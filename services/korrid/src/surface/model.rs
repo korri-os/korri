@@ -174,6 +174,9 @@ fn bare_game(id: String, title: String) -> SurfaceGame {
         total_playtime_seconds: None,
         saves: None,
         download: None,
+        system_id: None,
+        system: None,
+        media: None,
     }
 }
 
@@ -218,6 +221,11 @@ pub fn game_from_entry(entry: &Entry, entries: &[Entry]) -> SurfaceGame {
                 None => local.system.clone(),
                 Some(alternative) => format!("{} · {alternative}", local.system),
             });
+            // A release with no system has no badge and is in no system.
+            if let Some(system_id) = &local.system_id {
+                game.system_id = Some(system_id.clone());
+                game.system = Some(local.system.clone());
+            }
             // The cover korrid stores for this game, named as a surface host
             // reads it (#129). A peer's copy has no cover here.
             game.cover_art_url = local

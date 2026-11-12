@@ -305,6 +305,31 @@ pub fn clock_label() -> String {
     }
 }
 
+/// `SurfaceModel.publishedAt` for a model built at `now`: UTC epoch
+/// milliseconds. A clock that reads before the Unix epoch gives no time.
+pub fn published_at(now: std::time::SystemTime) -> Option<f64> {
+    now.duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|since| since.as_millis() as f64)
+}
+
+/// The present as a surface is told it. Both facts are read at one moment
+/// and change together, so the time adds no publish of its own.
+#[derive(Clone)]
+struct ClockSample {
+    label: String,
+    published_at: Option<f64>,
+}
+
+impl ClockSample {
+    fn now() -> Self {
+        Self {
+            label: clock_label(),
+            published_at: published_at(std::time::SystemTime::now()),
+        }
+    }
+}
+
 /// Port of `surface-displays.ts` and SurfaceRoot's catalog restore: the
 /// window's placement for the package the shell shows.
 #[derive(Default)]
@@ -367,7 +392,7 @@ pub struct Root {
     controllers: Arc<super::controllers::Controllers>,
     displays: std::sync::Mutex<Displays>,
     onboarding_was_needed: std::sync::Mutex<Option<bool>>,
-    clock: std::sync::Mutex<String>,
+    clock: std::sync::Mutex<ClockSample>,
     last_local_ids: std::sync::Mutex<Option<Vec<String>>>,
     notify: Notify,
 }
@@ -661,7 +686,7 @@ impl Root {
                 controllers,
                 displays: std::sync::Mutex::new(Displays::default()),
                 onboarding_was_needed: std::sync::Mutex::new(None),
-                clock: std::sync::Mutex::new(clock_label()),
+                clock: std::sync::Mutex::new(ClockSample::now()),
                 last_local_ids: std::sync::Mutex::new(None),
                 notify,
             }
@@ -990,11 +1015,14 @@ impl Root {
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_secs(30)).await;
-                let label = clock_label();
+                let sample = ClockSample::now();
                 let changed = {
                     let mut clock = this.clock.lock().expect("clock poisoned");
-                    let changed = *clock != label;
-                    *clock = label;
+                    // The time moves only with the label, each minute.
+                    let changed = clock.label != sample.label;
+                    if changed {
+                        *clock = sample;
+                    }
                     changed
                 };
                 if changed {
@@ -1092,7 +1120,18 @@ impl Root {
 
     /// The same local clock used by the catalog, also available over gameplay.
     pub fn clock(&self) -> String {
-        self.clock.lock().expect("clock poisoned").clone()
+        self.clock.lock().expect("clock poisoned").label.clone()
+    }
+
+    /// The time read with that clock label: `SurfaceModel.publishedAt`.
+    pub fn published_at(&self) -> Option<f64> {
+        self.clock.lock().expect("clock poisoned").published_at
+    }
+
+    /// A test gives the model's time; no assertion reads the system clock.
+    #[cfg(test)]
+    pub fn set_published_at(&self, published_at: Option<f64>) {
+        self.clock.lock().expect("clock poisoned").published_at = published_at;
     }
 
     /// The model without the catalog window and focused game, and the whole
@@ -1145,6 +1184,7 @@ impl Root {
             }
         });
         let games = catalog_games(&state).map(|games| self.decorate(games, &state));
+        let clock = self.clock.lock().expect("clock poisoned").clone();
         let base = SurfaceModel {
             displays: None,
             presentation: SurfacePresentation::catalog(),
@@ -1153,7 +1193,7 @@ impl Root {
             save_history: self.saves.history(),
             runner_choice: Some(self.runner.snapshot()),
             launch_settings: Some(self.launch.editor()),
-            clock_label: Some(self.clock.lock().expect("clock poisoned").clone()),
+            clock_label: Some(clock.label),
             actions: Vec::new(),
             settings,
             settings_status: self
@@ -1176,6 +1216,8 @@ impl Root {
                 },
             ),
             focused_game: None,
+            systems: None,
+            published_at: clock.published_at,
         };
         Facts { base, games, state }
     }

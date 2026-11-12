@@ -208,6 +208,53 @@ pub struct SurfaceGame {
     /// nothing is needed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub download: Option<SurfaceGameDownload>,
+    /// The system this game runs on, as Korri names it, such as "gba". It is
+    /// the value `CatalogQuery.systemId` and `SurfaceSystem.systemId` use.
+    /// Absent for a game on another device, and for a game with no system.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_id: Option<String>,
+    /// The system's name in words, such as "Game Boy Advance": the system's
+    /// title, else its id. Absent together with `systemId`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system: Option<String>,
+    /// Images Korri stores for this game, at most one of each role. Absent
+    /// when Korri has none. The square tile stays `coverArtUrl`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media: Option<Vec<SurfaceMedia>>,
+}
+
+/// What an image of a game is for. `poster` is upright, two wide to three
+/// tall. `hero` is a wide backdrop. `logo` is the game's title as an image,
+/// with a transparent background.
+#[typeshare(serialized_as = "SurfaceMediaRoleWire")]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SurfaceMediaRole {
+    Poster,
+    Hero,
+    Logo,
+}
+
+/// One stored image of a game.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceMedia {
+    pub role: SurfaceMediaRole,
+    /// Opaque, as `coverArtUrl`: hand it back unchanged as an image,
+    /// `{ $image: url }`. The host loads it later, so the image is empty
+    /// until it arrives, and stays empty if it cannot be loaded.
+    pub url: String,
+    /// The image's own width in pixels, so a surface can lay it out before
+    /// it arrives.
+    pub width: u32,
+    /// The image's own height in pixels.
+    pub height: u32,
+    /// One colour taken from this image, as lowercase `#rrggbb`. Absent when
+    /// the image has no clear colour. A surface that tints with it must have
+    /// a fallback.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 /// A non-game thing the user can do (open settings, cancel a launch, end
@@ -474,6 +521,10 @@ pub struct CatalogQuery {
     /// section.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub section: Option<String>,
+    /// Only games whose `SurfaceGame.systemId` equals this. Absent: every
+    /// system.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_id: Option<String>,
     pub order: CatalogOrder,
 }
 
@@ -530,6 +581,20 @@ pub enum SurfaceCatalog {
         /// The query this window answers.
         query: CatalogQuery,
     },
+}
+
+/// One system that games of the whole list run on, with how many do.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceSystem {
+    /// As `SurfaceGame.systemId`. Hand it back in `CatalogQuery.systemId`.
+    pub system_id: String,
+    /// The system's name in words, as `SurfaceGame.system`.
+    pub system: String,
+    /// Games of the whole list that run on this system, whatever the
+    /// surface's current query is.
+    pub total: u32,
 }
 
 /// The game a surface reports focus on, with that game's actions.
@@ -1393,6 +1458,16 @@ pub struct SurfaceModel {
     /// Absent until a `FocusGame` names a game Korri knows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub focused_game: Option<FocusedGame>,
+    /// The systems of the whole game list with their game counts, in title
+    /// order. A game without `systemId` is in none of them. Absent while the
+    /// catalog loads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub systems: Option<Vec<SurfaceSystem>>,
+    /// When Korri built this model, as UTC epoch milliseconds. A surface that
+    /// shows how long ago something happened compares against this; it is not
+    /// a live clock. Absent when Korri has no trustworthy time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub published_at: Option<f64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1892,6 +1967,85 @@ mod tests {
             serde_json::to_value(SurfaceRequest::FocusGame { game_id: None }).unwrap(),
             json!({"_tag": "FocusGame"})
         );
+    }
+
+    #[test]
+    fn systems_and_media_use_the_agreed_json() {
+        let media = SurfaceMedia {
+            role: SurfaceMediaRole::Hero,
+            url: "/game-assets/aa.png".into(),
+            width: 1920,
+            height: 620,
+            color: Some("#3a7bd5".into()),
+        };
+        assert_eq!(
+            serde_json::to_value(&media).unwrap(),
+            json!({"role": "hero", "url": "/game-assets/aa.png", "width": 1920,
+                "height": 620, "color": "#3a7bd5"})
+        );
+        assert_eq!(
+            serde_json::to_value(SurfaceMedia {
+                role: SurfaceMediaRole::Logo,
+                color: None,
+                ..media.clone()
+            })
+            .unwrap(),
+            json!({"role": "logo", "url": "/game-assets/aa.png", "width": 1920, "height": 620})
+        );
+        assert_eq!(
+            serde_json::to_value(SurfaceMediaRole::Poster).unwrap(),
+            json!("poster")
+        );
+        // A tile is `coverArtUrl`, never media.
+        assert!(serde_json::from_value::<SurfaceMediaRole>(json!("tile")).is_err());
+        assert_eq!(
+            serde_json::to_value(SurfaceSystem {
+                system_id: "gba".into(),
+                system: "Game Boy Advance".into(),
+                total: 3
+            })
+            .unwrap(),
+            json!({"systemId": "gba", "system": "Game Boy Advance", "total": 3})
+        );
+        // `publishedAt` is a number of milliseconds, as `lastPlayedAt` is.
+        let model: SurfaceModel = serde_json::from_value(json!({
+            "presentation": {"kind": "catalog"}, "catalog": {"_tag": "Loading"},
+            "status": {"_tag": "Browsing"}, "actions": [], "settings": [],
+            "settingsStatus": {"_tag": "Idle"}, "publishedAt": 1_794_446_934_334.0_f64,
+            "systems": [{"systemId": "gba", "system": "Game Boy Advance", "total": 3}]
+        }))
+        .unwrap();
+        assert_eq!(model.published_at, Some(1_794_446_934_334.0));
+        let wire = serde_json::to_value(&model).unwrap();
+        assert_eq!(wire["publishedAt"], json!(1_794_446_934_334.0_f64));
+        assert_eq!(wire["systems"][0]["systemId"], json!("gba"));
+        let query = CatalogQuery {
+            system_id: Some("gba".into()),
+            ..CatalogQuery::default()
+        };
+        assert_eq!(
+            serde_json::to_value(&query).unwrap(),
+            json!({"text": "", "systemId": "gba", "order": "korri"})
+        );
+        // A package written before the field existed still asks for every
+        // system, and a game without the new facts carries none of them.
+        assert_eq!(
+            serde_json::from_value::<CatalogQuery>(json!({"text": "", "order": "korri"})).unwrap(),
+            CatalogQuery::default()
+        );
+        let game: SurfaceGame = serde_json::from_value(json!({"id": "g", "title": "G"})).unwrap();
+        assert_eq!(
+            (game.system_id, game.system, game.media),
+            (None, None, None)
+        );
+        let game: SurfaceGame = serde_json::from_value(json!({
+            "id": "g", "title": "G", "systemId": "gba", "system": "Game Boy Advance",
+            "media": [{"role": "poster", "url": "/game-assets/bb.jpg", "width": 600, "height": 900}]
+        }))
+        .unwrap();
+        assert_eq!(game.system_id.as_deref(), Some("gba"));
+        assert_eq!(game.system.as_deref(), Some("Game Boy Advance"));
+        assert_eq!(game.media.unwrap()[0].role, SurfaceMediaRole::Poster);
     }
 
     #[test]

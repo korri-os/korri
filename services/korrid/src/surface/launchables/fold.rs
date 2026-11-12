@@ -171,6 +171,7 @@ mod tests {
             id: id.into(),
             title: id.into(),
             system: "GBA".into(),
+            system_id: Some("gba".into()),
             identity,
             cover_asset_id: None,
             play_stats: None,

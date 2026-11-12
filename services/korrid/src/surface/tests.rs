@@ -237,6 +237,55 @@ mod surface_model {
     }
 
     #[test]
+    fn publishes_a_local_games_system_and_none_for_a_peers_game() {
+        let with_system = Entry::LocalGame {
+            game: from(json!({ "id": "wl4", "title": "Wario Land 4",
+                "system": "Game Boy Advance", "systemId": "gba" })),
+            alternatives: Vec::new(),
+        };
+        // A system with no title is named by its id, as `LocalGame.system` is.
+        let untitled = Entry::LocalGame {
+            game: from(
+                json!({ "id": "celeste", "title": "Celeste", "system": "pico8", "systemId": "pico8" }),
+            ),
+            alternatives: Vec::new(),
+        };
+        // A release that names no system: no id, and no words for a badge.
+        let no_system = Entry::LocalGame {
+            game: from(json!({ "id": "jak1", "title": "Jak and Daxter", "system": "" })),
+            alternatives: Vec::new(),
+        };
+        let state = ready(
+            vec![with_system, untitled, no_system, host_game()],
+            None,
+            None,
+        );
+        let games = games(&state);
+        assert_eq!(
+            games
+                .iter()
+                .map(|game| (game.system_id.as_deref(), game.system.as_deref()))
+                .collect::<Vec<_>>(),
+            vec![
+                (Some("gba"), Some("Game Boy Advance")),
+                (Some("pico8"), Some("pico8")),
+                (None, None),
+                (None, None),
+            ]
+        );
+        // Step 1 of the art chain publishes no media yet.
+        assert!(games.iter().all(|game| game.media.is_none()));
+        assert_eq!(
+            serde_json::to_value(&games[0]).unwrap()["systemId"],
+            json!("gba")
+        );
+        assert!(serde_json::to_value(&games[3])
+            .unwrap()
+            .get("systemId")
+            .is_none());
+    }
+
+    #[test]
     fn publishes_a_stored_cover_by_its_asset_id_alone() {
         let asset_id = format!("{}.png", "a".repeat(64));
         let with_cover = Entry::LocalGame {
@@ -740,6 +789,118 @@ fn window_ids(model: &SurfaceModel) -> (u32, u32, Vec<String>) {
     )
 }
 
+#[test]
+fn published_at_is_utc_epoch_milliseconds_and_absent_before_the_epoch() {
+    use std::time::UNIX_EPOCH;
+    assert_eq!(
+        super::root::published_at(UNIX_EPOCH + Duration::from_millis(1_794_446_934_334)),
+        Some(1_794_446_934_334.0)
+    );
+    assert_eq!(super::root::published_at(UNIX_EPOCH), Some(0.0));
+    // A clock that reads before the epoch gives no time, not a negative one.
+    assert_eq!(
+        super::root::published_at(UNIX_EPOCH - Duration::from_secs(1)),
+        None
+    );
+}
+
+#[tokio::test]
+async fn the_model_says_when_korri_built_it_and_the_time_alone_never_publishes() {
+    let (hub, _, _directory) = hub_with(idle_outcomes(3));
+    settled(&hub, "velvet").await;
+    // The test gives the time; nothing here reads the system clock.
+    hub.root().set_published_at(Some(1_794_446_934_334.0));
+    let model = hub.model("velvet").unwrap();
+    assert_eq!(model.published_at, Some(1_794_446_934_334.0));
+    assert_eq!(
+        serde_json::to_value(&model).unwrap()["publishedAt"],
+        json!(1_794_446_934_334.0_f64)
+    );
+    // A second build with no new clock sample carries the same time. The
+    // watch pushes only a model that differs, so the time adds no push.
+    assert_eq!(
+        hub.model("velvet").unwrap().published_at,
+        model.published_at
+    );
+    // No trustworthy time: the field is absent, not zero.
+    hub.root().set_published_at(None);
+    let model = hub.model("velvet").unwrap();
+    assert_eq!(model.published_at, None);
+    assert!(serde_json::to_value(&model)
+        .unwrap()
+        .get("publishedAt")
+        .is_none());
+}
+
+#[tokio::test]
+async fn the_model_lists_the_systems_of_the_whole_list_and_a_query_can_keep_one() {
+    let mut outcomes = idle_outcomes(2);
+    outcomes.insert(
+        "app.local-games.list".into(),
+        json!({ "_tag": "Ok", "payload": { "games": [
+            { "id": "wl4", "title": "Wario Land 4", "system": "Game Boy Advance", "systemId": "gba" },
+            { "id": "smb", "title": "Super Mario Bros.", "system": "NES", "systemId": "nes" },
+            { "id": "anguna", "title": "Anguna", "system": "Game Boy Advance", "systemId": "gba" },
+            { "id": "jak1", "title": "Jak and Daxter", "system": "" },
+        ] } }),
+    );
+    let (hub, _, _directory) = hub_with(outcomes);
+    // Absent while the catalog loads.
+    assert!(matches!(
+        hub.model("velvet").unwrap().catalog,
+        SurfaceCatalog::Loading
+    ));
+    assert!(hub.model("velvet").unwrap().systems.is_none());
+    let model = settled(&hub, "velvet").await;
+    assert_eq!(window_ids(&model).0, 6);
+    let systems = |model: &SurfaceModel| {
+        model
+            .systems
+            .clone()
+            .unwrap()
+            .into_iter()
+            .map(|system| (system.system_id, system.system, system.total))
+            .collect::<Vec<_>>()
+    };
+    let expected = vec![
+        ("gba".to_owned(), "Game Boy Advance".to_owned(), 2),
+        ("nes".to_owned(), "NES".to_owned(), 1),
+    ];
+    assert_eq!(systems(&model), expected);
+    hub.request(
+        "velvet",
+        SurfaceRequest::MoveCatalog {
+            query: CatalogQuery {
+                system_id: Some("gba".into()),
+                order: CatalogOrder::Title,
+                ..CatalogQuery::default()
+            },
+            from: CatalogFrom::Start,
+            count: 50,
+        },
+    )
+    .unwrap();
+    let model = hub.model("velvet").unwrap();
+    let (total, _, window) = window_ids(&model);
+    assert_eq!(
+        (total, window),
+        (
+            2,
+            vec!["local-game:anguna".to_owned(), "local-game:wl4".to_owned()]
+        )
+    );
+    let SurfaceCatalog::Ready { window, .. } = &model.catalog else {
+        unreachable!()
+    };
+    assert!(window
+        .iter()
+        .all(|game| game.system_id.as_deref() == Some("gba")));
+    // The list of systems is of the whole list, not of this query.
+    assert_eq!(systems(&model), expected);
+    // Another surface keeps every system.
+    assert_eq!(window_ids(&hub.model("zone").unwrap()).0, 6);
+}
+
 #[tokio::test]
 async fn the_default_window_is_fifty_games_from_the_start_and_each_surface_moves_its_own() {
     let (hub, _, _directory) = hub_with(idle_outcomes(120));
@@ -772,6 +933,7 @@ async fn the_default_window_is_fifty_games_from_the_start_and_each_surface_moves
             query: CatalogQuery {
                 text: " GAME 0011".into(),
                 section: None,
+                system_id: None,
                 order: CatalogOrder::Title,
             },
             from: CatalogFrom::Start,
@@ -2247,6 +2409,7 @@ mod overlay {
         );
         let (hub, outcomes, _directory) = hub_with(outcomes);
         hub.model("pico").unwrap();
+        hub.root().set_published_at(Some(1_794_446_934_334.0));
         home_intent("L1");
         tokio::time::timeout(Duration::from_secs(4), async {
             loop {
@@ -2258,6 +2421,8 @@ mod overlay {
                         model.clock_label.as_deref(),
                         Some(hub.root().clock().as_str())
                     );
+                    // The overlay's model carries the same time as the catalog's.
+                    assert_eq!(model.published_at, Some(1_794_446_934_334.0));
                     break;
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;

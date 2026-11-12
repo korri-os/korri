@@ -116,6 +116,7 @@ fn local_game_from_route(
     LocalGame {
         id: route.playable_id,
         title: route.title.unwrap_or(route.release_id),
+        system_id: (!route.system_id.is_empty()).then(|| route.system_id.clone()),
         system: route.system_title.unwrap_or(route.system_id),
         identity: route.identity,
         cover_asset_id,
@@ -169,6 +170,28 @@ mod tests {
             vec![crate::plugin_test_fixtures::GBA_ID],
             "diagnostics: {:?}",
             catalog.diagnostics
+        );
+    }
+
+    /// The listed game carries the route's system: its id as the route has
+    /// it, and its title in words.
+    #[test]
+    fn a_listed_game_names_its_system_by_id_and_by_title() {
+        let root = tempdir().unwrap();
+        let registry = crate::plugin_test_fixtures::installed_pair(root.path());
+        std::fs::create_dir_all(root.path().join("roms")).unwrap();
+        std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
+        crate::plugin_test_fixtures::write_gba_library(root.path());
+        let state = ConfigSnapshotCoordinator::new(root.path()).reload();
+
+        let catalog = local_games(root.path(), &state, &registry);
+
+        let game = &catalog.games[0];
+        assert_eq!(game.system_id.as_deref(), Some("gba"));
+        assert_eq!(game.system, "Game Boy Advance");
+        assert_eq!(
+            serde_json::to_value(game).unwrap()["systemId"],
+            serde_json::json!("gba")
         );
     }
 }

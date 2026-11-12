@@ -202,6 +202,8 @@ fn model_for(launch_id: &str, title: Option<String>) -> SurfaceModel {
         store: None,
         invites: None,
         focused_game: None,
+        systems: None,
+        published_at: None,
     }
 }
 

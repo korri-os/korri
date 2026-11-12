@@ -8,7 +8,12 @@ use crate::GameIdentity;
 pub struct LocalGame {
     pub id: String,
     pub title: String,
+    /// The system's title, else its id.
     pub system: String,
+    /// The route's system id (`ResolvedRoute.system_id`). Absent for a
+    /// release that names no system.
+    #[serde(default, rename = "systemId", skip_serializing_if = "Option::is_none")]
+    pub system_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<GameIdentity>,
     #[serde(

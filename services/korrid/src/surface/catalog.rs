@@ -10,11 +10,15 @@
 //! order, `title` sorts by title, `mostPlayed` by recorded playtime and
 //! `recent` by newest session end. A game without the field sorts last, in
 //! Korri's order. Every sort is stable.
+//!
+//! The list also answers which systems its games run on (`SurfaceSystem`),
+//! counted over the whole list and never over one surface's query.
 
 use std::{cmp::Ordering, collections::HashMap, sync::Arc};
 
 use korri_surface_treaty::{
-    CatalogFrom, CatalogOrder, CatalogQuery, Cursor, SurfaceCatalog, SurfaceGame, CATALOG_MAX_COUNT,
+    CatalogFrom, CatalogOrder, CatalogQuery, Cursor, SurfaceCatalog, SurfaceGame, SurfaceSystem,
+    CATALOG_MAX_COUNT,
 };
 use serde::{Deserialize, Serialize};
 
@@ -23,15 +27,53 @@ use serde::{Deserialize, Serialize};
 pub struct CatalogGames {
     games: Vec<SurfaceGame>,
     lower_titles: Vec<String>,
+    systems: Vec<SurfaceSystem>,
+}
+
+/// The systems of a game list with their game counts, in title order. The
+/// first game of a system gives its title.
+fn systems_of(games: &[SurfaceGame]) -> Vec<SurfaceSystem> {
+    let mut positions: HashMap<&str, usize> = HashMap::new();
+    let mut systems: Vec<SurfaceSystem> = Vec::new();
+    for game in games {
+        let Some(system_id) = game.system_id.as_deref() else {
+            continue;
+        };
+        match positions.get(system_id) {
+            Some(position) => systems[*position].total += 1,
+            None => {
+                positions.insert(system_id, systems.len());
+                systems.push(SurfaceSystem {
+                    system_id: system_id.to_owned(),
+                    system: game.system.clone().unwrap_or_else(|| system_id.to_owned()),
+                    total: 1,
+                });
+            }
+        }
+    }
+    systems.sort_by(|left, right| {
+        compare_titles(
+            (&left.system.to_lowercase(), &left.system),
+            (&right.system.to_lowercase(), &right.system),
+        )
+        .then_with(|| left.system_id.cmp(&right.system_id))
+    });
+    systems
 }
 
 impl CatalogGames {
     pub fn new(games: Vec<SurfaceGame>) -> Self {
         let lower_titles = games.iter().map(|game| game.title.to_lowercase()).collect();
+        let systems = systems_of(&games);
         Self {
             games,
             lower_titles,
+            systems,
         }
+    }
+    /// `SurfaceModel.systems` for this list.
+    pub fn systems(&self) -> &[SurfaceSystem] {
+        &self.systems
     }
     pub fn len(&self) -> usize {
         self.games.len()
@@ -124,6 +166,10 @@ impl CatalogIndex {
                     .section
                     .as_ref()
                     .is_none_or(|section| game.section.as_ref() == Some(section))
+                    && query
+                        .system_id
+                        .as_ref()
+                        .is_none_or(|system_id| game.system_id.as_ref() == Some(system_id))
                     && (needle.is_empty() || games.lower_titles[*index as usize].contains(&needle))
             })
             .collect();
@@ -330,6 +376,9 @@ mod tests {
             total_playtime_seconds: (!id.is_multiple_of(5)).then_some((id * 31 % 777) as f64),
             saves: None,
             download: None,
+            system_id: None,
+            system: None,
+            media: None,
         }
     }
 
@@ -455,6 +504,7 @@ mod tests {
         let query = CatalogQuery {
             text: "  wArIo ".into(),
             section: None,
+            system_id: None,
             order: CatalogOrder::Korri,
         };
         let index = CatalogIndex::new(games.clone(), query.clone());
@@ -473,6 +523,114 @@ mod tests {
             ready(index.window(&CatalogFrom::Start, 50)).1,
             vec!["game:000003"]
         );
+    }
+
+    #[test]
+    fn a_system_filter_keeps_only_that_systems_games() {
+        let mut list: Vec<_> = (0..6).map(game).collect();
+        for (index, system) in [
+            Some(("gba", "Game Boy Advance")),
+            Some(("nes", "NES")),
+            None,
+            Some(("gba", "Game Boy Advance")),
+            Some(("nes", "NES")),
+            Some(("gba", "Game Boy Advance")),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            list[index].system_id = system.map(|(id, _)| id.into());
+            list[index].system = system.map(|(_, title)| title.into());
+        }
+        list[3].title = "Wario Land 4".into();
+        let games = Arc::new(CatalogGames::new(list));
+        let query = CatalogQuery {
+            system_id: Some("gba".into()),
+            ..CatalogQuery::default()
+        };
+        let index = CatalogIndex::new(games.clone(), query.clone());
+        let (total, window, _, _, _) = ready(index.window(&CatalogFrom::Start, 50));
+        assert_eq!(
+            (total, window),
+            (
+                3,
+                vec![
+                    "game:000000".to_owned(),
+                    "game:000003".to_owned(),
+                    "game:000005".to_owned()
+                ]
+            )
+        );
+        // It combines with the section and the title filter.
+        let index = CatalogIndex::new(
+            games.clone(),
+            CatalogQuery {
+                text: "wario".into(),
+                section: Some("Continue".into()),
+                ..query.clone()
+            },
+        );
+        assert_eq!(
+            ready(index.window(&CatalogFrom::Start, 50)).1,
+            vec!["game:000003"]
+        );
+        // The window says which query it answers.
+        let SurfaceCatalog::Ready {
+            query: answered, ..
+        } = index.window(&CatalogFrom::Start, 50)
+        else {
+            panic!("not ready")
+        };
+        assert_eq!(answered.system_id.as_deref(), Some("gba"));
+        // An id no game has matches nothing. It is not "every system".
+        let index = CatalogIndex::new(
+            games,
+            CatalogQuery {
+                system_id: Some("snes".into()),
+                ..CatalogQuery::default()
+            },
+        );
+        assert_eq!(ready(index.window(&CatalogFrom::Start, 50)).0, 0);
+    }
+
+    #[test]
+    fn systems_are_counted_over_the_whole_list_in_title_order() {
+        let mut list: Vec<_> = (0..7).map(game).collect();
+        for (index, system) in [
+            Some(("nes", "NES")),
+            Some(("gba", "Game Boy Advance")),
+            None,
+            Some(("pico8", "PICO-8")),
+            Some(("gba", "Game Boy Advance")),
+            // A system with no title is named by its id.
+            Some(("zx", "zx")),
+            Some(("gba", "Game Boy Advance")),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            list[index].system_id = system.map(|(id, _)| id.into());
+            list[index].system = system.map(|(_, title)| title.into());
+        }
+        let games = CatalogGames::new(list);
+        assert_eq!(
+            games
+                .systems()
+                .iter()
+                .map(|system| (
+                    system.system_id.as_str(),
+                    system.system.as_str(),
+                    system.total
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ("gba", "Game Boy Advance", 3),
+                ("nes", "NES", 1),
+                ("pico8", "PICO-8", 1),
+                ("zx", "zx", 1)
+            ]
+        );
+        assert!(CatalogGames::new(Vec::new()).systems().is_empty());
     }
 
     #[test]
@@ -502,6 +660,7 @@ mod tests {
                 CatalogQuery {
                     text: String::new(),
                     section: None,
+                    system_id: None,
                     order,
                 },
             );
@@ -531,6 +690,7 @@ mod tests {
             let query = CatalogQuery {
                 text: String::new(),
                 section: None,
+                system_id: None,
                 order,
             };
             let base: Vec<_> = (0..10_000).map(game).collect();
@@ -611,6 +771,7 @@ mod tests {
                 let query = CatalogQuery {
                     text: "1".into(),
                     section: None,
+                    system_id: None,
                     order,
                 };
                 let started = Instant::now();

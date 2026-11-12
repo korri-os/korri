@@ -315,6 +315,7 @@ impl SurfaceHub {
             let mut model = overlay.model();
             model.displays = root.display_facts();
             model.clock_label = Some(root.clock());
+            model.published_at = root.published_at();
             return Ok(model);
         }
         let host_revision = self.host_revision.load(Ordering::SeqCst);
@@ -324,6 +325,7 @@ impl SurfaceHub {
         model.displays = root.display_facts();
         let mut sessions = self.sessions.lock().expect("sessions poisoned");
         let session = sessions.entry(surface_id.to_owned()).or_default();
+        model.systems = games.as_ref().map(|games| games.systems().to_vec());
         model.catalog = match games {
             None => SurfaceCatalog::Loading,
             Some(games) if games.is_empty() => SurfaceCatalog::Empty,

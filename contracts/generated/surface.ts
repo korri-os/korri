@@ -63,6 +63,13 @@ export type SurfaceIdentityStatus = { _tag: "Idle" } | { _tag: "Working"; operat
 export type SurfaceLaunchSettings = { _tag: "Closed" } | ({ _tag: "Loading" | "Ready" } & SurfaceLaunchSettingsContent) | ({ _tag: "Conflict" | "Error"; message: string } & SurfaceLaunchSettingsContent);
 
 /**
+ * What an image of a game is for. `poster` is upright, two wide to three
+ * tall. `hero` is a wide backdrop. `logo` is the game's title as an image,
+ * with a transparent background.
+ */
+export type SurfaceMediaRole = "poster" | "hero" | "logo";
+
+/**
  * Something that happened, delivered to the surface's `update`.
  *
  * Directional repeat: the first repeat after 400 ms, then every 100 ms.
@@ -262,6 +269,11 @@ export interface CatalogQuery {
 	 * section.
 	 */
 	section?: string;
+	/**
+	 * Only games whose `SurfaceGame.systemId` equals this. Absent: every
+	 * system.
+	 */
+	systemId?: string;
 	order: CatalogOrder;
 }
 
@@ -348,6 +360,30 @@ export interface SurfaceLaunchLocation {
 	label: string;
 }
 
+/** One stored image of a game. */
+export interface SurfaceMedia {
+	role: SurfaceMediaRole;
+	/**
+	 * Opaque, as `coverArtUrl`: hand it back unchanged as an image,
+	 * `{ $image: url }`. The host loads it later, so the image is empty
+	 * until it arrives, and stays empty if it cannot be loaded.
+	 */
+	url: string;
+	/**
+	 * The image's own width in pixels, so a surface can lay it out before
+	 * it arrives.
+	 */
+	width: number;
+	/** The image's own height in pixels. */
+	height: number;
+	/**
+	 * One colour taken from this image, as lowercase `#rrggbb`. Absent when
+	 * the image has no clear colour. A surface that tints with it must have
+	 * a fallback.
+	 */
+	color?: string;
+}
+
 export interface SurfaceGame {
 	id: string;
 	title: string;
@@ -401,6 +437,22 @@ export interface SurfaceGame {
 	 * nothing is needed.
 	 */
 	download?: SurfaceGameDownload;
+	/**
+	 * The system this game runs on, as Korri names it, such as "gba". It is
+	 * the value `CatalogQuery.systemId` and `SurfaceSystem.systemId` use.
+	 * Absent for a game on another device, and for a game with no system.
+	 */
+	systemId?: string;
+	/**
+	 * The system's name in words, such as "Game Boy Advance": the system's
+	 * title, else its id. Absent together with `systemId`.
+	 */
+	system?: string;
+	/**
+	 * Images Korri stores for this game, at most one of each role. Absent
+	 * when Korri has none. The square tile stays `coverArtUrl`.
+	 */
+	media?: SurfaceMedia[];
 }
 
 export interface SurfaceGameplayControl {
@@ -607,6 +659,19 @@ export interface SurfaceStore {
 	details: SurfaceStoreDetails;
 }
 
+/** One system that games of the whole list run on, with how many do. */
+export interface SurfaceSystem {
+	/** As `SurfaceGame.systemId`. Hand it back in `CatalogQuery.systemId`. */
+	systemId: string;
+	/** The system's name in words, as `SurfaceGame.system`. */
+	system: string;
+	/**
+	 * Games of the whole list that run on this system, whatever the
+	 * surface's current query is.
+	 */
+	total: number;
+}
+
 /** Everything Korri publishes to the surface. Replaced wholesale on change. */
 export interface SurfaceModel {
 	/** Present only for a surface registered with displays: "all". */
@@ -644,6 +709,18 @@ export interface SurfaceModel {
 	 * Absent until a `FocusGame` names a game Korri knows.
 	 */
 	focusedGame?: FocusedGame;
+	/**
+	 * The systems of the whole game list with their game counts, in title
+	 * order. A game without `systemId` is in none of them. Absent while the
+	 * catalog loads.
+	 */
+	systems?: SurfaceSystem[];
+	/**
+	 * When Korri built this model, as UTC epoch milliseconds. A surface that
+	 * shows how long ago something happened compares against this; it is not
+	 * a live clock. Absent when Korri has no trustworthy time.
+	 */
+	publishedAt?: number;
 }
 
 /**

@@ -949,7 +949,13 @@ export interface LibraryFoldersSnapshotRequest {
 export interface LocalGame {
 	id: string;
 	title: string;
+	/** The system's title, else its id. */
 	system: string;
+	/**
+	 * The route's system id (`ResolvedRoute.system_id`). Absent for a
+	 * release that names no system.
+	 */
+	systemId?: string;
 	identity?: GameIdentity;
 	coverAssetId?: string;
 	playStats?: PlayStats;
