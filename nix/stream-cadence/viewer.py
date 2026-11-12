@@ -43,6 +43,7 @@ from device import (
     get_output,
     hand_over,
     let_in,
+    live_games,
     model,
     no_fixture_on_battery,
     plain_text,
@@ -262,6 +263,9 @@ class Session:
         self.fixture = False
         self.last_wake = 0.0
         self.last_game_check = 0.0
+        # A Korri device: the product compositor is there.
+        self.watch_games = self.compositor is not None
+        self.allow_game = False
         self.processes: dict[str, subprocess.Popen] = {}
         self.logs: dict[str, TextIO] = {}
 
@@ -453,8 +457,20 @@ class Session:
             raise RuntimeError(refused)
 
     def prepare(self, request: dict) -> dict:
-        if self.compositor:
-            games()
+        # On a Korri device a game has the machine. Only the tool's explicit
+        # option lets the fixture viewer of a private pair run beside one.
+        self.allow_game = bool(request.get("allow_game"))
+        if self.allow_game and not request["fixture"]:
+            raise RuntimeError(
+                "A live game is allowed only beside the fixture viewer of a private pair. "
+                "The installed viewer uses the device's own display, which the game has."
+            )
+        live: list[str] | None = None
+        if self.watch_games:
+            if self.allow_game:
+                live = live_games()
+            else:
+                games()
         if self.root is not None:
             raise RuntimeError("viewer session already prepared")
         self.check()
@@ -545,6 +561,8 @@ class Session:
             "run_folder": str(self.root),
             "keydir": str(keys),
             "hardware_path": self.hardware_path(),
+            # Only for a run that was allowed beside a game: the units live at its start.
+            **({} if live is None else {"live_games": live}),
         }
 
     def handle(self, request: dict) -> dict:
@@ -640,7 +658,11 @@ class Session:
                 threading.Thread(target=self.focus, args=(process.pid,), daemon=True).start()
             return {"pid": process.pid, "start_ns": start}
         if operation == "sample":
-            if self.compositor and time.monotonic() - self.last_game_check >= GAME_CHECK_SECONDS:
+            if (
+                self.watch_games
+                and not self.allow_game
+                and time.monotonic() - self.last_game_check >= GAME_CHECK_SECONDS
+            ):
                 # A game that starts during a measure ends it within this time.
                 games()
                 self.last_game_check = time.monotonic()
@@ -728,7 +750,15 @@ class Session:
             except Exception:
                 unchanged["compositor"] = False
         self.root = None
+        live: dict = {}
+        if self.watch_games and self.allow_game:
+            # The run was allowed beside a game: which units are live at its end.
+            try:
+                live["live_games"] = live_games()
+            except Exception as error:
+                errors.append(f"live games: {error}")
         return {
+            **live,
             "pass": all(unchanged.values())
             and not errors
             and not remaining

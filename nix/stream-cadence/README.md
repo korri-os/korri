@@ -361,7 +361,16 @@ nix run .#stream-cadence -- view --sender local --viewer operator@viewer \
 `--sender-fixture` gives the measure a private sender. The sender target
 then needs no product Sunshine, no certificate socket and no product
 display. On a Korri device a `korri-game-*` unit still refuses the start and
-ends a run, until the pair is proven beside a game.
+ends a run.
+
+`--allow-live-game` switches that one rule off for a run, to find out whether
+a private pair can run while a person plays on the device. The tool accepts
+it only for a private pair: `--sender-fixture`, the fixture viewer, and no
+battery and no hardware picture path on either device. Every other rule
+stays on. The result names the game units that were live at the start and at
+the end of the run (`discovered.live_game`), without their command lines.
+What the pair costs the player is not measured: the tool reads nothing of the
+game, so a person must watch it.
 
 **Where the fixtures run.** Both fixtures, sender and viewer, are for a
 machine on mains power with no hardware picture path: a server or a desktop.

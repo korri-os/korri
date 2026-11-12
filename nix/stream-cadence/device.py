@@ -189,6 +189,19 @@ def unit(name: str) -> dict[str, str]:
     )
 
 
+def live_games() -> list[str]:
+    """The names of the korri-game-* units that run now. Names only, no command line."""
+    text = command(
+        "systemctl",
+        "list-units",
+        "korri-game-*",
+        "--state=active,activating,deactivating",
+        "--no-legend",
+        "--plain",
+    )
+    return [line.split()[0] for line in text.splitlines() if line.strip()]
+
+
 def games() -> None:
     text = command(
         "systemctl",
