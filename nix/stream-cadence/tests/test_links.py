@@ -136,6 +136,8 @@ class SenderAgent(Linked):
         self.addCleanup(setattr, sender, "RENDER_NODES", real[0])
         self.addCleanup(setattr, sender, "INPUT_DEVICES", real[1])
         self.addCleanup(setattr, sender, "UINPUT", real[2])
+        self.addCleanup(setattr, sender, "UHID", sender.UHID)
+        sender.UHID = self.place / "uhid"
         session = sender.Session()
         self.addCleanup(session.close)
         built = session.handle(

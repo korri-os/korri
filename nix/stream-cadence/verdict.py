@@ -182,7 +182,17 @@ def described(ran: dict) -> str:
         f"plugin {ran.get('release_version')}" if ran["kind"] == PLUGIN_VIEWER else "stand-in"
     )
     place = "in the fixture" if ran["place"] == FIXTURE else "on the device's own display"
-    return f"{name} ({ran.get('moonlight')}), {place}"
+    # The render nodes that the viewer held open: where its own OpenGL ran. A
+    # result from before that read has no word about it.
+    nodes = ran.get("render_nodes")
+    opengl = (
+        ""
+        if nodes is None
+        else f", OpenGL on {', '.join(nodes)}"
+        if nodes
+        else ", no render node open: its OpenGL is Mesa's software rasterizer, or it has none"
+    )
+    return f"{name} ({ran.get('moonlight')}), {place}{opengl}"
 
 
 def viewers(baseline: list[dict], candidate: list[dict]) -> list[str]:
@@ -193,14 +203,16 @@ def viewers(baseline: list[dict], candidate: list[dict]) -> list[str]:
     that nobody reads a stand-in's numbers as the product viewer's.
     """
     old, new = one_viewer(baseline, "baseline"), one_viewer(candidate, "candidate")
-    same = old == new
-    return [
-        "baseline viewer: " + described(old),
-        "candidate viewer: " + described(new),
-        "The two results ran the same viewer."
-        if same
-        else "The two results ran different viewers; every verdict below compares these two.",
-    ]
+    if old == new:
+        last = "The two results ran the same viewer."
+    elif old.get("moonlight") == new.get("moonlight") and old.get("render_nodes") != new.get("render_nodes"):
+        last = (
+            "The two results ran the same viewer binary, but its OpenGL differs: one drew on "
+            "the graphics card and one did not. Every verdict below compares these two."
+        )
+    else:
+        last = "The two results ran different viewers; every verdict below compares these two."
+    return ["baseline viewer: " + described(old), "candidate viewer: " + described(new), last]
 
 
 def differences(baseline: list[dict], candidate: list[dict]) -> list[str]:
@@ -241,6 +253,75 @@ def valid_runs(records: list[dict], minimum: int) -> list[dict]:
     return runs
 
 
+def conditions_that_differ(old: list[dict], new: list[dict]) -> str | None:
+    """Which conditions differ between two results of valid runs, in words; None when none does.
+
+    The refusal of a verdict, and the line that a verdict prints when the
+    override lets it go on: a difference must be named either way.
+    """
+    changed = differences(old, new)
+    if not changed:
+        return None
+    # A condition that some runs have and others lack was added to the tool
+    # between the two recordings. That is another cause than another sender.
+    every = [conditions(record) for record in old + new]
+    absent = [
+        name
+        for name in changed
+        if name in ADDED_LATER
+        and any(row[name] is None for row in every)
+        and len({json.dumps(row[name], sort_keys=True) for row in every if row[name] is not None}) == 1
+    ]
+    # These have their own words. The measure also sets the rate and the mode.
+    named = {"beside_a_game", "viewer_place", "viewer_renderer"}
+    if "measure" in changed:
+        named |= {"measure", "requested_fps", "display"}
+    differ = [name for name in changed if name not in absent and name not in named]
+    advice = []
+    if "viewer_renderer" in changed:
+        advice.append(
+            "Some runs drew the viewer fixture's output with pixman, where a viewer's "
+            "OpenGL is Mesa's software rasterizer, and others with gles2 on the graphics "
+            "card. A result from before the tool recorded the renderer ran with pixman. "
+            "Record both results with the same renderer."
+        )
+    if "viewer_place" in changed:
+        advice.append(
+            "Some runs showed the stream in the fixture and others on the device's own "
+            "display. These are two displays; record both results in the same place."
+        )
+    if "measure" in changed:
+        advice.append(
+            "Some runs are the base measure of a private pair and others are its queue "
+            "measure (--queue-measure). The base measure shows the delay with no queue and "
+            "the viewer's own drops; the queue measure shows the delay of a full queue. "
+            "Compare base with base, and queue with queue."
+        )
+    if "beside_a_game" in changed:
+        advice.append(
+            "Some runs were recorded while a game ran on the device, or while its input "
+            "devices changed, and others were not. "
+            "A game changes a private pair's numbers; record both results with a game, "
+            "or both with none."
+        )
+    if differ:
+        advice.append(
+            "Record the baseline and the candidate with the same sender, request and devices."
+        )
+    if absent:
+        advice.append(
+            "One result was recorded before the tool kept "
+            + ", ".join(absent)
+            + "; record that result again."
+        )
+    return (
+        "The runs were not measured under the same conditions: "
+        + ", ".join(changed)
+        + ". "
+        + " ".join(advice)
+    )
+
+
 def judge(
     baseline: list[dict],
     candidate: list[dict],
@@ -250,66 +331,9 @@ def judge(
     old, new = valid_runs(baseline, minimum), valid_runs(candidate, minimum)
     one_viewer(old, "baseline")
     one_viewer(new, "candidate")
-    changed = differences(old, new)
-    if changed and not allow_different_conditions:
-        # A condition that some runs have and others lack was added to the tool
-        # between the two recordings. That is another cause than another sender.
-        every = [conditions(record) for record in old + new]
-        absent = [
-            name
-            for name in changed
-            if name in ADDED_LATER
-            and any(row[name] is None for row in every)
-            and len({json.dumps(row[name], sort_keys=True) for row in every if row[name] is not None}) == 1
-        ]
-        # These have their own words. The measure also sets the rate and the mode.
-        named = {"beside_a_game", "viewer_place", "viewer_renderer"}
-        if "measure" in changed:
-            named |= {"measure", "requested_fps", "display"}
-        differ = [name for name in changed if name not in absent and name not in named]
-        advice = []
-        if "viewer_renderer" in changed:
-            advice.append(
-                "Some runs drew the viewer fixture's output with pixman, where a viewer's "
-                "OpenGL is Mesa's software rasterizer, and others with gles2 on the graphics "
-                "card. A result from before the tool recorded the renderer ran with pixman. "
-                "Record both results with the same renderer."
-            )
-        if "viewer_place" in changed:
-            advice.append(
-                "Some runs showed the stream in the fixture and others on the device's own "
-                "display. These are two displays; record both results in the same place."
-            )
-        if "measure" in changed:
-            advice.append(
-                "Some runs are the base measure of a private pair and others are its queue "
-                "measure (--queue-measure). The base measure shows the delay with no queue and "
-                "the viewer's own drops; the queue measure shows the delay of a full queue. "
-                "Compare base with base, and queue with queue."
-            )
-        if "beside_a_game" in changed:
-            advice.append(
-                "Some runs were recorded while a game ran on the device, or while its input "
-                "devices changed, and others were not. "
-                "A game changes a private pair's numbers; record both results with a game, "
-                "or both with none."
-            )
-        if differ:
-            advice.append(
-                "Record the baseline and the candidate with the same sender, request and devices."
-            )
-        if absent:
-            advice.append(
-                "One result was recorded before the tool kept "
-                + ", ".join(absent)
-                + "; record that result again."
-            )
-        raise ValueError(
-            "The runs were not measured under the same conditions: "
-            + ", ".join(changed)
-            + ". "
-            + " ".join(advice)
-        )
+    words = conditions_that_differ(old, new)
+    if words and not allow_different_conditions:
+        raise ValueError(words)
     rows = []
     for number, name, extract in METRICS:
         before = [extract(record) for record in old]

@@ -18,7 +18,7 @@ from bar import Clean, Unreadable  # noqa: E402
 from cli import plugin_enabled  # noqa: E402
 from score import first_measured_frame  # noqa: E402
 import sender  # noqa: E402
-from verdict import differences, judge  # noqa: E402
+from verdict import conditions_that_differ, differences, judge  # noqa: E402
 import heat  # noqa: E402
 import machine  # noqa: E402
 import viewer  # noqa: E402
@@ -110,6 +110,19 @@ class Conditions(unittest.TestCase):
         self.assertEqual(rows["repeated_frames"]["verdict"], "equal")
         base = {row["metric"]: row for row in judge(self.result(), self.result(), 5)}
         self.assertEqual(base["dropped_frames"]["verdict"], "equal")
+
+    def test_the_override_still_says_which_conditions_differ(self):
+        pixman = self.result(viewer_fixture={"renderer": "pixman"})
+        gles2 = self.result(viewer_fixture={"renderer": "gles2"})
+        self.assertEqual(len(judge(pixman, gles2, 5, allow_different_conditions=True)), 15)
+        words = conditions_that_differ(pixman, gles2)
+        self.assertRegex(words, "viewer_renderer")
+        self.assertIn("software rasterizer", words)
+        # The refusal has the same words.
+        with self.assertRaises(ValueError) as refused:
+            judge(pixman, gles2, 5)
+        self.assertEqual(str(refused.exception), words)
+        self.assertIsNone(conditions_that_differ(gles2, gles2))
 
     def test_a_raised_gap_limit_is_another_condition(self):
         with self.assertRaisesRegex(ValueError, "max_capture_gaps") as refused:

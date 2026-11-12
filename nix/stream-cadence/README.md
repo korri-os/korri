@@ -98,7 +98,7 @@ korrid. aka's `HDMI-A-1` is marked unwatched. ibuki's `DP-1` is a family's
 TV and is not: these paths refuse there before they wake the display or
 start anything, and the refusal names the private pair as the way to
 measure on such a device. When the fact cannot be read (no `KORRID_DISPLAYS`,
-no entry for the display, no `unwatched` value), the tool refuses and says
+no entry for the display or more than one, no `unwatched` value), the tool refuses and says
 what it looked for. There is no option that overrides this. A handheld's
 own panel is not unwatched either, so the installed-viewer path is refused
 on it today; the step that needs that path adds what it needs, with its own
@@ -391,6 +391,16 @@ viewer of each result above its table and says whether the two are the same.
 The viewer is no condition: it is what a comparison changes on purpose, and a
 verdict between two viewers is the point of the tool. The place is a
 condition, and one result must have one viewer.
+
+`viewer_ran.render_nodes` are the render nodes that the viewer's process
+held open in any sample (a read of `/proc/PID/fd`). The compositor's
+renderer does not say where the viewer's own OpenGL runs: a viewer that
+draws on the graphics card holds its render node open, and one that fell
+back to Mesa's software rasterizer holds none. `verdict` prints it in the
+viewer's line ("OpenGL on /dev/dri/renderD128", or "no render node open"),
+says so when the same binary differs in it between two results, and refuses
+a result in which one run differs from the others. The limit: an open node
+shows that the viewer opened the card, not that it drew every frame there.
 
 **The private pair on ibuki, 2026-11-12.** ibuki is an Intel NUC8i3BEK: two
 cores and four threads, Intel graphics, a full Korri device with the
@@ -707,13 +717,17 @@ root, as for a product measure. Then:
 - The fixture makes no input device. Stock Sunshine makes a virtual mouse
   and keyboard when it starts, and a touch screen and a pen tablet for each
   client, all through `/dev/uinput`; the product's input stack would see
-  them. The fixture does not start where its user can open `/dev/uinput`;
+  them. Its DualSense pad goes through `/dev/uhid`; the nixpkgs Sunshine that
+  the fixture runs names that node in its binary. The fixture does not start
+  where its user can open `/dev/uinput` or `/dev/uhid`;
   the open is tried as that user, so ACLs count.
   Its Sunshine has `mouse`, `keyboard` and `controller` off.
 - A new entry under `/dev/input` during a run is a record, not a fault. The
   rule that it ended the run was there to catch the fixture's own Sunshine
   making a device. The probe above already proves that it cannot: the open
-  of `/dev/uinput` was tried as the fixture's user and failed. So an entry
+  of `/dev/uinput` and of `/dev/uhid` was tried as the fixture's user, and
+  the child that tries answered "refused" with a code of its own for each.
+  So an entry
   that appears is not the fixture's. A game that starts makes such entries
   (on aka: `event17`, `event18`, `mouse2`, `mouse3`), and a game must not
   stop a private pair; before, each game that started during a run ended it
@@ -1095,7 +1109,9 @@ an absent value is a value: a product sender has no render node, and a
 result with no `live_game` or `measure` ran with no game and is a base
 result. An unwatched
 display keeps the mode of the last viewer that shaped it, so check the mode
-before a candidate run. `--allow-different-conditions` overrides the refusal.
+before a candidate run. `--allow-different-conditions` overrides the refusal;
+the verdict then prints, above its table, the same words that the refusal
+would have had, so the difference is named either way.
 
 Baselines live in `baselines/<device>/`. They are measurement data and are
 not part of the tool's Nix source. A baseline of a private pair has one

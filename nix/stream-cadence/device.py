@@ -528,9 +528,12 @@ class Session:
         operation = request["operation"]
         if operation == "discover":
             return self.facts
-        if operation in ("wake", "provision", "start") and self.facts["watched_display"]:
+        if (
+            operation in ("wake", "provision", "start", "sample")
+            and self.facts["watched_display"]
+        ):
             # A person may be looking at the display: nothing wakes it, and the
-            # source does not start on it.
+            # source does not start on it. A sample wakes the display too.
             raise RuntimeError(self.facts["watched_display"])
         if operation == "wake":
             return wake(self.facts)

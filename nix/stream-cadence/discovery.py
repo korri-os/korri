@@ -122,15 +122,21 @@ def watched_display(facts: str | None, output: str) -> str | None:
     else:
         try:
             rows = json.loads(facts)
-            row = next(
-                (r for r in rows if isinstance(r, dict) and r.get("name") == output), None
-            ) if isinstance(rows, list) else None
         except ValueError:
-            rows, row = None, None
+            rows = None
+        named = (
+            [r for r in rows if isinstance(r, dict) and r.get("name") == output]
+            if isinstance(rows, list)
+            else []
+        )
+        row = named[0] if named else None
         if not isinstance(rows, list):
             found = "its value is not a list of displays"
         elif row is None:
             found = "it has no entry for that display"
+        elif len(named) > 1:
+            # The first entry must not decide for the others.
+            found = "it has more than one entry for that display"
         elif not isinstance(row.get("unwatched"), bool):
             found = "the entry does not say whether the display is unwatched"
         elif row["unwatched"]:

@@ -309,6 +309,23 @@ class WhichViewerAVerdictCompares(unittest.TestCase):
         self.assertEqual(len(same), 3)
         self.assertRegex(same[2], "same viewer")
 
+    def test_a_viewer_whose_opengl_fell_back_to_software_is_not_silent(self):
+        def ran(nodes: list[str] | None) -> dict:
+            return dict(viewer_ran(PLUGIN, "", FIXTURE), render_nodes=nodes)
+
+        card, software = self.result(ran(["/dev/dri/renderD128"])), self.result(ran([]))
+        lines = viewers(card, software)
+        self.assertRegex(lines[0], "OpenGL on /dev/dri/renderD128")
+        self.assertRegex(lines[1], "no render node open")
+        self.assertRegex(lines[2], "same viewer binary.*OpenGL differs")
+        self.assertRegex(viewers(card, card)[2], "same viewer")
+        self.assertNotIn("differs", viewers(card, card)[2])
+        # One run of a result that fell back makes the result one of two viewers.
+        with self.assertRaisesRegex(ValueError, "more than one viewer.*no render node open"):
+            judge(card[:4] + software[:1], card, 5)
+        # A result from before the read says nothing about it.
+        self.assertNotIn("OpenGL", viewers(self.result(viewer_ran(PLUGIN, "", FIXTURE)), card)[0])
+
     def test_one_result_has_one_viewer(self):
         plugin = self.result(viewer_ran(PLUGIN, "", FIXTURE))
         stand_in = self.result(viewer_ran(None, "/nix/store/cccc-moonlight-embedded-2.7.1", FIXTURE))

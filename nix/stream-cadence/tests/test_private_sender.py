@@ -38,6 +38,8 @@ class Machine(unittest.TestCase):
         self.uinput = root / "uinput"
         self.real = (sender.RENDER_NODES, sender.INPUT_DEVICES, sender.UINPUT)
         sender.RENDER_NODES, sender.INPUT_DEVICES, sender.UINPUT = dri, self.inputs, self.uinput
+        self.addCleanup(setattr, sender, "UHID", sender.UHID)
+        sender.UHID = root / "uhid"
         # No thermal zone and no device tree, whatever machine runs the tests.
         self.sensors = (heat.THERMAL, viewer.COMPATIBLE)
         heat.THERMAL, viewer.COMPATIBLE = root / "thermal", root / "compatible"

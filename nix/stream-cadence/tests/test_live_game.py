@@ -65,6 +65,8 @@ class Device(unittest.TestCase):
         (self.peers / "viewer-sway").chmod(0o755)
         heat.THERMAL, viewer.COMPATIBLE = place / "thermal", place / "compatible"
         sender.RENDER_NODES, sender.INPUT_DEVICES, sender.UINPUT = dri, inputs, place / "uinput"
+        self.addCleanup(setattr, sender, "UHID", sender.UHID)
+        sender.UHID = place / "uhid"
 
     @staticmethod
     def restore(real) -> None:
@@ -187,10 +189,22 @@ class AGameThatStartsDuringARun(Device):
         with self.assertRaisesRegex(RuntimeError, "can open .*uinput.*does not start"):
             self.prepare_sender(self.sender_session())
 
+    def test_the_fixture_does_not_start_where_its_user_can_open_uhid(self):
+        # Sunshine makes its DualSense pad through /dev/uhid, not through uinput.
+        sender.UHID.touch()
+        with self.assertRaisesRegex(RuntimeError, "can open .*uhid.*does not start"):
+            self.prepare_sender(self.sender_session())
+
+    def test_a_uhid_probe_that_could_not_be_made_keeps_the_strict_rule(self):
+        session = self.sender_session()
+        session.probe = lambda node, how: None if node == sender.UHID else node != sender.UINPUT
+        built = self.prepare_sender(session)
+        self.assertRegex(built["facts"]["input_rule"], "^strict: .*uhid.*could not be tried")
+
     def test_a_probe_that_could_not_be_made_keeps_the_strict_rule_and_says_so(self):
         session = self.sender_session()
         # The child that tries the node as the fixture's user did not run.
-        session.probe = lambda node, how: None if node == sender.UINPUT else True
+        session.probe = lambda node, how: None if node == sender.UINPUT else node != sender.UHID
         built = self.prepare_sender(session)
         self.assertRegex(built["facts"]["input_rule"], "^strict: .*uinput.*could not be tried")
         (sender.INPUT_DEVICES / "event17").touch()
@@ -215,8 +229,19 @@ class AGameThatStartsDuringARun(Device):
 
         sender.subprocess.run = broken
         self.assertIsNone(session.probe(node, os.O_WRONLY))
-        sender.subprocess.run = lambda *a, **k: subprocess.CompletedProcess(a, 2)
-        self.assertIsNone(session.probe(node, os.O_WRONLY))
+        # Python ends with 1 for any uncaught exception and with 0 for a script that
+        # did nothing: neither is the child's answer.
+        for code in (0, 1, 2, -9):
+            with self.subTest(code=code):
+                sender.subprocess.run = lambda *a, code=code, **k: subprocess.CompletedProcess(a, code)
+                self.assertIsNone(session.probe(node, os.O_WRONLY))
+        sender.subprocess.run = lambda *a, **k: subprocess.CompletedProcess(a, sender.PROBE_OPENED)
+        self.assertIs(session.probe(node, os.O_WRONLY), True)
+        sender.subprocess.run = lambda *a, **k: subprocess.CompletedProcess(a, sender.PROBE_REFUSED)
+        self.assertIs(session.probe(node, os.O_WRONLY), False)
+        self.assertNotIn(sender.PROBE_OPENED, (0, 1, 2))
+        self.assertNotIn(sender.PROBE_REFUSED, (0, 1, 2))
+        sender.subprocess.run = lambda *a, **k: subprocess.CompletedProcess(a, 1)
         # A render node is offered only when the probe says yes.
         self.assertFalse(session.opens(node, os.O_WRONLY))
 

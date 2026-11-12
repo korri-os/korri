@@ -363,6 +363,28 @@ class ABusyViewerOnAHardwarePath(Device):
             self.assertTrue(session.close()["pass"])
 
 
+class TheViewersOwnOpenGL(unittest.TestCase):
+    """A viewer that draws on the graphics card holds a render node open; one on Mesa's software rasterizer holds none."""
+
+    def test_render_nodes_that_a_process_holds_open_are_read_from_proc(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            proc = Path(temporary)
+            fds = proc / "4242" / "fd"
+            fds.mkdir(parents=True)
+            (fds / "0").symlink_to("/dev/null")
+            (fds / "7").symlink_to("/dev/dri/renderD128")
+            (fds / "9").symlink_to("/dev/dri/renderD128")
+            (fds / "11").symlink_to("socket:[12345]")
+            (fds / "12").symlink_to("/dev/dri/card1")
+            self.assertEqual(viewer.render_nodes_open(4242, proc), ["/dev/dri/renderD128"])
+            # No render node: software OpenGL, or no OpenGL.
+            (fds / "7").unlink()
+            (fds / "9").unlink()
+            self.assertEqual(viewer.render_nodes_open(4242, proc), [])
+            # A process that is gone, or that the agent may not read, gives no answer.
+            self.assertIsNone(viewer.render_nodes_open(1, proc))
+
+
 class NoFixtureOnABoard(Desktop):
     """A board with a device tree hosts no fixture; a root node that names no board does not count."""
 

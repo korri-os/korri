@@ -48,6 +48,7 @@ from verdict import (
     PLUGIN_VIEWER,
     QUEUE,
     STAND_IN,
+    conditions_that_differ,
     judge,
     valid_runs,
     viewers,
@@ -557,6 +558,14 @@ def viewer_ran(plugin: dict | None, stand_in: str, place: str) -> dict:
 
 
 RENDERER_OPTION = "--viewer-renderer"
+
+
+def viewer_render_nodes(samples: list[dict]) -> list[str] | None:
+    """The render nodes that the viewer held open in any sample; None when none could be read."""
+    read = [row["viewer_render_nodes"] for row in samples if row.get("viewer_render_nodes") is not None]
+    if not read:
+        return None
+    return sorted({node for nodes in read for node in nodes})
 
 
 def renderer_refusal(renderer: str | None, on_display: bool) -> str | None:
@@ -1292,6 +1301,9 @@ def view_case(
                 raise Refusal("Capture client exited during the measure; read capture.log")
             time.sleep(0.5)
         viewer.request("stop")
+        # Whether the viewer's own OpenGL was on the graphics card: the render nodes
+        # that it held open in any sample. None when no sample could read them.
+        facts["viewer_ran"]["render_nodes"] = viewer_render_nodes(samples)
         if prepared.get("hardware_path") and samples[-1].get("hardware_decode") is not True:
             raise Refusal(
                 "The viewer's log does not show that hardware decode started. A software fallback is not the product's picture path; read viewer.log."
@@ -1601,11 +1613,14 @@ def view(args: argparse.Namespace) -> int:
 def verdicts(args: argparse.Namespace) -> int:
     baseline, candidate = records(args.baseline), records(args.candidate)
     rows = judge(baseline, candidate, args.min_runs, args.allow_different_conditions)
+    old, new = valid_runs(baseline, args.min_runs), valid_runs(candidate, args.min_runs)
     # Which viewer each result ran: the plugin's or the stand-in, and where.
-    for line in viewers(
-        valid_runs(baseline, args.min_runs), valid_runs(candidate, args.min_runs)
-    ):
+    for line in viewers(old, new):
         print(line)
+    differ = conditions_that_differ(old, new)
+    if differ:
+        # Only the override lets a verdict come this far. It still names the difference.
+        print("Allowed by --allow-different-conditions. " + differ)
 
     def text(values: list[float | None]) -> str:
         if any(value is None for value in values):

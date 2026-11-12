@@ -271,6 +271,27 @@ def render_groups(member: set[int], nodes: set[int]) -> list[int]:
     return sorted(member & nodes)
 
 
+def render_nodes_open(pid: int, proc: Path = Path("/proc")) -> list[str] | None:
+    """The render nodes that a process holds open; None when the process cannot be read.
+
+    A viewer whose OpenGL is on the graphics card holds the card's render node
+    open. One that fell back to Mesa's software rasterizer holds none. The
+    compositor's renderer does not tell the two apart; this read does.
+    """
+    try:
+        entries = list((proc / str(pid) / "fd").iterdir())
+    except OSError:
+        return None
+    links = set()
+    for entry in entries:
+        try:
+            links.add(os.readlink(entry))
+        except OSError:
+            # A descriptor that closed between the two reads.
+            continue
+    return sorted(link for link in links if Path(link).name.startswith("renderD"))
+
+
 def own_display(shell: dict, read=None) -> tuple[dict | None, str | None]:
     """The device's own display, or why it could not be read.
 
@@ -630,6 +651,15 @@ class Session:
         if not request["fixture"] and self.facts["watched_display"]:
             # Before anything wakes the display or starts on it.
             raise RuntimeError(self.facts["watched_display"])
+        if not request["fixture"] and self.compositor and self.facts["display"] is None:
+            # A display that was not read is not an unwatched display: with two
+            # outputs, or with none, nobody knows which one a person looks at.
+            raise RuntimeError(
+                "The device's own display could not be read: "
+                f"{self.facts['display_unread'] or 'this agent found no enabled viewer plugin'}. "
+                "Whether a person looks at it is not known, so the installed viewer does "
+                "not start on it."
+            )
         plugin_viewer = bool(request.get("plugin_viewer"))
         if plugin_viewer and not (request["fixture"] and self.facts["plugin"]):
             raise RuntimeError(
@@ -860,6 +890,8 @@ class Session:
                     for zone in zones
                 ],
                 "hardware_decode": self.hardware_decode(),
+                # Whether the viewer's own OpenGL is on the graphics card.
+                "viewer_render_nodes": render_nodes_open(viewer.pid) if viewer else None,
             }
         if operation == "stop":
             code = self.stop("viewer")

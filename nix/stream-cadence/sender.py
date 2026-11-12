@@ -70,6 +70,11 @@ RUNS = Path("/tmp")
 RENDER_NODES = Path("/dev/dri")
 INPUT_DEVICES = Path("/dev/input")
 UINPUT = Path("/dev/uinput")
+# Sunshine makes its DualSense pad through uhid, and everything else through uinput.
+UHID = Path("/dev/uhid")
+# The two answers of the probe's child. Not 0, 1 or 2: Python ends with those
+# for a script that did nothing, for an uncaught exception and for bad arguments.
+PROBE_OPENED, PROBE_REFUSED = 10, 11
 # What a new entry under /dev/input means during a run (`input_rule`).
 INPUT_RECORD, INPUT_STRICT = "record", "strict"
 DISPLAY = "wayland-1"
@@ -380,8 +385,8 @@ class Session:
             )
         except (OSError, subprocess.SubprocessError):
             return None
-        # open_as_asked answers 0 or 1; any other end is no answer.
-        return {0: True, 1: False}.get(tried.returncode)
+        # Any other end of the child is no answer: the probe could not be made.
+        return {PROBE_OPENED: True, PROBE_REFUSED: False}.get(tried.returncode)
 
     def opens(self, node: Path, how: int) -> bool:
         """Whether the probe says that the fixture's user can open the node."""
@@ -567,21 +572,25 @@ class Session:
         # touch screen and a pen tablet for each client, all through uinput. The
         # product's input stack would see them. The fixture runs only where its
         # Sunshine cannot open that node; the open is tried as the fixture's user.
-        uinput = self.probe(UINPUT, os.O_WRONLY)
-        if uinput:
-            raise RuntimeError(
-                f"The user {self.facts['fixture_user']} can open {UINPUT}. A stock Sunshine "
-                "would make input devices there that the product's input stack sees. The "
-                "sender fixture does not start."
-            )
+        # Its DualSense pad goes through uhid; that node is tried the same way.
+        makers = {maker: self.probe(maker, os.O_WRONLY) for maker in (UINPUT, UHID)}
+        for maker, opened in makers.items():
+            if opened:
+                raise RuntimeError(
+                    f"The user {self.facts['fixture_user']} can open {maker}. A stock Sunshine "
+                    "would make input devices there that the product's input stack sees. The "
+                    "sender fixture does not start."
+                )
+        untried = [str(maker) for maker, opened in makers.items() if opened is None]
         # The probe was made and the open failed: no entry under /dev/input can
         # be the fixture's, so one that appears is recorded and is no fault. A
         # game that starts makes such entries, and a game must not stop the pair.
         # A probe that gave no answer proves nothing: the strict rule stays.
         self.input_rule = (
-            INPUT_RECORD
-            if uinput is False
-            else f"{INPUT_STRICT}: whether the fixture's user can open {UINPUT} could not be tried"
+            f"{INPUT_STRICT}: whether the fixture's user can open {', '.join(untried)} "
+            "could not be tried"
+            if untried
+            else INPUT_RECORD
         )
         self.facts["input_rule"] = self.input_rule
         if self.hardware_path:
@@ -894,12 +903,12 @@ class Session:
 
 
 def open_as_asked(node: str, how: str) -> int:
-    """The child of Session.opens: exit 0 when the node opens."""
+    """The child of Session.probe: one code when the node opens, another when the open is refused."""
     try:
         os.close(os.open(node, int(how) | os.O_NONBLOCK | os.O_CLOEXEC | os.O_NOCTTY))
     except OSError:
-        return 1
-    return 0
+        return PROBE_REFUSED
+    return PROBE_OPENED
 
 
 if __name__ == "__main__":

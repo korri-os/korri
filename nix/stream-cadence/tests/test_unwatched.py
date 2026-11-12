@@ -1,6 +1,7 @@
 """A test pattern goes only on a display that the device marks unwatched (CONTEXT.md)."""
 
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -48,6 +49,18 @@ class TheFact(unittest.TestCase):
                 self.assertIn("DP-1", refused)
                 self.assertIn("does not guess", refused)
 
+    def test_two_entries_for_one_display_are_refused(self):
+        # The first entry must not decide: [true, false] would let the pattern on.
+        for values in ((True, False), (False, True), (True, True)):
+            with self.subTest(values=values):
+                facts = json.dumps([{"name": "DP-1", "unwatched": value} for value in values])
+                refused = watched_display(facts, "DP-1")
+                self.assertRegex(refused, "more than one entry")
+                self.assertIn("does not guess", refused)
+        # Two displays with their own names are no duplicate.
+        two = json.dumps([{"name": "DP-1", "unwatched": True}, {"name": "DP-2", "unwatched": False}])
+        self.assertIsNone(watched_display(two, "DP-1"))
+
     def test_only_true_is_unwatched(self):
         for value in (False, None, 0, 1, "true"):
             with self.subTest(value=value):
@@ -71,7 +84,7 @@ class ProductSender(unittest.TestCase):
 
     def test_nothing_wakes_or_starts_on_a_watched_display(self):
         refused = watched_display(IBUKI, "DP-1")
-        for operation in ("wake", "provision", "start"):
+        for operation in ("wake", "provision", "start", "sample"):
             with self.subTest(operation=operation):
                 session = self.session(refused)
                 with self.assertRaisesRegex(RuntimeError, "a person may be looking at this display"):
@@ -107,6 +120,18 @@ class InstalledViewer(unittest.TestCase):
                     {"operation": "prepare", "fixture": False, "server_certificate": "public"}
                 )
             self.assertIsNone(session.root)
+            # A display that the agent could not read is not an unwatched display:
+            # a device with two outputs must not reach the wake.
+            session.facts["watched_display"] = None
+            session.facts["display"] = None
+            session.facts["display_unread"] = "need exactly one active compositor output"
+            session.compositor = {"uid": os.getuid(), "gid": os.getgid(), "user": "tester"}
+            with self.assertRaisesRegex(RuntimeError, "own display could not be read.*exactly one active"):
+                session.handle(
+                    {"operation": "prepare", "fixture": False, "server_certificate": "public"}
+                )
+            self.assertIsNone(session.root)
+            session.compositor = None
             # The fixture uses no display of the device: the fact does not stop it.
             prepared = session.handle(
                 {
