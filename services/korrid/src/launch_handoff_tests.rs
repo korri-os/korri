@@ -139,9 +139,8 @@ async fn reserved_selected_and_stored_routes_keep_exact_identity_overrides_and_w
             "app.session.start",
             json!({
                 "gameId":game_id,"expectedLaunchId":launch_id,"runnerId":runner,
-                "launch":{"settings":{
-                    "scope":{"_tag":"Runner","id":"@korri:mgba/mgba"},
-                    "values":{"plugin":{"video_vsync":false,"absent_key":1}}
+                "launch":{"plugin":{
+                    "@korri:mgba/mgba":{"video_vsync":false,"absent_key":1}
                 }}
             }),
         )
