@@ -1184,6 +1184,12 @@ impl LaunchablesState {
         let LaunchablesState::Loaded(mut loaded) = self else {
             return LaunchablesState::Loading;
         };
+        // The regular observer also owns externally requested stops and stops
+        // that outlive the dedicated stop poll. Both must fold exact absence
+        // through the same completion path, not preserve Stopping forever.
+        if matches!(loaded.phase, Phase::Stopping { .. }) {
+            return LaunchablesState::Loaded(loaded).with_status_after_stop(status);
+        }
         if let SessionStatusOutcome::Err(failure) = status {
             // A returned far launch is terminal, not an unavailable read.
             // Local startup failures keep their existing exact-cleanup flow.
