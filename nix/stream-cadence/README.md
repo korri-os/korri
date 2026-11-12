@@ -178,13 +178,16 @@ nix run .#stream-cadence -- verdict baseline/results.json candidate/results.json
 The sender runs Sunshine and the frame-ID source, as in `run`. On the viewer
 device, `capture.c` reads the ID bar from the compositor through
 wlr-screencopy. It samples the 36 cells of both bar rows on every output frame
-and writes one `display.csv` record (`index,display_ns`) for each frame.
+and writes one `display.csv` record (`index,display_ns,copy_ns`) for each
+frame. `copy_ns` is the time at which the capture asked for that frame.
 `bar.py` decodes the samples, so the bar has one decoder.
 
 Each run starts the viewer twice. The first start only finds the bar on the
 viewer's output. The second start is the measure: the capture already runs, so
-the time to the first frame is visible. Windows start at the first readable
-ID after that second start.
+the time to the first frame is visible. Windows start at the first frame that
+belongs to the second start: the first frame with an ID that the sender
+presented at or after that start. A picture that the first start left on a
+real panel has an older ID and does not count.
 
 `display_ns` is the compositor's commit time for the output frame. It is not
 panel scanout, and it tells nothing about panel response or how a stream
@@ -202,10 +205,64 @@ captures. The fixture viewer is nixpkgs `moonlight-embedded` with its `sdl`
 system, copied with `nix copy`. A server-only device has no viewer plugin.
 
 The fixture proves a viewer's session part and network library. It does not
-prove the picture path of a handheld or a phone. A run against the installed
-`@korri:moonlight` plugin on a device's own compositor is not built yet; it
-needs a docked bench device (ADR 0063).
+prove the picture path of a handheld or a phone.
 
+The viewer's agent reads the product output only for the installed viewer.
+The fixture has its own output.
+
+### The installed viewer on a handheld
+
+On a device with the enabled `@korri:moonlight` plugin, `view` runs the
+plugin's own `moonlight` on the device's own compositor and its real panel.
+A plugin that is installed but switched off counts as absent: the device then
+gets the copied viewer and the fixture.
+
+The agent runs as root, changes to the compositor's user with that user's
+groups, and starts the viewer with the arguments of korrid's `linux_viewer`
+(`stream_args`). The `-platform` value comes from a copy of korrid's chip
+table in `viewer.py`. A test reads korrid's file and fails when the two
+differ.
+
+This is not a korrid launch. The differences:
+
+- No `korri-game-*` systemd unit runs: no unit sandbox, no cgroup, no unit
+  credentials. The viewer is a child of the agent.
+- The arguments carry the tool's request (`-width`, `-height`, `-fps`,
+  `-codec`, `-bitrate`), not the settings that the plugin renders for a
+  launch.
+- `-viewonly` is set and no `-input` seat is given.
+- Sound goes to SDL's dummy driver. The product's audio server exists only
+  inside a korrid launch.
+- HOME and the key directory are the run directory.
+- The agent, not korrid, asks sway for fullscreen and focus. It tries every
+  0.1 s until sway knows the window. `startup_ms` contains that step.
+- korrid's own launch path and its lifecycle reports are not used.
+
+With the sender fixture, the device pairs by PIN (`moonlight pair` with the
+plugin's binary), and `KORRI_MOONLIGHT_SERVER_CERTIFICATE` pins the fixture
+Sunshine's certificate. With the sender on the host that runs the tool, the
+viewer's agent reports the far end of its own SSH connection, and the stream
+goes to that address: it takes the link that the SSH target names.
+
+**State on 2026-11-11: works once on each bench device, not proven.** One
+short run (10 scored seconds, 640x480) on each handheld:
+
+| | RG353M (RK3566) | RG35XX Pro (H700) |
+| --- | --- | --- |
+| Result | invalid: 2 capture gaps | valid |
+| Output-frame records | 1932 in 32.5 s, 59.47 each second | 1955 in 32.6 s, 60.00 each second |
+| Refreshes with no record | about 15 | 0 |
+| IDs lost at a gap in the record | 11 | 0 |
+| Shortest interval between two records | 10.2 ms (0.61 period) | 10.4 ms (0.62 period) |
+| Intervals from 0.50 to 0.75 period | 16 of 1931 | 5 of 1954 |
+| `startup_ms` | 1990.5 | 1569.1 |
+| Viewer CPU, CPU seconds each second | 0.147 | 0.135 |
+
+The next run on the RG353M ended 5 s into the measured stream: the device
+left the USB link and did not answer again. The cause is not known. No
+handheld baseline exists, and device runs stopped there.
+
+The gap rule below does not hold on these panels; read "Capture gaps".
 The private half of the test key pair crosses SSH into the viewer's run
 directory, because the viewer runs there. Cleanup removes it. The sender
 still revokes the certificate on exit.
@@ -235,7 +292,7 @@ The fixture discovers what it uses:
 
 | Value | How |
 | --- | --- |
-| Ports | A port that the kernel reports free, with Sunshine's whole span free around it. The fixture never takes the span of Sunshine's default port, so a product Sunshine that starts later finds its ports. |
+| Ports | A port that the kernel reports free, with Sunshine's whole span free around it. The fixture never takes the span of Sunshine's default port. That keeps it away from a Sunshine that uses the default; it knows nothing of a Sunshine on other ports. |
 | Render node | Each node in `/dev/dri` that the user can open, in order. The first node on which Sunshine finds a hardware encoder wins. With none, the first node that encodes at all. |
 | Encoder | Sunshine's configuration names none. Sunshine tries hardware encoders first. The result records `encoder`, `working_encoders` and `sender_fixture.hardware_encoder`. |
 | Display mode | The requested stream size, at the steady refresh below. |
@@ -260,10 +317,24 @@ is not shorter than the stream's period: 58.823 Hz (17 ms) for a request of
 source shows about 57.8 frames each second. `requested_fps` stays the
 request, and `display.refresh_hz` is the mode.
 
+Two results follow from that rate.
+
+- **A floor on a 60 Hz panel.** The panel refreshes about 2.3 times each
+  second more often than the fixture sends a frame. Each of those refreshes
+  repeats a picture, so a viewer on a 60 Hz panel shows about 2.3
+  `repeated_frames` and `late_frames` each second that come from the fixture,
+  not from the viewer. Compare two viewers against the same fixture, and
+  subtract nothing: the floor is the same for both.
+- **`expected_new_frames` is a ceiling, not the real rate.** It is the mode's
+  refresh times the window: 588.23 for 10 s. The output starts its timer again
+  after each frame, so a clean window has 576 to 582 new frames. No gate reads
+  the field.
+
 A headless output also counts no vblanks: every presentation has sequence 0.
-For such a sender a source miss is a refresh that passes between two
-presentations with no new frame, found by time: a gap above 1.5 refresh
-periods. A sender with a vblank counter is scored by sequence, as before.
+For such a sender `source_misses` is derived, not counted. A gap above 1.5
+refresh periods between two presentations gives `round(gap / period) - 1`
+misses, and `source_events` has no `missing_vblank_sequence` for them. A
+sender with a vblank counter is scored by sequence, as before.
 
 **The host that runs the tool.** The target `local` names it. It uses no SSH
 and no root. As a sender, `local` can host the fixture only. As a viewer,
@@ -286,7 +357,8 @@ loopback, so the network is not measured, and the sender and the viewer
 share one machine's CPU. The numbers compare an old and a new viewer against
 the same test sender. `run` still measures the product sender. `verdict`
 refuses to compare a fixture result with a product-sender result: the
-capture backend and the display mode differ.
+capture backend and the display mode differ. It also refuses two fixture
+results from different sender hosts, render nodes or viewer devices.
 
 Not tested yet: the fixture on an SSH target, and on aarch64.
 
@@ -317,9 +389,9 @@ display. A long tail in the first is the sender's own.
 | Number | Fields | Method |
 | --- | --- | --- |
 | 1 Packet arrival to display | `viewer.packet_to_display_ms` | Not measured: today's viewer reports no arrival time. The gate is `latency_ms`, sender presentation to viewer display, on the same sender and link. |
-| 2 Late, repeated, dropped | `capture_misses`, `repeated_frames`, `late_frames`, `torn_frames`, `undecodable_frames` in each window | A dropped ID was presented and never displayed. A repeated frame shows no new ID. A late frame is a new ID more than 1.5 refresh periods after the previous new ID. |
+| 2 Late, repeated, dropped | `capture_misses`, `repeated_frames`, `late_frames`, `torn_frames`, `undecodable_frames` in each window; `viewer.output_repeats` | A dropped ID was presented and never displayed. A repeated frame shows no new ID. A late frame is a new ID more than 1.5 refresh periods after the previous new ID. An output repeat is a refresh for which the compositor committed no frame. |
 | 3 CPU and battery | `viewer.cpu_seconds_per_second`, `viewer.battery_mw` | Viewer process CPU time from procfs over the scored time. Battery power only while a battery discharges in every sample; else not measured. |
-| 4 Startup | `viewer.startup_ms` | Viewer process start to the first displayed readable ID. korrid's launch path is not included. |
+| 4 Startup | `viewer.startup_ms` | Viewer process start to the first displayed frame of that start: the first ID that the sender presented at or after it. korrid's launch path is not included. On a handheld the time contains the agent's fullscreen and focus step. |
 | 5 Input | `viewer.input_ms` | Not measured: the press-to-packet measure is not built. |
 | 6 Stability | `viewer.stream_stalls`, `viewer.viewer_exits` | A stall is one second without a new ID in the scored time. A viewer exit ends the run as invalid. |
 
@@ -327,9 +399,27 @@ display. A long tail in the first is the sender's own.
 number is estimated. An unreadable output frame is a count, not an invalid
 recording: a viewer can show a frame without a whole bar.
 
-`viewer.capture_gaps` counts output frames that the capture did not read: an
-interval above 1.5 refresh periods between two records in the scored time. The
-default limit is zero, and a run above `--max-capture-gaps` is invalid.
+**Capture gaps.** A gap is an interval above 1.5 refresh periods between two
+records in the scored time. `score.py:capture_gaps` splits the gaps by
+`copy_ns`:
+
+- The capture asked more than 0.75 period after the previous frame. The
+  request can arrive after the next commit, so the gap counts as a missed
+  frame in `viewer.capture_gaps`. The default limit is zero, and a run above
+  `--max-capture-gaps` is invalid.
+- The capture asked in time. The compositor committed no frame, so the gap
+  counts in `viewer.output_repeats`, which `verdict` judges.
+
+The split assumes that two commits are at least one period apart. That holds
+on the headless fixture. **It does not hold on a real panel.** After an idle
+output, sway commits at once, and its next commit can follow at the next
+vblank. Both bench handhelds show intervals down to 0.61 period. A frame that
+the capture missed can then count as an output repeat, or leave no gap at
+all, and its ID becomes a dropped frame of the viewer. On the RG353M, 11 of
+15 gaps lost an ID, and 4 of those 11 count as output repeats. Until a rule
+holds there, `capture_gaps`, `output_repeats` and `capture_misses` of a
+handheld run are not proven, and a valid handheld run does not prove a
+complete display record.
 
 ### Verdict
 
@@ -344,8 +434,8 @@ for each metric.
 
 `verdict` refuses two results that were not measured under the same
 conditions: the sender's display mode, Sunshine version, encoder and capture
-backend, and the requested resolution, frame rate, codec, bitrate and viewer
-refresh. A difference there would judge the sender, not the viewer. An unwatched
+backend, the sender's model and render node, the viewer device's model, and
+the requested resolution, frame rate, codec, bitrate and viewer refresh. A difference there would judge the sender, not the viewer. An unwatched
 display keeps the mode of the last viewer that shaped it, so check the mode
 before a candidate run. `--allow-different-conditions` overrides the refusal.
 
