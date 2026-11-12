@@ -360,19 +360,46 @@ class ABusyViewerOnAHardwarePath(Device):
             self.assertTrue(session.close()["pass"])
 
 
-class ABatteryMeansAHandheld(DesktopChip):
+class ABatteryAndADeviceTreeMeanAHandheld(DesktopChip):
     """A chip that korrid's table does not name, as the RG DS has."""
 
-    def test_fixture_viewer_is_refused_on_a_device_with_a_battery(self):
+    def test_fixture_viewer_is_refused_on_a_device_with_a_battery_and_a_device_tree(self):
         machine.supply(self.supplies, "rk817-battery", "Battery")
+        machine.device_tree()
         session = self.session()
         facts = session.handle({"operation": "discover"})
         self.assertFalse(facts["hardware_picture_path"])
         self.assertEqual(facts["batteries"], ["rk817-battery"])
-        with self.assertRaisesRegex(RuntimeError, "battery \\(rk817-battery\\).*only its installed viewer"):
+        self.assertIs(facts["passive_handheld"], True)
+        with self.assertRaisesRegex(
+            RuntimeError, "battery \\(rk817-battery\\) and a device tree.*passive handheld runs only its installed viewer"
+        ):
             self.prepare(session)
         self.assertIsNone(session.root)
         self.assertEqual(session.processes, {})
+
+    def test_a_laptop_has_a_battery_and_no_device_tree_and_hosts_the_fixture(self):
+        # Its fans and its thermal zones are what the heat guard is for.
+        machine.supply(self.supplies, "AC", "Mains")
+        machine.supply(self.supplies, "BAT0", "Battery")
+        session = self.session()
+        facts = session.handle({"operation": "discover"})
+        self.assertEqual(facts["batteries"], ["BAT0"])
+        self.assertIs(facts["passive_handheld"], False)
+        self.assertTrue(Path(self.prepare(session)["run_folder"]).is_dir())
+
+    def test_a_hot_laptop_is_still_refused_by_the_heat_guard(self):
+        machine.supply(self.supplies, "BAT0", "Battery")
+        self.read(72000)
+        with self.assertRaisesRegex(RuntimeError, "The device is hot"):
+            self.prepare(self.session())
+
+    def test_a_board_with_a_device_tree_and_no_battery_hosts_the_fixture(self):
+        machine.supply(self.supplies, "usb", "USB")
+        machine.device_tree()
+        session = self.session()
+        self.assertIs(session.handle({"operation": "discover"})["passive_handheld"], False)
+        self.assertTrue(Path(self.prepare(session)["run_folder"]).is_dir())
 
     def test_mains_and_a_controllers_battery_are_no_battery_of_the_device(self):
         machine.supply(self.supplies, "AC", "Mains")
@@ -383,6 +410,7 @@ class ABatteryMeansAHandheld(DesktopChip):
 
     def test_supply_that_cannot_be_read_counts_as_a_battery(self):
         (self.supplies / "unknown").mkdir(parents=True)
+        machine.device_tree()
         session = self.session()
         with self.assertRaisesRegex(RuntimeError, "battery \\(unknown\\)"):
             self.prepare(session)

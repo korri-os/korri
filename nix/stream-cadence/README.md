@@ -309,7 +309,7 @@ viewer alone:
 | A run ends at once | 10 °C below a zone's critical trip point, or half-way between its highest passive trip point and its critical trip point when that is lower. |
 | A run does not start, and a running viewer is stopped | when the guard cannot read: a zone that has a limit is gone or gives no temperature, a zone's trip points cannot be read, or the guard's own thread fails. |
 | A device with a hardware picture path does not run | when no zone has a critical trip point: the guard has no limit for it. |
-| A device with a hardware picture path, or with a battery of its own, hosts no fixture | ever: no software viewer and no sender fixture. |
+| A device with a hardware picture path, or with a battery of its own and a device tree, hosts no fixture | ever: no software viewer and no sender fixture. |
 | A viewer on a hardware picture path is stopped | when any line of its log says that a frame did not come from the hardware decoder, or when it uses more than 1.0 CPU second each second for 2 s. |
 | A valid run on a hardware picture path | needs the log line of the measured start that says hardware decode started. |
 
@@ -394,18 +394,29 @@ whether it was the same game or how much of the machine it used, so prefer
 results with no game for a verdict.
 
 **Where the fixtures run.** Both fixtures, sender and viewer, are for a
-machine on mains power with no hardware picture path: a server or a desktop.
-They do not start:
+machine that can carry a software load: a server, a desktop or a laptop.
+A passive handheld runs only its installed viewer: it has no fan, and a
+software compositor, viewer or encoder heats it. The fixtures do not start:
 
 - on a device whose chip is in korrid's table of hardware picture paths;
-- on a device with a battery of its own under `/sys/class/power_supply`. A
-  battery means a handheld or a laptop, also where korrid's table does not
-  know the chip. A peripheral's battery (scope `Device`) does not count; a
-  supply whose type cannot be read counts. The build host is a laptop, so
-  it hosts neither fixture;
+- on a device that has both a battery of its own under
+  `/sys/class/power_supply` and a device tree (`/proc/device-tree`). The
+  tool takes such a device for a passive handheld, also where korrid's table
+  does not know the chip. A peripheral's battery (scope `Device`) does not
+  count; a supply whose type cannot be read counts as a battery;
 - on a hot host, or where the heat guard cannot read (see "The heat guard").
 
-A device with a battery runs only its installed viewer. The refusal says why.
+The refusal says which of these it is and what the rule is for.
+
+A laptop has a battery and no device tree, so the handheld rule lets it
+through. It has fans, and thermal zones that the heat guard reads; that
+guard decides there. The build host is such a laptop. Today the heat guard
+refuses it, because it reads within 20 °C of its critical trip point.
+
+The handheld rule is a guess from two facts, and it can be wrong both ways.
+A laptop whose firmware gives a device tree (some ARM laptops) is refused. A
+handheld with x86 firmware has no device tree and is let through; only the
+heat guard protects it. No such device has been tried.
 
 The agent `sender.py` owns one run directory under `/tmp`. In it run:
 

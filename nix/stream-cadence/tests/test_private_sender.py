@@ -203,14 +203,37 @@ class SenderHeatGuard(Machine):
         self.assertIsNone(session.root)
 
 
-class NotOnABattery(Machine):
-    def test_sender_fixture_never_starts_on_a_device_with_a_battery(self):
-        machine.supply(self.supplies, "BAT0", "Battery")
+class NotOnAPassiveHandheld(Machine):
+    def test_sender_fixture_never_starts_on_a_device_with_a_battery_and_a_device_tree(self):
+        machine.supply(self.supplies, "axp20x-battery", "Battery")
+        machine.device_tree()
         session = self.session()
-        self.assertEqual(session.handle({"operation": "discover"})["batteries"], ["BAT0"])
-        with self.assertRaisesRegex(RuntimeError, "battery \\(BAT0\\).*sender fixture does not start"):
+        facts = session.handle({"operation": "discover"})
+        self.assertEqual(facts["batteries"], ["axp20x-battery"])
+        self.assertIs(facts["passive_handheld"], True)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "battery \\(axp20x-battery\\) and a device tree.*passive handheld runs only its installed viewer.*sender fixture does not start",
+        ):
             self.prepare(session)
         self.assertIsNone(session.root)
+        self.assertFalse((self.peers / "arguments.log").exists())
+
+    def test_a_laptop_has_a_battery_and_no_device_tree_and_hosts_the_fixture(self):
+        machine.supply(self.supplies, "AC", "Mains")
+        machine.supply(self.supplies, "BAT0", "Battery")
+        session = self.session()
+        facts = session.handle({"operation": "discover"})
+        self.assertEqual(facts["batteries"], ["BAT0"])
+        self.assertIs(facts["passive_handheld"], False)
+        self.prepare(session)
+        self.assertTrue(session.close()["pass"])
+
+    def test_a_hot_laptop_is_still_refused_by_the_heat_guard(self):
+        machine.supply(self.supplies, "BAT0", "Battery")
+        self.zone(72000)
+        with self.assertRaisesRegex(RuntimeError, "The device is hot"):
+            self.prepare(self.session())
         self.assertFalse((self.peers / "arguments.log").exists())
 
     def test_a_controllers_battery_does_not_stop_the_fixture(self):

@@ -11,9 +11,9 @@ keeps that user. An agent that is root, as on a Korri device, gives the
 fixture's programs the product compositor's user. The agent owns the run
 directory and writes only there; the programs write in `home` and `rt`.
 
-The fixture does not start on a handheld or a laptop (a hardware picture
-path, or a battery), on a hot host, or where its Sunshine could make an input
-device. A game on a Korri device does not stop it; the result names the game.
+The fixture does not start on a handheld (a hardware picture path, or a
+battery with a device tree), on a hot host, or where its Sunshine could make
+an input device. A game on a Korri device does not stop it; the result names the game.
 """
 
 import base64
@@ -47,7 +47,8 @@ from device import (
     let_in,
     live_games,
     model,
-    no_fixture_on_battery,
+    no_fixture_on_handheld,
+    passive_handheld,
     plain_bytes,
     plain_text,
     proc,
@@ -312,6 +313,7 @@ class Session:
         self.hardware_path = platform() != PICTURE_PATH_DEFAULT
         self.facts["hardware_picture_path"] = self.hardware_path
         self.facts["batteries"] = batteries()
+        self.facts["passive_handheld"] = passive_handheld()
         # Why the guard stopped the fixture, once it did.
         self.ended: str | None = None
         # Taken again when the fixture prepares; here so that a close is never blind.
@@ -549,7 +551,7 @@ class Session:
                 "handheld. A compositor, a Sunshine and an encoder are too much load for it, "
                 "so the sender fixture does not start here."
             )
-        refused = no_fixture_on_battery("sender fixture") or no_start(
+        refused = no_fixture_on_handheld("sender fixture") or no_start(
             thermal_zones(), self.limits, self.hardware_path
         )
         if refused:

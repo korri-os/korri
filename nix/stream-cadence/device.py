@@ -117,14 +117,15 @@ def plain_bytes(root: Path) -> int:
 
 
 POWER_SUPPLY = Path("/sys/class/power_supply")
+DEVICE_TREE = Path("/proc/device-tree")
 
 
 def batteries() -> list[str]:
-    """The device's own batteries. A device that has one is a handheld or a laptop.
+    """The device's own batteries.
 
     A battery of a peripheral, such as a controller, has scope "Device" and is
     not the device's own. A supply whose type cannot be read counts as a
-    battery: the fixtures stay off a device that the tool cannot classify.
+    battery: the fixtures stay off a handheld that the tool cannot classify.
     """
     found = []
     for supply in sorted(POWER_SUPPLY.glob("*")):
@@ -140,16 +141,24 @@ def batteries() -> list[str]:
     return found
 
 
-def no_fixture_on_battery(fixture: str) -> str | None:
+def passive_handheld() -> bool:
+    """A battery of its own and a device tree: the tool takes the device for a passive handheld.
+
+    A laptop has a battery too, but its firmware gives no device tree. It has
+    fans, and thermal zones that the heat guard reads; that guard decides there.
+    """
+    return bool(batteries()) and DEVICE_TREE.is_dir()
+
+
+def no_fixture_on_handheld(fixture: str) -> str | None:
     """Why a fixture must not start on this device, or None. The rule of both agents."""
-    found = batteries()
-    if not found:
+    if not passive_handheld():
         return None
     return (
-        f"This device has a battery ({', '.join(found)}): it is a handheld or a laptop. "
-        "The fixtures put a software load on a device that is built to save power, and a "
-        f"device with a battery runs only its installed viewer. The {fixture} does not "
-        "start here."
+        f"This device has a battery ({', '.join(batteries())}) and a device tree: the tool "
+        "takes it for a passive handheld. A fixture is a software load, and such a device "
+        "has no fan to carry it. A passive handheld runs only its installed viewer. "
+        f"The {fixture} does not start here."
     )
 
 

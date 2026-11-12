@@ -45,7 +45,8 @@ from device import (
     let_in,
     live_games,
     model,
-    no_fixture_on_battery,
+    no_fixture_on_handheld,
+    passive_handheld,
     plain_text,
     read_plain,
     proc,
@@ -239,8 +240,10 @@ class Session:
             "platform": chosen,
             # korrid's chip table names a hardware picture path for this device.
             "hardware_picture_path": chosen != PICTURE_PATH_DEFAULT,
-            # The device's own batteries: with one it is a handheld or a laptop.
+            # The device's own batteries. With one and a device tree the tool
+            # takes the device for a passive handheld; a laptop has no device tree.
             "batteries": batteries(),
+            "passive_handheld": passive_handheld(),
             # The host that runs the tool, as this device reaches it: the far end
             # of the agent's own SSH connection. Absent with no SSH.
             "controller_address": connection[0] if connection else None,
@@ -486,11 +489,11 @@ class Session:
             )
         if request["fixture"]:
             # A handheld outside korrid's chip table would still get the software
-            # viewer. A battery marks every one of them.
-            on_battery = no_fixture_on_battery("viewer fixture")
-            if on_battery:
+            # viewer. A battery with a device tree marks every one of them.
+            handheld = no_fixture_on_handheld("viewer fixture")
+            if handheld:
                 raise RuntimeError(
-                    on_battery + f" Its viewer plugin is not usable: {self.facts['plugin_missing']}."
+                    handheld + f" Its viewer plugin is not usable: {self.facts['plugin_missing']}."
                 )
         self.fixture = bool(request["fixture"])
         if self.compositor is None and not self.fixture:
