@@ -91,21 +91,30 @@ class NoInputDevice(Machine):
         self.assertIsNone(session.root)
         self.assertFalse((self.peers / "arguments.log").exists())
 
-    def test_uinput_access_of_a_dropped_user_is_read_from_the_node(self):
+    def test_access_to_a_device_node_is_tried_as_the_fixtures_user(self):
+        if os.geteuid() == 0:
+            self.skipTest("root opens every node; this test describes an ordinary user")
+        session = self.session()
+        # Mode bits are not asked: the node is opened, as ACLs and all else decide.
         self.uinput.touch()
-        node = self.uinput.stat()
-        user = {"user": "viewer", "uid": node.st_uid + 1, "gid": node.st_gid + 1, "groups": []}
-        self.uinput.chmod(0o660)
-        self.assertFalse(sender.opens_uinput(user))
-        # A supplementary group that owns the node opens it; so does a world-writable node.
-        self.assertTrue(sender.opens_uinput(dict(user, groups=[node.st_gid])))
-        self.assertTrue(sender.opens_uinput(dict(user, gid=node.st_gid)))
-        self.assertTrue(sender.opens_uinput(dict(user, uid=node.st_uid)))
-        self.uinput.chmod(0o666)
-        self.assertTrue(sender.opens_uinput(user))
+        self.uinput.chmod(0o600)
+        self.assertTrue(session.opens(self.uinput, os.O_WRONLY))
+        self.uinput.chmod(0o400)
+        self.assertFalse(session.opens(self.uinput, os.O_WRONLY))
+        self.assertTrue(session.opens(self.uinput, os.O_RDONLY))
+        self.uinput.chmod(0o000)
+        self.assertFalse(session.opens(self.uinput, os.O_RDONLY))
         self.uinput.unlink()
-        self.assertFalse(sender.opens_uinput(user))
-        self.assertFalse(sender.opens_uinput(None))
+        self.assertFalse(session.opens(self.uinput, os.O_WRONLY))
+
+    def test_render_node_that_the_fixtures_user_cannot_open_is_not_offered(self):
+        if os.geteuid() == 0:
+            self.skipTest("root opens every node; this test describes an ordinary user")
+        closed = sender.RENDER_NODES / "renderD0"
+        closed.touch()
+        closed.chmod(0o000)
+        session = self.session()
+        self.assertEqual(session.render_nodes(), [str(sender.RENDER_NODES / "renderD1")])
 
     def test_new_input_device_during_a_run_ends_it_and_fails_the_restore(self):
         session = self.session()
@@ -235,6 +244,26 @@ class NoRoot(Machine):
         for name in ("compositor", "sunshine"):
             status = Path(f"/proc/{session.processes[name].pid}/status").read_text()
             self.assertIn(f"Uid:\t{os.geteuid()}\t", status)
+
+    def test_a_root_agent_takes_the_compositors_user_and_only_the_render_groups(self):
+        # The rule that a root agent applies, on the facts of aka's compositor.
+        compositor = {"user": "korri", "uid": 56774, "gid": 1000}
+        taken = sender.fixture_identity(compositor, member={1000, 17, 26, 303}, nodes={303})
+        self.assertEqual(taken, {"user": "korri", "uid": 56774, "gid": 1000, "groups": [303]})
+        # No audio, video or input group comes along, and none that the user is not in.
+        self.assertEqual(
+            sender.fixture_identity(compositor, member={1000, 17}, nodes={303})["groups"], []
+        )
+
+    def test_a_compositor_that_runs_as_root_gives_no_user_to_drop_to(self):
+        with self.assertRaisesRegex(RuntimeError, "runs as root.*does not start"):
+            sender.fixture_identity(
+                {"user": "root", "uid": 0, "gid": 0}, member={0}, nodes={303}
+            )
+        with self.assertRaisesRegex(RuntimeError, "runs as root"):
+            viewer.not_root({"user": "root", "uid": 0, "gid": 0, "exe": "/bin/sway"})
+        ordinary = {"user": "korri", "uid": 56774, "gid": 1000, "exe": "/bin/sway"}
+        self.assertIs(viewer.not_root(ordinary), ordinary)
 
 
 if __name__ == "__main__":

@@ -143,7 +143,7 @@ def plugin() -> tuple[dict | None, str | None]:
 
 # korrid's choice of picture path: platform_from_path in
 # services/korrid/src/linux_viewer/production.rs. This is a copy. The test
-# tests/test_handheld.py reads korrid's file and fails when the two differ.
+# tests/test_korrid_copy.py reads korrid's file and fails when the two differ.
 PICTURE_PATHS: tuple[tuple[tuple[bytes, ...], str], ...] = (
     ((b"qcom,sm8550", b"qcom,sm8250"), "v4l2m2m"),
     ((b"rockchip,rk3566", b"allwinner,sun50i-h700"), "v4l2request"),
@@ -181,11 +181,21 @@ def without_pin(text: str) -> str:
     return re.sub(PIN_LINE, r"\1[not shown]", text)
 
 
+def not_root(compositor: dict) -> dict:
+    """The viewer and the fixture take the compositor's user; that user must not be root."""
+    if compositor["uid"] == 0:
+        raise RuntimeError(
+            "The product compositor runs as root, so the viewer and the capture would too. "
+            "The measure does not start."
+        )
+    return compositor
+
+
 def product_compositor() -> dict:
     compositor = proc(int(unit("korri-compositor")["MainPID"]))
     if Path(compositor["exe"]).name != "sway":
         raise RuntimeError("The measure needs sway; this compositor is not sway.")
-    return compositor
+    return not_root(compositor)
 
 
 class Session:

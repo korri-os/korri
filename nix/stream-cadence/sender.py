@@ -2,9 +2,18 @@
 
 One run directory under /tmp holds a hidden compositor with a GPU renderer,
 the frame-ID source, a stock Sunshine on its own ports, and its pairing state.
-The fixture reads and changes nothing of a product stream. It runs as the user
-that started the agent, and needs no root, no Korri service and no
-certificate socket: the viewer pairs through Sunshine's own PIN.
+The fixture reads and changes nothing of a product stream, and needs no
+Korri service and no certificate socket: the viewer pairs through Sunshine's
+own PIN.
+
+Nothing of the fixture runs as root. An agent that an ordinary user starts
+keeps that user. An agent that is root, as on a Korri device, gives the
+fixture's programs the product compositor's user. The agent owns the run
+directory and writes only there; the programs write in `home` and `rt`.
+
+The fixture does not start on a handheld or a laptop (a hardware picture
+path, or a battery), on a hot host, where its Sunshine could make an input
+device, or while a game runs on a Korri device.
 """
 
 import base64
@@ -22,6 +31,7 @@ import signal
 import socket
 import ssl
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -112,14 +122,6 @@ def port_base() -> int:
     raise RuntimeError("Found no free port span for the fixture's Sunshine.")
 
 
-def render_nodes() -> list[str]:
-    return [
-        str(node)
-        for node in sorted(RENDER_NODES.glob("renderD*"))
-        if os.access(node, os.R_OK | os.W_OK)
-    ]
-
-
 def korri_identity() -> dict | None:
     """Who runs the fixture's programs when the agent is root.
 
@@ -139,34 +141,31 @@ def korri_identity() -> dict | None:
             f"compositor's user, and this host shows no korri-compositor: {error}. "
             "Start the agent as an ordinary user."
         ) from error
-    member = set(os.getgrouplist(compositor["user"], compositor["gid"]))
-    nodes = {node.stat().st_gid for node in RENDER_NODES.glob("renderD*")}
+    return fixture_identity(
+        compositor,
+        member=set(os.getgrouplist(compositor["user"], compositor["gid"])),
+        nodes={node.stat().st_gid for node in RENDER_NODES.glob("renderD*")},
+    )
+
+
+def fixture_identity(compositor: dict, *, member: set[int], nodes: set[int]) -> dict:
+    """The user and groups that a root agent gives the fixture's programs.
+
+    `member` are the groups of the compositor's user, `nodes` the groups that
+    own a render node. A compositor that itself runs as root gives no user to
+    drop to: the fixture would run as root, so it does not start.
+    """
+    if compositor["uid"] == 0:
+        raise RuntimeError(
+            "The product compositor runs as root, so the fixture's programs would too. "
+            "The sender fixture does not start."
+        )
     return {
         "user": compositor["user"],
         "uid": compositor["uid"],
         "gid": compositor["gid"],
         "groups": sorted(member & nodes),
     }
-
-
-def opens_uinput(identity: dict | None) -> bool:
-    """Whether the fixture's user can open /dev/uinput.
-
-    Stock Sunshine makes a virtual mouse and keyboard when it starts, and a
-    touch screen and a pen tablet for each client, all through uinput. The
-    product's input stack would see them. The fixture runs only where its
-    Sunshine cannot.
-    """
-    if not UINPUT.exists():
-        return False
-    if identity is None:
-        return os.access(UINPUT, os.W_OK)
-    node = UINPUT.stat()
-    return bool(
-        node.st_mode & 0o002
-        or (node.st_mode & 0o020 and node.st_gid in [identity["gid"], *identity["groups"]])
-        or (node.st_mode & 0o200 and node.st_uid == identity["uid"])
-    )
 
 
 def input_devices() -> set[str]:
@@ -350,6 +349,29 @@ class Session:
         # After the change of user, which clears it.
         end_with_agent()
 
+    def opens(self, node: Path, how: int) -> bool:
+        """Whether the fixture's user can open a device node, tried as that user.
+
+        A child takes the fixture's user and groups and opens the node. Mode
+        bits, ACLs and everything else decide as they will for the fixture.
+        """
+        tried = subprocess.run(
+            [sys.executable, "-B", __file__, "open", str(node), str(how)],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            timeout=20,
+            preexec_fn=self.restrict,
+        )
+        return tried.returncode == 0
+
+    def render_nodes(self) -> list[str]:
+        """The render nodes that the fixture's user can open for its compositor and encoder."""
+        return [
+            str(node)
+            for node in sorted(RENDER_NODES.glob("renderD*"))
+            if self.opens(node, os.O_RDWR)
+        ]
+
     def user_id(self) -> int:
         return self.identity["uid"] if self.identity else os.geteuid()
 
@@ -510,7 +532,11 @@ class Session:
             # On a Korri device a game has the machine: the fixture does not start.
             games()
             self.last_game_check = time.monotonic()
-        if opens_uinput(self.identity):
+        # Stock Sunshine makes a virtual mouse and keyboard when it starts, and a
+        # touch screen and a pen tablet for each client, all through uinput. The
+        # product's input stack would see them. The fixture runs only where its
+        # Sunshine cannot open that node; the open is tried as the fixture's user.
+        if self.opens(UINPUT, os.O_WRONLY):
             raise RuntimeError(
                 f"The user {self.facts['fixture_user']} can open {UINPUT}. A stock Sunshine "
                 "would make input devices there that the product's input stack sees. The "
@@ -532,7 +558,7 @@ class Session:
         self.sway, self.sunshine = str(request["sway"]), str(request["sunshine"])
         width, height = int(request["width"]), int(request["height"])
         hertz = steady_refresh_mhz(float(request["fps"])) / 1000
-        nodes = render_nodes()
+        nodes = self.render_nodes()
         if not nodes:
             raise RuntimeError(
                 "This user can open no render node in /dev/dri. The hidden compositor needs a GPU renderer: with a software renderer Sunshine captures one frame only."
@@ -815,5 +841,16 @@ class Session:
         }
 
 
+def open_as_asked(node: str, how: str) -> int:
+    """The child of Session.opens: exit 0 when the node opens."""
+    try:
+        os.close(os.open(node, int(how) | os.O_NONBLOCK | os.O_CLOEXEC | os.O_NOCTTY))
+    except OSError:
+        return 1
+    return 0
+
+
 if __name__ == "__main__":
+    if len(sys.argv) == 4 and sys.argv[1] == "open":
+        sys.exit(open_as_asked(sys.argv[2], sys.argv[3]))
     serve(Session)
