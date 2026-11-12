@@ -73,6 +73,8 @@ CONDITIONS = (
 # Only for these can one result be older than the condition. A value that is
 # absent for any other condition is a value: a product sender has no render node.
 ADDED_LATER = ("viewer_model",)
+# The lists of game units in `discovered.live_game`: each device, start and end.
+LIVE_GAME_MOMENTS = ("sender_at_start", "viewer_at_start", "sender_at_end", "viewer_at_end")
 
 
 def conditions(record: dict) -> dict:
@@ -86,6 +88,10 @@ def conditions(record: dict) -> dict:
     values["sender_model"] = facts.get("model")
     values["sender_render_node"] = (facts.get("sender_fixture") or {}).get("render_node")
     values["viewer_model"] = (facts.get("viewer") or {}).get("model")
+    # A game on the device changes the numbers of a private pair. A result from
+    # before this record was kept ran with no game: the tool refused beside one.
+    live = facts.get("live_game") or {}
+    values["beside_a_game"] = any(live.get(moment) for moment in LIVE_GAME_MOMENTS)
     return values
 
 
@@ -146,8 +152,14 @@ def judge(
             and any(row[name] is None for row in every)
             and len({json.dumps(row[name], sort_keys=True) for row in every if row[name] is not None}) == 1
         ]
-        differ = [name for name in changed if name not in absent]
+        differ = [name for name in changed if name not in absent and name != "beside_a_game"]
         advice = []
+        if "beside_a_game" in changed:
+            advice.append(
+                "Some runs were recorded while a game ran on the device and others were not. "
+                "A game changes a private pair's numbers; record both results with a game, "
+                "or both with none."
+            )
         if differ:
             advice.append(
                 "Record the baseline and the candidate with the same sender, request and devices."

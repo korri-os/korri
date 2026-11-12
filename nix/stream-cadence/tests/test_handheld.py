@@ -82,6 +82,35 @@ class Conditions(unittest.TestCase):
         self.assertIn("same sender, request and devices", str(refused.exception))
         self.assertEqual(len(judge(self.result(max_capture_gaps=3), self.result(max_capture_gaps=3), 5)), 15)
 
+    def test_a_result_beside_a_game_is_not_compared_with_one_without(self):
+        game = "korri-game-0123456789abcdef.service"
+
+        def live(**units) -> dict:
+            return {
+                "live_game": {
+                    "sender_at_start": [], "viewer_at_start": [], "sender_at_end": [], "viewer_at_end": [], **units,
+                }
+            }
+
+        free = self.result(**live())
+        beside = self.result(**live(sender_at_start=[game], viewer_at_start=[game]))
+        with self.assertRaisesRegex(ValueError, "beside_a_game") as refused:
+            judge(free, beside, 5)
+        self.assertIn("while a game ran on the device", str(refused.exception))
+        self.assertNotIn("recorded before", str(refused.exception))
+        self.assertEqual(len(judge(beside, beside, 5)), 15)
+        # A game at any moment of a run counts: here only at its end, on one side.
+        with self.assertRaisesRegex(ValueError, "beside_a_game"):
+            judge(free, self.result(**live(sender_at_end=[game])), 5)
+        # One run of five beside a game is enough to refuse the set.
+        mixed = free[:4] + beside[:1]
+        with self.assertRaisesRegex(ValueError, "beside_a_game"):
+            judge(mixed, mixed, 5)
+        # A result from before the record was kept ran with no game: the tool refused beside one.
+        self.assertEqual(len(judge(self.result(), free, 5)), 15)
+        # Only the lists of units decide; the trial's results also hold the old key `allowed`.
+        self.assertEqual(len(judge(self.result(**live(allowed=True)), free, 5)), 15)
+
     def test_a_product_sender_has_no_render_node_and_predates_nothing_for_it(self):
         product = self.result()
         fixture = self.result(sender_fixture={"render_node": "/dev/dri/renderD128"})

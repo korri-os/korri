@@ -380,6 +380,19 @@ Every result names the game units that were live on each device at the start
 and at the end of the run (`discovered.live_game`), without their command
 lines.
 
+**A game changes the pair's numbers.** In the 60 s run of that trial the
+delay p50 of the six windows was 23.9 to 26.0 ms. On aka with no game, the
+same pair at the same defaults gave 15.4 to 17.0 ms over 60 windows (sets A
+and B below). That is one run beside one game, so the size of the difference
+is not a rule; that there is a difference is the reason for this rule:
+`verdict` does not compare a result that was recorded beside a game with one
+that was not. A game at the start or at the end of any run, on either
+device, makes the result "beside a game" (condition `beside_a_game`). A game
+that starts and ends between those two reads is not seen. Two results that
+were both recorded beside a game are compared; the tool does not know
+whether it was the same game or how much of the machine it used, so prefer
+results with no game for a verdict.
+
 **Where the fixtures run.** Both fixtures, sender and viewer, are for a
 machine on mains power with no hardware picture path: a server or a desktop.
 They do not start:
@@ -699,8 +712,9 @@ for each metric.
 `verdict` refuses two results that were not measured under the same
 conditions: the sender's display mode, Sunshine version, encoder and capture
 backend, the sender's model and render node, the viewer device's model, and
-the requested resolution, frame rate, codec, bitrate and viewer refresh, and
-the limit `max_capture_gaps` of the run. A
+the requested resolution, frame rate, codec, bitrate and viewer refresh,
+the limit `max_capture_gaps` of the run, and whether a game ran on a device
+during a run. A
 difference there would judge the sender or the device, not the viewer. The
 model is the device's own name for itself; on a board whose firmware gives a
 placeholder (aka says "System Product Name"), two such machines look alike.
