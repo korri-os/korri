@@ -7,6 +7,7 @@ run-to-run spread, so it is equal. With five runs each, two sets from the same
 viewer separate by chance in about 0.8% of comparisons for each number.
 """
 
+import json
 import statistics
 from typing import Callable
 
@@ -128,10 +129,32 @@ def judge(
     old, new = valid_runs(baseline, minimum), valid_runs(candidate, minimum)
     changed = differences(old, new)
     if changed and not allow_different_conditions:
+        # A condition that some runs have and others lack was added to the tool
+        # between the two recordings. That is another cause than another sender.
+        every = [conditions(record) for record in old + new]
+        absent = [
+            name
+            for name in changed
+            if any(row[name] is None for row in every)
+            and len({json.dumps(row[name], sort_keys=True) for row in every if row[name] is not None}) == 1
+        ]
+        differ = [name for name in changed if name not in absent]
+        advice = []
+        if differ:
+            advice.append(
+                "Record the baseline and the candidate with the same sender, request and devices."
+            )
+        if absent:
+            advice.append(
+                "One result was recorded before the tool kept "
+                + ", ".join(absent)
+                + "; record that result again."
+            )
         raise ValueError(
             "The runs were not measured under the same conditions: "
             + ", ".join(changed)
-            + ". Record the baseline and the candidate with the same sender and request."
+            + ". "
+            + " ".join(advice)
         )
     rows = []
     for number, name, extract in METRICS:

@@ -18,7 +18,7 @@ from bar import Clean, Unreadable  # noqa: E402
 from cli import plugin_enabled  # noqa: E402
 from score import first_measured_frame  # noqa: E402
 import sender  # noqa: E402
-from verdict import differences  # noqa: E402
+from verdict import differences, judge  # noqa: E402
 import viewer  # noqa: E402
 
 TESTS = Path(__file__).resolve().parent
@@ -58,6 +58,35 @@ class FirstFrame(unittest.TestCase):
 
 
 class Conditions(unittest.TestCase):
+    def test_refusal_says_when_a_result_predates_a_condition(self):
+        def run(viewer_model) -> dict:
+            window = {
+                "latency_ms": {"p50": 20.0, "p95": 22.0}, "capture_misses": 0,
+                "repeated_frames": 0, "late_frames": 0, "torn_frames": 0,
+                "undecodable_frames": 0,
+            }
+            seat = {} if viewer_model is None else {"model": viewer_model}
+            return {
+                "discovered": {"valid": True, "model": "host A", "viewer": seat},
+                "source_counter": {"windows": [window]},
+                "viewer": {"startup_ms": 900.0},
+            }
+
+        stored = [run(None) for _ in range(5)]
+        fresh = [run("host A") for _ in range(5)]
+        with self.assertRaises(ValueError) as refused:
+            judge(stored, fresh, 5)
+        words = str(refused.exception)
+        self.assertIn("viewer_model", words)
+        # The cause is the age of one result, not another sender or request.
+        self.assertIn("recorded before the tool kept viewer_model", words)
+        self.assertNotIn("same sender and request", words)
+        # Two results that both have the condition and differ get the plain advice.
+        other = [run("host B") for _ in range(5)]
+        with self.assertRaisesRegex(ValueError, "same sender, request and devices") as differ:
+            judge(fresh, other, 5)
+        self.assertNotIn("recorded before", str(differ.exception))
+
     def test_another_host_render_node_or_viewer_device_is_another_condition(self):
         def record(**changed) -> dict:
             facts = {
