@@ -625,6 +625,13 @@ class Session:
         if operation == "start":
             if self.ended:
                 raise RuntimeError(self.ended)
+            # Each start writes its own log: what the guard and the validity gate
+            # read about decode belongs to this start alone.
+            current = self.root / "viewer.log"
+            if current.exists():
+                with (self.root / "viewer.earlier.log").open("a") as earlier:
+                    earlier.write(current.read_text(errors="replace"))
+                current.unlink()
             start = time.monotonic_ns()
             process = self.spawn("viewer", list(request["command"]), self.viewer_environment())
             threading.Thread(target=self.guard, args=(process,), daemon=True).start()
@@ -668,6 +675,7 @@ class Session:
                 "rows": base64.b64encode(rows.read_bytes() if rows.exists() else b"").decode(),
                 "capture_log": self.tail("capture"),
                 "viewer_log": self.tail("viewer"),
+                "viewer_earlier_log": self.tail("viewer.earlier"),
                 "fixture_log": self.tail("fixture"),
             }
         raise ValueError("unknown viewer operation")

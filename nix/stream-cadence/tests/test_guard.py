@@ -3,6 +3,7 @@
 from pathlib import Path
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -78,6 +79,66 @@ class NoSoftwareViewerOnAHandheld(Device):
         try:
             self.assertFalse(session.handle({"operation": "discover"})["hardware_picture_path"])
             self.assertTrue(Path(self.prepare(session)["run_folder"]).is_dir())
+        finally:
+            self.assertTrue(session.close()["pass"])
+
+
+def hardware_session(case: Device) -> viewer.Session:
+    """A session on a hardware-path chip with a run directory, as after a prepare.
+
+    No plugin exists on a build host, so the test makes the run directory itself
+    and starts stand-in viewers; the guard's rules are the real ones.
+    """
+    session = viewer.Session(str(case.peer))
+    session.root = Path(tempfile.mkdtemp(prefix="cadence-guard-test-", dir=case.directory.name))
+    (session.root / "rt").mkdir()
+    session.fixture = True  # no product compositor to ask for focus
+    return session
+
+
+def says(line: str) -> list[str]:
+    """A stand-in viewer that logs one line and stays."""
+    return ["sh", "-c", f'echo "{line}"; exec sleep 60']
+
+
+YES = "v4l2m2m: submit: first frame from decoder format=drm_prime (DRM_PRIME=YES)"
+NO = "v4l2m2m: submit: first frame from decoder format=nv12 (DRM_PRIME=NO)"
+
+
+class EachStartHasItsOwnLog(Device):
+    def test_decode_state_of_the_measured_start_is_not_the_locating_starts(self):
+        session = hardware_session(self)
+        try:
+            session.handle({"operation": "start", "command": says(YES)})
+            for _ in range(50):
+                if session.handle({"operation": "sample"})["hardware_decode"]:
+                    break
+                time.sleep(0.1)
+            self.assertIs(session.handle({"operation": "sample"})["hardware_decode"], True)
+            session.handle({"operation": "stop"})
+            # The measured start falls back to software decode.
+            session.handle({"operation": "start", "command": says(NO)})
+            running = session.processes["viewer"]
+            self.assertIsNotNone(running.wait(timeout=5))
+            with self.assertRaisesRegex(RuntimeError, "hardware decode did not start"):
+                session.handle({"operation": "sample"})
+            shown = session.handle({"operation": "evidence"})
+            self.assertIn("DRM_PRIME=NO", shown["viewer_log"])
+            self.assertNotIn("DRM_PRIME=YES", shown["viewer_log"])
+            self.assertIn("DRM_PRIME=YES", shown["viewer_earlier_log"])
+        finally:
+            self.assertTrue(session.close()["pass"])
+
+    def test_a_measured_start_with_no_decode_line_has_no_decode_state(self):
+        session = hardware_session(self)
+        try:
+            session.handle({"operation": "start", "command": says(YES)})
+            time.sleep(0.5)
+            session.handle({"operation": "stop"})
+            session.handle({"operation": "start", "command": says("Connecting...")})
+            time.sleep(0.5)
+            # The validity gate needs True; the locating start's line must not supply it.
+            self.assertIsNone(session.handle({"operation": "sample"})["hardware_decode"])
         finally:
             self.assertTrue(session.close()["pass"])
 

@@ -1010,7 +1010,7 @@ def view_case(
         (directory / "motion.log").write_text(motion_log)
         (directory / "display.csv").write_text(shown["times"])
         (directory / "display.rows").write_bytes(base64.b64decode(shown["rows"]))
-        for name in ("viewer_log", "capture_log", "fixture_log"):
+        for name in ("viewer_log", "viewer_earlier_log", "capture_log", "fixture_log"):
             (directory / name.replace("_", ".")).write_text(shown[name])
         times = display_records(shown["times"])
         values = np.frombuffer(base64.b64decode(shown["rows"]), dtype=np.uint8)
@@ -1111,7 +1111,7 @@ def view_case(
             # A refused run still keeps the viewer's own words.
             try:
                 shown = viewer.request("evidence")
-                for name in ("viewer_log", "capture_log", "fixture_log"):
+                for name in ("viewer_log", "viewer_earlier_log", "capture_log", "fixture_log"):
                     (directory / name.replace("_", ".")).write_text(shown[name])
             except Exception:
                 pass
