@@ -198,11 +198,14 @@ they stay comparable.
 ### The fixture
 
 The viewer and the capture client run inside a fixture: a second, headless
-sway process started from the device's installed sway binary, with the pixman
-renderer, inside the run directory. The product compositor is read and never
+sway process started from the device's installed sway binary, inside the run
+directory. Its renderer is pixman by default (`--viewer-renderer`, see "The
+plugin's viewer in the fixture"). The product compositor is read and never
 changed, and the test viewer never appears on the display that Sunshine
-captures. The fixture viewer is nixpkgs `moonlight-embedded` with its `sdl`
-system, copied with `nix copy`. A server-only device has no viewer plugin.
+captures. On a device with no viewer plugin the fixture viewer is the
+stand-in: nixpkgs `moonlight-embedded` with its `sdl` system, copied with
+`nix copy`. On a device with the plugin, a private pair runs the plugin's
+own binary there.
 
 The fixture proves a viewer's session part and network library. It does not
 prove the picture path of a handheld or a phone.
@@ -217,7 +220,10 @@ it. The sender still revokes the certificate on exit.
 ### The installed viewer on a handheld
 
 On a device with the enabled `@korri:moonlight` plugin, `view` runs the
-plugin's own `moonlight` on the device's own compositor and its real panel.
+plugin's own `moonlight` on the device's own compositor and its real panel,
+when the sender is a product sender or is on another device. (A private
+pair on one device never uses that device's display; see "The plugin's
+viewer in the fixture".)
 A plugin that is switched off, or whose `korri-plugin status` fails, is not
 usable. What happens then depends on the chip:
 
@@ -290,6 +296,152 @@ the reason when the plugin is not usable. No handheld baseline exists.
 
 By the gap rule of "Capture gaps", the RG353M run stays invalid: 14 of the
 15 gaps of its record lose an ID. The RG35XX Pro run has no gap.
+
+### The plugin's viewer in the fixture
+
+A private pair on one device never uses that device's display. With
+`--sender-fixture` and the sender and the viewer on the same device, the
+viewer runs in the fixture:
+
+- the plugin's own `moonlight`, when the device has the enabled
+  `@korri:moonlight` plugin. The pair then measures Korri's real viewer
+  binary;
+- the stand-in from nixpkgs, when it has not, as on aka.
+
+The tool takes "the same device" from the boot ID of the two agents, not
+from the names of the targets. The reason for the rule is ibuki: a
+living-room device with the plugin, whose one display is the family's TV.
+The path on the device's own display stays for an installed viewer on
+another device than the sender, and for the installed viewer of a product
+sender. Nothing of a fixture run wakes the display, sends the product
+compositor seat activity or asks it for focus; the agent only reads the
+display's mode when it starts, and a display that cannot be read does not
+stop a fixture run.
+
+It applies only where korrid's chip table gives the software picture path
+(`x11`). A device with a hardware picture path, and a board with a device
+tree, host no fixture, with or without the plugin.
+
+**How the binary is started.** With the arguments of korrid's `linux_viewer`
+(`stream_args`: `-platform x11`, `-mapping`, `-windowed`,
+`-autowindowresize`) and its environment
+(`KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT`,
+`SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS`), with the differences of "The
+installed viewer on a handheld" and three more:
+
+- `DISPLAY=:0` is left out. It names the X server of the device's own
+  compositor, and a fixture run must not reach it.
+- `WAYLAND_DISPLAY` and `XDG_RUNTIME_DIR` name the fixture's compositor, and
+  `SDL_VIDEODRIVER=wayland` makes SDL use it.
+- The viewer's programs keep no supplementary group (with
+  `--viewer-renderer gles2`: only the groups that own a render node).
+
+**SDL on Wayland, not an Xwayland in the fixture.** With `-platform x11` the
+plugin's Moonlight uses its SDL system (korrid's comment in `stream_args`
+says so, and upstream's `platform_check` returns SDL for `x11` when SDL is
+built in). The plugin's SDL is sdl2-compat on SDL 3, and its closure holds
+`wayland`, `libxkbcommon` and `libdecor`: it has a Wayland video driver. So
+the binary runs on the fixture's compositor with no X server. An Xwayland in
+the fixture would add a process on a two-core device and would put a socket
+and a lock file under `/tmp` beside the product's `:0`. The cost: on ibuki
+the product's viewer shows through the product compositor's Xwayland, and
+the fixture does not measure that step.
+
+**The renderer of the fixture's compositor.** `--viewer-renderer pixman` (the
+default) draws the fixture's output with the CPU. A viewer that asks for
+OpenGL then gets Mesa's software rasterizer, which is not what the product
+has on a device with a graphics card. `--viewer-renderer gles2` starts the
+fixture's compositor with the gles2 renderer on the device's render node, as
+the sender fixture's compositor. `discovered.viewer_fixture.renderer`
+records it and `verdict` keeps two renderers apart. pixman stays the
+default because the baseline on aka was recorded with it.
+
+**Which viewer ran.** `discovered.viewer_ran` holds `kind` (`plugin` or
+`stand-in`), `place` (`fixture` or `display`), the path of the `moonlight`
+binary, and for the plugin its release and package. `verdict` prints the
+viewer of each result above its table and says whether the two are the same.
+The viewer is no condition: it is what a comparison changes on purpose, and a
+verdict between two viewers is the point of the tool. The place is a
+condition, and one result must have one viewer.
+
+**The private pair on ibuki, 2026-11-12.** ibuki is an Intel NUC8i3BEK: two
+cores and four threads, Intel graphics, a full Korri device with the
+`@korri:moonlight` plugin (release `build-6a16a09421bf-shared-settings`),
+and an LG TV as its one display. Sender fixture and the plugin's viewer in
+the fixture (`view --sender root@ibuki --sender-fixture --viewer root@ibuki
+--resolution 1280x720 --viewer-renderer gles2`), 60 scored seconds each run,
+no game live. The fixture's Sunshine encoded with `h264_vaapi` on
+`renderD128`, as the user `korri`. These sets are evidence, not a baseline.
+
+| | Base, set A | Base, set B | Queue (`--queue-measure`) |
+| --- | --- | --- | --- |
+| Valid runs | 5 of 5 | 5 of 5 | 5 of 5 |
+| Sender, each second | 57.5 to 57.6 | 57.5 to 57.6 | 65.0 to 65.1 |
+| Sender intervals above 1.5 periods | 0 of 21 919 | 0 of 21 966 | 2 of 24 863 (22.8 and 25.3 ms) |
+| Viewer output, each second | 60.1 | 60.1 to 60.2 | 60.7 to 60.8 |
+| Delay p50, each 10 s window | 20.4 to 36.1 ms | 19.9 to 36.8 ms | 61.0 to 65.4 ms |
+| Delay p50, each run (`verdict`) | 24.0 to 26.6 ms | 23.0 to 26.4 ms | |
+| Dropped frames, each run | 6 to 20 | 7 to 18 | 272 to 277 (the sender's floor) |
+| Repeated frames, each run | 159 to 176 | 156 to 173 | 11 to 17 |
+| Viewer CPU, CPU seconds each second | 0.49 to 0.51 | 0.46 to 0.51 | 0.56 to 0.58 |
+| `startup_ms` | 845 to 1006 | 823 to 888 | 853 to 973 |
+
+`verdict` between the two base sets says `equal` for each measured number.
+So the pair on ibuki is steady from run to run. It is less quiet than on
+aka in two ways, and a baseline on ibuki has them as its floor:
+
+- The delay p50 of a window moves by one frame period (20 to 37 ms) inside
+  every base run. On aka the baseline of the same measure stays within
+  0.6 ms (15.4 to 15.9 ms).
+- A base run has 6 to 20 dropped frames, where the sender adds none. On aka
+  it has 0.
+
+The cause is not shown. One run on aka with `--viewer-renderer gles2` and
+the stand-in viewer was flat (12.5 to 12.8 ms, 0 dropped frames), so the
+renderer alone does not explain it. ibuki differs in its two cores and in
+the viewer binary, and the tool cannot run the stand-in where the plugin is
+installed, so the two are not told apart.
+
+**CPU.** A read of `/proc` every 5 s during the runs, 720p, base measure:
+
+| Program | CPU seconds each second |
+| --- | --- |
+| Sender: Sunshine | 0.45 to 0.46 |
+| Sender: compositor | 0.16 to 0.17 |
+| Sender: frame-ID source | 0.04 |
+| Viewer: the plugin's `moonlight` | 0.49 to 0.50 |
+| Viewer: compositor | 0.08 |
+| Viewer: capture | 0.01 |
+| The pair together | 1.23 to 1.25 |
+| The whole machine | 1.86 to 1.91 of 4 threads (46 to 48% busy) |
+
+The rest of the machine's load is the two agents, korrid, kernel workers
+for the graphics card and the disk, and the read itself. The package
+temperature went from 38 to 62 °C at most; the heat guard's two zones with a
+limit (`pch_cannonlake`, `acpitz`) stayed below 55 °C. The zone of the CPU
+package (`x86_pkg_temp`) has only placeholder trip points, so the guard has
+no limit for it.
+
+**pixman on ibuki does not give a measure of the viewer.** One set of five
+base runs with the default renderer: all valid, and the viewer used 1.35 to
+1.40 CPU seconds each second and showed 54.5 to 55.1 of the sender's 57.7
+frames each second. The delay p50 of a window was 38.8 to 59.1 ms with 156
+to 186 dropped frames in a run. The viewer's OpenGL was Mesa's software
+rasterizer, and that is what the numbers measure. Use `--viewer-renderer
+gles2` on ibuki.
+
+**1920x1080 on ibuki.** One base run with gles2: valid, and the viewer used
+0.62 CPU seconds each second, but it dropped 87 frames in 60 s (6 to 20 at
+1280x720) and repeated 248. Two cores run the pair at that size; they do
+not run it cleanly. Measure at 1280x720 on ibuki.
+
+**The product on ibuki during all runs.** The main PIDs and start times of
+`korri-shell`, `korri-compositor`, `korri-sunshine` and `korrid` were the
+same before and after each set. The display (`DP-1`, 3840x2160) stayed
+powered off, and the product compositor's focus did not change.
+`/dev/input` kept its 39 entries. No run directory, no process and no X
+socket beside the product's was left, also after a run that the heat guard
+ended on purpose (`--test-heat-end-margin`).
 
 ### The heat guard
 
@@ -870,8 +1022,22 @@ conditions: the sender's display mode, Sunshine version, encoder and capture
 backend, the sender's model and render node, the viewer device's model, and
 the requested resolution, frame rate, codec, bitrate and viewer refresh,
 the limit `max_capture_gaps` of the run, whether a game ran on a device
-during a run, and the measure of a private pair (base or queue). A
-difference there would judge the sender or the device, not the viewer. The
+during a run, the measure of a private pair (base or queue), where the
+viewer showed the stream (in the fixture or on the device's own display),
+and the renderer of the fixture's compositor. A
+difference there would judge the sender or the device, not the viewer.
+
+Which viewer ran is no condition. `verdict` prints it above the table, one
+line for each result and a third that says whether they are the same
+viewer, so that nobody reads a stand-in's numbers as the product viewer's:
+
+```
+baseline viewer: plugin build-6a16a09421bf-shared-settings (/nix/store/…/bin/moonlight), in the fixture
+candidate viewer: stand-in (/nix/store/…-moonlight-embedded-2.7.1/bin/moonlight), in the fixture
+The two results ran different viewers; every verdict below compares these two.
+```
+
+A result whose runs have more than one viewer gets no verdict. The
 model is the device's own name for itself; on a board whose firmware gives a
 placeholder (aka says "System Product Name"), two such machines look alike.
 When only one result has the condition `viewer_model`, `verdict` says that
