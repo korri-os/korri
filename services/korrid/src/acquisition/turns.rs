@@ -188,10 +188,12 @@ pub(super) enum ProviderError {
     /// (ADR 0032, section 2). The operation ends: the handler is not called
     /// again with an answer that only says the secret is wrong.
     Unauthorized,
-    /// A response repeated the plugin's secret, in a header, in its body or
-    /// in its final address (ADR 0034: the plugin's code never receives the
-    /// secret "in a response"). The response is not given to the handler and
-    /// the operation ends. `host` is the host that answered, never the value.
+    /// A response repeated the plugin's secret: in a header, in its body, in
+    /// its final address, or in the address of a redirect, which korrid then
+    /// did not follow (ADR 0034: the plugin's code never receives the secret
+    /// "in a response", and the secret goes to its one host only). No such
+    /// response is given to the handler and the operation ends. `host` is the
+    /// host that answered, never the value.
     CredentialRepeated { host: String },
 }
 
@@ -303,7 +305,17 @@ pub(super) async fn run<T>(
                     &context.hosts,
                 )
                 .await
-                .map_err(ProviderError::Unreachable)?;
+                .map_err(|failure| match failure {
+                    super::download::ChainFailure::Transport(failure) => {
+                        ProviderError::Unreachable(failure)
+                    }
+                    // The site put the secret in a redirect. korrid followed
+                    // it nowhere; for the plugin this is the same fault as a
+                    // response that repeats the secret.
+                    super::download::ChainFailure::SecretInRedirect { host } => {
+                        ProviderError::CredentialRepeated { host }
+                    }
+                })?;
             if response.credential_sent && response.status == 401 {
                 return Err(ProviderError::Unauthorized);
             }

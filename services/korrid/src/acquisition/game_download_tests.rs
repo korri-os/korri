@@ -38,6 +38,15 @@ async fn text(
             &hosts(),
         )
         .await
+        .map_err(transport)
+}
+
+/// These requests have no secret, so every failure is a transport one.
+fn transport(failure: super::download::ChainFailure) -> Failure {
+    match failure {
+        super::download::ChainFailure::Transport(failure) => failure,
+        other => panic!("expected a transport failure, got {other:?}"),
+    }
 }
 
 #[tokio::test]
@@ -92,7 +101,7 @@ async fn provider_requests_reach_only_declared_hosts_on_every_hop() {
             &private,
         )
         .await;
-    assert_eq!(refused.err(), Some(Failure::UnsafeUrl));
+    assert_eq!(refused.err().map(transport), Some(Failure::UnsafeUrl));
     // An empty list means no network.
     let none = engine
         .fetch_text(
@@ -106,7 +115,7 @@ async fn provider_requests_reach_only_declared_hosts_on_every_hop() {
             &[],
         )
         .await;
-    assert_eq!(none.err(), Some(Failure::UndeclaredHost));
+    assert_eq!(none.err().map(transport), Some(Failure::UndeclaredHost));
 }
 
 #[tokio::test]

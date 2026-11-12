@@ -81,6 +81,56 @@ impl GameRequest {
     }
 }
 
+/// Which requests of one chain carry the secret as a header: a request that
+/// is HTTPS to the secret's own host, and none after the first request that
+/// is not. So a chain that starts elsewhere never carries it, and a chain
+/// that leaves the host never carries it again, also when it comes back.
+pub(super) struct SecretCarry<'a> {
+    engine: &'a DownloadEngine,
+    credential: Option<&'a crate::plugin_secrets::PluginCredential>,
+}
+
+impl SecretCarry<'_> {
+    pub(super) fn header_for(&mut self, url: &Url) -> Option<header::HeaderValue> {
+        let header = self
+            .credential
+            .and_then(|credential| self.engine.secret_header(credential, url));
+        if header.is_none() {
+            self.credential = None;
+        }
+        header
+    }
+}
+
+/// Why a chain of requests gave no response.
+#[derive(Debug, Eq, PartialEq)]
+pub(super) enum ChainFailure {
+    Transport(Failure),
+    /// A redirect's address held the plugin's secret, as it is or
+    /// percent-encoded. korrid did not send a request there, to that host or
+    /// to any other. `host` is the host that sent the redirect, never the
+    /// value.
+    SecretInRedirect {
+        host: String,
+    },
+}
+
+impl From<Failure> for ChainFailure {
+    fn from(failure: Failure) -> Self {
+        Self::Transport(failure)
+    }
+}
+
+impl ChainFailure {
+    /// For a download whose failures are the closed transport vocabulary.
+    fn transport(self) -> Failure {
+        match self {
+            Self::Transport(failure) => failure,
+            Self::SecretInRedirect { .. } => Failure::Redirect,
+        }
+    }
+}
+
 /// A text response: final URL, lower-cased headers (repeats joined with ", ").
 pub(super) struct TextResponse {
     /// The answering hop carried the plugin's secret.
@@ -133,6 +183,17 @@ impl DownloadEngine {
     pub(super) fn with_secrets_over_https_only(mut self) -> Self {
         self.secrets_need_https = true;
         self
+    }
+
+    /// The secret as a header along one chain of requests (`SecretCarry`).
+    pub(super) fn secret_carry<'a>(
+        &'a self,
+        credential: Option<&'a crate::plugin_secrets::PluginCredential>,
+    ) -> SecretCarry<'a> {
+        SecretCarry {
+            engine: self,
+            credential,
+        }
     }
 
     /// The header that carries a plugin's secret on a request to `url`, when
@@ -223,6 +284,7 @@ impl DownloadEngine {
         })
         .await
         .map(|(_, response, _)| response)
+        .map_err(ChainFailure::transport)
     }
 
     /// One GET, or one form POST for a provider turn or game download, with manual
@@ -230,8 +292,9 @@ impl DownloadEngine {
     /// the owning plugin's declared hosts. After a POST, 301, 302 and 303
     /// continue as a GET with no body and 307 and 308 repeat the POST, as
     /// browsers do (RFC 9110 section 15.4). A plugin's secret is added again
-    /// on each hop, and only on a hop to the secret's own host (ADR 0034).
-    /// The last value says whether the answering hop carried it.
+    /// on each hop, and only on a hop to the secret's own host (ADR 0034,
+    /// `SecretCarry`). A redirect whose address holds the secret is not
+    /// followed. The last value says whether the answering hop carried it.
     async fn send(
         &self,
         mut url: Url,
@@ -239,13 +302,9 @@ impl DownloadEngine {
         mut form: Option<&str>,
         credential: Option<&crate::plugin_secrets::PluginCredential>,
         configure: impl Fn(reqwest::RequestBuilder) -> reqwest::RequestBuilder,
-    ) -> Result<(Url, Response, bool), Failure> {
+    ) -> Result<(Url, Response, bool), ChainFailure> {
         policy::declared(&url, hosts)?;
-        // Only a request that starts on the secret's host, over HTTPS,
-        // carries it, and it is gone for good once a redirect leaves that
-        // host.
-        let mut credential =
-            credential.filter(|credential| self.secret_header(credential, &url).is_some());
+        let mut carry = self.secret_carry(credential);
         for hops in 0..=5 {
             let client = self.client(&url).await?;
             let request = match form {
@@ -256,14 +315,10 @@ impl DownloadEngine {
                 None => client.get(url.clone()),
             };
             let mut request = configure(request.header(header::ACCEPT_ENCODING, "identity"));
-            let authorization =
-                credential.and_then(|credential| self.secret_header(credential, &url));
+            let authorization = carry.header_for(&url);
             let credential_sent = authorization.is_some();
-            match authorization {
-                Some(authorization) => {
-                    request = request.header(header::AUTHORIZATION, authorization)
-                }
-                None => credential = None,
+            if let Some(authorization) = authorization {
+                request = request.header(header::AUTHORIZATION, authorization);
             }
             let response = request.send().await.map_err(|error| {
                 if error.is_timeout() {
@@ -283,10 +338,27 @@ impl DownloadEngine {
                 .get(header::LOCATION)
                 .and_then(|v| v.to_str().ok())
                 .ok_or(Failure::Redirect)?;
-            url = policy::redirect(&url, location, hops, self.addresses)?;
+            // korrid sends the secret as a header to one host and puts it in
+            // no address, whoever asks: a site that answers with the secret
+            // in a redirect, to another host or to itself, gets no further
+            // request. The redirect is checked as the site wrote it and as
+            // the address it resolves to, before the next request is built.
+            let holds_secret =
+                |text: &str| credential.is_some_and(|credential| credential.appears_in(text));
+            let sent_by = || ChainFailure::SecretInRedirect {
+                host: url.host_str().unwrap_or("the provider").to_owned(),
+            };
+            if holds_secret(location) {
+                return Err(sent_by());
+            }
+            let next = policy::redirect(&url, location, hops, self.addresses)?;
+            if holds_secret(next.as_str()) {
+                return Err(sent_by());
+            }
+            url = next;
             policy::declared(&url, hosts)?;
         }
-        Err(Failure::Redirect)
+        Err(Failure::Redirect.into())
     }
 
     /// A provider turn request: GET or form POST, text capped at 512 KiB, decoded as
@@ -295,7 +367,7 @@ impl DownloadEngine {
         &self,
         request: TextRequest<'_>,
         hosts: &[String],
-    ) -> Result<TextResponse, Failure> {
+    ) -> Result<TextResponse, ChainFailure> {
         let work = async {
             let (url, mut response, credential_sent) = self
                 .send(
@@ -315,7 +387,7 @@ impl DownloadEngine {
                 .content_length()
                 .is_some_and(|length| length > MAX_TEXT_BYTES)
             {
-                return Err(Failure::TooLarge);
+                return Err(Failure::TooLarge.into());
             }
             let mut headers = std::collections::BTreeMap::<String, String>::new();
             for (name, value) in response.headers() {
@@ -332,11 +404,11 @@ impl DownloadEngine {
             let mut body = Vec::new();
             while let Some(chunk) = response.chunk().await.map_err(transfer)? {
                 if body.len() as u64 + chunk.len() as u64 > MAX_TEXT_BYTES {
-                    return Err(Failure::TooLarge);
+                    return Err(Failure::TooLarge.into());
                 }
                 body.extend_from_slice(&chunk);
             }
-            Ok(TextResponse {
+            Ok::<_, ChainFailure>(TextResponse {
                 credential_sent,
                 status,
                 url: url.to_string(),
@@ -347,7 +419,7 @@ impl DownloadEngine {
         match request.timeout {
             Some(limit) => tokio::time::timeout(limit, work)
                 .await
-                .map_err(|_| Failure::Stalled)?,
+                .map_err(|_| ChainFailure::Transport(Failure::Stalled))?,
             None => work.await,
         }
     }
@@ -427,7 +499,8 @@ impl DownloadEngine {
                 None,
                 |b| b,
             )
-            .await?;
+            .await
+            .map_err(ChainFailure::transport)?;
         if !response.status().is_success() || response.status() == StatusCode::PARTIAL_CONTENT {
             return Err(Failure::Network);
         }

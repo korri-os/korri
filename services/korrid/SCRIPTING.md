@@ -653,7 +653,11 @@ JSON string escapes are decoded (`\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`,
 `\t`, `\uXXXX`; so also in an object key, at any depth, and in a body that is
 not JSON as a whole), and after percent-encoding is decoded once, also inside
 a JSON string. It does not find any other encoding, such as base64, hex, or
-percent-encoding applied twice.
+percent-encoding applied twice. korrid also checks every redirect of such a
+turn before it sends the next request: if the `Location` value or the address
+it resolves to holds the secret in one of those forms, korrid does not follow
+the redirect, to another host or to the same host, and the operation ends in
+the same way.
 
 Today korrid supplies the secret to the turns of `game-assets.candidates`
 (ADR 0032). The turns of an acquisition provider carry no secret: no provider

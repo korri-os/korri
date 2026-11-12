@@ -2,7 +2,7 @@
 use super::{
     claims::DownloadResolution,
     download::DownloadEngine,
-    http_fixture::{Echo, HttpFixture, Route},
+    http_fixture::{Echo, HttpFixture, Place, Route},
     turns::{self, ProviderContext, ProviderError},
     Failure,
 };
@@ -1028,4 +1028,187 @@ async fn a_large_json_body_with_escapes_passes_the_guard_quickly() {
         .map(|character| format!("\\u{:04x}", character as u32))
         .collect();
     assert!(credential.appears_in(&format!("{body}\"{escaped}\"")));
+}
+
+/// ADR 0034: the secret goes to its one host, as a header. korrid puts it in
+/// no address, so a redirect whose address holds it is not followed: not to
+/// another declared host, and not to the same host.
+#[tokio::test]
+async fn a_redirect_that_holds_the_secret_is_not_followed() {
+    let server = HttpFixture::start([
+        ("/answer", Route::ok("text/plain", "done")),
+        ("/clean", Route::ok("text/plain", "clean")),
+    ]);
+    let other = |path: &str| server.url("other.test", path);
+    let redirecting = |path: &str, to: String, place: Place| {
+        server.route(
+            path,
+            Route::ok("text/plain", "").echoing(Echo::Redirect { to, place }),
+        );
+        server.url(HOST, path)
+    };
+    // A second hop on the other host that would drop the value again, so the
+    // final address would be clean: the leak would already have happened.
+    server.route(&format!("/hop?key={SECRET}"), Route::redirect("/clean"));
+    // A normal redirect to the other declared host still works, and the
+    // header does not go with it.
+    server.route("/away", Route::redirect(&other("/answer")));
+    let (context, _private) = context_with_secret(&handing_back(&[server.url(HOST, "/away")]));
+    let claims = turns::search(&engine(), &context, "q").await.unwrap();
+    assert!(claims[0].title.contains("done"));
+    let hops = server.received();
+    assert_eq!(
+        hops.iter()
+            .map(|request| (host_of(request), carried_secret(request)))
+            .collect::<Vec<_>>(),
+        vec![(HOST.to_owned(), true), ("other.test".to_owned(), false)]
+    );
+
+    let encoded: String = SECRET.bytes().map(|byte| format!("%{byte:02X}")).collect();
+    for (name, path, to, place) in [
+        (
+            "to another host, in the query",
+            "/query",
+            other("/image"),
+            Place::Query,
+        ),
+        (
+            "to another host, in the path",
+            "/path",
+            other("/image"),
+            Place::Path,
+        ),
+        (
+            "to another host, percent-encoded",
+            "/encoded",
+            other("/image"),
+            Place::QueryPercentEncoded,
+        ),
+        (
+            "two hops, the second of which removes it",
+            "/two-hops",
+            other("/hop"),
+            Place::Query,
+        ),
+        (
+            "to the same host, in the query",
+            "/same",
+            "/answer".to_owned(),
+            Place::Query,
+        ),
+        (
+            "to the same host, percent-encoded",
+            "/same-encoded",
+            "/answer".to_owned(),
+            Place::QueryPercentEncoded,
+        ),
+        (
+            "written with a tab that the address loses",
+            "/tab",
+            other("/image"),
+            Place::QuerySplitByTab,
+        ),
+    ] {
+        let url = redirecting(path, to, place);
+        let before = server.received().len();
+        let (context, _private) = context_with_secret(&handing_back(&[url]));
+        let error = turns::search(&engine(), &context, "q").await.unwrap_err();
+        // The diagnostic names the host that sent the redirect, not the value.
+        assert_eq!(
+            error,
+            ProviderError::CredentialRepeated { host: HOST.into() },
+            "{name}"
+        );
+        let failure = error.rpc();
+        for text in [format!("{error:?}"), failure.message] {
+            assert!(
+                !text.contains(SECRET) && !text.contains(&encoded),
+                "{name}: {text}"
+            );
+        }
+        // One request in all: the one that got the redirect. No request went
+        // to the address the redirect named, on either host.
+        let sent = &server.received()[before..];
+        assert_eq!(
+            sent.iter()
+                .map(|request| (host_of(request), request.path.clone()))
+                .collect::<Vec<_>>(),
+            vec![(HOST.to_owned(), path.to_owned())],
+            "{name}"
+        );
+        assert!(carried_secret(&sent[0]), "{name}");
+    }
+    // An address turns a backslash in its path into a slash, so here the
+    // address the redirect resolves to no longer holds the secret as it is.
+    // The `Location` value as the site wrote it does.
+    let backslashed = r"sgdb\back\slash";
+    let url = redirecting("/backslash", other("/image"), Place::Path);
+    let before = server.received().len();
+    let (context, _private) = context_with_the_secret(backslashed, &handing_back(&[url]));
+    assert_eq!(
+        turns::search(&engine(), &context, "q").await.unwrap_err(),
+        ProviderError::CredentialRepeated { host: HOST.into() }
+    );
+    assert_eq!(
+        server.received()[before..]
+            .iter()
+            .map(|request| (host_of(request), request.path.clone()))
+            .collect::<Vec<_>>(),
+        vec![(HOST.to_owned(), "/backslash".to_owned())]
+    );
+    // No request the server ever saw carried the value in its address.
+    assert!(server
+        .received()
+        .iter()
+        .all(|request| !request.path.contains(SECRET) && !request.path.contains(&encoded)));
+}
+
+/// The rule for the header itself, on the engine as shipped korrid has it:
+/// HTTPS to the secret's own host, again on a redirect to that host, and
+/// never again once the chain has left it.
+#[test]
+fn the_header_follows_a_chain_only_while_it_stays_https_on_its_own_host() {
+    let private = tempfile::tempdir().unwrap();
+    let secrets = crate::plugin_secrets::PluginSecrets::new(private.path());
+    secrets.set("@test:shop", SECRET).unwrap();
+    let credential = secrets.credential("@test:shop", HOST).unwrap().unwrap();
+    let shipped = DownloadEngine::default();
+    let carried = |chain: &[&str]| {
+        let mut carry = shipped.secret_carry(Some(&credential));
+        chain
+            .iter()
+            .map(|address| {
+                let header = carry.header_for(&url::Url::parse(address).unwrap());
+                header.is_some_and(|header| header.to_str().unwrap() == format!("Bearer {SECRET}"))
+            })
+            .collect::<Vec<_>>()
+    };
+    let own = |path: &str| format!("https://{HOST}{path}");
+    // Added again on each redirect that stays on the host.
+    assert_eq!(
+        carried(&[&own("/a"), &own("/b"), &own("/c")]),
+        [true, true, true]
+    );
+    // Gone once the chain leaves, also when it comes back.
+    assert_eq!(
+        carried(&[&own("/a"), "https://other.test/b", &own("/c"), &own("/d")]),
+        [true, false, false, false]
+    );
+    // A chain that starts elsewhere never gains it.
+    assert_eq!(
+        carried(&["https://other.test/a", &own("/b")]),
+        [false, false]
+    );
+    // Never over plain HTTP, and not after it.
+    let plain = format!("http://{HOST}/a");
+    assert_eq!(carried(&[&plain, &own("/b")]), [false, false]);
+    assert_eq!(
+        carried(&[&own("/a"), &plain, &own("/c")]),
+        [true, false, false]
+    );
+    // No secret, no header.
+    let mut none = shipped.secret_carry(None);
+    assert!(none
+        .header_for(&url::Url::parse(&own("/a")).unwrap())
+        .is_none());
 }

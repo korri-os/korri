@@ -37,6 +37,22 @@ pub(super) enum Echo {
     BodyUnicodeEscaped,
     /// As an object key of a JSON body.
     Key,
+    /// The secret alone, without `Bearer `, in the address of a redirect
+    /// to `to`.
+    Redirect { to: String, place: Place },
+}
+
+/// Where in a redirect's address a route puts the secret.
+#[derive(Clone, Copy)]
+pub(super) enum Place {
+    Query,
+    Path,
+    /// In the query, every byte percent-encoded.
+    QueryPercentEncoded,
+    /// In the query, with a tab in the middle of it. A URL parser drops the
+    /// tab, so the address the redirect resolves to holds the secret and the
+    /// `Location` value as written does not.
+    QuerySplitByTab,
 }
 
 fn percent_encoded(text: &str) -> String {
@@ -205,6 +221,25 @@ impl HttpFixture {
                             })
                             .to_string()
                             .into_bytes()
+                        }
+                        Some(Echo::Redirect { to, place }) => {
+                            let token = sent.strip_prefix("Bearer ").unwrap_or(&sent);
+                            route.status = 302;
+                            route.body = Vec::new();
+                            route.headers.push((
+                                "Location".into(),
+                                match place {
+                                    Place::Query => format!("{to}?key={token}"),
+                                    Place::Path => format!("{to}/{token}"),
+                                    Place::QueryPercentEncoded => {
+                                        format!("{to}?key={}", percent_encoded(token))
+                                    }
+                                    Place::QuerySplitByTab => {
+                                        let (start, end) = token.split_at(token.len() / 2);
+                                        format!("{to}?key={start}\t{end}")
+                                    }
+                                },
+                            ));
                         }
                         None => {}
                     }
