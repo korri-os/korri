@@ -211,7 +211,7 @@ let
         'matches: []' 'options:' '  auto_manage: true' 'source_devices: []' > "$deferred_profile"
       ${lib.concatMapStringsSep "\n" (profile: ''
         UPSTREAM="${inputplumberRoot}/devices/${profile.file}" yq eval -i \
-          '.source_devices += (load(strenv(UPSTREAM)).source_devices | map(.ignore = true))' "$deferred_profile"
+          '.source_devices += load(strenv(UPSTREAM)).source_devices | .source_devices[].ignore = true' "$deferred_profile"
       '') deferredDeviceProfiles}
 
       test "$(yq eval '.version' "$default_profile")" = 1 \

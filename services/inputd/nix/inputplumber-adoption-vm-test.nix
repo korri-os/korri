@@ -18,14 +18,18 @@ let
   # loop, without adding korrid/streaming/session setup to this adoption proof.
   reconciler = inputdPackage.overrideAttrs {
     CARGO_BUILD_JOBS = "2";
-    buildPhaseCargoCommand = ''
+    buildPhase = ''
+      runHook preBuild
       cargoBuildLog=$(mktemp cargoBuildLogXXXX.json)
       cargo build --release --locked --example inputplumber-adoption-proof \
         --message-format json-render-diagnostics >"$cargoBuildLog"
+      runHook postBuild
     '';
-    installPhaseCommand = ''
+    installPhase = ''
+      runHook preInstall
       mkdir -p "$out/bin"
       cp target/release/examples/inputplumber-adoption-proof "$out/bin/"
+      runHook postInstall
     '';
     postInstall = "";
   };
