@@ -969,7 +969,8 @@ fn place_keys_are_stable_per_layer() {
 
 const FRAMESKIP: &str = "launch:row:setting:video.frameskip";
 const RENDER_SCALE: &str = "launch:row:setting:video.render-scale";
-const SPEED: &str = "launch:row:setting:plugin.speed";
+const SPEED: &str = "launch:row:runner:retroarch/mgba:setting:plugin.speed";
+const GPSP_SPEED: &str = "launch:row:runner:retroarch/gpsp:setting:plugin.speed";
 const CODEC: &str = "launch:stream:@korri:moonlight/moonlight#video.codec";
 
 fn limit(tag: &str, value: Value) -> Value {
@@ -1408,6 +1409,135 @@ async fn a_write_korrid_refuses_as_stale_asks_for_a_reload_and_keeps_the_change(
     assert!(launch.act(launch_id::CANCEL));
     assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
     assert_eq!(calls(&script, SET).len(), 2);
+}
+
+/// mGBA and gpSP each have a setting of their own with the same key.
+fn two_runners_with_speed(selected: &'static str) -> Fixture {
+    let mut fixture = shared_and_own();
+    fixture.runners[1].schema = fixture.runners[0].schema.clone();
+    fixture.selected = Some(selected);
+    fixture
+}
+
+#[tokio::test]
+async fn a_runner_only_change_stays_with_its_runner_when_another_runner_is_chosen() {
+    let (korrid, script) = scripted();
+    let mgba = ok_snapshot(two_runners_with_speed("retroarch/mgba").snapshot());
+    let gpsp = ok_snapshot(two_runners_with_speed("retroarch/gpsp").snapshot());
+    push(&script, SNAPSHOT, mgba.clone());
+    push(&script, SET, written_ok());
+    let launch = controller(korrid);
+    launch.open("wario".into(), "Wario Land 4".into(), None, None);
+    settle().await;
+    assert_eq!(
+        row(&shown(&launch), "Speed").map(|item| item.id),
+        Some(SPEED.into())
+    );
+    assert!(launch.change(SPEED, "3"));
+    assert_eq!(
+        changes(&shown(&launch)),
+        [(SPEED.to_owned(), "Default".to_owned())]
+    );
+
+    // gpSP is chosen. Its row of the same key is its own row: mGBA's change
+    // is not shown on it and is not counted.
+    push(&script, SNAPSHOT, gpsp);
+    assert!(launch.act(launch_id::RELOAD));
+    settle().await;
+    let now = shown(&launch);
+    assert!(titles(&now).contains(&"gpSP only".to_owned()));
+    let speed = row(&now, "Speed").expect("gpSP's own row");
+    assert_eq!(speed.id, GPSP_SPEED);
+    assert_eq!(speed.value.as_deref(), Some("Default"));
+    assert!(now.changes.is_empty());
+    assert!(now.keep.is_none());
+    assert!(launch.change(RENDER_SCALE, "2"));
+    assert!(launch.change(GPSP_SPEED, "7"));
+    let now = shown(&launch);
+    assert_eq!(
+        now.keep.as_ref().map(|keep| keep.label.as_str()),
+        Some("Keep 2 changes")
+    );
+    assert_eq!(
+        changes(&now),
+        [
+            (RENDER_SCALE.to_owned(), "4x".to_owned()),
+            (GPSP_SPEED.to_owned(), "Default".to_owned()),
+        ]
+    );
+    // A launch carries what the list shows, and mGBA's change is not in it.
+    assert!(launch.change("launch:keep", "launch"));
+    let (ticket, values) = launch.submit_one_launch("wario");
+    assert_eq!(
+        serde_json::to_value(values.expect("one-launch values")).unwrap(),
+        json!({
+            "settings": { "video": { "render-scale": 2 } },
+            "plugin": { "retroarch/gpsp": { "speed": 7 } },
+            "modifiers": {},
+        })
+    );
+    launch.complete_one_launch(ticket, true);
+    assert!(shown(&launch).changes.is_empty());
+    // Closing writes nothing: mGBA's change waits for mGBA.
+    assert_eq!(launch.close().await, Closing::Kept);
+    assert!(calls(&script, SET).is_empty());
+
+    // mGBA is chosen again: its change shows again, and is kept for mGBA.
+    push(&script, SNAPSHOT, mgba);
+    launch.open("wario".into(), "Wario Land 4".into(), None, None);
+    settle().await;
+    let now = shown(&launch);
+    assert_eq!(value(&row(&now, "Speed")), Some("3".into()));
+    assert_eq!(changes(&now), [(SPEED.to_owned(), "Default".to_owned())]);
+    assert_eq!(
+        now.keep.as_ref().map(|keep| keep.label.as_str()),
+        Some("Keep 1 change")
+    );
+    assert_eq!(launch.close().await, Closing::Kept);
+    let writes = calls(&script, SET);
+    assert_eq!(writes.len(), 1);
+    assert_eq!(
+        writes[0]["place"],
+        json!({
+            "layer": { "_tag": "Game", "id": "wario" },
+            "scope": { "_tag": "Runner", "id": "retroarch/mgba" },
+        })
+    );
+    assert_eq!(writes[0]["path"], setting("plugin.speed"));
+    assert_eq!(writes[0]["value"], json!(3));
+}
+
+/// A change waits only for a runner the game still offers.
+#[tokio::test]
+async fn a_runner_only_change_goes_when_the_game_no_longer_offers_its_runner() {
+    let (korrid, script) = scripted();
+    push(
+        &script,
+        SNAPSHOT,
+        ok_snapshot(two_runners_with_speed("retroarch/mgba").snapshot()),
+    );
+    let launch = controller(korrid);
+    launch.open("wario".into(), "Wario Land 4".into(), None, None);
+    settle().await;
+    assert!(launch.change(SPEED, "3"));
+    let mut gone = two_runners_with_speed("retroarch/gpsp");
+    gone.runners.remove(0);
+    push(&script, SNAPSHOT, ok_snapshot(gone.snapshot()));
+    assert!(launch.act(launch_id::RELOAD));
+    settle().await;
+    assert!(shown(&launch).changes.is_empty());
+    push(
+        &script,
+        SNAPSHOT,
+        ok_snapshot(two_runners_with_speed("retroarch/mgba").snapshot()),
+    );
+    assert!(launch.act(launch_id::RELOAD));
+    settle().await;
+    assert!(shown(&launch).changes.is_empty());
+    assert_eq!(
+        value(&row(&shown(&launch), "Speed")),
+        Some("Default".into())
+    );
 }
 
 /// The game's start closes the editor through `close`, and starts only on

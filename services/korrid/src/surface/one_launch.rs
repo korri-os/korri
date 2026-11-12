@@ -49,10 +49,24 @@ pub(crate) struct Change {
     pub side: Side,
 }
 
+impl Change {
+    /// The runner of a runner-only setting of the device that runs the game.
+    fn only_for(&self) -> Option<&str> {
+        match &self.side {
+            Side::Holder { runner } => runner.as_deref(),
+            Side::Viewer { .. } => None,
+        }
+    }
+}
+
 #[derive(Clone, Default)]
 struct Draft {
     version: u64,
     changes: Vec<Change>,
+    /// Runner-only changes for a runner that is not the chosen one. They
+    /// wait out of sight: no list shows them, no close writes them and no
+    /// launch carries them, until their runner is chosen again.
+    aside: Vec<Change>,
     /// The keep place the person chose. None: the list's default, this game.
     keep: Option<String>,
 }
@@ -154,13 +168,15 @@ impl OneLaunch {
         draft
     }
     fn settle(&mut self, game: &str) {
-        if self
-            .pending
-            .get(game)
-            .is_some_and(|draft| draft.changes.is_empty())
-        {
+        let Some(draft) = self.pending.get_mut(game) else {
+            return;
+        };
+        if draft.changes.is_empty() {
             // The keep choice belongs to changes; with none it starts again.
-            self.pending.remove(game);
+            draft.keep = None;
+            if draft.aside.is_empty() {
+                self.pending.remove(game);
+            }
         }
     }
     pub fn changes(&self, game: &str) -> &[Change] {
@@ -174,9 +190,44 @@ impl OneLaunch {
             .and_then(|draft| draft.keep.as_deref())
     }
     pub fn set_keep(&mut self, game: &str, place: &str) {
-        if self.pending.contains_key(game) {
+        if !self.changes(game).is_empty() {
             self.touch(game).keep = Some(place.into());
         }
+    }
+    /// The runner the game has chosen now, and the runners it offers. A
+    /// runner-only change belongs to one runner: while another runner is
+    /// chosen it is set aside, and it is a change again once its own runner
+    /// is chosen. A change for a runner the game no longer offers is dropped.
+    pub fn choose_runner(&mut self, game: &str, chosen: Option<&str>, offered: &[&str]) {
+        let version = self.next();
+        let Some(draft) = self.pending.get_mut(game) else {
+            return;
+        };
+        let (stay, leave): (Vec<Change>, Vec<Change>) = std::mem::take(&mut draft.changes)
+            .into_iter()
+            .partition(|change| {
+                change
+                    .only_for()
+                    .is_none_or(|runner| Some(runner) == chosen)
+            });
+        let (back, wait): (Vec<Change>, Vec<Change>) = std::mem::take(&mut draft.aside)
+            .into_iter()
+            .partition(|change| change.only_for() == chosen);
+        if !leave.is_empty() || !back.is_empty() {
+            // A launch that took the earlier changes must not end these.
+            draft.version = version;
+        }
+        draft.changes = stay.into_iter().chain(back).collect();
+        draft.aside = wait
+            .into_iter()
+            .chain(leave)
+            .filter(|change| {
+                change
+                    .only_for()
+                    .is_some_and(|runner| offered.contains(&runner))
+            })
+            .collect();
+        self.settle(game);
     }
     /// One row's change. The row's earlier change, if any, is replaced.
     pub fn set(&mut self, game: &str, change: Change) {
@@ -344,6 +395,68 @@ mod tests {
         assert!(drafts.changes("game").is_empty());
     }
 
+    fn speed(runner: &str, value: u64) -> Change {
+        Change {
+            row: format!("launch:row:runner:{runner}:setting:plugin.speed"),
+            path: json!({"_tag":"Setting","payload":{"key":"plugin.speed"}}),
+            value: json!(value),
+            side: Side::Holder {
+                runner: Some(runner.into()),
+            },
+        }
+    }
+
+    #[test]
+    fn a_runner_only_change_is_set_aside_until_its_runner_is_chosen_again() {
+        let mut drafts = OneLaunch::default();
+        let offered = ["mgba", "gpsp"];
+        drafts.set("game", speed("mgba", 3));
+        drafts.set("game", scale(4));
+        for_launch(&mut drafts);
+        drafts.choose_runner("game", Some("mgba"), &offered);
+        assert_eq!(drafts.changes("game"), [speed("mgba", 3), scale(4)]);
+
+        // Another runner: the change is no change of the list or of a launch.
+        drafts.choose_runner("game", Some("gpsp"), &offered);
+        assert_eq!(drafts.changes("game"), [scale(4)]);
+        let (ticket, launch) = drafts.submit("game");
+        assert!(launch.unwrap().plugin.is_empty());
+        drafts.complete(ticket, true);
+        assert!(drafts.changes("game").is_empty());
+        // Nothing shows now, so there is no keep choice to change or to hold.
+        drafts.set_keep("game", KEEP_LAUNCH);
+        assert_eq!(drafts.keep("game"), None);
+
+        // No runner chosen: it still waits. Its own runner: it is back.
+        drafts.choose_runner("game", None, &offered);
+        assert!(drafts.changes("game").is_empty());
+        drafts.set("game", speed("gpsp", 7));
+        drafts.choose_runner("game", Some("mgba"), &offered);
+        assert_eq!(drafts.changes("game"), [speed("mgba", 3)]);
+        drafts.choose_runner("game", Some("gpsp"), &offered);
+        assert_eq!(drafts.changes("game"), [speed("gpsp", 7)]);
+
+        // A runner the game no longer offers: its change is dropped.
+        drafts.choose_runner("game", Some("gpsp"), &["gpsp"]);
+        drafts.kept("game", &speed("gpsp", 7));
+        drafts.choose_runner("game", Some("mgba"), &offered);
+        assert!(drafts.changes("game").is_empty());
+    }
+
+    #[test]
+    fn a_late_launch_success_does_not_end_a_change_that_came_back_with_its_runner() {
+        let mut drafts = OneLaunch::default();
+        let offered = ["mgba", "gpsp"];
+        drafts.set("game", speed("mgba", 3));
+        drafts.choose_runner("game", Some("gpsp"), &offered);
+        drafts.set("game", scale(4));
+        for_launch(&mut drafts);
+        let (ticket, _) = drafts.submit("game");
+        drafts.choose_runner("game", Some("mgba"), &offered);
+        drafts.complete(ticket, true);
+        assert_eq!(drafts.changes("game"), [scale(4), speed("mgba", 3)]);
+    }
+
     #[test]
     fn a_launch_does_not_carry_a_stream_viewers_change_and_does_not_end_it() {
         let mut drafts = OneLaunch::default();
@@ -368,7 +481,7 @@ mod tests {
         let launch = launch_override(&[
             scale(3),
             Change {
-                row: "launch:row:setting:plugin.speed".into(),
+                row: "launch:row:runner:@test:runner/main:setting:plugin.speed".into(),
                 path: json!({"_tag":"Setting","payload":{"key":"plugin.speed"}}),
                 value: json!(2),
                 side: Side::Holder {

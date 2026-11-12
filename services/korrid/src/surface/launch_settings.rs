@@ -24,7 +24,7 @@ use super::{
     korrid::{ask, Korrid},
     launch_model::{
         active_profile_of, device_launch_from, launch_id,
-        list::{launch_list, LaunchList, ListInput, KEEP_LAUNCH},
+        list::{launch_list, runners_of, LaunchList, ListInput, KEEP_LAUNCH},
         profile_from_pick, revision_of, DeviceLaunch, LaunchWrite, PendingSetting,
     },
     one_launch::{game_key, Change, OneLaunch, Side},
@@ -258,12 +258,18 @@ impl Inner {
             self.list = None;
             return;
         };
-        let mut list = self.list_now(&game);
-        // A change whose row is gone, or whose value its device now has,
-        // could not be seen or set back. Only what a device said now counts.
+        let key = game.key();
+        // Only what a device said now counts.
         let holder_read = self.snapshot.is_some() && !self.unreachable;
         let viewer_read = self.device_snapshot.is_some();
-        let key = game.key();
+        if let Some(snapshot) = self.snapshot.as_ref().filter(|_| holder_read) {
+            // A runner-only change shows only while its runner is chosen.
+            let (chosen, offered) = runners_of(snapshot);
+            self.drafts.choose_runner(&key, chosen, &offered);
+        }
+        let mut list = self.list_now(&game);
+        // A change whose row is gone, or whose value its device now has,
+        // could not be seen or set back.
         let before = self.drafts.changes(&key).len();
         self.drafts.retain(&key, |change| {
             let read = match change.side {

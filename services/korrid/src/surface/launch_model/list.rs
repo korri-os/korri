@@ -376,7 +376,12 @@ fn plugin_groups(
             json!({ "_tag": "ServiceSetting", "payload": { "id": plugin, "key": key } })
         }
     };
-    let row_path = |key: &str| match kind {
+    // A runner-only row is its runner's own row: another runner's setting of
+    // the same key is another row.
+    let row_path = |key: &str, runner_only: bool| match kind {
+        OwnerKind::Runner if runner_only => {
+            format!("runner:{}:setting:{key}", plugin.unwrap_or(""))
+        }
         OwnerKind::Runner => format!("setting:{key}"),
         OwnerKind::Modifier => format!("modifier:{}:setting:{key}", plugin.unwrap_or("")),
         OwnerKind::Service => format!("service:{}:setting:{key}", plugin.unwrap_or("")),
@@ -429,7 +434,7 @@ fn plugin_groups(
             };
             let runner_only = kind == OwnerKind::Runner && section.key == "plugin";
             let item = builder.setting(RowSpec {
-                id: launch_id::row(&row_path(&leaf.path)),
+                id: launch_id::row(&row_path(&leaf.path, runner_only)),
                 // The value carries the unit: "Volume", "80%".
                 label: leaf
                     .label
@@ -789,6 +794,17 @@ fn profile_group(context: &Context) -> SurfaceSettingGroup {
             .extend(profile_rows(context, Some(selected)).items);
     }
     group
+}
+
+/// The runner the game has chosen now, and every runner it offers, by id.
+pub(crate) fn runners_of(snapshot: &Value) -> (Option<&str>, Vec<&str>) {
+    (
+        selected_runner(snapshot).and_then(|runner| str_of(runner, "id")),
+        array(snapshot, "runners")
+            .iter()
+            .filter_map(|runner| str_of(runner, "id"))
+            .collect(),
+    )
 }
 
 pub(crate) fn launch_list(input: &ListInput) -> LaunchList {

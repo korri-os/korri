@@ -44,7 +44,8 @@ producer the korrid port came from.
 | `launch:row:cpu.min`, `cpu.max`, `gpu.min`, `gpu.max` | `launch-settings set KEY=PERCENT [layer] [scope]`; `play GAME --set KEY=PERCENT` | The list shows the value in force; the CLI names the place |
 | `launch:row:cpu.governor` | `launch-settings set cpu.governor=VALUE`; `play GAME --set cpu.governor=VALUE` | One device value: kept at Device/Any, or named for one launch |
 | `launch:row:runner` | `play GAME --runner ID`; `launch-settings runner ID --game GAME` | The row opens the runner chooser |
-| `launch:row:setting:KEY` | `launch-settings set KEY=VALUE [layer] [scope]`; `play GAME --set KEY=VALUE` | A shared key for any runner; a `plugin.*` key for its runner |
+| `launch:row:setting:KEY` | `launch-settings set KEY=VALUE [layer] [scope]`; `play GAME --set KEY=VALUE` | A shared key, for any runner |
+| `launch:row:runner:RUNNER:setting:KEY` | `launch-settings set KEY=VALUE [layer] [scope]`; `play GAME --set KEY=VALUE` | A `plugin.*` key, for its runner `RUNNER`. The row and its waiting change belong to that runner only |
 | `launch:row:modifier:ID:enabled` | `launch-settings set ID.enabled=true\|false [layer] [scope]`; `play GAME --set ID.enabled=true\|false` | Same modifier path |
 | `launch:row:modifier:ID:setting:KEY` | `launch-settings set ID.KEY=VALUE [layer] [scope]`; `play GAME --set ID.KEY=VALUE` | Same modifier schema |
 | `launch:row:service:ID:setting:KEY` | `launch-settings set ID.KEY=VALUE [layer] [scope]`; `play GAME --set ID.KEY=VALUE` | Same service schema |

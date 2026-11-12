@@ -94,6 +94,12 @@ change without a new owner decision.
   named for one launch. The game starts only when every change that waits
   was written. When a write fails, the editor stays open in Error or
   Conflict with its changes marked, and nothing starts.
+- **Runner-only rows.** A runner-only row belongs to one runner: its row id
+  names that runner, and its change waits with that runner. While another
+  runner is chosen, the change is set aside. The list does not show or count
+  it, a close does not write it and a launch does not carry it. It is a
+  change again when its runner is chosen again. A change for a runner the
+  game no longer offers is dropped.
 - **One-launch governor.** The limits helper sets the governor for the whole
   device. korrid applies the launch's governor when the game unit starts and
   puts the device's own back when it ends. A korrid restart also applies the

@@ -671,6 +671,13 @@ pub struct DeviceLaunch {
 
 // --- context ----------------------------------------------------------------
 
+/// The runner the game has chosen, of the runners a person can choose.
+fn selected_runner(snapshot: &Value) -> Option<&Value> {
+    array(snapshot, "runners").iter().find(|runner| {
+        field(runner, "selected") == &json!(true) && field(runner, "choosable") == &json!(true)
+    })
+}
+
 struct Context<'a> {
     snapshot: &'a Value,
     device_page: bool,
@@ -687,9 +694,7 @@ struct Context<'a> {
 
 impl<'a> Context<'a> {
     fn new(snapshot: &'a Value, game_id: Option<&str>) -> Self {
-        let selected = array(snapshot, "runners").iter().find(|runner| {
-            field(runner, "selected") == &json!(true) && field(runner, "choosable") == &json!(true)
-        });
+        let selected = selected_runner(snapshot);
         let values_of = |values: &Value| -> HashMap<String, Value> {
             record(values).map_or(HashMap::new(), |map| {
                 map.values()
