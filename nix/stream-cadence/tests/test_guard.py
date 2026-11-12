@@ -142,6 +142,42 @@ class EachStartHasItsOwnLog(Device):
         finally:
             self.assertTrue(session.close()["pass"])
 
+    def test_a_later_line_that_says_no_ends_the_run(self):
+        session = hardware_session(self)
+        try:
+            # Hardware decode starts, then the viewer falls back while it runs.
+            session.handle(
+                {"operation": "start", "command": ["sh", "-c", f'echo "{YES}"; sleep 1; echo "{NO}"; exec sleep 60']}
+            )
+            running = session.processes["viewer"]
+            self.assertIsNotNone(running.wait(timeout=6))
+            with self.assertRaisesRegex(RuntimeError, "hardware decode did not start"):
+                session.handle({"operation": "sample"})
+        finally:
+            self.assertTrue(session.close()["pass"])
+
+    def test_a_no_far_down_a_long_log_is_seen(self):
+        self.assertIs(viewer.decode_started(YES + "\n"), True)
+        self.assertIs(viewer.decode_started(YES + "\n" + "x" * 100_000 + "\n" + NO + "\n"), False)
+        self.assertIs(viewer.decode_started(NO + "\n" + YES + "\n"), False)
+        # What was seen in an earlier part of the log is kept.
+        self.assertIs(viewer.decode_started("more\n", known=True), True)
+        self.assertIs(viewer.decode_started(YES + "\n", known=False), False)
+        session = hardware_session(self)
+        try:
+            session.handle(
+                {
+                    "operation": "start",
+                    "command": [
+                        "sh", "-c",
+                        f'echo "{YES}"; head -c 100000 /dev/zero | tr "\\0" x; echo; echo "{NO}"; exec sleep 60',
+                    ],
+                }
+            )
+            self.assertIsNotNone(session.processes["viewer"].wait(timeout=6))
+        finally:
+            self.assertTrue(session.close()["pass"])
+
     def test_a_measured_start_with_no_decode_line_has_no_decode_state(self):
         session = hardware_session(self)
         try:

@@ -766,7 +766,7 @@ class Session:
             self.check()
             if not self.alive("source") or self.cursor is None:
                 raise RuntimeError("motion source stopped during streaming")
-            journal = read_plain(self.home() / "sunshine.log")[self.cursor :].decode(
+            journal = read_plain(self.home() / "sunshine.log", offset=self.cursor).decode(
                 errors="replace"
             )
             return {"threads": scheduling(self.facts), "journal": journal}

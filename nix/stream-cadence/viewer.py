@@ -78,10 +78,19 @@ def busy(used: "deque[tuple[float, int]]", ticks_per_second: int) -> float | Non
     return (used[-1][1] - used[0][1]) / ticks_per_second / span
 
 
-def decode_started(log: str) -> bool | None:
-    """Whether the installed viewer's log says that hardware decode started; None: not yet."""
-    found = DECODE_STARTED.search(log)
-    return None if found is None else found.group(1) == "YES"
+def decode_started(log: str, known: bool | None = None) -> bool | None:
+    """Whether the installed viewer's log says that hardware decode started; None: not yet.
+
+    Any line that says no decides, wherever it stands: a viewer that falls
+    back while it runs is no hardware-decode viewer. `known` is what an
+    earlier part of the same log said.
+    """
+    for answer in DECODE_STARTED.findall(log):
+        if answer == "NO":
+            known = False
+        elif known is None:
+            known = True
+    return known
 
 
 def ticks(pid: int) -> int | None:
@@ -244,6 +253,11 @@ class Session:
         self.facts["heat_guarded"] = any(self.limits.values())
         # Why the guard ended the viewer, once it did.
         self.ended: str | None = None
+        # What the log of the current viewer start said about decode, and how
+        # much of that log is read.
+        self.decode: bool | None = None
+        self.decode_read = 0
+        self.decode_lock = threading.Lock()
         self.root: Path | None = None
         self.fixture = False
         self.last_wake = 0.0
@@ -375,7 +389,17 @@ class Session:
         root = self.root
         if root is None or not self.hardware_path():
             return None
-        return decode_started(plain_text(root / "viewer.log", 1 << 16))
+        # The whole log is read, each part once. The guard's thread and a sample
+        # both ask, so one of them reads at a time.
+        with self.decode_lock:
+            try:
+                fresh = read_plain(root / "viewer.log", offset=self.decode_read)
+            except FileNotFoundError:
+                return self.decode
+            whole = fresh[: fresh.rfind(b"\n") + 1]
+            self.decode_read += len(whole)
+            self.decode = decode_started(whole.decode(errors="replace"), self.decode)
+            return self.decode
 
     def end(self, reason: str, process: subprocess.Popen | None) -> None:
         """The guard's one action: stop the viewer at once and keep the reason."""
@@ -602,6 +626,8 @@ class Session:
                 raise RuntimeError(self.ended)
             # Each start writes its own log: what the guard and the validity gate
             # read about decode belongs to this start alone.
+            with self.decode_lock:
+                self.decode, self.decode_read = None, 0
             current = self.root / "viewer.log"
             if os.path.lexists(current):
                 with append_log(self.root / "viewer.earlier.log") as earlier:

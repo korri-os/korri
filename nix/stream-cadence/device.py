@@ -70,12 +70,13 @@ def append_log(path: Path) -> TextIO:
     )
 
 
-def read_plain(path: Path, limit: int = -1) -> bytes:
+def read_plain(path: Path, limit: int = -1, offset: int = 0) -> bytes:
     """Read a plain file as it is. A link, a directory or a device in its place is an error."""
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
     with os.fdopen(fd, "rb") as stream:
         if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
             raise OSError(f"{path} is not a plain file")
+        stream.seek(offset)
         return stream.read(limit)
 
 
