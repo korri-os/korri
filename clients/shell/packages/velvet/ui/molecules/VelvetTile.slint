@@ -196,7 +196,9 @@ export component VelvetTile inherits Rectangle {
         width: parent.width;
         height: parent.height;
         target: root.tile.shown && !root.inert ? root.tile.focus-id : "";
-        columns: root.slides && !root.inert;
+        // A tile that is not shown takes no finger: a place with nothing in it holds no
+        // place of its own (the view sends only that it is empty), so it must not lie over a tile that is.
+        columns: root.slides && !root.inert && root.tile.shown;
         activated(target, at, released) => { root.activated(target, at, released); }
         slide(by) => { root.slide(by); }
         slid => { root.slid(); }

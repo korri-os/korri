@@ -46,7 +46,8 @@ export component VelvetTap inherits TouchArea {
         if (armed && lifted) {
             if (sliding) {
                 root.activated(target, along(self.mouse-x), true);
-            } else if (!dragged) {
+            } else if (!dragged && target != "") {
+                // (An area that only takes drags, with no target, activates nothing.)
                 if (on-track) {
                     root.activated(target, along(self.mouse-x), true);
                 } else {

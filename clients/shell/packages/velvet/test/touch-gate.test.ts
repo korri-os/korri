@@ -101,12 +101,30 @@ describe("the gesture rules", () => {
   })
 
   test("a drag never activates: a moved press reports only a slide or a range", () => {
-    expect(finish).toMatch(/\} else if \(!dragged\) \{/)
+    expect(finish).toMatch(/\} else if \(!dragged && target != ""\) \{/)
     expect(tap).toMatch(/Tokens\.drag-start/)
   })
 
   test("only the main button presses", () => {
     expect(tap).toMatch(/event\.button != PointerEventButton\.left && event\.kind != PointerEventKind\.cancel/)
+  })
+})
+
+describe("what is not there takes no finger", () => {
+  // A place with nothing in it is sent as `{ shown: false }` and no more: it has no place of
+  // its own in the view, so it stands where the first tile does. It must not take that tile's tap.
+  test("a tile that is not shown has no tap area: no target, and no drag", () => {
+    const tile = stripComments(read("ui/molecules/VelvetTile.slint"))
+    const tap = tile.slice(tile.lastIndexOf("VelvetTap {"))
+    expect(/target:\s*root\.tile\.shown\s*&&[^;]*\?\s*root\.tile\.focus-id\s*:\s*"";/.test(tap)).toBe(true)
+    expect(/columns:[^;]*root\.tile\.shown[^;]*;/.test(tap)).toBe(true)
+    expect(/\brows:/.test(tap)).toBe(false)
+  })
+
+  test("a tap area is off without a target or a drag to take, and never activates an empty target", () => {
+    const tap = stripComments(read("ui/atoms/VelvetTap.slint"))
+    expect(/enabled:\s*target != "" \|\| rows \|\| columns;/.test(tap)).toBe(true)
+    expect(/else if \(!dragged && target != ""\)/.test(tap)).toBe(true)
   })
 })
 
