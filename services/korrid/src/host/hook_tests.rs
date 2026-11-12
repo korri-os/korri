@@ -742,7 +742,7 @@ async fn stored_split_refuses_before_hooks_only_for_a_save_bearing_plan() {
                     game_id: GAME.into(),
                     runner_id: "@korri:mgba/mgba".into(),
                     launch: None,
-                    host: None,
+                    holder: None,
                 },
                 Some(&person),
             )

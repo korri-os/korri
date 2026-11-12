@@ -2718,7 +2718,7 @@ esac
         let snapshot = runtime
             .launch_settings_snapshot(crate::launch_settings::LaunchSettingsSnapshotRequest {
                 game_id: None,
-                host: None,
+                holder: None,
             })
             .await
             .unwrap();
@@ -2774,7 +2774,7 @@ esac
                 path: LaunchPath::Runner,
                 expected_revision: revision,
                 value: Some(runner_id.into()),
-                host: None,
+                holder: None,
             };
             let before = runner_choice_revisions(root.path()).unwrap();
             let (entered, committed) = tokio::sync::oneshot::channel();
@@ -2828,7 +2828,7 @@ esac
                     path: LaunchPath::Runner,
                     expected_revision: other_revision,
                     value: Some("@test:other/core".into()),
-                    host: None,
+                    holder: None,
                 })
                 .await
                 .unwrap();

@@ -132,7 +132,7 @@ impl Module for LaunchSettings {
         let response = context.rpc(&RpcRequest::LaunchSettingsSnapshot(
             LaunchSettingsSnapshotRequest {
                 game_id: game_id.clone(),
-                host: None,
+                holder: None,
             },
         ))?;
         let RpcResponse::LaunchSettingsSnapshot(LaunchSettingsSnapshotOutcome::Ok(snapshot)) =
@@ -206,7 +206,7 @@ impl Module for LaunchSettings {
                     profile_id: None,
                     title: value(args, "title"),
                     expected_revision,
-                    host: None,
+                    holder: None,
                 }),
                 "rename" => {
                     let id = value(args, "id");
@@ -218,7 +218,7 @@ impl Module for LaunchSettings {
                         profile_id: Some(id),
                         title: rename_title.expect("validated rename title"),
                         expected_revision,
-                        host: None,
+                        holder: None,
                     })
                 }
                 "delete" => {
@@ -231,7 +231,7 @@ impl Module for LaunchSettings {
                         game_id,
                         profile_id: id,
                         expected_revision,
-                        host: None,
+                        holder: None,
                     })
                 }
                 "use" => {
@@ -246,7 +246,7 @@ impl Module for LaunchSettings {
                         game_id,
                         profile_id: id,
                         expected_revision,
-                        host: None,
+                        holder: None,
                     })
                 }
                 _ => return Err(CliError::usage("Choose a profiles action.")),
@@ -296,7 +296,7 @@ impl Module for LaunchSettings {
                 // less specific places stop applying; the plugin default holds.
                 clear,
                 expected_revision,
-                host: None,
+                holder: None,
             })
         };
         let response = context.rpc(&request)?;

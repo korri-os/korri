@@ -418,7 +418,10 @@ impl LaunchSettings {
             self.korrid,
             Route,
             LaunchSettingsSnapshot,
-            LaunchSettingsSnapshotRequest { game_id, host },
+            LaunchSettingsSnapshotRequest {
+                game_id,
+                holder: host
+            },
             LaunchSettingsSnapshotOutcome
         ) {
             LaunchSettingsSnapshotOutcome::Ok(snapshot) => {
@@ -559,7 +562,7 @@ impl LaunchSettings {
                         value,
                         clear,
                         expected_revision: revision(snapshot, &layer),
-                        host,
+                        holder: host,
                     },
                     LaunchSettingsWriteOutcome
                 )
@@ -575,7 +578,7 @@ impl LaunchSettings {
                     game_id,
                     profile_id,
                     expected_revision: revision(snapshot, &json!({ "_tag": "Game" })),
-                    host,
+                    holder: host,
                 },
                 LaunchSettingsWriteOutcome
             ),
@@ -592,7 +595,7 @@ impl LaunchSettings {
                     profile_id,
                     title,
                     expected_revision: revision(snapshot, &json!({ "_tag": "Game" })),
-                    host,
+                    holder: host,
                 },
                 LaunchSettingsWriteOutcome
             ),
@@ -607,7 +610,7 @@ impl LaunchSettings {
                     game_id,
                     profile_id,
                     expected_revision: revision(snapshot, &json!({ "_tag": "Game" })),
-                    host,
+                    holder: host,
                 },
                 LaunchSettingsWriteOutcome
             ),

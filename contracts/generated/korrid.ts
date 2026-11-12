@@ -440,7 +440,7 @@ export interface GameRoutesRequest {
 	 * must ask that holder (a streamed game, ADR 0066). The holder itself
 	 * never forwards: it answers for its own games.
 	 */
-	host?: string;
+	holder?: string;
 }
 
 export enum SaveMark {
@@ -709,7 +709,7 @@ export interface LaunchProfileRemoveRequest {
 	 * must ask that holder (a streamed game, ADR 0066). The holder itself
 	 * never forwards: it answers for its own games.
 	 */
-	host?: string;
+	holder?: string;
 }
 
 export interface LaunchProfileSaveRequest {
@@ -722,7 +722,7 @@ export interface LaunchProfileSaveRequest {
 	 * must ask that holder (a streamed game, ADR 0066). The holder itself
 	 * never forwards: it answers for its own games.
 	 */
-	host?: string;
+	holder?: string;
 }
 
 export interface LaunchProfileSelectRequest {
@@ -734,7 +734,7 @@ export interface LaunchProfileSelectRequest {
 	 * must ask that holder (a streamed game, ADR 0066). The holder itself
 	 * never forwards: it answers for its own games.
 	 */
-	host?: string;
+	holder?: string;
 }
 
 export interface LaunchProfileSnapshot {
@@ -842,7 +842,7 @@ export interface LaunchSetRequest {
 	 * must ask that holder (a streamed game, ADR 0066). The holder itself
 	 * never forwards: it answers for its own games.
 	 */
-	host?: string;
+	holder?: string;
 }
 
 export interface LaunchSettingsSnapshotRequest {
@@ -852,7 +852,7 @@ export interface LaunchSettingsSnapshotRequest {
 	 * must ask that holder (a streamed game, ADR 0066). The holder itself
 	 * never forwards: it answers for its own games.
 	 */
-	host?: string;
+	holder?: string;
 }
 
 export type LaunchNotice =
@@ -1760,7 +1760,7 @@ export interface SelectedGameLaunchRequest {
 	 * must ask that holder (a streamed game, ADR 0066). The holder itself
 	 * never forwards: it answers for its own games.
 	 */
-	host?: string;
+	holder?: string;
 }
 
 export enum SecretSettingStatus {

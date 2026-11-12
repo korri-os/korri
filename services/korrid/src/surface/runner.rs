@@ -383,7 +383,7 @@ impl RunnerChooser {
             GameRoutes,
             crate::game_routes::GameRoutesRequest {
                 game_id: id,
-                host: host.clone()
+                holder: host.clone()
             },
             crate::game_routes::GameRoutesOutcome
         );
@@ -595,7 +595,7 @@ impl RunnerChooser {
                 value,
                 clear: false,
                 expected_revision,
-                host: host.clone()
+                holder: host.clone()
             },
             LaunchSettingsWriteOutcome
         );

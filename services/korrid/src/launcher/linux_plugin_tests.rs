@@ -423,7 +423,7 @@ fn snapshot_dry_run_and_schema_defaults_do_not_change_launch_input_and_set_valid
         },
         value: Some(serde_json::json!(9)),
         expected_revision: snapshot.revisions.games,
-        host: None,
+        holder: None,
     };
     assert!(ls::set_with_registry(
         game.root.path(),
@@ -514,7 +514,7 @@ fn nested_settings_store_clear_remove_defaults_and_warn_skip_use_real_plugin_ope
         expected_revision: crate::config::settings::runner_choice_revisions(game.root.path())
             .unwrap()
             .games,
-        host: None,
+        holder: None,
     };
     let write = |request: &mut LaunchSetRequest| {
         let revisions = ls::set_with_registry(
@@ -706,7 +706,7 @@ fn retroarch_pattern_port_settings_set_clear_and_report_concrete_validation_path
         expected_revision: crate::config::settings::runner_choice_revisions(game.root.path())
             .unwrap()
             .games,
-        host: None,
+        holder: None,
     };
     for scope in [
         LaunchRunnerScope::Runner(game.route.runner_id.clone()),

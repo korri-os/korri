@@ -3316,7 +3316,7 @@ async fn dispatch(
         }
         // The runner the person chose for a streamed game (issue #401).
         RpcRequest::SelectedGameLaunch(request)
-            if request.host.is_some()
+            if request.holder.is_some()
                 && matches!(state.mode, ServerMode::Brain(_))
                 && stream_play::device::is_local_caller(authorization) =>
         {
@@ -3328,7 +3328,7 @@ async fn dispatch(
                     .upstream
                     .prepare_streamed_launch(
                         &request.game_id,
-                        request.host.as_deref(),
+                        request.holder.as_deref(),
                         upstreams::StreamedLaunch {
                             runner_id: Some(request.runner_id),
                             launch: request.launch,

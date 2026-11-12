@@ -116,9 +116,9 @@ pub(crate) async fn ask_holder(
     use crate::launch_settings::{LaunchSettingsSnapshotOutcome, LaunchSettingsWriteOutcome};
     macro_rules! forward {
         ($variant:ident, $asked:expr, $refused:path) => {{
-            let holder = $asked.host.clone()?;
+            let holder = $asked.holder.clone()?;
             let mut asked = $asked.clone();
-            asked.host = None;
+            asked.holder = None;
             Some(
                 match peers
                     .holder_call(&holder, RpcRequest::$variant(asked))
@@ -231,12 +231,12 @@ pub(crate) async fn dispatch(
         }
     }
     let holder_of_request = match request {
-        RpcRequest::LaunchSettingsSnapshot(asked) => asked.host.as_deref(),
-        RpcRequest::LaunchSettingsSet(asked) => asked.host.as_deref(),
-        RpcRequest::LaunchProfileSave(asked) => asked.host.as_deref(),
-        RpcRequest::LaunchProfileRemove(asked) => asked.host.as_deref(),
-        RpcRequest::LaunchProfileSelect(asked) => asked.host.as_deref(),
-        RpcRequest::GameRoutes(asked) => asked.host.as_deref(),
+        RpcRequest::LaunchSettingsSnapshot(asked) => asked.holder.as_deref(),
+        RpcRequest::LaunchSettingsSet(asked) => asked.holder.as_deref(),
+        RpcRequest::LaunchProfileSave(asked) => asked.holder.as_deref(),
+        RpcRequest::LaunchProfileRemove(asked) => asked.holder.as_deref(),
+        RpcRequest::LaunchProfileSelect(asked) => asked.holder.as_deref(),
+        RpcRequest::GameRoutes(asked) => asked.holder.as_deref(),
         _ => None,
     };
     if named_holder(host, peers, holder_of_request).is_some() {
@@ -325,7 +325,7 @@ pub(crate) async fn dispatch(
         // The runner the person chose for a streamed game (issue #401): the
         // holder's owner-device launch, with this device's viewer lifecycle.
         RpcRequest::SelectedGameLaunch(request)
-            if named_holder(host, peers, request.host.as_deref()).is_some() =>
+            if named_holder(host, peers, request.holder.as_deref()).is_some() =>
         {
             let outcome = match host.session_status().await {
                 Ok(
@@ -335,7 +335,7 @@ pub(crate) async fn dispatch(
                 ) => peers
                     .prepare_streamed_launch(
                         &request.game_id,
-                        request.host.as_deref(),
+                        request.holder.as_deref(),
                         upstreams::StreamedLaunch {
                             runner_id: Some(request.runner_id.clone()),
                             launch: request.launch.clone(),

@@ -50,7 +50,7 @@ fn req(
         path,
         value,
         expected_revision: revision,
-        host: None,
+        holder: None,
     }
 }
 fn any(layer: LaunchLayer) -> LaunchPlace {
@@ -820,7 +820,7 @@ fn launch_settings_profile_create_rename_select_remove_and_remembered_pick() {
                 profile_id: None,
                 title: "  My Quiet  ".into(),
                 expected_revision: revision,
-                host: None,
+                holder: None,
             },
         )
         .unwrap()
@@ -837,7 +837,7 @@ fn launch_settings_profile_create_rename_select_remove_and_remembered_pick() {
             game_id: "game".into(),
             profile_id: Some("my-quiet".into()),
             expected_revision: revision,
-            host: None,
+            holder: None,
         },
     )
     .unwrap()
@@ -851,7 +851,7 @@ fn launch_settings_profile_create_rename_select_remove_and_remembered_pick() {
             profile_id: Some("my-quiet".into()),
             title: "Renamed".into(),
             expected_revision: revision,
-            host: None,
+            holder: None,
         },
     )
     .unwrap()
@@ -863,7 +863,7 @@ fn launch_settings_profile_create_rename_select_remove_and_remembered_pick() {
         game_id: "game".into(),
         profile_id: "my-quiet".into(),
         expected_revision: revision,
-        host: None,
+        holder: None,
     };
     revision = remove_profile(root.path(), private.path(), &lock, &req)
         .unwrap()
@@ -883,7 +883,7 @@ fn launch_settings_profile_create_rename_select_remove_and_remembered_pick() {
             game_id: "game".into(),
             profile_id: Some("absent".into()),
             expected_revision: revision.clone(),
-            host: None
+            holder: None
         }
     )
     .is_err());
@@ -895,7 +895,7 @@ fn launch_settings_profile_create_rename_select_remove_and_remembered_pick() {
             game_id: "game".into(),
             profile_id: None,
             expected_revision: revision,
-            host: None,
+            holder: None,
         },
     )
     .unwrap();
@@ -924,7 +924,7 @@ fn launch_settings_pending_publication_blocks_every_mutation_without_rewriting_f
                 path: LaunchPath::CpuMax,
                 value: Some(json!(50)),
                 expected_revision: before.games.clone(),
-                host: None
+                holder: None
             },
             &client
         ),
@@ -940,7 +940,7 @@ fn launch_settings_pending_publication_blocks_every_mutation_without_rewriting_f
                 profile_id: None,
                 title: "Quiet 2".into(),
                 expected_revision: before.games.clone(),
-                host: None
+                holder: None
             }
         ),
         Err(SettingsError::Conflict)
@@ -954,7 +954,7 @@ fn launch_settings_pending_publication_blocks_every_mutation_without_rewriting_f
                 game_id: "game".into(),
                 profile_id: "quiet".into(),
                 expected_revision: before.games.clone(),
-                host: None
+                holder: None
             }
         ),
         Err(SettingsError::Conflict)
@@ -968,7 +968,7 @@ fn launch_settings_pending_publication_blocks_every_mutation_without_rewriting_f
                 game_id: "game".into(),
                 profile_id: None,
                 expected_revision: before.games,
-                host: None
+                holder: None
             }
         ),
         Err(SettingsError::Conflict)

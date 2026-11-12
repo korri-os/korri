@@ -507,7 +507,7 @@ impl Korrid {
                 game_id,
                 runner_id,
                 launch,
-                host,
+                holder: host,
             },
             SelectedGameLaunchOutcome
         )

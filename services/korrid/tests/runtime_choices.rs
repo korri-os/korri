@@ -101,7 +101,7 @@ fn set_choice(
             path: LaunchPath::Runner,
             value: runner.map(|v| serde_json::json!(v)),
             expected_revision: revision.into(),
-            host: None,
+            holder: None,
         },
         &launch_settings::helper::Client {
             socket: root.join("absent.sock"),

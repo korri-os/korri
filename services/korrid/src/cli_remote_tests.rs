@@ -873,7 +873,7 @@ fn remote_process_selected_launch_nonce_survives_restart() {
         game_id: GAME.into(),
         runner_id: RUNNER.into(),
         launch: None,
-        host: None,
+        holder: None,
     });
     assert!(authorization::is_security_mutation(&request));
     let encoded = credentials

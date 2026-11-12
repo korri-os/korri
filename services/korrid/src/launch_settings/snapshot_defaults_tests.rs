@@ -32,7 +32,7 @@ fn snapshot_distinguishes_clear_from_an_authored_value_equal_to_device_default()
         path: LaunchPath::CpuMax,
         value: Some(json!(61)),
         expected_revision: before.device,
-        host: None,
+        holder: None,
     };
     let revisions = set(root.path(), private.path(), &lock, &request, &client).unwrap();
     let authored = snapshot(root.path(), None, None, &client).unwrap();

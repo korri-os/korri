@@ -365,7 +365,7 @@ impl NativeClient {
                     game_id: game_id.into(),
                     runner_id: runner_id.into(),
                     launch,
-                    host: None,
+                    holder: None,
                 },
             ))
             .await?

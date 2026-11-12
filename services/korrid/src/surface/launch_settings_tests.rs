@@ -1091,7 +1091,7 @@ fn streamed(
     reachable: Arc<std::sync::atomic::AtomicBool>,
 ) -> (Arc<LaunchSettings>, Calls) {
     let (korrid, calls) = answering(move |tag, payload| {
-        let to_holder = payload["host"] == "aka";
+        let to_holder = payload["holder"] == "aka";
         if to_holder && !reachable.load(std::sync::atomic::Ordering::SeqCst) {
             return refused("UpstreamUnreachable", "upstream unreachable: timed out");
         }
@@ -1567,7 +1567,7 @@ async fn a_streamed_game_shows_the_same_list_read_from_and_written_to_the_device
     );
     // Read from aka; this device's own settings are read from this device.
     let reads = asked(&calls, SNAPSHOT);
-    assert!(reads.contains(&json!({ "gameId": "wario", "host": "aka" })));
+    assert!(reads.contains(&json!({ "gameId": "wario", "holder": "aka" })));
     assert!(reads.contains(&json!({})));
     // A value that describes a device says which device keeps it.
     assert_eq!(
@@ -1587,7 +1587,7 @@ async fn a_streamed_game_shows_the_same_list_read_from_and_written_to_the_device
     let writes = asked(&calls, SET);
     assert_eq!(writes.len(), 1);
     assert_eq!(
-        writes[0]["host"],
+        writes[0]["holder"],
         json!("aka"),
         "written where the game runs"
     );
@@ -1622,7 +1622,7 @@ async fn this_devices_stream_rows_are_written_to_this_device_at_once() {
     settle().await;
     let writes = asked(&calls, SET);
     assert_eq!(writes.len(), 1);
-    assert!(writes[0].get("host").is_none(), "this device keeps it");
+    assert!(writes[0].get("holder").is_none(), "this device keeps it");
     assert_eq!(
         writes[0]["place"],
         json!({ "layer": { "_tag": "Device" }, "scope": { "_tag": "Runner", "id": MOONLIGHT } })
@@ -1765,7 +1765,7 @@ async fn a_holder_that_is_no_peer_now_reads_as_unreachable_and_a_refusal_keeps_i
         ),
     ] {
         let (korrid, _) = answering(move |_, payload| {
-            if payload["host"] == "aka" {
+            if payload["holder"] == "aka" {
                 refused(code, message)
             } else {
                 ok_snapshot(this_device().snapshot())

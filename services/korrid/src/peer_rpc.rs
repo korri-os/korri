@@ -1533,7 +1533,7 @@ mod tests {
                     path: crate::launch_settings::LaunchPath::CpuMax,
                     value: Some(serde_json::json!(60)),
                     expected_revision: String::new(),
-                    host: None,
+                    holder: None,
                 }),
                 NOW,
                 token(64),

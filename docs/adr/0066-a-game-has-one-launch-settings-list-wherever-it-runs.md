@@ -81,10 +81,12 @@ change without a new owner decision.
   optional `launch` as `SessionStartRequest`. A prepare that carries it has
   the owner-device policy; a pass with the stream scope cannot send it.
 - **Which device answers.** The launch-settings calls, the profile calls,
-  `GameRoutes` and `SelectedGameLaunch` take an optional `host`, as
-  `SessionPrepareRequest` already did. A local caller names the holder there
+  `GameRoutes` and `SelectedGameLaunch` take an optional `holder`: the
+  label of the device that runs the game. `SessionPrepareRequest` keeps its
+  older field `host` for the same thing; `AGENTS.md` forbids extending that
+  name, so the new fields do not copy it. A local caller names the holder
   and its own korrid asks that holder, in host mode and in brain mode. A peer
-  cannot use `host` to make a korrid ask a third device.
+  cannot use `holder` to make a korrid ask a third device.
 - **Keeping.** The editor writes the changes when it closes, or when its game
   starts from the runner chooser. A shared value goes to the any-runner
   place and a runner-only value to its runner's place. The CPU governor is
