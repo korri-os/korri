@@ -18,12 +18,15 @@ table and its capability map are in `docs/design/surfaces/velvet/DIRECTION.md`.
 | `src/view.ts` | The view, from the state and the model. |
 | `src/browse.ts`, `src/lists.ts` | Home, the row, the lobby, a set, the detail; the lists home keeps over the one catalog window. |
 | `src/pages.ts`, `src/settings.ts`, `src/curtain.ts`, `src/keys.ts` | Every other screen Korri publishes, as one list page; status and questions as the curtain; the keyboard. |
-| `src/art.ts`, `src/poster.ts`, `src/colour.ts` | Which picture a tile shows, the pixel budget, the no-art card, the stage light. |
+| `src/art.ts`, `src/poster.ts`, `src/colour.ts` | Which picture a tile shows, the pixel budget, which no-art card a game gets, the stage light. |
+| `drawings/` | The no-art cards, drawn at build time. `draw.ts` is the geometry (a shape names a palette place, never a colour), `palettes.ts` the colours, `build.ts` writes the two files below. `bun packages/velvet/drawings/build.ts` in `clients/shell`; `velvet-check` runs it and fails on any difference. |
+| `ui/drawings.slint`, `src/drawings.ts` | Generated. The view's side: `global Drawings`, every card's layers and every palette. The logic's side: each drawing's number, its title box and its ink rule. |
+| `src/systems.ts`, `src/drawings-slots.ts` | The machines Velvet has a drawing for; the palette's places. Shared by the logic and the build. |
 | `src/fit.ts`, `src/measure.ts`, `src/words.ts` | Fitting caps titles and fact lines from the fonts' advance tables; words about time and size. |
 | `src/qr.ts` | The backup's QR code (own encoder, held equal to `qrcode` by test). |
 | `fonts/` | Big Shoulders ExtraBold (display, caps), Archivo semi-condensed 400 and 700; their OFL texts; `fonts/source/` the scripts that cut them. |
 | `test/` | The gates and tests (`bun test packages/velvet/test` in `clients/shell`). |
-| `preview/` | `scenarios.ts` → `scenarios/*.json` (92 models with the presses to each screen), `fixtures/korri.json` (Korri's slices), `art/` (self-drawn test pictures and `build.py`), `previews.ts`, `shots.sh` (the real shell under Xvfb), `probe.sh` (the shell's probe over every scenario). |
+| `preview/` | `scenarios.ts` → `scenarios/*.json` (99 models with the presses to each screen), `fixtures/korri.json` (Korri's slices), `art/` (self-drawn test pictures and `build.py`), `previews.ts`, `shots.sh` (the real shell under Xvfb), `probe.sh` (the shell's probe over every scenario). |
 
 ## The plan
 
@@ -74,7 +77,7 @@ shell, `VELVET_FRAMES` (below) through the test harness.
 | Identity and backup | `identity`, `identity-last`, `identity-backup`, `identity-password`, `identity-working`, `identity-problem`, `identity-switched`, `identity-retired` | `VelvetList.Identity`, `VelvetProgramme.Backup`, `VelvetQr` |
 | The store and its search | `store`, `store-none`, `store-search`, `store-results`, `store-offer`, `store-confirm`, `store-downloading` | `VelvetList.Store`, `VelvetProgramme.Store`, `.Offer` |
 | Invites | `invites`, `invite-notice` | `VelvetList.Invites`, `VelvetNotice` |
-| Saves, the runner, launch settings | `saves`, `saves-empty`, `saves-restore`, `runner`, `launch-settings` | `VelvetList.Saves`, `.Runner`, `.LaunchSettings` |
+| Saves, the runner, launch settings | `saves`, `saves-empty`, `saves-restore`, `runner`, `launch-settings`, `launch-changes`, `launch-keep`, `launch-streamed`, `launch-unreachable`, `launch-conflict`, `launch-loading`, `launch-empty` | `VelvetList.Saves`, `.Runner`, `.LaunchSettings` |
 | The gameplay overlay | `overlay`, `overlay-groups`, `overlay-stream`, `overlay-asking` | `pages/VelvetPaused`, `VelvetPause` |
 
 ## Contract use
@@ -86,12 +89,41 @@ shell, `VELVET_FRAMES` (below) through the test harness.
 - One catalog window. Home needs several lists and has one window and one
   query at a time. `src/lists.ts` asks one after another (`recent` from the
   start, `mostPlayed`, `korri`, `recent` from the end, `korri` from the end,
-  one a peer), tells the answers apart by `catalog.query`, and keeps the few
-  games each list shows. A set asks for a window of 60 and asks again
-  `Around` the focused game near the window's edge.
+  one a peer, then `recent` from the start again), tells the answers apart
+  by `catalog.query`, and keeps the few games each list shows. One question
+  an update. A pass is six questions and one more for each peer (six peers
+  at most); a library whose peers' games or unplayed games fill more than
+  one window adds a question for each further window (three for peers,
+  five for unplayed games), so 20 at the very most. A set asks for a
+  window of 60 and asks again `Around` the focused game near the window's
+  edge.
+- The resting window. Between passes Velvet leaves the window on the 60
+  newest games (`REST`). The treaty has no mark for "the library changed",
+  so that window is where Velvet sees a change: when a game in it says
+  something new (artwork arrived, it was played, it can be resumed), every
+  kept copy of that game is replaced at once (`refresh`) and the lists are
+  asked again, one question a publication. A publication that changes no
+  game asks nothing: a clock tick or a focus move costs no request. A game
+  outside the 60 is read again at the next change inside them, on the way
+  back from a set or from play, and when `systems` changes.
+- Not started. korrid sorts `recent` by last play and keeps Korri's order
+  among equals, so the unplayed games stand after the played ones in Korri's
+  order. The shelf and the row's slot take them from the windows already
+  kept. Only when those hold none does Velvet page back from the list's end
+  (`tail:N`, 200 games a page, five pages at most), so the first unplayed
+  game is found among the last 1,024. "See all" opens the set `Around` that
+  game and holds the focus at or after it; with more unplayed games than
+  that, the set pages back to the true first as the focus goes up.
 - "Now" is `model.publishedAt`. It can be a minute behind, so a session that
   ended after it is "Just now". Without it a fact is a date and the pick is
-  the last game played.
+  the last game played. Dates are read in UTC (`getUTC*` only; a surface has
+  no zone), and a save says how long ago it was made ("3 h 20 min ago"),
+  never a clock time. `test/words.test.ts` runs the words under four `TZ`
+  values and expects the same text.
+- Launch settings (ADR 0066) are one list: where the game runs under the
+  title, each setting once, a changed row's earlier value beside its value,
+  and, while a row is changed, a last row for where the changes are kept.
+  Every id goes to Korri unchanged.
 - `FocusGame` whenever the game in focus changes; the detail's More and
   `options` list `model.focusedGame.actions`.
 - Focus (contract 8.4): every target carries `focused`, `focusRegion` and a
@@ -147,20 +179,39 @@ backdrop pixel differs from its neighbour by more than four levels.
 - **Pixels.** The shell keeps 24 MiB of decoded pixels for a surface. A
   stored poster is 600x900: 2.1 MiB. So a view asks for its pictures in
   order of importance (`take`, `src/art.ts`: the hero, the focused game's
-  logo, then tiles from the focused one outwards, rows in sight first) and
-  stops at 23 MiB. A tile over the budget shows its no-art card. A set is
+  logo, then tiles from the focused one outwards, rows in sight first; in
+  the library the shelves before the home's row, which has left the stage)
+  and stops at 23 MiB. A tile over the budget shows its no-art card. A set is
   five tiles across at most and a shelf five games, so every tile in sight
   has its picture. The mockup's six across cannot have that while the shell
   hands a poster over at its stored size (see "Asked of the shell").
-- **Calls.** Every `view()` over 10,000 games is under 50 ms on the slowest
-  device's clock (medians of 8 to about 45 ms there; the test multiplies
-  this workstation's CPU time by 28, the factor Zone measured). Most of a call is the view's JSON, so a
-  view holds what is on the stage and no more: the shelves in sight, the
-  set's rows in sight and one each way. A no-art card's drawing is made once
-  a system and variant and kept; the first sight of a new one costs about
-  10 ms on that device, so a screen of never-seen cards can take one call
-  over the budget, up to about 100 ms, once. `init` makes the drawings of
-  the systems Korri publishes, on the load budget.
+- **Calls.** Every `view` and every `update` over 10,000 games is under
+  50 ms on the slowest device's clock, the first sight of a screen included:
+  there is no allowance for a first call. The test
+  (`view_calls_stay_well_inside_the_budget_on_a_slow_clock`) runs a tour
+  twice on seven fresh engines and holds every single `view()`, and the
+  longest `update()` of every step, to the budget by its median over the
+  engines; it multiplies this workstation's CPU time by 28, the factor Zone
+  measured. In a full run of the test binary a view is 5 to 22 ms there
+  (medians; the worst single call 24 ms) and an update under 11 ms; the
+  update that keeps a window of 200 games while the home reads its lists
+  again is 20 to 23 ms.
+  - About half of a view call is its JSON, and that follows the number of
+    values. A view holds what is on the stage and no more (the largest is
+    under 13 kB): the shelves in sight, the set's rows in sight and one each
+    way, for a tile only what its kind draws, for a line of facts only the
+    facts it has.
+  - The other half is making the view. A game's tile is made once and kept
+    by the game's id while Korri says the same of the game; a tile at its
+    place is kept too, so a move makes the two tiles the focus left and
+    landed on and every other tile is the object the last view sent. What
+    remains is the first sight of a card (its title fitted to its drawing's
+    box): about 1 ms a card on that device.
+  - A no-art card costs nothing to draw: it is a drawing and a palette by
+    number (`drawings/`). `init` warms nothing.
+  - Korri publishes with every move of the focus. A publication is read by
+    its window's games (60), each against the one object kept for that game
+    (`src/lists.ts`).
 - **Motion.** A set's rows and the lobby's shelves move by whole steps. The
   software renderer has no blur, no shadow, no rotation, and does not clip a
   picture to a radius: tiles have square corners and a gradient shade.
@@ -208,7 +259,10 @@ a pattern can see; `velvet_package.rs` holds the rest.
 10. A part with no `x` or `y` of its own stands in the middle of its parent.
     The vignette's left-edge gradient (three fifths of the window wide) had
     none, stood from a fifth of the width to four fifths, and left a seam
-    down every wide stage.
+    down every wide stage. The fade for "more above" in a scrolled list had
+    no `y` and lay across the middle of the list; the light on a card's head
+    lay across its middle. A gate now refuses a gradient that names no `y`
+    and does not fill its parent (`test/authoring-gate.test.ts`).
 11. A part that starts on a fraction of a pixel and runs past the window's
     right edge leaves the window's last column undrawn. The stage's large
     gradients stand on whole pixels.
@@ -245,27 +299,32 @@ bash packages/velvet/preview/shots.sh  <korri-shell> <fixture-korrid> OUT [SIZES
 ```
 
 `probe.sh` runs the shell's own probe (where each press goes, and a tap on
-every target) over scenarios' models. Over all 92 it takes hours; these 33
+every target) over scenarios' models. Over all 99 it takes hours; these 35
 have the models that differ: `home home-no-art set-peer home-fresh home-one
 home-stale empty error loading first-boot first-boot-starter wifi wifi-none
 wifi-failed store store-results store-offer store-downloading identity
-identity-backup identity-retired saves runner launch-settings overlay
+identity-backup identity-retired saves runner launch-settings launch-changes
+launch-unreachable overlay
 overlay-groups busy-steps problem-long confirm choose-save invites
 settings-problem ended`.
 
 `velvet_package.rs` draws every preview state at five sizes, plays every
 scenario at six and checks the focused target is all in sight after every
 press, holds the backdrop free of seams, holds a system's set to that
-system's games, and times the calls.
+system's games, and times every `view()` and every step's longest
+`update()` of a tour over 10,000 games.
 `VELVET_FRAMES=DIR VELVET_SIZES=WxH,... VELVET_ONLY=a,b` writes scenarios'
 last frames; `VELVET_PREVIEW_OUT=DIR` writes every preview state.
 
 | Gate | Holds |
 | --- | --- |
-| `authoring-gate` | No raw colour or pixel literal outside the tokens; no blur, shadow or rotation; no saturated blue; animations only of an element's own geometry, opacity or ground; logic is pure and imports only the treaty's types. |
+| `authoring-gate` | No raw colour or pixel literal outside the tokens; no blur, shadow or rotation; no saturated blue; animations only of an element's own geometry, opacity or ground; a gradient names its `y` or fills its parent; logic is pure, reads no local time, and imports only the treaty's types. |
 | `atomic-gate` | One component a file, named as its file; imports point down; only `main.slint` binds. |
 | `decomposition-gate` | Every component has its preview; none is unused; `Screen` is the plan, field for field. |
 | `contrast-gate` | The house's pairs; a title and its facts on any game's light. |
 | `touch-gate` | `activated` and `dragged` reach the root from every instance; the gesture rules; the way back. |
-| `scenarios` | Every scenario at six sizes: the focus convention, the pixel budget, the view's size, the view's keys. |
-| `plan`, `browse`, `touch`, `motion`, `words`, `poster`, `qr` | The plan's invariants over a sweep of sizes; the owner's decisions as behaviour; the rest. |
+| `scenarios` | Every scenario at six sizes: the focus convention, the pixel budget, the view's size, the view's keys; no negative number and no empty kind stands in for "none". |
+| `refresh` | A game Korri changes after the lists loaded shows on the stage, the row, the lobby and the detail; a quiet model asks nothing; one question an update; a game is one object in every list that holds it; the pixel budget goes to what is in sight. |
+| `fresh` | Not started with 0, 3, 60, 200 and 10,000 unplayed games, in libraries where they stand apart and where they stand last. |
+| `poster` | The generated drawings and palettes: every card names ones that are there, its title fits its box, its ink stands out, and a card in a view is two numbers and its title. |
+| `plan`, `browse`, `touch`, `motion`, `words`, `qr` | The plan's invariants over a sweep of sizes; the owner's decisions as behaviour; launch settings as one list; the rest. |
