@@ -923,7 +923,7 @@ async fn a_streamed_game_offers_its_holders_runners_and_launch_settings_and_asks
     assert_eq!(list.runs_on.as_deref(), Some("Runs on aka"));
     assert!(
         asked("app.launch-settings.snapshot")
-            .contains(&json!({ "gameId": "actraiser", "host": "aka" })),
+            .contains(&json!({ "gameId": "actraiser", "holder": "aka" })),
         "{:?}",
         asked("app.launch-settings.snapshot")
     );
@@ -963,7 +963,7 @@ async fn a_streamed_game_offers_its_holders_runners_and_launch_settings_and_asks
     );
     assert_eq!(
         asked("app.local-games.routes"),
-        [json!({ "gameId": "actraiser", "host": "aka" })]
+        [json!({ "gameId": "actraiser", "holder": "aka" })]
     );
     assert!(
         asked("app.session.prepare").is_empty(),
@@ -2892,13 +2892,13 @@ mod runner_chooser {
             .filter(|(tag, _)| tag == "app.local-games.routes")
             .map(|(_, payload)| payload.clone())
             .collect();
-        assert_eq!(asked, [json!({ "gameId": "wl4", "host": "aka" })]);
+        assert_eq!(asked, [json!({ "gameId": "wl4", "holder": "aka" })]);
         // A choice for this game is saved where the game runs.
         press(&chooser, "game:0");
         settle().await;
         let saved = sets(&script);
         assert_eq!(saved.len(), 1);
-        assert_eq!(saved[0]["host"], json!("aka"));
+        assert_eq!(saved[0]["holder"], json!("aka"));
         assert_eq!(saved[0]["path"], json!({ "_tag": "Runner" }));
         // Launch once carries the chosen runner and the holder's name.
         press(&chooser, "launch:0");
