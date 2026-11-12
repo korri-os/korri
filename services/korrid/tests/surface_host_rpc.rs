@@ -185,8 +185,8 @@ async fn surface_host_rpc_scoped_permissions_allow_only_initial_reads_and_local_
             json!({"_tag":"app.library.folders.remove","payload":{"folder":"gba"}}),
             json!({"_tag":"app.library.folders.rescan","payload":{}}),
             json!({"_tag":"system.settings.update","payload":{"expectedRevision":"r","settingId":"s","value":"v"}}),
-            json!({"_tag":"system.settings.steamgriddbCredential.set","payload":{"token":"t"}}),
-            json!({"_tag":"system.settings.steamgriddbCredential.clear","payload":{}}),
+            json!({"_tag":"system.settings.credential.set","payload":{"pluginId":"@korri:steamgriddb","token":"t"}}),
+            json!({"_tag":"system.settings.credential.clear","payload":{"pluginId":"@korri:steamgriddb"}}),
         ] {
             let method = body["_tag"].as_str().unwrap().to_owned();
             let read = method == "app.session.controls";

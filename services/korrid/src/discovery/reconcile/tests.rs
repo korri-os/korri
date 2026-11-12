@@ -74,34 +74,6 @@ fn run_publishes_library_locations_and_ownership_and_unchanged_rescan_writes_not
     );
 }
 #[test]
-fn title_enrichment_uses_library_and_refuses_a_stale_fingerprint() {
-    let (root, private, writer, report) = fixture();
-    writer.run(&report, &DiscoveryOptions::default()).unwrap();
-    let game = owned_discovery_games(root.path(), private.path())
-        .unwrap()
-        .remove(0);
-    let updated = update_owned_discovery_title(
-        root.path(),
-        private.path(),
-        &Arc::new(Mutex::new(())),
-        &game,
-        "Better Game",
-    )
-    .unwrap()
-    .unwrap();
-    assert_eq!(updated.title, "Better Game");
-    assert!(
-        current_owned_discovery_game(root.path(), private.path(), &game)
-            .unwrap()
-            .is_none()
-    );
-    assert!(
-        current_owned_discovery_game(root.path(), private.path(), &updated)
-            .unwrap()
-            .is_some()
-    );
-}
-#[test]
 fn pairing_scans_and_publishes_once() {
     let root = tempfile::tempdir().unwrap();
     let private = tempfile::tempdir().unwrap();

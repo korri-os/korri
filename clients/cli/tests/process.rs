@@ -87,7 +87,6 @@ fn settings(revision: &str, name: &str) -> SettingsSnapshot {
         player_count: 1,
         editable_setting_ids: vec![config::settings::DEVICE_NAME_SETTING_ID.into()],
         plugins: vec![],
-        steam_grid_db_credential: config::settings::SecretSettingStatus::NotConfigured,
     }
 }
 

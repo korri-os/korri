@@ -16,13 +16,13 @@ import time
 binary, socket, mode = sys.argv[1:]
 master, slave = pty.openpty()
 original = termios.tcgetattr(slave)
-args = [binary, "metadata", "key", "set", "--socket", socket, "--json"]
+args = [binary, "plugins", "credential", "set", "@korri:steamgriddb", "--socket", socket, "--json"]
 if mode == "switch-sigterm":
     args = [binary, "identity", "switch", "local", "--yes", "--socket", socket, "--json"]
 # Even explicit private stdin must not read echoed input from a terminal whose
 # stdout is redirected. Neither half-terminal case may prompt.
 if mode == "stdout-pipe":
-    args.append("--key-stdin")
+    args.append("--credential-stdin")
 def attach_terminal():
     os.setsid()
     fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
@@ -117,7 +117,7 @@ try:
         sys.exit(0)
     assert child.returncode == 0, transcript.decode(errors="replace")
     # Prompts use stderr; the result is still exactly the existing response.
-    assert b'SteamGridDB key:' in transcript
+    assert b'Plugin secret:' in transcript
     result_start = transcript.index(b'{"_tag"')
     result = json.loads(transcript[result_start:].decode())
     assert result["outcome"]["_tag"] == "Ok"

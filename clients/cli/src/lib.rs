@@ -7,7 +7,6 @@ pub mod identity;
 mod keep_launch;
 pub mod launch_settings;
 pub mod library;
-pub mod metadata;
 pub mod module;
 pub mod output;
 pub mod play;
@@ -45,7 +44,6 @@ pub static MODULES: &[&dyn Module] = &[
     &saves::Saves,
     &identity::Identity,
     &setup::Setup,
-    &metadata::Metadata,
 ];
 
 pub static VERSION: LazyLock<String> = LazyLock::new(|| match option_env!("KORRI_BUILD_ID") {

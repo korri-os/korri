@@ -96,8 +96,6 @@ impl SurfaceHostPermission {
             | RpcRequest::LibraryFolderRemove(_)
             | RpcRequest::LibraryFoldersRescan(_)
             | RpcRequest::SettingsUpdate(_)
-            | RpcRequest::SteamGridDbCredentialSet(_)
-            | RpcRequest::SteamGridDbCredentialClear(_)
             | RpcRequest::CredentialSet(_)
             | RpcRequest::CredentialClear(_)
             | RpcRequest::OwnerBindingStart(_)
@@ -517,10 +515,10 @@ mod tests {
                 serde_json::from_value(json!({"_tag":tag,"payload":{}})).unwrap();
             assert_eq!(read_only.authorize(&headers, &request), Ok(()));
         }
-        let admin_write =
-            RpcRequest::SteamGridDbCredentialSet(crate::SteamGridDbCredentialSetRequest {
-                token: "test-token".into(),
-            });
+        let admin_write = RpcRequest::CredentialSet(crate::CredentialSetRequest {
+            plugin_id: "@korri:steamgriddb".into(),
+            token: "test-token".into(),
+        });
         assert_eq!(
             local.authorize(&headers, &admin_write),
             Err(StatusCode::FORBIDDEN)

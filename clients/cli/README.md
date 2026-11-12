@@ -33,7 +33,7 @@ variable; its default is the same `korrid-cli/cli.sock` path as the Rust client.
 
 Run `korri --help` or `korri <area> --help` for exact arguments. Product areas
 are `devices`, `library`, `launch-settings`, `downloads`, `controllers`,
-`plugins`, `wifi`, `saves`, `identity`, `setup` and `metadata`. Session actions
+`plugins`, `wifi`, `saves`, `identity` and `setup`. Session actions
 are `play`, `leave`, `resume` and `end`. Provider acquisition is `get`.
 [Play and library details](PLAY-LIBRARY.md) include launch-setting constraints.
 [Settings parity audit](PARITY.md) maps the actual shell settings and actions,

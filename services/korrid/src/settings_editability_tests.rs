@@ -3,12 +3,14 @@ use super::*;
 use authorization::{AuthorizationContext, Principal};
 
 const NAME: &str = config::settings::DEVICE_NAME_SETTING_ID;
-const CREDENTIAL: &str = "steamgriddb-credential";
+const PLUGIN: &str = plugin_test_fixtures::ART_PLUGIN_ID;
+/// The secret row of the plugin that declares a secret.
+const CREDENTIAL: &str = "plugin-credential:%40korri%3Asteamgriddb";
 const SECRET: &str = "editability-test-credential-not-a-real-secret";
 
 fn brain_state(root: &std::path::Path, permission: SurfaceHostPermission) -> AppState {
     config::test_fixtures::gba(root);
-    let registry = plugin_test_fixtures::installed(root);
+    let registry = plugin_test_fixtures::installed_with_secret_plugin(root);
     let (mut state, _) = brain_app_state(
         TOKEN,
         ORIGIN,
@@ -23,6 +25,17 @@ fn brain_state(root: &std::path::Path, permission: SurfaceHostPermission) -> App
     );
     state.surface_host_access = Some(SurfaceHostAccess::new(TOKEN, ORIGIN, permission));
     state
+}
+
+/// The secret status of the plugin that declares a secret.
+fn credential_status(snapshot: &Value) -> &str {
+    snapshot["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|plugin| plugin["id"] == PLUGIN)
+        .and_then(|plugin| plugin["credential"].as_str())
+        .unwrap_or_else(|| panic!("{PLUGIN} has no secret status in {snapshot}"))
 }
 
 fn assert_ids(snapshot: &Value, expected: &[&str]) {
@@ -45,7 +58,10 @@ fn assert_ids(snapshot: &Value, expected: &[&str]) {
 #[tokio::test]
 async fn host_metadata_reports_only_supported_and_authorized_handlers() {
     let fixture = Fixture::new();
-    config::settings::set_steamgriddb_credential(&fixture.root.path().join("private"), SECRET)
+    // This device has no plugin that declares a secret. A secret left by a
+    // removed plugin is still never in a snapshot.
+    plugin_secrets::PluginSecrets::new(fixture.root.path().join("private"))
+        .set(PLUGIN, SECRET)
         .unwrap();
     for (permission, ids) in [
         (SurfaceHostPermission::Full, vec![NAME, COUNT]),
@@ -54,7 +70,6 @@ async fn host_metadata_reports_only_supported_and_authorized_handlers() {
     ] {
         let (app, _) = fixture.routers(permission);
         let before = snapshot(&app).await;
-        assert_eq!(before["steamGridDbCredential"], "Configured");
         assert_ids(&before, &ids);
         let mut write = update(before["revision"].as_str().unwrap(), COUNT, "6");
         write["payload"]["editableSettingIds"] = json!([COUNT, NAME, CREDENTIAL]);
@@ -132,11 +147,11 @@ async fn brain_metadata_preserves_name_and_secret_writes_but_never_plugin_or_cou
     }
     for (body, status) in [
         (
-            json!({"_tag":"system.settings.steamgriddbCredential.set","payload":{"token":SECRET}}),
+            json!({"_tag":"system.settings.credential.set","payload":{"pluginId":PLUGIN,"token":SECRET}}),
             "Configured",
         ),
         (
-            json!({"_tag":"system.settings.steamgriddbCredential.clear","payload":{}}),
+            json!({"_tag":"system.settings.credential.clear","payload":{"pluginId":PLUGIN}}),
             "NotConfigured",
         ),
     ] {
@@ -144,11 +159,12 @@ async fn brain_metadata_preserves_name_and_secret_writes_but_never_plugin_or_cou
         assert_eq!(result["outcome"]["_tag"], "Ok", "{result}");
         assert_eq!(result["outcome"]["payload"]["status"], status);
         let current = snapshot(&app).await;
-        assert_eq!(current["steamGridDbCredential"], status);
+        assert_eq!(credential_status(&current), status);
         assert_ids(&current, &[NAME, CREDENTIAL]);
         assert!(!result.to_string().contains(SECRET));
         assert_eq!(
-            config::settings::read_steamgriddb_credential(&root.path().join("private"))
+            plugin_secrets::PluginSecrets::new(root.path().join("private"))
+                .read(PLUGIN)
                 .unwrap()
                 .as_deref(),
             (status == "Configured").then_some(SECRET)
@@ -164,7 +180,9 @@ async fn restricted_brain_metadata_and_forged_ids_cannot_grant_write_permission(
     ] {
         let root = tempfile::tempdir().unwrap();
         let state = brain_state(root.path(), permission);
-        config::settings::set_steamgriddb_credential(&root.path().join("private"), SECRET).unwrap();
+        plugin_secrets::PluginSecrets::new(root.path().join("private"))
+            .set(PLUGIN, SECRET)
+            .unwrap();
         let app = surface_host_router_from_state(state);
         // Even a forged snapshot request cannot select the returned permissions.
         let forged_snapshot = rpc(
@@ -177,7 +195,7 @@ async fn restricted_brain_metadata_and_forged_ids_cannot_grant_write_permission(
         .await;
         let before = &forged_snapshot["outcome"]["payload"];
         assert_ids(before, &[]);
-        assert_eq!(before["steamGridDbCredential"], "Configured");
+        assert_eq!(credential_status(before), "Configured");
         let bytes = std::fs::read(root.path().join("device.yaml")).unwrap();
         let revision = before["revision"].as_str().unwrap();
         for mut body in [
@@ -187,8 +205,8 @@ async fn restricted_brain_metadata_and_forged_ids_cannot_grant_write_permission(
                 before["plugins"][0]["id"].as_str().unwrap(),
                 "false",
             ),
-            json!({"_tag":"system.settings.steamgriddbCredential.set","payload":{"token":"replacement"}}),
-            json!({"_tag":"system.settings.steamgriddbCredential.clear","payload":{}}),
+            json!({"_tag":"system.settings.credential.set","payload":{"pluginId":PLUGIN,"token":"replacement"}}),
+            json!({"_tag":"system.settings.credential.clear","payload":{"pluginId":PLUGIN}}),
         ] {
             body["payload"]["editableSettingIds"] = json!([NAME, CREDENTIAL]);
             assert_eq!(
@@ -215,9 +233,10 @@ async fn restricted_brain_metadata_and_forged_ids_cannot_grant_write_permission(
             std::fs::read(root.path().join("device.yaml")).unwrap(),
             bytes
         );
-        assert_eq!(snapshot(&app).await["steamGridDbCredential"], "Configured");
+        assert_eq!(credential_status(&snapshot(&app).await), "Configured");
         assert_eq!(
-            config::settings::read_steamgriddb_credential(&root.path().join("private"))
+            plugin_secrets::PluginSecrets::new(root.path().join("private"))
+                .read(PLUGIN)
                 .unwrap()
                 .as_deref(),
             Some(SECRET)
@@ -301,7 +320,7 @@ async fn non_surface_host_brain_metadata_uses_dispatch_authority_not_shell_permi
         for body in [
             json!({"_tag":"system.settings.snapshot","payload":{"editableSettingIds":[NAME,CREDENTIAL]}}),
             update("forged-revision", NAME, "forged"),
-            json!({"_tag":"system.settings.steamgriddbCredential.clear","payload":{}}),
+            json!({"_tag":"system.settings.credential.clear","payload":{"pluginId":PLUGIN}}),
         ] {
             assert!(
                 dispatch(&state, &context, serde_json::from_value(body).unwrap())

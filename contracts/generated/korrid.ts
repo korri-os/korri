@@ -53,6 +53,8 @@ export type NonFinalDownloadTag = "NonFinalDownload";
 
 export type PluginDetailsOutput = PluginHttpRequests | ProviderClaimDetails;
 
+export type PluginGameAssetCandidatesOutput = PluginHttpRequests | GameAssetCandidates;
+
 /** Legacy `PluginHttpRequestOptions` value type, without `undefined`. */
 export type PluginHttpQueryValue = string | number | boolean;
 
@@ -405,6 +407,49 @@ export interface FinalDownload {
 	method?: FinalDownloadMethod;
 	/** Form fields of string values; needs `method: "POST"`. */
 	body?: Record<string, string>;
+}
+
+/**
+ * What a stored image of a game is for: legacy `GameAssetRole` without
+ * `banner` and `screenshot`, which have no consumer (ADR 0032 as widened
+ * for Velvet). `tile` is the square cover (`LocalGame.coverAssetId`).
+ */
+export enum GameAssetRole {
+	Tile = "tile",
+	Poster = "poster",
+	Hero = "hero",
+	Logo = "logo",
+}
+
+/**
+ * Legacy `GameAssetSource` without `provider`: korrid writes the owning
+ * plugin's id itself. `id` is the site's own id of the image, as text.
+ * `url` is where korrid downloads it: HTTPS, one of the plugin's `hosts`,
+ * no credentials, query or fragment.
+ */
+export interface GameAssetCandidateSource {
+	id?: string;
+	url: string;
+}
+
+/**
+ * Legacy `GameAssetCandidate` without `candidateId` and `gameId`. `width`
+ * and `height` are optional; when given, the image must have that size.
+ */
+export interface GameAssetCandidate {
+	role: GameAssetRole;
+	width?: number;
+	height?: number;
+	source: GameAssetCandidateSource;
+}
+
+/**
+ * The handler's result (legacy `ListGameAssetCandidatesResponse`): the
+ * candidates in the plugin's order of preference, roles in any order.
+ * korrid takes the first candidate of each role. Empty: no match.
+ */
+export interface GameAssetCandidates {
+	candidates: GameAssetCandidate[];
 }
 
 export interface GameProviderIdentity {
@@ -1382,6 +1427,15 @@ export interface PluginDetailsInput {
 }
 
 /**
+ * `game-assets.candidates` input: the game's library title, the only game
+ * fact a plugin gets, and every response so far.
+ */
+export interface PluginGameAssetCandidatesInput {
+	title: string;
+	responses: PluginHttpResponse[];
+}
+
+/**
  * The legacy `request(url, options)` call as a value: `url` plus the legacy
  * `PluginHttpRequestOptions` fields `query`, `headers`, `timeoutMs`, and the
  * same GET/form-POST semantics as `FinalDownload`.
@@ -2052,7 +2106,6 @@ export interface SettingsSnapshot {
 	 */
 	editableSettingIds: string[];
 	plugins: PluginSetting[];
-	steamGridDbCredential: SecretSettingStatus;
 }
 
 export interface SettingsSnapshotRequest {
@@ -2087,13 +2140,6 @@ export interface SourceStatus {
 export interface SourceStatusRequest {
 	/** Selects exactly one native peer by its expected device public key. */
 	devicePublicKey: string;
-}
-
-export interface SteamGridDbCredentialClearRequest {
-}
-
-export interface SteamGridDbCredentialSetRequest {
-	token: string;
 }
 
 /** The empty Ok payload of a request korrid accepted. */
@@ -2386,8 +2432,6 @@ export type RpcRequest =
 	| { _tag: "app.library.folders.rescan", payload: LibraryFoldersRescanRequest }
 	| { _tag: "system.settings.snapshot", payload: SettingsSnapshotRequest }
 	| { _tag: "system.settings.update", payload: SettingsUpdateRequest }
-	| { _tag: "system.settings.steamgriddbCredential.set", payload: SteamGridDbCredentialSetRequest }
-	| { _tag: "system.settings.steamgriddbCredential.clear", payload: SteamGridDbCredentialClearRequest }
 	| { _tag: "system.settings.credential.set", payload: CredentialSetRequest }
 	| { _tag: "system.settings.credential.clear", payload: CredentialClearRequest }
 	| { _tag: "system.identity.status", payload: IdentityStatusRequest }
@@ -2488,8 +2532,6 @@ export type RpcResponse =
 	| { _tag: "app.library.folders.rescan", outcome: LibraryFoldersSnapshotOutcome }
 	| { _tag: "system.settings.snapshot", outcome: SettingsSnapshotOutcome }
 	| { _tag: "system.settings.update", outcome: SettingsUpdateOutcome }
-	| { _tag: "system.settings.steamgriddbCredential.set", outcome: SensitiveSettingOutcome }
-	| { _tag: "system.settings.steamgriddbCredential.clear", outcome: SensitiveSettingOutcome }
 	| { _tag: "system.settings.credential.set", outcome: SensitiveSettingOutcome }
 	| { _tag: "system.settings.credential.clear", outcome: SensitiveSettingOutcome }
 	| { _tag: "system.identity.status", outcome: IdentityStatusOutcome }

@@ -42,7 +42,6 @@ pub mod catalog_migrate;
 pub mod cli;
 pub mod config;
 pub mod discovery;
-pub mod enrichment;
 pub mod federation;
 mod game_assets;
 pub mod game_routes;
@@ -1177,19 +1176,7 @@ pub struct SettingsSnapshot {
     /// every write still checks authority and runtime preconditions.
     pub editable_setting_ids: Vec<String>,
     pub plugins: Vec<PluginSetting>,
-    pub steam_grid_db_credential: config::settings::SecretSettingStatus,
 }
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SteamGridDbCredentialSetRequest {
-    pub token: String,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SteamGridDbCredentialClearRequest {}
 
 /// Set one plugin's secret on this device (ADR 0034). The answer carries the
 /// status, never the value.
@@ -1709,10 +1696,6 @@ pub enum RpcRequest {
     SettingsSnapshot(SettingsSnapshotRequest),
     #[serde(rename = "system.settings.update")]
     SettingsUpdate(SettingsUpdateRequest),
-    #[serde(rename = "system.settings.steamgriddbCredential.set")]
-    SteamGridDbCredentialSet(SteamGridDbCredentialSetRequest),
-    #[serde(rename = "system.settings.steamgriddbCredential.clear")]
-    SteamGridDbCredentialClear(SteamGridDbCredentialClearRequest),
     #[serde(rename = "system.settings.credential.set")]
     CredentialSet(CredentialSetRequest),
     #[serde(rename = "system.settings.credential.clear")]
@@ -1926,10 +1909,6 @@ pub enum RpcResponse {
     SettingsSnapshot(SettingsSnapshotOutcome),
     #[serde(rename = "system.settings.update")]
     SettingsUpdate(SettingsUpdateOutcome),
-    #[serde(rename = "system.settings.steamgriddbCredential.set")]
-    SteamGridDbCredentialSet(SensitiveSettingOutcome),
-    #[serde(rename = "system.settings.steamgriddbCredential.clear")]
-    SteamGridDbCredentialClear(SensitiveSettingOutcome),
     #[serde(rename = "system.settings.credential.set")]
     CredentialSet(SensitiveSettingOutcome),
     #[serde(rename = "system.settings.credential.clear")]
@@ -4343,13 +4322,7 @@ async fn dispatch(
                     &brain.local_storage_root,
                     &brain.registry_source,
                 )
-                .and_then(|readable| {
-                    config::settings::read_sensitive(&brain.private_state_root).and_then(
-                        |sensitive| {
-                            settings_snapshot(readable, sensitive, &brain.private_state_root)
-                        },
-                    )
-                })
+                .and_then(|readable| settings_snapshot(readable, &brain.private_state_root))
                 .map(SettingsSnapshotOutcome::Ok)
                 .unwrap_or_else(|error| SettingsSnapshotOutcome::Err(settings_failure(error))),
             ),
@@ -4405,17 +4378,7 @@ async fn dispatch(
                 }
                 RpcResponse::SettingsUpdate(
                     outcome
-                        .and_then(|readable| {
-                            config::settings::read_sensitive(&brain.private_state_root).and_then(
-                                |sensitive| {
-                                    settings_snapshot(
-                                        readable,
-                                        sensitive,
-                                        &brain.private_state_root,
-                                    )
-                                },
-                            )
-                        })
+                        .and_then(|readable| settings_snapshot(readable, &brain.private_state_root))
                         .map(SettingsUpdateOutcome::Ok)
                         .unwrap_or_else(|error| {
                             SettingsUpdateOutcome::Err(settings_failure(error))
@@ -4436,69 +4399,6 @@ async fn dispatch(
                 RpcResponse::SettingsUpdate(SettingsUpdateOutcome::Err(local_settings_required()))
             }
         },
-        RpcRequest::SteamGridDbCredentialSet(request) => match &state.mode {
-            ServerMode::Brain(brain) => {
-                let _write = brain
-                    .settings_write_lock
-                    .lock()
-                    .expect("settings write lock poisoned");
-                RpcResponse::SteamGridDbCredentialSet(
-                    config::settings::set_steamgriddb_credential(
-                        &brain.private_state_root,
-                        &request.token,
-                    )
-                    .and_then(|status| {
-                        crate::enrichment::SteamGridDbEnricher::clear_non_assigned_attempts(
-                            &brain.private_state_root,
-                        )
-                        .map_err(|diagnostic| {
-                            config::settings::SettingsError::Storage(diagnostic.message)
-                        })?;
-                        Ok(status)
-                    })
-                    .map(|status| SensitiveSettingOutcome::Ok(SensitiveSettingResult { status }))
-                    .unwrap_or_else(|error| SensitiveSettingOutcome::Err(settings_failure(error))),
-                )
-            }
-            ServerMode::Host(_) => {
-                RpcResponse::SteamGridDbCredentialSet(SensitiveSettingOutcome::Err(RpcFailure {
-                    code: "OperationUnsupported".into(),
-                    message: "settings are available only from the brain server".into(),
-                }))
-            }
-        },
-        RpcRequest::SteamGridDbCredentialClear(_) => {
-            match &state.mode {
-                ServerMode::Brain(brain) => {
-                    let _write = brain
-                        .settings_write_lock
-                        .lock()
-                        .expect("settings write lock poisoned");
-                    RpcResponse::SteamGridDbCredentialClear(
-                    config::settings::clear_steamgriddb_credential(&brain.private_state_root)
-                        .and_then(|status| {
-                            crate::enrichment::SteamGridDbEnricher::clear_non_assigned_attempts(
-                                &brain.private_state_root,
-                            )
-                            .map_err(|diagnostic| config::settings::SettingsError::Storage(diagnostic.message))?;
-                            Ok(status)
-                        })
-                        .map(|status| {
-                            SensitiveSettingOutcome::Ok(SensitiveSettingResult { status })
-                        })
-                        .unwrap_or_else(|error| {
-                            SensitiveSettingOutcome::Err(settings_failure(error))
-                        }),
-                )
-                }
-                ServerMode::Host(_) => RpcResponse::SteamGridDbCredentialClear(
-                    SensitiveSettingOutcome::Err(RpcFailure {
-                        code: "OperationUnsupported".into(),
-                        message: "settings are available only from the brain server".into(),
-                    }),
-                ),
-            }
-        }
         // ADR 0034: a plugin's secret is set wherever the plugin runs, so
         // both modes answer.
         RpcRequest::CredentialSet(request) => RpcResponse::CredentialSet(set_plugin_credential(
@@ -4976,17 +4876,6 @@ fn editable_setting_ids(
             if permitted(&setting_update(DEVICE_NAME_SETTING_ID)) {
                 ids.push(DEVICE_NAME_SETTING_ID.into());
             }
-            // This existing frontend setting uses two dedicated write handlers.
-            // Neither the credential nor any private path belongs in metadata.
-            if permitted(&RpcRequest::SteamGridDbCredentialSet(
-                SteamGridDbCredentialSetRequest {
-                    token: String::new(),
-                },
-            )) && permitted(&RpcRequest::SteamGridDbCredentialClear(
-                SteamGridDbCredentialClearRequest {},
-            )) {
-                ids.push("steamgriddb-credential".into());
-            }
             // Brain count writes and installed-plugin toggles are refused by
             // their handlers, even for an otherwise fully authorized caller.
         }
@@ -5033,12 +4922,29 @@ fn set_plugin_credential(
         }
         None => secrets.clear(plugin_id),
     };
-    match result {
-        Ok(status) => SensitiveSettingOutcome::Ok(SensitiveSettingResult { status }),
+    let status = match result {
+        Ok(status) => status,
         Err(error @ PluginSecretError::Storage) => {
-            failure("SettingsStorageUnavailable", &error.to_string())
+            return failure("SettingsStorageUnavailable", &error.to_string())
         }
-        Err(error) => failure("SettingsInvalid", &error.to_string()),
+        Err(error) => return failure("SettingsInvalid", &error.to_string()),
+    };
+    // ADR 0032, section 3: what an artwork pass learned with the old secret
+    // goes, except the images it stored. Where a pass can run, discovery
+    // clears under its own write lock.
+    let cleared = match state.local_library() {
+        Some(library) => library.discovery.plugin_secret_changed(plugin_id),
+        None => acquisition::artwork::clear_attempts_after_secret_change(
+            state.private_state_root(),
+            plugin_id,
+        ),
+    };
+    match cleared {
+        Ok(()) => SensitiveSettingOutcome::Ok(SensitiveSettingResult { status }),
+        Err(_) => failure(
+            "SettingsStorageUnavailable",
+            "private state root is unavailable",
+        ),
     }
 }
 
@@ -5074,7 +4980,6 @@ fn plugin_credentials(
 
 fn settings_snapshot(
     settings: config::settings::ReadableSettings,
-    sensitive: config::settings::SensitiveSettings,
     private_state_root: &Path,
 ) -> Result<SettingsSnapshot, config::settings::SettingsError> {
     let mut credentials = plugin_credentials(private_state_root, &settings)?;
@@ -5095,7 +5000,6 @@ fn settings_snapshot(
                 enabled: plugin.enabled,
             })
             .collect(),
-        steam_grid_db_credential: sensitive.steam_grid_db_credential,
     })
 }
 
@@ -6635,8 +6539,6 @@ mod plugin_repositories_tests;
 pub mod plugin_test_fixtures;
 mod runner_platform;
 pub mod script;
-#[cfg(test)]
-mod settings_secrets_tests;
 pub mod upstream;
 pub mod upstream_native;
 pub mod upstreams;
@@ -7851,19 +7753,21 @@ mod tests {
             .pop()
             .unwrap();
         let assignment = game_assets::GameAssetRepository::new(private.path())
-            .assign_tile(
+            .assign(
                 game_assets::AssetOwnerIdentity {
                     playable_id: game.playable_id,
                     release_id: game.release_id,
                     release_fingerprint: game.release_fingerprint,
                     rom_identity: game.rom_identity,
                 },
+                game_assets::GameAssetRole::Tile,
                 game_assets::AssetCandidate {
                     bytes: PNG_1X1.to_vec(),
                     declared_width: Some(1),
                     declared_height: Some(1),
-                    game_id: 10,
-                    grid_id: 20,
+                    provider: "@korri:steamgriddb".into(),
+                    source_id: Some("20".into()),
+                    source_url: None,
                 },
             )
             .unwrap();
@@ -7944,19 +7848,21 @@ mod tests {
             discovery::FolderSelectionGrantStore::default(),
         );
         let assignment = game_assets::GameAssetRepository::new(private.path())
-            .assign_tile(
+            .assign(
                 game_assets::AssetOwnerIdentity {
                     playable_id: "wl4".into(),
                     release_id: "gba".into(),
                     release_fingerprint: "sha256:item".into(),
                     rom_identity: "sha256:rom".into(),
                 },
+                game_assets::GameAssetRole::Tile,
                 game_assets::AssetCandidate {
                     bytes: PNG_1X1.to_vec(),
                     declared_width: Some(1),
                     declared_height: Some(1),
-                    game_id: 10,
-                    grid_id: 20,
+                    provider: "@korri:steamgriddb".into(),
+                    source_id: Some("20".into()),
+                    source_url: None,
                 },
             )
             .unwrap();
@@ -8004,7 +7910,7 @@ mod tests {
             format!("{}.png", "b".repeat(64)),
             "assignments.json".to_owned(),
             "../assignments.json".to_owned(),
-            "../../steamgriddb.credential".to_owned(),
+            "../../@korri:steamgriddb/credential".to_owned(),
             String::new(),
         ] {
             let (status, _, body) = asset_object(

@@ -184,6 +184,10 @@ pub(super) enum ProviderError {
     Unreachable(super::Failure),
     /// The plugin: thrown error, invalid output, undeclared host, exceeded bound.
     Failed(String),
+    /// The site answered 401 to a request that carried the plugin's secret
+    /// (ADR 0032, section 2). The operation ends: the handler is not called
+    /// again with an answer that only says the secret is wrong.
+    Unauthorized,
 }
 
 impl ProviderError {
@@ -193,7 +197,7 @@ impl ProviderError {
                 "ProviderUnreachable",
                 "The provider is not answering. Check the connection and retry.",
             ),
-            Self::Failed(_) => (
+            Self::Failed(_) | Self::Unauthorized => (
                 "ProviderFailed",
                 "The provider sent an answer Korri cannot use. Please retry later.",
             ),
@@ -216,14 +220,14 @@ pub(super) struct ProviderContext {
     pub credential: Option<std::sync::Arc<crate::plugin_secrets::PluginCredential>>,
 }
 
-enum Turn<T> {
+pub(super) enum Turn<T> {
     Requests(Vec<PluginHttpRequest>),
     Result(T),
 }
 
 /// Run one operation to its result: call, fetch the requested responses,
 /// call again with all responses so far, within the ADR 0016 bounds.
-async fn run<T>(
+pub(super) async fn run<T>(
     engine: &super::download::DownloadEngine,
     context: &ProviderContext,
     operation: &'static str,
@@ -282,6 +286,9 @@ async fn run<T>(
                 )
                 .await
                 .map_err(ProviderError::Unreachable)?;
+            if response.credential_sent && response.status == 401 {
+                return Err(ProviderError::Unauthorized);
+            }
             responses.push(PluginHttpResponse {
                 status: response.status,
                 ok: (200..300).contains(&response.status),
@@ -375,7 +382,9 @@ fn requests<T>(value: &serde_json::Value) -> Option<serde_json::Result<Turn<T>>>
 
 /// The tag decides: `_tag: "HttpRequests"` asks for data, anything else is
 /// the result, decoded strictly as the legacy type.
-fn decode_turn<T: serde::de::DeserializeOwned>(output: &str) -> serde_json::Result<Turn<T>> {
+pub(super) fn decode_turn<T: serde::de::DeserializeOwned>(
+    output: &str,
+) -> serde_json::Result<Turn<T>> {
     let value: serde_json::Value = serde_json::from_str(output)?;
     requests(&value).unwrap_or_else(|| serde_json::from_value(value).map(Turn::Result))
 }

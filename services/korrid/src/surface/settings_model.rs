@@ -6,10 +6,7 @@ use korri_surface_treaty::{
     SurfaceSettingInteraction, SurfaceSettingItem,
 };
 
-use crate::{
-    config::settings::SecretSettingStatus, LibraryFolderStatus, LibraryFoldersSnapshot,
-    LibraryFoldersState, SettingsSnapshot,
-};
+use crate::{LibraryFolderStatus, LibraryFoldersSnapshot, LibraryFoldersState, SettingsSnapshot};
 
 /// Every fact here comes from korrid.
 #[derive(Clone, Debug, Default)]
@@ -156,31 +153,6 @@ pub fn settings_from(facts: &DeviceFacts) -> Vec<SurfaceSettingGroup> {
         ),
     ];
     groups.extend(facts.launch_settings.iter().flatten().cloned().map(Some));
-    groups.push(group(
-        "Metadata",
-        vec![settings.map(|settings| {
-            let configured = settings.steam_grid_db_credential == SecretSettingStatus::Configured;
-            SurfaceSettingItem {
-                value: Some(
-                    if configured {
-                        "Configured"
-                    } else {
-                        "Not configured"
-                    }
-                    .into(),
-                ),
-                description: Some("Used only by korrid for metadata and cover art lookup".into()),
-                interaction: can_edit("steamgriddb-credential").then(|| {
-                    SurfaceSettingInteraction::SensitiveText {
-                        placeholder: Some("Paste API key".into()),
-                        max_length: Some(256),
-                        clear_label: configured.then(|| "Clear saved key".into()),
-                    }
-                }),
-                ..SurfaceSettingItem::new("steamgriddb-credential", "SteamGridDB API key")
-            }
-        })],
-    ));
     // Plugins: one group per repository, built from korrid's repository facts.
     groups.extend(facts.plugin_groups.iter().flatten().cloned().map(Some));
     let discovery = facts.discovery.as_ref();

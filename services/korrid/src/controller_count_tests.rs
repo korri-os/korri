@@ -122,7 +122,6 @@ async fn host_count_default_read_update_and_cas_use_real_device_config() {
     assert_eq!(before["playerCount"], 4);
     assert_eq!(before["editableSettingIds"], json!([COUNT]));
     assert!(before["plugins"].as_array().is_some());
-    assert_eq!(before["steamGridDbCredential"], "NotConfigured");
     let revision = before["revision"].as_str().unwrap();
     let updated = rpc(&app, update(revision, COUNT, "6")).await;
     assert_eq!(updated["outcome"]["_tag"], "Ok", "{updated}");
@@ -187,12 +186,6 @@ async fn host_count_invalid_values_and_unrelated_settings_leave_bytes_unchanged(
             "OperationUnsupported",
         );
         assert_eq!(fixture.bytes(), bytes);
-    }
-    for request in [
-        json!({"_tag":"system.settings.steamgriddbCredential.set","payload":{"token":"not-a-real-secret"}}),
-        json!({"_tag":"system.settings.steamgriddbCredential.clear","payload":{}}),
-    ] {
-        assert_error(&rpc(&app, request).await, "OperationUnsupported");
     }
 }
 

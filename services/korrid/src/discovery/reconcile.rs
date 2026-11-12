@@ -750,43 +750,6 @@ pub(crate) fn current_owned_discovery_game(
         .into_iter()
         .find(|game| game == expected))
 }
-pub(crate) fn update_owned_discovery_title(
-    readable_root: &Path,
-    private_root: &Path,
-    write_lock: &Arc<Mutex<()>>,
-    game: &DiscoveryOwnedGame,
-    title: &str,
-) -> Result<Option<DiscoveryOwnedGame>, DiscoveryError> {
-    let _guard = write_lock.lock().expect("discovery write lock poisoned");
-    let mut private = PrivateState::read(private_root)?;
-    documents::recover(readable_root, private_root, &mut private)?;
-    let Some(mut owned) = current_owned_discovery_game(readable_root, private_root, game)? else {
-        return Ok(None);
-    };
-    let current = Documents::read(readable_root)?;
-    let before = current.validate()?;
-    let mut after = before.clone();
-    let item = after
-        .library
-        .get_mut(&game.playable_id)
-        .expect("owned game exists");
-    item.title = Some(title.into());
-    owned.title = title.into();
-    owned.release_fingerprint = fingerprint_mapping(
-        serde_yaml::to_value(item)
-            .expect("game serializes")
-            .as_mapping()
-            .expect("game map"),
-    );
-    current.commit(
-        current.with_snapshot(&before, &after)?,
-        readable_root,
-        private_root,
-        &mut private,
-    )?;
-    Ok(Some(owned))
-}
-
 #[cfg(test)]
 mod tests;
 fn ensure_fixed_files(root: &Path) -> Result<(), DiscoveryError> {

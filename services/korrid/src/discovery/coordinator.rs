@@ -7,13 +7,13 @@ use std::{
 };
 
 use crate::{
+    acquisition::artwork::ArtworkPass,
     config::snapshot::ConfigSnapshotCoordinator,
     discovery::{
         reconcile::{DiscoveryCoordinator as ReconcileCoordinator, DiscoveryMutationReport},
         scanner::{DiscoveryDiagnostic, DiscoveryDiagnosticCode},
         DiscoveryError, DiscoveryOptions,
     },
-    enrichment::SteamGridDbEnricher,
 };
 use rand::RngCore;
 
@@ -145,7 +145,8 @@ fn canonical_directory(path: &Path) -> Result<PathBuf, FolderSelectionGrantError
 #[derive(Clone)]
 pub struct DiscoveryLifecycleCoordinator {
     reconciler: ReconcileCoordinator,
-    enricher: SteamGridDbEnricher,
+    /// The artwork pass of the `Enriching` phase (ADR 0032).
+    artwork: ArtworkPass,
     readable_root: PathBuf,
     private_root: PathBuf,
     snapshot_reader: ConfigSnapshotCoordinator,
@@ -272,7 +273,12 @@ impl DiscoveryLifecycleCoordinator {
             write_lock.clone(),
         )
         .with_registry_source(registry_source.clone());
-        let enricher = SteamGridDbEnricher::new(&readable_root, &private_root, write_lock.clone());
+        let artwork = ArtworkPass::new(
+            &readable_root,
+            &private_root,
+            write_lock.clone(),
+            registry_source.clone(),
+        );
         let attention_lock = reconciler.write_lock();
         let snapshot_reader = ConfigSnapshotCoordinator::new(&readable_root);
         snapshot_reader.reload();
@@ -281,7 +287,7 @@ impl DiscoveryLifecycleCoordinator {
             private_root,
             snapshot_reader,
             reconciler,
-            enricher,
+            artwork,
             grants,
             options: DiscoveryOptions::default(),
             state: Arc::new(Mutex::new(LifecycleState::default())),
@@ -292,6 +298,12 @@ impl DiscoveryLifecycleCoordinator {
         coordinator.refresh_snapshot_cache();
         coordinator.start_work(WorkRequest::Rescan);
         coordinator
+    }
+
+    /// A plugin's secret was set or cleared: its artwork attempts except
+    /// `assigned` go, so the next pass asks again (ADR 0032, section 3).
+    pub(crate) fn plugin_secret_changed(&self, plugin_id: &str) -> std::io::Result<()> {
+        self.artwork.secret_changed(plugin_id)
     }
 
     /// The folder-selection receipts `pair` consumes.
@@ -546,7 +558,7 @@ impl DiscoveryLifecycleCoordinator {
                 }
                 WorkRequest::Unpair(ref id) => self.reconciler.unpair(id, &self.options),
                 WorkRequest::Rescan => {
-                    let _ = self.enricher.clear_retryable_attempts();
+                    self.artwork.clear_retryable_attempts();
                     self.reconciler.rescan(&self.options)
                 }
             };
@@ -639,7 +651,7 @@ impl DiscoveryLifecycleCoordinator {
             state.enriching = true;
             bump(&mut state);
         }
-        let report = self.enricher.run();
+        let report = self.artwork.run();
         let diagnostics = report.diagnostics;
         let mut state = self
             .state
@@ -947,7 +959,12 @@ mod tests {
                 private.path(),
                 lock.clone(),
             ),
-            enricher: SteamGridDbEnricher::new(readable.path(), private.path(), lock.clone()),
+            artwork: ArtworkPass::new(
+                readable.path(),
+                private.path(),
+                lock.clone(),
+                crate::plugin_policy::RegistrySource::Installed,
+            ),
             readable_root: readable.path().into(),
             private_root: private.path().into(),
             snapshot_reader: ConfigSnapshotCoordinator::new(readable.path()),
@@ -1035,5 +1052,64 @@ mod tests {
             .wait_until_idle(Duration::from_secs(5))
             .sources
             .is_empty());
+    }
+
+    /// ADR 0032, section 2: the artwork pass runs after each successful
+    /// discovery pass, with the plugins that carry the handler.
+    #[test]
+    fn a_discovery_pass_is_followed_by_the_artwork_pass_of_the_installed_plugin() {
+        const PLUGIN: &str = crate::plugin_test_fixtures::ART_PLUGIN_ID;
+        let readable = tempfile::tempdir().unwrap();
+        let private = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        fs::write(folder.path().join("Wario Land 4.gba"), b"rom").unwrap();
+        let grants = FolderSelectionGrantStore::default();
+        // The plugin declares a secret and answers with no candidates.
+        let lifecycle = DiscoveryLifecycleCoordinator::new_with_registry_source(
+            readable.path(),
+            private.path(),
+            Arc::new(Mutex::new(())),
+            grants.clone(),
+            crate::plugin_policy::RegistrySource::Selected(Arc::new(
+                crate::plugin_test_fixtures::installed_with_secret_plugin(readable.path()),
+            )),
+        );
+        lifecycle.wait_until_idle(Duration::from_secs(5));
+        lifecycle
+            .pair(
+                &grants.issue_approved_path(folder.path()).unwrap().token,
+                "gba",
+            )
+            .unwrap();
+        let attempts = private.path().join(PLUGIN).join("attempts.json");
+        let codes = |snapshot: &DiscoverySnapshot| {
+            snapshot
+                .diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.code.clone())
+                .collect::<Vec<_>>()
+        };
+
+        // No secret, no call: the pass says so and records nothing.
+        let snapshot = lifecycle.wait_until_idle(Duration::from_secs(5));
+        assert_eq!(snapshot.state, DiscoveryPhase::Idle);
+        assert_eq!(codes(&snapshot), ["CredentialMissing"]);
+        assert!(!attempts.exists());
+
+        // With the secret, the next pass asks the plugin and records its
+        // answer in the plugin's own folder.
+        crate::plugin_secrets::PluginSecrets::new(private.path())
+            .set(PLUGIN, "lifecycle-test-not-a-real-secret")
+            .unwrap();
+        lifecycle.rescan();
+        let snapshot = lifecycle.wait_until_idle(Duration::from_secs(5));
+        assert!(codes(&snapshot).is_empty(), "{:?}", snapshot.diagnostics);
+        let recorded = fs::read_to_string(&attempts).unwrap();
+        assert!(recorded.contains("\"no-match\""), "{recorded}");
+        assert!(!recorded.contains("lifecycle-test-not-a-real-secret"));
+
+        // A secret change clears what the pass learned with the old one.
+        lifecycle.plugin_secret_changed(PLUGIN).unwrap();
+        assert!(!fs::read_to_string(&attempts).unwrap().contains("no-match"));
     }
 }

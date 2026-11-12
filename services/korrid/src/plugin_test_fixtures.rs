@@ -184,6 +184,21 @@ pub fn art_package(
     }
 }
 
+/// `installed` beside an artwork plugin that declares a secret for
+/// `www.steamgriddb.com` and finds nothing: enough for the settings rows and
+/// the secret RPCs.
+pub fn installed_with_secret_plugin(root: &Path) -> PluginRegistry {
+    installed_with_art(
+        root,
+        art_package(
+            root,
+            "export const name = 'steamgriddb'; export const title = 'SteamGridDB'; export const handlers = {'game-assets.candidates': () => ({candidates: []})};",
+            &["www.steamgriddb.com", "cdn2.steamgriddb.com"],
+            Some("www.steamgriddb.com"),
+        ),
+    )
+}
+
 /// The mGBA core of `installed` beside one artwork plugin.
 pub fn installed_with_art(root: &Path, art: EnabledPackage) -> PluginRegistry {
     PluginRegistry::from_installed(vec![

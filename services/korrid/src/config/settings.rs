@@ -10,7 +10,7 @@
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, OpenOptions},
-    io::{Read, Write},
+    io::Write,
     num::NonZeroU8,
     path::{Path, PathBuf},
 };
@@ -26,18 +26,12 @@ use crate::plugin_policy;
 pub const DEVICE_NAME_SETTING_ID: &str = "device-name";
 pub const PLAYER_COUNT_SETTING_ID: &str = "host.preferences.playerCount";
 pub(crate) const ONBOARDING_FINISHED_FILE_NAME: &str = "onboarding-finished";
-const STEAMGRIDDB_CREDENTIAL_FILE_NAME: &str = "steamgriddb.credential";
 
 #[typeshare::typeshare]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub enum SecretSettingStatus {
     Configured,
     NotConfigured,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SensitiveSettings {
-    pub steam_grid_db_credential: SecretSettingStatus,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -146,104 +140,6 @@ pub fn read_with_registry_source(
         device_name: snapshot.host.and_then(|host| host.title),
         plugins,
     })
-}
-
-pub fn read_sensitive(private_root: &Path) -> Result<SensitiveSettings, SettingsError> {
-    let path = secret_path(private_root);
-    if !private_root.exists() {
-        return Ok(SensitiveSettings {
-            steam_grid_db_credential: SecretSettingStatus::NotConfigured,
-        });
-    }
-    if !private_root.is_dir() {
-        return Err(SettingsError::Storage(
-            "private state root is unavailable".into(),
-        ));
-    }
-    Ok(SensitiveSettings {
-        steam_grid_db_credential: if path.exists() {
-            SecretSettingStatus::Configured
-        } else {
-            SecretSettingStatus::NotConfigured
-        },
-    })
-}
-
-pub fn set_steamgriddb_credential(
-    private_root: &Path,
-    token: &str,
-) -> Result<SecretSettingStatus, SettingsError> {
-    let token = token.trim();
-    if token.is_empty() {
-        return Err(SettingsError::Invalid(
-            "SteamGridDB credential cannot be empty".into(),
-        ));
-    }
-    fs::create_dir_all(private_root)
-        .map_err(|_| SettingsError::Storage("private state root is unavailable".into()))?;
-    if !private_root.is_dir() {
-        return Err(SettingsError::Storage(
-            "private state root is unavailable".into(),
-        ));
-    }
-    write_secret_atomically(&secret_path(private_root), token.as_bytes())?;
-    Ok(SecretSettingStatus::Configured)
-}
-
-pub(crate) fn read_steamgriddb_credential(
-    private_root: &Path,
-) -> Result<Option<String>, SettingsError> {
-    let path = secret_path(private_root);
-    if !private_root.exists() {
-        return Ok(None);
-    }
-    if !private_root.is_dir() {
-        return Err(SettingsError::Storage(
-            "private state root is unavailable".into(),
-        ));
-    }
-    match fs::File::open(path) {
-        Ok(mut file) => {
-            let mut token = String::new();
-            file.read_to_string(&mut token)
-                .map_err(|_| SettingsError::Storage("private state root is unavailable".into()))?;
-            let token = token.trim().to_owned();
-            Ok((!token.is_empty()).then_some(token))
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(_) => Err(SettingsError::Storage(
-            "private state root is unavailable".into(),
-        )),
-    }
-}
-
-pub fn clear_steamgriddb_credential(
-    private_root: &Path,
-) -> Result<SecretSettingStatus, SettingsError> {
-    if !private_root.exists() {
-        return Ok(SecretSettingStatus::NotConfigured);
-    }
-    if !private_root.is_dir() {
-        return Err(SettingsError::Storage(
-            "private state root is unavailable".into(),
-        ));
-    }
-    match fs::remove_file(secret_path(private_root)) {
-        Ok(()) => {
-            sync_directory(private_root);
-            Ok(SecretSettingStatus::NotConfigured)
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            Ok(SecretSettingStatus::NotConfigured)
-        }
-        Err(_) => Err(SettingsError::Storage(
-            "private state root is unavailable".into(),
-        )),
-    }
-}
-
-fn secret_path(private_root: &Path) -> PathBuf {
-    private_root.join(STEAMGRIDDB_CREDENTIAL_FILE_NAME)
 }
 
 pub fn update(
@@ -440,44 +336,6 @@ pub(crate) fn read_fixed(root: &Path, name: &str) -> Result<String, SettingsErro
 
 pub(crate) fn revision(content: &str) -> String {
     hex::encode(Sha256::digest(content.as_bytes()))
-}
-
-fn write_secret_atomically(path: &Path, content: &[u8]) -> Result<(), SettingsError> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| SettingsError::Storage("private state file has no parent".into()))?;
-    let temporary: PathBuf = parent.join(format!(
-        ".{}.{}.tmp",
-        path.file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("secret"),
-        hex::encode(rand::random::<[u8; 8]>())
-    ));
-    let result = (|| {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary)
-            .map_err(|_| SettingsError::Storage("private state root is unavailable".into()))?;
-        file.write_all(content)
-            .map_err(|_| SettingsError::Storage("private state root is unavailable".into()))?;
-        file.sync_all()
-            .map_err(|_| SettingsError::Storage("private state root is unavailable".into()))?;
-        fs::rename(&temporary, path)
-            .map_err(|_| SettingsError::Storage("private state root is unavailable".into()))?;
-        sync_directory(parent);
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result
-}
-
-fn sync_directory(path: &Path) {
-    if let Ok(directory) = OpenOptions::new().read(true).open(path) {
-        let _ = directory.sync_all();
-    }
 }
 
 pub(crate) fn write_atomically(

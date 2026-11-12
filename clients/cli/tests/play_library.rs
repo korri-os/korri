@@ -1425,7 +1425,6 @@ fn play_library_remote_folder_selection_requires_ssh_and_never_issues_receipt() 
             player_count: 1,
             editable_setting_ids: vec![],
             plugins: vec![],
-            steam_grid_db_credential: config::settings::SecretSettingStatus::NotConfigured,
         })),
         RpcResponse::PeerList(PeerListOutcome::Ok(PeerList {
             peers: vec![PeerListEntry {
@@ -1610,7 +1609,6 @@ fn target_responses() -> Vec<RpcResponse> {
             player_count: 1,
             editable_setting_ids: vec![],
             plugins: vec![],
-            steam_grid_db_credential: config::settings::SecretSettingStatus::NotConfigured,
         })),
         RpcResponse::PeerList(PeerListOutcome::Ok(PeerList {
             peers: vec![PeerListEntry {

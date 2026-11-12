@@ -62,7 +62,7 @@ impl PluginSecrets {
         plugin_id: &str,
         secret: &str,
     ) -> Result<SecretSettingStatus, PluginSecretError> {
-        let folder = self.folder(plugin_id)?;
+        let folder = self.plugin_folder(plugin_id)?;
         let secret = secret.trim();
         if secret.is_empty() {
             return Err(PluginSecretError::Empty);
@@ -87,7 +87,7 @@ impl PluginSecrets {
     /// The secret, for the one caller that adds it to a request. `None` when
     /// it is not set.
     pub(crate) fn read(&self, plugin_id: &str) -> Result<Option<String>, PluginSecretError> {
-        let path = self.folder(plugin_id)?.join(CREDENTIAL_FILE_NAME);
+        let path = self.plugin_folder(plugin_id)?.join(CREDENTIAL_FILE_NAME);
         let mut file = match fs::File::open(path) {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -103,8 +103,6 @@ impl PluginSecrets {
     /// The plugin's secret, bound to the one host that receives it. `None`
     /// when it is not set: then korrid does not call the plugin's handler
     /// that needs it (ADR 0034, "No secret, no call").
-    // The artwork operation (ADR 0032) is the caller; it lands next.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn credential(
         &self,
         plugin_id: &str,
@@ -144,7 +142,7 @@ impl PluginSecrets {
     /// Delete the plugin's secret. Deleting one that is already gone succeeds,
     /// so a step that runs twice is safe.
     pub fn clear(&self, plugin_id: &str) -> Result<SecretSettingStatus, PluginSecretError> {
-        let folder = self.folder(plugin_id)?;
+        let folder = self.plugin_folder(plugin_id)?;
         match fs::remove_file(folder.join(CREDENTIAL_FILE_NAME)) {
             Ok(()) => {
                 sync_directory(&folder);
@@ -157,9 +155,11 @@ impl PluginSecrets {
         }
     }
 
-    /// The plugin's own folder in korrid's private state. The id is checked
-    /// here, again, before it becomes a path part.
-    fn folder(&self, plugin_id: &str) -> Result<PathBuf, PluginSecretError> {
+    /// The plugin's own folder in korrid's private state
+    /// (`<private>/<plugin id>/`): its secret, and its artwork attempts
+    /// (ADR 0032). The id is checked here, again, before it becomes a path
+    /// part.
+    pub(crate) fn plugin_folder(&self, plugin_id: &str) -> Result<PathBuf, PluginSecretError> {
         if !valid_plugin_id(plugin_id) {
             return Err(PluginSecretError::InvalidPluginId);
         }
@@ -192,6 +192,13 @@ impl PluginCredential {
     pub(crate) fn authorization(&self, url: &url::Url) -> Option<reqwest::header::HeaderValue> {
         matches!(url.host(), Some(url::Host::Domain(host)) if host == self.host)
             .then(|| self.header.clone())
+    }
+
+    /// Whether `other` holds the same secret for the same host: the artwork
+    /// pass records what it learned only while the secret it used still
+    /// stands.
+    pub(crate) fn same_secret(&self, other: &Self) -> bool {
+        self.host == other.host && self.header == other.header
     }
 }
 

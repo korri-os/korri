@@ -283,24 +283,6 @@ impl Korrid {
             SettingsUpdateOutcome
         )
     }
-    pub async fn set_steam_grid_db_credential(&self, token: String) -> SensitiveSettingOutcome {
-        call!(
-            self,
-            Mapping::SettingWrite,
-            SteamGridDbCredentialSet,
-            crate::SteamGridDbCredentialSetRequest { token },
-            SensitiveSettingOutcome
-        )
-    }
-    pub async fn clear_steam_grid_db_credential(&self) -> SensitiveSettingOutcome {
-        call!(
-            self,
-            Mapping::SettingWrite,
-            SteamGridDbCredentialClear,
-            crate::SteamGridDbCredentialClearRequest {},
-            SensitiveSettingOutcome
-        )
-    }
     pub async fn set_plugin_credential(
         &self,
         plugin_id: String,

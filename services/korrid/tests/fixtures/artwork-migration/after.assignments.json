@@ -1,0 +1,38 @@
+{
+  "anguna:tile": {
+    "asset_id": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4.jpg",
+    "owner": {
+      "playable_id": "anguna",
+      "release_fingerprint": "sha256:9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a",
+      "release_id": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "rom_identity": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "role": "tile",
+    "source": {
+      "format": "jpg",
+      "height": 1024,
+      "id": "98765",
+      "provider": "@korri:steamgriddb",
+      "sha256": "sha256:c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "width": 1024
+    }
+  },
+  "wario-land-4:tile": {
+    "asset_id": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.png",
+    "owner": {
+      "playable_id": "wario-land-4",
+      "release_fingerprint": "sha256:9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a",
+      "release_id": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "rom_identity": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "role": "tile",
+    "source": {
+      "format": "png",
+      "height": 512,
+      "id": "123456",
+      "provider": "@korri:steamgriddb",
+      "sha256": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "width": 512
+    }
+  }
+}

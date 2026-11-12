@@ -45,6 +45,8 @@ impl Default for DownloadEngine {
 /// fronted sites (coolrom.com) answer 403 to a request without one. It names
 /// Korri and does not imitate a browser. A provider turn may set its own.
 pub(super) const USER_AGENT: &str = concat!("Korri/", env!("CARGO_PKG_VERSION"));
+/// The whole time one artwork image download may take (ADR 0032).
+const IMAGE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Body text one provider turn response may carry (ADR 0016).
 pub(super) const MAX_TEXT_BYTES: u64 = 512 * 1024;
 
@@ -75,6 +77,8 @@ impl GameRequest {
 
 /// A text response: final URL, lower-cased headers (repeats joined with ", ").
 pub(super) struct TextResponse {
+    /// The answering hop carried the plugin's secret.
+    pub credential_sent: bool,
     pub status: u16,
     pub url: String,
     pub headers: std::collections::BTreeMap<String, String>,
@@ -260,7 +264,7 @@ impl DownloadEngine {
         hosts: &[String],
     ) -> Result<TextResponse, Failure> {
         let work = async {
-            let (url, mut response, _) = self
+            let (url, mut response, credential_sent) = self
                 .send(
                     request.url,
                     policy::Hosts::Only(hosts),
@@ -300,6 +304,7 @@ impl DownloadEngine {
                 body.extend_from_slice(&chunk);
             }
             Ok(TextResponse {
+                credential_sent,
                 status,
                 url: url.to_string(),
                 headers,
@@ -312,6 +317,60 @@ impl DownloadEngine {
                 .map_err(|_| Failure::Stalled)?,
             None => work.await,
         }
+    }
+
+    /// The image an artwork candidate names (ADR 0032, section 1, step 3):
+    /// HTTPS, one of the plugin's declared hosts, a public address, no
+    /// redirect, 10 seconds in all and at most `max_bytes`. It never carries
+    /// the plugin's secret.
+    pub(super) async fn fetch_image(
+        &self,
+        url: &Url,
+        hosts: &[String],
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, Failure> {
+        if url.scheme() != "https" && self.addresses.requires_https() {
+            return Err(Failure::UnsafeUrl);
+        }
+        policy::declared(url, policy::Hosts::Only(hosts))?;
+        let work = async {
+            let client = self.client(url).await?;
+            let mut response = client
+                .get(url.clone())
+                .header(header::ACCEPT_ENCODING, "identity")
+                .send()
+                .await
+                .map_err(|error| {
+                    if error.is_timeout() {
+                        Failure::Stalled
+                    } else {
+                        Failure::Network
+                    }
+                })?;
+            if response.status().is_redirection() {
+                return Err(Failure::Redirect);
+            }
+            if !response.status().is_success() {
+                return Err(Failure::Network);
+            }
+            if response
+                .content_length()
+                .is_some_and(|length| length > max_bytes as u64)
+            {
+                return Err(Failure::TooLarge);
+            }
+            let mut bytes = Vec::new();
+            while let Some(chunk) = response.chunk().await.map_err(transfer)? {
+                if bytes.len() + chunk.len() > max_bytes {
+                    return Err(Failure::TooLarge);
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            Ok(bytes)
+        };
+        tokio::time::timeout(IMAGE_TIMEOUT, work)
+            .await
+            .map_err(|_| Failure::Stalled)?
     }
 
     /// A resolved game with no expected hash: one attempt, streamed to a

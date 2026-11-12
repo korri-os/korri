@@ -38,6 +38,9 @@ use rquickjs::{function::This, Context, Filter, Function, Object, Runtime, Type,
 /// The operation that turns a selected runner and target into a launch plan.
 /// Native runners may omit this handler for the default program/content launch.
 pub const LAUNCH_PREPARE: &str = "launch.prepare";
+/// The artwork operation (ADR 0032): a plugin that carries this handler
+/// finds images for a game. Admission looks for it and never calls it.
+pub const GAME_ASSETS_CANDIDATES: &str = "game-assets.candidates";
 
 /// Compose a modifier around the preceding plan, before any launch effects.
 pub const LAUNCH_COMPOSE: &str = "launch.compose";

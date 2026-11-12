@@ -1317,13 +1317,21 @@ fn report_from(
     if native_units.is_empty() && !manifest.ports.is_empty() {
         return Err("ports require an active service contribution".into());
     }
+    // ADR 0016 as amended by ADR 0032: network access belongs to a plugin
+    // that korrid fetches for, a provider or an artwork plugin.
     if !manifest.hosts.is_empty()
         && declaration
             .providers
             .as_ref()
             .is_none_or(|providers| providers.is_empty())
+        && !crate::script::has_plugin_operation_snapshot(
+            &source,
+            crate::script::GAME_ASSETS_CANDIDATES,
+        )?
     {
-        return Err("hosts require a providers contribution".into());
+        return Err(
+            "hosts require a providers contribution or a game-assets.candidates handler".into(),
+        );
     }
     let mut managed_names = BTreeSet::new();
     for (name, unit) in &native_units {
@@ -1683,9 +1691,60 @@ mod approval_tests {
         .err()
         .unwrap();
         assert!(
-            error.contains("hosts require a providers contribution"),
+            error.contains(
+                "hosts require a providers contribution or a game-assets.candidates handler"
+            ),
             "{error}"
         );
+    }
+
+    /// ADR 0032: an artwork plugin exports no `providers`. Its handler is
+    /// what lets it name hosts, and a secret for one of them.
+    #[test]
+    fn an_artwork_handler_admits_hosts_without_a_providers_export() {
+        let directory = tempfile::tempdir().unwrap();
+        let package = provider_package(
+            directory.path(),
+            Some(
+                r#"["www.steamgriddb.com","cdn2.steamgriddb.com"],"credentialHost":"www.steamgriddb.com""#,
+            ),
+            false,
+        );
+        let write = |handlers: &str| {
+            fs::write(
+                package.join("plugin.ts"),
+                format!("export const name = 'steamgriddb'; {handlers}"),
+            )
+            .unwrap();
+        };
+        // The handler must not run during admission.
+        write("export const handlers = {'game-assets.candidates': () => { throw new Error('must not call'); }};");
+        let report = provider_report(&package).unwrap();
+        assert_eq!(
+            report.hosts,
+            ["www.steamgriddb.com", "cdn2.steamgriddb.com"]
+        );
+        assert_eq!(
+            report.credential_host.as_deref(),
+            Some("www.steamgriddb.com")
+        );
+        assert!(report.declaration.providers.is_none());
+        assert!(report
+            .warning
+            .contains("sends it only to www.steamgriddb.com."));
+        // Another handler, or no handler, does not.
+        for handlers in [
+            "",
+            "export const handlers = {'launch.prepare': () => ({})};",
+            "export const handlers = {'game-assets.candidate': () => ({candidates: []})};",
+        ] {
+            write(handlers);
+            let error = provider_report(&package).err().unwrap();
+            assert!(
+                error.contains("hosts require a providers contribution"),
+                "{error}"
+            );
+        }
     }
 
     #[test]

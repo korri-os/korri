@@ -4717,8 +4717,7 @@ mod plugin_repositories {
             "system.settings.snapshot",
             json!({ "_tag": "Ok", "payload": { "revision": "r1", "playerCount": 4,
                 "editableSettingIds": [row],
-                "plugins": [{ "id": ART, "title": "SteamGridDB", "enabled": true, "credential": "NotConfigured" }],
-                "steamGridDbCredential": "NotConfigured" } }),
+                "plugins": [{ "id": ART, "title": "SteamGridDB", "enabled": true, "credential": "NotConfigured" }] } }),
         );
         push(
             &script,

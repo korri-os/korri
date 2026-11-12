@@ -82,7 +82,7 @@ fn target() -> Vec<Exchange> {
             json!({}),
             ok(
                 "system.settings.snapshot",
-                json!({"revision":"v1","deviceName":"Here","playerCount":1,"editableSettingIds":[],"plugins":[],"steamGridDbCredential":"NotConfigured"}),
+                json!({"revision":"v1","deviceName":"Here","playerCount":1,"editableSettingIds":[],"plugins":[]}),
             ),
         ),
         exchange(

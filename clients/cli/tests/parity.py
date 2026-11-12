@@ -21,7 +21,6 @@ MAPPINGS = {
     "person-name": "identity name NAME",
     "setup-restart": "setup restart",
     "host.preferences.playerCount": "controllers seats COUNT",
-    "steamgriddb-credential": "metadata key set|clear",
     "local-games": "library games list",
     "game-discovery-status": "library folders list",
     "library-folder-rescan": "library folders rescan",

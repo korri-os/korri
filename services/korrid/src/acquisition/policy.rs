@@ -19,6 +19,16 @@ impl AddressPolicy {
         }
         public_address(ip)
     }
+
+    /// An artwork image comes over HTTPS. Tests reach a loopback server
+    /// over plain HTTP.
+    pub(super) fn requires_https(self) -> bool {
+        #[cfg(test)]
+        if matches!(self, Self::AllowLoopback) {
+            return false;
+        }
+        true
+    }
 }
 
 pub(super) fn public_address(ip: IpAddr) -> bool {

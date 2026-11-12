@@ -135,7 +135,6 @@ fn settings() -> SettingsSnapshot {
         player_count: 2,
         editable_setting_ids: vec![config::settings::PLAYER_COUNT_SETTING_ID.into()],
         plugins: vec![],
-        steam_grid_db_credential: config::settings::SecretSettingStatus::Configured,
     }
 }
 fn assert_json(output: &Output, response: &RpcResponse, exit: i32) {
@@ -272,7 +271,6 @@ const EARLY_REJECTIONS: &[(&[&str], &str)] = &[
         &["wifi", "connect", "id", "--ask-password", "--json"],
         MISSING_PRIVATE_INPUT,
     ),
-    (&["metadata", "key", "set", "--json"], MISSING_PRIVATE_INPUT),
     (
         &[
             "plugins",
@@ -387,30 +385,6 @@ fn settings_saves_keep_exact_producer_ids_and_confirm_both_writes() {
         );
         server.done();
     }
-}
-
-#[test]
-fn settings_metadata_never_prints_the_credential() {
-    let response = RpcResponse::SteamGridDbCredentialSet(SensitiveSettingOutcome::Ok(
-        SensitiveSettingResult {
-            status: config::settings::SecretSettingStatus::Configured,
-        },
-    ));
-    let server = RpcServer::start(vec![exchange(
-        RpcRequest::SteamGridDbCredentialSet(SteamGridDbCredentialSetRequest {
-            token: "private-token".into(),
-        }),
-        response.clone(),
-    )]);
-    assert_json(
-        &server.run(
-            &["metadata", "key", "set", "--key-stdin", "--json"],
-            "private-token\n",
-        ),
-        &response,
-        0,
-    );
-    server.done();
 }
 
 #[test]
@@ -755,13 +729,13 @@ fn settings_identity_reset_is_blocked_without_exclusive_writer_proof_and_never_t
 
 #[test]
 fn settings_hidden_terminal_input_disables_echo_restores_it_and_keeps_secrets_out_of_argv() {
-    let response = RpcResponse::SteamGridDbCredentialSet(SensitiveSettingOutcome::Ok(
-        SensitiveSettingResult {
+    let response =
+        RpcResponse::CredentialSet(SensitiveSettingOutcome::Ok(SensitiveSettingResult {
             status: config::settings::SecretSettingStatus::Configured,
-        },
-    ));
+        }));
     let server = RpcServer::start(vec![exchange(
-        RpcRequest::SteamGridDbCredentialSet(SteamGridDbCredentialSetRequest {
+        RpcRequest::CredentialSet(CredentialSetRequest {
+            plugin_id: "@korri:steamgriddb".into(),
             token: "private-token".into(),
         }),
         response,
@@ -1126,7 +1100,6 @@ fn settings_invalid_private_input_and_rejected_secret_arguments_are_never_echoed
             "private-password",
             "--json",
         ],
-        vec!["metadata", "key", "set", "private-token", "--json"],
         vec![
             "plugins",
             "credential",
@@ -1319,36 +1292,6 @@ fn settings_setup_rerun_needs_confirmation_and_finishing_keeps_the_existing_iden
         );
         server.done();
     }
-}
-
-#[test]
-fn settings_metadata_show_and_clear_only_show_configuration_status() {
-    let response = RpcResponse::SettingsSnapshot(SettingsSnapshotOutcome::Ok(settings()));
-    let server = RpcServer::start(vec![exchange(
-        RpcRequest::SettingsSnapshot(SettingsSnapshotRequest {}),
-        response.clone(),
-    )]);
-    assert_json(
-        &server.run(&["metadata", "key", "--json"], ""),
-        &response,
-        0,
-    );
-    server.done();
-    let response = RpcResponse::SteamGridDbCredentialClear(SensitiveSettingOutcome::Ok(
-        SensitiveSettingResult {
-            status: config::settings::SecretSettingStatus::NotConfigured,
-        },
-    ));
-    let server = RpcServer::start(vec![exchange(
-        RpcRequest::SteamGridDbCredentialClear(SteamGridDbCredentialClearRequest {}),
-        response.clone(),
-    )]);
-    assert_json(
-        &server.run(&["metadata", "key", "clear", "--yes", "--json"], ""),
-        &response,
-        0,
-    );
-    server.done();
 }
 
 #[test]

@@ -844,26 +844,6 @@ impl Launchables {
         let this = Arc::clone(self);
         let setting_id = setting_id.to_owned();
         let value = value.to_owned();
-        if setting_id == "steamgriddb-credential" {
-            tokio::spawn(async move {
-                let result = if value.trim().is_empty() {
-                    this.korrid.clear_steam_grid_db_credential().await
-                } else {
-                    this.korrid.set_steam_grid_db_credential(value).await
-                };
-                this.lock().settings_busy = false;
-                match result {
-                    SensitiveSettingOutcome::Err(failure) => {
-                        this.settings_problem(&setting_id, &failure.message)
-                    }
-                    SensitiveSettingOutcome::Ok(_) => {
-                        this.publish_settings_status(SurfaceSettingsStatus::Idle);
-                        this.load(false, None).await;
-                    }
-                }
-            });
-            return;
-        }
         // A plugin's secret row: an empty value clears, as its clear action
         // sends. The value goes to korrid and is never kept here.
         if let Some(plugin_id) = crate::surface::plugins::credential_plugin_from(&setting_id) {

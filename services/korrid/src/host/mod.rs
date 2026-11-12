@@ -1054,9 +1054,7 @@ impl HostRuntime {
                 &runtime.settings_registry_source(),
             )
             .map_err(crate::settings_failure)?;
-            let sensitive = crate::config::settings::read_sensitive(&runtime.private_state_root)
-                .map_err(crate::settings_failure)?;
-            crate::settings_snapshot(readable, sensitive, &runtime.private_state_root)
+            crate::settings_snapshot(readable, &runtime.private_state_root)
                 .map_err(crate::settings_failure)
         })
         .await
@@ -1085,9 +1083,7 @@ impl HostRuntime {
                 &runtime.settings_registry_source(),
             )
             .map_err(crate::settings_failure)?;
-            let sensitive = crate::config::settings::read_sensitive(&runtime.private_state_root)
-                .map_err(crate::settings_failure)?;
-            crate::settings_snapshot(readable, sensitive, &runtime.private_state_root)
+            crate::settings_snapshot(readable, &runtime.private_state_root)
                 .map_err(crate::settings_failure)
         })
         .await
@@ -1120,8 +1116,6 @@ impl HostRuntime {
                 if before.revision != request.expected_revision {
                     return Err(crate::settings_failure(settings::SettingsError::Conflict));
                 }
-                let sensitive = settings::read_sensitive(&runtime.private_state_root)
-                    .map_err(crate::settings_failure)?;
                 let settings::SettingChange::PlayerCount(count) = &change else {
                     unreachable!("validated player count")
                 };
@@ -1160,7 +1154,7 @@ impl HostRuntime {
                                         .into(),
                             });
                         }
-                        crate::settings_snapshot(readable, sensitive, &runtime.private_state_root)
+                        crate::settings_snapshot(readable, &runtime.private_state_root)
                             .map_err(crate::settings_failure)
                     }
                     Err(error) => {

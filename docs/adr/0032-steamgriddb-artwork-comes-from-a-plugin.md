@@ -298,7 +298,7 @@ it.
 | Result `{ candidates }` | legacy `ListGameAssetCandidatesResponse` | None. No new `_tag`: ADR 0016 treats anything but `HttpRequests` as the result. |
 | `candidateId` | legacy `GameAssetCandidate` | Dropped. It named a file in legacy's candidate cache. main names an asset by its bytes. |
 | `gameId` | legacy `GameAssetCandidate` | Dropped. korrid asked about one game. |
-| `role` | legacy `GameAssetRole` | Only `tile` is admitted. Its only consumer is `matching_tile_asset_ids`, which feeds `coverAssetId`. The other five roles join when a consumer exists. |
+| `role` | legacy `GameAssetRole` | Only `tile` is admitted. Its only consumer is `matching_tile_asset_ids`, which feeds `coverAssetId`. The other five roles join when a consumer exists. **Amended 2026-11-11:** `poster`, `hero` and `logo` joined (see "Amendment: roles for Velvet"). |
 | `width`, `height` | legacy `GameAssetCandidate` (required) | Optional, as main's `AssetCandidate.declared_width` and `declared_height`. The SteamGridDB `Grid` schema has no size. korrid still refuses a mismatch (`InconsistentDimensions`). |
 | `source.provider` | legacy `GameAssetSource` | Not in the plugin result. korrid writes the owning plugin id, so a plugin cannot claim another source. The legacy closed list becomes the plugin id. |
 | `source.id` | legacy `GameAssetSource.id`, the legacy importer's `imageId` | None. |
@@ -357,6 +357,30 @@ artwork section beside "Acquisition providers".
   The migration probably finds no key file on most devices. I did not check
   any device.
 - Covers stay invisible until the section 6 prerequisite lands.
+
+## Amendment: roles for Velvet (2026-11-11)
+
+**Owner decision, 2026-11-11:** "art first". The Velvet surface (epic #425)
+is the consumer this ADR waited for ("The other five roles join when a
+consumer exists"). Sections 1 to 5 are built as written, with these deltas.
+Section 6 was replaced by
+[ADR 0065](0065-the-shell-reads-a-stored-image-through-the-rpc-and-shows-it-when-it-arrives.md).
+The "Portal" bullet of section 5 does not apply: the portal is gone.
+
+| Element | As written | Amended |
+|---|---|---|
+| Roles admitted | `tile` | `tile`, `poster`, `hero`, `logo` (legacy `GameAssetRole`; the legacy importer maps 1x1 to `tile` and 2x3 to `poster`). `banner` and `screenshot` stay refused: no consumer, and no licensed screenshot producer (ADR 0042). |
+| Choice (section 1, "Order") | korrid uses the first candidate | korrid uses the first candidate of each role. The plugin lists roles in any order. |
+| Step 1 of section 1 | skip a game with a recorded attempt or a matching `tile` assignment | Skip a game with a recorded attempt. A game that holds every role gets no call. A role the game holds already is not downloaded again. |
+| Step 4 of section 1 | `validate_image`, unchanged (square) | One size rule for each role: `tile` square; `poster` 2 to 3 within 2 %; `hero` wider than tall, from 2 to 1 up to 4 to 1; `logo` any shape with an alpha channel (PNG or WebP). Every image is still a static PNG, JPEG or WebP of at most 4096 pixels a side and 5 MiB. |
+| Assignment key (section 5) | `<playable id>` | `<playable id>:<role>`, legacy `GameAssetAssignmentRecord.id`. The one-off migration turns each old key into `<playable id>:tile`. |
+| Outcome `assigned` (section 2) | Image stored | At least one role was stored. A role with no candidate is not an error. A game is `transient` when any of its downloads failed, also when another role arrived, so the next rescan fetches the rest. |
+| Several plugins (section 2) | stop for a game once it has a tile | A plugin is not asked about a game that holds every role. |
+| Consumer | `coverAssetId` | `coverAssetId` stays the `tile`. `SurfaceGame.media` carries `poster`, `hero` and `logo` (surface treaty, #421). |
+
+Built in `services/korrid/src/acquisition/artwork.rs` and
+`services/korrid/src/game_assets.rs`. The one-off migration is
+`services/korrid/deploy/migrate-plugin-artwork.py`.
 
 ## Owner questions
 

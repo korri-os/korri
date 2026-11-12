@@ -600,10 +600,12 @@ from that projection.
 Each entry is a lowercase DNS name of at least two labels (`[a-z0-9]`, inner
 `-`, each label 1 to 63 bytes, 253 bytes in total), no trailing dot, no
 wildcard, no port, no scheme, no IP literal. Entries are distinct; at most 128,
-the `ports` bound. A non-empty `hosts` needs a `providers` export, as `ports`
-needs a service. korrid refuses any request and any redirect hop whose host is
-not exactly in the owning plugin's list, both for provider turns and for the
-game download. An empty list means no network. The SSRF and redirect policy in
+the `ports` bound. A non-empty `hosts` needs a `providers` export or a
+`game-assets.candidates` handler (ADR 0032), as `ports` needs a service.
+korrid refuses any request and any redirect hop whose host is not exactly in
+the owning plugin's list: for provider turns, for the game download, for
+artwork turns and for the artwork image download. An empty list means no
+network. The SSRF and redirect policy in
 `acquisition/policy.rs` still applies to every hop.
 
 #### Plugin secret
@@ -1020,6 +1022,137 @@ ADR 0012/0013's cache grammar, readiness, content-hash identity and
   one line per ready folder that no library release names (korrid stopped
   between publishing and recording). Nothing deletes such a folder; the next
   Get of that game records it.
+
+### Artwork
+
+ADR 0032 records the decision, with the roles widened on 2026-11-11 for the
+Velvet surface. A plugin finds images for a game; korrid makes every request,
+downloads the images, checks them and stores them. korrid knows no artwork
+site. Every type named below is a Rust type exported through Typeshare into
+`contracts/generated/korrid.ts`.
+
+#### Declaration
+
+```ts
+import type {
+  PluginGameAssetCandidatesInput, PluginGameAssetCandidatesOutput,
+} from "korrid"
+
+export const name = "steamgriddb"
+export const title = "SteamGridDB"
+export const handlers = {
+  "game-assets.candidates": (input: PluginGameAssetCandidatesInput): PluginGameAssetCandidatesOutput => { /* ... */ },
+}
+```
+
+A plugin declares the operation by carrying a callable handler named
+`game-assets.candidates`. Evaluation checks that it is callable and never
+calls it. The plugin exports no `providers`: it is not an acquisition
+provider. Its `plugin.nix` names the hosts it may reach in `hosts` and, when
+the site needs a key, the one host that receives it in `credentialHost` (see
+"Plugin secret").
+
+#### The handler
+
+The handler follows the request and response turns of an acquisition
+provider, with the same rules and the same bounds: the plugin's declared
+`hosts`, the refused headers, at most 4 calls, 8 requests per turn, 512 KiB
+per response, 4 MiB of input, 1000 ms and 16 MiB per call.
+
+| Operation | Input type | Output type |
+|---|---|---|
+| `game-assets.candidates` | `PluginGameAssetCandidatesInput { title, responses }` | `PluginGameAssetCandidatesOutput = PluginHttpRequests \| GameAssetCandidates` |
+
+`title` is the game's library title, the only game fact a plugin gets. The
+playable id, the release, the system and every path stay in korrid.
+
+```ts
+interface GameAssetCandidates { candidates: GameAssetCandidate[] }
+
+interface GameAssetCandidate {
+  role: "tile" | "poster" | "hero" | "logo"   // GameAssetRole
+  width?: number          // when given, the image must have this size
+  height?: number
+  source: GameAssetCandidateSource
+}
+
+interface GameAssetCandidateSource {
+  id?: string             // the site's own id of the image, as text
+  url: string             // https, one of the plugin's hosts, no credentials, query or fragment
+}
+```
+
+The plugin lists candidates in its order of preference, roles in any order.
+korrid takes the first candidate of each role. An empty list means no match.
+Matching, filtering and ordering stay in the plugin. `banner` and `screenshot`
+are refused: they have no consumer. Unknown fields, explicit `null` values, a
+role korrid does not admit, an empty `source.id` and a `source.url` with
+credentials, a query or a fragment each refuse the whole answer
+(`ProviderFailed`). A plugin cannot name a provider or a title: korrid writes
+the owning plugin's id as the source's provider, and titles are library data.
+
+#### What korrid does with the candidates
+
+For each role the game does not hold yet, korrid downloads the first
+candidate's `url`: HTTPS only, a host in the plugin's `hosts`, a public
+address, no redirect, 10 seconds in all and at most 5 MiB. This download
+never carries the plugin's secret. korrid then checks the bytes: a static
+PNG, JPEG or WebP of at most 4096 pixels a side, with the size the candidate
+gave if it gave one, and in the shape of its role:
+
+| Role | Shape |
+|---|---|
+| `tile` | square |
+| `poster` | width to height is 2 to 3, within 2 % |
+| `hero` | wider than tall, from 2 to 1 up to 4 to 1 |
+| `logo` | any shape, with an alpha channel (PNG or WebP) |
+
+Under discovery's write lock korrid checks that the game is still the one it
+asked about, then writes the blob and the assignment.
+
+- **Blob:** `<private>/game-assets/blobs/<sha256>.<png|jpg|webp>`. The file
+  name is the asset id.
+- **Assignment:** `<private>/game-assets/assignments.json`, one record for
+  each `<playable id>:<role>`: `{ asset_id, role, owner, source }`. `source`
+  is `{ provider, id?, url?, sha256, width, height, format }`, where
+  `provider` is the owning plugin's id.
+- **Reading:** `LocalGame.coverAssetId` is the `tile` asset id.
+  `app.game-assets.object { assetId }` serves an asset that any assignment
+  names, whatever its role (ADR 0065).
+
+#### When korrid calls it
+
+After each successful discovery pass, in the `Enriching` phase, wherever
+discovery runs (ADR 0017). korrid asks every enabled plugin that carries the
+handler, in plugin id order, about at most 8 games per plugin per pass. It
+does not ask a plugin about a game that plugin has a recorded attempt for,
+and it does not ask about a game that already holds every role. If the
+plugin declares a secret and the secret is not set, korrid does not call the
+handler and reports `CredentialMissing`.
+
+Attempts are in the plugin's own folder,
+`<private>/<plugin id>/attempts.json`, keyed by a hash of the playable id,
+the release id, the release fingerprint and the ROM identity:
+
+| Event | Outcome | Cleared by |
+|---|---|---|
+| An image was stored, or the game held images and nothing failed | `assigned` | never |
+| The plugin returned no candidate | `no-match` | a set or a clear of the plugin's secret |
+| `ProviderUnreachable`, `ProviderFailed`, a failed download | `transient` | a rescan |
+| korrid refused the bytes and stored nothing | `asset-rejected` | a set or a clear of the plugin's secret |
+| The game changed during the pass | not recorded | |
+
+A role with no candidate is not an error. A game is `transient` when any of
+its downloads failed, also when another role arrived: the next rescan asks
+again and downloads only the roles the game does not hold. A 401 answer to a
+request that carried the secret stops the pass for that plugin and records
+nothing (`CredentialUnauthorized`). korrid records an attempt only while the
+secret it used still stands. korrid does not retry a 429 or a 5xx: the plugin
+sees `ok: false`.
+
+The diagnostics of the pass appear with the discovery snapshot's own. Their
+messages are fixed copy: none contains a URL, a header value, plugin text or
+the secret.
 
 ### Native runners for specific content
 

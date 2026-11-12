@@ -22,7 +22,6 @@ producer the korrid port came from.
 | `person-name` | `identity name NAME` | Same person-name producer and signer requirement |
 | `setup-restart` | `setup restart` | Retains games, identity and Wi-Fi |
 | `host.preferences.playerCount` | `controllers seats COUNT` | Configured seats, not physical assignments |
-| `steamgriddb-credential` set / clear | `metadata key set --key-stdin` / `metadata key clear` | Private input; never show key |
 | `local-games` (read-only) | `library games list` | Actual local game IDs |
 | `game-discovery-status` (read-only) | `library folders list` | Scan state and diagnostics |
 | `library-folder-rescan` | `library folders rescan` | Same rescan |

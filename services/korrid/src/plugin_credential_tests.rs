@@ -7,18 +7,8 @@ use std::os::unix::fs::PermissionsExt;
 const PLUGIN: &str = plugin_test_fixtures::ART_PLUGIN_ID;
 const SECRET: &str = "plugin-credential-test-not-a-real-secret";
 const ROW: &str = "plugin-credential:%40korri%3Asteamgriddb";
-const ART_SOURCE: &str = "export const name = 'steamgriddb'; export const title = 'SteamGridDB'; export const handlers = {'game-assets.candidates': () => ({candidates: []})};";
-
 fn art_registry(root: &std::path::Path) -> plugin::PluginRegistry {
-    plugin_test_fixtures::installed_with_art(
-        root,
-        plugin_test_fixtures::art_package(
-            root,
-            ART_SOURCE,
-            &["www.steamgriddb.com", "cdn2.steamgriddb.com"],
-            Some("www.steamgriddb.com"),
-        ),
-    )
+    plugin_test_fixtures::installed_with_secret_plugin(root)
 }
 
 /// A device korrid (host mode) with the artwork plugin installed.
@@ -172,6 +162,46 @@ async fn brain_mode_sets_and_clears_a_plugin_secret_the_same_way() {
     let root = tempfile::tempdir().unwrap();
     let app = brain_router(root.path(), SurfaceHostPermission::Full);
     set_read_and_clear(&app, root.path()).await;
+}
+
+/// ADR 0032, section 3: a set or a clear of the plugin's secret clears its
+/// artwork attempts except `assigned`, so the next pass asks again.
+#[tokio::test]
+async fn a_set_or_a_clear_drops_the_plugins_artwork_attempts_except_assigned() {
+    let fixture = host_fixture();
+    let (app, _) = fixture.routers(SurfaceHostPermission::Full);
+    let folder = fixture.root.path().join("private").join(PLUGIN);
+    std::fs::create_dir_all(&folder).unwrap();
+    let attempt = |outcome: &str| {
+        json!({ "outcome": outcome, "playable_id": outcome, "release_id": "r",
+            "release_fingerprint": "f", "rom_identity": "i" })
+    };
+    let attempts = json!({ "attempts": {
+        "sha256:a": attempt("assigned"), "sha256:b": attempt("no-match"),
+        "sha256:c": attempt("transient"), "sha256:d": attempt("asset-rejected"),
+    } });
+    for body in [set(PLUGIN, SECRET), clear(PLUGIN)] {
+        std::fs::write(folder.join("attempts.json"), attempts.to_string()).unwrap();
+        let answer = rpc(&app, body).await;
+        assert_eq!(answer["outcome"]["_tag"], "Ok", "{answer}");
+        let left: Value =
+            serde_json::from_slice(&std::fs::read(folder.join("attempts.json")).unwrap()).unwrap();
+        assert_eq!(
+            left["attempts"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .collect::<Vec<_>>(),
+            vec!["sha256:a"],
+            "{left}"
+        );
+    }
+    // A refused set changes no attempt.
+    std::fs::write(folder.join("attempts.json"), attempts.to_string()).unwrap();
+    assert_error(&rpc(&app, set(PLUGIN, " ")).await, "SettingsInvalid");
+    let left: Value =
+        serde_json::from_slice(&std::fs::read(folder.join("attempts.json")).unwrap()).unwrap();
+    assert_eq!(left["attempts"].as_object().unwrap().len(), 4);
 }
 
 #[tokio::test]
