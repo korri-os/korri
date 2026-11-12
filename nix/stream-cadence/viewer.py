@@ -98,15 +98,28 @@ def plugin() -> dict | None:
     }
 
 
+# korrid's choice of picture path: platform_from_path in
+# services/korrid/src/linux_viewer/production.rs. This is a copy. The test
+# tests/test_handheld.py reads korrid's file and fails when the two differ.
+PICTURE_PATHS: tuple[tuple[tuple[bytes, ...], str], ...] = (
+    ((b"qcom,sm8550", b"qcom,sm8250"), "v4l2m2m"),
+    ((b"rockchip,rk3566", b"allwinner,sun50i-h700"), "v4l2request"),
+)
+PICTURE_PATH_DEFAULT = "x11"
+
+
+def picture_path(compatible: bytes) -> str:
+    """The viewer's -platform for a device-tree compatible value."""
+    values = compatible.split(b"\0")
+    for chips, name in PICTURE_PATHS:
+        if any(chip in values for chip in chips):
+            return name
+    return PICTURE_PATH_DEFAULT
+
+
 def platform() -> str:
-    """The picture path that korrid chooses: linux_viewer/production.rs platform()."""
     path = Path("/proc/device-tree/compatible")
-    values = path.read_bytes().split(b"\0") if path.exists() else []
-    if b"qcom,sm8550" in values or b"qcom,sm8250" in values:
-        return "v4l2m2m"
-    if b"rockchip,rk3566" in values or b"allwinner,sun50i-h700" in values:
-        return "v4l2request"
-    return "x11"
+    return picture_path(path.read_bytes() if path.exists() else b"")
 
 
 PIN_LINE = r"(PIN on the target PC: )(\d{4})\b"

@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import sys
 import unittest
 
@@ -21,6 +22,45 @@ KORRID_VIEWER = Path(
         TESTS.parents[2] / "services/korrid/src/linux_viewer/production.rs",
     )
 )
+
+
+def korrid_picture_paths(source: str) -> tuple[list[tuple[set[bytes], str]], str | None]:
+    """The chip table of korrid's platform_from_path: branches in order, then the default."""
+    body = source.split("fn platform_from_path", 1)[1].split("\n}\n", 1)[0]
+    table = body.split("let mut values", 1)[1]
+    branches: list[tuple[set[bytes], str]] = []
+    chips: set[bytes] = set()
+    default = None
+    for token in re.finditer(r'b"([^"]+)"|^\s*"([^"]+)"\s*$', table, re.MULTILINE):
+        if token.group(1):
+            chips.add(token.group(1).encode())
+        elif chips:
+            branches.append((chips, token.group(2)))
+            chips = set()
+        else:
+            default = token.group(2)
+    return branches, default
+
+
+class KorridCopy(unittest.TestCase):
+    def test_picture_path_table_equals_korrids(self):
+        branches, default = korrid_picture_paths(KORRID_VIEWER.read_text())
+        self.assertGreaterEqual(len(branches), 1, "cannot read korrid's chip table any more")
+        self.assertEqual(default, viewer.PICTURE_PATH_DEFAULT)
+        self.assertEqual(
+            [(set(chips), name) for chips, name in viewer.PICTURE_PATHS], branches
+        )
+        for chips, name in branches:
+            for chip in chips:
+                self.assertEqual(viewer.picture_path(b"vendor,board\0" + chip + b"\0"), name)
+        self.assertEqual(viewer.picture_path(b"vendor,board\0vendor,chip\0"), default)
+        self.assertEqual(viewer.picture_path(b""), default)
+
+    def test_table_reader_sees_a_changed_korrid(self):
+        source = KORRID_VIEWER.read_text()
+        changed = source.replace('b"rockchip,rk3566"', 'b"rockchip,rk3568"')
+        self.assertNotEqual(source, changed)
+        self.assertNotEqual(korrid_picture_paths(source), korrid_picture_paths(changed))
 
 
 class PairingWords(unittest.TestCase):

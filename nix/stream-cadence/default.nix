@@ -123,6 +123,9 @@ let
           pkgs.python3Packages.ruff
           pkgs.python3Packages.mypy
         ];
+        # viewer.py holds a copy of korrid's picture-path table. The tests read
+        # korrid's own file, so a change there fails this build.
+        CADENCE_KORRID_VIEWER = ../../services/korrid/src/linux_viewer/production.rs;
       }
       ''
             export PYTHONDONTWRITEBYTECODE=1
