@@ -86,6 +86,9 @@ export class Play {
   model!: Model
   /** Every request Velvet made, in order. */
   readonly requests: Request[] = []
+  /** The most MoveCatalog requests one `update` returned, and how many updates ran. */
+  mostMovesInOneUpdate = 0
+  updates = 0
   private base: any
   private games: Game[] | undefined
   private query: any = { text: "", section: null, order: "korri" }
@@ -132,6 +135,8 @@ export class Play {
     while (queue.length > 0) {
       const result = globalThis.surface.update(this.state, queue.pop()!, this.model)
       this.state = result.state
+      this.updates += 1
+      this.mostMovesInOneUpdate = Math.max(this.mostMovesInOneUpdate, (result.requests as any[]).filter(request => request._tag === "MoveCatalog").length)
       let changed = false
       for (const request of result.requests as any[]) {
         made.push(request)
@@ -163,6 +168,11 @@ export class Play {
     if (step.startsWith("model ")) this.swap(models[Number(step.slice(6))])
     else if (step.startsWith("wait")) this.deliver({ _tag: "Tick", idleMs: Math.round(Number(step.slice(5) || "1") * 1000) })
     else this.press(step)
+  }
+
+  /** How many MoveCatalog requests Velvet has made. */
+  get moves(): number {
+    return this.requests.filter((request: any) => request._tag === "MoveCatalog").length
   }
 
   get view(): any {

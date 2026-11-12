@@ -26,7 +26,7 @@ import type { SurfaceButton, SurfaceMessage as Message, SurfaceModel as Model } 
 import { detailButtons, detailGame, dragHome, dragSet, focusedGame, openSet, pressDetail, pressHome, pressSet, setSorts, setWindow, settleSet, tapHome, tapSet, type Step } from "./browse"
 import { curtainLayout, curtainOf, type CurtainSpec } from "./curtain"
 import { keyAt, keyGrid, keyInPlace, keyMove } from "./keys"
-import { homeOf, LISTS_START, settleLists, shelvesOf, staleLists, tickLists } from "./lists"
+import { homeOf, LISTS_START, refresh, settleLists, shelvesOf, staleLists, tickLists } from "./lists"
 import { clearEntry, commitEntry, entryHeading, onboardingSteps, screenPanel, sheetPanel, shown } from "./pages"
 import { plan, type Plan } from "./plan"
 import { lastAttempt, rejectedEntry, sameAttempt } from "./settings"
@@ -493,6 +493,11 @@ function settle(state: State, model: Model, out: Request[], tick: boolean): Stat
     if (settled.request !== undefined) out.push(settled.request)
     else if (tick && setWindow(next.set, model.catalog) === undefined && model.catalog._tag === "Ready") out.push(openSet(next.set))
     if (settled.set !== next.set) next = { ...next, set: settled.set }
+    // The games the home keeps are as the set's window has them now.
+    if (model.catalog._tag === "Ready") {
+      const fresh = refresh(next.lists, model.catalog.window)
+      if (fresh.lists !== next.lists) next = { ...next, lists: fresh.lists }
+    }
   } else if (model.presentation.kind === "catalog") {
     const ticked = tick ? tickLists(next.lists) : { lists: next.lists }
     const settled = "request" in ticked && ticked.request !== undefined ? ticked : settleLists(ticked.lists, model, true)

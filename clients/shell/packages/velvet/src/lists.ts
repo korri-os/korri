@@ -20,9 +20,36 @@
  *              names them
  *     peer:S   order `recent` within one such section: "Plays on S"
  *
- * The lists go stale when the library changes (`stampOf`) or a game was just
- * played; they are then asked for again, and the old ones show meanwhile.
- * While a set holds the window (src/browse.ts) nothing is asked here.
+ *     rest     `recent` from the start once more, last: the window Velvet
+ *              rests on while nothing is asked
+ *
+ * Korri changes games Velvet already holds: artwork arrives after the
+ * library is found, a few games a pass; a game is played, becomes resumable,
+ * gets a download. A surface shows what the model says now, so on every
+ * publication:
+ *
+ *   - every kept game that stands in the window Korri published is replaced
+ *     by the window's (`refresh`, by id);
+ *   - when one of them differed (`sameGame`), or the window Velvet rests on
+ *     changed its games, the library changed under the lists: all of them
+ *     are asked for again, and the old ones show meanwhile;
+ *   - when the window is no longer the one Velvet rests on (a set held it),
+ *     the lists are asked for again too.
+ *
+ * The treaty has no mark that says "the library changed", so a change is
+ * seen only in the window Korri publishes. That is why Velvet rests on the
+ * games it shows most (the newest sixty). A game outside it that changes is
+ * picked up at the next of these: any change inside the window, a return
+ * from a set or from play, a change of `systems`.
+ *
+ * No loop: a question is asked only when a list is stale, each answer is
+ * kept and compared with nothing, and the last answer is the resting window,
+ * so a model that changes nothing a list holds (the clock, the focused game)
+ * asks nothing. At most one question goes out a publication.
+ *
+ * The lists also go stale when the library's systems change (`stampOf`) or a
+ * game was just played. While a set holds the window (src/browse.ts) nothing
+ * is asked here.
  */
 import type { CatalogQuery, SurfaceCatalog, SurfaceModel as Model } from "../../../../../contracts/generated/surface"
 import { ROW_SLOTS, SHELF_SLOTS } from "./plan"
@@ -43,8 +70,14 @@ const MOST_PEERS = 6
 
 const query = (order: CatalogQuery["order"], extra: Partial<CatalogQuery> = {}): CatalogQuery => ({ text: "", order, ...extra })
 
+/** Games in the window Velvet rests on: the newest played, which the pick, the row and Lately show. */
+const REST_COUNT = 60
+
+/** The window Velvet rests on: asked first (the pick shows soonest) and again last. */
+const REST: Want = { key: "recent", query: query("recent"), from: "start", count: REST_COUNT }
+
 const BASE: readonly Want[] = [
-  { key: "recent", query: query("recent"), from: "start", count: 24 },
+  REST,
   { key: "most", query: query("mostPlayed"), from: "start", count: 12 },
   { key: "korri", query: query("korri"), from: "start", count: 50 },
   { key: "tail", query: query("recent"), from: "end", count: 24 },
@@ -56,7 +89,72 @@ export const LISTS_START: Lists = { kept: {}, total: 0, peers: [], peerTotals: {
 /** Every list wanted, in the order it is asked for. */
 export function wants(lists: Lists): readonly Want[] {
   const backs = lists.backs.map((before, i): Want => ({ key: `ends:${i + 1}`, query: query("korri"), from: { before }, count: 200 }))
-  return [...BASE, ...backs, ...lists.peers.map((section): Want => ({ key: `peer:${section}`, query: query("recent", { section }), from: "start", count: SHELF_SLOTS + 1 }))]
+  return [...BASE, ...backs, ...lists.peers.map((section): Want => ({ key: `peer:${section}`, query: query("recent", { section }), from: "start", count: SHELF_SLOTS + 1 })), REST]
+}
+
+/**
+ * Whether two publications of a game say the same: everything Velvet shows
+ * of a game or decides by. Field by field, because Korri sends every game
+ * anew with every model and this runs for each one kept.
+ */
+export function sameGame(a: Game, b: Game): boolean {
+  if (a === b) return true
+  if (
+    a.id !== b.id || a.title !== b.title || a.section !== b.section || a.subtitle !== b.subtitle || a.systemId !== b.systemId || a.system !== b.system
+    || a.coverArtUrl !== b.coverArtUrl || a.resumable !== b.resumable || a.activeProfile !== b.activeProfile
+    || a.lastPlayedAt !== b.lastPlayedAt || a.playCount !== b.playCount || a.totalPlaytimeSeconds !== b.totalPlaytimeSeconds
+    || a.saves?._tag !== b.saves?._tag
+  ) return false
+  const media = a.media ?? []
+  const other = b.media ?? []
+  if (media.length !== other.length) return false
+  for (let i = 0; i < media.length; i++) {
+    const m = media[i]!, o = other[i]!
+    if (m.url !== o.url || m.role !== o.role || m.color !== o.color || m.width !== o.width || m.height !== o.height) return false
+  }
+  const places = a.launchLocations ?? []
+  const others = b.launchLocations ?? []
+  if (places.length !== others.length || places.some((place, i) => place.id !== others[i]!.id || place.label !== others[i]!.label)) return false
+  // A download is rare and small: its whole value.
+  if ((a.download === undefined) !== (b.download === undefined)) return false
+  return a.download === undefined || JSON.stringify(a.download) === JSON.stringify(b.download)
+}
+
+/**
+ * The kept games as the window Korri published has them: each one that
+ * stands in the window is the window's. `changed`: one of them said
+ * something else than the one kept.
+ */
+export function refresh(lists: Lists, window: readonly Game[]): { readonly lists: Lists; readonly changed: boolean } {
+  if (window.length === 0) return { lists, changed: false }
+  let byId: Map<string, Game> | undefined
+  let kept: Record<string, readonly Game[]> | undefined
+  let changed = false
+  for (const key in lists.kept) {
+    const list = lists.kept[key]!
+    let next: Game[] | undefined
+    for (let i = 0; i < list.length; i++) {
+      const old = list[i]!
+      if (byId === undefined) {
+        byId = new Map()
+        for (const game of window) byId.set(game.id, game)
+      }
+      const now = byId.get(old.id)
+      if (now === undefined || now === old || sameGame(old, now)) continue
+      next ??= [...list]
+      next[i] = now
+      changed = true
+    }
+    if (next !== undefined) (kept ??= { ...lists.kept })[key] = next
+  }
+  return kept === undefined ? { lists, changed } : { lists: { ...lists, kept }, changed }
+}
+
+/** Whether a window holds the games a kept list holds, in its order (each compared by `sameGame`). */
+function sameList(kept: readonly Game[] | undefined, window: readonly Game[]): boolean {
+  if (kept === undefined || kept.length !== window.length) return false
+  for (let i = 0; i < window.length; i++) if (kept[i]!.id !== window[i]!.id || !sameGame(kept[i]!, window[i]!)) return false
+  return true
 }
 
 export const sameQuery = (a: CatalogQuery, b: CatalogQuery): boolean =>
@@ -105,6 +203,19 @@ export function settleLists(lists: Lists, model: Model, free: boolean): { readon
   // The library changed under the lists: ask again from the first.
   const stamp = stampOf(model)
   if (next.stamp !== stamp) next = { ...next, stamp, done: 0, backs: [], ...(next.asked === undefined ? {} : { asked: undefined }) }
+  // Settled, and Korri published on its own. What the window says now decides.
+  if (next.asked === undefined && next.done > 0 && next.done >= wants(next).length) {
+    if (!answers(catalog, REST)) {
+      // The window is not the one Velvet rests on (a set held it): read the lists again.
+      next = staleLists(next)
+    } else if (!sameList(next.kept[REST.key], catalog.window)) {
+      // The resting window's games changed (artwork came, a game was played): so may every other list.
+      next = staleLists({ ...next, kept: { ...next.kept, [REST.key]: catalog.window } })
+    }
+  }
+  // Every kept game Korri published again is as it is now.
+  const fresh = refresh(next, catalog.window)
+  next = fresh.lists
   // The answer to the question out.
   if (next.asked !== undefined && answers(catalog, next.asked)) next = keep(next, next.asked, catalog)
   // The window Korri already shows may answer the next ones (its first model answers `korri`).
