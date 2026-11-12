@@ -19,7 +19,8 @@ korrid controls the unwatched display and performs the effects. A modifier
 supplies its display-change hook as a file in its package. The gamescope
 modifier's hook changes gamescope's live output size. No gamescope property
 or binary name belongs in korrid's core. The hook runs with the game's runtime
-user and sandbox, following ADR 0029's execution boundary.
+user and sandbox, following ADR 0029's execution boundary (see the PID
+namespace correction below).
 
 This is a new plugin contribution, not permission for a plugin to run effects
 while its declaration is evaluated. Existing signature and permission checks
@@ -82,6 +83,31 @@ Render size and encoded quality remain separate. A new shape currently selects
 full screen-sized encoding. Presence reports do not reset a lower encoded size
 at the same aspect. Adaptive bitrate and frame-rate policy remain outside this
 change.
+
+## Corrections from the first hardware run (2026-11-11)
+
+The hook does not run in an exact copy of the game's sandbox. The game unit
+uses `PrivatePIDs=yes`. A new unit with that property gets a fresh PID
+namespace, not the game's, so the hook saw no game process and korrid refused
+every reshape on aka. A live hook now keeps the game's user, mounts,
+capabilities and other limits, without `PrivatePIDs`. It must observe the
+running game; that is its purpose. Before and after hooks keep the namespace.
+korrid logs the hook's own failure reason.
+
+The Android viewer does not survive a fold from the inner screen to the cover
+screen. Android stops the viewer's activity, and the viewer ends its
+connection when stopped. Live reshape therefore applies only while the viewer
+keeps running, for example on unfold. Fold to the cover screen still
+reconnects. Changing that needs its own decision.
+
+The viewer no longer parks the decoder on a spare surface when its screen
+surface is destroyed. That code ran at every stream end and was followed by a
+native crash in Android's `SurfaceTexture` finalizer four times on the Fold.
+The mechanism was not reproduced in isolation. Stream teardown is as it was
+before this ADR.
+
+Still unproven on hardware at this date: the hook's resize step, Sunshine's
+encoder replacement inside a live stream, and the decoder following it.
 
 ## Trade-offs
 
