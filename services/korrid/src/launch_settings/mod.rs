@@ -44,6 +44,11 @@ pub struct LaunchSettingsResolved {
 pub struct LaunchSettingsSnapshotRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub game_id: Option<String>,
+    /// The label of the device that runs the game, when this device's korrid
+    /// must ask that holder (a streamed game, ADR 0066). The holder itself
+    /// never forwards: it answers for its own games.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
 }
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -91,6 +96,11 @@ pub struct LaunchProfileSaveRequest {
     pub profile_id: Option<String>,
     pub title: String,
     pub expected_revision: String,
+    /// The label of the device that runs the game, when this device's korrid
+    /// must ask that holder (a streamed game, ADR 0066). The holder itself
+    /// never forwards: it answers for its own games.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
 }
 
 #[typeshare]
@@ -100,6 +110,11 @@ pub struct LaunchProfileRemoveRequest {
     pub game_id: String,
     pub profile_id: String,
     pub expected_revision: String,
+    /// The label of the device that runs the game, when this device's korrid
+    /// must ask that holder (a streamed game, ADR 0066). The holder itself
+    /// never forwards: it answers for its own games.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
 }
 
 #[typeshare]
@@ -110,6 +125,11 @@ pub struct LaunchProfileSelectRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<String>,
     pub expected_revision: String,
+    /// The label of the device that runs the game, when this device's korrid
+    /// must ask that holder (a streamed game, ADR 0066). The holder itself
+    /// never forwards: it answers for its own games.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
 }
 
 #[typeshare]

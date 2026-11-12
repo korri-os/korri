@@ -397,6 +397,7 @@ mod tests {
                 viewer_display: None,
                 game_id: "neverball".into(),
                 host: host.map(str::to_owned),
+                launch: None,
             });
             assert_eq!(
                 SurfaceHostPermission::LocalSessions.permits(&request),
@@ -541,6 +542,7 @@ mod tests {
             viewer_display: None,
             game_id: "neverball".into(),
             host: None,
+            launch: None,
         });
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -737,7 +739,7 @@ mod tests {
             list["outcome"]["payload"]["gameRunner"],
             "@missing:build/core"
         );
-        let launch = rpc(&app, "app.local-games.launch.selected", json!({"gameId":game_id,"runnerId":"@korri:mgba/mgba","launch":{"settings":{"scope":{"_tag":"Runner","id":"@korri:mgba/mgba"},"values":{"plugin":{"video_vsync":false,"absent_key":1}}}}})).await;
+        let launch = rpc(&app, "app.local-games.launch.selected", json!({"gameId":game_id,"runnerId":"@korri:mgba/mgba","launch":{"plugin":{"@korri:mgba/mgba":{"video_vsync":false,"absent_key":1}}}})).await;
         assert_eq!(launch["outcome"]["_tag"], "Ok", "{launch}");
         assert_eq!(launch["outcome"]["payload"]["session"]["gameId"], game_id);
         let launch_id = launch["outcome"]["payload"]["session"]["launchId"]

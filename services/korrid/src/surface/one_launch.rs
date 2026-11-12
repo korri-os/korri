@@ -1,14 +1,43 @@
-//! One caller's transient settings. No file writes and no shared global draft.
+//! One game's changes that are not kept yet (ADR 0066), and where the person
+//! wants them kept. No file writes and no shared global draft: the editor
+//! writes them when it closes, and a launch carries the ones for this launch.
 use crate::{
     config::cascade::{set_leaf, LaunchSettingValue},
-    launch_settings::{LaunchOverride, LaunchRunnerScope, LaunchScopedSettings},
+    launch_settings::{LaunchOverride, LaunchPath},
 };
+use serde_json::Value;
 use std::collections::HashMap;
 
-#[derive(Clone)]
+use super::launch_model::list::KEEP_LAUNCH;
+
+/// A game by the device that runs it. A streamed copy and this device's own
+/// copy can share an id, and their changes must not mix.
+pub(crate) fn game_key(id: &str, host: Option<&str>) -> String {
+    match host {
+        Some(host) => format!("{host}\u{0}{id}"),
+        None => id.to_owned(),
+    }
+}
+
+/// One changed row.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Change {
+    /// The list row that made it. A row has at most one change.
+    pub row: String,
+    /// korrid's typed path (`LaunchPath`), as JSON.
+    pub path: Value,
+    /// The value to use. Null: the plugin's own default.
+    pub value: Value,
+    /// The runner a runner-only setting belongs to.
+    pub runner: Option<String>,
+}
+
+#[derive(Clone, Default)]
 struct Draft {
     version: u64,
-    settings: LaunchScopedSettings,
+    changes: Vec<Change>,
+    /// The keep place the person chose. None: the list's default, this game.
+    keep: Option<String>,
 }
 
 #[derive(Default)]
@@ -16,8 +45,80 @@ pub(crate) struct OneLaunch {
     sequence: u64,
     pending: HashMap<String, Draft>,
     submitted: HashMap<u64, (String, Draft)>,
-    last: Option<(u64, String, Draft)>,
 }
+
+/// The changes as the values of one launch. A shared setting has no runner
+/// scope; a runner-only setting is keyed by its runner.
+pub(crate) fn launch_override(changes: &[Change]) -> Result<LaunchOverride, String> {
+    let mut launch = LaunchOverride::default();
+    let setting = |value: &Value| -> Result<Option<LaunchSettingValue>, String> {
+        if value.is_null() {
+            return Ok(Some(LaunchSettingValue::Cleared));
+        }
+        serde_json::from_value(value.clone())
+            .map(Some)
+            .map_err(|error| error.to_string())
+    };
+    let percent = |value: &Value| -> Result<u8, String> {
+        value
+            .as_u64()
+            .and_then(|percent| u8::try_from(percent).ok())
+            .ok_or_else(|| "A limit is a whole percent.".to_owned())
+    };
+    for change in changes {
+        let path: LaunchPath =
+            serde_json::from_value(change.path.clone()).map_err(|error| error.to_string())?;
+        match path {
+            LaunchPath::Setting { key } => match key.strip_prefix("plugin.") {
+                Some(rest) => {
+                    let runner = change
+                        .runner
+                        .clone()
+                        .ok_or("A runner-only setting needs its runner.")?;
+                    set_leaf(
+                        launch.plugin.entry(runner).or_default(),
+                        rest,
+                        setting(&change.value)?,
+                    );
+                }
+                None => set_leaf(&mut launch.settings, &key, setting(&change.value)?),
+            },
+            LaunchPath::ModifierEnabled { id } => {
+                launch.modifiers.entry(id).or_default().enabled = change.value.as_bool();
+            }
+            LaunchPath::ModifierSetting { id, key } => set_leaf(
+                &mut launch.modifiers.entry(id).or_default().settings,
+                &key,
+                setting(&change.value)?,
+            ),
+            LaunchPath::ServiceSetting { id, key } => set_leaf(
+                &mut launch.services.entry(id).or_default().settings,
+                &key,
+                setting(&change.value)?,
+            ),
+            LaunchPath::CpuMin => {
+                launch.cpu.get_or_insert_with(Default::default).min = Some(percent(&change.value)?);
+            }
+            LaunchPath::CpuMax => {
+                launch.cpu.get_or_insert_with(Default::default).max = Some(percent(&change.value)?);
+            }
+            LaunchPath::CpuGovernor => {
+                launch.cpu.get_or_insert_with(Default::default).governor =
+                    change.value.as_str().map(str::to_owned);
+            }
+            LaunchPath::GpuMin => {
+                launch.gpu.get_or_insert_with(Default::default).min = Some(percent(&change.value)?);
+            }
+            LaunchPath::GpuMax => {
+                launch.gpu.get_or_insert_with(Default::default).max = Some(percent(&change.value)?);
+            }
+            // The runner is chosen in the runner chooser, never as a change.
+            LaunchPath::Runner => return Err("A runner is not a launch value.".into()),
+        }
+    }
+    Ok(launch)
+}
+
 impl OneLaunch {
     fn next(&mut self) -> u64 {
         self.sequence = self
@@ -26,84 +127,105 @@ impl OneLaunch {
             .expect("one-launch sequence exhausted");
         self.sequence
     }
-    pub fn pending(&self, game: &str) -> Option<&LaunchScopedSettings> {
-        self.pending.get(game).map(|draft| &draft.settings)
-    }
-    /// The revision binds Keep to the exact displayed values across edits/games.
-    pub fn keepable(&self, game: &str) -> Option<(u64, &LaunchScopedSettings)> {
-        self.pending
-            .get(game)
-            .or_else(|| {
-                self.last
-                    .as_ref()
-                    .filter(|(_, id, _)| id == game)
-                    .map(|(_, _, draft)| draft)
-            })
-            .map(|draft| (draft.version, &draft.settings))
-    }
-    pub fn set(
-        &mut self,
-        game: &str,
-        scope: LaunchRunnerScope,
-        path: &str,
-        value: Option<LaunchSettingValue>,
-    ) -> Result<(), String> {
-        if matches!(scope, LaunchRunnerScope::Any) && path.starts_with("plugin.") {
-            return Err("Runner-only settings need a runner scope.".into());
-        }
-        if self.pending(game).is_some_and(|draft| draft.scope != scope) {
-            return Err(
-                "The one-launch draft uses another scope. Clear it before changing scope.".into(),
-            );
-        }
+    fn touch(&mut self, game: &str) -> &mut Draft {
         let version = self.next();
-        let draft = self.pending.entry(game.into()).or_insert_with(|| Draft {
-            version,
-            settings: LaunchScopedSettings {
-                scope,
-                values: HashMap::new(),
-            },
-        });
-        set_leaf(&mut draft.settings.values, path, value);
+        let draft = self.pending.entry(game.into()).or_default();
         draft.version = version;
-        if draft.settings.values.is_empty() {
+        draft
+    }
+    fn settle(&mut self, game: &str) {
+        if self
+            .pending
+            .get(game)
+            .is_some_and(|draft| draft.changes.is_empty())
+        {
+            // The keep choice belongs to changes; with none it starts again.
             self.pending.remove(game);
         }
-        Ok(())
     }
-    /// The ticket identifies exactly the values sent, not a later editor state.
+    pub fn changes(&self, game: &str) -> &[Change] {
+        self.pending
+            .get(game)
+            .map_or(&[], |draft| draft.changes.as_slice())
+    }
+    pub fn keep(&self, game: &str) -> Option<&str> {
+        self.pending
+            .get(game)
+            .and_then(|draft| draft.keep.as_deref())
+    }
+    pub fn set_keep(&mut self, game: &str, place: &str) {
+        if self.pending.contains_key(game) {
+            self.touch(game).keep = Some(place.into());
+        }
+    }
+    /// One row's change. The row's earlier change, if any, is replaced.
+    pub fn set(&mut self, game: &str, change: Change) {
+        let draft = self.touch(game);
+        match draft
+            .changes
+            .iter_mut()
+            .find(|known| known.row == change.row)
+        {
+            Some(known) => *known = change,
+            None => draft.changes.push(change),
+        }
+    }
+    /// The row is back at its earlier value.
+    pub fn remove(&mut self, game: &str, row: &str) {
+        if self.pending.contains_key(game) {
+            self.touch(game).changes.retain(|change| change.row != row);
+            self.settle(game);
+        }
+    }
+    /// A change that was written, unless the person changed the row again.
+    pub fn kept(&mut self, game: &str, written: &Change) {
+        if let Some(draft) = self.pending.get_mut(game) {
+            draft.changes.retain(|change| change != written);
+        }
+        self.settle(game);
+    }
+    /// Drop the changes the list cannot show: a row that is gone, or a value
+    /// the device now has anyway. They could not be seen or set back.
+    pub fn retain(&mut self, game: &str, shown: impl Fn(&Change) -> bool) {
+        if let Some(draft) = self.pending.get_mut(game) {
+            draft.changes.retain(|change| shown(change));
+        }
+        self.settle(game);
+    }
+    /// The values the next launch carries, when the person keeps the changes
+    /// for this launch only. The ticket identifies exactly the values sent,
+    /// not a later editor state.
     pub fn submit(&mut self, game: &str) -> (u64, Option<LaunchOverride>) {
-        let Some(draft) = self.pending.get(game).cloned() else {
+        let Some(draft) = self
+            .pending
+            .get(game)
+            .filter(|draft| draft.keep.as_deref() == Some(KEEP_LAUNCH))
+            .cloned()
+        else {
             return (0, None);
         };
-        let ticket = self.next();
-        let launch = LaunchOverride {
-            settings: Some(draft.settings.clone()),
-            ..Default::default()
+        let Ok(launch) = launch_override(&draft.changes) else {
+            return (0, None);
         };
+        if launch.is_empty() {
+            return (0, None);
+        }
+        let ticket = self.next();
         self.submitted.insert(ticket, (game.into(), draft));
         (ticket, Some(launch))
     }
+    /// A launch took its values: they end with it.
     pub fn complete(&mut self, ticket: u64, success: bool) {
         let Some((game, draft)) = self.submitted.remove(&ticket) else {
             return;
         };
-        if !success {
-            return;
-        }
-        if self
-            .pending
-            .get(&game)
-            .is_some_and(|current| current.version == draft.version)
+        if success
+            && self
+                .pending
+                .get(&game)
+                .is_some_and(|current| current.version == draft.version)
         {
             self.pending.remove(&game);
-        }
-        if self
-            .last
-            .as_ref()
-            .is_none_or(|(known, _, _)| ticket > *known)
-        {
-            self.last = Some((ticket, game, draft));
         }
     }
 }
@@ -112,86 +234,137 @@ impl OneLaunch {
 mod tests {
     use super::*;
     use crate::config::cascade::leaf;
-    fn scale(value: u64) -> LaunchSettingValue {
-        LaunchSettingValue::Number(value.into())
+    use serde_json::json;
+
+    fn scale(value: u64) -> Change {
+        Change {
+            row: "launch:row:setting:video.render-scale".into(),
+            path: json!({"_tag":"Setting","payload":{"key":"video.render-scale"}}),
+            value: json!(value),
+            runner: None,
+        }
     }
+    fn for_launch(drafts: &mut OneLaunch) {
+        drafts.set_keep("game", KEEP_LAUNCH);
+    }
+    fn sent(launch: Option<LaunchOverride>) -> Option<LaunchSettingValue> {
+        leaf(&launch?.settings, "video.render-scale").cloned()
+    }
+
     #[test]
-    fn successful_launch_consumes_once_but_retains_values_for_keep() {
+    fn a_launch_carries_the_changes_only_when_they_are_kept_for_this_launch() {
         let mut drafts = OneLaunch::default();
-        drafts
-            .set(
-                "game",
-                LaunchRunnerScope::Any,
-                "video.render-scale",
-                Some(scale(4)),
-            )
-            .unwrap();
-        let (ticket, sent) = drafts.submit("game");
-        assert_eq!(
-            leaf(
-                &sent.unwrap().settings.unwrap().values,
-                "video.render-scale"
-            ),
-            Some(&scale(4))
+        drafts.set("game", scale(4));
+        assert!(
+            drafts.submit("game").1.is_none(),
+            "this game is the default"
         );
+        for_launch(&mut drafts);
+        let (ticket, launch) = drafts.submit("game");
+        assert_eq!(sent(launch), Some(LaunchSettingValue::Number(4.into())));
         drafts.complete(ticket, true);
-        assert!(drafts.submit("game").1.is_none());
-        assert_eq!(
-            leaf(
-                &drafts.keepable("game").unwrap().1.values,
-                "video.render-scale"
-            ),
-            Some(&scale(4))
+        assert!(
+            drafts.changes("game").is_empty(),
+            "they end with the launch"
         );
-        assert!(drafts.keepable("other-game").is_none());
+        assert!(drafts.submit("game").1.is_none());
+        assert!(drafts.submit("other-game").1.is_none());
     }
+
     #[test]
-    fn failure_keeps_the_draft_and_late_success_cannot_erase_new_edits() {
+    fn failure_keeps_the_changes_and_late_success_cannot_erase_new_ones() {
         let mut drafts = OneLaunch::default();
-        drafts
-            .set(
-                "game",
-                LaunchRunnerScope::Any,
-                "video.render-scale",
-                Some(scale(4)),
-            )
-            .unwrap();
+        drafts.set("game", scale(4));
+        for_launch(&mut drafts);
         let (failed, _) = drafts.submit("game");
         drafts.complete(failed, false);
         let (late, _) = drafts.submit("game");
-        drafts
-            .set(
-                "game",
-                LaunchRunnerScope::Any,
-                "video.render-scale",
-                Some(scale(2)),
-            )
-            .unwrap();
+        drafts.set("game", scale(2));
         drafts.complete(late, true);
-        assert_eq!(
-            leaf(
-                &drafts.pending("game").unwrap().values,
-                "video.render-scale"
-            ),
-            Some(&scale(2))
-        );
+        assert_eq!(drafts.changes("game"), [scale(2)]);
     }
+
     #[test]
-    fn removed_values_do_not_return_after_an_inflight_launch() {
+    fn a_row_set_back_leaves_no_change_and_no_keep_choice() {
         let mut drafts = OneLaunch::default();
-        drafts
-            .set(
-                "game",
-                LaunchRunnerScope::Any,
-                "video.render-scale",
-                Some(scale(4)),
-            )
-            .unwrap();
-        let (ticket, _) = drafts.submit("game");
-        drafts
-            .set("game", LaunchRunnerScope::Any, "video.render-scale", None)
-            .unwrap();
-        drafts.complete(ticket, true);
-        assert!(drafts.pending("game").is_none());
+        drafts.set("game", scale(4));
+        for_launch(&mut drafts);
+        drafts.remove("game", &scale(4).row);
+        assert!(drafts.changes("game").is_empty());
+        drafts.set("game", scale(2));
+        assert_eq!(drafts.keep("game"), None);
+    }
+
+    #[test]
+    fn a_written_change_goes_unless_the_row_changed_again() {
+        let mut drafts = OneLaunch::default();
+        drafts.set("game", scale(4));
+        let written = scale(4);
+        drafts.set("game", scale(2));
+        drafts.kept("game", &written);
+        assert_eq!(drafts.changes("game"), [scale(2)]);
+        drafts.kept("game", &scale(2));
+        assert!(drafts.changes("game").is_empty());
+    }
+
+    #[test]
+    fn one_launch_values_have_no_runner_scope_and_runner_only_values_name_their_runner() {
+        let launch = launch_override(&[
+            scale(3),
+            Change {
+                row: "launch:row:setting:plugin.speed".into(),
+                path: json!({"_tag":"Setting","payload":{"key":"plugin.speed"}}),
+                value: json!(2),
+                runner: Some("@test:runner/main".into()),
+            },
+            Change {
+                row: "launch:row:setting:video.vsync".into(),
+                path: json!({"_tag":"Setting","payload":{"key":"video.vsync"}}),
+                value: Value::Null,
+                runner: None,
+            },
+            Change {
+                row: "launch:row:cpu.governor".into(),
+                path: json!({"_tag":"CpuGovernor"}),
+                value: json!("performance"),
+                runner: None,
+            },
+            Change {
+                row: "launch:row:cpu.max".into(),
+                path: json!({"_tag":"CpuMax"}),
+                value: json!(60),
+                runner: None,
+            },
+            Change {
+                row: "launch:row:service:@korri:sunshine/sunshine:setting:video.bitrate".into(),
+                path: json!({"_tag":"ServiceSetting","payload":{"id":"@korri:sunshine/sunshine","key":"video.bitrate"}}),
+                value: json!(20),
+                runner: None,
+            },
+            Change {
+                row: "launch:row:modifier:@korri:gamescope/gamescope:enabled".into(),
+                path: json!({"_tag":"ModifierEnabled","payload":{"id":"@korri:gamescope/gamescope"}}),
+                value: json!(true),
+                runner: None,
+            },
+        ])
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(&launch).unwrap(),
+            json!({
+                "settings": {"video": {"render-scale": 3, "vsync": null}},
+                "plugin": {"@test:runner/main": {"speed": 2}},
+                "modifiers": {"@korri:gamescope/gamescope": {"enabled": true, "settings": {}}},
+                "services": {"@korri:sunshine/sunshine": {"settings": {"video": {"bitrate": 20}}}},
+                "cpu": {"max": 60, "governor": "performance"},
+            })
+        );
+        assert!(launch_override(&[Change {
+            row: "launch:row:setting:plugin.speed".into(),
+            path: json!({"_tag":"Setting","payload":{"key":"plugin.speed"}}),
+            value: json!(2),
+            runner: None,
+        }])
+        .is_err());
     }
 }

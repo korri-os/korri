@@ -1,9 +1,11 @@
-//! Port of `clients/portal/src/surface/launch-settings.ts`: Device settings'
-//! launch groups, and one game's editor, opened from a game action and
-//! closed by its close action. Every write is one typed
-//! `app.launch-settings.set` naming a place, a path and the revision of the
-//! snapshot it was made from. Each read and write has one generation, so a
-//! late reply changes nothing.
+//! Launch settings for the surface: Device settings' launch groups, and one
+//! game's editor, opened from a game action and closed by its close action.
+//! The editor is one list (ADR 0066): a changed row waits as a change, and the
+//! changes are written when the editor closes, to the place the person chose.
+//! A streamed game's list is read from and written to the device that runs
+//! it. Every write is one typed `app.launch-settings.set` naming a place, a
+//! path and the revision of the snapshot it was made from. Each read and
+//! write has one generation, so a late reply changes nothing.
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -15,14 +17,16 @@ use korri_surface_treaty::{
     SurfaceLaunchSettingsProblem, SurfaceSettingGroup, SurfaceSettingInteraction,
     SurfaceSettingItem, SurfaceSettingsStatus,
 };
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use super::{
     korrid::{ask, Korrid},
     launch_model::{
-        active_profile_of, device_launch_from, launch_id, profile_from_pick, revision_of,
-        DeviceLaunch, LaunchEditor, LaunchWrite, PendingSetting,
+        active_profile_of, device_launch_from, launch_id,
+        list::{launch_list, LaunchList, ListInput, RowTarget},
+        profile_from_pick, revision_of, DeviceLaunch, LaunchWrite, PendingSetting,
     },
+    one_launch::{game_key, Change, OneLaunch},
     Notify,
 };
 use crate::{
@@ -92,9 +96,42 @@ enum Write {
 enum Again {
     Read,
     Write(String, Box<Write>),
+    /// Close again: write the changes that are left.
+    Keep,
 }
 
 pub type OpenRunners = Arc<dyn Fn() + Send + Sync>;
+
+/// The game the editor is open for, and the device that runs it.
+#[derive(Clone)]
+struct Subject {
+    id: String,
+    title: String,
+    /// The label of the device that runs a streamed game. None: this device.
+    host: Option<String>,
+}
+
+impl Subject {
+    fn key(&self) -> String {
+        game_key(&self.id, self.host.as_deref())
+    }
+}
+
+/// One close that writes: the changes, their place and the snapshot they
+/// were made from.
+struct Keeping {
+    game: Subject,
+    layer: Value,
+    changes: Vec<Change>,
+    snapshot: Value,
+    operation: u64,
+}
+
+/// The holder did not answer: no reply, a reply that was not korrid's, or no
+/// such peer right now. A refusal the holder itself gave has its own code.
+fn holder_did_not_answer(failure: &RpcFailure) -> bool {
+    failure.code.starts_with("Upstream")
+}
 
 #[derive(Default)]
 struct Inner {
@@ -105,17 +142,19 @@ struct Inner {
     generation: u64,
     device_generation: u64,
     busy: bool,
-    game_id: Option<String>,
-    game_title: String,
+    game: Option<Subject>,
     open_runners: Option<OpenRunners>,
     snapshot: Option<Value>,
-    editor_rows: Option<LaunchEditor>,
-    drafts: super::one_launch::OneLaunch,
-    keeps: HashMap<String, super::one_launch_model::Keep>,
+    /// The device that runs the game did not answer the last read or write.
+    unreachable: bool,
+    /// The last snapshot each game's device gave, to show its rows while it
+    /// cannot be reached. They cannot change then.
+    known: HashMap<String, Value>,
+    list: Option<LaunchList>,
+    drafts: OneLaunch,
     device_snapshot: Option<Value>,
     device: Option<DeviceLaunch>,
     device_pending: HashMap<String, Vec<PendingSetting>>,
-    pending: HashMap<String, Vec<PendingSetting>>,
     learning: std::collections::HashSet<String>,
     again: Option<Again>,
 }
@@ -148,23 +187,45 @@ impl Inner {
         }
     }
 
+    fn list_now(&self, game: &Subject) -> LaunchList {
+        let key = game.key();
+        launch_list(&ListInput {
+            // A holder that cannot be reached shows what it last said.
+            snapshot: self
+                .snapshot
+                .as_ref()
+                .or_else(|| self.known.get(&key).filter(|_| self.unreachable)),
+            game_id: &game.id,
+            holder: game.host.as_deref(),
+            reachable: !self.unreachable,
+            viewer: self.device_snapshot.as_ref(),
+            changes: self.drafts.changes(&key),
+            keep: self.drafts.keep(&key),
+            can_choose_runner: self.open_runners.is_some(),
+        })
+    }
+
     fn build(&mut self) {
-        self.keeps.clear();
-        self.editor_rows = self.snapshot.as_ref().map(|snapshot| {
-            let (editor, keeps) = super::one_launch_model::editor(
-                snapshot,
-                self.game_id.as_deref(),
-                &self.pending,
-                &self.drafts,
-            );
-            self.keeps = keeps;
-            editor
-        });
-        self.pending = self
-            .editor_rows
-            .as_ref()
-            .map(|editor| still_pending(&editor.rows))
-            .unwrap_or_default();
+        let Some(game) = self.game.clone() else {
+            self.list = None;
+            return;
+        };
+        let mut list = self.list_now(&game);
+        if self.snapshot.is_some() && !self.unreachable {
+            // A change whose row is gone, or whose value the device now has,
+            // could not be seen or set back.
+            let key = game.key();
+            let before = self.drafts.changes(&key).len();
+            self.drafts.retain(&key, |change| {
+                list.rows
+                    .get(&change.row)
+                    .is_some_and(|row| row.stored != change.value)
+            });
+            if self.drafts.changes(&key).len() != before {
+                list = self.list_now(&game);
+            }
+        }
+        self.list = Some(list);
     }
 
     fn build_device(&mut self) {
@@ -185,17 +246,17 @@ impl Inner {
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
+        let list = self.list.as_ref();
         SurfaceLaunchSettingsContent {
-            game_title: Some(self.game_title.clone()),
-            runs_on: None,
-            groups: Vec::new(),
-            changes: Vec::new(),
-            keep: None,
-            places: self
-                .editor_rows
-                .as_ref()
-                .map(|editor| editor.places.clone())
-                .unwrap_or_default(),
+            game_title: self.game.as_ref().map(|game| game.title.clone()),
+            runs_on: self.game.as_ref().map(|game| match &game.host {
+                Some(host) => format!("Runs on {host}"),
+                None => "Runs here".into(),
+            }),
+            groups: list.map(|list| list.groups.clone()).unwrap_or_default(),
+            changes: list.map(|list| list.changes.clone()).unwrap_or_default(),
+            keep: list.and_then(|list| list.keep.clone()),
+            places: Vec::new(),
             profiles: profiles
                 .iter()
                 .map(|profile| SurfaceLaunchProfile {
@@ -217,16 +278,12 @@ impl Inner {
                 .and_then(|snapshot| snapshot.get("selectedProfile"))
                 .and_then(Value::as_str)
                 .map(Into::into),
-            notes: self
-                .editor_rows
-                .as_ref()
-                .map(|editor| editor.notes.clone())
-                .unwrap_or_default(),
+            notes: list.map(|list| list.notes.clone()).unwrap_or_default(),
             actions,
         }
     }
 
-    /// Choose a runner, when the places wait on one and the page offers it.
+    /// Choose a runner, when the list waits on one and the page offers it.
     fn runner_action(&self) -> Vec<SurfaceAction> {
         let needs = self
             .snapshot
@@ -247,6 +304,7 @@ impl Inner {
     }
 
     fn ready(&mut self) {
+        self.unreachable = false;
         self.build();
         let mut actions = self.runner_action();
         actions.extend([reload_action(), close_action()]);
@@ -255,17 +313,48 @@ impl Inner {
 
     fn failed(&mut self, failure: &RpcFailure, again: Again) {
         self.again = Some(again);
-        self.editor = Some(if failure.code == "SettingsConflict" {
-            SurfaceLaunchSettings::Conflict(SurfaceLaunchSettingsProblem {
-                message: CONFLICT.into(),
-                content: self.content(vec![reload_action(), close_action()]),
-            })
-        } else {
-            SurfaceLaunchSettings::Error(SurfaceLaunchSettingsProblem {
-                message: failure.message.clone(),
-                content: self.content(vec![retry_action(), close_action()]),
-            })
-        });
+        if failure.code == "SettingsConflict" {
+            self.build();
+            self.editor = Some(SurfaceLaunchSettings::Conflict(
+                SurfaceLaunchSettingsProblem {
+                    message: CONFLICT.into(),
+                    content: self.content(vec![reload_action(), close_action()]),
+                },
+            ));
+            return;
+        }
+        let holder = self
+            .game
+            .as_ref()
+            .and_then(|game| game.host.clone())
+            .filter(|_| holder_did_not_answer(failure));
+        self.unreachable = holder.is_some();
+        self.build();
+        self.editor = Some(SurfaceLaunchSettings::Error(SurfaceLaunchSettingsProblem {
+            message: match holder {
+                Some(holder) => {
+                    format!("{holder} cannot be reached. Its settings cannot change now.")
+                }
+                None => failure.message.clone(),
+            },
+            content: self.content(vec![retry_action(), close_action()]),
+        }));
+    }
+
+    /// This device's own rows changed under an open editor: draw it again
+    /// in the state it is in.
+    fn redraw(&mut self) {
+        match self.editor.take() {
+            Some(SurfaceLaunchSettings::Ready(_)) => self.ready(),
+            Some(SurfaceLaunchSettings::Error(problem)) => {
+                self.build();
+                self.editor = Some(SurfaceLaunchSettings::Error(SurfaceLaunchSettingsProblem {
+                    content: self.content(problem.content.actions),
+                    ..problem
+                }));
+            }
+            other => self.editor = other,
+        }
     }
 
     fn remember(&mut self, id: &str, snapshot: &Value) {
@@ -319,12 +408,18 @@ impl LaunchSettings {
         self.lock().editor_tag() != "Closed"
     }
 
-    async fn snapshot(&self, game_id: Option<String>) -> Result<Value, RpcFailure> {
+    /// One device's launch settings: this device's, or the holder's that
+    /// `host` names.
+    async fn snapshot(
+        &self,
+        game_id: Option<String>,
+        host: Option<String>,
+    ) -> Result<Value, RpcFailure> {
         match ask!(
             self.korrid,
             Route,
             LaunchSettingsSnapshot,
-            LaunchSettingsSnapshotRequest { game_id },
+            LaunchSettingsSnapshotRequest { game_id, host },
             LaunchSettingsSnapshotOutcome
         ) {
             LaunchSettingsSnapshotOutcome::Ok(snapshot) => {
@@ -340,7 +435,7 @@ impl LaunchSettings {
             inner.device_generation += 1;
             inner.device_generation
         };
-        let result = self.snapshot(None).await;
+        let result = self.snapshot(None, None).await;
         {
             let mut inner = self.lock();
             if operation != inner.device_generation {
@@ -358,6 +453,10 @@ impl LaunchSettings {
                     inner.build_device();
                 }
             }
+            // A streamed game's list shows this device's stream section.
+            if inner.game.as_ref().is_some_and(|game| game.host.is_some()) {
+                inner.redraw();
+            }
         }
         self.changed();
     }
@@ -367,43 +466,51 @@ impl LaunchSettings {
         tokio::spawn(async move { this.refresh_device().await });
     }
 
-    /// The synchronous half of a read: Loading shows at once, as the
-    /// portal's read published it before its first await.
-    fn begin_read(&self, keep: bool) -> Option<(String, u64)> {
+    /// The synchronous half of a read: Loading shows at once.
+    fn begin_read(&self, keep: bool) -> Option<(Subject, u64)> {
         let started = {
             let mut inner = self.lock();
-            let id = inner.game_id.clone()?;
+            let game = inner.game.clone()?;
             inner.generation += 1;
             if !keep {
                 inner.snapshot = None;
-                inner.editor_rows = None;
+                inner.list = None;
+                inner.unreachable = false;
                 inner.editor = Some(SurfaceLaunchSettings::Loading(
                     inner.content(vec![close_action()]),
                 ));
             }
-            (id, inner.generation)
+            (game, inner.generation)
         };
         self.changed();
         Some(started)
     }
 
     async fn read(self: &Arc<Self>, keep: bool) {
-        if let Some((id, operation)) = self.begin_read(keep) {
-            self.finish_read(id, operation).await;
+        if let Some((game, operation)) = self.begin_read(keep) {
+            self.finish_read(game, operation).await;
         }
     }
 
-    async fn finish_read(&self, id: String, operation: u64) {
-        let result = self.snapshot(Some(id.clone())).await;
+    async fn finish_read(&self, game: Subject, operation: u64) {
+        let result = self
+            .snapshot(Some(game.id.clone()), game.host.clone())
+            .await;
         {
             let mut inner = self.lock();
             if operation != inner.generation {
                 return;
             }
             match result {
-                Err(failure) => inner.failed(&failure, Again::Read),
+                Err(failure) => {
+                    inner.snapshot = None;
+                    inner.failed(&failure, Again::Read);
+                }
                 Ok(snapshot) => {
-                    inner.remember(&id, &snapshot);
+                    if game.host.is_none() {
+                        inner.remember(&game.id, &snapshot);
+                    }
+                    inner.known.insert(game.key(), snapshot.clone());
                     inner.snapshot = Some(snapshot);
                     inner.again = None;
                     inner.ready();
@@ -414,13 +521,19 @@ impl LaunchSettings {
     }
 
     fn spawn_read(self: &Arc<Self>, keep: bool) {
-        if let Some((id, operation)) = self.begin_read(keep) {
+        if let Some((game, operation)) = self.begin_read(keep) {
             let this = Arc::clone(self);
-            tokio::spawn(async move { this.finish_read(id, operation).await });
+            tokio::spawn(async move { this.finish_read(game, operation).await });
         }
     }
 
-    async fn send(&self, send: Write, snapshot: &Value) -> LaunchSettingsWriteOutcome {
+    /// One write to the device `host` names, or to this device.
+    async fn send(
+        &self,
+        send: Write,
+        snapshot: &Value,
+        host: Option<String>,
+    ) -> LaunchSettingsWriteOutcome {
         match send {
             Write::Set {
                 target,
@@ -446,7 +559,8 @@ impl LaunchSettings {
                         path,
                         value,
                         clear,
-                        expected_revision: revision(snapshot, &layer)
+                        expected_revision: revision(snapshot, &layer),
+                        host,
                     },
                     LaunchSettingsWriteOutcome
                 )
@@ -461,7 +575,8 @@ impl LaunchSettings {
                 LaunchProfileSelectRequest {
                     game_id,
                     profile_id,
-                    expected_revision: revision(snapshot, &serde_json::json!({ "_tag": "Game" }))
+                    expected_revision: revision(snapshot, &json!({ "_tag": "Game" })),
+                    host,
                 },
                 LaunchSettingsWriteOutcome
             ),
@@ -477,7 +592,8 @@ impl LaunchSettings {
                     game_id,
                     profile_id,
                     title,
-                    expected_revision: revision(snapshot, &serde_json::json!({ "_tag": "Game" }))
+                    expected_revision: revision(snapshot, &json!({ "_tag": "Game" })),
+                    host,
                 },
                 LaunchSettingsWriteOutcome
             ),
@@ -491,74 +607,19 @@ impl LaunchSettings {
                 LaunchProfileRemoveRequest {
                     game_id,
                     profile_id,
-                    expected_revision: revision(snapshot, &serde_json::json!({ "_tag": "Game" }))
+                    expected_revision: revision(snapshot, &json!({ "_tag": "Game" })),
+                    host,
                 },
                 LaunchSettingsWriteOutcome
             ),
         }
     }
 
-    /// One write from the editor. Saving shows on the row; the snapshot is
-    /// read again after.
+    /// One write from the editor that is not a change: a profile's pick,
+    /// name or removal. Saving shows on the row; the snapshot is read again
+    /// after.
     fn write(self: &Arc<Self>, setting_id: String, send: Write) {
-        if let Write::Set {
-            target,
-            value,
-            clear,
-        } = &send
-        {
-            if target.place["layer"]["_tag"] == "Launch" {
-                let mut inner = self.lock();
-                if inner.busy || inner.editor_tag() != "Ready" {
-                    return;
-                }
-                let result = (|| -> Result<(), String> {
-                    let game = inner.game_id.clone().ok_or("No game is selected")?;
-                    let path: crate::launch_settings::LaunchPath =
-                        serde_json::from_value(target.path.clone()).map_err(|e| e.to_string())?;
-                    let crate::launch_settings::LaunchPath::Setting { key } = path else {
-                        return Err("Only settings can be edited in this draft".into());
-                    };
-                    let scope = serde_json::from_value(target.place["scope"].clone())
-                        .map_err(|e| e.to_string())?;
-                    let value = if *clear {
-                        Some(Value::Null)
-                    } else {
-                        value.clone()
-                    };
-                    if let Some(value) = value.as_ref().filter(|v| !v.is_null()) {
-                        if let Some(shared) = korri_settings_treaty::SharedSetting::from_path(&key)
-                        {
-                            crate::launch_settings::store::validate_property(
-                                &shared.property(),
-                                value,
-                            )?;
-                        }
-                    }
-                    let value = value
-                        .map(serde_json::from_value)
-                        .transpose()
-                        .map_err(|e| e.to_string())?;
-                    inner.drafts.set(&game, scope, &key, value)
-                })();
-                match result {
-                    Ok(()) => {
-                        inner.status = None;
-                        inner.ready();
-                    }
-                    Err(message) => {
-                        inner.status = Some(SurfaceSettingsStatus::Problem {
-                            setting_id,
-                            message,
-                        })
-                    }
-                }
-                drop(inner);
-                self.changed();
-                return;
-            }
-        }
-        let (snapshot, operation) = {
+        let (snapshot, host, operation) = {
             let mut inner = self.lock();
             let Some(snapshot) = inner.snapshot.clone() else {
                 return;
@@ -571,12 +632,13 @@ impl LaunchSettings {
             inner.status = Some(SurfaceSettingsStatus::Saving {
                 setting_id: setting_id.clone(),
             });
-            (snapshot, inner.generation)
+            let host = inner.game.as_ref().and_then(|game| game.host.clone());
+            (snapshot, host, inner.generation)
         };
         self.changed();
         let this = Arc::clone(self);
         tokio::spawn(async move {
-            let result = this.send(send.clone(), &snapshot).await;
+            let result = this.send(send.clone(), &snapshot, host).await;
             let open = {
                 let mut inner = this.lock();
                 inner.busy = false;
@@ -643,7 +705,7 @@ impl LaunchSettings {
         let Some(send) = send else { return };
         let this = Arc::clone(self);
         tokio::spawn(async move {
-            let result = this.send(send, &snapshot).await;
+            let result = this.send(send, &snapshot, None).await;
             {
                 let mut inner = this.lock();
                 inner.busy = false;
@@ -767,42 +829,8 @@ impl LaunchSettings {
         true
     }
 
-    fn add(&self, place_id: String, setting: PendingSetting) {
-        let mut inner = self.lock();
-        if inner.editor_tag() != "Ready" {
-            return;
-        }
-        let settings = inner.pending.entry(place_id).or_default();
-        if settings.contains(&setting) {
-            return;
-        }
-        settings.push(setting);
-        inner.ready();
-        drop(inner);
-        self.changed();
-    }
-
-    fn withdraw(&self, setting_id: &str) -> bool {
-        let mut inner = self.lock();
-        let Some((place_id, setting)) = inner
-            .editor_rows
-            .as_ref()
-            .and_then(|editor| editor.rows.pending.get(setting_id))
-            .cloned()
-        else {
-            return false;
-        };
-        inner
-            .pending
-            .entry(place_id)
-            .or_default()
-            .retain(|candidate| *candidate != setting);
-        inner.ready();
-        drop(inner);
-        self.changed();
-        true
-    }
-
+    /// The values the next launch of this game carries: the changes kept
+    /// for this launch only (ADR 0066). `game` is the game's key.
     pub(crate) fn submit_one_launch(
         &self,
         game: &str,
@@ -820,57 +848,119 @@ impl LaunchSettings {
         self.changed();
     }
 
-    /// Changes to a launch row. False: not a launch row.
-    pub fn change(self: &Arc<Self>, setting_id: &str, value: &str) -> bool {
-        let keep = self.lock().keeps.get(setting_id).cloned();
-        if let Some(keep) = keep {
-            if let Some(place) = keep.targets.get(value) {
-                self.write(
+    fn problem(&self, setting_id: &str, message: impl Into<String>) {
+        self.lock().status = Some(SurfaceSettingsStatus::Problem {
+            setting_id: setting_id.into(),
+            message: message.into(),
+        });
+        self.changed();
+    }
+
+    /// One list row changed. A value of the device that runs the game waits
+    /// as a change; a value of this device's stream viewer is written now.
+    fn change_row(self: &Arc<Self>, setting_id: &str, text: &str) -> bool {
+        let (row, game) = {
+            let inner = self.lock();
+            let row = inner
+                .list
+                .as_ref()
+                .and_then(|list| list.rows.get(setting_id))
+                .cloned();
+            (row, inner.game.clone())
+        };
+        let (Some(row), Some(game)) = (row, game) else {
+            return false;
+        };
+        let Some(value) = row.value_of(text) else {
+            self.problem(setting_id, INVALID);
+            return true;
+        };
+        match row.target {
+            RowTarget::Viewer(target) => {
+                if value == row.stored {
+                    return true;
+                }
+                let clear = value.is_null();
+                self.write_device(
                     setting_id.into(),
-                    Write::Set {
-                        target: LaunchWrite {
-                            place: place.clone(),
-                            path: serde_json::json!({"_tag":"Setting","payload":{"key":keep.path}}),
-                            encoder: super::launch_model::Encoder::Text,
-                        },
-                        clear: keep.value.is_null(),
-                        value: (!keep.value.is_null()).then_some(keep.value),
-                    },
+                    Some(Write::Set {
+                        target,
+                        value: (!clear).then_some(value),
+                        clear,
+                    }),
                 );
             }
-            return true;
+            RowTarget::Holder { path, runner } => {
+                // Korri knows a shared setting's shape before any device does.
+                let shared = path["payload"]["key"]
+                    .as_str()
+                    .filter(|_| path["_tag"] == "Setting")
+                    .and_then(korri_settings_treaty::SharedSetting::from_path);
+                if let Some(shared) = shared.filter(|_| !value.is_null()) {
+                    if let Err(message) =
+                        crate::launch_settings::store::validate_property(&shared.property(), &value)
+                    {
+                        self.problem(setting_id, message);
+                        return true;
+                    }
+                }
+                let mut inner = self.lock();
+                if inner.busy || inner.editor_tag() != "Ready" {
+                    return true;
+                }
+                let key = game.key();
+                if value == row.stored {
+                    inner.drafts.remove(&key, setting_id);
+                } else {
+                    inner.drafts.set(
+                        &key,
+                        Change {
+                            row: setting_id.into(),
+                            path,
+                            value,
+                            runner,
+                        },
+                    );
+                }
+                inner.status = None;
+                inner.ready();
+                drop(inner);
+                self.changed();
+            }
         }
+        true
+    }
+
+    /// Changes to a launch row. False: not a launch row.
+    pub fn change(self: &Arc<Self>, setting_id: &str, value: &str) -> bool {
         if setting_id.starts_with("launch-device:") {
             self.change_device(setting_id, value);
             return true;
         }
-        let (game, target, adding, snapshot) = {
+        if setting_id == launch_id::KEEP {
+            let mut inner = self.lock();
+            let known = inner
+                .list
+                .as_ref()
+                .is_some_and(|list| list.keep_places.contains_key(value));
+            if let (true, Some(game)) = (known, inner.game.clone()) {
+                inner.drafts.set_keep(&game.key(), value);
+                inner.redraw();
+                drop(inner);
+                self.changed();
+            }
+            return true;
+        }
+        if self.change_row(setting_id, value) {
+            return true;
+        }
+        let (game, snapshot) = {
             let inner = self.lock();
-            let rows = inner.editor_rows.as_ref().map(|editor| &editor.rows);
             (
-                inner.game_id.clone(),
-                rows.and_then(|rows| rows.writes.get(setting_id)).cloned(),
-                rows.and_then(|rows| rows.adds.get(setting_id)).cloned(),
+                inner.game.as_ref().map(|game| game.id.clone()),
                 inner.snapshot.clone(),
             )
         };
-        if let Some(target) = target {
-            if let Some(encoded) = target.encoder.encode(value) {
-                if encoded.value.is_none() && !encoded.clear && self.withdraw(setting_id) {
-                    return true;
-                }
-            }
-            if let Some(send) = self.set_from(setting_id, &target, value) {
-                self.write(setting_id.into(), send);
-            }
-            return true;
-        }
-        if let Some(adding) = adding {
-            if !value.is_empty() {
-                self.add(adding.place_id, adding.kind.pending_of(value));
-            }
-            return true;
-        }
         if setting_id == launch_id::PICK {
             let profile_id = profile_from_pick(value);
             // Only a profile this read published.
@@ -903,11 +993,7 @@ impl LaunchSettings {
             let title = value.trim().to_owned();
             if title.is_empty() {
                 // A profile needs a name; korrid would refuse it too.
-                self.lock().status = Some(SurfaceSettingsStatus::Problem {
-                    setting_id: setting_id.into(),
-                    message: "A profile needs a name.".into(),
-                });
-                self.changed();
+                self.problem(setting_id, "A profile needs a name.");
                 return true;
             }
             if let Some(game_id) = game {
@@ -935,13 +1021,13 @@ impl LaunchSettings {
             return self.act_device(action_id);
         }
         if action_id == launch_id::CANCEL {
-            self.cancel();
+            self.spawn_close();
             return true;
         }
         if action_id == launch_id::RUNNER {
             let open = {
                 let inner = self.lock();
-                (inner.editor_tag() != "Closed" && !inner.runner_action().is_empty())
+                (inner.editor_tag() != "Closed")
                     .then(|| inner.open_runners.clone())
                     .flatten()
             };
@@ -965,7 +1051,7 @@ impl LaunchSettings {
                 }
                 let again = inner.again.take().unwrap_or(Again::Read);
                 // Retry shows the editor again first, so a repeated write has a row to save on.
-                if inner.snapshot.is_some() {
+                if inner.snapshot.is_some() && !matches!(again, Again::Read) {
                     inner.ready();
                 }
                 again
@@ -974,59 +1060,19 @@ impl LaunchSettings {
             match again {
                 Again::Read => self.spawn_read(false),
                 Again::Write(setting_id, send) => self.write(setting_id, *send),
-            }
-            return true;
-        }
-        let (cleared, reset, game_id, snapshot) = {
-            let inner = self.lock();
-            let rows = inner.editor_rows.as_ref().map(|editor| &editor.rows);
-            (
-                rows.and_then(|rows| rows.clears.get(action_id)).cloned(),
-                rows.and_then(|rows| rows.defaults.get(action_id)).cloned(),
-                inner.game_id.clone(),
-                inner.snapshot.clone(),
-            )
-        };
-        let target_of = |this: &Self, id: &str| {
-            this.lock()
-                .editor_rows
-                .as_ref()
-                .and_then(|editor| editor.rows.writes.get(id))
-                .cloned()
-        };
-        // Inherit on a string setting: a pending one goes, a written one is taken away.
-        if let Some(cleared) = cleared {
-            if self.withdraw(&cleared) {
-                return true;
-            }
-            if let Some(target) = target_of(self, &cleared) {
-                self.write(
-                    action_id.into(),
-                    Write::Set {
-                        target,
-                        value: None,
-                        clear: false,
-                    },
-                );
-            }
-            return true;
-        }
-        // Default on a number or a string setting: a Cleared setting here.
-        if let Some(reset) = reset {
-            if let Some(target) = target_of(self, &reset) {
-                self.write(
-                    action_id.into(),
-                    Write::Set {
-                        target,
-                        value: None,
-                        clear: true,
-                    },
-                );
+                Again::Keep => self.spawn_close(),
             }
             return true;
         }
         let Some(profile_id) = action_id.strip_prefix("launch:profile:remove:") else {
             return false;
+        };
+        let (game_id, snapshot) = {
+            let inner = self.lock();
+            (
+                inner.game.as_ref().map(|game| game.id.clone()),
+                inner.snapshot.clone(),
+            )
         };
         let known = snapshot
             .as_ref()
@@ -1049,15 +1095,144 @@ impl LaunchSettings {
         true
     }
 
+    /// The synchronous half of keeping: what to write and where. None: there
+    /// is nothing to write now. Changes for this launch stay for the launch
+    /// to carry; an editor that is not Ready closes without writing.
+    fn begin_keep(&self) -> Option<Keeping> {
+        let mut inner = self.lock();
+        if inner.busy || inner.editor_tag() != "Ready" {
+            return None;
+        }
+        let game = inner.game.clone()?;
+        let list = inner.list.as_ref()?;
+        let layer = list.keep_places.get(&list.keep_selected)?.layer.clone()?;
+        let changes = inner.drafts.changes(&game.key()).to_vec();
+        let snapshot = inner.snapshot.clone()?;
+        if changes.is_empty() {
+            return None;
+        }
+        inner.generation += 1;
+        inner.busy = true;
+        inner.status = Some(SurfaceSettingsStatus::Saving {
+            setting_id: launch_id::KEEP.into(),
+        });
+        Some(Keeping {
+            game,
+            layer,
+            changes,
+            snapshot,
+            operation: inner.generation,
+        })
+    }
+
+    /// Write the changes one by one, each from the revision the last left.
+    /// A write that fails leaves the editor open, saying why; what was not
+    /// written stays a change.
+    async fn finish_keep(self: &Arc<Self>, keeping: Keeping) {
+        let Keeping {
+            game,
+            layer,
+            changes,
+            mut snapshot,
+            operation,
+        } = keeping;
+        self.changed();
+        let mut failure = None;
+        for change in changes {
+            // The governor is one device value: only the device keeps it.
+            let layer = if change.path["_tag"] == "CpuGovernor" {
+                json!({ "_tag": "Device" })
+            } else {
+                layer.clone()
+            };
+            // A shared value is kept for any runner, a runner-only value for its runner.
+            let scope = match &change.runner {
+                Some(runner) => json!({ "_tag": "Runner", "id": runner }),
+                None => json!({ "_tag": "Any" }),
+            };
+            let clear = change.value.is_null();
+            let result = self
+                .send(
+                    Write::Set {
+                        target: LaunchWrite {
+                            place: json!({ "layer": layer, "scope": scope }),
+                            path: change.path.clone(),
+                            encoder: super::launch_model::Encoder::Text,
+                        },
+                        value: (!clear).then(|| change.value.clone()),
+                        clear,
+                    },
+                    &snapshot,
+                    game.host.clone(),
+                )
+                .await;
+            match result {
+                LaunchSettingsWriteOutcome::Ok(revisions) => {
+                    snapshot["revisions"] = serde_json::to_value(revisions).unwrap_or(Value::Null);
+                    let mut inner = self.lock();
+                    inner.drafts.kept(&game.key(), &change);
+                    if operation == inner.generation {
+                        if let Some(current) = inner.snapshot.as_mut() {
+                            current["revisions"] = snapshot["revisions"].clone();
+                        }
+                    }
+                }
+                LaunchSettingsWriteOutcome::Err(error) => {
+                    failure = Some(error);
+                    break;
+                }
+            }
+        }
+        {
+            let mut inner = self.lock();
+            inner.busy = false;
+            inner.status = None;
+            if operation != inner.generation {
+                drop(inner);
+                self.changed();
+                return;
+            }
+            if let Some(failure) = &failure {
+                inner.failed(failure, Again::Keep);
+                drop(inner);
+                self.changed();
+                return;
+            }
+        }
+        self.cancel();
+        self.spawn_refresh_device();
+    }
+
+    /// The editor closes, or its game starts: the changes are written to the
+    /// place the person chose, then the editor closes (ADR 0066).
+    pub async fn close(self: &Arc<Self>) {
+        match self.begin_keep() {
+            Some(keeping) => self.finish_keep(keeping).await,
+            None => self.cancel(),
+        }
+    }
+
+    /// Close from an action: at once when there is nothing to write.
+    fn spawn_close(self: &Arc<Self>) {
+        match self.begin_keep() {
+            Some(keeping) => {
+                let this = Arc::clone(self);
+                tokio::spawn(async move { this.finish_keep(keeping).await });
+            }
+            None => self.cancel(),
+        }
+    }
+
+    /// Close without writing. Changes that are not kept stay with the game.
     pub fn cancel(&self) {
         {
             let mut inner = self.lock();
             inner.generation += 1;
-            inner.game_id = None;
+            inner.game = None;
             inner.open_runners = None;
             inner.snapshot = None;
-            inner.editor_rows = None;
-            inner.pending.clear();
+            inner.list = None;
+            inner.unreachable = false;
             inner.again = None;
             inner.editor = Some(SurfaceLaunchSettings::Closed);
             if !inner.busy {
@@ -1079,7 +1254,7 @@ impl LaunchSettings {
         let this = Arc::clone(self);
         let id = id.to_owned();
         tokio::spawn(async move {
-            let result = this.snapshot(Some(id.clone())).await;
+            let result = this.snapshot(Some(id.clone()), None).await;
             let mut inner = this.lock();
             inner.learning.remove(&id);
             if let Ok(snapshot) = result {
@@ -1090,14 +1265,24 @@ impl LaunchSettings {
         });
     }
 
-    /// Open the editor for one game, by korrid's id.
-    pub fn open(self: &Arc<Self>, id: String, title: String, choose_runners: Option<OpenRunners>) {
+    /// Open the editor for one game, by korrid's id. `host` names the
+    /// device that runs a streamed game.
+    pub fn open(
+        self: &Arc<Self>,
+        id: String,
+        title: String,
+        host: Option<String>,
+        choose_runners: Option<OpenRunners>,
+    ) {
+        let streamed = host.is_some();
         {
             let mut inner = self.lock();
-            inner.game_id = Some(id);
-            inner.game_title = title;
+            inner.game = Some(Subject { id, title, host });
             inner.open_runners = choose_runners;
-            inner.pending.clear();
+        }
+        if streamed {
+            // Its list shows this device's stream section.
+            self.spawn_refresh_device();
         }
         self.spawn_read(false);
     }

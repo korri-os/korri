@@ -50,6 +50,7 @@ fn req(
         path,
         value,
         expected_revision: revision,
+        host: None,
     }
 }
 fn any(layer: LaunchLayer) -> LaunchPlace {
@@ -70,16 +71,16 @@ fn shared_settings_fold_at_any_runner_scope_and_launch_wins() {
         serde_json::to_value(&resolved.runner.settings).unwrap()["video"]["render-scale"],
         4
     );
-    let one: LaunchOverride = serde_json::from_value(
-        json!({"settings": {"scope": {"_tag": "Any"}, "values": {"video": {"render-scale": 3}}}}),
-    )
-    .unwrap();
+    // A shared value of one launch has no runner scope (ADR 0066).
+    let one: LaunchOverride =
+        serde_json::from_value(json!({"settings": {"video": {"render-scale": 3}}})).unwrap();
     let resolved = resolve_launch(&snapshot, &route(), Some(&one), None).unwrap();
     assert_eq!(
         serde_json::to_value(&resolved.runner.settings).unwrap()["video"]["render-scale"],
         3
     );
-    let clear: LaunchOverride = serde_json::from_value(json!({"settings": {"scope": {"_tag": "Any"}, "values": {"video": {"render-scale": null}}}})).unwrap();
+    let clear: LaunchOverride =
+        serde_json::from_value(json!({"settings": {"video": {"render-scale": null}}})).unwrap();
     let resolved = resolve_launch(&snapshot, &route(), Some(&clear), None).unwrap();
     assert!(
         crate::config::cascade::leaf(&resolved.runner.settings, "video.render-scale").is_none()
@@ -146,12 +147,143 @@ fn shared_setting_can_be_authored_without_any_installed_runner() {
 }
 
 #[test]
-fn one_launch_rejects_plugin_settings_without_runner_scope() {
-    let one: LaunchOverride = serde_json::from_value(
-        json!({"settings": {"scope": {"_tag": "Any"}, "values": {"plugin": {"custom": true}}}}),
-    )
-    .unwrap();
+fn one_launch_takes_runner_only_settings_only_by_their_runner() {
+    let one: LaunchOverride =
+        serde_json::from_value(json!({"settings": {"plugin": {"custom": true}}})).unwrap();
     assert!(launch::override_body(&one).is_err());
+    // Only Korri's shared settings travel without a runner. The scoped shape
+    // this replaced is refused, not read as settings named scope and values.
+    for unknown in [
+        json!({"settings": {"speed": 2}}),
+        json!({"settings": {"scope": {"_tag": "Any"}, "values": {"video": {"render-scale": 3}}}}),
+    ] {
+        let launch: LaunchOverride = serde_json::from_value(unknown).unwrap();
+        assert!(launch::override_body(&launch).is_err());
+    }
+    let config = decode_config_documents(DEVICE, LIBRARY).unwrap();
+    let one: LaunchOverride = serde_json::from_value(json!({
+        "settings": {"video": {"render-scale": 2}},
+        "plugin": {RUNNER: {"speed": 2}, "@korri:other/runner": {"speed": 9}},
+    }))
+    .unwrap();
+    let resolved = resolve_launch(&config, &route(), Some(&one), None).unwrap();
+    // The launch's runner gets its own values and the shared ones. Another
+    // runner's values wait for a launch that uses it.
+    assert_eq!(
+        serde_json::to_value(&resolved.runner.settings).unwrap(),
+        json!({"video": {"render-scale": 2}, "plugin": {"speed": 2}})
+    );
+    assert!(matches!(
+        &resolved.values.values["settings.plugin.speed"].source,
+        Some(LaunchSource::Place(LaunchPlace {
+            layer: LaunchLayer::Launch,
+            scope: LaunchRunnerScope::Runner(id),
+        })) if id == RUNNER
+    ));
+    assert!(launch::override_body(
+        &serde_json::from_value(json!({"plugin": {"not a runner id": {"speed": 1}}})).unwrap()
+    )
+    .is_err());
+}
+
+#[test]
+fn one_launch_carries_the_governor_and_launch_service_settings() {
+    const SERVICE: &str = "@korri:sunshine/sunshine";
+    let config = decode_config_documents(DEVICE, LIBRARY).unwrap();
+    let device = resolve_launch(&config, &route(), None, Some(&facts())).unwrap();
+    assert_eq!(device.limits.governor.as_deref(), Some("schedutil"));
+    let one: LaunchOverride = serde_json::from_value(json!({
+        "cpu": {"governor": "performance"},
+        "services": {SERVICE: {"settings": {"video": {"max-bitrate-kbps": 3000}}}},
+    }))
+    .unwrap();
+    let resolved = resolve_launch(&config, &route(), Some(&one), Some(&facts())).unwrap();
+    assert_eq!(resolved.limits.governor.as_deref(), Some("performance"));
+    assert_eq!(
+        resolved.values.values["cpu.governor"].source,
+        Some(LaunchSource::Place(LaunchPlace {
+            layer: LaunchLayer::Launch,
+            scope: LaunchRunnerScope::Any,
+        }))
+    );
+    assert_eq!(
+        serde_json::to_value(&resolved.services[SERVICE].settings).unwrap(),
+        json!({"video": {"max-bitrate-kbps": 3000}})
+    );
+    // The device's limits stay as they were: only the governor is named.
+    assert_eq!(resolved.limits.cpu.max.value, device.limits.cpu.max.value);
+    // A governor this device does not have is refused, not guessed.
+    let unknown: LaunchOverride =
+        serde_json::from_value(json!({"cpu": {"governor": "turbo"}})).unwrap();
+    assert!(resolve_launch(&config, &route(), Some(&unknown), Some(&facts())).is_err());
+    let empty: LaunchOverride = serde_json::from_value(json!({"cpu": {"governor": " "}})).unwrap();
+    assert!(launch::override_body(&empty).is_err());
+}
+
+#[test]
+fn a_launch_governor_holds_for_the_session_and_the_devices_own_comes_back_after() {
+    let root = root();
+    let ok = json!({"_tag":"Ok","payload":{}});
+    let describe = json!({"_tag":"Ok","payload":facts()});
+    let (client, handle) = server(
+        root.path(),
+        vec![
+            describe.clone(),
+            ok.clone(),
+            ok.clone(),
+            ok.clone(),
+            ok,
+            describe,
+        ],
+    );
+    let governor = session::SessionGovernor::for_launch(root.path(), &client, Some("performance"))
+        .unwrap()
+        .expect("the launch names another governor than the device's");
+    let limits = session::SessionLimits {
+        cpu: LaunchPercentRange { min: 0, max: 40 },
+        gpu: LaunchPercentRange { min: 20, max: 80 },
+        governor: Some(governor),
+        runner_id: RUNNER.into(),
+        build: "build".into(),
+    };
+    let id = "fedcba9876543210fedcba9876543210";
+    assert!(limits.apply(&client, id).is_none());
+    session::end(&client, id);
+    // The device's own governor needs no device call at all.
+    assert!(
+        session::SessionGovernor::for_launch(root.path(), &client, Some("schedutil"))
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        session::SessionGovernor::for_launch(root.path(), &unavailable(root.path()), None)
+            .unwrap()
+            .is_none()
+    );
+    let requests = handle.join().unwrap();
+    let sent: Vec<(&str, Option<&str>)> = requests
+        .iter()
+        .map(|request| {
+            (
+                request["_tag"].as_str().unwrap(),
+                request["payload"]["governor"].as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        sent,
+        [
+            ("Describe", None),
+            ("ApplyDevice", Some("performance")),
+            ("ApplySession", None),
+            ("EndSession", None),
+            ("ApplyDevice", Some("schedutil")),
+            ("Describe", None),
+        ]
+    );
+    // The device's limits travel with the governor, unchanged.
+    assert_eq!(requests[1]["payload"]["cpu"], json!({"min": 10, "max": 95}));
+    assert_eq!(requests[4]["payload"]["cpu"], json!({"min": 10, "max": 95}));
 }
 
 #[test]
@@ -494,7 +626,7 @@ fn setters_write_every_layer_and_runner_place_to_the_correct_document() {
 #[test]
 fn override_and_set_wire_refuse_every_file_only_kind_and_removed_rpc() {
     for key in [
-        "env", "args", "cwd", "hooks", "routines", "config", "runner", "services", "unknown",
+        "env", "args", "cwd", "hooks", "routines", "config", "runner", "unknown",
     ] {
         assert!(
             serde_json::from_value::<LaunchOverride>(json!({key:{}})).is_err(),
@@ -513,13 +645,19 @@ fn override_and_set_wire_refuse_every_file_only_kind_and_removed_rpc() {
     )
     .is_err());
     let config = decode_config_documents(DEVICE, LIBRARY).unwrap();
-    let one:LaunchOverride=serde_json::from_value(json!({"cpu":{"max":45},"settings":{"scope":{"_tag":"Runner","id":RUNNER},"values":{"speed":2}}})).unwrap();
+    let one: LaunchOverride =
+        serde_json::from_value(json!({"cpu":{"max":45},"plugin":{RUNNER:{"speed":2}}})).unwrap();
     let resolved = resolve_launch(&config, &route(), Some(&one), None).unwrap();
     assert_eq!(resolved.limits.cpu.max.value, 45);
     assert_eq!(
-        serde_json::to_value(&resolved.runner.settings["speed"]).unwrap(),
-        2
+        serde_json::to_value(&resolved.runner.settings["plugin"]).unwrap(),
+        json!({"speed": 2})
     );
+    // A prepare may carry the same values (ADR 0066); nothing else is added.
+    assert!(serde_json::from_value::<crate::SessionPrepareRequest>(
+        json!({"gameId":"game","launch":{"cpu":{"max":45}}})
+    )
+    .is_ok());
 }
 #[test]
 fn runner_property_validation_uses_schema_type_enum_and_range() {
@@ -598,6 +736,7 @@ fn helper_apply_end_and_warning_use_the_actual_socket_protocol() {
     let limits = session::SessionLimits {
         cpu: LaunchPercentRange { min: 0, max: 40 },
         gpu: LaunchPercentRange { min: 20, max: 80 },
+        governor: None,
         runner_id: RUNNER.into(),
         build: "build".into(),
     };
@@ -681,6 +820,7 @@ fn launch_settings_profile_create_rename_select_remove_and_remembered_pick() {
                 profile_id: None,
                 title: "  My Quiet  ".into(),
                 expected_revision: revision,
+                host: None,
             },
         )
         .unwrap()
@@ -697,6 +837,7 @@ fn launch_settings_profile_create_rename_select_remove_and_remembered_pick() {
             game_id: "game".into(),
             profile_id: Some("my-quiet".into()),
             expected_revision: revision,
+            host: None,
         },
     )
     .unwrap()
@@ -710,6 +851,7 @@ fn launch_settings_profile_create_rename_select_remove_and_remembered_pick() {
             profile_id: Some("my-quiet".into()),
             title: "Renamed".into(),
             expected_revision: revision,
+            host: None,
         },
     )
     .unwrap()
@@ -721,6 +863,7 @@ fn launch_settings_profile_create_rename_select_remove_and_remembered_pick() {
         game_id: "game".into(),
         profile_id: "my-quiet".into(),
         expected_revision: revision,
+        host: None,
     };
     revision = remove_profile(root.path(), private.path(), &lock, &req)
         .unwrap()
@@ -739,7 +882,8 @@ fn launch_settings_profile_create_rename_select_remove_and_remembered_pick() {
         &LaunchProfileSelectRequest {
             game_id: "game".into(),
             profile_id: Some("absent".into()),
-            expected_revision: revision.clone()
+            expected_revision: revision.clone(),
+            host: None
         }
     )
     .is_err());
@@ -751,6 +895,7 @@ fn launch_settings_profile_create_rename_select_remove_and_remembered_pick() {
             game_id: "game".into(),
             profile_id: None,
             expected_revision: revision,
+            host: None,
         },
     )
     .unwrap();
@@ -778,7 +923,8 @@ fn launch_settings_pending_publication_blocks_every_mutation_without_rewriting_f
                 place: any(LaunchLayer::Game("game".into())),
                 path: LaunchPath::CpuMax,
                 value: Some(json!(50)),
-                expected_revision: before.games.clone()
+                expected_revision: before.games.clone(),
+                host: None
             },
             &client
         ),
@@ -793,7 +939,8 @@ fn launch_settings_pending_publication_blocks_every_mutation_without_rewriting_f
                 game_id: "game".into(),
                 profile_id: None,
                 title: "Quiet 2".into(),
-                expected_revision: before.games.clone()
+                expected_revision: before.games.clone(),
+                host: None
             }
         ),
         Err(SettingsError::Conflict)
@@ -806,7 +953,8 @@ fn launch_settings_pending_publication_blocks_every_mutation_without_rewriting_f
             &LaunchProfileRemoveRequest {
                 game_id: "game".into(),
                 profile_id: "quiet".into(),
-                expected_revision: before.games.clone()
+                expected_revision: before.games.clone(),
+                host: None
             }
         ),
         Err(SettingsError::Conflict)
@@ -819,7 +967,8 @@ fn launch_settings_pending_publication_blocks_every_mutation_without_rewriting_f
             &LaunchProfileSelectRequest {
                 game_id: "game".into(),
                 profile_id: None,
-                expected_revision: before.games
+                expected_revision: before.games,
+                host: None
             }
         ),
         Err(SettingsError::Conflict)

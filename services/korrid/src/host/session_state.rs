@@ -10093,6 +10093,7 @@ mod launch_settings_lifecycle_tests {
         SessionLimits {
             cpu: LaunchPercentRange { min: 20, max: 60 },
             gpu: LaunchPercentRange { min: 0, max: 80 },
+            governor: None,
             runner_id: "@test:runner/main".into(),
             build: "build".into(),
         }
@@ -10346,6 +10347,7 @@ mod launch_settings_completion_tests {
         let limits = SessionLimits {
             cpu: LaunchPercentRange { min: 0, max: 80 },
             gpu: LaunchPercentRange { min: 0, max: 75 },
+            governor: None,
             runner_id: "runner".into(),
             build: "build".into(),
         };

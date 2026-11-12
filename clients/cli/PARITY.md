@@ -41,14 +41,16 @@ producer the korrid port came from.
 | `plugin-toggle:ID` | `plugins on ID` / `plugins off ID` | Stale approval requires review and explicit reapproval |
 | `launch-device:cpu.min`, `cpu.max`, `gpu.min`, `gpu.max` | `launch-settings set KEY=PERCENT` | Same Device/Any place |
 | `launch-device:cpu.governor` | `launch-settings set cpu.governor=VALUE` | Device/Any only, when advertised |
-| `launch:set:PLACE#cpu.min`, `cpu.max`, `gpu.min`, `gpu.max` | `launch-settings set KEY=PERCENT [layer] [scope]` | Same place; no inferred game/release |
-| `launch:set:PLACE#runner` | `launch-settings runner ID [layer]` | Any-runner scope; `--inherit` clears |
-| `launch:set:PLACE#setting:KEY` | `launch-settings set KEY=VALUE [layer] [scope]` | Runner/family schemas define keys and types |
-| `launch:set:PLACE#add-setting` | `launch-settings set KEY=VALUE [layer] [scope]` | Portal's Add alone changes no stored value |
-| `launch:set:PLACE#modifier:ID:enabled` | `launch-settings set ID.enabled=true\|false [layer] [scope]` | Same modifier path |
-| `launch:set:PLACE#modifier:ID:setting:KEY` | `launch-settings set ID.KEY=VALUE [layer] [scope]` | Same modifier schema |
-| `launch:set:PLACE#modifier:ID:add-setting` | `launch-settings set ID.KEY=VALUE [layer] [scope]` | Add alone changes no stored value |
-| Inherit / `launch:set:PLACE#clear:PATH` | `launch-settings set KEY --inherit [layer] [scope]` | Clears override; empty strings stay values |
+| `launch:row:cpu.min`, `cpu.max`, `gpu.min`, `gpu.max` | `launch-settings set KEY=PERCENT [layer] [scope]`; `play GAME --set KEY=PERCENT` | The list shows the value in force; the CLI names the place |
+| `launch:row:cpu.governor` | `launch-settings set cpu.governor=VALUE`; `play GAME --set cpu.governor=VALUE` | One device value: kept at Device/Any, or named for one launch |
+| `launch:row:runner` | `play GAME --runner ID`; `launch-settings runner ID --game GAME` | The row opens the runner chooser |
+| `launch:row:setting:KEY` | `launch-settings set KEY=VALUE [layer] [scope]`; `play GAME --set KEY=VALUE` | A shared key for any runner; a `plugin.*` key for its runner |
+| `launch:row:modifier:ID:enabled` | `launch-settings set ID.enabled=true\|false [layer] [scope]`; `play GAME --set ID.enabled=true\|false` | Same modifier path |
+| `launch:row:modifier:ID:setting:KEY` | `launch-settings set ID.KEY=VALUE [layer] [scope]`; `play GAME --set ID.KEY=VALUE` | Same modifier schema |
+| `launch:row:service:ID:setting:KEY` | `launch-settings set ID.KEY=VALUE [layer] [scope]`; `play GAME --set ID.KEY=VALUE` | Same service schema |
+| Default on a `launch:row:*` row | `launch-settings set KEY --default [layer] [scope]` | A Cleared setting: the plugin's own default holds |
+| `launch:keep` | `play GAME --set KEY=VALUE` (this launch); `--keep[=game\|device\|system:ID\|release:ID\|profile:ID]`; `launch-settings set KEY=VALUE [layer]` | The list writes when the editor closes; the CLI writes after the launch is accepted |
+| `launch:stream:RUNNER#KEY` | `launch-settings set --runner RUNNER KEY=VALUE` | This device's own stream viewer, at Device and that runner; written at once |
 | `launch:profile:pick` | `launch-settings profiles use ID --game GAME`; `use --none --game GAME` | Exact profile ID, including no-profile choice |
 | `launch:profile:new` | `launch-settings profiles new TITLE --game GAME` | Same profile creation |
 | `launch:profile:rename:ID` | `launch-settings profiles rename ID TITLE --game GAME` | Same `LaunchProfileSave` with `profileId`, trimmed title, 40-character limit and observed revision |
@@ -58,7 +60,7 @@ producer the korrid port came from.
 | `launch:cancel` | Exit / do not submit a command | Navigation only |
 | Pico `pico.font` (native package preference) | **No CLI command; schema unresolved** | The package declares it; korrid stores it per surface (`app.surface.preferences`) |
 | Zone `zone.look` (native package preference) | **No CLI command; schema unresolved** | The package declares it; korrid stores it per surface (`app.surface.preferences`) |
-| `launch:set:PLACE#file:*`, `runner-facts:*`, unavailable GPU row | `launch-settings show [layer] [scope]` | Read-only facts; hooks, environment, arguments, working directory and raw config remain file-authored exceptions |
+| File-only values and runner facts (not in the list), unavailable GPU row `launch:row:gpu` | `launch-settings show [layer] [scope]` | Read-only facts; hooks, environment, arguments, working directory and raw config remain file-authored exceptions |
 
 Layer flags: Device by default, `--system SYSTEM`, `--game GAME`,
 `--release RELEASE --game GAME`, `--profile PROFILE --game GAME`.

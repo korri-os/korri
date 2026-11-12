@@ -338,7 +338,7 @@ fn test_snapshot() -> launch_settings::LaunchSnapshot {
             selected: true,
             // Settings are nested (ADR 0037): the section `@test/mod` makes the
             // runner path `@test/mod.option` collide with the modifier's option.
-            schema: serde_json::json!({"properties":{"speed":{"type":"integer","minimum":1,"maximum":10},"@test/mod":{"type":"object","properties":{"option":{"type":"boolean"}}}}}),
+            schema: serde_json::json!({"properties":{"plugin":{"type":"object","properties":{"speed":{"type":"integer","minimum":1,"maximum":10}}},"@test/mod":{"type":"object","properties":{"option":{"type":"boolean"}}}}}),
             revision: "runner-rev".into(),
             prepare: LaunchRunnerFacts::Unavailable("not prepared".into()),
             choosable: true,
@@ -437,7 +437,6 @@ fn play_library_stale_launch_is_not_retargeted() {
 #[test]
 fn play_library_one_launch_overrides_use_runner_schema_and_never_write_settings() {
     use game_routes::*;
-    use launch_settings::*;
     use saves::types::*;
     let routes = RpcResponse::GameRoutes(GameRoutesOutcome::Ok(GameRoutes {
         game_id: "game".into(),
@@ -478,7 +477,7 @@ fn play_library_one_launch_overrides_use_runner_schema_and_never_write_settings(
         "play",
         "a gAmE",
         "--set",
-        "speed=2",
+        "plugin.speed=2",
         "--set",
         "cpu.max=70",
         "--json",
@@ -503,7 +502,12 @@ fn play_library_one_launch_overrides_use_runner_schema_and_never_write_settings(
     let calls = server.calls.lock().unwrap();
     assert_eq!(calls.len(), 5);
     assert!(
-        matches!(&calls[4],RpcRequest::SelectedGameLaunch(r) if r.runner_id=="@test/runner" && r.launch.as_ref().unwrap().cpu.as_ref().unwrap().max==Some(70) && matches!(r.launch.as_ref().unwrap().settings.as_ref().unwrap().scope,LaunchRunnerScope::Runner(_)))
+        matches!(&calls[4], RpcRequest::SelectedGameLaunch(r) if r.runner_id == "@test/runner"
+            && r.launch.as_ref().unwrap().cpu.as_ref().unwrap().max == Some(70)
+            // A runner-only value is keyed by its runner; nothing carries a scope.
+            && serde_json::to_value(r.launch.as_ref().unwrap()).unwrap()["plugin"]
+                == serde_json::json!({"@test/runner": {"speed": 2}})
+            && r.launch.as_ref().unwrap().settings.is_empty())
     );
     assert!(!calls
         .iter()
@@ -600,10 +604,9 @@ fn play_keep_saves_shared_values_only_after_success_and_chains_revisions() {
             panic!("launch precedes keep")
         };
         let nested = serde_json::to_value(start.launch.as_ref().unwrap()).unwrap();
-        assert_eq!(nested["settings"]["values"]["video"]["render-scale"], 4);
-        assert!(nested["settings"]["values"]
-            .get("video.render-scale")
-            .is_none());
+        assert_eq!(nested["settings"]["video"]["render-scale"], 4);
+        assert!(nested["settings"].get("video.render-scale").is_none());
+        assert!(nested["settings"].get("scope").is_none());
         let writes: Vec<_> = calls
             .iter()
             .filter_map(|r| {

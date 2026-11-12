@@ -315,6 +315,14 @@ struct SelectedRemoteSession {
     viewer_target: LinuxViewerStatus,
 }
 
+/// What a streamed launch carries beyond its game (ADR 0066): the runner the
+/// person chose for it, and the values of this one launch.
+#[derive(Clone, Debug, Default)]
+pub struct StreamedLaunch {
+    pub runner_id: Option<String>,
+    pub launch: Option<crate::launch_settings::LaunchOverride>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum FreezerVerb {
     Freeze,
@@ -970,16 +978,42 @@ impl UpstreamRegistry {
         game_id: &str,
         host_label: Option<&str>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, UpstreamError> {
-        let registry = self.resolved()?;
-        registry.prepare_stream_resolved(game_id, host_label).await
+        self.prepare_streamed_launch(game_id, host_label, StreamedLaunch::default())
+            .await
     }
 
-    async fn prepare_stream_resolved(
+    /// Prepare a streamed game with a runner choice or one-launch values.
+    pub async fn prepare_streamed_launch(
         &self,
         game_id: &str,
         host_label: Option<&str>,
+        launch: StreamedLaunch,
     ) -> Result<crate::game_routes::SelectedGameLaunch, UpstreamError> {
-        let host = match host_label {
+        let registry = self.resolved()?;
+        registry
+            .prepare_stream_resolved(game_id, host_label, launch)
+            .await
+    }
+
+    /// One call to the holder a label names, for the launch settings and
+    /// runner choices of a streamed game (ADR 0066). The holder decides
+    /// whether this device may make it.
+    pub(crate) async fn holder_call(
+        &self,
+        host_label: &str,
+        request: crate::RpcRequest,
+    ) -> Result<crate::RpcResponse, UpstreamError> {
+        let registry = self.resolved()?;
+        match &registry.host_for(Some(host_label))?.client {
+            RegisteredClient::Native(client) => client.call(request).await,
+            RegisteredClient::Legacy(_) => Err(UpstreamError::Failure(format!(
+                "{host_label} does not offer launch settings"
+            ))),
+        }
+    }
+
+    fn host_for(&self, host_label: Option<&str>) -> Result<&RegisteredHost, UpstreamError> {
+        match host_label {
             Some(label) => {
                 let mut matches = self.hosts.iter().filter(|host| host.label == label);
                 let host = matches.next().ok_or_else(|| {
@@ -992,20 +1026,25 @@ impl UpstreamRegistry {
                         "upstream host label is ambiguous".into(),
                     ));
                 }
-                host
+                Ok(host)
             }
-            None if self.hosts.len() == 1 => &self.hosts[0],
-            None if self.hosts.is_empty() => {
-                return Err(UpstreamError::Failure(
-                    "no upstream hosts configured".into(),
-                ))
-            }
-            None => {
-                return Err(UpstreamError::Failure(
-                    "host is required when multiple upstreams are configured".into(),
-                ))
-            }
-        };
+            None if self.hosts.len() == 1 => Ok(&self.hosts[0]),
+            None if self.hosts.is_empty() => Err(UpstreamError::Failure(
+                "no upstream hosts configured".into(),
+            )),
+            None => Err(UpstreamError::Failure(
+                "host is required when multiple upstreams are configured".into(),
+            )),
+        }
+    }
+
+    async fn prepare_stream_resolved(
+        &self,
+        game_id: &str,
+        host_label: Option<&str>,
+        launch: StreamedLaunch,
+    ) -> Result<crate::game_routes::SelectedGameLaunch, UpstreamError> {
+        let host = self.host_for(host_label)?;
         let _mutation = self.remote_prepare_mutation.lock().await;
         let direct_legacy = self.is_legacy_only();
         if !direct_legacy {
@@ -1013,6 +1052,12 @@ impl UpstreamRegistry {
         }
         let prepared = match &host.client {
             RegisteredClient::Legacy(client) => {
+                if launch.runner_id.is_some() || launch.launch.is_some() {
+                    return Err(UpstreamError::Failure(format!(
+                        "{} takes no runner choice and no launch settings",
+                        host.label
+                    )));
+                }
                 let prepared = client.prepare_stream(game_id).await?;
                 let prepared = SessionPrepared {
                     game_id: prepared.game_id,
@@ -1055,7 +1100,19 @@ impl UpstreamRegistry {
                         .map(|d| format!("{}x{}", d.width, d.height))
                         .unwrap_or_else(|| "none".into())
                 );
-                let prepared = client.prepare_stream(game_id, viewer_display).await?;
+                let prepared = match launch.runner_id {
+                    // The owner-device launch with a chosen runner (issue #401).
+                    Some(runner_id) => {
+                        client
+                            .selected_game_launch(game_id, &runner_id, launch.launch)
+                            .await?
+                    }
+                    None => {
+                        client
+                            .prepare_stream_for_launch(game_id, viewer_display, launch.launch)
+                            .await?
+                    }
+                };
                 let selected = SelectedRemoteSession {
                     display: prepared.session.display.clone(),
                     viewer_target: LinuxViewerStatus::Running,

@@ -17,6 +17,11 @@ use typeshare::typeshare;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GameRoutesRequest {
     pub game_id: String,
+    /// The label of the device that runs the game, when this device's korrid
+    /// must ask that holder (a streamed game, ADR 0066). The holder itself
+    /// never forwards: it answers for its own games.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
 }
 
 #[typeshare]
@@ -61,6 +66,11 @@ pub struct SelectedGameLaunchRequest {
     pub runner_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub launch: Option<crate::launch_settings::LaunchOverride>,
+    /// The label of the device that runs the game, when this device's korrid
+    /// must ask that holder (a streamed game, ADR 0066). The holder itself
+    /// never forwards: it answers for its own games.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
 }
 
 #[typeshare]

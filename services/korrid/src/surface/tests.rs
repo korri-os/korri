@@ -793,6 +793,184 @@ async fn an_empty_library_is_empty_and_a_bad_surface_id_is_refused() {
     assert_eq!(hub.model("").unwrap_err().code, "InvalidSurfaceId");
 }
 
+/// A hub whose korrid answers by call and keeps every request it got.
+fn recording_hub(
+    outcomes: HashMap<String, Value>,
+) -> (
+    Arc<SurfaceHub>,
+    Arc<std::sync::Mutex<Vec<Value>>>,
+    tempfile::TempDir,
+) {
+    let requests = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+    let base = in_memory_korrid(Arc::new(std::sync::Mutex::new(outcomes)));
+    let korrid = Korrid::new(Arc::new({
+        let requests = Arc::clone(&requests);
+        move |request: RpcRequest| {
+            let base = base.clone();
+            let requests = Arc::clone(&requests);
+            Box::pin(async move {
+                requests
+                    .lock()
+                    .unwrap()
+                    .push(serde_json::to_value(&request).unwrap());
+                base.rpc(super::korrid::Mapping::Unreachable, request)
+                    .await
+                    .map_err(|failure| Refusal::Unreachable(failure.message))
+            })
+        }
+    }));
+    let directory = tempfile::tempdir().unwrap();
+    let intent = crate::overlay_intent::OverlayIntent::default();
+    let hub = SurfaceHub::new(
+        korrid,
+        directory.path().join("private"),
+        intent.subscribe(),
+        Arc::default(),
+    );
+    (hub, requests, directory)
+}
+
+/// Issue #401 and ADR 0066: a streamed game has its runners and its launch
+/// settings, read from the device that runs it, and asks for a runner there
+/// before it starts.
+#[tokio::test]
+async fn a_streamed_game_offers_its_holders_runners_and_launch_settings_and_asks_before_it_starts()
+{
+    let mut outcomes = idle_outcomes(0);
+    outcomes.insert(
+        "app.catalog.snapshot".into(),
+        json!({"_tag":"Ok","payload":{"games":[{
+        "id":"actraiser","title":"ActRaiser","host":"aka","supportsRunnerSelection":true,
+        "source":{"devicePublicKey":"aka-key","label":"aka","isLocal":false}}]}}),
+    );
+    outcomes.insert(
+        "app.local-games.routes".into(),
+        json!({ "_tag": "Ok", "payload": {
+            "gameId": "actraiser",
+            "routes": [
+                { "runnerId": "@korri:snes9x/snes9x", "systemId": "snes", "runnerBuild": "b", "program": "snes9x", "warnings": [] },
+                { "runnerId": "@simonwjackson:actraiser/actraiser", "systemId": "snes", "runnerBuild": "b", "program": "actraiser", "warnings": [] },
+            ],
+            "selection": { "_tag": "Choose" },
+            "systemRunners": {},
+            "revisions": { "device": "d1", "games": "g1" }
+        } }),
+    );
+    outcomes.insert(
+        "app.launch-settings.snapshot".into(),
+        json!({ "_tag": "Ok", "payload": {
+            "places": [], "resolved": { "values": {} }, "runners": [], "runnerResolved": [],
+            "modifiers": [], "services": [], "profiles": [], "notices": [],
+            "routeLayers": { "_tag": "NeedsRunnerChoice" },
+            "revisions": { "device": "d1", "games": "g1" }
+        } }),
+    );
+    let (hub, requests, _directory) = recording_hub(outcomes);
+    let model = settled(&hub, "pico").await;
+    let id = window_ids(&model).2[0].clone();
+    hub.request(
+        "pico",
+        SurfaceRequest::FocusGame {
+            game_id: Some(id.clone()),
+        },
+    )
+    .unwrap();
+    let focused = hub.model("pico").unwrap().focused_game.unwrap();
+    assert_eq!(
+        focused
+            .actions
+            .iter()
+            .map(|action| (action.id.as_str(), action.label.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("runners", "Runners on aka"),
+            ("launch-settings", "Launch settings")
+        ]
+    );
+    let asked = |tag: &str| -> Vec<Value> {
+        requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|call| call["_tag"] == tag)
+            .map(|call| call["payload"].clone())
+            .collect()
+    };
+
+    // Launch settings: the list, read from aka.
+    hub.request(
+        "pico",
+        SurfaceRequest::RunGameAction {
+            game_id: id.clone(),
+            action_id: "launch-settings".into(),
+        },
+    )
+    .unwrap();
+    for _ in 0..200 {
+        if matches!(
+            hub.model("pico").unwrap().launch_settings,
+            Some(korri_surface_treaty::SurfaceLaunchSettings::Ready(_))
+        ) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let Some(korri_surface_treaty::SurfaceLaunchSettings::Ready(list)) =
+        hub.model("pico").unwrap().launch_settings
+    else {
+        panic!("the launch settings never opened")
+    };
+    assert_eq!(list.runs_on.as_deref(), Some("Runs on aka"));
+    assert!(
+        asked("app.launch-settings.snapshot")
+            .contains(&json!({ "gameId": "actraiser", "host": "aka" })),
+        "{:?}",
+        asked("app.launch-settings.snapshot")
+    );
+    hub.request(
+        "pico",
+        SurfaceRequest::RunAction {
+            action_id: "launch:cancel".into(),
+        },
+    )
+    .unwrap();
+
+    // Play: several runners on aka and none chosen, so the chooser opens.
+    hub.request(
+        "pico",
+        SurfaceRequest::LaunchGame {
+            game_id: id,
+            launch_location_id: None,
+        },
+    )
+    .unwrap();
+    for _ in 0..200 {
+        if matches!(
+            hub.model("pico").unwrap().runner_choice,
+            Some(korri_surface_treaty::SurfaceRunnerChoice::Ready(_))
+        ) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert!(
+        matches!(
+            hub.model("pico").unwrap().runner_choice,
+            Some(korri_surface_treaty::SurfaceRunnerChoice::Ready(_))
+        ),
+        "the chooser never opened: {:?}",
+        hub.model("pico").unwrap().runner_choice
+    );
+    assert_eq!(
+        asked("app.local-games.routes"),
+        [json!({ "gameId": "actraiser", "host": "aka" })]
+    );
+    assert!(
+        asked("app.session.prepare").is_empty(),
+        "nothing starts before the person chooses"
+    );
+}
+
 #[tokio::test]
 async fn focus_game_publishes_that_games_actions_only_for_a_game_korri_knows() {
     let mut outcomes = idle_outcomes(3);
@@ -2487,19 +2665,28 @@ mod runner_chooser {
         } })
     }
 
-    struct Started(Arc<Mutex<Vec<(String, String)>>>, Arc<Mutex<Vec<String>>>);
+    /// Launches as (game, runner), sessions returned to, and the holder each
+    /// launch named. A launch with no runner leaves the choice to its holder.
+    struct Started(
+        Arc<Mutex<Vec<(String, String)>>>,
+        Arc<Mutex<Vec<String>>>,
+        Arc<Mutex<Vec<Option<String>>>>,
+    );
 
     fn chooser(korrid: Korrid, start_answer: Option<Value>) -> (Arc<RunnerChooser>, Started) {
         let started = Arc::new(Mutex::new(Vec::new()));
         let returned = Arc::new(Mutex::new(Vec::new()));
+        let holders = Arc::new(Mutex::new(Vec::new()));
         let log = Arc::clone(&started);
         let back = Arc::clone(&returned);
+        let named = Arc::clone(&holders);
         let chooser = RunnerChooser::new(
             korrid,
             Arc::new(|| {}),
             RunnerLaunchIntegration {
-                start_launch: Box::new(move |id, runner| {
-                    log.lock().unwrap().push((id, runner));
+                start_launch: Box::new(move |id, host, runner: Option<String>| {
+                    log.lock().unwrap().push((id, runner.unwrap_or_default()));
+                    named.lock().unwrap().push(host);
                     let answer = start_answer.clone();
                     Box::pin(async move { answer.map(from) })
                 }),
@@ -2509,7 +2696,7 @@ mod runner_chooser {
                 reload: Box::new(|| {}),
             },
         );
-        (chooser, Started(started, returned))
+        (chooser, Started(started, returned, holders))
     }
 
     async fn settle() {
@@ -2575,7 +2762,7 @@ mod runner_chooser {
             json!({ "_tag": "Ok", "payload": { "device": "d1", "games": "g2" } }),
         );
         let (chooser, started) = chooser(korrid, None);
-        chooser.open("wl4".into(), "Wario Land 4".into(), Intent::Launch);
+        chooser.open("wl4".into(), "Wario Land 4".into(), None, Intent::Launch);
         settle().await;
         let state = chooser.snapshot();
         assert!(matches!(state, SurfaceRunnerChoice::Stale(_)));
@@ -2617,11 +2804,11 @@ mod runner_chooser {
             routes(None, json!({ "_tag": "Choose" })),
         );
         let (chooser, started) = chooser(korrid, None);
-        chooser.open("wl4".into(), "Wario Land 4".into(), Intent::Inspect);
+        chooser.open("wl4".into(), "Wario Land 4".into(), None, Intent::Inspect);
         settle().await;
         let old =
             content(&chooser.snapshot()).routes[0].actions[0].id["runner:".len()..].to_owned();
-        chooser.open("wl4".into(), "Wario Land 4".into(), Intent::Inspect);
+        chooser.open("wl4".into(), "Wario Land 4".into(), None, Intent::Inspect);
         settle().await;
         chooser.act(old);
         settle().await;
@@ -2651,7 +2838,7 @@ mod runner_chooser {
                 json!({ "_tag": "Ok", "payload": { "session": { "gameId": "wl4", "launchId": "L" }, "warnings": [warning] } }),
             ),
         );
-        chooser.open("wl4".into(), "Wario Land 4".into(), Intent::Launch);
+        chooser.open("wl4".into(), "Wario Land 4".into(), None, Intent::Launch);
         settle().await;
         assert_eq!(
             *started.0.lock().unwrap(),
@@ -2669,6 +2856,133 @@ mod runner_chooser {
     }
 
     #[tokio::test]
+    async fn a_streamed_games_chooser_reads_and_saves_its_runners_on_the_holder() {
+        let (korrid, script) = scripted();
+        push(
+            &script,
+            "app.session.status",
+            json!({ "_tag": "Ok", "payload": {} }),
+        );
+        push(
+            &script,
+            "app.local-games.routes",
+            routes(None, json!({ "_tag": "Choose" })),
+        );
+        push(
+            &script,
+            "app.launch-settings.set",
+            json!({ "_tag": "Ok", "payload": { "device": "d1", "games": "g2" } }),
+        );
+        let (chooser, started) = chooser(korrid, None);
+        chooser.open(
+            "wl4".into(),
+            "Wario Land 4".into(),
+            Some("aka".into()),
+            Intent::Launch,
+        );
+        settle().await;
+        // Several runners and none saved: the person is asked (issue #401).
+        assert!(matches!(chooser.snapshot(), SurfaceRunnerChoice::Ready(_)));
+        assert!(started.0.lock().unwrap().is_empty());
+        let asked: Vec<Value> = script
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .filter(|(tag, _)| tag == "app.local-games.routes")
+            .map(|(_, payload)| payload.clone())
+            .collect();
+        assert_eq!(asked, [json!({ "gameId": "wl4", "host": "aka" })]);
+        // A choice for this game is saved where the game runs.
+        press(&chooser, "game:0");
+        settle().await;
+        let saved = sets(&script);
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0]["host"], json!("aka"));
+        assert_eq!(saved[0]["path"], json!({ "_tag": "Runner" }));
+        // Launch once carries the chosen runner and the holder's name.
+        press(&chooser, "launch:0");
+        settle().await;
+        assert_eq!(
+            *started.0.lock().unwrap(),
+            vec![("wl4".to_owned(), "@korri:retroarch/mgba".to_owned())]
+        );
+        assert_eq!(*started.2.lock().unwrap(), vec![Some("aka".to_owned())]);
+    }
+
+    #[tokio::test]
+    async fn a_streamed_game_whose_holder_has_one_runner_selected_starts_without_asking() {
+        let (korrid, script) = scripted();
+        push(
+            &script,
+            "app.session.status",
+            json!({ "_tag": "Ok", "payload": {} }),
+        );
+        push(
+            &script,
+            "app.local-games.routes",
+            routes(
+                Some("@korri:retroarch/mgba"),
+                json!({ "_tag": "Selected", "runnerId": "@korri:retroarch/mgba" }),
+            ),
+        );
+        let (chooser, started) = chooser(korrid, None);
+        chooser.open(
+            "wl4".into(),
+            "Wario Land 4".into(),
+            Some("aka".into()),
+            Intent::Launch,
+        );
+        settle().await;
+        // No runner is named: the holder prepares the stream as it always
+        // did, with the runner it has selected.
+        assert_eq!(
+            *started.0.lock().unwrap(),
+            vec![("wl4".to_owned(), String::new())]
+        );
+        assert_eq!(*started.2.lock().unwrap(), vec![Some("aka".to_owned())]);
+        assert!(chooser.is_closed());
+    }
+
+    #[tokio::test]
+    async fn a_streamed_game_still_starts_when_this_device_may_not_read_the_holders_runners() {
+        let (korrid, script) = scripted();
+        push(
+            &script,
+            "app.session.status",
+            json!({ "_tag": "Ok", "payload": {} }),
+        );
+        // A pass with the stream scope may play, but not read runner choices.
+        push(
+            &script,
+            "app.local-games.routes",
+            json!({ "_tag": "Err", "payload": { "code": "PermissionDenied", "message": "no" } }),
+        );
+        let (chooser, started) = chooser(korrid, None);
+        chooser.open(
+            "wl4".into(),
+            "Wario Land 4".into(),
+            Some("aka".into()),
+            Intent::Launch,
+        );
+        settle().await;
+        assert_eq!(
+            *started.0.lock().unwrap(),
+            vec![("wl4".to_owned(), String::new())]
+        );
+        assert!(chooser.is_closed());
+        // Looking at the runners, not starting, says what went wrong.
+        chooser.open(
+            "wl4".into(),
+            "Wario Land 4".into(),
+            Some("aka".into()),
+            Intent::Inspect,
+        );
+        settle().await;
+        assert!(matches!(chooser.snapshot(), SurfaceRunnerChoice::Error(_)));
+    }
+
+    #[tokio::test]
     async fn launching_a_game_already_live_returns_to_that_exact_session() {
         let (korrid, script) = scripted();
         push(
@@ -2677,7 +2991,7 @@ mod runner_chooser {
             json!({ "_tag": "Ok", "payload": { "active": { "launchId": "L1", "gameId": "wl4" } } }),
         );
         let (chooser, started) = chooser(korrid, None);
-        chooser.open("wl4".into(), "Wario Land 4".into(), Intent::Launch);
+        chooser.open("wl4".into(), "Wario Land 4".into(), None, Intent::Launch);
         settle().await;
         assert!(chooser.is_closed());
         assert_eq!(*started.1.lock().unwrap(), vec!["L1".to_owned()]);
@@ -2697,7 +3011,7 @@ mod runner_chooser {
                 json!({ "_tag": "Err", "payload": { "code": "ActiveSessionConflict", "message": "busy" } }),
             ),
         );
-        chooser.open("wl4".into(), "Wario Land 4".into(), Intent::Inspect);
+        chooser.open("wl4".into(), "Wario Land 4".into(), None, Intent::Inspect);
         settle().await;
         push(
             &script,

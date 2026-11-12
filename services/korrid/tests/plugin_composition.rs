@@ -856,6 +856,7 @@ fn snapshot_lists_installed_modifiers_without_authored_values_and_validates_opti
         },
         value: Some(serde_json::json!(true)),
         expected_revision: snapshot.revisions.games,
+        host: None,
     };
     let revisions = ls::set_with_registry(
         root.path(),
@@ -1034,6 +1035,7 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
         expected_revision: korrid::config::settings::runner_choice_revisions(root.path())
             .unwrap()
             .games,
+        host: None,
     };
     assert!(ls::set_with_registry(
         root.path(),

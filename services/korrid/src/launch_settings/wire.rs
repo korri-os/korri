@@ -78,6 +78,11 @@ pub struct LaunchSetRequest {
     #[serde(default)]
     pub clear: bool,
     pub expected_revision: String,
+    /// The label of the device that runs the game, when this device's korrid
+    /// must ask that holder (a streamed game, ADR 0066). The holder itself
+    /// never forwards: it answers for its own games.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
 }
 #[typeshare]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -97,25 +102,65 @@ pub struct LaunchLimits {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max: Option<u8>,
 }
+/// CPU limits for one launch, with the governor beside them (ADR 0066).
 #[typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct LaunchScopedSettings {
-    pub scope: LaunchRunnerScope,
-    pub values: HashMap<String, crate::config::cascade::LaunchSettingValue>,
+pub struct LaunchCpuLimits {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub governor: Option<String>,
 }
+/// The values of one launch (ADR 0066). They end with that launch. A value has
+/// no runner scope: a shared setting applies to the runner this launch uses,
+/// and a runner-only setting names its runner. Hooks, environment variables
+/// and arguments never travel here (ADR 0029).
 #[typeshare]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LaunchOverride {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub settings: Option<LaunchScopedSettings>,
+    /// Shared settings, nested by section as a place holds them.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub settings: HashMap<String, crate::config::cascade::LaunchSettingValue>,
+    /// Runner-only settings, keyed by runner id. Each record is the content
+    /// of that runner's `plugin` bucket.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub plugin: HashMap<String, HashMap<String, crate::config::cascade::LaunchSettingValue>>,
     #[serde(default)]
     pub modifiers: HashMap<String, LaunchModifierValues>,
+    /// Launch service settings, keyed by service id.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub services: HashMap<String, LaunchServiceValues>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cpu: Option<LaunchLimits>,
+    pub cpu: Option<LaunchCpuLimits>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gpu: Option<LaunchLimits>,
+}
+impl LaunchOverride {
+    /// No value at all: nothing for a launch to carry.
+    pub fn is_empty(&self) -> bool {
+        self.settings.is_empty()
+            && self.plugin.values().all(HashMap::is_empty)
+            && self
+                .modifiers
+                .values()
+                .all(|record| record.enabled.is_none() && record.settings.is_empty())
+            && self
+                .services
+                .values()
+                .all(|record| record.settings.is_empty())
+            && self
+                .cpu
+                .as_ref()
+                .is_none_or(|cpu| cpu.min.is_none() && cpu.max.is_none() && cpu.governor.is_none())
+            && self
+                .gpu
+                .as_ref()
+                .is_none_or(|gpu| gpu.min.is_none() && gpu.max.is_none())
+    }
 }
 #[typeshare]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -123,6 +168,13 @@ pub struct LaunchOverride {
 pub struct LaunchModifierValues {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    #[serde(default)]
+    pub settings: HashMap<String, crate::config::cascade::LaunchSettingValue>,
+}
+#[typeshare]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LaunchServiceValues {
     #[serde(default)]
     pub settings: HashMap<String, crate::config::cascade::LaunchSettingValue>,
 }

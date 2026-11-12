@@ -321,11 +321,24 @@ impl NativeClient {
         game_id: &str,
         viewer_display: Option<crate::launcher::plugin_launch::PluginDisplay>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, UpstreamError> {
+        self.prepare_stream_for_launch(game_id, viewer_display, None)
+            .await
+    }
+
+    /// Prepare with the values of this one launch. The holder takes them only
+    /// from a device of its owner.
+    pub async fn prepare_stream_for_launch(
+        &self,
+        game_id: &str,
+        viewer_display: Option<crate::launcher::plugin_launch::PluginDisplay>,
+        launch: Option<crate::launch_settings::LaunchOverride>,
+    ) -> Result<crate::game_routes::SelectedGameLaunch, UpstreamError> {
         match self
             .call(RpcRequest::SessionPrepare(SessionPrepareRequest {
                 viewer_display,
                 game_id: game_id.into(),
                 host: None,
+                launch,
             }))
             .await?
         {
@@ -335,6 +348,36 @@ impl NativeClient {
             }
             response => Err(UpstreamError::Wire(format!(
                 "native prepare returned {response:?}"
+            ))),
+        }
+    }
+
+    /// Launch with the runner the person chose on the holder (issue #401).
+    pub async fn selected_game_launch(
+        &self,
+        game_id: &str,
+        runner_id: &str,
+        launch: Option<crate::launch_settings::LaunchOverride>,
+    ) -> Result<crate::game_routes::SelectedGameLaunch, UpstreamError> {
+        match self
+            .call(RpcRequest::SelectedGameLaunch(
+                crate::game_routes::SelectedGameLaunchRequest {
+                    game_id: game_id.into(),
+                    runner_id: runner_id.into(),
+                    launch,
+                    host: None,
+                },
+            ))
+            .await?
+        {
+            RpcResponse::SelectedGameLaunch(SelectedGameLaunchOutcome::Ok(prepared)) => {
+                Ok(prepared)
+            }
+            RpcResponse::SelectedGameLaunch(SelectedGameLaunchOutcome::Err(failure)) => {
+                Err(Self::tagged_failure(failure))
+            }
+            response => Err(UpstreamError::Wire(format!(
+                "native selected launch returned {response:?}"
             ))),
         }
     }
@@ -1154,6 +1197,7 @@ mod tests {
             game_id: "game".into(),
             host: None,
             viewer_display: None,
+            launch: None,
         };
         assert_eq!(
             serde_json::to_value(&request).unwrap(),

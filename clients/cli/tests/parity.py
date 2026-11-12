@@ -42,7 +42,9 @@ MAPPINGS = {
     "plugin-publishers:status": "plugins publishers (read-only status)",
     "plugin-toggle:": "plugins on|off ID",
     "launch-device:": "launch-settings set KEY=VALUE",
-    "launch:set:": "launch-settings set KEY=VALUE [layer and scope]",
+    "launch:row:": "launch-settings set KEY=VALUE [layer and scope]; play GAME --set KEY=VALUE",
+    "launch:stream:": "launch-settings set --runner ID KEY=VALUE",
+    "launch:keep": "play GAME --set KEY=VALUE --keep[=PLACE]; launch-settings set KEY=VALUE [layer]",
     "launch:profile:pick": "launch-settings profiles use ID|--none --game GAME",
     "launch:profile:new": "launch-settings profiles new TITLE --game GAME",
     "launch:profile:remove:": "launch-settings profiles delete ID --game GAME",
@@ -150,7 +152,7 @@ class Parity(unittest.TestCase):
         self.assertIn("plugin-toggle:", plugins)
         check_ids(plugins)
         launch = launch_ids((SURFACE / "launch_model.rs").read_text())
-        self.assertIn("launch:set:", launch)
+        self.assertIn("launch:row:", launch)
         check_ids(launch)
 
     def test_surface_owned_preferences_are_recorded(self):

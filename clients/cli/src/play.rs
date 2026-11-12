@@ -59,6 +59,7 @@ impl Module for Play {
         };
         let response = context.rpc(&RpcRequest::GameRoutes(GameRoutesRequest {
             game_id: game_id.clone(),
+            host: None,
         }))?;
         let RpcResponse::GameRoutes(GameRoutesOutcome::Ok(routes)) = &response else {
             return Ok(preflight(response));
@@ -90,6 +91,7 @@ impl Module for Play {
         let response = context.rpc(&RpcRequest::LaunchSettingsSnapshot(
             LaunchSettingsSnapshotRequest {
                 game_id: Some(game_id.clone()),
+                host: None,
             },
         ))?;
         let RpcResponse::LaunchSettingsSnapshot(LaunchSettingsSnapshotOutcome::Ok(snapshot)) =
@@ -165,6 +167,7 @@ impl Module for Play {
             game_id,
             runner_id,
             launch,
+            host: None,
         });
         let response = match context.rpc(&request) {
             Ok(response) => response,

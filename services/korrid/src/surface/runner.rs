@@ -34,8 +34,11 @@ pub type StartFuture = Pin<Box<dyn Future<Output = Option<SessionStartResult>> +
 
 /// The chooser's road into the shared launch lifecycle.
 pub struct RunnerLaunchIntegration {
-    /// Starts in the shared Busy; the chooser owns choices, not startup.
-    pub start_launch: Box<dyn Fn(String, String) -> StartFuture + Send + Sync>,
+    /// Starts in the shared Busy; the chooser owns choices, not startup. The
+    /// game, the device that runs it when that is another device, and the
+    /// chosen runner. No runner: the holder already has one selected.
+    pub start_launch:
+        Box<dyn Fn(String, Option<String>, Option<String>) -> StartFuture + Send + Sync>,
     pub return_session: Box<dyn Fn(ActiveSession) + Send + Sync>,
     pub reload: Box<dyn Fn() + Send + Sync>,
 }
@@ -62,6 +65,8 @@ struct Inner {
     generation: u64,
     title: String,
     game_id: String,
+    /// The label of the device that runs a streamed game. None: this device.
+    host: Option<String>,
     snapshot: Option<GameRoutes>,
     active: Option<ActiveSession>,
 }
@@ -89,6 +94,7 @@ impl RunnerChooser {
                 generation: 0,
                 title: String::new(),
                 game_id: String::new(),
+                host: None,
                 snapshot: None,
                 active: None,
             }),
@@ -278,11 +284,14 @@ impl RunnerChooser {
         self.publish(SurfaceRunnerChoice::Conflict(content));
     }
 
-    async fn launch(self: &Arc<Self>, runner_id: String, operation: u64) {
-        let requested = self.lock().game_id.clone();
+    async fn launch(self: &Arc<Self>, runner_id: Option<String>, operation: u64) {
+        let (requested, host) = {
+            let inner = self.lock();
+            (inner.game_id.clone(), inner.host.clone())
+        };
         // Shared startup and chooser dismissal happen in one dispatch.
         self.publish(SurfaceRunnerChoice::Closed);
-        let Some(result) = (self.launches.start_launch)(requested, runner_id).await else {
+        let Some(result) = (self.launches.start_launch)(requested, host, runner_id).await else {
             return;
         };
         if !self.current(operation) {
@@ -309,16 +318,31 @@ impl RunnerChooser {
         }
     }
 
-    pub fn open(self: &Arc<Self>, id: String, game_title: String, intent: Intent) {
+    /// Open for a game. `host` names the device that runs a streamed game:
+    /// its runners are read from, and its choices are saved on, that device.
+    pub fn open(
+        self: &Arc<Self>,
+        id: String,
+        game_title: String,
+        host: Option<String>,
+        intent: Intent,
+    ) {
         let this = Arc::clone(self);
-        tokio::spawn(async move { this.open_now(id, game_title, intent).await });
+        tokio::spawn(async move { this.open_now(id, game_title, host, intent).await });
     }
 
-    async fn open_now(self: &Arc<Self>, id: String, game_title: String, intent: Intent) {
+    async fn open_now(
+        self: &Arc<Self>,
+        id: String,
+        game_title: String,
+        host: Option<String>,
+        intent: Intent,
+    ) {
         let operation = {
             let mut inner = self.lock();
             inner.generation += 1;
             inner.game_id = id.clone();
+            inner.host = host.clone();
             inner.title = game_title;
             inner.snapshot = None;
             inner.active = None;
@@ -357,13 +381,25 @@ impl RunnerChooser {
             self.korrid,
             Route,
             GameRoutes,
-            crate::game_routes::GameRoutesRequest { game_id: id },
+            crate::game_routes::GameRoutesRequest {
+                game_id: id,
+                host: host.clone()
+            },
             crate::game_routes::GameRoutesOutcome
         );
         if !self.current(operation) {
             return;
         }
         let record = match result {
+            // Only a device of the holder's owner may read its runners. A
+            // device that may still play starts the game as it always did:
+            // the holder uses the runner it has, or says what is missing.
+            crate::game_routes::GameRoutesOutcome::Err(_)
+                if host.is_some() && intent == Intent::Launch =>
+            {
+                Box::pin(self.launch(None, operation)).await;
+                return;
+            }
             crate::game_routes::GameRoutesOutcome::Err(failure) => {
                 self.problem(&failure);
                 return;
@@ -377,6 +413,9 @@ impl RunnerChooser {
         self.show(record);
         if intent == Intent::Launch {
             if let Some(runner_id) = selected {
+                // A holder with one runner selected prepares the stream as it
+                // always did, at this device's shape.
+                let runner_id = host.is_none().then_some(runner_id);
                 Box::pin(self.launch(runner_id, operation)).await;
             }
         }
@@ -429,12 +468,16 @@ impl RunnerChooser {
             self.cancel();
             return;
         }
-        let (game_id, title) = {
+        let (game_id, title, host) = {
             let inner = self.lock();
-            (inner.game_id.clone(), inner.title.clone())
+            (
+                inner.game_id.clone(),
+                inner.title.clone(),
+                inner.host.clone(),
+            )
         };
         if id == "reload" {
-            Box::pin(self.open_now(game_id, title, Intent::Inspect)).await;
+            Box::pin(self.open_now(game_id, title, host, Intent::Inspect)).await;
             return;
         }
         let operation = self.bump();
@@ -478,7 +521,7 @@ impl RunnerChooser {
                 };
                 if ended {
                     (self.launches.reload)();
-                    Box::pin(self.open_now(game_id, title, Intent::Inspect)).await;
+                    Box::pin(self.open_now(game_id, title, host, Intent::Inspect)).await;
                     return;
                 }
                 tokio::time::sleep(Duration::from_millis(500)).await;
@@ -501,7 +544,7 @@ impl RunnerChooser {
             .and_then(|index| record.routes.get(index));
         if kind == "launch" {
             if let Some(route) = route {
-                Box::pin(self.launch(route.runner_id.clone(), operation)).await;
+                Box::pin(self.launch(Some(route.runner_id.clone()), operation)).await;
             }
             return;
         }
@@ -552,6 +595,7 @@ impl RunnerChooser {
                 value,
                 clear: false,
                 expected_revision,
+                host: host.clone()
             },
             LaunchSettingsWriteOutcome
         );
@@ -562,7 +606,7 @@ impl RunnerChooser {
             self.problem(&failure);
             return;
         }
-        Box::pin(self.open_now(game_id, title, Intent::Inspect)).await;
+        Box::pin(self.open_now(game_id, title, host, Intent::Inspect)).await;
     }
 
     /// Warnings from a launch that did not go through this panel.

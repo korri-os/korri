@@ -128,6 +128,7 @@ fn prepare(runtime: &HostRuntime) -> Result<crate::game_routes::SelectedGameLaun
             width: 2176,
             height: 1812,
         }),
+        None,
     )
 }
 
@@ -475,6 +476,7 @@ fn resumed_and_conflicting_prepares_do_not_create_netplay_credentials() {
                 crate::plugin_test_fixtures::GBA_ID,
                 fixture.runtime.owner_public_key().as_deref(),
                 viewer.clone(),
+                None,
             )
             .unwrap();
         assert_eq!(resumed.session.launch_id, launched.session.launch_id);
@@ -484,6 +486,7 @@ fn resumed_and_conflicting_prepares_do_not_create_netplay_credentials() {
                 "other",
                 fixture.runtime.owner_public_key().as_deref(),
                 viewer,
+                None,
             )
             .unwrap_err();
         assert_eq!(refusal.code, "ActiveSessionConflict");

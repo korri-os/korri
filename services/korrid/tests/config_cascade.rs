@@ -81,13 +81,16 @@ fn family_then_system_then_runner_then_game_then_override_is_explainable() {
         serde_json::json!({"level":6})
     );
     assert_eq!(result.config.unwrap().append.as_deref(), Some("layer = 6"));
-    let launch: korrid::launch_settings::LaunchOverride=serde_json::from_value(serde_json::json!({"settings":{"scope":{"_tag":"Runner","id":runner},"values":{"level":7}}})).unwrap();
+    // One launch names a runner-only value by its runner (ADR 0066). It
+    // joins that runner's `plugin` bucket and leaves the authored values.
+    let launch: korrid::launch_settings::LaunchOverride =
+        serde_json::from_value(serde_json::json!({"plugin":{runner:{"level":7}}})).unwrap();
     let result = korrid::launch_settings::resolve_launch(&snapshot, &route, Some(&launch), None)
         .unwrap()
         .runner;
     assert_eq!(
         serde_json::to_value(result.settings).unwrap(),
-        serde_json::json!({"level":7})
+        serde_json::json!({"level":6,"plugin":{"level":7}})
     );
     assert_eq!(result.config.unwrap().append.as_deref(), Some("layer = 6"));
 }

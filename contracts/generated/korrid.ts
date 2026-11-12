@@ -435,6 +435,12 @@ export interface GameRoutes {
 
 export interface GameRoutesRequest {
 	gameId: string;
+	/**
+	 * The label of the device that runs the game, when this device's korrid
+	 * must ask that holder (a streamed game, ADR 0066). The holder itself
+	 * never forwards: it answers for its own games.
+	 */
+	host?: string;
 }
 
 export enum SaveMark {
@@ -573,6 +579,13 @@ export interface LaunchContribution {
 	routine?: string;
 }
 
+/** CPU limits for one launch, with the governor beside them (ADR 0066). */
+export interface LaunchCpuLimits {
+	min?: number;
+	max?: number;
+	governor?: string;
+}
+
 export interface LaunchCpuPolicy {
 	name: string;
 	cpus: number[];
@@ -625,20 +638,28 @@ export interface LaunchModifierValues {
 	settings?: Record<string, LaunchSettingValue>;
 }
 
-export type LaunchRunnerScope =
-	| { _tag: "Any", id?: undefined }
-	| { _tag: "Family", id: string }
-	| { _tag: "Runner", id: string };
-
-export interface LaunchScopedSettings {
-	scope: LaunchRunnerScope;
-	values: Record<string, LaunchSettingValue>;
+export interface LaunchServiceValues {
+	settings?: Record<string, LaunchSettingValue>;
 }
 
+/**
+ * The values of one launch (ADR 0066). They end with that launch. A value has
+ * no runner scope: a shared setting applies to the runner this launch uses,
+ * and a runner-only setting names its runner. Hooks, environment variables
+ * and arguments never travel here (ADR 0029).
+ */
 export interface LaunchOverride {
-	settings?: LaunchScopedSettings;
+	/** Shared settings, nested by section as a place holds them. */
+	settings?: Record<string, LaunchSettingValue>;
+	/**
+	 * Runner-only settings, keyed by runner id. Each record is the content
+	 * of that runner's `plugin` bucket.
+	 */
+	plugin?: Record<string, Record<string, LaunchSettingValue>>;
 	modifiers?: Record<string, LaunchModifierValues>;
-	cpu?: LaunchLimits;
+	/** Launch service settings, keyed by service id. */
+	services?: Record<string, LaunchServiceValues>;
+	cpu?: LaunchCpuLimits;
 	gpu?: LaunchLimits;
 }
 
@@ -655,6 +676,11 @@ export type LaunchLayer =
 	profileId: string;
 }}
 	| { _tag: "Launch", id?: undefined };
+
+export type LaunchRunnerScope =
+	| { _tag: "Any", id?: undefined }
+	| { _tag: "Family", id: string }
+	| { _tag: "Runner", id: string };
 
 export interface LaunchPlace {
 	layer: LaunchLayer;
@@ -678,6 +704,12 @@ export interface LaunchProfileRemoveRequest {
 	gameId: string;
 	profileId: string;
 	expectedRevision: string;
+	/**
+	 * The label of the device that runs the game, when this device's korrid
+	 * must ask that holder (a streamed game, ADR 0066). The holder itself
+	 * never forwards: it answers for its own games.
+	 */
+	host?: string;
 }
 
 export interface LaunchProfileSaveRequest {
@@ -685,12 +717,24 @@ export interface LaunchProfileSaveRequest {
 	profileId?: string;
 	title: string;
 	expectedRevision: string;
+	/**
+	 * The label of the device that runs the game, when this device's korrid
+	 * must ask that holder (a streamed game, ADR 0066). The holder itself
+	 * never forwards: it answers for its own games.
+	 */
+	host?: string;
 }
 
 export interface LaunchProfileSelectRequest {
 	gameId: string;
 	profileId?: string;
 	expectedRevision: string;
+	/**
+	 * The label of the device that runs the game, when this device's korrid
+	 * must ask that holder (a streamed game, ADR 0066). The holder itself
+	 * never forwards: it answers for its own games.
+	 */
+	host?: string;
 }
 
 export interface LaunchProfileSnapshot {
@@ -793,10 +837,22 @@ export interface LaunchSetRequest {
 	value?: LaunchJsonValue;
 	clear?: boolean;
 	expectedRevision: string;
+	/**
+	 * The label of the device that runs the game, when this device's korrid
+	 * must ask that holder (a streamed game, ADR 0066). The holder itself
+	 * never forwards: it answers for its own games.
+	 */
+	host?: string;
 }
 
 export interface LaunchSettingsSnapshotRequest {
 	gameId?: string;
+	/**
+	 * The label of the device that runs the game, when this device's korrid
+	 * must ask that holder (a streamed game, ADR 0066). The holder itself
+	 * never forwards: it answers for its own games.
+	 */
+	host?: string;
 }
 
 export type LaunchNotice =
@@ -1699,6 +1755,12 @@ export interface SelectedGameLaunchRequest {
 	gameId: string;
 	runnerId: string;
 	launch?: LaunchOverride;
+	/**
+	 * The label of the device that runs the game, when this device's korrid
+	 * must ask that holder (a streamed game, ADR 0066). The holder itself
+	 * never forwards: it answers for its own games.
+	 */
+	host?: string;
 }
 
 export enum SecretSettingStatus {
@@ -1832,6 +1894,11 @@ export interface SessionPrepareRequest {
 	gameId: string;
 	viewerDisplay?: PluginDisplay;
 	host?: string;
+	/**
+	 * The values of this one launch (ADR 0066), as `SessionStartRequest`
+	 * carries them. A holder accepts them only from a device of its owner.
+	 */
+	launch?: LaunchOverride;
 }
 
 export interface SessionReserveRequest {

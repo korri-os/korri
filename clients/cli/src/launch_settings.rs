@@ -8,7 +8,6 @@ use crate::{
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use korrid::{launch_settings::*, RpcRequest, RpcResponse};
 use serde_json::Value;
-use std::collections::HashMap;
 pub struct LaunchSettings;
 fn flags(command: Command) -> Command {
     command
@@ -133,6 +132,7 @@ impl Module for LaunchSettings {
         let response = context.rpc(&RpcRequest::LaunchSettingsSnapshot(
             LaunchSettingsSnapshotRequest {
                 game_id: game_id.clone(),
+                host: None,
             },
         ))?;
         let RpcResponse::LaunchSettingsSnapshot(LaunchSettingsSnapshotOutcome::Ok(snapshot)) =
@@ -206,6 +206,7 @@ impl Module for LaunchSettings {
                     profile_id: None,
                     title: value(args, "title"),
                     expected_revision,
+                    host: None,
                 }),
                 "rename" => {
                     let id = value(args, "id");
@@ -217,6 +218,7 @@ impl Module for LaunchSettings {
                         profile_id: Some(id),
                         title: rename_title.expect("validated rename title"),
                         expected_revision,
+                        host: None,
                     })
                 }
                 "delete" => {
@@ -229,6 +231,7 @@ impl Module for LaunchSettings {
                         game_id,
                         profile_id: id,
                         expected_revision,
+                        host: None,
                     })
                 }
                 "use" => {
@@ -243,6 +246,7 @@ impl Module for LaunchSettings {
                         game_id,
                         profile_id: id,
                         expected_revision,
+                        host: None,
                     })
                 }
                 _ => return Err(CliError::usage("Choose a profiles action.")),
@@ -292,6 +296,7 @@ impl Module for LaunchSettings {
                 // less specific places stop applying; the plugin default holds.
                 clear,
                 expected_revision,
+                host: None,
             })
         };
         let response = context.rpc(&request)?;
@@ -578,11 +583,13 @@ pub(crate) fn setting(
         "cpu.max" if authorized("cpu") => Some(LaunchPath::CpuMax),
         "gpu.min" if authorized("gpu") => Some(LaunchPath::GpuMin),
         "gpu.max" if authorized("gpu") => Some(LaunchPath::GpuMax),
+        // The governor is one device value. Only the device place keeps it;
+        // one launch may name another (ADR 0066).
         "cpu.governor"
-            if !one_launch
-                && authorized("cpu")
-                && matches!(place.layer, LaunchLayer::Device)
-                && matches!(place.scope, LaunchRunnerScope::Any) =>
+            if authorized("cpu")
+                && (one_launch
+                    || (matches!(place.layer, LaunchLayer::Device)
+                        && matches!(place.scope, LaunchRunnerScope::Any))) =>
         {
             Some(LaunchPath::CpuGovernor)
         }
@@ -677,13 +684,33 @@ pub(crate) fn overrides(
                 launch.gpu.get_or_insert_default().max =
                     Some(value.as_u64().expect("percent") as u8)
             }
+            LaunchPath::CpuGovernor => {
+                launch.cpu.get_or_insert_default().governor = value.as_str().map(str::to_owned)
+            }
             LaunchPath::Setting { key } => {
-                let settings = launch.settings.get_or_insert_with(|| LaunchScopedSettings {
-                    scope: place.scope.clone(),
-                    values: HashMap::new(),
-                });
+                let value = Some(
+                    serde_json::from_value(value)
+                        .map_err(|_| CliError::usage("Setting must be scalar."))?,
+                );
+                // A shared value has no runner scope. A runner-only value is
+                // keyed by its runner (ADR 0066).
+                match key.strip_prefix("plugin.") {
+                    Some(own) => korrid::config::cascade::set_leaf(
+                        launch.plugin.entry(runner.into()).or_default(),
+                        own,
+                        value,
+                    ),
+                    None if korri_settings_treaty::SharedSetting::from_path(&key).is_some() => {
+                        korrid::config::cascade::set_leaf(&mut launch.settings, &key, value)
+                    }
+                    None => return Err(CliError::usage(
+                        "One launch takes shared settings and the runner's own plugin.* settings.",
+                    )),
+                }
+            }
+            LaunchPath::ServiceSetting { id, key } => {
                 korrid::config::cascade::set_leaf(
-                    &mut settings.values,
+                    &mut launch.services.entry(id).or_default().settings,
                     &key,
                     Some(
                         serde_json::from_value(value)
@@ -711,8 +738,12 @@ pub(crate) fn overrides(
             }
         }
     }
-    for limits in [&launch.cpu, &launch.gpu].into_iter().flatten() {
-        if limits.min.zip(limits.max).is_some_and(|(a, b)| a > b) {
+    let ranges = [
+        launch.cpu.as_ref().map(|cpu| (cpu.min, cpu.max)),
+        launch.gpu.as_ref().map(|gpu| (gpu.min, gpu.max)),
+    ];
+    for (min, max) in ranges.into_iter().flatten() {
+        if min.zip(max).is_some_and(|(a, b)| a > b) {
             return Err(CliError::usage(
                 "Minimum limit cannot exceed maximum limit.",
             ));

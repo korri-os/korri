@@ -66,3 +66,44 @@ is kept. This removes the limit of one scope for each launch.
 - Pico's form of the list.
 - The phone's stream viewer values as Korri launch settings (issue #395). The
   viewer that Korri owns (issue #391) changes which of these settings exist.
+
+## As built (2026-11-12, issue #445)
+
+These are implementation choices. They follow the decision above and can
+change without a new owner decision.
+
+- **One-launch wire.** `LaunchOverride` holds shared values in `settings`
+  with no runner scope, runner-only values in `plugin` keyed by runner id,
+  `modifiers` keyed by modifier id, `services` keyed by service id, the CPU
+  limits with `governor` beside them, and the GPU limits. korrid refuses a
+  `settings` key that is not a shared setting.
+- **The streamed launch request.** `SessionPrepareRequest` has the same
+  optional `launch` as `SessionStartRequest`. A prepare that carries it has
+  the owner-device policy; a pass with the stream scope cannot send it.
+- **Which device answers.** The launch-settings calls, the profile calls,
+  `GameRoutes` and `SelectedGameLaunch` take an optional `host`, as
+  `SessionPrepareRequest` already did. A local caller names the holder there
+  and its own korrid asks that holder, in host mode and in brain mode. A peer
+  cannot use `host` to make a korrid ask a third device.
+- **Keeping.** The editor writes the changes when it closes, or when its game
+  starts from the runner chooser. A shared value goes to the any-runner
+  place and a runner-only value to its runner's place. The CPU governor is
+  one device value: it is kept on the device whatever place is chosen, or
+  named for one launch.
+- **One-launch governor.** The limits helper sets the governor for the whole
+  device. korrid applies the launch's governor when the game unit starts and
+  puts the device's own back when it ends. A korrid restart also applies the
+  device's own.
+- **The stream section.** The playing device's stream viewer values are
+  written to that device at once, in its device place for the viewer. They
+  are not part of the changes that wait to be kept, because that device has
+  no place for a streamed game and its viewer takes no one-launch values yet
+  (issue #395).
+- **A runner choice for a streamed game.** The chooser reads the holder's
+  runners. A holder with one runner selected prepares as before, with the
+  viewer's display. A runner chosen for one launch uses `SelectedGameLaunch`,
+  which carries no viewer display; the live shape report sets the shape after
+  the viewer connects (ADR 0058).
+- **Not in the list.** Values that live only in files (hooks, environment,
+  arguments, working folder, raw config) and the runner's prepare facts are
+  not rows. `korri launch-settings show` prints them.

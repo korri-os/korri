@@ -153,20 +153,39 @@ pub(crate) fn override_body(
     launch: &LaunchOverride,
 ) -> Result<PlaceBody, crate::config::settings::SettingsError> {
     let invalid = |s: &str| crate::config::settings::SettingsError::Invalid(s.into());
-    for v in [&launch.cpu, &launch.gpu].into_iter().flatten() {
-        if v.min.is_some_and(|v| v > 100)
-            || v.max.is_some_and(|v| v == 0 || v > 100)
-            || matches!((v.min,v.max),(Some(a),Some(b)) if a>b)
+    let ranges = [
+        launch.cpu.as_ref().map(|v| (v.min, v.max)),
+        launch.gpu.as_ref().map(|v| (v.min, v.max)),
+    ];
+    for (min, max) in ranges.into_iter().flatten() {
+        if min.is_some_and(|v| v > 100)
+            || max.is_some_and(|v| v == 0 || v > 100)
+            || matches!((min, max), (Some(a), Some(b)) if a > b)
         {
             return Err(invalid("invalid launch percent range"));
         }
     }
     let mut body = PlaceBody::default();
-    body.values.cpu = launch.cpu.as_ref().map(|v| config::DeviceCpu {
-        min: v.min,
-        max: v.max,
-        governor: None,
-    });
+    body.values.cpu = launch
+        .cpu
+        .as_ref()
+        .map(|v| {
+            Ok::<_, crate::config::settings::SettingsError>(config::DeviceCpu {
+                min: v.min,
+                max: v.max,
+                governor: v
+                    .governor
+                    .as_ref()
+                    .map(|name| {
+                        if name.trim().is_empty() {
+                            return Err(invalid("governor must be a nonempty string"));
+                        }
+                        Ok(crate::config::NonEmptyString(name.clone()))
+                    })
+                    .transpose()?,
+            })
+        })
+        .transpose()?;
     body.values.gpu = launch.gpu.as_ref().map(|v| config::Limits {
         min: v.min,
         max: v.max,
@@ -175,27 +194,42 @@ pub(crate) fn override_body(
         serde_json::to_value(&launch.modifiers).expect("serializable launch modifiers"),
     )
     .map_err(|e| invalid(&e.to_string()))?;
-    if let Some(settings) = &launch.settings {
-        let record = RunnerConfig {
-            settings: settings.values.clone(),
-            ..Default::default()
-        };
-        match &settings.scope {
-            LaunchRunnerScope::Runner(id) => {
-                crate::config::place::validate_scope_id("runners", id).map_err(|e| invalid(&e))?;
-                body.runners.insert(id.clone(), record);
-            }
-            LaunchRunnerScope::Family(id) => {
-                crate::config::place::validate_scope_id("families", id).map_err(|e| invalid(&e))?;
-                body.families.insert(id.clone(), record);
-            }
-            LaunchRunnerScope::Any => {
-                if settings.values.contains_key("plugin") {
-                    return Err(invalid("plugin settings need a runner or family scope"));
-                }
-                body.settings = settings.values.clone();
-            }
+    for (id, record) in &launch.services {
+        body.values.services.insert(
+            id.clone(),
+            crate::config::modifiers::ServiceConfig {
+                settings: record.settings.clone(),
+            },
+        );
+    }
+    // A shared value has no runner scope. A runner-only value names its runner.
+    if launch.settings.contains_key("plugin") {
+        return Err(invalid("runner-only settings are keyed by runner"));
+    }
+    let (shared, unnamed) = crate::config::cascade::leaves(&launch.settings);
+    if !unnamed.is_empty()
+        || shared
+            .iter()
+            .any(|(key, _)| korri_settings_treaty::SharedSetting::from_path(key).is_none())
+    {
+        return Err(invalid("only shared settings have no runner scope"));
+    }
+    body.settings = launch.settings.clone();
+    for (id, values) in &launch.plugin {
+        crate::config::place::validate_scope_id("runners", id).map_err(|e| invalid(&e))?;
+        if values.is_empty() {
+            continue;
         }
+        body.runners.insert(
+            id.clone(),
+            RunnerConfig {
+                settings: HashMap::from([(
+                    "plugin".to_owned(),
+                    crate::config::cascade::LaunchSettingValue::Section(values.clone()),
+                )]),
+                ..Default::default()
+            },
+        );
     }
     Ok(body)
 }
@@ -622,12 +656,33 @@ pub fn resolve_launch(
         );
         values.get_mut(key).unwrap().adjusted = v.adjusted;
     }
-    let governor = snapshot
-        .host
+    // The governor is one device value. Only one launch can name another.
+    let launch_governor = launch
         .as_ref()
-        .and_then(|v| v.cpu.as_ref())
+        .and_then(|v| v.values.cpu.as_ref())
         .and_then(|v| v.governor.as_ref())
-        .map(|v| v.0.clone())
+        .map(|v| v.0.clone());
+    if let (Some(name), Some(facts)) = (&launch_governor, facts) {
+        if facts
+            .cpu_policies
+            .iter()
+            .any(|v| !v.available_governors.iter().any(|v| v == name))
+        {
+            return Err(crate::config::settings::SettingsError::Invalid(
+                "governor is not supported by every CPU policy".into(),
+            ));
+        }
+    }
+    let governor = launch_governor
+        .clone()
+        .or_else(|| {
+            snapshot
+                .host
+                .as_ref()
+                .and_then(|v| v.cpu.as_ref())
+                .and_then(|v| v.governor.as_ref())
+                .map(|v| v.0.clone())
+        })
         .or_else(|| defaults.map(|v| v.governor.clone()));
     if let Some(v) = &governor {
         sourced(
@@ -635,7 +690,12 @@ pub fn resolve_launch(
             "cpu.governor".into(),
             LaunchValuePath::Editable(LaunchPath::CpuGovernor),
             v.clone().into(),
-            if snapshot
+            if launch_governor.is_some() {
+                LaunchSource::Place(LaunchPlace {
+                    layer: LaunchLayer::Launch,
+                    scope: LaunchRunnerScope::Any,
+                })
+            } else if snapshot
                 .host
                 .as_ref()
                 .and_then(|v| v.cpu.as_ref())

@@ -1418,6 +1418,16 @@ impl Launchables {
 
     /// Act on one entry: launch, resume, or prepare a stream.
     pub fn confirm_entry(self: &Arc<Self>, entry: Entry) {
+        self.confirm(entry, None);
+    }
+
+    /// A streamed game with the runner the person chose on its holder, or
+    /// none when the holder has one selected (issue #401).
+    pub fn confirm_streamed(self: &Arc<Self>, entry: Entry, runner_id: Option<String>) {
+        self.confirm(entry, runner_id);
+    }
+
+    fn confirm(self: &Arc<Self>, entry: Entry, runner_id: Option<String>) {
         let current = self.state();
         let LaunchablesState::Loaded(Loaded {
             phase: Phase::Ready,
@@ -1513,17 +1523,40 @@ impl Launchables {
                 self.publish(preparing.clone());
                 let this = Arc::clone(self);
                 tokio::spawn(async move {
-                    this.prepare(operation, preparing, game).await;
+                    this.prepare(operation, preparing, game, runner_id).await;
                 });
             }
         }
     }
 
-    async fn prepare(self: &Arc<Self>, operation: u64, preparing: LaunchablesState, game: Game) {
-        let outcome = self
-            .korrid
-            .session_prepare(game.id.clone(), game.host.clone())
-            .await;
+    async fn prepare(
+        self: &Arc<Self>,
+        operation: u64,
+        preparing: LaunchablesState,
+        game: Game,
+        runner_id: Option<String>,
+    ) {
+        // The changes kept for this launch travel in its request (ADR 0066).
+        let holder = game.source.label.clone();
+        let (settings_ticket, launch) = (self.hooks.launch_overrides)(
+            &crate::surface::one_launch::game_key(&game.id, Some(&holder)),
+        );
+        let outcome = match runner_id {
+            Some(runner_id) => {
+                self.korrid
+                    .selected_game_launch(game.id.clone(), runner_id, Some(holder), launch)
+                    .await
+            }
+            None => {
+                self.korrid
+                    .session_prepare(game.id.clone(), game.host.clone(), launch)
+                    .await
+            }
+        };
+        (self.hooks.launch_overrides_complete)(
+            settings_ticket,
+            matches!(&outcome, SelectedGameLaunchOutcome::Ok(_)),
+        );
         if operation != self.lock().action_seq {
             if matches!(outcome, SelectedGameLaunchOutcome::Ok(_)) {
                 self.load(true, None).await;

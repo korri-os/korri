@@ -105,6 +105,94 @@ pub(crate) fn spawn_watch(
     })
 }
 
+/// The launch settings and runner choices of a streamed game live on the
+/// device that runs it (ADR 0066). A local caller names that holder in `host`;
+/// this korrid asks it and returns its answer. None: the request names no
+/// holder, or is not one of these calls.
+pub(crate) async fn ask_holder(
+    peers: &upstreams::UpstreamRegistry,
+    request: &RpcRequest,
+) -> Option<RpcResponse> {
+    use crate::launch_settings::{LaunchSettingsSnapshotOutcome, LaunchSettingsWriteOutcome};
+    macro_rules! forward {
+        ($variant:ident, $asked:expr, $refused:path) => {{
+            let holder = $asked.host.clone()?;
+            let mut asked = $asked.clone();
+            asked.host = None;
+            Some(
+                match peers
+                    .holder_call(&holder, RpcRequest::$variant(asked))
+                    .await
+                {
+                    Ok(response @ RpcResponse::$variant(_)) => response,
+                    Ok(_) => RpcResponse::$variant($refused(RpcFailure {
+                        code: "UpstreamWire".into(),
+                        message: format!("{holder} answered a different request"),
+                    })),
+                    // The holder refused this device, not the request: only a
+                    // device of its owner may read or change its settings.
+                    Err(upstreams::UpstreamError::Http(403)) => {
+                        RpcResponse::$variant($refused(RpcFailure {
+                            code: "PermissionDenied".into(),
+                            message: format!(
+                                "This device cannot change the settings of {holder}. Only a device of its owner can."
+                            ),
+                        }))
+                    }
+                    Err(error) => RpcResponse::$variant($refused(upstream_failure(error))),
+                },
+            )
+        }};
+    }
+    match request {
+        RpcRequest::LaunchSettingsSnapshot(asked) => forward!(
+            LaunchSettingsSnapshot,
+            asked,
+            LaunchSettingsSnapshotOutcome::Err
+        ),
+        RpcRequest::LaunchSettingsSet(asked) => {
+            forward!(LaunchSettingsSet, asked, LaunchSettingsWriteOutcome::Err)
+        }
+        RpcRequest::LaunchProfileSave(asked) => {
+            forward!(LaunchProfileSave, asked, LaunchSettingsWriteOutcome::Err)
+        }
+        RpcRequest::LaunchProfileRemove(asked) => {
+            forward!(LaunchProfileRemove, asked, LaunchSettingsWriteOutcome::Err)
+        }
+        RpcRequest::LaunchProfileSelect(asked) => {
+            forward!(LaunchProfileSelect, asked, LaunchSettingsWriteOutcome::Err)
+        }
+        RpcRequest::GameRoutes(asked) => {
+            forward!(GameRoutes, asked, game_routes::GameRoutesOutcome::Err)
+        }
+        _ => None,
+    }
+}
+
+/// A local caller, not a peer: only it may send this korrid to another device.
+pub(crate) fn is_local_caller(authorization: &AuthorizationContext) -> bool {
+    matches!(
+        authorization,
+        AuthorizationContext::LocalSurfaceHost
+            | AuthorizationContext::LocalUnixControl
+            | AuthorizationContext::LocalCli
+    )
+}
+
+/// The label a request names when it is another device's. This device's own
+/// label names no holder, unless a peer carries the same label.
+fn named_holder<'a>(
+    host: &host::HostRuntime,
+    peers: &upstreams::UpstreamRegistry,
+    label: Option<&'a str>,
+) -> Option<&'a str> {
+    let label = label?;
+    if Some(label) == host.local_label() && matches!(peers.has_peer_label(label), Ok(false)) {
+        return None;
+    }
+    Some(label)
+}
+
 pub(crate) async fn dispatch(
     state: &AppState,
     authorization: &AuthorizationContext,
@@ -134,18 +222,25 @@ pub(crate) async fn dispatch(
         }
         peers.clear_stream_play_end();
     }
-    if !matches!(
-        authorization,
-        AuthorizationContext::LocalSurfaceHost
-            | AuthorizationContext::LocalUnixControl
-            | AuthorizationContext::LocalCli
-    ) {
+    if !is_local_caller(authorization) {
         return None;
     }
     if let Some(launch_id) = peers.stream_play_launch_id() {
         if let Some(response) = stream_player_control_refusal(&launch_id, request) {
             return Some(response);
         }
+    }
+    let holder_of_request = match request {
+        RpcRequest::LaunchSettingsSnapshot(asked) => asked.host.as_deref(),
+        RpcRequest::LaunchSettingsSet(asked) => asked.host.as_deref(),
+        RpcRequest::LaunchProfileSave(asked) => asked.host.as_deref(),
+        RpcRequest::LaunchProfileRemove(asked) => asked.host.as_deref(),
+        RpcRequest::LaunchProfileSelect(asked) => asked.host.as_deref(),
+        RpcRequest::GameRoutes(asked) => asked.host.as_deref(),
+        _ => None,
+    };
+    if named_holder(host, peers, holder_of_request).is_some() {
+        return ask_holder(peers, request).await;
     }
     match request {
         RpcRequest::CatalogSnapshot(_) => {
@@ -205,7 +300,14 @@ pub(crate) async fn dispatch(
                     | host::control::HostSessionStatus::Completed { .. }
                     | host::control::HostSessionStatus::Failed { .. },
                 ) => peers
-                    .prepare_stream(&request.game_id, request.host.as_deref())
+                    .prepare_streamed_launch(
+                        &request.game_id,
+                        request.host.as_deref(),
+                        upstreams::StreamedLaunch {
+                            runner_id: None,
+                            launch: request.launch.clone(),
+                        },
+                    )
                     .await
                     .map_err(upstream_failure),
                 Ok(_) => Err(RpcFailure {
@@ -215,6 +317,39 @@ pub(crate) async fn dispatch(
                 Err(error) => Err(error),
             };
             Some(RpcResponse::SessionPrepare(
+                outcome
+                    .map(game_routes::SelectedGameLaunchOutcome::Ok)
+                    .unwrap_or_else(game_routes::SelectedGameLaunchOutcome::Err),
+            ))
+        }
+        // The runner the person chose for a streamed game (issue #401): the
+        // holder's owner-device launch, with this device's viewer lifecycle.
+        RpcRequest::SelectedGameLaunch(request)
+            if named_holder(host, peers, request.host.as_deref()).is_some() =>
+        {
+            let outcome = match host.session_status().await {
+                Ok(
+                    host::control::HostSessionStatus::NoActive
+                    | host::control::HostSessionStatus::Completed { .. }
+                    | host::control::HostSessionStatus::Failed { .. },
+                ) => peers
+                    .prepare_streamed_launch(
+                        &request.game_id,
+                        request.host.as_deref(),
+                        upstreams::StreamedLaunch {
+                            runner_id: Some(request.runner_id.clone()),
+                            launch: request.launch.clone(),
+                        },
+                    )
+                    .await
+                    .map_err(upstream_failure),
+                Ok(_) => Err(RpcFailure {
+                    code: "ActiveSessionConflict".into(),
+                    message: "This device already holds a live session.".into(),
+                }),
+                Err(error) => Err(error),
+            };
+            Some(RpcResponse::SelectedGameLaunch(
                 outcome
                     .map(game_routes::SelectedGameLaunchOutcome::Ok)
                     .unwrap_or_else(game_routes::SelectedGameLaunchOutcome::Err),
@@ -419,6 +554,365 @@ mod tests {
         ));
         server.abort();
     }
+    /// A holder with an installed library. Its device keeps its own CPU limit.
+    fn library_holder(root: &Path) -> host::HostRuntime {
+        std::fs::write(root.join("device.yaml"), "host: {cpu: {max: 77}}\n").unwrap();
+        let config = root.join("host.toml");
+        std::fs::write(&config, "label = \"holder\"\ngames = []\n").unwrap();
+        let runtime = host::HostRuntime::from_paths_with_backend(
+            &config,
+            Some(root.into()),
+            root.join("private"),
+            Arc::new(InMemoryLaunchUnitBackend::default()),
+        )
+        .with_route_registry(
+            root.into(),
+            crate::plugin::PluginRegistry::from_installed(Vec::new()).unwrap(),
+        );
+        runtime.claim_save_owner();
+        runtime
+    }
+
+    /// This device with one native peer named "holder".
+    async fn playing_device(
+        holder: host::HostRuntime,
+        local_root: &Path,
+    ) -> (AppState, TestLinuxStreamViewer, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let router = crate::plain_host_routers_for_tests(holder).0;
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let viewer = TestLinuxStreamViewer::default();
+        let peers = upstreams::UpstreamRegistry::new(vec![upstreams::UpstreamHostConfig::native(
+            "holder",
+            format!("http://{address}"),
+        )])
+        .with_linux_viewer(Arc::new(viewer.clone()));
+        let (mut state, _) = crate::app_states(host_runtime(local_root, "local"));
+        state.remote = Some(peers);
+        (state, viewer, server)
+    }
+
+    async fn ask(
+        state: &AppState,
+        who: &AuthorizationContext,
+        request: serde_json::Value,
+    ) -> serde_json::Value {
+        let response = crate::dispatch(state, who, serde_json::from_value(request).unwrap())
+            .await
+            .unwrap();
+        serde_json::to_value(response).unwrap()["outcome"].clone()
+    }
+
+    #[tokio::test]
+    async fn launch_settings_that_name_a_holder_are_read_from_and_written_to_that_device() {
+        let holder_root = tempfile::tempdir().unwrap();
+        let local_root = tempfile::tempdir().unwrap();
+        let (state, _, server) =
+            playing_device(library_holder(holder_root.path()), local_root.path()).await;
+        let shell = AuthorizationContext::LocalSurfaceHost;
+        // Read: the holder's own values, not this device's.
+        let read = ask(
+            &state,
+            &shell,
+            json!({"_tag":"app.launch-settings.snapshot","payload":{"host":"holder"}}),
+        )
+        .await;
+        assert_eq!(read["_tag"], "Ok", "{read}");
+        assert_eq!(
+            read["payload"]["resolved"]["values"]["cpu.max"]["value"],
+            77
+        );
+        let own = ask(
+            &state,
+            &shell,
+            json!({"_tag":"app.launch-settings.snapshot","payload":{}}),
+        )
+        .await;
+        assert_ne!(own["payload"]["resolved"]["values"]["cpu.max"]["value"], 77);
+        // Write: on the holder, from the revision it gave.
+        let written = ask(
+            &state,
+            &shell,
+            json!({"_tag":"app.launch-settings.set","payload":{
+                "host":"holder",
+                "place":{"layer":{"_tag":"Device"},"scope":{"_tag":"Any"}},
+                "path":{"_tag":"CpuMax"},
+                "value":55,
+                "expectedRevision":read["payload"]["revisions"]["device"],
+            }}),
+        )
+        .await;
+        assert_eq!(written["_tag"], "Ok", "{written}");
+        assert!(
+            std::fs::read_to_string(holder_root.path().join("device.yaml"))
+                .unwrap()
+                .contains("max: 55")
+        );
+        assert!(!local_root.path().join("device.yaml").exists());
+        // The holder's runners are asked of the holder too (issue #401).
+        let routes = ask(
+            &state,
+            &shell,
+            json!({"_tag":"app.local-games.routes","payload":{"gameId":"absent","host":"holder"}}),
+        )
+        .await;
+        assert_eq!(routes["_tag"], "Err");
+        assert_ne!(
+            routes["payload"]["code"], "OperationUnsupported",
+            "{routes}"
+        );
+        // A peer cannot send this korrid on to another device: it gets this
+        // device's own answer.
+        let peer = AuthorizationContext::Peer(crate::authorization::Principal::OwnerDevice {
+            device_public_key: "d".repeat(64),
+            owner_statement: String::new(),
+            owner_public_key: "o".repeat(64),
+        });
+        let hop = ask(
+            &state,
+            &peer,
+            json!({"_tag":"app.launch-settings.snapshot","payload":{"host":"holder"}}),
+        )
+        .await;
+        assert_ne!(hop["payload"]["resolved"]["values"]["cpu.max"]["value"], 55);
+        // A holder that does not answer is said to be unreachable.
+        server.abort();
+        let _ = server.await;
+        let gone = ask(
+            &state,
+            &shell,
+            json!({"_tag":"app.launch-settings.snapshot","payload":{"host":"holder"}}),
+        )
+        .await;
+        assert_eq!(gone["_tag"], "Err");
+        assert_eq!(gone["payload"]["code"], "UpstreamUnreachable", "{gone}");
+    }
+
+    /// A device that only plays, as the phone's korrid: brain mode with one
+    /// native peer named "holder".
+    async fn playing_brain(
+        holder: host::HostRuntime,
+        local_root: &Path,
+    ) -> (AppState, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let router = crate::plain_host_routers_for_tests(holder).0;
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let peers = upstreams::UpstreamRegistry::new(vec![upstreams::UpstreamHostConfig::native(
+            "holder",
+            format!("http://{address}"),
+        )])
+        .with_linux_viewer(Arc::new(TestLinuxStreamViewer::default()));
+        let (state, _) = crate::brain_app_state(
+            "brain-test-capability",
+            "http://127.0.0.1:8099",
+            local_root,
+            local_root.join("private"),
+            crate::plugin_policy::RegistrySource::Selected(Arc::new(
+                crate::plugin::PluginRegistry::from_installed(Vec::new()).unwrap(),
+            )),
+            crate::config::snapshot::ConfigSnapshotCoordinator::new(local_root),
+            crate::discovery::FolderSelectionGrantStore::default(),
+            Some(peers),
+            None,
+            None,
+        );
+        (state, server)
+    }
+
+    #[tokio::test]
+    async fn a_device_that_only_plays_reaches_the_holder_for_a_streamed_games_settings() {
+        let holder_root = tempfile::tempdir().unwrap();
+        let local_root = tempfile::tempdir().unwrap();
+        let (state, server) =
+            playing_brain(library_holder(holder_root.path()), local_root.path()).await;
+        let shell = AuthorizationContext::LocalSurfaceHost;
+        let read = ask(
+            &state,
+            &shell,
+            json!({"_tag":"app.launch-settings.snapshot","payload":{"host":"holder"}}),
+        )
+        .await;
+        assert_eq!(read["_tag"], "Ok", "{read}");
+        assert_eq!(
+            read["payload"]["resolved"]["values"]["cpu.max"]["value"],
+            77
+        );
+        let written = ask(
+            &state,
+            &shell,
+            json!({"_tag":"app.launch-settings.set","payload":{
+                "host":"holder",
+                "place":{"layer":{"_tag":"Device"},"scope":{"_tag":"Any"}},
+                "path":{"_tag":"CpuMax"},
+                "value":55,
+                "expectedRevision":read["payload"]["revisions"]["device"],
+            }}),
+        )
+        .await;
+        assert_eq!(written["_tag"], "Ok", "{written}");
+        assert!(
+            std::fs::read_to_string(holder_root.path().join("device.yaml"))
+                .unwrap()
+                .contains("max: 55")
+        );
+        for (call, payload) in [
+            (
+                "app.local-games.routes",
+                json!({"gameId":"absent","host":"holder"}),
+            ),
+            (
+                "app.launch-settings.profile.select",
+                json!({"gameId":"absent","host":"holder","expectedRevision":"r"}),
+            ),
+        ] {
+            let asked = ask(&state, &shell, json!({"_tag":call,"payload":payload})).await;
+            assert_ne!(
+                asked["payload"]["code"], "OperationUnsupported",
+                "{call}: {asked}"
+            );
+        }
+        // Without a holder the call is about this device, which has no
+        // installed Linux routes: the refusal it always gave.
+        let own = ask(
+            &state,
+            &shell,
+            json!({"_tag":"app.launch-settings.set","payload":{
+                "place":{"layer":{"_tag":"Device"},"scope":{"_tag":"Any"}},
+                "path":{"_tag":"CpuMax"},
+                "value":55,
+                "expectedRevision":"r",
+            }}),
+        )
+        .await;
+        assert_eq!(own["payload"]["code"], "OperationUnsupported", "{own}");
+        // A peer never sends this korrid on to another device.
+        let peer = AuthorizationContext::Peer(crate::authorization::Principal::OwnerDevice {
+            device_public_key: "d".repeat(64),
+            owner_statement: String::new(),
+            owner_public_key: "o".repeat(64),
+        });
+        let hop = ask(
+            &state,
+            &peer,
+            json!({"_tag":"app.launch-settings.snapshot","payload":{"host":"holder"}}),
+        )
+        .await;
+        assert_eq!(hop["payload"]["code"], "OperationUnsupported", "{hop}");
+        // The chosen runner travels with the streamed launch (issue #401).
+        let launched = ask(
+            &state,
+            &shell,
+            json!({"_tag":"app.local-games.launch.selected","payload":{
+                "gameId":"absent","host":"holder","runnerId":"@test:runner/main"}}),
+        )
+        .await;
+        assert_eq!(launched["_tag"], "Err");
+        assert_ne!(
+            launched["payload"]["code"], "OperationUnsupported",
+            "{launched}"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn a_holder_that_refuses_this_device_says_only_its_owners_devices_may_change_it() {
+        // A holder that does not take this device as one of its owner's.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let router = axum::Router::new().route(
+            "/rpc",
+            axum::routing::post(|| async { axum::http::StatusCode::FORBIDDEN }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let peers = upstreams::UpstreamRegistry::new(vec![upstreams::UpstreamHostConfig::native(
+            "holder",
+            format!("http://{address}"),
+        )]);
+        let request = serde_json::from_value(
+            json!({"_tag":"app.launch-settings.snapshot","payload":{"gameId":"g","host":"holder"}}),
+        )
+        .unwrap();
+        let response = ask_holder(&peers, &request)
+            .await
+            .expect("a holder is named");
+        let refused = serde_json::to_value(response).unwrap()["outcome"]["payload"].clone();
+        assert_eq!(refused["code"], "PermissionDenied", "{refused}");
+        assert_eq!(
+            refused["message"],
+            "This device cannot change the settings of holder. Only a device of its owner can."
+        );
+        // A request that names no holder is not this function's to answer.
+        let own = serde_json::from_value(
+            json!({"_tag":"app.launch-settings.snapshot","payload":{"gameId":"g"}}),
+        )
+        .unwrap();
+        assert!(ask_holder(&peers, &own).await.is_none());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn a_streamed_launch_carries_its_values_and_its_chosen_runner_to_the_holder() {
+        let holder_root = tempfile::tempdir().unwrap();
+        let local_root = tempfile::tempdir().unwrap();
+        let holder = host_runtime(holder_root.path(), "holder");
+        let (state, viewer, server) = playing_device(holder.clone(), local_root.path()).await;
+        let shell = AuthorizationContext::LocalSurfaceHost;
+        // The fixture holder runs a host command game, which takes no values
+        // and no runner choice. Its refusal proves both reached its launch.
+        for request in [
+            json!({"_tag":"app.session.prepare","payload":{
+                "gameId":"holder-game","host":"holder","launch":{"cpu":{"max":50}}}}),
+            json!({"_tag":"app.local-games.launch.selected","payload":{
+                "gameId":"holder-game","host":"holder","runnerId":"@test:runner/main"}}),
+        ] {
+            let refused = ask(&state, &shell, request).await;
+            assert_eq!(refused["_tag"], "Err", "{refused}");
+            assert!(
+                refused["payload"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("installed runner choices or overrides"),
+                "{refused}"
+            );
+        }
+        assert!(
+            viewer.calls().is_empty(),
+            "a refused launch starts no viewer"
+        );
+        assert!(!state.remote.as_ref().unwrap().has_selected_session());
+        // The same launch without values starts, as before.
+        let started = ask(
+            &state,
+            &shell,
+            json!({"_tag":"app.session.prepare","payload":{"gameId":"holder-game","host":"holder"}}),
+        )
+        .await;
+        assert_eq!(started["_tag"], "Ok", "{started}");
+        // A device that is not the owner's cannot send values to this holder.
+        let (holder_state, _) = crate::app_states(holder);
+        let pass = AuthorizationContext::Peer(crate::authorization::Principal::Household {
+            device_public_key: "d".repeat(64),
+            owner_statement: String::new(),
+            person_pass: crate::authorization::PersonPass {
+                event_id: String::new(),
+                event_json: String::new(),
+                expires_at: u64::MAX,
+                scopes: vec![crate::authorization::Scope::StreamLaunch],
+                person_public_key: "p".repeat(64),
+            },
+        });
+        let with_values: RpcRequest =
+            serde_json::from_value(json!({"_tag":"app.session.prepare","payload":{
+            "gameId":"holder-game","launch":{"cpu":{"max":50}}}}))
+            .unwrap();
+        assert!(crate::dispatch(&holder_state, &pass, with_values)
+            .await
+            .is_err());
+        server.abort();
+    }
+
     #[tokio::test]
     async fn simultaneous_local_and_peer_launches_admit_exactly_one_selection() {
         let holder_root = tempfile::tempdir().unwrap();
@@ -589,6 +1083,7 @@ mod tests {
                     viewer_display: None,
                     game_id: "streamed-game".into(),
                     host: Some("holder".into()),
+                    launch: None,
                 }),
             )
             .await

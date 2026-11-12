@@ -222,6 +222,12 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::InvitesNetplay(_)
         | RpcRequest::InvitesStreamPlay(_)
         | RpcRequest::InvitesDismiss(_) => PeerPolicy::LocalOnly,
+        // One-launch values change how the holder runs the game (ADR 0066):
+        // only a device of the holder's owner may send them, as with the
+        // launch-settings calls below. A pass with the stream scope may not.
+        RpcRequest::SessionPrepare(request) if request.launch.is_some() => {
+            PeerPolicy::OwnerDeviceOnly
+        }
         RpcRequest::SessionPrepare(_) | RpcRequest::SessionViewerDisplay(_) => {
             PeerPolicy::ExplicitScope(Scope::StreamLaunch)
         }
@@ -1751,10 +1757,61 @@ mod tests {
                 request(serde_json::json!({"_tag":"system.health","payload":{}})),
                 request(serde_json::json!({"_tag":"system.settings.snapshot","payload":{}})),
                 request(serde_json::json!({"_tag":"app.session.end","payload":{"force":true}})),
+                // The stream scope starts a game. It does not change how the
+                // holder runs it (ADR 0066).
+                request(
+                    serde_json::json!({"_tag":"app.session.prepare","payload":{"gameId":"g","launch":{"cpu":{"max":50}}}}),
+                ),
             ] {
                 assert!(authorize(attempt.context(), &request).is_err());
             }
         }
+    }
+
+    #[test]
+    fn a_prepare_that_carries_launch_values_is_accepted_only_from_an_owner_device() {
+        let root = tempfile::tempdir().unwrap();
+        let authority = Authorization::load(root.path()).unwrap();
+        let owner = Keys::parse(OWNER).unwrap();
+        let other = Keys::parse(OTHER_OWNER).unwrap();
+        let plain =
+            request(serde_json::json!({"_tag":"app.session.prepare","payload":{"gameId":"g"}}));
+        let with_values = request(serde_json::json!({
+            "_tag":"app.session.prepare",
+            "payload":{"gameId":"g","launch":{"settings":{"video":{"render-scale":2}}}}
+        }));
+        assert_eq!(
+            policy_for(&plain),
+            PeerPolicy::ExplicitScope(Scope::StreamLaunch)
+        );
+        assert_eq!(policy_for(&with_values), PeerPolicy::OwnerDeviceOnly);
+        // A device of the holder's owner: as the launch-settings calls.
+        let owned = owner_statement(&owner, DEVICE, "owned", NOW);
+        let same_owner = authority
+            .attempt(&local(), DEVICE, Some(&owned), None, &[], NOW)
+            .unwrap();
+        assert!(authorize(same_owner.context(), &with_values).is_ok());
+        // Another owner's device with a stream pass may play, without values.
+        let foreign = owner_statement(&other, DEVICE, "owned", NOW);
+        let pass = pass(
+            &owner,
+            "household",
+            &[STREAM_LAUNCH_SCOPE],
+            NOW + MAX_PERSON_PASS_LIFETIME_SECONDS,
+        );
+        let guest = authority
+            .attempt(&local(), DEVICE, Some(&foreign), Some(&pass), &[], NOW)
+            .unwrap();
+        assert!(authorize(guest.context(), &plain).is_ok());
+        assert!(authorize(guest.context(), &with_values).is_err());
+        assert!(authorize(
+            &AuthorizationContext::Peer(Principal::Unknown {
+                device_public_key: DEVICE.into()
+            }),
+            &with_values
+        )
+        .is_err());
+        assert!(authorize(&AuthorizationContext::LocalSurfaceHost, &with_values).is_ok());
     }
 
     #[test]

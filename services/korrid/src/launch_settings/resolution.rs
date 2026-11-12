@@ -683,7 +683,11 @@ pub fn snapshot_for_person(
     })
 }
 
-pub fn apply_device(root: &Path, client: &helper::Client) -> Result<(), String> {
+/// The device's own clock values: its any-runner place over the helper's defaults.
+pub(crate) fn device_defaults(
+    root: &Path,
+    client: &helper::Client,
+) -> Result<LaunchDeviceDefaults, String> {
     let (snapshot, _) = settings::runner_choice_snapshot(root).map_err(|e| e.to_string())?;
     let facts = client.describe()?;
     let mut only = snapshot.clone();
@@ -696,7 +700,7 @@ pub fn apply_device(root: &Path, client: &helper::Client) -> Result<(), String> 
     let resolved = resolve_launch(&only, &context(&only, None), None, Some(&facts))
         .map_err(|e| e.to_string())?;
     let value = |key: &str| resolved.values.values[key].value.as_u64().unwrap() as u8;
-    client.apply_device(&LaunchDeviceDefaults {
+    Ok(LaunchDeviceDefaults {
         cpu: LaunchPercentRange {
             min: value("cpu.min"),
             max: value("cpu.max"),
@@ -707,4 +711,8 @@ pub fn apply_device(root: &Path, client: &helper::Client) -> Result<(), String> 
         },
         governor: resolved.limits.governor.unwrap_or(facts.defaults.governor),
     })
+}
+
+pub fn apply_device(root: &Path, client: &helper::Client) -> Result<(), String> {
+    client.apply_device(&device_defaults(root, client)?)
 }

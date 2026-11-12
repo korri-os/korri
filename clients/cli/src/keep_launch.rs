@@ -46,10 +46,13 @@ pub(crate) fn requests(
     let mut result = Vec::new();
     let mut add =
         |path: LaunchPath, scope: LaunchRunnerScope, value: Value| -> Result<(), CliError> {
-            let place = LaunchPlace {
-                layer: layer.clone(),
-                scope,
+            // The governor is one device value: only the device keeps it.
+            let layer = if matches!(path, LaunchPath::CpuGovernor) {
+                LaunchLayer::Device
+            } else {
+                layer.clone()
             };
+            let place = LaunchPlace { layer, scope };
             if !snapshot
                 .places
                 .iter()
@@ -59,31 +62,46 @@ pub(crate) fn requests(
                     "That keep destination is not an available place for this game.",
                 ));
             }
-            let expected_revision = if matches!(layer, LaunchLayer::Device | LaunchLayer::System(_))
-            {
-                &snapshot.revisions.device
-            } else {
-                &snapshot.revisions.games
-            };
+            let expected_revision =
+                if matches!(place.layer, LaunchLayer::Device | LaunchLayer::System(_)) {
+                    &snapshot.revisions.device
+                } else {
+                    &snapshot.revisions.games
+                };
             result.push(LaunchSetRequest {
-                place,
-                path,
                 clear: value.is_null(),
                 value: (!value.is_null()).then_some(value),
                 expected_revision: expected_revision.clone(),
+                host: None,
+                place,
+                path,
             });
             Ok(())
         };
-    if let Some(settings) = &launch.settings {
-        let mut values = korrid::config::cascade::leaves(&settings.values).0;
+    // A shared value is kept for any runner, a runner-only value for its
+    // runner. Nobody is asked for a scope (ADR 0066).
+    let mut values = korrid::config::cascade::leaves(&launch.settings).0;
+    values.sort_by(|a, b| a.0.cmp(&b.0));
+    for (key, value) in values {
+        add(
+            LaunchPath::Setting { key },
+            LaunchRunnerScope::Any,
+            json!(value),
+        )?;
+    }
+    let mut runners: Vec<_> = launch.plugin.iter().collect();
+    runners.sort_by_key(|(id, _)| *id);
+    for (runner, own) in runners {
+        let mut values = korrid::config::cascade::leaves(own).0;
         values.sort_by(|a, b| a.0.cmp(&b.0));
         for (key, value) in values {
-            let scope = if korri_settings_treaty::SharedSetting::from_path(&key).is_some() {
-                LaunchRunnerScope::Any
-            } else {
-                settings.scope.clone()
-            };
-            add(LaunchPath::Setting { key }, scope, json!(value))?;
+            add(
+                LaunchPath::Setting {
+                    key: format!("plugin.{key}"),
+                },
+                LaunchRunnerScope::Runner(runner.clone()),
+                json!(value),
+            )?;
         }
     }
     for (path, value) in [
@@ -94,6 +112,29 @@ pub(crate) fn requests(
     ] {
         if let Some(value) = value {
             add(path, LaunchRunnerScope::Any, json!(value))?;
+        }
+    }
+    if let Some(governor) = launch.cpu.as_ref().and_then(|cpu| cpu.governor.as_ref()) {
+        add(
+            LaunchPath::CpuGovernor,
+            LaunchRunnerScope::Any,
+            json!(governor),
+        )?;
+    }
+    let mut services: Vec<_> = launch.services.iter().collect();
+    services.sort_by_key(|(id, _)| *id);
+    for (id, service) in services {
+        let mut values = korrid::config::cascade::leaves(&service.settings).0;
+        values.sort_by(|a, b| a.0.cmp(&b.0));
+        for (key, value) in values {
+            add(
+                LaunchPath::ServiceSetting {
+                    id: id.clone(),
+                    key,
+                },
+                LaunchRunnerScope::Any,
+                json!(value),
+            )?;
         }
     }
     let mut modifiers: Vec<_> = launch.modifiers.iter().collect();
@@ -128,16 +169,23 @@ mod tests {
     fn snapshot() -> LaunchSnapshot {
         serde_json::from_value(json!({
             "places":[
+                {"place":{"layer":{"_tag":"Device"},"scope":{"_tag":"Any"}},"title":"Device","body":{},"editableKinds":["cpu"]},
                 {"place":{"layer":{"_tag":"Game","id":"game"},"scope":{"_tag":"Any"}},"title":"Game","body":{},"editableKinds":["settings"]},
                 {"place":{"layer":{"_tag":"Game","id":"game"},"scope":{"_tag":"Runner","id":"@test:runner/play"}},"title":"Runner","body":{},"editableKinds":["settings"]}
             ], "resolved":{"values":{}},"runners":[],"runnerResolved":[],"modifiers":[],"services":[],"profiles":[],"notices":[],"routeLayers":{"_tag":"Present"},"revisions":{"device":"d1","games":"g1"}
         })).unwrap()
     }
     #[test]
-    fn keeps_shared_values_at_any_scope_and_native_values_at_runner_scope() {
-        let launch: LaunchOverride = serde_json::from_value(json!({"settings":{"scope":{"_tag":"Runner","id":"@test:runner/play"},"values":{"video":{"render-scale":4},"plugin":{"quality":2}}}})).unwrap();
+    fn keeps_shared_values_at_any_scope_and_runner_only_values_for_their_runner() {
+        let launch: LaunchOverride = serde_json::from_value(json!({
+            "settings":{"video":{"render-scale":4}},
+            "plugin":{"@test:runner/play":{"quality":2}},
+            "cpu":{"max":60,"governor":"performance"},
+            "services":{"@korri:sunshine/sunshine":{"settings":{"video":{"max-bitrate-kbps":3000}}}}
+        }))
+        .unwrap();
         let writes = requests(&snapshot(), "game", &launch, "game").unwrap();
-        assert_eq!(writes.len(), 2);
+        assert_eq!(writes.len(), 5);
         let shared = writes
             .iter()
             .find(|w| matches!(&w.path, LaunchPath::Setting { key } if key == "video.render-scale"))
@@ -145,11 +193,26 @@ mod tests {
         assert_eq!(shared.place.scope, LaunchRunnerScope::Any);
         assert_eq!(shared.value, Some(json!(4)));
         assert_eq!(shared.expected_revision, "g1");
-        let native = writes
+        let own = writes
             .iter()
             .find(|w| matches!(&w.path, LaunchPath::Setting { key } if key == "plugin.quality"))
             .unwrap();
-        assert!(matches!(native.place.scope, LaunchRunnerScope::Runner(_)));
+        assert_eq!(
+            own.place.scope,
+            LaunchRunnerScope::Runner("@test:runner/play".into())
+        );
+        // The governor is one device value: the device keeps it, not the game.
+        let governor = writes
+            .iter()
+            .find(|w| matches!(w.path, LaunchPath::CpuGovernor))
+            .unwrap();
+        assert_eq!(governor.place.layer, LaunchLayer::Device);
+        assert_eq!(governor.expected_revision, "d1");
+        assert!(writes.iter().any(|w| matches!(
+            &w.path,
+            LaunchPath::ServiceSetting { id, key }
+                if id == "@korri:sunshine/sunshine" && key == "video.max-bitrate-kbps"
+        ) && w.place.layer == LaunchLayer::Game("game".into())));
     }
     #[test]
     fn refuses_unobserved_destinations_before_launch() {

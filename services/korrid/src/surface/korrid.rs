@@ -476,6 +476,7 @@ impl Korrid {
         &self,
         game_id: String,
         host: Option<String>,
+        launch: Option<crate::launch_settings::LaunchOverride>,
     ) -> SelectedGameLaunchOutcome {
         call!(
             self,
@@ -484,7 +485,29 @@ impl Korrid {
             crate::SessionPrepareRequest {
                 game_id,
                 host,
-                viewer_display: None
+                viewer_display: None,
+                launch,
+            },
+            SelectedGameLaunchOutcome
+        )
+    }
+    /// A streamed game with the runner the person chose on its holder.
+    pub async fn selected_game_launch(
+        &self,
+        game_id: String,
+        runner_id: String,
+        host: Option<String>,
+        launch: Option<crate::launch_settings::LaunchOverride>,
+    ) -> SelectedGameLaunchOutcome {
+        call!(
+            self,
+            Mapping::Unreachable,
+            SelectedGameLaunch,
+            crate::game_routes::SelectedGameLaunchRequest {
+                game_id,
+                runner_id,
+                launch,
+                host,
             },
             SelectedGameLaunchOutcome
         )

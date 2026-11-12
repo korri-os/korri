@@ -95,8 +95,12 @@ Shared values can use Any scope without an installed runner. Unsupported shared
 values remain authored but are skipped with a path-specific launch warning.
 Hooks, environment, arguments, working directory and raw config remain read-only.
 
-One-launch values use `LaunchOverride` and do not persist by default. For a game
-ID from `korri library games list`:
+One-launch values use `LaunchOverride` and do not persist by default. A
+one-launch value has no runner scope (ADR 0066): a shared key such as
+`video.render-scale` applies to the runner this launch uses, and a `plugin.*`
+key is sent for that runner only. One launch also takes `cpu.governor` and
+launch service settings. It never takes hooks, environment or arguments. For a
+game ID from `korri library games list`:
 
 ```sh
 korri play "$GAME_ID" --set video.render-scale=4
@@ -106,7 +110,9 @@ korri play "$GAME_ID" --set video.render-scale=4 --keep
 `--keep` saves the explicit values after korrid accepts the launch, not after
 readiness or game exit. It defaults to Game. Use `--keep=device`,
 `--keep=system:ID`, `--keep=release:ID` or `--keep=profile:ID` for another observed
-place. Native settings retain their runner scope; shared settings use Any.
+place. A `plugin.*` value is kept for its runner; a shared value is kept for
+any runner. The CPU governor is one device value, so `--keep` always writes it
+to the device.
 Each write uses the latest returned revision. A conflict or other write failure
 stops further Keep writes and reports which stage failed; the accepted launch
 is not undone. JSON output appends the Keep replies to the existing response array.

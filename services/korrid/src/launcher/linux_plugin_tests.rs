@@ -273,10 +273,7 @@ fn one_launch_native_effects_are_compared_with_the_real_persistent_cascade() {
     let mut snapshot = game.snapshot.clone();
     let host = snapshot.host.get_or_insert_with(Default::default);
     host.place.settings = serde_json::from_value(json!({"video":{"render-scale":2}})).unwrap();
-    let launch = serde_json::from_value(
-        json!({"settings":{"scope":{"_tag":"Any"},"values":{"video":{"render-scale":4}}}}),
-    )
-    .unwrap();
+    let launch = serde_json::from_value(json!({"settings":{"video":{"render-scale":4}}})).unwrap();
     let spec = launch_route(
         game.root.path(),
         &snapshot,
@@ -426,6 +423,7 @@ fn snapshot_dry_run_and_schema_defaults_do_not_change_launch_input_and_set_valid
         },
         value: Some(serde_json::json!(9)),
         expected_revision: snapshot.revisions.games,
+        host: None,
     };
     assert!(ls::set_with_registry(
         game.root.path(),
@@ -516,6 +514,7 @@ fn nested_settings_store_clear_remove_defaults_and_warn_skip_use_real_plugin_ope
         expected_revision: crate::config::settings::runner_choice_revisions(game.root.path())
             .unwrap()
             .games,
+        host: None,
     };
     let write = |request: &mut LaunchSetRequest| {
         let revisions = ls::set_with_registry(
@@ -707,6 +706,7 @@ fn retroarch_pattern_port_settings_set_clear_and_report_concrete_validation_path
         expected_revision: crate::config::settings::runner_choice_revisions(game.root.path())
             .unwrap()
             .games,
+        host: None,
     };
     for scope in [
         LaunchRunnerScope::Runner(game.route.runner_id.clone()),

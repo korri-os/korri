@@ -1,14 +1,14 @@
-//! Port of `clients/portal/src/surface/launch-settings-model.ts`: launch
-//! settings as settings rows. korrid's snapshot in, surface places out.
-//! Pure. The portal read the snapshot as JSON; this port does the same over
-//! `serde_json::Value`, so each rule reads as it did there.
+//! Launch settings as settings rows. korrid's snapshot in, surface rows out.
+//! Pure. Device settings show the device's own place and its stream viewer's,
+//! row by row (a port of `clients/portal/src/surface/launch-settings-model.ts`).
+//! One game's editor is one list, built in `list` (ADR 0066). The snapshot is
+//! read as JSON, over `serde_json::Value`.
 
 use std::collections::{BTreeMap, HashMap};
 
 use korri_surface_treaty::{
-    SurfaceLaunchSettingsLayer, SurfaceLaunchSettingsPlace, SurfaceLaunchSettingsScope,
-    SurfaceLaunchSettingsScopeKind, SurfaceSettingChoice, SurfaceSettingConfirmation,
-    SurfaceSettingGroup, SurfaceSettingInteraction, SurfaceSettingItem, SurfaceSettingScope,
+    SurfaceSettingChoice, SurfaceSettingConfirmation, SurfaceSettingGroup,
+    SurfaceSettingInteraction, SurfaceSettingItem, SurfaceSettingScope,
 };
 use serde_json::{json, Map, Value};
 
@@ -25,9 +25,16 @@ pub mod launch_id {
     pub fn device(setting: &str) -> String {
         format!("launch-device:{setting}")
     }
-    pub fn set(place_id: &str, path: &str) -> String {
-        format!("launch:set:{place_id}#{path}")
+    /// One row of a game's list (ADR 0066): a setting once, wherever it is kept.
+    pub fn row(path: &str) -> String {
+        format!("launch:row:{path}")
     }
+    /// A setting of this device's own stream viewer, in a streamed game's list.
+    pub fn stream(runner_id: &str, key: &str) -> String {
+        format!("launch:stream:{runner_id}#{key}")
+    }
+    /// The one control that says where the changes are kept.
+    pub const KEEP: &str = "launch:keep";
     pub fn device_set(place_id: &str, path: &str) -> String {
         format!("launch-device:set:{place_id}#{path}")
     }
@@ -47,13 +54,13 @@ pub mod launch_id {
 }
 
 mod kind {
-    pub const RUNNER: &str = "runner";
     pub const CPU: &str = "cpu";
     pub const GPU: &str = "gpu";
-    pub const MODIFIERS: &str = "modifiers";
     pub const SETTINGS: &str = "settings";
     pub const SERVICES: &str = "services";
 }
+
+pub(crate) mod list;
 
 // --- JSON helpers -----------------------------------------------------------
 
@@ -214,17 +221,6 @@ pub fn revision_of(layer: &Value) -> &'static str {
         "device"
     } else {
         "games"
-    }
-}
-
-fn file_of(layer: &Value) -> &'static str {
-    if tag(layer) == "Launch" {
-        return "this launch only";
-    }
-    if revision_of(layer) == "device" {
-        "device.yaml"
-    } else {
-        "library.yaml"
     }
 }
 
@@ -668,12 +664,6 @@ pub struct Rows {
     pub defaults: HashMap<String, String>,
 }
 
-pub struct LaunchEditor {
-    pub places: Vec<SurfaceLaunchSettingsPlace>,
-    pub notes: Vec<String>,
-    pub rows: Rows,
-}
-
 pub struct DeviceLaunch {
     pub groups: Vec<SurfaceSettingGroup>,
     pub rows: Rows,
@@ -755,9 +745,6 @@ impl<'a> Context<'a> {
     }
     fn resolved(&self, path: &Value) -> Option<&Value> {
         self.by_path.get(&value_path_key(&editable(path)))
-    }
-    fn list(&self, kind: &str) -> Option<&Value> {
-        self.by_path.get(&value_path_key(&bare_path(kind)))
     }
     fn skip(&self, path: &Value, runner_id: Option<&str>) -> Option<&String> {
         let runner = if tag(path) == "Setting" {
@@ -1231,92 +1218,6 @@ fn limit_groups(
     groups
 }
 
-fn runner_group(
-    context: &Context,
-    rows: &mut Rows,
-    place_id: &str,
-    place: &Value,
-    body: &Value,
-) -> SurfaceSettingGroup {
-    let own = str_of(body, "runner").map(str::to_owned);
-    let id = launch_id::set(place_id, "runner");
-    let installed: Vec<SurfaceSettingChoice> = array(context.snapshot, "runners")
-        .iter()
-        .filter(|runner| field(runner, "choosable") == &json!(true))
-        .map(|runner| {
-            choice(
-                str_of(runner, "id").unwrap_or(""),
-                context.runner_title(runner),
-            )
-        })
-        .collect();
-    let missing = own
-        .as_ref()
-        .is_some_and(|own| !installed.iter().any(|choice| &choice.value == own));
-    let streamer = own.as_ref().and_then(|own| {
-        array(context.snapshot, "runners").iter().find(|runner| {
-            str_of(runner, "id") == Some(own) && field(runner, "choosable") != &json!(true)
-        })
-    });
-    let mut choices = vec![choice(INHERIT, "Inherit")];
-    choices.extend(installed);
-    if missing {
-        let own = own.clone().unwrap_or_default();
-        let label = match streamer {
-            None => format!("{own} (not installed)"),
-            Some(streamer) => format!("{} (streams only)", context.runner_title(streamer)),
-        };
-        choices.push(choice(own, label));
-    }
-    rows.writes.insert(
-        id.clone(),
-        LaunchWrite {
-            place: place.clone(),
-            path: bare_path("Runner"),
-            encoder: Encoder::TextOrInherit,
-        },
-    );
-    let source = source_text(
-        context,
-        place,
-        context.resolved(&bare_path("Runner")),
-        &|value| match value.as_str() {
-            Some(id) => context
-                .runner_titles
-                .get(id)
-                .cloned()
-                .unwrap_or_else(|| id.into()),
-            None => value_text(value),
-        },
-    );
-    let selected = own.clone().unwrap_or_else(|| INHERIT.into());
-    SurfaceSettingGroup {
-        title: "Runner".into(),
-        items: vec![SurfaceSettingItem {
-            value: Some(
-                choices
-                    .iter()
-                    .find(|choice| choice.value == selected)
-                    .map_or("Inherit".into(), |choice| choice.label.clone()),
-            ),
-            description: Some(
-                if streamer.is_some() {
-                    "This runner only views streams; it runs no game. Korri skips it here."
-                } else if missing {
-                    "This runner isn't installed. Korri skips it and its runner settings here."
-                } else {
-                    "The most specific place that names an installed runner wins."
-                }
-                .into(),
-            ),
-            source,
-            scope: Some(SurfaceSettingScope::Shared),
-            interaction: Some(choice_interaction(choices, selected)),
-            ..SurfaceSettingItem::new(id, "Runner")
-        }],
-    }
-}
-
 // --- plugin settings ----------------------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -1330,6 +1231,8 @@ struct Leaf {
     maximum: Option<f64>,
     default: Option<Value>,
     device: bool,
+    /// False: a shared setting this runner cannot honour (ADR 0057).
+    supported: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -1449,6 +1352,7 @@ fn leaf_of(node: &Value, segments: &[String], objects: &[String]) -> Leaf {
         maximum: field(node, "maximum").as_f64(),
         default: node.as_object().and_then(|map| map.get("default").cloned()),
         device: str_of(node, "x-korri-scope") == Some("device"),
+        supported: field(node, "x-korri-supported") != &json!(false),
     }
 }
 
@@ -2397,100 +2301,6 @@ fn plugins_of(context: &Context, listed: &[Value], kind: &str) -> Vec<Plugin> {
     known
 }
 
-fn modifier_groups(
-    context: &Context,
-    rows: &mut Rows,
-    place_id: &str,
-    place: &Value,
-    body: &Value,
-    pending: &[PendingSetting],
-    row_id: &dyn Fn(&str) -> String,
-) -> Vec<SurfaceSettingGroup> {
-    let own = field(body, "modifiers");
-    let mut groups = Vec::new();
-    for modifier in plugins_of(context, array(context.snapshot, "modifiers"), "modifiers") {
-        let authored = field(own, &modifier.id);
-        let enabled = field(authored, "enabled").as_bool();
-        let id = row_id(&format!("modifier:{}:enabled", modifier.id));
-        let path = json!({ "_tag": "ModifierEnabled", "payload": { "id": modifier.id } });
-        rows.writes.insert(
-            id.clone(),
-            LaunchWrite {
-                place: place.clone(),
-                path: path.clone(),
-                encoder: Encoder::Toggle,
-            },
-        );
-        let source = source_text(context, place, context.resolved(&path), &value_text);
-        let enabled_row = SurfaceSettingItem {
-            value: Some(
-                match enabled {
-                    None => "Inherit",
-                    Some(true) => "On",
-                    Some(false) => "Off",
-                }
-                .into(),
-            ),
-            description: Some(if modifier.listed {
-                NEXT_LAUNCH.into()
-            } else {
-                "This modifier isn't installed or is turned off on this device.".into()
-            }),
-            source,
-            scope: Some(SurfaceSettingScope::Device),
-            interaction: Some(choice_interaction(
-                vec![
-                    choice(INHERIT, "Inherit"),
-                    choice("true", "On"),
-                    choice("false", "Off"),
-                ],
-                enabled.map_or(INHERIT.to_owned(), |enabled| enabled.to_string()),
-            )),
-            ..SurfaceSettingItem::new(id, modifier.title.clone())
-        };
-        let applies_at = |candidate: &Value| {
-            profile_in_force(context, candidate) && applies(context, field(candidate, "scope"))
-        };
-        let device_scope = |_: Option<&Leaf>| true;
-        let settings = setting_groups(
-            context,
-            rows,
-            &Owner {
-                kind: OwnerKind::Modifier,
-                plugin: Some(modifier.id.clone()),
-                place_id: place_id.into(),
-                place: place.clone(),
-                title: modifier.title.clone(),
-                sections: modifier
-                    .schema
-                    .as_ref()
-                    .map(sections_of)
-                    .unwrap_or_default(),
-                own: field(authored, "settings").clone(),
-                added: pending
-                    .iter()
-                    .filter_map(|setting| match setting {
-                        PendingSetting::Modifier { id, key } if *id == modifier.id => {
-                            Some(key.clone())
-                        }
-                        _ => None,
-                    })
-                    .collect(),
-                row_id,
-                device_scope: &device_scope,
-                missing: "This modifier no longer describes this setting.".into(),
-                applies_at: &applies_at,
-            },
-        );
-        groups.push(SurfaceSettingGroup {
-            title: format!("Modifier {}", modifier.title),
-            items: vec![enabled_row],
-        });
-        groups.extend(settings);
-    }
-    groups
-}
-
 fn service_groups(
     context: &Context,
     rows: &mut Rows,
@@ -2539,240 +2349,6 @@ fn service_groups(
         ));
     }
     groups
-}
-
-fn not_in_force_text(context: &Context, place: &Value) -> String {
-    if !applies(context, field(place, "scope")) {
-        return source_text(context, place, None, &value_text)
-            .unwrap_or_else(|| "Not in force".into());
-    }
-    let layer = field(place, "layer");
-    if tag(layer) == "Profile"
-        && str_of(field(layer, "id"), "profileId") != str_of(context.snapshot, "selectedProfile")
-    {
-        return "Not in force: this profile isn't picked".into();
-    }
-    "Not in force".into()
-}
-
-const LISTS: [(&str, &str, &str); 4] = [
-    ("ArgsPrepend", "Arguments before", "args:prepend"),
-    ("ArgsAppend", "Arguments after", "args:append"),
-    ("HooksBefore", "Before launch", "hooks:before"),
-    ("HooksAfter", "After the session", "hooks:after"),
-];
-
-fn part_text(value: &Value) -> String {
-    match value.as_array() {
-        None => str_of(value, "run").map_or_else(|| value_text(value), Into::into),
-        Some(items) => {
-            let words = items.iter().all(Value::is_string);
-            items
-                .iter()
-                .map(part_text)
-                .collect::<Vec<_>>()
-                .join(if words { " " } else { "; " })
-        }
-    }
-}
-
-fn own_part<'a>(body: &'a Value, kind: &str) -> &'a Value {
-    match kind {
-        "ArgsPrepend" => field(field(body, "args"), "prepend"),
-        "ArgsAppend" => field(field(body, "args"), "append"),
-        "HooksBefore" => field(field(body, "hooks"), "before"),
-        _ => field(field(body, "hooks"), "after"),
-    }
-}
-
-fn is_empty_part(value: &Value) -> bool {
-    value.is_null() || value.as_array().is_some_and(Vec::is_empty)
-}
-
-/// Values set only in files: shown with where they are, never changed here.
-fn file_group(context: &Context, entry: &Value, place_id: &str) -> Option<SurfaceSettingGroup> {
-    let place = field(entry, "place");
-    let body = field(entry, "body");
-    let here = place_title(context, entry);
-    let describe_of = |layer: &Value| format!("Set in {}. Change it there.", file_of(layer));
-    let row = |key: &str,
-               label: String,
-               value: String,
-               source: Option<String>,
-               description: Option<String>| SurfaceSettingItem {
-        value: Some(value),
-        source: Some(source.unwrap_or_else(|| format!("from {here}"))),
-        scope: Some(SurfaceSettingScope::Device),
-        description: Some(description.unwrap_or_else(|| describe_of(field(place, "layer")))),
-        ..SurfaceSettingItem::new(launch_id::set(place_id, &format!("file:{key}")), label)
-    };
-    let mut items = Vec::new();
-    if let Some(env) = record(field(body, "env")) {
-        for (key, value) in env {
-            items.push(row(
-                &format!("env:{key}"),
-                format!("Environment {key}"),
-                if value.is_null() {
-                    "Unset".into()
-                } else {
-                    value_text(value)
-                },
-                None,
-                None,
-            ));
-        }
-    }
-    if let Some(cwd) = str_of(body, "cwd") {
-        items.push(row("cwd", "Working folder".into(), cwd.into(), None, None));
-    }
-    let own_contributions = |kind: &str| -> Vec<Value> {
-        context
-            .list(kind)
-            .map(|list| array(list, "contributions"))
-            .unwrap_or(&[])
-            .iter()
-            .filter(|part| {
-                let source = field(part, "source");
-                tag(source) == "Place"
-                    && same_place(field(source, "payload"), place)
-                    && !is_empty_part(field(part, "value"))
-            })
-            .cloned()
-            .collect()
-    };
-    let in_force = LISTS
-        .iter()
-        .any(|(kind, _, _)| !own_contributions(kind).is_empty());
-    let not_in_force = not_in_force_text(context, place);
-    for (kind, label, key) in LISTS {
-        if !in_force {
-            let own = own_part(body, kind);
-            if !is_empty_part(own) {
-                items.push(row(
-                    &format!("{key}:own"),
-                    label.into(),
-                    part_text(own),
-                    Some(not_in_force.clone()),
-                    None,
-                ));
-            }
-            continue;
-        }
-        for (index, part) in own_contributions(kind).iter().enumerate() {
-            let routine = str_of(part, "routine");
-            items.push(row(
-                &format!("{key}:{index}"),
-                label.into(),
-                part_text(field(part, "value")),
-                Some(match routine {
-                    None => format!("In force: from {here}"),
-                    Some(routine) => format!("In force: routine {routine}, used by {here}"),
-                }),
-                Some(if routine.is_none() {
-                    describe_of(field(place, "layer"))
-                } else {
-                    "Set in device.yaml. Change it there.".into()
-                }),
-            ));
-        }
-    }
-    if !in_force {
-        for name in strings(field(field(body, "hooks"), "use")) {
-            items.push(row(
-                &format!("hooks:use:{name}"),
-                "Routine".into(),
-                name.clone(),
-                Some(not_in_force.clone()),
-                Some("Set in device.yaml. Change it there.".into()),
-            ));
-        }
-    }
-    if let Some(config) = record(field(body, "config")).filter(|config| !config.is_empty()) {
-        items.push(row(
-            "config",
-            "Runner config".into(),
-            value_text(&Value::Object(config.clone())),
-            None,
-            None,
-        ));
-    }
-    if let Some(modifiers) = record(field(body, "modifiers")) {
-        for (modifier, raw) in modifiers {
-            if let Some(config) = raw.get("config") {
-                items.push(row(
-                    &format!("modifier-config:{modifier}"),
-                    format!("{modifier} config"),
-                    value_text(config),
-                    None,
-                    None,
-                ));
-            }
-        }
-    }
-    (!items.is_empty()).then(|| SurfaceSettingGroup {
-        title: "From files".into(),
-        items,
-    })
-}
-
-fn runner_facts_group(
-    context: &Context,
-    place_id: &str,
-    scope: &Value,
-) -> Option<SurfaceSettingGroup> {
-    if tag(scope) != "Runner" {
-        return None;
-    }
-    let runner = array(context.snapshot, "runners")
-        .iter()
-        .find(|candidate| str_of(candidate, "id") == str_of(scope, "id"))?;
-    let title = context.runner_title(runner);
-    let from = format!("from {title} (default)");
-    let row = |key: &str, label: String, value: String| SurfaceSettingItem {
-        value: Some(value),
-        source: Some(from.clone()),
-        scope: Some(SurfaceSettingScope::Device),
-        ..SurfaceSettingItem::new(
-            launch_id::set(place_id, &format!("runner-facts:{key}")),
-            label,
-        )
-    };
-    let prepare = field(runner, "prepare");
-    if tag(prepare) == "Unavailable" {
-        return Some(SurfaceSettingGroup {
-            title: "From the runner".into(),
-            items: vec![SurfaceSettingItem {
-                value: Some(str_of(prepare, "payload").unwrap_or("").into()),
-                description: Some(format!("Korri could not ask {title} what it sets. Its environment, arguments and folder are not shown.")),
-                ..SurfaceSettingItem::new(launch_id::set(place_id, "runner-facts:unavailable"), "Runner facts unavailable")
-            }],
-        });
-    }
-    let facts = field(prepare, "payload");
-    let mut items: Vec<SurfaceSettingItem> = record(field(facts, "env"))
-        .map(|env| {
-            env.iter()
-                .map(|(key, value)| {
-                    row(
-                        &format!("env:{key}"),
-                        format!("Environment {key}"),
-                        value.as_str().unwrap_or("").into(),
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    let args = strings(field(facts, "args"));
-    if !args.is_empty() {
-        items.push(row("args", "Arguments".into(), args.join(" ")));
-    }
-    if let Some(cwd) = str_of(facts, "cwd") {
-        items.push(row("cwd", "Working folder".into(), cwd.into()));
-    }
-    (!items.is_empty()).then(|| SurfaceSettingGroup {
-        title: "From the runner".into(),
-        items,
-    })
 }
 
 fn profile_rows(context: &Context, own: Option<&str>) -> SurfaceSettingGroup {
@@ -2981,92 +2557,6 @@ pub fn launch_notes_from(snapshot: &Value, game_id: Option<&str>) -> Vec<String>
         }
     }
     notes
-}
-
-/// One game's editor: a place per layer and runner scope, most general first.
-pub fn launch_editor_from(
-    snapshot: &Value,
-    game_id: Option<&str>,
-    pending: &HashMap<String, Vec<PendingSetting>>,
-) -> LaunchEditor {
-    let context = Context::new(snapshot, game_id);
-    let mut rows = Rows::default();
-    let places = context
-        .places
-        .iter()
-        .map(|entry| {
-            let place = field(entry, "place");
-            let place_id = place_id_of(place);
-            let body = field(entry, "body");
-            let kinds = strings(field(entry, "editableKinds"));
-            let has = |kind: &str| kinds.iter().any(|candidate| candidate == kind);
-            let scope = field(place, "scope");
-            let any = tag(scope) == "Any";
-            let added = pending.get(&place_id).cloned().unwrap_or_default();
-            let row_id = |path: &str| launch_id::set(&place_id, path);
-            let layer = field(place, "layer");
-            let mut groups: Vec<SurfaceSettingGroup> = Vec::new();
-            if any && has(kind::RUNNER) {
-                groups.push(runner_group(&context, &mut rows, &place_id, place, body));
-            }
-            if has(kind::SETTINGS) {
-                groups.extend(runner_setting_groups(
-                    &context, &mut rows, &place_id, place, body, &added, &row_id,
-                ));
-            }
-            groups.extend(limit_groups(
-                &context,
-                &mut rows,
-                place,
-                body,
-                &kinds,
-                &|key| launch_id::set(&place_id, key),
-            ));
-            if has(kind::MODIFIERS) {
-                groups.extend(modifier_groups(
-                    &context, &mut rows, &place_id, place, body, &added, &row_id,
-                ));
-            }
-            if has(kind::SERVICES) {
-                groups.extend(service_groups(
-                    &context, &mut rows, &place_id, place, body, &added, &row_id,
-                ));
-            }
-            if tag(layer) == "Game" && any {
-                groups.push(profile_rows(&context, None));
-            }
-            if tag(layer) == "Profile" && any {
-                groups.push(profile_rows(
-                    &context,
-                    str_of(field(layer, "id"), "profileId"),
-                ));
-            }
-            groups.extend(file_group(&context, entry, &place_id));
-            groups.extend(runner_facts_group(&context, &place_id, scope));
-            SurfaceLaunchSettingsPlace {
-                id: place_id.clone(),
-                title: place_title(&context, entry),
-                layer: SurfaceLaunchSettingsLayer {
-                    id: layer_key(layer),
-                    title: layer_title(&context, layer),
-                },
-                scope: SurfaceLaunchSettingsScope {
-                    kind: match tag(scope) {
-                        "Any" => SurfaceLaunchSettingsScopeKind::Any,
-                        "Family" => SurfaceLaunchSettingsScopeKind::Family,
-                        _ => SurfaceLaunchSettingsScopeKind::Runner,
-                    },
-                    label: scope_label(&context, scope),
-                },
-                groups,
-            }
-        })
-        .collect();
-    LaunchEditor {
-        places,
-        notes: launch_notes_from(snapshot, game_id),
-        rows,
-    }
 }
 
 /// Device settings' launch groups, from a snapshot without a game.

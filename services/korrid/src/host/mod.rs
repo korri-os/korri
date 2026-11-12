@@ -681,12 +681,29 @@ impl HostRuntime {
         person_public_key: Option<&str>,
         viewer_display: Option<crate::launcher::plugin_launch::PluginDisplay>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
+        self.prepare_for_launch(game_id, person_public_key, viewer_display, None)
+            .await
+    }
+
+    /// Prepare with the values of this one launch (ADR 0066). The caller has
+    /// already checked that an owner device sent them.
+    pub async fn prepare_for_launch(
+        &self,
+        game_id: &str,
+        person_public_key: Option<&str>,
+        viewer_display: Option<crate::launcher::plugin_launch::PluginDisplay>,
+        launch: Option<crate::launch_settings::LaunchOverride>,
+    ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         let runtime = self.clone();
         let game_id = game_id.to_owned();
         let person_public_key = person_public_key.map(str::to_owned);
         tokio::task::spawn_blocking(move || {
-            let outcome =
-                runtime.prepare_blocking(&game_id, person_public_key.as_deref(), viewer_display);
+            let outcome = runtime.prepare_blocking(
+                &game_id,
+                person_public_key.as_deref(),
+                viewer_display,
+                launch,
+            );
             #[cfg(test)]
             runtime.session_rpc_probe("app.session.prepare");
             outcome
@@ -810,6 +827,10 @@ impl HostRuntime {
         })();
         crate::launch_timeline::record(game_id, LaunchStage::Catalog, catalog_started.elapsed());
         let (registry, snapshot, route) = resolved_route?;
+        let launch_governor = launch_override
+            .as_ref()
+            .and_then(|launch| launch.cpu.as_ref())
+            .and_then(|cpu| cpu.governor.clone());
         let resolved = measure(game_id, LaunchStage::Settings, || {
             let limit_facts = crate::launch_settings::helper::Client::default()
                 .describe()
@@ -837,6 +858,28 @@ impl HostRuntime {
             self.netplay_launch_input(&mut launch.command, None)?;
             Ok::<_, RpcFailure>(launch)
         })?;
+        let build = registry
+            .installed_package(&route.runner_id)
+            .map_err(|error| dynamic_failure(error.to_string()))?
+            .package
+            .display()
+            .to_string();
+        let mut warnings = launch.warnings;
+        // As with the limits: a governor the helper cannot take is a warning.
+        let governor = crate::launch_settings::session::SessionGovernor::for_launch(
+            root,
+            &crate::launch_settings::helper::Client::default(),
+            launch_governor.as_deref(),
+        )
+        .unwrap_or_else(|message| {
+            warnings.push(crate::launcher::typed_settings::LaunchWarning {
+                setting: "launch-settings".into(),
+                runner_id: route.runner_id.clone(),
+                build: build.clone(),
+                message: format!("The CPU governor for this launch was not applied: {message}"),
+            });
+            None
+        });
         let limits = crate::launch_settings::session::SessionLimits {
             cpu: crate::launch_settings::LaunchPercentRange {
                 min: resolved.limits.cpu.min.value,
@@ -846,13 +889,9 @@ impl HostRuntime {
                 min: resolved.limits.gpu.min.value,
                 max: resolved.limits.gpu.max.value,
             },
+            governor,
             runner_id: route.runner_id.clone(),
-            build: registry
-                .installed_package(&route.runner_id)
-                .map_err(|error| dynamic_failure(error.to_string()))?
-                .package
-                .display()
-                .to_string(),
+            build,
         };
         let hooks = if resolved.hooks.before.is_empty() && resolved.hooks.after.is_empty() {
             None
@@ -889,7 +928,7 @@ impl HostRuntime {
             limits: Some(limits),
             command: launch.command,
             runner_id: Some(route.runner_id),
-            warnings: launch.warnings,
+            warnings,
         })
     }
 
@@ -898,6 +937,7 @@ impl HostRuntime {
         game_id: &str,
         person_public_key: Option<&str>,
         viewer_display: Option<crate::launcher::plugin_launch::PluginDisplay>,
+        launch: Option<crate::launch_settings::LaunchOverride>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         timed_start(game_id, || {
             launch_timeline::measure(game_id, launch_timeline::LaunchStage::Catalog, || {
@@ -910,7 +950,7 @@ impl HostRuntime {
             // neither read a stale runner selection nor create credentials.
             launch_timeline::measure(game_id, launch_timeline::LaunchStage::UnitStart, || {
                 launcher.prepare_composed(game_id, person_public_key, || {
-                    self.prepare_launch_command(game_id, None, None, viewer_display)
+                    self.prepare_launch_command(game_id, None, launch.clone(), viewer_display)
                 })
             })
         })
@@ -2678,6 +2718,7 @@ esac
         let snapshot = runtime
             .launch_settings_snapshot(crate::launch_settings::LaunchSettingsSnapshotRequest {
                 game_id: None,
+                host: None,
             })
             .await
             .unwrap();
@@ -2733,6 +2774,7 @@ esac
                 path: LaunchPath::Runner,
                 expected_revision: revision,
                 value: Some(runner_id.into()),
+                host: None,
             };
             let before = runner_choice_revisions(root.path()).unwrap();
             let (entered, committed) = tokio::sync::oneshot::channel();
@@ -2786,6 +2828,7 @@ esac
                     path: LaunchPath::Runner,
                     expected_revision: other_revision,
                     value: Some("@test:other/core".into()),
+                    host: None,
                 })
                 .await
                 .unwrap();
@@ -3310,7 +3353,7 @@ esac
             "HostLibraryInvalid"
         );
         assert_eq!(
-            host.prepare_blocking(crate::config::test_fixtures::OTHER_ID, None, None)
+            host.prepare_blocking(crate::config::test_fixtures::OTHER_ID, None, None, None)
                 .unwrap_err()
                 .code,
             "HostLibraryInvalid"

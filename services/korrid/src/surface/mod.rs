@@ -23,7 +23,6 @@ pub mod launchables;
 pub mod model;
 pub mod network_onboarding;
 mod one_launch;
-mod one_launch_model;
 pub mod overlay;
 pub mod owner_binding;
 pub mod placement;

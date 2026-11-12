@@ -111,6 +111,39 @@ fn launchable_on_this_device(entry: Entry) -> Entry {
     entry
 }
 
+/// The copy of a game that another device of the federation runs, when the
+/// entry presents that copy. Its launch settings and runners are that
+/// device's (ADR 0066); only a native peer answers for them.
+fn streamed_game(entry: Option<&Entry>) -> Option<&crate::Game> {
+    match entry {
+        Some(Entry::Game { game, .. })
+            if !game.source.is_local && game.source.device_public_key.is_some() =>
+        {
+            Some(game)
+        }
+        _ => None,
+    }
+}
+
+/// The streamed copy a holder's label and korrid id name, as an entry.
+fn streamed_entry(state: &LaunchablesState, id: &str, holder: &str) -> Option<Entry> {
+    let is_copy =
+        |game: &crate::Game| !game.source.is_local && game.id == id && game.source.label == holder;
+    state.entries().iter().find_map(|entry| {
+        if entry.is_now_playing() {
+            return None;
+        }
+        match entry {
+            Entry::Game { game, .. } if is_copy(game) => Some(entry.clone()),
+            _ => entry
+                .alternatives()
+                .iter()
+                .find(|copy| copy.remote().is_some_and(is_copy))
+                .map(Entry::for_copy),
+        }
+    })
+}
+
 /// The local catalog copy with installed-runner selection, if any.
 fn local_runner_entry(entry: Option<&Entry>) -> Option<crate::Game> {
     match entry {
@@ -363,11 +396,11 @@ impl Root {
                     korrid.clone(),
                     notify.clone(),
                     RunnerLaunchIntegration {
-                        start_launch: Box::new(move |id, runner_id| {
+                        start_launch: Box::new(move |id, host, runner_id| {
                             let root = start.upgrade();
                             Box::pin(async move {
                                 let root = root?;
-                                root.start_from_chooser(id, runner_id).await
+                                root.start_from_chooser(id, host, runner_id).await
                             })
                         }),
                         return_session: Box::new(move |session| {
@@ -638,11 +671,24 @@ impl Root {
     async fn start_from_chooser(
         self: Arc<Self>,
         id: String,
-        runner_id: String,
+        host: Option<String>,
+        runner_id: Option<String>,
     ) -> Option<SessionStartResult> {
-        // A launch from the chooser leaves any launch settings it was opened from.
-        self.launch.cancel();
+        // A launch from the chooser leaves any launch settings it was opened
+        // from. Its changes are kept first, as when the editor closes.
+        self.launch.close().await;
         let current = self.launchables.state();
+        if let Some(host) = host {
+            // A streamed game starts through the stream lifecycle, which
+            // publishes its own progress and warnings.
+            if let Some(entry) = streamed_entry(&current, &id, &host) {
+                *self.launch_plan.lock().expect("launch plan poisoned") =
+                    Some(LaunchPlan::new(&id, false, false));
+                self.launchables.confirm_streamed(entry, runner_id);
+            }
+            return None;
+        }
+        let runner_id = runner_id?;
         let surface_id = local_game_ids_by_surface_id(&current)
             .into_iter()
             .find(|(_, korrid_id)| *korrid_id == id)
@@ -1209,14 +1255,23 @@ impl Root {
         if let Some(korrid_id) = korrid_id.as_ref().filter(|_| ready_now) {
             self.launch.learn(korrid_id);
         }
+        // A streamed game has the same two actions (issue #401): its runners
+        // and its launch settings are those of the device that runs it.
+        let streamed = streamed_game(entry);
         if local_runner_entry(entry).is_some() {
             actions.push(SurfaceAction::new(
                 "runners",
                 "Runners on this device",
                 healthy,
             ));
+        } else if let Some(game) = streamed.filter(|game| game.supports_runner_selection) {
+            actions.push(SurfaceAction::new(
+                "runners",
+                format!("Runners on {}", game.source.label),
+                healthy,
+            ));
         }
-        if korrid_id.is_some() {
+        if korrid_id.is_some() || streamed.is_some() {
             actions.push(SurfaceAction::new(
                 LAUNCH_SETTINGS_ACTION_ID,
                 "Launch settings",
@@ -1248,6 +1303,19 @@ impl Root {
             return;
         };
         if !game.source.is_local {
+            // Several runners on the holder: its chooser first (issue #401).
+            // A live session of this game is returned to by the chooser.
+            if streamed_game(Some(&chosen)).is_some_and(|game| game.supports_runner_selection) {
+                if content.unavailable_session_status.is_none() {
+                    self.runner.open(
+                        game.id.clone(),
+                        game.title.clone(),
+                        Some(game.source.label.clone()),
+                        Intent::Launch,
+                    );
+                }
+                return;
+            }
             *self.launch_plan.lock().expect("launch plan poisoned") =
                 Some(LaunchPlan::new(&game.id, false, false));
             self.launchables.confirm_entry(chosen);
@@ -1270,7 +1338,7 @@ impl Root {
         // because korrid resolves artifacts per runner.
         if game.supports_runner_selection {
             self.runner
-                .open(game.id.clone(), game.title.clone(), Intent::Launch);
+                .open(game.id.clone(), game.title.clone(), None, Intent::Launch);
             return;
         }
         // The gate starts at once; nothing here waits for its outcome.
@@ -1725,38 +1793,51 @@ impl Root {
                 if action_id == "runners" {
                     let healthy = matches!(&current, LaunchablesState::Loaded(Loaded { content, .. }) if content.unavailable_session_status.is_none());
                     if let Some(local) = local_runner_entry(Some(&entry)).filter(|_| healthy) {
-                        self.runner.open(local.id, local.title, Intent::Inspect);
+                        self.runner
+                            .open(local.id, local.title, None, Intent::Inspect);
+                    } else if let Some(game) = streamed_game(Some(&entry))
+                        .filter(|game| healthy && game.supports_runner_selection)
+                    {
+                        self.runner.open(
+                            game.id.clone(),
+                            game.title.clone(),
+                            Some(game.source.label.clone()),
+                            Intent::Inspect,
+                        );
                     }
                     return;
                 }
                 if action_id == LAUNCH_SETTINGS_ACTION_ID {
-                    let Some(korrid_id) = local_game_ids_by_surface_id(&current)
-                        .get(&game_id)
-                        .cloned()
-                    else {
-                        return;
-                    };
                     let Entry::Game { game, .. } = &entry else {
                         return;
                     };
-                    // The runner chooser, when this page offers it, fills in
-                    // the layers that wait on a runner choice.
                     let healthy = matches!(&current, LaunchablesState::Loaded(Loaded { content, .. }) if content.unavailable_session_status.is_none());
-                    let choose =
-                        local_runner_entry(Some(&entry))
+                    // The runner chooser, when this page offers it, fills in
+                    // the settings that wait on a runner choice.
+                    let chooser = |id: String, title: String, host: Option<String>| {
+                        let runner = Arc::clone(&self.runner);
+                        Arc::new(move || {
+                            runner.open(id.clone(), title.clone(), host.clone(), Intent::Inspect)
+                        }) as super::launch_settings::OpenRunners
+                    };
+                    if let Some(korrid_id) = local_game_ids_by_surface_id(&current)
+                        .get(&game_id)
+                        .cloned()
+                    {
+                        let choose = local_runner_entry(Some(&entry))
                             .filter(|_| healthy)
-                            .map(|local| {
-                                let runner = Arc::clone(&self.runner);
-                                Arc::new(move || {
-                                    runner.open(
-                                        local.id.clone(),
-                                        local.title.clone(),
-                                        Intent::Inspect,
-                                    )
-                                })
-                                    as super::launch_settings::OpenRunners
-                            });
-                    self.launch.open(korrid_id, game.title.clone(), choose);
+                            .map(|local| chooser(local.id, local.title, None));
+                        self.launch
+                            .open(korrid_id, game.title.clone(), None, choose);
+                    } else if let Some(game) = streamed_game(Some(&entry)) {
+                        // The list is read from and written to the holder.
+                        let holder = game.source.label.clone();
+                        let choose = (healthy && game.supports_runner_selection).then(|| {
+                            chooser(game.id.clone(), game.title.clone(), Some(holder.clone()))
+                        });
+                        self.launch
+                            .open(game.id.clone(), game.title.clone(), Some(holder), choose);
+                    }
                     return;
                 }
                 if action_id == "end" {

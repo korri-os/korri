@@ -196,6 +196,7 @@ fn hooks_before_in_order_after_reversed_and_after_end_session() {
     let limits = SessionLimits {
         cpu: LaunchPercentRange { min: 0, max: 100 },
         gpu: LaunchPercentRange { min: 0, max: 100 },
+        governor: None,
         runner_id: "@test:runner/main".into(),
         build: "test".into(),
     };
@@ -741,6 +742,7 @@ async fn stored_split_refuses_before_hooks_only_for_a_save_bearing_plan() {
                     game_id: GAME.into(),
                     runner_id: "@korri:mgba/mgba".into(),
                     launch: None,
+                    host: None,
                 },
                 Some(&person),
             )

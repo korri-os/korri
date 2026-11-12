@@ -263,7 +263,7 @@ fn an_unsupported_setting_is_reported_once_and_never_reaches_the_native_config()
     runner
         .files
         .insert("autoconfig".into(), "/autoconfig".into());
-    let overrides: korrid::launch_settings::LaunchOverride = serde_json::from_value(serde_json::json!({"settings":{"scope":{"_tag":"Runner","id":"@korri:mgba/mgba"},"values":{"plugin":{"audio_volume":-3,"video_vsync":false,"absent_key":1}}}})).unwrap();
+    let overrides: korrid::launch_settings::LaunchOverride = serde_json::from_value(serde_json::json!({"plugin":{"@korri:mgba/mgba":{"audio_volume":-3,"video_vsync":false,"absent_key":1}}})).unwrap();
     let registry = PluginRegistry::from_installed(vec![runner.clone()]).unwrap();
     let route = resolve_linux_route(
         root.path(),

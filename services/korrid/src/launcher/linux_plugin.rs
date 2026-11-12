@@ -338,10 +338,9 @@ fn inspect_route(
         Ok(modifiers)
     };
     composition.modifiers = resolve_modifiers(&mut resolved.modifiers, &mut warnings)?;
-    if launch
-        .as_ref()
-        .is_some_and(|value| value.settings.is_some() || !value.modifiers.is_empty())
-    {
+    if launch.as_ref().is_some_and(|value| {
+        !value.settings.is_empty() || !value.plugin.is_empty() || !value.modifiers.is_empty()
+    }) {
         let mut persistent = crate::launch_settings::resolve_launch(snapshot, route, None, None)
             .map_err(|e| error(e.to_string()))?;
         super::typed_settings::validate_runner(

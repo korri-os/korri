@@ -333,6 +333,10 @@ pub struct SessionPrepareRequest {
     pub viewer_display: Option<crate::launcher::plugin_launch::PluginDisplay>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host: Option<String>,
+    /// The values of this one launch (ADR 0066), as `SessionStartRequest`
+    /// carries them. A holder accepts them only from a device of its owner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launch: Option<launch_settings::LaunchOverride>,
 }
 
 #[typeshare]
@@ -2920,6 +2924,16 @@ async fn dispatch(
     if let Some(response) = stream_play::device::dispatch(state, authorization, &request).await {
         return Ok(response);
     }
+    // A device that only plays (a phone, a TV) holds no launch settings for a
+    // streamed game: its korrid asks the holder the request names (ADR 0066).
+    if let ServerMode::Brain(brain) = &state.mode {
+        if stream_play::device::is_local_caller(authorization) {
+            if let Some(response) = stream_play::device::ask_holder(&brain.upstream, &request).await
+            {
+                return Ok(response);
+            }
+        }
+    }
     let mut response = match request {
         // Objects are answered with bytes on their own routes, never here.
         RpcRequest::SaveObject(_)
@@ -3300,6 +3314,33 @@ async fn dispatch(
                 }
             })
         }
+        // The runner the person chose for a streamed game (issue #401).
+        RpcRequest::SelectedGameLaunch(request)
+            if request.host.is_some()
+                && matches!(state.mode, ServerMode::Brain(_))
+                && stream_play::device::is_local_caller(authorization) =>
+        {
+            let ServerMode::Brain(brain) = &state.mode else {
+                unreachable!("checked Brain mode")
+            };
+            RpcResponse::SelectedGameLaunch(
+                brain
+                    .upstream
+                    .prepare_streamed_launch(
+                        &request.game_id,
+                        request.host.as_deref(),
+                        upstreams::StreamedLaunch {
+                            runner_id: Some(request.runner_id),
+                            launch: request.launch,
+                        },
+                    )
+                    .await
+                    .map(game_routes::SelectedGameLaunchOutcome::Ok)
+                    .unwrap_or_else(|error| {
+                        game_routes::SelectedGameLaunchOutcome::Err(upstream_failure(error))
+                    }),
+            )
+        }
         RpcRequest::SelectedGameLaunch(request) => {
             RpcResponse::SelectedGameLaunch(match &state.mode {
                 ServerMode::Host(host) => host
@@ -3631,7 +3672,14 @@ async fn dispatch(
             let outcome = match (&state.mode, state.rpc_surface) {
                 (ServerMode::Brain(brain), RpcSurface::Lan) => brain
                     .upstream
-                    .prepare_stream(&request.game_id, request.host.as_deref())
+                    .prepare_streamed_launch(
+                        &request.game_id,
+                        request.host.as_deref(),
+                        upstreams::StreamedLaunch {
+                            runner_id: None,
+                            launch: request.launch,
+                        },
+                    )
                     .await
                     .map(game_routes::SelectedGameLaunchOutcome::Ok)
                     .unwrap_or_else(|error| {
@@ -3640,10 +3688,11 @@ async fn dispatch(
                 (ServerMode::Host(host), RpcSurface::Lan) => host
                     .clone()
                     .for_starting_device(authorization.starting_device())
-                    .prepare(
+                    .prepare_for_launch(
                         &request.game_id,
                         authorization.person_public_key(host.owner_public_key().as_deref()),
                         request.viewer_display,
+                        request.launch,
                     )
                     .await
                     .map(game_routes::SelectedGameLaunchOutcome::Ok)
