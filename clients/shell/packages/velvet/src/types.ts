@@ -27,12 +27,33 @@ export type Direction = "up" | "down" | "left" | "right"
 
 // ---- The home's lists (src/lists.ts) ----
 
+/**
+ * Where a catalog question starts: an end of the order, the page next to a
+ * window already read, or around one game. A page carries the cursor Korri
+ * gave and the place in the order its window must stand at, so its answer is
+ * known from every other window of the same order.
+ */
+export type WantFrom =
+  | { readonly at: "start" }
+  | { readonly at: "end" }
+  /** The page that ends where the window read before began (at `index`). */
+  | { readonly at: "before"; readonly cursor: string; readonly index: number }
+  /** The page that begins where the window read before ended (at `index`). */
+  | { readonly at: "after"; readonly cursor: string; readonly index: number }
+  | { readonly at: "around"; readonly gameId: string }
+
 /** One list the home or the lobby needs, as a catalog question. */
 export interface Want {
   readonly key: string
   readonly query: CatalogQuery
-  readonly from: "start" | "end" | { readonly before: string }
+  readonly from: WantFrom
   readonly count: number
+}
+
+/** A page to read: Korri's cursor, and the place in the order it stands at. */
+export interface Page {
+  readonly cursor: string
+  readonly index: number
 }
 
 export interface Lists {
@@ -47,14 +68,23 @@ export interface Lists {
   /** The question out, and the Ticks it has waited. */
   readonly asked?: Want
   readonly waited: number
-  /** Every want up to this one in the sequence is answered. */
-  readonly done: number
+  /** The wants answered in this pass over the lists, by key. A pass is over when none is left. */
+  readonly read: readonly string[]
   /** What the lists were read against: a change makes them stale. */
   readonly stamp: string
-  /** Cursors further back from the end of Korri's order, read to find more devices. */
-  readonly backs: readonly string[]
-  /** Cursors further back from the end of the recent order, read to find where the unplayed games begin. */
-  readonly tails: readonly string[]
+  /** Pages before the end of Korri's order, read to find more devices. */
+  readonly backs: readonly Page[]
+  /**
+   * Where the games not yet started begin, when no list shows it: Korri's
+   * order is read on from its start (`scans`) and the recent order back from
+   * its end (`tails`), a page each in turn, until one shows the first of them
+   * (`found`). `earliest` is the earliest of them the pages from the end have
+   * shown so far.
+   */
+  readonly scans: readonly Page[]
+  readonly tails: readonly Page[]
+  readonly earliest?: string
+  readonly found?: string
 }
 
 // ---- A set (the grid) ----

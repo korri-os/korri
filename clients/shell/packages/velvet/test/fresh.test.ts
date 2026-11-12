@@ -7,10 +7,14 @@
  * reach.
  *
  * Two libraries a size: `mixed`, where an unplayed game stands among the
- * first of Korri's order (the usual case: the lists know the first one and
- * the set opens on it), and `after`, where Korri's order holds every played
- * game first (the lists read the end of the recent order back to find it;
- * past a thousand the set reads on as focus goes up).
+ * first of Korri's order (the usual case: the lists show the first one), and
+ * `after`, where Korri's order holds every played game first (no list shows
+ * where the unplayed ones begin, and Velvet reads on from both ends, a page
+ * each in turn, each page its own question, until one shows it).
+ *
+ * Contract section 5: the not-started slot holds "the first one, in Korri's
+ * order". Whatever the library, that is the game the row, the shelf and the
+ * set begin on, and the number of questions it costs is held here.
  */
 import { describe, expect, test } from "bun:test"
 import { ROW_SLOTS, SHELF_SLOTS } from "../src/plan"
@@ -117,9 +121,8 @@ for (const shape of ["mixed", "after"] as const) {
         const run = new Play(model, 640, 480)
         run.press("down")
         expect((run.view.homeRow as any[]).filter(tile => tile.kind === "game").at(-1).label.startsWith("Fresh")).toBe(true)
-        // Where the lists can know the first unplayed game, the row's last place and the shelf start on it.
-        const exact = shape === "mixed" || count <= 1000
-        if (exact) expect((run.view.homeRow as any[]).filter(tile => tile.kind === "game").at(-1).label).toBe(all[0])
+        // The row's last place and the shelf start on the first unplayed game in Korri's order.
+        expect((run.view.homeRow as any[]).filter(tile => tile.kind === "game").at(-1).label).toBe(all[0])
         run.press("up")
         const moves = run.moves
         openSet(run)
@@ -129,10 +132,8 @@ for (const shape of ["mixed", "after"] as const) {
         expect((run.view.setMarks as any[]).length).toBeGreaterThan(0)
         inSight(run)
         expect(focus(run)!.label.startsWith("Fresh")).toBe(true)
-        if (exact) {
-          expect(focus(run)!.label).toBe(all[0])
-          expect(run.view.set.count).toBe(`${count.toLocaleString("en-US")} games`)
-        }
+        expect(focus(run)!.label).toBe(all[0])
+        expect(run.view.set.count).toBe(`${count.toLocaleString("en-US")} games`)
         // Up to the first unplayed game.
         const up = walk(run, "up", count)
         walk(run, "left", 10)
@@ -198,5 +199,109 @@ describe("the reviewer's case", () => {
     expect((run.view.setTiles as any[]).filter(tile => tile.shown).length).toBeGreaterThan(0)
     expect((run.view.setMarks as any[]).filter(entry => entry.focused).length).toBe(1)
     inSight(run)
+  })
+})
+
+describe("the first one, in Korri's order: what finding it costs", () => {
+  const { systems: _systems, ...rest } = base
+  /** `played` played games, then `unplayed` unplayed ones, in Korri's order. */
+  const after = (played: number, unplayed: number) => ({
+    ...rest,
+    catalog: {
+      _tag: "Ready",
+      games: [
+        ...Array.from({ length: played }, (_, i) => ({ id: `p${i}`, title: `Played ${String(i).padStart(5, "0")}`, section: "This device", lastPlayedAt: NOW - (i + 1) * 3_600_000, playCount: 1 + i, totalPlaytimeSeconds: 600 * (i + 1) })),
+        ...Array.from({ length: unplayed }, (_, i) => ({ id: `u${i}`, title: `Fresh ${String(i).padStart(5, "0")}`, section: "This device" })),
+      ],
+    },
+  })
+  const asked = (run: Play): string[] => (run.requests as any[]).filter(request => request._tag === "MoveCatalog").map(move => `${move.query.order}:${move.from._tag}`)
+  const rowLast = (run: Play): string => {
+    run.press("down")
+    const label = (run.view.homeRow as any[]).filter(tile => tile.kind === "game" && tile.shown).at(-1).label
+    run.press("up")
+    return label
+  }
+  /** No cursor is asked for twice, and no update asks more than one question. */
+  const eachPageOnce = (run: Play): void => {
+    const cursors = (run.requests as any[]).filter(request => request._tag === "MoveCatalog" && (request.from._tag === "Before" || request.from._tag === "After")).map(move => `${move.query.order}:${move.from._tag}:${move.from.cursor}`)
+    expect(new Set(cursors).size).toBe(cursors.length)
+    expect(run.mostMovesInOneUpdate).toBeLessThanOrEqual(1)
+  }
+
+  test("80 played, then 300 unplayed: Fresh 0 in the row and first in the set, for one page of Korri's order", () => {
+    const run = new Play(after(80, 300), 640, 480)
+    expect(asked(run)).toEqual(["recent:Start", "mostPlayed:Start", "recent:End", "korri:Start", "korri:End", "korri:After", "recent:Around", "recent:Start"])
+    eachPageOnce(run)
+    expect(rowLast(run)).toBe("Fresh 00000")
+    openSet(run)
+    expect(focus(run)!.label).toBe("Fresh 00000")
+    expect((run.view.setMarks as any[]).find(entry => entry.focused).at).toBe(0)
+    expect(run.view.set.count).toBe("300 games")
+    // The page read is not kept: the lists hold the games around the first one, not a window of the middle.
+    expect(Object.keys(run.state.lists.kept).filter(key => key.startsWith("scan") || key.startsWith("tail:"))).toEqual([])
+  })
+
+  test("80 played, then 10,000 unplayed: the same eight questions", () => {
+    const run = new Play(after(80, 10_000), 640, 480)
+    expect(asked(run).length).toBe(8)
+    eachPageOnce(run)
+    expect(rowLast(run)).toBe("Fresh 00000")
+  })
+
+  test("10,000 unplayed among the first of Korri's order: no page at all", () => {
+    const run = new Play(library(10_000, "mixed"), 640, 480)
+    expect(asked(run)).toEqual(["recent:Start", "mostPlayed:Start", "recent:End", "korri:Start", "korri:End", "recent:Around", "recent:Start"])
+    expect(rowLast(run)).toBe("Fresh 00000")
+  })
+
+  test("every game unplayed: the first list shows them, and nothing more is asked", () => {
+    const run = new Play(after(0, 300), 640, 480)
+    expect(asked(run)).toEqual(["recent:Start", "mostPlayed:Start", "recent:End", "korri:Start", "korri:End", "recent:Start"])
+    // The pick is the first game; the row's last place is the first other one.
+    expect(run.view.home.mark.key).toBe("u0")
+    expect(rowLast(run)).toBe("Fresh 00001")
+  })
+
+  test("one unplayed game: the end of the recent order shows it", () => {
+    const run = new Play(after(80, 1), 640, 480)
+    expect(asked(run)).toEqual(["recent:Start", "mostPlayed:Start", "recent:End", "korri:Start", "korri:End", "recent:Start"])
+    expect(rowLast(run)).toBe("Fresh 00000")
+  })
+
+  test("no unplayed game: nothing is read on, and there is no slot for one", () => {
+    const run = new Play(after(80, 0), 640, 480)
+    expect(asked(run).length).toBe(6)
+    expect(rowLast(run).startsWith("Played")).toBe(true)
+  })
+
+  test("3,000 played, then 500 unplayed: read from both ends in turn, the shorter way finds it", () => {
+    const run = new Play(after(3000, 500), 640, 480)
+    // From the start it is 15 pages away, from the end 3: three pages each way, and the last one read holds it.
+    expect(asked(run)).toEqual([
+      "recent:Start", "mostPlayed:Start", "recent:End", "korri:Start", "korri:End",
+      "korri:After", "recent:Before", "korri:After", "recent:Before", "korri:After", "recent:Before",
+      "recent:Start",
+    ])
+    eachPageOnce(run)
+    expect(rowLast(run)).toBe("Fresh 00000")
+    openSet(run)
+    expect(focus(run)!.label).toBe("Fresh 00000")
+    expect(run.view.set.count).toBe("500 games")
+  })
+
+  test("the unplayed games begin exactly where a page begins: the page before it says so", () => {
+    // 24 in the tail, then one page of 200: 224 unplayed, and the next page back holds played games only.
+    const run = new Play(after(3000, 224), 640, 480)
+    eachPageOnce(run)
+    expect(rowLast(run)).toBe("Fresh 00000")
+  })
+
+  test("a window answers the question that asked for it, and no other", () => {
+    const run = new Play(after(3000, 500), 640, 480)
+    // Every page asked for was asked with the cursor of the window read before it, in its own order.
+    const pages = (run.requests as any[]).filter(request => request._tag === "MoveCatalog" && (request.from._tag === "Before" || request.from._tag === "After"))
+    expect(pages.filter(move => move.from._tag === "After").map(move => move.from.cursor)).toEqual(["i49", "i249", "i449"])
+    expect(pages.filter(move => move.from._tag === "Before").map(move => move.from.cursor)).toEqual(["i3476", "i3276", "i3076"])
   })
 })

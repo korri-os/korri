@@ -85,8 +85,9 @@ describe("one catalog window, several lists", () => {
   test("home asks one list after another and tells the answers apart by the query", () => {
     const run = new Play(model("home"))
     const moves = run.requests.filter((request: any) => request._tag === "MoveCatalog") as any[]
-    expect(moves.map(move => `${move.query.order}:${move.from._tag}${move.query.section ? `:${move.query.section}` : ""}`).slice(0, 5))
-      .toEqual(["recent:Start", "mostPlayed:Start", "korri:Start", "recent:End", "korri:End"])
+    // (Korri's order from its start holds all 21 games, so it answers the question for its end too.)
+    expect(moves.map(move => `${move.query.order}:${move.from._tag}${move.query.section ? `:${move.query.section}` : ""}`))
+      .toEqual(["recent:Start", "mostPlayed:Start", "recent:End", "korri:Start", "recent:Start:zao", "recent:Start"])
     expect(moves.every(move => move.count <= 200)).toBe(true)
     // A press while the lists are kept asks for nothing more.
     expect(tags(run.press("down")).filter(tag => tag === "MoveCatalog")).toEqual([])
