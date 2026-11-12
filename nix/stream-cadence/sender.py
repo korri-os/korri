@@ -14,6 +14,7 @@ import json
 import math
 import os
 from pathlib import Path
+import pwd
 import re
 import secrets
 import shutil
@@ -26,11 +27,23 @@ import time
 from typing import TextIO
 import urllib.request
 
-from device import deferred_termination, end_with_agent, model, scheduling, serve
+from device import (
+    deferred_termination,
+    end_with_agent,
+    games,
+    model,
+    proc,
+    scheduling,
+    serve,
+    unit,
+)
 from discovery import encoder_probe, output, properties
 
 RUNS = Path("/tmp")
 RENDER_NODES = Path("/dev/dri")
+INPUT_DEVICES = Path("/dev/input")
+UINPUT = Path("/dev/uinput")
+GAME_CHECK_SECONDS = 2.0
 DISPLAY = "wayland-1"
 RENDERER = "gles2"
 APPLICATION = "Desktop"
@@ -95,6 +108,59 @@ def render_nodes() -> list[str]:
     ]
 
 
+def korri_identity() -> dict | None:
+    """Who runs the fixture's programs when the agent is root.
+
+    Nothing of the fixture runs as root. On a Korri device the agent is root,
+    as for a product measure, and the fixture takes the user of the product
+    compositor. Its supplementary groups are only those that own a render
+    node: no group that opens the audio, input or uinput devices of the
+    product. An agent that is not root keeps the user that started it.
+    """
+    if os.geteuid() != 0:
+        return None
+    try:
+        compositor = proc(int(unit("korri-compositor")["MainPID"]))
+    except Exception as error:
+        raise RuntimeError(
+            "The sender fixture does not run as root. On a Korri device it takes the "
+            f"compositor's user, and this host shows no korri-compositor: {error}. "
+            "Start the agent as an ordinary user."
+        ) from error
+    member = set(os.getgrouplist(compositor["user"], compositor["gid"]))
+    nodes = {node.stat().st_gid for node in RENDER_NODES.glob("renderD*")}
+    return {
+        "user": compositor["user"],
+        "uid": compositor["uid"],
+        "gid": compositor["gid"],
+        "groups": sorted(member & nodes),
+    }
+
+
+def opens_uinput(identity: dict | None) -> bool:
+    """Whether the fixture's user can open /dev/uinput.
+
+    Stock Sunshine makes a virtual mouse and keyboard when it starts, and a
+    touch screen and a pen tablet for each client, all through uinput. The
+    product's input stack would see them. The fixture runs only where its
+    Sunshine cannot.
+    """
+    if not UINPUT.exists():
+        return False
+    if identity is None:
+        return os.access(UINPUT, os.W_OK)
+    node = UINPUT.stat()
+    return bool(
+        node.st_mode & 0o002
+        or (node.st_mode & 0o020 and node.st_gid in [identity["gid"], *identity["groups"]])
+        or (node.st_mode & 0o200 and node.st_uid == identity["uid"])
+    )
+
+
+def input_devices() -> set[str]:
+    return set(os.listdir(INPUT_DEVICES)) if INPUT_DEVICES.is_dir() else set()
+
+
 def startup(log: str) -> dict:
     """What Sunshine's startup log says about itself and its encoders."""
     versions = re.findall(r"Sunshine version: (\S+)", log)
@@ -136,6 +202,10 @@ def configuration(root: Path, base: int, node: str) -> str:
         "log_path": root / "sunshine.log",
         "upnp": "disabled",
         "system_tray": "disabled",
+        # A viewer measure sends no input; the fixture takes none.
+        "mouse": "disabled",
+        "keyboard": "disabled",
+        "controller": "disabled",
         # Only this host posts the PIN.
         "origin_web_ui_allowed": "pc",
     }
@@ -176,6 +246,14 @@ class Session:
             "sunshine_version": None,
             "working_encoders": [],
         }
+        # None: the agent is no root and keeps its user. Else the Korri
+        # compositor's user, which every program of the fixture takes.
+        self.identity = korri_identity()
+        self.facts["fixture_user"] = (
+            self.identity["user"] if self.identity else pwd.getpwuid(os.geteuid()).pw_name
+        )
+        self.inputs: set[str] = set()
+        self.last_game_check = 0.0
         self.root: Path | None = None
         self.sway = ""
         self.sunshine = ""
@@ -196,6 +274,24 @@ class Session:
             **extra,
         }
 
+    def restrict(self) -> None:
+        """A child's first step: leave root for the fixture's user, then end with the agent."""
+        if self.identity:
+            os.setgroups(self.identity["groups"])
+            os.setgid(self.identity["gid"])
+            os.setuid(self.identity["uid"])
+        # After the change of user, which clears it.
+        end_with_agent()
+
+    def own(self, *paths: Path) -> None:
+        if self.identity:
+            for path in paths:
+                os.chown(path, self.identity["uid"], self.identity["gid"])
+
+    def new_inputs(self) -> list[str]:
+        """Input devices that appeared since the fixture started. None may be the fixture's."""
+        return sorted(input_devices() - self.inputs)
+
     def spawn(self, name: str, args: list[str], env: dict[str, str]) -> subprocess.Popen:
         assert self.root is not None
         if name in self.processes:
@@ -209,7 +305,7 @@ class Session:
             stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=subprocess.STDOUT,
-            preexec_fn=end_with_agent,
+            preexec_fn=self.restrict,
         )
         return self.processes[name]
 
@@ -248,6 +344,7 @@ class Session:
             capture_output=True,
             text=True,
             timeout=20,
+            preexec_fn=self.restrict,
         )
         if result.returncode:
             raise RuntimeError("swaymsg failed: " + result.stderr.strip())
@@ -258,6 +355,9 @@ class Session:
         assert self.root is not None and self.login is not None
         runtime = self.root / "rt"
         attempt: dict = {"render_node": node, "working_encoders": [], "hardware_encoder": False}
+        # A socket that an earlier attempt left would pass for a compositor that is up.
+        for stale in [*runtime.glob(f"{DISPLAY}*"), runtime / "sway.sock"]:
+            stale.unlink(missing_ok=True)
         self.spawn(
             "compositor",
             [self.sway, "--config", str(self.root / "sway.conf")],
@@ -281,6 +381,7 @@ class Session:
         base = port_base()
         attempt["port"] = base
         (self.root / "sunshine.conf").write_text(configuration(self.root, base, node))
+        self.own(self.root / "sunshine.conf")
         (self.root / "sunshine.log").unlink(missing_ok=True)
         self.spawn(
             "sunshine",
@@ -323,6 +424,17 @@ class Session:
     def prepare(self, request: dict) -> dict:
         if self.root is not None:
             raise RuntimeError("sender fixture already prepared")
+        if self.identity:
+            # On a Korri device a game has the machine: the fixture does not start.
+            games()
+            self.last_game_check = time.monotonic()
+        if opens_uinput(self.identity):
+            raise RuntimeError(
+                f"The user {self.facts['fixture_user']} can open {UINPUT}. A stock Sunshine "
+                "would make input devices there that the product's input stack sees. The "
+                "sender fixture does not start."
+            )
+        self.inputs = input_devices()
         self.sway, self.sunshine = str(request["sway"]), str(request["sunshine"])
         width, height = int(request["width"]), int(request["height"])
         hertz = steady_refresh_mhz(float(request["fps"])) / 1000
@@ -349,6 +461,14 @@ class Session:
         stored = self.root / "credentials.json"
         stored.touch(mode=0o600)
         stored.write_text(credentials(*self.login))
+        self.own(
+            self.root,
+            self.root / "rt",
+            self.root / "config",
+            self.root / "sway.conf",
+            self.root / "apps.json",
+            stored,
+        )
         # Prefer a hardware encoder: take the first render node on which Sunshine
         # finds one. Without one, take the first node that encodes at all.
         attempts: list[dict] = []
@@ -370,6 +490,7 @@ class Session:
                 raise RuntimeError("The sender fixture did not start again: " + chosen["error"])
         if not self.text("sunshine.crt").strip():
             raise RuntimeError("The fixture's Sunshine wrote no certificate; the viewer cannot pin it.")
+        self.check()
         self.facts.update(
             display=output(self.sway_message("-t", "get_outputs")),
             sunshine_version=chosen["sunshine_version"],
@@ -429,6 +550,16 @@ class Session:
                 raise RuntimeError(
                     f"The fixture's {name} stopped: " + self.text(f"{name}.out")[-2000:]
                 )
+        appeared = self.new_inputs()
+        if appeared:
+            raise RuntimeError(
+                f"New input devices appeared while the fixture ran: {', '.join(appeared)}. "
+                "The fixture must make none; the run ends."
+            )
+        if self.identity and time.monotonic() - self.last_game_check >= GAME_CHECK_SECONDS:
+            # A game that starts during a measure ends the measure: the person wins.
+            games()
+            self.last_game_check = time.monotonic()
 
     def start(self, request: dict) -> dict:
         assert self.root is not None
@@ -496,6 +627,8 @@ class Session:
     @deferred_termination()
     def close(self) -> dict:
         errors = []
+        # Before anything stops: a device that the fixture's Sunshine made would go with it.
+        appeared = self.new_inputs() if self.root else []
         for name in ("source", "sunshine", "compositor"):
             try:
                 self.stop(name)
@@ -505,6 +638,8 @@ class Session:
         strays: list[int] = []
         remaining: list[int] = []
         size = 0
+        if appeared:
+            errors.append("new input devices: " + ", ".join(appeared))
         if root:
             # Anything that still carries the run directory was started by this
             # fixture. Nothing of it outlives the run.
@@ -535,6 +670,7 @@ class Session:
             "run_folder_removed": not (root and root.exists()),
             "stray_processes_killed": strays,
             "remaining_processes": [f"/proc/{pid}" for pid in remaining],
+            "new_input_devices": appeared,
             "errors": errors,
         }
 

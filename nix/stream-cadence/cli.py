@@ -389,13 +389,12 @@ def fixture_stream(
         host = (
             args.ssh_target.rsplit("@", 1)[-1].strip("[]") if args.ssh_target else loopback
         )
-    url_host = "[" + host + "]" if ":" in host and not host.startswith("[") else host
-    port = facts["sunshine_port"]
-    info, _ = server_info(url_host, [port])
-    facts["host_uuid"] = info.findtext("uniqueid")
+    # The tool itself does not ask the fixture's Sunshine anything. Only the
+    # viewer must reach it, and the pairing proves that. A device's firewall
+    # can admit loopback and nothing from this host.
     facts["stream_host"] = host
     remote.request("start", motion=motion)
-    return host, port, facts["sender_fixture"]["application"]
+    return host, facts["sunshine_port"], facts["sender_fixture"]["application"]
 
 
 def plugin_enabled(code: int, status: str) -> bool:
