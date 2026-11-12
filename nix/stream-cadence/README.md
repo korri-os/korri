@@ -311,10 +311,15 @@ The tool's own rules, in `viewer.py`:
 | A viewer on a hardware picture path is stopped | when its log says that its first frame did not come from the hardware decoder, or when it uses more than 1.0 CPU second each second for 2 s. |
 | A valid run on a hardware picture path | needs the log line of the measured start that says hardware decode started. |
 
-A device with no hardware picture path and no zone with a critical trip
-point runs unguarded; `discovered.viewer.heat_guarded` is then false. A zone
-with readable trip points and no critical one is recorded and not judged. A
-trip point at or below zero is a placeholder and counts as absent.
+**A device with no thermal zone.** The decision: a device with a hardware
+picture path does not run without a zone that gives a limit, because such a
+device is a passive handheld. Any other device with no such zone runs
+unguarded, and `discovered.viewer.heat_guarded` is then false. aka is such a
+device: it has no zone under `/sys/class/thermal` at all and no hardware
+picture path, so a viewer measure on aka runs with no heat guard.
+
+A zone with readable trip points and no critical one is recorded and not
+judged. A trip point at or below zero is a placeholder and counts as absent.
 
 The tool asks the viewer's agent for the start rules before it starts
 anything, the sender fixture included. A thread of the agent then looks at a

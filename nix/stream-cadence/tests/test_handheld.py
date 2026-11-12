@@ -319,6 +319,12 @@ class HeatGuard(unittest.TestCase):
         viewer.THERMAL, viewer.COMPATIBLE = self.previous
         self.directory.cleanup()
 
+    def session(self) -> viewer.Session:
+        """A session that is closed even when its test fails: no run directory stays behind."""
+        made = viewer.Session(str(self.peer))
+        self.addCleanup(made.close)
+        return made
+
     def read(self, millidegrees: int) -> None:
         # In one step, as sysfs answers: the guard's thread must never see half a write.
         fresh = self.thermal.with_name("fresh-temp")
@@ -335,7 +341,7 @@ class HeatGuard(unittest.TestCase):
         )
 
     def test_zones_and_limits_are_discovered_and_each_sample_has_the_temperature(self):
-        session = viewer.Session(str(self.peer))
+        session = self.session()
         try:
             found = session.handle({"operation": "discover"})["thermal"]
             self.assertEqual(found[0]["type"], "cpu-thermal")
@@ -354,7 +360,7 @@ class HeatGuard(unittest.TestCase):
 
     def test_run_does_not_start_on_a_hot_device(self):
         self.read(72222)
-        session = viewer.Session(str(self.peer))
+        session = self.session()
         with self.assertRaisesRegex(RuntimeError, "device is hot.*72.2.*70.0"):
             self.prepare(session)
         # Nothing was started and no directory was made.
@@ -363,7 +369,7 @@ class HeatGuard(unittest.TestCase):
         self.assertTrue(session.close()["pass"])
 
     def test_guard_ends_a_running_viewer_at_once_and_the_run_cleans_up(self):
-        session = viewer.Session(str(self.peer))
+        session = self.session()
         try:
             root = Path(self.prepare(session)["run_folder"])
             process = session.processes
@@ -383,7 +389,7 @@ class HeatGuard(unittest.TestCase):
         self.assertFalse(root.exists())
 
     def test_a_low_test_limit_ends_a_run_on_a_cool_device(self):
-        session = viewer.Session(str(self.peer))
+        session = self.session()
         try:
             # 50 degrees is cool; a margin of 50 below the critical 95 puts the end at 45.
             self.prepare(session, test_end_margin=50000)

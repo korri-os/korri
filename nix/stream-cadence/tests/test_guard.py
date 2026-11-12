@@ -41,6 +41,12 @@ class Device(unittest.TestCase):
         viewer.THERMAL, viewer.COMPATIBLE = self.previous
         self.directory.cleanup()
 
+    def session(self) -> viewer.Session:
+        """A session that is closed even when its test fails: no run directory stays behind."""
+        made = viewer.Session(str(self.peer))
+        self.addCleanup(made.close)
+        return made
+
     def read(self, millidegrees: int) -> None:
         # In one step, as sysfs answers: the guard's thread must never see half a write.
         fresh = self.zone.with_name("fresh-temp")
@@ -59,7 +65,7 @@ class Device(unittest.TestCase):
 
 class NoSoftwareViewerOnAHandheld(Device):
     def test_fixture_viewer_is_refused_on_a_chip_with_a_hardware_picture_path(self):
-        session = viewer.Session(str(self.peer))
+        session = self.session()
         facts = session.handle({"operation": "discover"})
         self.assertEqual(facts["platform"], "v4l2request")
         self.assertTrue(facts["hardware_picture_path"])
@@ -71,14 +77,14 @@ class NoSoftwareViewerOnAHandheld(Device):
         self.assertTrue(session.close()["pass"])
 
     def test_refusal_says_why_the_plugin_was_not_usable(self):
-        session = viewer.Session(str(self.peer))
+        session = self.session()
         session.facts["plugin_missing"] = "korri-plugin status ended with 1: korrid did not answer"
         with self.assertRaisesRegex(RuntimeError, "korrid did not answer"):
             self.prepare(session)
 
     def test_a_chip_with_no_hardware_path_keeps_the_fixture_viewer(self):
         viewer.COMPATIBLE.write_bytes(b"vendor,board\0vendor,chip\0")
-        session = viewer.Session(str(self.peer))
+        session = self.session()
         try:
             self.assertFalse(session.handle({"operation": "discover"})["hardware_picture_path"])
             self.assertTrue(Path(self.prepare(session)["run_folder"]).is_dir())
@@ -92,7 +98,7 @@ def hardware_session(case: Device) -> viewer.Session:
     No plugin exists on a build host, so the test makes the run directory itself
     and starts stand-in viewers; the guard's rules are the real ones.
     """
-    session = viewer.Session(str(case.peer))
+    session = case.session()
     session.root = Path(tempfile.mkdtemp(prefix="cadence-guard-test-", dir=case.directory.name))
     (session.root / "rt").mkdir()
     session.fixture = True  # no product compositor to ask for focus
@@ -158,7 +164,7 @@ class DesktopChip(Device):
 
 class AGuardThatCannotReadStopsTheRun(DesktopChip):
     def ended(self, break_it, words: str) -> None:
-        session = viewer.Session(str(self.peer))
+        session = self.session()
         try:
             process = self.running(session)
             break_it()
@@ -196,7 +202,7 @@ class AGuardThatCannotReadStopsTheRun(DesktopChip):
 
     def test_run_does_not_start_when_the_guard_cannot_read(self):
         (self.zone / "temp").write_text("not a number\n")
-        session = viewer.Session(str(self.peer))
+        session = self.session()
         with self.assertRaisesRegex(RuntimeError, "cannot read.*does not start"):
             self.prepare(session)
         self.assertIsNone(session.root)
@@ -208,7 +214,7 @@ class AGuardThatCannotReadStopsTheRun(DesktopChip):
         other.mkdir()
         (other / "type").write_text("board-sensor\n")
         (other / "temp").write_text("\n")
-        session = viewer.Session(str(self.peer))
+        session = self.session()
         try:
             self.prepare(session)
             sample = session.handle({"operation": "sample"})
@@ -236,7 +242,7 @@ class TestMarginOnlyLowersTheEnd(DesktopChip):
             )
 
     def test_the_agent_never_ends_later_than_its_own_rule(self):
-        session = viewer.Session(str(self.peer))
+        session = self.session()
         try:
             self.prepare(session, test_end_margin=1)
             self.assertEqual(session.limits["thermal_zone0"]["end_at"], 85000)
@@ -246,7 +252,7 @@ class TestMarginOnlyLowersTheEnd(DesktopChip):
 
 class AStopAfterTheLastSampleIsReported(DesktopChip):
     def test_stop_says_that_the_guard_ended_the_viewer(self):
-        session = viewer.Session(str(self.peer))
+        session = self.session()
         try:
             process = self.running(session)
             self.read(86000)
@@ -258,7 +264,7 @@ class AStopAfterTheLastSampleIsReported(DesktopChip):
             self.assertTrue(session.close()["pass"])
 
     def test_stop_of_a_viewer_that_the_guard_left_alone_is_plain(self):
-        session = viewer.Session(str(self.peer))
+        session = self.session()
         try:
             self.running(session)
             self.assertIn("exit", session.handle({"operation": "stop"}))
@@ -268,7 +274,7 @@ class AStopAfterTheLastSampleIsReported(DesktopChip):
 
 class HeatIsCheckedBeforeAnythingStarts(DesktopChip):
     def test_check_refuses_a_hot_or_unreadable_device_and_makes_nothing(self):
-        session = viewer.Session(str(self.peer))
+        session = self.session()
         self.assertEqual(session.handle({"operation": "check"}), {})
         self.read(72222)
         with self.assertRaisesRegex(RuntimeError, "device is hot.*72.2"):
@@ -322,21 +328,21 @@ class ADeviceWithNoThermalZone(Device):
 
     def test_hardware_path_device_with_no_zone_does_not_run(self):
         self.empty()
-        session = viewer.Session(str(self.peer))
+        session = self.session()
         with self.assertRaisesRegex(RuntimeError, "no thermal zone with a critical trip point"):
             self.prepare(session)
         self.assertIsNone(session.root)
 
     def test_hardware_path_device_whose_zones_have_no_critical_trip_does_not_run(self):
         (self.zone / "trip_point_2_type").write_text("passive\n")
-        session = viewer.Session(str(self.peer))
+        session = self.session()
         with self.assertRaisesRegex(RuntimeError, "no thermal zone with a critical trip point"):
             self.prepare(session)
 
     def test_other_device_with_no_zone_runs_unguarded_and_says_so(self):
         self.empty()
         viewer.COMPATIBLE.write_bytes(b"vendor,board\0vendor,chip\0")
-        session = viewer.Session(str(self.peer))
+        session = self.session()
         try:
             facts = session.handle({"operation": "discover"})
             self.assertEqual(facts["thermal"], [])
