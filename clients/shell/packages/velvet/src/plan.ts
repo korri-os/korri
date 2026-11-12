@@ -14,6 +14,7 @@
  * clock, the "now" line) leaves; a control never does.
  */
 import { clamp } from "./colour"
+import { onForget } from "./memo"
 
 /** Below this width / height the compositions stack. */
 export const NARROW_RATIO = 0.9
@@ -142,7 +143,11 @@ export const DEFAULT_SIZE = { width: 1280, height: 720 } as const
 const gapOf = (tile: number): number => Math.round(Math.max(10, tile * TILE_RATIO * 0.16))
 const growOf = (tile: number): number => Math.ceil(tile * (FOCUS_SCALE - 1))
 
+// The plan of the size asked for last: a window keeps its size for a long time.
 let last: Plan | undefined
+onForget(() => {
+  last = undefined
+})
 
 export function plan(width: number, height: number): Plan {
   if (last !== undefined && last.width === width && last.height === height) return last

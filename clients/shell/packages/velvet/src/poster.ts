@@ -20,6 +20,7 @@
 import { GELS, hash } from "./colour"
 import { GEL_SHELLS, MOTIF_DRAWINGS, PALETTES, PATTERN_ACCENTS, PATTERN_PALETTES, PATTERN_SHELLS, SYSTEM_DRAWINGS, SYSTEM_PALETTES, VARIANTS, type Drawing } from "./drawings"
 import { fitCapsOnce, type Fit } from "./fit"
+import { onForget } from "./memo"
 import { knownSystem, LANGUAGES } from "./systems"
 
 export { KNOWN_SYSTEMS, knownSystem } from "./systems"
@@ -42,6 +43,8 @@ export interface Poster {
   readonly badgeTop: boolean
   /** The card's ground colour. */
   readonly paper: number
+  /** The card as a view sends it: made with the card, so every view of it sends the one object. */
+  readonly view: PosterView
 }
 
 /** A machine's palette, by `choice`: one of its shells; with none of its own, a gel and one of the gel's shells. */
@@ -55,12 +58,16 @@ function systemPalette(id: string, choice: number): number {
 const patternPalette = (family: number, choice: number): number =>
   PATTERN_PALETTES + ((family % GELS.length) * PATTERN_SHELLS + (choice % PATTERN_SHELLS)) * PATTERN_ACCENTS + ((choice >>> 2) % PATTERN_ACCENTS)
 
-const posters = new Map<string, Poster>()
+// A card by its system (none is ""), then by its title: both whole.
+const posters = new Map<string, Map<string, Poster>>()
+onForget(() => posters.clear())
 
 /** The no-art card of a game (or of a system, for the By system shelf: its name as the title). */
 export function posterFor(title: string, systemId: string | undefined): Poster {
-  const key = `${systemId ?? ""}\u0000${title}`
-  const known = posters.get(key)
+  // No system and an empty one are the same to everything below.
+  const system = systemId ?? ""
+  let byTitle = posters.get(system)
+  const known = byTitle?.get(title)
   if (known !== undefined) return known
   const seed = hash(title)
   const variant = seed % VARIANTS
@@ -80,9 +87,17 @@ export function posterFor(title: string, systemId: string | undefined): Poster {
   }
   const colours = PALETTES[palette]!
   const fit: Fit = fitCapsOnce(title, drawing.w, drawing.h, drawing.max * CARD_H, 4.2)
-  const poster: Poster = { drawing: drawing.index, palette, lines: fit.lines, size: fit.size, ink: colours[1 + drawing.ink]!, badgeTop: drawing.badgeTop, paper: colours[0] }
-  if (posters.size > 600) posters.clear()
-  posters.set(key, poster)
+  const ink = colours[1 + drawing.ink]!
+  const poster: Poster = {
+    drawing: drawing.index, palette, lines: fit.lines, size: fit.size, ink, badgeTop: drawing.badgeTop, paper: colours[0],
+    view: { shown: true, drawing: drawing.index, palette, lines: fit.lines, size: fit.size, ink },
+  }
+  if (byTitle === undefined || byTitle.size > 600) {
+    if (posters.size > 200) posters.clear()
+    byTitle = new Map()
+    posters.set(system, byTitle)
+  }
+  byTitle.set(title, poster)
   return poster
 }
 
@@ -98,13 +113,5 @@ export interface PosterView {
 
 export const NO_POSTER: PosterView = { shown: false, drawing: 0, palette: 0, lines: [], size: 0, ink: 0 }
 
-const views = new WeakMap<Poster, PosterView>()
-
-export function posterView(poster: Poster): PosterView {
-  let view = views.get(poster)
-  if (view === undefined) {
-    view = { shown: true, drawing: poster.drawing, palette: poster.palette, lines: poster.lines, size: poster.size, ink: poster.ink }
-    views.set(poster, view)
-  }
-  return view
-}
+/** A card as a view sends it. */
+export const posterView = (poster: Poster): PosterView => poster.view

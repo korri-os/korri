@@ -23,6 +23,7 @@
 import type { SurfaceAction, SurfaceModel as Model, SurfaceStatus, SurfaceSteps } from "../../../../../contracts/generated/surface"
 import { breakLines, textWidth } from "./fit"
 import { gameById } from "./lists"
+import { onForget } from "./memo"
 import { shortKey } from "./pages"
 import type { Plan } from "./plan"
 import { question } from "./settings"
@@ -210,7 +211,11 @@ function askCurtain(state: State): CurtainSpec | undefined {
 /** The act that puts Velvet's question away: an ask with no buttons. */
 export const CLOSED = { title: "", lines: [], buttons: [] } as const
 
+// The curtain of the very state and model asked for last (an update and its view ask several times).
 let last: { state: State; model: Model; curtain: CurtainSpec | undefined } | undefined
+onForget(() => {
+  last = undefined
+})
 
 /** The curtain that is up: Korri's status first, then Velvet's question, then Korri's identity work. */
 export function curtainOf(state: State, model: Model): CurtainSpec | undefined {

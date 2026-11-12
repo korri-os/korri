@@ -51,8 +51,10 @@
  *     by that object and not made again;
  *   - lists settled against a model stay settled against that same model
  *     (a press and a tick settle too, and ask nothing of the lists).
+ * What is kept that way follows the one rule in src/memo.ts.
  */
 import type { CatalogQuery, SurfaceCatalog, SurfaceModel as Model } from "../../../../../contracts/generated/surface"
+import { onForget } from "./memo"
 import { ROW_SLOTS, SHELF_SLOTS } from "./plan"
 import type { Game, Lists, Request, SetState, Want } from "./types"
 import { within } from "./words"
@@ -517,18 +519,17 @@ export interface HomeLists {
   readonly row: readonly Game[]
 }
 
-// A view asks for the home's lists several times (the stage, the row, the exits), and nothing
-// of them changes while the kept lists are the same and the newest game is still this week's
-// (or still is not): the answer is kept, and asking again reads no list.
-let lastHome: { kept: Lists["kept"]; newest: Game | undefined; thisWeek: boolean; timed: boolean; home: HomeLists } | undefined
+// A view asks for the home's lists several times (the stage, the row, the exits). The answer
+// depends on the kept lists and on which played games are within the week of Korri's time,
+// and on nothing else. So it is kept with the stretch of Korri's time over which no game
+// crosses the week's line (`after` < time <= `until`): inside it the answer is the same one,
+// outside it the lists are read again. (src/memo.ts has the rule.)
+let lastHome: { readonly kept: Lists["kept"]; readonly timed: boolean; readonly after: number; readonly until: number; readonly home: HomeLists } | undefined
+
+const WEEK = PICK_DAYS * 24 * 60 * 60 * 1000
 
 export function homeOf(lists: Lists, publishedAt: number | undefined): HomeLists {
-  if (lastHome !== undefined && lastHome.kept === lists.kept && lastHome.timed === (publishedAt !== undefined)) {
-    const newest = lastHome.newest
-    const thisWeek = newest !== undefined && (publishedAt === undefined || within(newest.lastPlayedAt, publishedAt, PICK_DAYS))
-    // The row holds this week's games first; with the pick still this week's, a game that left the week waits for the next list.
-    if (thisWeek === lastHome.thisWeek) return lastHome.home
-  }
+  if (lastHome !== undefined && lastHome.kept === lists.kept && lastHome.timed === (publishedAt !== undefined) && (publishedAt === undefined || (publishedAt > lastHome.after && publishedAt <= lastHome.until))) return lastHome.home
   const recent = playedOf(lists.kept.recent)
   const most = (lists.kept.most ?? []).filter(game => (game.totalPlaytimeSeconds ?? 0) > 0)
   const newest = recent[0]
@@ -552,7 +553,17 @@ export function homeOf(lists: Lists, publishedAt: number | undefined): HomeLists
   }
   if (fresh !== undefined) row.push(fresh)
   const home = { pick, why, row }
-  lastHome = { kept: lists.kept, newest, thisWeek, timed: publishedAt !== undefined, home }
+  // A game is this week's while Korri's time is no later than its last session and a week.
+  let after = Number.NEGATIVE_INFINITY
+  let until = Number.POSITIVE_INFINITY
+  if (publishedAt !== undefined) {
+    for (const game of recent) {
+      const line = game.lastPlayedAt! + WEEK
+      if (line < publishedAt) after = Math.max(after, line)
+      else until = Math.min(until, line)
+    }
+  }
+  lastHome = { kept: lists.kept, timed: publishedAt !== undefined, after, until, home }
   return home
 }
 
@@ -575,12 +586,16 @@ export const freshSet = (first?: string): SetState => ({ ...SET_START, key: "fre
 export const peerSet = (section: string): SetState => ({ ...SET_START, key: `peer:${section}`, title: `Plays on ${section}`, order: "recent", section })
 export const systemSet = (systemId: string, system: string): SetState => ({ ...SET_START, key: `system:${systemId}`, title: system, order: "title", systemId })
 
-let lastShelves: { kept: Lists["kept"]; systems: Model["systems"]; total: number; shelves: readonly ShelfSpec[] } | undefined
+// The shelves, kept with everything they are made of: the kept lists, the peers and their totals, the library's total, the systems.
+let lastShelves: { kept: Lists["kept"]; peers: Lists["peers"]; peerTotals: Lists["peerTotals"]; systems: Model["systems"]; total: number; shelves: readonly ShelfSpec[] } | undefined
 
 /** The lobby's shelves: Lately, Not started, one per other device, By system. A shelf with nothing on it is left out. */
 export function shelvesOf(lists: Lists, model: Model): readonly ShelfSpec[] {
   // Korri sends the systems anew with every model: the same ones give the same shelves, the same objects.
-  if (lastShelves !== undefined && lastShelves.kept === lists.kept && lastShelves.total === lists.total && sameSystems(lastShelves.systems, model.systems)) {
+  if (
+    lastShelves !== undefined && lastShelves.kept === lists.kept && lastShelves.peers === lists.peers && lastShelves.peerTotals === lists.peerTotals && lastShelves.total === lists.total
+    && sameSystems(lastShelves.systems, model.systems)
+  ) {
     if (lastShelves.systems !== model.systems) lastShelves = { ...lastShelves, systems: model.systems }
     return lastShelves.shelves
   }
@@ -604,9 +619,20 @@ export function shelvesOf(lists: Lists, model: Model): readonly ShelfSpec[] {
       { kind: "more", label: "A to Z", count: lists.total, set: everySet("title") },
     ],
   })
-  lastShelves = { kept: lists.kept, systems: model.systems, total: lists.total, shelves }
+  lastShelves = { kept: lists.kept, peers: lists.peers, peerTotals: lists.peerTotals, systems: model.systems, total: lists.total, shelves }
   return shelves
 }
+
+onForget(() => {
+  wanted = undefined
+  rested = undefined
+  knowing = undefined
+  stamped = undefined
+  settled = undefined
+  freshest = undefined
+  lastHome = undefined
+  lastShelves = undefined
+})
 
 /** A game Velvet knows by id, from any list kept or the window. */
 export function gameById(lists: Lists, model: Model, id: string | undefined): Game | undefined {

@@ -24,6 +24,7 @@ import type {
   SurfaceStoreGet,
 } from "../../../../../contracts/generated/surface"
 import { gameById, sameQuery } from "./lists"
+import { onForget } from "./memo"
 import { actionRow, connectionLine, connectionWords, question, settingRows, wifiRows, WIFI_PASSWORD_MAX, WIFI_SSID_MAX, numberFits } from "./settings"
 import { NONE, send, seq, type Act, type ButtonSpec, type Entry, type GameplayValue, type PageRef, type PanelSpec, type RowSpec, type SheetKind, type State } from "./types"
 import { bytes, duration, saved } from "./words"
@@ -517,7 +518,11 @@ export function shown(state: State, model: Model): Shown {
   return "home"
 }
 
+// The panel of the very state and model asked for last.
 let lastPanel: { state: State; model: Model; panel: PanelSpec | undefined } | undefined
+onForget(() => {
+  lastPanel = undefined
+})
 
 /** The panel that holds the screen, if a panel does. */
 export function screenPanel(state: State, model: Model): PanelSpec | undefined {

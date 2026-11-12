@@ -18,6 +18,7 @@
  * `publishedAt`; idle time is the shell's Tick.
  */
 import type { SurfaceMessage as Message, SurfaceModel as Model, SurfaceRequest as Request } from "../../../../contracts/generated/surface"
+import { onForget } from "./src/memo"
 import type { State } from "./src/types"
 import { MOTION_KEY, start, update as step } from "./src/update"
 import { overlayView, view as draw } from "./src/view"
@@ -32,8 +33,13 @@ export function update(state: State, message: Message, model: Model): { state: S
   return step(state, message, model)
 }
 
+// The view of the very state and model drawn last (src/memo.ts has the rule for everything kept).
 let lastView: { state: State; model: Model; view: ReturnType<typeof draw> } | undefined
 let lastOverlay: { state: State; model: Model; view: ReturnType<typeof overlayView> } | undefined
+onForget(() => {
+  lastView = undefined
+  lastOverlay = undefined
+})
 
 export function view(state: State, model: Model) {
   if (lastView?.state === state && lastView.model === model) return lastView.view

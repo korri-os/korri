@@ -18,7 +18,7 @@ import { join } from "node:path"
 import { contrast } from "../src/colour"
 import { DRAWINGS, LAYERS, MOTIF_DRAWINGS, PALETTES, SYSTEM_DRAWINGS, SYSTEM_PALETTES, VARIANTS } from "../src/drawings"
 import { PALETTE_LENGTH, SLOT } from "../src/drawings-slots"
-import { CARD_H, CARD_W, KNOWN_SYSTEMS, knownSystem, posterFor } from "../src/poster"
+import { CARD_H, CARD_W, KNOWN_SYSTEMS, knownSystem, posterFor, posterView } from "../src/poster"
 import { PACKAGE } from "./slint-source"
 
 const titles = ["Ember Road", "Tide Pool", "Moss and Stone", "Dusk Runner", "Sand King", "Comet Courier", "Lantern Keep", "Bramble Run", "Petal Quest", "Quartz Drift", "Iron Orchard", "µCity"]
@@ -199,7 +199,8 @@ describe("the no-art card", () => {
   test("a card in a view is its drawing and its palette by number, and its title", () => {
     for (const system of [...KNOWN_SYSTEMS, "wasm4", undefined]) {
       for (const title of titles) {
-        const { paper: _paper, badgeTop: _badge, ...sent } = posterFor(title, system)
+        const { shown, ...sent } = posterView(posterFor(title, system))
+        expect(shown).toBe(true)
         expect(Object.keys(sent).sort()).toEqual(["drawing", "ink", "lines", "palette", "size"])
         expect(JSON.stringify(sent).length, `${title} on ${system}`).toBeLessThan(140)
       }

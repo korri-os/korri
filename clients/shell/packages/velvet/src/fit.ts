@@ -6,6 +6,7 @@
  * lines it is given. A word wider than the box sets the size.
  */
 import { DISPLAY_ADVANCES, STRONG_ADVANCES, TEXT_ADVANCES } from "./measure"
+import { onForget } from "./memo"
 import { caps } from "./words"
 
 /** Kerning and rounding room: Slint shapes the line, the table only adds advances. */
@@ -86,7 +87,15 @@ function wrap(words: readonly string[], size: number, width: number): string[] {
   return lines
 }
 
-const fits = new Map<string, Fit>()
+// A fit by its text, then held to its box exactly: two boxes that differ by any amount are two fits.
+interface Fitted {
+  readonly width: number
+  readonly height: number
+  readonly max: number
+  readonly min: number
+  readonly fit: Fit
+}
+const fits = new Map<string, Fitted[]>()
 
 /**
  * The largest size up to `max` at which `text`, wrapped by words, stands
@@ -94,14 +103,21 @@ const fits = new Map<string, Fit>()
  * `min` is cut to the lines that do, the last one ending in an ellipsis.
  */
 export function fitCaps(text: string, width: number, height: number, max: number, min = 1): Fit {
-  // The box to a sixteenth of a unit, as whole numbers: a fraction is slow to write as text.
-  const key = `${text}|${Math.round(width * 16)}|${Math.round(height * 16)}|${Math.round(max * 16)}|${Math.round(min * 16)}`
-  const known = fits.get(key)
-  if (known !== undefined) return known
-  const best = fitCapsOnce(text, width, height, max, min)
-  if (fits.size > 2000) fits.clear()
-  fits.set(key, best)
-  return best
+  let known = fits.get(text)
+  if (known !== undefined) {
+    for (let i = 0; i < known.length; i++) {
+      const one = known[i]!
+      if (one.width === width && one.height === height && one.max === max && one.min === min) return one.fit
+    }
+  }
+  const fit = fitCapsOnce(text, width, height, max, min)
+  if (known === undefined || known.length >= 8) {
+    if (fits.size > 2000) fits.clear()
+    known = []
+    fits.set(text, known)
+  }
+  known.push({ width, height, max, min, fit })
+  return fit
 }
 
 /** `fitCaps` without its memory, for a caller that keeps the answer itself (a game's card is fitted once and kept by the game). */
@@ -208,19 +224,28 @@ function cut(line: string, size: number, width: number, marked = false): string 
 export const fitHeight = (fit: Fit): number =>
   fit.lines.length === 0 ? 0 : (fit.lines.length - 1) * fit.size * DISPLAY_LINE + fit.size * DISPLAY_CAP_HEIGHT
 
+// A width by the whole text, one memory a weight.
 const textWidths = new Map<string, number>()
+const strongWidths = new Map<string, number>()
+onForget(() => {
+  widths.clear()
+  upperWidths.clear()
+  fits.clear()
+  textWidths.clear()
+  strongWidths.clear()
+})
 
 /** The width of `text` in the text face (Archivo), in font sizes. */
 export function textWidth(text: string, strong = false): number {
-  const key = strong ? `\u0001${text}` : text
-  const known = textWidths.get(key)
+  const kept = strong ? strongWidths : textWidths
+  const known = kept.get(text)
   if (known !== undefined) return known
   const table = strong ? STRONG_ADVANCES : TEXT_ADVANCES
   let total = 0
   for (const c of text) total += table[c.codePointAt(0)!] ?? 560
   const width = (total / 1000) * SAFETY
-  if (textWidths.size > 4000) textWidths.clear()
-  textWidths.set(key, width)
+  if (kept.size > 4000) kept.clear()
+  kept.set(text, width)
   return width
 }
 

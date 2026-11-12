@@ -6,6 +6,7 @@
  * DOM. The encoder is the one Zone's package holds (packages/zone/src/qr.ts),
  * copied: a package imports nothing from another.
  */
+import { onForget } from "./memo"
 /*
  * A QR code in byte mode at error correction level M with mask 0, the
  * smallest version that holds the text (ISO/IEC 18004; the steps follow
@@ -183,6 +184,7 @@ export function encodeQr(bytes: readonly number[]): { readonly size: number; rea
 
 const QUIET = 4
 
+/** The CRC-32 table: made at the first code (a backup is rare), and the same every time it is made. */
 let crcTable: Uint32Array | undefined
 function crc32(bytes: Uint8Array): number {
   if (crcTable === undefined) {
@@ -264,7 +266,12 @@ function utf8(text: string): number[] {
   return out
 }
 
+// The code of a text, by the whole text: a view of the backup page asks for the same one again.
 const cache = new Map<string, string>()
+onForget(() => {
+  cache.clear()
+  crcTable = undefined
+})
 
 /** A `data:image/png` URL of the code for `text`, black on white. */
 export function qrDataUrl(text: string): string {

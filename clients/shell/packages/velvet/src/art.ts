@@ -18,6 +18,7 @@ import type { SurfaceMedia, SurfaceMediaRole } from "../../../../../contracts/ge
 import { gelHue, hsl, parseHex, stageLight, toHsl } from "./colour"
 import { breakLines, fitCaps, fitCapsOnce, textWidth } from "./fit"
 import { sameGame } from "./lists"
+import { onForget } from "./memo"
 import { NO_POSTER, posterFor, posterView, type PosterView } from "./poster"
 import type { Game } from "./types"
 import { ago, caps, playtime } from "./words"
@@ -39,16 +40,20 @@ export const PIXEL_BUDGET = 23 * 1024 * 1024
 const LONGEST_SIDE = 1920
 const COVER_SIDE = 512
 
-let spent = 0
-const taken = new Set<string>()
-
-/** A new view: nothing asked for yet. */
-export function beginPictures(): void {
-  spent = 0
-  taken.clear()
+/**
+ * The pictures one view asks for, and what they cost so far. A view makes one
+ * (`pictures()`) and hands it to everything that may ask for a picture, in
+ * the order of importance: whoever asks first gets its picture first. It is
+ * an argument, not something a module holds, so what a tile shows is decided
+ * by what its view passed in and by nothing else.
+ */
+export interface Pictures {
+  spent: number
+  readonly taken: Set<string>
 }
 
-export const picturesSpent = (): number => spent
+/** A new view: nothing asked for yet. */
+export const pictures = (): Pictures => ({ spent: 0, taken: new Set() })
 
 /** The decoded size of a stored picture as the shell hands it over. */
 export function decodedBytes(width: number, height: number): number {
@@ -57,12 +62,12 @@ export function decodedBytes(width: number, height: number): number {
 }
 
 /** Ask for a picture in this view. False: it does not fit, do without it. */
-export function take(url: string, width: number, height: number): boolean {
-  if (taken.has(url)) return true
+export function take(asked: Pictures, url: string, width: number, height: number): boolean {
+  if (asked.taken.has(url)) return true
   const cost = decodedBytes(width, height)
-  if (spent + cost > PIXEL_BUDGET) return false
-  spent += cost
-  taken.add(url)
+  if (asked.spent + cost > PIXEL_BUDGET) return false
+  asked.spent += cost
+  asked.taken.add(url)
   return true
 }
 
@@ -198,9 +203,9 @@ function madeOf(game: Game): Made {
 }
 
 /** A game's tile as this view may show it: its picture when the budget has room, else its no-art card. */
-function budgeted(game: Game): { readonly view: TileView; readonly badgeTop: boolean } {
+function budgeted(asked: Pictures, game: Game): { readonly view: TileView; readonly badgeTop: boolean } {
   const tile = madeOf(game)
-  return tile.url === "" || take(tile.url, tile.width, tile.height) ? { view: tile.art, badgeTop: tile.artBadgeTop } : { view: tile.card, badgeTop: tile.cardBadgeTop }
+  return tile.url === "" || take(asked, tile.url, tile.width, tile.height) ? { view: tile.art, badgeTop: tile.artBadgeTop } : { view: tile.card, badgeTop: tile.cardBadgeTop }
 }
 
 /** Where a tile stands, past its focus id: its shelf in the lobby, and whether its row is at rest. */
@@ -211,13 +216,17 @@ export interface Standing {
 
 // A tile at its place, kept while everything that makes it is the same: a move changes the
 // two tiles the focus leaves and lands on, and every other tile in the view is the object
-// the last view sent. Keyed by the focus id, which names the place.
+// the last view sent. Found by the focus id, and held to every argument it was made from.
 interface Placed {
   readonly base: TileView
+  readonly region: string
   readonly focused: boolean
+  readonly at: number
   readonly shelf: number | undefined
   readonly rests: boolean | undefined
   readonly count: string | undefined
+  readonly badge: string
+  readonly badgeTop: boolean
   readonly out: TileView
 }
 const placed = new Map<string, Placed>()
@@ -226,7 +235,10 @@ function place(base: TileView, region: string, focusId: string, focused: boolean
   const shelf = standing?.shelf
   const rests = standing?.rests
   const known = placed.get(focusId)
-  if (known !== undefined && known.base === base && known.focused === focused && known.shelf === shelf && known.rests === rests && known.count === count) return known.out
+  if (
+    known !== undefined && known.base === base && known.region === region && known.focused === focused && known.at === at && known.shelf === shelf && known.rests === rests
+    && known.count === count && (!focused || (known.badge === badge && known.badgeTop === badgeTop))
+  ) return known.out
   const out: TileView = {
     ...base, focusId, focused, focusRegion: region, at,
     ...(count === undefined ? {} : { count }),
@@ -237,31 +249,31 @@ function place(base: TileView, region: string, focusId: string, focused: boolean
     ...(rests === undefined ? {} : { rests }),
   }
   if (placed.size > 600) placed.clear()
-  placed.set(focusId, { base, focused, shelf, rests, count, out })
+  placed.set(focusId, { base, region, focused, at, shelf, rests, count, badge, badgeTop, out })
   return out
 }
 
 /** A game's tile on a shelf or in the row. */
-export function gameTile(game: Game, region: string, focusId: string, focused: boolean, at: number, standing?: Standing): TileView {
-  const { view, badgeTop } = budgeted(game)
+export function gameTile(asked: Pictures, game: Game, region: string, focusId: string, focused: boolean, at: number, standing?: Standing): TileView {
+  const { view, badgeTop } = budgeted(asked, game)
   return place(view, region, focusId, focused, at, standing, undefined, game.system ?? "", badgeTop)
 }
 
 /** A game's card where it is no focus target (the pick's card). */
-export const gameCard = (game: Game): TileView => budgeted(game).view
+export const gameCard = (asked: Pictures, game: Game): TileView => budgeted(asked, game).view
 
 // A set's tiles, by their slot in the grid's pool: kept like the tiles above.
-const slots = new Map<number, { readonly base: TileView; readonly at: number; readonly lit: boolean; readonly out: TileView }>()
+const slots = new Map<number, { readonly base: TileView; readonly at: number; readonly lit: boolean; readonly badge: string; readonly badgeTop: boolean; readonly out: TileView }>()
 
 /** A game's picture in a set, at its place: no focus target (its mark is), lit when its mark has the focus. */
-export function setTile(game: Game, at: number, lit: boolean, slot: number): TileView {
-  const { view, badgeTop } = budgeted(game)
-  const known = slots.get(slot)
-  if (known !== undefined && known.base === view && known.at === at && known.lit === lit) return known.out
+export function setTile(asked: Pictures, game: Game, at: number, lit: boolean, slot: number): TileView {
+  const { view, badgeTop } = budgeted(asked, game)
   const badge = game.system ?? ""
+  const known = slots.get(slot)
+  if (known !== undefined && known.base === view && known.at === at && known.lit === lit && (!lit || (known.badge === badge && known.badgeTop === badgeTop))) return known.out
   const out: TileView = lit ? { ...view, at, lit, badge, badgeTop } : { ...view, at, lit }
   if (slots.size > 200) slots.clear()
-  slots.set(slot, { base: view, at, lit, out })
+  slots.set(slot, { base: view, at, lit, badge, badgeTop, out })
   return out
 }
 
@@ -296,6 +308,14 @@ export function systemTile(systemId: string, system: string, count: string, regi
   return place(base, region, focusId, focused, at, standing, count, "", false)
 }
 
+onForget(() => {
+  made.clear()
+  placed.clear()
+  slots.clear()
+  navs.clear()
+  systems.clear()
+})
+
 /** The pick's place in the row while the pick stands over it: a focus target the view does not draw. */
 export const waitingTile = (region: string, focusId: string, focused: boolean, at: number): TileView =>
   ({ ...BLANK, shown: false, focusId, focused, focusRegion: region, at })
@@ -316,12 +336,12 @@ export interface StageView {
 export const HOUSE_GLOW = 0x2a2620
 
 /** What a game does to the stage: its hero as the backdrop, and its art's colour (the title's gel without one) as the light. */
-export function stageOf(game: Game | undefined, veil: number, drift: boolean, fill = false, lit = false): StageView {
+export function stageOf(asked: Pictures, game: Game | undefined, veil: number, drift: boolean, fill = false, lit = false): StageView {
   if (game === undefined) return { key: "", light: HOUSE_GLOW, artShown: false, art: NO_IMAGE, fill, veil, drift: false }
   // `lit`: the stage is far from the game (the library's pages): its colour, without its picture.
   const hero = lit ? undefined : mediaOf(game, "hero")
   const light = stageLight(mediaOf(game, "hero")?.color ?? mediaOf(game, "poster")?.color ?? mediaOf(game, "logo")?.color, game.title)
-  return hero === undefined || !take(hero.url, hero.width, hero.height)
+  return hero === undefined || !take(asked, hero.url, hero.width, hero.height)
     ? { key: `light:${game.id}`, light, artShown: false, art: NO_IMAGE, fill, veil, drift: false }
     : { key: hero.url, light, artShown: true, art: { $image: hero.url }, fill, veil, drift }
 }
@@ -465,9 +485,9 @@ export function logoBox(width: number, height: number, boxW: number, boxH: numbe
 }
 
 /** A game's marquee in a box: its logo (the title under it until it arrives, or alone), its badge and its facts. */
-export function marqueeOf(game: Game, box: MarqueeBox, publishedAt: number | undefined, facts: readonly FactView[] = factsOf(game, publishedAt)): MarqueeView {
+export function marqueeOf(asked: Pictures, game: Game, box: MarqueeBox, publishedAt: number | undefined, facts: readonly FactView[] = factsOf(game, publishedAt)): MarqueeView {
   const wanted = box.mark ? mediaOf(game, "logo") : undefined
-  const logo = wanted !== undefined && take(wanted.url, wanted.width, wanted.height) ? wanted : undefined
+  const logo = wanted !== undefined && take(asked, wanted.url, wanted.width, wanted.height) ? wanted : undefined
   const most = box.lines ?? 3
   const fit = box.mark ? fitCaps(game.title, box.width, Math.max(box.title, box.logoH), box.title, Math.min(box.title, 18)) : undefined
   const lines = fit === undefined ? [] : fit.lines.slice(0, Math.min(3, Math.max(most, 1)))

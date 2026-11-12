@@ -15,7 +15,7 @@
  * under it is drawn inert (no target, no tap).
  */
 import type { SurfaceModel as Model } from "../../../../../contracts/generated/surface"
-import { beginPictures, gameCard, NO_IMAGE, NO_MARQUEE, stageOf, type StageView } from "./art"
+import { gameCard, NO_IMAGE, NO_MARQUEE, pictures, stageOf, type Pictures, type StageView } from "./art"
 import { detailGame, detailView, focusedGame, homeExits, homeView, NO_PILL, pill, setExits, setView, type PillView } from "./browse"
 import { curtainLayout, curtainOf } from "./curtain"
 import { breakLines, fitCaps } from "./fit"
@@ -65,18 +65,8 @@ function sheetRows(panel: PanelSpec, state: State, live: boolean): RowView[] {
   return panel.rows.map(row => rowView(row, "sheet", focus, live))
 }
 
-const qrs = new Map<string, string>()
-function qrOf(text: string): string {
-  let url = qrs.get(text)
-  if (url === undefined) {
-    url = qrDataUrl(text)
-    if (qrs.size > 4) qrs.clear()
-    qrs.set(text, url)
-  }
-  return url
-}
 
-function pageView(panel: PanelSpec, state: State, p: Plan, live: boolean) {
+function pageView(asked: Pictures, panel: PanelSpec, state: State, p: Plan, live: boolean) {
   const focus = panelFocus(panel, state.panels[panel.key]).focus
   const side = panel.side
   const game = side?.kind === "tile" ? side.game : undefined
@@ -91,7 +81,7 @@ function pageView(panel: PanelSpec, state: State, p: Plan, live: boolean) {
       stack: panelStacks(p),
       panel: side?.kind ?? "none",
       panelTitle: side?.title ?? "",
-      qr: side?.qr === undefined ? NO_IMAGE : { $image: qrOf(side.qr) },
+      qr: side?.qr === undefined ? NO_IMAGE : { $image: qrDataUrl(side.qr) },
     },
     rows: panel.rows.map(row => rowView(row, "rows", focus, live)),
     // Down from the rows lands on the first button that can be pressed (a dimmed Next waits
@@ -103,7 +93,7 @@ function pageView(panel: PanelSpec, state: State, p: Plan, live: boolean) {
       focusActive: button === (panel.buttons.find(candidate => candidate.dim !== true) ?? panel.buttons[0]),
     } as PillView)),
     panelLines: (side?.lines ?? []).flatMap(line => breakLines(line.length > 60 && !line.includes(" ") ? chunk(line, 28) : line, p.fact, p.panelW)),
-    tiles: game === undefined ? [] : [gameCard(game)],
+    tiles: game === undefined ? [] : [gameCard(asked, game)],
   }
 }
 
@@ -210,10 +200,9 @@ function emptyView(state: State, model: Model, p: Plan, live: boolean) {
 /** The plan as main.slint's Screen. */
 const screenOf = (p: Plan) => p
 
-let lastStageGame: string | undefined
-
 export function view(state: State, model: Model) {
-  beginPictures()
+  // What this view asks for in pictures: the stage first, then each part in its own order.
+  const asked = pictures()
   const p = plan(state.size.width, state.size.height)
   const top = topLayer(state, model)
   const live = top === "screen"
@@ -227,19 +216,18 @@ export function view(state: State, model: Model) {
   const veil = page === "list" ? 0.86 : page === "set" ? 0.8 : page === "home" && state.depth === 2 ? 0.78 : page === "home" && state.depth === 1 ? 0.3 : 0
   // The keyboard and the curtain take the house: its lights go down further.
   const taken = top === "curtain" || top === "keyboard"
-  const stage: StageView = page === "empty" ? stageOf(undefined, 0, false) : stageOf(lead, taken ? Math.max(veil, 0.84) : veil, state.drift && top === "screen" && (page === "home" || page === "detail"), page === "detail", page === "set" || page === "list" || (page === "home" && state.depth === 2))
-  lastStageGame = lead?.id
+  const stage: StageView = page === "empty" ? stageOf(asked, undefined, 0, false) : stageOf(asked, lead, taken ? Math.max(veil, 0.84) : veil, state.drift && top === "screen" && (page === "home" || page === "detail"), page === "detail", page === "set" || page === "list" || (page === "home" && state.depth === 2))
   const sheet = state.sheet === undefined ? undefined : sheetPanel(state.sheet.kind, state, model)
   const exits = top !== "screen" ? {}
     : page === "home" ? homeExits(state, model)
       : page === "empty" ? (emptyButtons(model).length > 0 ? { menu: { down: { to: "empty", entry: "remembered" } }, empty: { up: { to: "menu", entry: "first" } } } : {})
         : page === "set" && state.set !== undefined ? setExits(state.set, model)
           : page === "list" && panel !== undefined ? panelExits(panel) : {}
-  const home = page === "home" ? homeView(state, model, p, live) : undefined
-  const set = page === "set" && state.set !== undefined ? setView(state, state.set, model, p, live) : undefined
-  const detail = page === "detail" ? detailView(state, model, p, live) : undefined
+  const home = page === "home" ? homeView(asked, state, model, p, live) : undefined
+  const set = page === "set" && state.set !== undefined ? setView(asked, state, state.set, model, p, live) : undefined
+  const detail = page === "detail" ? detailView(asked, state, model, p, live) : undefined
   const empty = page === "empty" ? emptyView(state, model, p, live) : undefined
-  const list = page === "list" && panel !== undefined ? pageView(panel, state, p, live) : undefined
+  const list = page === "list" && panel !== undefined ? pageView(asked, panel, state, p, live) : undefined
   const keyboard = keyboardView(state, top === "keyboard")
   const curtain = curtainView(state, model, p)
   return {
@@ -295,7 +283,6 @@ export function view(state: State, model: Model) {
 
 /** The gameplay overlay: Korri's controls over the running game, and Korri's status over those. */
 export function overlayView(state: State, model: Model) {
-  beginPictures()
   const p = plan(state.size.width, state.size.height)
   const top = topLayer(state, model)
   const overlay = model.presentation.kind === "gameplay-overlay" ? model.presentation : undefined
@@ -333,4 +320,4 @@ export function overlayView(state: State, model: Model) {
   }
 }
 
-export { NO_MARQUEE, NO_PILL, lastStageGame }
+export { NO_MARQUEE, NO_PILL }

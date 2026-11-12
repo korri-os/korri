@@ -22,11 +22,12 @@
  * launches. Back closes each level.
  */
 import type { CatalogQuery, SurfaceCatalog, SurfaceModel as Model } from "../../../../../contracts/generated/surface"
-import { blankTile, factLines, factsOf, gameCard, gameTile, hasHero, marqueeOf, mediaOf, navTile, NO_IMAGE, NO_MARQUEE, NO_TILE, setTile, systemTile, type Standing, titleLines, waitingTile, type FactView, type MarqueeView, type TileView } from "./art"
+import { blankTile, factLines, factsOf, gameCard, gameTile, hasHero, marqueeOf, mediaOf, navTile, NO_IMAGE, NO_MARQUEE, NO_TILE, setTile, systemTile, type Pictures, type Standing, titleLines, waitingTile, type FactView, type MarqueeView, type TileView } from "./art"
 import { fitCaps, textWidth } from "./fit"
 import { gridMove, lineMove } from "./focus"
 import { homeOf, sameQuery, shelvesOf, type ShelfItem, type ShelfSpec } from "./lists"
 import { sortWords } from "./pages"
+import { onForget } from "./memo"
 import { TILE_RATIO, type Plan } from "./plan"
 import { NONE, send, type Act, type Direction, type Game, type Request, type SetState, type State } from "./types"
 import { ago, bytes, caps, games as gamesWords } from "./words"
@@ -45,6 +46,12 @@ export function rowItems(state: State, model: Model): readonly RowItem[] {
 }
 
 let lastRow: { readonly home: ReturnType<typeof homeOf>; readonly items: readonly RowItem[] } | undefined
+onForget(() => {
+  lastRow = undefined
+  standings.clear()
+  orders.clear()
+  markViews.clear()
+})
 
 export const shelfRegion = (key: string): string => `shelf:${key}`
 
@@ -184,10 +191,10 @@ export const pill = (label: string, region: string, focusId: string, focused: bo
 /** Whether a card already says the game's name (so the marquee beside it does not repeat it). */
 const cardNames = (game: Game): boolean => mediaOf(game, "poster") === undefined
 
-function shelfTile(item: ShelfItem, region: string, id: string, focused: boolean, at: number, standing: Standing): TileView {
+function shelfTile(asked: Pictures, item: ShelfItem, region: string, id: string, focused: boolean, at: number, standing: Standing): TileView {
   switch (item.kind) {
     case "game":
-      return gameTile(item.game, region, id, focused, at, standing)
+      return gameTile(asked, item.game, region, id, focused, at, standing)
     case "more":
       return navTile(item.label, item.count === undefined ? "" : String(item.count), region, id, focused, at, standing)
     case "system":
@@ -221,7 +228,7 @@ function nowOf(state: State, model: Model, shelves: readonly ShelfSpec[]): { tit
   return { title: item.set.title, fact: item.count === undefined ? "" : gamesWords(item.count) }
 }
 
-export function homeView(state: State, model: Model, plan: Plan, live: boolean) {
+export function homeView(asked: Pictures, state: State, model: Model, plan: Plan, live: boolean) {
   const home = homeOf(state.lists, model.publishedAt)
   const pick = home.pick
   const shelves = shelvesOf(state.lists, model)
@@ -230,15 +237,15 @@ export function homeView(state: State, model: Model, plan: Plan, live: boolean) 
   const hero = hasHero(pick)
   const onPick = live && !state.onMenu && depth === 0
   // The mark's logo first, then the row's tiles from the focused one outwards (the pixel budget, src/art.ts).
-  const mark = pick === undefined ? NO_MARQUEE : marqueeOf(pick, {
+  const mark = pick === undefined ? NO_MARQUEE : marqueeOf(asked, pick, {
     width: hero ? plan.heroW : plan.textW, logoH: hero ? Math.round(plan.markH * 1.25) : plan.markH, title: hero ? plan.title : plan.pickTitle, fact: plan.fact,
     mark: hero || !cardNames(pick), badge: true,
   }, model.publishedAt)
   const rowGame = depth === 1 ? row[state.rowAt] : undefined
   const rowMark = rowGame === undefined ? NO_MARQUEE : rowGame.kind === "game"
-    ? marqueeOf(rowGame.game, { width: plan.rowMarkW, logoH: Math.max(24, plan.rowMarkH - plan.fact * 3.2), title: Math.min(plan.title, Math.max(24, (plan.rowMarkH - plan.fact * 3.2) / 2)), fact: plan.fact, mark: true, badge: false, lines: 2 }, model.publishedAt)
+    ? marqueeOf(asked, rowGame.game, { width: plan.rowMarkW, logoH: Math.max(24, plan.rowMarkH - plan.fact * 3.2), title: Math.min(plan.title, Math.max(24, (plan.rowMarkH - plan.fact * 3.2) / 2)), fact: plan.fact, mark: true, badge: false, lines: 2 }, model.publishedAt)
     : { ...NO_MARQUEE, key: "all", ...fitMark("Library", plan.rowMarkW, plan), facts: factLines([{ icon: "grid", text: gamesWords(state.lists.total), strong: false }], plan.fact, plan.rowMarkW) }
-  const cards = pick === undefined || hero ? [] : [gameCard(pick)]
+  const cards = pick === undefined || hero ? [] : [gameCard(asked, pick)]
   const rowTiles: TileView[] = row.map(() => NO_TILE)
   const fillRow = () => {
     const standing = depth === 0 ? ROW_RESTS : ROW_UP
@@ -249,7 +256,7 @@ export function homeView(state: State, model: Model, plan: Plan, live: boolean) 
       if (item.kind === "all") rowTiles[at] = navTile("All games", String(state.lists.total), "row", id, focused, at, standing)
       // The pick takes its place in the row once the row is the shelf.
       else if (item.pick && depth === 0) rowTiles[at] = waitingTile("row", id, focused, at)
-      else rowTiles[at] = gameTile(item.game, "row", id, focused, at, standing)
+      else rowTiles[at] = gameTile(asked, item.game, "row", id, focused, at, standing)
     }
   }
   // The pixel budget goes to what is in sight first (src/art.ts): the row before the shelf
@@ -279,7 +286,7 @@ export function homeView(state: State, model: Model, plan: Plan, live: boolean) 
       if (at !== column && Math.abs(at - first) > across) continue
       const id = `${region}:${at}`
       const focused = live && !state.onMenu && depth === 2 && index === shelfAtNow && column === at
-      tiles[starts[index]! + at] = shelfTile(shelf.items[at]!, region, id, focused, at, standingOf(index, depth !== 2 || index !== shelfAtNow))
+      tiles[starts[index]! + at] = shelfTile(asked, shelf.items[at]!, region, id, focused, at, standingOf(index, depth !== 2 || index !== shelfAtNow))
     }
   }
   if (depth >= 2) fillRow()
@@ -309,17 +316,23 @@ export function homeView(state: State, model: Model, plan: Plan, live: boolean) 
   }
 }
 
-const orders = new Map<number, readonly number[]>()
+// The order for a count and a place, kept by both (a view asks for the same few again and again).
+const orders = new Map<number, Map<number, readonly number[]>>()
 
 /** Places 0 to count - 1, the one nearest `from` first. */
 export function nearest(count: number, from: number): readonly number[] {
-  const key = count * 4096 + from
-  let order = orders.get(key)
+  let byFrom = orders.get(count)
+  if (byFrom === undefined) {
+    if (orders.size > 100) orders.clear()
+    byFrom = new Map()
+    orders.set(count, byFrom)
+  }
+  let order = byFrom.get(from)
   if (order === undefined) {
     // At the same distance, the one after: it is the one in sight (a focused shelf stands at the top).
     order = Array.from({ length: count }, (_, index) => index).sort((a, b) => Math.abs(a - from) - Math.abs(b - from) || b - a)
-    if (orders.size > 500) orders.clear()
-    orders.set(key, order)
+    if (byFrom.size > 200) byFrom.clear()
+    byFrom.set(from, order)
   }
   return order
 }
@@ -537,7 +550,7 @@ function markOf(index: number, at: number, focused: boolean, label: string): Mar
   return mark
 }
 
-export function setView(state: State, set: SetState, model: Model, plan: Plan, live: boolean) {
+export function setView(asked: Pictures, state: State, set: SetState, model: Model, plan: Plan, live: boolean) {
   const window = setWindow(set, model.catalog)
   const count = setCount(set, model.catalog)
   const first = set.scrolled ?? set.first
@@ -560,7 +573,7 @@ export function setView(state: State, set: SetState, model: Model, plan: Plan, l
       const game = window.window[set.low + place - window.firstIndex]
       const lit = live && !set.pill && place === focusedAt
       // Each place keeps its slot while it is near the view, so a row that scrolls keeps its tiles.
-      tiles[place % pool] = game === undefined ? blankTile(place) : setTile(game, place, lit, place % pool)
+      tiles[place % pool] = game === undefined ? blankTile(place) : setTile(asked, game, place, lit, place % pool)
     }
   }
   // A focus target for each place a tile is sent for: the rows in sight and one more each way.
@@ -693,7 +706,7 @@ export function detailStacks(buttons: readonly DetailButton[], plan: Plan): bool
   return width > plan.width - 2 * plan.padX
 }
 
-export function detailView(state: State, model: Model, plan: Plan, live: boolean) {
+export function detailView(asked: Pictures, state: State, model: Model, plan: Plan, live: boolean) {
   const game = detailGame(state, model)
   if (state.detail === undefined || game === undefined) return undefined
   const buttons = detailButtons(game, model)
@@ -704,7 +717,7 @@ export function detailView(state: State, model: Model, plan: Plan, live: boolean
     ...(savesWords(game) === undefined ? [] : [{ icon: "save", text: savesWords(game)!, strong: false }]),
   ]
   const facts = [...factsOf(game, model.publishedAt, true), ...extra]
-  const mark: MarqueeView = marqueeOf(game, { width: hero ? plan.detailLogoW : plan.textW, logoH: hero ? plan.detailLogoH : plan.markH, title: hero ? plan.detailTitle : plan.pickTitle, fact: plan.detailFact, mark: hero || !cardNames(game), badge: false }, model.publishedAt, [])
+  const mark: MarqueeView = marqueeOf(asked, game, { width: hero ? plan.detailLogoW : plan.textW, logoH: hero ? plan.detailLogoH : plan.markH, title: hero ? plan.detailTitle : plan.pickTitle, fact: plan.detailFact, mark: hero || !cardNames(game), badge: false }, model.publishedAt, [])
   return {
     detail: {
       shown: true,
@@ -715,7 +728,7 @@ export function detailView(state: State, model: Model, plan: Plan, live: boolean
       facts: factLines(facts, plan.detailFact, plan.width - 2 * plan.padX, game.system === undefined ? 0 : plan.detailFact * (1.6 + textWidth(game.system, true))),
       note: downloadWords(game),
     },
-    cards: hero ? [] : [gameCard(game)],
+    cards: hero ? [] : [gameCard(asked, game)],
     buttons: buttons.map((button, index) => pill(button.label, "detail", button.id, live && index === at, { icon: button.icon, quiet: button.quiet })),
   }
 }

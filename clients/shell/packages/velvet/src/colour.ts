@@ -7,6 +7,7 @@
  * string and a small generator), so a title always draws the same card.
  * Pure: no clock, no Math.random.
  */
+import { onForget } from "./memo"
 
 export const clamp = (value: number, low: number, high: number): number => Math.max(low, Math.min(high, value))
 
@@ -132,8 +133,9 @@ function gel(hue: number, saturation: number): number {
  */
 export function stageLight(artColour: string | undefined, title: string): number {
   // Every view lights the stage, and a game's light never changes while its colour and title do not.
-  const key = `${artColour ?? ""}\u0000${title}`
-  const known = lights.get(key)
+  const colour = artColour ?? ""
+  let byTitle = lights.get(colour)
+  const known = byTitle?.get(title)
   if (known !== undefined) return known
   const parsed = parseHex(artColour)
   let light: number
@@ -141,9 +143,15 @@ export function stageLight(artColour: string | undefined, title: string): number
     const [h, s, l] = toHsl(parsed)
     light = s >= 0.12 && l >= 0.05 ? gel(h, clamp(s, 0.3, 0.62)) : gel(gelHue(title), 0.4)
   } else light = gel(gelHue(title), 0.46)
-  if (lights.size > 400) lights.clear()
-  lights.set(key, light)
+  if (byTitle === undefined || byTitle.size > 50) {
+    if (lights.size > 400) lights.clear()
+    byTitle = new Map()
+    lights.set(colour, byTitle)
+  }
+  byTitle.set(title, light)
   return light
 }
 
-const lights = new Map<string, number>()
+// A light by the art's colour (none is ""), then by the title: both whole, so no two games share one by chance.
+const lights = new Map<string, Map<string, number>>()
+onForget(() => lights.clear())
