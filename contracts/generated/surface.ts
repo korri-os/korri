@@ -52,14 +52,15 @@ export type SurfaceIdentityStatus = { _tag: "Idle" } | { _tag: "Working"; operat
  * chooser, Back reaches the surface while the editor is open, because the
  * editor can hold questions of the surface's own (typing a profile name, a
  * delete confirmation): the surface closes those first, then runs the close
- * action. A write in progress is `settingsStatus` Saving with the row's id.
+ * action. A write in progress is `settingsStatus` Saving with the row's id;
+ * while the changes are kept, that id is the `keep` row's.
  * `Conflict` means the values changed elsewhere and must be reloaded;
- * `Error` carries Korri's message and a Retry action. Both carry user-facing
- * `message` copy.
+ * `Error` carries Korri's message and a Retry action. A device that runs a
+ * streamed game and cannot be reached is an `Error`: its rows stay in the
+ * content without an interaction, and the playing device's own rows still
+ * work. Both carry user-facing `message` copy.
  */
 export type SurfaceLaunchSettings = { _tag: "Closed" } | ({ _tag: "Loading" | "Ready" } & SurfaceLaunchSettingsContent) | ({ _tag: "Conflict" | "Error"; message: string } & SurfaceLaunchSettingsContent);
-
-export type SurfaceLaunchSettingsScopeKind = "any" | "family" | "runner";
 
 /**
  * Something that happened, delivered to the surface's `update`.
@@ -524,81 +525,46 @@ export interface SurfaceSettingGroup {
 }
 
 /**
- * The layer a launch settings place belongs to. `id` is opaque; `title` is
- * display text.
- */
-export interface SurfaceLaunchSettingsLayer {
-	id: string;
-	title: string;
-}
-
-/** Which runners a place applies to. `label` is display text. */
-export interface SurfaceLaunchSettingsScope {
-	kind: SurfaceLaunchSettingsScopeKind;
-	label: string;
-}
-
-/**
- * One place of a game's launch settings: a layer (Device, a System, the
- * Game, a Release, a Profile) limited to a runner scope (any runner, one
- * runner family, one runner). For each value the most specific place that
- * sets it wins. `id` is opaque and stable across models, so a surface may
- * keep the place it shows. Every row id goes unchanged to `ChangeSetting`,
- * every action id to `RunAction`.
+ * One game's launch settings as one list (ADR 0066). Each setting appears
+ * once, with the value the next launch would use, whether this device runs
+ * the game or another device streams it here. A changed row waits as a
+ * change. Korri writes the changes to the `keep` place when the editor
+ * closes; changes kept for this launch go with that launch and end with it.
  *
- * Places of one layer arrive consecutively, most general layer first, and
- * within a layer any runner first, then each family, then each runner. A
- * surface groups on a change of `layer.id`, and may show a layer's places as
- * one list or one at a time.
- *
- * Rows Korri lets the person change carry an interaction. Values set only in
- * files (environment, arguments, working folder, hooks, routines, runner
- * config) are rows without one, with `source` and `scope`. A runner place
- * carries an "Add setting" choice row whose choices are the runner's
- * settings not yet set there; its `selected` is "" (none). Profile controls
- * (pick, new, rename, delete) are ordinary rows: the pick and New profile in
- * the Game place for any runner, Name and Delete in each Profile place for
- * any runner.
+ * Values set only in files (environment, arguments, working folder, hooks,
+ * routines, runner config) are not rows. Profile controls (pick, new, name,
+ * delete) are ordinary rows of the last group.
  */
-export interface SurfaceLaunchSettingsPlace {
-	id: string;
-	/** The whole place in Korri's words, such as "Game for mGBA". */
-	title: string;
-	layer: SurfaceLaunchSettingsLayer;
-	scope: SurfaceLaunchSettingsScope;
-	groups: SurfaceSettingGroup[];
-}
-
 export interface SurfaceLaunchSettingsContent {
 	gameTitle?: string;
-	/**
-	 * Where the game runs, in Korri's words: "Runs here", "Runs on aka".
-	 * The same list serves a local and a streamed game (ADR 0066).
-	 */
+	/** Where the game runs, in Korri's words: "Runs here", "Runs on aka". */
 	runsOn?: string;
 	/**
-	 * The one list (ADR 0066): each setting once, grouped by setting
-	 * section, with the value the next launch would use. A row Korri cannot
-	 * change now (its device cannot be reached, or the runner cannot honour
-	 * the setting) has no interaction, and its `description` says why. Every
-	 * row id goes unchanged to `ChangeSetting`.
+	 * The list, grouped by setting section. A row Korri cannot change now
+	 * (its device cannot be reached, or the runner cannot honour the
+	 * setting) has no interaction, and its `description` says why. A row's
+	 * `source` says which device keeps the value, when the value describes
+	 * one device. Every row id goes unchanged to `ChangeSetting`, every
+	 * action id to `RunAction`. Empty while Loading, and when Korri has
+	 * nothing to show.
 	 */
-	groups?: SurfaceSettingGroup[];
-	/** The rows changed and not kept yet. A row is in the list at most once. */
-	changes?: SurfaceLaunchSettingsChange[];
+	groups: SurfaceSettingGroup[];
+	/**
+	 * The rows changed and not kept yet. A row is in the list at most once.
+	 * Setting a row back to its earlier value takes it out.
+	 */
+	changes: SurfaceLaunchSettingsChange[];
 	/**
 	 * Where the changes are kept. Present only while `changes` is not
 	 * empty. A choice row: this launch, this game, every game, then the
 	 * other places. Its id goes unchanged to `ChangeSetting`.
 	 */
 	keep?: SurfaceSettingItem;
-	/** Empty while Loading, and when Korri could not read them. */
-	places: SurfaceLaunchSettingsPlace[];
 	profiles: SurfaceLaunchProfile[];
 	/** The profile the next launch uses. Absent: none. */
 	selectedProfileId?: string;
 	/**
-	 * Plain lines about the whole editor, in Korri's words: places Korri
+	 * Plain lines about the whole editor, in Korri's words: settings Korri
 	 * cannot show yet, a runner a place names that is not installed, a
 	 * runner whose launch facts could not be read. Empty when there is
 	 * nothing to say.

@@ -21,7 +21,6 @@ SurfaceGameplayControlInteractionWire = '{ kind: "command" } | { kind: "toggle";
 SurfacePresentationWire = "SurfaceCatalogPresentation | SurfaceGameplayOverlayPresentation"
 SurfaceGameplayControlValueWire = '{ kind: "toggle"; value: boolean } | { kind: "choice"; value: string } | { kind: "range"; value: number }'
 SurfaceRunnerChoiceWire = '{ _tag: "Closed" } | ({ _tag: "Loading" | "Ready" | "Stale" | "Conflict" | "Error" | "Busy" | "Warnings" } & SurfaceRunnerChoiceContent)'
-SurfaceLaunchSettingsScopeKindWire = '"any" | "family" | "runner"'
 SurfaceLaunchSettingsWire = '{ _tag: "Closed" } | ({ _tag: "Loading" | "Ready" } & SurfaceLaunchSettingsContent) | ({ _tag: "Conflict" | "Error"; message: string } & SurfaceLaunchSettingsContent)'
 SurfaceNetworkConnectionWire = '{ _tag: "Offline" } | { _tag: "Wired" } | { _tag: "Wifi"; ssid: string; strengthPercent?: number }'
 SurfaceWifiAttemptWire = '{ _tag: "Idle" } | { _tag: "Connecting"; ssid: string } | { _tag: "Failed"; ssid: string; message: string; passwordRejected: boolean }'

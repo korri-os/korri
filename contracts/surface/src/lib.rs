@@ -854,66 +854,6 @@ pub enum SurfaceRunnerChoice {
 // Launch settings
 // ---------------------------------------------------------------------------
 
-/// The layer a launch settings place belongs to. `id` is opaque; `title` is
-/// display text.
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SurfaceLaunchSettingsLayer {
-    pub id: String,
-    pub title: String,
-}
-
-#[typeshare(serialized_as = "SurfaceLaunchSettingsScopeKindWire")]
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SurfaceLaunchSettingsScopeKind {
-    Any,
-    Family,
-    Runner,
-}
-
-/// Which runners a place applies to. `label` is display text.
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SurfaceLaunchSettingsScope {
-    pub kind: SurfaceLaunchSettingsScopeKind,
-    pub label: String,
-}
-
-/// One place of a game's launch settings: a layer (Device, a System, the
-/// Game, a Release, a Profile) limited to a runner scope (any runner, one
-/// runner family, one runner). For each value the most specific place that
-/// sets it wins. `id` is opaque and stable across models, so a surface may
-/// keep the place it shows. Every row id goes unchanged to `ChangeSetting`,
-/// every action id to `RunAction`.
-///
-/// Places of one layer arrive consecutively, most general layer first, and
-/// within a layer any runner first, then each family, then each runner. A
-/// surface groups on a change of `layer.id`, and may show a layer's places as
-/// one list or one at a time.
-///
-/// Rows Korri lets the person change carry an interaction. Values set only in
-/// files (environment, arguments, working folder, hooks, routines, runner
-/// config) are rows without one, with `source` and `scope`. A runner place
-/// carries an "Add setting" choice row whose choices are the runner's
-/// settings not yet set there; its `selected` is "" (none). Profile controls
-/// (pick, new, rename, delete) are ordinary rows: the pick and New profile in
-/// the Game place for any runner, Name and Delete in each Profile place for
-/// any runner.
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SurfaceLaunchSettingsPlace {
-    pub id: String,
-    /// The whole place in Korri's words, such as "Game for mGBA".
-    pub title: String,
-    pub layer: SurfaceLaunchSettingsLayer,
-    pub scope: SurfaceLaunchSettingsScope,
-    pub groups: Vec<SurfaceSettingGroup>,
-}
-
 /// A person's named variation of a game's launch settings.
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -933,6 +873,15 @@ pub struct SurfaceLaunchSettingsChange {
     pub was: String,
 }
 
+/// One game's launch settings as one list (ADR 0066). Each setting appears
+/// once, with the value the next launch would use, whether this device runs
+/// the game or another device streams it here. A changed row waits as a
+/// change. Korri writes the changes to the `keep` place when the editor
+/// closes; changes kept for this launch go with that launch and end with it.
+///
+/// Values set only in files (environment, arguments, working folder, hooks,
+/// routines, runner config) are not rows. Profile controls (pick, new, name,
+/// delete) are ordinary rows of the last group.
 #[typeshare]
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -940,31 +889,29 @@ pub struct SurfaceLaunchSettingsContent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub game_title: Option<String>,
     /// Where the game runs, in Korri's words: "Runs here", "Runs on aka".
-    /// The same list serves a local and a streamed game (ADR 0066).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runs_on: Option<String>,
-    /// The one list (ADR 0066): each setting once, grouped by setting
-    /// section, with the value the next launch would use. A row Korri cannot
-    /// change now (its device cannot be reached, or the runner cannot honour
-    /// the setting) has no interaction, and its `description` says why. Every
-    /// row id goes unchanged to `ChangeSetting`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// The list, grouped by setting section. A row Korri cannot change now
+    /// (its device cannot be reached, or the runner cannot honour the
+    /// setting) has no interaction, and its `description` says why. A row's
+    /// `source` says which device keeps the value, when the value describes
+    /// one device. Every row id goes unchanged to `ChangeSetting`, every
+    /// action id to `RunAction`. Empty while Loading, and when Korri has
+    /// nothing to show.
     pub groups: Vec<SurfaceSettingGroup>,
     /// The rows changed and not kept yet. A row is in the list at most once.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// Setting a row back to its earlier value takes it out.
     pub changes: Vec<SurfaceLaunchSettingsChange>,
     /// Where the changes are kept. Present only while `changes` is not
     /// empty. A choice row: this launch, this game, every game, then the
     /// other places. Its id goes unchanged to `ChangeSetting`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keep: Option<SurfaceSettingItem>,
-    /// Empty while Loading, and when Korri could not read them.
-    pub places: Vec<SurfaceLaunchSettingsPlace>,
     pub profiles: Vec<SurfaceLaunchProfile>,
     /// The profile the next launch uses. Absent: none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selected_profile_id: Option<String>,
-    /// Plain lines about the whole editor, in Korri's words: places Korri
+    /// Plain lines about the whole editor, in Korri's words: settings Korri
     /// cannot show yet, a runner a place names that is not installed, a
     /// runner whose launch facts could not be read. Empty when there is
     /// nothing to say.
@@ -988,10 +935,13 @@ pub struct SurfaceLaunchSettingsProblem {
 /// chooser, Back reaches the surface while the editor is open, because the
 /// editor can hold questions of the surface's own (typing a profile name, a
 /// delete confirmation): the surface closes those first, then runs the close
-/// action. A write in progress is `settingsStatus` Saving with the row's id.
+/// action. A write in progress is `settingsStatus` Saving with the row's id;
+/// while the changes are kept, that id is the `keep` row's.
 /// `Conflict` means the values changed elsewhere and must be reloaded;
-/// `Error` carries Korri's message and a Retry action. Both carry user-facing
-/// `message` copy.
+/// `Error` carries Korri's message and a Retry action. A device that runs a
+/// streamed game and cannot be reached is an `Error`: its rows stay in the
+/// content without an interaction, and the playing device's own rows still
+/// work. Both carry user-facing `message` copy.
 #[typeshare(serialized_as = "SurfaceLaunchSettingsWire")]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "_tag")]
@@ -1985,7 +1935,7 @@ mod tests {
         });
         assert_eq!(
             serde_json::to_value(&settings).unwrap(),
-            json!({"_tag": "Error", "message": "m", "places": [], "profiles": [], "notes": [], "actions": []})
+            json!({"_tag": "Error", "message": "m", "groups": [], "changes": [], "profiles": [], "notes": [], "actions": []})
         );
         let choice = SurfaceRunnerChoice::Closed;
         assert_eq!(

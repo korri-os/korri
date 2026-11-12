@@ -256,7 +256,6 @@ impl Inner {
             groups: list.map(|list| list.groups.clone()).unwrap_or_default(),
             changes: list.map(|list| list.changes.clone()).unwrap_or_default(),
             keep: list.and_then(|list| list.keep.clone()),
-            places: Vec::new(),
             profiles: profiles
                 .iter()
                 .map(|profile| SurfaceLaunchProfile {

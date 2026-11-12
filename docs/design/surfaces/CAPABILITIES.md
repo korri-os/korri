@@ -95,12 +95,22 @@ Rules for an answer:
 ## Launch settings (`SurfaceModel.launchSettings`)
 
 - **C37 Launch settings editor.** Closed, Loading, Ready, and Conflict and
-  Error with a `message`; `gameTitle`; `layers` most general first, each
-  with its groups; rows through `changeSetting`, actions through
-  `runAction`; `note`; a write in progress is `settingsStatus` Saving.
-- **C38 Profiles.** `profiles` and `selectedProfileId`; pick and New profile
-  in the Game layer, Name and Delete in each Profile layer. Back closes the
-  surface's own questions first, then runs the host's close action.
+  Error with a `message`; `gameTitle`; `runsOn` ("Runs here", "Runs on
+  aka"). One list (ADR 0066): `groups` by setting section, each setting
+  once, with the value the next launch would use, the same for a game this
+  device runs and a streamed game. A row with no interaction cannot change,
+  and its `description` says why (the runner cannot honour it, or the device
+  that runs the game cannot be reached). `changes` names each changed row
+  and its earlier value (`was`). `keep` is present only while `changes` is
+  not empty: the one primary control, a choice of where the changes are
+  kept. Rows and `keep` go through `changeSetting`, actions through
+  `runAction`; `notes`; a write in progress is `settingsStatus` Saving, on
+  the `keep` row while the changes are written. An Error for a device that
+  cannot be reached still carries the list and a Retry action.
+- **C38 Profiles.** `profiles` and `selectedProfileId`; the pick, New
+  profile, and the picked profile's Name and Delete are rows of the Profile
+  group. A profile is also a `keep` place. Back closes the surface's own
+  questions first, then runs the host's close action.
 
 ## Settings (`SurfaceModel.settings`, `settingsStatus`, `actions`)
 
