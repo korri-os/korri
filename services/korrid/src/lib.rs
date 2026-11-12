@@ -8521,6 +8521,63 @@ command = ["game-one"]
     }
 
     #[tokio::test]
+    async fn local_exact_stop_rpc_acknowledges_pending_then_observes_failed_unit_completion() {
+        use korri_inputd::korrid_client::{ExactStopOutcome, KorridClient, SessionStatus};
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(
+            &config,
+            "label = \"zao\"\n[[games]]\nid = \"one\"\ntitle = \"One\"\ncommand = [\"game-one\"]\n",
+        )
+        .unwrap();
+        let backend = Arc::new(host::control::InMemoryLaunchUnitBackend::default());
+        backend.configure_stop(false, false, None);
+        let runtime = host::HostRuntime::from_paths_with_backend(
+            &config,
+            None,
+            root.path().join("private"),
+            backend.clone(),
+        );
+        runtime.claim_save_owner();
+        let (lan, local) = plain_host_routers(runtime);
+        let launch = rpc_body(
+            lan,
+            r#"{"_tag":"app.session.prepare","payload":{"gameId":"one"}}"#,
+        )
+        .await;
+        let id = launch["outcome"]["payload"]["session"]["launchId"]
+            .as_str()
+            .unwrap();
+        let socket = root.path().join("control.sock");
+        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, local).await.unwrap() });
+        let client = KorridClient::new(socket);
+        // The real local HTTP/RPC dispatch acknowledges before the configured
+        // unit completes, inside inputd's ordinary 750 ms mutation budget.
+        assert_eq!(
+            client.stop_active_exact().await.unwrap(),
+            ExactStopOutcome::AlreadyStopping
+        );
+        assert_eq!(
+            client.status().await.unwrap(),
+            SessionStatus::Stopping {
+                launch_id: id.into()
+            }
+        );
+        // Model systemd's eventual failed-unit observation separately from
+        // acknowledging its stop job. The VM covers the real timeout/SIGKILL.
+        backend.configure_stop(true, false, None);
+        backend.fail_live(137);
+        assert_eq!(client.status().await.unwrap(), SessionStatus::Completed);
+        assert_eq!(client.status().await.unwrap(), SessionStatus::Completed);
+        assert_eq!(
+            client.stop_active_exact().await.unwrap(),
+            ExactStopOutcome::Completed
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
     async fn local_end_resolves_only_failed_or_absent_blocked_journal_units() {
         for (failed, exact) in [(false, false), (true, false), (false, true), (true, true)] {
             let root = tempfile::tempdir().unwrap();
