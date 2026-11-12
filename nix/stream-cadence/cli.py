@@ -523,6 +523,30 @@ def rate_refusal(option: str, value: float) -> str | None:
     )
 
 
+def isolation_record(samples: list[dict]) -> dict:
+    """Keep actual X peers and input FDs. Startup may precede the first X connection."""
+    rows = [row.get("isolation") for row in samples]
+    seen = False
+    failed = not rows
+    for row in rows:
+        if row is None:
+            failed = True
+            continue
+        if row["input_nodes"] or ((seen or row["x"]["connected"]) and not row["pass"]):
+            failed = True
+        seen |= bool(row["pass"])
+    return {"pass": seen and not failed, "samples": rows}
+
+
+def pc_fixture_namespace(*, product: bool, fixture: bool, private_pair: bool, same_device: bool, platform: str) -> bool:
+    """A decoder with fixed :0 needs both halves on this same device's loopback."""
+    if not (product and fixture and platform == "x11_vaapi"):
+        return False
+    if not (private_pair and same_device):
+        raise ValueError("A PC product fixture needs a private pair on the same device: its decoder hardcodes :0. Across devices a private network namespace cannot carry the stream, and no safe private X display is available.")
+    return True
+
+
 def viewer_place(plugin: bool, sender_fixture: bool, same_device: bool) -> str:
     """Where the viewer shows the stream: in the fixture, or on the device's own display.
 
@@ -1190,6 +1214,10 @@ def view_case(
                 )
             viewer_refresh = args.viewer_refresh
             width, height = args.resolution or (1920, 1080)
+        private_x = pc_fixture_namespace(
+            product=bool(product), fixture=not on_display, private_pair=args.sender_fixture,
+            same_device=same_clock, platform=seat["platform"],
+        )
         loopback = str(ipaddress.IPv4Address(socket.INADDR_LOOPBACK))
         measure = BASE
         if args.sender_fixture:
@@ -1209,6 +1237,7 @@ def view_case(
                 "prepare",
                 sway=paths["sway"],
                 sunshine=paths["sunshine"],
+                private_x_namespace=private_x,
                 width=width,
                 height=height,
                 fps=fps,
@@ -1287,11 +1316,12 @@ def view_case(
             # A private pair: the sender is a fixture. With the fixture viewer it
             # runs beside a game.
             private_pair=args.sender_fixture,
+            pair_namespace=facts.get("pair_namespace"),
         )
         facts["live_game"]["viewer_at_start"] = prepared.get("live_games", [])
         if not on_display:
             # What draws the fixture's output; verdict keeps two renderers apart.
-            facts["viewer_fixture"] = {"renderer": prepared.get("renderer")}
+            facts["viewer_fixture"] = {"renderer": prepared.get("renderer"), "private_x_namespace": private_x}
         # Which viewer this run measures, and where it shows the stream.
         facts["viewer_ran"] = viewer_ran(
             plugin, paths["viewer"], DISPLAY if on_display else FIXTURE, copied=copied
@@ -1404,6 +1434,12 @@ def view_case(
         # Whether the viewer's own OpenGL was on the graphics card: the render nodes
         # that it held open in any sample. None when no sample could read them.
         facts["viewer_ran"]["render_nodes"] = viewer_render_nodes(samples)
+        if private_x:
+            facts["viewer_isolation"] = isolation_record(
+                [row for row in samples if row["device_ns"] >= started["start_ns"]]
+            )
+            if not facts["viewer_isolation"]["pass"]:
+                raise Refusal("The fixture viewer's X connection or input isolation was not proved; read viewer-samples.json.")
         if prepared.get("hardware_path") and samples[-1].get("hardware_decode") is not True:
             raise Refusal(
                 "The viewer's log does not show that hardware decode started. A software fallback is not the product's picture path; read viewer.log."

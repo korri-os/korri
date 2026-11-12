@@ -32,6 +32,7 @@ import threading
 import time
 from typing import TextIO
 
+from fixture_namespace import PairNamespace, hide_input, isolation
 from discovery import watched_display
 from heat import END_MARGIN, must_end, no_start, thermal_limits, thermal_zones
 import device
@@ -415,6 +416,8 @@ class Session:
         self.decode: bool | None = None
         self.decode_read = 0
         self.decode_lock = threading.Lock()
+        self.namespace = PairNamespace()
+        self.x_namespace = False
         self.root: Path | None = None
         self.fixture = False
         # The plugin's own binary as the viewer in the fixture, with korrid's environment.
@@ -434,6 +437,8 @@ class Session:
         self.logs: dict[str, TextIO] = {}
 
     def restrict(self) -> None:
+        if self.x_namespace:
+            hide_input()
         if self.compositor is None:
             # The calling user keeps its identity; the children end with the agent.
             end_with_agent()
@@ -525,9 +530,10 @@ class Session:
             # run may reach the device's display.
             return dict(
                 self.environment(),
+                **({"DISPLAY": ":0"} if self.x_namespace else {}),
                 **(product if self.plugin_viewer else {}),
                 WAYLAND_DISPLAY=DISPLAY,
-                SDL_VIDEODRIVER="wayland",
+                SDL_VIDEODRIVER="x11" if self.x_namespace else "wayland",
                 SDL_AUDIODRIVER="dummy",
             )
         # What korrid's linux_viewer gives the viewer unit, with two changes.
@@ -724,12 +730,19 @@ class Session:
                         else f" Its viewer plugin is not usable: {self.facts['plugin_missing']}."
                     )
                 )
-        if request["fixture"] and plugin_viewer and self.facts["platform"] == PICTURE_PATH_PC:
+        needs_private_x = request["fixture"] and plugin_viewer and self.facts["platform"] == PICTURE_PATH_PC
+        private_x = request.get("pair_namespace")
+        if needs_private_x and not (private_x and request.get("private_pair")):
             raise RuntimeError(
                 "The PC VA-API decoder hardcodes X display :0. A different DISPLAY does not "
                 "keep it off the product's X server. No fully private X display is available "
                 "for this fixture, so the product viewer does not start."
             )
+        if private_x:
+            if not needs_private_x or not request.get("private_pair"):
+                raise RuntimeError("A private X namespace is only for a same-device PC product pair.")
+            self.namespace.join(private_x)
+            self.x_namespace = True
         self.fixture = bool(request["fixture"])
         self.plugin_viewer = plugin_viewer
         self.renderer = renderer
@@ -756,8 +769,8 @@ class Session:
                 f"output {OUTPUT} mode {int(request['width'])}x{int(request['height'])}"
                 f"@{float(request['refresh_hz']):g}Hz\n"
                 "default_border none\n"
-                "xwayland disable\n"
-                'for_window [title=".*"] fullscreen enable\n',
+                + ("xwayland force\n" if self.x_namespace else "xwayland disable\n")
+                + 'for_window [title=".*"] fullscreen enable\n',
             )
         handed = [keys, self.home(), runtime]
         # A viewer that pairs by PIN makes its own key pair in its key directory.
@@ -794,6 +807,15 @@ class Session:
             raise RuntimeError(self.fixture_failed("opened no socket"))
         if self.processes["fixture"].poll() is not None:
             raise RuntimeError(self.fixture_failed("exited"))
+        if self.x_namespace:
+            for _ in range(100):
+                if Path("/tmp/.X11-unix/X0").is_socket():
+                    break
+                if self.processes["fixture"].poll() is not None:
+                    break
+                time.sleep(0.1)
+            if not Path("/tmp/.X11-unix/X0").is_socket():
+                raise RuntimeError("Private Xwayland opened no :0 socket: " + self.tail("fixture"))
         return {
             "run_folder": str(self.root),
             "keydir": str(keys),
@@ -922,9 +944,14 @@ class Session:
                     self.end(unsafe, viewer)
             if self.ended:
                 raise RuntimeError(self.ended)
+            proof = (
+                isolation(viewer.pid, self.processes["fixture"].pid)
+                if self.x_namespace and viewer else None
+            )
             return {
                 "device_ns": time.monotonic_ns(),
                 "viewer_ticks": ticks(viewer.pid) if viewer else None,
+                "isolation": proof,
                 "viewer_exit": viewer.poll() if viewer else None,
                 "capture_exit": capture.poll() if capture else None,
                 "battery": battery(),
@@ -1005,6 +1032,7 @@ class Session:
                 live = live_games()
             except Exception as error:
                 errors.append(f"live games: {error}")
+        self.namespace.close()
         return {
             "live_games": live,
             # Which product units restarted, appeared or went during the run. A

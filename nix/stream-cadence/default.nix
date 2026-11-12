@@ -32,6 +32,7 @@ let
       ./heat.py
       ./sender.py
       ./viewer.py
+      ./fixture_namespace.py
     ];
   };
   captureSource = pkgs.lib.fileset.toSource {

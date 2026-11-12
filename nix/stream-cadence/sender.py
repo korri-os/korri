@@ -58,6 +58,7 @@ from device import (
     unit,
     write_new,
 )
+from fixture_namespace import PairNamespace
 from discovery import encoder_probe, output, properties
 from heat import must_end, no_start, thermal_limits, thermal_zones
 from viewer import (
@@ -300,6 +301,7 @@ def fails_restore(others: list[dict], uid: int) -> bool:
 class Session:
     def __init__(self) -> None:
         release = Path("/etc/os-release")
+        self.namespace = PairNamespace()
         self.facts: dict = {
             "model": model(),
             "architecture": os.uname().machine,
@@ -605,6 +607,8 @@ class Session:
         )
         if refused:
             raise RuntimeError(refused)
+        if request.get("private_x_namespace"):
+            self.facts["pair_namespace"] = self.namespace.create()
         self.inputs, self.appeared, self.gone = input_devices(), set(), set()
         self.sway, self.sunshine = str(request["sway"]), str(request["sunshine"])
         width, height = int(request["width"]), int(request["height"])
@@ -881,6 +885,7 @@ class Session:
                 live = live_games()
             except Exception as error:
                 errors.append(f"live games: {error}")
+        self.namespace.close()
         return {
             "live_games": live,
             # A product unit that restarted during the run is a record, not a
