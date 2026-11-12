@@ -143,16 +143,19 @@ Slint 1.18.1, interpreted, with the shell's binder. The gates hold the ones
 a pattern can see; `velvet_package.rs` holds the rest.
 
 1. Animate only an element's own geometry, opacity or ground, and write the
-   animated binding out from `in` properties, `Tokens`, the row's own data
-   and geometry. An animated binding that reads a property worked out in the
-   component loses its value (the element stands at 0, or the interpreter
-   panics at `rtti.rs:370`).
+   animated binding out from the row's own data, `Tokens`, its own geometry,
+   and `in` properties that do not hang on row data. An animated binding that
+   reads a property worked out in the component, or an `in` property bound
+   to an expression over a row (a tile's `rests` was one), loses its value:
+   the element stands at 0, or the interpreter panics at `rtti.rs:370`. What
+   a tile needs for a motion is a field of the tile.
 2. An animated place must not hang on a struct the view sends. The shell
    sets a struct again with every view that changes any field of it, and an
    animated binding under it starts again from zero when that happens twice
    before a frame. So the set's first row is a top-level number
-   (`setFirstRow`), which the shell sets only when it changes, and the
-   lobby's labels and tiles each move by themselves.
+   (`setFirstRow`), and so are the lobby's focused shelf (`shelfAt`) and
+   home's depth (`homeDepth`): the shell sets a top-level property only when
+   it changes. Moving each tile by itself instead loses the labels' place.
 3. Every list is a top-level property of the window. A list inside a struct
    can miss an in-place row update. Lists inside list rows are fine.
 4. A field the view leaves out of a struct keeps the value its list row had
@@ -167,6 +170,13 @@ a pattern can see; `velvet_package.rs` holds the rest.
 7. A motion starts when its place is first read, and a repeater makes its
    rows when the window draws: a test draws, steps the clock, and draws
    again before it reads where anything is.
+8. A value set in `init` is the first value: nothing moves to it. A motion
+   on arrival needs a change after the first frame (a `Timer`, as the house
+   lights use).
+9. A view that never changes is drawn once, and under X11 a window still on
+   its way to the screen can lose that one frame: the empty library and the
+   overlay stayed black until a press. The house lights (`t-open`, 700 ms)
+   and the overlay panel's arrival draw the first view more than once.
 
 ## Asked of the shell
 
@@ -179,6 +189,12 @@ Not Velvet's to change; reported to the coordinator.
   by its section not being Korri's "Continue" or "This device".
 - The fixture catalog orders `mostPlayed` by `playCount`; korrid orders it by
   time played; the treaty's comment says by recorded sessions.
+- A struct field a view leaves out keeps its row's old value (4 above), and
+  the probe's `selected_rect_is_visible` takes the first element whose
+  `accessible-item-selected` is true, target or not. A package must gate
+  that flag itself. The contract does not say so.
+- Under X11 the shell does not draw again when its window is first shown
+  (9 above).
 
 ## Checks
 

@@ -100,11 +100,13 @@ export interface TileView {
   readonly focusRegion?: string
   /** Drawn as focused though it is no focus target (a set's tiles). */
   readonly lit?: boolean
+  /** On a row that is not the focused one: it steps back under a veil. */
+  readonly rests: boolean
 }
 
 export const NO_TILE: TileView = {
   shown: false, kind: "game", artKind: "", art: NO_IMAGE, artW: 0, artH: 0, field: 0, capLines: [], capSize: 0,
-  poster: NO_POSTER, badge: "", badgeTop: false, label: "", count: "", at: 0, shelf: 0,
+  poster: NO_POSTER, badge: "", badgeTop: false, label: "", count: "", at: 0, shelf: 0, rests: false,
 }
 
 /** A field for a card that composes a picture: the picture's hue (the title's gel without one), deep. */

@@ -149,7 +149,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
     tile("Logo", by("logo")),
     tile("NoArt", cards[0]),
     tile("NoArtFocused", { ...cards[1], lit: true, badge: "NES" }),
-    tile("Resting", by("poster"), "rests: true;"),
+    tile("Resting", { ...by("poster"), rests: true }),
     tile("System", (lobby.shelfTiles as any[]).find(entry => entry.kind === "system")),
     tile("WayIn", (home.homeRow as any[]).find(entry => entry.kind === "nav")),
   ])
@@ -220,7 +220,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
   const p = lit("pages")
   const browse = (name: string, scene: string) => {
     const v = view(scene)
-    return { name, body: one("VelvetBrowse", `${FILL} home: ${p(v.home)}; cards: ${p(v.homeCards)}; row-tiles: ${p(v.homeRow)}; shelves: ${p(v.shelves)}; shelf-tiles: ${p(v.shelfTiles)};`) }
+    return { name, body: one("VelvetBrowse", `${FILL} home: ${p(v.home)}; cards: ${p(v.homeCards)}; row-tiles: ${p(v.homeRow)}; shelves: ${p(v.shelves)}; shelf-tiles: ${p(v.shelfTiles)}; shelf-at: ${v.shelfAt}; depth: ${v.homeDepth};`) }
   }
   add("pages", "VelvetBrowse", [browse("Home", "home"), browse("HomeNoArt", "home-no-art"), browse("Row", "row"), browse("Lobby", "lobby"), browse("OneGame", "home-one")])
   const detail = (name: string, scene: string) => {
@@ -237,7 +237,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
   add("pages", "VelvetPaused", [pause("VelvetPaused", "pages")("Plain", "overlay"), pause("VelvetPaused", "pages")("Stream", "overlay-stream")])
   const set = (name: string, scene: string) => {
     const v = view(scene)
-    return { name, body: one("VelvetSet", `${FILL} set: ${p(v.set)}; tiles: ${p(v.setTiles)}; marks: ${p(v.setMarks)};`) }
+    return { name, body: one("VelvetSet", `${FILL} set: ${p(v.set)}; first-row: ${v.setFirstRow}; tiles: ${p(v.setTiles)}; marks: ${p(v.setMarks)};`) }
   }
   add("pages", "VelvetSet", [set("EveryGame", "set"), set("NoArt", "set-no-art"), set("Pill", "set-pill"), set("OneSystem", "set-system")])
 }

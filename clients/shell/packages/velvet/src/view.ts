@@ -250,6 +250,10 @@ export function view(state: State, model: Model) {
     homeRow: home?.row ?? NONE,
     shelves: home?.shelves ?? NONE,
     shelfTiles: home?.shelfTiles ?? NONE,
+    // The focused shelf stands alone too, for the lobby's track (see `setFirstRow`).
+    shelfAt: home?.home.shelfAt ?? 0,
+    // And how deep home is: the page, the row's tiles and the lobby all move by it.
+    homeDepth: home?.home.depth ?? 0,
     set: set?.set ?? OFF,
     setTiles: set?.tiles ?? NONE,
     // The row a set's window starts at stands alone: a number the shell sets only when it

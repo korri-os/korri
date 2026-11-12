@@ -49,6 +49,10 @@ export component VelvetGrid inherits Rectangle {
             tile: tile;
             inert: root.inert;
             visible: tile.shown;
+            // A row over the window's first is on its way out: without this its foot would
+            // show as a line of colours over the first row.
+            opacity: Math.floor(tile.at / Tokens.screen.columns) >= root.first-row ? 1 : 0;
+            animate opacity { duration: Tokens.t-scroll; easing: ease-out; }
             activated(target, at, released) => { root.activated(target, at, released); }
         }
         for mark in root.marks: Rectangle {

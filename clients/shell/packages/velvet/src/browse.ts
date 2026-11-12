@@ -224,10 +224,10 @@ export function homeView(state: State, model: Model, plan: Plan, live: boolean) 
   for (const at of nearest(row.length, depth === 1 ? state.rowAt : 0)) {
     const item = row[at]!
     const focused = live && !state.onMenu && depth === 1 && state.rowAt === at
-    if (item.kind === "all") rowTiles[at] = navTile("All games", String(state.lists.total), "row", `row:${at}`, focused, at)
+    if (item.kind === "all") rowTiles[at] = { ...navTile("All games", String(state.lists.total), "row", `row:${at}`, focused, at), rests: depth === 0 }
     // The pick takes its place in the row once the row is the shelf.
     else if (item.pick && depth === 0) rowTiles[at] = { ...waitingTile("row", `row:${at}`, focused, at), shown: false }
-    else rowTiles[at] = gameTile(item.game, "row", `row:${at}`, focused, at)
+    else rowTiles[at] = { ...gameTile(item.game, "row", `row:${at}`, focused, at), rests: depth === 0 }
   }
   const shelfAtNow = shelfAt(state, shelves)
   const now = nowOf(state, model, shelves)
@@ -253,7 +253,7 @@ export function homeView(state: State, model: Model, plan: Plan, live: boolean) 
       if (at !== column && Math.abs(at - first) > across) continue
       const id = `${region}:${at}`
       const focused = live && !state.onMenu && depth === 2 && index === shelfAtNow && column === at
-      tiles[starts[index]! + at] = { ...shelfTile(shelf.items[at]!, region, id, focused, at), shelf: index }
+      tiles[starts[index]! + at] = { ...shelfTile(shelf.items[at]!, region, id, focused, at), shelf: index, rests: depth !== 2 || index !== shelfAtNow }
     }
   }
   const heads = shelves.map(shelf => ({ key: shelf.key, label: shelf.label, at: state.scrolled?.[shelfRegion(shelf.key)] ?? columnOf(state, shelf), count: shelf.items.length }))

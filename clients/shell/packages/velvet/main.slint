@@ -61,6 +61,11 @@ export component Surface inherits Window {
     in property <[Tile]> home-row;
     in property <[Shelf]> shelves;
     in property <[Tile]> shelf-tiles;
+    // Numbers a moving track hangs on stand alone. The shell sets a property only when
+    // it changes; inside a struct they would be set again with every view, and the
+    // track's motion would start again (README, "What the interpreter taught us").
+    in property <int> shelf-at;
+    in property <int> home-depth;
     in property <Set> set;
     in property <[Tile]> set-tiles;
     in property <int> set-first-row;
@@ -93,6 +98,14 @@ export component Surface inherits Window {
     property <bool> paged: layer == "screen" || layer == "sheet";
 
     // ---- The Tokens' inputs ----
+    // The house lights are up: set once, a moment after Velvet opens, so the change is
+    // a motion (a value set in `init` is the first value, and nothing moves to it).
+    property <bool> up;
+    Timer {
+        interval: 50ms;
+        running: !root.up;
+        triggered => { root.up = true; }
+    }
     init => {
         Tokens.width = self.width;
         Tokens.height = self.height;
@@ -129,6 +142,8 @@ export component Surface inherits Window {
         row-tiles: root.home-row;
         shelves: root.shelves;
         shelf-tiles: root.shelf-tiles;
+        shelf-at: root.shelf-at;
+        depth: root.home-depth;
         inert: root.layer != "screen";
         activated(target, at, released) => { root.activated(target, at, released); }
         dragged(region, by) => { root.dragged(region, by); }
@@ -217,6 +232,16 @@ export component Surface inherits Window {
         x: (root.width - self.width) / 2;
         y: root.height - self.height - Tokens.screen.pad-y * Tokens.unit;
         notice: root.notice;
+    }
+    // The house lights come up once, when Velvet opens: the stage is dark, then it is not.
+    // (It is also what makes sure the first view is drawn more than once: a window that
+    // is still on its way to the screen can lose a single frame.)
+    Rectangle {
+        width: root.width;
+        height: root.height;
+        background: Tokens.house-down;
+        opacity: root.up ? 0 : 1;
+        animate opacity { duration: Tokens.t-open; easing: ease-out; }
     }
 }
 

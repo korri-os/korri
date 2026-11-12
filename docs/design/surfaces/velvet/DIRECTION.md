@@ -49,9 +49,11 @@ goes dark under it; Back puts it away.
 
 | What | How | Token |
 | --- | --- | --- |
+| Velvet opens | The house lights come up from dark, once | `t-open` 700 ms |
 | Focus moves | The tile grows 1.08 from its foot and takes the edge; neighbours never shift | `t-focus` 240 ms, `cubic-bezier(0.16, 1, 0.3, 1)`, no overshoot |
 | The stage changes game | The band and the light cross-fade, no dark dip | `t-backdrop` 380 ms, `t-light` 420 ms |
 | A level down or up | The page slides a window's height | `t-layer` 420 ms, `t-level` 360 ms |
+| A shelf or a row of a set comes into focus | The lobby and the set move one whole step | `t-focus` 240 ms, `t-scroll` 260 ms |
 | A tile arrives | Opacity 0 to 1 and scale 0.95 to 1 | `t-reveal` 420 ms, `t-stagger` 40 ms |
 | A row not in focus | Under a veil at about half | `t-focus` |
 | Facts | After the focus rests | `dwell` 450 ms, then `t-meta` 300 ms |

@@ -140,19 +140,19 @@ export function fitCaps(text: string, width: number, height: number, max: number
   return best
 }
 
-/** A word in pieces no wider than `width` at `size`: whole when it fits. */
+/** A word in pieces no wider than `width` at `size`: whole when it fits, else in pieces of about one length (no last letter alone). */
 function split(word: string, size: number, width: number): string[] {
-  if (capsWidth(word) * size <= width) return [word]
-  const pieces: string[] = []
-  let piece = ""
-  for (const c of word) {
-    if (piece !== "" && capsWidth(piece + c) * size > width) {
-      pieces.push(piece)
-      piece = c
-    } else piece += c
+  const whole = capsWidth(word) * size
+  if (whole <= width) return [word]
+  const letters = [...word]
+  // As few pieces as the widths allow, each about as long as the next.
+  for (let count = Math.ceil(whole / width); count <= letters.length; count++) {
+    const each = Math.ceil(letters.length / count)
+    const pieces: string[] = []
+    for (let at = 0; at < letters.length; at += each) pieces.push(letters.slice(at, at + each).join(""))
+    if (pieces.every(piece => capsWidth(piece) * size <= width)) return pieces
   }
-  if (piece !== "") pieces.push(piece)
-  return pieces
+  return letters
 }
 
 /** `line` cut to `width` at `size`, ending in an ellipsis when it was cut (or already ends in one). */

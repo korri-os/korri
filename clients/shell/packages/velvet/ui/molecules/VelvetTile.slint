@@ -30,7 +30,6 @@ export component VelvetTile inherits Rectangle {
     in property <bool> slides;
     in property <Tile> tile;
     // The row this tile stands in is not the focused one: it steps back.
-    in property <bool> rests;
     // Focus does not make it grow (the pick's card: it is the show already).
     in property <bool> fixed;
     // Under another layer, or a card that only shows: drawn, but no target.
@@ -182,7 +181,7 @@ export component VelvetTile inherits Rectangle {
             width: parent.width;
             height: parent.height;
             background: Tokens.velvet-55;
-            opacity: root.rests ? 1 : 0;
+            opacity: root.tile.rests ? 1 : 0;
             animate opacity { duration: Tokens.t-focus; easing: ease-in-out; }
         }
         VelvetEdge {

@@ -92,11 +92,16 @@ shoot() { # size name
   # The focus rests: the facts come in after the dwell, and every motion ends.
   sleep 1.2
   mkdir -p "$out/$size"
+  # The pointer stands out of the picture.
+  xdotool mousemove 1999 1199 2>/dev/null || :
   id=$(xdotool search --onlyvisible --name "^Velvet" 2>/dev/null | tail -1 || echo "$id")
   import -window "$id" "$out/$size/$name.png"
   echo requests >&7
   sleep 0.2
   grep "^{" "$run/fixture.out" >"$out/$size/$name.requests.txt" || :
+  # What the shell said, when it said anything: a view it refused shows here.
+  if [[ -s $run/shell.log ]]; then grep -v "ElementHandle API" "$run/shell.log" >"$out/$size/$name.shell.log" || :; fi
+  [[ -s $out/$size/$name.shell.log ]] || rm -f "$out/$size/$name.shell.log"
   kill "$shell_pid" 2>/dev/null || :
   wait "$shell_pid" 2>/dev/null || :
   exec 7>&-
