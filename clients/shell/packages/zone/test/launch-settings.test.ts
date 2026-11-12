@@ -416,8 +416,8 @@ describe("the scroll rule", () => {
     const band = stripComments(read("ui/organisms/ZoneSkyBand.slint"))
     // The list's height gives the keep row its room.
     expect(band).toContain("height: Math.max(0, parent.height - 8 * root.a - parent.keep-h);")
-    expect(band).toContain("if root.marks && list.more-above: ZoneShape")
-    expect(band).toContain("if root.marks && list.more-below: ZoneShape")
+    expect(band).toContain("visible: root.marks && list.more-above;")
+    expect(band).toContain("visible: root.marks && list.more-below;")
     const page = stripComments(read("pages/ZoneLaunchSettings.slint"))
     expect(page).toContain("keep: root.keep;")
     expect(page).toContain("marks: true;")

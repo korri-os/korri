@@ -118,7 +118,10 @@ export component ZoneSkyBand {
                 rows: root.rows;
                 label-share: root.label-share;
             }
-            if root.marks && list.more-above: ZoneShape {
+            // Always present, shown by where the list stands: a mark that only then
+            // came to be was not always drawn.
+            ZoneShape {
+                visible: root.marks && list.more-above;
                 x: parent.width - 7 * root.a;
                 y: list.y;
                 width: 6 * root.a;
@@ -126,7 +129,8 @@ export component ZoneSkyBand {
                 ink: Tokens.red;
                 commands: "M 0 " + (self.height / Tokens.unit) + " L " + Tokens.pt(self.width, self.height) + " L " + Tokens.pt(self.width / 2, 0) + " Z";
             }
-            if root.marks && list.more-below: ZoneShape {
+            ZoneShape {
+                visible: root.marks && list.more-below;
                 x: parent.width - 7 * root.a;
                 y: list.y + list.height - 6 * root.a;
                 width: 6 * root.a;
