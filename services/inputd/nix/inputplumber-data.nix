@@ -2,18 +2,152 @@
 
 let
   inherit (pkgs) lib;
-  selectedDeviceProfiles = [
+  # Pinned upstream 0.75.2 external gamepad set. These are schema/target
+  # expectations, not model-specific Korri behavior. Check the complete set below.
+  externalDeviceProfiles = [
     {
-      file = "60-xbox_one_gamepad.yaml";
-      name = "Microsoft X-Box One pad";
-      upstreamTarget = "xbox-series";
+      file = "60-8bit_do_pro_2.yaml";
+      name = "8BitDo 8BitDo Pro 2";
+      upstreamTargets = [
+        "xbox-elite"
+        "mouse"
+        "keyboard"
+      ];
+    }
+    {
+      file = "60-LogitechDualAction.yaml";
+      name = "Logitech Dual ACtion";
+      upstreamTargets = [
+        "xbox-elite"
+        "mouse"
+        "keyboard"
+      ];
+    }
+    {
+      file = "60-flydigi_vader_4_pro.yaml";
+      name = "flydigi-vader-4-pro";
+      upstreamTargets = [
+        "deck"
+        "touchpad"
+      ];
+    }
+    {
+      file = "60-horipad_steam.yaml";
+      name = "Horipad Steam";
+      upstreamTargets = [
+        "hori-steam"
+        "mouse"
+        "keyboard"
+      ];
+    }
+    {
+      file = "60-ps4_gamepad.yaml";
+      name = "Sony Interactive Entertainment Wireless Controller";
+      upstreamTargets = [
+        "ds5"
+        "mouse"
+        "keyboard"
+      ];
+    }
+    {
+      file = "60-ps5_ds-edge_gamepad.yaml";
+      name = "Sony Interactive Entertainment DualSense Edge Wireless Controller";
+      upstreamTargets = [
+        "ds5-edge"
+        "mouse"
+        "keyboard"
+      ];
+    }
+    {
+      file = "60-ps5_ds_gamepad.yaml";
+      name = "Sony Interactive Entertainment DualSense Wireless Controller";
+      upstreamTargets = [
+        "ds5"
+        "mouse"
+        "keyboard"
+      ];
+    }
+    {
+      file = "60-switch_pro.yaml";
+      name = "Nintendo Co., Ltd. Pro Controller";
+      upstreamTargets = [
+        "gamepad"
+        "mouse"
+        "keyboard"
+      ];
     }
     {
       file = "60-xbox_360_gamepad.yaml";
       name = "Microsoft X-Box 360 pad";
-      upstreamTarget = "xb360";
+      upstreamTargets = [
+        "xb360"
+        "mouse"
+        "keyboard"
+      ];
+    }
+    {
+      file = "60-xbox_gamepad.yaml";
+      name = "Microsoft X-Box pad";
+      upstreamTargets = [
+        "xb360"
+        "mouse"
+        "keyboard"
+      ];
+    }
+    {
+      file = "60-xbox_one_bt_gamepad.yaml";
+      name = "Microsoft X-Box One pad";
+      upstreamTargets = [
+        "xbox-series"
+        "mouse"
+        "keyboard"
+      ];
+    }
+    {
+      file = "60-xbox_one_elite_gamepad.yaml";
+      name = "Microsoft X-Box One Elite pad";
+      upstreamTargets = [
+        "xbox-elite"
+        "mouse"
+        "keyboard"
+      ];
+    }
+    {
+      file = "60-xbox_one_gamepad.yaml";
+      name = "Microsoft X-Box One pad";
+      upstreamTargets = [
+        "xbox-series"
+        "mouse"
+        "keyboard"
+      ];
+    }
+    {
+      file = "65-generic_gamepad.yaml";
+      name = "Generic Gamepad";
+      upstreamTargets = [
+        "xb360"
+        "mouse"
+        "keyboard"
+      ];
     }
   ];
+  # These upstream profiles merge hidraw or auxiliary ABS interfaces. Inputd
+  # cannot yet prove that they belong to one gameplay source. Do not let the
+  # generic fallback claim only their evdev half (see source_topology.rs).
+  deferredDeviceFiles = [
+    "60-flydigi_vader_4_pro.yaml"
+    "60-horipad_steam.yaml"
+    "60-ps4_gamepad.yaml"
+    "60-ps5_ds-edge_gamepad.yaml"
+    "60-ps5_ds_gamepad.yaml"
+    "60-xbox_one_bt_gamepad.yaml"
+  ];
+  selectedDeviceProfiles = builtins.filter (
+    profile: !(builtins.elem profile.file deferredDeviceFiles)
+  ) externalDeviceProfiles;
+  deferredDeviceProfiles = builtins.filter (
+    profile: builtins.elem profile.file deferredDeviceFiles
+  ) externalDeviceProfiles;
   # This is the shared immutable mapping profile loaded by inputd for every
   # supported composite, not a filter on the physical controller's name.
   resolvedProfile = "korri-60-xbox_one_gamepad.yaml";
@@ -22,6 +156,12 @@ let
   transformSelectedProfiles =
     { inputplumberRoot }:
     ''
+      # Fail closed when an upstream update adds/removes an external profile.
+      printf '%s\n' ${
+        lib.escapeShellArgs (map (profile: profile.file) externalDeviceProfiles)
+      } | sort > expected-external
+      (cd "${inputplumberRoot}/devices"; printf '%s\n' 60-*.yaml 65-generic_gamepad.yaml) | sort > actual-external
+      cmp expected-external actual-external || exit 1
       default_profile="${inputplumberRoot}/profiles/default.yaml"
       resolved_profile="${inputplumberRoot}/profiles/${resolvedProfile}"
 
@@ -42,19 +182,37 @@ let
           && test "$(yq eval '.name' "$selected_device")" = '${profile.name}' \
           && test "$(yq eval '.options.auto_manage // false' "$selected_device")" = false \
           && test "$(yq eval '.options.persist // false' "$selected_device")" = false \
-          && test "$(yq eval -o=json -I=0 '.target_devices' "$selected_device")" = '["${profile.upstreamTarget}","mouse","keyboard"]' || {
+          && test "$(yq eval -o=json -I=0 '.target_devices' "$selected_device")" = '${builtins.toJSON profile.upstreamTargets}' || {
             echo "selected upstream profile ${profile.file} changed schema or target policy" >&2
             exit 1
           }
 
-        yq eval -i '.options.auto_manage = true | .options.persist = true | .target_devices = ["xb360", "mouse", "keyboard"]' "$selected_device"
-        test "$(yq eval '.options.auto_manage' "$selected_device")" = true \
-          && test "$(yq eval '.options.persist' "$selected_device")" = true \
-          && test "$(yq eval -o=json -I=0 '.target_devices' "$selected_device")" = '["xb360","mouse","keyboard"]' || {
-          echo "selected profile ${profile.file} auto-management or target transform produced unexpected data" >&2
-          exit 1
-        }
-      '') selectedDeviceProfiles}
+        ${lib.optionalString (builtins.elem profile selectedDeviceProfiles) ''
+          test "$(yq eval '.maximum_sources' "$selected_device")" = 1 \
+            && test "$(yq eval '[.source_devices[] | select(has("hidraw"))] | length' "$selected_device")" = 0 || {
+            echo "selected profile ${profile.file} no longer guarantees one evdev source" >&2
+            exit 1
+          }
+          yq eval -i '.options.auto_manage = true | .options.persist = true | .target_devices = ["xb360", "mouse", "keyboard"]' "$selected_device"
+          test "$(yq eval '.options.auto_manage' "$selected_device")" = true \
+            && test "$(yq eval '.options.persist' "$selected_device")" = true \
+            && test "$(yq eval -o=json -I=0 '.target_devices' "$selected_device")" = '["xb360","mouse","keyboard"]' || {
+            echo "selected profile ${profile.file} auto-management or target transform produced unexpected data" >&2
+            exit 1
+          }
+        ''}
+      '') externalDeviceProfiles}
+
+      # An active ignore config before all 60-* and 65-* profiles uses the
+      # exact upstream matchers, not a second hand-written vendor/model list.
+      deferred_profile="${inputplumberRoot}/devices/59-korri-deferred-gamepads.yaml"
+      test ! -e "$deferred_profile" || exit 1
+      printf '%s\n' 'version: 1' 'kind: CompositeDevice' 'name: Deferred multi-interface gamepads' \
+        'matches: []' 'options:' '  auto_manage: true' 'source_devices: []' > "$deferred_profile"
+      ${lib.concatMapStringsSep "\n" (profile: ''
+        UPSTREAM="${inputplumberRoot}/devices/${profile.file}" yq eval -i \
+          '.source_devices += (load(strenv(UPSTREAM)).source_devices | map(.ignore = true))' "$deferred_profile"
+      '') deferredDeviceProfiles}
 
       test "$(yq eval '.version' "$default_profile")" = 1 \
         && test "$(yq eval '.kind' "$default_profile")" = DeviceProfile \
@@ -169,6 +327,8 @@ let
         '') additionalDataPackages}
 
         ${transformSelectedProfiles { inputplumberRoot = "$inputplumber_root"; }}
+        test ! -e "$inputplumber_root/devices/00-korri-ignore-virtual.yaml"
+        cp ${./inputplumber-ignore-virtual.yaml} "$inputplumber_root/devices/00-korri-ignore-virtual.yaml"
       '';
 in
 {
@@ -177,6 +337,8 @@ in
     composeResolved
     transformSelectedProfiles
     selectedDeviceProfiles
+    externalDeviceProfiles
+    deferredDeviceProfiles
     resolvedProfile
     ;
 }

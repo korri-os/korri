@@ -1,0 +1,42 @@
+# Keep output devices out of every external profile, including the catch-all.
+# Identity sources: input-seat-rules.nix (SeatSpec/UinputSeatBackend),
+# korri-input.nix's normalized-target ACL, and Sunshine's libvirtualhid names.
+# InputPlumber sorts filenames across data roots. This must precede 50-/60-/65-.
+version: 1
+kind: CompositeDevice
+name: Ignore Korri and Sunshine outputs
+matches: []
+options:
+  auto_manage: true
+source_devices:
+  - group: gamepad
+    ignore: true
+    udev:
+      subsystem: input
+      attributes:
+        - name: name
+          value: Korri Seat P*
+        - name: phys
+          value: korri/input-seat/p*
+  - group: gamepad
+    ignore: true
+    udev:
+      subsystem: input
+      attributes:
+        - name: name
+          value: Microsoft X-Box 360 pad
+        - name: id/bustype
+          value: "0003"
+        - name: id/vendor
+          value: "045e"
+        - name: id/product
+          value: "028e"
+        - name: id/version
+          value: "0001"
+  - group: gamepad
+    ignore: true
+    udev:
+      subsystem: input
+      attributes:
+        - name: name
+          value: libvirtualhid *
