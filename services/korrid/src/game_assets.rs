@@ -54,6 +54,22 @@ pub(crate) struct AssetAssignment {
     pub role: GameAssetRole,
     pub owner: AssetOwnerIdentity,
     pub source: GameAssetSource,
+    /// One colour of this image as lowercase `#rrggbb`, computed once when
+    /// the image is stored (`dominant_color`). Absent when the image has no
+    /// clear colour, and on a record stored before colours were computed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
+/// A stored `poster`, `hero` or `logo` of one game, as the game list
+/// carries it. The `tile` is the cover and is never in this list.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct StoredMedia {
+    pub role: GameAssetRole,
+    pub asset_id: String,
+    pub width: u32,
+    pub height: u32,
+    pub color: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -202,6 +218,44 @@ impl GameAssetRepository {
         Ok(asset_ids)
     }
 
+    /// The stored `poster`, `hero` and `logo` of each of these exact games,
+    /// in that order, by playable id. A game with none is not in the map. An
+    /// image whose blob is gone is left out, as for the tile.
+    pub(crate) fn matching_media<'a>(
+        &self,
+        owners: impl IntoIterator<Item = &'a AssetOwnerIdentity>,
+    ) -> Result<BTreeMap<String, Vec<StoredMedia>>, AssetError> {
+        const MEDIA_ROLES: [GameAssetRole; 3] = [
+            GameAssetRole::Poster,
+            GameAssetRole::Hero,
+            GameAssetRole::Logo,
+        ];
+        let assignments = read_assignments(&self.root)?;
+        let blob_root = self.root.join(BLOBS_DIR);
+        let mut media = BTreeMap::new();
+        for owner in owners {
+            let stored: Vec<StoredMedia> = MEDIA_ROLES
+                .into_iter()
+                .filter_map(|role| matching_assignment(&assignments, owner, role))
+                .filter(|assignment| {
+                    valid_asset_id(&assignment.asset_id)
+                        && blob_root.join(&assignment.asset_id).is_file()
+                })
+                .map(|assignment| StoredMedia {
+                    role: assignment.role,
+                    asset_id: assignment.asset_id.clone(),
+                    width: assignment.source.width,
+                    height: assignment.source.height,
+                    color: assignment.color.clone(),
+                })
+                .collect();
+            if !stored.is_empty() {
+                media.insert(owner.playable_id.clone(), stored);
+            }
+        }
+        Ok(media)
+    }
+
     /// The image an assignment names, for `app.game-assets.object`.
     ///
     /// The rules are those of `KorriGameAssetPathHandler` at `android-final`:
@@ -264,6 +318,7 @@ impl GameAssetRepository {
                 height: decoded.height,
                 format: decoded.extension,
             },
+            color: decoded.color,
         };
         let mut assignments = read_assignments(&self.root)?;
         assignments.insert(
@@ -286,6 +341,7 @@ struct DecodedImage {
     extension: String,
     width: u32,
     height: u32,
+    color: Option<String>,
 }
 
 /// `<playable id>:<role>`, the key of one assignment.
@@ -438,7 +494,67 @@ fn validate_image(
         extension: extension.into(),
         width,
         height,
+        color: dominant_color(&image),
     })
+}
+
+/// The side of the square an image is reduced to before its colour is read.
+const COLOR_SAMPLE_SIDE: u32 = 32;
+/// Hue buckets of 30 degrees.
+const HUE_BUCKETS: usize = 12;
+
+/// One colour of an image, as lowercase `#rrggbb`, for a surface to tint
+/// with (`SurfaceMedia.color`). The image is reduced to 32 by 32 pixels.
+/// Pixels that are mostly transparent, near black, near white or of low
+/// saturation are dropped. The rest are put in 12 hue buckets, and the
+/// answer is the average colour of the largest bucket. `None` when no pixel
+/// is left: a surface then uses its own fallback.
+fn dominant_color(image: &image::DynamicImage) -> Option<String> {
+    let sample = image
+        .resize_exact(
+            COLOR_SAMPLE_SIDE,
+            COLOR_SAMPLE_SIDE,
+            image::imageops::FilterType::Triangle,
+        )
+        .to_rgba8();
+    // Per bucket: the pixel count and the sum of each channel.
+    let mut buckets = [(0u32, [0u32; 3]); HUE_BUCKETS];
+    for pixel in sample.pixels() {
+        let [red, green, blue, alpha] = pixel.0;
+        let (max, min) = (red.max(green).max(blue), red.min(green).min(blue));
+        let near_black = max < 40;
+        let near_white = min > 230;
+        // Saturation under a quarter: greys, and washed-out colour.
+        let low_saturation = u32::from(max - min) * 4 < u32::from(max);
+        if alpha < 128 || near_black || near_white || low_saturation {
+            continue;
+        }
+        let (red_f, green_f, blue_f) = (f32::from(red), f32::from(green), f32::from(blue));
+        let spread = f32::from(max - min);
+        let hue = if max == red {
+            60.0 * ((green_f - blue_f) / spread).rem_euclid(6.0)
+        } else if max == green {
+            60.0 * ((blue_f - red_f) / spread + 2.0)
+        } else {
+            60.0 * ((red_f - green_f) / spread + 4.0)
+        };
+        let bucket = (hue / 30.0) as usize % HUE_BUCKETS;
+        buckets[bucket].0 += 1;
+        for (sum, channel) in buckets[bucket].1.iter_mut().zip([red, green, blue]) {
+            *sum += u32::from(channel);
+        }
+    }
+    // The first of equally large buckets, so the answer is always the same.
+    let (count, sums) = buckets
+        .iter()
+        .rev()
+        .max_by_key(|(count, _)| *count)
+        .copied()?;
+    if count == 0 {
+        return None;
+    }
+    let [red, green, blue] = sums.map(|sum| (sum + count / 2) / count);
+    Some(format!("#{red:02x}{green:02x}{blue:02x}"))
 }
 
 fn image_limits() -> Limits {
@@ -713,6 +829,206 @@ mod tests {
         changed.rom_identity = "sha256:other-rom".into();
         assert!(repo.assigned_roles(&changed).unwrap().is_empty());
         assert_eq!(repo.matching_tile_asset_id(&changed).unwrap(), None);
+    }
+
+    #[test]
+    fn media_lists_exactly_the_stored_poster_hero_and_logo_and_never_the_tile() {
+        let private = tempfile::tempdir().unwrap();
+        let repo = GameAssetRepository::new(private.path());
+        let mut other = owner();
+        other.playable_id = "anguna".into();
+        let mut bare = owner();
+        bare.playable_id = "no-art".into();
+        let owners = [owner(), other.clone(), bare];
+        assert!(repo.matching_media(&owners).unwrap().is_empty());
+
+        // wl4: every role. anguna: a tile and a logo only.
+        let hero = test_image(192, 62, ImageFormat::Png, false, [30, 160, 90]);
+        let logo = test_image(40, 13, ImageFormat::Png, true, [255, 255, 255]);
+        for (role, bytes) in [
+            (GameAssetRole::Logo, logo.clone()),
+            (GameAssetRole::Hero, hero.clone()),
+            (GameAssetRole::Tile, png(8, 8)),
+            (GameAssetRole::Poster, png(60, 90)),
+        ] {
+            repo.assign(owner(), role, candidate(bytes)).unwrap();
+        }
+        repo.assign(other.clone(), GameAssetRole::Tile, candidate(png(8, 8)))
+            .unwrap();
+        repo.assign(other, GameAssetRole::Logo, candidate(logo.clone()))
+            .unwrap();
+
+        let media = repo.matching_media(&owners).unwrap();
+        assert_eq!(media.keys().collect::<Vec<_>>(), vec!["anguna", "wl4"]);
+        // Poster, hero, logo, whatever order they were stored in.
+        assert_eq!(
+            media["wl4"]
+                .iter()
+                .map(|stored| (stored.role, stored.width, stored.height))
+                .collect::<Vec<_>>(),
+            vec![
+                (GameAssetRole::Poster, 60, 90),
+                (GameAssetRole::Hero, 192, 62),
+                (GameAssetRole::Logo, 40, 13)
+            ]
+        );
+        assert_eq!(
+            media["wl4"][1],
+            StoredMedia {
+                role: GameAssetRole::Hero,
+                asset_id: format!("{}.png", hex::encode(Sha256::digest(&hero))),
+                width: 192,
+                height: 62,
+                color: Some("#1ea05a".into()),
+            }
+        );
+        // A game with only some roles lists exactly those.
+        assert_eq!(
+            media["anguna"]
+                .iter()
+                .map(|stored| stored.role)
+                .collect::<Vec<_>>(),
+            vec![GameAssetRole::Logo]
+        );
+        // A white logo has no clear colour.
+        assert_eq!(media["anguna"][0].color, None);
+        // The tile is the cover, in its own list.
+        assert_eq!(repo.matching_tile_asset_ids(&owners).unwrap().len(), 2);
+        // An image whose blob is gone is left out.
+        fs::remove_file(
+            private
+                .path()
+                .join(STATE_DIR)
+                .join(BLOBS_DIR)
+                .join(&media["wl4"][1].asset_id),
+        )
+        .unwrap();
+        assert_eq!(
+            repo.matching_media(&owners).unwrap()["wl4"]
+                .iter()
+                .map(|stored| stored.role)
+                .collect::<Vec<_>>(),
+            vec![GameAssetRole::Poster, GameAssetRole::Logo]
+        );
+    }
+
+    #[test]
+    fn the_colour_is_computed_once_and_kept_with_the_assignment() {
+        let private = tempfile::tempdir().unwrap();
+        let repo = GameAssetRepository::new(private.path());
+        let assignment = repo
+            .assign(
+                owner(),
+                GameAssetRole::Poster,
+                candidate(test_image(60, 90, ImageFormat::Png, false, [200, 60, 40])),
+            )
+            .unwrap();
+        assert_eq!(assignment.color.as_deref(), Some("#c83c28"));
+        let file: serde_json::Value = serde_json::from_slice(
+            &fs::read(private.path().join(STATE_DIR).join(ASSIGNMENTS_FILE)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(file["wl4:poster"]["color"], "#c83c28");
+        // An image with no clear colour keeps no field.
+        repo.assign(
+            owner(),
+            GameAssetRole::Hero,
+            candidate(test_image(
+                192,
+                62,
+                ImageFormat::Png,
+                false,
+                [128, 128, 128],
+            )),
+        )
+        .unwrap();
+        let file: serde_json::Value = serde_json::from_slice(
+            &fs::read(private.path().join(STATE_DIR).join(ASSIGNMENTS_FILE)).unwrap(),
+        )
+        .unwrap();
+        assert!(file["wl4:hero"].get("color").is_none());
+    }
+
+    /// An image painted in vertical bands, widest first.
+    fn banded(width: u32, height: u32, bands: &[([u8; 4], u32)]) -> image::DynamicImage {
+        let total: u32 = bands.iter().map(|(_, share)| share).sum();
+        image::DynamicImage::ImageRgba8(image::RgbaImage::from_fn(width, height, |x, _| {
+            let mut edge = 0;
+            for (colour, share) in bands {
+                edge += share * width / total;
+                if x < edge {
+                    return image::Rgba(*colour);
+                }
+            }
+            image::Rgba(bands[bands.len() - 1].0)
+        }))
+    }
+
+    #[test]
+    fn the_colour_is_the_average_of_the_largest_hue_bucket() {
+        let flat = |rgb: [u8; 3]| {
+            dominant_color(&image::DynamicImage::ImageRgb8(
+                image::RgbImage::from_pixel(64, 64, image::Rgb(rgb)),
+            ))
+        };
+        // A flat colour is its own answer, in lowercase hex.
+        assert_eq!(flat([200, 60, 40]).as_deref(), Some("#c83c28"));
+        assert_eq!(flat([10, 120, 255]).as_deref(), Some("#0a78ff"));
+        // Near black, near white and low saturation leave nothing.
+        for dull in [
+            [0, 0, 0],
+            [30, 10, 10],
+            [255, 255, 255],
+            [240, 235, 250],
+            [128, 128, 128],
+            [140, 120, 120],
+        ] {
+            assert_eq!(flat(dull), None, "{dull:?}");
+        }
+        // The pixels where two bands meet are blended by the reduction, so a
+        // banded image is compared within a few steps of each channel.
+        let near = |colour: Option<String>, [red, green, blue]: [u8; 3]| {
+            let colour = colour.expect("a colour");
+            assert!(colour.len() == 7 && colour.starts_with('#'), "{colour}");
+            assert_eq!(colour, colour.to_lowercase());
+            let channel = |at: usize| u8::from_str_radix(&colour[at..at + 2], 16).unwrap();
+            for (found, wanted) in [(channel(1), red), (channel(3), green), (channel(5), blue)] {
+                assert!(
+                    found.abs_diff(wanted) <= 6,
+                    "{colour} is not near {red},{green},{blue}"
+                );
+            }
+        };
+        // Two hues: the larger area wins, and it is not mixed with the other.
+        let blue = [20, 80, 220, 255];
+        let red = [220, 40, 30, 255];
+        near(
+            dominant_color(&banded(320, 320, &[(blue, 3), (red, 1)])),
+            [20, 80, 220],
+        );
+        near(
+            dominant_color(&banded(320, 320, &[(red, 3), (blue, 1)])),
+            [220, 40, 30],
+        );
+        // Black bars, white text and grey do not count, however large.
+        let black = [0, 0, 0, 255];
+        let white = [255, 255, 255, 255];
+        near(
+            dominant_color(&banded(320, 320, &[(black, 5), (white, 4), (blue, 1)])),
+            [20, 80, 220],
+        );
+        // A logo: transparent pixels do not count, whatever colour they hide.
+        let hidden_red = [220, 40, 30, 0];
+        near(
+            dominant_color(&banded(320, 320, &[(hidden_red, 3), (blue, 1)])),
+            [20, 80, 220],
+        );
+        assert_eq!(dominant_color(&banded(64, 64, &[(hidden_red, 1)])), None);
+        // The same image always gives the same answer, at any size.
+        let two = banded(640, 200, &[(blue, 1), (red, 1)]);
+        assert_eq!(dominant_color(&two), dominant_color(&two));
+        assert!(dominant_color(&banded(4000, 1300, &[(blue, 3), (red, 1)]))
+            .is_some_and(|colour| colour.len() == 7 && colour.starts_with('#')));
     }
 
     #[test]

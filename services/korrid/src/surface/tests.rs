@@ -273,7 +273,7 @@ mod surface_model {
                 (None, None),
             ]
         );
-        // Step 1 of the art chain publishes no media yet.
+        // None of these games has a stored image.
         assert!(games.iter().all(|game| game.media.is_none()));
         assert_eq!(
             serde_json::to_value(&games[0]).unwrap()["systemId"],
@@ -304,6 +304,74 @@ mod surface_model {
         // No stored cover, and a peer's game: absent, so the surface draws its own.
         assert_eq!(games[1].cover_art_url, None);
         assert_eq!(games[2].cover_art_url, None);
+    }
+
+    #[test]
+    fn publishes_a_local_games_stored_media_by_asset_id_with_size_and_colour() {
+        let poster = format!("{}.jpg", "b".repeat(64));
+        let hero = format!("{}.png", "c".repeat(64));
+        let logo = format!("{}.webp", "d".repeat(64));
+        let cover = format!("{}.png", "a".repeat(64));
+        let with_media = Entry::LocalGame {
+            game: from(
+                json!({ "id": "wl4", "title": "Wario Land 4", "system": "GBA",
+                "systemId": "gba", "coverAssetId": cover, "media": [
+                    { "role": "poster", "assetId": poster, "width": 600, "height": 900, "color": "#3a7bd5" },
+                    { "role": "hero", "assetId": hero, "width": 1920, "height": 620, "color": "#20304f" },
+                    { "role": "logo", "assetId": logo, "width": 400, "height": 120 },
+                ] }),
+            ),
+            alternatives: Vec::new(),
+        };
+        // Only some roles: exactly those.
+        let hero_only = Entry::LocalGame {
+            game: from(
+                json!({ "id": "anguna", "title": "Anguna", "system": "GBA", "media": [
+                { "role": "hero", "assetId": hero, "width": 1920, "height": 620 },
+            ] }),
+            ),
+            alternatives: Vec::new(),
+        };
+        let state = ready(
+            vec![with_media, hero_only, local_game(), host_game()],
+            None,
+            None,
+        );
+        let games = games(&state);
+        // References only, in the form of `coverArtUrl` (ADR 0065).
+        assert_eq!(
+            serde_json::to_value(&games[0].media).unwrap(),
+            json!([
+                { "role": "poster", "url": format!("/game-assets/{poster}"), "width": 600, "height": 900, "color": "#3a7bd5" },
+                { "role": "hero", "url": format!("/game-assets/{hero}"), "width": 1920, "height": 620, "color": "#20304f" },
+                { "role": "logo", "url": format!("/game-assets/{logo}"), "width": 400, "height": 120 },
+            ])
+        );
+        // The tile stays the cover and is never in media.
+        assert_eq!(
+            games[0].cover_art_url.as_deref(),
+            Some(format!("/game-assets/{cover}").as_str())
+        );
+        assert_eq!(
+            serde_json::to_value(&games[1].media).unwrap(),
+            json!([{ "role": "hero", "url": format!("/game-assets/{hero}"), "width": 1920, "height": 620 }])
+        );
+        assert_eq!(games[1].cover_art_url, None);
+        // No stored image, and a peer's game: absent, not an empty list.
+        assert_eq!(games[2].media, None);
+        assert_eq!(games[3].media, None);
+        assert!(serde_json::to_value(&games[2])
+            .unwrap()
+            .get("media")
+            .is_none());
+        // A list korrid's game source never sends: a tile as media is refused
+        // where the game is read.
+        assert!(serde_json::from_value::<crate::launcher::LocalGame>(
+            json!({ "id": "wl4", "title": "Wario Land 4", "system": "GBA", "media": [
+                { "role": "tile", "assetId": cover, "width": 512, "height": 512 },
+            ] })
+        )
+        .is_err());
     }
 
     #[test]

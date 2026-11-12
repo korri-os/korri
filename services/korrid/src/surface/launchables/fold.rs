@@ -174,6 +174,7 @@ mod tests {
             system_id: Some("gba".into()),
             identity,
             cover_asset_id: None,
+            media: None,
             play_stats: None,
         }
     }

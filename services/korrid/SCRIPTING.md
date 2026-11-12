@@ -1113,10 +1113,21 @@ asked about, then writes the blob and the assignment.
 - **Blob:** `<private>/game-assets/blobs/<sha256>.<png|jpg|webp>`. The file
   name is the asset id.
 - **Assignment:** `<private>/game-assets/assignments.json`, one record for
-  each `<playable id>:<role>`: `{ asset_id, role, owner, source }`. `source`
-  is `{ provider, id?, url?, sha256, width, height, format }`, where
+  each `<playable id>:<role>`: `{ asset_id, role, owner, source, color? }`.
+  `source` is `{ provider, id?, url?, sha256, width, height, format }`, where
   `provider` is the owning plugin's id.
+- **Colour:** `color` is one colour of the image as lowercase `#rrggbb`.
+  korrid computes it once, when it stores the image: it reduces the image to
+  32 by 32 pixels, drops pixels that are mostly transparent, near black,
+  near white or of low saturation, puts the rest in 12 hue buckets and takes
+  the average colour of the largest bucket. The field is absent when no
+  pixel is left.
 - **Reading:** `LocalGame.coverAssetId` is the `tile` asset id.
+  `LocalGame.media` lists the stored `poster`, `hero` and `logo`, in that
+  order, as `LocalGameMedia { role, assetId, width, height, color? }`; it is
+  absent when the game has none, and it never holds a tile. The surface
+  model publishes them as `SurfaceGame.media`, each named
+  `/game-assets/<asset id>` as `coverArtUrl` is.
   `app.game-assets.object { assetId }` serves an asset that any assignment
   names, whatever its role (ADR 0065).
 

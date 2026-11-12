@@ -68,3 +68,4 @@ SurfacePreferenceDeclarations = 'import("./surface").SurfacePreferenceDeclaratio
 SurfacePreferenceValues = 'import("./surface").SurfacePreferenceValues'
 SurfacePackageDisplays = 'import("./surface").SurfacePackageDisplays'
 SurfaceSteps = 'import("./surface").SurfaceSteps'
+SurfaceMediaRole = 'import("./surface").SurfaceMediaRole'

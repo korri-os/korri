@@ -15,14 +15,14 @@ use crate::{
         snapshot::{ConfigSnapshotState, SnapshotAuthorization},
     },
     discovery,
-    game_assets::{AssetOwnerIdentity, GameAssetRepository},
+    game_assets::{AssetOwnerIdentity, GameAssetRepository, GameAssetRole},
     plugin::PluginRegistry,
 };
 use std::{collections::BTreeMap, path::Path};
 
 pub use types::{
     FileProvisionMode, LaunchContributorKind, LaunchExecutor, LaunchPublicationReservationFailure,
-    LaunchRouteContributor, LocalGame, ProvisionedFile,
+    LaunchRouteContributor, LocalGame, LocalGameMedia, ProvisionedFile,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -72,8 +72,8 @@ pub fn local_games_with_cover_assets(
 ) -> LocalGameCatalog {
     let mut diagnostics = Vec::new();
     let mut games = Vec::new();
-    let cover_asset_ids = private_root
-        .map(|private_root| cover_asset_ids(readable_root, private_root))
+    let art = private_root
+        .map(|private_root| stored_art(readable_root, private_root))
         .unwrap_or_default();
     let play_stats = private_root
         .map(|root| crate::play_log::PlayLogRepository::new(root).load_all_stats())
@@ -95,7 +95,7 @@ pub fn local_games_with_cover_assets(
         let mut listed = std::collections::BTreeSet::new();
         for route in catalog.routes {
             if listed.insert(route.playable_id.clone()) {
-                games.push(local_game_from_route(route, &cover_asset_ids, &play_stats));
+                games.push(local_game_from_route(route, &art, &play_stats));
             }
         }
     }
@@ -105,10 +105,11 @@ pub fn local_games_with_cover_assets(
 
 fn local_game_from_route(
     route: ResolvedRoute,
-    cover_asset_ids: &BTreeMap<String, String>,
+    art: &StoredArt,
     play_stats: &BTreeMap<String, crate::play_log::PlayStats>,
 ) -> LocalGame {
-    let cover_asset_id = cover_asset_ids.get(&route.playable_id).cloned();
+    let cover_asset_id = art.covers.get(&route.playable_id).cloned();
+    let media = art.media.get(&route.playable_id).cloned();
     let stats = play_stats
         .get(&route.playable_id)
         .cloned()
@@ -120,13 +121,22 @@ fn local_game_from_route(
         system: route.system_title.unwrap_or(route.system_id),
         identity: route.identity,
         cover_asset_id,
+        media,
         play_stats: stats,
     }
 }
 
-fn cover_asset_ids(readable_root: &Path, private_root: &Path) -> BTreeMap<String, String> {
+/// The images korrid stores for the games discovery owns, by playable id:
+/// the tile as the cover, and the other roles as media.
+#[derive(Default)]
+struct StoredArt {
+    covers: BTreeMap<String, String>,
+    media: BTreeMap<String, Vec<LocalGameMedia>>,
+}
+
+fn stored_art(readable_root: &Path, private_root: &Path) -> StoredArt {
     let Ok(games) = discovery::reconcile::owned_discovery_games(readable_root, private_root) else {
-        return BTreeMap::new();
+        return StoredArt::default();
     };
     let repo = GameAssetRepository::new(private_root);
     let owners: Vec<_> = games
@@ -138,7 +148,41 @@ fn cover_asset_ids(readable_root: &Path, private_root: &Path) -> BTreeMap<String
             rom_identity: game.rom_identity,
         })
         .collect();
-    repo.matching_tile_asset_ids(&owners).unwrap_or_default()
+    let media = repo
+        .matching_media(&owners)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(playable_id, stored)| {
+            let media = stored
+                .into_iter()
+                .filter_map(|stored| {
+                    Some(LocalGameMedia {
+                        role: media_role(stored.role)?,
+                        asset_id: stored.asset_id,
+                        width: stored.width,
+                        height: stored.height,
+                        color: stored.color,
+                    })
+                })
+                .collect();
+            (playable_id, media)
+        })
+        .collect();
+    StoredArt {
+        covers: repo.matching_tile_asset_ids(&owners).unwrap_or_default(),
+        media,
+    }
+}
+
+/// The role of a stored image as media. The tile is the cover, never media.
+fn media_role(role: GameAssetRole) -> Option<korri_surface_treaty::SurfaceMediaRole> {
+    use korri_surface_treaty::SurfaceMediaRole;
+    match role {
+        GameAssetRole::Tile => None,
+        GameAssetRole::Poster => Some(SurfaceMediaRole::Poster),
+        GameAssetRole::Hero => Some(SurfaceMediaRole::Hero),
+        GameAssetRole::Logo => Some(SurfaceMediaRole::Logo),
+    }
 }
 
 #[cfg(test)]
@@ -171,6 +215,120 @@ mod tests {
             "diagnostics: {:?}",
             catalog.diagnostics
         );
+    }
+
+    /// A discovered game with a tile, a poster and a logo: the tile is the
+    /// cover, and media lists exactly the other two.
+    #[test]
+    fn a_listed_game_carries_its_stored_media_beside_its_cover() {
+        use crate::game_assets::{test_image, AssetCandidate};
+        use image::ImageFormat;
+        use korri_surface_treaty::SurfaceMediaRole;
+        let root = tempdir().unwrap();
+        let private = tempdir().unwrap();
+        let roms = tempdir().unwrap();
+        std::fs::write(roms.path().join("Wario Land 4.gba"), b"rom").unwrap();
+        let registry = crate::plugin_test_fixtures::installed(root.path());
+        discovery::reconcile::DiscoveryCoordinator::for_tests(root.path(), private.path())
+            .pair(
+                roms.path().to_path_buf(),
+                "gba",
+                &discovery::DiscoveryOptions::default(),
+            )
+            .unwrap();
+        let state = ConfigSnapshotCoordinator::new(root.path()).reload();
+        let listed = |private_root| {
+            local_games_with_cover_assets(root.path(), private_root, &state, &registry)
+                .games
+                .into_iter()
+                .next()
+                .expect("the discovered game is listed")
+        };
+        // No stored art: neither a cover nor a media list.
+        let bare = listed(Some(private.path()));
+        assert_eq!((bare.cover_asset_id, bare.media), (None, None));
+
+        let game = discovery::reconcile::owned_discovery_games(root.path(), private.path())
+            .unwrap()
+            .remove(0);
+        let repository = GameAssetRepository::new(private.path());
+        let mut stored = std::collections::BTreeMap::new();
+        for (role, bytes) in [
+            (
+                GameAssetRole::Logo,
+                test_image(40, 13, ImageFormat::Png, true, [240, 200, 40]),
+            ),
+            (
+                GameAssetRole::Tile,
+                test_image(8, 8, ImageFormat::Png, true, [200, 60, 40]),
+            ),
+            (
+                GameAssetRole::Poster,
+                test_image(60, 90, ImageFormat::Png, false, [20, 80, 220]),
+            ),
+        ] {
+            let assignment = repository
+                .assign(
+                    AssetOwnerIdentity {
+                        playable_id: game.playable_id.clone(),
+                        release_id: game.release_id.clone(),
+                        release_fingerprint: game.release_fingerprint.clone(),
+                        rom_identity: game.rom_identity.clone(),
+                    },
+                    role,
+                    AssetCandidate {
+                        bytes,
+                        declared_width: None,
+                        declared_height: None,
+                        provider: crate::plugin_test_fixtures::ART_PLUGIN_ID.into(),
+                        source_id: None,
+                        source_url: None,
+                    },
+                )
+                .unwrap();
+            stored.insert(role, assignment.asset_id);
+        }
+
+        let game = listed(Some(private.path()));
+        assert_eq!(
+            game.cover_asset_id.as_ref(),
+            Some(&stored[&GameAssetRole::Tile])
+        );
+        assert_eq!(
+            game.media,
+            Some(vec![
+                LocalGameMedia {
+                    role: SurfaceMediaRole::Poster,
+                    asset_id: stored[&GameAssetRole::Poster].clone(),
+                    width: 60,
+                    height: 90,
+                    color: Some("#1450dc".into()),
+                },
+                LocalGameMedia {
+                    role: SurfaceMediaRole::Logo,
+                    asset_id: stored[&GameAssetRole::Logo].clone(),
+                    width: 40,
+                    height: 13,
+                    color: Some("#f0c828".into()),
+                },
+            ])
+        );
+        // On the wire: camelCase, no hero, and never a tile.
+        let wire = serde_json::to_value(&game).unwrap();
+        assert_eq!(
+            wire["media"],
+            serde_json::json!([
+                { "role": "poster", "assetId": stored[&GameAssetRole::Poster], "width": 60, "height": 90, "color": "#1450dc" },
+                { "role": "logo", "assetId": stored[&GameAssetRole::Logo], "width": 40, "height": 13, "color": "#f0c828" },
+            ])
+        );
+        assert!(serde_json::from_value::<LocalGameMedia>(serde_json::json!(
+            { "role": "tile", "assetId": stored[&GameAssetRole::Tile], "width": 8, "height": 8 }
+        ))
+        .is_err());
+        // Without the private root there is no stored art to speak of.
+        let unknown = listed(None);
+        assert_eq!((unknown.cover_asset_id, unknown.media), (None, None));
     }
 
     /// The listed game carries the route's system: its id as the route has

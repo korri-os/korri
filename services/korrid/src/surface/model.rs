@@ -4,8 +4,8 @@
 //! outcome or an error code. Anything Korri cannot honestly report is absent.
 
 use korri_surface_treaty::{
-    SurfaceAction, SurfaceGame, SurfaceGameDownload, SurfaceLaunchLocation, SurfaceStatus,
-    SurfaceTrue,
+    SurfaceAction, SurfaceGame, SurfaceGameDownload, SurfaceLaunchLocation, SurfaceMedia,
+    SurfaceStatus, SurfaceTrue,
 };
 
 use super::{
@@ -232,6 +232,24 @@ pub fn game_from_entry(entry: &Entry, entries: &[Entry]) -> SurfaceGame {
                 .cover_asset_id
                 .as_deref()
                 .map(crate::game_assets::asset_url);
+            // The other stored images, named as the cover is. A game with
+            // none carries no list.
+            game.media = local
+                .media
+                .as_ref()
+                .filter(|media| !media.is_empty())
+                .map(|media| {
+                    media
+                        .iter()
+                        .map(|stored| SurfaceMedia {
+                            role: stored.role,
+                            url: crate::game_assets::asset_url(&stored.asset_id),
+                            width: stored.width,
+                            height: stored.height,
+                            color: stored.color.clone(),
+                        })
+                        .collect()
+                });
             let locations = launch_locations_for_entry(entry);
             if locations.len() >= 2 {
                 game.launch_locations = Some(locations);

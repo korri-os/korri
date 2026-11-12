@@ -380,6 +380,49 @@ fn a_pass_stores_the_first_candidate_of_each_role_and_the_secret_goes_to_its_hos
     let before = fixture.server.received().len();
     assert_eq!(fixture.pass().run(), ArtworkReport::default());
     assert_eq!(fixture.server.received().len(), before);
+
+    // The whole chain: what the plugin found is what a surface is given.
+    let registry = installed_with_art(
+        fixture.readable.path(),
+        art_package(fixture.readable.path(), &plugin_source(""), &[], None),
+    );
+    let state =
+        crate::config::snapshot::ConfigSnapshotCoordinator::new(fixture.readable.path()).reload();
+    let listed = crate::launcher::local_games_with_cover_assets(
+        fixture.readable.path(),
+        Some(fixture.private.path()),
+        &state,
+        &registry,
+    )
+    .games
+    .remove(0);
+    let entry = crate::surface::launchables::state::Entry::LocalGame {
+        game: listed,
+        alternatives: Vec::new(),
+    };
+    let surface = crate::surface::model::game_from_entry(&entry, std::slice::from_ref(&entry));
+    let asset_id = |bytes: &[u8]| format!("{}.png", hex::encode(sha2::Sha256::digest(bytes)));
+    assert_eq!(
+        surface.cover_art_url,
+        Some(format!("/game-assets/{}", asset_id(&images[0].1)))
+    );
+    assert_eq!(surface.system_id.as_deref(), Some("gba"));
+    assert_eq!(
+        serde_json::to_value(&surface.media).unwrap(),
+        serde_json::json!([
+            { "role": "poster", "url": format!("/game-assets/{}", asset_id(&images[2].1)),
+              "width": 60, "height": 90, "color": "#c83c28" },
+            { "role": "hero", "url": format!("/game-assets/{}", asset_id(&images[3].1)),
+              "width": 192, "height": 62, "color": "#c83c28" },
+            { "role": "logo", "url": format!("/game-assets/{}", asset_id(&images[4].1)),
+              "width": 40, "height": 13, "color": "#c83c28" },
+        ])
+    );
+    // Each of those references is an asset the object request serves.
+    for media in surface.media.unwrap() {
+        let id = media.url.strip_prefix("/game-assets/").unwrap();
+        assert!(repository.assigned_asset(id).unwrap().is_some(), "{id}");
+    }
 }
 
 #[test]

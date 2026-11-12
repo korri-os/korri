@@ -269,6 +269,7 @@ fn play_library_ambiguous_titles_piped_list_exact_choices() {
                     system_id: Some("sys".into()),
                     identity: None,
                     cover_asset_id: None,
+                    media: None,
                     play_stats: None,
                 })
                 .to_vec(),
@@ -292,6 +293,7 @@ fn games() -> RpcResponse {
             system_id: Some("sys".into()),
             identity: None,
             cover_asset_id: None,
+            media: None,
             play_stats: None,
         }],
         failures: None,
@@ -1084,6 +1086,7 @@ fn play_library_terminal_picker_requires_an_exact_game_id() {
                     system_id: Some("sys".into()),
                     identity: None,
                     cover_asset_id: None,
+                    media: None,
                     play_stats: None,
                 })
                 .to_vec(),
@@ -1144,6 +1147,7 @@ fn play_library_terminal_picker_numbers_filters_and_cancel_never_guess() {
                         system_id: Some("sys".into()),
                         identity: None,
                         cover_asset_id: None,
+                        media: None,
                         play_stats: None,
                     })
                     .to_vec(),

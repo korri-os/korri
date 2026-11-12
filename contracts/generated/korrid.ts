@@ -1005,6 +1005,22 @@ export interface LibraryFoldersSnapshot {
 export interface LibraryFoldersSnapshotRequest {
 }
 
+/** One stored image of a local game that is not its cover. */
+export interface LocalGameMedia {
+	/** `poster`, `hero` or `logo`. It cannot be `tile`. */
+	role: import("./surface").SurfaceMediaRole;
+	/** The asset id, as `coverAssetId`: `<sha256>.<png|jpg|webp>`. */
+	assetId: string;
+	/** The image's own size in pixels. */
+	width: number;
+	height: number;
+	/**
+	 * One colour of the image as lowercase `#rrggbb`. Absent when the image
+	 * has no clear colour.
+	 */
+	color?: string;
+}
+
 export interface LocalGame {
 	id: string;
 	title: string;
@@ -1017,6 +1033,11 @@ export interface LocalGame {
 	systemId?: string;
 	identity?: GameIdentity;
 	coverAssetId?: string;
+	/**
+	 * The game's stored `poster`, `hero` and `logo`, in that order. Absent
+	 * when it has none. The tile is `coverAssetId` and is never in here.
+	 */
+	media?: LocalGameMedia[];
 	playStats?: PlayStats;
 }
 

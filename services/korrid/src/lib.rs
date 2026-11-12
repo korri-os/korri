@@ -7946,6 +7946,74 @@ mod tests {
         );
     }
 
+    /// ADR 0065: the object request serves an image that any assignment
+    /// names, whatever its role.
+    #[tokio::test]
+    async fn game_asset_object_answers_an_assigned_image_of_every_role() {
+        use game_assets::GameAssetRole;
+        use image::ImageFormat;
+        let readable = tempfile::tempdir().unwrap();
+        let private = tempfile::tempdir().unwrap();
+        let app = discovery_test_router(
+            readable.path(),
+            private.path(),
+            discovery::FolderSelectionGrantStore::default(),
+        );
+        let repository = game_assets::GameAssetRepository::new(private.path());
+        for (role, bytes, content_type) in [
+            (
+                GameAssetRole::Tile,
+                game_assets::test_image(8, 8, ImageFormat::Png, true, [200, 60, 40]),
+                "image/png",
+            ),
+            (
+                GameAssetRole::Poster,
+                game_assets::test_image(60, 90, ImageFormat::Jpeg, false, [20, 90, 200]),
+                "image/jpeg",
+            ),
+            (
+                GameAssetRole::Hero,
+                game_assets::test_image(192, 62, ImageFormat::WebP, false, [30, 160, 90]),
+                "image/webp",
+            ),
+            (
+                GameAssetRole::Logo,
+                game_assets::test_image(40, 13, ImageFormat::Png, true, [240, 200, 40]),
+                "image/png",
+            ),
+        ] {
+            let assignment = repository
+                .assign(
+                    game_assets::AssetOwnerIdentity {
+                        playable_id: "wl4".into(),
+                        release_id: "gba".into(),
+                        release_fingerprint: "sha256:item".into(),
+                        rom_identity: "sha256:rom".into(),
+                    },
+                    role,
+                    game_assets::AssetCandidate {
+                        bytes: bytes.clone(),
+                        declared_width: None,
+                        declared_height: None,
+                        provider: "@korri:steamgriddb".into(),
+                        source_id: None,
+                        source_url: None,
+                    },
+                )
+                .unwrap();
+            let (status, answered_type, body) = asset_object(
+                app.clone(),
+                asset_request(&assignment.asset_id),
+                Some("Bearer right-token"),
+                None,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{role:?}");
+            assert_eq!(answered_type.as_deref(), Some(content_type), "{role:?}");
+            assert_eq!(body, bytes, "{role:?}");
+        }
+    }
+
     #[tokio::test]
     async fn discovery_rejects_unknown_expired_and_replayed_receipts() {
         let readable = tempfile::tempdir().unwrap();
