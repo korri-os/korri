@@ -179,3 +179,99 @@ describe("sameGame", () => {
     for (const change of changes) expect(sameGame(game(), change(game())), change.toString()).toBe(false)
   })
 })
+
+describe("the pixel budget goes to what is in sight", () => {
+  const base = art()
+  /** Forty games, thirty of them played, each with a poster of `side` by `side * 1.5` stored pixels. */
+  const library = (side: number) => ({
+    ...base,
+    systems: undefined,
+    catalog: {
+      _tag: "Ready",
+      games: Array.from({ length: 40 }, (_, index) => ({
+        id: `h${index}`, title: `Heavy ${String(index).padStart(2, "0")}`, section: "This device",
+        ...(index < 30 ? { lastPlayedAt: base.publishedAt - (index + 1) * 3_600_000, playCount: 40 - index, totalPlaytimeSeconds: 600 * (40 - index) } : {}),
+        media: [{ role: "poster", url: `preview/art/heavy-${index}.png`, width: side, height: side * 1.5, color: "#804020" }],
+      })),
+    },
+  })
+
+  test("in the library the shelves' tiles get their pictures before the row that left the stage", () => {
+    // A stored poster of 800x1200 is 3.7 MiB: six to the budget.
+    const run = new Play(library(800), 1280, 720)
+    const games = (tiles: any[]) => tiles.filter(tile => tile.shown && tile.kind === "game")
+    run.press("down")
+    // On the row, the row comes first: every one of its games has its picture.
+    const row = games(run.view.homeRow)
+    expect(row.length).toBeGreaterThan(2)
+    expect(row.every(tile => tile.artKind === "poster")).toBe(true)
+    // Down to the last shelf: "Not started" stands over it, in sight, and "Lately" (the row's games) has left.
+    run.press("down", "down", "down")
+    expect(run.view.homeDepth).toBe(2)
+    expect(run.view.shelfAt).toBe(2)
+    const inSight = games(run.view.shelfTiles)
+    expect(inSight.length).toBe(5)
+    expect(inSight.every(tile => tile.shelf === 1)).toBe(true)
+    expect(inSight.every(tile => tile.artKind === "poster")).toBe(true)
+    // The row, off the stage, has what the budget has left: a card where its picture does not fit, never a hole.
+    const rowNow = games(run.view.homeRow)
+    expect(rowNow.some(tile => tile.artKind === "none")).toBe(true)
+    for (const tile of rowNow) expect(tile.poster.lines.length).toBeGreaterThan(0)
+    const pictures = new Set([...inSight, ...rowNow].filter(tile => tile.artKind === "poster").map(tile => tile.art.$image))
+    expect(pictures.size * 800 * 1200 * 4).toBeLessThanOrEqual(24 * 1024 * 1024)
+  })
+
+  test("a tile the last view sent is the same object in the next, when nothing of it changed", () => {
+    const run = new Play(library(60), 1280, 720)
+    run.press("down", "down")
+    const before = run.view.shelfTiles as any[]
+    run.press("right")
+    const after = run.view.shelfTiles as any[]
+    const same = after.filter((tile, index) => tile.shown && tile === before[index]).length
+    const changed = after.filter((tile, index) => tile.shown && tile !== before[index]).length
+    // A move changes the tile the focus left and the one it landed on.
+    expect(changed).toBe(2)
+    expect(same).toBeGreaterThan(3)
+  })
+})
+
+describe("a game is one object in every list that holds it", () => {
+  const one = (run: Play): void => {
+    const seen = new Map<string, unknown>()
+    for (const list of Object.values(run.state.lists.kept)) {
+      for (const game of list) {
+        if (!seen.has(game.id)) seen.set(game.id, game)
+        expect(seen.get(game.id) === game, game.id).toBe(true)
+      }
+    }
+    expect(seen.size).toBeGreaterThan(0)
+  }
+
+  test("after the lists load, after artwork arrives, after a set and back", () => {
+    const run = new Play(bare())
+    one(run)
+    run.swap(art())
+    one(run)
+    // The artwork is in every list's copy: no list still holds a game as it was.
+    for (const list of Object.values(run.state.lists.kept)) {
+      const ember = list.find(game => game.id === "ember-road")
+      if (ember !== undefined) expect((ember.media ?? []).length).toBeGreaterThan(0)
+    }
+    run.press("down", "down", "right", "right", "right", "right", "right", "confirm")
+    expect(run.view.page).toBe("set")
+    run.press("down", "back")
+    one(run)
+  })
+
+  test("a game that changes while only its other lists show it is replaced in all of them", () => {
+    const full = art()
+    const run = new Play(full)
+    const changed = withGames(full, game => (game.id === "tide-pool" ? { ...game, resumable: true, lastPlayedAt: full.publishedAt - MINUTE } : game))
+    run.swap(changed)
+    one(run)
+    for (const list of Object.values(run.state.lists.kept)) {
+      const tide = list.find(game => game.id === "tide-pool")
+      if (tide !== undefined) expect(tide.resumable).toBe(true)
+    }
+  })
+})

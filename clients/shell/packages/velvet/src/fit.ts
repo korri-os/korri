@@ -23,13 +23,45 @@ const widths = new Map<string, number>()
 export function capsWidth(text: string): number {
   const known = widths.get(text)
   if (known !== undefined) return known
-  let total = 0
-  const upper = caps(text)
-  for (let i = 0; i < upper.length; i++) total += DISPLAY_ADVANCES[upper.charCodeAt(i)] ?? FALLBACK_ADVANCE
-  const width = (total / 1000) * SAFETY
+  const width = upperWidth(caps(text))
   if (widths.size > 4000) widths.clear()
   widths.set(text, width)
   return width
+}
+
+const upperWidths = new Map<string, number>()
+
+/** The width of a word that is in caps already, in font sizes. */
+function upperWidth(upper: string): number {
+  const known = upperWidths.get(upper)
+  if (known !== undefined) return known
+  let total = 0
+  for (let i = 0; i < upper.length; i++) total += DISPLAY_ADVANCES[upper.charCodeAt(i)] ?? FALLBACK_ADVANCE
+  const width = (total / 1000) * SAFETY
+  if (upperWidths.size > 4000) upperWidths.clear()
+  upperWidths.set(upper, width)
+  return width
+}
+
+/** White space as `\s` has it, by code: a title is cut into words for every card on its way in, and a pattern is slow there. */
+function isSpace(code: number): boolean {
+  return code === 32 || (code >= 9 && code <= 13) || code === 0xa0 || (code > 0x167f && (code === 0x1680 || (code >= 0x2000 && code <= 0x200a) || code === 0x2028 || code === 0x2029 || code === 0x202f || code === 0x205f || code === 0x3000 || code === 0xfeff))
+}
+
+/** The words of `text`. */
+function wordsOf(text: string): string[] {
+  const words: string[] = []
+  let start = -1
+  for (let i = 0; i < text.length; i++) {
+    if (isSpace(text.charCodeAt(i))) {
+      if (start >= 0) {
+        words.push(text.slice(start, i))
+        start = -1
+      }
+    } else if (start < 0) start = i
+  }
+  if (start >= 0) words.push(text.slice(start))
+  return words
 }
 
 export interface Fit {
@@ -62,15 +94,26 @@ const fits = new Map<string, Fit>()
  * `min` is cut to the lines that do, the last one ending in an ellipsis.
  */
 export function fitCaps(text: string, width: number, height: number, max: number, min = 1): Fit {
-  const key = `${text}|${width.toFixed(1)}|${height.toFixed(1)}|${max.toFixed(1)}|${min}`
+  // The box to a sixteenth of a unit, as whole numbers: a fraction is slow to write as text.
+  const key = `${text}|${Math.round(width * 16)}|${Math.round(height * 16)}|${Math.round(max * 16)}|${Math.round(min * 16)}`
   const known = fits.get(key)
   if (known !== undefined) return known
-  const words = text.trim().split(/\s+/).filter(word => word !== "")
+  const best = fitCapsOnce(text, width, height, max, min)
+  if (fits.size > 2000) fits.clear()
+  fits.set(key, best)
+  return best
+}
+
+/** `fitCaps` without its memory, for a caller that keeps the answer itself (a game's card is fitted once and kept by the game). */
+export function fitCapsOnce(text: string, width: number, height: number, max: number, min = 1): Fit {
+  // In caps from the start: the words are measured and set as they will be drawn.
+  const words = wordsOf(caps(text))
   // The search works on numbers: each word's width once, a space's width between them
   // (the advance table has no kerning, so a line's width is the sum). The lines become
   // strings once, at the size found. A title is fitted for every card on its way in.
-  const widths = words.map(capsWidth)
-  const space = capsWidth(" ")
+  const widths: number[] = []
+  for (let i = 0; i < words.length; i++) widths.push(upperWidth(words[i]!))
+  const space = upperWidth(" ")
   const holds = (size: number): boolean => {
     if (widths.length === 0) return true
     let lines = 1
@@ -117,12 +160,12 @@ export function fitCaps(text: string, width: number, height: number, max: number
         text += " " + words[i]!
         line = tried
       } else {
-        lines.push(caps(text))
+        lines.push(text)
         text = words[i]!
         line = widths[i]!
       }
     }
-    if (text !== "") lines.push(caps(text))
+    if (text !== "") lines.push(text)
     best = { size: found, lines }
   }
   if (best === undefined) {
@@ -135,8 +178,6 @@ export function fitCaps(text: string, width: number, height: number, max: number
     if (lines.length > room && kept.length > 0) kept[kept.length - 1] = cut(`${kept[kept.length - 1]}…`, min, width, true)
     best = { size: min, lines: kept.map(caps) }
   }
-  if (fits.size > 2000) fits.clear()
-  fits.set(key, best)
   return best
 }
 

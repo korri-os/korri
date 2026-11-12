@@ -168,10 +168,24 @@ impl Korri {
     }
 }
 
+thread_local! {
+    /// The longest `update` since it was last read, in CPU ns of this thread
+    /// (each test runs on its own thread).
+    static LONGEST_UPDATE: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// The longest `update` since the last call of this, in CPU ns.
+fn longest_update() -> u64 {
+    LONGEST_UPDATE.with(|longest| longest.replace(0))
+}
+
 fn deliver(engine: &mut engine::Engine, korri: &mut Korri, message: Value) {
     let mut queue = vec![message];
     while let Some(message) = queue.pop() {
+        let started = korri_shell::budget_clock::BudgetClock::ThreadCpu.start();
         let requests = engine.update(&message).unwrap();
+        let took = started.elapsed().as_nanos() as u64;
+        LONGEST_UPDATE.with(|longest| longest.set(longest.get().max(took)));
         if korri.answer(&requests) {
             engine.set_model(&korri.published()).unwrap();
             queue.push(json!({"_tag": "KorriPublished"}));
@@ -853,17 +867,21 @@ const CALL_BUDGET_MS: f64 = 50.0;
 /// one busy moment of this machine does not decide it.
 const TIMED_ENGINES: usize = 7;
 
-/// Every `view()` over 10,000 games stays under 50 ms on the slow device's
-/// clock (contract A5: a call over the budget is a performance defect, with
-/// no exception for the first sight of anything). The tour: the home, along
-/// the row, the lobby, along and down its shelves, a set and moves through
-/// it (which re-ask the window), the sort sheet, the detail, an idle Tick.
+/// Every `view()` and every `update()` over 10,000 games stays under 50 ms
+/// on the slow device's clock (contract A5: a call over the budget is a
+/// performance defect, with no exception for the first sight of anything).
+/// The tour: the home, along the row, the lobby, along and down its shelves,
+/// a set and moves through it (which re-ask the window), the sort sheet, the
+/// detail, an idle Tick.
 ///
 /// The tour runs twice on each of TIMED_ENGINES fresh engines. The first
 /// run is the first sight of every screen and every card on the way; the
-/// second is the same screens again. Each single call, in both runs, is
+/// second is the same screens again. Each single `view()`, in both runs, is
 /// held to the one budget: its median over the engines, on the thread's CPU
-/// clock, times SLOW_FACTOR.
+/// clock, times SLOW_FACTOR. A step is one or more `update()` calls (the
+/// press, then one for each model Korri publishes in answer, eight when the
+/// home reads its lists again); the longest of a step's is held to the same
+/// budget the same way.
 #[test]
 fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
     let root = package();
@@ -874,6 +892,8 @@ fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
     let json_only = std::env::var_os("VELVET_VIEW_JSON").is_some();
     // One entry a call of the two runs: what it is, and its time on each engine.
     let mut calls: Vec<(&'static str, Vec<u64>)> = Vec::new();
+    // The longest update of each step, the same way.
+    let mut updates: Vec<Vec<u64>> = Vec::new();
     let mut bytes = 0;
     for engine_number in 0..TIMED_ENGINES {
         let (mut engine, mut korri) = start(&root, &model, 640, 480);
@@ -881,15 +901,19 @@ fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
         let mut at = 0;
         let mut timed =
             |engine: &mut engine::Engine, korri: &mut Korri, what: &'static str, press: &str| {
+                longest_update();
                 step(engine, korri, &home, press);
+                let update = longest_update();
                 let started = korri_shell::budget_clock::BudgetClock::ThreadCpu.start();
                 let view = engine.view().unwrap();
                 let took = started.elapsed().as_nanos() as u64;
                 if engine_number == 0 {
                     calls.push((what, Vec::new()));
+                    updates.push(Vec::new());
                 }
                 assert_eq!(calls[at].0, what, "the tour is the same on every engine");
                 calls[at].1.push(took);
+                updates[at].push(update);
                 at += 1;
                 bytes = bytes.max(view.to_string().len());
                 if json_only && engine_number == 0 {
@@ -952,23 +976,37 @@ fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
     let half = calls.len() / 2;
     let mut over = Vec::new();
     let mut kinds: BTreeMap<&str, [Vec<u64>; 2]> = BTreeMap::new();
+    let mut update_kinds: BTreeMap<&str, [Vec<u64>; 2]> = BTreeMap::new();
     for (index, (what, times)) in calls.iter().enumerate() {
         let run = usize::from(index >= half);
         let took = median(times);
+        let update = median(&updates[index]);
         kinds.entry(what).or_default()[run].push(took);
-        if took > limit {
-            over.push(format!(
-                "{what} (call {} of the {} run): {took} CPU ns, about {:.1} ms on the device, over the {CALL_BUDGET_MS} ms budget",
-                index % half + 1,
-                if run == 0 { "first" } else { "second" },
-                device(took)
-            ));
+        update_kinds.entry(what).or_default()[run].push(update);
+        for (call, took) in [("view", took), ("update", update)] {
+            if took > limit {
+                over.push(format!(
+                    "{what} (step {} of the {} run), its {call}: {took} CPU ns, about {:.1} ms on the device, over the {CALL_BUDGET_MS} ms budget",
+                    index % half + 1,
+                    if run == 0 { "first" } else { "second" },
+                    device(took)
+                ));
+            }
         }
     }
+    let worst = |list: &Vec<u64>| *list.iter().max().unwrap();
     for (what, runs) in &kinds {
-        let worst = |list: &Vec<u64>| *list.iter().max().unwrap();
         eprintln!(
             "{what}: first sight median {:.1} ms, worst call {:.1} ms; again median {:.1} ms, worst call {:.1} ms (on the device; budget {CALL_BUDGET_MS} ms)",
+            device(median(&runs[0])),
+            device(worst(&runs[0])),
+            device(median(&runs[1])),
+            device(worst(&runs[1]))
+        );
+    }
+    for (what, runs) in &update_kinds {
+        eprintln!(
+            "{what}, its longest update: first run median {:.1} ms, worst {:.1} ms; again median {:.1} ms, worst {:.1} ms (on the device; budget {CALL_BUDGET_MS} ms)",
             device(median(&runs[0])),
             device(worst(&runs[0])),
             device(median(&runs[1])),

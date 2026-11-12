@@ -11,6 +11,8 @@
  * costs the same whether it was ever seen before or not.
  */
 import { describe, expect, test } from "bun:test"
+import { hash } from "../src/colour"
+import { fitCaps } from "../src/fit"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { contrast } from "../src/colour"
@@ -201,6 +203,31 @@ describe("the no-art card", () => {
         expect(Object.keys(sent).sort()).toEqual(["drawing", "ink", "lines", "palette", "size"])
         expect(JSON.stringify(sent).length, `${title} on ${system}`).toBeLessThan(140)
       }
+    }
+  })
+})
+
+describe("the hash that picks a card", () => {
+  // The rule, written plainly: FNV-1a over the title's code points.
+  const plain = (text: string): number => {
+    let h = 2166136261
+    for (const c of text) {
+      h ^= c.codePointAt(0)!
+      h = Math.imul(h, 16777619)
+    }
+    return h >>> 0
+  }
+
+  test("reads a title by code point, whatever its letters", () => {
+    for (const title of ["", "A", "Ember Road", "Ōkami", "ポケットモンスター", "A😀B", "😀", "\ud83d", "x\ud83dy", "naïve café", "Ys Ⅷ"]) {
+      expect(hash(title), JSON.stringify(title)).toBe(plain(title))
+    }
+  })
+
+  test("fitted titles are in caps, cut at any white space, and never empty for a title with a letter", () => {
+    for (const [title, words] of [["Ember Road", ["EMBER", "ROAD"]], ["  two\tspaces\u00a0here ", ["TWO", "SPACES", "HERE"]], ["straße", ["STRASSE"]], ["5 µm", ["5", "µM"]]] as const) {
+      const fit = fitCaps(title, 400, 400, 20, 4)
+      expect(fit.lines.join(" ").split(" ")).toEqual([...words])
     }
   })
 })

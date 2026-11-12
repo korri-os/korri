@@ -119,7 +119,9 @@ export class Play {
       model.systems = systems(this.games)
     }
     if (this.focused !== undefined) model.focusedGame = { gameId: this.focused, actions: this.actions }
-    this.model = model as Model
+    // The shell hands Velvet each model as JSON: every publication is new objects all the way
+    // down, and nothing may lean on a game being the same object as the one published before.
+    this.model = JSON.parse(JSON.stringify(model)) as Model
   }
 
   /** Korri publishes another model (a scenario's `model N`). */

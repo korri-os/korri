@@ -13,8 +13,11 @@ export const clamp = (value: number, low: number, high: number): number => Math.
 /** FNV-1a over code points. */
 export function hash(text: string): number {
   let h = 2166136261
-  for (const c of text) {
-    h ^= c.codePointAt(0)!
+  // By code point, read by index: a string's iterator makes an object a letter, and this runs for every card.
+  for (let i = 0; i < text.length; i++) {
+    const point = text.codePointAt(i)!
+    if (point > 0xffff) i++
+    h ^= point
     h = Math.imul(h, 16777619)
   }
   return h >>> 0
@@ -128,11 +131,19 @@ function gel(hue: number, saturation: number): number {
  * next (`gel`).
  */
 export function stageLight(artColour: string | undefined, title: string): number {
+  // Every view lights the stage, and a game's light never changes while its colour and title do not.
+  const key = `${artColour ?? ""}\u0000${title}`
+  const known = lights.get(key)
+  if (known !== undefined) return known
   const parsed = parseHex(artColour)
+  let light: number
   if (parsed !== undefined) {
     const [h, s, l] = toHsl(parsed)
-    if (s >= 0.12 && l >= 0.05) return gel(h, clamp(s, 0.3, 0.62))
-    return gel(gelHue(title), 0.4)
-  }
-  return gel(gelHue(title), 0.46)
+    light = s >= 0.12 && l >= 0.05 ? gel(h, clamp(s, 0.3, 0.62)) : gel(gelHue(title), 0.4)
+  } else light = gel(gelHue(title), 0.46)
+  if (lights.size > 400) lights.clear()
+  lights.set(key, light)
+  return light
 }
+
+const lights = new Map<string, number>()

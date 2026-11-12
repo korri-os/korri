@@ -19,7 +19,7 @@
  */
 import { GELS, hash } from "./colour"
 import { GEL_SHELLS, MOTIF_DRAWINGS, PALETTES, PATTERN_ACCENTS, PATTERN_PALETTES, PATTERN_SHELLS, SYSTEM_DRAWINGS, SYSTEM_PALETTES, VARIANTS, type Drawing } from "./drawings"
-import { fitCaps, type Fit } from "./fit"
+import { fitCapsOnce, type Fit } from "./fit"
 import { knownSystem, LANGUAGES } from "./systems"
 
 export { KNOWN_SYSTEMS, knownSystem } from "./systems"
@@ -79,7 +79,7 @@ export function posterFor(title: string, systemId: string | undefined): Poster {
     palette = patternPalette(family, choice)
   }
   const colours = PALETTES[palette]!
-  const fit: Fit = fitCaps(title, drawing.w, drawing.h, drawing.max * CARD_H, 4.2)
+  const fit: Fit = fitCapsOnce(title, drawing.w, drawing.h, drawing.max * CARD_H, 4.2)
   const poster: Poster = { drawing: drawing.index, palette, lines: fit.lines, size: fit.size, ink: colours[1 + drawing.ink]!, badgeTop: drawing.badgeTop, paper: colours[0] }
   if (posters.size > 600) posters.clear()
   posters.set(key, poster)

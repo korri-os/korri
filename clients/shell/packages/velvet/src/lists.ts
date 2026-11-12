@@ -56,6 +56,17 @@
  * The lists also go stale when the library's systems change (`stampOf`) or a
  * game was just played. While a set holds the window (src/browse.ts) nothing
  * is asked here.
+ *
+ * Korri publishes with every move of the focus, and every publication is
+ * new objects all the way down. So that reading one costs little:
+ *   - a game is one object in every list that holds it (`keep`), and a
+ *     publication is read by its window's games against that one object
+ *     (`refresh`: sixty comparisons, not one for every game kept);
+ *   - a game that says what it said before keeps its object, so everything
+ *     made from it (its tile, the home's row, the shelves) is found again
+ *     by that object and not made again;
+ *   - lists settled against a model stay settled against that same model
+ *     (a press and a tick settle too, and ask nothing of the lists).
  */
 import type { CatalogQuery, SurfaceCatalog, SurfaceModel as Model } from "../../../../../contracts/generated/surface"
 import { ROW_SLOTS, SHELF_SLOTS } from "./plan"
@@ -97,6 +108,16 @@ export const LISTS_START: Lists = { kept: {}, total: 0, peers: [], peerTotals: {
 
 /** Every list wanted, in the order it is asked for. */
 export function wants(lists: Lists): readonly Want[] {
+  // Asked for at every step of a pass, and the same while the pages and the peers are.
+  if (wanted !== undefined && wanted.backs === lists.backs && wanted.tails === lists.tails && wanted.peers === lists.peers) return wanted.wants
+  const made = wantsOf(lists)
+  wanted = { backs: lists.backs, tails: lists.tails, peers: lists.peers, wants: made }
+  return made
+}
+
+let wanted: { readonly backs: Lists["backs"]; readonly tails: Lists["tails"]; readonly peers: Lists["peers"]; readonly wants: readonly Want[] } | undefined
+
+function wantsOf(lists: Lists): readonly Want[] {
   const backs = lists.backs.map((before, i): Want => ({ key: `ends:${i + 1}`, query: query("korri"), from: { before }, count: 200 }))
   const tails = lists.tails.map((before, i): Want => ({ key: `tail:${i + 1}`, query: query("recent"), from: { before }, count: FRESH_COUNT }))
   return [...BASE, ...backs, ...tails, ...lists.peers.map((section): Want => ({ key: `peer:${section}`, query: query("recent", { section }), from: "start", count: SHELF_SLOTS + 1 })), REST]
@@ -110,24 +131,32 @@ export function wants(lists: Lists): readonly Want[] {
 export function sameGame(a: Game, b: Game): boolean {
   if (a === b) return true
   if (
-    a.id !== b.id || a.title !== b.title || a.section !== b.section || a.subtitle !== b.subtitle || a.systemId !== b.systemId || a.system !== b.system
-    || a.coverArtUrl !== b.coverArtUrl || a.resumable !== b.resumable || a.activeProfile !== b.activeProfile
-    || a.lastPlayedAt !== b.lastPlayedAt || a.playCount !== b.playCount || a.totalPlaytimeSeconds !== b.totalPlaytimeSeconds
-    || a.saves?._tag !== b.saves?._tag
+    a.id !== b.id || a.lastPlayedAt !== b.lastPlayedAt || a.resumable !== b.resumable || a.playCount !== b.playCount || a.totalPlaytimeSeconds !== b.totalPlaytimeSeconds
+    || a.title !== b.title || a.section !== b.section || a.subtitle !== b.subtitle || a.systemId !== b.systemId || a.system !== b.system
+    || a.coverArtUrl !== b.coverArtUrl || a.activeProfile !== b.activeProfile
   ) return false
-  const media = a.media ?? []
-  const other = b.media ?? []
-  if (media.length !== other.length) return false
-  for (let i = 0; i < media.length; i++) {
-    const m = media[i]!, o = other[i]!
-    if (m.url !== o.url || m.role !== o.role || m.color !== o.color || m.width !== o.width || m.height !== o.height) return false
+  const saves = a.saves, others = b.saves
+  if (saves !== others && saves?._tag !== others?._tag) return false
+  const media = a.media, other = b.media
+  if (media !== other) {
+    const count = media === undefined ? 0 : media.length
+    if (count !== (other === undefined ? 0 : other.length)) return false
+    for (let i = 0; i < count; i++) {
+      const m = media![i]!, o = other![i]!
+      if (m.url !== o.url || m.role !== o.role || m.color !== o.color || m.width !== o.width || m.height !== o.height) return false
+    }
   }
-  const places = a.launchLocations ?? []
-  const others = b.launchLocations ?? []
-  if (places.length !== others.length || places.some((place, i) => place.id !== others[i]!.id || place.label !== others[i]!.label)) return false
+  const places = a.launchLocations, there = b.launchLocations
+  if (places !== there) {
+    const count = places === undefined ? 0 : places.length
+    if (count !== (there === undefined ? 0 : there.length)) return false
+    for (let i = 0; i < count; i++) if (places![i]!.id !== there![i]!.id || places![i]!.label !== there![i]!.label) return false
+  }
   // A download is rare and small: its whole value.
-  if ((a.download === undefined) !== (b.download === undefined)) return false
-  return a.download === undefined || JSON.stringify(a.download) === JSON.stringify(b.download)
+  const download = a.download, their = b.download
+  if (download === their) return true
+  if (download === undefined || their === undefined) return false
+  return JSON.stringify(download) === JSON.stringify(their)
 }
 
 /**
@@ -137,33 +166,58 @@ export function sameGame(a: Game, b: Game): boolean {
  */
 export function refresh(lists: Lists, window: readonly Game[]): { readonly lists: Lists; readonly changed: boolean } {
   if (window.length === 0) return { lists, changed: false }
-  let byId: Map<string, Game> | undefined
-  let kept: Record<string, readonly Game[]> | undefined
-  let changed = false
+  // The same lists against the same window, found the same before: nothing to read again.
+  if (rested !== undefined && rested.kept === lists.kept && rested.window === window) return { lists, changed: false }
+  const known = knownOf(lists.kept)
+  // The games that say something new, by id. Few, and most often none.
+  let news: Map<string, Game> | undefined
+  for (let w = 0; w < window.length; w++) {
+    const now = window[w]!
+    const old = known.get(now.id)
+    if (old === undefined || old === now || sameGame(old, now)) continue
+    ;(news ??= new Map()).set(now.id, now)
+  }
+  if (news === undefined) {
+    rested = { kept: lists.kept, window }
+    return { lists, changed: false }
+  }
+  // One of them changed: it is replaced in every list it stands in.
+  const kept: Record<string, readonly Game[]> = {}
   for (const key in lists.kept) {
     const list = lists.kept[key]!
     let next: Game[] | undefined
     for (let i = 0; i < list.length; i++) {
-      const old = list[i]!
-      if (byId === undefined) {
-        byId = new Map()
-        for (const game of window) byId.set(game.id, game)
-      }
-      const now = byId.get(old.id)
-      if (now === undefined || now === old || sameGame(old, now)) continue
-      next ??= [...list]
-      next[i] = now
-      changed = true
+      const now = news.get(list[i]!.id)
+      if (now !== undefined) (next ??= [...list])[i] = now
     }
-    if (next !== undefined) (kept ??= { ...lists.kept })[key] = next
+    kept[key] = next ?? list
   }
-  return kept === undefined ? { lists, changed } : { lists: { ...lists, kept }, changed }
+  return { lists: { ...lists, kept }, changed: true }
 }
 
-/** Whether a window holds the games a kept list holds, in its order (each compared by `sameGame`). */
-function sameList(kept: readonly Game[] | undefined, window: readonly Game[]): boolean {
+let rested: { readonly kept: Lists["kept"]; readonly window: readonly Game[] } | undefined
+
+// Every kept game by its id. A game is one object in every list it stands in (`keep`, and
+// the replacement above), so one entry a game is enough: a publication is read by its
+// window's games (60), not by every game kept (some hundreds, and Korri publishes with
+// every move of the focus). Made once for the lists kept.
+let knowing: { readonly kept: Lists["kept"]; readonly games: Map<string, Game> } | undefined
+
+function knownOf(kept: Lists["kept"]): Map<string, Game> {
+  if (knowing !== undefined && knowing.kept === kept) return knowing.games
+  const games = new Map<string, Game>()
+  for (const key in kept) {
+    const list = kept[key]!
+    for (let i = 0; i < list.length; i++) games.set(list[i]!.id, list[i]!)
+  }
+  knowing = { kept, games }
+  return games
+}
+
+/** Whether a window holds the games a kept list holds, in its order. (Whether one of them changed, `refresh` says.) */
+function sameOrder(kept: readonly Game[] | undefined, window: readonly Game[]): boolean {
   if (kept === undefined || kept.length !== window.length) return false
-  for (let i = 0; i < window.length; i++) if (kept[i]!.id !== window[i]!.id || !sameGame(kept[i]!, window[i]!)) return false
+  for (let i = 0; i < window.length; i++) if (kept[i]!.id !== window[i]!.id) return false
   return true
 }
 
@@ -187,7 +241,20 @@ export function moveFor(want: Want): Request {
 
 /** What the lists were read against. */
 export function stampOf(model: Model): string {
-  return (model.systems ?? []).map(system => `${system.systemId}:${system.total}`).join(",")
+  if (stamped !== undefined && stamped.systems === model.systems) return stamped.stamp
+  const stamp = (model.systems ?? []).map(system => `${system.systemId}:${system.total}`).join(",")
+  stamped = { systems: model.systems, stamp }
+  return stamp
+}
+
+let stamped: { readonly systems: Model["systems"]; readonly stamp: string } | undefined
+
+/** Whether two publications of the systems say the same. */
+function sameSystems(a: Model["systems"], b: Model["systems"]): boolean {
+  if (a === b) return true
+  if (a === undefined || b === undefined || a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i]!.systemId !== b[i]!.systemId || a[i]!.system !== b[i]!.system || a[i]!.total !== b[i]!.total) return false
+  return true
 }
 
 const isPeer = (game: Game): boolean => game.section !== undefined && game.section !== SECTION_CONTINUE && game.section !== SECTION_HERE
@@ -204,6 +271,17 @@ function peersIn(games: readonly Game[], known: readonly string[]): string[] {
  * `free`: the home or the lobby holds the window (no set is open).
  */
 export function settleLists(lists: Lists, model: Model, free: boolean): { readonly lists: Lists; readonly request?: Request } {
+  // Settled against this very model already, and nothing came of it: nothing will now. A
+  // press and a tick settle too, and Korri's model is the same object until it publishes.
+  if (settled !== undefined && settled.lists === lists && settled.model === model && settled.free === free) return { lists }
+  const result = settleNow(lists, model, free)
+  if (result.request === undefined && result.lists === lists) settled = { lists, model, free }
+  return result
+}
+
+let settled: { readonly lists: Lists; readonly model: Model; readonly free: boolean } | undefined
+
+function settleNow(lists: Lists, model: Model, free: boolean): { readonly lists: Lists; readonly request?: Request } {
   const catalog = model.catalog
   if (catalog._tag === "Empty") {
     return lists.total === 0 && lists.done === BASE.length && lists.asked === undefined ? { lists } : { lists: { ...LISTS_START, done: BASE.length, stamp: stampOf(model) } }
@@ -213,19 +291,17 @@ export function settleLists(lists: Lists, model: Model, free: boolean): { readon
   // The library changed under the lists: ask again from the first.
   const stamp = stampOf(model)
   if (next.stamp !== stamp) next = { ...next, stamp, done: 0, backs: [], tails: [], ...(next.asked === undefined ? {} : { asked: undefined }) }
-  // Settled, and Korri published on its own. What the window says now decides.
-  if (next.asked === undefined && next.done > 0 && next.done >= wants(next).length) {
-    if (!answers(catalog, REST)) {
-      // The window is not the one Velvet rests on (a set held it): read the lists again.
-      next = staleLists(next)
-    } else if (!sameList(next.kept[REST.key], catalog.window)) {
-      // The resting window's games changed (artwork came, a game was played): so may every other list.
-      next = staleLists({ ...next, kept: { ...next.kept, [REST.key]: catalog.window } })
-    }
-  }
   // Every kept game Korri published again is as it is now.
   const fresh = refresh(next, catalog.window)
   next = fresh.lists
+  // Settled, and Korri published on its own. What the window says now decides.
+  if (next.asked === undefined && next.done > 0 && next.done >= wants(next).length) {
+    // The window is not the one Velvet rests on (a set held it): read the lists again.
+    if (!answers(catalog, REST)) next = staleLists(next)
+    // The resting window's games changed (artwork came, a game was played), or other games
+    // stand in it now: so may every other list. This window is the first answer of the new pass.
+    else if (fresh.changed || !sameOrder(next.kept[REST.key], catalog.window)) next = staleLists(next)
+  }
   // The answer to the question out.
   if (next.asked !== undefined && answers(catalog, next.asked)) next = keep(next, next.asked, catalog)
   // The window Korri already shows may answer the next ones (its first model answers `korri`).
@@ -237,7 +313,11 @@ export function settleLists(lists: Lists, model: Model, free: boolean): { readon
 }
 
 function keep(lists: Lists, want: Want, catalog: Ready): Lists {
-  const kept = { ...lists.kept, [want.key]: catalog.window }
+  // A game another list already holds is kept as that list's object (`refresh` has made every
+  // kept game say what this window says): a game is one object in every list it stands in.
+  const known = knownOf(lists.kept)
+  const window = catalog.window.map(game => known.get(game.id) ?? game)
+  const kept = { ...lists.kept, [want.key]: window }
   let next: Lists = { ...lists, kept, asked: undefined, waited: 0, done: lists.done + 1 }
   if (want.query.section === undefined && want.query.systemId === undefined) next = { ...next, total: catalog.total }
   if (want.key === "ends" || want.key.startsWith("ends:")) {
@@ -280,7 +360,16 @@ const freshOf = (games: readonly Game[] | undefined): Game[] => (games ?? []).fi
  * that the first of these is the earliest unplayed game seen, and the set
  * reads on from there).
  */
-export function freshGames(lists: Lists): Game[] {
+export function freshGames(lists: Lists): readonly Game[] {
+  if (freshest !== undefined && freshest.kept === lists.kept && freshest.tails === lists.tails) return freshest.games
+  const games = freshNow(lists)
+  freshest = { kept: lists.kept, tails: lists.tails, games }
+  return games
+}
+
+let freshest: { readonly kept: Lists["kept"]; readonly tails: Lists["tails"]; readonly games: readonly Game[] } | undefined
+
+function freshNow(lists: Lists): Game[] {
   const kept = lists.kept
   const head = [...freshOf(kept.recent), ...freshOf(kept.korri)]
   const back: Game[] = []
@@ -298,16 +387,23 @@ export interface HomeLists {
   readonly row: readonly Game[]
 }
 
-let lastHome: { kept: Lists["kept"]; week: string; home: HomeLists } | undefined
+// A view asks for the home's lists several times (the stage, the row, the exits), and nothing
+// of them changes while the kept lists are the same and the newest game is still this week's
+// (or still is not): the answer is kept, and asking again reads no list.
+let lastHome: { kept: Lists["kept"]; newest: Game | undefined; thisWeek: boolean; timed: boolean; home: HomeLists } | undefined
 
 export function homeOf(lists: Lists, publishedAt: number | undefined): HomeLists {
+  if (lastHome !== undefined && lastHome.kept === lists.kept && lastHome.timed === (publishedAt !== undefined)) {
+    const newest = lastHome.newest
+    const thisWeek = newest !== undefined && (publishedAt === undefined || within(newest.lastPlayedAt, publishedAt, PICK_DAYS))
+    // The row holds this week's games first; with the pick still this week's, a game that left the week waits for the next list.
+    if (thisWeek === lastHome.thisWeek) return lastHome.home
+  }
   const recent = playedOf(lists.kept.recent)
   const most = (lists.kept.most ?? []).filter(game => (game.totalPlaytimeSeconds ?? 0) > 0)
   const newest = recent[0]
   // Without Korri's time there is nothing to measure a week against: the newest played game is the pick.
   const thisWeek = newest !== undefined && (publishedAt === undefined || within(newest.lastPlayedAt, publishedAt, PICK_DAYS))
-  const week = `${thisWeek}:${publishedAt === undefined}`
-  if (lastHome !== undefined && lastHome.kept === lists.kept && lastHome.week === week) return lastHome.home
   let pick: Game | undefined
   let why: HomeLists["why"]
   if (thisWeek) [pick, why] = [newest, "recent"]
@@ -326,7 +422,7 @@ export function homeOf(lists: Lists, publishedAt: number | undefined): HomeLists
   }
   if (fresh !== undefined) row.push(fresh)
   const home = { pick, why, row }
-  lastHome = { kept: lists.kept, week, home }
+  lastHome = { kept: lists.kept, newest, thisWeek, timed: publishedAt !== undefined, home }
   return home
 }
 
@@ -353,7 +449,11 @@ let lastShelves: { kept: Lists["kept"]; systems: Model["systems"]; total: number
 
 /** The lobby's shelves: Lately, Not started, one per other device, By system. A shelf with nothing on it is left out. */
 export function shelvesOf(lists: Lists, model: Model): readonly ShelfSpec[] {
-  if (lastShelves !== undefined && lastShelves.kept === lists.kept && lastShelves.systems === model.systems && lastShelves.total === lists.total) return lastShelves.shelves
+  // Korri sends the systems anew with every model: the same ones give the same shelves, the same objects.
+  if (lastShelves !== undefined && lastShelves.kept === lists.kept && lastShelves.total === lists.total && sameSystems(lastShelves.systems, model.systems)) {
+    if (lastShelves.systems !== model.systems) lastShelves = { ...lastShelves, systems: model.systems }
+    return lastShelves.shelves
+  }
   const shelves: ShelfSpec[] = []
   const games = (list: readonly Game[]): ShelfItem[] => list.slice(0, SHELF_SLOTS).map(game => ({ kind: "game", game }))
   const lately = playedOf(lists.kept.recent)

@@ -14,11 +14,11 @@ export component PosterFocused inherits VelvetPreview {
 }
 
 export component Cover inherits VelvetPreview {
-    VelvetTile { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: self.height * Tokens.tile-ratio; height: parent.height * 0.7; tile: { shown: true, kind: "game", art-kind: "cover", art: @image-url("../../preview/art/cover-ember.png"), poster: { shown: true, drawing: 4, palette: 1, lines: ["COMET", "COURIER"], size: 16.059, ink: 16052198 }, label: "Comet Courier", field: 4469794, cap-lines: ["COMET", "COURIER"], cap-size: 12, at: 5 };  }
+    VelvetTile { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: self.height * Tokens.tile-ratio; height: parent.height * 0.7; tile: { shown: true, kind: "game", art-kind: "cover", art: @image-url("../../preview/art/cover-ember.png"), field: 4469794, cap-lines: ["COMET", "COURIER"], cap-size: 12, poster: { shown: true, drawing: 4, palette: 1, lines: ["COMET", "COURIER"], size: 16.059, ink: 16052198 }, label: "Comet Courier", at: 5 };  }
 }
 
 export component Logo inherits VelvetPreview {
-    VelvetTile { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: self.height * Tokens.tile-ratio; height: parent.height * 0.7; tile: { shown: true, kind: "game", art-kind: "logo", art: @image-url("../../preview/art/logo-tide.png"), poster: { shown: true, drawing: 17, palette: 14, lines: ["TIDE", "POOL"], size: 12.825, ink: 789520 }, label: "Tide Pool", field: 2309443, at: 1 };  }
+    VelvetTile { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: self.height * Tokens.tile-ratio; height: parent.height * 0.7; tile: { shown: true, kind: "game", art-kind: "logo", art: @image-url("../../preview/art/logo-tide.png"), field: 2309443, poster: { shown: true, drawing: 17, palette: 14, lines: ["TIDE", "POOL"], size: 12.825, ink: 789520 }, label: "Tide Pool", at: 1 };  }
 }
 
 export component NoArt inherits VelvetPreview {
@@ -34,9 +34,9 @@ export component Resting inherits VelvetPreview {
 }
 
 export component System inherits VelvetPreview {
-    VelvetTile { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: self.height * Tokens.tile-ratio; height: parent.height * 0.7; tile: { shown: true, kind: "system", poster: { shown: true, drawing: 5, palette: 3, lines: ["GAME", "BOY"], size: 16.652, ink: 16052198 }, label: "Game Boy", count: "1 game", focus-id: "shelf:systems:0", focused: true, shelf: 3 };  }
+    VelvetTile { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: self.height * Tokens.tile-ratio; height: parent.height * 0.7; tile: { shown: true, kind: "system", poster: { shown: true, drawing: 5, palette: 3, lines: ["GAME", "BOY"], size: 16.652, ink: 16052198 }, label: "Game Boy", focus-id: "shelf:systems:0", focused: true, count: "1 game", shelf: 3 };  }
 }
 
 export component WayIn inherits VelvetPreview {
-    VelvetTile { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: self.height * Tokens.tile-ratio; height: parent.height * 0.7; tile: { shown: true, kind: "nav", label: "All games", count: "21", focus-id: "row:5", at: 5, rests: true };  }
+    VelvetTile { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: self.height * Tokens.tile-ratio; height: parent.height * 0.7; tile: { shown: true, kind: "nav", label: "All games", focus-id: "row:5", at: 5, count: "21", rests: true };  }
 }

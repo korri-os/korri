@@ -16,7 +16,7 @@
  */
 import type { SurfaceMedia, SurfaceMediaRole } from "../../../../../contracts/generated/surface"
 import { gelHue, hsl, parseHex, stageLight, toHsl } from "./colour"
-import { breakLines, fitCaps, textWidth } from "./fit"
+import { breakLines, fitCaps, fitCapsOnce, textWidth } from "./fit"
 import { sameGame } from "./lists"
 import { NO_POSTER, posterFor, posterView, type PosterView } from "./poster"
 import type { Game } from "./types"
@@ -157,20 +157,41 @@ function madeOf(game: Game): Made {
   const known = made.get(game.id)
   if (known !== undefined && (known.game === game || sameGame(known.game, game))) return known
   const paper = posterFor(game.title, game.systemId)
-  const card: TileView = { shown: true, kind: "game", artKind: "none", art: NO_IMAGE, poster: posterView(paper), label: game.title }
-  const poster = mediaOf(game, "poster")
-  const logo = mediaOf(game, "logo")
-  let next: Made = { game, card, art: card, url: "", width: 0, height: 0, cardBadgeTop: paper.badgeTop, artBadgeTop: paper.badgeTop }
-  if (poster !== undefined) next = { ...next, art: { ...card, artKind: "poster", art: { $image: poster.url } }, url: poster.url, width: poster.width, height: poster.height, artBadgeTop: false }
-  else if (game.coverArtUrl !== undefined && game.coverArtUrl !== "") {
-    const fit = fitCaps(game.title, 52, 24, 12, 4.2)
+  const lines = posterView(paper)
+  const card: TileView = { shown: true, kind: "game", artKind: "none", art: NO_IMAGE, poster: lines, label: game.title }
+  // One look through the game's pictures (this runs for every card on its way in).
+  let poster: SurfaceMedia | undefined
+  let logo: SurfaceMedia | undefined
+  let hero: SurfaceMedia | undefined
+  const media = game.media
+  if (media !== undefined) {
+    for (let i = 0; i < media.length; i++) {
+      const one = media[i]!
+      if (one.url === "") continue
+      if (one.role === "poster") poster ??= one
+      else if (one.role === "logo") logo ??= one
+      else if (one.role === "hero") hero ??= one
+    }
+  }
+  let next: Made
+  if (poster !== undefined) {
     next = {
-      ...next, art: { ...card, artKind: "cover", art: { $image: game.coverArtUrl }, field: fieldOf(mediaOf(game, "hero")?.color, game.title), capLines: fit.lines, capSize: fit.size },
-      url: game.coverArtUrl, width: COVER_SIDE, height: COVER_SIDE, artBadgeTop: true,
+      game, card, art: { shown: true, kind: "game", artKind: "poster", art: { $image: poster.url }, poster: lines, label: game.title },
+      url: poster.url, width: poster.width, height: poster.height, cardBadgeTop: paper.badgeTop, artBadgeTop: false,
+    }
+  } else if (game.coverArtUrl !== undefined && game.coverArtUrl !== "") {
+    const fit = fitCapsOnce(game.title, 52, 24, 12, 4.2)
+    next = {
+      game, card,
+      art: { shown: true, kind: "game", artKind: "cover", art: { $image: game.coverArtUrl }, field: fieldOf(hero?.color, game.title), capLines: fit.lines, capSize: fit.size, poster: lines, label: game.title },
+      url: game.coverArtUrl, width: COVER_SIDE, height: COVER_SIDE, cardBadgeTop: paper.badgeTop, artBadgeTop: true,
     }
   } else if (logo !== undefined) {
-    next = { ...next, art: { ...card, artKind: "logo", art: { $image: logo.url }, field: fieldOf(logo.color ?? mediaOf(game, "hero")?.color, game.title) }, url: logo.url, width: logo.width, height: logo.height, artBadgeTop: false }
-  }
+    next = {
+      game, card, art: { shown: true, kind: "game", artKind: "logo", art: { $image: logo.url }, field: fieldOf(logo.color ?? hero?.color, game.title), poster: lines, label: game.title },
+      url: logo.url, width: logo.width, height: logo.height, cardBadgeTop: paper.badgeTop, artBadgeTop: false,
+    }
+  } else next = { game, card, art: card, url: "", width: 0, height: 0, cardBadgeTop: paper.badgeTop, artBadgeTop: paper.badgeTop }
   if (made.size > 1200) made.clear()
   made.set(game.id, next)
   return next
@@ -182,35 +203,89 @@ function budgeted(game: Game): { readonly view: TileView; readonly badgeTop: boo
   return tile.url === "" || take(tile.url, tile.width, tile.height) ? { view: tile.art, badgeTop: tile.artBadgeTop } : { view: tile.card, badgeTop: tile.cardBadgeTop }
 }
 
-/** A game's tile on a shelf or in the row. The system's badge shows on the focused one only. */
-export function gameTile(game: Game, region: string, focusId: string, focused: boolean, at: number): TileView {
+/** Where a tile stands, past its focus id: its shelf in the lobby, and whether its row is at rest. */
+export interface Standing {
+  readonly shelf?: number
+  readonly rests?: boolean
+}
+
+// A tile at its place, kept while everything that makes it is the same: a move changes the
+// two tiles the focus leaves and lands on, and every other tile in the view is the object
+// the last view sent. Keyed by the focus id, which names the place.
+interface Placed {
+  readonly base: TileView
+  readonly focused: boolean
+  readonly shelf: number | undefined
+  readonly rests: boolean | undefined
+  readonly count: string | undefined
+  readonly out: TileView
+}
+const placed = new Map<string, Placed>()
+
+function place(base: TileView, region: string, focusId: string, focused: boolean, at: number, standing: Standing | undefined, count: string | undefined, badge: string, badgeTop: boolean): TileView {
+  const shelf = standing?.shelf
+  const rests = standing?.rests
+  const known = placed.get(focusId)
+  if (known !== undefined && known.base === base && known.focused === focused && known.shelf === shelf && known.rests === rests && known.count === count) return known.out
+  const out: TileView = {
+    ...base, focusId, focused, focusRegion: region, at,
+    ...(count === undefined ? {} : { count }),
+    // The system's badge shows on the focused tile only. It is sent with every focused tile, an
+    // empty one too: a field left out would keep the badge of the tile that stood here before.
+    ...(focused ? { badge, badgeTop } : {}),
+    ...(shelf === undefined ? {} : { shelf }),
+    ...(rests === undefined ? {} : { rests }),
+  }
+  if (placed.size > 600) placed.clear()
+  placed.set(focusId, { base, focused, shelf, rests, count, out })
+  return out
+}
+
+/** A game's tile on a shelf or in the row. */
+export function gameTile(game: Game, region: string, focusId: string, focused: boolean, at: number, standing?: Standing): TileView {
   const { view, badgeTop } = budgeted(game)
-  return focused
-    ? { ...view, focusId, focused, focusRegion: region, at, badge: game.system ?? "", badgeTop }
-    : { ...view, focusId, focused, focusRegion: region, at }
+  return place(view, region, focusId, focused, at, standing, undefined, game.system ?? "", badgeTop)
 }
 
 /** A game's card where it is no focus target (the pick's card). */
 export const gameCard = (game: Game): TileView => budgeted(game).view
 
+// A set's tiles, by their slot in the grid's pool: kept like the tiles above.
+const slots = new Map<number, { readonly base: TileView; readonly at: number; readonly lit: boolean; readonly out: TileView }>()
+
 /** A game's picture in a set, at its place: no focus target (its mark is), lit when its mark has the focus. */
-export function setTile(game: Game, at: number, lit: boolean): TileView {
+export function setTile(game: Game, at: number, lit: boolean, slot: number): TileView {
   const { view, badgeTop } = budgeted(game)
-  return lit ? { ...view, at, lit, badge: game.system ?? "", badgeTop } : { ...view, at, lit }
+  const known = slots.get(slot)
+  if (known !== undefined && known.base === view && known.at === at && known.lit === lit) return known.out
+  const badge = game.system ?? ""
+  const out: TileView = lit ? { ...view, at, lit, badge, badgeTop } : { ...view, at, lit }
+  if (slots.size > 200) slots.clear()
+  slots.set(slot, { base: view, at, lit, out })
+  return out
 }
 
 /** A place in a set whose game Korri has not sent yet. */
 export const blankTile = (at: number): TileView => ({ ...BLANK, at, lit: false })
 
+const NAV: TileView = { shown: true, kind: "nav", poster: NO_POSTER }
+const navs = new Map<string, TileView>()
+
 /** A way further in: "All games", "See all", "A to Z". */
-export function navTile(label: string, count: string, region: string, focusId: string, focused: boolean, at: number): TileView {
-  return { shown: true, kind: "nav", poster: NO_POSTER, label, count, focusId, focused, focusRegion: region, at }
+export function navTile(label: string, count: string, region: string, focusId: string, focused: boolean, at: number, standing?: Standing): TileView {
+  let base = navs.get(label)
+  if (base === undefined) {
+    base = { ...NAV, label }
+    if (navs.size > 50) navs.clear()
+    navs.set(label, base)
+  }
+  return place(base, region, focusId, focused, at, standing, count, "", false)
 }
 
 const systems = new Map<string, TileView>()
 
 /** A system on the By system shelf: its own card, its count at the head. */
-export function systemTile(systemId: string, system: string, count: string, region: string, focusId: string, focused: boolean, at: number): TileView {
+export function systemTile(systemId: string, system: string, count: string, region: string, focusId: string, focused: boolean, at: number, standing?: Standing): TileView {
   const key = `${systemId}\u0000${system}`
   let base = systems.get(key)
   if (base === undefined) {
@@ -218,12 +293,12 @@ export function systemTile(systemId: string, system: string, count: string, regi
     if (systems.size > 200) systems.clear()
     systems.set(key, base)
   }
-  return { ...base, count, focusId, focused, focusRegion: region, at }
+  return place(base, region, focusId, focused, at, standing, count, "", false)
 }
 
-/** A place on a shelf that waits for its game (off the stage, or not yet answered). */
+/** The pick's place in the row while the pick stands over it: a focus target the view does not draw. */
 export const waitingTile = (region: string, focusId: string, focused: boolean, at: number): TileView =>
-  ({ ...BLANK, focusId, focused, focusRegion: region, at })
+  ({ ...BLANK, shown: false, focusId, focused, focusRegion: region, at })
 
 // ---- The stage ----
 

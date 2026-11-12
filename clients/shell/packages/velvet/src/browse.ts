@@ -22,7 +22,7 @@
  * launches. Back closes each level.
  */
 import type { CatalogQuery, SurfaceCatalog, SurfaceModel as Model } from "../../../../../contracts/generated/surface"
-import { blankTile, factLines, factsOf, gameCard, gameTile, hasHero, marqueeOf, mediaOf, navTile, NO_IMAGE, NO_MARQUEE, NO_TILE, setTile, systemTile, titleLines, waitingTile, type FactView, type MarqueeView, type TileView } from "./art"
+import { blankTile, factLines, factsOf, gameCard, gameTile, hasHero, marqueeOf, mediaOf, navTile, NO_IMAGE, NO_MARQUEE, NO_TILE, setTile, systemTile, type Standing, titleLines, waitingTile, type FactView, type MarqueeView, type TileView } from "./art"
 import { fitCaps, textWidth } from "./fit"
 import { gridMove, lineMove } from "./focus"
 import { homeOf, sameQuery, shelvesOf, type ShelfItem, type ShelfSpec } from "./lists"
@@ -38,9 +38,13 @@ export type RowItem = { readonly kind: "game"; readonly game: Game; readonly pic
 /** The row's places: the pick (shown once the row is focused), its games, then "All games". */
 export function rowItems(state: State, model: Model): readonly RowItem[] {
   const home = homeOf(state.lists, model.publishedAt)
-  if (home.pick === undefined) return []
-  return [{ kind: "game", game: home.pick, pick: true }, ...home.row.map((game): RowItem => ({ kind: "game", game, pick: false })), { kind: "all" }]
+  if (lastRow?.home === home) return lastRow.items
+  const items: readonly RowItem[] = home.pick === undefined ? [] : [{ kind: "game", game: home.pick, pick: true }, ...home.row.map((game): RowItem => ({ kind: "game", game, pick: false })), { kind: "all" }]
+  lastRow = { home, items }
+  return items
 }
+
+let lastRow: { readonly home: ReturnType<typeof homeOf>; readonly items: readonly RowItem[] } | undefined
 
 export const shelfRegion = (key: string): string => `shelf:${key}`
 
@@ -180,16 +184,31 @@ export const pill = (label: string, region: string, focusId: string, focused: bo
 /** Whether a card already says the game's name (so the marquee beside it does not repeat it). */
 const cardNames = (game: Game): boolean => mediaOf(game, "poster") === undefined
 
-function shelfTile(item: ShelfItem, region: string, id: string, focused: boolean, at: number): TileView {
+function shelfTile(item: ShelfItem, region: string, id: string, focused: boolean, at: number, standing: Standing): TileView {
   switch (item.kind) {
     case "game":
-      return gameTile(item.game, region, id, focused, at)
+      return gameTile(item.game, region, id, focused, at, standing)
     case "more":
-      return navTile(item.label, item.count === undefined ? "" : String(item.count), region, id, focused, at)
+      return navTile(item.label, item.count === undefined ? "" : String(item.count), region, id, focused, at, standing)
     case "system":
-      return systemTile(item.systemId, item.system, gamesWords(item.count), region, id, focused, at)
+      return systemTile(item.systemId, item.system, gamesWords(item.count), region, id, focused, at, standing)
   }
 }
+
+// Where a shelf's tiles stand: one object a shelf and state, so a tile kept from the last view is found the same.
+const standings = new Map<number, Standing>()
+function standingOf(shelf: number, rests: boolean): Standing {
+  const key = shelf * 2 + (rests ? 1 : 0)
+  let standing = standings.get(key)
+  if (standing === undefined) {
+    standing = { shelf, rests }
+    standings.set(key, standing)
+  }
+  return standing
+}
+const ROW_RESTS: Standing = { rests: true }
+const ROW_UP: Standing = { rests: false }
+const ROW_IDS = Array.from({ length: 12 }, (_, at) => `row:${at}`)
 
 /** The line at the library's head: the focused thing's name and one fact. */
 function nowOf(state: State, model: Model, shelves: readonly ShelfSpec[]): { title: string; fact: string } {
@@ -221,14 +240,21 @@ export function homeView(state: State, model: Model, plan: Plan, live: boolean) 
     : { ...NO_MARQUEE, key: "all", ...fitMark("Library", plan.rowMarkW, plan), facts: factLines([{ icon: "grid", text: gamesWords(state.lists.total), strong: false }], plan.fact, plan.rowMarkW) }
   const cards = pick === undefined || hero ? [] : [gameCard(pick)]
   const rowTiles: TileView[] = row.map(() => NO_TILE)
-  for (const at of nearest(row.length, depth === 1 ? state.rowAt : 0)) {
-    const item = row[at]!
-    const focused = live && !state.onMenu && depth === 1 && state.rowAt === at
-    if (item.kind === "all") rowTiles[at] = { ...navTile("All games", String(state.lists.total), "row", `row:${at}`, focused, at), rests: depth === 0 }
-    // The pick takes its place in the row once the row is the shelf.
-    else if (item.pick && depth === 0) rowTiles[at] = { ...waitingTile("row", `row:${at}`, focused, at), shown: false }
-    else rowTiles[at] = { ...gameTile(item.game, "row", `row:${at}`, focused, at), rests: depth === 0 }
+  const fillRow = () => {
+    const standing = depth === 0 ? ROW_RESTS : ROW_UP
+    for (const at of nearest(row.length, depth === 1 ? state.rowAt : 0)) {
+      const item = row[at]!
+      const id = ROW_IDS[at] ?? `row:${at}`
+      const focused = live && !state.onMenu && depth === 1 && state.rowAt === at
+      if (item.kind === "all") rowTiles[at] = navTile("All games", String(state.lists.total), "row", id, focused, at, standing)
+      // The pick takes its place in the row once the row is the shelf.
+      else if (item.pick && depth === 0) rowTiles[at] = waitingTile("row", id, focused, at)
+      else rowTiles[at] = gameTile(item.game, "row", id, focused, at, standing)
+    }
   }
+  // The pixel budget goes to what is in sight first (src/art.ts): the row before the shelf
+  // under it, and in the library, where the row has left the stage, the shelves before the row.
+  if (depth < 2) fillRow()
   const shelfAtNow = shelfAt(state, shelves)
   const now = nowOf(state, model, shelves)
   // The shelves' tiles, the focused shelf first.
@@ -253,9 +279,10 @@ export function homeView(state: State, model: Model, plan: Plan, live: boolean) 
       if (at !== column && Math.abs(at - first) > across) continue
       const id = `${region}:${at}`
       const focused = live && !state.onMenu && depth === 2 && index === shelfAtNow && column === at
-      tiles[starts[index]! + at] = { ...shelfTile(shelf.items[at]!, region, id, focused, at), shelf: index, rests: depth !== 2 || index !== shelfAtNow }
+      tiles[starts[index]! + at] = shelfTile(shelf.items[at]!, region, id, focused, at, standingOf(index, depth !== 2 || index !== shelfAtNow))
     }
   }
+  if (depth >= 2) fillRow()
   const heads = shelves.map(shelf => ({ key: shelf.key, label: shelf.label, at: state.scrolled?.[shelfRegion(shelf.key)] ?? columnOf(state, shelf), count: shelf.items.length }))
   const rowAt = Math.max(0, Math.min(state.rowAt, Math.max(0, row.length - 1)))
   return {
@@ -282,10 +309,19 @@ export function homeView(state: State, model: Model, plan: Plan, live: boolean) 
   }
 }
 
+const orders = new Map<number, readonly number[]>()
+
 /** Places 0 to count - 1, the one nearest `from` first. */
-export function nearest(count: number, from: number): number[] {
-  // At the same distance, the one after: it is the one in sight (a focused shelf stands at the top).
-  return Array.from({ length: count }, (_, index) => index).sort((a, b) => Math.abs(a - from) - Math.abs(b - from) || b - a)
+export function nearest(count: number, from: number): readonly number[] {
+  const key = count * 4096 + from
+  let order = orders.get(key)
+  if (order === undefined) {
+    // At the same distance, the one after: it is the one in sight (a focused shelf stands at the top).
+    order = Array.from({ length: count }, (_, index) => index).sort((a, b) => Math.abs(a - from) - Math.abs(b - from) || b - a)
+    if (orders.size > 500) orders.clear()
+    orders.set(key, order)
+  }
+  return order
 }
 
 function fitMark(text: string, width: number, plan: Plan) {
@@ -481,6 +517,26 @@ export function dragSet(set: SetState, by: number, model: Model, plan: Plan): Se
   return to === from ? set : { ...set, scrolled: to }
 }
 
+interface MarkView {
+  readonly focusId: string
+  readonly focused: boolean
+  readonly focusRegion: string
+  readonly at: number
+  readonly label: string
+}
+
+// A set's marks, kept like its tiles: a move changes two of them.
+const markViews = new Map<number, MarkView>()
+
+function markOf(index: number, at: number, focused: boolean, label: string): MarkView {
+  const known = markViews.get(index)
+  if (known !== undefined && known.at === at && known.focused === focused && known.label === label) return known
+  const mark: MarkView = { focusId: `g:${index}`, focused, focusRegion: "grid", at, label }
+  if (markViews.size > 400) markViews.clear()
+  markViews.set(index, mark)
+  return mark
+}
+
 export function setView(state: State, set: SetState, model: Model, plan: Plan, live: boolean) {
   const window = setWindow(set, model.catalog)
   const count = setCount(set, model.catalog)
@@ -504,14 +560,17 @@ export function setView(state: State, set: SetState, model: Model, plan: Plan, l
       const game = window.window[set.low + place - window.firstIndex]
       const lit = live && !set.pill && place === focusedAt
       // Each place keeps its slot while it is near the view, so a row that scrolls keeps its tiles.
-      tiles[place % pool] = game === undefined ? blankTile(place) : setTile(game, place, lit)
+      tiles[place % pool] = game === undefined ? blankTile(place) : setTile(game, place, lit, place % pool)
     }
   }
   // A focus target for each place a tile is sent for: the rows in sight and one more each way.
-  const marks = window === undefined ? [] : window.window.flatMap((game, index) => {
-    const place = window.firstIndex + index - set.low
-    return place < from || place >= until ? [] : [{ focusId: `g:${set.low + place}`, focused: live && !set.pill && place === focusedAt, focusRegion: "grid", at: place, label: game.title }]
-  })
+  const marks: MarkView[] = []
+  if (window !== undefined) {
+    for (let place = from; place < until; place++) {
+      const game = window.window[set.low + place - window.firstIndex]
+      if (game !== undefined) marks.push(markOf(set.low + place, place, live && !set.pill && place === focusedAt, game.title))
+    }
+  }
   const focused = set.pill ? undefined : setGame(set, model.catalog, set.at)
   const system = set.key === "every" && set.systemId !== undefined ? model.systems?.find(item => item.systemId === set.systemId)?.system : undefined
   const waiting = window === undefined
