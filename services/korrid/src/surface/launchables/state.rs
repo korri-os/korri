@@ -771,6 +771,18 @@ impl LaunchablesState {
             });
         }
         let Some(choice) = choices.into_iter().next() else {
+            // Stops from inputd or the owner CLI use the same busy state as
+            // the surface's End action, without starting another stop request.
+            if let Some(active) =
+                active.filter(|active| active.phase.as_deref() == Some("stopping"))
+            {
+                return LaunchablesState::Loaded(Loaded {
+                    phase: Phase::Stopping {
+                        launch_id: active.launch_id.clone(),
+                    },
+                    content: state,
+                });
+            }
             return match failure {
                 Some(failure) => {
                     state.notice = Some(LaunchNotice::launch(format!(
@@ -1410,7 +1422,8 @@ impl LaunchablesState {
                 }
                 loaded.content.entries = entries;
                 let previous_launch = previous.as_ref().map(|session| &session.launch_id);
-                if active.map(|active| &active.launch_id) != previous_launch
+                if active.is_some_and(|active| active.phase.as_deref() == Some("stopping"))
+                    || active.map(|active| &active.launch_id) != previous_launch
                     || pending_launches
                         .iter()
                         .any(|pending| Some(&pending.session.launch_id) != previous_launch)

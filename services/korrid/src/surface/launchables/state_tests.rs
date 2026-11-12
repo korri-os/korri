@@ -1001,7 +1001,7 @@ mod manual_pending_launch_choices {
     }
 
     #[test]
-    fn stopping_with_waiting_history_is_not_a_startup_candidate() {
+    fn stopping_with_waiting_history_uses_the_existing_stopping_screen_not_startup() {
         let active = json!({ "launchId": "A", "gameId": "wl4", "phase": "stopping", "initialHandoff": "waiting" });
         let initial = Content::default();
         assert_eq!(
@@ -1012,7 +1012,7 @@ mod manual_pending_launch_choices {
                 )),
                 &[]
             )),
-            "Ready"
+            "Stopping"
         );
         let pending_a =
             json!([{ "session": { "launchId": "A", "gameId": "wl4" }, "phase": "cancelling" }]);
@@ -1024,7 +1024,7 @@ mod manual_pending_launch_choices {
                 )),
                 &[]
             )),
-            "Ready"
+            "Stopping"
         );
         let both = json!([
             { "session": { "launchId": "A", "gameId": "wl4" }, "phase": "cancelling" },
@@ -1067,6 +1067,22 @@ mod manual_pending_launch_choices {
             );
         }
     }
+}
+
+#[test]
+fn an_external_stop_shows_stopping_until_the_exact_session_is_gone() {
+    let running = ready().with_session_status(&status(json!({"_tag":"Ok", "payload": {
+        "active": {"launchId":"exact", "gameId":"skate3", "phase":"running"}
+    }})));
+    let stopping = running.with_session_status(&status(json!({"_tag":"Ok", "payload": {
+        "active": {"launchId":"exact", "gameId":"skate3", "phase":"stopping"}
+    }})));
+    assert_eq!(tag(&stopping), "Stopping");
+    assert!(
+        matches!(stopping.loaded().unwrap().phase, Phase::Stopping { ref launch_id } if launch_id == "exact")
+    );
+    let gone = stopping.with_status_after_stop(&status(json!({"_tag":"Ok", "payload": {}})));
+    assert_eq!(tag(&gone), "Ready");
 }
 
 #[test]
