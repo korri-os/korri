@@ -27,7 +27,7 @@ import { shortKey } from "./pages"
 import type { Plan } from "./plan"
 import { question } from "./settings"
 import { NONE, send, seq, type Act, type Game, type State } from "./types"
-import { bytes, duration, moment } from "./words"
+import { bytes, duration, saved } from "./words"
 
 export interface CurtainButton {
   readonly label: string
@@ -106,7 +106,7 @@ function statusCurtain(state: State, model: Model): CurtainSpec | undefined {
         buttons: actionButtons(status.actions), first: firstOf(status.actions, decline), back: decline === undefined ? "swallow" : run(decline),
       }
     case "ChooseSave": {
-      const sides: CurtainButton[] = status.sides.map(side => ({ label: side.device, note: `${moment(side.endedAt)}, ${duration(side.durationSeconds)} session`, act: run(side.actionId) }))
+      const sides: CurtainButton[] = status.sides.map(side => ({ label: side.device, note: `${saved(side.endedAt, model.publishedAt)}, ${duration(side.durationSeconds)} session`, act: run(side.actionId) }))
       return {
         key: `saves:${status.gameId}`, kind: "ask", kicker: status.kicker, ...named, words: status.detail === undefined ? [] : [status.detail], progress: -2,
         buttons: [...sides, ...actionButtons(status.actions)], first: firstOf(status.actions, decline, sides.length), column: true,

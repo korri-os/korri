@@ -2,6 +2,12 @@
  * Velvet's own words for the facts Korri publishes as numbers: how long ago,
  * how long played, how many, how big. Pure functions; "now" is the model's
  * `publishedAt` (the moment korrid built it), never a clock of Velvet's own.
+ *
+ * Every time Korri publishes is UTC epoch milliseconds, and a surface has no
+ * time zone. So "how long ago" is the time between two of Korri's numbers
+ * and nothing else: no calendar day, no midnight. Where there is nothing to
+ * compare with, the fact is the UTC date. Velvet never works out a clock
+ * time: the only clock on the stage is Korri's `clockLabel`.
  */
 
 const MINUTE = 60_000
@@ -9,10 +15,10 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const
 
-/** A day as "6 Nov 2026": what the fact says while Korri gives no time to compare with. */
+/** A day as "6 Nov 2026", in UTC: what the fact says while Korri gives no time to compare with. */
 export function dayOf(at: number): string {
   const date = new Date(at)
-  return `${date.getDate()} ${MONTHS[date.getMonth()] ?? ""} ${date.getFullYear()}`
+  return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()] ?? ""} ${date.getUTCFullYear()}`
 }
 
 /**
@@ -86,11 +92,27 @@ export function bytes(count: number): string {
   return `${text} ${units[unit]}`
 }
 
-/** A date and time for a save: "6 Nov 2026, 21:47". */
-export function moment(at: number): string {
-  const date = new Date(at)
-  const two = (n: number) => String(n).padStart(2, "0")
-  return `${dayOf(at)}, ${two(date.getHours())}:${two(date.getMinutes())}`
+/** How long a month of saves is told apart by the hour. */
+const SAVE_DAYS = 30
+
+/**
+ * When a save was made, against the model's time: saves of one day must read
+ * apart, so this says more than `ago` does. "Just now", "45 min ago",
+ * "3 h 20 min ago", "5 days 3 h ago"; past a month, and with no time from
+ * Korri, the UTC date. Never a clock time.
+ */
+export function saved(at: number, publishedAt: number | undefined): string {
+  if (publishedAt === undefined) return dayOf(at)
+  const since = publishedAt - at
+  if (since < MINUTE) return "Just now"
+  const minutes = Math.floor(since / MINUTE) % 60
+  const hours = Math.floor(since / HOUR) % 24
+  const days = Math.floor(since / DAY)
+  if (since < HOUR) return `${minutes} min ago`
+  if (since < DAY) return minutes === 0 ? `${hours} h ago` : `${hours} h ${minutes} min ago`
+  if (days > SAVE_DAYS) return dayOf(at)
+  const dayWords = days === 1 ? "1 day" : `${days} days`
+  return hours === 0 ? `${dayWords} ago` : `${dayWords} ${hours} h ago`
 }
 
 /**

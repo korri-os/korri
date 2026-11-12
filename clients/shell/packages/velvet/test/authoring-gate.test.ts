@@ -18,6 +18,8 @@
  * Logic (.ts):
  *  - Pure: no clock, no randomness, no timers, no network, no storage.
  *    "Now" is `model.publishedAt`; idle time is the shell's Tick.
+ *  - No local time: Korri's times are UTC epoch milliseconds and a surface
+ *    has no zone, so a date is read with the UTC accessors only.
  *  - A package imports only types from contracts/generated/surface.ts, and
  *    its own files.
  */
@@ -87,6 +89,11 @@ describe("authoring: views", () => {
 describe("authoring: logic", () => {
   test("pure: no clock, randomness, timers, network or storage", () => {
     const banned = /\bDate\.now\b|\bnew Date\(\s*\)|\bMath\.random\b|\bsetTimeout\b|\bsetInterval\b|\brequestAnimationFrame\b|\bperformance\.now\b|\bfetch\(|\bXMLHttpRequest\b|\blocalStorage\b|\bsessionStorage\b|\bcrypto\./g
+    expect(logic.flatMap(file => [...code(file).matchAll(banned)].map(match => `${file}: ${match[0]}`))).toEqual([])
+  })
+
+  test("no local time: Korri's times are UTC and a surface has no zone", () => {
+    const banned = /\.get(Date|Month|FullYear|Year|Hours|Minutes|Seconds|Milliseconds|Day|TimezoneOffset)\(|\.toLocale(Date|Time)String\(|\.to(Date|Time)String\(|\bIntl\.DateTimeFormat\b/g
     expect(logic.flatMap(file => [...code(file).matchAll(banned)].map(match => `${file}: ${match[0]}`))).toEqual([])
   })
 

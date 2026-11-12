@@ -26,7 +26,7 @@ import type {
 import { gameById, sameQuery } from "./lists"
 import { actionRow, connectionLine, connectionWords, question, settingRows, wifiRows, WIFI_PASSWORD_MAX, WIFI_SSID_MAX, numberFits } from "./settings"
 import { NONE, send, seq, type Act, type ButtonSpec, type Entry, type GameplayValue, type PageRef, type PanelSpec, type RowSpec, type SheetKind, type State } from "./types"
-import { bytes, duration, moment } from "./words"
+import { bytes, duration, saved } from "./words"
 
 const run = (actionId: string): Act => send({ _tag: "RunAction", actionId })
 const head = (id: string, label: string): RowSpec => ({ id, kind: "head", label })
@@ -409,14 +409,14 @@ function savesPanel(state: State, model: Model): PanelSpec {
   else {
     for (const entry of history.entries) {
       const facts = `${duration(entry.durationSeconds)} session${entry.interrupted ? ", cut short" : ""}.`
-      const base = { id: `h:${entry.snapshotId}`, kind: "row" as const, label: moment(entry.endedAt), value: entry.device }
+      const base = { id: `h:${entry.snapshotId}`, kind: "row" as const, label: saved(entry.endedAt, model.publishedAt), value: entry.device }
       if (entry.current || entry.restore === undefined) rows.push({ ...base, note: entry.current ? `${facts} This device continues from it.` : facts, ...(entry.current ? { mark: "check" as const } : {}), rests: true })
       else {
         const restore = entry.restore
         rows.push({
           ...base, note: `${facts} ${restore.description ?? restore.label}`, ...(restore.enabled ? {} : { dim: true }),
           ...(restore.enabled
-            ? { press: { t: "ask", ask: question(restore.label, [`${moment(entry.endedAt)}, ${entry.device}.`, restore.description ?? "This device will continue from this save."], restore.label, run(restore.id)) } as Act }
+            ? { press: { t: "ask", ask: question(restore.label, [`${saved(entry.endedAt, model.publishedAt)}, ${entry.device}.`, restore.description ?? "This device will continue from this save."], restore.label, run(restore.id)) } as Act }
             : { rests: true }),
         })
       }
