@@ -450,8 +450,61 @@ def pair_measure(sender_refresh_hz: float, viewer_refresh_hz: float) -> str:
         return BASE
     if sender_ms < viewer_ms:
         return QUEUE
+    # What the user can do. A rate below this one gives the sender a longer period.
+    limit = f"{1000 / viewer_ms:g}"
+    if 1_000_000 // steady_refresh_mhz(viewer_refresh_hz) > viewer_ms:
+        base = f"Leave --fps out for the base measure, or give an --fps below {limit} for it."
+    else:
+        # A viewer refresh with a period of whole milliseconds: the default rate
+        # is this equal pair.
+        base = f"At this viewer refresh the default rate gives the equal pair too. Give an --fps below {limit} for the base measure."
+    queue = (
+        f"Give {QUEUE_OPTION} for the queue measure."
+        if viewer_ms > 1
+        else "No sender output is faster than a period of 1 ms, so this viewer refresh has no queue measure."
+    )
     raise Refusal(
-        f"The sender fixture's output and the viewer fixture's output would have an equal frame period ({sender_ms} ms). An equal pair gives no steady measure: the two rates then differ only by the machine's load, a viewer's queue fills in 4 s or in 50 s, and one viewer gives a short or a long delay by the moment. Leave --fps out for the base measure, or give {QUEUE_OPTION} for the queue measure, or choose a rate whose period differs by a whole millisecond."
+        f"The sender fixture's output and the viewer fixture's output would have an equal frame period ({sender_ms} ms). An equal pair gives no steady measure: the two rates then differ only by the machine's load, a viewer's queue fills in 4 s or in 50 s, and one viewer gives a short or a long delay by the moment. {base} {queue}"
+    )
+
+
+def panel_refusal(sender_refresh_hz: float, panel_refresh_hz: float) -> str | None:
+    """Why a sender fixture in this mode must not feed an installed viewer, or None.
+
+    A real panel has its own clock. A sender whose output period is shorter
+    than the panel's shows more frames than the panel can, and the viewer
+    drops the surplus. The result would be a base result, and verdict would
+    judge the sender's dropped frames as the viewer's. The queue measure is
+    only for two fixtures, so such a rate does not run. An equal period on
+    paper is let through: the sender's own work makes its real period the
+    longer one.
+    """
+    sender_ms, panel_ms = output_period_ms(sender_refresh_hz), 1000 / panel_refresh_hz
+    if sender_ms >= panel_ms:
+        return None
+    return (
+        f"This --fps gives the sender fixture's output a frame period of {sender_ms} ms, which is "
+        f"faster than the panel of the installed viewer ({panel_refresh_hz:g} Hz, {panel_ms:.2f} ms). "
+        "The viewer would drop the sender's surplus frames, and the result would count them as "
+        "the viewer's. With an installed viewer, leave --fps out or give a rate at or below the "
+        "panel's."
+    )
+
+
+# A headless output has a frame period of whole milliseconds, 1 ms at least,
+# and the tool measures no stream below one frame each second.
+FIXTURE_RATES = (1.0, 1000.0)
+
+
+def rate_refusal(option: str, value: float) -> str | None:
+    """Why a fixture's output cannot have this rate, or None. Asked before any device."""
+    low, high = FIXTURE_RATES
+    if low <= value <= high:
+        return None
+    return (
+        f"{option} {value:g} is not a rate that a fixture's output can have: give a value from "
+        f"{low:g} to {high:g}. A headless output has a frame period of whole milliseconds, "
+        "1 ms at least."
     )
 
 
@@ -956,10 +1009,15 @@ def view_case(
             # The fixture's display exists for this stream alone: the requested
             # size, at the steady refresh nearest below the requested rate.
             fps = fixture_rate(args.fps, viewer_refresh, queue=args.queue_measure)
+            # Before the sender starts, from the mode that its agent sets for this rate.
             if plugin is None:
-                # A private pair. Before the sender starts: the mode that its agent
-                # sets for this rate must not give the viewer fixture's frame period.
+                # A private pair: not the viewer fixture's frame period.
                 pair_measure(steady_refresh_mhz(fps) / 1000, viewer_refresh)
+            else:
+                # An installed viewer: not faster than its panel.
+                refused = panel_refusal(steady_refresh_mhz(fps) / 1000, viewer_refresh)
+                if refused:
+                    raise Refusal(refused)
             built = sender.request(
                 "prepare",
                 sway=paths["sway"],
@@ -975,6 +1033,10 @@ def view_case(
                 # From the mode that the sender's compositor reports, and the mode
                 # that the viewer fixture's compositor is given below.
                 measure = pair_measure(facts["display"]["refresh_hz"], viewer_refresh)
+            else:
+                refused = panel_refusal(facts["display"]["refresh_hz"], viewer_refresh)
+                if refused:
+                    raise Refusal(refused)
             if args.queue_measure and measure != QUEUE:
                 raise Refusal(
                     f"{QUEUE_OPTION} did not give a sender that is faster than the viewer fixture "
@@ -1305,6 +1367,14 @@ def view(args: argparse.Namespace) -> int:
             f"The target {LOCAL} is the host that runs the tool, with no root. It can host the sender fixture only: add --sender-fixture."
         )
     args.ssh_target = sender_target
+    # Before any device is asked: a rate that no fixture's output can have.
+    rates = [("--viewer-refresh", args.viewer_refresh)]
+    if args.sender_fixture and args.fps is not None:
+        rates.append(("--fps", args.fps))
+    for option, value in rates:
+        refused = rate_refusal(option, value)
+        if refused:
+            raise Refusal(refused)
     if args.queue_measure:
         # Before any device is asked. The installed viewer is known later.
         refused = queue_measure_refusal(args.sender_fixture, args.fps, installed_viewer=False)

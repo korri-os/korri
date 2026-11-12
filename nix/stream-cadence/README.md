@@ -649,16 +649,27 @@ dropped frames, like one that `--queue-measure` asked for. `verdict` still
 keeps two results with different rates apart.
 
 A private pair whose two periods are equal does not run: `--fps 63` at the
-default viewer refresh (16 ms against 16 ms), or `--viewer-refresh 58.823`
-alone (17 ms against 17 ms). The refusal says that an equal pair gives no
+default viewer refresh (16 ms against 16 ms), or `--fps 60 --viewer-refresh
+58.823` (17 ms against 17 ms). The refusal says that an equal pair gives no
 steady measure, and it comes before the sender starts. The tries below are
-the reason.
+the reason. (`--viewer-refresh 58.823` alone is a base pair: the sender
+gets 18 ms.) A viewer refresh whose period is a whole number of
+milliseconds, such as 50, 62.5, 100 or 125, makes the default rate the
+equal pair; the refusal then names the `--fps` below which the pair is a
+base pair.
+
+`--viewer-refresh`, and `--fps` with `--sender-fixture`, must be from 1 to
+1000: a headless output has a frame period of whole milliseconds, 1 ms at
+least. The tool refuses another value before it asks any device.
 
 `--queue-measure` is the named way to ask for the queue pair. It is accepted
 only for a private pair, and not with `--fps`: the measure sets the rate.
 With an installed viewer the sender is asked for the panel's rate, as
-before, and the result is a base result whatever the rate: a real panel has
-its own clock, and the tool does not compare it with the sender's period.
+before, and the result is a base result. An `--fps` that gives the sender's
+output a shorter frame period than the panel's is refused there, before the
+sender starts: the viewer would drop the sender's surplus frames, and no
+measure of the tool separates them from the viewer's own. A rate at or
+below the panel's always runs.
 
 **Why two: the tries on aka.** Against the product sender on aka, the same
 fixture viewer's delay climbed from about 18 ms in steps of one refresh

@@ -21,8 +21,10 @@ from cli import (  # noqa: E402
     fixture_rate,
     pair_measure,
     pair_rate,
+    panel_refusal,
     parser,
     queue_measure_refusal,
+    rate_refusal,
     view,
     viewer_notes,
     viewer_stream_host,
@@ -121,6 +123,65 @@ class TwoMeasures(unittest.TestCase):
             pair_measure(sender.steady_refresh_mhz(63.0) / 1000, 60.0)
         with self.assertRaisesRegex(Refusal, "no steady measure"):
             pair_measure(sender.steady_refresh_mhz(60.0) / 1000, 58.823)
+
+    def test_the_equal_pair_refusal_says_what_the_user_can_do(self):
+        # --fps made the pair equal, and the default rate would not: leave it out.
+        with self.assertRaisesRegex(Refusal, "Leave --fps out"):
+            pair_measure(sender.steady_refresh_mhz(63.0) / 1000, 60.0)
+        # A viewer refresh with a whole-millisecond period: the default rate is the equal pair.
+        for refresh, limit in ((50.0, "50"), (100.0, "100"), (125.0, "125"), (62.5, "62.5")):
+            with self.subTest(refresh=refresh):
+                default = sender.steady_refresh_mhz(fixture_rate(None, refresh, queue=False)) / 1000
+                with self.assertRaises(Refusal) as refused:
+                    pair_measure(default, refresh)
+                words = str(refused.exception)
+                self.assertNotIn("Leave --fps out", words)
+                self.assertIn(f"--fps below {limit} ", words)
+                self.assertIn("--queue-measure", words)
+                # The advice holds: such a rate gives the base pair.
+                below = float(limit) - 0.01
+                self.assertEqual(pair_measure(sender.steady_refresh_mhz(below) / 1000, refresh), BASE)
+                self.assertEqual(
+                    pair_measure(sender.steady_refresh_mhz(pair_rate(refresh)) / 1000, refresh), QUEUE
+                )
+
+    def test_a_sender_fixture_faster_than_a_real_panel_is_refused(self):
+        # An installed viewer shows on a panel with its own clock. The default asks
+        # the sender for the panel's rate, and its whole-millisecond period is longer.
+        self.assertIsNone(panel_refusal(sender.steady_refresh_mhz(60.0) / 1000, 60.0))
+        self.assertIsNone(panel_refusal(sender.steady_refresh_mhz(59.98) / 1000, 59.98))
+        self.assertIsNone(panel_refusal(sender.steady_refresh_mhz(30.0) / 1000, 60.0))
+        # Equal on paper: the sender's own work makes its real period the longer one.
+        self.assertIsNone(panel_refusal(sender.steady_refresh_mhz(50.0) / 1000, 50.0))
+        # --fps above the panel's rate: the result would be `base` with the sender's
+        # dropped frames in it, and verdict would judge them as the viewer's.
+        for fps, panel in ((63.0, 60.0), (67.0, 60.0), (120.0, 59.98), (62.5, 60.0)):
+            with self.subTest(fps=fps, panel=panel):
+                self.assertRegex(
+                    panel_refusal(sender.steady_refresh_mhz(fps) / 1000, panel),
+                    "--fps.*faster than the panel.*sender's",
+                )
+
+    def test_a_rate_with_no_headless_mode_is_refused_before_any_device_is_asked(self):
+        self.assertIsNone(rate_refusal("--viewer-refresh", 60.0))
+        self.assertIsNone(rate_refusal("--fps", 1.0))
+        self.assertIsNone(rate_refusal("--fps", 1000.0))
+        for value in (0.0004, 0.0009, 0.99, 1000.5, 1001.0, 5000.0):
+            with self.subTest(value=value):
+                self.assertRegex(rate_refusal("--viewer-refresh", value), "--viewer-refresh.*from 1 to 1000")
+        cases = (
+            ["--viewer-refresh", "0.0004"],
+            ["--sender-fixture", "--viewer-refresh", "1001", "--queue-measure"],
+            ["--sender-fixture", "--fps", "0.0005"],
+            ["--sender-fixture", "--fps", "2000"],
+        )
+        for extra in cases:
+            with self.subTest(options=extra):
+                args = parser().parse_args(
+                    ["view", "--sender", "operator@sender", "--viewer", "operator@viewer", *extra]
+                )
+                with self.assertRaisesRegex(Refusal, "from 1 to 1000"):
+                    view(args)
 
     def test_queue_result_says_that_its_dropped_frames_are_not_the_viewers(self):
         self.assertNotIn("dropped_frames", viewer_notes(BASE))
@@ -257,6 +318,8 @@ class Cleanup(unittest.TestCase):
         try:
             restore = session.close()
             self.assertEqual(restore["stray_processes_killed"], [left_behind])
+            # The agent's own check saw it end; the wait below cannot hide a stray.
+            self.assertEqual(restore["remaining_processes"], [])
             self.assertTrue(self.ended(left_behind))
             # Listed and alive: the agent kills only what it can prove its own.
             self.assertEqual(
