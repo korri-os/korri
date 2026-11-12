@@ -54,7 +54,6 @@ export function start(model: Model, preferences: Readonly<Record<string, string>
     columns: {},
     pages: [],
     panels: {},
-    scope: 0,
     curtain: { key: "", at: 0, line: 0 },
     onboarding: { step: 0, started: false, finishing: false },
     identity: { f: "idle" },
@@ -208,8 +207,6 @@ export function perform(state: State, act: Act | undefined, model: Model, out: R
     }
     case "candidate":
       return act.rowId === "" ? { ...state, candidate: undefined } : { ...state, candidate: { rowId: act.rowId, at: act.at } }
-    case "scope":
-      return { ...state, scope: act.at }
     case "motion":
       out.push({ _tag: "RememberPreference", key: MOTION_KEY, value: act.still ? "reduced" : "full" })
       return { ...state, still: act.still }
@@ -441,8 +438,9 @@ function published(state: State, model: Model): State {
   // A setting's keyboard closes when Korri stops offering the text it edits.
   const entry = next.keyboard?.entry
   if (entry?.e === "setting") {
-    const places = model.launchSettings !== undefined && model.launchSettings._tag !== "Closed" ? model.launchSettings.places.flatMap(place => place.groups) : []
-    const kind = [...model.settings, ...places].flatMap(group => group.items).find(item => item.id === entry.settingId)?.interaction?.kind
+    const launch = model.launchSettings !== undefined && model.launchSettings._tag !== "Closed" ? model.launchSettings : undefined
+    const launched = launch === undefined ? [] : [...launch.groups.flatMap(group => group.items), ...(launch.keep === undefined ? [] : [launch.keep])]
+    const kind = [...model.settings.flatMap(group => group.items), ...launched].find(item => item.id === entry.settingId)?.interaction?.kind
     if (kind !== "text" && kind !== "sensitiveText" && kind !== "number") next = { ...next, keyboard: undefined }
   }
   if (model.onboarding === undefined && (next.onboarding.step !== 0 || next.onboarding.finishing)) next = { ...next, onboarding: { step: 0, started: false, finishing: false } }
@@ -467,9 +465,6 @@ function published(state: State, model: Model): State {
   // A page whose subject Korri no longer publishes closes.
   const pages = next.pages.filter(page => !(page.p === "identity" && model.identityManagement === undefined) && !((page.p === "store" || page.p === "provider" || page.p === "entry") && model.store === undefined) && !(page.p === "wifi" && model.network === undefined))
   if (pages.length !== next.pages.length) next = { ...next, pages }
-  if (model.launchSettings === undefined || model.launchSettings._tag === "Closed") {
-    if (next.scope !== 0) next = { ...next, scope: 0 }
-  }
   // A new invite is announced once, by a notice that takes no focus.
   const invites = model.invites ?? []
   const fresh = invites.find(invite => !next.invitesSeen.includes(invite.id))

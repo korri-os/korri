@@ -201,7 +201,7 @@
    }
   }
  },
- "buildLabel": "korri 0.4.1 \u00b7 9a1fb22",
+ "buildLabel": "korri 0.4.1 · 9a1fb22",
  "clockLabel": "21:47",
  "networkFailed": {
   "connection": {
@@ -287,7 +287,7 @@
     "runnerBuild": "/nix/store/8n1x2-retroarch-1.19.1",
     "program": "RetroArch mGBA",
     "warnings": [
-     "video.shader \u00b7 retroarch-mgba \u00b7 1.19.1: the shader preset was not found and the default is used"
+     "video.shader · retroarch-mgba · 1.19.1: the shader preset was not found and the default is used"
     ],
     "actions": [
      {
@@ -335,7 +335,7 @@
   ],
   "saved": [],
   "warnings": [
-   "audio.latency \u00b7 retroarch-mgba \u00b7 1.19.1: 32 ms is below what this device supports; 64 ms is used"
+   "audio.latency · retroarch-mgba · 1.19.1: 32 ms is below what this device supports; 64 ms is used"
   ],
   "actions": [
    {
@@ -347,509 +347,234 @@
  },
  "launchSettings": {
   "_tag": "Ready",
-  "gameTitle": "Wario Land 4",
-  "places": [
-   {
-    "id": "device/any",
-    "title": "Device",
-    "layer": {
-     "id": "device",
-     "title": "Device"
-    },
-    "scope": {
-     "kind": "any",
-     "label": "Any runner"
-    },
-    "groups": [
-     {
-      "title": "Runner",
-      "items": [
-       {
-        "id": "launch:set:device/any#runner",
-        "label": "Runner",
-        "value": "Inherit",
-        "description": "The most specific place that names an installed runner wins.",
-        "source": "mGBA from Game",
-        "scope": "shared",
-        "interaction": {
-         "kind": "choice",
-         "choices": [
-          {
-           "value": "inherit",
-           "label": "Inherit"
-          },
-          {
-           "value": "retroarch/mgba",
-           "label": "mGBA"
-          },
-          {
-           "value": "retroarch/gpsp",
-           "label": "gpSP"
-          }
-         ],
-         "selected": "inherit"
-        }
-       }
-      ]
-     },
-     {
-      "title": "CPU",
-      "items": [
-       {
-        "id": "launch:set:device/any#cpu.min",
-        "label": "CPU min",
-        "value": "Inherit",
-        "description": "Applies at next launch. Sets the device's clock limits.",
-        "source": "33 % (0.60 GHz) from Device for mGBA",
-        "scope": "device",
-        "interaction": {
-         "kind": "choice",
-         "choices": [
-          {
-           "value": "inherit",
-           "label": "Inherit"
-          },
-          {
-           "value": "0",
-           "label": "0 % (no floor)"
-          },
-          {
-           "value": "23",
-           "label": "23 % (0.41 GHz)"
-          },
-          {
-           "value": "33",
-           "label": "33 % (0.60 GHz)"
-          },
-          {
-           "value": "45",
-           "label": "45 % (0.82 GHz)"
-          },
-          {
-           "value": "61",
-           "label": "61 % (1.10 GHz)"
-          },
-          {
-           "value": "79",
-           "label": "79 % (1.42 GHz)"
-          },
-          {
-           "value": "89",
-           "label": "89 % (1.61 GHz)"
-          },
-          {
-           "value": "100",
-           "label": "100 % (1.80 GHz)"
-          }
-         ],
-         "selected": "inherit"
-        }
-       },
-       {
-        "id": "launch:set:device/any#cpu.max",
-        "label": "CPU max",
-        "value": "89 % (1.61 GHz)",
-        "description": "Applies at next launch. Sets the device's clock limits.",
-        "source": "61 % (1.10 GHz) from Profile Battery saver",
-        "scope": "device",
-        "interaction": {
-         "kind": "choice",
-         "choices": [
-          {
-           "value": "inherit",
-           "label": "Inherit"
-          },
-          {
-           "value": "23",
-           "label": "23 % (0.41 GHz)"
-          },
-          {
-           "value": "33",
-           "label": "33 % (0.60 GHz)"
-          },
-          {
-           "value": "45",
-           "label": "45 % (0.82 GHz)"
-          },
-          {
-           "value": "61",
-           "label": "61 % (1.10 GHz)"
-          },
-          {
-           "value": "79",
-           "label": "79 % (1.42 GHz)"
-          },
-          {
-           "value": "89",
-           "label": "89 % (1.61 GHz)"
-          },
-          {
-           "value": "100",
-           "label": "100 % (1.80 GHz)"
-          }
-         ],
-         "selected": "89"
-        }
-       },
-       {
-        "id": "launch:set:device/any#cpu.governor",
-        "label": "CPU governor",
-        "value": "Inherit",
-        "description": "Applies at next launch.",
-        "source": "schedutil from Device (default)",
-        "scope": "device",
-        "interaction": {
-         "kind": "choice",
-         "choices": [
-          {
-           "value": "inherit",
-           "label": "Inherit"
-          },
-          {
-           "value": "conservative",
-           "label": "conservative"
-          },
-          {
-           "value": "ondemand",
-           "label": "ondemand"
-          },
-          {
-           "value": "userspace",
-           "label": "userspace"
-          },
-          {
-           "value": "powersave",
-           "label": "powersave"
-          },
-          {
-           "value": "performance",
-           "label": "performance"
-          },
-          {
-           "value": "schedutil",
-           "label": "schedutil"
-          }
-         ],
-         "selected": "inherit"
-        }
-       }
-      ]
-     },
-     {
-      "title": "GPU",
-      "items": [
-       {
-        "id": "launch:set:device/any#gpu.min",
-        "label": "GPU min",
-        "value": "Inherit",
-        "description": "Applies at next launch. Sets the device's clock limits.",
-        "source": "0 % from Device (default)",
-        "scope": "device",
-        "interaction": {
-         "kind": "choice",
-         "choices": [
-          {
-           "value": "inherit",
-           "label": "Inherit"
-          },
-          {
-           "value": "0",
-           "label": "0 % (no floor)"
-          },
-          {
-           "value": "25",
-           "label": "25 % (0.20 GHz)"
-          },
-          {
-           "value": "38",
-           "label": "38 % (0.30 GHz)"
-          },
-          {
-           "value": "50",
-           "label": "50 % (0.40 GHz)"
-          },
-          {
-           "value": "75",
-           "label": "75 % (0.60 GHz)"
-          },
-          {
-           "value": "88",
-           "label": "88 % (0.70 GHz)"
-          },
-          {
-           "value": "100",
-           "label": "100 % (0.80 GHz)"
-          }
-         ],
-         "selected": "inherit"
-        }
-       },
-       {
-        "id": "launch:set:device/any#gpu.max",
-        "label": "GPU max",
-        "value": "Inherit",
-        "description": "Applies at next launch. Sets the device's clock limits.",
-        "source": "75 % (0.60 GHz) from Game",
-        "scope": "device",
-        "interaction": {
-         "kind": "choice",
-         "choices": [
-          {
-           "value": "inherit",
-           "label": "Inherit"
-          },
-          {
-           "value": "25",
-           "label": "25 % (0.20 GHz)"
-          },
-          {
-           "value": "38",
-           "label": "38 % (0.30 GHz)"
-          },
-          {
-           "value": "50",
-           "label": "50 % (0.40 GHz)"
-          },
-          {
-           "value": "75",
-           "label": "75 % (0.60 GHz)"
-          },
-          {
-           "value": "88",
-           "label": "88 % (0.70 GHz)"
-          },
-          {
-           "value": "100",
-           "label": "100 % (0.80 GHz)"
-          }
-         ],
-         "selected": "inherit"
-        }
-       }
-      ]
-     }
-    ]
-   },
-   {
-    "id": "device/family:retroarch",
-    "title": "Device for family retroarch",
-    "layer": {
-     "id": "device",
-     "title": "Device"
-    },
-    "scope": {
-     "kind": "family",
-     "label": "Family retroarch"
-    },
-    "groups": [
-     {
-      "title": "Family retroarch \u00b7 Video",
-      "items": [
-       {
-        "id": "launch:set:device/family:retroarch#add-setting:video",
-        "label": "Add setting",
-        "value": "Choose a setting",
-        "description": "3 more settings Family retroarch offers here.",
-        "interaction": {
-         "kind": "choice",
-         "choices": [
-          {
-           "value": "video.frameskip",
-           "label": "Frameskip"
-          },
-          {
-           "value": "video.color-correction",
-           "label": "Colour correction"
-          },
-          {
-           "value": "video.fps-limit",
-           "label": "FPS limit"
-          }
-         ],
-         "selected": ""
-        }
-       }
-      ]
-     },
-     {
-      "title": "Family retroarch \u00b7 Input",
-      "items": [
-       {
-        "id": "launch:set:device/family:retroarch#add-setting:input",
-        "label": "Add setting",
-        "value": "Choose a setting",
-        "description": "1 more setting Family retroarch offers here.",
-        "interaction": {
-         "kind": "choice",
-         "choices": [
-          {
-           "value": "input.solar.level",
-           "label": "Solar sensor level"
-          }
-         ],
-         "selected": ""
-        }
-       }
-      ]
-     },
-     {
-      "title": "Family retroarch \u00b7 Language",
-      "items": [
-       {
-        "id": "launch:set:device/family:retroarch#add-setting:locale",
-        "label": "Add setting",
-        "value": "Choose a setting",
-        "description": "1 more setting Family retroarch offers here.",
-        "interaction": {
-         "kind": "choice",
-         "choices": [
-          {
-           "value": "locale.language",
-           "label": "Language"
-          }
-         ],
-         "selected": ""
-        }
-       }
-      ]
-     }
-    ]
-   },
-   {
-    "id": "device/runner:retroarch/mgba",
-    "title": "Device for mGBA",
-    "layer": {
-     "id": "device",
-     "title": "Device"
-    },
-    "scope": {
-     "kind": "runner",
-     "label": "mGBA"
-    },
-    "groups": [
-     {
-      "title": "mGBA \u00b7 Video",
-      "items": [
-       {
-        "id": "launch:set:device/runner:retroarch/mgba#setting:video.color-correction",
-        "label": "Colour correction",
-        "source": "Off from mGBA (default)",
-        "scope": "shared",
-        "value": "On",
-        "interaction": {
-         "kind": "choice",
-         "choices": [
-          {
-           "value": "inherit",
-           "label": "Inherit"
-          },
-          {
-           "value": "default",
-           "label": "Default"
-          },
-          {
-           "value": "true",
-           "label": "On"
-          },
-          {
-           "value": "false",
-           "label": "Off"
-          }
-         ],
-         "selected": "true"
-        }
-       },
-       {
-        "id": "launch:set:device/runner:retroarch/mgba#add-setting:video",
-        "label": "Add setting",
-        "value": "Choose a setting",
-        "description": "2 more settings mGBA offers here.",
-        "interaction": {
-         "kind": "choice",
-         "choices": [
-          {
-           "value": "video.frameskip",
-           "label": "Frameskip"
-          },
-          {
-           "value": "video.fps-limit",
-           "label": "FPS limit"
-          }
-         ],
-         "selected": ""
-        }
-       }
-      ]
-     },
-     {
-      "title": "mGBA \u00b7 Input",
-      "items": [
-       {
-        "id": "launch:set:device/runner:retroarch/mgba#add-setting:input",
-        "label": "Add setting",
-        "value": "Choose a setting",
-        "description": "1 more setting mGBA offers here.",
-        "interaction": {
-         "kind": "choice",
-         "choices": [
-          {
-           "value": "input.solar.level",
-           "label": "Solar sensor level"
-          }
-         ],
-         "selected": ""
-        }
-       }
-      ]
-     },
-     {
-      "title": "mGBA \u00b7 Language",
-      "items": [
-       {
-        "id": "launch:set:device/runner:retroarch/mgba#setting:locale.language",
-        "label": "Language",
-        "source": "from Device for mGBA",
-        "scope": "device",
-        "value": "de",
-        "interaction": {
-         "kind": "text",
-         "placeholder": "Empty",
-         "allowEmpty": true
-        }
-       },
-       {
-        "id": "launch:set:device/runner:retroarch/mgba#clear:setting:locale.language",
-        "label": "Inherit Language",
-        "value": "Clear",
-        "description": "Takes the value set here away, so the value in force comes from elsewhere.",
-        "interaction": {
-         "kind": "action",
-         "actionId": "launch:set:device/runner:retroarch/mgba#clear:setting:locale.language"
-        }
-       },
-       {
-        "id": "launch:set:device/runner:retroarch/mgba#default:setting:locale.language",
-        "label": "Default Language",
-        "value": "Use",
-        "description": "mGBA's own default holds here, whatever less specific places set.",
-        "interaction": {
-         "kind": "action",
-         "actionId": "launch:set:device/runner:retroarch/mgba#default:setting:locale.language"
-        }
-       }
-      ]
-     }
-    ]
-   }
-  ],
-  "profiles": [
-   {
-    "id": "battery",
-    "title": "Battery saver"
-   }
-  ],
-  "selectedProfileId": "battery",
+  "gameTitle": "Mario Kart Wii: Retro Rewind",
+  "runsOn": "Runs here",
+  "profiles": [],
   "notes": [],
+  "groups": [
+   {
+    "title": "Video",
+    "items": [
+     {
+      "id": "launch:video.render-scale",
+      "label": "Render scale",
+      "value": "4x",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "1x",
+         "label": "1x"
+        },
+        {
+         "value": "2x",
+         "label": "2x"
+        },
+        {
+         "value": "3x",
+         "label": "3x"
+        },
+        {
+         "value": "4x",
+         "label": "4x"
+        },
+        {
+         "value": "5x",
+         "label": "5x"
+        },
+        {
+         "value": "6x",
+         "label": "6x"
+        }
+       ],
+       "selected": "4x"
+      }
+     },
+     {
+      "id": "launch:video.aspect-ratio",
+      "label": "Aspect ratio",
+      "value": "Fill view",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "original",
+         "label": "Original"
+        },
+        {
+         "value": "fill-view",
+         "label": "Fill view"
+        },
+        {
+         "value": "stretch",
+         "label": "Stretch"
+        },
+        {
+         "value": "4-3",
+         "label": "4:3"
+        },
+        {
+         "value": "16-9",
+         "label": "16:9"
+        }
+       ],
+       "selected": "fill-view"
+      }
+     },
+     {
+      "id": "launch:video.window-mode",
+      "label": "Window mode",
+      "value": "Borderless",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "windowed",
+         "label": "Windowed"
+        },
+        {
+         "value": "borderless",
+         "label": "Borderless"
+        },
+        {
+         "value": "exclusive",
+         "label": "Exclusive"
+        }
+       ],
+       "selected": "borderless"
+      }
+     },
+     {
+      "id": "launch:video.fps-limit",
+      "label": "FPS limit",
+      "value": "Off",
+      "description": "Not supported by WiiCompiled"
+     }
+    ]
+   },
+   {
+    "title": "Audio",
+    "items": [
+     {
+      "id": "launch:audio.volume",
+      "label": "Volume",
+      "value": "100%",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "0-",
+         "label": "0%"
+        },
+        {
+         "value": "25-",
+         "label": "25%"
+        },
+        {
+         "value": "50-",
+         "label": "50%"
+        },
+        {
+         "value": "75-",
+         "label": "75%"
+        },
+        {
+         "value": "100-",
+         "label": "100%"
+        }
+       ],
+       "selected": "100-"
+      }
+     }
+    ]
+   },
+   {
+    "title": "Performance",
+    "items": [
+     {
+      "id": "launch:performance.cpu-limit",
+      "label": "CPU limit",
+      "value": "100%",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "25-",
+         "label": "25%"
+        },
+        {
+         "value": "50-",
+         "label": "50%"
+        },
+        {
+         "value": "75-",
+         "label": "75%"
+        },
+        {
+         "value": "100-",
+         "label": "100%"
+        }
+       ],
+       "selected": "100-"
+      }
+     },
+     {
+      "id": "launch:performance.cpu-governor",
+      "label": "CPU governor",
+      "value": "Powersave",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "powersave",
+         "label": "Powersave"
+        },
+        {
+         "value": "schedutil",
+         "label": "Schedutil"
+        },
+        {
+         "value": "performance",
+         "label": "Performance"
+        }
+       ],
+       "selected": "powersave"
+      }
+     }
+    ]
+   },
+   {
+    "title": "Runs with",
+    "items": [
+     {
+      "id": "launch:runs-with.runner",
+      "label": "Runner",
+      "value": "WiiCompiled",
+      "description": "This game has one runner."
+     },
+     {
+      "id": "launch:runs-with.gamescope",
+      "label": "Gamescope",
+      "value": "On",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "off",
+         "label": "Off"
+        },
+        {
+         "value": "on",
+         "label": "On"
+        }
+       ],
+       "selected": "on"
+      }
+     }
+    ]
+   }
+  ],
+  "changes": [],
   "actions": [
    {
     "id": "launch:reload",
@@ -1008,7 +733,7 @@
     "get": {
      "_tag": "Working",
      "kicker": "Downloading Celeste Classic 2",
-     "detail": "8 KB of 15.9 KB \u00b7 8 KB/s \u00b7 0:01 left",
+     "detail": "8 KB of 15.9 KB · 8 KB/s · 0:01 left",
      "progress": {
       "done": 8000,
       "total": 15872
@@ -1665,7 +1390,7 @@
   "progress": {
    "_tag": "Busy",
    "kicker": "Downloading FEX rootfs",
-   "detail": "612 MB of 1.2 GB \u00b7 6.4 MB/s \u00b7 1:30 left",
+   "detail": "612 MB of 1.2 GB · 6.4 MB/s · 1:30 left",
    "progress": {
     "done": 612000000,
     "total": 1160000000
@@ -1690,7 +1415,7 @@
   "problemLong": {
    "_tag": "Problem",
    "kicker": "Catalog problem",
-   "reason": "local games: LocalRouteUnavailable: game average-day-in-america-by-bug has no installed Linux runner \u00b7 local games: LocalRouteUnavailable: game eggshell-66c0dfbd9ceda85a76e3e25b has no installed Linux runner \u00b7 local games: LocalRouteUnavailable: game eggshell-68c27d6be7c30cea4ebd4641 has no installed Linux runner \u00b7 local games: LocalRouteUnavailable: game eggshell-6a2ee4c46c21aa46014604d2 has no installed Linux runner \u00b7 local games: LocalRouteUnavailable: game eggshell-rust-spike has no installed Linux runner \u00b7 local games: LocalRouteUnavailable: game mega-man-rock-n-roll has no installed Linux runner",
+   "reason": "local games: LocalRouteUnavailable: game average-day-in-america-by-bug has no installed Linux runner · local games: LocalRouteUnavailable: game eggshell-66c0dfbd9ceda85a76e3e25b has no installed Linux runner · local games: LocalRouteUnavailable: game eggshell-68c27d6be7c30cea4ebd4641 has no installed Linux runner · local games: LocalRouteUnavailable: game eggshell-6a2ee4c46c21aa46014604d2 has no installed Linux runner · local games: LocalRouteUnavailable: game eggshell-rust-spike has no installed Linux runner · local games: LocalRouteUnavailable: game mega-man-rock-n-roll has no installed Linux runner",
    "canRetry": true
   },
   "confirm": {
@@ -1736,5 +1461,1025 @@
    "description": "zao is not on the network",
    "enabled": false
   }
- ]
+ ],
+ "launchChanges": {
+  "_tag": "Ready",
+  "gameTitle": "Mario Kart Wii: Retro Rewind",
+  "runsOn": "Runs here",
+  "profiles": [],
+  "notes": [],
+  "groups": [
+   {
+    "title": "Video",
+    "items": [
+     {
+      "id": "launch:video.render-scale",
+      "label": "Render scale",
+      "value": "2x",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "1x",
+         "label": "1x"
+        },
+        {
+         "value": "2x",
+         "label": "2x"
+        },
+        {
+         "value": "3x",
+         "label": "3x"
+        },
+        {
+         "value": "4x",
+         "label": "4x"
+        },
+        {
+         "value": "5x",
+         "label": "5x"
+        },
+        {
+         "value": "6x",
+         "label": "6x"
+        }
+       ],
+       "selected": "2x"
+      }
+     },
+     {
+      "id": "launch:video.aspect-ratio",
+      "label": "Aspect ratio",
+      "value": "Original",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "original",
+         "label": "Original"
+        },
+        {
+         "value": "fill-view",
+         "label": "Fill view"
+        },
+        {
+         "value": "stretch",
+         "label": "Stretch"
+        },
+        {
+         "value": "4-3",
+         "label": "4:3"
+        },
+        {
+         "value": "16-9",
+         "label": "16:9"
+        }
+       ],
+       "selected": "original"
+      }
+     },
+     {
+      "id": "launch:video.window-mode",
+      "label": "Window mode",
+      "value": "Borderless",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "windowed",
+         "label": "Windowed"
+        },
+        {
+         "value": "borderless",
+         "label": "Borderless"
+        },
+        {
+         "value": "exclusive",
+         "label": "Exclusive"
+        }
+       ],
+       "selected": "borderless"
+      }
+     },
+     {
+      "id": "launch:video.fps-limit",
+      "label": "FPS limit",
+      "value": "Off",
+      "description": "Not supported by WiiCompiled"
+     }
+    ]
+   },
+   {
+    "title": "Audio",
+    "items": [
+     {
+      "id": "launch:audio.volume",
+      "label": "Volume",
+      "value": "100%",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "0-",
+         "label": "0%"
+        },
+        {
+         "value": "25-",
+         "label": "25%"
+        },
+        {
+         "value": "50-",
+         "label": "50%"
+        },
+        {
+         "value": "75-",
+         "label": "75%"
+        },
+        {
+         "value": "100-",
+         "label": "100%"
+        }
+       ],
+       "selected": "100-"
+      }
+     }
+    ]
+   },
+   {
+    "title": "Performance",
+    "items": [
+     {
+      "id": "launch:performance.cpu-limit",
+      "label": "CPU limit",
+      "value": "100%",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "25-",
+         "label": "25%"
+        },
+        {
+         "value": "50-",
+         "label": "50%"
+        },
+        {
+         "value": "75-",
+         "label": "75%"
+        },
+        {
+         "value": "100-",
+         "label": "100%"
+        }
+       ],
+       "selected": "100-"
+      }
+     },
+     {
+      "id": "launch:performance.cpu-governor",
+      "label": "CPU governor",
+      "value": "Powersave",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "powersave",
+         "label": "Powersave"
+        },
+        {
+         "value": "schedutil",
+         "label": "Schedutil"
+        },
+        {
+         "value": "performance",
+         "label": "Performance"
+        }
+       ],
+       "selected": "powersave"
+      }
+     }
+    ]
+   },
+   {
+    "title": "Runs with",
+    "items": [
+     {
+      "id": "launch:runs-with.runner",
+      "label": "Runner",
+      "value": "WiiCompiled",
+      "description": "This game has one runner."
+     },
+     {
+      "id": "launch:runs-with.gamescope",
+      "label": "Gamescope",
+      "value": "On",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "off",
+         "label": "Off"
+        },
+        {
+         "value": "on",
+         "label": "On"
+        }
+       ],
+       "selected": "on"
+      }
+     }
+    ]
+   }
+  ],
+  "changes": [
+   {
+    "id": "launch:video.render-scale",
+    "was": "4x"
+   },
+   {
+    "id": "launch:video.aspect-ratio",
+    "was": "Fill view"
+   }
+  ],
+  "keep": {
+   "id": "launch:keep",
+   "label": "Keep 2 changes",
+   "value": "This game",
+   "description": "Used every time you play this game.",
+   "interaction": {
+    "kind": "choice",
+    "choices": [
+     {
+      "value": "launch",
+      "label": "This launch"
+     },
+     {
+      "value": "game",
+      "label": "This game"
+     },
+     {
+      "value": "device",
+      "label": "Every game"
+     },
+     {
+      "value": "system:wii",
+      "label": "System Wii"
+     },
+     {
+      "value": "release:usa",
+      "label": "Release USA"
+     },
+     {
+      "value": "profile:battery",
+      "label": "Profile Battery saver"
+     }
+    ],
+    "selected": "game"
+   }
+  },
+  "actions": [
+   {
+    "id": "launch:reload",
+    "label": "Reload",
+    "enabled": true
+   },
+   {
+    "id": "launch:cancel",
+    "label": "Close",
+    "enabled": true
+   }
+  ]
+ },
+ "launchStreamed": {
+  "_tag": "Ready",
+  "gameTitle": "Mario Kart Wii: Retro Rewind",
+  "runsOn": "Runs on aka",
+  "profiles": [],
+  "notes": [],
+  "groups": [
+   {
+    "title": "Video",
+    "items": [
+     {
+      "id": "launch:video.render-scale",
+      "label": "Render scale",
+      "value": "2x",
+      "source": "Stays on aka",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "1x",
+         "label": "1x"
+        },
+        {
+         "value": "2x",
+         "label": "2x"
+        },
+        {
+         "value": "3x",
+         "label": "3x"
+        },
+        {
+         "value": "4x",
+         "label": "4x"
+        },
+        {
+         "value": "5x",
+         "label": "5x"
+        },
+        {
+         "value": "6x",
+         "label": "6x"
+        }
+       ],
+       "selected": "2x"
+      }
+     },
+     {
+      "id": "launch:video.aspect-ratio",
+      "label": "Aspect ratio",
+      "value": "Original",
+      "source": "Stays on aka",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "original",
+         "label": "Original"
+        },
+        {
+         "value": "fill-view",
+         "label": "Fill view"
+        },
+        {
+         "value": "stretch",
+         "label": "Stretch"
+        },
+        {
+         "value": "4-3",
+         "label": "4:3"
+        },
+        {
+         "value": "16-9",
+         "label": "16:9"
+        }
+       ],
+       "selected": "original"
+      }
+     },
+     {
+      "id": "launch:video.window-mode",
+      "label": "Window mode",
+      "value": "Borderless",
+      "source": "Stays on aka",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "windowed",
+         "label": "Windowed"
+        },
+        {
+         "value": "borderless",
+         "label": "Borderless"
+        },
+        {
+         "value": "exclusive",
+         "label": "Exclusive"
+        }
+       ],
+       "selected": "borderless"
+      }
+     },
+     {
+      "id": "launch:video.fps-limit",
+      "label": "FPS limit",
+      "value": "Off",
+      "description": "Not supported by WiiCompiled",
+      "source": "Stays on aka"
+     }
+    ]
+   },
+   {
+    "title": "Audio",
+    "items": [
+     {
+      "id": "launch:audio.volume",
+      "label": "Volume",
+      "value": "100%",
+      "source": "Stays on aka",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "0-",
+         "label": "0%"
+        },
+        {
+         "value": "25-",
+         "label": "25%"
+        },
+        {
+         "value": "50-",
+         "label": "50%"
+        },
+        {
+         "value": "75-",
+         "label": "75%"
+        },
+        {
+         "value": "100-",
+         "label": "100%"
+        }
+       ],
+       "selected": "100-"
+      }
+     }
+    ]
+   },
+   {
+    "title": "Stream",
+    "items": [
+     {
+      "id": "launch:stream.stream-size",
+      "label": "Stream size",
+      "value": "This screen",
+      "source": "Stays on this device",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "this-screen",
+         "label": "This screen"
+        },
+        {
+         "value": "1920-1080",
+         "label": "1920×1080"
+        },
+        {
+         "value": "1280-720",
+         "label": "1280×720"
+        }
+       ],
+       "selected": "this-screen"
+      }
+     },
+     {
+      "id": "launch:stream.stream-frame-rate",
+      "label": "Stream frame rate",
+      "value": "60",
+      "source": "Stays on this device",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "30",
+         "label": "30"
+        },
+        {
+         "value": "60",
+         "label": "60"
+        },
+        {
+         "value": "90",
+         "label": "90"
+        },
+        {
+         "value": "120",
+         "label": "120"
+        }
+       ],
+       "selected": "60"
+      }
+     },
+     {
+      "id": "launch:stream.bitrate",
+      "label": "Bitrate",
+      "value": "40 Mbps",
+      "source": "Stays on this device",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "10-mbps",
+         "label": "10 Mbps"
+        },
+        {
+         "value": "20-mbps",
+         "label": "20 Mbps"
+        },
+        {
+         "value": "40-mbps",
+         "label": "40 Mbps"
+        },
+        {
+         "value": "80-mbps",
+         "label": "80 Mbps"
+        }
+       ],
+       "selected": "40-mbps"
+      }
+     },
+     {
+      "id": "launch:stream.codec",
+      "label": "Codec",
+      "value": "Automatic",
+      "source": "Stays on this device",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "automatic",
+         "label": "Automatic"
+        },
+        {
+         "value": "h-264",
+         "label": "H.264"
+        },
+        {
+         "value": "hevc",
+         "label": "HEVC"
+        },
+        {
+         "value": "av1",
+         "label": "AV1"
+        }
+       ],
+       "selected": "automatic"
+      }
+     }
+    ]
+   },
+   {
+    "title": "Performance",
+    "items": [
+     {
+      "id": "launch:performance.cpu-limit",
+      "label": "CPU limit",
+      "value": "100%",
+      "source": "Stays on aka",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "25-",
+         "label": "25%"
+        },
+        {
+         "value": "50-",
+         "label": "50%"
+        },
+        {
+         "value": "75-",
+         "label": "75%"
+        },
+        {
+         "value": "100-",
+         "label": "100%"
+        }
+       ],
+       "selected": "100-"
+      }
+     },
+     {
+      "id": "launch:performance.cpu-governor",
+      "label": "CPU governor",
+      "value": "Powersave",
+      "source": "Stays on aka",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "powersave",
+         "label": "Powersave"
+        },
+        {
+         "value": "schedutil",
+         "label": "Schedutil"
+        },
+        {
+         "value": "performance",
+         "label": "Performance"
+        }
+       ],
+       "selected": "powersave"
+      }
+     }
+    ]
+   },
+   {
+    "title": "Runs with",
+    "items": [
+     {
+      "id": "launch:runs-with.runner",
+      "label": "Runner",
+      "value": "WiiCompiled",
+      "description": "This game has one runner.",
+      "source": "Stays on aka"
+     },
+     {
+      "id": "launch:runs-with.gamescope",
+      "label": "Gamescope",
+      "value": "On",
+      "source": "Stays on aka",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "off",
+         "label": "Off"
+        },
+        {
+         "value": "on",
+         "label": "On"
+        }
+       ],
+       "selected": "on"
+      }
+     }
+    ]
+   }
+  ],
+  "changes": [
+   {
+    "id": "launch:video.render-scale",
+    "was": "4x"
+   },
+   {
+    "id": "launch:video.aspect-ratio",
+    "was": "Fill view"
+   }
+  ],
+  "keep": {
+   "id": "launch:keep",
+   "label": "Keep 2 changes",
+   "value": "This game",
+   "description": "Used every time you play this game.",
+   "interaction": {
+    "kind": "choice",
+    "choices": [
+     {
+      "value": "launch",
+      "label": "This launch"
+     },
+     {
+      "value": "game",
+      "label": "This game"
+     },
+     {
+      "value": "device",
+      "label": "Every game"
+     },
+     {
+      "value": "system:wii",
+      "label": "System Wii"
+     },
+     {
+      "value": "release:usa",
+      "label": "Release USA"
+     },
+     {
+      "value": "profile:battery",
+      "label": "Profile Battery saver"
+     }
+    ],
+    "selected": "game"
+   }
+  },
+  "actions": [
+   {
+    "id": "launch:reload",
+    "label": "Reload",
+    "enabled": true
+   },
+   {
+    "id": "launch:cancel",
+    "label": "Close",
+    "enabled": true
+   }
+  ]
+ },
+ "launchUnreachable": {
+  "_tag": "Error",
+  "message": "aka cannot be reached. Its settings cannot change now.",
+  "gameTitle": "Mario Kart Wii: Retro Rewind",
+  "runsOn": "Runs on aka",
+  "profiles": [],
+  "notes": [],
+  "groups": [
+   {
+    "title": "Video",
+    "items": [
+     {
+      "id": "launch:video.render-scale",
+      "label": "Render scale",
+      "value": "4x",
+      "description": "aka cannot be reached.",
+      "source": "Stays on aka"
+     },
+     {
+      "id": "launch:video.aspect-ratio",
+      "label": "Aspect ratio",
+      "value": "Fill view",
+      "description": "aka cannot be reached.",
+      "source": "Stays on aka"
+     },
+     {
+      "id": "launch:video.window-mode",
+      "label": "Window mode",
+      "value": "Borderless",
+      "description": "aka cannot be reached.",
+      "source": "Stays on aka"
+     },
+     {
+      "id": "launch:video.fps-limit",
+      "label": "FPS limit",
+      "value": "Off",
+      "description": "aka cannot be reached.",
+      "source": "Stays on aka"
+     }
+    ]
+   },
+   {
+    "title": "Audio",
+    "items": [
+     {
+      "id": "launch:audio.volume",
+      "label": "Volume",
+      "value": "100%",
+      "description": "aka cannot be reached.",
+      "source": "Stays on aka"
+     }
+    ]
+   },
+   {
+    "title": "Stream",
+    "items": [
+     {
+      "id": "launch:stream.stream-size",
+      "label": "Stream size",
+      "value": "This screen",
+      "source": "Stays on this device",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "this-screen",
+         "label": "This screen"
+        },
+        {
+         "value": "1920-1080",
+         "label": "1920×1080"
+        },
+        {
+         "value": "1280-720",
+         "label": "1280×720"
+        }
+       ],
+       "selected": "this-screen"
+      }
+     },
+     {
+      "id": "launch:stream.stream-frame-rate",
+      "label": "Stream frame rate",
+      "value": "30",
+      "source": "Stays on this device",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "30",
+         "label": "30"
+        },
+        {
+         "value": "60",
+         "label": "60"
+        },
+        {
+         "value": "90",
+         "label": "90"
+        },
+        {
+         "value": "120",
+         "label": "120"
+        }
+       ],
+       "selected": "30"
+      }
+     },
+     {
+      "id": "launch:stream.bitrate",
+      "label": "Bitrate",
+      "value": "20 Mbps",
+      "source": "Stays on this device",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "10-mbps",
+         "label": "10 Mbps"
+        },
+        {
+         "value": "20-mbps",
+         "label": "20 Mbps"
+        },
+        {
+         "value": "40-mbps",
+         "label": "40 Mbps"
+        },
+        {
+         "value": "80-mbps",
+         "label": "80 Mbps"
+        }
+       ],
+       "selected": "20-mbps"
+      }
+     },
+     {
+      "id": "launch:stream.codec",
+      "label": "Codec",
+      "value": "Automatic",
+      "source": "Stays on this device",
+      "interaction": {
+       "kind": "choice",
+       "choices": [
+        {
+         "value": "automatic",
+         "label": "Automatic"
+        },
+        {
+         "value": "h-264",
+         "label": "H.264"
+        },
+        {
+         "value": "hevc",
+         "label": "HEVC"
+        },
+        {
+         "value": "av1",
+         "label": "AV1"
+        }
+       ],
+       "selected": "automatic"
+      }
+     }
+    ]
+   },
+   {
+    "title": "Performance",
+    "items": [
+     {
+      "id": "launch:performance.cpu-limit",
+      "label": "CPU limit",
+      "value": "100%",
+      "description": "aka cannot be reached.",
+      "source": "Stays on aka"
+     },
+     {
+      "id": "launch:performance.cpu-governor",
+      "label": "CPU governor",
+      "value": "Powersave",
+      "description": "aka cannot be reached.",
+      "source": "Stays on aka"
+     }
+    ]
+   },
+   {
+    "title": "Runs with",
+    "items": [
+     {
+      "id": "launch:runs-with.runner",
+      "label": "Runner",
+      "value": "WiiCompiled",
+      "description": "aka cannot be reached.",
+      "source": "Stays on aka"
+     },
+     {
+      "id": "launch:runs-with.gamescope",
+      "label": "Gamescope",
+      "value": "On",
+      "description": "aka cannot be reached.",
+      "source": "Stays on aka"
+     }
+    ]
+   }
+  ],
+  "changes": [
+   {
+    "id": "launch:stream.stream-frame-rate",
+    "was": "60"
+   },
+   {
+    "id": "launch:stream.bitrate",
+    "was": "40 Mbps"
+   }
+  ],
+  "keep": {
+   "id": "launch:keep",
+   "label": "Keep 2 changes",
+   "value": "This game",
+   "description": "Used every time you play this game.",
+   "interaction": {
+    "kind": "choice",
+    "choices": [
+     {
+      "value": "launch",
+      "label": "This launch"
+     },
+     {
+      "value": "game",
+      "label": "This game"
+     },
+     {
+      "value": "device",
+      "label": "Every game"
+     },
+     {
+      "value": "system:wii",
+      "label": "System Wii"
+     },
+     {
+      "value": "release:usa",
+      "label": "Release USA"
+     },
+     {
+      "value": "profile:battery",
+      "label": "Profile Battery saver"
+     }
+    ],
+    "selected": "game"
+   }
+  },
+  "actions": [
+   {
+    "id": "launch:retry",
+    "label": "Retry",
+    "enabled": true
+   },
+   {
+    "id": "launch:cancel",
+    "label": "Close",
+    "enabled": true
+   }
+  ]
+ },
+ "launchConflict": {
+  "_tag": "Conflict",
+  "message": "Launch settings changed elsewhere. Reload to see them before you change them.",
+  "gameTitle": "Mario Kart Wii: Retro Rewind",
+  "runsOn": "Runs here",
+  "groups": [],
+  "changes": [],
+  "profiles": [],
+  "notes": [],
+  "actions": [
+   {
+    "id": "launch:reload",
+    "label": "Reload",
+    "enabled": true
+   },
+   {
+    "id": "launch:cancel",
+    "label": "Close",
+    "enabled": true
+   }
+  ]
+ },
+ "launchLoading": {
+  "_tag": "Loading",
+  "gameTitle": "Mario Kart Wii: Retro Rewind",
+  "groups": [],
+  "changes": [],
+  "profiles": [],
+  "notes": [],
+  "actions": [
+   {
+    "id": "launch:cancel",
+    "label": "Close",
+    "enabled": true
+   }
+  ]
+ },
+ "launchEmpty": {
+  "_tag": "Ready",
+  "gameTitle": "Celeste Classic",
+  "runsOn": "Runs here",
+  "profiles": [],
+  "notes": [],
+  "groups": [],
+  "changes": [],
+  "actions": [
+   {
+    "id": "launch:reload",
+    "label": "Reload",
+    "enabled": true
+   },
+   {
+    "id": "launch:cancel",
+    "label": "Close",
+    "enabled": true
+   }
+  ]
+ }
 }

@@ -302,3 +302,88 @@ describe("progress is a state, not a number", () => {
     expect(curtain("busy-plain").progressShare).toBe(0)
   })
 })
+
+describe("launch settings are one list (ADR 0066)", () => {
+  const open = (name: string) => {
+    const scene = scenario(name)
+    const run = new Play(scene.models[0])
+    return { run, launch: scene.models[0].launchSettings as any }
+  }
+  const rows = (run: Play) => run.view.listRows as any[]
+
+  test("each setting once, under its section; where the game runs under the title", () => {
+    const { run, launch } = open("launch-settings")
+    expect(run.view.page).toBe("list")
+    expect(run.view.list.title).toBe("LAUNCH SETTINGS")
+    expect(run.view.list.sub).toBe(`${launch.gameTitle} · ${launch.runsOn}`)
+    const heads = rows(run).filter(row => row.kind === "head").map(row => row.label)
+    expect(heads).toEqual(launch.groups.filter((group: any) => group.items.length > 0).map((group: any) => group.title))
+    const items = launch.groups.flatMap((group: any) => group.items)
+    for (const item of items) expect(rows(run).filter(row => row.focusId === `l:${item.id}`).length, item.id).toBe(1)
+    // Nothing is changed: no row says what it was, and there is no keep row.
+    expect(rows(run).some(row => /\(was |^Was /.test(row.value ?? ""))).toBe(false)
+    expect(rows(run).some(row => row.focusId === "l:launch:keep")).toBe(false)
+  })
+
+  test("a row Korri gives no way to change still takes the focus, and says why", () => {
+    const { run, launch } = open("launch-settings")
+    const fixed = launch.groups.flatMap((group: any) => group.items).find((item: any) => item.interaction === undefined && item.description !== undefined)
+    const row = rows(run).find(entry => entry.focusId === `l:${fixed.id}`)
+    expect(row.note).toContain(fixed.description)
+    expect(row.focusRegion).toBe("rows")
+  })
+
+  test("a changed row says what it was, and the keep row stands last while a row is changed", () => {
+    const { run, launch } = open("launch-changes")
+    expect(launch.changes.length).toBeGreaterThan(0)
+    const items = launch.groups.flatMap((group: any) => group.items)
+    for (const change of launch.changes) {
+      const now = items.find((item: any) => item.id === change.id).value
+      expect(rows(run).find(row => row.focusId === `l:${change.id}`).value, change.id).toBe(`${now} (was ${change.was})`)
+    }
+    // A row that is not changed shows its value alone.
+    const same = items.find((item: any) => !launch.changes.some((change: any) => change.id === item.id) && item.value !== undefined)
+    expect(rows(run).find(row => row.focusId === `l:${same.id}`).value).toBe(same.value)
+    const last = rows(run).at(-1)
+    expect(last.focusId).toBe(`l:${launch.keep.id}`)
+    expect(last.label).toBe(launch.keep.label)
+    expect(rows(run).at(-2).kind).toBe("head")
+    // The scenario that shows it stands on it, at every size.
+    const kept = new Play(scenario("launch-keep").models[0])
+    for (const step of scenario("launch-keep").steps) kept.press(step)
+    expect(targets(kept.view).find(entry => entry.focused)?.focusId).toBe(`l:${launch.keep.id}`)
+  })
+
+  test("a row's id goes to Korri unchanged, and so does the keep row's", () => {
+    const { run, launch } = open("launch-changes")
+    const first = launch.groups[0].items[0]
+    const stepped = run.press("right") as any[]
+    expect(stepped.find(request => request._tag === "ChangeSetting").settingId).toBe(first.id)
+    let guard = 0
+    while (targets(run.view).find(entry => entry.focused)?.focusId !== `l:${launch.keep.id}` && guard++ < 60) run.press("down")
+    const kept = run.press("right") as any[]
+    expect(kept.find(request => request._tag === "ChangeSetting").settingId).toBe(launch.keep.id)
+  })
+
+  test("an error for a device that cannot be reached keeps the list, and opens on Korri's first action", () => {
+    const { run, launch } = open("launch-unreachable")
+    expect(rows(run)[0].kind).toBe("problem")
+    expect(rows(run)[0].label).toBe(launch.message)
+    expect(rows(run).filter(row => row.kind === "head").length).toBeGreaterThan(0)
+    const entry = launch.actions.find((action: any) => action.enabled)
+    expect(targets(run.view).find(item => item.focused)?.focusId).toBe(`l:a:${entry.id}`)
+  })
+
+  test("a conflict shows Korri's message and its actions; loading says so; Back runs Korri's close action", () => {
+    const conflict = open("launch-conflict")
+    expect(rows(conflict.run)[0].label).toBe(conflict.launch.message)
+    expect((conflict.run.view.listButtons as any[]).map(button => button.label)).toEqual(conflict.launch.actions.map((action: any) => action.label))
+    const empty = open("launch-empty")
+    expect(rows(empty.run).map(row => row.label)).toEqual(["No launch settings for this game."])
+    const loading = open("launch-loading")
+    expect(rows(loading.run).some(row => row.label === "Reading this game's launch settings.")).toBe(true)
+    const { run, launch } = open("launch-settings")
+    const close = launch.actions.find((action: any) => action.id.endsWith(":cancel"))
+    expect(run.press("back")).toEqual([{ _tag: "RunAction", actionId: close.id }] as any)
+  })
+})

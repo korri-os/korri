@@ -111,7 +111,6 @@ export type Act =
   | { readonly t: "detail"; readonly game: Game }
   | { readonly t: "lobby" }
   | { readonly t: "candidate"; readonly rowId: string; readonly at: number }
-  | { readonly t: "scope"; readonly at: number }
   | { readonly t: "motion"; readonly still: boolean }
   | { readonly t: "onboarding"; readonly step: number; readonly started?: boolean; readonly finishing?: boolean }
   | { readonly t: "identity"; readonly flow: IdentityFlow }
@@ -305,8 +304,6 @@ export interface State {
   readonly panels: Readonly<Record<string, PanelState>>
   /** A candidate on a choice Korri publishes with nothing chosen. */
   readonly candidate?: { readonly rowId: string; readonly at: number }
-  /** The launch settings place shown, by its position. */
-  readonly scope: number
   readonly keyboard?: KeyboardState
   readonly ask?: AskState
   /** Korri's status: which button holds focus, the first line shown, and what it is for. */

@@ -88,8 +88,8 @@ C34 A fact in the detail: Saves in sync, Saves not in sync, Saves kept by Steam,
 C35 The detail's Choose a save, and the curtain: each save a button with its device and when.
 C36 Saves, a list page: each save a row, restore asks first.
 C11 Run with, a list page: one row a runner, the one in force marked.
-C37 Launch settings, a list page: Applies to steps the scope; rows by group; Reload and Close at its foot.
-C38 The page's subtitle names the profile in force; the scope row steps through places and profiles.
+C37 Launch settings, a list page: where the game runs under the title; one list, rows by group, each setting once; a changed row says what it was beside its value; a row that cannot change rests and says why; while a row is changed the last row is where the changes are kept; Reload and Close at its foot, and first under Korri's message.
+C38 Profiles are rows of Korri's Profile group; a profile is also a place the keep row offers. Back runs Korri's close action.
 C12 Settings, a list page: a quiet head a group, a row an item, its value at the right.
 C13 Choice: Left and Right step through the choices and send at once; Confirm steps forward. Range: a track. Text, number and secret: the keyboard. Action: Confirm; a destructive one asks on the curtain.
 C14 The row says Saving; a problem stands under its row in Exit.

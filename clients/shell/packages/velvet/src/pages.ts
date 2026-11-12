@@ -365,6 +365,17 @@ function runnerPanel(model: Model): PanelSpec {
   return { key: "korri:runner", title: choice.gameTitle, sub: choice.message, rows, buttons: [], back: NONE }
 }
 
+/**
+ * Korri's launch settings (ADR 0066): one list. Each setting stands once,
+ * under its section, with the value the next launch would use, the same for
+ * a game this device runs and a game another device runs. A row Korri gives
+ * no way to change rests and says why. A changed row says what it was, beside
+ * its value. While
+ * a row is changed, the last row is where the changes are kept (this launch,
+ * this game, every game...). Profiles are rows of Korri's own Profile group.
+ * The rows show while Korri is ready, and beside an error: the rows of this
+ * device still work then.
+ */
 function launchPanel(state: State, model: Model): PanelSpec {
   const launch = model.launchSettings
   if (launch === undefined || launch._tag === "Closed") return { key: "korri:launch", title: "Launch settings", rows: [], buttons: [], back: NONE }
@@ -372,27 +383,36 @@ function launchPanel(state: State, model: Model): PanelSpec {
   const rows: RowSpec[] = []
   if (launch._tag === "Conflict" || launch._tag === "Error") rows.push(problem("l:message", launch.message))
   if (launch._tag === "Loading") rows.push(note("l:wait", "Reading this game's launch settings."))
-  const at = Math.max(0, Math.min(state.scope, launch.places.length - 1))
-  const place = launch.places[at]
-  if (launch._tag === "Ready" && place !== undefined) {
-    const count = launch.places.length
-    if (count > 1) {
-      rows.push({
-        id: "l:place", kind: "row", label: "Applies to", value: place.title, mark: "step", note: `${at + 1} of ${count}. For each value, the most specific place that sets it wins.`,
-        press: { t: "scope", at: (at + 1) % count }, step: direction => ({ t: "scope", at: (at + direction + count) % count }),
-      })
-    }
-    place.groups.forEach((group, index) => {
-      rows.push(head(`l:head:${index}`, group.title))
-      for (const item of group.items) rows.push(...settingRows(item, model.settingsStatus, state, `l:${place.id}:`))
-    })
-  }
   launch.notes.forEach((line, index) => rows.push(note(`l:note:${index}`, line)))
-  const profile = launch.profiles.find(item => item.id === launch.selectedProfileId)
+  const listed = launch._tag === "Ready" || launch._tag === "Error"
+  const asks = launch._tag === "Conflict" || launch._tag === "Error"
+  const entry = launch.actions.find(action => action.enabled)
+  if (listed) {
+    const was = new Map(launch.changes.map(change => [change.id, change.was] as const))
+    launch.groups.filter(group => group.items.length > 0).forEach((group, index) => {
+      rows.push(head(`l:head:${index}`, group.title))
+      for (const item of group.items) {
+        const earlier = was.get(item.id)
+        for (const row of settingRows(item, model.settingsStatus, state, "l:")) {
+          // A row changed and not kept yet says what it was, beside its value: seen without the focus on it.
+          rows.push(earlier === undefined || row.id !== `l:${item.id}` ? row : { ...row, value: row.value === undefined || row.value === "" ? `Was ${earlier}` : `${row.value} (was ${earlier})` })
+        }
+      }
+    })
+    // Ready with no row is no fault: Korri has nothing to set for this game.
+    if (launch._tag === "Ready" && rows.length === launch.notes.length) rows.push(note("l:none", "No launch settings for this game."))
+    // Where the changes are kept: there only while a row is changed.
+    if (launch.keep !== undefined && was.size > 0) {
+      rows.push(head("l:head:keep", "Changes"))
+      rows.push(...settingRows(launch.keep, model.settingsStatus, state, "l:"))
+    }
+  }
   return {
     key: "korri:launch", title: "Launch settings",
-    sub: [launch.gameTitle, profile === undefined ? undefined : `Profile: ${profile.title}`].filter(part => part !== undefined).join(" · "),
+    sub: [launch.gameTitle, launch.runsOn].filter(part => part !== undefined && part !== "").join(" · "),
     rows, buttons: actionButtons("l:a:", launch.actions),
+    // Korri's message asks for an action: a conflict or an error opens on the first one that can be pressed.
+    ...(asks && entry !== undefined ? { first: `l:a:${entry.id}` } : {}),
     // The editor is Korri's to close: Back runs its close action.
     back: close === undefined ? NONE : run(close.id),
   }

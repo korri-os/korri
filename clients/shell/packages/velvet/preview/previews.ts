@@ -236,7 +236,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
     return { name, body: one("VelvetHouse", `${FILL} empty: ${p(v.empty)}; title: ${p(v.emptyTitle)}; lines: ${p(v.emptyLines)}; buttons: ${p(v.emptyButtons)};`) }
   }
   add("pages", "VelvetHouse", [house("Invitation", "empty"), house("Error", "error")])
-  add("pages", "VelvetList", [["Settings", "settings"], ["Wifi", "wifi"], ["Identity", "identity"], ["Saves", "saves"], ["Runner", "runner"], ["LaunchSettings", "launch-settings"], ["Invites", "invites"], ["Store", "store"]].map(([name, scene]) => programme("VelvetList", "pages")(name!, scene!)))
+  add("pages", "VelvetList", [["Settings", "settings"], ["Wifi", "wifi"], ["Identity", "identity"], ["Saves", "saves"], ["Runner", "runner"], ["LaunchSettings", "launch-settings"], ["LaunchChanges", "launch-keep"], ["LaunchUnreachable", "launch-unreachable"], ["Invites", "invites"], ["Store", "store"]].map(([name, scene]) => programme("VelvetList", "pages")(name!, scene!)))
   add("pages", "VelvetPaused", [pause("VelvetPaused", "pages")("Plain", "overlay"), pause("VelvetPaused", "pages")("Stream", "overlay-stream")])
   const set = (name: string, scene: string) => {
     const v = view(scene)
