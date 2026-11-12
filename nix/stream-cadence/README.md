@@ -210,6 +210,10 @@ prove the picture path of a handheld or a phone.
 The viewer's agent reads the product output only for the installed viewer.
 The fixture has its own output.
 
+With a product sender, the private half of the test key pair crosses SSH into
+the viewer's run directory, because the viewer runs there. Cleanup removes
+it. The sender still revokes the certificate on exit.
+
 ### The installed viewer on a handheld
 
 On a device with the enabled `@korri:moonlight` plugin, `view` runs the
@@ -259,13 +263,46 @@ short run (10 scored seconds, 640x480) on each handheld:
 | Viewer CPU, CPU seconds each second | 0.147 | 0.135 |
 
 The next run on the RG353M ended 5 s into the measured stream: the device
-left the USB link and did not answer again. The cause is not known. No
-handheld baseline exists, and device runs stopped there.
+reset. In the 7 s before, the viewer used about 1 to 2 CPU seconds each second
+in place of 0.15. The device's log of that run is lost, and no cause is
+proven; a thermal reset fits. With nothing of the tool running, that device
+reads 69 to 74 °C, and its first passive trip point is 70 °C: its korrid
+uses one whole CPU. No handheld baseline exists, and device runs stopped
+there.
 
 The gap rule below does not hold on these panels; read "Capture gaps".
-The private half of the test key pair crosses SSH into the viewer's run
-directory, because the viewer runs there. Cleanup removes it. The sender
-still revokes the certificate on exit.
+
+### The heat guard
+
+A viewer measure can heat a passive device. The viewer's agent guards every
+run, on every target. It reads each thermal zone and its trip points from
+`/sys/class/thermal` at run time. No temperature of a device is in the tool.
+The tool's own rules, in `viewer.py`:
+
+| Rule | Limit |
+| --- | --- |
+| A run does not start | at or above a zone's lowest passive trip point. With no passive trip point: within 20 °C of its critical trip point. |
+| A run ends at once | 10 °C below a zone's critical trip point, or half-way between its highest passive trip point and its critical trip point when that is lower. |
+| A run of the installed viewer on a hardware picture path ends at once | when the viewer's log says that its first frame did not come from the hardware decoder, or when the viewer uses more than 1.0 CPU second each second for 2 s. |
+| A valid run of that viewer | needs the log line that says hardware decode started. |
+
+A zone with no critical trip point is recorded and not judged. A trip point
+at or below zero is a placeholder and counts as absent. A thread of the agent
+looks at a running viewer four times each second and stops it by itself, so a
+slow host or link cannot delay the stop. The run then ends as invalid with
+the reason, and cleanup runs as after any run.
+
+Each viewer sample holds `thermal` (each zone's temperature in millidegrees)
+and `hardware_decode`, and the samples of the locating start are kept too.
+Each run prints the lowest and highest temperature of the guarded zones.
+`viewer.thermal` in the result holds the zones, their trip points and the
+limits that the tool derived.
+
+For the RG353M the limits are: start below 70 °C, end at 85 °C (critical 95).
+For the RG35XX Pro: start below 60 °C, end at 90 °C (critical 110). The build
+host's CPU zone has a critical trip point of 110 °C and no passive one; it
+read 99 °C on 2026-11-11, so the guard refuses the viewer on that host until
+it is cooler.
 
 ### The sender fixture
 
@@ -445,6 +482,11 @@ data and are not part of the tool's Nix source.
 | Baseline | Recorded | Viewer | What it proves |
 | --- | --- | --- | --- |
 | `baselines/aka` | 2026-11-11, five runs | nixpkgs `moonlight-embedded` 2.7.1, `sdl` system, in the fixture | The session part and network library on aka. Record it again with the published `@korri:moonlight` x86_64 plugin before stage 1 of #391 compares against it. |
+
+That baseline is older than three things that now run on the measured
+device during a measure: the check for a `korri-game-*` unit (one
+`systemctl list-units` every 2 s), the thermal reads of the heat guard, and
+the guard's thread. Record it again before a comparison that counts.
 
 In that baseline the viewer's delay grows in steps of one refresh period
 during the first 20 seconds and then stays near 51.5 ms, about three periods

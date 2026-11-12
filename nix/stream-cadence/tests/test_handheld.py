@@ -1,5 +1,6 @@
 """The handheld path and the points of the first review: copies, secrets, choices."""
 
+from collections import deque
 import hashlib
 import http.server
 import json
@@ -222,6 +223,189 @@ class PinPost(unittest.TestCase):
         with self.assertRaises(OSError):
             session.pin("1234")
         self.assertEqual(len(self.requests), before)
+
+
+# The trip points that the two bench handhelds reported on 2026-11-11, and one
+# zone of the build host with its placeholder trips.
+RG353M = [("passive", 70000), ("passive", 75000), ("critical", 95000)]
+RG35XX_PRO = [("passive", 60000), ("passive", 70000), ("critical", 110000)]
+ACPI_ZONE = [
+    ("passive", -274000), ("passive", -274000), ("critical", 126950),
+    ("hot", 126950), ("passive", 126950),
+]
+
+
+def zone(trips: list[tuple[str, int]], temp: int = 50000) -> dict:
+    return {
+        "zone": "thermal_zone0",
+        "type": "cpu-thermal",
+        "temp": temp,
+        "trips": [{"type": kind, "temp": value} for kind, value in trips],
+    }
+
+
+class HeatLimits(unittest.TestCase):
+    def test_limits_come_from_the_devices_own_trip_points(self):
+        self.assertEqual(
+            viewer.thermal_limits(zone(RG353M)),
+            {"critical": 95000, "start_below": 70000, "end_at": 85000},
+        )
+        # Half-way from the last passive trip to the critical one is the lower limit here.
+        self.assertEqual(
+            viewer.thermal_limits(zone(RG35XX_PRO)),
+            {"critical": 110000, "start_below": 60000, "end_at": 90000},
+        )
+        # Placeholder trips count as absent: only margins below the critical trip remain.
+        self.assertEqual(
+            viewer.thermal_limits(zone(ACPI_ZONE)),
+            {"critical": 126950, "start_below": 106950, "end_at": 116950},
+        )
+        self.assertIsNone(viewer.thermal_limits(zone([("passive", 70000)])))
+        self.assertIsNone(viewer.thermal_limits(zone([])))
+
+    def test_a_test_margin_moves_only_the_end_limit(self):
+        limits = viewer.thermal_limits(zone(RG353M), end_margin=40000)
+        self.assertEqual(limits["end_at"], 55000)
+        self.assertEqual(limits["start_below"], 70000)
+
+    def test_too_hot_names_the_zone_the_reading_and_the_devices_trip(self):
+        limits = {"thermal_zone0": viewer.thermal_limits(zone(RG353M))}
+        self.assertIsNone(viewer.too_hot([zone(RG353M, 69999)], limits, "start_below"))
+        refused = viewer.too_hot([zone(RG353M, 72222)], limits, "start_below")
+        self.assertIn("cpu-thermal reads 72.2", refused)
+        self.assertIn("does not start at or above 70.0", refused)
+        self.assertIsNone(viewer.too_hot([zone(RG353M, 84999)], limits, "end_at"))
+        self.assertIn("ends at 85.0", viewer.too_hot([zone(RG353M, 85000)], limits, "end_at"))
+        # A zone with no critical trip point is recorded and never judged.
+        self.assertIsNone(viewer.too_hot([zone([], 99000)], {"thermal_zone0": None}, "end_at"))
+
+    def test_busy_viewer_is_seen_after_the_whole_time_and_not_at_startup(self):
+        # The short run on the RG353M: a start-up burst, then 0.15.
+        fine: deque[tuple[float, int]] = deque()
+        rates = [0.66, 0.19, 0.92, 0.38, 0.17, 0.16, 0.14, 0.17]
+        spent = 0.0
+        seen = []
+        for n, rate in enumerate(rates):
+            spent += rate * 0.55 * 100
+            fine.append((n * 0.55, round(spent)))
+            seen.append(viewer.busy(fine, 100))
+        self.assertIsNone(seen[0])
+        self.assertTrue(all(value is None or value < viewer.BUSY_RATE for value in seen))
+        # The long run that ended with the device off the link.
+        hot: deque[tuple[float, int]] = deque()
+        spent = 0.0
+        over = None
+        for n, rate in enumerate([0.75, 0.89, 0.93, 0.04, 1.06, 1.39, 1.31, 1.38, 1.25, 1.42]):
+            spent += rate * 0.6 * 100
+            hot.append((n * 0.6, round(spent)))
+            load = viewer.busy(hot, 100)
+            if over is None and load is not None and load > viewer.BUSY_RATE:
+                over = n * 0.6
+        self.assertIsNotNone(over)
+        self.assertLess(over, 5.0)
+
+    def test_hardware_decode_is_read_from_the_viewers_own_first_frame_line(self):
+        # The line of the RG353M's installed viewer in the short run.
+        started = "v4l2m2m: submit: first frame from decoder format=drm_prime (DRM_PRIME=YES)\n"
+        self.assertIs(viewer.decode_started("Connecting...\n" + started), True)
+        self.assertIs(
+            viewer.decode_started(started.replace("drm_prime (DRM_PRIME=YES", "nv12 (DRM_PRIME=NO")),
+            False,
+        )
+        self.assertIsNone(viewer.decode_started("Connecting...\n"))
+
+
+class HeatGuard(unittest.TestCase):
+    """The guard on a real session: real sysfs-shaped files, a real viewer process."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        root = Path(self.directory.name)
+        self.thermal = root / "thermal" / "thermal_zone0"
+        self.thermal.mkdir(parents=True)
+        (self.thermal / "type").write_text("cpu-thermal\n")
+        for n, (kind, value) in enumerate(RG353M):
+            (self.thermal / f"trip_point_{n}_type").write_text(kind + "\n")
+            (self.thermal / f"trip_point_{n}_temp").write_text(f"{value}\n")
+        self.read(50000)
+        self.peer = root / "peer"
+        self.peer.write_text(f'#!/bin/sh\nexec {sys.executable} -B {TESTS / "host-peer.py"} "$@"\n')
+        self.peer.chmod(0o755)
+        self.previous, viewer.THERMAL = viewer.THERMAL, root / "thermal"
+
+    def tearDown(self):
+        viewer.THERMAL = self.previous
+        self.directory.cleanup()
+
+    def read(self, millidegrees: int) -> None:
+        (self.thermal / "temp").write_text(f"{millidegrees}\n")
+
+    def prepare(self, session: viewer.Session, **extra) -> dict:
+        return session.handle(
+            {
+                "operation": "prepare", "fixture": True, "width": 640, "height": 480,
+                "refresh_hz": 50.0, "certificate": None, "key": None,
+                "server_certificate": "public", **extra,
+            }
+        )
+
+    def test_zones_and_limits_are_discovered_and_each_sample_has_the_temperature(self):
+        session = viewer.Session(str(self.peer))
+        try:
+            found = session.handle({"operation": "discover"})["thermal"]
+            self.assertEqual(found[0]["type"], "cpu-thermal")
+            self.assertEqual(found[0]["limits"]["end_at"], 85000)
+            self.assertEqual(len(found[0]["trips"]), 3)
+            self.assertFalse(self.prepare(session)["hardware_path"])
+            self.read(61234)
+            sample = session.handle({"operation": "sample"})
+            self.assertEqual(sample["thermal"], {"cpu-thermal": 61234})
+            self.assertIsNone(sample["hardware_decode"])
+        finally:
+            self.assertTrue(session.close()["pass"])
+
+    def test_run_does_not_start_on_a_hot_device(self):
+        self.read(72222)
+        session = viewer.Session(str(self.peer))
+        with self.assertRaisesRegex(RuntimeError, "device is hot.*72.2.*70.0"):
+            self.prepare(session)
+        # Nothing was started and no directory was made.
+        self.assertIsNone(session.root)
+        self.assertEqual(session.processes, {})
+        self.assertTrue(session.close()["pass"])
+
+    def test_guard_ends_a_running_viewer_at_once_and_the_run_cleans_up(self):
+        session = viewer.Session(str(self.peer))
+        try:
+            root = Path(self.prepare(session)["run_folder"])
+            process = session.processes
+            session.handle({"operation": "start", "command": ["sleep", "60"]})
+            running = process["viewer"]
+            session.handle({"operation": "sample"})
+            self.read(86000)
+            # The guard's own thread stops the viewer; no request is needed for it.
+            self.assertIsNotNone(running.wait(timeout=5))
+            with self.assertRaisesRegex(RuntimeError, "cpu-thermal reads 86.0.*ends at 85.0"):
+                session.handle({"operation": "sample"})
+            with self.assertRaisesRegex(RuntimeError, "ends at 85.0"):
+                session.handle({"operation": "start", "command": ["sleep", "60"]})
+        finally:
+            restore = session.close()
+        self.assertTrue(restore["pass"], restore)
+        self.assertFalse(root.exists())
+
+    def test_a_low_test_limit_ends_a_run_on_a_cool_device(self):
+        session = viewer.Session(str(self.peer))
+        try:
+            # 50 degrees is cool; a margin of 50 below the critical 95 puts the end at 45.
+            self.prepare(session, test_end_margin=50000)
+            session.handle({"operation": "start", "command": ["sleep", "60"]})
+            running = session.processes["viewer"]
+            self.assertIsNotNone(running.wait(timeout=5))
+            with self.assertRaisesRegex(RuntimeError, "reads 50.0.*ends at 45.0"):
+                session.handle({"operation": "sample"})
+        finally:
+            self.assertTrue(session.close()["pass"])
 
 
 class RenderNodeChoice(unittest.TestCase):

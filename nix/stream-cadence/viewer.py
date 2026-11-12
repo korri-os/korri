@@ -17,6 +17,7 @@ pair, which crosses SSH because the viewer runs here.
 """
 
 import base64
+from collections import deque
 import gzip
 import json
 import os
@@ -47,6 +48,108 @@ from device import (
 DISPLAY = "wayland-1"
 OUTPUT = "HEADLESS-1"
 PLUGIN = "@korri:moonlight"
+THERMAL = Path("/sys/class/thermal")
+# Tool rules of the heat guard. Each limit comes from the trip points that the
+# device itself reports; the rules add only margins and times.
+END_MARGIN = 10_000  # millidegrees: a run ends at least this far below a critical trip
+GUARD_PERIOD = 0.25  # seconds between two looks at a running viewer
+BUSY_RATE = 1.0  # CPU seconds each second that no hardware-decode viewer needs
+BUSY_SECONDS = 2.0  # for this long
+GAME_CHECK_SECONDS = 2.0
+# The installed viewer's own words for its first decoded frame (the plugin's
+# Moonlight patches 0002 and 0021): a dma-buf frame comes from a hardware decoder.
+DECODE_STARTED = re.compile(r"first frame from decoder format=\S+ \(DRM_PRIME=(YES|NO)\)")
+
+
+def thermal_zones() -> list[dict]:
+    """Each thermal zone with its temperature and trip points, in millidegrees Celsius."""
+    zones = []
+    for zone in sorted(THERMAL.glob("thermal_zone*")):
+        try:
+            row: dict = {
+                "zone": zone.name,
+                "type": (zone / "type").read_text().strip(),
+                "temp": int((zone / "temp").read_text()),
+                "trips": [],
+            }
+        except (OSError, ValueError):
+            continue
+        for kind in sorted(zone.glob("trip_point_*_type")):
+            try:
+                value = int(kind.with_name(kind.name[: -len("type")] + "temp").read_text())
+            except (OSError, ValueError):
+                continue
+            row["trips"].append({"type": kind.read_text().strip(), "temp": value})
+        zones.append(row)
+    return zones
+
+
+def thermal_limits(zone: dict, end_margin: int = END_MARGIN) -> dict | None:
+    """When a run may start and when it must end, from one zone's own trip points.
+
+    A zone with no critical trip point gives no limit. A run ends END_MARGIN
+    below the critical trip, or half-way between the highest passive trip and
+    the critical trip when that is lower. A run does not start at or above the
+    lowest passive trip: the device already slows itself there. With no
+    passive trip a run does not start within two margins of the critical trip.
+    Trip points at or below zero, and passive trips not below the critical
+    one, are placeholders and count as absent.
+    """
+    critical = min(
+        (trip["temp"] for trip in zone["trips"] if trip["type"] == "critical" and trip["temp"] > 0),
+        default=None,
+    )
+    if critical is None:
+        return None
+    passive = [
+        trip["temp"]
+        for trip in zone["trips"]
+        if trip["type"] == "passive" and 0 < trip["temp"] < critical
+    ]
+
+    def end_at(margin: int) -> int:
+        return critical - max(margin, (critical - max(passive)) // 2 if passive else 0)
+
+    start = min(passive) if passive else critical - 2 * END_MARGIN
+    return {
+        "critical": critical,
+        "start_below": min(start, end_at(END_MARGIN)),
+        "end_at": end_at(end_margin),
+    }
+
+
+def too_hot(zones: list[dict], limits: dict[str, dict | None], rule: str) -> str | None:
+    """Why the device is too hot under one rule (start_below or end_at), or None."""
+    for zone in zones:
+        limit = limits.get(zone["zone"])
+        if limit and zone["temp"] >= limit[rule]:
+            return (
+                f"{zone['type']} reads {zone['temp'] / 1000:.1f} °C. "
+                + (
+                    "A run does not start at or above"
+                    if rule == "start_below"
+                    else "A run ends at"
+                )
+                + f" {limit[rule] / 1000:.1f} °C; the device's critical trip point is "
+                f"{limit['critical'] / 1000:.1f} °C."
+            )
+    return None
+
+
+def busy(used: "deque[tuple[float, int]]", ticks_per_second: int) -> float | None:
+    """CPU seconds each second over the kept (time, ticks) points; None before BUSY_SECONDS."""
+    while len(used) > 1 and used[-1][0] - used[1][0] >= BUSY_SECONDS:
+        used.popleft()
+    span = used[-1][0] - used[0][0] if used else 0.0
+    if span < BUSY_SECONDS:
+        return None
+    return (used[-1][1] - used[0][1]) / ticks_per_second / span
+
+
+def decode_started(log: str) -> bool | None:
+    """Whether the installed viewer's log says that hardware decode started; None: not yet."""
+    found = DECODE_STARTED.search(log)
+    return None if found is None else found.group(1) == "YES"
 
 
 def ticks(pid: int) -> int | None:
@@ -159,7 +262,7 @@ class Session:
         self.shell = {"processes": {"compositor": self.compositor}}
         connection = os.environ.get("SSH_CONNECTION", "").split()
         installed = plugin() if self.compositor else None
-        self.facts = {
+        self.facts: dict = {
             "model": model(),
             "architecture": os.uname().machine,
             "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
@@ -174,9 +277,16 @@ class Session:
             # of the agent's own SSH connection. Absent with no SSH.
             "controller_address": connection[0] if connection else None,
         }
+        zones = thermal_zones()
+        self.end_margin = END_MARGIN
+        self.limits = {zone["zone"]: thermal_limits(zone) for zone in zones}
+        self.facts["thermal"] = [dict(zone, limits=self.limits[zone["zone"]]) for zone in zones]
+        # Why the guard ended the viewer, once it did.
+        self.ended: str | None = None
         self.root: Path | None = None
         self.fixture = False
         self.last_wake = 0.0
+        self.last_game_check = 0.0
         self.processes: dict[str, subprocess.Popen] = {}
         self.logs: dict[str, TextIO] = {}
 
@@ -288,11 +398,71 @@ class Session:
             except Exception:
                 time.sleep(0.1)
 
+    def hardware_path(self) -> bool:
+        """Whether this run shows the installed viewer on a hardware picture path."""
+        return not self.fixture and self.facts["platform"] != PICTURE_PATH_DEFAULT
+
+    def hardware_decode(self) -> bool | None:
+        root = self.root
+        if root is None or not self.hardware_path():
+            return None
+        path = root / "viewer.log"
+        if not path.exists():
+            return None
+        with path.open(errors="replace") as log:
+            return decode_started(log.read(1 << 16))
+
+    def end(self, reason: str, process: subprocess.Popen | None) -> None:
+        """The guard's one action: stop the viewer at once and keep the reason."""
+        self.ended = reason
+        if process and process.poll() is None:
+            process.send_signal(signal.SIGINT)
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+
+    def guard(self, process: subprocess.Popen) -> None:
+        """Watch a running viewer on its own thread, so no slow host delays the stop."""
+        used: deque[tuple[float, int]] = deque()
+        rate = os.sysconf("SC_CLK_TCK")
+        while process.poll() is None and self.ended is None:
+            reason = too_hot(thermal_zones(), self.limits, "end_at")
+            if reason is None and self.hardware_path():
+                if self.hardware_decode() is False:
+                    reason = (
+                        "The viewer's log says that hardware decode did not start. "
+                        "A software fallback is not the product's picture path."
+                    )
+                spent = ticks(process.pid)
+                if spent is not None:
+                    used.append((time.monotonic(), spent))
+                    load = busy(used, rate)
+                    if reason is None and load is not None and load > BUSY_RATE:
+                        reason = (
+                            f"The viewer used {load:.2f} CPU seconds each second for "
+                            f"{BUSY_SECONDS:g} s. A viewer with hardware decode stays far "
+                            f"below {BUSY_RATE:g}; the run ends before the device heats."
+                        )
+            if reason:
+                self.end(reason, process)
+                return
+            time.sleep(GUARD_PERIOD)
+
     def prepare(self, request: dict) -> dict:
         if self.compositor:
             games()
         if self.root is not None:
             raise RuntimeError("viewer session already prepared")
+        hot = too_hot(thermal_zones(), self.limits, "start_below")
+        if hot:
+            raise RuntimeError("The device is hot. " + hot + " Let it cool, then run again.")
+        if request.get("test_end_margin") is not None:
+            # A test sets the end limit low on purpose, to show that the guard ends a run.
+            self.end_margin = int(request["test_end_margin"])
+            self.limits = {
+                zone["zone"]: thermal_limits(zone, self.end_margin) for zone in thermal_zones()
+            }
         self.fixture = bool(request["fixture"])
         if self.compositor is None and not self.fixture:
             raise RuntimeError("A host with no Korri has no viewer plugin; only the fixture runs here.")
@@ -326,7 +496,11 @@ class Session:
         if not self.fixture:
             wake(self.shell)
             self.last_wake = time.monotonic()
-            return {"run_folder": str(self.root), "keydir": str(keys)}
+            return {
+                "run_folder": str(self.root),
+                "keydir": str(keys),
+                "hardware_path": self.hardware_path(),
+            }
         self.spawn(
             "fixture",
             [self.sway, "--config", str(self.root / "sway.conf")],
@@ -348,7 +522,11 @@ class Session:
             raise RuntimeError("fixture compositor opened no socket: " + self.tail("fixture"))
         if self.processes["fixture"].poll() is not None:
             raise RuntimeError("fixture compositor exited: " + self.tail("fixture"))
-        return {"run_folder": str(self.root), "keydir": str(keys)}
+        return {
+            "run_folder": str(self.root),
+            "keydir": str(keys),
+            "hardware_path": self.hardware_path(),
+        }
 
     def handle(self, request: dict) -> dict:
         operation = request["operation"]
@@ -422,26 +600,40 @@ class Session:
                 )
             return {"log": without_pin(self.tail("pair"))}
         if operation == "start":
+            if self.ended:
+                raise RuntimeError(self.ended)
             start = time.monotonic_ns()
             process = self.spawn("viewer", list(request["command"]), self.viewer_environment())
+            threading.Thread(target=self.guard, args=(process,), daemon=True).start()
             if not self.fixture:
                 threading.Thread(target=self.focus, args=(process.pid,), daemon=True).start()
             return {"pid": process.pid, "start_ns": start}
         if operation == "sample":
-            if self.compositor:
+            if self.compositor and time.monotonic() - self.last_game_check >= GAME_CHECK_SECONDS:
+                # A game that starts during a measure ends it within this time.
                 games()
+                self.last_game_check = time.monotonic()
             if not self.fixture and time.monotonic() - self.last_wake >= 30:
                 # Seat activity keeps a real panel from idling off under the measure.
                 wake(self.shell)
                 self.last_wake = time.monotonic()
             viewer = self.processes.get("viewer")
             capture = self.processes.get("capture")
+            zones = thermal_zones()
+            if self.ended is None:
+                hot = too_hot(zones, self.limits, "end_at")
+                if hot:
+                    self.end(hot, viewer)
+            if self.ended:
+                raise RuntimeError(self.ended)
             return {
                 "device_ns": time.monotonic_ns(),
                 "viewer_ticks": ticks(viewer.pid) if viewer else None,
                 "viewer_exit": viewer.poll() if viewer else None,
                 "capture_exit": capture.poll() if capture else None,
                 "battery": battery(),
+                "thermal": {zone["type"]: zone["temp"] for zone in zones},
+                "hardware_decode": self.hardware_decode(),
             }
         if operation == "stop":
             return {"exit": self.stop("viewer"), "log": self.tail("viewer")}

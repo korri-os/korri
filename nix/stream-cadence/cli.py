@@ -755,12 +755,28 @@ def pgm(data: bytes) -> np.ndarray:
     return np.frombuffer(pixels, dtype=np.uint8).reshape(height, width)
 
 
-def locate(viewer: Remote, sender: Remote, capture: str) -> tuple[Location, int]:
+def heat_range(samples: list[dict], guarded: set[str]) -> str:
+    """The lowest and highest temperature of each guarded thermal zone in a run's samples."""
+    zones: dict[str, list[int]] = {}
+    for row in samples:
+        for name, value in (row.get("thermal") or {}).items():
+            if name in guarded:
+                zones.setdefault(name, []).append(value)
+    return ", ".join(
+        f"{name} {min(values) / 1000:.1f}..{max(values) / 1000:.1f} C"
+        for name, values in zones.items()
+    )
+
+
+def locate(
+    viewer: Remote, sender: Remote, capture: str, samples: list[dict]
+) -> tuple[Location, int]:
     """Find the ID bar on the viewer's output once the stream shows."""
     deadline = time.monotonic() + 45
     while time.monotonic() < deadline:
         sender.request("sample")
         state = viewer.request("sample")
+        samples.append(state)
         if state["viewer_exit"] is not None:
             raise Refusal(
                 f"Viewer exited before it showed the stream ({state['viewer_exit']}); read viewer.log"
@@ -867,6 +883,11 @@ def view_case(
             certificate=certificate,
             key=key,
             server_certificate=server_certificate,
+            test_end_margin=(
+                None
+                if args.test_heat_end_margin is None
+                else round(args.test_heat_end_margin * 1000)
+            ),
         )
         moonlight = plugin["moonlight"] if plugin else paths["viewer"] + "/bin/moonlight"
         if args.sender_fixture:
@@ -941,7 +962,7 @@ def view_case(
         # The first start only locates the bar. The second start is the measure,
         # with the capture already running, so startup time is observable.
         viewer.request("start", command=command)
-        location, output_width = locate(viewer, sender, paths["capture"])
+        location, output_width = locate(viewer, sender, paths["capture"], samples)
         viewer.request("stop")
         facts["bar_location"] = {"x": location.x, "y": location.y, "cell": location.cell}
         before, seat_before = clock(sender), clock(viewer)
@@ -970,6 +991,10 @@ def view_case(
                 raise Refusal("Capture client exited during the measure; read capture.log")
             time.sleep(0.5)
         viewer.request("stop")
+        if prepared.get("hardware_path") and samples[-1].get("hardware_decode") is not True:
+            raise Refusal(
+                "The viewer's log does not show that hardware decode started. A software fallback is not the product's picture path; read viewer.log."
+            )
         if args.sender_fixture and not (facts.get("encoder") and facts.get("capture_backend")):
             raise Refusal(
                 "The fixture Sunshine's log names no encoder or capture backend for this stream; a verdict could not tell its conditions."
@@ -1067,6 +1092,16 @@ def view_case(
         facts["error"] = str(error)
     finally:
         (directory / "viewer-samples.json").write_text(json.dumps(samples, indent=2))
+        heat = heat_range(
+            samples,
+            {
+                zone["type"]
+                for zone in (facts.get("viewer") or {}).get("thermal", [])
+                if zone.get("limits")
+            },
+        )
+        if heat:
+            print(f"{record['label']} viewer heat: {heat}", flush=True)
         if latest:
             (directory / "journal.log").write_text(latest)
         if not (directory / "viewer.log").exists():
@@ -1485,6 +1520,11 @@ def parser() -> argparse.ArgumentParser:
         "--keydir", type=Path, default=state / "korri/stream-cadence/keys"
     )
     watch.add_argument("--max-capture-gaps", type=nonnegative_integer, default=0)
+    # For a test of the heat guard only: end a run this many degrees below each
+    # critical trip point, so that the guard ends a run on a cool device.
+    watch.add_argument(
+        "--test-heat-end-margin", type=positive, default=None, help=argparse.SUPPRESS
+    )
     ruling = commands.add_parser(
         "verdict", help="equal, better or worse for each number of two view results"
     )
