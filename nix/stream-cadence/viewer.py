@@ -256,6 +256,16 @@ def not_root(compositor: dict) -> dict:
     return compositor
 
 
+# The renderers of the fixture's compositor; the first is the default.
+RENDERERS = ("pixman", "gles2")
+RENDER_NODES = Path("/dev/dri")
+
+
+def render_groups(member: set[int], nodes: set[int]) -> list[int]:
+    """The groups that the fixture's programs keep for a render node: those of the compositor's user that own one."""
+    return sorted(member & nodes)
+
+
 def own_display(shell: dict, read=None) -> tuple[dict | None, str | None]:
     """The device's own display, or why it could not be read.
 
@@ -335,6 +345,9 @@ class Session:
         self.fixture = False
         # The plugin's own binary as the viewer in the fixture, with korrid's environment.
         self.plugin_viewer = False
+        # The renderer of the fixture's compositor, and the groups that its programs keep.
+        self.renderer = RENDERERS[0]
+        self.groups: list[int] = []
         self.last_wake = 0.0
         self.last_game_check = 0.0
         # A Korri device: the product compositor is there.
@@ -349,7 +362,8 @@ class Session:
             end_with_agent()
             return
         if self.fixture:
-            os.setgroups([])
+            # None, or with the gles2 renderer the groups that own a render node.
+            os.setgroups(self.groups)
         else:
             # The installed viewer opens the decoder's device nodes, as its unit
             # does: it needs the compositor user's own groups.
@@ -378,6 +392,21 @@ class Session:
             "TMPDIR": str(self.home()),
             "PATH": os.environ.get("PATH", ""),
         }
+
+    def fixture_environment(self) -> dict[str, str]:
+        """The fixture's compositor: headless, no input device, and the renderer of this run.
+
+        With `gles2` the compositor finds the device's render node by itself,
+        and its clients draw on the graphics card. With `pixman` everything is
+        drawn by the CPU: a viewer that asks for OpenGL then gets Mesa's
+        software rasterizer.
+        """
+        return dict(
+            self.environment(),
+            WLR_BACKENDS="headless",
+            WLR_LIBINPUT_NO_DEVICES="1",
+            WLR_RENDERER=self.renderer,
+        )
 
     def capture_environment(self) -> dict[str, str]:
         if self.fixture or self.compositor is None:
@@ -556,6 +585,12 @@ class Session:
             self.limits = {
                 zone["zone"]: thermal_limits(zone, self.end_margin) for zone in thermal_zones()
             }
+        renderer = request.get("renderer") or RENDERERS[0]
+        if renderer not in RENDERERS or (renderer != RENDERERS[0] and not request["fixture"]):
+            raise RuntimeError(
+                f"The renderer {renderer!r} is not one of the fixture's compositor: "
+                f"{', '.join(RENDERERS)}. Only the fixture has a renderer to choose."
+            )
         plugin_viewer = bool(request.get("plugin_viewer"))
         if plugin_viewer and not (request["fixture"] and self.facts["plugin"]):
             raise RuntimeError(
@@ -590,6 +625,14 @@ class Session:
                 )
         self.fixture = bool(request["fixture"])
         self.plugin_viewer = plugin_viewer
+        self.renderer = renderer
+        if self.compositor and renderer != RENDERERS[0]:
+            # As the sender fixture: of the compositor user's groups, only those
+            # that own a render node.
+            self.groups = render_groups(
+                member=set(os.getgrouplist(self.compositor["user"], self.compositor["gid"])),
+                nodes={node.stat().st_gid for node in RENDER_NODES.glob("renderD*")},
+            )
         if self.compositor is None and not self.fixture:
             raise RuntimeError("A host with no Korri has no viewer plugin; only the fixture runs here.")
         self.root = Path(tempfile.mkdtemp(prefix="korri-stream-cadence-view-", dir="/tmp"))
@@ -632,13 +675,7 @@ class Session:
         self.spawn(
             "fixture",
             [self.sway, "--config", str(self.root / "sway.conf")],
-            dict(
-                self.environment(),
-                WLR_BACKENDS="headless",
-                WLR_LIBINPUT_NO_DEVICES="1",
-                WLR_RENDERER="pixman",
-                SWAYSOCK=str(runtime / "sway.sock"),
-            ),
+            dict(self.fixture_environment(), SWAYSOCK=str(runtime / "sway.sock")),
         )
         for _ in range(100):
             if (runtime / DISPLAY).is_socket():
@@ -655,6 +692,7 @@ class Session:
             "keydir": str(keys),
             "hardware_path": self.hardware_path(),
             "live_games": live,
+            "renderer": self.renderer,
         }
 
     def handle(self, request: dict) -> dict:

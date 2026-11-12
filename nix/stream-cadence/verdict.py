@@ -118,6 +118,13 @@ def conditions(record: dict) -> dict:
     # A headless output of the fixture and the device's own panel are two
     # displays. Which viewer ran is no condition (see `viewers`).
     values["viewer_place"] = viewer_of(record)["place"]
+    # What drew the fixture's output. A result from before the fact ran with
+    # pixman: the fixture had no other renderer. None on the device's display.
+    values["viewer_renderer"] = (
+        (facts.get("viewer_fixture") or {}).get("renderer") or "pixman"
+        if values["viewer_place"] == FIXTURE
+        else None
+    )
     return values
 
 

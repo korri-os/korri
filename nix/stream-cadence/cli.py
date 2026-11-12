@@ -556,6 +556,16 @@ def viewer_ran(plugin: dict | None, stand_in: str, place: str) -> dict:
     }
 
 
+RENDERER_OPTION = "--viewer-renderer"
+
+
+def renderer_refusal(renderer: str, on_display: bool) -> str | None:
+    """Why this renderer cannot be asked for, or None. Only the fixture's compositor has one to choose."""
+    if on_display and renderer != "pixman":
+        return f"{RENDERER_OPTION} {renderer} is for a viewer in the fixture. This viewer shows on the device's own display, whose compositor the tool does not change."
+    return None
+
+
 QUEUE_OPTION = "--queue-measure"
 
 
@@ -1030,6 +1040,9 @@ def view_case(
         on_display = (
             viewer_place(bool(plugin), args.sender_fixture, same_device=same_clock) == DISPLAY
         )
+        refused = renderer_refusal(args.viewer_renderer, on_display)
+        if refused:
+            raise Refusal(refused)
         if args.queue_measure and on_display:
             # Before the sender fixture starts.
             raise Refusal(queue_measure_refusal(True, None, installed_viewer=True))
@@ -1141,6 +1154,7 @@ def view_case(
             fixture=not on_display,
             # The plugin's own binary in the fixture gets korrid's environment there.
             plugin_viewer=bool(plugin) and not on_display,
+            renderer=args.viewer_renderer,
             width=width,
             height=height,
             refresh_hz=viewer_refresh,
@@ -1157,6 +1171,9 @@ def view_case(
             private_pair=args.sender_fixture,
         )
         facts["live_game"]["viewer_at_start"] = prepared.get("live_games", [])
+        if not on_display:
+            # What draws the fixture's output; verdict keeps two renderers apart.
+            facts["viewer_fixture"] = {"renderer": prepared.get("renderer")}
         # Which viewer this run measures, and where it shows the stream.
         facts["viewer_ran"] = viewer_ran(plugin, paths["viewer"], DISPLAY if on_display else FIXTURE)
         moonlight = facts["viewer_ran"]["moonlight"]
@@ -1803,6 +1820,12 @@ def parser() -> argparse.ArgumentParser:
         help="default: the viewer's display mode, or 1920x1080 in the fixture",
     )
     watch.add_argument("--viewer-refresh", type=positive, default=60.0)
+    watch.add_argument(
+        "--viewer-renderer",
+        choices=["pixman", "gles2"],
+        default="pixman",
+        help="what draws the viewer fixture's output: pixman draws with the CPU, and a viewer that asks for OpenGL gets Mesa's software rasterizer; gles2 uses the device's graphics card, as the product compositor does",
+    )
     watch.add_argument(
         "--codec", choices=["h264", "h265", "av1", "auto"], default="h264"
     )

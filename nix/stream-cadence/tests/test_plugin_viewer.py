@@ -7,7 +7,16 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from cli import DISPLAY, FIXTURE, PLUGIN_VIEWER, STAND_IN, viewer_place, viewer_ran  # noqa: E402
+from cli import (  # noqa: E402
+    DISPLAY,
+    FIXTURE,
+    PLUGIN_VIEWER,
+    STAND_IN,
+    parser,
+    renderer_refusal,
+    viewer_place,
+    viewer_ran,
+)
 import heat  # noqa: E402
 import machine  # noqa: E402
 from verdict import judge, viewers  # noqa: E402
@@ -142,6 +151,63 @@ class PluginViewerInTheFixture(unittest.TestCase):
 
         self.assertEqual(viewer.own_display({}, unread), (None, "need exactly one active compositor output"))
         self.assertEqual(viewer.own_display({}, lambda _shell: {"name": "DP-1"}), ({"name": "DP-1"}, None))
+
+
+class FixtureRenderer(PluginViewerInTheFixture):
+    """The viewer fixture's compositor draws in software, or on the device's graphics card by option."""
+
+    def test_pixman_is_the_default_and_the_programs_keep_no_group(self):
+        session = self.session()
+        prepared = self.prepare(session)
+        self.assertEqual(prepared["renderer"], "pixman")
+        self.assertEqual(session.fixture_environment()["WLR_RENDERER"], "pixman")
+        self.assertEqual(session.groups, [])
+
+    def test_gles2_is_given_to_the_fixtures_compositor(self):
+        session = self.session()
+        prepared = self.prepare(session, renderer="gles2")
+        self.assertEqual(prepared["renderer"], "gles2")
+        environment = session.fixture_environment()
+        self.assertEqual(environment["WLR_RENDERER"], "gles2")
+        self.assertEqual(environment["WLR_BACKENDS"], "headless")
+        self.assertEqual(environment["WLR_LIBINPUT_NO_DEVICES"], "1")
+
+    def test_only_the_groups_of_a_render_node_are_kept_for_gles2(self):
+        # The compositor's user is in audio, video, render and input; a render node belongs to render.
+        self.assertEqual(viewer.render_groups(member={17, 26, 303, 174}, nodes={303}), [303])
+        self.assertEqual(viewer.render_groups(member={17}, nodes={303}), [])
+
+    def test_an_unknown_renderer_and_a_renderer_for_the_devices_display_are_refused(self):
+        session = self.session()
+        with self.assertRaisesRegex(RuntimeError, "renderer"):
+            self.prepare(session, renderer="vulkan")
+        self.assertIsNone(session.root)
+        self.assertEqual(
+            parser().parse_args(["view", "--sender", "a", "--viewer", "b"]).viewer_renderer, "pixman"
+        )
+        self.assertRegex(renderer_refusal("gles2", on_display=True), "--viewer-renderer.*fixture")
+        self.assertIsNone(renderer_refusal("gles2", on_display=False))
+        self.assertIsNone(renderer_refusal("pixman", on_display=True))
+
+    def test_the_renderer_is_a_condition_of_a_verdict(self):
+        def result(renderer: str | None) -> list[dict]:
+            window = {
+                "latency_ms": {"p50": 20.0, "p95": 22.0}, "capture_misses": 0,
+                "repeated_frames": 0, "late_frames": 0, "torn_frames": 0, "undecodable_frames": 0,
+            }
+            facts = {"valid": True, "model": "host", "viewer": {"model": "host"}, "max_capture_gaps": 0}
+            if renderer:
+                facts["viewer_fixture"] = {"renderer": renderer}
+            return [
+                {"discovered": dict(facts), "source_counter": {"windows": [window]}, "viewer": {"startup_ms": 900.0}}
+                for _ in range(5)
+            ]
+
+        with self.assertRaisesRegex(ValueError, "viewer_renderer"):
+            judge(result("pixman"), result("gles2"), 5)
+        # A result from before the fact ran with pixman: the fixture had no other renderer.
+        self.assertEqual(len(judge(result(None), result("pixman"), 5)), 15)
+        self.assertEqual(len(judge(result("gles2"), result("gles2"), 5)), 15)
 
 
 class IbukisThermalZones(unittest.TestCase):
