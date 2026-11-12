@@ -280,6 +280,40 @@ class HeatIsCheckedBeforeAnythingStarts(DesktopChip):
         self.assertTrue(session.close()["pass"])
 
 
+class ABusyViewerOnAHardwarePath(Device):
+    """The CPU rule on a real process. The limit is set to half a CPU, so one busy loop is over it."""
+
+    def setUp(self):
+        super().setUp()
+        self.rate, viewer.BUSY_RATE = viewer.BUSY_RATE, 0.5
+
+    def tearDown(self):
+        viewer.BUSY_RATE = self.rate
+        super().tearDown()
+
+    def test_viewer_that_spins_is_ended_with_its_cpu_rate(self):
+        session = hardware_session(self)
+        try:
+            session.handle({"operation": "start", "command": ["sh", "-c", "while :; do :; done"]})
+            process = session.processes["viewer"]
+            self.assertIsNotNone(process.wait(timeout=10))
+            with self.assertRaisesRegex(RuntimeError, "CPU seconds each second"):
+                session.handle({"operation": "sample"})
+        finally:
+            self.assertTrue(session.close()["pass"])
+
+    def test_viewer_that_idles_runs_on(self):
+        session = hardware_session(self)
+        try:
+            session.handle({"operation": "start", "command": says(YES)})
+            time.sleep(viewer.BUSY_SECONDS + 1)
+            sample = session.handle({"operation": "sample"})
+            self.assertIsNone(sample["viewer_exit"])
+            self.assertIs(sample["hardware_decode"], True)
+        finally:
+            self.assertTrue(session.close()["pass"])
+
+
 class ADeviceWithNoThermalZone(Device):
     def empty(self) -> None:
         for path in self.zone.iterdir():
