@@ -194,20 +194,28 @@ async fn restricted_brain_metadata_and_forged_ids_cannot_grant_write_permission(
         )
         .await;
         let before = &forged_snapshot["outcome"]["payload"];
-        assert_ids(before, &[]);
+        // ADR 0034: the device shell's permission may write a plugin's
+        // secret, and nothing else in this list.
+        let may_write_secret = permission == SurfaceHostPermission::LocalSessions;
+        assert_ids(before, if may_write_secret { &[CREDENTIAL] } else { &[] });
         assert_eq!(credential_status(before), "Configured");
         let bytes = std::fs::read(root.path().join("device.yaml")).unwrap();
         let revision = before["revision"].as_str().unwrap();
-        for mut body in [
+        let mut refused = vec![
             update(revision, NAME, "forged"),
             update(
                 revision,
                 before["plugins"][0]["id"].as_str().unwrap(),
                 "false",
             ),
-            json!({"_tag":"system.settings.credential.set","payload":{"pluginId":PLUGIN,"token":"replacement"}}),
-            json!({"_tag":"system.settings.credential.clear","payload":{"pluginId":PLUGIN}}),
-        ] {
+        ];
+        if !may_write_secret {
+            refused.extend([
+                json!({"_tag":"system.settings.credential.set","payload":{"pluginId":PLUGIN,"token":"replacement"}}),
+                json!({"_tag":"system.settings.credential.clear","payload":{"pluginId":PLUGIN}}),
+            ]);
+        }
+        for mut body in refused {
             body["payload"]["editableSettingIds"] = json!([NAME, CREDENTIAL]);
             assert_eq!(
                 request(&app, body, Some(&format!("Bearer {TOKEN}")), Some(ORIGIN))

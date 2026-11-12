@@ -1273,8 +1273,16 @@ pub fn plugin_setting_groups(
                 .count();
             Some((group, first + rows))
         });
-        if let Some((group, at)) = place {
-            group.items.insert(at, row);
+        match place {
+            Some((group, at)) => group.items.insert(at, row),
+            // The plugin's own rows cannot be listed now (the repository
+            // list is still being read, or cannot be read). Its secret does
+            // not depend on that list: the row ends the first group.
+            None => {
+                if let Some(group) = groups.first_mut() {
+                    group.items.push(row);
+                }
+            }
         }
     }
     groups

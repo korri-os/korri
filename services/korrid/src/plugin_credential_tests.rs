@@ -250,35 +250,174 @@ async fn a_refused_secret_changes_nothing_and_no_failure_repeats_it() {
     );
 }
 
+/// ADR 0034, "Entry": a device gives its shell the `LocalSessions`
+/// permission, and a person enters the secret in the plugin's row there.
 #[tokio::test]
-async fn a_shell_without_full_permission_sees_the_status_and_cannot_write() {
+async fn a_device_shell_sets_and_clears_a_secret_and_a_read_only_shell_cannot() {
     let fixture = host_fixture();
     let private = fixture.root.path().join("private");
-    plugin_secrets::PluginSecrets::new(&private)
-        .set(PLUGIN, SECRET)
-        .unwrap();
-    for permission in [
-        SurfaceHostPermission::LocalSessions,
-        SurfaceHostPermission::ReadOnly,
-    ] {
-        let (app, _) = fixture.routers(permission);
-        let current = snapshot(&app).await;
-        assert_eq!(plugin_of(&current, PLUGIN)["credential"], "Configured");
-        assert!(!current["editableSettingIds"]
-            .as_array()
-            .unwrap()
-            .contains(&json!(ROW)));
-        assert!(!current.to_string().contains(SECRET));
-        for body in [set(PLUGIN, "replacement"), clear(PLUGIN)] {
-            let (status, _) =
-                request(&app, body, Some(&format!("Bearer {TOKEN}")), Some(ORIGIN)).await;
-            assert_eq!(status, StatusCode::FORBIDDEN);
-        }
+    let (device_shell, _) = fixture.routers(SurfaceHostPermission::LocalSessions);
+    // The same life of a secret as under the full permission: the row is
+    // editable, both RPCs answer with a status, and no answer holds the value.
+    set_read_and_clear(&device_shell, fixture.root.path()).await;
+    // A plugin that declares no secret, and an id that is not an installed
+    // plugin, are refused for the device shell as for everyone.
+    for plugin_id in ["@korri:mgba", "@gone:art", "../identity"] {
+        let refused = rpc(&device_shell, set(plugin_id, SECRET)).await;
+        assert_error(&refused, "SettingsInvalid");
+        assert!(!refused.to_string().contains(SECRET));
+    }
+    assert!(!private.join("@korri:mgba").exists() && !private.join("@gone:art").exists());
+    // Nothing else the shell could not do before is open to it now.
+    let (status, _) = request(
+        &device_shell,
+        json!({"_tag":"system.plugins.setEnabled","payload":{"id":PLUGIN,"enabled":false}}),
+        Some(&format!("Bearer {TOKEN}")),
+        Some(ORIGIN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let stored = rpc(&device_shell, set(PLUGIN, SECRET)).await;
+    assert_eq!(stored["outcome"]["payload"]["status"], "Configured");
+    let (read_only, _) = fixture.routers(SurfaceHostPermission::ReadOnly);
+    let current = snapshot(&read_only).await;
+    assert_eq!(plugin_of(&current, PLUGIN)["credential"], "Configured");
+    assert!(!current["editableSettingIds"]
+        .as_array()
+        .unwrap()
+        .contains(&json!(ROW)));
+    assert!(!current.to_string().contains(SECRET));
+    for body in [set(PLUGIN, "replacement"), clear(PLUGIN)] {
+        let (status, answer) = request(
+            &read_only,
+            body,
+            Some(&format!("Bearer {TOKEN}")),
+            Some(ORIGIN),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(!answer.to_string().contains(SECRET));
     }
     assert_eq!(
         std::fs::read_to_string(private.join(PLUGIN).join("credential")).unwrap(),
         SECRET
     );
+}
+
+fn surface_model() -> Value {
+    json!({"_tag":"app.surface.model","payload":{"surfaceId":"zone"}})
+}
+
+fn change_setting(value: &str) -> Value {
+    json!({"_tag":"app.surface.request","payload":{"surfaceId":"zone",
+        "request":{"_tag":"ChangeSetting","settingId":ROW,"value":value}}})
+}
+
+/// The plugin's secret row in the model a surface gets, once it is there.
+async fn secret_row(app: &Router) -> Value {
+    for _ in 0..500 {
+        let model = rpc(app, surface_model()).await;
+        let row = model["outcome"]["payload"]["settings"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|group| group["items"].as_array().cloned().unwrap_or_default())
+            .find(|item| item["id"] == ROW);
+        if let Some(row) = row {
+            return row;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("the surface model never showed the plugin's secret row")
+}
+
+async fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
+    for _ in 0..500 {
+        if done() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("{what}")
+}
+
+/// The other path of ADR 0034's entry: a surface's settings change, carried
+/// by the surface host inside korrid under the shell's own permission.
+#[tokio::test]
+async fn a_surface_on_a_device_sets_and_clears_the_secret_through_its_settings_row() {
+    let fixture = host_fixture();
+    let credential = fixture
+        .root
+        .path()
+        .join("private")
+        .join(PLUGIN)
+        .join("credential");
+    let (device_shell, _) = fixture.routers(SurfaceHostPermission::LocalSessions);
+
+    // The row is editable on a device.
+    let row = secret_row(&device_shell).await;
+    assert_eq!(row["label"], "SteamGridDB API key");
+    assert_eq!(row["value"], "Not configured");
+    assert_eq!(
+        row["interaction"],
+        json!({"kind":"sensitiveText","placeholder":"Paste API key","maxLength":256})
+    );
+
+    let accepted = rpc(&device_shell, change_setting(SECRET)).await;
+    assert_eq!(accepted["outcome"]["_tag"], "Ok", "{accepted}");
+    wait_until("the surface's change never stored the secret", || {
+        std::fs::read_to_string(&credential).is_ok_and(|stored| stored == SECRET)
+    })
+    .await;
+    // The model says so, offers the clear action, and never holds the value.
+    let mut row = secret_row(&device_shell).await;
+    for _ in 0..500 {
+        if row["value"] == "Configured" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        row = secret_row(&device_shell).await;
+    }
+    assert_eq!(row["value"], "Configured");
+    assert_eq!(row["interaction"]["clearLabel"], "Clear saved key");
+    let model = rpc(&device_shell, surface_model()).await;
+    assert!(!model.to_string().contains(SECRET));
+
+    // The row's clear action sends an empty value.
+    let accepted = rpc(&device_shell, change_setting("")).await;
+    assert_eq!(accepted["outcome"]["_tag"], "Ok", "{accepted}");
+    wait_until("the surface's clear never removed the secret", || {
+        !credential.exists()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_surface_under_a_read_only_shell_cannot_change_the_secret() {
+    let fixture = host_fixture();
+    let private = fixture.root.path().join("private");
+    plugin_secrets::PluginSecrets::new(&private)
+        .set(PLUGIN, SECRET)
+        .unwrap();
+    let (read_only, _) = fixture.routers(SurfaceHostPermission::ReadOnly);
+    // The row shows the status and offers no interaction.
+    let row = secret_row(&read_only).await;
+    assert_eq!(row["value"], "Configured");
+    assert!(row.get("interaction").is_none(), "{row}");
+    // A surface that asks anyway changes nothing: the surface host makes
+    // each effect under the shell's permission.
+    for value in ["replacement", ""] {
+        let accepted = rpc(&read_only, change_setting(value)).await;
+        assert_eq!(accepted["outcome"]["_tag"], "Ok", "{accepted}");
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(
+        std::fs::read_to_string(private.join(PLUGIN).join("credential")).unwrap(),
+        SECRET
+    );
+    let model = rpc(&read_only, surface_model()).await;
+    assert!(!model.to_string().contains(SECRET));
 }
 
 #[tokio::test]

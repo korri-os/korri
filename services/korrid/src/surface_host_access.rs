@@ -96,8 +96,6 @@ impl SurfaceHostPermission {
             | RpcRequest::LibraryFolderRemove(_)
             | RpcRequest::LibraryFoldersRescan(_)
             | RpcRequest::SettingsUpdate(_)
-            | RpcRequest::CredentialSet(_)
-            | RpcRequest::CredentialClear(_)
             | RpcRequest::OwnerBindingStart(_)
             | RpcRequest::IdentityBackupExport(_)
             | RpcRequest::IdentityLocalSwitch(_)
@@ -121,6 +119,8 @@ impl SurfaceHostPermission {
             | RpcRequest::PluginArchiveInstall(_)
             | RpcRequest::PluginSetEnabled(_)
             | RpcRequest::SessionViewerDisplay(_) => false,
+            // A plugin's secret is a write the device shell may make (below).
+            RpcRequest::CredentialSet(_) | RpcRequest::CredentialClear(_) => false,
         };
         match self {
             Self::Full => true,
@@ -172,6 +172,11 @@ impl SurfaceHostPermission {
                         | RpcRequest::WifiConnectHidden(_)
                         | RpcRequest::OnboardingFinish(_)
                         | RpcRequest::OnboardingRestart(_) => true,
+                        // ADR 0034, "Entry": a person enters a plugin's
+                        // secret in the plugin's own row on the device. The
+                        // shell can replace or clear a secret. It can never
+                        // read one: every answer is a status.
+                        RpcRequest::CredentialSet(_) | RpcRequest::CredentialClear(_) => true,
                         _ => false,
                     }
             }
@@ -515,14 +520,35 @@ mod tests {
                 serde_json::from_value(json!({"_tag":tag,"payload":{}})).unwrap();
             assert_eq!(read_only.authorize(&headers, &request), Ok(()));
         }
-        let admin_write = RpcRequest::CredentialSet(crate::CredentialSetRequest {
-            plugin_id: "@korri:steamgriddb".into(),
-            token: "test-token".into(),
-        });
+        let admin_write =
+            RpcRequest::PluginSetEnabled(crate::plugin_admin::PluginSetEnabledRequest {
+                id: "@korri:steamgriddb".into(),
+                enabled: true,
+            });
         assert_eq!(
             local.authorize(&headers, &admin_write),
             Err(StatusCode::FORBIDDEN)
         );
+        // ADR 0034: the device shell may set and clear a plugin's secret. A
+        // read-only shell may not.
+        for secret_write in [
+            RpcRequest::CredentialSet(crate::CredentialSetRequest {
+                plugin_id: "@korri:steamgriddb".into(),
+                token: "test-token".into(),
+            }),
+            RpcRequest::CredentialClear(crate::CredentialClearRequest {
+                plugin_id: "@korri:steamgriddb".into(),
+            }),
+        ] {
+            assert_eq!(local.authorize(&headers, &secret_write), Ok(()));
+            assert_eq!(
+                read_only.authorize(&headers, &secret_write),
+                Err(StatusCode::FORBIDDEN)
+            );
+            assert!(SurfaceHostPermission::Full.permits(&secret_write));
+            assert!(SurfaceHostPermission::LocalSessions.permits(&secret_write));
+            assert!(!SurfaceHostPermission::ReadOnly.permits(&secret_write));
+        }
     }
 
     #[test]

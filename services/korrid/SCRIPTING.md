@@ -651,7 +651,11 @@ characters with a clear action), or with `korri plugins credential set ID`.
 Both use `system.settings.credential.set { pluginId, token }` and
 `system.settings.credential.clear { pluginId }`. Both are `OwnerDeviceOnly`
 and both answer in host mode and in brain mode, so a person's other device
-can set a handheld's secret over the peer wire. The answer is
+can set a handheld's secret over the peer wire. A device's own shell may
+make both calls too: the `LocalSessions` surface host permission admits
+them, so the row is editable on the device. That shell can replace or clear
+a secret and can never read one. A read-only shell sees the status and
+cannot write. The answer is
 `SensitiveSettingResult { status }`: `Configured` or `NotConfigured`, never
 the value. `set` needs a plugin that is turned on and declares a secret on
 this device, a value that is not empty after trimming, at most 256 bytes, and

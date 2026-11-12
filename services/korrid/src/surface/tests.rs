@@ -4767,6 +4767,32 @@ mod plugin_repositories {
         // No declared secret: no row.
         let groups = plugin_setting_groups(&art_facts(), Some(&installed_plugins(None)), &[]);
         assert_eq!(group(&groups, OTHER_GROUP).items.len(), 1);
+
+        // While the plugin list is read, or when it cannot be read, the row
+        // is still there: it ends the first group.
+        for facts in [
+            PluginFacts::default(),
+            PluginFacts {
+                repositories: Read::Failed("Can't reach the plugin host".into()),
+                ..PluginFacts::default()
+            },
+        ] {
+            let groups = plugin_setting_groups(
+                &facts,
+                Some(&installed_plugins(Some("NotConfigured"))),
+                &[row.clone()],
+            );
+            assert_eq!(groups[0].title, PLUGINS_GROUP);
+            assert_eq!(groups[0].items.last().unwrap().id, row);
+            assert_eq!(
+                groups
+                    .iter()
+                    .flat_map(|group| &group.items)
+                    .filter(|item| item.id == row)
+                    .count(),
+                1
+            );
+        }
     }
 
     #[tokio::test]
