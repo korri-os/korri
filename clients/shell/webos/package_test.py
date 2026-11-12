@@ -43,7 +43,7 @@ def check_ipk(path, product_relays):
         for name in ('bin/korri-webos', 'bin/korri-shell', 'bin/fixture-korrid', 'bin/webos-korrid'):
             assert archive.getmember(APP_BASE + name).mode == 0o755
         index = json.load(archive.extractfile(APP_BASE + 'cache/index.json'))
-        assert {entry['id'] for entry in index['entries']} == {'zone', 'pico'}
+        assert {'zone', 'pico'} <= {entry['id'] for entry in index['entries']}
         for entry in index['entries']:
             assert entry['pass'] and entry['dir'] == 'packages/' + entry['id']
             for relative, size, mtime in entry['files']:

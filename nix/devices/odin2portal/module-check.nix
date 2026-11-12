@@ -69,7 +69,7 @@ assert c.services.korriLinuxHost.runtimeUid == 1000;
 assert !c.services.korriLinuxHost.validation.enable;
 assert c.services.korriLinuxHost.audio.enable;
 assert c.services.korri.shell.enable;
-assert c.services.korri.shell.startSurface == "pico";
+assert c.services.korri.shell.startSurface == "velvet";
 assert c.services.korri.pluginHost.enable;
 assert c.systemd.services.korrid.environment.KORRID_SHELL_UNIT == "korri-shell.service";
 assert c.systemd.services.korrid.environment.KORRID_SHELL_FREEZER_ENABLED == "true";

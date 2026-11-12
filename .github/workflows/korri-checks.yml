@@ -50,6 +50,7 @@ jobs:
       limitsd: ${{ steps.plan.outputs.limitsd }}
       zone: ${{ steps.plan.outputs.zone }}
       pico: ${{ steps.plan.outputs.pico }}
+      velvet: ${{ steps.plan.outputs.velvet }}
     steps:
       - name: Check out the exact tested source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -390,10 +391,34 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Run pico-check
         run: nix run .#pico-check
+  velvet:
+    name: Velvet surface
+    needs: select
+    if: needs.select.outputs.velvet == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the exact tested source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+      - name: Verify source identity
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+        run: |
+          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run velvet-check
+        run: nix run .#velvet-check
   check:
     name: Host, shell, and surface
     if: always()
-    needs: [select, policy, cache, fmt, treaty, shell, parity, cli, korrid, inputd, limitsd, zone, pico]
+    needs: [select, policy, cache, fmt, treaty, shell, parity, cli, korrid, inputd, limitsd, zone, pico, velvet]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

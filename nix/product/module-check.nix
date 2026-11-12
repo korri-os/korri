@@ -1067,16 +1067,16 @@ assert
   rg353m.systemd.services.korrid.environment.KORRID_STUN
   == builtins.toJSON requirements.constants.stun;
 # Every product device opens Pico (Phase 2 of Pico on Korri).
-assert requirements.constants.surfaceId == "pico";
-assert rg353m.services.korri.shell.startSurface == "pico";
-assert lib.hasInfix "--surfaces pico," rg353m.systemd.services.korri-shell.serviceConfig.ExecStart;
+assert requirements.constants.surfaceId == "velvet";
+assert rg353m.services.korri.shell.startSurface == "velvet";
+assert lib.hasInfix "--surfaces velvet," rg353m.systemd.services.korri-shell.serviceConfig.ExecStart;
 assert rg353m.services.korridLinuxDevice.address == requirements.constants.korridAddress;
 assert builtins.elem 39217 rg353m.networking.firewall.allowedTCPPorts;
 # Every device runs the same shell arguments; no device passes its own flags.
 assert lib.all
   (
     device:
-    lib.hasSuffix " --installed --placement fullscreen --surfaces pico,zone" device.config.systemd.services.korri-shell.serviceConfig.ExecStart
+    lib.hasSuffix " --installed --placement fullscreen --surfaces velvet,pico,zone" device.config.systemd.services.korri-shell.serviceConfig.ExecStart
   )
   [
     standalone

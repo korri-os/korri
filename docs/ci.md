@@ -59,7 +59,8 @@ selection elapsed time, including any bounded fetch; checkout and selector-test
 time remain separate steps in the hosted job timings.
 
 Shell and surface package code under `clients/shell/` selects the `shell` lane,
-and Pico paths also select `pico`, without korrid compilation. The separate Python `parity`
+and Pico paths also select `pico`, and Velvet paths (its package and
+`clients/shell/tests/velvet_package.rs`) `velvet`, without korrid compilation. The separate Python `parity`
 lane runs only when one of the five producer files read by
 `clients/cli/tests/parity.py` changes, or the parity guard itself changes. Those
 files are korrid's `surface/settings_model.rs`, `surface/plugins.rs` and
@@ -102,7 +103,7 @@ consumers. New documentation is unknown until reviewed, not silently skipped.
 | `korrid` | `korrid-host-check`: pinned fixture hashes, script setup, all Rust tests, config review, dev binaries, socket-activated signer and real surface host RPC smoke. No individual Rust-test selection. |
 | `inputd` | Affected/probe: `inputd-check -- --fast` retains all Rust/core, wasm, portability and deployment-shell checks. Explicit full/scheduled/`ci-full`: default `inputd-check` also retains all eight module/package/VM gates. |
 | `limitsd` | Existing `limitsd-check`: fmt, clippy, real filesystem/socket tests. |
-| `pico`, `zone` | Their surface package check apps, separate from shell tests. |
+| `pico`, `zone`, `velvet` | Their surface package check apps, separate from shell tests. |
 
 The separate, unselected published workflow always runs its existing
 `korri-published-plugins-check`: both signed architecture pins, stability,

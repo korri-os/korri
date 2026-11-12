@@ -24,6 +24,7 @@ LANES = (
     "limitsd",
     "zone",
     "pico",
+    "velvet",
 )
 SURFACES = {"zone"}
 # Inputs of the existing cache tests and delivery-workflow check. Shared Nix
@@ -119,6 +120,8 @@ def affected(paths):
             selected.add("shell")
             if path.startswith("clients/shell/packages/pico/"):
                 selected.add("pico")
+            if path.startswith("clients/shell/packages/velvet/") or path == "clients/shell/tests/velvet_package.rs":
+                selected.add("velvet")
         elif path.startswith("surfaces/"):
             parts = parsed.parts
             surface = parts[1] if len(parts) > 1 else ""

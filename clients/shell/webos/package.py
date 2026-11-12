@@ -73,8 +73,9 @@ def stage_surfaces(stage, verifier):
     (stage / 'verification.txt').write_text(result.stdout + result.stderr)
     index = json.loads((stage / 'cache/index.json').read_text())
     entries = index['entries']
-    if {entry['id'] for entry in entries} != {'zone', 'pico'} or not all(entry['pass'] for entry in entries):
-        raise ValueError('Zone and Pico must pass install-time verification: ' + result.stdout)
+    # The TV starts Zone and Pico (launcher.c). Every package in the folder is packed and must pass.
+    if not {'zone', 'pico'} <= {entry['id'] for entry in entries} or not all(entry['pass'] for entry in entries):
+        raise ValueError('every surface package, Zone and Pico among them, must pass install-time verification: ' + result.stdout)
     for entry in entries:
         if entry['dir'] != 'packages/' + entry['id']:
             raise ValueError('verification index is not relocatable')

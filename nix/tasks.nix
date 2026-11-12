@@ -42,7 +42,7 @@ let
         cd "$KORRI_ROOT"
         for task in ci-plan-check korri-nix-cache-check rpminiv2-delivery-check \
           korrid-fmt-check korrid-treaty-check \
-          cli-parity-check cli-check cli-build-identity-eval-check cli-build-identity-check korrid-host-check inputd-check limitsd-check zone-check pico-check \
+          cli-parity-check cli-check cli-build-identity-eval-check cli-build-identity-check korrid-host-check inputd-check limitsd-check zone-check pico-check velvet-check \
           shell-check korri-published-plugins-check; do
           nix run ".#$task"
         done
@@ -610,6 +610,41 @@ let
         if ! cmp -s "$committed" packages/pico/logic.js; then
           cp "$committed" packages/pico/logic.js
           echo "packages/pico/logic.js is stale: run bun run pico:build in clients/shell" >&2
+          exit 1
+        fi
+      '';
+    };
+
+    velvet-check = {
+      description = "Run Velvet's native package checks: its gates, plan, behaviour and contrast tests, typecheck, and the freshness of logic.js, the scenarios and the previews.";
+      usageSuffix = " -- [bun test arguments]";
+      runtimeInputs = [
+        pkgs.bun
+        pkgs.nodejs
+        pkgs.diffutils
+        pkgs.git
+      ];
+      env.NIX_PATH = "nixpkgs=${pkgs.path}";
+      script = ''
+        cd "$KORRI_ROOT/clients/shell"
+        bun install --frozen-lockfile --ignore-scripts
+        bun test "$@" packages/velvet/test
+        bun run velvet:typecheck
+        # logic.js is the bundle of logic.ts: it must be the one committed.
+        committed=$(mktemp)
+        cp packages/velvet/logic.js "$committed"
+        bun run velvet:build >/dev/null
+        if ! cmp -s "$committed" packages/velvet/logic.js; then
+          cp "$committed" packages/velvet/logic.js
+          echo "packages/velvet/logic.js is stale: run bun run velvet:build in clients/shell" >&2
+          exit 1
+        fi
+        # The scenarios and the previews are written from the logic: they must be the ones committed.
+        bun packages/velvet/preview/scenarios.ts >/dev/null
+        bun packages/velvet/preview/previews.ts >/dev/null
+        if ! git diff --quiet -- packages/velvet/preview/scenarios packages/velvet/preview/art/qr.png packages/velvet/ui packages/velvet/pages; then
+          git --no-pager diff --stat -- packages/velvet/preview/scenarios packages/velvet/preview/art/qr.png packages/velvet/ui packages/velvet/pages >&2
+          echo "Velvet's scenarios or previews are stale: run bun packages/velvet/preview/scenarios.ts and bun packages/velvet/preview/previews.ts in clients/shell" >&2
           exit 1
         fi
       '';

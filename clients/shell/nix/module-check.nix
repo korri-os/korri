@@ -132,9 +132,9 @@ assert builtins.elem credentialService daemon.partOf;
 assert builtins.elem "--installed" argv;
 assert builtins.elem "${installed}/packages" argv;
 assert builtins.elem "${installed}/cache" argv;
-assert builtins.elem "pico,zone" argv;
+assert builtins.elem "pico,velvet,zone" argv;
 assert
-  builtins.elem "zone,pico" (lib.splitString " " started.systemd.services.korri-shell.serviceConfig.ExecStart);
+  builtins.elem "zone,pico,velvet" (lib.splitString " " started.systemd.services.korri-shell.serviceConfig.ExecStart);
 pkgs.runCommand "korri-shell-module-check" { } ''
   grep -F 'User=korri-shell' ${pkgs.writeText "korri-shell.service" unit}
   grep -F 'Restart=on-failure' ${pkgs.writeText "korri-shell.service" unit}
@@ -142,8 +142,10 @@ pkgs.runCommand "korri-shell-module-check" { } ''
   test -s ${installed}/cache/index.json
   test -s ${installed}/cache/surfaces/pico.json
   test -s ${installed}/cache/surfaces/zone.json
+  test -s ${installed}/cache/surfaces/velvet.json
   grep -q '"pass": true' ${installed}/cache/surfaces/pico.json
   grep -q '"pass": true' ${installed}/cache/surfaces/zone.json
+  grep -q '"pass": true' ${installed}/cache/surfaces/velvet.json
   export RUNTIME_DIRECTORY="$TMPDIR/credentials"
   mkdir -m 700 "$RUNTIME_DIRECTORY"
   ${producer.serviceConfig.ExecStart} > "$TMPDIR/credential-output"
