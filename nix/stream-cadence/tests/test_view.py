@@ -8,7 +8,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from bar import BITS, Clean, Location, Unreadable, decode_rows, paint, read  # noqa: E402
+from bar import BITS, Clean, Location, Torn, Unreadable, decode_rows, paint, read  # noqa: E402
 from score import (  # noqa: E402
     battery_mw,
     capture_gaps,
@@ -74,17 +74,27 @@ class DisplayRecord(unittest.TestCase):
         with self.assertRaises(ValueError):
             display_records("index,display_ns\n0,10\n1,10\n")
 
-    def gaps(self, shown, presented=range(1, 20), scored=(0, 100), requests=None) -> tuple:
-        """Records as (time in refresh periods, ID or None); returns (lose an ID, whole)."""
+    def gaps(self, shown, discarded=(), scored=(0, 100), requests=None) -> tuple:
+        """Records as (time in refresh periods, ID, None, or a torn pair of IDs).
+
+        Returns (gaps that lose an ID, gaps that lose none).
+        """
         rows = [
             {"index": n, "display_ns": int(at * PERIOD)} for n, (at, _) in enumerate(shown)
         ]
         if requests:
             for row, late in zip(rows[1:], requests):
                 row["copy_ns"] = row["display_ns"] - int(PERIOD) + int(late * PERIOD)
-        frames = [Unreadable("blank") if ident is None else Clean(ident) for _, ident in shown]
+        frames = [
+            Unreadable("blank")
+            if ident is None
+            else Torn(*ident)
+            if isinstance(ident, tuple)
+            else Clean(ident)
+            for _, ident in shown
+        ]
         return capture_gaps(
-            rows, frames, presented, PERIOD, scored[0] * PERIOD, scored[1] * PERIOD
+            rows, frames, set(discarded), PERIOD, scored[0] * PERIOD, scored[1] * PERIOD
         )
 
     def test_gap_that_loses_an_id_makes_the_record_incomplete(self):
@@ -94,11 +104,44 @@ class DisplayRecord(unittest.TestCase):
     def test_gap_that_loses_no_id_is_counted_and_whole(self):
         # The panel showed ID 3 for two periods; at worst one repeat is not in the record.
         self.assertEqual(self.gaps([(0, 1), (1, 2), (2, 3), (4, 4), (5, 5)]), (0, 1))
-        # An ID that the sender never presented is not lost.
+        # An ID that the sender itself discarded was never on its display: not lost.
+        self.assertEqual(self.gaps([(0, 1), (1, 2), (2, 3), (4, 5), (5, 6)], discarded=[4]), (0, 1))
+
+    def test_an_id_that_the_senders_log_lacks_is_still_lost(self):
+        # IDs count up by one. Only the sender's own DISCARD removes one; a log
+        # that lost a line must not hide a lost frame.
+        self.assertEqual(self.gaps([(0, 1), (1, 2), (2, 3), (4, 5), (5, 6)]), (1, 0))
+
+    def test_one_wrong_id_far_away_hides_no_gap(self):
+        lost_4 = [(2, 1), (3, 2), (4, 3), (6, 5), (7, 6)]
+        # An ID far above everything, long before the gap.
+        self.assertEqual(self.gaps([(0, 90), (1, 1)] + lost_4), (1, 0))
+        # An ID far below everything, long after the gap.
+        self.assertEqual(self.gaps(lost_4 + [(8, 7), (9, 8), (10, 2)]), (1, 0))
+
+    def test_lost_id_one_record_beside_the_gap_counts_against_it(self):
+        # 4 is nowhere. The record cannot say whether 5 came early or 4 was
+        # dropped before it, so the gap is not proven whole.
+        self.assertEqual(self.gaps([(0, 1), (1, 2), (2, 3), (3, 5), (5, 6), (6, 7)]), (1, 0))
+        # The RG353M's pattern: the gap, then an ID jump one record later.
+        self.assertEqual(self.gaps([(0, 1), (1, 2), (3, 3), (4, 5), (5, 6)]), (1, 0))
+        # Two records away it is a dropped frame and a separate, whole gap.
         self.assertEqual(
-            self.gaps([(0, 1), (1, 2), (2, 3), (4, 5), (5, 6)], presented=[1, 2, 3, 5, 6]),
-            (0, 1),
+            self.gaps([(0, 1), (1, 3), (2, 4), (3, 5), (5, 6), (6, 7), (7, 8)]), (0, 1)
         )
+
+    def test_record_out_of_order_at_a_gap_cannot_be_judged(self):
+        self.assertEqual(self.gaps([(0, 1), (1, 2), (2, 5), (4, 3), (5, 4)]), (1, 0))
+        self.assertEqual(self.gaps([(0, 1), (1, 3), (2, 2), (4, 3), (5, 4)]), (1, 0))
+
+    def test_torn_frame_after_the_gap_does_not_hide_a_lost_id(self):
+        # The torn frame shows 5 above and 3 below; 4 is nowhere.
+        self.assertEqual(self.gaps([(0, 1), (1, 2), (2, 3), (4, (5, 3)), (5, 5), (6, 6)]), (1, 0))
+        # A torn frame that shows 4 itself loses nothing.
+        self.assertEqual(self.gaps([(0, 1), (1, 2), (2, 3), (4, (5, 4)), (5, 5), (6, 6)]), (0, 1))
+
+    def test_gap_with_no_readable_id_after_it_cannot_be_judged(self):
+        self.assertEqual(self.gaps([(0, 1), (1, 2), (2, 3), (4, None), (5, None)]), (1, 0))
 
     def test_lost_id_without_a_gap_is_a_dropped_frame_and_no_gap(self):
         self.assertEqual(self.gaps([(0, 1), (1, 2), (2, 4), (3, 5)]), (0, 0))
@@ -117,7 +160,7 @@ class DisplayRecord(unittest.TestCase):
         for n, step in enumerate([0.61, 1.25, 0.8, 1.2, 0.75, 1.24, 0.62, 1.1] * 4):
             at += step
             shown.append((at, n + 1))
-        self.assertEqual(self.gaps(shown, presented=range(1, 40)), (0, 0))
+        self.assertEqual(self.gaps(shown), (0, 0))
 
     def test_gap_beside_an_unreadable_frame_is_judged_by_the_ids_around_it(self):
         # IDs 3 and 4 are nowhere; the blank frame cannot have shown them for certain.

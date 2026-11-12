@@ -1024,7 +1024,7 @@ def view_case(
             to_sender, sender_error = bridge(before, after)
             to_seat, seat_error = bridge(seat_before, seat_after)
             facts["bridge_uncertainty_ms"] = sender_error + seat_error
-        presented = feedback(motion_log)[0]
+        presented, _, discarded = feedback(motion_log)
         first = first_measured_frame(frames, presented, to_seat(started["start_ns"]), to_sender)
         if first is None:
             raise Refusal("The measured viewer start showed no readable ID; read viewer.log")
@@ -1032,7 +1032,7 @@ def view_case(
         scored = (origin + args.warmup * 1e9, origin + (args.warmup + duration) * 1e9)
         period = 1e9 / viewer_refresh
         # Display times and IDs decide a gap; the capture's request time does not.
-        gaps, repeats = capture_gaps(times, frames, presented, period, scored[0], scored[1])
+        gaps, repeats = capture_gaps(times, frames, discarded, period, scored[0], scored[1])
         record["viewer"] = {
             "startup_ms": (origin - started["start_ns"]) / 1e6,
             "cpu_seconds_per_second": cpu_rate(

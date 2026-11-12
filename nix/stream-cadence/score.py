@@ -100,7 +100,7 @@ def display_records(text: str) -> list[dict[str, int]]:
 def capture_gaps(
     rows: list[dict[str, int]],
     frames: list[Frame],
-    presented: Collection[int],
+    discarded: Collection[int],
     period_ns: float,
     start_ns: float,
     end_ns: float,
@@ -110,11 +110,23 @@ def capture_gaps(
     A gap is an interval above 1.5 refresh periods between two records that
     both lie in the scored time. `rows` and `frames` are the whole record.
 
-    A gap loses an ID when the sender presented an ID that appears nowhere in
-    the record, and that ID was due inside the gap: the records up to the gap
-    show only older IDs, and the records after it show only newer ones. Such a
-    gap makes the record incomplete. Nothing in the record can tell a frame
-    that the capture missed from a frame that the viewer dropped.
+    The source counts its IDs up by one, so an ID is lost when it appears
+    nowhere in the record and the sender did not discard it itself. The
+    sender's log of presentations is not asked: a log that lacks a line must
+    not hide a lost frame.
+
+    Display order places a lost ID only between its neighbours, so each gap is
+    judged by the readable records around it: the two before and the two
+    after. If an ID between the oldest and the newest of those is lost, the gap
+    loses an ID and the record is incomplete there: nothing in the record can
+    tell a frame that the capture missed from a frame that the viewer dropped.
+    One record of margin on each side is on purpose. A lost ID right beside a
+    gap can belong to it: the record cannot say whether the ID after it came
+    early, and a torn frame shows two IDs.
+
+    The same four records must be in order. Where they are not, or where no
+    readable record stands on one side of the gap, the gap cannot be judged
+    and counts as losing an ID. IDs far from a gap decide nothing about it.
 
     A gap that loses no ID is whole as far as IDs go. At worst the record
     lacks one output frame that repeated a picture.
@@ -125,29 +137,25 @@ def capture_gaps(
     """
     if len(rows) != len(frames):
         raise ValueError("the display record and its decoded frames differ in length")
-    seen = {ident for frame in frames for ident in frame_ids(frame)}
-    lost = sorted(ident for ident in presented if ident not in seen)
-    # For each record: the newest ID shown up to it, and the oldest ID shown from it on.
-    newest: list[int | None] = []
-    latest: int | None = None
-    for frame in frames:
-        for ident in frame_ids(frame):
-            latest = ident if latest is None else max(latest, ident)
-        newest.append(latest)
-    oldest: list[int | None] = [None] * len(frames)
-    earliest: int | None = None
-    for index in range(len(frames) - 1, -1, -1):
-        for ident in frame_ids(frames[index]):
-            earliest = ident if earliest is None else min(earliest, ident)
-        oldest[index] = earliest
+    shown = [frame_ids(frame) for frame in frames]
+    seen = {ident for ids in shown for ident in ids}
+    readable = [index for index, ids in enumerate(shown) if ids]
     incomplete = whole = 0
     for index in range(1, len(rows)):
         before, after = rows[index - 1]["display_ns"], rows[index]["display_ns"]
         if before < start_ns or after > end_ns or after - before <= 1.5 * period_ns:
             continue
-        older, newer = newest[index - 1], oldest[index]
-        due = bisect.bisect_right(lost, older) if older is not None else len(lost)
-        if newer is not None and due < len(lost) and lost[due] < newer:
+        place = bisect.bisect_left(readable, index)
+        older, newer = readable[max(0, place - 2) : place], readable[place : place + 2]
+        if not older or not newer:
+            incomplete += 1
+            continue
+        spans = [(min(shown[at]), max(shown[at])) for at in older + newer]
+        in_order = all(a[0] <= b[0] and a[1] <= b[1] for a, b in zip(spans, spans[1:]))
+        if not in_order or any(
+            ident not in seen and ident not in discarded
+            for ident in range(spans[0][0] + 1, spans[-1][1])
+        ):
             incomplete += 1
         else:
             whole += 1
