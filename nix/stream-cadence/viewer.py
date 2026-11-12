@@ -256,6 +256,19 @@ def not_root(compositor: dict) -> dict:
     return compositor
 
 
+def own_display(shell: dict, read=None) -> tuple[dict | None, str | None]:
+    """The device's own display, or why it could not be read.
+
+    Only a viewer on that display needs it. A private pair on one device runs
+    in the fixture and must not fail for a display that has two outputs or no
+    mode. This is a read: it sends the product compositor no seat activity.
+    """
+    try:
+        return (read or get_output)(shell), None
+    except Exception as error:
+        return None, str(error)
+
+
 def product_compositor() -> dict:
     compositor = proc(int(unit("korri-compositor")["MainPID"]))
     if Path(compositor["exe"]).name != "sway":
@@ -279,6 +292,7 @@ class Session:
         connection = os.environ.get("SSH_CONNECTION", "").split()
         installed, missing = plugin() if self.compositor else (None, "this host has no Korri")
         chosen = platform()
+        display, display_unread = own_display(self.shell) if installed else (None, None)
         self.facts: dict = {
             "model": model(),
             "architecture": os.uname().machine,
@@ -287,7 +301,8 @@ class Session:
             "compositor": self.compositor,
             # Only the installed viewer uses the device's own display. The fixture
             # has its own output, so it does not need exactly one product output.
-            "display": get_output(self.shell) if installed else None,
+            "display": display,
+            "display_unread": display_unread,
             "plugin": installed,
             # Why no installed viewer is usable; a status that fails is not "absent".
             "plugin_missing": missing,
@@ -318,6 +333,8 @@ class Session:
         self.decode_lock = threading.Lock()
         self.root: Path | None = None
         self.fixture = False
+        # The plugin's own binary as the viewer in the fixture, with korrid's environment.
+        self.plugin_viewer = False
         self.last_wake = 0.0
         self.last_game_check = 0.0
         # A Korri device: the product compositor is there.
@@ -374,10 +391,21 @@ class Session:
 
     def viewer_environment(self) -> dict[str, str]:
         assert self.root is not None
+        # What korrid's linux_viewer gives the plugin's binary, without DISPLAY.
+        product = dict(
+            KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT="1",
+            SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS="1",
+            KORRI_MOONLIGHT_SERVER_CERTIFICATE=str(self.root / "server.pem"),
+        )
         if self.fixture:
             # The dummy audio driver keeps the fixture free of the device's sound.
+            # The plugin's binary shows through SDL on the fixture's Wayland
+            # display. korrid's DISPLAY=:0 is left out on purpose: it names the
+            # X server of the device's own compositor, and nothing of a fixture
+            # run may reach the device's display.
             return dict(
                 self.environment(),
+                **(product if self.plugin_viewer else {}),
                 WAYLAND_DISPLAY=DISPLAY,
                 SDL_VIDEODRIVER="wayland",
                 SDL_AUDIODRIVER="dummy",
@@ -386,14 +414,7 @@ class Session:
         # HOME is the run directory, so the test writes nothing into the product's
         # home. Sound goes to SDL's dummy driver: the unit's audio server exists
         # only inside a korrid launch, and without one the viewer ends the stream.
-        return dict(
-            self.environment(),
-            KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT="1",
-            SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS="1",
-            DISPLAY=":0",
-            SDL_AUDIODRIVER="dummy",
-            KORRI_MOONLIGHT_SERVER_CERTIFICATE=str(self.root / "server.pem"),
-        )
+        return dict(self.environment(), **product, DISPLAY=":0", SDL_AUDIODRIVER="dummy")
 
     def spawn(self, name: str, args: list[str], env: dict[str, str]) -> subprocess.Popen:
         assert self.root is not None
@@ -535,23 +556,40 @@ class Session:
             self.limits = {
                 zone["zone"]: thermal_limits(zone, self.end_margin) for zone in thermal_zones()
             }
+        plugin_viewer = bool(request.get("plugin_viewer"))
+        if plugin_viewer and not (request["fixture"] and self.facts["plugin"]):
+            raise RuntimeError(
+                "The plugin's viewer in the fixture needs the fixture and an enabled viewer "
+                "plugin. This agent found no enabled viewer plugin: "
+                f"{self.facts['plugin_missing']}."
+            )
         if request["fixture"] and self.hardware_path():
-            # The fixture viewer decodes in software. On a handheld that is not the
-            # product's picture path, and it heats a passive device.
+            # A viewer in the fixture decodes in software. On a handheld that is not
+            # the product's picture path, and it heats a passive device.
             raise RuntimeError(
                 f"This device's chip has a hardware picture path ({self.facts['platform']}) in "
-                "korrid's table. The tool does not run its software viewer on such a device: "
-                "only the installed viewer plugin runs there. The plugin is not usable: "
-                f"{self.facts['plugin_missing']}."
+                "korrid's table. Such a device hosts no fixture: the tool runs no software "
+                "viewer there, and its installed viewer plugin runs only on its own display. "
+                + (
+                    ""
+                    if self.facts["plugin"]
+                    else f"The plugin is not usable: {self.facts['plugin_missing']}."
+                )
             )
         if request["fixture"]:
             # korrid's chip table does not name every handheld's chip.
             handheld = no_fixture_on_board("viewer fixture")
             if handheld:
                 raise RuntimeError(
-                    handheld + f" Its viewer plugin is not usable: {self.facts['plugin_missing']}."
+                    handheld
+                    + (
+                        ""
+                        if self.facts["plugin"]
+                        else f" Its viewer plugin is not usable: {self.facts['plugin_missing']}."
+                    )
                 )
         self.fixture = bool(request["fixture"])
+        self.plugin_viewer = plugin_viewer
         if self.compositor is None and not self.fixture:
             raise RuntimeError("A host with no Korri has no viewer plugin; only the fixture runs here.")
         self.root = Path(tempfile.mkdtemp(prefix="korri-stream-cadence-view-", dir="/tmp"))

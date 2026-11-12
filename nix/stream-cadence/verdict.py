@@ -90,6 +90,9 @@ ADDED_LATER = ("viewer_model",)
 # the faster side (cli.py: pair_rate). They answer different questions.
 BASE = "base"
 QUEUE = "queue"
+# Which viewer ran and where, in `discovered.viewer_ran`.
+DISPLAY, FIXTURE = "display", "fixture"
+PLUGIN_VIEWER, STAND_IN = "plugin", "stand-in"
 # The lists of game units in `discovered.live_game`: each device, start and end.
 LIVE_GAME_MOMENTS = ("sender_at_start", "viewer_at_start", "sender_at_end", "viewer_at_end")
 
@@ -112,7 +115,78 @@ def conditions(record: dict) -> dict:
     # A result from before the tool named its measure is a base result: the
     # queue measure did not exist.
     values["measure"] = facts.get("measure") or BASE
+    # A headless output of the fixture and the device's own panel are two
+    # displays. Which viewer ran is no condition (see `viewers`).
+    values["viewer_place"] = viewer_of(record)["place"]
     return values
+
+
+def viewer_of(record: dict) -> dict:
+    """Which viewer a run measured and where it showed the stream.
+
+    `discovered.viewer_ran` says it. A result from before that fact is read
+    from what it has: then a device with the plugin ran the plugin on its own
+    display, and any other device ran the stand-in in the fixture.
+    """
+    facts = record["discovered"]
+    ran = facts.get("viewer_ran")
+    if ran:
+        return ran
+    plugin = (facts.get("viewer") or {}).get("plugin")
+    if plugin:
+        return {
+            "kind": PLUGIN_VIEWER,
+            "place": DISPLAY,
+            "moonlight": plugin.get("moonlight"),
+            "release_version": plugin.get("release_version"),
+            "package": plugin.get("package"),
+        }
+    command = facts.get("viewer_command") or [None]
+    return {
+        "kind": STAND_IN,
+        "place": FIXTURE,
+        "moonlight": command[0],
+        "release_version": None,
+        "package": None,
+    }
+
+
+def one_viewer(records: list[dict], name: str) -> dict:
+    """The one viewer of a result; a result with more than one viewer is no result of a viewer."""
+    found = {json.dumps(viewer_of(record), sort_keys=True) for record in records}
+    if len(found) != 1:
+        raise ValueError(
+            f"The {name} result has runs of more than one viewer: "
+            + "; ".join(sorted(described(json.loads(row)) for row in found))
+            + ". A verdict needs one viewer in each result."
+        )
+    return json.loads(found.pop())
+
+
+def described(ran: dict) -> str:
+    name = (
+        f"plugin {ran.get('release_version')}" if ran["kind"] == PLUGIN_VIEWER else "stand-in"
+    )
+    place = "in the fixture" if ran["place"] == FIXTURE else "on the device's own display"
+    return f"{name} ({ran.get('moonlight')}), {place}"
+
+
+def viewers(baseline: list[dict], candidate: list[dict]) -> list[str]:
+    """Which viewer each result ran, for the head of a verdict.
+
+    The viewer is what a comparison changes on purpose, so it is no condition:
+    two different viewers are compared. The verdict says which they are, so
+    that nobody reads a stand-in's numbers as the product viewer's.
+    """
+    old, new = one_viewer(baseline, "baseline"), one_viewer(candidate, "candidate")
+    same = old == new
+    return [
+        "baseline viewer: " + described(old),
+        "candidate viewer: " + described(new),
+        "The two results ran the same viewer."
+        if same
+        else "The two results ran different viewers; every verdict below compares these two.",
+    ]
 
 
 def differences(baseline: list[dict], candidate: list[dict]) -> list[str]:
@@ -160,6 +234,8 @@ def judge(
     allow_different_conditions: bool = False,
 ) -> list[dict]:
     old, new = valid_runs(baseline, minimum), valid_runs(candidate, minimum)
+    one_viewer(old, "baseline")
+    one_viewer(new, "candidate")
     changed = differences(old, new)
     if changed and not allow_different_conditions:
         # A condition that some runs have and others lack was added to the tool
@@ -173,11 +249,16 @@ def judge(
             and len({json.dumps(row[name], sort_keys=True) for row in every if row[name] is not None}) == 1
         ]
         # These have their own words. The measure also sets the rate and the mode.
-        named = {"beside_a_game"}
+        named = {"beside_a_game", "viewer_place"}
         if "measure" in changed:
             named |= {"measure", "requested_fps", "display"}
         differ = [name for name in changed if name not in absent and name not in named]
         advice = []
+        if "viewer_place" in changed:
+            advice.append(
+                "Some runs showed the stream in the fixture and others on the device's own "
+                "display. These are two displays; record both results in the same place."
+            )
         if "measure" in changed:
             advice.append(
                 "Some runs are the base measure of a private pair and others are its queue "

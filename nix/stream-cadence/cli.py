@@ -41,7 +41,17 @@ from score import (
     stamps,
 )
 from sender import steady_refresh_mhz
-from verdict import BASE, QUEUE, judge
+from verdict import (
+    BASE,
+    DISPLAY,
+    FIXTURE,
+    PLUGIN_VIEWER,
+    QUEUE,
+    STAND_IN,
+    judge,
+    valid_runs,
+    viewers,
+)
 
 
 class Refusal(RuntimeError):
@@ -506,6 +516,44 @@ def rate_refusal(option: str, value: float) -> str | None:
         f"{low:g} to {high:g}. A headless output has a frame period of whole milliseconds, "
         "1 ms at least."
     )
+
+
+def viewer_place(plugin: bool, sender_fixture: bool, same_device: bool) -> str:
+    """Where the viewer shows the stream: in the fixture, or on the device's own display.
+
+    A private pair on one device never uses that device's display: the
+    display can be a family's TV. Its viewer runs in the fixture, the plugin's
+    own binary when the device has the plugin, else the stand-in. The
+    device's own display is for an installed viewer on another device than
+    the sender, and for an installed viewer of a product sender. A device
+    with no plugin has only the fixture.
+    """
+    if not plugin or (sender_fixture and same_device):
+        return FIXTURE
+    return DISPLAY
+
+
+def viewer_ran(plugin: dict | None, stand_in: str, place: str) -> dict:
+    """Which viewer a run measured, for the result (`discovered.viewer_ran`).
+
+    The plugin's own binary with its release and package, or the stand-in
+    from nixpkgs that the tool copied. `stand_in` is that copy's store path.
+    """
+    if plugin:
+        return {
+            "kind": PLUGIN_VIEWER,
+            "place": place,
+            "moonlight": plugin["moonlight"],
+            "release_version": plugin.get("release_version"),
+            "package": plugin.get("package"),
+        }
+    return {
+        "kind": STAND_IN,
+        "place": place,
+        "moonlight": stand_in + "/bin/moonlight",
+        "release_version": None,
+        "package": None,
+    }
 
 
 QUEUE_OPTION = "--queue-measure"
@@ -977,27 +1025,40 @@ def view_case(
         }
         same_clock = seat["boot_id"] == facts["boot_id"]
         plugin = seat["plugin"]
-        if args.queue_measure and plugin:
+        # A private pair on one device runs its viewer in the fixture, also where
+        # the plugin is installed: nothing of it uses the device's display.
+        on_display = (
+            viewer_place(bool(plugin), args.sender_fixture, same_device=same_clock) == DISPLAY
+        )
+        if args.queue_measure and on_display:
             # Before the sender fixture starts.
             raise Refusal(queue_measure_refusal(True, None, installed_viewer=True))
-        if plugin:
+        if on_display:
             # The installed viewer shows the stream on the device's own display.
+            if seat["display"] is None:
+                raise Refusal(
+                    f"The viewer device's own display could not be read: {seat.get('display_unread')}"
+                )
             mode = seat["display"]["mode"]
             viewer_refresh = seat["display"]["refresh_hz"]
             width, height = args.resolution or (mode["width"], mode["height"])
         else:
+            # Why the viewer would run in the fixture on this device.
+            why = (
+                "a private pair on one device runs its viewer in the fixture, never on the device's display"
+                if plugin
+                else f"its viewer plugin is not usable: {seat.get('plugin_missing')}"
+            )
             if seat.get("hardware_picture_path"):
-                # Before the sender starts: a handheld never gets the software viewer.
+                # Before the sender starts: a handheld never gets a software viewer.
                 raise Refusal(
-                    f"The viewer device's chip has a hardware picture path ({seat['platform']}), and its viewer plugin is not usable: {seat.get('plugin_missing')}. The tool does not run its software viewer on such a device."
+                    f"The viewer device's chip has a hardware picture path ({seat['platform']}), and {why}. The tool runs no software viewer and no fixture on such a device."
                 )
             if seat.get("no_fixture"):
                 # The agent's own reason: a board with a device tree, or a board
                 # that it could not read.
-                raise Refusal(
-                    f"Viewer device: {seat['no_fixture']} Its viewer plugin is not usable: {seat.get('plugin_missing')}."
-                )
-            if not paths["viewer"]:
+                raise Refusal(f"Viewer device: {seat['no_fixture']} Also: {why}.")
+            if not plugin and not paths["viewer"]:
                 raise Refusal(
                     "The viewer's agent finds no enabled viewer plugin, and the tool copied no viewer. Run the measure again."
                 )
@@ -1010,7 +1071,7 @@ def view_case(
             # size, at the steady refresh nearest below the requested rate.
             fps = fixture_rate(args.fps, viewer_refresh, queue=args.queue_measure)
             # Before the sender starts, from the mode that its agent sets for this rate.
-            if plugin is None:
+            if not on_display:
                 # A private pair: not the viewer fixture's frame period.
                 pair_measure(steady_refresh_mhz(fps) / 1000, viewer_refresh)
             else:
@@ -1029,7 +1090,7 @@ def view_case(
             facts.update(built["facts"])
             facts["live_game"]["sender_at_start"] = facts.pop("live_games_at_start", [])
             refresh = min(facts["display"]["refresh_hz"], viewer_refresh)
-            if plugin is None:
+            if not on_display:
                 # From the mode that the sender's compositor reports, and the mode
                 # that the viewer fixture's compositor is given below.
                 measure = pair_measure(facts["display"]["refresh_hz"], viewer_refresh)
@@ -1077,7 +1138,9 @@ def view_case(
         )
         prepared = viewer.request(
             "prepare",
-            fixture=plugin is None,
+            fixture=not on_display,
+            # The plugin's own binary in the fixture gets korrid's environment there.
+            plugin_viewer=bool(plugin) and not on_display,
             width=width,
             height=height,
             refresh_hz=viewer_refresh,
@@ -1094,7 +1157,9 @@ def view_case(
             private_pair=args.sender_fixture,
         )
         facts["live_game"]["viewer_at_start"] = prepared.get("live_games", [])
-        moonlight = plugin["moonlight"] if plugin else paths["viewer"] + "/bin/moonlight"
+        # Which viewer this run measures, and where it shows the stream.
+        facts["viewer_ran"] = viewer_ran(plugin, paths["viewer"], DISPLAY if on_display else FIXTURE)
+        moonlight = facts["viewer_ran"]["moonlight"]
         if args.sender_fixture:
             # Pairing replaces the certificate grant. The viewer binary of this
             # run shows a PIN, and the sender's agent posts it to its Sunshine.
@@ -1493,12 +1558,13 @@ def view(args: argparse.Namespace) -> int:
 
 
 def verdicts(args: argparse.Namespace) -> int:
-    rows = judge(
-        records(args.baseline),
-        records(args.candidate),
-        args.min_runs,
-        args.allow_different_conditions,
-    )
+    baseline, candidate = records(args.baseline), records(args.candidate)
+    rows = judge(baseline, candidate, args.min_runs, args.allow_different_conditions)
+    # Which viewer each result ran: the plugin's or the stand-in, and where.
+    for line in viewers(
+        valid_runs(baseline, args.min_runs), valid_runs(candidate, args.min_runs)
+    ):
+        print(line)
 
     def text(values: list[float | None]) -> str:
         if any(value is None for value in values):
