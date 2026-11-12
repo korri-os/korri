@@ -256,11 +256,18 @@ def judge(
             and len({json.dumps(row[name], sort_keys=True) for row in every if row[name] is not None}) == 1
         ]
         # These have their own words. The measure also sets the rate and the mode.
-        named = {"beside_a_game", "viewer_place"}
+        named = {"beside_a_game", "viewer_place", "viewer_renderer"}
         if "measure" in changed:
             named |= {"measure", "requested_fps", "display"}
         differ = [name for name in changed if name not in absent and name not in named]
         advice = []
+        if "viewer_renderer" in changed:
+            advice.append(
+                "Some runs drew the viewer fixture's output with pixman, where a viewer's "
+                "OpenGL is Mesa's software rasterizer, and others with gles2 on the graphics "
+                "card. A result from before the tool recorded the renderer ran with pixman. "
+                "Record both results with the same renderer."
+            )
         if "viewer_place" in changed:
             advice.append(
                 "Some runs showed the stream in the fixture and others on the device's own "

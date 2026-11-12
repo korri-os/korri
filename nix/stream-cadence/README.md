@@ -216,7 +216,7 @@ they stay comparable.
 
 The viewer and the capture client run inside a fixture: a second, headless
 sway process started from the device's installed sway binary, inside the run
-directory. Its renderer is pixman by default (`--viewer-renderer`, see "The
+directory. Its renderer is gles2 by default (`--viewer-renderer`, see "The
 plugin's viewer in the fixture"). The product compositor is read and never
 changed, and the test viewer never appears on the display that Sunshine
 captures. On a device with no viewer plugin the fixture viewer is the
@@ -366,14 +366,23 @@ and a lock file under `/tmp` beside the product's `:0`. The cost: on ibuki
 the product's viewer shows through the product compositor's Xwayland, and
 the fixture does not measure that step.
 
-**The renderer of the fixture's compositor.** `--viewer-renderer pixman` (the
-default) draws the fixture's output with the CPU. A viewer that asks for
-OpenGL then gets Mesa's software rasterizer, which is not what the product
-has on a device with a graphics card. `--viewer-renderer gles2` starts the
-fixture's compositor with the gles2 renderer on the device's render node, as
-the sender fixture's compositor. `discovered.viewer_fixture.renderer`
-records it and `verdict` keeps two renderers apart. pixman stays the
-default because the baseline on aka was recorded with it.
+**The renderer of the fixture's compositor.** The default is gles2: the
+fixture's compositor draws on the device's render node, as the sender
+fixture's compositor and the product compositor do, and its programs keep
+only the groups that own a render node. A measure of a viewer must not
+carry Mesa's software rasterizer, and with pixman it does: pixman draws the
+fixture's output with the CPU, and a viewer that asks for OpenGL then gets
+that rasterizer. On aka the stand-in's CPU fell from 1.26 to 0.21 CPU
+seconds each second and its delay from 15.4 to 12.5 ms with gles2; on ibuki
+pixman cost the viewer three frames each second (below).
+
+`--viewer-renderer pixman` is the explicit way to the old behaviour.
+`discovered.viewer_fixture.renderer` records the renderer, and `verdict`
+keeps two renderers apart; a result from before the fact ran with pixman.
+When the compositor does not start with gles2, the run is refused: the
+refusal gives the compositor's own words, says that it needs a render node
+that the fixture's user can open, and names `--viewer-renderer pixman`. The
+tool never falls back to another renderer by itself.
 
 **Which viewer ran.** `discovered.viewer_ran` holds `kind` (`plugin` or
 `stand-in`), `place` (`fixture` or `display`), the path of the `moonlight`
@@ -444,12 +453,12 @@ package (`x86_pkg_temp`) has only placeholder trip points, so the guard has
 no limit for it.
 
 **pixman on ibuki does not give a measure of the viewer.** One set of five
-base runs with the default renderer: all valid, and the viewer used 1.35 to
+base runs with pixman, the default of that day: all valid, and the viewer used 1.35 to
 1.40 CPU seconds each second and showed 54.5 to 55.1 of the sender's 57.7
 frames each second. The delay p50 of a window was 38.8 to 59.1 ms with 156
 to 186 dropped frames in a run. The viewer's OpenGL was Mesa's software
-rasterizer, and that is what the numbers measure. Use `--viewer-renderer
-gles2` on ibuki.
+rasterizer, and that is what the numbers measure. This set is the reason
+for today's default.
 
 **1920x1080 on ibuki.** One base run with gles2: valid, and the viewer used
 0.62 CPU seconds each second, but it dropped 87 frames in 60 s (6 to 20 at
@@ -1077,6 +1086,13 @@ directory for each measure.
 | --- | --- | --- | --- |
 | `baselines/aka/private-pair/base/results.json` | 2026-11-12, tool at `a2bfded2e` | Sender fixture and viewer fixture on aka, no game live, load about 1 | 5 valid of 5 |
 | `baselines/aka/private-pair/queue/results.json` | 2026-11-12, tool at `a2bfded2e` | The same, with `--queue-measure` | 5 valid of 5 |
+
+**These two baselines are stale.** They were recorded with the pixman
+renderer, which was the only one then, so the viewer's OpenGL in them is
+Mesa's software rasterizer: most of the 1.25 CPU seconds each second below
+is that rasterizer and not the viewer. `verdict` refuses them against a
+result of today's default (`viewer_renderer`). They must be recorded again
+with gles2 before any comparison.
 
 The viewer in both is the fixture viewer: nixpkgs `moonlight-embedded` 2.7.1
 with its `sdl` system. These baselines prove the measure and give stage 1 of

@@ -559,9 +559,9 @@ def viewer_ran(plugin: dict | None, stand_in: str, place: str) -> dict:
 RENDERER_OPTION = "--viewer-renderer"
 
 
-def renderer_refusal(renderer: str, on_display: bool) -> str | None:
-    """Why this renderer cannot be asked for, or None. Only the fixture's compositor has one to choose."""
-    if on_display and renderer != "pixman":
+def renderer_refusal(renderer: str | None, on_display: bool) -> str | None:
+    """Why a renderer cannot be asked for, or None. Only the fixture's compositor has one to choose."""
+    if on_display and renderer is not None:
         return f"{RENDERER_OPTION} {renderer} is for a viewer in the fixture. This viewer shows on the device's own display, whose compositor the tool does not change."
     return None
 
@@ -1164,6 +1164,7 @@ def view_case(
             fixture=not on_display,
             # The plugin's own binary in the fixture gets korrid's environment there.
             plugin_viewer=bool(plugin) and not on_display,
+            # None: the agent's default, gles2. The device's own display has none.
             renderer=args.viewer_renderer,
             width=width,
             height=height,
@@ -1832,9 +1833,8 @@ def parser() -> argparse.ArgumentParser:
     watch.add_argument("--viewer-refresh", type=positive, default=60.0)
     watch.add_argument(
         "--viewer-renderer",
-        choices=["pixman", "gles2"],
-        default="pixman",
-        help="what draws the viewer fixture's output: pixman draws with the CPU, and a viewer that asks for OpenGL gets Mesa's software rasterizer; gles2 uses the device's graphics card, as the product compositor does",
+        choices=["gles2", "pixman"],
+        help="what draws the viewer fixture's output. The default is gles2: the device's graphics card, as the product compositor uses it. pixman draws with the CPU, and a viewer that asks for OpenGL then gets Mesa's software rasterizer",
     )
     watch.add_argument(
         "--codec", choices=["h264", "h265", "av1", "auto"], default="h264"

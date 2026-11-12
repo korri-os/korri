@@ -258,8 +258,11 @@ def not_root(compositor: dict) -> dict:
     return compositor
 
 
-# The renderers of the fixture's compositor; the first is the default.
-RENDERERS = ("pixman", "gles2")
+# The renderers of the fixture's compositor. gles2 draws on the device's
+# graphics card and is the default: with pixman a viewer's OpenGL is Mesa's
+# software rasterizer, and a measure of a viewer must not carry that.
+RENDERERS = ("gles2", "pixman")
+RENDERER_DEFAULT = "gles2"
 RENDER_NODES = Path("/dev/dri")
 
 
@@ -365,7 +368,7 @@ class Session:
         # The plugin's own binary as the viewer in the fixture, with korrid's environment.
         self.plugin_viewer = False
         # The renderer of the fixture's compositor, and the groups that its programs keep.
-        self.renderer = RENDERERS[0]
+        self.renderer = RENDERER_DEFAULT
         self.groups: list[int] = []
         self.last_wake = 0.0
         self.last_game_check = 0.0
@@ -415,16 +418,30 @@ class Session:
     def fixture_environment(self) -> dict[str, str]:
         """The fixture's compositor: headless, no input device, and the renderer of this run.
 
-        With `gles2` the compositor finds the device's render node by itself,
-        and its clients draw on the graphics card. With `pixman` everything is
-        drawn by the CPU: a viewer that asks for OpenGL then gets Mesa's
-        software rasterizer.
+        With `gles2`, the default, the compositor finds the device's render
+        node by itself, and its clients draw on the graphics card. With
+        `pixman` everything is drawn by the CPU: a viewer that asks for OpenGL
+        then gets Mesa's software rasterizer. Nothing here lets gles2 itself
+        fall back to software.
         """
         return dict(
             self.environment(),
             WLR_BACKENDS="headless",
             WLR_LIBINPUT_NO_DEVICES="1",
             WLR_RENDERER=self.renderer,
+        )
+
+    def fixture_failed(self, how: str) -> str:
+        """Why the fixture's compositor did not start. With gles2 the cause and the way out are named."""
+        log = self.tail("fixture")
+        if self.renderer != "gles2":
+            return f"fixture compositor {how}: {log}"
+        return (
+            f"The viewer fixture's compositor did not start with the gles2 renderer ({how}): "
+            f"{log.strip()} It needs a render node under {RENDER_NODES} that the fixture's user "
+            "can open. The tool does not fall back to another renderer by itself. "
+            "--viewer-renderer pixman draws with the CPU: a viewer's OpenGL is then Mesa's "
+            "software rasterizer, and the result is no measure of that viewer's CPU or delay."
         )
 
     def capture_environment(self) -> dict[str, str]:
@@ -604,8 +621,8 @@ class Session:
             self.limits = {
                 zone["zone"]: thermal_limits(zone, self.end_margin) for zone in thermal_zones()
             }
-        renderer = request.get("renderer") or RENDERERS[0]
-        if renderer not in RENDERERS or (renderer != RENDERERS[0] and not request["fixture"]):
+        renderer = request.get("renderer") or RENDERER_DEFAULT
+        if renderer not in RENDERERS or (request.get("renderer") and not request["fixture"]):
             raise RuntimeError(
                 f"The renderer {renderer!r} is not one of the fixture's compositor: "
                 f"{', '.join(RENDERERS)}. Only the fixture has a renderer to choose."
@@ -648,7 +665,7 @@ class Session:
         self.fixture = bool(request["fixture"])
         self.plugin_viewer = plugin_viewer
         self.renderer = renderer
-        if self.compositor and renderer != RENDERERS[0]:
+        if self.compositor and renderer == "gles2":
             # As the sender fixture: of the compositor user's groups, only those
             # that own a render node.
             self.groups = render_groups(
@@ -706,9 +723,9 @@ class Session:
                 break
             time.sleep(0.1)
         else:
-            raise RuntimeError("fixture compositor opened no socket: " + self.tail("fixture"))
+            raise RuntimeError(self.fixture_failed("opened no socket"))
         if self.processes["fixture"].poll() is not None:
-            raise RuntimeError("fixture compositor exited: " + self.tail("fixture"))
+            raise RuntimeError(self.fixture_failed("exited"))
         return {
             "run_folder": str(self.root),
             "keydir": str(keys),

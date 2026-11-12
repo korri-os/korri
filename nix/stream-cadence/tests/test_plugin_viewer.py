@@ -154,40 +154,69 @@ class PluginViewerInTheFixture(unittest.TestCase):
 
 
 class FixtureRenderer(PluginViewerInTheFixture):
-    """The viewer fixture's compositor draws in software, or on the device's graphics card by option."""
+    """The viewer fixture's compositor draws on the device's graphics card; pixman only by option."""
 
-    def test_pixman_is_the_default_and_the_programs_keep_no_group(self):
+    def test_gles2_is_the_default_of_the_fixtures_compositor(self):
+        # A measure of a viewer must not carry Mesa's software rasterizer.
         session = self.session()
         prepared = self.prepare(session)
-        self.assertEqual(prepared["renderer"], "pixman")
-        self.assertEqual(session.fixture_environment()["WLR_RENDERER"], "pixman")
-        self.assertEqual(session.groups, [])
-
-    def test_gles2_is_given_to_the_fixtures_compositor(self):
-        session = self.session()
-        prepared = self.prepare(session, renderer="gles2")
         self.assertEqual(prepared["renderer"], "gles2")
         environment = session.fixture_environment()
         self.assertEqual(environment["WLR_RENDERER"], "gles2")
         self.assertEqual(environment["WLR_BACKENDS"], "headless")
         self.assertEqual(environment["WLR_LIBINPUT_NO_DEVICES"], "1")
+        # No software renderer behind the name gles2.
+        self.assertNotIn("WLR_RENDERER_ALLOW_SOFTWARE", environment)
+        self.assertEqual(viewer.RENDERER_DEFAULT, "gles2")
+        self.assertIsNone(parser().parse_args(["view", "--sender", "a", "--viewer", "b"]).viewer_renderer)
+
+    def test_pixman_is_the_explicit_way_to_the_old_behaviour(self):
+        session = self.session()
+        prepared = self.prepare(session, renderer="pixman")
+        self.assertEqual(prepared["renderer"], "pixman")
+        self.assertEqual(session.fixture_environment()["WLR_RENDERER"], "pixman")
+        self.assertEqual(session.groups, [])
+        args = parser().parse_args(["view", "--sender", "a", "--viewer", "b", "--viewer-renderer", "pixman"])
+        self.assertEqual(args.viewer_renderer, "pixman")
 
     def test_only_the_groups_of_a_render_node_are_kept_for_gles2(self):
         # The compositor's user is in audio, video, render and input; a render node belongs to render.
         self.assertEqual(viewer.render_groups(member={17, 26, 303, 174}, nodes={303}), [303])
         self.assertEqual(viewer.render_groups(member={17}, nodes={303}), [])
 
+    def test_gles2_that_cannot_start_is_refused_with_the_cause_and_the_option(self):
+        # A compositor that finds no graphics card ends, as sway does. Nothing falls back.
+        failing = Path(self.directory.name) / "no-card"
+        failing.write_text("#!/bin/sh\necho '[ERROR] [render/egl.c:312] Failed to create EGL context' >&2\nexit 1\n")
+        failing.chmod(0o755)
+        session = viewer.Session(str(failing))
+        self.addCleanup(session.close)
+        with self.assertRaises(RuntimeError) as refused:
+            self.prepare(session)
+        words = str(refused.exception)
+        self.assertRegex(words, "did not start with the gles2 renderer")
+        self.assertIn("Failed to create EGL context", words)
+        self.assertIn("render node", words)
+        self.assertIn("--viewer-renderer pixman", words)
+        self.assertEqual(session.processes.get("viewer"), None)
+        # With pixman the same failure is not blamed on the graphics card.
+        other = viewer.Session(str(failing))
+        self.addCleanup(other.close)
+        with self.assertRaises(RuntimeError) as plain:
+            self.prepare(other, renderer="pixman")
+        self.assertNotIn("--viewer-renderer", str(plain.exception))
+
     def test_an_unknown_renderer_and_a_renderer_for_the_devices_display_are_refused(self):
         session = self.session()
         with self.assertRaisesRegex(RuntimeError, "renderer"):
             self.prepare(session, renderer="vulkan")
         self.assertIsNone(session.root)
-        self.assertEqual(
-            parser().parse_args(["view", "--sender", "a", "--viewer", "b"]).viewer_renderer, "pixman"
-        )
-        self.assertRegex(renderer_refusal("gles2", on_display=True), "--viewer-renderer.*fixture")
-        self.assertIsNone(renderer_refusal("gles2", on_display=False))
-        self.assertIsNone(renderer_refusal("pixman", on_display=True))
+        for asked in ("gles2", "pixman"):
+            self.assertRegex(renderer_refusal(asked, on_display=True), "--viewer-renderer.*fixture")
+            self.assertIsNone(renderer_refusal(asked, on_display=False))
+        # No option on the device's own display: nothing to refuse.
+        self.assertIsNone(renderer_refusal(None, on_display=True))
+        self.assertIsNone(renderer_refusal(None, on_display=False))
 
     def test_the_renderer_is_a_condition_of_a_verdict(self):
         def result(renderer: str | None) -> list[dict]:
@@ -203,10 +232,14 @@ class FixtureRenderer(PluginViewerInTheFixture):
                 for _ in range(5)
             ]
 
-        with self.assertRaisesRegex(ValueError, "viewer_renderer"):
+        with self.assertRaisesRegex(ValueError, "viewer_renderer") as refused:
             judge(result("pixman"), result("gles2"), 5)
+        self.assertIn("software rasterizer", str(refused.exception))
         # A result from before the fact ran with pixman: the fixture had no other renderer.
+        # So the landed baseline of that time does not compare with a result of today's default.
         self.assertEqual(len(judge(result(None), result("pixman"), 5)), 15)
+        with self.assertRaisesRegex(ValueError, "viewer_renderer"):
+            judge(result(None), result("gles2"), 5)
         self.assertEqual(len(judge(result("gles2"), result("gles2"), 5)), 15)
 
 
