@@ -55,7 +55,21 @@ pub fn asset_id(url: &str) -> Option<&str> {
 }
 
 /// Decode a raster image within the shell's limits. Runs on any thread.
+/// A `data:` URL and a package file keep their own size: a package sizes
+/// its own images.
 pub fn decode_raster(bytes: &[u8], mode: Option<pico8::Mode>) -> Result<Pixels> {
+    decode(bytes, mode, None)
+}
+
+/// Decode an image korrid stores (`asset_id`). It can be far larger than any
+/// Korri screen, so one whose longer side is over `MAX_STORED_SIDE` is scaled
+/// down to that side, keeping its aspect ratio. Runs on the image thread:
+/// only the scaled pixels cross to the UI thread and count in the cache.
+pub fn decode_stored(bytes: &[u8], mode: Option<pico8::Mode>) -> Result<Pixels> {
+    decode(bytes, mode, Some(MAX_STORED_SIDE))
+}
+
+fn decode(bytes: &[u8], mode: Option<pico8::Mode>, longest: Option<u32>) -> Result<Pixels> {
     if bytes.len() > MAX_ENCODED_BYTES {
         bail!("image is too large");
     }
@@ -66,11 +80,38 @@ pub fn decode_raster(bytes: &[u8], mode: Option<pico8::Mode>) -> Result<Pixels> 
     limits.max_alloc = Some(MAX_SIDE as u64 * MAX_SIDE as u64 * 4);
     reader.limits(limits);
     let mut pixels = reader.decode()?.into_rgba8();
+    if let Some((width, height)) =
+        longest.and_then(|longest| scaled_size(pixels.width(), pixels.height(), longest))
+    {
+        // Before the palette step, so that step sees the pixels that are shown.
+        pixels = image::imageops::resize(
+            &pixels,
+            width,
+            height,
+            image::imageops::FilterType::Triangle,
+        );
+    }
     if let Some(mode) = mode {
         pico8::quantize(&mut pixels, mode);
     }
     let (width, height) = pixels.dimensions();
     Ok(Pixels::clone_from_slice(pixels.as_raw(), width, height))
+}
+
+/// The size of a `width` by `height` image scaled down so that its longer
+/// side is `longest`, with its aspect ratio kept. `None` when it already
+/// fits: an image is never scaled up.
+fn scaled_size(width: u32, height: u32, longest: u32) -> Option<(u32, u32)> {
+    let longer = width.max(height);
+    if longer <= longest {
+        return None;
+    }
+    let scale = |side: u32| {
+        let scaled =
+            (u64::from(side) * u64::from(longest) + u64::from(longer) / 2) / u64::from(longer);
+        (scaled as u32).max(1)
+    };
+    Some((scale(width), scale(height)))
 }
 
 /// Decoded pixels a surface may keep cached. A window of 200 covers at
@@ -80,6 +121,12 @@ pub const CACHE_BYTES: usize = 24 * 1024 * 1024;
 pub const MAX_ENCODED_BYTES: usize = 8 * 1024 * 1024;
 /// Largest decoded side, in pixels.
 pub const MAX_SIDE: u32 = 4096;
+/// The longer side an image korrid stores is scaled down to. 1920 pixels is
+/// the widest Korri screen now that webOS is dropped (#433), so no surface
+/// can show more of a stored image than this. At this bound a 16:9 image is
+/// about 8 MiB decoded, inside `CACHE_BYTES`; unscaled, one stored 3611x1877
+/// logo is 25.9 MiB, more than the whole budget.
+pub const MAX_STORED_SIDE: u32 = 1920;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Key {
@@ -455,6 +502,109 @@ pub(crate) mod tests {
         let mut cache = ImageCache::new(dir.path());
         assert_eq!(cache.get(&asset_url('a'), None)?.size().width, 0);
         assert_eq!(cache.waiting(), 0);
+        Ok(())
+    }
+
+    /// An encoded PNG of one flat colour: small as bytes, large as pixels.
+    fn large_png(width: u32, height: u32) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        image::RgbaImage::from_pixel(width, height, image::Rgba([0x2b, 0xac, 0xfd, 255]))
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
+            .expect("encode");
+        bytes
+    }
+
+    #[test]
+    fn a_stored_image_is_scaled_down_to_1920_on_its_longer_side() -> Result<()> {
+        assert_eq!(MAX_STORED_SIDE, 1920);
+        for ((width, height), (shown_width, shown_height)) in [
+            // A hero as SteamGridDB has them: half the size, same shape.
+            ((3840, 1240), (1920, 620)),
+            // A tall image: the longer side is the height.
+            ((1000, 3000), (640, 1920)),
+            // The logo that was larger than the whole cache.
+            ((3611, 1877), (1920, 998)),
+            // Already inside the bound: unchanged, and never scaled up.
+            ((600, 900), (600, 900)),
+            ((1920, 620), (1920, 620)),
+            ((1920, 1920), (1920, 1920)),
+            ((2, 1), (2, 1)),
+        ] {
+            let pixels = decode_stored(&large_png(width, height), None)?;
+            assert_eq!(
+                (pixels.width(), pixels.height()),
+                (shown_width, shown_height),
+                "{width}x{height}"
+            );
+            // The picture is the same picture.
+            assert_eq!(pixels.as_bytes()[..4], [0x2b, 0xac, 0xfd, 255]);
+        }
+        // A very thin image keeps at least one pixel of its short side.
+        assert_eq!(scaled_size(4096, 1, 1920), Some((1920, 1)));
+        assert_eq!(scaled_size(1, 4096, 1920), Some((1, 1920)));
+        Ok(())
+    }
+
+    #[test]
+    fn a_scaled_stored_image_is_quantised_after_it_is_scaled() -> Result<()> {
+        let pixels = decode_stored(&large_png(3840, 1240), Some(pico8::Mode::Flat))?;
+        assert_eq!((pixels.width(), pixels.height()), (1920, 620));
+        // The near-blue of `png_data_url`, as the palette step gives it.
+        assert_eq!(pixels.as_bytes()[..4], [0x29, 0xad, 0xff, 255]);
+        Ok(())
+    }
+
+    #[test]
+    fn the_cache_counts_the_scaled_size_of_a_stored_image() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let mut cache = ImageCache::new(dir.path());
+        cache.load_assets_with(Box::new(|_, _| {}));
+        let (hero, logo) = (asset_url('a'), asset_url('b'));
+        cache.get(&hero, None)?;
+        cache.get(&logo, None)?;
+        // What the image thread hands over for a 3840x1240 hero and for the
+        // 3611x1877 logo: together 15 MiB, where the logo alone was 25.9 MiB.
+        assert!(cache.arrived(
+            &hero,
+            None,
+            Some(decode_stored(&large_png(3840, 1240), None)?)
+        ));
+        assert_eq!(cache.bytes(), 1920 * 620 * 4);
+        assert!(cache.arrived(
+            &logo,
+            None,
+            Some(decode_stored(&large_png(3611, 1877), None)?)
+        ));
+        assert_eq!(cache.bytes(), 1920 * 620 * 4 + 1920 * 998 * 4);
+        assert!(cache.bytes() < CACHE_BYTES);
+        // Both stay cached: neither pushed the other out.
+        assert_eq!(cache.len(), 2);
+        let shown = cache.get(&hero, None)?.size();
+        assert_eq!((shown.width, shown.height), (1920, 620));
+        Ok(())
+    }
+
+    #[test]
+    fn a_data_url_and_a_package_file_keep_their_own_size() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let bytes = large_png(3840, 1240);
+        std::fs::write(dir.path().join("hero.png"), &bytes)?;
+        let url = format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(&bytes)
+        );
+        let mut cache = ImageCache::new(dir.path());
+        // A package sizes its own images: the bound is for korrid's only.
+        let shown = cache.get(&url, None)?.size();
+        assert_eq!((shown.width, shown.height), (3840, 1240));
+        assert_eq!(cache.bytes(), 3840 * 1240 * 4);
+        let shown = cache.get("hero.png", None)?.size();
+        assert_eq!((shown.width, shown.height), (3840, 1240));
+        let pixels = decode_raster(&bytes, None)?;
+        assert_eq!((pixels.width(), pixels.height()), (3840, 1240));
         Ok(())
     }
 

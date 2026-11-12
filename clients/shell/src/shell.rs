@@ -278,7 +278,7 @@ impl Shell {
                         .asset(&job.url, crate::images::MAX_ENCODED_BYTES)
                         .map_err(|error| error.to_string())
                         .and_then(|bytes| {
-                            crate::images::decode_raster(&bytes, job.mode)
+                            crate::images::decode_stored(&bytes, job.mode)
                                 .map(crate::images::Arrival)
                                 .map_err(|_| "it does not decode".to_owned())
                         });

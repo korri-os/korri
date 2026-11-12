@@ -65,9 +65,12 @@ RPC, not traditional REST." This record is the corrected decision.
   peer wire later. Today only a local game's cover is published.
 - A surface cannot tell an image that is still loading from one that failed.
   It knows only that Korri has a cover (`coverArtUrl` is present).
-- The object route serves cover art only. Save screenshots (#126, the other
-  half of #129) need their own rule for which objects a caller may read.
+- The object route serves any image an assignment names, of any role
+  (`tile`, `poster`, `hero`, `logo`). It does not serve save screenshots
+  (#126, the other half of #129): they need their own rule for which objects
+  a caller may read.
 - The shell keeps at most 24 MiB of decoded pixels for a surface. A 512×512
   tile is 1 MiB decoded, so about 24 fit. A surface that shows more large
-  images at once will load some of them again as it scrolls. Serving an image
-  at the size a surface draws it is not decided here.
+  images at once will load some of them again as it scrolls. The shell scales
+  a stored image down to at most 1920 px on its longer side, and serving an
+  image at the exact size a surface draws it is still not decided.

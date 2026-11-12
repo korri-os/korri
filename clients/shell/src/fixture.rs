@@ -320,6 +320,9 @@ impl Fixture {
 
 fn model_for(state: &State, surface_id: &str) -> Value {
     let surface = state.surfaces.get(surface_id);
+    // Everything the fixture does not compute is the published model's own,
+    // `publishedAt` among it: a test sets that time. The fixture never reads
+    // the system clock, so a test decides what "now" is.
     let mut model = state.base.clone();
     let query = surface
         .and_then(|s| s.query.clone())
@@ -338,6 +341,21 @@ fn model_for(state: &State, surface_id: &str) -> Value {
         Some(catalog) => catalog.clone(),
         None => catalog::window(&state.games, &query, &from, count),
     };
+    // `systems` goes with the game list, as korrid publishes it: counted
+    // over the whole list, absent while the list is not known (a published
+    // Loading or Error catalog), and empty when Korri knows no game.
+    let systems = match &state.fixed_catalog {
+        None => Some(catalog::systems(&state.games)),
+        Some(fixed) if fixed["_tag"] == "Empty" => Some(Vec::new()),
+        Some(_) => None,
+    };
+    if let Some(fields) = model.as_object_mut() {
+        match systems {
+            Some(systems) => fields.insert("systems".into(), Value::Array(systems)),
+            None => fields.remove("systems"),
+        };
+    }
+
     if surface.and_then(|s| s.displays) == Some(engine::Displays::All) {
         // One main display unless told otherwise; the fixture has no compositor to read outputs from.
         model["displays"] = state.displays.clone().unwrap_or_else(
@@ -776,4 +794,149 @@ fn input(
     })();
     lock.lock().unwrap().input_subscribers -= 1;
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::korrid::Korrid;
+
+    fn base() -> Value {
+        json!({
+            "presentation": {"kind": "catalog"}, "catalog": {"_tag": "Loading"},
+            "status": {"_tag": "Browsing"}, "actions": [], "settings": [],
+            "settingsStatus": {"_tag": "Idle"},
+        })
+    }
+
+    fn games() -> Vec<Value> {
+        vec![
+            json!({"id": "wl4", "title": "Wario Land 4", "systemId": "gba", "system": "Game Boy Advance"}),
+            json!({"id": "smb", "title": "Super Mario Bros.", "systemId": "nes", "system": "NES"}),
+            json!({"id": "anguna", "title": "Anguna", "systemId": "gba", "system": "Game Boy Advance"}),
+            // A peer's game has no system.
+            json!({"id": "neverball", "title": "Neverball", "section": "zao"}),
+        ]
+    }
+
+    /// The model korrid's own client reads over the wire, as the shell does.
+    fn read(korrid: &Korrid, surface: &str) -> Value {
+        serde_json::from_str(&korrid.model(surface).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn a_query_keeps_one_system_and_the_model_lists_the_systems_of_the_whole_list() {
+        let fixture = Fixture::start(base(), games(), Behaviour::default()).unwrap();
+        let korrid = Korrid::new(fixture.connection());
+        let expected = json!([
+            {"systemId": "gba", "system": "Game Boy Advance", "total": 2},
+            {"systemId": "nes", "system": "NES", "total": 1},
+        ]);
+        let model = read(&korrid, "velvet");
+        assert_eq!(model["catalog"]["total"], 4);
+        assert_eq!(model["systems"], expected);
+        // The treaty's own type reads what the fixture publishes.
+        let typed: korri_surface_treaty::SurfaceModel =
+            serde_json::from_value(model.clone()).unwrap();
+        assert_eq!(typed.systems.unwrap()[0].total, 2);
+
+        korrid
+            .request(
+                "velvet",
+                &json!({"_tag": "MoveCatalog", "query": {"text": "", "systemId": "gba", "order": "title"},
+                    "from": {"_tag": "Start"}, "count": 50}),
+            )
+            .unwrap();
+        let model = read(&korrid, "velvet");
+        let window: Vec<&str> = model["catalog"]["window"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|game| game["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(window, ["anguna", "wl4"]);
+        assert_eq!(model["catalog"]["query"]["systemId"], "gba");
+        // The list of systems is of the whole list, not of this query.
+        assert_eq!(model["systems"], expected);
+        // Another surface keeps its own query.
+        assert_eq!(read(&korrid, "zone")["catalog"]["total"], 4);
+    }
+
+    #[test]
+    fn systems_are_absent_while_the_catalog_is_not_known_and_empty_for_no_games() {
+        let fixture = Fixture::start(base(), games(), Behaviour::default()).unwrap();
+        let mut model = base();
+        // A value a careless fixture file carries is not published as a fact.
+        model["systems"] = json!([{"systemId": "stale", "system": "Stale", "total": 9}]);
+        for catalog in [
+            json!({"_tag": "Loading"}),
+            json!({"_tag": "Error", "message": "Korri cannot read the library"}),
+        ] {
+            model["catalog"] = catalog.clone();
+            fixture.set_model(model.clone());
+            let published = fixture.model("velvet");
+            assert_eq!(published["catalog"], catalog);
+            assert!(published.get("systems").is_none(), "{catalog}");
+        }
+        // Korri knows no game: an empty list, as korrid publishes it.
+        model["catalog"] = json!({"_tag": "Empty"});
+        fixture.set_model(model.clone());
+        assert_eq!(fixture.model("velvet")["systems"], json!([]));
+        model["catalog"] = json!({"_tag": "Ready", "games": []});
+        fixture.set_model(model.clone());
+        assert_eq!(fixture.model("velvet")["catalog"], json!({"_tag": "Empty"}));
+        assert_eq!(fixture.model("velvet")["systems"], json!([]));
+        // Games, none of them with a system.
+        model["catalog"] = json!({"_tag": "Ready", "games": [{"id": "g", "title": "G"}]});
+        fixture.set_model(model.clone());
+        assert_eq!(fixture.model("velvet")["catalog"]["total"], 1);
+        assert_eq!(fixture.model("velvet")["systems"], json!([]));
+        // A Ready catalog's games are counted again.
+        model["catalog"] = json!({"_tag": "Ready", "games": games()});
+        fixture.set_model(model);
+        assert_eq!(
+            fixture.model("velvet")["systems"][0],
+            json!({"systemId": "gba", "system": "Game Boy Advance", "total": 2})
+        );
+    }
+
+    #[test]
+    fn published_at_is_the_time_a_test_sets_and_never_the_system_clock() {
+        let fixture = Fixture::start(base(), games(), Behaviour::default()).unwrap();
+        let korrid = Korrid::new(fixture.connection());
+        // A model that carries no time publishes none.
+        assert!(read(&korrid, "velvet").get("publishedAt").is_none());
+        assert!(fixture.model("velvet").get("publishedAt").is_none());
+
+        fixture.publish(|model| model["publishedAt"] = json!(1_794_446_934_334_u64));
+        let model = read(&korrid, "velvet");
+        assert_eq!(model["publishedAt"], json!(1_794_446_934_334_u64));
+        let typed: korri_surface_treaty::SurfaceModel = serde_json::from_value(model).unwrap();
+        assert_eq!(typed.published_at, Some(1_794_446_934_334.0));
+        // It does not move by itself, however often the model is read or the
+        // surface moves its window.
+        korrid
+            .request(
+                "velvet",
+                &json!({"_tag": "MoveCatalog", "query": catalog::default_query(),
+                    "from": {"_tag": "End"}, "count": 2}),
+            )
+            .unwrap();
+        assert_eq!(
+            read(&korrid, "velvet")["publishedAt"],
+            json!(1_794_446_934_334_u64)
+        );
+        // A whole new model carries its own time, or none.
+        let mut later = base();
+        later["catalog"] = json!({"_tag": "Ready", "games": games()});
+        later["publishedAt"] = json!(1_794_450_000_000_u64);
+        fixture.set_model(later.clone());
+        assert_eq!(
+            fixture.model("velvet")["publishedAt"],
+            json!(1_794_450_000_000_u64)
+        );
+        later.as_object_mut().unwrap().remove("publishedAt");
+        fixture.set_model(later);
+        assert!(fixture.model("velvet").get("publishedAt").is_none());
+    }
 }
