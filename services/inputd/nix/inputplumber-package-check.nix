@@ -30,6 +30,7 @@ assert
     ./inputplumber-dbus-observer-timing.patch
     ./inputplumber-target-device-paths.patch
     ./inputplumber-startup-unhide-quiet.patch
+    ./inputplumber-ignore-before-reconnect.patch
   ];
 assert inputplumberRuntime.patches == inputplumberRuntime.upstream.patches;
 assert inputplumberRuntime.doCheck;
@@ -216,17 +217,42 @@ pkgs.runCommand "inputplumber-korri-package-check"
       exit 1
     }
 
+    prepare_drift_root() {
+      mkdir -p "$drift_root/devices" "$drift_root/profiles"
+      cp "${inputplumberRuntime}/share/inputplumber/devices/"*.yaml "$drift_root/devices/"
+      cp "${inputplumberRuntime}/share/inputplumber/profiles/default.yaml" \
+        "$drift_root/profiles/default.yaml"
+      # A valid transform must be able to append mappings to its copied
+      # profile. Otherwise read-only store modes masquerade as guard refusals.
+      chmod -R u+w "$drift_root"
+    }
+    # Positive control: a refusal must come from a mutation, not the harness.
+    drift_root="$TMPDIR/schema-drift/control/share/inputplumber"
+    prepare_drift_root
+    (
+      ${data.transformSelectedProfiles { inputplumberRoot = "$drift_root"; }}
+    )
+
     for selected in ${
       pkgs.lib.escapeShellArgs (map (profile: profile.file) data.externalDeviceProfiles)
     }; do
-      for mutation in '.version = 2' '.kind = "DeviceProfile"' '.name = "renamed"' \
+      source_mutations=()
+      case "$selected" in
+        ${pkgs.lib.concatMapStringsSep "|" (profile: profile.file) data.selectedDeviceProfiles})
+          source_mutations=(
+            '.source_devices[0].udev.subsystem = "hidraw"'
+            '.maximum_sources = 2'
+            '.source_devices[0].hidraw = {"vendor_id": "045e"}'
+            '.source_devices = []'
+            '.source_devices[0].evdev.handler = "js*"'
+            '.source_devices[0].udev.sys_name = "js*"'
+          ) ;;
+      esac
+      for mutation in "''${source_mutations[@]}" '.version = 2' '.kind = "DeviceProfile"' '.name = "renamed"' \
         '.options.auto_manage = true' '.options.persist = true' \
         '.target_devices[0] = "renamed-upstream-target"' missing; do
         drift_root="$TMPDIR/schema-drift/$selected/$mutation/share/inputplumber"
-        mkdir -p "$drift_root/devices" "$drift_root/profiles"
-        cp "${inputplumberRuntime}/share/inputplumber/devices/"*.yaml "$drift_root/devices/"
-        cp "${inputplumberRuntime}/share/inputplumber/profiles/default.yaml" \
-          "$drift_root/profiles/default.yaml"
+        prepare_drift_root
         if test "$mutation" = missing; then
           rm "$drift_root/devices/$selected"
         else
