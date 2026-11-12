@@ -4,7 +4,7 @@
  */
 import { describe, expect, test } from "bun:test"
 import type { KorriModel, SurfaceGame } from "../src/model"
-import { GAME_FIELDS, interned, LOCATION_FIELDS, sameGame } from "../src/native/intern"
+import { GAME_FIELDS, interned, LOCATION_FIELDS, MEDIA_FIELDS, sameGame } from "../src/native/intern"
 import { fixtureModel } from "./fixtures/fixture-host"
 
 const game: Required<SurfaceGame> = {
@@ -21,6 +21,12 @@ const game: Required<SurfaceGame> = {
   totalPlaytimeSeconds: 4_000,
   saves: { _tag: "Synced" },
   download: { bytes: 1_000 } as SurfaceGame["download"] & object,
+  systemId: "pico8",
+  system: "PICO-8",
+  media: [
+    { role: "poster", url: `/game-assets/${"a".repeat(64)}.png`, width: 600, height: 900, color: "#3a7bd5" },
+    { role: "hero", url: `/game-assets/${"b".repeat(64)}.jpg`, width: 1920, height: 620, color: "#20304f" },
+  ],
 }
 
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
@@ -42,6 +48,29 @@ describe("sameGame", () => {
       changed.launchLocations = [{ ...game.launchLocations[0]!, [field]: "other" }, game.launchLocations[1]!]
       expect([field, sameGame(game, changed)]).toEqual([field, false])
     }
+  })
+
+  test("a game's stored images are compared by value, entry by entry", () => {
+    // Parsed again: other objects, the same images.
+    expect(copy(game).media).not.toBe(game.media)
+    expect(sameGame(game, copy(game))).toBe(true)
+    for (const field of Object.keys(MEDIA_FIELDS) as (keyof typeof MEDIA_FIELDS)[]) {
+      // In the last entry, so every entry is compared and not only the first.
+      const changed = copy(game)
+      changed.media = [game.media[0]!, { ...game.media[1]!, [field]: field === "width" || field === "height" ? 1 : field === "role" ? "logo" : "other" }]
+      expect([field, sameGame(game, changed)]).toEqual([field, false])
+    }
+    // An image with no colour is not the image with one, and is itself.
+    const { color: _, ...plain } = game.media[1]!
+    const colourless = { ...copy(game), media: [game.media[0]!, plain] }
+    expect(sameGame(game, colourless)).toBe(false)
+    expect(sameGame(colourless, copy(colourless))).toBe(true)
+    // One image fewer, one more, another order, none at all.
+    for (const media of [[game.media[0]!], [...game.media, game.media[0]!], [game.media[1]!, game.media[0]!], []]) {
+      expect([media.length, sameGame(game, { ...copy(game), media })]).toEqual([media.length, false])
+    }
+    const { media: __, ...bare } = copy(game)
+    expect(sameGame(bare, copy(bare))).toBe(true)
   })
 })
 

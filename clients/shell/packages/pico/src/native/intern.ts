@@ -72,8 +72,7 @@ function catalogInterned(before: KorriModel["catalog"] | undefined, catalog: Kor
 
 /**
  * Every field of a game. A field the treaty adds fails the typecheck here
- * until `sameGame` compares it too (test/native-program.test.ts changes each
- * one).
+ * until `sameGame` compares it too (test/intern.test.ts changes each one).
  */
 export const GAME_FIELDS: Readonly<Record<keyof SurfaceGame, true>> = {
   id: true,
@@ -89,10 +88,18 @@ export const GAME_FIELDS: Readonly<Record<keyof SurfaceGame, true>> = {
   totalPlaytimeSeconds: true,
   saves: true,
   download: true,
+  systemId: true,
+  system: true,
+  media: true,
 }
 
 /** Every field of a launch location, as `GAME_FIELDS` (`sameLocations`). */
 export const LOCATION_FIELDS: Readonly<Record<keyof SurfaceLaunchLocation, true>> = { id: true, label: true }
+
+type GameMedia = NonNullable<SurfaceGame["media"]>[number]
+
+/** Every field of one of a game's stored images, as `GAME_FIELDS` (`sameMedia`). */
+export const MEDIA_FIELDS: Readonly<Record<keyof GameMedia, true>> = { role: true, url: true, width: true, height: true, color: true }
 
 /** Whether two games are equal: field by field, by name (QuickJS reads a
  * named field several times faster than a field looked up by a string). */
@@ -107,7 +114,10 @@ export function sameGame(a: SurfaceGame, b: SurfaceGame): boolean {
     && a.lastPlayedAt === b.lastPlayedAt
     && a.playCount === b.playCount
     && a.totalPlaytimeSeconds === b.totalPlaytimeSeconds
+    && a.systemId === b.systemId
+    && a.system === b.system
     && (a.launchLocations === b.launchLocations || sameLocations(a.launchLocations, b.launchLocations))
+    && (a.media === b.media || sameMedia(a.media, b.media))
     // Rarely present: by their JSON text.
     && (a.saves === b.saves || sameText(a.saves, b.saves))
     && (a.download === b.download || sameText(a.download, b.download))
@@ -119,6 +129,16 @@ function sameLocations(a: SurfaceGame["launchLocations"], b: SurfaceGame["launch
     const x = a[i]
     const y = b[i]
     if (x === undefined || y === undefined || x.id !== y.id || x.label !== y.label) return false
+  }
+  return true
+}
+
+function sameMedia(a: SurfaceGame["media"], b: SurfaceGame["media"]): boolean {
+  if (a === undefined || b === undefined || a.length !== b.length) return false
+  for (let i = 0; i < a.length; i += 1) {
+    const x = a[i]
+    const y = b[i]
+    if (x === undefined || y === undefined || x.role !== y.role || x.url !== y.url || x.width !== y.width || x.height !== y.height || x.color !== y.color) return false
   }
   return true
 }
