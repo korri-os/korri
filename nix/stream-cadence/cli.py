@@ -2,6 +2,7 @@
 
 import argparse
 import base64
+import contextlib
 import fcntl
 import gzip
 import ipaddress
@@ -43,6 +44,10 @@ from verdict import judge
 
 class Refusal(RuntimeError):
     pass
+
+
+# The target that names the host that runs the tool: no SSH and no root.
+LOCAL = "local"
 
 
 def execute(args: list[str], **kwargs) -> subprocess.CompletedProcess:
@@ -90,8 +95,18 @@ def ssh_target(
     return target, options
 
 
+def endpoint(value: str, extra_options: list[str]) -> tuple[str | None, list[str]]:
+    """An SSH target and its options, or no target for the host that runs the tool."""
+    if value == LOCAL:
+        return None, []
+    return ssh_target(value, None, extra_options)
+
+
 def tools(
-    architecture: str, target: str, options: list[str], parts: tuple[str, ...] = ("motion",)
+    architecture: str,
+    target: str | None,
+    options: list[str],
+    parts: tuple[str, ...] = ("motion",),
 ) -> tuple[str, str, list[str]]:
     if architecture not in ("aarch64", "x86_64"):
         raise Refusal(
@@ -127,6 +142,18 @@ def tools(
         ["nix", "eval", "--raw", "--impure", "--expr", source_expression], timeout=30
     ).stdout
     paths.append(source)
+    # The host that runs the tool already holds what it built.
+    if target is not None:
+        deliver(target, options, paths)
+    python = next(path for path in paths if re.search(r"-python3-[\d.]", path))
+    motion = next((path for path in paths if path.endswith("-stream-cadence-motion")), "")
+    # Python is prebuilt; the two immutable agent modules are interpreted with
+    # bytecode writes disabled. No native build or pyc file occurs on the device.
+    agent = shlex.join([python + "/bin/python3", "-B", "-u", source + "/device.py"])
+    return agent, motion + "/bin/stream-cadence-motion", paths
+
+
+def deliver(target: str, options: list[str], paths: list[str]) -> None:
     key = Path.home() / ".config/korri/cache-key.secret"
     if key.is_file():
         execute(
@@ -143,16 +170,10 @@ def tools(
             "Cannot deliver signed prebuilt tools. Publish/sign the closure with a device-trusted cache key on this host. Do not bypass signature checks or build on the device.\n"
             + error.stderr
         ) from error
-    python = next(path for path in paths if re.search(r"-python3-[\d.]", path))
-    motion = next((path for path in paths if path.endswith("-stream-cadence-motion")), "")
-    # Python is prebuilt; the two immutable agent modules are interpreted with
-    # bytecode writes disabled. No native build or pyc file occurs on the device.
-    agent = shlex.join([python + "/bin/python3", "-B", "-u", source + "/device.py"])
-    return agent, motion + "/bin/stream-cadence-motion", paths
 
 
 class Remote:
-    def __init__(self, command: list[str], log: Path):
+    def __init__(self, command: list[str], log: Path, detached: bool = False):
         self.log = log.open("w")
         self.process = subprocess.Popen(
             command,
@@ -161,6 +182,9 @@ class Remote:
             stderr=self.log,
             text=True,
             bufsize=1,
+            # An agent on this host gets its own session. A terminal's Ctrl-C then
+            # reaches the tool alone, and the tool closes the agent in order.
+            start_new_session=detached,
         )
         self.closed = False
         self.request_id = 0
@@ -350,6 +374,27 @@ def sender_stream(
     app = app_name(url_host, info, args.keydir, result["serverCertificate"])
     remote.request("start", motion=motion)
     return host, port, app, result["serverCertificate"]
+
+
+def fixture_stream(
+    args: argparse.Namespace, remote: Remote, facts: dict, motion: str, loopback: str
+) -> tuple[str, int, str]:
+    """Start the frame-ID source on the sender fixture.
+
+    Returns the stream host, the fixture Sunshine's port and its one application.
+    """
+    host = args.stream_host
+    if not host:
+        host = (
+            args.ssh_target.rsplit("@", 1)[-1].strip("[]") if args.ssh_target else loopback
+        )
+    url_host = "[" + host + "]" if ":" in host and not host.startswith("[") else host
+    port = facts["sunshine_port"]
+    info, _ = server_info(url_host, [port])
+    facts["host_uuid"] = info.findtext("uniqueid")
+    facts["stream_host"] = host
+    remote.request("start", motion=motion)
+    return host, port, facts["sender_fixture"]["application"]
 
 
 def stop_client(client: subprocess.Popen | None) -> None:
@@ -692,7 +737,7 @@ def view_case(
     viewer: Remote,
     paths: dict[str, str],
     directory: Path,
-    certificate: str,
+    certificate: str | None,
     index: int,
 ) -> dict:
     record: dict = {
@@ -721,8 +766,24 @@ def view_case(
         else:
             viewer_refresh = args.viewer_refresh
             width, height = args.resolution or (1920, 1080)
-        refresh = min(facts["display"]["refresh_hz"], viewer_refresh)
-        fps = args.fps if args.fps is not None else refresh
+        loopback = str(ipaddress.IPv4Address(socket.INADDR_LOOPBACK))
+        if args.sender_fixture:
+            # The fixture's display exists for this stream alone: the requested
+            # size, at the steady refresh nearest below the requested rate.
+            fps = args.fps if args.fps is not None else viewer_refresh
+            built = sender.request(
+                "prepare",
+                sway=paths["sway"],
+                sunshine=paths["sunshine"],
+                width=width,
+                height=height,
+                fps=fps,
+            )
+            facts.update(built["facts"])
+            refresh = min(facts["display"]["refresh_hz"], viewer_refresh)
+        else:
+            refresh = min(facts["display"]["refresh_hz"], viewer_refresh)
+            fps = args.fps if args.fps is not None else refresh
         facts.update(
             requested_fps=fps,
             requested_resolution={"width": width, "height": height},
@@ -731,12 +792,18 @@ def view_case(
             viewer_refresh_hz=viewer_refresh,
             max_capture_gaps=args.max_capture_gaps,
         )
-        host, port, app, server_certificate = sender_stream(
-            args, sender, facts, certificate, paths["motion"]
-        )
+        key = None
+        if args.sender_fixture:
+            host, port, app = fixture_stream(args, sender, facts, paths["motion"], loopback)
+            server_certificate = built["server_certificate"]
+        else:
+            assert certificate is not None
+            host, port, app, server_certificate = sender_stream(
+                args, sender, facts, certificate, paths["motion"]
+            )
+            key = (args.keydir / "key.pem").read_text()
         # A viewer on the sender's own machine reaches Sunshine on IPv4 loopback,
         # where Sunshine's wildcard listener answers.
-        loopback = str(ipaddress.IPv4Address(socket.INADDR_LOOPBACK))
         viewer_host = args.viewer_stream_host or (loopback if same_clock else host)
         prepared = viewer.request(
             "prepare",
@@ -745,9 +812,27 @@ def view_case(
             height=height,
             refresh_hz=viewer_refresh,
             certificate=certificate,
-            key=(args.keydir / "key.pem").read_text(),
+            key=key,
             server_certificate=server_certificate,
         )
+        moonlight = plugin["moonlight"] if plugin else paths["viewer"] + "/bin/moonlight"
+        if args.sender_fixture:
+            # Pairing replaces the certificate grant. The viewer binary of this
+            # run shows a PIN, and the sender's agent posts it to its Sunshine.
+            pin = viewer.request(
+                "pair",
+                command=[
+                    moonlight,
+                    "pair",
+                    "-keydir",
+                    prepared["keydir"],
+                    "-port",
+                    str(port),
+                    viewer_host,
+                ],
+            )["pin"]
+            sender.request("pin", pin=pin)
+            viewer.request("paired")
         request = [
             "-width",
             str(width),
@@ -763,7 +848,7 @@ def view_case(
         if plugin:
             # The arguments of korrid's linux_viewer (stream_args), with no input seat.
             command = [
-                plugin["moonlight"],
+                moonlight,
                 "stream",
                 "-app",
                 app,
@@ -783,7 +868,7 @@ def view_case(
             ]
         else:
             command = [
-                paths["viewer"] + "/bin/moonlight",
+                moonlight,
                 "stream",
                 viewer_host,
                 "-port",
@@ -830,6 +915,10 @@ def view_case(
                 raise Refusal("Capture client exited during the measure; read capture.log")
             time.sleep(0.5)
         viewer.request("stop")
+        if args.sender_fixture and not (facts.get("encoder") and facts.get("capture_backend")):
+            raise Refusal(
+                "The fixture Sunshine's log names no encoder or capture backend for this stream; a verdict could not tell its conditions."
+            )
         after, seat_after = clock(sender), clock(viewer)
         motion_log = sender.request("evidence")["motion_log"]
         shown = viewer.request("evidence")
@@ -914,6 +1003,7 @@ def view_case(
             # An unreadable output frame is a smoothness count, not a broken recording.
             max_unreadable_frames=len(frames),
             display_period_ns=period,
+            source_period_ns=1e9 / facts["display"]["refresh_hz"],
         )
         source["label"] = directory.name
         source["bridge_uncertainty_ms"] = facts["bridge_uncertainty_ms"]
@@ -979,20 +1069,38 @@ def view_case(
 
 
 def view(args: argparse.Namespace) -> int:
-    sender_target, sender_options = ssh_target(args.sender, None, args.ssh_option)
-    viewer_target, viewer_options = ssh_target(args.viewer, None, args.ssh_option)
+    sender_target, sender_options = endpoint(args.sender, args.ssh_option)
+    viewer_target, viewer_options = endpoint(args.viewer, args.ssh_option)
+    if sender_target is None and not args.sender_fixture:
+        raise Refusal(
+            f"The target {LOCAL} is the host that runs the tool, with no root. It can host the sender fixture only: add --sender-fixture."
+        )
     args.ssh_target = sender_target
 
-    def deliver(target: str, options: list[str], extra: tuple[str, ...]) -> tuple[str, list[str]]:
-        architecture = execute(
-            ["ssh", *options, target, "uname -m"], timeout=20
-        ).stdout.strip()
+    def built(
+        target: str | None, options: list[str], extra: tuple[str, ...]
+    ) -> tuple[str, list[str]]:
+        architecture = (
+            os.uname().machine
+            if target is None
+            else execute(["ssh", *options, target, "uname -m"], timeout=20).stdout.strip()
+        )
         agent, _, paths = tools(architecture, target, options, extra)
         return agent, paths
 
-    sender_agent, sender_paths = deliver(sender_target, sender_options, ("motion",))
-    # A device with the viewer plugin uses that binary. Any other device gets a copy.
-    installed = (
+    def part(paths: list[str], mark: str, program: str = "") -> str:
+        return next((path + program for path in paths if mark in path), "")
+
+    sender_agent, sender_paths = built(
+        sender_target,
+        sender_options,
+        ("motion", "sway", "sunshine") if args.sender_fixture else ("motion",),
+    )
+    if args.sender_fixture:
+        sender_agent = sender_agent.replace("/device.py", "/sender.py")
+    # A device with the viewer plugin uses that binary. Any other device gets a
+    # copy. The host that runs the tool is no Korri device: it also gets a sway.
+    installed = viewer_target is not None and (
         subprocess.run(
             ["ssh", *viewer_options, viewer_target, "korri-plugin status @korri:moonlight"],
             capture_output=True,
@@ -1000,17 +1108,26 @@ def view(args: argparse.Namespace) -> int:
         ).returncode
         == 0
     )
-    seat_agent, seat_paths = deliver(
-        viewer_target, viewer_options, ("capture",) if installed else ("capture", "viewer")
-    )
+    seat_parts: tuple[str, ...] = ("capture",) if installed else ("capture", "viewer")
+    if viewer_target is None:
+        seat_parts += ("sway",)
+    seat_agent, seat_paths = built(viewer_target, viewer_options, seat_parts)
     seat_agent = seat_agent.replace("/device.py", "/viewer.py")
+    if viewer_target is None:
+        seat_agent += " " + shlex.quote(part(seat_paths, "-sway-unwrapped-", "/bin/sway"))
     paths = {
-        "motion": next(p for p in sender_paths if p.endswith("-stream-cadence-motion"))
-        + "/bin/stream-cadence-motion",
-        "capture": next(p for p in seat_paths if "-stream-cadence-capture-" in p)
-        + "/bin/stream-cadence-capture",
-        "viewer": next((p for p in seat_paths if "-moonlight-embedded-" in p), ""),
+        "motion": part(sender_paths, "-stream-cadence-motion", "/bin/stream-cadence-motion"),
+        "sway": part(sender_paths, "-sway-unwrapped-", "/bin/sway"),
+        "sunshine": part(sender_paths, "-sunshine-", "/bin/sunshine"),
+        "capture": part(seat_paths, "-stream-cadence-capture-", "/bin/stream-cadence-capture"),
+        "viewer": part(seat_paths, "-moonlight-embedded-"),
     }
+
+    def agent(target: str | None, options: list[str], command: str, log: Path) -> Remote:
+        if target is None:
+            return Remote(shlex.split(command), log, detached=True)
+        return Remote(["ssh", *options, target, command], log)
+
     args.imported_store_paths = sorted(set(sender_paths + seat_paths))
     args.out = (
         args.out.resolve()
@@ -1019,28 +1136,31 @@ def view(args: argparse.Namespace) -> int:
     )
     args.out.mkdir(parents=True, exist_ok=True)
     args.keydir = args.keydir.expanduser().resolve()
-    args.keydir.mkdir(mode=0o700, parents=True, exist_ok=True)
     results: list[dict] = []
-    with (args.keydir / "lock").open("a") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as error:
-            raise Refusal(
-                "Another cadence run uses this client certificate; wait for it to finish"
-            ) from error
-        certificate = keypair(args.keydir)
+    with contextlib.ExitStack() as held:
+        certificate = None
+        # The sender fixture has no certificate grant. Each run pairs a key pair
+        # that the viewer makes in its own run directory.
+        if not args.sender_fixture:
+            args.keydir.mkdir(mode=0o700, parents=True, exist_ok=True)
+            lock = held.enter_context((args.keydir / "lock").open("a"))
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as error:
+                raise Refusal(
+                    "Another cadence run uses this client certificate; wait for it to finish"
+                ) from error
+            certificate = keypair(args.keydir)
         print("Results:", args.out, flush=True)
         for index in range(args.runs):
             directory = args.out / f"run-{index + 1}"
             directory.mkdir()
             remotes = [
-                Remote(
-                    ["ssh", *sender_options, sender_target, sender_agent],
-                    directory / "device-agent.log",
+                agent(
+                    sender_target, sender_options, sender_agent, directory / "device-agent.log"
                 ),
-                Remote(
-                    ["ssh", *viewer_options, viewer_target, seat_agent],
-                    directory / "viewer-agent.log",
+                agent(
+                    viewer_target, viewer_options, seat_agent, directory / "viewer-agent.log"
                 ),
             ]
             try:
@@ -1279,8 +1399,21 @@ def parser() -> argparse.ArgumentParser:
     watch = commands.add_parser(
         "view", help="measure a viewer from outside: what it shows, and when"
     )
-    watch.add_argument("--sender", required=True, help="SSH target that runs Sunshine")
-    watch.add_argument("--viewer", required=True, help="SSH target that shows the stream")
+    watch.add_argument(
+        "--sender",
+        required=True,
+        help=f"SSH target that runs Sunshine; {LOCAL} is this host, for the sender fixture",
+    )
+    watch.add_argument(
+        "--viewer",
+        required=True,
+        help=f"SSH target that shows the stream; {LOCAL} is this host, with no root",
+    )
+    watch.add_argument(
+        "--sender-fixture",
+        action="store_true",
+        help="give the measure a private sender on the sender target: a hidden compositor and a stock Sunshine on its own ports",
+    )
     watch.add_argument("--ssh-option", action="append", default=[])
     watch.add_argument("--stream-host", help="sender address as this host reaches it")
     watch.add_argument(

@@ -7,6 +7,10 @@ Two ways to show the stream, chosen by what the device has:
 - A server-only device has no viewer. A fixture holds a copied viewer and the
   capture client: a second, headless sway started from the installed binary.
 
+A host with no Korri has neither. Started with the path of a sway binary, the
+agent runs the same fixture as the calling user with that sway, and reads no
+Korri unit.
+
 The product compositor, Sunshine and korrid are read and never changed. All
 files live in one run directory, including the private half of the test key
 pair, which crosses SSH because the viewer runs here.
@@ -17,9 +21,11 @@ import gzip
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -27,6 +33,7 @@ from typing import TextIO
 
 from device import (
     deferred_termination,
+    end_with_agent,
     games,
     get_output,
     proc,
@@ -102,21 +109,39 @@ def platform() -> str:
     return "x11"
 
 
+def pairing_pin(text: str) -> str | None:
+    """The PIN that Moonlight prints and then waits for the sender to admit."""
+    found = re.search(r"PIN on the target PC: (\d{4})\b", text)
+    return found.group(1) if found else None
+
+
+def product_compositor() -> dict:
+    compositor = proc(int(unit("korri-compositor")["MainPID"]))
+    if Path(compositor["exe"]).name != "sway":
+        raise RuntimeError("The measure needs sway; this compositor is not sway.")
+    return compositor
+
+
 class Session:
-    def __init__(self) -> None:
-        compositor = proc(int(unit("korri-compositor")["MainPID"]))
-        if Path(compositor["exe"]).name != "sway":
-            raise RuntimeError("The measure needs sway; this compositor is not sway.")
-        self.compositor = compositor
+    def __init__(self, sway: str | None = None) -> None:
+        # A Korri device names the user and the sway binary through its product
+        # compositor. Any other host gets a sway from the tool and keeps the
+        # calling user: no Korri unit is read there.
+        if sway:
+            self.compositor: dict | None = None
+            self.sway = sway
+        else:
+            self.compositor = product_compositor()
+            self.sway = self.compositor["exe"]
         # The shape that device.py's compositor helpers read.
-        self.shell = {"processes": {"compositor": compositor}}
+        self.shell = {"processes": {"compositor": self.compositor}}
         self.facts = {
             "architecture": os.uname().machine,
             "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
             "clock_ticks_per_second": os.sysconf("SC_CLK_TCK"),
-            "compositor": compositor,
-            "display": get_output(self.shell),
-            "plugin": plugin(),
+            "compositor": self.compositor,
+            "display": get_output(self.shell) if self.compositor else None,
+            "plugin": plugin() if self.compositor else None,
             "platform": platform(),
         }
         self.root: Path | None = None
@@ -126,6 +151,10 @@ class Session:
         self.logs: dict[str, TextIO] = {}
 
     def restrict(self) -> None:
+        if self.compositor is None:
+            # The calling user keeps its identity; the children end with the agent.
+            end_with_agent()
+            return
         if self.fixture:
             os.setgroups([])
         else:
@@ -146,7 +175,7 @@ class Session:
         }
 
     def capture_environment(self) -> dict[str, str]:
-        if self.fixture:
+        if self.fixture or self.compositor is None:
             return dict(self.environment(), WAYLAND_DISPLAY=DISPLAY)
         shell = self.compositor["environment"]
         return dict(
@@ -227,21 +256,27 @@ class Session:
                 time.sleep(0.1)
 
     def prepare(self, request: dict) -> dict:
-        games()
+        if self.compositor:
+            games()
         if self.root is not None:
             raise RuntimeError("viewer session already prepared")
         self.fixture = bool(request["fixture"])
+        if self.compositor is None and not self.fixture:
+            raise RuntimeError("A host with no Korri has no viewer plugin; only the fixture runs here.")
         self.root = Path(tempfile.mkdtemp(prefix="korri-stream-cadence-view-", dir="/tmp"))
         runtime, keys = self.root / "rt", self.root / "keys"
         runtime.mkdir(mode=0o700)
         keys.mkdir(mode=0o700)
-        (keys / "client.pem").write_text(request["certificate"])
-        key = keys / "key.pem"
-        key.touch(mode=0o600)
-        key.write_text(request["key"])
         pin = self.root / "server.pem"
         pin.write_text(request["server_certificate"])
-        owned = [self.root, runtime, keys, keys / "client.pem", key, pin]
+        owned = [self.root, runtime, keys, pin]
+        # A viewer that pairs by PIN makes its own key pair in this directory.
+        if request.get("certificate"):
+            (keys / "client.pem").write_text(request["certificate"])
+            key = keys / "key.pem"
+            key.touch(mode=0o600)
+            key.write_text(request["key"])
+            owned += [keys / "client.pem", key]
         if self.fixture:
             config = self.root / "sway.conf"
             config.write_text(
@@ -252,15 +287,16 @@ class Session:
                 'for_window [title=".*"] fullscreen enable\n'
             )
             owned.append(config)
-        for path in owned:
-            os.chown(path, self.compositor["uid"], self.compositor["gid"])
+        if self.compositor:
+            for path in owned:
+                os.chown(path, self.compositor["uid"], self.compositor["gid"])
         if not self.fixture:
             wake(self.shell)
             self.last_wake = time.monotonic()
             return {"run_folder": str(self.root), "keydir": str(keys)}
         self.spawn(
             "fixture",
-            [self.compositor["exe"], "--config", str(self.root / "sway.conf")],
+            [self.sway, "--config", str(self.root / "sway.conf")],
             dict(
                 self.environment(),
                 WLR_BACKENDS="headless",
@@ -323,6 +359,31 @@ class Session:
                 self.capture_environment(),
             )
             return {}
+        if operation == "pair":
+            # Moonlight prints a PIN, then waits until the sender admits it.
+            (self.root / "pair.log").unlink(missing_ok=True)
+            pairing = self.spawn("pair", list(request["command"]), self.viewer_environment())
+            for _ in range(150):
+                pin = pairing_pin(self.tail("pair"))
+                if pin:
+                    return {"pin": pin}
+                if pairing.poll() is not None:
+                    break
+                time.sleep(0.1)
+            raise RuntimeError("The viewer printed no pairing PIN: " + self.tail("pair"))
+        if operation == "paired":
+            waiting = self.processes.get("pair")
+            if waiting is None:
+                raise RuntimeError("no pairing runs in this session")
+            try:
+                waiting.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                pass
+            finished = waiting.poll() is not None
+            code = self.stop("pair")
+            if not finished or code:
+                raise RuntimeError(f"The viewer did not pair ({code}): " + self.tail("pair"))
+            return {"log": self.tail("pair")}
         if operation == "start":
             start = time.monotonic_ns()
             process = self.spawn("viewer", list(request["command"]), self.viewer_environment())
@@ -330,7 +391,8 @@ class Session:
                 threading.Thread(target=self.focus, args=(process.pid,), daemon=True).start()
             return {"pid": process.pid, "start_ns": start}
         if operation == "sample":
-            games()
+            if self.compositor:
+                games()
             if not self.fixture and time.monotonic() - self.last_wake >= 30:
                 # Seat activity keeps a real panel from idling off under the measure.
                 wake(self.shell)
@@ -361,7 +423,7 @@ class Session:
     @deferred_termination()
     def close(self) -> dict:
         errors = []
-        for name in ("viewer", "capture", "fixture"):
+        for name in ("pair", "viewer", "capture", "fixture"):
             try:
                 self.stop(name)
             except Exception as error:
@@ -382,18 +444,23 @@ class Session:
                         remaining.append(str(process.parent))
                 except (FileNotFoundError, PermissionError, ProcessLookupError):
                     pass
-        try:
-            now = proc(int(unit("korri-compositor")["MainPID"]))
-            unchanged = (
-                now["pid"] == self.compositor["pid"]
-                and now["start_ticks"] == self.compositor["start_ticks"]
-            )
-        except Exception:
-            unchanged = False
+        unchanged = {}
+        if self.compositor:
+            try:
+                now = proc(int(unit("korri-compositor")["MainPID"]))
+                unchanged["compositor"] = (
+                    now["pid"] == self.compositor["pid"]
+                    and now["start_ticks"] == self.compositor["start_ticks"]
+                )
+            except Exception:
+                unchanged["compositor"] = False
         self.root = None
         return {
-            "pass": unchanged and not errors and not remaining and not (root and root.exists()),
-            "pids_unchanged": {"compositor": unchanged},
+            "pass": all(unchanged.values())
+            and not errors
+            and not remaining
+            and not (root and root.exists()),
+            "pids_unchanged": unchanged,
             "run_folder": str(root) if root else None,
             "run_folder_removed": not (root and root.exists()),
             "remaining_processes": remaining,
@@ -402,4 +469,6 @@ class Session:
 
 
 if __name__ == "__main__":
-    serve(Session)
+    # With a sway binary as its argument, the agent serves a host with no Korri.
+    supplied = sys.argv[1] if len(sys.argv) > 1 else None
+    serve(lambda: Session(supplied))

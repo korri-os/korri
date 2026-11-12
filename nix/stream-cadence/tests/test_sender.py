@@ -1,4 +1,4 @@
-"""The private sender."""
+"""The private sender and the host that runs the tool as a target."""
 
 import os
 from pathlib import Path
@@ -10,9 +10,10 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from cli import Refusal, Remote  # noqa: E402
+from cli import LOCAL, Refusal, Remote, endpoint, parser, view  # noqa: E402
 from discovery import session_log  # noqa: E402
 import sender  # noqa: E402
+import viewer  # noqa: E402
 
 TESTS = Path(__file__).resolve().parent
 FIXTURES = TESTS / "fixtures" / "sender"
@@ -124,6 +125,7 @@ class Cleanup(unittest.TestCase):
             remote = Remote(
                 [sys.executable, "-B", str(TESTS.parent / "sender.py")],
                 Path(temporary) / "agent.log",
+                detached=True,
             )
             facts = remote.request("discover")
             self.assertRegex(facts["boot_id"], r"^[0-9a-f-]{36}$")
@@ -134,6 +136,85 @@ class Cleanup(unittest.TestCase):
             restore = remote.close()
             self.assertTrue(restore["pass"], restore)
             self.assertEqual(remote.process.returncode, 0)
+
+
+class HostViewer(unittest.TestCase):
+    """A host with no Korri: the calling user, a supplied sway, no Korri unit."""
+
+    def program(self, directory: Path) -> str:
+        path = directory / "peer"
+        path.write_text(f'#!/bin/sh\nexec {sys.executable} -B {TESTS / "host-peer.py"} "$@"\n')
+        path.chmod(0o755)
+        return str(path)
+
+    def test_fixture_runs_as_the_caller_and_pairs_by_pin(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            peer = self.program(Path(temporary))
+            session = viewer.Session(peer)
+            try:
+                facts = session.handle({"operation": "discover"})
+                self.assertIsNone(facts["compositor"])
+                self.assertIsNone(facts["plugin"])
+                prepared = session.handle(
+                    {
+                        "operation": "prepare",
+                        "fixture": True,
+                        "width": 640,
+                        "height": 480,
+                        "refresh_hz": 50.0,
+                        "certificate": None,
+                        "key": None,
+                        "server_certificate": "public",
+                    }
+                )
+                root, keys = Path(prepared["run_folder"]), Path(prepared["keydir"])
+                self.assertTrue((root / "rt" / viewer.DISPLAY).is_socket())
+                self.assertEqual(root.stat().st_uid, os.getuid())
+                self.assertEqual(list(keys.iterdir()), [])
+                command = [peer, "pair", "-keydir", str(keys), "-port", "1", "sender"]
+                self.assertEqual(
+                    session.handle({"operation": "pair", "command": command}), {"pin": "4321"}
+                )
+                (keys / "admitted").touch()
+                self.assertIn("Succesfully paired", session.handle({"operation": "paired"})["log"])
+                (keys / "admitted").unlink()
+                (keys / "refused").touch()
+                session.handle({"operation": "pair", "command": command})
+                with self.assertRaisesRegex(RuntimeError, "did not pair"):
+                    session.handle({"operation": "paired"})
+            finally:
+                restore = session.close()
+            self.assertTrue(restore["pass"], restore)
+            self.assertEqual(restore["pids_unchanged"], {})
+            self.assertFalse(root.exists())
+
+    def test_host_has_no_installed_viewer(self):
+        session = viewer.Session("/unused/sway")
+        with self.assertRaisesRegex(RuntimeError, "only the fixture"):
+            session.handle(
+                {"operation": "prepare", "fixture": False, "server_certificate": "public"}
+            )
+        self.assertTrue(session.close()["pass"])
+
+    def test_pairing_pin_is_read_from_moonlights_own_words(self):
+        self.assertEqual(
+            viewer.pairing_pin("Please enter the following PIN on the target PC: 0042\n"), "0042"
+        )
+        self.assertIsNone(viewer.pairing_pin("Failed to pair to server: 12345\n"))
+
+
+class LocalTarget(unittest.TestCase):
+    def test_local_names_this_host_and_other_values_stay_ssh_targets(self):
+        self.assertEqual(endpoint(LOCAL, ["UserKnownHostsFile=/x"]), (None, []))
+        target, options = endpoint("operator@device:2222", [])
+        self.assertEqual(target, "operator@device")
+        self.assertEqual(options[-2:], ["-p", "2222"])
+
+    def test_local_sender_needs_the_fixture(self):
+        args = parser().parse_args(["view", "--sender", LOCAL, "--viewer", LOCAL])
+        self.assertFalse(args.sender_fixture)
+        with self.assertRaisesRegex(Refusal, "--sender-fixture"):
+            view(args)
 
 
 if __name__ == "__main__":
