@@ -250,6 +250,42 @@ def survivors(root: Path) -> list[int]:
     return sorted(found)
 
 
+def describe(pid: int) -> dict | None:
+    """Whose a process is and which session it is in; None when it is gone."""
+    try:
+        fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+        command = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode(
+            errors="replace"
+        )
+        return {
+            "pid": pid,
+            "uid": os.stat(f"/proc/{pid}").st_uid,
+            # Field 6 of proc(5): the session ID.
+            "session": int(fields[3]),
+            "command": command.strip()[:200],
+        }
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def sort_matches(rows: list[dict], uid: int, sessions: set[int]) -> tuple[list[dict], list[dict]]:
+    """The processes that are the fixture's by proof, and all the others.
+
+    The agent starts each program of the fixture in a session of its own, so
+    whatever descends from one is in one of those sessions. A process is the
+    fixture's when the fixture's user owns it and it is in such a session.
+    Anything else that carries the run directory, such as an operator's shell
+    there, is not the agent's to kill.
+    """
+    ours = [row for row in rows if row["uid"] == uid and row["session"] in sessions]
+    return ours, [row for row in rows if row not in ours]
+
+
+def fails_restore(others: list[dict], uid: int) -> bool:
+    """A leftover of the fixture's user may be a fixture process that left its session."""
+    return any(row["uid"] == uid for row in others)
+
+
 class Session:
     def __init__(self) -> None:
         release = Path("/etc/os-release")
@@ -290,6 +326,8 @@ class Session:
         self.cursor: int | None = None
         self.processes: dict[str, subprocess.Popen] = {}
         self.logs: dict[str, TextIO] = {}
+        # The session IDs of every program that this agent started.
+        self.sessions: set[int] = set()
 
     def environment(self, **extra: str) -> dict[str, str]:
         assert self.root is not None
@@ -312,6 +350,9 @@ class Session:
         # After the change of user, which clears it.
         end_with_agent()
 
+    def user_id(self) -> int:
+        return self.identity["uid"] if self.identity else os.geteuid()
+
     def new_inputs(self) -> list[str]:
         """Input devices that appeared since the fixture started. None may be the fixture's."""
         return sorted(input_devices() - self.inputs)
@@ -330,7 +371,10 @@ class Session:
             stdout=log,
             stderr=subprocess.STDOUT,
             preexec_fn=self.restrict,
+            # Its own session: what descends from it is known by that at cleanup.
+            start_new_session=True,
         )
+        self.sessions.add(self.processes[name].pid)
         return self.processes[name]
 
     def stop(self, name: str) -> None:
@@ -720,14 +764,18 @@ class Session:
                 errors.append(f"{name}: {error}")
         root = self.root
         strays: list[int] = []
+        others: list[dict] = []
         remaining: list[int] = []
         size = 0
         if appeared:
             errors.append("new input devices: " + ", ".join(appeared))
         if root:
-            # Anything that still carries the run directory was started by this
-            # fixture. Nothing of it outlives the run.
-            strays = survivors(root)
+            # Nothing of the fixture outlives the run. The agent ends what it can
+            # prove its own and only lists any other process that carries the
+            # run directory.
+            found = [row for row in map(describe, survivors(root)) if row]
+            ours, others = sort_matches(found, self.user_id(), self.sessions)
+            strays = [row["pid"] for row in ours]
             for pid in strays:
                 try:
                     os.kill(pid, signal.SIGKILL)
@@ -740,13 +788,18 @@ class Session:
             except Exception as error:
                 errors.append("run folder cleanup: " + str(error))
             for _ in range(50):
-                remaining = survivors(root)
+                found = [row for row in map(describe, survivors(root)) if row]
+                ours, others = sort_matches(found, self.user_id(), self.sessions)
+                remaining = [row["pid"] for row in ours]
                 if not remaining:
                     break
                 time.sleep(0.1)
         self.root = None
         return {
-            "pass": not errors and not remaining and not (root and root.exists()),
+            "pass": not errors
+            and not remaining
+            and not fails_restore(others, self.user_id())
+            and not (root and root.exists()),
             # The fixture reads no product service, so it has none to compare.
             "pids_unchanged": {},
             "run_folder": str(root) if root else None,
@@ -754,6 +807,9 @@ class Session:
             "run_folder_removed": not (root and root.exists()),
             "stray_processes_killed": strays,
             "remaining_processes": [f"/proc/{pid}" for pid in remaining],
+            # Not the agent's by proof, so not killed: an operator's shell in the
+            # run directory, or a fixture process that left its session.
+            "other_processes": others,
             "new_input_devices": appeared,
             "errors": errors,
         }

@@ -6,6 +6,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -104,13 +105,25 @@ class Cleanup(unittest.TestCase):
         self.assertFalse(root.exists())
         self.assertIsNotNone(tracked.poll())
 
-    def test_close_finds_and_ends_a_process_that_the_session_did_not_track(self):
+    def test_close_ends_what_descends_from_the_fixture_and_nothing_else(self):
         root = Path(tempfile.mkdtemp(prefix="cadence-sender-test-"))
         session = self.session(root)
-        # One hides in another session with only its working directory there;
-        # the other carries the run directory only in its environment.
-        by_cwd = subprocess.Popen(["sleep", "60"], cwd=root, start_new_session=True)
-        by_environment = subprocess.Popen(
+        # A child of the fixture leaves a child of its own behind, in the
+        # fixture's session; the session's tracked process is only the parent.
+        session.spawn(
+            "compositor",
+            ["sh", "-c", "sleep 60 & echo $! > left-behind; exec sleep 61"],
+            session.environment(),
+        )
+        for _ in range(50):
+            if (root / "home" / "left-behind").exists() and (root / "home" / "left-behind").read_text().strip():
+                break
+            time.sleep(0.1)
+        left_behind = int((root / "home" / "left-behind").read_text())
+        # An operator's shell in the run directory, and a process that only
+        # carries the directory in its environment: the agent started neither.
+        operator = subprocess.Popen(["sleep", "60"], cwd=root, start_new_session=True)
+        other = subprocess.Popen(
             ["sleep", "60"],
             cwd="/",
             env={"HOME": str(root), "PATH": os.environ["PATH"]},
@@ -118,18 +131,38 @@ class Cleanup(unittest.TestCase):
         )
         try:
             restore = session.close()
+            self.assertEqual(restore["stray_processes_killed"], [left_behind])
+            self.assertFalse(Path(f"/proc/{left_behind}").exists())
+            # Listed and alive: the agent kills only what it can prove its own.
             self.assertEqual(
-                restore["stray_processes_killed"], sorted([by_cwd.pid, by_environment.pid])
+                sorted(row["pid"] for row in restore["other_processes"]),
+                sorted([operator.pid, other.pid]),
             )
-            self.assertEqual(restore["remaining_processes"], [])
-            self.assertTrue(restore["pass"], restore)
-            self.assertEqual(by_cwd.wait(timeout=5), -9)
-            self.assertEqual(by_environment.wait(timeout=5), -9)
+            self.assertIsNone(operator.poll())
+            self.assertIsNone(other.poll())
+            # They belong to the fixture's user, so the check cannot call the run clean.
+            self.assertFalse(restore["pass"])
+            self.assertTrue(restore["run_folder_removed"])
         finally:
-            for process in (by_cwd, by_environment):
+            for process in (operator, other):
                 if process.poll() is None:
                     process.kill()
                     process.wait()
+
+    def test_process_of_another_user_is_listed_and_does_not_fail_the_check(self):
+        mine = os.geteuid()
+        rows = [
+            {"pid": 11, "uid": mine, "session": 7},
+            {"pid": 12, "uid": mine, "session": 99},
+            {"pid": 13, "uid": mine + 1, "session": 7},
+            {"pid": 14, "uid": mine + 1, "session": 99},
+        ]
+        ours, others = sender.sort_matches(rows, mine, {7})
+        self.assertEqual([row["pid"] for row in ours], [11])
+        self.assertEqual([row["pid"] for row in others], [12, 13, 14])
+        # Only a leftover of the fixture's own user can be a fixture process.
+        self.assertTrue(sender.fails_restore(others[:1], mine))
+        self.assertFalse(sender.fails_restore(others[1:], mine))
 
     def test_agent_answers_the_device_protocol_and_restores_without_a_fixture(self):
         with tempfile.TemporaryDirectory() as temporary:
