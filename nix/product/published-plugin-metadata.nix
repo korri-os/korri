@@ -11,8 +11,12 @@
 let
   lib = pkgs.lib;
   published = import ./catalog-plugins.nix { inherit pkgs system; };
-  names = builtins.filter (name: lib.elem published.plugins.${name} pluginPackages) (
-    builtins.attrNames published.plugins
+  # Compare catalog path text, not `published.plugins`: forcing a plugin's
+  # store context requires its path to be valid on the build host, so a
+  # device image would need every catalog plugin, selected or not.
+  selectedPaths = map toString pluginPackages;
+  names = builtins.filter (name: lib.elem published.records.${name}.store_path selectedPaths) (
+    builtins.attrNames published.records
   );
   bindings = pkgs.writeText "korri-image-publishers.json" (builtins.toJSON publishers);
   closure = pkgs.closureInfo { rootPaths = pluginPackages; };
