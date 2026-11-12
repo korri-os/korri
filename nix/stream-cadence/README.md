@@ -387,6 +387,8 @@ no game live. The fixture's Sunshine encoded with `h264_vaapi` on
 | `startup_ms` | 845 to 1006 | 823 to 888 | 853 to 973 |
 
 `verdict` between the two base sets says `equal` for each measured number.
+A second queue set of five valid runs (delay p50 of a window 60.8 to
+65.3 ms, 265 to 289 dropped frames) also gives `equal` against the first.
 So the pair on ibuki is steady from run to run. It is less quiet than on
 aka in two ways, and a baseline on ibuki has them as its floor:
 
