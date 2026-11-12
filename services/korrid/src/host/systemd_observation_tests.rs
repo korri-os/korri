@@ -369,3 +369,107 @@ async fn losing_the_manager_drops_cached_facts_and_a_new_owner_resynchronizes() 
     drop(reader);
     replacement.close().await.unwrap();
 }
+
+#[derive(Debug, zbus::DBusError)]
+#[zbus(prefix = "org.freedesktop.systemd1")]
+enum UnavailableUnit {
+    NoSuchUnit(String),
+    AccessDenied(String),
+}
+
+struct MissingUnitManager(Arc<AtomicBool>);
+#[zbus::interface(name = "org.freedesktop.systemd1.Manager")]
+impl MissingUnitManager {
+    fn get_unit(&self, _name: &str) -> Result<OwnedObjectPath, UnavailableUnit> {
+        if self.0.load(Ordering::SeqCst) {
+            Err(UnavailableUnit::NoSuchUnit("unit was never loaded".into()))
+        } else {
+            Err(UnavailableUnit::AccessDenied("cannot verify unit".into()))
+        }
+    }
+    fn subscribe(&self) {}
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn never_loaded_unit_resolves_at_startup_and_through_local_or_exact_end() {
+    use crate::host::{
+        identity::{persist_active, read_active, ActiveSession},
+        input_seat::RecordingInputPool,
+        session_state::{HostSessionControl, HostSessionStatus, HostSessionStop},
+        LaunchUnitBackend, LaunchUnitState, SystemdLaunchUnitBackend,
+    };
+    use std::{fs, os::unix::fs::PermissionsExt};
+
+    let bus = PrivateBus::start();
+    let missing = Arc::new(AtomicBool::new(true));
+    let _server = zbus::connection::Builder::address(bus.address.as_str())
+        .unwrap()
+        .name("org.freedesktop.systemd1")
+        .unwrap()
+        .serve_at(
+            "/org/freedesktop/systemd1",
+            MissingUnitManager(missing.clone()),
+        )
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    let reader = Arc::new(NativeUnitReader::connect_to(Some(bus.address.clone())).unwrap());
+    let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    for action in ["startup", "local", "exact"] {
+        let root = tempfile::tempdir().unwrap();
+        let ctl = root.path().join("systemctl");
+        // Only enumeration uses the subprocess adapter. Exact-unit properties
+        // come from the real private bus, including systemd's NoSuchUnit error.
+        fs::write(
+            &ctl,
+            "#!/bin/sh\ncase \" $* \" in *' list-units '*) exit 0;; *) exit 1;; esac\n",
+        )
+        .unwrap();
+        fs::set_permissions(&ctl, fs::Permissions::from_mode(0o700)).unwrap();
+        let backend = Arc::new(
+            SystemdLaunchUnitBackend::new(ctl.clone(), ctl, 1000, 1000)
+                .unwrap()
+                .with_native_observation(reader.clone()),
+        );
+        assert!(backend.live_launch_ids().unwrap().is_empty());
+        missing.store(true, Ordering::SeqCst);
+        assert_eq!(backend.state(id).unwrap(), LaunchUnitState::Completed);
+        let journal = root.path().join("host-session");
+        persist_active(
+            &journal,
+            &ActiveSession::running(id.into(), "one".into(), None, 1),
+        )
+        .unwrap();
+        let seats = Arc::new(RecordingInputPool::default());
+        let control = HostSessionControl::with_input_seats(root.path(), backend, seats.clone());
+        if action != "startup" {
+            missing.store(false, Ordering::SeqCst);
+            assert_eq!(control.status(), HostSessionStatus::RecoveryBlocked);
+            assert!(read_active(&journal).unwrap().is_some());
+            assert_eq!(control.stop(id), HostSessionStop::RecoveryBlocked);
+            assert!(control.resolve_ended_session().is_err());
+            missing.store(true, Ordering::SeqCst);
+            // A stale caller must not complete a different journal identity.
+            assert!(matches!(
+                control.stop("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+                HostSessionStop::StaleIdentity { .. }
+            ));
+            let ended = if action == "local" {
+                control.resolve_ended_session().unwrap()
+            } else {
+                control.stop(id)
+            };
+            assert_eq!(
+                ended,
+                HostSessionStop::Completed {
+                    launch_id: id.into()
+                }
+            );
+        }
+        assert_eq!(control.status(), HostSessionStatus::NoActive);
+        assert!(read_active(&journal).unwrap().is_none());
+        assert!(seats.calls.lock().unwrap().contains(&format!("end:{id}")));
+        control.initialize_input(4).unwrap();
+    }
+}
