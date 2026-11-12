@@ -253,7 +253,7 @@ short run (10 scored seconds, 640x480) on each handheld:
 
 | | RG353M (RK3566) | RG35XX Pro (H700) |
 | --- | --- | --- |
-| Result | invalid: 2 capture gaps | valid |
+| Result | invalid: gaps that lose an ID | valid |
 | Output-frame records | 1932 in 32.5 s, 59.47 each second | 1955 in 32.6 s, 60.00 each second |
 | Refreshes with no record | about 15 | 0 |
 | IDs lost at a gap in the record | 11 | 0 |
@@ -270,7 +270,8 @@ reads 69 to 74 °C, and its first passive trip point is 70 °C: its korrid
 uses one whole CPU. No handheld baseline exists, and device runs stopped
 there.
 
-The gap rule below does not hold on these panels; read "Capture gaps".
+By the gap rule of "Capture gaps", 3 of the RG353M run's 4 scored gaps lose
+an ID, so that run stays invalid. The RG35XX Pro run has no gap.
 
 ### The heat guard
 
@@ -426,7 +427,7 @@ display. A long tail in the first is the sender's own.
 | Number | Fields | Method |
 | --- | --- | --- |
 | 1 Packet arrival to display | `viewer.packet_to_display_ms` | Not measured: today's viewer reports no arrival time. The gate is `latency_ms`, sender presentation to viewer display, on the same sender and link. |
-| 2 Late, repeated, dropped | `capture_misses`, `repeated_frames`, `late_frames`, `torn_frames`, `undecodable_frames` in each window; `viewer.output_repeats` | A dropped ID was presented and never displayed. A repeated frame shows no new ID. A late frame is a new ID more than 1.5 refresh periods after the previous new ID. An output repeat is a refresh for which the compositor committed no frame. |
+| 2 Late, repeated, dropped | `capture_misses`, `repeated_frames`, `late_frames`, `torn_frames`, `undecodable_frames` in each window; `viewer.output_repeats` | A dropped ID was presented and never displayed. A repeated frame shows no new ID. A late frame is a new ID more than 1.5 refresh periods after the previous new ID. An output repeat is a gap in the display record that loses no ID: the panel showed one picture across it. |
 | 3 CPU and battery | `viewer.cpu_seconds_per_second`, `viewer.battery_mw` | Viewer process CPU time from procfs over the scored time. Battery power only while a battery discharges in every sample; else not measured. |
 | 4 Startup | `viewer.startup_ms` | Viewer process start to the first displayed frame of that start: the first ID that the sender presented at or after it. korrid's launch path is not included. On a handheld the time contains the agent's fullscreen and focus step. |
 | 5 Input | `viewer.input_ms` | Not measured: the press-to-packet measure is not built. |
@@ -437,26 +438,47 @@ number is estimated. An unreadable output frame is a count, not an invalid
 recording: a viewer can show a frame without a whole bar.
 
 **Capture gaps.** A gap is an interval above 1.5 refresh periods between two
-records in the scored time. `score.py:capture_gaps` splits the gaps by
-`copy_ns`:
+records in the scored time. `score.py:capture_gaps` judges each gap by the
+display times and the IDs of the record, and by nothing else:
 
-- The capture asked more than 0.75 period after the previous frame. The
-  request can arrive after the next commit, so the gap counts as a missed
-  frame in `viewer.capture_gaps`. The default limit is zero, and a run above
-  `--max-capture-gaps` is invalid.
-- The capture asked in time. The compositor committed no frame, so the gap
-  counts in `viewer.output_repeats`, which `verdict` judges.
+- **A gap that loses an ID** counts in `viewer.capture_gaps`. The sender
+  presented an ID that appears nowhere in the record, and that ID was due
+  inside the gap: the records up to the gap show only older IDs, and the
+  records after it show only newer ones. The display record is then
+  incomplete, because nothing can tell a frame that the capture missed from
+  a frame that the viewer dropped. The default limit is zero, and a run
+  above `--max-capture-gaps` is invalid.
+- **A gap that loses no ID** counts in `viewer.output_repeats`, which
+  `verdict` judges, and the run stays valid. The panel showed one picture
+  across the gap. At worst the record lacks one output frame that repeated
+  that picture.
 
-The split assumes that two commits are at least one period apart. That holds
-on the headless fixture. **It does not hold on a real panel.** After an idle
+A lost ID with no gap beside it is a dropped frame (`capture_misses`) and
+no gap.
+
+`copy_ns` stays in the record as evidence. No rule and no verdict metric
+reads it. An earlier rule used it and assumed that two compositor commits are
+at least one period apart. On a real panel they are not: after an idle
 output, sway commits at once, and its next commit can follow at the next
-vblank. Both bench handhelds show intervals down to 0.61 period. A frame that
-the capture missed can then count as an output repeat, or leave no gap at
-all, and its ID becomes a dropped frame of the viewer. On the RG353M, 11 of
-15 gaps lost an ID, and 4 of those 11 count as output repeats. Until a rule
-holds there, `capture_gaps`, `output_repeats` and `capture_misses` of a
-handheld run are not proven, and a valid handheld run does not prove a
-complete display record.
+vblank. The commit times of both bench handhelds scatter between about 0.6
+and 1.25 periods (one short run each on 2026-11-11, `tests/intervals.py`):
+
+| Interval between two records, in periods | RG353M, of 1931 | RG35XX Pro, of 1954 |
+| --- | --- | --- |
+| 0.50 to 0.75 (shortest: 0.61 and 0.62) | 16 | 5 |
+| 0.75 to 1.00 | 923 | 978 |
+| 1.00 to 1.25 | 951 | 970 |
+| 1.25 to 1.50 | 23 | 1 |
+| above 1.50: a gap | 18 | 0 |
+
+In that RG353M run the earlier rule called one gap an output repeat although
+an ID was lost in it. From the first readable frame on, 11 of 15 gaps lose
+an ID; 3 more gaps lie before that frame.
+
+What the rule cannot see: when the capture misses a frame between two
+commits that are less than 1.5 periods apart in sum, no gap exists, and the
+missed ID counts as a dropped frame of the viewer. With intervals down to
+0.61 period that can happen, and the record cannot show it.
 
 ### Verdict
 

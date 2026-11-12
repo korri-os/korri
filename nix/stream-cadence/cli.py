@@ -1019,17 +1019,15 @@ def view_case(
             to_sender, sender_error = bridge(before, after)
             to_seat, seat_error = bridge(seat_before, seat_after)
             facts["bridge_uncertainty_ms"] = sender_error + seat_error
-        first = first_measured_frame(
-            frames, feedback(motion_log)[0], to_seat(started["start_ns"]), to_sender
-        )
+        presented = feedback(motion_log)[0]
+        first = first_measured_frame(frames, presented, to_seat(started["start_ns"]), to_sender)
         if first is None:
             raise Refusal("The measured viewer start showed no readable ID; read viewer.log")
         origin = times[first]["display_ns"]
         scored = (origin + args.warmup * 1e9, origin + (args.warmup + duration) * 1e9)
         period = 1e9 / viewer_refresh
-        gaps, repeats = capture_gaps(
-            [row for row in times if scored[0] <= row["display_ns"] <= scored[1]], period
-        )
+        # Display times and IDs decide a gap; the capture's request time does not.
+        gaps, repeats = capture_gaps(times, frames, presented, period, scored[0], scored[1])
         record["viewer"] = {
             "startup_ms": (origin - started["start_ns"]) / 1e6,
             "cpu_seconds_per_second": cpu_rate(
@@ -1077,7 +1075,7 @@ def view_case(
         record["viewer"]["stream_stalls"] = source["stream_stalls"]
         if gaps > args.max_capture_gaps:
             raise Refusal(
-                f"The capture missed {gaps} output frames in the scored time; limit {args.max_capture_gaps}. The display record is incomplete."
+                f"{gaps} gaps of the display record lose an ID in the scored time; limit {args.max_capture_gaps}. The record is incomplete: nothing tells a frame that the capture missed from a frame that the viewer dropped."
             )
         facts["valid"] = True
     except (KeyboardInterrupt, SystemExit):

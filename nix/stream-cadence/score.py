@@ -4,6 +4,8 @@ Field names come from content-memory-phase-accept-usb1[-source]-result.json.
 A discarded submission is not a presentation and can never be a capture miss.
 """
 
+import bisect
+from collections.abc import Collection
 import csv
 import math
 import re
@@ -95,24 +97,61 @@ def display_records(text: str) -> list[dict[str, int]]:
     return rows
 
 
-def capture_gaps(rows: list[dict[str, int]], period_ns: float) -> tuple[int, int]:
-    """Gaps in the display record: frames the capture missed, and output repeats.
+def capture_gaps(
+    rows: list[dict[str, int]],
+    frames: list[Frame],
+    presented: Collection[int],
+    period_ns: float,
+    start_ns: float,
+    end_ns: float,
+) -> tuple[int, int]:
+    """Gaps in the display record of the scored time: those that lose an ID, and the rest.
 
-    A gap is an interval above 1.5 refresh periods between two records. The
-    compositor copies a frame at its first commit after the capture's request.
-    A request sent more than 0.75 period after the previous frame can arrive
-    after the next commit, so that gap is a missed frame and the proof needs
-    zero of them. After a timely request, a gap means that the compositor
-    committed no frame: the display repeated its picture.
+    A gap is an interval above 1.5 refresh periods between two records that
+    both lie in the scored time. `rows` and `frames` are the whole record.
+
+    A gap loses an ID when the sender presented an ID that appears nowhere in
+    the record, and that ID was due inside the gap: the records up to the gap
+    show only older IDs, and the records after it show only newer ones. Such a
+    gap makes the record incomplete. Nothing in the record can tell a frame
+    that the capture missed from a frame that the viewer dropped.
+
+    A gap that loses no ID is whole as far as IDs go. At worst the record
+    lacks one output frame that repeated a picture.
+
+    Only display times and IDs decide. The capture's request time (`copy_ns`)
+    stays in the record as evidence and is not read here: on a real panel two
+    commits can be less than one period apart, so a request time proves nothing.
     """
-    missed = repeats = 0
-    for a, b in zip(rows, rows[1:]):
-        if b["display_ns"] - a["display_ns"] > 1.5 * period_ns:
-            if b["copy_ns"] - a["display_ns"] > 0.75 * period_ns:
-                missed += 1
-            else:
-                repeats += 1
-    return missed, repeats
+    if len(rows) != len(frames):
+        raise ValueError("the display record and its decoded frames differ in length")
+    seen = {ident for frame in frames for ident in frame_ids(frame)}
+    lost = sorted(ident for ident in presented if ident not in seen)
+    # For each record: the newest ID shown up to it, and the oldest ID shown from it on.
+    newest: list[int | None] = []
+    latest: int | None = None
+    for frame in frames:
+        for ident in frame_ids(frame):
+            latest = ident if latest is None else max(latest, ident)
+        newest.append(latest)
+    oldest: list[int | None] = [None] * len(frames)
+    earliest: int | None = None
+    for index in range(len(frames) - 1, -1, -1):
+        for ident in frame_ids(frames[index]):
+            earliest = ident if earliest is None else min(earliest, ident)
+        oldest[index] = earliest
+    incomplete = whole = 0
+    for index in range(1, len(rows)):
+        before, after = rows[index - 1]["display_ns"], rows[index]["display_ns"]
+        if before < start_ns or after > end_ns or after - before <= 1.5 * period_ns:
+            continue
+        older, newer = newest[index - 1], oldest[index]
+        due = bisect.bisect_right(lost, older) if older is not None else len(lost)
+        if newer is not None and due < len(lost) and lost[due] < newer:
+            incomplete += 1
+        else:
+            whole += 1
+    return incomplete, whole
 
 
 def first_measured_frame(

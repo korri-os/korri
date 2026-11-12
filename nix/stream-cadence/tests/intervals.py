@@ -11,9 +11,10 @@ distribution is the sender's own. A long tail only in the second belongs to
 the stream or to the viewer.
 
 It also prints every interval between two output-frame records as a histogram
-in quarters of the viewer's refresh period, for valid and invalid runs. The
-gap attribution of score.py:capture_gaps holds only when no interval is
-clearly below one period.
+in quarters of the viewer's refresh period, for valid and invalid runs. On a
+real panel the commit times scatter below and above one period; that is why
+score.py:capture_gaps judges a gap by IDs and not by the capture's request
+time. The count of late requests is printed as evidence only.
 """
 
 import argparse

@@ -74,28 +74,63 @@ class DisplayRecord(unittest.TestCase):
         with self.assertRaises(ValueError):
             display_records("index,display_ns\n0,10\n1,10\n")
 
-    def test_gap_after_a_late_request_is_a_missed_frame(self):
-        # Each request follows the previous frame by a tenth of a period,
-        # except the request for output frame 4, which is a whole period late.
+    def gaps(self, shown, presented=range(1, 20), scored=(0, 100), requests=None) -> tuple:
+        """Records as (time in refresh periods, ID or None); returns (lose an ID, whole)."""
         rows = [
-            {
-                "index": n,
-                "display_ns": int(n * PERIOD),
-                "copy_ns": int((n - (0.0 if n == 4 else 0.9)) * PERIOD),
-            }
-            for n in (0, 1, 2, 4, 5)
+            {"index": n, "display_ns": int(at * PERIOD)} for n, (at, _) in enumerate(shown)
         ]
-        self.assertEqual(capture_gaps(rows, PERIOD), (1, 0))
-        self.assertEqual(capture_gaps(rows[:3], PERIOD), (0, 0))
+        if requests:
+            for row, late in zip(rows[1:], requests):
+                row["copy_ns"] = row["display_ns"] - int(PERIOD) + int(late * PERIOD)
+        frames = [Unreadable("blank") if ident is None else Clean(ident) for _, ident in shown]
+        return capture_gaps(
+            rows, frames, presented, PERIOD, scored[0] * PERIOD, scored[1] * PERIOD
+        )
 
-    def test_gap_after_a_timely_request_is_an_output_repeat(self):
-        rows = [
-            {"index": n, "display_ns": int(n * PERIOD), "copy_ns": int((n - 0.9) * PERIOD)}
-            for n in (0, 1, 2, 4, 5)
-        ]
-        # The request for frame 4 went out a tenth of a period after frame 2.
-        rows[3]["copy_ns"] = int(2.1 * PERIOD)
-        self.assertEqual(capture_gaps(rows, PERIOD), (0, 1))
+    def test_gap_that_loses_an_id_makes_the_record_incomplete(self):
+        # Two periods pass between ID 3 and ID 5, and ID 4 is nowhere.
+        self.assertEqual(self.gaps([(0, 1), (1, 2), (2, 3), (4, 5), (5, 6)]), (1, 0))
+
+    def test_gap_that_loses_no_id_is_counted_and_whole(self):
+        # The panel showed ID 3 for two periods; at worst one repeat is not in the record.
+        self.assertEqual(self.gaps([(0, 1), (1, 2), (2, 3), (4, 4), (5, 5)]), (0, 1))
+        # An ID that the sender never presented is not lost.
+        self.assertEqual(
+            self.gaps([(0, 1), (1, 2), (2, 3), (4, 5), (5, 6)], presented=[1, 2, 3, 5, 6]),
+            (0, 1),
+        )
+
+    def test_lost_id_without_a_gap_is_a_dropped_frame_and_no_gap(self):
+        self.assertEqual(self.gaps([(0, 1), (1, 2), (2, 4), (3, 5)]), (0, 0))
+
+    def test_request_time_decides_nothing(self):
+        shown = [(0, 1), (1, 2), (2, 3), (4, 4), (5, 5)]
+        lost = [(0, 1), (1, 2), (2, 3), (4, 5), (5, 6)]
+        for requests in ([0.1, 0.1, 0.1, 0.1], [0.1, 0.1, 1.9, 0.1], [0.9, 0.9, 0.9, 0.9]):
+            with self.subTest(requests=requests):
+                self.assertEqual(self.gaps(shown, requests=requests), (0, 1))
+                self.assertEqual(self.gaps(lost, requests=requests), (1, 0))
+
+    def test_commit_times_of_a_real_panel_make_no_gap_by_themselves(self):
+        # The RG353M's record: intervals from 0.61 to 1.25 periods, one ID each.
+        at, shown = 0.0, []
+        for n, step in enumerate([0.61, 1.25, 0.8, 1.2, 0.75, 1.24, 0.62, 1.1] * 4):
+            at += step
+            shown.append((at, n + 1))
+        self.assertEqual(self.gaps(shown, presented=range(1, 40)), (0, 0))
+
+    def test_gap_beside_an_unreadable_frame_is_judged_by_the_ids_around_it(self):
+        # IDs 3 and 4 are nowhere; the blank frame cannot have shown them for certain.
+        self.assertEqual(self.gaps([(0, 1), (1, 2), (2, None), (4, 5), (5, 6)]), (1, 0))
+        self.assertEqual(self.gaps([(0, 1), (1, 2), (2, None), (4, 3), (5, 4)]), (0, 1))
+
+    def test_only_gaps_inside_the_scored_time_count(self):
+        shown = [(0, 1), (2, 3), (3, 4), (4, 5), (6, 7), (7, 8)]
+        self.assertEqual(self.gaps(shown), (2, 0))
+        self.assertEqual(self.gaps(shown, scored=(2, 5)), (0, 0))
+        self.assertEqual(self.gaps(shown, scored=(2, 7)), (1, 0))
+        with self.assertRaises(ValueError):
+            capture_gaps([{"index": 0, "display_ns": 0}], [], [1], PERIOD, 0, 1)
 
 
 class DisplayScore(unittest.TestCase):
