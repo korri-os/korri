@@ -347,9 +347,15 @@ export function setGame(set: SetState, catalog: SurfaceCatalog, at: number): Gam
   return window?.window[at - window.firstIndex]
 }
 
-/** The first question for a set: its start, or the end of the recent order for Not started. */
+/**
+ * The first question for a set: its start. Not started asks for the window
+ * around its first game when the lists know it (that window shows the last
+ * played game before it, so where the set begins), else for the end of the
+ * recent order.
+ */
 export function openSet(set: SetState): Request {
-  return { _tag: "MoveCatalog", query: setQuery(set), from: set.fromEnd ? { _tag: "End" } : { _tag: "Start" }, count: SET_WINDOW }
+  const from = !set.fromEnd ? { _tag: "Start" as const } : set.gameId !== undefined ? { _tag: "Around" as const, gameId: set.gameId } : { _tag: "End" as const }
+  return { _tag: "MoveCatalog", query: setQuery(set), from, count: SET_WINDOW }
 }
 
 /**
@@ -363,15 +369,24 @@ export function settleSet(set: SetState, catalog: SurfaceCatalog, plan: Plan): {
   if (window === undefined) return { set }
   let next: SetState = set.moving ? { ...set, moving: false } : set
   let low = 0
+  let lowKnown = true
   if (set.fromEnd) {
-    let played = -1
+    // Not started is the end of the recent order, from the first game with no session.
+    let played: number | undefined
     for (let i = window.window.length - 1; i >= 0; i--) {
       if (window.window[i]!.lastPlayedAt !== undefined) {
         played = i
         break
       }
     }
-    low = played >= 0 ? window.firstIndex + played + 1 : window.before === undefined ? window.firstIndex : 0
+    if (played !== undefined) low = window.firstIndex + played + 1
+    else if (window.firstIndex === 0) low = 0
+    else if (set.lowKnown === true) low = set.low
+    else {
+      // Only unplayed games, and more before them: the set begins no later than this window does.
+      low = set.lowKnown === false ? Math.min(set.low, window.firstIndex) : window.firstIndex
+      lowKnown = false
+    }
   }
   const last = Math.max(low, window.total - 1)
   let at = next.at
@@ -384,16 +399,20 @@ export function settleSet(set: SetState, catalog: SurfaceCatalog, plan: Plan): {
   at = Math.max(low, Math.min(at, last))
   const gameId = window.window[at - window.firstIndex]?.id
   const row = Math.floor((at - low) / plan.columns)
-  let first = next.first
+  // The set grew at its start (an earlier window showed more unplayed games): the rows shown stay the same games.
+  let first = set.fromEnd && set.lowKnown === false && low < set.low ? next.first + Math.round((set.low - low) / plan.columns) : next.first
   if (row < first) first = row
   if (row >= first + plan.gridRows) first = row - plan.gridRows + 1
   first = Math.max(0, first)
-  if (at !== next.at || low !== next.low || first !== next.first || gameId !== next.gameId) next = { ...next, at, low, first, ...(gameId === undefined ? {} : { gameId }) }
+  if (at !== next.at || low !== next.low || first !== next.first || gameId !== next.gameId || (set.fromEnd && next.lowKnown !== lowKnown)) {
+    next = { ...next, at, low, first, ...(gameId === undefined ? {} : { gameId }), ...(set.fromEnd ? { lowKnown } : {}) }
+  }
   // Near an edge that has more beyond it: a window around the focused game.
   const edge = SET_EDGE_ROWS * plan.columns
   const start = window.firstIndex
   const end = window.firstIndex + window.window.length
-  const nearStart = window.before !== undefined && at - start < edge && start > low
+  // (Where Not started begins is not known yet, its first window's start is an edge with more beyond it.)
+  const nearStart = window.before !== undefined && at - start < edge && (start > low || !lowKnown)
   const nearEnd = window.after !== undefined && end - 1 - at < edge
   if (!next.moving && gameId !== undefined && (nearStart || nearEnd)) {
     return { set: { ...next, moving: true }, request: { _tag: "MoveCatalog", query: setQuery(next), from: { _tag: "Around", gameId }, count: SET_WINDOW } }

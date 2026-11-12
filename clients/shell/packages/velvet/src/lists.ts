@@ -14,7 +14,13 @@
  *              started
  *     tail     order `recent`, from the end: a game never played sorts last,
  *              so this is "Not started" when the start of Korri's order
- *              holds none
+ *              holds none; read further back (`tail:1`...) while a window
+ *              holds only unplayed games, to find where they begin
+ *
+ * "Not started" is in Korri's order: Korri sorts `recent` stably, so the
+ * games with no session keep Korri's order among themselves, after every
+ * played game. The first of them is the first game not yet started in
+ * Korri's order (`freshGames`).
  *     ends     Korri's own order, from the end: a section's games arrive
  *              together and other devices' sections come last, so this
  *              names them
@@ -66,6 +72,9 @@ export const PICK_DAYS = 7
 const ASK_AGAIN_AFTER = 4
 /** How often the end of Korri's order is paged back to find more devices. */
 const PAGES_BACK = 3
+/** How often the end of the recent order is paged back to find the first unplayed game, and how many games a page. */
+const FRESH_PAGES = 5
+const FRESH_COUNT = 200
 const MOST_PEERS = 6
 
 const query = (order: CatalogQuery["order"], extra: Partial<CatalogQuery> = {}): CatalogQuery => ({ text: "", order, ...extra })
@@ -84,12 +93,13 @@ const BASE: readonly Want[] = [
   { key: "ends", query: query("korri"), from: "end", count: 200 },
 ]
 
-export const LISTS_START: Lists = { kept: {}, total: 0, peers: [], peerTotals: {}, waited: 0, done: 0, stamp: "", backs: [] }
+export const LISTS_START: Lists = { kept: {}, total: 0, peers: [], peerTotals: {}, waited: 0, done: 0, stamp: "", backs: [], tails: [] }
 
 /** Every list wanted, in the order it is asked for. */
 export function wants(lists: Lists): readonly Want[] {
   const backs = lists.backs.map((before, i): Want => ({ key: `ends:${i + 1}`, query: query("korri"), from: { before }, count: 200 }))
-  return [...BASE, ...backs, ...lists.peers.map((section): Want => ({ key: `peer:${section}`, query: query("recent", { section }), from: "start", count: SHELF_SLOTS + 1 })), REST]
+  const tails = lists.tails.map((before, i): Want => ({ key: `tail:${i + 1}`, query: query("recent"), from: { before }, count: FRESH_COUNT }))
+  return [...BASE, ...backs, ...tails, ...lists.peers.map((section): Want => ({ key: `peer:${section}`, query: query("recent", { section }), from: "start", count: SHELF_SLOTS + 1 })), REST]
 }
 
 /**
@@ -202,7 +212,7 @@ export function settleLists(lists: Lists, model: Model, free: boolean): { readon
   let next = lists
   // The library changed under the lists: ask again from the first.
   const stamp = stampOf(model)
-  if (next.stamp !== stamp) next = { ...next, stamp, done: 0, backs: [], ...(next.asked === undefined ? {} : { asked: undefined }) }
+  if (next.stamp !== stamp) next = { ...next, stamp, done: 0, backs: [], tails: [], ...(next.asked === undefined ? {} : { asked: undefined }) }
   // Settled, and Korri published on its own. What the window says now decides.
   if (next.asked === undefined && next.done > 0 && next.done >= wants(next).length) {
     if (!answers(catalog, REST)) {
@@ -238,6 +248,12 @@ function keep(lists: Lists, want: Want, catalog: Ready): Lists {
     const first = catalog.window[0]
     if (first !== undefined && isPeer(first) && catalog.before !== undefined && lists.backs.length < PAGES_BACK) next = { ...next, backs: [...lists.backs, catalog.before] }
   }
+  if (want.key === "tail" || want.key.startsWith("tail:")) {
+    // Only unplayed games here, more before them, and no list that shows the first one: read further back.
+    const known = freshOf(kept.recent).length > 0 || freshOf(kept.korri).length > 0
+    const onlyFresh = catalog.window.length > 0 && catalog.window.every(game => game.lastPlayedAt === undefined)
+    if (!known && onlyFresh && catalog.before !== undefined && lists.tails.length < FRESH_PAGES) next = { ...next, tails: [...lists.tails, catalog.before] }
+  }
   if (want.key.startsWith("peer:")) next = { ...next, peerTotals: { ...next.peerTotals, [want.key.slice(5)]: catalog.total } }
   return next
 }
@@ -250,10 +266,28 @@ export function tickLists(lists: Lists): { readonly lists: Lists; readonly reque
 }
 
 /** The lists are to be read again (a game was just played). The kept ones show meanwhile. */
-export const staleLists = (lists: Lists): Lists => (lists.done === 0 && lists.asked === undefined ? lists : { ...lists, done: 0, backs: [], asked: undefined, waited: 0 })
+export const staleLists = (lists: Lists): Lists => (lists.done === 0 && lists.asked === undefined ? lists : { ...lists, done: 0, backs: [], tails: [], asked: undefined, waited: 0 })
 
 const playedOf = (games: readonly Game[] | undefined): Game[] => (games ?? []).filter(game => game.lastPlayedAt !== undefined)
 const freshOf = (games: readonly Game[] | undefined): Game[] => (games ?? []).filter(game => game.lastPlayedAt === undefined)
+
+/**
+ * The games not yet started, the first in Korri's order first, as far as
+ * the lists show them. The start of the recent order shows the first ones
+ * when fewer games were played than it holds; else the start of Korri's
+ * order does, when one of its games is unplayed; else the end of the recent
+ * order, read back to the last played game (up to FRESH_PAGES pages: past
+ * that the first of these is the earliest unplayed game seen, and the set
+ * reads on from there).
+ */
+export function freshGames(lists: Lists): Game[] {
+  const kept = lists.kept
+  const head = [...freshOf(kept.recent), ...freshOf(kept.korri)]
+  const back: Game[] = []
+  if (head.length === 0) for (let i = lists.tails.length; i >= 1; i--) back.push(...freshOf(kept[`tail:${i}`]))
+  const seen = new Set<string>()
+  return [...head, ...back, ...freshOf(kept.tail)].filter(game => !seen.has(game.id) && seen.add(game.id) !== undefined)
+}
 
 export interface HomeLists {
   /** The game that fills the stage. Undefined: no game is known yet. */
@@ -280,7 +314,8 @@ export function homeOf(lists: Lists, publishedAt: number | undefined): HomeLists
   else if (most[0] !== undefined) [pick, why] = [most[0], "most"]
   else if (newest !== undefined) [pick, why] = [newest, "recent"]
   else [pick, why] = [lists.kept.korri?.[0] ?? lists.kept.recent?.[0], "first"]
-  const fresh = [...freshOf(lists.kept.korri), ...freshOf(lists.kept.tail)].find(game => game.id !== pick?.id)
+  // The row's last place: the first game not yet started, in Korri's order.
+  const fresh = freshGames(lists).find(game => game.id !== pick?.id)
   const row: Game[] = []
   const room = ROW_SLOTS - (fresh === undefined ? 0 : 1)
   const thisWeekGames = publishedAt === undefined ? recent : recent.filter(game => within(game.lastPlayedAt, publishedAt, PICK_DAYS))
@@ -309,7 +344,8 @@ export interface ShelfSpec {
 const SET_START = { at: 0, first: 0, pill: false, moving: true, low: 0, fromEnd: false } as const
 
 export const everySet = (order: SetState["order"]): SetState => ({ ...SET_START, key: "every", title: "Every game", order })
-export const freshSet = (): SetState => ({ ...SET_START, key: "fresh", title: "Not started", order: "recent", fromEnd: true })
+/** Not started. It opens around `first`, the first unplayed game the lists know, so the window shows where they begin. */
+export const freshSet = (first?: string): SetState => ({ ...SET_START, key: "fresh", title: "Not started", order: "recent", fromEnd: true, ...(first === undefined ? {} : { gameId: first }) })
 export const peerSet = (section: string): SetState => ({ ...SET_START, key: `peer:${section}`, title: `Plays on ${section}`, order: "recent", section })
 export const systemSet = (systemId: string, system: string): SetState => ({ ...SET_START, key: `system:${systemId}`, title: system, order: "title", systemId })
 
@@ -322,9 +358,8 @@ export function shelvesOf(lists: Lists, model: Model): readonly ShelfSpec[] {
   const games = (list: readonly Game[]): ShelfItem[] => list.slice(0, SHELF_SLOTS).map(game => ({ kind: "game", game }))
   const lately = playedOf(lists.kept.recent)
   if (lately.length > 0) shelves.push({ key: "lately", label: "Lately", items: [...games(lately), { kind: "more", label: "See all", set: everySet("recent") }] })
-  const seen = new Set<string>()
-  const fresh = [...freshOf(lists.kept.korri), ...freshOf(lists.kept.tail)].filter(game => !seen.has(game.id) && seen.add(game.id) !== undefined)
-  if (fresh.length > 0) shelves.push({ key: "fresh", label: "Not started", items: [...games(fresh), ...(fresh.length > SHELF_SLOTS ? [{ kind: "more", label: "See all", set: freshSet() } as const] : [])] })
+  const fresh = freshGames(lists)
+  if (fresh.length > 0) shelves.push({ key: "fresh", label: "Not started", items: [...games(fresh), ...(fresh.length > SHELF_SLOTS ? [{ kind: "more", label: "See all", set: freshSet(fresh[0]!.id) } as const] : [])] })
   for (const section of lists.peers) {
     const list = lists.kept[`peer:${section}`] ?? []
     if (list.length === 0) continue

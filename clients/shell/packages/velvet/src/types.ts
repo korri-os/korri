@@ -53,6 +53,8 @@ export interface Lists {
   readonly stamp: string
   /** Cursors further back from the end of Korri's order, read to find more devices. */
   readonly backs: readonly string[]
+  /** Cursors further back from the end of the recent order, read to find where the unplayed games begin. */
+  readonly tails: readonly string[]
 }
 
 // ---- A set (the grid) ----
@@ -77,6 +79,12 @@ export interface SetState {
   readonly moving: boolean
   /** The first place of the set that is a game of it (Not started: the first unplayed). */
   readonly low: number
+  /**
+   * Not started only. True: `low` is where the unplayed games begin (a window showed the
+   * last played game before it, or the start of the order). Else `low` is the lowest
+   * unplayed place seen so far, and more may stand before it.
+   */
+  readonly lowKnown?: boolean
   /** A finger scrolled the rows (ADR 0055): the first row shown, apart from focus. */
   readonly scrolled?: number
 }
