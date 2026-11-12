@@ -88,9 +88,11 @@ pkgs.runCommand "inputplumber-korri-package-check"
     test "$(xmllint --xpath "count($action)" "$policy")" = 1
     test "$(xmllint --xpath "count($action/defaults/*[text()='no'])" "$policy")" = 3
 
-    # Regression for #437: both the Sunshine Xbox One and wired Xbox 360
-    # profiles must adopt their physical controllers without ManageAllDevices.
-    for selected in 60-xbox_one_gamepad.yaml 60-xbox_360_gamepad.yaml; do
+    # Regression for #437: every external profile must adopt its controllers
+    # without ManageAllDevices, including the unknown-joystick catch-all.
+    for selected in ${
+      pkgs.lib.escapeShellArgs (map (profile: profile.file) data.selectedDeviceProfiles)
+    }; do
       selected_device="$inputplumber_root/devices/$selected"
       test -f "$selected_device"
       test "$(yq eval '.version' "$selected_device")" = 1 \
@@ -121,13 +123,36 @@ pkgs.runCommand "inputplumber-korri-package-check"
     }
     for device in "$inputplumber_root"/devices/*.yaml; do
       case "$(basename "$device")" in
-        60-xbox_one_gamepad.yaml|60-xbox_360_gamepad.yaml) continue ;;
+        ${
+          pkgs.lib.concatMapStringsSep "|" (profile: profile.file) data.selectedDeviceProfiles
+        }|00-korri-ignore-virtual.yaml|59-korri-deferred-gamepads.yaml) continue ;;
       esac
       cmp "${inputplumberRuntime}/share/inputplumber/devices/$(basename "$device")" "$device" || {
         echo "unselected device profile $device must remain unchanged" >&2
         exit 1
       }
     done
+
+    cmp ${./inputplumber-ignore-virtual.yaml} "$inputplumber_root/devices/00-korri-ignore-virtual.yaml"
+    deferred="$inputplumber_root/devices/59-korri-deferred-gamepads.yaml"
+    test "$(yq eval '.options.auto_manage' "$deferred")" = true
+    test "$(yq eval '[.source_devices[] | select(.ignore != true)] | length' "$deferred")" = 0
+    : > expected-deferred
+    ${pkgs.lib.concatMapStringsSep "\n" (profile: ''
+      yq eval -o=json -I=0 '.source_devices[] | del(.ignore)' \
+        "${inputplumberRuntime}/share/inputplumber/devices/${profile.file}" >> expected-deferred
+    '') data.deferredDeviceProfiles}
+    yq eval -o=json -I=0 '.source_devices[] | del(.ignore)' "$deferred" > actual-deferred
+    cmp expected-deferred actual-deferred
+    # The upstream unsupported rule excludes js/mouse handlers, not event
+    # joysticks. The broad event ignore is later than our generic catch-all.
+    test "$(yq eval '[.source_devices[].evdev.handler | select(. == "event*")] | length' "$inputplumber_root/devices/10-ignore_unsupported.yaml")" = 0
+    test "$(yq eval '[.source_devices[].evdev.handler | select(. == "event*")] | length' "$inputplumber_root/devices/69-ignore_generic.yaml")" = 1
+    printf '%s\n' 00-korri-ignore-virtual.yaml 10-ignore_unsupported.yaml \
+      59-korri-deferred-gamepads.yaml 60-xbox_360_gamepad.yaml \
+      65-generic_gamepad.yaml 69-ignore_generic.yaml > expected-order
+    sort expected-order > actual-order
+    cmp expected-order actual-order
 
     cmp "${inputplumberRuntime}/share/inputplumber/profiles/default.yaml" "$default_profile" || {
       echo "the shared upstream default profile must remain unchanged" >&2
@@ -191,15 +216,15 @@ pkgs.runCommand "inputplumber-korri-package-check"
       exit 1
     }
 
-    for selected in 60-xbox_one_gamepad.yaml 60-xbox_360_gamepad.yaml; do
+    for selected in ${
+      pkgs.lib.escapeShellArgs (map (profile: profile.file) data.externalDeviceProfiles)
+    }; do
       for mutation in '.version = 2' '.kind = "DeviceProfile"' '.name = "renamed"' \
         '.options.auto_manage = true' '.options.persist = true' \
         '.target_devices[0] = "renamed-upstream-target"' missing; do
         drift_root="$TMPDIR/schema-drift/$selected/$mutation/share/inputplumber"
         mkdir -p "$drift_root/devices" "$drift_root/profiles"
-        cp "${inputplumberRuntime}/share/inputplumber/devices/60-xbox_one_gamepad.yaml" \
-          "${inputplumberRuntime}/share/inputplumber/devices/60-xbox_360_gamepad.yaml" \
-          "$drift_root/devices/"
+        cp "${inputplumberRuntime}/share/inputplumber/devices/"*.yaml "$drift_root/devices/"
         cp "${inputplumberRuntime}/share/inputplumber/profiles/default.yaml" \
           "$drift_root/profiles/default.yaml"
         if test "$mutation" = missing; then

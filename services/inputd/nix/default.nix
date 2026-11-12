@@ -63,6 +63,10 @@ in
         inputplumberKorri
         ;
     };
+    inputplumber-adoption-vm = import ./inputplumber-adoption-vm-test.nix {
+      module = korriInputModule;
+      inherit pkgs inputdPackage inputplumberKorri;
+    };
     inputplumber-device-paths-vm = import ./inputplumber-device-paths-vm-test.nix {
       module = korriInputModule;
       inherit pkgs inputdPackage inputplumberKorri;
