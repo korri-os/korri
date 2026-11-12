@@ -733,7 +733,12 @@ class Session:
                 "hardware_decode": self.hardware_decode(),
             }
         if operation == "stop":
-            return {"exit": self.stop("viewer"), "log": self.tail("viewer")}
+            code = self.stop("viewer")
+            if self.ended:
+                # The guard can end the viewer after the last sample. The stop must
+                # say so, or a run could be valid with no reason recorded.
+                raise RuntimeError(self.ended)
+            return {"exit": code, "log": self.tail("viewer")}
         if operation == "evidence":
             self.stop("capture")
             times, rows = self.root / "display.csv", self.root / "display.rows"

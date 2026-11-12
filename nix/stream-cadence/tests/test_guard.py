@@ -244,6 +244,28 @@ class TestMarginOnlyLowersTheEnd(DesktopChip):
             self.assertTrue(session.close()["pass"])
 
 
+class AStopAfterTheLastSampleIsReported(DesktopChip):
+    def test_stop_says_that_the_guard_ended_the_viewer(self):
+        session = viewer.Session(str(self.peer))
+        try:
+            process = self.running(session)
+            self.read(86000)
+            self.assertIsNotNone(process.wait(timeout=5))
+            # No sample comes any more; the tool asks the viewer to stop.
+            with self.assertRaisesRegex(RuntimeError, "reads 86.0.*ends at 85.0"):
+                session.handle({"operation": "stop"})
+        finally:
+            self.assertTrue(session.close()["pass"])
+
+    def test_stop_of_a_viewer_that_the_guard_left_alone_is_plain(self):
+        session = viewer.Session(str(self.peer))
+        try:
+            self.running(session)
+            self.assertIn("exit", session.handle({"operation": "stop"}))
+        finally:
+            self.assertTrue(session.close()["pass"])
+
+
 class ADeviceWithNoThermalZone(Device):
     def empty(self) -> None:
         for path in self.zone.iterdir():
