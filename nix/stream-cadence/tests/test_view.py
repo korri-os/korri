@@ -140,6 +140,32 @@ class DisplayScore(unittest.TestCase):
         self.assertEqual(report["unreadable_frames"], 1)
         self.assertEqual(report["windows"][0]["undecodable_frames"], 1)
 
+    def test_source_on_an_output_with_no_vblank_counter_is_scored_by_time(self):
+        # A headless output reports sequence 0. One refresh passes with no new
+        # source frame, 1.6 seconds into the recording.
+        times = [int(n * PERIOD) + (int(PERIOD) if n >= 80 else 0) for n in range(200)]
+        log = "\n".join(
+            f"PRESENT id={n + 1} submit_ns={ns} present_ns={ns} sequence=0"
+            for n, ns in enumerate(times)
+        )
+        frames = [Clean(n + 1) for n in range(200)]
+        rows = [{"index": n, "display_ns": ns + 3_000_000} for n, ns in enumerate(times)]
+
+        def measured(**extra) -> dict:
+            return score(
+                list(frames), rows, log, lambda ns: ns,
+                warmup=1, seconds=2, window=1, fps=50, refresh=50,
+                display_period_ns=PERIOD, **extra,
+            )
+
+        report = measured(source_period_ns=PERIOD)
+        self.assertEqual([w["source_misses"] for w in report["windows"]], [1, 0])
+        self.assertEqual([w["capture_misses"] for w in report["windows"]], [0, 0])
+        self.assertIsNone(report["source_events"][0]["missing_vblank_sequence"])
+        self.assertEqual(report["source_events"][0]["before_id"], 80)
+        with self.assertRaisesRegex(ValueError, "non-monotonic"):
+            measured()
+
     def test_receive_clock_records_keep_their_fields(self):
         ids = list(range(1, 201))
         frames = [Clean(ident) for ident in ids]

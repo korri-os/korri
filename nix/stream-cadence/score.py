@@ -174,11 +174,16 @@ def score(
     refresh: float,
     max_unreadable_frames: int = 0,
     display_period_ns: float | None = None,
+    source_period_ns: float | None = None,
 ) -> dict:
     """Score decode units on the receive clock, or output frames on the display clock.
 
     With `display_period_ns` the rows are a viewer's output frames. Each window
     then also counts frames that repeat an ID and new IDs that arrive late.
+
+    `source_period_ns` is the refresh period of a sender output that counts no
+    vblanks, as a headless output does. Its source misses come from the time
+    between two presentations.
     """
     if max_unreadable_frames < 0:
         raise ValueError("max_unreadable_frames must be nonnegative")
@@ -305,9 +310,22 @@ def score(
             capture_events.append(
                 {"id": ident, "window": window_numbers[id(target[0])], **row}
             )
-    ordered = sorted(presented.values(), key=lambda row: row["sequence"])
+    # An output with no vblank counter reports sequence 0 for every presentation.
+    timed = source_period_ns is not None and not any(
+        row["sequence"] for row in presented.values()
+    )
+    ordered = sorted(
+        presented.values(), key=lambda row: row["present_ns" if timed else "sequence"]
+    )
     for a, b in zip(ordered, ordered[1:]):
-        gap = b["sequence"] - a["sequence"]
+        if timed:
+            assert source_period_ns is not None
+            # More than 1.5 periods between two presentations: the output
+            # refreshed in between with no new source frame.
+            periods = (b["present_ns"] - a["present_ns"]) / source_period_ns
+            gap = max(2, round(periods)) if periods > 1.5 else 1
+        else:
+            gap = b["sequence"] - a["sequence"]
         if gap <= 0 or b["present_ns"] <= a["present_ns"]:
             raise ValueError("non-monotonic presentation feedback")
         for step in range(1, gap):
@@ -318,7 +336,7 @@ def score(
                 source_events.append(
                     {
                         "window": window_numbers[id(target[0])],
-                        "missing_vblank_sequence": a["sequence"] + step,
+                        "missing_vblank_sequence": None if timed else a["sequence"] + step,
                         "estimated_present_ns": ns,
                         "before_id": a["id"],
                         "after_id": b["id"],
