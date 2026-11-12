@@ -241,7 +241,10 @@ fn abort_and_timeout_prevent_game_limits_and_after_steps_while_warn_continues() 
     ] {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(RecordingBackend::default());
-        let control = control(root.path(), backend.clone());
+        let seats = Arc::new(super::input_seat::RecordingInputPool::default());
+        let control =
+            HostSessionControl::with_input_seats(root.path(), backend.clone(), seats.clone())
+                .with_boot_id(super::hooks::TEST_BOOT_ID);
         let mut step = json!({"run":run,"timeout":2});
         if let Some(policy) = policy {
             step["on-failure"] = policy.into();
@@ -262,6 +265,13 @@ fn abort_and_timeout_prevent_game_limits_and_after_steps_while_warn_continues() 
             }));
             assert_eq!(*backend.events.lock().unwrap(), [run]);
             assert!(!root.path().join("host-session/active.json").exists());
+            assert!(seats.session.lock().unwrap().is_none());
+            assert!(seats
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|call| call.starts_with("end:")));
         }
         assert_eq!(backend.hooks.lock().unwrap()[0].1, Duration::from_secs(2));
     }

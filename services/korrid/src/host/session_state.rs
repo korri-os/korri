@@ -206,6 +206,55 @@ enum LaunchPreparation<'a> {
     Compose(Box<dyn FnOnce() -> Result<super::HostLaunchCommand, RpcFailure> + 'a>),
 }
 
+/// Seats acquired before the startup journal exists. Any preparation error
+/// releases them without manufacturing a running game record. A receiver that
+/// refuses cleanup stays fenced; idle input initialization can reconcile it.
+struct PendingInputSeats<'a> {
+    manager: &'a dyn InputSeatManager,
+    launch_id: &'a str,
+    lease: Option<Box<dyn InputSeatLease>>,
+    committed: bool,
+}
+
+impl<'a> PendingInputSeats<'a> {
+    fn acquire(manager: &'a dyn InputSeatManager, launch_id: &'a str) -> Result<Self, String> {
+        let mut pending = Self {
+            manager,
+            launch_id,
+            lease: None,
+            committed: false,
+        };
+        manager.begin_session(launch_id, korri_input_contract::SeatOrder::FirstPress)?;
+        pending.lease = Some(manager.start(launch_id)?);
+        Ok(pending)
+    }
+
+    fn commit(mut self) -> Box<dyn InputSeatLease> {
+        self.committed = true;
+        self.lease.take().expect("acquired input seats")
+    }
+}
+
+impl Drop for PendingInputSeats<'_> {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        let stopped = self
+            .lease
+            .take()
+            .is_none_or(|lease| lease.stop(self.launch_id).is_ok());
+        let ended = self.manager.end_session(self.launch_id);
+        if !stopped || ended.is_err() {
+            self.manager.fence();
+            eprintln!(
+                "korrid: pre-unit input cleanup failed for {}; input remains fenced: {ended:?}",
+                self.launch_id
+            );
+        }
+    }
+}
+
 /// What korrid last applied to the shell unit's freezer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ShellFreezerState {
@@ -2442,6 +2491,10 @@ impl HostSessionControl {
                 ));
             }
         }
+        // Acquire before hooks and the running journal. A rejected seat must
+        // not leave a game record whose cleanup depends on that same receiver.
+        let pending_seats = PendingInputSeats::acquire(self.input_seats.as_ref(), &launch_id)
+            .map_err(|message| failure("InputSeatUnavailable", message))?;
         if let (Some(hooks), Some(environment)) = (hooks, &hook_environment) {
             super::hooks::before(
                 self.backend.as_ref(),
@@ -2647,22 +2700,7 @@ impl HostSessionControl {
             *state = ActiveState::RecoveryBlocked;
             failure("HostRecoveryBlocked", message)
         })?;
-        let seat_lease = match self
-            .input_seats
-            .begin_session(&launch_id, korri_input_contract::SeatOrder::FirstPress)
-            .and_then(|()| self.input_seats.start(&launch_id))
-        {
-            Ok(lease) => lease,
-            Err(message) => {
-                // The game never ran; discard the record without logging.
-                *state = if self.discard_active().is_ok() {
-                    ActiveState::NoActive
-                } else {
-                    ActiveState::RecoveryBlocked
-                };
-                return Err(failure("InputSeatUnavailable", message));
-            }
-        };
+        let seat_lease = pending_seats.commit();
         let mut launch_environment = environment.clone();
         // Like placement, retain the composed fact on the exact unit so a
         // repeated prepare after restart cannot substitute a new display mode.
@@ -4351,6 +4389,38 @@ mod tests {
             "one terminal restore attempt per launch, not one per status poll"
         );
         assert!(calls.iter().all(|call| call["_tag"] == "EndSession"));
+    }
+
+    #[test]
+    fn preunit_seat_failure_leaves_no_running_journal_even_when_cleanup_refuses() {
+        for begin_fails in [true, false] {
+            let root = tempfile::tempdir().unwrap();
+            let backend = Arc::new(DeterministicBackend::default());
+            let seats = Arc::new(FailingSeatManager {
+                begin_fails,
+                end_fails: true,
+                ..Default::default()
+            });
+            let control =
+                HostSessionControl::with_input_seats(root.path(), backend.clone(), seats.clone());
+            let error = control
+                .prepare("one", None, Ok(&["game".into()]), &BTreeMap::new())
+                .unwrap_err();
+            assert_eq!(error.code, "InputSeatUnavailable");
+            assert!(!control.identity_root.join(ACTIVE_FILE).exists());
+            assert!(read_active(&control.identity_root).unwrap().is_none());
+            assert_eq!(control.status(), HostSessionStatus::NoActive);
+            assert!(backend.state.lock().unwrap().units.is_empty());
+            assert_eq!(stats(&control, "one").play_count, 0);
+            assert!(seats.is_fenced(), "uncertain input is not launch authority");
+            assert_eq!(
+                control
+                    .prepare("two", None, Ok(&["game".into()]), &BTreeMap::new())
+                    .unwrap_err()
+                    .code,
+                "InputSeatUnavailable"
+            );
+        }
     }
 
     #[test]
@@ -6088,7 +6158,12 @@ printf '[{{"success":true}}]'
     struct TestSeatLease {
         alive: Arc<AtomicBool>,
     }
-    struct FailingSeatManager;
+    #[derive(Default)]
+    struct FailingSeatManager {
+        begin_fails: bool,
+        end_fails: bool,
+        fenced: AtomicBool,
+    }
     impl InputSeatManager for TestSeatManager {
         fn initialize(&self, _: u8, _: Option<&str>) -> Result<(), String> {
             Ok(())
@@ -6128,21 +6203,35 @@ printf '[{{"success":true}}]'
             Ok(())
         }
         fn begin_session(&self, _: &str, _: korri_input_contract::SeatOrder) -> Result<(), String> {
-            Ok(())
+            if self.begin_fails {
+                Err("input receiver refused request: Recovering".into())
+            } else {
+                Ok(())
+            }
         }
         fn end_session(&self, _: &str) -> Result<(), String> {
-            Ok(())
+            if self.end_fails {
+                Err("input receiver refused cleanup".into())
+            } else {
+                Ok(())
+            }
         }
         fn route(&self, _: Option<&str>) -> Result<(), String> {
             Ok(())
         }
         fn ready(&self) -> Result<(), String> {
-            Ok(())
+            if self.is_fenced() {
+                Err("input is fenced".into())
+            } else {
+                Ok(())
+            }
         }
         fn is_fenced(&self) -> bool {
-            false
+            self.fenced.load(Ordering::SeqCst)
         }
-        fn fence(&self) {}
+        fn fence(&self) {
+            self.fenced.store(true, Ordering::SeqCst);
+        }
         fn start(&self, _launch_id: &str) -> Result<Box<dyn InputSeatLease>, String> {
             Err("seat receiver unavailable".into())
         }
@@ -9007,7 +9096,7 @@ printf '[{{"success":true}}]'
         let control = HostSessionControl::with_input_seats(
             root.path(),
             backend.clone(),
-            Arc::new(FailingSeatManager),
+            Arc::new(FailingSeatManager::default()),
         );
 
         // Status does not open a lease. Return reports the failure without
@@ -9299,7 +9388,7 @@ printf '[{{"success":true}}]'
         let control = HostSessionControl::with_input_seats(
             root.path(),
             backend.clone(),
-            Arc::new(FailingSeatManager),
+            Arc::new(FailingSeatManager::default()),
         )
         .with_compositor(compositor);
 

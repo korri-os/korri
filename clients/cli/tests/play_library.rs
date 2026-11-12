@@ -147,6 +147,27 @@ fn play_library_session_end_uses_observed_id_and_keeps_pending_outcome() {
     );
 }
 #[test]
+fn play_library_end_recovery_pins_the_identity_present_in_status() {
+    for code in ["HostLaunchFailed", "HostRecoveryBlocked"] {
+        let server = Server::start(vec![
+            active(Some(RpcFailure {
+                code: code.into(),
+                message: "exact unit requires recovery".into(),
+            })),
+            RpcResponse::SessionEnd(SessionEndOutcome::Ok(SessionEndResult {
+                phase: SessionEndPhase::Ended,
+            })),
+        ]);
+        let output = server.run(&["end", "--yes"]);
+        assert!(output.status.success());
+        assert!(
+            matches!(&server.calls.lock().unwrap()[1], RpcRequest::SessionEnd(r)
+            if r.expected_launch_id.as_deref() == Some("observed-launch") && r.force != Some(true))
+        );
+    }
+}
+
+#[test]
 fn play_library_end_resolves_failed_or_blocked_host_through_existing_end() {
     for code in ["HostLaunchFailed", "HostRecoveryBlocked"] {
         let server = Server::start(vec![
