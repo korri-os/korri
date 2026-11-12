@@ -1,0 +1,10 @@
+// VelvetHead's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetHead } from "VelvetHead.slint";
+
+export component Library inherits VelvetPreview {
+    VelvetHead { x: Tokens.screen.pad-x * Tokens.unit; y: Tokens.screen.pad-y * Tokens.unit; height: Tokens.screen.head-h * Tokens.unit; text: "LIBRARY"; }
+}

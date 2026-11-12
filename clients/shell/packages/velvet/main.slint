@@ -23,6 +23,8 @@
 import { Tokens } from "ui/tokens.slint";
 import { Screen, Layer, Poster, Tile, Fact, FactLine, Facts, Marquee, Pill, Stage, Shelf, Row, Key, Keyboard, Step, Curtain, Sheet, Page, Home, Mark, Set, Detail, Empty, Notice } from "ui/types.slint";
 import { VelvetStage } from "ui/organisms/VelvetStage.slint";
+import { VelvetBack } from "ui/atoms/VelvetBack.slint";
+import { VelvetTap } from "ui/atoms/VelvetTap.slint";
 import { VelvetSheet } from "ui/organisms/VelvetSheet.slint";
 import { VelvetKeyboard } from "ui/organisms/VelvetKeyboard.slint";
 import { VelvetCurtain } from "ui/organisms/VelvetCurtain.slint";
@@ -61,6 +63,7 @@ export component Surface inherits Window {
     in property <[Tile]> shelf-tiles;
     in property <Set> set;
     in property <[Tile]> set-tiles;
+    in property <int> set-first-row;
     in property <[Mark]> set-marks;
     in property <Detail> detail;
     in property <[Tile]> detail-cards;
@@ -84,6 +87,8 @@ export component Surface inherits Window {
     in property <[Step]> curtain-steps;
     in property <[Pill]> curtain-buttons;
     in property <Notice> notice;
+    // Touch is in use and there is a level to go back to: the way back shows.
+    in property <bool> way-back;
     // The page is in sight: the keyboard and the curtain take the house.
     property <bool> paged: layer == "screen" || layer == "sheet";
 
@@ -142,6 +147,7 @@ export component Surface inherits Window {
         width: root.width;
         height: root.height;
         set: root.set;
+        first-row: root.set-first-row;
         tiles: root.set-tiles;
         marks: root.set-marks;
         inert: root.layer != "screen";
@@ -166,6 +172,19 @@ export component Surface inherits Window {
         panel-lines: root.list-panel-lines;
         tiles: root.list-tiles;
         inert: root.layer != "screen";
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+    VelvetBack {
+        x: root.width - self.width - Tokens.screen.pad-x * Tokens.unit * 0.5;
+        y: root.height - self.height - Tokens.screen.pad-y * Tokens.unit * 0.5;
+        shown: root.way-back && root.layer == "screen";
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+    // A tap beside a sheet, or over the keyboard's field, is Back.
+    if root.layer == "sheet" || root.layer == "keyboard": VelvetTap {
+        width: root.width;
+        height: root.height;
+        target: "back";
         activated(target, at, released) => { root.activated(target, at, released); }
     }
     if root.sheet.shown: VelvetSheet {

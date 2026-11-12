@@ -27,7 +27,7 @@ import { fitCaps, textWidth } from "./fit"
 import { gridMove, lineMove } from "./focus"
 import { homeOf, sameQuery, shelvesOf, type ShelfItem, type ShelfSpec } from "./lists"
 import { sortWords } from "./pages"
-import type { Plan } from "./plan"
+import { TILE_RATIO, type Plan } from "./plan"
 import { NONE, send, type Act, type Direction, type Game, type Request, type SetState, type State } from "./types"
 import { ago, bytes, caps, games as gamesWords } from "./words"
 
@@ -214,7 +214,7 @@ export function homeView(state: State, model: Model, plan: Plan, live: boolean) 
   const mark = pick === undefined ? NO_MARQUEE : marqueeOf(pick, {
     width: hero ? plan.heroW : plan.textW, logoH: hero ? Math.round(plan.markH * 1.25) : plan.markH, title: hero ? plan.title : plan.pickTitle, fact: plan.fact,
     mark: hero || !cardNames(pick), badge: true,
-  }, model.publishedAt, pickFactsOf(home, pick, model))
+  }, model.publishedAt)
   const rowGame = depth === 1 ? row[state.rowAt] : undefined
   const rowMark = rowGame === undefined ? NO_MARQUEE : rowGame.kind === "game"
     ? marqueeOf(rowGame.game, { width: plan.rowMarkW, logoH: Math.max(24, plan.rowMarkH - plan.fact * 3.2), title: Math.min(plan.title, Math.max(24, (plan.rowMarkH - plan.fact * 3.2) / 2)), fact: plan.fact, mark: true, badge: false, lines: 2 }, model.publishedAt)
@@ -233,21 +233,27 @@ export function homeView(state: State, model: Model, plan: Plan, live: boolean) 
   const now = nowOf(state, model, shelves)
   // The shelves' tiles, the focused shelf first.
   const tiles: TileView[] = []
+  // Only what is on the stage is sent: the shelves in sight, and on each the tiles in sight.
+  // Every tile keeps its place in the list all the same, so a view row is always the same
+  // tile and nothing slides from one tile's place to another's; a tile out of sight is its
+  // place and no more (`shown: false`, no focus target).
+  const across = Math.ceil((plan.width - plan.padX) / (plan.shelfH * TILE_RATIO + plan.shelfGap)) + 1
   const starts: number[] = []
-  for (const shelf of shelves) {
+  shelves.forEach((shelf, index) => {
     starts.push(tiles.length)
-    for (const _ of shelf.items) tiles.push(NO_TILE)
-  }
+    for (let at = 0; at < shelf.items.length; at++) tiles.push({ shown: false, focusId: "", at, shelf: index } as unknown as TileView)
+  })
   for (const index of nearest(shelves.length, shelfAtNow)) {
+    if (!shelfShown(depth, index, shelfAtNow)) continue
     const shelf = shelves[index]!
     const region = shelfRegion(shelf.key)
     const column = columnOf(state, shelf)
-    // A shelf off the stage holds its places and waits for its games.
-    const near = depth === 2 ? Math.abs(index - shelfAtNow) <= 1 : depth === 1 && index === 0
+    const first = state.scrolled?.[region] ?? column
     for (const at of nearest(shelf.items.length, column)) {
+      if (at !== column && Math.abs(at - first) > across) continue
       const id = `${region}:${at}`
       const focused = live && !state.onMenu && depth === 2 && index === shelfAtNow && column === at
-      tiles[starts[index]! + at] = { ...(near ? shelfTile(shelf.items[at]!, region, id, focused, at) : waitingTile(region, id, focused, at)), shelf: index }
+      tiles[starts[index]! + at] = { ...shelfTile(shelf.items[at]!, region, id, focused, at), shelf: index }
     }
   }
   const heads = shelves.map(shelf => ({ key: shelf.key, label: shelf.label, at: state.scrolled?.[shelfRegion(shelf.key)] ?? columnOf(state, shelf), count: shelf.items.length }))
@@ -278,14 +284,8 @@ export function homeView(state: State, model: Model, plan: Plan, live: boolean) 
 
 /** Places 0 to count - 1, the one nearest `from` first. */
 export function nearest(count: number, from: number): number[] {
-  return Array.from({ length: count }, (_, index) => index).sort((a, b) => Math.abs(a - from) - Math.abs(b - from) || a - b)
-}
-
-function pickFactsOf(home: ReturnType<typeof homeOf>, pick: Game, model: Model): FactView[] {
-  return [
-    ...(home.why === "most" && pick.playCount !== undefined && pick.playCount > 0 ? [{ icon: "again", text: `${pick.playCount} times played`, strong: false }] : []),
-    ...factsOf(pick, model.publishedAt),
-  ]
+  // At the same distance, the one after: it is the one in sight (a focused shelf stands at the top).
+  return Array.from({ length: count }, (_, index) => index).sort((a, b) => Math.abs(a - from) - Math.abs(b - from) || b - a)
 }
 
 function fitMark(text: string, width: number, plan: Plan) {
@@ -294,6 +294,16 @@ function fitMark(text: string, width: number, plan: Plan) {
 }
 
 /** The exits of the home's regions (contract 8.4). */
+/**
+ * Whether a shelf's tiles are in the view. Home shows none of the library;
+ * the row shows the shelf under it; the lobby shows the focused shelf and the
+ * one each side of it. A view holds what is on the stage and no more: every
+ * byte of it is read on every call (the call budget).
+ */
+export function shelfShown(depth: number, index: number, at: number): boolean {
+  return depth === 2 ? Math.abs(index - at) <= 1 : depth === 1 && index === at
+}
+
 export function homeExits(state: State, model: Model): Record<string, Record<string, { to: string; entry: string }>> {
   const shelves = shelvesOf(state.lists, model)
   const hasPick = homeOf(state.lists, model.publishedAt).pick !== undefined
@@ -301,11 +311,15 @@ export function homeExits(state: State, model: Model): Record<string, Record<str
   if (!hasPick) return exits
   exits.menu = { down: { to: "pick", entry: "first" } }
   exits.pick = { up: { to: "menu", entry: "first" }, down: { to: "row", entry: "remembered" } }
-  exits.row = { up: { to: "pick", entry: "first" }, ...(shelves.length > 0 ? { down: { to: shelfRegion(shelves[shelfAt(state, shelves)]!.key), entry: "remembered" } } : {}) }
+  const at = shelfAt(state, shelves)
+  const shown = (index: number) => shelfShown(state.depth, index, at)
+  exits.row = { up: { to: "pick", entry: "first" }, ...(shelves.length > 0 && shown(at) ? { down: { to: shelfRegion(shelves[at]!.key), entry: "remembered" } } : {}) }
+  // An exit leads only to a region with targets in this view; the next view names the next one.
   shelves.forEach((shelf, index) => {
+    if (!shown(index)) return
     exits[shelfRegion(shelf.key)] = {
-      up: index === 0 ? { to: "row", entry: "remembered" } : { to: shelfRegion(shelves[index - 1]!.key), entry: "remembered" },
-      ...(index < shelves.length - 1 ? { down: { to: shelfRegion(shelves[index + 1]!.key), entry: "remembered" } } : {}),
+      ...(index === 0 ? { up: { to: "row", entry: "remembered" } } : shown(index - 1) ? { up: { to: shelfRegion(shelves[index - 1]!.key), entry: "remembered" } } : {}),
+      ...(index < shelves.length - 1 && shown(index + 1) ? { down: { to: shelfRegion(shelves[index + 1]!.key), entry: "remembered" } } : {}),
     }
   })
   return exits
@@ -314,7 +328,7 @@ export function homeExits(state: State, model: Model): Record<string, Record<str
 // ---- A set ----
 
 /** Games a set's window asks Korri for, and how near its edge focus may come before the window moves. */
-export const SET_WINDOW = 120
+export const SET_WINDOW = 60
 const SET_EDGE_ROWS = 3
 
 export function setQuery(set: SetState): CatalogQuery {
@@ -454,15 +468,19 @@ export function setView(state: State, set: SetState, model: Model, plan: Plan, l
   const first = set.scrolled ?? set.first
   const pool = plan.poolRows * plan.columns
   const from = Math.max(0, first - 1) * plan.columns
+  // The rows in sight (the whole ones and the one that shows under them), one above and one below: the rows a move can bring in.
+  const until = Math.min(count, from + pool, (first + plan.gridRows + 2) * plan.columns)
   const tiles: TileView[] = []
   for (let slot = 0; slot < pool; slot++) tiles.push(NO_TILE)
   const focusedAt = set.at - set.low
   if (window !== undefined) {
     // The focused row asks for its pictures first, then the rows beside it (the pixel budget, src/art.ts).
     const places: number[] = []
-    for (let place = from; place < Math.min(count, from + pool); place++) places.push(place)
+    for (let place = from; place < until; place++) places.push(place)
     const row = (place: number) => Math.floor(place / plan.columns)
-    places.sort((a, b) => Math.abs(row(a) - row(focusedAt)) - Math.abs(row(b) - row(focusedAt)) || a - b)
+    // Rows in sight (the whole ones and the one that shows under them) before a row that waits out of sight.
+    const away = (place: number) => (row(place) >= first && row(place) <= first + plan.gridRows ? 0 : 1)
+    places.sort((a, b) => away(a) - away(b) || Math.abs(row(a) - row(focusedAt)) - Math.abs(row(b) - row(focusedAt)) || a - b)
     for (const place of places) {
       const game = window.window[set.low + place - window.firstIndex]
       const lit = live && !set.pill && place === focusedAt
@@ -470,9 +488,10 @@ export function setView(state: State, set: SetState, model: Model, plan: Plan, l
       tiles[place % pool] = game === undefined ? { ...NO_TILE, shown: true, at: place } : { ...gameCard(game), at: place, lit, badge: lit ? game.system ?? "" : "" } as TileView
     }
   }
+  // A focus target for each place a tile is sent for: the rows in sight and one more each way.
   const marks = window === undefined ? [] : window.window.flatMap((game, index) => {
     const place = window.firstIndex + index - set.low
-    return place < 0 ? [] : [{ focusId: `g:${set.low + place}`, focused: live && !set.pill && place === focusedAt, focusRegion: "grid", at: place, label: game.title }]
+    return place < from || place >= until ? [] : [{ focusId: `g:${set.low + place}`, focused: live && !set.pill && place === focusedAt, focusRegion: "grid", at: place, label: game.title }]
   })
   const focused = set.pill ? undefined : setGame(set, model.catalog, set.at)
   const system = set.key === "every" && set.systemId !== undefined ? model.systems?.find(item => item.systemId === set.systemId)?.system : undefined

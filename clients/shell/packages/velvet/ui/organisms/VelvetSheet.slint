@@ -26,6 +26,8 @@ export component VelvetSheet inherits Rectangle {
         background: @linear-gradient(90deg, Tokens.velvet-94 0%, Tokens.house-down 100%);
         opacity: root.in ? 1 : 0;
         animate x, opacity { duration: Tokens.t-sheet; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+        // A tap on the sheet itself is no tap beside it.
+        TouchArea { }
         // The edge the sheet throws on the stage.
         Rectangle {
             x: -Tokens.screen.pad-x * root.u;

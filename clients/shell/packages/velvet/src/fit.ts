@@ -24,7 +24,8 @@ export function capsWidth(text: string): number {
   const known = widths.get(text)
   if (known !== undefined) return known
   let total = 0
-  for (const c of caps(text)) total += DISPLAY_ADVANCES[c.codePointAt(0)!] ?? FALLBACK_ADVANCE
+  const upper = caps(text)
+  for (let i = 0; i < upper.length; i++) total += DISPLAY_ADVANCES[upper.charCodeAt(i)] ?? FALLBACK_ADVANCE
   const width = (total / 1000) * SAFETY
   if (widths.size > 4000) widths.clear()
   widths.set(text, width)
@@ -65,21 +66,64 @@ export function fitCaps(text: string, width: number, height: number, max: number
   const known = fits.get(key)
   if (known !== undefined) return known
   const words = text.trim().split(/\s+/).filter(word => word !== "")
-  const holds = (size: number, lines: readonly string[]) =>
-    lines.every(line => capsWidth(line) * size <= width) && lines.length * size * DISPLAY_LINE <= height
+  // The search works on numbers: each word's width once, a space's width between them
+  // (the advance table has no kerning, so a line's width is the sum). The lines become
+  // strings once, at the size found. A title is fitted for every card on its way in.
+  const widths = words.map(capsWidth)
+  const space = capsWidth(" ")
+  const holds = (size: number): boolean => {
+    if (widths.length === 0) return true
+    let lines = 1
+    let line = widths[0]!
+    let widest = 0
+    for (let i = 1; i < widths.length; i++) {
+      const tried = line + space + widths[i]!
+      if (tried * size <= width) line = tried
+      else {
+        if (line > widest) widest = line
+        lines++
+        line = widths[i]!
+      }
+    }
+    if (line > widest) widest = line
+    return widest * size <= width && lines * size * DISPLAY_LINE <= height
+  }
   let low = min
   let high = Math.max(min, max)
-  let best: Fit | undefined
-  if (holds(high, wrap(words, high, width))) best = { size: high, lines: wrap(words, high, width).map(caps) }
+  let found: number | undefined
+  if (holds(high)) found = high
   else {
-    for (let i = 0; i < 12; i++) {
+    // Eight halvings: to a hundredth of the range, finer than a pixel at any size Velvet sets.
+    for (let i = 0; i < 8; i++) {
       const size = (low + high) / 2
-      const lines = wrap(words, size, width)
-      if (holds(size, lines)) {
-        best = { size, lines: lines.map(caps) }
+      if (holds(size)) {
+        found = size
         low = size
       } else high = size
     }
+  }
+  let best: Fit | undefined
+  if (found !== undefined) {
+    // The lines at that size, by the same sums.
+    const lines: string[] = []
+    let text = ""
+    let line = 0
+    for (let i = 0; i < words.length; i++) {
+      const tried = line + space + widths[i]!
+      if (text === "" ) {
+        text = words[i]!
+        line = widths[i]!
+      } else if (tried * found <= width) {
+        text += " " + words[i]!
+        line = tried
+      } else {
+        lines.push(caps(text))
+        text = words[i]!
+        line = widths[i]!
+      }
+    }
+    if (text !== "") lines.push(caps(text))
+    best = { size: found, lines }
   }
   if (best === undefined) {
     // Not even at the smallest size. A word wider than the box breaks where the box

@@ -1,0 +1,34 @@
+// VelvetCurtain's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetCurtain } from "VelvetCurtain.slint";
+
+export component Steps inherits VelvetPreview {
+    VelvetCurtain { x: 0; y: 0; width: parent.width; height: parent.height; curtain: { shown: true, kind: "busy", kicker-size: 58, name: "Tide Pool", step-line: "Step 3 of 4 · Getting the game ready", progress: -2 }; kicker: ["STARTING TIDE POOL"]; lines: []; steps: [{ label: "Checking saves", state: "done" }, { label: "Downloading", state: "done" }, { label: "Getting the game ready", state: "now" }, { label: "Starting the game", state: "next" }]; buttons: [{ shown: true, label: "Cancel", focus-id: "x:0", focused: true }]; }
+}
+
+export component Progress inherits VelvetPreview {
+    VelvetCurtain { x: 0; y: 0; width: parent.width; height: parent.height; curtain: { shown: true, kind: "busy", kicker-size: 58, name: "Tide Pool", progress: 0.528 }; kicker: ["DOWNLOADING FEX ROOTFS"]; lines: ["612 MB of 1.2 GB · 6.4 MB/s · 1:30 left"]; steps: []; buttons: [{ shown: true, label: "Cancel", focus-id: "x:0", focused: true }]; }
+}
+
+export component Problem inherits VelvetPreview {
+    VelvetCurtain { x: 0; y: 0; width: parent.width; height: parent.height; curtain: { shown: true, kind: "problem", kicker-size: 58, name: "Tide Pool", progress: -2 }; kicker: ["COULD NOT START"]; lines: ["zao did not answer in time. Check that it is awake and on the same network."]; steps: []; buttons: [{ shown: true, label: "Dismiss", focus-id: "x:0", focused: true }, { shown: true, label: "Try again", quiet: true, focus-id: "x:1" }]; }
+}
+
+export component LongProblem inherits VelvetPreview {
+    VelvetCurtain { x: 0; y: 0; width: parent.width; height: parent.height; curtain: { shown: true, kind: "problem", kicker-size: 58, progress: -2 }; kicker: ["CATALOG PROBLEM"]; lines: ["local games: LocalRouteUnavailable: game average-day-in-america-by-bug has no installed Linux", "runner · local games: LocalRouteUnavailable: game eggshell-66c0dfbd9ceda85a76e3e25b has", "no installed Linux runner · local games: LocalRouteUnavailable: game", "eggshell-68c27d6be7c30cea4ebd4641 has no installed Linux runner · local games:", "LocalRouteUnavailable: game eggshell-6a2ee4c46c21aa46014604d2 has no installed Linux", "runner · local games: LocalRouteUnavailable: game eggshell-rust-spike has no installed Linux", "runner · local games: LocalRouteUnavailable: game mega-man-rock-n-roll has no installed Linux", "runner"]; steps: []; buttons: [{ shown: true, label: "Dismiss", focus-id: "x:0", focused: true }, { shown: true, label: "Try again", quiet: true, focus-id: "x:1" }]; }
+}
+
+export component Confirm inherits VelvetPreview {
+    VelvetCurtain { x: 0; y: 0; width: parent.width; height: parent.height; curtain: { shown: true, kind: "ask", kicker-size: 58, progress: -2 }; kicker: ["NEEDS A DOWNLOAD"]; lines: ["FEX rootfs and Proton-CachyOS, 1.5 GB"]; steps: []; buttons: [{ shown: true, label: "Download", focus-id: "x:0", focused: true }, { shown: true, label: "Cancel", quiet: true, focus-id: "x:1" }]; }
+}
+
+export component ChooseSave inherits VelvetPreview {
+    VelvetCurtain { x: 0; y: 0; width: parent.width; height: parent.height; curtain: { shown: true, kind: "ask", kicker-size: 58, name: "Vesper", progress: -2, stack: true }; kicker: ["TWO SAVES OF VESPER"]; lines: ["This device and zao each played on their own. Choose the one to keep going from; the other stays", "in the history."]; steps: []; buttons: [{ shown: true, label: "mini", note: "9 Nov 2026, 14:47, 1 h 30 min session", focus-id: "x:0" }, { shown: true, label: "zao", note: "10 Nov 2026, 14:47, 25 min session", focus-id: "x:1" }, { shown: true, label: "Not now", focus-id: "x:2", focused: true }]; }
+}
+
+export component Running inherits VelvetPreview {
+    VelvetCurtain { x: 0; y: 0; width: parent.width; height: parent.height; curtain: { shown: true, kind: "running", kicker-size: 58, name: "Tide Pool", progress: -2 }; kicker: ["PLAYING NOW"]; lines: []; steps: []; buttons: []; }
+}

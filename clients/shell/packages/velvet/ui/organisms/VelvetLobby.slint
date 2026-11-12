@@ -35,16 +35,18 @@ export component VelvetLobby inherits Rectangle {
     // The finger's travel since the last whole tile.
     property <length> carried;
     clip: true;
-    // The shelves stand on one track; the track moves a shelf's pitch.
+    // Each label and each tile moves by itself, a shelf's pitch a step. One moving
+    // track would be less to write, but its animated place starts again from the
+    // top when a view is applied twice before a frame (README, "What the
+    // interpreter taught us"), and focus would be judged out of sight.
     Rectangle {
         x: 0;
-        y: -root.shelf-at * Tokens.screen.shelf-pitch * Tokens.unit;
+        y: 0;
         width: root.width;
         height: root.height;
-        animate y { duration: Tokens.t-focus; easing: cubic-bezier(0.16, 1, 0.3, 1); }
         for shelf[n] in root.shelves: Text {
             x: root.pad;
-            y: n * root.pitch-y;
+            y: (n - root.shelf-at) * Tokens.screen.shelf-pitch * Tokens.unit;
             width: root.view;
             height: Tokens.screen.shelf-label * root.u;
             text: shelf.label;
@@ -55,6 +57,7 @@ export component VelvetLobby inherits Rectangle {
             vertical-alignment: center;
             overflow: elide;
             opacity: root.entered && n == root.shelf-at ? 1 : 0.5;
+            animate y { duration: Tokens.t-focus; easing: cubic-bezier(0.16, 1, 0.3, 1); }
             animate opacity { duration: Tokens.t-focus; easing: ease-in-out; }
         }
         for tile in root.tiles: VelvetTile {
@@ -64,7 +67,7 @@ export component VelvetLobby inherits Rectangle {
                     root.shelves[tile.shelf].at * (Tokens.screen.shelf-h * Tokens.tile-ratio + Tokens.screen.shelf-gap) * Tokens.unit - (root.width - 2 * Tokens.screen.pad-x * Tokens.unit - Tokens.screen.shelf-h * Tokens.tile-ratio * Tokens.unit * 1.75),
                     0px,
                     Math.max(0px, root.shelves[tile.shelf].count * (Tokens.screen.shelf-h * Tokens.tile-ratio + Tokens.screen.shelf-gap) * Tokens.unit - Tokens.screen.shelf-gap * Tokens.unit - (root.width - 2 * Tokens.screen.pad-x * Tokens.unit)));
-            y: tile.shelf * root.pitch-y + root.row-y;
+            y: (tile.shelf - root.shelf-at) * Tokens.screen.shelf-pitch * Tokens.unit + Tokens.screen.shelf-row-y * Tokens.unit;
             width: root.tile-w;
             height: root.tile-h;
             tile: tile;
@@ -72,6 +75,7 @@ export component VelvetLobby inherits Rectangle {
             inert: root.inert;
             slides: true;
             animate x { duration: Tokens.t-scroll; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+            animate y { duration: Tokens.t-focus; easing: cubic-bezier(0.16, 1, 0.3, 1); }
             activated(target, at, released) => { root.activated(target, at, released); }
             slide(by) => {
                 root.carried += by;

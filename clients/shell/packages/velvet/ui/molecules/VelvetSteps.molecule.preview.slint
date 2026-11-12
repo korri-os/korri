@@ -1,0 +1,10 @@
+// VelvetSteps's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetSteps } from "VelvetSteps.slint";
+
+export component ThreeOfFour inherits VelvetPreview {
+    VelvetSteps { x: parent.width * 0.2; y: parent.height / 2; width: parent.width * 0.6; steps: [{ label: "Checking saves", state: "done" }, { label: "Downloading", state: "done" }, { label: "Getting the game ready", state: "now" }, { label: "Starting the game", state: "next" }]; line: "Step 3 of 4 · Getting the game ready"; }
+}

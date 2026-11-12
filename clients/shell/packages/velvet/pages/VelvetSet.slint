@@ -15,6 +15,8 @@ export component VelvetSet inherits Rectangle {
     callback activated(target: string, at: float, released: bool);
     callback dragged(region: string, by: int);
     in property <Set> set;
+    // The first row in the grid's window (a number of its own: main.slint says why).
+    in property <int> first-row;
     in property <[Tile]> tiles;
     in property <[Mark]> marks;
     in property <bool> inert;
@@ -91,7 +93,7 @@ export component VelvetSet inherits Rectangle {
         height: parent.height - self.y;
         tiles: root.tiles;
         marks: root.marks;
-        first-row: root.set.first-row;
+        first-row: root.first-row;
         inert: root.inert;
         activated(target, at, released) => { root.activated(target, at, released); }
         dragged(region, by) => { root.dragged(region, by); }

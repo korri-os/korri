@@ -224,8 +224,22 @@ export function curtainLayout(spec: CurtainSpec, plan: Plan): CurtainLayout {
   const stack = spec.column === true || plan.narrow || row > plan.curtainW || spec.buttons.some(button => button.note !== undefined)
   // What the window has left for words: the kicker, the name, the bars and the buttons come first.
   const buttons = spec.buttons.length === 0 ? 0 : stack ? spec.buttons.length * plan.button * (spec.buttons.some(button => button.note !== undefined) ? 3.3 : 2.7) : plan.button * 2.7
-  const fixed = plan.kicker * 1.3 + (spec.name === undefined ? 0 : plan.body * 1.6) + (spec.steps === undefined ? 0 : plan.body * 3) + (spec.progress > -2 ? plan.body * 2.4 : 0) + buttons + plan.padY * 2.4
-  const room = Math.max(1, Math.floor((plan.height - fixed) / (plan.body * 1.35)))
+  // The column as VelvetCurtain stands it: each part, and the gap between parts. The kicker
+  // may take two lines, a problem its mark, and words that do not all fit the two lines
+  // that say so. An estimate on the safe side: a line too few shows; a button under the
+  // window's foot does not.
+  const gap = plan.body * 0.7
+  const fixedParts = [
+    spec.name === undefined ? 0 : plan.body * 1.2,
+    plan.kicker * 2 + (spec.kind === "problem" ? plan.body * 1.8 : 0),
+    spec.steps === undefined ? 0 : plan.body * 2.4,
+    spec.progress > -2 ? plan.body * 2 : 0,
+    buttons,
+  ].filter(part => part > 0)
+  const fixed = fixedParts.reduce((sum, part) => sum + part, 0) + gap * fixedParts.length + plan.padY * 2
+  const line = plan.body * 1.35
+  const whole = Math.floor((plan.height - fixed) / line)
+  const room = Math.max(1, lines.length <= whole ? whole : Math.floor((plan.height - fixed - 2 * (plan.body * 1.2 + gap)) / line))
   return { lines, room, stack }
 }
 

@@ -1,0 +1,10 @@
+// VelvetTap's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetTap } from "VelvetTap.slint";
+
+export component Target inherits VelvetPreview {
+    Rectangle { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: parent.width * 0.3; height: parent.height * 0.3; background: Tokens.light-10; VelvetTap { width: parent.width; height: parent.height; target: "play"; } }
+}

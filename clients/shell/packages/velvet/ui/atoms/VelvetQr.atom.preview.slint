@@ -1,0 +1,10 @@
+// VelvetQr's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetQr } from "VelvetQr.slint";
+
+export component Backup inherits VelvetPreview {
+    VelvetQr { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: Math.min(parent.width, parent.height) * 0.6; height: self.width; code: @image-url("../../preview/art/qr.png"); }
+}

@@ -1,0 +1,18 @@
+// VelvetKeycap's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetKeycap } from "VelvetKeycap.slint";
+
+export component Letter inherits VelvetPreview {
+    VelvetKeycap { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: Tokens.screen.key-w * Tokens.unit; height: Tokens.screen.key-h * Tokens.unit; key: { focus-id: "k:q", label: "q", row: 1, span: 1 }; }
+}
+
+export component Focused inherits VelvetPreview {
+    VelvetKeycap { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: Tokens.screen.key-w * Tokens.unit; height: Tokens.screen.key-h * Tokens.unit; key: { focus-id: "k:q", focused: true, label: "q", row: 1, span: 1 }; }
+}
+
+export component Done inherits VelvetPreview {
+    VelvetKeycap { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: Tokens.screen.key-w * Tokens.unit * 2; height: Tokens.screen.key-h * Tokens.unit; key: { focus-id: "k:done", focused: true, label: "Done", column: 8, row: 4, span: 2, lit: true, quiet: true }; }
+}

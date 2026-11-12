@@ -32,7 +32,10 @@ export component VelvetCurtain inherits Rectangle {
     TouchArea { }
     column := VerticalLayout {
         x: (root.width - root.w) / 2;
-        y: Math.max(Tokens.screen.pad-y * root.u, (root.height - self.preferred-height) / 2);
+        // In the middle while it fits. When it does not (a short window, three buttons one
+        // under the other), it stands on the window's foot: the buttons stay in sight and
+        // the words above them give way.
+        y: self.preferred-height + 2 * Tokens.screen.pad-y * root.u <= root.height ? (root.height - self.preferred-height) / 2 : root.height - Tokens.screen.pad-y * root.u * 0.6 - self.preferred-height;
         width: root.w;
         height: self.preferred-height;
         spacing: root.body * 0.7;

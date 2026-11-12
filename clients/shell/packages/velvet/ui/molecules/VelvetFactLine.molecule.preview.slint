@@ -1,0 +1,10 @@
+// VelvetFactLine's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetFactLine } from "VelvetFactLine.slint";
+
+export component Four inherits VelvetPreview {
+    VelvetFactLine { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2; line: { count: 4, a: { icon: "resume", text: "Ready to resume", strong: true }, b: { icon: "clock", text: "2 hours ago" }, c: { icon: "watch", text: "61 h 19 min" }, d: { icon: "here", text: "This device" } }; }
+}

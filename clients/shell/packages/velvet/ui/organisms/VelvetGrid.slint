@@ -44,9 +44,12 @@ export component VelvetGrid inherits Rectangle {
             y: root.inset + Math.floor(tile.at / root.columns) * root.pitch;
             width: root.tile-w;
             height: root.tile-h;
+            // A picture: it carries no focus id, so it is no target and takes no tap (its
+            // mark does). It still shows the focus: the edge, the growth, the badge.
             tile: tile;
-            inert: true;
+            inert: root.inert;
             visible: tile.shown;
+            activated(target, at, released) => { root.activated(target, at, released); }
         }
         for mark in root.marks: Rectangle {
             x: root.pad + Math.mod(mark.at, root.columns) * (root.tile-w + root.gap);

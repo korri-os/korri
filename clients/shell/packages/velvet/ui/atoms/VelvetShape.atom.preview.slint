@@ -1,0 +1,10 @@
+// VelvetShape's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetShape } from "VelvetShape.slint";
+
+export component Play inherits VelvetPreview {
+    VelvetShape { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: parent.height * 0.3; height: parent.height * 0.3; commands: "M4.3 2.4V13.6L13.4 8Z"; }
+}

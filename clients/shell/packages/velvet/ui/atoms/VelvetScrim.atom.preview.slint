@@ -1,0 +1,14 @@
+// VelvetScrim's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetScrim } from "VelvetScrim.slint";
+
+export component Wide inherits VelvetPreview {
+    Rectangle { x: 0; y: 0; width: parent.width; height: parent.height; background: Tokens.light-45; VelvetScrim { width: parent.width; height: parent.height; } }
+}
+
+export component Narrow inherits VelvetPreview {
+    Rectangle { x: 0; y: 0; width: parent.width; height: parent.height; background: Tokens.light-45; VelvetScrim { width: parent.width; height: parent.height; narrow: true; } }
+}

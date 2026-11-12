@@ -1,0 +1,38 @@
+// VelvetBack: the way back for a finger (ADR 0055). A pad has a Back button
+// and Android has its gesture; a touch screen alone has neither. So while
+// touch is in use, and only then, a round chip stands in the stage's lower
+// right corner. A tap on it is the Back button. It is no focus target: a
+// button press hides it again.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetIcon } from "VelvetIcon.slint";
+import { VelvetTap } from "VelvetTap.slint";
+
+export component VelvetBack inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
+    in property <bool> shown;
+    property <length> side: Math.max(Tokens.touch-least, Tokens.screen.row-height * Tokens.unit * 1.1);
+    width: side;
+    height: side;
+    border-radius: side / 2;
+    background: Tokens.velvet-86;
+    border-width: Tokens.hair;
+    border-color: Tokens.light-20;
+    opacity: shown ? 1 : 0;
+    animate opacity { duration: Tokens.t-sheet; easing: ease-in-out; }
+    accessible-role: button;
+    accessible-label: "Back";
+    VelvetIcon {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        name: "back";
+        ink: Tokens.house-light;
+        size: root.side * 0.42;
+    }
+    VelvetTap {
+        width: parent.width;
+        height: parent.height;
+        target: root.shown ? "back" : "";
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+}

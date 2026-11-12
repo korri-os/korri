@@ -1,0 +1,26 @@
+// VelvetPill's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetPill } from "VelvetPill.slint";
+
+export component Filled inherits VelvetPreview {
+    VelvetPill { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; pill: { shown: true, label: "Play on This device", icon: "play", focus-id: "d:place:0", focused: true }; }
+}
+
+export component Quiet inherits VelvetPreview {
+    VelvetPill { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; pill: { shown: true, label: "Play on zao", icon: "peer", quiet: true, focus-id: "d:place:1" }; }
+}
+
+export component Dim inherits VelvetPreview {
+    VelvetPill { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; pill: { shown: true, label: "Next", dim: true, focus-id: "d:place:0", focused: true }; }
+}
+
+export component Danger inherits VelvetPreview {
+    VelvetPill { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; pill: { shown: true, label: "Remove folder", quiet: true, danger: true, focus-id: "d:place:0" }; }
+}
+
+export component Menu inherits VelvetPreview {
+    VelvetPill { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; pill: { shown: true, label: "Menu", icon: "menu", quiet: true, focus-id: "menu" }; size: Tokens.screen.small * Tokens.unit; }
+}

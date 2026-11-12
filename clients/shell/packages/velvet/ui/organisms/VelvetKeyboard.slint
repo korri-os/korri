@@ -27,7 +27,13 @@ export component VelvetKeyboard inherits Rectangle {
     background: Tokens.velvet-86;
     opacity: in ? 1 : 0;
     animate opacity { duration: Tokens.t-sheet; easing: ease-in-out; }
-    TouchArea { }
+    // The keys and the field take their own taps; a tap anywhere else is Back (main.slint).
+    TouchArea {
+        x: root.keys-x;
+        y: Math.max(0px, root.keys-y - root.draft-size * 2.3 - root.body * 3.4);
+        width: root.keys-w;
+        height: root.height - self.y;
+    }
     // What is being typed, and for what.
     Text {
         x: root.keys-x;

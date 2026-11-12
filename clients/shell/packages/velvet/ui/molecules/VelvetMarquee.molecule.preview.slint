@@ -1,0 +1,18 @@
+// VelvetMarquee's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetMarquee } from "VelvetMarquee.slint";
+
+export component Logo inherits VelvetPreview {
+    VelvetMarquee { x: Tokens.screen.pad-x * Tokens.unit; y: Tokens.screen.pad-y * Tokens.unit; width: Tokens.screen.hero-w * Tokens.unit; height: parent.height * 0.7; mq: { key: "ember-road", logo-shown: true, logo: @image-url("../../preview/art/logo-ember.png"), logo-w: 578, logo-h: 249, lines: 1, line1: "EMBER ROAD", size: 83, badge: "PC", facts: { count: 1, first: { count: 4, a: { icon: "resume", text: "Ready to resume", strong: true }, b: { icon: "clock", text: "2 hours ago" }, c: { icon: "watch", text: "61 h 19 min" }, d: { icon: "here", text: "This device" } } } }; }
+}
+
+export component Title inherits VelvetPreview {
+    VelvetMarquee { x: Tokens.screen.pad-x * Tokens.unit; y: Tokens.screen.pad-y * Tokens.unit; width: Tokens.screen.hero-w * Tokens.unit; height: parent.height * 0.7; mq: { key: "ember-road", badge: "PC", facts: { count: 1, first: { count: 4, a: { icon: "resume", text: "Ready to resume", strong: true }, b: { icon: "clock", text: "2 hours ago" }, c: { icon: "watch", text: "61 h 19 min" }, d: { icon: "here", text: "This device" } } } }; }
+}
+
+export component LongLogo inherits VelvetPreview {
+    VelvetMarquee { x: Tokens.screen.pad-x * Tokens.unit; y: Tokens.screen.pad-y * Tokens.unit; width: Tokens.screen.hero-w * Tokens.unit; height: parent.height * 0.7; mq: { key: "tide-pool", logo-shown: true, logo: @image-url("../../preview/art/logo-tide.png"), logo-w: 569, logo-h: 169, lines: 1, line1: "TIDE POOL", size: 83, facts: { count: 1, first: { count: 3, a: { icon: "clock", text: "Yesterday" }, b: { icon: "watch", text: "26 h 39 min" }, c: { icon: "here", text: "This device, zao" } } } }; }
+}

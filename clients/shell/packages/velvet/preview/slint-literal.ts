@@ -1,6 +1,6 @@
 /**
  * A view value as a Slint literal, for the preview states
- * (preview/write-previews.ts) and the tests: keys in kebab case, an image as
+ * (preview/previews.ts) and the tests: keys in kebab case, an image as
  * `@image-url`, relative to the file that holds it.
  */
 const kebab = (name: string): string => name.replace(/[A-Z]/g, c => `-${c.toLowerCase()}`)
@@ -13,9 +13,13 @@ export function literal(value: unknown, up: string): string {
   if (typeof value === "boolean") return value ? "true" : "false"
   if (Array.isArray(value)) return `[${value.map(item => literal(item, up)).join(", ")}]`
   const entry = value as Record<string, unknown>
-  if (typeof entry.$image === "string") return entry.$image === "" ? '@image-url("")' : `@image-url("${up}${entry.$image}")`
+  // The empty picture (a data URL in a view) is the property's own default here.
+  if (typeof entry.$image === "string") return entry.$image === "" || entry.$image.startsWith("data:") ? '@image-url("")' : `@image-url("${up}${entry.$image}")`
+  // A field at its type's default is left out: a struct literal fills it in.
   const fields = Object.entries(entry)
     .filter(([key]) => key !== "focusRegion" && key !== "focusActive" && key !== "focusPlan")
-    .map(([key, inner]) => `${kebab(key)}: ${literal(inner, up)}`)
+    .map(([key, inner]) => [key, literal(inner, up)] as const)
+    .filter(([, text]) => text !== "false" && text !== "0" && text !== '""' && text !== "[]" && text !== "{  }" && text !== '@image-url("")')
+    .map(([key, text]) => `${kebab(key)}: ${text}`)
   return `{ ${fields.join(", ")} }`
 }

@@ -1,0 +1,18 @@
+// VelvetButtons's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetButtons } from "VelvetButtons.slint";
+
+export component Row inherits VelvetPreview {
+    VelvetButtons { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2; width: parent.width - 2 * self.x; pills: [{ shown: true, label: "Play on This device", icon: "play", focus-id: "d:place:0", focused: true }, { shown: true, label: "Play on zao", icon: "peer", quiet: true, focus-id: "d:place:1" }]; }
+}
+
+export component Stack inherits VelvetPreview {
+    VelvetButtons { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height * 0.3; width: parent.width - 2 * self.x; pills: [{ shown: true, label: "Play on This device", icon: "play", focus-id: "d:place:0", focused: true }, { shown: true, label: "Play on zao", icon: "peer", quiet: true, focus-id: "d:place:1" }]; stack: true; }
+}
+
+export component Centred inherits VelvetPreview {
+    VelvetButtons { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2; width: parent.width - 2 * self.x; pills: [{ shown: true, label: "Dismiss", focus-id: "x:0", focused: true }, { shown: true, label: "Try again", quiet: true, focus-id: "x:1" }]; centred: true; }
+}

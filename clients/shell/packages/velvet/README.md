@@ -1,0 +1,210 @@
+# Velvet (native surface package)
+
+A dark house, lit by the game in front of you. Velvet is the surface every
+Korri product device opens (#424); Pico and Zone stay installed and
+selectable. The owner's decisions are in #423; the direction, its motion
+table and its capability map are in `docs/design/surfaces/velvet/DIRECTION.md`.
+
+| Path | What |
+| --- | --- |
+| `main.slint` | The binding: `Surface` and `Overlay`. The only file that knows the view. It feeds the `Tokens` global the window's size, the plan, `still` and `touching`, and hands each page plain properties. |
+| `ui/tokens.slint` | `global Tokens`: colour, type, shape, motion, and the few sizes that do not scale. Every raw colour and every pixel literal is here and nowhere else. |
+| `ui/types.slint` | The view's structs. `Screen` is the plan (`src/plan.ts`), field for field. |
+| `ui/atoms`, `ui/molecules`, `ui/organisms`, `pages/` | One component per file. Each has its preview states beside it, `<Name>.<layer>.preview.slint`, written by `preview/previews.ts`. |
+| `ui/preview-frame.slint` | The window a preview state inherits. |
+| `logic.ts` → `logic.js` | `init`, `update`, `view`, `overlay`. `bun run velvet:build` in `clients/shell`; `velvet-check` rebuilds it and fails on any difference. |
+| `src/plan.ts` | The plan: layout as a pure function of (width, height). |
+| `src/update.ts` | Every message. A row, a button and a key carry an `Act` (data); `perform` is the one place an act is done. |
+| `src/view.ts` | The view, from the state and the model. |
+| `src/browse.ts`, `src/lists.ts` | Home, the row, the lobby, a set, the detail; the lists home keeps over the one catalog window. |
+| `src/pages.ts`, `src/settings.ts`, `src/curtain.ts`, `src/keys.ts` | Every other screen Korri publishes, as one list page; status and questions as the curtain; the keyboard. |
+| `src/art.ts`, `src/poster.ts`, `src/colour.ts` | Which picture a tile shows, the pixel budget, the no-art card, the stage light. |
+| `src/fit.ts`, `src/measure.ts`, `src/words.ts` | Fitting caps titles and fact lines from the fonts' advance tables; words about time and size. |
+| `src/qr.ts` | The backup's QR code (own encoder, held equal to `qrcode` by test). |
+| `fonts/` | Big Shoulders ExtraBold (display, caps), Archivo semi-condensed 400 and 700; their OFL texts; `fonts/source/` the scripts that cut them. |
+| `test/` | The gates and tests (`bun test packages/velvet/test` in `clients/shell`). |
+| `preview/` | `scenarios.ts` → `scenarios/*.json` (92 models with the presses to each screen), `fixtures/korri.json` (Korri's slices), `art/` (self-drawn test pictures and `build.py`), `previews.ts`, `shots.sh` (the real shell under Xvfb), `probe.sh` (the shell's probe over every scenario). |
+
+## The plan
+
+`plan(width, height)` (`src/plan.ts`) is the whole layout. The view sends it
+as `screen`; `Tokens.screen` holds it; components read sizes from it. Named
+thresholds decide structure, never a device:
+
+| Name | Value | What changes |
+| --- | --- | --- |
+| `NARROW_RATIO` | width / height under 0.9 | The pick stacks under the hero's band; buttons stand one under the other; a list page's panel stands over its rows. |
+| `PANEL_BESIDE_RATIO` | 1.25 and at least 560 px wide | A list page's panel (the backup's QR code) stands beside the rows. |
+| `EMPTY_WIDE_RATIO` | 1.5 | The empty library's ghost tiles stand beside the invitation. |
+| `MOST_COLUMNS` | 5 | The most tiles a set shows across (the pixel budget, below). |
+| `SHELF_SLOTS` | 5 | Games on a lobby shelf before "See all". |
+
+What yields first when the window gets small: the library's peek under the
+row, then the row's height, then a logo's size, then lines of facts (three at
+most), then a curtain's words (they page, "More above / More below"). A
+button never yields: when a curtain cannot fit, it stands on the window's
+foot and its words give way.
+
+Proven at 1920x1080, 1240x1080, 640x480, 480x800, 320x240 and 1280x720, and
+by a sweep from 320x240 to 2560x1440 (`test/plan.test.ts`).
+
+## Screens
+
+Every screen Korri publishes, and where its preview is. A scenario is
+`preview/scenarios/<name>.json`; `preview/shots.sh` draws it through the real
+shell, `VELVET_FRAMES` (below) through the test harness.
+
+| Screen | Scenarios | Component previews |
+| --- | --- | --- |
+| Home: the pick | `home`, `home-no-art`, `home-fresh`, `home-stale`, `home-undated`, `home-one`, `home-menu-pill` | `pages/VelvetBrowse` (Home, HomeNoArt, OneGame), `VelvetPick`, `VelvetStage`, `VelvetMarquee` |
+| The row under the pick | `row`, `row-no-art`, `row-all` | `VelvetBrowse.Row`, `VelvetTile` |
+| The lobby | `lobby`, `lobby-no-art`, `lobby-not-started`, `lobby-peer`, `lobby-systems` | `VelvetBrowse.Lobby`, `VelvetLobby` |
+| A set | `set`, `set-no-art`, `set-deep`, `set-system`, `set-peer`, `set-pill`, `set-sorted` | `pages/VelvetSet`, `VelvetGrid` |
+| Sort and filter | `set-sort` | `VelvetSheet.Sort` |
+| The detail (Cinema) | `detail`, `detail-no-art`, `detail-poster`, `detail-long-title`, `detail-two-places`, `detail-peer` | `pages/VelvetDetail`, `VelvetPick.Cinema` |
+| A game's other actions | `detail-actions`, `detail-actions-asking` | `VelvetSheet.Actions` |
+| No-art cards | `home-no-art`, `row-no-art`, `lobby-no-art`, `set-no-art`, `detail-no-art` | `VelvetPoster`, `VelvetTile.NoArt` |
+| Empty library, loading, error | `empty`, `empty-no-store`, `loading`, `error` | `pages/VelvetHouse`, `VelvetEmpty` |
+| The house menu | `menu`, `menu-invite` | `VelvetSheet.Menu` |
+| Status: Busy, steps, progress | `busy-plain`, `busy-steps`, `busy-progress`, `running`, `ended`, `paused-stream` | `VelvetCurtain`, `VelvetSteps`, `VelvetBar` |
+| Problem, Confirm, ChooseSave | `problem`, `problem-long`, `confirm`, `choose-save` | `VelvetCurtain` |
+| Settings and every interaction | `settings`, `settings-choice`, `settings-text`, `settings-text-symbols`, `settings-secret`, `settings-destructive`, `settings-saving`, `settings-problem`, `settings-foot` | `pages/VelvetList.Settings`, `VelvetRow`, `VelvetKeyboard` |
+| Wi-Fi and hidden networks | `wifi`, `wifi-password`, `wifi-hidden`, `wifi-failed`, `wifi-none` | `VelvetList.Wifi`, `VelvetSignal` |
+| First boot | `first-boot`, `first-boot-wifi`, `first-boot-names`, `first-boot-starter`, `first-boot-ready` | `VelvetProgramme.FirstBoot` |
+| Identity and backup | `identity`, `identity-last`, `identity-backup`, `identity-password`, `identity-working`, `identity-problem`, `identity-switched`, `identity-retired` | `VelvetList.Identity`, `VelvetProgramme.Backup`, `VelvetQr` |
+| The store and its search | `store`, `store-none`, `store-search`, `store-results`, `store-offer`, `store-confirm`, `store-downloading` | `VelvetList.Store`, `VelvetProgramme.Store`, `.Offer` |
+| Invites | `invites`, `invite-notice` | `VelvetList.Invites`, `VelvetNotice` |
+| Saves, the runner, launch settings | `saves`, `saves-empty`, `saves-restore`, `runner`, `launch-settings` | `VelvetList.Saves`, `.Runner`, `.LaunchSettings` |
+| The gameplay overlay | `overlay`, `overlay-groups`, `overlay-stream`, `overlay-asking` | `pages/VelvetPaused`, `VelvetPause` |
+
+## Contract use
+
+- `preferences`: `velvet.motion`, mark `device`, `full` or `reduced`; stored
+  with `RememberPreference` from Settings › Velvet › Motion. Reduced lands
+  every change at once (`Tokens.still`) and the stage never drifts.
+  `displays: "main"`.
+- One catalog window. Home needs several lists and has one window and one
+  query at a time. `src/lists.ts` asks one after another (`recent` from the
+  start, `mostPlayed`, `korri`, `recent` from the end, `korri` from the end,
+  one a peer), tells the answers apart by `catalog.query`, and keeps the few
+  games each list shows. A set asks for a window of 60 and asks again
+  `Around` the focused game near the window's edge.
+- "Now" is `model.publishedAt`. It can be a minute behind, so a session that
+  ended after it is "Just now". Without it a fact is a date and the pick is
+  the last game played.
+- `FocusGame` whenever the game in focus changes; the detail's More and
+  `options` list `model.focusedGame.actions`.
+- Focus (contract 8.4): every target carries `focused`, `focusRegion` and a
+  `focusId`; `focusPlan` names a region's exits only to regions with targets
+  in that view. Regions: `menu`, `pick`, `row`, `shelf:<key>`, `pill`,
+  `grid`, `detail`, `empty`, `rows`, `buttons`, `sheet`, `keys`, `curtain`.
+- Touch (ADR 0055): a `VelvetTap` over every target reports its id through
+  the root's one `activated`. A game tile takes the focus on the first tap
+  and opens on the second. Shelves and the row drag by whole tiles, a set by
+  whole rows (`dragged`). `Touched` hides the highlight until the next
+  button. A touch screen has no Back button: while touch is in use a round
+  chip stands in the lower right corner (`VelvetBack`, target `back`), and a
+  tap beside a sheet or over the keyboard's field is Back too.
+- `Tick`: the stage drifts after two seconds of rest and stops on any press.
+- Images (ADR 0065): a picture is empty until it arrives. The no-art card is
+  drawn under every picture, so there is never a hole. Only the detail cuts
+  the hero to fill; everywhere else it keeps its shape, as a band across the
+  top that falls off into the dark.
+- A plugin's secret (`plugin-credential:<id>`, `sensitiveText`) is a Settings
+  row: Configured or Not configured, edited on the keyboard with its text
+  hidden, with "Clear key".
+
+## Limits
+
+- **Pixels.** The shell keeps 24 MiB of decoded pixels for a surface. A
+  stored poster is 600x900: 2.1 MiB. So a view asks for its pictures in
+  order of importance (`take`, `src/art.ts`: the hero, the focused game's
+  logo, then tiles from the focused one outwards, rows in sight first) and
+  stops at 23 MiB. A tile over the budget shows its no-art card. A set is
+  five tiles across at most and a shelf five games, so every tile in sight
+  has its picture. The mockup's six across cannot have that while the shell
+  hands a poster over at its stored size (see "Asked of the shell").
+- **Calls.** Every `view()` over 10,000 games is under 50 ms on the slowest
+  device's clock (medians of 8 to about 45 ms there; the test multiplies
+  this workstation's CPU time by 28, the factor Zone measured). Most of a call is the view's JSON, so a
+  view holds what is on the stage and no more: the shelves in sight, the
+  set's rows in sight and one each way. A no-art card's drawing is made once
+  a system and variant and kept; the first sight of a new one costs about
+  10 ms on that device, so a screen of never-seen cards can take one call
+  over the budget, up to about 100 ms, once. `init` makes the drawings of
+  the systems Korri publishes, on the load budget.
+- **Motion.** A set's rows and the lobby's shelves move by whole steps. The
+  software renderer has no blur, no shadow, no rotation, and does not clip a
+  picture to a radius: tiles have square corners and a gradient shade.
+
+## What the interpreter taught us
+
+Slint 1.18.1, interpreted, with the shell's binder. The gates hold the ones
+a pattern can see; `velvet_package.rs` holds the rest.
+
+1. Animate only an element's own geometry, opacity or ground, and write the
+   animated binding out from `in` properties, `Tokens`, the row's own data
+   and geometry. An animated binding that reads a property worked out in the
+   component loses its value (the element stands at 0, or the interpreter
+   panics at `rtti.rs:370`).
+2. An animated place must not hang on a struct the view sends. The shell
+   sets a struct again with every view that changes any field of it, and an
+   animated binding under it starts again from zero when that happens twice
+   before a frame. So the set's first row is a top-level number
+   (`setFirstRow`), which the shell sets only when it changes, and the
+   lobby's labels and tiles each move by themselves.
+3. Every list is a top-level property of the window. A list inside a struct
+   can miss an in-place row update. Lists inside list rows are fine.
+4. A field the view leaves out of a struct keeps the value its list row had
+   before; the shell converts from the previous value. So `focused` counts
+   only on what is a target now (`focus-id` set), and a place with no tile
+   says `shown: false`.
+5. A list row is the same element for as long as it keeps its index. So a
+   tile keeps its place in its list: shelves send every place (one out of
+   sight is `{ shown: false }`), and a set's tiles stand in slots by place.
+6. `row`, `col` and `top` are taken as property names. There are no hex
+   integer literals. `viewport-*` is deprecated for `content-*`.
+7. A motion starts when its place is first read, and a repeater makes its
+   rows when the window draws: a test draws, steps the clock, and draws
+   again before it reads where anything is.
+
+## Asked of the shell
+
+Not Velvet's to change; reported to the coordinator.
+
+- Pictures at the size they are drawn. A grid of posters needs a fifth of
+  the pixels the shell decodes for it. With that, a set could be six or
+  seven across with every picture.
+- A treaty flag for "plays on another device". Velvet tells a peer's shelf
+  by its section not being Korri's "Continue" or "This device".
+- The fixture catalog orders `mostPlayed` by `playCount`; korrid orders it by
+  time played; the treaty's comment says by recorded sessions.
+
+## Checks
+
+```
+nix run .#velvet-check                 # the gates and tests, typecheck, freshness
+cd clients/shell
+bun test packages/velvet/test
+bun run velvet:typecheck
+cargo test --release --features fixture --test velvet_package
+cargo run --release -- verify packages/velvet
+bash packages/velvet/preview/probe.sh  <surface-probe>
+bash packages/velvet/preview/shots.sh  <korri-shell> <fixture-korrid> OUT [SIZES] [SCENARIOS...]
+```
+
+`velvet_package.rs` draws every preview state at five sizes, plays every
+scenario at six and checks the focused target is all in sight after every
+press, holds a system's set to that system's games, and times the calls.
+`VELVET_FRAMES=DIR VELVET_SIZES=WxH,... VELVET_ONLY=a,b` writes scenarios'
+last frames; `VELVET_PREVIEW_OUT=DIR` writes every preview state.
+
+| Gate | Holds |
+| --- | --- |
+| `authoring-gate` | No raw colour or pixel literal outside the tokens; no blur, shadow or rotation; no saturated blue; animations only of an element's own geometry, opacity or ground; logic is pure and imports only the treaty's types. |
+| `atomic-gate` | One component a file, named as its file; imports point down; only `main.slint` binds. |
+| `decomposition-gate` | Every component has its preview; none is unused; `Screen` is the plan, field for field. |
+| `contrast-gate` | The house's pairs; a title and its facts on any game's light. |
+| `touch-gate` | `activated` and `dragged` reach the root from every instance; the gesture rules; the way back. |
+| `scenarios` | Every scenario at six sizes: the focus convention, the pixel budget, the view's size, the view's keys. |
+| `plan`, `browse`, `touch`, `motion`, `words`, `poster`, `qr` | The plan's invariants over a sweep of sizes; the owner's decisions as behaviour; the rest. |

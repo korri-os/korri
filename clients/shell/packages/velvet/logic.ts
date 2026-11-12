@@ -18,6 +18,7 @@
  * `publishedAt`; idle time is the shell's Tick.
  */
 import type { SurfaceMessage as Message, SurfaceModel as Model, SurfaceRequest as Request } from "../../../../contracts/generated/surface"
+import { warm } from "./src/poster"
 import type { State } from "./src/types"
 import { MOTION_KEY, start, update as step } from "./src/update"
 import { overlayView, view as draw } from "./src/view"
@@ -25,6 +26,8 @@ import { overlayView, view as draw } from "./src/view"
 export type { State }
 
 export function init(model: Model, stored: Readonly<Record<string, string>>): State {
+  // On the load budget: the no-art cards of the systems this library holds.
+  warm((model.systems ?? []).map(system => system.systemId))
   return start(model, stored)
 }
 

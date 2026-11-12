@@ -1,0 +1,14 @@
+// VelvetFacts's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetFacts } from "VelvetFacts.slint";
+
+export component WithBadge inherits VelvetPreview {
+    VelvetFacts { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2; width: parent.width - 2 * self.x; facts: { count: 1, first: { count: 4, a: { icon: "resume", text: "Ready to resume", strong: true }, b: { icon: "clock", text: "2 hours ago" }, c: { icon: "watch", text: "61 h 19 min" }, d: { icon: "here", text: "This device" } } }; badge: "PC"; }
+}
+
+export component TwoLines inherits VelvetPreview {
+    VelvetFacts { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2; width: parent.width - 2 * self.x; facts: { count: 2, first: { count: 3, a: { icon: "resume", text: "Ready to resume", strong: true }, b: { icon: "clock", text: "2 hours ago" }, c: { icon: "watch", text: "61 h 19 min" } }, second: { count: 1, a: { icon: "here", text: "This device" } } }; }
+}

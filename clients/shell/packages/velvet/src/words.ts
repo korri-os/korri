@@ -98,5 +98,6 @@ export function moment(at: number): string {
  * which reads as M ("µCity" would set as "MCITY"), so the sign keeps its case.
  */
 export function caps(text: string): string {
+  if (text.indexOf("µ") < 0) return text.toUpperCase()
   return text.split("µ").map(part => part.toUpperCase()).join("µ")
 }

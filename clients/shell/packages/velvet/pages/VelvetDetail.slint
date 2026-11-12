@@ -20,7 +20,7 @@ export component VelvetDetail inherits Rectangle {
     animate opacity { duration: Tokens.t-detail; easing: cubic-bezier(0.16, 1, 0.3, 1); }
     VelvetPick {
         x: 0;
-        y: root.in ? 0px : 10px;
+        y: root.in ? 0px : Tokens.tile-type-least;
         width: parent.width;
         height: parent.height;
         hero: root.detail.hero;

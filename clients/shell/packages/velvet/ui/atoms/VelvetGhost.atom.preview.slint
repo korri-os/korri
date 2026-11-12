@@ -1,0 +1,10 @@
+// VelvetGhost's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetGhost } from "VelvetGhost.slint";
+
+export component Place inherits VelvetPreview {
+    VelvetGhost { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: parent.height * 0.4; height: parent.height * 0.6; }
+}

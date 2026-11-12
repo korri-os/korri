@@ -42,13 +42,15 @@ export component VelvetRow inherits Rectangle {
     accessible-role: button;
     accessible-label: it.label;
     accessible-item-selectable: target && !inert;
-    accessible-item-selected: it.focused;
+    // `focused` counts only on a target: a row that is none may still carry the flag of the
+    // row that stood in its place before (README, "What the interpreter taught us").
+    accessible-item-selected: target && it.focused;
     if root.target: Rectangle {
         width: root.width;
         height: root.height;
         border-radius: Math.min(root.size * 0.55, Tokens.round-row);
         background: Tokens.house-light;
-        opacity: root.it.focused && Tokens.ring && !root.inert ? 1 : 0;
+        opacity: root.target && root.it.focused && Tokens.ring && !root.inert ? 1 : 0;
         animate opacity { duration: Tokens.t-ring; easing: ease-in-out; }
     }
     if root.it.kind == "head": Text {

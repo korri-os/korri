@@ -1,0 +1,18 @@
+// VelvetLight's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetLight } from "VelvetLight.slint";
+
+export component Ember inherits VelvetPreview {
+    VelvetLight { x: 0; y: 0; width: parent.width; height: parent.height; glow: Tokens.tint(11355177); }
+}
+
+export component Tide inherits VelvetPreview {
+    VelvetLight { x: 0; y: 0; width: parent.width; height: parent.height; glow: Tokens.tint(2982549); }
+}
+
+export component House inherits VelvetPreview {
+    VelvetLight { x: 0; y: 0; width: parent.width; height: parent.height; }
+}

@@ -1,0 +1,18 @@
+// VelvetWords's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetWords } from "VelvetWords.slint";
+
+export component Fact inherits VelvetPreview {
+    VelvetWords { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2; text: "Played 2 hours ago"; }
+}
+
+export component Strong inherits VelvetPreview {
+    VelvetWords { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2; text: "Ready to resume"; strong: true; ink: Tokens.house-light; }
+}
+
+export component Wraps inherits VelvetPreview {
+    VelvetWords { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height * 0.3; width: parent.width - 2 * self.x; text: "Bring your first games in through a plugin. Once you play, the game you come back to waits for you right here."; wraps: true; size: Tokens.screen.body * Tokens.unit; }
+}

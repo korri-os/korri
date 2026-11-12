@@ -1,0 +1,14 @@
+// VelvetFact's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetFact } from "VelvetFact.slint";
+
+export component Plain inherits VelvetPreview {
+    VelvetFact { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2; fact: { icon: "clock", text: "2 hours ago" }; }
+}
+
+export component Strong inherits VelvetPreview {
+    VelvetFact { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2; fact: { icon: "resume", text: "Ready to resume", strong: true }; }
+}

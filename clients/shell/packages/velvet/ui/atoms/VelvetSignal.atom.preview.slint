@@ -1,0 +1,26 @@
+// VelvetSignal's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetSignal } from "VelvetSignal.slint";
+
+export component Bars0 inherits VelvetPreview {
+    VelvetSignal { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; bars: 0; size: Math.min(parent.width, parent.height) * 0.2; }
+}
+
+export component Bars1 inherits VelvetPreview {
+    VelvetSignal { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; bars: 1; size: Math.min(parent.width, parent.height) * 0.2; }
+}
+
+export component Bars2 inherits VelvetPreview {
+    VelvetSignal { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; bars: 2; size: Math.min(parent.width, parent.height) * 0.2; }
+}
+
+export component Bars3 inherits VelvetPreview {
+    VelvetSignal { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; bars: 3; size: Math.min(parent.width, parent.height) * 0.2; }
+}
+
+export component Bars4 inherits VelvetPreview {
+    VelvetSignal { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; bars: 4; size: Math.min(parent.width, parent.height) * 0.2; }
+}

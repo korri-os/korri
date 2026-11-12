@@ -33,6 +33,8 @@ import { lastAttempt, rejectedEntry, sameAttempt } from "./settings"
 import type { Act, ButtonSpec, Direction, KeyboardState, PanelSpec, PanelState, Request, RowSpec, State } from "./types"
 
 export const MOTION_KEY = "velvet.motion"
+/** The tap target that is the Back button (ADR 0055: a touch screen has none). */
+export const BACK_TARGET = "back"
 /** The stage drifts after this long without a press. */
 export const DRIFT_AFTER_MS = 2000
 /** Ticks an invite's notice shows. */
@@ -106,7 +108,8 @@ function panelPress(state: State, panel: PanelSpec, button: SurfaceButton, p: Pl
         return rowAt > 0 ? put({ focus: rows[rowAt - 1]!.id, at: rowAt - 1 }) : { state }
       case "down":
         if (rowAt < rows.length - 1) return put({ focus: rows[rowAt + 1]!.id, at: rowAt + 1 })
-        return panel.buttons.length > 0 ? put({ focus: panel.buttons[0]!.id, at: rowAt }) : { state }
+        // Into the buttons: the first one that can be pressed (a dimmed Next waits beside Skip).
+        return panel.buttons.length > 0 ? put({ focus: (panel.buttons.find(candidate => candidate.dim !== true) ?? panel.buttons[0]!).id, at: rowAt }) : { state }
       case "left":
       case "right":
         return row.step === undefined ? { state } : { state, act: row.step(button === "left" ? -1 : 1) }
@@ -388,6 +391,8 @@ function activated(state: State, target: string, at: number | undefined, release
   const p = plan(state.size.width, state.size.height)
   const done = (step: Step | undefined): State => (step === undefined ? state : perform(step.state, step.act, model, out))
   const curtain = curtainOf(state, model)
+  // The way back for a finger: the chip, a tap beside a sheet or over the keyboard's field.
+  if (target === BACK_TARGET) return curtain !== undefined ? state : pressed(state, "back", model, out)
   if (curtain !== undefined) {
     if (!target.startsWith("x:")) return state
     const index = Number(target.slice(2))

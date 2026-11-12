@@ -1,0 +1,18 @@
+// VelvetCaps's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetCaps } from "VelvetCaps.slint";
+
+export component Title inherits VelvetPreview {
+    VelvetCaps { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height * 0.3; width: parent.width - 2 * self.x; lines: ["EMBER", "ROAD"]; size: Tokens.screen.title * Tokens.unit; }
+}
+
+export component Centred inherits VelvetPreview {
+    VelvetCaps { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height * 0.3; width: parent.width - 2 * self.x; lines: ["COULD NOT START"]; size: Tokens.screen.head * Tokens.unit; centred: true; }
+}
+
+export component LongWord inherits VelvetPreview {
+    VelvetCaps { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height * 0.3; width: parent.width - 2 * self.x; lines: ["ANTIDISESTABLISH", "MENTARIANISM"]; size: Tokens.screen.head * Tokens.unit; }
+}

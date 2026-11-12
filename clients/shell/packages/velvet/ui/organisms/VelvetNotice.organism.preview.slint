@@ -1,0 +1,10 @@
+// VelvetNotice's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetNotice } from "VelvetNotice.slint";
+
+export component Invite inherits VelvetPreview {
+    VelvetNotice { x: (parent.width - self.width) / 2; y: parent.height - self.height - Tokens.screen.pad-y * Tokens.unit; notice: { shown: true, title: "Mika plays Glass Garden", words: "On zao. Open the menu to join." }; }
+}

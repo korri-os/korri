@@ -113,6 +113,8 @@ const bare = library(false)
 /** A library nobody has played yet, and one with a single game. */
 const fresh = library(true, fixtures.map(({ ago: _ago, plays: _plays, hours: _hours, resumable: _resumable, ...rest }) => rest))
 const one = library(true, [fixtures[1]!])
+/** The other device holds more games than a shelf shows: its shelf ends in "See all". */
+const crowd = library(true, [...fixtures, ...["Salt Road", "Winter Kiln", "Low Tide Radio", "Paper Moon", "Brass Owl", "Hollow Pine"].map((title, index): Fixture => ({ id: `zao-${index}`, title, section: "zao", ...(index % 2 === 0 ? { systemId: "snes", system: "SNES" } : {}), ago: (30 + index * 11) * DAY, plays: 3 + index, hours: 2 + index }))])
 /** A week away: nothing played in the last seven days, so the pick is the most played. */
 const stale = { ...library(true, fixtures.map(fixture => (fixture.ago === undefined ? fixture : { ...fixture, ago: fixture.ago + 18 * DAY, resumable: false }))) }
 /** No time from Korri: the facts say a date. */
@@ -167,6 +169,8 @@ const toSettings = ["system"]
 const toWifi = ["menu", "down", "down", "confirm"]
 const toIdentity = ["menu", "down", "down", "down", "confirm"]
 const toStore = ["menu", "confirm"]
+/** First boot: past the controllers, and past Wi-Fi with "Skip for now". */
+const pastWifi = ["confirm", "down", "down", "down", "down", "down", "confirm"]
 const toLobby = ["down", "down"]
 const toSet = [...toLobby, "right", "right", "right", "right", "right", "right", "confirm"]
 const toSystems = [...toLobby, "down", "down", "down"]
@@ -195,7 +199,9 @@ const scenarios: Scenario[] = [
   { name: "set-sort", models: [ready], steps: [...toSet, "options"] },
   { name: "set-sorted", models: [ready], steps: [...toSet, "options", "down", "confirm", "back", "down"] },
   { name: "set-system", models: [ready], steps: [...toSystems, "confirm"] },
-  { name: "set-peer", models: [ready], steps: [...toLobby, "down", "down", "right", "right", "right", "confirm"] },
+  { name: "set-deep", models: [ready], steps: [...toSet, "down", "down", "down", "right"] },
+  { name: "set-peer", models: [crowd], steps: [...toLobby, "down", "down", "right", "right", "right", "right", "right", "confirm", "right"] },
+  { name: "detail-peer", models: [ready], steps: [...toLobby, "down", "down", "right", "right", "confirm"] },
   // The detail.
   { name: "detail", models: [ready], steps: ["confirm"] },
   { name: "detail-no-art", models: [bare], steps: ["confirm"] },
@@ -229,6 +235,7 @@ const scenarios: Scenario[] = [
   { name: "wifi-failed", models: [{ ...ready, network: wifiFailed }], steps: [...toWifi, "down", "down"] },
   { name: "wifi-none", models: [{ ...ready, network: { connection: { _tag: "Wired" }, wifi: { _tag: "NoAdapter" } } }], steps: toWifi },
   { name: "identity", models: [ready], steps: toIdentity },
+  { name: "identity-last", models: [ready], steps: [...toIdentity, "down", "down"] },
   { name: "identity-retired", models: [identity(korri.identity.retired)], steps: [...toIdentity, "down", "down", "down", "confirm"] },
   { name: "identity-password", models: [ready], steps: [...toIdentity, "confirm"] },
   { name: "identity-backup", models: [identity(korri.identity.backup)], steps: toIdentity },
@@ -262,8 +269,9 @@ const scenarios: Scenario[] = [
   { name: "launch-settings", models: [{ ...ready, launchSettings: korri.launchSettings }], steps: ["down"] },
   { name: "first-boot", models: [firstBoot()], steps: [] },
   { name: "first-boot-wifi", models: [firstBoot()], steps: ["confirm"] },
-  { name: "first-boot-names", models: [firstBoot()], steps: ["confirm", "down", "down", "down", "down", "down", "down", "down", "confirm"] },
-  { name: "first-boot-starter", models: [firstBoot({ onboarding: { ...korri.onboarding.onboarding, starterPack: { _tag: "Offered", actions: [{ id: "starter-pack:install", label: "Get the Starter pack", enabled: true }] } } })], steps: ["confirm", "down", "down", "down", "down", "down", "down", "down", "confirm", "down", "confirm"] },
+  { name: "first-boot-names", models: [firstBoot()], steps: [...pastWifi] },
+  { name: "first-boot-ready", models: [firstBoot()], steps: [...pastWifi, "down", "confirm"] },
+  { name: "first-boot-starter", models: [firstBoot({ onboarding: { ...korri.onboarding.onboarding, starterPack: { _tag: "Offered", actions: [{ id: "starter-pack:install", label: "Get the Starter pack", enabled: true }] } } })], steps: [...pastWifi, "down", "confirm"] },
   // The gameplay overlay.
   { name: "overlay", models: [overlay(korri.overlay.plain)], steps: [] },
   { name: "overlay-groups", models: [overlay(korri.overlay.groups)], steps: ["down", "down"] },

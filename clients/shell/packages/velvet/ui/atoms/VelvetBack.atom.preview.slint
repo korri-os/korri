@@ -1,0 +1,10 @@
+// VelvetBack's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetBack } from "VelvetBack.slint";
+
+export component Shown inherits VelvetPreview {
+    VelvetBack { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; shown: true; }
+}

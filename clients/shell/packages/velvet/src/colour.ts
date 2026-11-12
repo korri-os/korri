@@ -100,17 +100,39 @@ export const HOUSE_DOWN = 0x040406
 export const HOUSE_LIGHT = 0xf3eee6
 export const USHER = 0xb3ada3
 
+/** The light's core is drawn at this weight over House down (ui/atoms/VelvetLight.slint). */
+export const LIGHT_CORE = 0.9
+/** House light on the light's core keeps at least this contrast: a title can stand anywhere on the stage. */
+export const LIGHT_CONTRAST = 4.5
+
+/**
+ * A gel at one brightness for the eye. HSL's lightness is not that: a yellow
+ * at 42 % is three times as bright as a blue at 42 %, and a title on it would
+ * wash out. So the lightness starts at 42 % and comes down until House light
+ * on the light's core keeps LIGHT_CONTRAST.
+ */
+function gel(hue: number, saturation: number): number {
+  let lightness = 0.42
+  let colour = hsl(hue, saturation, lightness)
+  while (lightness > 0.1 && contrast(HOUSE_LIGHT, mix(HOUSE_DOWN, colour, LIGHT_CORE)) < LIGHT_CONTRAST) {
+    lightness -= 0.01
+    colour = hsl(hue, saturation, lightness)
+  }
+  return colour
+}
+
 /**
  * The stage light for a game: its art's colour with the saturation held
- * between 0.30 and 0.62 at 42 % lightness, or the title's gel when the art
- * has no colour to give (absent, near grey or near black).
+ * between 0.30 and 0.62, or the title's gel when the art has no colour to
+ * give (absent, near grey or near black). Every light is as bright as the
+ * next (`gel`).
  */
 export function stageLight(artColour: string | undefined, title: string): number {
   const parsed = parseHex(artColour)
   if (parsed !== undefined) {
     const [h, s, l] = toHsl(parsed)
-    if (s >= 0.12 && l >= 0.05) return hsl(h, clamp(s, 0.3, 0.62), 0.42)
-    return hsl(gelHue(title), 0.4, 0.42)
+    if (s >= 0.12 && l >= 0.05) return gel(h, clamp(s, 0.3, 0.62))
+    return gel(gelHue(title), 0.4)
   }
-  return hsl(gelHue(title), 0.46, 0.42)
+  return gel(gelHue(title), 0.46)
 }

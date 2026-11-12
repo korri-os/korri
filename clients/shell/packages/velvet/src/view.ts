@@ -240,6 +240,8 @@ export function view(state: State, model: Model) {
     screen: screenOf(p),
     still: state.still,
     touching: state.touched,
+    // A finger's way back, where there is a level to go back to.
+    wayBack: state.touched && (page === "set" || page === "detail" || page === "list" || (page === "home" && state.depth > 0)),
     layer: top,
     page,
     stage,
@@ -250,6 +252,10 @@ export function view(state: State, model: Model) {
     shelfTiles: home?.shelfTiles ?? NONE,
     set: set?.set ?? OFF,
     setTiles: set?.tiles ?? NONE,
+    // The row a set's window starts at stands alone: a number the shell sets only when it
+    // changes. Inside `set` it would be set again with every view, and the grid's
+    // moving track would start its motion again (README, "What the interpreter taught us").
+    setFirstRow: set?.set.firstRow ?? 0,
     setMarks: set?.marks ?? NONE,
     detail: detail?.detail ?? OFF,
     detailCards: detail?.cards ?? NONE,

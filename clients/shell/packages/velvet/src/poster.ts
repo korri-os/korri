@@ -6,11 +6,17 @@
  *     grammar for all of them: a paper field in one of the machine's shell
  *     colours, parts of the machine (D-pad, buttons, grille, screen,
  *     cartridge, keys), one texture, and the title in the display face.
- *     The title seeds the composition, the shell, the parts, their scale and
- *     place, so two games of one system never draw the same card.
+ *     The title picks one of VARIANTS drawings (composition, shell, parts,
+ *     their scale and place), so neighbours of one system differ.
  *   - Any other system, or none: a pattern tile. Its motif and its hue come
  *     from the system id (the title when there is none), so one system's
- *     games read as a family; the title varies the rest.
+ *     games read as a family; the title picks the variant.
+ *
+ * A drawing is made once and kept (`drafts`): a card's shapes cost about a
+ * third of a millisecond of logic on a workstation, about ten on the slowest
+ * device, and a screen of cards must not pay that on every move. A game's
+ * card is then its variant's drawing and its own fitted title. `warm` makes
+ * the drawings of the systems Korri publishes while Velvet loads.
  *
  * A card is a list of filled paths in a 60 x 90 box plus the fitted title;
  * Slint draws them as they are (ui/molecules/VelvetPoster.slint). Flat fills
@@ -18,7 +24,7 @@
  * turn is worked into the coordinates here. No marks and no logos: the parts
  * quote a machine's shapes, never its brand.
  */
-import { contrast, gelHue, hash, hsl, mix, pick, rng, toHsl } from "./colour"
+import { contrast, GELS, gelHue, hash, hsl, mix, pick, rng, toHsl } from "./colour"
 import { fitCaps, type Fit } from "./fit"
 
 export const CARD_W = 60
@@ -175,9 +181,12 @@ interface Place {
   readonly r: number
 }
 
-const n = (value: number): string => String(Math.round(value * 100) / 100)
+// A tenth of a card unit is half a pixel on the largest tile: one decimal is enough, and a view sends every digit.
+const n = (value: number): string => String(Math.round(value * 10) / 10)
 
 function at(place: Place, x: number, y: number): [number, number] {
+  // Most parts stand straight: no turn, no trigonometry.
+  if (place.r === 0) return [place.x + x * place.s, place.y + y * place.s]
   const a = (place.r * Math.PI) / 180
   const cos = Math.cos(a)
   const sin = Math.sin(a)
@@ -410,20 +419,20 @@ function texture(kind: Texture, p: Palette, x: number, y: number, w: number, h: 
   let d = ""
   switch (kind) {
     case "dither": {
-      // Crossed stripes filled even-odd: a checker of 2.5-unit cells.
-      const cell = 2.5
+      // Crossed stripes filled even-odd: a checker of 3.75-unit cells.
+      const cell = 3.75
       for (let i = 0; i * cell < w; i += 2) d += box(here, x + i * cell, y, Math.min(cell, w - i * cell), h)
       for (let j = 0; j * cell < h; j += 2) d += box(here, x, y + j * cell, w, Math.min(cell, h - j * cell))
       return [{ d, c: p.deep, o: opacity * 0.6, e: true }]
     }
     case "halftone": {
-      const pitch = 6
+      const pitch = 9
       for (let j = 0; j * pitch < h + pitch; j++) {
         for (let i = 0; i * pitch < w + pitch; i++) {
           const cx = x + i * pitch + (j % 2 === 1 ? pitch / 2 : 0)
           const cy = y + j * pitch
           if (cx > x + w || cy > y + h) continue
-          d += polygon(here, [[cx, cy - 1.1], [cx + 1.1, cy], [cx, cy + 1.1], [cx - 1.1, cy]])
+          d += polygon(here, [[cx, cy - 1.6], [cx + 1.6, cy], [cx, cy + 1.6], [cx - 1.6, cy]])
         }
       }
       return [{ d, c: p.lite, o: opacity * 0.5 }]
@@ -435,16 +444,16 @@ function texture(kind: Texture, p: Palette, x: number, y: number, w: number, h: 
       return [{ d, c: 0xffffff, o: opacity * 0.2 }]
     }
     case "ridges": {
-      for (let j = 0; j * 2.4 < h; j++) d += box(here, x, y + j * 2.4, w, 1.1)
+      for (let j = 0; j * 3.6 < h; j++) d += box(here, x, y + j * 3.6, w, 1.6)
       return [{ d, c: p.ink, o: opacity * 0.22 }]
     }
     case "scan": {
-      for (let j = 0; j * 3 < h; j++) d += box(here, x, y + j * 3, w, 0.7)
+      for (let j = 0; j * 4.5 < h; j++) d += box(here, x, y + j * 4.5, w, 1)
       return [{ d, c: p.lite, o: opacity * 0.2 }]
     }
     case "grid": {
-      for (let i = 1; i * 5 < w; i++) d += box(here, x + i * 5 - 0.15, y, 0.3, h)
-      for (let j = 1; j * 5 < h; j++) d += box(here, x, y + j * 5 - 0.15, w, 0.3)
+      for (let i = 1; i * 7.5 < w; i++) d += box(here, x + i * 7.5 - 0.2, y, 0.4, h)
+      for (let j = 1; j * 7.5 < h; j++) d += box(here, x, y + j * 7.5 - 0.2, w, 0.4)
       return [{ d, c: p.lite, o: opacity * 0.3 }]
     }
   }
@@ -642,11 +651,12 @@ function motif(kind: Motif, next: () => number, tone: number, other: number): Sh
 /**
  * The pattern tile, for a system Velvet has no parts for, or none. The hue
  * and the motif come from `family` (the system id; the title without one);
- * the title varies the shell, the motif's size and place, and the plate.
+ * the variant (from the title) picks the shell, the motif's size and place,
+ * and the plate.
  */
-function patternTile(title: string, family: string): Draft {
+function patternTile(variant: number, family: string): Draft {
   const of = hash(`family|${family}`)
-  const next = rng(hash(`${title}|pattern|${family}`))
+  const next = rng(hash(`${variant}|pattern|${family}`))
   const h = GEL_OF(of)
   const kind = MOTIFS[(of >>> 4) % MOTIFS.length]!
   const shells = [
@@ -668,8 +678,13 @@ function patternTile(title: string, family: string): Draft {
 /** A family's hue: any of the twelve gels, a few degrees either way. */
 const GEL_OF = (seed: number): number => gelHue(`\u0000${seed}`)
 
-function finish(draft: Draft, title: string): Poster {
-  // Shapes of one colour that follow each other are one path.
+/** A drawing, finished: its shapes as layers (shapes of one colour that follow each other are one path). */
+interface Drawing {
+  readonly layers: readonly Layer[]
+  readonly draft: Draft
+}
+
+function drawingOf(draft: Draft): Drawing {
   const layers: Layer[] = []
   const ground: Shape = { d: `M0 0H${CARD_W}V${CARD_H}H0Z`, c: draft.paper }
   for (const shape of [ground, ...draft.shapes]) {
@@ -680,26 +695,74 @@ function finish(draft: Draft, title: string): Poster {
     if (before !== undefined && before.c === shape.c && before.o === o && before.e === e && !e) layers[layers.length - 1] = { ...before, d: before.d + shape.d }
     else layers.push({ d: shape.d, c: shape.c, o, e })
   }
-  const fit: Fit = fitCaps(title, draft.box.w, draft.box.h, draft.max * CARD_H, 4.2)
-  return {
-    layers, lines: fit.lines, size: fit.size,
-    tx: draft.box.x, ty: draft.box.y, tw: draft.box.w, th: draft.box.h,
-    top: draft.top, ink: draft.ink, badgeTop: draft.badgeTop, paper: draft.paper,
-  }
+  return { layers, draft }
 }
 
+/** Drawings a title picks from, for one system or family. */
+export const VARIANTS = 8
+/** Families a game with no system falls into: enough that neighbours differ, few enough that every drawing is kept. */
+const FAMILIES = 24
+
+const drafts = new Map<string, Drawing>()
 const posters = new Map<string, Poster>()
+
+/** The drawing for a title: its system's (or family's) variant, made once. */
+function drawingFor(title: string, systemId: string | undefined): Drawing {
+  const seed = hash(title)
+  const variant = seed % VARIANTS
+  const language = knownSystem(systemId)
+  const spoken = language === undefined ? undefined : LANGUAGES[language]!
+  // A machine with no shell colours of its own takes one of the twelve gels, by the title.
+  const gel = spoken !== undefined && spoken.shells === undefined ? `gel${(seed >>> 8) % GELS.length}` : ""
+  const family = systemId === undefined || systemId.trim() === "" ? `title|${(seed >>> 8) % FAMILIES}` : `system|${systemId.trim().toLowerCase()}`
+  const key = spoken !== undefined ? `${language}|${variant}|${gel}` : `${family}|${variant}`
+  let drawing = drafts.get(key)
+  if (drawing === undefined) {
+    drawing = drawingOf(spoken !== undefined ? systemPoster(spoken, gel, key) : patternTile(variant, family))
+    if (drafts.size > 400) drafts.clear()
+    drafts.set(key, drawing)
+  }
+  return drawing
+}
+
+/** The most drawings `warm` makes: about half a second of the two-second load budget on the slowest device. */
+const WARM_MOST = 64
+
+/**
+ * Make the drawings of the systems Korri publishes before the first view
+ * (logic.ts calls this from `init`, which is on the load budget, not a
+ * call's). After it, a card of one of these systems costs its title's fit.
+ * A system Velvet has no parts for, and a game with no system, still draw
+ * on first sight.
+ */
+export function warm(systemIds: readonly string[]): void {
+  let made = 0
+  for (const systemId of systemIds) {
+    const language = knownSystem(systemId)
+    const spoken = language === undefined ? undefined : LANGUAGES[language]
+    if (language === undefined || spoken === undefined || spoken.shells === undefined) continue
+    for (let variant = 0; variant < VARIANTS; variant++) {
+      const key = `${language}|${variant}|`
+      if (drafts.has(key)) continue
+      if (made >= WARM_MOST) return
+      drafts.set(key, drawingOf(systemPoster(spoken, "", key)))
+      made++
+    }
+  }
+}
 
 /** The no-art card of a game (or of a system, for the By system shelf: its name as the title). */
 export function posterFor(title: string, systemId: string | undefined): Poster {
   const key = `${systemId ?? ""}\u0000${title}`
   const known = posters.get(key)
   if (known !== undefined) return known
-  const language = knownSystem(systemId)
-  const draft = language !== undefined
-    ? systemPoster(LANGUAGES[language]!, title, `${title}|${language}`)
-    : patternTile(title, systemId === undefined || systemId.trim() === "" ? `title|${title}` : `system|${systemId.trim().toLowerCase()}`)
-  const poster = finish(draft, title)
+  const { layers, draft } = drawingFor(title, systemId)
+  const fit: Fit = fitCaps(title, draft.box.w, draft.box.h, draft.max * CARD_H, 4.2)
+  const poster: Poster = {
+    layers, lines: fit.lines, size: fit.size,
+    tx: draft.box.x, ty: draft.box.y, tw: draft.box.w, th: draft.box.h,
+    top: draft.top, ink: draft.ink, badgeTop: draft.badgeTop, paper: draft.paper,
+  }
   if (posters.size > 600) posters.clear()
   posters.set(key, poster)
   return poster

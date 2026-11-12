@@ -1,0 +1,14 @@
+// VelvetEdge's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetEdge } from "VelvetEdge.slint";
+
+export component Lit inherits VelvetPreview {
+    VelvetEdge { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: parent.height * 0.4; height: parent.height * 0.6; lit: true; }
+}
+
+export component Rest inherits VelvetPreview {
+    Rectangle { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: parent.height * 0.4; height: parent.height * 0.6; background: Tokens.light-10; VelvetEdge { width: parent.width; height: parent.height; } }
+}
