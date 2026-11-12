@@ -85,8 +85,8 @@ C43 The curtain: the session is paused elsewhere, with Korri's actions.
 C44 The curtain: the session ended, with Korri's words and Dismiss.
 C45 A fact in the overlay, under the clock: who is playing, by name.
 C34 A fact in the detail: Saves in sync, Saves not in sync, Saves kept by Steam, Two saves to choose from.
-C35 The detail's Choose a save, and the curtain: each save a button with its device and when.
-C36 Saves, a list page: each save a row, restore asks first.
+C35 The detail's Choose a save, and the curtain: each save a button with its device and how long ago it was made ("3 h 20 min ago"; a date past thirty days). Never a clock time: Korri's times are UTC and a surface has no zone.
+C36 Saves, a list page: each save a row named by how long ago it was made, restore asks first.
 C11 Run with, a list page: one row a runner, the one in force marked.
 C37 Launch settings, a list page: where the game runs under the title; one list, rows by group, each setting once; a changed row says what it was beside its value; a row that cannot change rests and says why; while a row is changed the last row is where the changes are kept; Reload and Close at its foot, and first under Korri's message.
 C38 Profiles are rows of Korri's Profile group; a profile is also a place the keep row offers. Back runs Korri's close action.
