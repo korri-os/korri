@@ -124,6 +124,8 @@ export component VelvetTile inherits Rectangle {
         }
         // The light on the card's head.
         if root.tile.kind != "nav": Rectangle {
+            x: 0;
+            y: 0;
             width: parent.width;
             height: parent.height * 0.38;
             background: @linear-gradient(180deg, Tokens.sheen 0%, Tokens.clear 100%);

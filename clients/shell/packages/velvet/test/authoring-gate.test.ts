@@ -14,6 +14,9 @@
  *  - An animation is of an element's own geometry, opacity or ground (the
  *    interpreter loses the value of an animated custom property; README,
  *    "What the interpreter taught us").
+ *  - A part drawn as a gradient names its `y`, or fills its parent's
+ *    height: a part with no `y` is centred in its parent, and a fade meant
+ *    for an edge then lies across the middle.
  *
  * Logic (.ts):
  *  - Pure: no clock, no randomness, no timers, no network, no storage.
@@ -79,6 +82,27 @@ describe("authoring: views", () => {
       }
     }
     expect(wrong).toEqual([])
+  })
+
+  test("a gradient names where it stands: its y, or its parent's whole height", () => {
+    const loose: string[] = []
+    for (const file of files.filter(file => !isPreview(file))) {
+      const lines = stripComments(read(file)).split("\n")
+      lines.forEach((line, at) => {
+        if (!/^\s*background:.*@linear-gradient/.test(line)) return
+        const indent = line.length - line.trimStart().length
+        // The part's own lines: the ones at this depth, back to its opening line and on to its closing brace.
+        let open = at
+        while (open > 0 && lines[open]!.length - lines[open]!.trimStart().length >= indent) open--
+        let close = at
+        while (close < lines.length - 1 && (lines[close]!.trim() === "" || lines[close]!.length - lines[close]!.trimStart().length >= indent)) close++
+        if (/\binherits\b/.test(lines[open]!)) return
+        const own = lines.slice(open + 1, close).filter(entry => entry.length - entry.trimStart().length === indent).map(entry => entry.trim())
+        const placed = own.some(entry => entry.startsWith("y:")) || own.some(entry => /^height: (parent|root)\.height;/.test(entry))
+        if (!placed) loose.push(`${file}:${at + 1}`)
+      })
+    }
+    expect(loose).toEqual([])
   })
 
   test("no deprecated viewport property", () => {

@@ -63,14 +63,18 @@ export component VelvetRows inherits Rectangle {
             }
         }
     }
-    // More above, more below.
+    // More above, more below. Each names its place: a part with no `y` is centred in its parent,
+    // and the fade for "more above" then lies across the middle of the list.
     Rectangle {
+        x: 0;
+        y: 0;
         width: root.width;
         height: root.size * 1.4;
         background: @linear-gradient(180deg, root.ground 0%, root.ground.with-alpha(0) 100%);
         opacity: flick.content-y < -1px ? 1 : 0;
     }
     Rectangle {
+        x: 0;
         y: root.height - self.height;
         width: root.width;
         height: root.size * 1.4;
