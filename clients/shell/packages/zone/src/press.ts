@@ -18,7 +18,7 @@ import type { SurfaceButton, SurfaceModel } from "../../../../../contracts/gener
 import { findKey, keyAt, keyGrid, type ZoneGridKey } from "./keys"
 import { buttonRow, dialogButtons, nearest, tabsPlan, type ZoneBox, type ZoneScreen } from "./plan/screen"
 import { entryHeading, optionsPlan, ZONE_OPTIONS_SYSTEM } from "./plan/options"
-import { launchPlan, launchSlices, ZONE_LAUNCH_SCOPE_ROW } from "./plan/launch-settings"
+import { launchCursor, launchEntryAction, launchListEntry, launchPlan, type ZoneLaunchZone } from "./plan/launch-settings"
 import { runWithPlan } from "./plan/options-run-with"
 import { storeRows } from "./rows"
 import { launchChoices, playtime, type ZoneFindKey } from "./state/games"
@@ -473,50 +473,56 @@ function rowsPage(
 
 // ---- LAUNCH SETTINGS ----
 
+/**
+ * The page's zones, top to bottom (src/plan/launch-settings.ts): Korri's
+ * actions, the list, the keep row. Up and down walk the list's rows, the
+ * ones Korri gives no way to change among them, and at its ends go to the
+ * zone that way; left and right walk the buttons, or step the focused row.
+ */
 function launch(state: ZoneSurfaceState, button: Direction | "confirm", korri: SurfaceModel, send: Send): void {
   const settings = korri.launchSettings
   if (settings === undefined || settings._tag === "Closed") return
-  const plan = launchPlan(settings, korri.settingsStatus, state.launchScope)
-  const slices = launchSlices(korri, state.launchScope)
-  const rows = slices === undefined || !plan.rows ? [] : optionsPlan(slices).rows
-  const actions = plan.actions
+  const plan = launchPlan(settings, korri.settingsStatus)
+  const all = optionsPlan(plan.slices).rows
   const message = (inner: Extract<ZoneSurfaceMessage, { _tag: "Launch" }>["message"]) => send({ _tag: "Launch", message: inner })
-  // On Korri's actions under the rows: left and right walk them, up goes back to the rows.
-  if (rows.length === 0 && state.launchAction === undefined && optionsLayer(state.launch) === "none") {
-    const first = actions.find(action => action.enabled)
-    if (first !== undefined && button === "confirm") return send({ _tag: "LaunchAction", actionId: first.id })
-    if (first !== undefined) send({ _tag: "FocusedLaunchAction", actionId: first.id })
-    // The view already lights the first: a direction moves on from it.
-    if (!isDirection(button) || first === undefined) return
-    return launch({ ...state, launchAction: first.id }, button, korri, send)
+  // A keyboard or a dialog holds the cursor.
+  if (optionsLayer(state.launch) !== "none") return rowsPage(state, state.launch, all, button, message, undefined, korri, send)
+  const cursor = launchCursor(plan, state.launch.focused, state.launchAction)
+  if (cursor.zone === "none") return
+  const enter = (zone: ZoneLaunchZone | undefined, from: ZoneLaunchZone) => {
+    if (zone === "actions") {
+      const first = launchEntryAction(plan)
+      if (first !== undefined) send({ _tag: "FocusedLaunchAction", actionId: first.id })
+    } else if (zone === "list") {
+      const row = launchListEntry(plan, state.launch.focused, from)
+      if (row !== undefined) message({ _tag: "FocusedRow", rowId: row.id })
+    } else if (zone === "keep" && plan.keep !== undefined) {
+      message({ _tag: "FocusedRow", rowId: plan.keep.id })
+    }
   }
-  const onAction = state.launchAction !== undefined && optionsLayer(state.launch) === "none"
-  if (onAction) {
-    const at = Math.max(0, actions.findIndex(action => action.id === state.launchAction))
-    if (isDirection(button)) {
-      // The buttons as the row draws them (it may wrap).
-      const inside = rowStep(actions.map(action => action.label), skyList(false), at, button)
-      if (inside !== undefined) return send({ _tag: "FocusedLaunchAction", actionId: actions[inside]!.id })
-    }
-    if (button === "left" || button === "right" || button === "down") return
-    if (button === "up") {
-      // The row the list holds, else its last.
-      const back = rows.find(entry => entry.id === state.launch.focused) ?? rows.at(-1)
-      if (back !== undefined) message({ _tag: "FocusedRow", rowId: back.id })
-      return
-    }
-    if (button === "confirm") send({ _tag: "LaunchAction", actionId: state.launchAction! })
+  const beside = (zone: ZoneLaunchZone, direction: -1 | 1) => plan.zones[plan.zones.indexOf(zone) + direction]
+  if (cursor.zone === "actions") {
+    const actions = plan.actions
+    const at = Math.max(0, actions.findIndex(action => action.id === cursor.actionId))
+    if (button === "confirm") return send({ _tag: "LaunchAction", actionId: cursor.actionId })
+    // The buttons as the row draws them (it may wrap).
+    const inside = rowStep(actions.map(action => action.label), skyList(false), at, button)
+    if (inside !== undefined) return send({ _tag: "FocusedLaunchAction", actionId: actions[inside]!.id })
+    if (button === "up" || button === "down") enter(beside("actions", button === "up" ? -1 : 1), "actions")
     return
   }
-  const at = rows.findIndex(row => row.id === state.launch.focused)
-  const toActions = () => {
-    const first = actions.find(action => action.enabled) ?? actions[0]
-    if (first !== undefined) send({ _tag: "FocusedLaunchAction", actionId: first.id })
+  if (cursor.zone === "keep") {
+    if (button === "up") return enter(beside("keep", -1), "keep")
+    if (button === "down") return
+    return rowsPage(state, { ...state.launch, focused: cursor.rowId }, all, button, message, undefined, korri, send)
   }
-  if (optionsLayer(state.launch) === "none" && button === "down" && (rows.length === 0 || at === rows.length - 1)) return toActions()
-  if (optionsLayer(state.launch) === "none" && rows.length === 0) return
-  rowsPage(state, state.launch, rows, button, message, undefined, korri, send)
-  void ZONE_LAUNCH_SCOPE_ROW
+  const at = plan.list.findIndex(row => row.id === cursor.rowId)
+  if (button === "up" || button === "down") {
+    const next = plan.list[at + (button === "up" ? -1 : 1)]
+    if (next !== undefined) return message({ _tag: "FocusedRow", rowId: next.id })
+    return enter(beside("list", button === "up" ? -1 : 1), "list")
+  }
+  rowsPage(state, { ...state.launch, focused: cursor.rowId }, all, button, message, undefined, korri, send)
 }
 
 // ---- RUN WITH ----

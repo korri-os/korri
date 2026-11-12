@@ -11,7 +11,7 @@ import type { SurfaceGame, SurfaceModel, SurfaceNetworkConnection, SurfaceStatus
 import { keyAt, keyGrid } from "./keys"
 import { formatZoneBytes, zoneProgressShare } from "./plan/bytes"
 import { entryHeading, optionsPlan } from "./plan/options"
-import { launchPlan } from "./plan/launch-settings"
+import { launchHead } from "./plan/launch-settings"
 import { zoneTallyRows, zoneTallyValue } from "./plan/tally"
 import { qrDataUrl } from "./qr"
 import { actionButtons, barsOf, btn, launchRows, optionRows, row, runWithRows, storeRows, tag, type Btn, type Row, type Tag } from "./rows"
@@ -405,7 +405,9 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneS
   let keyboard: ReturnType<typeof keyboardView> | typeof EMPTY_KEYBOARD = EMPTY_KEYBOARD
   let dialog: ReturnType<typeof dialogView> | typeof EMPTY_DIALOG = EMPTY_DIALOG
   let rows: Row[] = []
-  let head = { shown: false, title: "", tags: [] as Tag[] }
+  // `cap` 0: the title at its plan size; `stacked`: the tags on their own line under it (LAUNCH SETTINGS' plan).
+  let head = { shown: false, title: "", tags: [] as Tag[], cap: 0, stacked: false }
+  let keep = { shown: false, row: row({ kind: "item" }), note: "" }
   let well = { shown: false, initials: "", stripes: 0 }
 
   if (onGames && layer === "keyboard") {
@@ -468,8 +470,13 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneS
     case "launch": {
       const launch = korri.launchSettings
       if (launch === undefined || launch._tag === "Closed") break
-      rows = launchRows(state, korri, launch)
-      head = { shown: true, title: launch.gameTitle ?? "", tags: [tag(launch._tag, LAUNCH_TAGS[launch._tag])] }
+      const shape = launchRows(state, korri, launch, screen)
+      rows = shape.rows
+      keep = shape.keep
+      // Where the game runs, in Korri's words; without them, Korri's state while it is not ready.
+      const where = launch.runsOn ?? (launch._tag === "Ready" ? undefined : launch._tag)
+      const title = launch.gameTitle ?? ""
+      head = { shown: true, title, tags: where === undefined ? [] : [tag(where, LAUNCH_TAGS[launch._tag])], ...launchHead(title, where, screen) }
       const board = state.launch.keyboard
       if (board !== undefined) {
         const heading = entryHeading(board.entry)
@@ -490,20 +497,19 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneS
         dialog = dialogView(asking.confirm.headline, asking.confirm.korriHeadline === true, asking.confirm.lines, "",
           [btn("No", { focused: asking.focused === 0 }), btn(asking.confirm.confirmLabel, { focused: asking.focused === 1 })])
       }
-      void launchPlan
       break
     }
     case "runwith": {
       const runner = korri.runnerChoice
       if (runner === undefined || runner._tag === "Closed") break
       rows = runWithRows(state, runner)
-      head = { shown: true, title: runner.gameTitle, tags: [tag(runner._tag, RUN_TAGS[runner._tag])] }
+      head = { shown: true, title: runner.gameTitle, tags: [tag(runner._tag, RUN_TAGS[runner._tag])], cap: 0, stacked: false }
       break
     }
     case "store": {
       const shape = storeRows(state, korri)
       rows = shape.rows
-      head = { shown: shape.title !== "" || shape.tags.length > 0, title: shape.title, tags: [...shape.tags] }
+      head = { shown: shape.title !== "" || shape.tags.length > 0, title: shape.title, tags: [...shape.tags], cap: 0, stacked: false }
       well = { shown: shape.well, initials: initialsOf(shape.title), stripes: stripeSetOf(shape.title) }
       const search = state.store.keyboard
       if (search !== undefined) {
@@ -597,8 +603,8 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneS
   const attracting = onGames && layer === "idle" && band.length > 0
   const attractAt = Math.min(nav.idleCard, Math.max(0, band.length - 1))
   const cardFocused = onGames && nav.zone === "cards" && layer === "none" && !status.busy.shown && !dialog.shown && held === undefined
-  // On the tabs (or LAUNCH SETTINGS' buttons) a page's list keeps its row as the one it enters on, unfocused.
-  if (((page === "options" || page === "savedata") && nav.zone === "tabs") || (page === "launch" && state.launchAction !== undefined)) {
+  // On the tabs a page's list keeps its row as the one it enters on, unfocused.
+  if ((page === "options" || page === "savedata") && nav.zone === "tabs") {
     rows = rows.map(entry => (entry.focused ? { ...entry, focused: false, focusActive: true } : entry))
   }
   const device = deviceNameSetting(korri)?.value ?? ""
@@ -656,6 +662,7 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneS
     // List pages
     head,
     rows,
+    keep,
     well,
     // SAVE DATA
     saveCards: save.cards.map((entry, index) => ({ ...entry, focusId: `save:${index}`, focused: save.marked && index === save.focus && state.identity.flow._tag !== "retired" })),

@@ -23,6 +23,11 @@ export component ZoneRowList inherits Rectangle {
     in-out property <length> focus-y;
     in-out property <length> focus-h;
     property <length> list-h: list.preferred-height;
+    // The rows' own height, for what stands right under a list shorter than its box.
+    out property <length> content-h: list-h;
+    // Rows stand above or below what the list shows: where it stands now, by the focus or by a finger.
+    out property <bool> more-above: -flick.content-y > 0.5 * Tokens.unit;
+    out property <bool> more-below: -flick.content-y < root.list-h - root.height - 0.5 * Tokens.unit;
     property <length> scroll: list-h <= root.height ? 0 : Math.clamp(focus-y + focus-h / 2 - root.height / 2, 0, list-h - root.height);
     // A finger scrolls the list too (ADR 0055): it is a Flickable, and the
     // place the focus gives it is set again whenever the focus moves (or the

@@ -83,6 +83,10 @@ export struct Row {
     danger: bool,
     choice: bool,
     saving: bool,
+    // LAUNCH SETTINGS: the value is changed and not kept yet (drawn in yellow), and its
+    // earlier value's words when the plan finds room for them beside it (src/plan/launch-settings.ts).
+    changed: bool,
+    was: string,
     bars: int,
     buttons: [Btn],
     tags: [Tag],
@@ -202,6 +206,18 @@ export struct Head {
     shown: bool,
     title: string,
     tags: [Tag],
+    // The title's cap in px (0: its plan size), and whether the tags stand on
+    // their own line under it: the plan's (src/plan/launch-settings.ts launchHead).
+    cap: float,
+    stacked: bool,
+}
+
+// LAUNCH SETTINGS' keep row (ADR 0066): where the changes are kept. Shown only
+// while a row is changed; `note` is its words while the cursor is on it.
+export struct Keep {
+    shown: bool,
+    row: Row,
+    note: string,
 }
 
 export struct WellInfo {

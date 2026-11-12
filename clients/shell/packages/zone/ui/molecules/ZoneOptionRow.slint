@@ -1,10 +1,12 @@
 // ZoneOptionRow: one row of OPTIONS (and of every list page): the label on its black panel, the value on its own (bars before a network's words, a range's bar), the pink drop when focused, the red triangles inside the value panel's ends on a choice, the red caret blinking while Korri saves.
+// On LAUNCH SETTINGS a changed value is yellow, with its earlier value beside it in the quiet white when the plan gave it room (`it.was`); `primary` fills the label's panel yellow (the keep row, the page's one filled control).
 
 import { Tokens } from "../../ui/tokens.slint";
 import { ZoneTap } from "../atoms/ZoneTap.slint";
 import { ZoneShape } from "../atoms/ZoneShape.slint";
 import { ZonePanel } from "../atoms/ZonePanel.slint";
 import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+import { ZoneMeasure } from "../atoms/ZoneMeasure.slint";
 import { ZoneTriangle } from "../atoms/ZoneTriangle.slint";
 import { ZoneBars } from "../atoms/ZoneBars.slint";
 import { ZoneUnderline } from "../atoms/ZoneUnderline.slint";
@@ -22,6 +24,7 @@ export component ZoneOptionRow {
     in property <float> nudge: Tokens.nudge-button;
     in property <bool> blink-on: Tokens.blink-on;
     in property <float> label-share: 0.55;
+    in property <bool> primary: false;
     property <length> c1: 10 * a;
     property <length> cell: 14 * a;
     property <length> run: 13 * a;
@@ -31,6 +34,16 @@ export component ZoneOptionRow {
     out property <length> need: cell + 4 * a;
     height: need;
     property <bool> lit: it.focused;
+    // The value's box; with an earlier value beside it, the pair stands centred in the box
+    // (the plan checked that both fit: src/plan/launch-settings.ts launchRowFit).
+    property <length> bars-room: it.bars >= 0 && it.kind == "item" ? 14 * a : 0;
+    // A choice's triangles stand two art px inside each end of the value's room: its words keep clear of them.
+    property <length> arrows-room: it.choice && it.kind == "item" ? 4 * a : 0;
+    property <length> value-box: Math.max((1 * Tokens.unit), value-w - 2 * run - bars-room - 2 * arrows-room - (it.kind == "range" ? 50 * a : 0));
+    property <bool> paired: it.was != "" && it.kind == "item";
+    now-w := ZoneMeasure { text: root.it.value; cap: root.c1; face: root.it.value-fact ? "fact" : "caps"; }
+    was-w := ZoneMeasure { text: root.it.was; cap: root.c1; face: "fact"; }
+    property <length> pair-x: value-x + run + bars-room + arrows-room + Math.max(0 * Tokens.unit, (value-box - now-w.preferred-width - 4 * a - was-w.preferred-width) / 2);
     // The highlight: hidden while touch is in use (Tokens.ring); the focus stays.
     property <bool> ring: it.focused && Tokens.ring;
     // ---- item: label panel, value panel ----
@@ -54,7 +67,7 @@ export component ZoneOptionRow {
             height: root.cell;
             run: root.run;
             left-straight: true;
-            ink: Tokens.black;
+            ink: root.primary ? Tokens.yellow : Tokens.black;
         }
         ZoneCaps {
             x: 4 * root.a;
@@ -63,7 +76,7 @@ export component ZoneOptionRow {
             elide: true;
             text: root.it.label;
             cap: root.c1;
-            ink: root.it.disabled ? "flat" : "white";
+            ink: root.primary ? "ink" : root.it.disabled ? "flat" : "white";
             colour: Tokens.steel;
             face: root.it.label-fact ? "fact" : "caps";
         }
@@ -98,16 +111,25 @@ export component ZoneOptionRow {
             }
         }
         value := ZoneCaps {
-            x: root.value-x + root.run + parent.bars-w;
+            x: root.paired ? root.pair-x : root.value-x + root.run + root.bars-room + root.arrows-room;
             y: 2 * root.a;
-            box: Math.max((1 * Tokens.unit), root.value-w - 2 * root.run - parent.bars-w - (root.it.kind == "range" ? 50 * root.a : 0));
-            centre: root.it.kind == "item";
-            elide: true;
+            box: root.paired ? now-w.preferred-width : root.value-box;
+            centre: root.it.kind == "item" && !root.paired;
+            elide: !root.paired;
             text: root.it.value;
             cap: root.c1;
-            ink: root.it.disabled ? "flat" : root.it.danger ? "danger" : root.it.saving && root.it.kind == "range" ? "hud" : "white";
-            colour: Tokens.steel;
+            ink: root.it.disabled || root.it.changed ? "flat" : root.it.danger ? "danger" : root.it.saving && root.it.kind == "range" ? "hud" : "white";
+            colour: root.it.disabled ? Tokens.steel : Tokens.yellow;
             face: root.it.value-fact ? "fact" : "caps";
+        }
+        if root.paired: ZoneCaps {
+            x: root.pair-x + now-w.preferred-width + 4 * root.a;
+            y: 2 * root.a;
+            text: root.it.was;
+            cap: root.c1;
+            ink: "flat";
+            colour: Tokens.white-shade;
+            face: "fact";
         }
         // Choice triangles inside the value panel's ends, nudging.
         if root.ring && root.it.choice: Rectangle {

@@ -9,7 +9,7 @@
  * (src/view.rs), so a row that once was red would stay red.
  */
 import type { SurfaceAction, SurfaceModel, SurfaceSettingItem } from "../../../../../contracts/generated/surface"
-import { launchPlan, launchSlices, type ZoneLaunchOpen } from "./plan/launch-settings"
+import { launchCursor, launchPlan, launchRowFit, wasWords, type ZoneLaunchOpen } from "./plan/launch-settings"
 import { focusedRow, isPick, optionsPlan, type ZoneOptionsPlan, type ZoneOptionsRow, type ZoneOptionsSlices } from "./plan/options"
 import { runWithPlan, zoneSavedRowId, type ZoneRunWithOpen } from "./plan/options-run-with"
 import {
@@ -21,7 +21,8 @@ import {
   zoneStoreSearch,
   ZONE_STORE_SEARCH_ROW,
 } from "./plan/store"
-import type { ZoneOptions } from "./state/options"
+import type { ZoneScreen } from "./plan/screen"
+import { optionsLayer, type ZoneOptions } from "./state/options"
 import type { ZoneSurfaceState } from "./state/surface"
 
 export interface Btn {
@@ -60,6 +61,10 @@ export interface Row {
   readonly choice: boolean
   /** Korri is saving this row: the red caret blinks at the value's end. */
   readonly saving: boolean
+  /** The value is changed and not kept yet (LAUNCH SETTINGS): it is drawn in yellow. */
+  readonly changed: boolean
+  /** The earlier value's words beside the value ("was 4x"); "" when none stand there. */
+  readonly was: string
   /** Wi-Fi bars lit, 0 to 4; -1 for none. */
   readonly bars: number
   readonly buttons: readonly Btn[]
@@ -82,6 +87,8 @@ const NONE: Row = {
   danger: false,
   choice: false,
   saving: false,
+  changed: false,
+  was: "",
   bars: -1,
   buttons: [],
   tags: [],
@@ -116,17 +123,14 @@ function valueOf(entry: ZoneOptionsRow, options: ZoneOptions): string {
 /**
  * OPTIONS' plan as rows: a group's title, its rows, the focused row's
  * description (always a disabled row's), Korri's problem under its row.
- * LAUNCH SETTINGS hands the same plan its layers.
  */
-export function optionRows(plan: ZoneOptionsPlan, options: ZoneOptions, captions?: ReadonlyMap<string, string>): Row[] {
+export function optionRows(plan: ZoneOptionsPlan, options: ZoneOptions): Row[] {
   const rows: Row[] = []
   // A group key (SYSTEM, after the system button) stands for its first row.
   const lit = focusedRow(plan, options.focused)?.id
   for (const group of plan.groups) {
     rows.push(row({ kind: "title", label: group.title }))
     for (const entry of group.rows) {
-      const caption = captions?.get(entry.id)
-      if (caption !== undefined) rows.push(row({ kind: "caption", label: caption }))
       const focused = lit === entry.id && options.keyboard === undefined && options.dialog === undefined
       const interaction = entry.item.interaction
       const saving = group.status._tag === "Saving" && group.status.settingId === entry.id
@@ -184,18 +188,118 @@ export function actionButtons(actions: readonly SurfaceAction[], focused: string
   })
 }
 
-/** LAUNCH SETTINGS: Korri's notes or message, the layers' rows, Korri's actions. */
-export function launchRows(state: ZoneSurfaceState, korri: SurfaceModel, launch: ZoneLaunchOpen): Row[] {
-  const plan = launchPlan(launch, korri.settingsStatus, state.launchScope)
-  const slices = launchSlices(korri, state.launchScope)
+/** A sentence as a note says it: closed by a full stop unless it ends one already. */
+const sentence = (words: string): string => (/[.!?…]$/.test(words) ? words : `${words}.`)
+
+/** The first letter as a capital. */
+const capital = (words: string): string => words.charAt(0).toUpperCase() + words.slice(1)
+
+export interface LaunchShape {
+  /** The list, top to bottom: Korri's notes and message, the groups' rows, Korri's actions. */
+  readonly rows: Row[]
+  /** The keep row, under the list and always in view; `shown` only while a row is changed. */
+  readonly keep: { readonly shown: boolean; readonly row: Row; readonly note: string }
+}
+
+/**
+ * LAUNCH SETTINGS (ADR 0066): one list, each setting once under its
+ * section, then the keep row. A changed row's value is yellow, with its
+ * earlier value beside it when the plan finds room and in its note when
+ * not. A row Korri gives no way to change is dimmed. Only the focused row
+ * shows its note: the words the row had to cut, the earlier value, Korri's
+ * description (why a row cannot change), and where the value stays.
+ */
+export function launchRows(state: ZoneSurfaceState, korri: SurfaceModel, launch: ZoneLaunchOpen, screen: ZoneScreen): LaunchShape {
+  const plan = launchPlan(launch, korri.settingsStatus)
+  const options = state.launch
+  const layered = optionsLayer(options) !== "none"
+  const cursor = launchCursor(plan, options.focused, state.launchAction)
+  const lit = !layered && cursor.zone !== "none" && cursor.zone !== "actions" ? cursor.rowId : undefined
   const rows: Row[] = []
   for (const note of launch.notes) rows.push(row({ kind: "text", label: note, labelFact: true }))
   if (launch._tag === "Conflict" || launch._tag === "Error") rows.push(row({ kind: "problem", label: launch.message, labelFact: true }))
+  const buttons = () => {
+    if (plan.actions.length === 0) return
+    // The button the row lights: the one the cursor is on, else the one it would enter on while no row holds it.
+    const held = cursor.zone === "actions" ? cursor.actionId : undefined
+    rows.push(actionButtons(plan.actions, held))
+  }
+  if (plan.actionsFirst) buttons()
   if (launch._tag === "Loading") rows.push(row({ kind: "word", label: "Loading" }))
-  if (plan.rows && slices !== undefined) rows.push(...optionRows(optionsPlan(slices), state.launch, plan.captions))
-  const lit = state.launchAction ?? (rows.some(entry => entry.kind === "item") ? undefined : plan.actions.find(action => action.enabled)?.id)
-  if (plan.actions.length > 0) rows.push(actionButtons(plan.actions, lit))
-  return rows
+  // Ready with no row is no fault: Korri has nothing to set for this game.
+  if (launch._tag === "Ready" && plan.list.length === 0) rows.push(row({ kind: "word", label: "No settings" }))
+  for (const group of plan.groups) {
+    rows.push(row({ kind: "caption", label: group.title }))
+    for (const entry of group.rows) {
+      const item = entry.item
+      const interaction = item.interaction
+      const focused = lit === entry.id
+      const labelFact = entry.keepCase?.label === true
+      const value = valueOf(entry, options)
+      const was = plan.was.get(entry.id)
+      const fixed = interaction === undefined
+      const choice = interaction?.kind === "choice" || interaction?.kind === "number"
+      const fit = launchRowFit(item.label, labelFact, value, was, choice, screen)
+      rows.push(row({
+        kind: "item",
+        label: item.label,
+        labelFact,
+        value,
+        valueFact: true,
+        focused,
+        focusId: `row:${entry.id}`,
+        disabled: fixed,
+        danger: interaction?.kind === "action" && interaction.destructive === true,
+        choice,
+        saving: group.status._tag === "Saving" && group.status.settingId === entry.id,
+        changed: was !== undefined,
+        was: was !== undefined && fit.wasBeside ? wasWords(was) : "",
+      }))
+      if (focused) {
+        const parts = [
+          ...(fit.labelCut ? [item.label] : []),
+          ...(fit.valueCut ? [value] : []),
+          ...(was !== undefined && !fit.wasBeside ? [capital(wasWords(was))] : []),
+          ...(item.description === undefined || item.description === "" ? [] : [item.description]),
+          ...(item.source === undefined || item.source === "" ? [] : [item.source]),
+        ]
+        if (parts.length > 0) rows.push(row({ kind: "note", label: parts.map(sentence).join(" "), labelFact: true }))
+      }
+      if (group.status._tag === "Problem" && group.status.settingId === entry.id) {
+        rows.push(row({ kind: "problem", label: group.status.message, labelFact: true }))
+      }
+    }
+  }
+  if (!plan.actionsFirst) buttons()
+  const keep = plan.keep
+  if (keep === undefined) return { rows, keep: { shown: false, row: row({ kind: "item" }), note: "" } }
+  const focused = lit === keep.id
+  const value = valueOf(keep, options)
+  const fit = launchRowFit(keep.item.label, false, value, undefined, keep.item.interaction?.kind === "choice", screen)
+  const parts = [
+    ...(fit.labelCut ? [keep.item.label] : []),
+    ...(fit.valueCut ? [value] : []),
+    ...(keep.item.description === undefined || keep.item.description === "" ? [] : [keep.item.description]),
+    ...(keep.item.source === undefined || keep.item.source === "" ? [] : [keep.item.source]),
+  ]
+  return {
+    rows,
+    keep: {
+      shown: true,
+      row: row({
+        kind: "item",
+        label: keep.item.label,
+        value,
+        valueFact: true,
+        focused,
+        focusId: `row:${keep.id}`,
+        choice: keep.item.interaction?.kind === "choice",
+        saving: korri.settingsStatus._tag === "Saving" && korri.settingsStatus.settingId === keep.id,
+        holds: focused,
+      }),
+      note: focused ? parts.map(sentence).join(" ") : "",
+    },
+  }
 }
 
 /** RUN WITH: warnings, Korri's message, a row per route with its buttons, the choice's own buttons. */

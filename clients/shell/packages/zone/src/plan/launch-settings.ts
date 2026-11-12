@@ -1,29 +1,34 @@
 /**
- * What the LAUNCH SETTINGS page shows for Korri's launch settings editor.
+ * What the LAUNCH SETTINGS page shows for Korri's launch settings editor
+ * (ADR 0066): one list. Each setting stands once, under its setting section,
+ * with the value the next launch would use, the same for a game that runs
+ * here and a game that another device runs.
  *
- * Korri publishes places: a layer (Device, a System, the Game, a Release,
- * each Profile) for a runner scope (any runner, a family, one runner). Zone
- * shows one runner scope at a time, chosen on a RUNNER SCOPE row at the top that
- * steps like any OPTIONS choice (ZONE_LAUNCH_SCOPE_ROW, Zone's own, never
- * sent to Korri), and under it one group per layer, in Korri's order, every row of that
- * layer's place for the scope under the layer's title. A layer with no
- * place for the scope is left out. The page reuses OPTIONS' rows, keyboard
- * and dialog, so it hands OPTIONS' plan the layers as settings groups; the
- * state model (src/state/surface.ts) runs OPTIONS' update on the same
- * slices, and the two can never disagree about the rows.
+ *     the head     the game's title, and where the game runs in Korri's
+ *                  words ("Runs here", "Runs on aka")
+ *     the list     Korri's notes and message, then every group with its
+ *                  rows. A changed row shows its earlier value. A row Korri
+ *                  gives no way to change is dimmed and says why while the
+ *                  cursor is on it
+ *     the actions  Korri's actions (Reload, Retry, Close) as one row of
+ *                  buttons: under the message while Korri reports a conflict
+ *                  or an error, at the list's end otherwise
+ *     the keep row present only while a row is changed: where the changes
+ *                  are kept. It stands under the list, always in view
  *
- * Korri's own groups inside a place (RUNNER, CPU, FROM FILES) are not drawn:
- * the labels already say which is which ("CPU min", "Environment PATH"),
- * and a row only a file sets says so under it. A plugin's settings are the
- * exception: Korri gives each section of a plugin's settings a group of its
- * own, titled "<plugin> · <section>" ("Moonlight · Video"), whose rows ("FPS",
- * "Add setting") do not name their plugin. Its title stands as a caption
- * over its first row (`captions`), and so does the title of the group that
- * follows one ("CPU", "Modifier MangoHud"), so no row reads as part of the
- * plugin section above it.
+ * The page reuses OPTIONS' rows, keyboard and dialog, so it hands OPTIONS'
+ * plan the groups and the keep row as settings groups; the state model
+ * (src/state/surface.ts) runs OPTIONS' update on the same slices, and the two
+ * can never disagree about the rows.
+ *
+ * Everything here is a pure function of Korri's model and the window
+ * (src/plan/screen.ts): which words fit their box, where the earlier value
+ * stands, how large the title is.
  */
 import type { SurfaceAction, SurfaceLaunchSettings, SurfaceModel } from "../../../../../../contracts/generated/surface"
-import type { ZoneOptionsSlices } from "./options"
+import { measureWords } from "./measure"
+import { optionsPlan, type ZoneOptionsGroup, type ZoneOptionsRow, type ZoneOptionsSlices } from "./options"
+import type { ZoneScreen } from "./screen"
 
 export type ZoneLaunchOpen = Exclude<SurfaceLaunchSettings, { readonly _tag: "Closed" }>
 export type ZoneLaunchState = ZoneLaunchOpen["_tag"]
@@ -31,102 +36,207 @@ export type ZoneLaunchState = ZoneLaunchOpen["_tag"]
 export const launchOpen = (korri: Pick<SurfaceModel, "launchSettings">): boolean =>
   korri.launchSettings !== undefined && korri.launchSettings._tag !== "Closed"
 
-/** One runner scope, as the strip names it. */
-export interface ZoneLaunchScope {
-  readonly kind: "any" | "family" | "runner"
-  readonly label: string
-}
+/** A part of the page the cursor can stand in, top to bottom. */
+export type ZoneLaunchZone = "actions" | "list" | "keep"
 
 export interface ZoneLaunchPlan {
-  /** OPTIONS' slices: the layers as settings groups, and nothing of Zone's own. */
+  /** OPTIONS' slices: the groups, then the keep row as a group of its own. */
   readonly slices: ZoneOptionsSlices
-  /** The rows show only while Korri is ready; otherwise its message does. */
+  /** The rows show while Korri is ready, and beside an error: the rows of this device still work then. */
   readonly rows: boolean
-  /** Every runner scope Korri publishes a place for, in Korri's order. */
-  readonly scopes: readonly ZoneLaunchScope[]
-  /** The scope shown, held inside `scopes`. */
-  readonly scope: number
+  /** The list's groups, as OPTIONS' plan makes them (a DISMISS row under a row Korri has a problem with). */
+  readonly groups: readonly ZoneOptionsGroup[]
+  /** Every row of the list, top to bottom: the order up and down walk. */
+  readonly list: readonly ZoneOptionsRow[]
+  /** The earlier value in Korri's words, by the id of each row changed and not kept yet. */
+  readonly was: ReadonlyMap<string, string>
+  /** Where the changes are kept. Present only while a row is changed. */
+  readonly keep?: ZoneOptionsRow
   /** Korri's actions, Close among them. */
   readonly actions: readonly SurfaceAction[]
+  /** The actions stand under Korri's message, over the rows. */
+  readonly actionsFirst: boolean
+  /** The zones that hold a target, top to bottom. */
+  readonly zones: readonly ZoneLaunchZone[]
   /** The action that closes the editor, for B. */
   readonly closeActionId?: string
-  /** A plugin section's title, by the id of the group's first row, drawn over it. */
-  readonly captions: ReadonlyMap<string, string>
 }
 
-/** A group of one plugin's section of settings, which Korri titles "<plugin> · <section>". */
-const pluginSection = (title: string) => title.includes(" · ")
+/** The keep row's group, by its place among the slices' groups: the last. */
+const KEEP_TITLE = ""
 
-/** Zone's own RUNNER SCOPE row: which runner scope shows. Never sent to Korri. */
-export const ZONE_LAUNCH_SCOPE_ROW = "zone:launch-scope"
-
-/** The scope a step on the RUNNER SCOPE row lands on, round the ends. */
-export const launchScopeStep = (count: number, scope: number, direction: -1 | 1): number =>
-  count === 0 ? 0 : (scope + direction + count) % count
-
-const sameScope = (a: ZoneLaunchScope, b: ZoneLaunchScope) => a.kind === b.kind && a.label === b.label
-
-/** The scopes in the order Korri first publishes them. */
-export function launchScopes(launch: ZoneLaunchOpen): readonly ZoneLaunchScope[] {
-  const scopes: ZoneLaunchScope[] = []
-  for (const place of launch.places) {
-    if (!scopes.some(scope => sameScope(scope, place.scope))) scopes.push({ kind: place.scope.kind, label: place.scope.label })
-  }
-  return scopes
-}
-
-export function launchPlan(
-  launch: ZoneLaunchOpen,
-  status: SurfaceModel["settingsStatus"],
-  scope = 0,
-): ZoneLaunchPlan {
+export function launchPlan(launch: ZoneLaunchOpen, status: SurfaceModel["settingsStatus"]): ZoneLaunchPlan {
   const close = launch.actions.find(action => action.id.endsWith(":cancel"))
-  const rows = launch._tag === "Ready"
-  const scopes = launchScopes(launch)
-  const shown = Math.max(0, Math.min(scope, scopes.length - 1))
-  const chosen = scopes[shown]
-  const places = chosen === undefined ? [] : launch.places.filter(place => sameScope(place.scope, chosen))
-  const runner = {
-    title: "Runner",
-    items: [{
-      id: ZONE_LAUNCH_SCOPE_ROW,
-      label: "Runner scope",
-      value: chosen?.label ?? "",
-      description: "Which runners the values below apply to.",
-      interaction: {
-        kind: "choice" as const,
-        choices: scopes.map((candidate, index) => ({ value: String(index), label: candidate.label })),
-        selected: String(shown),
-      },
-    }],
+  const rows = launch._tag === "Ready" || launch._tag === "Error"
+  const was = new Map(rows ? (launch.changes ?? []).map(change => [change.id, change.was] as const) : [])
+  const shown = rows ? (launch.groups ?? []).filter(group => group.items.length > 0) : []
+  const kept = rows && was.size > 0 ? launch.keep : undefined
+  const slices: ZoneOptionsSlices = {
+    settings: [...shown, ...(kept === undefined ? [] : [{ title: KEEP_TITLE, items: [kept] }])],
+    settingsStatus: status,
+    actions: [],
   }
+  const options = optionsPlan(slices)
+  const groups = kept === undefined ? options.groups : options.groups.slice(0, -1)
+  const list = groups.flatMap(group => group.rows)
+  const keep = kept === undefined ? undefined : options.groups.at(-1)?.rows[0]
+  const actionsFirst = launch._tag === "Conflict" || launch._tag === "Error"
+  const zones: ZoneLaunchZone[] = []
+  if (actionsFirst && launch.actions.length > 0) zones.push("actions")
+  if (list.length > 0) zones.push("list")
+  if (!actionsFirst && launch.actions.length > 0) zones.push("actions")
+  if (keep !== undefined) zones.push("keep")
   return {
-    slices: {
-      settings: rows
-        ? [
-            ...(scopes.length > 1 ? [runner] : []),
-            ...places.map(place => ({ title: place.layer.title, items: place.groups.flatMap(group => group.items) })),
-          ]
-        : [],
-      settingsStatus: status,
-      actions: [],
-    },
+    slices,
     rows,
-    scopes,
-    scope: shown,
+    groups,
+    list,
+    was,
+    ...(keep === undefined ? {} : { keep }),
     actions: launch.actions,
+    actionsFirst,
+    zones,
     ...(close === undefined ? {} : { closeActionId: close.id }),
-    captions: new Map(places.flatMap(place => place.groups.flatMap((group, index) => {
-      const first = group.items[0]
-      const previous = place.groups[index - 1]
-      const captioned = pluginSection(group.title) || (previous !== undefined && pluginSection(previous.title))
-      return first !== undefined && captioned ? [[first.id, group.title] as const] : []
-    }))),
   }
 }
 
 /** The slices for OPTIONS' update while the editor is open; none while it is not. */
-export function launchSlices(korri: Pick<SurfaceModel, "launchSettings" | "settingsStatus">, scope = 0): ZoneOptionsSlices | undefined {
+export function launchSlices(korri: Pick<SurfaceModel, "launchSettings" | "settingsStatus">): ZoneOptionsSlices | undefined {
   const launch = korri.launchSettings
-  return launch === undefined || launch._tag === "Closed" ? undefined : launchPlan(launch, korri.settingsStatus, scope).slices
+  return launch === undefined || launch._tag === "Closed" ? undefined : launchPlan(launch, korri.settingsStatus).slices
+}
+
+// ---- The cursor ----
+
+/** Where the cursor stands: on an action, on a row of the list, on the keep row, or nowhere. */
+export type ZoneLaunchCursor =
+  | { readonly zone: "actions"; readonly actionId: string }
+  | { readonly zone: "list"; readonly rowId: string }
+  | { readonly zone: "keep"; readonly rowId: string }
+  | { readonly zone: "none" }
+
+/** The action the buttons enter on: the first that can be pressed. */
+export const launchEntryAction = (plan: ZoneLaunchPlan): SurfaceAction | undefined =>
+  plan.actions.find(action => action.enabled) ?? plan.actions[0]
+
+/**
+ * The cursor, from the row and the action the state holds. With neither, it
+ * starts on the first row; with no rows, or while Korri reports a conflict
+ * or an error (the message asks for an action), on the first action that
+ * can be pressed.
+ */
+export function launchCursor(plan: ZoneLaunchPlan, focused: string | undefined, action: string | undefined): ZoneLaunchCursor {
+  if (action !== undefined && plan.actions.some(candidate => candidate.id === action)) return { zone: "actions", actionId: action }
+  if (focused !== undefined && plan.keep?.id === focused) return { zone: "keep", rowId: focused }
+  if (focused !== undefined && plan.list.some(row => row.id === focused)) return { zone: "list", rowId: focused }
+  const first = plan.list[0]
+  const entry = plan.actions.find(candidate => candidate.enabled)
+  if (entry !== undefined && (plan.actionsFirst || first === undefined)) return { zone: "actions", actionId: entry.id }
+  if (first !== undefined) return { zone: "list", rowId: first.id }
+  return { zone: "none" }
+}
+
+/**
+ * The row the list is entered on from another zone: the row it holds, else
+ * its first row from above and its last row from below.
+ */
+export function launchListEntry(plan: ZoneLaunchPlan, held: string | undefined, from: ZoneLaunchZone): ZoneOptionsRow | undefined {
+  const kept = plan.list.find(row => row.id === held)
+  if (kept !== undefined) return kept
+  return plan.zones.indexOf(from) < plan.zones.indexOf("list") ? plan.list[0] : plan.list.at(-1)
+}
+
+// ---- What fits (ui/molecules/ZoneOptionRow.slint, ui/organisms/ZoneSkyBand.slint) ----
+
+/** The list's label share of a row (pages/ZoneLaunchSettings.slint). */
+export const ZONE_LAUNCH_LABEL_SHARE = 0.55
+/** The room between a changed value and its earlier value, in art px. */
+export const ZONE_LAUNCH_WAS_GAP = 4
+/** The title's cap in art px: its plan size, and the least it shrinks to before it is cut. */
+export const ZONE_LAUNCH_TITLE_CAP = 20
+export const ZONE_LAUNCH_TITLE_CAP_LEAST = 10
+/** The head's room beside its title's panel: the band's margins and the gap to the tags, in art px. */
+export const ZONE_LAUNCH_HEAD_MARGIN = 16
+/** The title's panel past its words at each end, in art px: it leans by its height, the cap and one art px over and under. */
+export const launchTitlePad = (cap: number): number => cap + 2
+/** A lone tag's room beside its words (ZoneTagRow: one art px at each end), in art px. */
+export const ZONE_LAUNCH_TAG_PAD = 2
+
+/** The room a choice's triangles keep clear at each end of its value, in art px (ZoneOptionRow's `arrows-room`). */
+export const ZONE_LAUNCH_ARROWS_ROOM = 4
+
+export interface ZoneLaunchBoxes {
+  /** The room a label's words have, in px. */
+  readonly label: number
+  /** The room a value's words have, in px. */
+  readonly value: number
+}
+
+/** A row's two boxes at this window, as ZoneOptionRow lays them out in ZoneSkyBand's list. */
+export function launchBoxes(screen: ZoneScreen, choice: boolean): ZoneLaunchBoxes {
+  const a = screen.a
+  const width = screen.width - 16 * a
+  const label = Math.floor((width * ZONE_LAUNCH_LABEL_SHARE) / a) * a
+  const value = width - label - 4 * a
+  return {
+    label: Math.max(0, label - 13 * a - 6 * a),
+    value: Math.max(0, value - 26 * a - (choice ? 2 * ZONE_LAUNCH_ARROWS_ROOM * a : 0)),
+  }
+}
+
+/** The earlier value as the row says it: "was 4x". */
+export const wasWords = (was: string): string => `was ${was}`
+
+export interface ZoneLaunchRowFit {
+  /** The earlier value stands beside the value; otherwise the focused row's note says it. */
+  readonly wasBeside: boolean
+  /** The label's words are cut: the focused row's note says them whole. */
+  readonly labelCut: boolean
+  /** The value's words are cut: the focused row's note says them whole. */
+  readonly valueCut: boolean
+}
+
+/**
+ * What of a row fits at this window. The earlier value is a readout: it
+ * yields its place beside the value before the value is cut, and moves to
+ * the focused row's note.
+ */
+export function launchRowFit(label: string, labelFact: boolean, value: string, was: string | undefined, choice: boolean, screen: ZoneScreen): ZoneLaunchRowFit {
+  const boxes = launchBoxes(screen, choice)
+  const cap = 10 * screen.a
+  const valueWidth = measureWords(value, cap, "fact", screen.look)
+  const wasWidth = was === undefined ? 0 : measureWords(wasWords(was), cap, "fact", screen.look) + ZONE_LAUNCH_WAS_GAP * screen.a
+  return {
+    wasBeside: was !== undefined && valueWidth + wasWidth <= boxes.value,
+    labelCut: measureWords(label, cap, labelFact ? "fact" : "caps", screen.look) > boxes.label,
+    valueCut: valueWidth > boxes.value,
+  }
+}
+
+export interface ZoneLaunchHead {
+  /** The title's cap in px. */
+  readonly cap: number
+  /** The tag stands on its own line under the title. */
+  readonly stacked: boolean
+}
+
+/**
+ * The head: the title beside its tag. A title too long for its room takes
+ * a line of its own over the tag when the window is tall (height pays);
+ * otherwise, and then too, it yields its size down to the least before it
+ * yields a letter.
+ */
+export function launchHead(title: string, tag: string | undefined, screen: ZoneScreen): ZoneLaunchHead {
+  const a = screen.a
+  const tagWidth = tag === undefined ? 0 : measureWords(tag, 10 * a, "caps", screen.look) + ZONE_LAUNCH_TAG_PAD * a
+  const fits = (cap: number, room: number) => measureWords(title, cap * a, "korri", screen.look) <= room - 2 * launchTitlePad(cap) * a
+  const beside = screen.width - ZONE_LAUNCH_HEAD_MARGIN * a - tagWidth
+  const alone = screen.width - ZONE_LAUNCH_HEAD_MARGIN * a
+  const largest = (room: number) => {
+    for (let cap = ZONE_LAUNCH_TITLE_CAP; cap > ZONE_LAUNCH_TITLE_CAP_LEAST; cap--) if (fits(cap, room)) return cap
+    return ZONE_LAUNCH_TITLE_CAP_LEAST
+  }
+  if (tag === undefined || fits(ZONE_LAUNCH_TITLE_CAP, beside)) return { cap: ZONE_LAUNCH_TITLE_CAP * a, stacked: false }
+  if (screen.select.strips === "tall") return { cap: largest(alone) * a, stacked: true }
+  return { cap: largest(beside) * a, stacked: false }
 }

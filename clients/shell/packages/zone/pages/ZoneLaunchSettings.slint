@@ -1,10 +1,10 @@
-// ZoneLaunchSettings: LAUNCH SETTINGS: the game and Korri's state in the head, Korri's notes or message, the RUNNER SCOPE row, one group per layer of OPTIONS' rows, Korri's actions as buttons.
+// ZoneLaunchSettings: LAUNCH SETTINGS (ADR 0066): the game and where it runs in the head; one list of Korri's notes or message, each setting once under its section, Korri's actions as buttons; and, while a row is changed, the keep row at the band's foot, always in view.
 
 import { Tokens } from "../ui/tokens.slint";
 import { ZoneSkyBand } from "../ui/organisms/ZoneSkyBand.slint";
 import { ZoneOptionsEntry } from "../ui/organisms/ZoneOptionsEntry.slint";
 import { ZoneShell } from "../ui/templates/ZoneShell.slint";
-import { Tab, Hints, Foot, Head, Row, WellInfo, Keyboard } from "../ui/types.slint";
+import { Tab, Hints, Foot, Head, Row, WellInfo, Keyboard, Keep } from "../ui/types.slint";
 
 export component ZoneLaunchSettings {
     callback activated(target: string, at: float, released: bool);
@@ -13,6 +13,7 @@ export component ZoneLaunchSettings {
     in property <Foot> foot;
     in property <Head> head;
     in property <[Row]> rows;
+    in property <Keep> keep;
     in property <WellInfo> well;
     in property <Keyboard> keyboard;
     in property <length> bottom-room: 0;
@@ -35,6 +36,8 @@ export component ZoneLaunchSettings {
             well: root.well;
             label-share: 0.55;
             bottom-room: root.bottom-room;
+            keep: root.keep;
+            marks: true;
         }
     }
     if root.keyboard.shown: ZoneOptionsEntry { activated(target, at, released) => { root.activated(target, at, released); } 

@@ -57,11 +57,43 @@ fixtures' words and look are Zone's.
   (#379) is drawn as any other group; a red mark at the list's top or foot
   says more rows stand there, and a long value ends in "…" before its label.
 
+## Launch settings (ADR 0066)
+
+LAUNCH SETTINGS is one list, the same for a game that runs here and a game
+that another device runs. `src/plan/launch-settings.ts` is its plan; the page
+reads `groups`, `changes`, `keep` and `runsOn` and nothing of the old places.
+
+- The head: the game's title and where the game runs, in Korri's words. The
+  title yields its size before it yields a letter; in a tall window the tag
+  takes its own line under the title.
+- The list: each setting once under its section. A changed row's value is
+  yellow. Its earlier value ("was 4x") stands beside it when both fit the
+  value's box, and in the focused row's note when they do not. A row with no
+  `interaction` is dimmed; it still takes the cursor, and its note says why.
+- A note shows only under the focused row: words the row had to cut, the
+  earlier value, Korri's `description`, then `source` ("Stays on aka").
+- The keep row shows only while `changes` is not empty. It stands outside the
+  list, right under a short list and at the band's foot under a long one, so
+  it is always in view and never covers a row. Its label panel is yellow:
+  the page's one filled control. Its id goes to `ChangeSetting` as any choice.
+- Korri's actions are one row of buttons: under the message while Korri
+  reports a conflict or an error (Retry stays on the first screen), at the
+  list's end otherwise.
+- Focus: up and down walk the zones top to bottom (buttons, list, keep row).
+  The cursor starts on the first row, or on the first button when Korri's
+  message asks for one or there is no row.
+- A red mark right of the list's top or foot says more rows stand there.
+
+`test/fixtures/launch-settings.ts` holds hand-written models that follow the
+treaty. `bun packages/zone/preview/launch-scenarios.ts` (in `clients/shell`)
+writes them into `preview/scenarios/launch*.json` and writes the page's
+preview states from the views `logic.ts` makes of them.
+
 ## Checks
 
 ```sh
 cd clients/shell
-bun test packages/zone/test            # gates, plans, contrast, QR (142 tests)
+bun test packages/zone/test            # gates, plans, contrast, QR, launch settings
 bun run zone:typecheck
 bash packages/zone/test/bite.sh        # each gate fails on a planted defect
 cargo test --release --features fixture --test zone_package   # previews at five sizes; focus in view

@@ -24,3 +24,18 @@ export component Disabled inherits ZonePreview {
     ground: "options";
     ZoneOptionRow { x: 8 * Tokens.a; y: 8 * Tokens.a; width: parent.width - 16 * Tokens.a; it: { kind: "item", label: "Sleep", value: "Go", disabled: true, bars: -1 }; }
 }
+
+export component Changed inherits ZonePreview {
+    ground: "options";
+    ZoneOptionRow { x: 8 * Tokens.a; y: 8 * Tokens.a; width: parent.width - 16 * Tokens.a; it: { kind: "item", label: "Render scale", value: "2x", value-fact: true, focused: true, choice: true, changed: true, was: "was 4x", bars: -1, holds: true }; }
+}
+
+export component ChangedNoRoom inherits ZonePreview {
+    ground: "options";
+    ZoneOptionRow { x: 8 * Tokens.a; y: 8 * Tokens.a; width: parent.width - 16 * Tokens.a; it: { kind: "item", label: "Texture filter", value: "Sharp bilinear, integer prescale", value-fact: true, choice: true, changed: true, bars: -1 }; }
+}
+
+export component Keep inherits ZonePreview {
+    ground: "options";
+    ZoneOptionRow { x: 8 * Tokens.a; y: 8 * Tokens.a; width: parent.width - 16 * Tokens.a; primary: true; it: { kind: "item", label: "Keep 2 changes", value: "This game", value-fact: true, focused: true, choice: true, bars: -1, holds: true }; }
+}

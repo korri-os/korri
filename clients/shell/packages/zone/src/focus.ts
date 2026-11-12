@@ -16,6 +16,7 @@
  * view to .slint; the rest is .slint's.
  */
 import type { SurfaceModel } from "../../../../../contracts/generated/surface"
+import { launchCursor, launchListEntry, launchPlan } from "./plan/launch-settings"
 import { buttonRow, dialogButtons, tabsPlan, type ZoneScreen } from "./plan/screen"
 import { dialogKey, dialogRoom, dialogWindow, dialogWords } from "./plan/dialog-words"
 import { planSaveData } from "./plan/save-data"
@@ -144,7 +145,7 @@ const hasTargets = (value: unknown): boolean => {
  * the foot) never hold an entry with `focused`, and walking them cost most
  * of a view call in QuickJS.
  */
-const FOCUS_KEYS = ["tabs", "cardMarks", "actions", "find", "get", "optsRows", "keyboard", "dialog", "busy", "saveCards", "retired", "slab", "seats", "next", "newSave", "rows"] as const
+const FOCUS_KEYS = ["tabs", "cardMarks", "actions", "find", "get", "optsRows", "keyboard", "dialog", "busy", "saveCards", "retired", "slab", "seats", "next", "newSave", "rows", "keep"] as const
 
 /** The layers .slint draws only while shown (main.slint, ZoneGames, ZoneStatusLayer: each under `if ….shown`). */
 const HIDDEN_WHOLE = ["keyboard", "dialog", "busy", "hud", "launchCard", "tally"] as const
@@ -271,6 +272,9 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
   }
   view.rows = targetRows(view.rows as Json[])
   view.optsRows = targetRows(view.optsRows as Json[])
+  // LAUNCH SETTINGS' keep row, drawn only while a row is changed.
+  const keep = view.keep as { shown?: boolean } | undefined
+  if (keep !== undefined && keep.shown !== true) hide("keep")
 
   // ---- Regions ----
   if (!hidden.has("tabs")) view.tabs = regionOf(view.tabs, "tabs", entry => entry.active === true)
@@ -303,21 +307,30 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
     let held = 0
     view.rows = (view.rows as Json[]).map(entry => regionOf(entry, rowRegion(hasTargets(entry) ? held++ : held)))
   } else {
-    // A list is a column of rows; LAUNCH SETTINGS' buttons under it are their own row.
+    // A list is a column of rows; LAUNCH SETTINGS' row of buttons is a region of its own.
     const rows = view.rows as Json[]
-    const last = rows.length - 1
-    const actions = page === "launch" && rows[last]?.kind === "buttons" ? last : -1
+    const actions = page === "launch" ? rows.findIndex(entry => entry.kind === "buttons") : -1
     const items = rows.map((entry, index) => (index !== actions && entry.kind !== undefined && ["item", "range", "route"].includes(entry.kind as string) ? index : -1)).filter(index => index >= 0)
     const marked = rows.findIndex(entry => entry.focused === true || entry.focusActive === true)
     // The row the list enters on: the one it holds, else the one Zone goes to (the first; the last from below).
-    const enters = marked >= 0 && items.includes(marked) ? marked : (page === "launch" || page === "onboarding" ? items.at(-1) : items[0]) ?? -1
+    let enters = marked >= 0 && items.includes(marked) ? marked : (page === "onboarding" ? items.at(-1) : items[0]) ?? -1
+    const launch = korri.launchSettings
+    if (page === "launch" && launch !== undefined && launch._tag !== "Closed" && marked < 0) {
+      // LAUNCH SETTINGS: the row src/press.ts goes to from the zone the cursor is in (src/plan/launch-settings.ts).
+      const plan = launchPlan(launch, korri.settingsStatus)
+      const cursor = launchCursor(plan, state.launch.focused, state.launchAction)
+      const entry = cursor.zone === "actions" || cursor.zone === "keep" ? launchListEntry(plan, state.launch.focused, cursor.zone) : undefined
+      if (entry !== undefined) enters = rows.findIndex(candidate => candidate.focusId === `row:${entry.id}`)
+    }
     // LAUNCH SETTINGS enters its buttons on the first that can be pressed.
     const enabled = actions >= 0 ? ((rows[actions]!.buttons as Json[]).find(button => button.disabled !== true) ?? (rows[actions]!.buttons as Json[])[0]) : undefined
     view.rows = rows.map((entry, index) =>
       index === actions ? regionOf(entry, "actions", button => button === enabled) : regionOf(entry, "list", () => index === enters))
   }
+  if (!hidden.has("keep") && keep !== undefined) view.keep = regionOf(view.keep, "keep", () => true)
 
   // ---- Exits ----
+  const regions = REGIONS
   const plan: Record<string, ZoneExits> = {}
   const presence = new Map<string, boolean>()
   const present = (key: string) => {
@@ -382,10 +395,27 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
         })
         break
       }
-      case "launch":
-        plan.list = { down: { to: "actions", entry: "active" } }
-        plan.actions = { up: { to: "list", entry: "active" } }
+      case "launch": {
+        // The zones top to bottom, as drawn: Korri's buttons (over the rows under a conflict or an error, else at the list's end), the list, the keep row.
+        const rows = view.rows as Json[]
+        const buttons = rows.findIndex(entry => entry.kind === "buttons")
+        const first = rows.findIndex(entry => entry.kind === "item")
+        const zones = [
+          ...(buttons >= 0 && first >= 0 && buttons < first ? ["actions"] : []),
+          "list",
+          ...(buttons >= 0 && !(first >= 0 && buttons < first) ? ["actions"] : []),
+          "keep",
+        ].filter(zone => regions.has(zone))
+        zones.forEach((zone, at) => {
+          const above = zones[at - 1]
+          const below = zones[at + 1]
+          plan[zone] = {
+            ...(above === undefined ? {} : { up: { to: above, entry: "active" } }),
+            ...(below === undefined ? {} : { down: { to: below, entry: "active" } }),
+          }
+        })
         break
+      }
       case "onboarding":
         if (present("seats") && present("next")) {
           plan.seats = { down: { to: "next", entry: "first" } }
@@ -406,7 +436,6 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
     }
   }
   // Every exit names a region with targets in this view (regionOf noted them).
-  const regions = REGIONS
   const focusPlan: Record<string, ZoneExits> = {}
   for (const [region, exits] of Object.entries(plan)) {
     const kept = Object.fromEntries(Object.entries(exits).filter(([, exit]) => exit !== undefined && regions.has(exit.to)))

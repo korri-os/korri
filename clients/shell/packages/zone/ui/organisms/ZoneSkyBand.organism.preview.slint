@@ -14,3 +14,13 @@ export component Entry inherits ZonePreview {
     ground: "options";
     ZoneSkyBand { x: 0; y: 0; width: parent.width; height: parent.height; head: { shown: true, title: "Celeste Classic 2", tags: [{ label: "PICO-8", kind: "system", korri: true }] }; well: { shown: true, initials: "CC", stripes: 1 }; rows: [{ kind: "text", label: "Madeline climbs again, with a grappling hook this time.", label-fact: true }, { kind: "buttons", buttons: [{ label: "Get", focused: true, lit: true }] }]; }
 }
+
+export component Keep inherits ZonePreview {
+    ground: "options";
+    ZoneSkyBand { x: 0; y: 0; width: parent.width; height: parent.height; marks: true; head: { shown: true, title: "Wario Land 4", tags: [{ label: "Runs on aka", kind: "system" }] }; rows: [{ kind: "caption", label: "Video" }, { kind: "item", label: "Render scale", value: "2x", value-fact: true, focused: true, choice: true, changed: true, was: "was 4x", bars: -1, holds: true }, { kind: "note", label: "Stays on aka.", label-fact: true }, { kind: "item", label: "Aspect ratio", value: "Original", value-fact: true, choice: true, changed: true, bars: -1 }, { kind: "item", label: "Window mode", value: "Borderless", value-fact: true, choice: true, bars: -1 }, { kind: "item", label: "FPS limit", value: "Off", value-fact: true, disabled: true, bars: -1 }, { kind: "caption", label: "Audio" }, { kind: "item", label: "Volume", value: "100%", value-fact: true, choice: true, bars: -1 }, { kind: "caption", label: "Stream" }, { kind: "item", label: "Stream size", value: "This screen", value-fact: true, choice: true, bars: -1 }, { kind: "item", label: "Bitrate", value: "40 Mbps", value-fact: true, choice: true, bars: -1 }, { kind: "buttons", buttons: [{ label: "Reload" }, { label: "Close" }] }]; keep: { shown: true, row: { kind: "item", label: "Keep 2 changes", value: "This game", value-fact: true, choice: true, bars: -1 } }; }
+}
+
+export component KeepFocused inherits ZonePreview {
+    ground: "options";
+    ZoneSkyBand { x: 0; y: 0; width: parent.width; height: parent.height; marks: true; head: { shown: true, title: "The Legend of Zelda: Echoes of Wisdom", tags: [{ label: "Runs on aka", kind: "system" }], cap: 20, stacked: true }; rows: [{ kind: "caption", label: "Video" }, { kind: "item", label: "Render scale", value: "2x", value-fact: true, choice: true, changed: true, was: "was 4x", bars: -1 }, { kind: "item", label: "Window mode", value: "Borderless", value-fact: true, choice: true, bars: -1 }]; keep: { shown: true, row: { kind: "item", label: "Keep 1 change", value: "This launch", value-fact: true, focused: true, choice: true, bars: -1, holds: true }, note: "The change ends when you stop playing." }; }
+}

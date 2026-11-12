@@ -6,12 +6,23 @@ import { ZonePanel } from "../atoms/ZonePanel.slint";
 import { ZoneCaps } from "../atoms/ZoneCaps.slint";
 import { ZoneCoverWell } from "../atoms/ZoneCoverWell.slint";
 import { ZoneTagRow } from "../molecules/ZoneTagRow.slint";
+import { ZoneOptionRow } from "../molecules/ZoneOptionRow.slint";
 import { ZoneRowList } from "./ZoneRowList.slint";
-import { Row, Head, WellInfo } from "../types.slint";
+import { ZoneWarningLines } from "./ZoneWarningLines.slint";
+import { Row, Head, WellInfo, Keep } from "../types.slint";
 
 // The sky band (OPTIONS' band): the screen's full width with a 3-art-px
 // black lip over and under it, 4 art px of ground from each strip, the
 // black wedge in its bottom-left corner standing still under the rows.
+//
+// LAUNCH SETTINGS (ADR 0066) adds three things, each off unless its page
+// asks: the head's title at the plan's cap with its tags under it when the
+// plan stacks them; `keep`, one row under a black lip, outside the list
+// (right under a short list, at the band's foot under a long one), so it is
+// always in view and never covers a row (its label panel yellow: the
+// page's one filled control); and `marks`, a red
+// mark right of the list's top or foot while rows stand that way (PAUSED's
+// mark).
 export component ZoneSkyBand {
     callback activated(target: string, at: float, released: bool);
     property <length> a: Tokens.a;
@@ -21,8 +32,12 @@ export component ZoneSkyBand {
     in property <float> nudge: Tokens.nudge-button;
     in property <float> label-share: 0.55;
     in property <length> bottom-room: 0;
+    in property <Keep> keep;
+    in property <bool> marks: false;
     property <length> c1: 10 * a;
-    property <length> head-h: head.shown ? 26 * a : 0;
+    // The title's cap (the plan's when it gives one) and its panel, centred in the title's line.
+    property <length> title-cap: head.cap > 0 ? head.cap * Tokens.unit : 2 * c1;
+    property <length> head-h: !head.shown ? 0 : head.stacked ? 44 * a : 26 * a;
     property <length> band-y: head-h + 4 * a;
     property <length> band-h: Math.max(0, root.height - band-y - 4 * a - bottom-room);
     property <length> leg: Math.min(0.78 * band-h, root.width / 4);
@@ -32,28 +47,32 @@ export component ZoneSkyBand {
         width: parent.width;
         height: parent.height;
         cache-rendering-hint: true;
-        property <length> title-w: Math.min(title.natural, root.width - tags.natural - 60 * root.a);
+        // The tags beside the title take their width from its room; stacked, they stand under it.
+        property <length> beside: root.head.stacked ? 0 : tags.natural + 6 * root.a;
+        // The panel leans by its height, so a smaller title needs less room at its ends.
+        property <length> panel-h: root.title-cap + 2 * root.a;
+        property <length> title-w: Math.min(title.natural, root.width - (root.head.stacked ? 0 : tags.natural) - 16 * root.a - 2 * self.panel-h);
         ZonePanel {
-            x: (root.width - self.width - tags.natural - 6 * root.a) / 2;
-            y: 2 * root.a;
-            width: parent.title-w + 2 * 22 * root.a;
-            height: 22 * root.a;
-            run: 21 * root.a;
+            x: (root.width - self.width - parent.beside) / 2;
+            y: 2 * root.a + (22 * root.a - parent.panel-h) / 2;
+            width: parent.title-w + 2 * parent.panel-h;
+            height: parent.panel-h;
+            run: parent.panel-h - root.a;
             ink: Tokens.black;
         }
         title := ZoneCaps {
-            x: (root.width - parent.title-w - 44 * root.a - tags.natural - 6 * root.a) / 2 + 22 * root.a;
-            y: 3 * root.a;
+            x: (root.width - parent.title-w - 2 * parent.panel-h - parent.beside) / 2 + parent.panel-h;
+            y: 3 * root.a + (2 * root.c1 - root.title-cap) / 2;
             box: parent.title-w;
             elide: true;
             text: root.head.title;
-            cap: 2 * root.c1;
+            cap: root.title-cap;
             face: "korri";
         }
         tags := ZoneTagRow {
             fill: false;
-            x: title.x + parent.title-w + 22 * root.a + 6 * root.a;
-            y: 6 * root.a;
+            x: root.head.stacked ? (root.width - self.natural) / 2 : title.x + parent.title-w + parent.panel-h + 6 * root.a;
+            y: root.head.stacked ? 26 * root.a : 6 * root.a;
             width: self.natural;
             tags: root.head.tags;
         }
@@ -89,13 +108,63 @@ export component ZoneSkyBand {
                 stripes: root.well.stripes;
                 initials: root.well.initials;
             }
-            ZoneRowList {  activated(target, at, released) => { root.activated(target, at, released); } 
+            // The keep row's room at the band's foot: its lip, the row, and its note while the cursor is on it.
+            property <length> keep-h: !root.keep.shown ? 0 : 6 * root.a + keep-row.need + (root.keep.note != "" ? keep-note.height : 0);
+            list := ZoneRowList {  activated(target, at, released) => { root.activated(target, at, released); } 
                 x: 8 * root.a + (root.well.shown ? parent.well-w + 8 * root.a : 0);
                 y: 4 * root.a;
                 width: parent.width - self.x - 8 * root.a;
-                height: parent.height - 8 * root.a;
+                height: Math.max(0, parent.height - 8 * root.a - parent.keep-h);
                 rows: root.rows;
                 label-share: root.label-share;
+            }
+            if root.marks && list.more-above: ZoneShape {
+                x: parent.width - 7 * root.a;
+                y: list.y;
+                width: 6 * root.a;
+                height: 6 * root.a;
+                ink: Tokens.red;
+                commands: "M 0 " + (self.height / Tokens.unit) + " L " + Tokens.pt(self.width, self.height) + " L " + Tokens.pt(self.width / 2, 0) + " Z";
+            }
+            if root.marks && list.more-below: ZoneShape {
+                x: parent.width - 7 * root.a;
+                y: list.y + list.height - 6 * root.a;
+                width: 6 * root.a;
+                height: 6 * root.a;
+                ink: Tokens.red;
+                commands: "M 0 0 L " + Tokens.pt(self.width, 0) + " L " + Tokens.pt(self.width / 2, self.height) + " Z";
+            }
+            // Always present, placed and shown by its data: the row updates in place.
+            Rectangle {
+                visible: root.keep.shown;
+                x: list.x;
+                // Right under a list shorter than its box; at the band's foot under a longer one.
+                y: Math.min(list.y + list.content-h, parent.height - 4 * root.a - parent.keep-h);
+                width: list.width;
+                height: parent.keep-h;
+                Rectangle {
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    height: 2 * root.a;
+                    background: Tokens.black;
+                }
+                keep-row := ZoneOptionRow { activated(target, at, released) => { root.activated(target, at, released); } 
+                    x: 0;
+                    y: 6 * root.a;
+                    width: parent.width;
+                    it: root.keep.row;
+                    label-share: root.label-share;
+                    primary: true;
+                }
+                keep-note := ZoneWarningLines {
+                    visible: root.keep.note != "";
+                    x: 0;
+                    y: 6 * root.a + keep-row.need;
+                    width: parent.width;
+                    line: root.keep.note;
+                    full: false;
+                }
             }
         }
     }
