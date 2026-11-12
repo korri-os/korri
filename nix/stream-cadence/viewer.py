@@ -146,6 +146,8 @@ def thermal_limits(zone: dict, end_margin: int = END_MARGIN) -> dict | None:
     ]
 
     def end_at(margin: int) -> int:
+        # A test may ask for a wider margin, never for a narrower one.
+        margin = max(margin, END_MARGIN)
         return critical - max(margin, (critical - max(passive)) // 2 if passive else 0)
 
     start = min(passive) if passive else critical - 2 * END_MARGIN

@@ -217,6 +217,33 @@ class AGuardThatCannotReadStopsTheRun(DesktopChip):
             self.assertTrue(session.close()["pass"])
 
 
+def trips(*values: tuple[str, int]) -> dict:
+    return {
+        "zone": "thermal_zone0", "type": "cpu-thermal", "temp": 50000, "unreadable": None,
+        "trips": [{"type": kind, "temp": value} for kind, value in values],
+    }
+
+
+class TestMarginOnlyLowersTheEnd(DesktopChip):
+    def test_a_margin_below_the_tools_own_is_not_taken(self):
+        for zone in (trips(*RG353M), trips(("critical", 110000))):
+            normal = viewer.thermal_limits(zone)
+            for margin in (0, 1, 9999):
+                with self.subTest(margin=margin, critical=normal["critical"]):
+                    self.assertEqual(viewer.thermal_limits(zone, end_margin=margin), normal)
+            self.assertLess(
+                viewer.thermal_limits(zone, end_margin=30000)["end_at"], normal["end_at"]
+            )
+
+    def test_the_agent_never_ends_later_than_its_own_rule(self):
+        session = viewer.Session(str(self.peer))
+        try:
+            self.prepare(session, test_end_margin=1)
+            self.assertEqual(session.limits["thermal_zone0"]["end_at"], 85000)
+        finally:
+            self.assertTrue(session.close()["pass"])
+
+
 class ADeviceWithNoThermalZone(Device):
     def empty(self) -> None:
         for path in self.zone.iterdir():
