@@ -1296,7 +1296,7 @@ async fn closing_the_editor_keeps_the_changes_for_this_game_each_at_its_scope() 
     );
     assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
     // Kept: the next launch carries nothing, and the list has no change left.
-    assert!(launch.submit_one_launch("wario").1.is_none());
+    assert!(launch.submit_one_launch("wario", None).1.is_none());
     launch.open("wario".into(), "Wario Land 4".into(), None, None);
     settle().await;
     assert!(shown(&launch).changes.is_empty());
@@ -1356,7 +1356,7 @@ async fn changes_for_this_launch_go_with_that_launch_and_end_with_it() {
     assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
     settle().await;
     assert!(calls(&script, SET).is_empty());
-    let (ticket, values) = launch.submit_one_launch("wario");
+    let (ticket, values) = launch.submit_one_launch("wario", None);
     assert_eq!(
         serde_json::to_value(values.expect("one-launch values")).unwrap(),
         json!({
@@ -1369,10 +1369,10 @@ async fn changes_for_this_launch_go_with_that_launch_and_end_with_it() {
     );
     // A failed launch keeps them; a launch that started ends them.
     launch.complete_one_launch(ticket, false);
-    let (ticket, values) = launch.submit_one_launch("wario");
+    let (ticket, values) = launch.submit_one_launch("wario", None);
     assert!(values.is_some());
     launch.complete_one_launch(ticket, true);
-    assert!(launch.submit_one_launch("wario").1.is_none());
+    assert!(launch.submit_one_launch("wario", None).1.is_none());
     launch.open("wario".into(), "Wario Land 4".into(), None, None);
     settle().await;
     assert!(shown(&launch).changes.is_empty());
@@ -1467,7 +1467,7 @@ async fn a_runner_only_change_stays_with_its_runner_when_another_runner_is_chose
     );
     // A launch carries what the list shows, and mGBA's change is not in it.
     assert!(launch.change("launch:keep", "launch"));
-    let (ticket, values) = launch.submit_one_launch("wario");
+    let (ticket, values) = launch.submit_one_launch("wario", None);
     assert_eq!(
         serde_json::to_value(values.expect("one-launch values")).unwrap(),
         json!({
@@ -1505,6 +1505,59 @@ async fn a_runner_only_change_stays_with_its_runner_when_another_runner_is_chose
     );
     assert_eq!(writes[0]["path"], setting("plugin.speed"));
     assert_eq!(writes[0]["value"], json!(3));
+}
+
+/// Launch once names its runner. The launch carries that runner's values
+/// and ends only those; the saved runner's values still wait.
+#[tokio::test]
+async fn a_launch_carries_and_ends_only_the_one_launch_values_of_the_runner_it_uses() {
+    let (korrid, script) = scripted();
+    let mgba = ok_snapshot(two_runners_with_speed("retroarch/mgba").snapshot());
+    let gpsp = ok_snapshot(two_runners_with_speed("retroarch/gpsp").snapshot());
+    push(&script, SNAPSHOT, mgba.clone());
+    let launch = controller(korrid);
+    launch.open("wario".into(), "Wario Land 4".into(), None, None);
+    settle().await;
+    assert!(launch.change(SPEED, "3"));
+    assert!(launch.change("launch:keep", "launch"));
+    // gpSP is saved, and gets a one-launch value of its own.
+    push(&script, SNAPSHOT, gpsp);
+    assert!(launch.act(launch_id::RELOAD));
+    settle().await;
+    assert!(shown(&launch).changes.is_empty());
+    assert!(launch.change(GPSP_SPEED, "7"));
+    assert!(launch.change("launch:keep", "launch"));
+
+    // Launch once with mGBA.
+    let (ticket, values) = launch.submit_one_launch("wario", Some("retroarch/mgba"));
+    assert_eq!(
+        serde_json::to_value(values.expect("one-launch values")).unwrap(),
+        json!({ "plugin": { "retroarch/mgba": { "speed": 3 } }, "modifiers": {} })
+    );
+    launch.complete_one_launch(ticket, true);
+    // gpSP's value was not used: it still waits, for this launch.
+    let now = shown(&launch);
+    assert_eq!(
+        changes(&now),
+        [(GPSP_SPEED.to_owned(), "Default".to_owned())]
+    );
+    assert_eq!(value(&now.keep), Some("This launch".into()));
+    // A launch that names no runner uses the saved one.
+    let (ticket, values) = launch.submit_one_launch("wario", None);
+    assert_eq!(
+        serde_json::to_value(values.expect("one-launch values")).unwrap(),
+        json!({ "plugin": { "retroarch/gpsp": { "speed": 7 } }, "modifiers": {} })
+    );
+    launch.complete_one_launch(ticket, true);
+    assert!(shown(&launch).changes.is_empty());
+    // mGBA's value ended with its launch.
+    push(&script, SNAPSHOT, mgba);
+    assert!(launch.act(launch_id::RELOAD));
+    settle().await;
+    let now = shown(&launch);
+    assert!(now.changes.is_empty());
+    assert_eq!(value(&row(&now, "Speed")), Some("Default".into()));
+    assert!(calls(&script, SET).is_empty());
 }
 
 /// A change waits only for a runner the game still offers.
@@ -1563,7 +1616,7 @@ async fn closing_for_a_game_start_says_whether_every_change_was_kept() {
     assert_eq!(launch.close().await, Closing::Kept);
     assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
     assert_eq!(calls(&script, SET).len(), 1);
-    assert!(launch.submit_one_launch("wario").1.is_some());
+    assert!(launch.submit_one_launch("wario", None).1.is_some());
 
     for (code, state) in [
         ("SettingsConflict", "Conflict"),
@@ -1793,9 +1846,9 @@ async fn a_streamed_games_changes_and_this_devices_own_copy_do_not_mix() {
     assert!(launch.change("launch:keep", "launch"));
     assert!(launch.act(launch_id::CANCEL));
     // The streamed launch carries them; a launch of this device's copy does not.
-    assert!(launch.submit_one_launch("wario").1.is_none());
+    assert!(launch.submit_one_launch("wario", None).1.is_none());
     let key = crate::surface::one_launch::game_key("wario", Some("aka"));
-    assert!(launch.submit_one_launch(&key).1.is_some());
+    assert!(launch.submit_one_launch(&key, None).1.is_some());
 }
 
 /// The place this device's stream viewer reads its values from.
@@ -1855,7 +1908,7 @@ async fn this_devices_stream_rows_wait_as_changes_and_are_kept_on_this_device() 
     );
     assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
     let key = crate::surface::one_launch::game_key("wario", Some("aka"));
-    assert!(launch.submit_one_launch(&key).1.is_none());
+    assert!(launch.submit_one_launch(&key, None).1.is_none());
 }
 
 #[tokio::test]
@@ -1906,7 +1959,7 @@ async fn stream_values_stay_on_this_device_when_the_changes_are_for_this_launch(
     assert_eq!(writes[0]["place"], viewer_place());
     assert_eq!(writes[0]["value"], json!("av1"));
     let key = crate::surface::one_launch::game_key("wario", Some("aka"));
-    let (ticket, values) = launch.submit_one_launch(&key);
+    let (ticket, values) = launch.submit_one_launch(&key, None);
     assert_eq!(
         serde_json::to_value(values.expect("one-launch values")).unwrap(),
         json!({ "settings": { "video": { "render-scale": 2 } }, "modifiers": {} })

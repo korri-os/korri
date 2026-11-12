@@ -453,9 +453,10 @@ impl Root {
                     LaunchablesHooks {
                         launch_overrides: {
                             let root = this.clone();
-                            Box::new(move |game| {
-                                root.upgrade()
-                                    .map_or((0, None), |root| root.launch.submit_one_launch(game))
+                            Box::new(move |game, runner| {
+                                root.upgrade().map_or((0, None), |root| {
+                                    root.launch.submit_one_launch(game, runner)
+                                })
                             })
                         },
                         launch_overrides_complete: {

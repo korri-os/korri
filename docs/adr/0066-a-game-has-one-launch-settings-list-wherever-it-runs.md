@@ -97,9 +97,15 @@ change without a new owner decision.
 - **Runner-only rows.** A runner-only row belongs to one runner: its row id
   names that runner, and its change waits with that runner. While another
   runner is chosen, the change is set aside. The list does not show or count
-  it, a close does not write it and a launch does not carry it. It is a
-  change again when its runner is chosen again. A change for a runner the
-  game no longer offers is dropped.
+  it and a close does not write it. It is a change again when its runner is
+  chosen again, with the keep place it was set aside under. A change for a
+  runner the game no longer offers is dropped.
+- **Which changes a launch carries.** The shared changes, and the
+  runner-only changes of the runner the launch uses, shown or set aside,
+  when they are for this launch. When the launch starts, only what it
+  carried ends; a change for another runner still waits. A launch that
+  names no runner uses the runner the game had chosen when its list was
+  last read.
 - **One-launch governor.** The limits helper sets the governor for the whole
   device. korrid applies the launch's governor when the game unit starts and
   puts the device's own back when it ends. A korrid restart also applies the

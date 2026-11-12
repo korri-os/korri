@@ -982,12 +982,15 @@ impl LaunchSettings {
     }
 
     /// The values the next launch of this game carries: the changes kept
-    /// for this launch only (ADR 0066). `game` is the game's key.
+    /// for this launch only (ADR 0066). `game` is the game's key. `runner`
+    /// is the runner the launch names. None: it names none, and uses the
+    /// runner the game has chosen.
     pub(crate) fn submit_one_launch(
         &self,
         game: &str,
+        runner: Option<&str>,
     ) -> (u64, Option<crate::launch_settings::LaunchOverride>) {
-        self.lock().drafts.submit(game)
+        self.lock().drafts.submit(game, runner)
     }
 
     pub(crate) fn complete_one_launch(&self, ticket: u64, success: bool) {

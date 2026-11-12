@@ -96,8 +96,15 @@ type Changer = Box<dyn Fn(&str, &str) -> bool + Send + Sync>;
 
 /// The parts of the portal the launchables brain calls back into.
 pub struct LaunchablesHooks {
-    pub launch_overrides:
-        Box<dyn Fn(&str) -> (u64, Option<crate::launch_settings::LaunchOverride>) + Send + Sync>,
+    /// The one-launch values of a game for the runner its launch names. No
+    /// runner: the launch names none. The ticket goes back on completion.
+    pub launch_overrides: Box<
+        dyn Fn(&str, Option<&str>) -> (u64, Option<crate::launch_settings::LaunchOverride>)
+            + Send
+            + Sync,
+    >,
+    /// The launch of that ticket started or failed. On a start, what it
+    /// carried ends with it.
     pub launch_overrides_complete: Box<dyn Fn(u64, bool) + Send + Sync>,
     /// A prepared launch korrid started with launch warnings.
     pub launch_warnings: Box<dyn Fn(String, Vec<LaunchWarning>) + Send + Sync>,
@@ -1329,7 +1336,8 @@ impl Launchables {
             self.cancel_owned_startup(token).await;
             return None;
         }
-        let (settings_ticket, launch) = (self.hooks.launch_overrides)(game_id);
+        let (settings_ticket, launch) =
+            (self.hooks.launch_overrides)(game_id, runner_id.as_deref());
         let outcome = self
             .korrid
             .session_start(
@@ -1540,6 +1548,7 @@ impl Launchables {
         let holder = game.source.label.clone();
         let (settings_ticket, launch) = (self.hooks.launch_overrides)(
             &crate::surface::one_launch::game_key(&game.id, Some(&holder)),
+            runner_id.as_deref(),
         );
         let outcome = match runner_id {
             Some(runner_id) => {

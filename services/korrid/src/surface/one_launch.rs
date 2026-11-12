@@ -59,23 +59,45 @@ impl Change {
     }
 }
 
+/// A runner-only change set aside while another runner is chosen.
+#[derive(Clone)]
+struct Aside {
+    change: Change,
+    /// The keep place in force when the change was set aside. The keep
+    /// control it was made under is not in view while it waits.
+    keep: Option<String>,
+}
+
 #[derive(Clone, Default)]
 struct Draft {
     version: u64,
     changes: Vec<Change>,
     /// Runner-only changes for a runner that is not the chosen one. They
-    /// wait out of sight: no list shows them, no close writes them and no
-    /// launch carries them, until their runner is chosen again.
-    aside: Vec<Change>,
+    /// wait out of sight: no list shows them and no close writes them,
+    /// until their runner is chosen again. Only a launch that uses their
+    /// runner carries them.
+    aside: Vec<Aside>,
     /// The keep place the person chose. None: the list's default, this game.
     keep: Option<String>,
+}
+
+fn for_launch(keep: &Option<String>) -> bool {
+    keep.as_deref() == Some(KEEP_LAUNCH)
+}
+
+/// What one launch carried, by its ticket.
+struct Carried {
+    game: String,
+    /// The draft's version when the launch took the changes.
+    version: u64,
+    changes: Vec<Change>,
 }
 
 #[derive(Default)]
 pub(crate) struct OneLaunch {
     sequence: u64,
     pending: HashMap<String, Draft>,
-    submitted: HashMap<u64, (String, Draft)>,
+    submitted: HashMap<u64, Carried>,
 }
 
 /// The changes as the values of one launch. A shared setting has no runner
@@ -199,7 +221,6 @@ impl OneLaunch {
     /// chosen it is set aside, and it is a change again once its own runner
     /// is chosen. A change for a runner the game no longer offers is dropped.
     pub fn choose_runner(&mut self, game: &str, chosen: Option<&str>, offered: &[&str]) {
-        let version = self.next();
         let Some(draft) = self.pending.get_mut(game) else {
             return;
         };
@@ -210,19 +231,27 @@ impl OneLaunch {
                     .only_for()
                     .is_none_or(|runner| Some(runner) == chosen)
             });
-        let (back, wait): (Vec<Change>, Vec<Change>) = std::mem::take(&mut draft.aside)
+        let (back, wait): (Vec<Aside>, Vec<Aside>) = std::mem::take(&mut draft.aside)
             .into_iter()
-            .partition(|change| change.only_for() == chosen);
-        if !leave.is_empty() || !back.is_empty() {
-            // A launch that took the earlier changes must not end these.
-            draft.version = version;
+            .partition(|aside| aside.change.only_for() == chosen);
+        let keep = draft.keep.clone();
+        if let Some(first) = back.first().filter(|_| stay.is_empty()) {
+            // No other change shows: the keep place is the one these left under.
+            draft.keep = first.keep.clone();
         }
-        draft.changes = stay.into_iter().chain(back).collect();
+        draft.changes = stay
+            .into_iter()
+            .chain(back.into_iter().map(|aside| aside.change))
+            .collect();
         draft.aside = wait
             .into_iter()
-            .chain(leave)
-            .filter(|change| {
-                change
+            .chain(leave.into_iter().map(|change| Aside {
+                change,
+                keep: keep.clone(),
+            }))
+            .filter(|aside| {
+                aside
+                    .change
                     .only_for()
                     .is_some_and(|runner| offered.contains(&runner))
             })
@@ -263,47 +292,78 @@ impl OneLaunch {
         }
         self.settle(game);
     }
-    /// The values the next launch carries, when the person keeps the changes
-    /// for this launch only. The ticket identifies exactly the values sent,
-    /// not a later editor state.
-    pub fn submit(&mut self, game: &str) -> (u64, Option<LaunchOverride>) {
-        let Some(draft) = self
-            .pending
-            .get(game)
-            .filter(|draft| draft.keep.as_deref() == Some(KEEP_LAUNCH))
-            .cloned()
-        else {
+    /// The values the next launch carries: the changes the person keeps for
+    /// this launch only. They are the shared changes, and the runner-only
+    /// changes of the runner the launch uses, shown or set aside. `runner`
+    /// is that runner. None: the launch names no runner, so it uses the
+    /// runner the game had chosen when its list was last read. The ticket
+    /// identifies exactly the changes sent, not a later editor state.
+    pub fn submit(&mut self, game: &str, runner: Option<&str>) -> (u64, Option<LaunchOverride>) {
+        let Some(draft) = self.pending.get(game) else {
             return (0, None);
         };
-        let Ok(launch) = launch_override(&draft.changes) else {
+        let shown = draft
+            .changes
+            .iter()
+            .filter(|_| for_launch(&draft.keep))
+            .filter(|change| match (change.only_for(), runner) {
+                (Some(only_for), Some(runner)) => only_for == runner,
+                _ => true,
+            });
+        let aside = draft
+            .aside
+            .iter()
+            .filter(|aside| for_launch(&aside.keep))
+            .map(|aside| &aside.change)
+            .filter(|change| runner.is_some() && change.only_for() == runner);
+        let changes: Vec<Change> = shown
+            .chain(aside)
+            // A stream viewer's value is not a launch's to carry.
+            .filter(|change| matches!(change.side, Side::Holder { .. }))
+            .cloned()
+            .collect();
+        let version = draft.version;
+        let Ok(launch) = launch_override(&changes) else {
             return (0, None);
         };
         if launch.is_empty() {
             return (0, None);
         }
         let ticket = self.next();
-        self.submitted.insert(ticket, (game.into(), draft));
+        self.submitted.insert(
+            ticket,
+            Carried {
+                game: game.into(),
+                version,
+                changes,
+            },
+        );
         (ticket, Some(launch))
     }
-    /// A launch took its values: they end with it. A stream viewer's change
-    /// was not the launch's to carry, so it still waits.
+    /// A launch took its values: what it carried ends with it. Every other
+    /// change still waits: another runner's, and a stream viewer's.
     pub fn complete(&mut self, ticket: u64, success: bool) {
-        let Some((game, draft)) = self.submitted.remove(&ticket) else {
+        let Some(carried) = self.submitted.remove(&ticket) else {
             return;
         };
         if !success {
             return;
         }
-        if let Some(current) = self
+        // The person changed the draft after the launch took it: it is a new
+        // draft, and the launch ends none of it.
+        if let Some(draft) = self
             .pending
-            .get_mut(&game)
-            .filter(|current| current.version == draft.version)
+            .get_mut(&carried.game)
+            .filter(|draft| draft.version == carried.version)
         {
-            current
+            draft
                 .changes
-                .retain(|change| matches!(change.side, Side::Viewer { .. }));
+                .retain(|change| !carried.changes.contains(change));
+            draft
+                .aside
+                .retain(|aside| !carried.changes.contains(&aside.change));
         }
-        self.settle(&game);
+        self.settle(&carried.game);
     }
 }
 
@@ -332,7 +392,7 @@ mod tests {
             },
         }
     }
-    fn for_launch(drafts: &mut OneLaunch) {
+    fn keep_for_launch(drafts: &mut OneLaunch) {
         drafts.set_keep("game", KEEP_LAUNCH);
     }
     fn sent(launch: Option<LaunchOverride>) -> Option<LaunchSettingValue> {
@@ -344,29 +404,29 @@ mod tests {
         let mut drafts = OneLaunch::default();
         drafts.set("game", scale(4));
         assert!(
-            drafts.submit("game").1.is_none(),
+            drafts.submit("game", None).1.is_none(),
             "this game is the default"
         );
-        for_launch(&mut drafts);
-        let (ticket, launch) = drafts.submit("game");
+        keep_for_launch(&mut drafts);
+        let (ticket, launch) = drafts.submit("game", None);
         assert_eq!(sent(launch), Some(LaunchSettingValue::Number(4.into())));
         drafts.complete(ticket, true);
         assert!(
             drafts.changes("game").is_empty(),
             "they end with the launch"
         );
-        assert!(drafts.submit("game").1.is_none());
-        assert!(drafts.submit("other-game").1.is_none());
+        assert!(drafts.submit("game", None).1.is_none());
+        assert!(drafts.submit("other-game", None).1.is_none());
     }
 
     #[test]
     fn failure_keeps_the_changes_and_late_success_cannot_erase_new_ones() {
         let mut drafts = OneLaunch::default();
         drafts.set("game", scale(4));
-        for_launch(&mut drafts);
-        let (failed, _) = drafts.submit("game");
+        keep_for_launch(&mut drafts);
+        let (failed, _) = drafts.submit("game", None);
         drafts.complete(failed, false);
-        let (late, _) = drafts.submit("game");
+        let (late, _) = drafts.submit("game", None);
         drafts.set("game", scale(2));
         drafts.complete(late, true);
         assert_eq!(drafts.changes("game"), [scale(2)]);
@@ -376,7 +436,7 @@ mod tests {
     fn a_row_set_back_leaves_no_change_and_no_keep_choice() {
         let mut drafts = OneLaunch::default();
         drafts.set("game", scale(4));
-        for_launch(&mut drafts);
+        keep_for_launch(&mut drafts);
         drafts.remove("game", &scale(4).row);
         assert!(drafts.changes("game").is_empty());
         drafts.set("game", scale(2));
@@ -412,19 +472,20 @@ mod tests {
         let offered = ["mgba", "gpsp"];
         drafts.set("game", speed("mgba", 3));
         drafts.set("game", scale(4));
-        for_launch(&mut drafts);
+        keep_for_launch(&mut drafts);
         drafts.choose_runner("game", Some("mgba"), &offered);
         assert_eq!(drafts.changes("game"), [speed("mgba", 3), scale(4)]);
 
-        // Another runner: the change is no change of the list or of a launch.
+        // Another runner: the change is no change of the list, or of a
+        // launch with that runner.
         drafts.choose_runner("game", Some("gpsp"), &offered);
         assert_eq!(drafts.changes("game"), [scale(4)]);
-        let (ticket, launch) = drafts.submit("game");
+        let (ticket, launch) = drafts.submit("game", None);
         assert!(launch.unwrap().plugin.is_empty());
         drafts.complete(ticket, true);
         assert!(drafts.changes("game").is_empty());
         // Nothing shows now, so there is no keep choice to change or to hold.
-        drafts.set_keep("game", KEEP_LAUNCH);
+        drafts.set_keep("game", "game:wario");
         assert_eq!(drafts.keep("game"), None);
 
         // No runner chosen: it still waits. Its own runner: it is back.
@@ -433,8 +494,11 @@ mod tests {
         drafts.set("game", speed("gpsp", 7));
         drafts.choose_runner("game", Some("mgba"), &offered);
         assert_eq!(drafts.changes("game"), [speed("mgba", 3)]);
+        // It is back with the keep place it left under.
+        assert_eq!(drafts.keep("game"), Some(KEEP_LAUNCH));
         drafts.choose_runner("game", Some("gpsp"), &offered);
         assert_eq!(drafts.changes("game"), [speed("gpsp", 7)]);
+        assert_eq!(drafts.keep("game"), None);
 
         // A runner the game no longer offers: its change is dropped.
         drafts.choose_runner("game", Some("gpsp"), &["gpsp"]);
@@ -443,31 +507,115 @@ mod tests {
         assert!(drafts.changes("game").is_empty());
     }
 
+    fn plugin_of(launch: Option<LaunchOverride>) -> Value {
+        serde_json::to_value(launch.expect("one-launch values").plugin).unwrap()
+    }
+
     #[test]
-    fn a_late_launch_success_does_not_end_a_change_that_came_back_with_its_runner() {
+    fn a_launch_carries_the_runner_only_changes_of_the_runner_it_uses_and_ends_only_those() {
+        let offered = ["mgba", "gpsp"];
+        let mut drafts = OneLaunch::default();
+        drafts.set("game", speed("mgba", 3));
+        keep_for_launch(&mut drafts);
+        // gpSP is saved: mGBA's change is set aside, gpSP has its own.
+        drafts.choose_runner("game", Some("gpsp"), &offered);
+        drafts.set("game", speed("gpsp", 7));
+        drafts.set("game", scale(4));
+        drafts.set("game", codec());
+        keep_for_launch(&mut drafts);
+
+        // Launch once with mGBA: the shared change and mGBA's.
+        let (ticket, launch) = drafts.submit("game", Some("mgba"));
+        assert_eq!(
+            serde_json::to_value(launch.unwrap()).unwrap(),
+            json!({
+                "settings": { "video": { "render-scale": 4 } },
+                "plugin": { "mgba": { "speed": 3 } },
+                "modifiers": {},
+            })
+        );
+        // A launch that failed ends nothing.
+        drafts.complete(ticket, false);
+        let (ticket, _) = drafts.submit("game", Some("mgba"));
+        drafts.complete(ticket, true);
+        // gpSP's change was not used: it still waits. So does the viewer's.
+        assert_eq!(drafts.changes("game"), [speed("gpsp", 7), codec()]);
+        drafts.choose_runner("game", Some("mgba"), &offered);
+        assert_eq!(drafts.changes("game"), [codec()], "mGBA's change ended");
+
+        // A launch that names no runner uses the saved one.
+        drafts.choose_runner("game", Some("gpsp"), &offered);
+        let (ticket, launch) = drafts.submit("game", None);
+        assert_eq!(plugin_of(launch), json!({ "gpsp": { "speed": 7 } }));
+        drafts.complete(ticket, true);
+        assert_eq!(drafts.changes("game"), [codec()]);
+    }
+
+    #[test]
+    fn a_launch_with_the_saved_runner_leaves_another_runners_change_set_aside() {
+        let offered = ["mgba", "gpsp"];
+        let mut drafts = OneLaunch::default();
+        drafts.set("game", speed("mgba", 3));
+        keep_for_launch(&mut drafts);
+        drafts.choose_runner("game", Some("gpsp"), &offered);
+        drafts.set("game", speed("gpsp", 7));
+        keep_for_launch(&mut drafts);
+        let (ticket, launch) = drafts.submit("game", Some("gpsp"));
+        assert_eq!(plugin_of(launch), json!({ "gpsp": { "speed": 7 } }));
+        drafts.complete(ticket, true);
+        assert!(drafts.changes("game").is_empty());
+        // A runner that has no change of its own carries nothing.
+        assert!(drafts.submit("game", Some("gpsp")).1.is_none());
+        drafts.choose_runner("game", Some("mgba"), &offered);
+        assert_eq!(drafts.changes("game"), [speed("mgba", 3)]);
+        assert_eq!(drafts.keep("game"), Some(KEEP_LAUNCH));
+    }
+
+    #[test]
+    fn a_set_aside_change_goes_with_a_launch_only_when_it_was_for_this_launch() {
+        let offered = ["mgba", "gpsp"];
+        let mut drafts = OneLaunch::default();
+        // mGBA's change is for this game, the default.
+        drafts.set("game", speed("mgba", 3));
+        drafts.choose_runner("game", Some("gpsp"), &offered);
+        drafts.set("game", scale(4));
+        keep_for_launch(&mut drafts);
+        // Launch once with mGBA: the shared change only.
+        let (ticket, launch) = drafts.submit("game", Some("mgba"));
+        assert_eq!(plugin_of(launch), json!({}));
+        drafts.complete(ticket, true);
+        assert!(drafts.changes("game").is_empty());
+        // It waits for mGBA, and is still for this game.
+        drafts.choose_runner("game", Some("mgba"), &offered);
+        assert_eq!(drafts.changes("game"), [speed("mgba", 3)]);
+        assert_eq!(drafts.keep("game"), None);
+    }
+
+    #[test]
+    fn a_launch_ends_what_it_carried_also_when_a_set_aside_change_came_back_meanwhile() {
         let mut drafts = OneLaunch::default();
         let offered = ["mgba", "gpsp"];
         drafts.set("game", speed("mgba", 3));
         drafts.choose_runner("game", Some("gpsp"), &offered);
         drafts.set("game", scale(4));
-        for_launch(&mut drafts);
-        let (ticket, _) = drafts.submit("game");
+        keep_for_launch(&mut drafts);
+        let (ticket, _) = drafts.submit("game", Some("gpsp"));
         drafts.choose_runner("game", Some("mgba"), &offered);
         drafts.complete(ticket, true);
-        assert_eq!(drafts.changes("game"), [scale(4), speed("mgba", 3)]);
+        assert_eq!(drafts.changes("game"), [speed("mgba", 3)]);
     }
 
     #[test]
     fn a_launch_does_not_carry_a_stream_viewers_change_and_does_not_end_it() {
         let mut drafts = OneLaunch::default();
         drafts.set("game", codec());
-        for_launch(&mut drafts);
+        keep_for_launch(&mut drafts);
         assert!(
-            drafts.submit("game").1.is_none(),
+            drafts.submit("game", None).1.is_none(),
             "a stream value alone is nothing to carry"
         );
         drafts.set("game", scale(4));
-        let (ticket, launch) = drafts.submit("game");
+        let (ticket, launch) = drafts.submit("game", None);
         assert_eq!(
             serde_json::to_value(launch.unwrap()).unwrap(),
             json!({ "settings": { "video": { "render-scale": 4 } }, "modifiers": {} })

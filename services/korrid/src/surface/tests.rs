@@ -1183,6 +1183,168 @@ async fn a_game_started_from_the_chooser_starts_only_when_every_change_was_kept(
     assert_eq!(starts(), 1, "kept, so the game starts");
 }
 
+/// ADR 0066: a launch carries the shared changes and the runner-only changes
+/// of the runner it uses. Launch once names that runner, whichever runner
+/// the game has saved.
+#[tokio::test]
+async fn launching_once_with_another_runner_carries_that_runners_one_launch_values() {
+    use korri_surface_treaty::{SurfaceLaunchSettings, SurfaceRunnerChoice};
+    const SNES9X: &str = "@korri:snes9x/snes9x";
+    const OWN: &str = "@simonwjackson:actraiser/actraiser";
+    let speed_row = |runner: &str| format!("launch:row:runner:{runner}:setting:plugin.speed");
+    let snapshot = |saved: &str| {
+        let runner = |id: &str, title: &str| {
+            json!({
+                "id": id, "title": title, "selected": id == saved, "choosable": true,
+                "schema": korri_settings_treaty::schema(
+                    &[],
+                    json!({ "type": "object", "properties": { "speed": { "type": "integer", "title": "Speed" } } }),
+                ),
+                "revision": "r1",
+                "prepare": { "_tag": "Ready", "payload": { "env": {}, "args": [] } },
+            })
+        };
+        json!({ "_tag": "Ok", "payload": {
+            "places": [{
+                "place": { "layer": { "_tag": "Game", "id": "actraiser" }, "scope": { "_tag": "Any" } },
+                "title": "ActRaiser", "body": {}, "editableKinds": ["runner", "cpu", "gpu"],
+            }],
+            "resolved": { "values": {} },
+            "runners": [runner(SNES9X, "Snes9x"), runner(OWN, "ActRaiser")],
+            "runnerResolved": [], "modifiers": [], "services": [], "profiles": [], "notices": [],
+            "routeLayers": { "_tag": "Present" },
+            "revisions": { "device": "d1", "games": "g1" }
+        } })
+    };
+    let mut outcomes = idle_outcomes(0);
+    outcomes.insert(
+        "app.catalog.snapshot".into(),
+        json!({"_tag":"Ok","payload":{"games":[{
+        "id":"actraiser","title":"ActRaiser","host":"aka","supportsRunnerSelection":true,
+        "source":{"devicePublicKey":"aka-key","label":"aka","isLocal":false}}]}}),
+    );
+    outcomes.insert(
+        "app.local-games.routes".into(),
+        json!({ "_tag": "Ok", "payload": {
+            "gameId": "actraiser",
+            "routes": [
+                { "runnerId": SNES9X, "systemId": "snes", "runnerBuild": "b", "program": "snes9x", "warnings": [] },
+                { "runnerId": OWN, "systemId": "snes", "runnerBuild": "b", "program": "actraiser", "warnings": [] },
+            ],
+            "selection": { "_tag": "Choose" },
+            "systemRunners": {},
+            "revisions": { "device": "d1", "games": "g1" }
+        } }),
+    );
+    outcomes.insert("app.launch-settings.snapshot".into(), snapshot(SNES9X));
+    let outcomes = Arc::new(std::sync::Mutex::new(outcomes));
+    let (hub, requests, _directory) = recording_hub(Arc::clone(&outcomes));
+    let act = |action_id: &str| {
+        hub.request(
+            "pico",
+            SurfaceRequest::RunAction {
+                action_id: action_id.into(),
+            },
+        )
+        .unwrap();
+    };
+    let change = |setting_id: &str, value: &str| {
+        hub.request(
+            "pico",
+            SurfaceRequest::ChangeSetting {
+                setting_id: setting_id.into(),
+                value: value.into(),
+            },
+        )
+        .unwrap();
+    };
+    let editor_ready = |model: &SurfaceModel| {
+        matches!(model.launch_settings, Some(SurfaceLaunchSettings::Ready(_)))
+    };
+    let marked = |model: &SurfaceModel| -> Vec<String> {
+        let Some(SurfaceLaunchSettings::Ready(list)) = &model.launch_settings else {
+            panic!("the editor is not ready")
+        };
+        list.changes
+            .iter()
+            .map(|change| change.id.clone())
+            .collect()
+    };
+
+    let id = window_ids(&settled(&hub, "pico").await).2[0].clone();
+    hub.request(
+        "pico",
+        SurfaceRequest::RunGameAction {
+            game_id: id,
+            action_id: "launch-settings".into(),
+        },
+    )
+    .unwrap();
+    model_when(&hub, "the editor opens", editor_ready).await;
+    // Snes9x is saved. Its own speed is changed, for this launch.
+    change(&speed_row(SNES9X), "3");
+    change("launch:keep", "launch");
+    assert_eq!(marked(&hub.model("pico").unwrap()), [speed_row(SNES9X)]);
+
+    // The other runner is saved: Snes9x's change is set aside, and the saved
+    // runner gets a one-launch value of its own.
+    outcomes
+        .lock()
+        .unwrap()
+        .insert("app.launch-settings.snapshot".into(), snapshot(OWN));
+    act("launch:reload");
+    model_when(&hub, "the list shows the other runner", |model| {
+        editor_ready(model) && marked(model).is_empty()
+    })
+    .await;
+    change(&speed_row(OWN), "5");
+    change("launch:keep", "launch");
+    assert_eq!(marked(&hub.model("pico").unwrap()), [speed_row(OWN)]);
+
+    // Launch once with Snes9x.
+    act("launch:runner");
+    let model = model_when(&hub, "the chooser opens", |model| {
+        matches!(model.runner_choice, Some(SurfaceRunnerChoice::Ready(_)))
+    })
+    .await;
+    let Some(SurfaceRunnerChoice::Ready(chooser)) = &model.runner_choice else {
+        unreachable!()
+    };
+    assert_eq!(chooser.routes[0].runner_id, SNES9X);
+    let launch_once = chooser.routes[0]
+        .actions
+        .iter()
+        .find(|action| action.label == "Launch once")
+        .expect("Launch once")
+        .id
+        .clone();
+    act(&launch_once);
+    let started = || {
+        requests
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|call| call["_tag"] == "app.local-games.launch.selected")
+            .map(|call| call["payload"].clone())
+    };
+    for _ in 0..200 {
+        if started().is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let started = started().expect("the launch never started");
+    assert_eq!(started["runnerId"], json!(SNES9X));
+    assert_eq!(started["holder"], json!("aka"));
+    // The launch carries Snes9x's value. The saved runner's value is not
+    // this launch's to carry.
+    assert_eq!(
+        started["launch"]["plugin"],
+        json!({ SNES9X: { "speed": 3 } }),
+        "{started}"
+    );
+}
+
 #[tokio::test]
 async fn focus_game_publishes_that_games_actions_only_for_a_game_korri_knows() {
     let mut outcomes = idle_outcomes(3);
