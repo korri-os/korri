@@ -8,11 +8,20 @@ let
       type == "directory" && !(builtins.elem (builtins.baseNameOf path) [ "__pycache__" "baselines" ])
       || type == "regular" && !(pkgs.lib.hasSuffix ".pyc" path);
   };
+  # korrid's own picture-path table. viewer.py holds a copy of it.
+  korridViewer = ../../services/korrid/src/linux_viewer/production.rs;
+  # The gate that the app build depends on: no device constant in production
+  # source, and no difference between viewer.py's copy and korrid's table.
   sourceCheck =
-    pkgs.runCommand "stream-cadence-source-check" { nativeBuildInputs = [ pkgs.python3 ]; }
+    pkgs.runCommand "stream-cadence-source-check"
+      {
+        nativeBuildInputs = [ pkgs.python3 ];
+        CADENCE_KORRID_VIEWER = korridViewer;
+      }
       ''
         export PYTHONDONTWRITEBYTECODE=1
         python3 -m unittest discover -s ${source}/tests -p test_source.py -v
+        python3 -m unittest discover -s ${source}/tests -p test_korrid_copy.py -v
         touch "$out"
       '';
   deviceSource = pkgs.lib.fileset.toSource {
@@ -124,9 +133,8 @@ let
           pkgs.python3Packages.ruff
           pkgs.python3Packages.mypy
         ];
-        # viewer.py holds a copy of korrid's picture-path table. The tests read
-        # korrid's own file, so a change there fails this build.
-        CADENCE_KORRID_VIEWER = ../../services/korrid/src/linux_viewer/production.rs;
+        # The same check runs in sourceCheck; here it runs with all other tests.
+        CADENCE_KORRID_VIEWER = korridViewer;
       }
       ''
             export PYTHONDONTWRITEBYTECODE=1
