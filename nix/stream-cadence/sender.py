@@ -45,6 +45,7 @@ from device import (
     hand_over,
     let_in,
     live_games,
+    machine_sample,
     product_units,
     units_record,
     model,
@@ -825,7 +826,12 @@ class Session:
             journal = read_plain(self.home() / "sunshine.log", offset=self.cursor).decode(
                 errors="replace"
             )
-            return {"threads": scheduling(self.facts), "journal": journal}
+            return {
+                "threads": scheduling(self.facts),
+                "journal": journal,
+                # How busy the whole machine is, and how much of that is this fixture.
+                "machine": machine_sample([process.pid for process in self.processes.values()]),
+            }
         if operation == "evidence":
             self.stop("source")
             return {

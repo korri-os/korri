@@ -156,6 +156,49 @@ def unit(name: str) -> dict[str, str]:
     )
 
 
+STAT = Path("/proc/stat")
+LOADAVG = Path("/proc/loadavg")
+
+
+def process_ticks(pid: int) -> int:
+    """User and system ticks of one process with all its threads; 0 when it is gone."""
+    try:
+        fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+    except (OSError, IndexError):
+        return 0
+    # utime and stime: fields 14 and 15 of proc(5), counted from the state field.
+    return int(fields[11]) + int(fields[12])
+
+
+def agent_ticks() -> int:
+    """The agent's own ticks, with those of every child that it has waited for."""
+    fields = Path("/proc/self/stat").read_text().rsplit(")", 1)[1].split()
+    # utime, stime, cutime and cstime: fields 14 to 17 of proc(5).
+    return sum(int(value) for value in fields[11:15])
+
+
+def machine_sample(pids: list[int]) -> dict:
+    """One look at how busy the whole machine is, for `score.machine_use`.
+
+    The summed CPU counters of /proc/stat (user, nice, system, idle, iowait,
+    irq, softirq, steal; guest time is inside user time), the ticks of the
+    tool's own programs on this device (the agent, and `pids`: what it
+    started and still runs), and the load average as plain evidence. Two
+    looks give the share of all CPUs that was not idle, and the share that
+    the tool itself used. A program that ended is in the agent's ticks from
+    then on, so the sum never falls. Programs that a started program starts
+    by itself (the compositor's background helper) are not in it.
+    """
+    cpu = [int(value) for value in STAT.read_text().splitlines()[0].split()[1:9]]
+    return {
+        "ns": time.monotonic_ns(),
+        "cpu": cpu,
+        "own_ticks": agent_ticks() + sum(process_ticks(pid) for pid in pids),
+        "loadavg": [float(value) for value in LOADAVG.read_text().split()[:3]],
+        "ticks_per_second": os.sysconf("SC_CLK_TCK"),
+    }
+
+
 def unit_names(listing: str) -> list[str]:
     """The product's units from `systemctl list-units`, without the games.
 

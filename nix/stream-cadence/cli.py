@@ -37,6 +37,7 @@ from score import (
     display_records,
     feedback,
     first_measured_frame,
+    machine_use,
     score,
     stamps,
 )
@@ -51,6 +52,7 @@ from verdict import (
     STAND_IN,
     conditions_that_differ,
     judge,
+    machine_line,
     product_changes,
     valid_runs,
     viewers,
@@ -625,6 +627,26 @@ def viewer_ran(
 RENDERER_OPTION = "--viewer-renderer"
 
 
+def machine_record(sender: dict | None, seat: dict | None, same_device: bool) -> dict:
+    """How busy each device was over the scored time, with the tool's own programs taken out.
+
+    `sender` and `seat` are `score.machine_use` of the two agents' looks; None
+    for an agent that does not look (a product sender's). `tool` is the share
+    of all CPUs that the tool's own programs used on that device: the agent
+    and what it started. On one device the sender's stack and the viewer's
+    are both the tool's. `other` is the rest of `busy`: what else ran. A
+    foreign load moves every number of a pair, and `verdict` compares this.
+    """
+    record: dict = {}
+    for name, use, partner in (("sender", sender, seat), ("viewer", seat, sender)):
+        if use is None:
+            record[name] = None
+            continue
+        tool = use["own"] + (partner["own"] if same_device and partner else 0.0)
+        record[name] = dict(use, tool=tool, other=max(0.0, use["busy"] - tool))
+    return record
+
+
 def viewer_render_nodes(samples: list[dict]) -> list[str] | None:
     """The render nodes that the viewer held open in any sample; None when none could be read."""
     read = [row["viewer_render_nodes"] for row in samples if row.get("viewer_render_nodes") is not None]
@@ -1093,6 +1115,7 @@ def view_case(
     facts["run_index"] = index
     facts["bridge_uncertainty_ms"] = None
     samples: list[dict] = []
+    sender_looks: list[dict | None] = []
     latest = ""
     try:
         if facts.get("watched_display"):
@@ -1363,7 +1386,10 @@ def view_case(
         duration = math.floor(args.seconds / args.window) * args.window
         deadline = time.monotonic() + args.startup + args.warmup + duration + 2
         while time.monotonic() < deadline:
-            latest = sender.request("sample")["journal"]
+            sent = sender.request("sample")
+            latest = sent["journal"]
+            # A product sender's agent does not look at the machine.
+            sender_looks.append(sent.get("machine"))
             facts.update(session_log(latest))
             state = viewer.request("sample")
             samples.append(state)
@@ -1426,6 +1452,25 @@ def view_case(
 
         gaps, repeats = capture_gaps(
             times, frames, discarded, period, scored[0], scored[1], booked=booked
+        )
+        # How busy each device was over the scored time, and what else ran there
+        # beside the tool's own programs. Each agent's looks are in its own clock.
+        facts["machine"] = machine_record(
+            machine_use(
+                [dict(look, ns=to_sender(look["ns"])) for look in sender_looks if look],
+                booked_from,
+                booked_to,
+            ),
+            machine_use(
+                [
+                    dict(row["machine"], ns=to_seat(row["machine"]["ns"]))
+                    for row in samples
+                    if row.get("machine")
+                ],
+                booked_from,
+                booked_to,
+            ),
+            same_device=same_clock,
         )
         record["viewer"] = {
             "startup_ms": (origin - started["start_ns"]) / 1e6,
@@ -1724,6 +1769,9 @@ def verdicts(args: argparse.Namespace) -> int:
     if differ:
         # Only the override lets a verdict come this far. It still names the difference.
         print("Allowed by --allow-different-conditions. " + differ)
+    # What else ran on each device: a busier machine in one result is refused
+    # above, and with the override this line still shows it.
+    print(machine_line(old, new))
     # A product process that restarted during a run: valid, and said here.
     for line in product_changes(old, new):
         print(line)

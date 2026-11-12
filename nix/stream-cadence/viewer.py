@@ -45,6 +45,7 @@ from device import (
     korrid_displays,
     let_in,
     live_games,
+    machine_sample,
     product_units,
     units_record,
     model,
@@ -906,6 +907,9 @@ class Session:
                     for zone in zones
                 ],
                 "hardware_decode": self.hardware_decode(),
+                # How busy the whole machine is, and how much of that is the viewer,
+                # its fixture and the capture.
+                "machine": machine_sample([process.pid for process in self.processes.values()]),
                 # Whether the viewer's own OpenGL is on the graphics card.
                 "viewer_render_nodes": render_nodes_open(viewer.pid) if viewer else None,
             }

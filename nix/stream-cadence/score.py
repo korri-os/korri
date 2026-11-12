@@ -499,3 +499,34 @@ def score(
             report,
         )
     return report
+
+
+def machine_use(samples: list[dict], start_ns: float, end_ns: float) -> dict | None:
+    """How busy the whole machine was between the first and the last look inside a time.
+
+    A look is `device.machine_sample`: the summed CPU counters of /proc/stat,
+    the ticks of the agent's own programs, and the load average. `busy` is the
+    share of all CPUs that was not idle (waiting for a disk counts as idle),
+    and `own` is the share that the agent's own programs used. None when the
+    machine was not read twice inside the time.
+    """
+    inside = [row for row in samples if row and start_ns <= row["ns"] <= end_ns]
+    if len(inside) < 2:
+        return None
+    first, last = inside[0], inside[-1]
+    total = sum(last["cpu"]) - sum(first["cpu"])
+    seconds = (last["ns"] - first["ns"]) / 1e9
+    if total <= 0 or seconds <= 0:
+        return None
+    # Fields 4 and 5 of the cpu line of proc(5): idle and iowait.
+    idle = sum(last["cpu"][3:5]) - sum(first["cpu"][3:5])
+    return {
+        "busy": (total - idle) / total,
+        "own": (last["own_ticks"] - first["own_ticks"]) / total,
+        "cpus": total / first["ticks_per_second"] / seconds,
+        "seconds": seconds,
+        "loadavg_start": first["loadavg"],
+        "loadavg_end": last["loadavg"],
+    }
+
+

@@ -99,6 +99,8 @@ COPIED_PRODUCT = "copied-product"
 LIVE_GAME_MOMENTS = ("sender_at_start", "viewer_at_start", "sender_at_end", "viewer_at_end")
 # The entries under /dev/input that changed during the run, in the same place.
 LIVE_GAME_INPUTS = ("input_devices_appeared", "input_devices_disappeared")
+# The devices in `discovered.machine`: how busy each was, and what else ran there.
+MACHINE_SIDES = ("sender", "viewer")
 
 
 def conditions(record: dict) -> dict:
@@ -299,8 +301,9 @@ def conditions_that_differ(old: list[dict], new: list[dict]) -> str | None:
     override lets it go on: a difference must be named either way.
     """
     changed = differences(old, new)
+    busier = machine_difference(old, new)
     if not changed:
-        return None
+        return busier
     # A condition that some runs have and others lack was added to the tool
     # between the two recordings. That is another cause than another sender.
     every = [conditions(record) for record in old + new]
@@ -358,6 +361,7 @@ def conditions_that_differ(old: list[dict], new: list[dict]) -> str | None:
         + ", ".join(changed)
         + ". "
         + " ".join(advice)
+        + (" " + busier if busier else "")
     )
 
 
@@ -387,3 +391,62 @@ def judge(
             }
         )
     return rows
+
+
+def machine_others(records: list[dict], side: str) -> list[float] | None:
+    """What else ran on one device in each run of a result; None when any run lacks the record."""
+    values = [((record["discovered"].get("machine") or {}).get(side) or {}).get("other") for record in records]
+    known = [float(value) for value in values if value is not None]
+    return known if len(known) == len(values) else None
+
+
+def share(values: list[float]) -> str:
+    return f"{min(values) * 100:.1f}%..{max(values) * 100:.1f}%"
+
+
+def machine_line(baseline: list[dict], candidate: list[dict]) -> str:
+    """One line for a verdict: what else ran on each device, as a share of all CPUs, in both results."""
+    parts = []
+    for name, records in (("baseline", baseline), ("candidate", candidate)):
+        sides = [
+            f"{side} device {share(values)}"
+            for side in MACHINE_SIDES
+            if (values := machine_others(records, side)) is not None
+        ]
+        parts.append(f"{name}: " + (", ".join(sides) if sides else "not recorded"))
+    return "what else ran on the machine, share of all CPUs: " + "; ".join(parts)
+
+
+def machine_difference(old: list[dict], new: list[dict]) -> str | None:
+    """Why the two results were not measured on an equally busy machine, or None.
+
+    The rule of a metric: two ranges that do not overlap differ. Another
+    load on the device moves every number of a pair, so a verdict between such
+    results would judge that load. A result that has no record while the
+    other has one was recorded before the tool kept it.
+    """
+    words = []
+    for side in MACHINE_SIDES:
+        before, after = machine_others(old, side), machine_others(new, side)
+        if before is None and after is None:
+            continue
+        if before is None or after is None:
+            return (
+                "One result was recorded before the tool kept how busy the machine was "
+                "(machine); record that result again."
+            )
+        if min(after) > max(before) or max(after) < min(before):
+            words.append(
+                f"on the {side} device what else ran took {share(before)} of all CPUs in the "
+                f"baseline and {share(after)} in the candidate"
+            )
+    if not words:
+        return None
+    return (
+        "The machine was busier in one result: "
+        + "; ".join(words)
+        + ". Another load on the device changes a pair's numbers; record both results on an "
+        "equally quiet machine."
+    )
+
+

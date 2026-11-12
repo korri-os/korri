@@ -549,8 +549,10 @@ and `/dev/input` did not change. These sets are evidence, not a baseline.
 
 aka was not quiet for the first sets. A unit of another test that is no
 game unit (`hookshot-pr-hold-test.service`, about 2.5 CPUs) ran until 18:05
-UTC, and aka's load average was 14 to 16, then 4 to 5. Nothing in a result
-says so today. The table has aka's 1-minute load before and after each set.
+UTC, and aka's load average was 14 to 16, then 4 to 5. Nothing in these
+results says so; they are from before the tool recorded how busy the
+machine was (see "Verdict"). The table has aka's 1-minute load before and
+after each set, read by hand.
 
 | Set | Load | Valid | Delay p50, each window | Dropped | Viewer CPU s/s | `startup_ms` |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -576,8 +578,9 @@ What the sets show:
   delay (19.6 to 20.0 ms against 11.8 to 14.6 ms), for the CPU and for the
   startup, and `worse` for repeated frames. The stand-in's first run, under
   the same load as base A, has the numbers of base A (19 to 20 ms, 0.258,
-  1097 ms). A baseline needs a quiet aka, and the person who records it
-  must look at the load: the tool does not record it.
+  1097 ms). A baseline needs a quiet aka. These two sets are the reason
+  that every result now records what else ran on the machine, and that
+  `verdict` refuses two results whose machines were not equally busy.
 - **The product's viewer and the stand-in measure alike in this fixture.**
   In turns on a quiet aka: the same delay (11.7 to 12.2 ms against 11.7 to
   12.1 ms), no dropped frame in either, and a CPU of 0.164 to 0.165 against
@@ -1227,7 +1230,48 @@ candidate: the product changed during run-3: korri-shell.service (restarted), ko
 ```
 
 A result from before this record gets the line "the product's units were
-not recorded". The
+not recorded".
+
+**How busy the machine was.** Another load on a device moves every number
+of a pair: on aka on 2026-11-12, sets A and B of the same viewer differed by
+8 ms of delay because another test used about 2.5 CPUs during set A, and no
+result showed it. Each agent of a fixture now looks at the machine in every
+sample: the summed CPU counters of `/proc/stat`, the ticks of the tool's own
+programs there (the agent and what it started: the sender's compositor,
+Sunshine and source, or the viewer, its compositor and the capture), and the
+load average. For each device `discovered.machine` holds, over the scored
+time:
+
+| Field | Meaning |
+| --- | --- |
+| `busy` | The share of all CPUs that was not idle. Waiting for a disk counts as idle. |
+| `tool` | The share that the tool's own programs used. On one device the sender's stack and the viewer's are both the tool's. |
+| `other` | `busy` without `tool`: what else ran. It holds the kernel's own work too, also the part that the pair causes, and a program that one of the tool's programs starts by itself. |
+| `own`, `cpus`, `seconds` | This agent's part of `tool`, the count of CPUs, and the time between the first and the last look inside the scored time. |
+| `loadavg_start`, `loadavg_end` | The load average at those two looks, as plain evidence. |
+
+On a quiet aka one run gave `busy` 4.9%, `tool` 2.2% and `other` 2.8% of 12
+CPUs. A product sender's agent does not look, so its device has no record.
+
+No run is stopped or made invalid for a busy machine. The protection is in
+`verdict`: it prints one line with the range of `other` in each result for
+each device, and it applies the rule of a metric to it. When the two ranges
+do not overlap, it refuses and says that the machine was busier in one
+result, with both ranges. `--allow-different-conditions` overrides the
+refusal, and the line stays. A result with no record, against one that has
+it, is refused as "recorded before the tool kept how busy the machine was".
+
+```
+what else ran on the machine, share of all CPUs: baseline: sender device 21.0%..24.0%, viewer device 21.0%..24.0%; candidate: sender device 0.4%..0.7%, viewer device 0.4%..0.7%
+```
+
+The rule has no smallest gap: two quiet results whose ranges miss each
+other by a tenth of a percent are refused like a loaded one. How wide the
+range of a quiet aka is over five runs is not measured yet.
+
+Sets A and B themselves cannot be checked against this rule afterwards:
+their evidence holds the load average before and after each set and no CPU
+counters, and a load average is not a share of the CPUs. The
 model is the device's own name for itself; on a board whose firmware gives a
 placeholder (aka says "System Product Name"), two such machines look alike.
 When only one result has the condition `viewer_model`, `verdict` says that
