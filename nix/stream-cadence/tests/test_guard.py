@@ -9,6 +9,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import heat  # noqa: E402
+import machine  # noqa: E402
 import viewer  # noqa: E402
 
 TESTS = Path(__file__).resolve().parent
@@ -37,6 +38,7 @@ class Device(unittest.TestCase):
         self.peer.chmod(0o755)
         self.previous = (heat.THERMAL, viewer.COMPATIBLE)
         heat.THERMAL, viewer.COMPATIBLE = root / "thermal", root / "compatible"
+        self.supplies = machine.power_supplies(self, root)
 
     def tearDown(self):
         heat.THERMAL, viewer.COMPATIBLE = self.previous
@@ -319,6 +321,34 @@ class ABusyViewerOnAHardwarePath(Device):
             self.assertIs(sample["hardware_decode"], True)
         finally:
             self.assertTrue(session.close()["pass"])
+
+
+class ABatteryMeansAHandheld(DesktopChip):
+    """A chip that korrid's table does not name, as the RG DS has."""
+
+    def test_fixture_viewer_is_refused_on_a_device_with_a_battery(self):
+        machine.supply(self.supplies, "rk817-battery", "Battery")
+        session = self.session()
+        facts = session.handle({"operation": "discover"})
+        self.assertFalse(facts["hardware_picture_path"])
+        self.assertEqual(facts["batteries"], ["rk817-battery"])
+        with self.assertRaisesRegex(RuntimeError, "battery \\(rk817-battery\\).*only its installed viewer"):
+            self.prepare(session)
+        self.assertIsNone(session.root)
+        self.assertEqual(session.processes, {})
+
+    def test_mains_and_a_controllers_battery_are_no_battery_of_the_device(self):
+        machine.supply(self.supplies, "AC", "Mains")
+        machine.supply(self.supplies, "sony_controller_battery_00", "Battery", scope="Device")
+        session = self.session()
+        self.assertEqual(session.handle({"operation": "discover"})["batteries"], [])
+        self.assertTrue(Path(self.prepare(session)["run_folder"]).is_dir())
+
+    def test_supply_that_cannot_be_read_counts_as_a_battery(self):
+        (self.supplies / "unknown").mkdir(parents=True)
+        session = self.session()
+        with self.assertRaisesRegex(RuntimeError, "battery \\(unknown\\)"):
+            self.prepare(session)
 
 
 class ADeviceWithNoThermalZone(Device):

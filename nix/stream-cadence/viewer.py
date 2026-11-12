@@ -33,12 +33,15 @@ import time
 from typing import TextIO
 
 from heat import END_MARGIN, must_end, no_start, thermal_limits, thermal_zones
+import device
 from device import (
+    batteries,
     deferred_termination,
     end_with_agent,
     games,
     get_output,
     model,
+    no_fixture_on_battery,
     proc,
     serve,
     sway,
@@ -86,7 +89,7 @@ def ticks(pid: int) -> int | None:
 
 def battery() -> list[dict]:
     rows = []
-    for supply in sorted(Path("/sys/class/power_supply").glob("*")):
+    for supply in sorted(device.POWER_SUPPLY.glob("*")):
         try:
             if (supply / "type").read_text().strip() != "Battery":
                 continue
@@ -210,6 +213,8 @@ class Session:
             "platform": chosen,
             # korrid's chip table names a hardware picture path for this device.
             "hardware_picture_path": chosen != PICTURE_PATH_DEFAULT,
+            # The device's own batteries: with one it is a handheld or a laptop.
+            "batteries": batteries(),
             # The host that runs the tool, as this device reaches it: the far end
             # of the agent's own SSH connection. Absent with no SSH.
             "controller_address": connection[0] if connection else None,
@@ -424,6 +429,14 @@ class Session:
                 "only the installed viewer plugin runs there. The plugin is not usable: "
                 f"{self.facts['plugin_missing']}."
             )
+        if request["fixture"]:
+            # A handheld outside korrid's chip table would still get the software
+            # viewer. A battery marks every one of them.
+            on_battery = no_fixture_on_battery("viewer fixture")
+            if on_battery:
+                raise RuntimeError(
+                    on_battery + f" Its viewer plugin is not usable: {self.facts['plugin_missing']}."
+                )
         self.fixture = bool(request["fixture"])
         if self.compositor is None and not self.fixture:
             raise RuntimeError("A host with no Korri has no viewer plugin; only the fixture runs here.")

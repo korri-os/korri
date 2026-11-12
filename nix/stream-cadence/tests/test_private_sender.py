@@ -10,6 +10,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import heat  # noqa: E402
+import machine  # noqa: E402
 import sender  # noqa: E402
 import viewer  # noqa: E402
 
@@ -40,6 +41,7 @@ class Machine(unittest.TestCase):
         # No thermal zone and no device tree, whatever machine runs the tests.
         self.sensors = (heat.THERMAL, viewer.COMPATIBLE)
         heat.THERMAL, viewer.COMPATIBLE = root / "thermal", root / "compatible"
+        self.supplies = machine.power_supplies(self, root)
 
     def tearDown(self):
         sender.RENDER_NODES, sender.INPUT_DEVICES, sender.UINPUT = self.real
@@ -190,6 +192,23 @@ class SenderHeatGuard(Machine):
         with self.assertRaisesRegex(RuntimeError, "hardware picture path.*does not start"):
             self.prepare(session)
         self.assertIsNone(session.root)
+
+
+class NotOnABattery(Machine):
+    def test_sender_fixture_never_starts_on_a_device_with_a_battery(self):
+        machine.supply(self.supplies, "BAT0", "Battery")
+        session = self.session()
+        self.assertEqual(session.handle({"operation": "discover"})["batteries"], ["BAT0"])
+        with self.assertRaisesRegex(RuntimeError, "battery \\(BAT0\\).*sender fixture does not start"):
+            self.prepare(session)
+        self.assertIsNone(session.root)
+        self.assertFalse((self.peers / "arguments.log").exists())
+
+    def test_a_controllers_battery_does_not_stop_the_fixture(self):
+        machine.supply(self.supplies, "controller_battery", "Battery", scope="Device")
+        session = self.session()
+        self.prepare(session)
+        self.assertTrue(session.close()["pass"])
 
 
 class NotOnAHandheld(Machine):

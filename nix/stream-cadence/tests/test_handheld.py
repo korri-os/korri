@@ -20,6 +20,7 @@ from score import first_measured_frame  # noqa: E402
 import sender  # noqa: E402
 from verdict import differences, judge  # noqa: E402
 import heat  # noqa: E402
+import machine  # noqa: E402
 import viewer  # noqa: E402
 
 TESTS = Path(__file__).resolve().parent
@@ -315,6 +316,7 @@ class HeatGuard(unittest.TestCase):
         self.peer.chmod(0o755)
         self.previous = (heat.THERMAL, viewer.COMPATIBLE)
         heat.THERMAL, viewer.COMPATIBLE = root / "thermal", root / "no-device-tree"
+        self.supplies = machine.power_supplies(self, root)
 
     def tearDown(self):
         heat.THERMAL, viewer.COMPATIBLE = self.previous
@@ -424,6 +426,7 @@ class RenderNodeChoice(unittest.TestCase):
             # No thermal zone and no device tree, whatever machine runs the tests.
             sensors = (heat.THERMAL, viewer.COMPATIBLE)
             heat.THERMAL, viewer.COMPATIBLE = Path(temporary) / "thermal", Path(temporary) / "dt"
+            machine.power_supplies(self, temporary)
             session = sender.Session()
             try:
                 built = session.handle(
@@ -480,6 +483,7 @@ class RenderNodeChoice(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             sender.RENDER_NODES = Path(temporary)
             heat.THERMAL, viewer.COMPATIBLE = Path(temporary) / "thermal", Path(temporary) / "dt"
+            machine.power_supplies(self, temporary)
             session = sender.Session()
             try:
                 with self.assertRaisesRegex(RuntimeError, "no render node"):

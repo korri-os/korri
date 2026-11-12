@@ -22,6 +22,7 @@ from cli import (  # noqa: E402
 from discovery import session_log  # noqa: E402
 import sender  # noqa: E402
 import heat  # noqa: E402
+import machine  # noqa: E402
 import viewer  # noqa: E402
 
 TESTS = Path(__file__).resolve().parent
@@ -155,6 +156,7 @@ class NoSensors(unittest.TestCase):
         self.real = (heat.THERMAL, viewer.COMPATIBLE)
         heat.THERMAL = Path(self.sysfs.name) / "thermal"
         viewer.COMPATIBLE = Path(self.sysfs.name) / "compatible"
+        machine.power_supplies(self, self.sysfs.name)
 
     def tearDown(self):
         heat.THERMAL, viewer.COMPATIBLE = self.real

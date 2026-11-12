@@ -45,6 +45,43 @@ def end_with_agent() -> None:
         os._exit(127)
 
 
+POWER_SUPPLY = Path("/sys/class/power_supply")
+
+
+def batteries() -> list[str]:
+    """The device's own batteries. A device that has one is a handheld or a laptop.
+
+    A battery of a peripheral, such as a controller, has scope "Device" and is
+    not the device's own. A supply whose type cannot be read counts as a
+    battery: the fixtures stay off a device that the tool cannot classify.
+    """
+    found = []
+    for supply in sorted(POWER_SUPPLY.glob("*")):
+        try:
+            kind = (supply / "type").read_text().strip()
+            scope = supply / "scope"
+            peripheral = scope.exists() and scope.read_text().strip() == "Device"
+        except OSError:
+            found.append(supply.name)
+            continue
+        if kind == "Battery" and not peripheral:
+            found.append(supply.name)
+    return found
+
+
+def no_fixture_on_battery(fixture: str) -> str | None:
+    """Why a fixture must not start on this device, or None. The rule of both agents."""
+    found = batteries()
+    if not found:
+        return None
+    return (
+        f"This device has a battery ({', '.join(found)}): it is a handheld or a laptop. "
+        "The fixtures put a software load on a device that is built to save power, and a "
+        f"device with a battery runs only its installed viewer. The {fixture} does not "
+        "start here."
+    )
+
+
 def model() -> str | None:
     """The device's own name for itself: the device tree's, else the firmware's."""
     paths = (

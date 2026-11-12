@@ -29,9 +29,11 @@ from typing import TextIO
 import urllib.request
 
 from device import (
+    batteries,
     deferred_termination,
     end_with_agent,
     games,
+    no_fixture_on_battery,
     model,
     proc,
     scheduling,
@@ -263,6 +265,7 @@ class Session:
         self.facts["heat_guarded"] = any(self.limits.values())
         self.hardware_path = platform() != PICTURE_PATH_DEFAULT
         self.facts["hardware_picture_path"] = self.hardware_path
+        self.facts["batteries"] = batteries()
         # Why the guard stopped the fixture, once it did.
         self.ended: str | None = None
         # Taken again when the fixture prepares; here so that a close is never blind.
@@ -455,7 +458,9 @@ class Session:
                 "handheld. A compositor, a Sunshine and an encoder are too much load for it, "
                 "so the sender fixture does not start here."
             )
-        refused = no_start(thermal_zones(), self.limits, self.hardware_path)
+        refused = no_fixture_on_battery("sender fixture") or no_start(
+            thermal_zones(), self.limits, self.hardware_path
+        )
         if refused:
             raise RuntimeError(refused)
         self.inputs = input_devices()

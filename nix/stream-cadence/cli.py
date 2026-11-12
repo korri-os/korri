@@ -831,6 +831,10 @@ def view_case(
                 raise Refusal(
                     f"The viewer device's chip has a hardware picture path ({seat['platform']}), and its viewer plugin is not usable: {seat.get('plugin_missing')}. The tool does not run its software viewer on such a device."
                 )
+            if seat.get("batteries"):
+                raise Refusal(
+                    f"The viewer device has a battery ({', '.join(seat['batteries'])}): it is a handheld or a laptop, and its viewer plugin is not usable: {seat.get('plugin_missing')}. A device with a battery runs only its installed viewer; the tool does not run its software viewer there."
+                )
             if not paths["viewer"]:
                 raise Refusal(
                     "The viewer's agent finds no enabled viewer plugin, and the tool copied no viewer. Run the measure again."
