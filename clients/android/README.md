@@ -37,7 +37,8 @@ korrid before `clients/shell`'s `android_main`. The `android` feature uses the
 pinned Slint interpreter, QuickJS logic worker and shared `Shell` runtime with
 Slint's Android activity backend and Skia. Artemis's `Game` hosts the stream.
 
-The APK bundles `clients/shell/packages/pico` and `zone` without Android-specific edits.
+The APK bundles `clients/shell/packages/velvet`, `pico` and `zone` without Android-specific edits.
+Velvet opens first (#424); L1 + R1 moves to the next package in that order.
 The build runs Linux's surface verifier first. Java unpacks the bundled files
 to app cache on launch; no user or identity record is migrated. The shell loads
 both packages with the same `app.surface.declare`, preferences, model, request
@@ -77,7 +78,7 @@ M2 neither changes ownership nor invokes Amber.
 | B, SELECT, Android BACK | Back |
 | X | Options |
 | START, MENU | Menu |
-| L1 + R1 on one controller | Switch Pico ↔ Zone |
+| L1 + R1 on one controller | Next surface: Velvet → Pico → Zone → Velvet |
 | Y, MODE | No surface action (Linux reserves MODE for the host) |
 
 Android's BUTTON_A means Confirm and BUTTON_B means Back; the mapping does not
@@ -184,11 +185,11 @@ runner and identity fields; non-owner callers do not receive owner play stats.
 
 ## Device check
 
-`KorriShellDeviceTest` waits for an actual rendered Pico view with a non-empty
-real library, after launch, background/return, orientation changes and three
+`KorriShellDeviceTest` checks that Velvet opens first, then waits for an actual
+rendered surface with a non-empty real library, after launch, background/return, orientation changes and three
 consecutive recreations. It injects real touchscreen drags and checks that
 Pico's cursor moves. It injects D-pad/gamepad/remote keys, confirms cards,
-closes layers with Back, and switches Pico ↔ Zone. It checks Owned identity, no WebView, health authentication,
+closes layers with Back, and switches Velvet → Pico → Zone → Velvet. It checks Owned identity, no WebView, health authentication,
 cutout mode and hidden system bars. This device acceptance requires an already
 owned phone with a reachable peer library; it is not a fresh-install fixture.
 Build with `nix run .#android-device-test-apk`, then run on an ARM64 phone:

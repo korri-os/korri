@@ -50,7 +50,7 @@ public class KorriShellActivity extends NativeActivity {
         }
         try {
             File surfaces = new File(getCacheDir(), "surfaces");
-            for (String id : new String[] { "pico", "zone" }) {
+            for (String id : new String[] { "velvet", "pico", "zone" }) {
                 copyPackage("surfaces/" + id, new File(surfaces, id));
             }
             packagePath = surfaces.getAbsolutePath();

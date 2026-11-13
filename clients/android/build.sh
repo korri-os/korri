@@ -31,7 +31,7 @@ case "$mode" in
   apk)
     # Run the same verifier as Linux on the build machine, never the phone.
     mkdir -p "$KORRI_ROOT/.cache"
-    for surface in pico zone; do
+    for surface in velvet pico zone; do
       nix run "$KORRI_ROOT#shell-run" -- verify "$KORRI_ROOT/clients/shell/packages/$surface" \
         > "$KORRI_ROOT/.cache/android-$surface-verification.json"
     done

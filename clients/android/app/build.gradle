@@ -153,6 +153,7 @@ def surfaceAssets = tasks.register('surfaceAssets', Sync) {
     from('../../shell/packages') {
         include 'pico/**/*.slint', 'pico/**/*.js', 'pico/fonts/**', 'pico/art/**'
         include 'zone/**/*.slint', 'zone/**/*.js', 'zone/fonts/**', 'zone/art/**'
+        include 'velvet/**/*.slint', 'velvet/**/*.js', 'velvet/fonts/**'
     }
     into(layout.buildDirectory.dir('generated/surfaceAssets/surfaces'))
 }

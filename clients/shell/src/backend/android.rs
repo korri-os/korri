@@ -1,4 +1,4 @@
-//! NativeActivity carries the same Shell, Pico package and app.surface.*
+//! NativeActivity carries the same Shell, surface packages and app.surface.*
 //! connection as Linux. Android owns the window and its native event loop.
 use super::{Backend, FrameCounter, HostEvent, Placement};
 use crate::{
@@ -254,8 +254,10 @@ fn run(app: AndroidApp) -> anyhow::Result<()> {
     let (tx, rx) = mpsc::channel();
     let backend = Rc::new(Android::install(app, tx.clone())?);
     let input = backend.input.clone();
+    // The first package is the one the app opens: Velvet (#424).
     let mut shell = Shell::new(
         vec![
+            Package::at(&Path::new(&package).join("velvet"))?,
             Package::at(&Path::new(&package).join("pico"))?,
             Package::at(&Path::new(&package).join("zone"))?,
         ],
@@ -490,26 +492,35 @@ fn run(app: AndroidApp) -> anyhow::Result<()> {
             if frames.get() > last_frame {
                 last_frame = frames.get();
                 // Read the rendered surface, not a test-only input shortcut.
-                let pico = shell.current_id() == Some("pico");
+                let id = shell.current_id().unwrap_or_default().to_owned();
                 let home = shell.surface_property("home");
-                let number = |name: &str| {
-                    let value = if pico {
-                        match &home {
-                            Some(Value::Struct(home)) => home.get_field(name).cloned(),
-                            _ => None,
-                        }
-                    } else {
-                        shell.surface_property(name)
-                    };
-                    match value {
-                        Some(Value::Number(n)) => n as i32,
-                        _ => 0,
-                    }
+                let int = |value: Option<Value>| match value {
+                    Some(Value::Number(n)) => n as i32,
+                    _ => 0,
+                };
+                let home_field = |name: &str| match &home {
+                    Some(Value::Struct(home)) => home.get_field(name).cloned(),
+                    _ => None,
+                };
+                // Each surface names its library count and cursor differently.
+                let (count, selected) = match id.as_str() {
+                    "pico" => (int(home_field("total")), int(home_field("selected-index"))),
+                    // Velvet's row is the library window home shows.
+                    "velvet" => (
+                        match shell.surface_property("home-row") {
+                            Some(Value::Model(row)) => slint::Model::row_count(&row) as i32,
+                            _ => 0,
+                        },
+                        int(home_field("row-at")),
+                    ),
+                    _ => (
+                        int(shell.surface_property("total")),
+                        int(shell.surface_property("focused-card")),
+                    ),
                 };
                 if let Ok(mut env) = vm.attach_current_thread() {
                     let _: jni::errors::Result<()> = env.with_local_frame(4, |env| {
-                        let surface: JObject =
-                            env.new_string(if pico { "pico" } else { "zone" })?.into();
+                        let surface: JObject = env.new_string(&id)?.into();
                         let page = match shell.surface_property("page") {
                             Some(Value::String(page)) => page.to_string(),
                             _ => String::new(),
@@ -522,12 +533,8 @@ fn run(app: AndroidApp) -> anyhow::Result<()> {
                             &[
                                 JValue::Object(&surface),
                                 JValue::Object(&page),
-                                JValue::Int(number("total")),
-                                JValue::Int(number(if pico {
-                                    "selected-index"
-                                } else {
-                                    "focused-card"
-                                })),
+                                JValue::Int(count),
+                                JValue::Int(selected),
                             ],
                         )?;
                         Ok(())

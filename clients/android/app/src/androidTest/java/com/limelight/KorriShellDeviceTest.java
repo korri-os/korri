@@ -42,6 +42,7 @@ public class KorriShellDeviceTest {
             assertEquals(401, health(port.get(), null));
             assertEquals(200, health(port.get(), KorridServer.capability()));
             assertOwned(port.get());
+            assertVelvetOpensFirst(scenario);
             assertDragMovesPico(scenario);
             assertControllerAndRemote(scenario);
             scenario.onActivity(activity -> activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE));
@@ -73,12 +74,21 @@ public class KorriShellDeviceTest {
             scenario.onActivity(activity -> ready.set(activity.isShellReady() && activity.shellLibraryCount() > 0));
             if (ready.get()) {
                 scenario.onActivity(activity -> android.util.Log.i("KorriShellDeviceTest",
-                        "PICO_RENDERED count=" + activity.shellLibraryCount() + " selected=" + activity.shellSelectedIndex()));
+                        "SURFACE_RENDERED id=" + activity.shellSurfaceId() + " count=" + activity.shellLibraryCount()
+                                + " selected=" + activity.shellSelectedIndex()));
                 return;
             }
             SystemClock.sleep(100);
         } while (SystemClock.elapsedRealtime() < deadline);
-        fail("Pico did not render a non-empty real peer library");
+        fail("The surface did not render a non-empty real peer library");
+    }
+
+    // Velvet is the default surface (#424); the Pico checks below start one L1+R1 later.
+    private static void assertVelvetOpensFirst(ActivityScenario<KorriShellActivity> scenario) {
+        scenario.onActivity(a -> assertEquals("velvet", a.shellSurfaceId()));
+        switchSurface();
+        awaitState(scenario, a -> a.shellSurfaceId().equals("pico") && a.shellLibraryCount() > 0,
+                "L1+R1 did not go from Velvet to Pico");
     }
 
     private static void assertFullscreen(ActivityScenario<KorriShellActivity> scenario) {
@@ -137,6 +147,10 @@ public class KorriShellDeviceTest {
         // a non-destructive layer, and B returns to the card band.
         press(KeyEvent.KEYCODE_BUTTON_X, InputDevice.SOURCE_GAMEPAD);
         press(KeyEvent.KEYCODE_BUTTON_B, InputDevice.SOURCE_GAMEPAD);
+        // The order is Velvet, Pico, Zone: Zone wraps to Velvet, then Pico.
+        switchSurface();
+        awaitState(scenario, a -> a.shellSurfaceId().equals("velvet") && a.shellLibraryCount() > 0,
+                "L1+R1 did not wrap from Zone to Velvet");
         switchSurface();
         awaitState(scenario, a -> a.shellSurfaceId().equals("pico") && a.shellLibraryCount() > 0,
                 "L1+R1 did not return to Pico");
