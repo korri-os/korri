@@ -12,6 +12,8 @@ use std::{
     time::Duration,
 };
 
+mod support;
+
 fn uid() -> u32 {
     unsafe { libc::geteuid() }
 }
@@ -20,6 +22,9 @@ fn uid() -> u32 {
 fn wrong_uid_is_refused_or_acl_unavailability_fails_closed() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("control/viewer.sock");
+    if support::refused_below_an_unmapped_root(&path) {
+        return;
+    }
     let lifecycle = match Lifecycle::bind(&path, "a", uid() + 1) {
         Ok(lifecycle) => lifecycle,
         Err(error)
@@ -52,6 +57,55 @@ fn wrong_uid_is_refused_or_acl_unavailability_fails_closed() {
     );
     lifecycle.failed("test finished".into());
     lifecycle.drain();
+}
+
+// A different local user who can write an ancestor can replace the private
+// directory by name. The viewer must refuse such a location before it creates
+// anything. Only the owner of a parent can make it unsafe here, so the test
+// needs no second UID.
+#[test]
+fn location_another_user_could_rewrite_is_refused_before_anything_is_created() {
+    let root = tempfile::tempdir().unwrap();
+    let cases: [(&str, u32, &str); 5] = [
+        ("other-writable", 0o707, "control/viewer.sock"),
+        ("group-writable", 0o770, "control/viewer.sock"),
+        // The sticky exception is for root-owned directories such as /tmp.
+        ("own-sticky", 0o1777, "control/viewer.sock"),
+        ("writable-grandparent", 0o777, "private/control/viewer.sock"),
+        ("private", 0o700, "link/control/viewer.sock"),
+    ];
+    for (name, mode, socket) in cases {
+        let parent = root.path().join(name);
+        std::fs::create_dir(&parent).unwrap();
+        std::fs::create_dir(parent.join("private")).unwrap();
+        std::os::unix::fs::symlink("private", parent.join("link")).unwrap();
+        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(mode)).unwrap();
+        if uid() == 0 && mode == 0o1777 {
+            continue; // Root's own sticky directory is the documented exception.
+        }
+        let socket = parent.join(socket);
+        let error = match Lifecycle::bind(&socket, "a", uid()) {
+            Ok(_) => panic!("{name}: the viewer bound a socket in an unsafe location"),
+            Err(error) => format!("{error:#}"),
+        };
+        let unsafe_ancestor = if name == "private" {
+            parent.join("link")
+        } else {
+            parent.clone()
+        };
+        assert!(
+            error.contains(&format!("ancestor {} is ", unsafe_ancestor.display())),
+            "{name}: the refusal must name the unsafe ancestor: {error}"
+        );
+        assert!(
+            std::fs::symlink_metadata(socket.parent().unwrap()).is_err()
+                && std::fs::read_dir(parent.join("private"))
+                    .unwrap()
+                    .next()
+                    .is_none(),
+            "{name}: a refused location must stay untouched"
+        );
+    }
 }
 
 // Run explicitly as root. All three participants drop to distinct unprivileged

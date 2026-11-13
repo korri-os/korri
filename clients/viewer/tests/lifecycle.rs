@@ -7,6 +7,8 @@ use korri_viewer_treaty::{
 use korri_viewer_treaty::{read_message, write_message};
 use std::{io::BufReader, os::unix::net::UnixStream, time::Duration};
 
+mod support;
+
 fn request(socket: &mut BufReader<UnixStream>, launch: &str, command: C) -> R {
     write_message(
         socket.get_mut(),
@@ -28,6 +30,9 @@ fn request(socket: &mut BufReader<UnixStream>, launch: &str, command: C) -> R {
 fn exact_launch_connected_events_and_confirmed_stop_over_real_socket() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("control/viewer.sock");
+    if support::refused_below_an_unmapped_root(&path) {
+        return;
+    }
     let lifecycle = Lifecycle::bind(&path, "launch-a", unsafe { libc::geteuid() }).unwrap();
     let mut socket = BufReader::new(UnixStream::connect(&path).unwrap());
     socket
@@ -137,9 +142,27 @@ fn existing_path_is_not_deleted() {
 }
 
 #[test]
+fn socket_name_too_long_for_its_pinned_address_fails_closed() {
+    let dir = tempfile::tempdir().unwrap();
+    // The address is /proc/self/fd/<descriptor>/<name> in 108 bytes.
+    let path = dir.path().join("control").join("s".repeat(100));
+    if support::refused_below_an_unmapped_root(&path) {
+        return;
+    }
+    assert!(Lifecycle::bind(&path, "a", unsafe { libc::geteuid() }).is_err());
+    assert!(
+        !path.parent().unwrap().exists(),
+        "a refused bind must remove the directory it created"
+    );
+}
+
+#[test]
 fn startup_failure_returns_typed_error_and_stopped_event() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("control/viewer.sock");
+    if support::refused_below_an_unmapped_root(&path) {
+        return;
+    }
     let lifecycle = Lifecycle::bind(&path, "a", unsafe { libc::geteuid() }).unwrap();
     let mut socket = BufReader::new(UnixStream::connect(&path).unwrap());
     socket
@@ -161,6 +184,9 @@ fn startup_failure_returns_typed_error_and_stopped_event() {
 fn real_binary_reports_missing_pin_over_socket_and_exits() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("control/viewer.sock");
+    if support::refused_below_an_unmapped_root(&path) {
+        return;
+    }
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_korri-viewer"))
         .args([
             "--lifecycle-socket",
@@ -244,6 +270,9 @@ fn shutdown_closes_a_partial_reader_and_removes_the_owned_socket() {
     use std::io::{Read, Write};
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("control/viewer.sock");
+    if support::refused_below_an_unmapped_root(&path) {
+        return;
+    }
     let lifecycle = Lifecycle::bind(&path, "a", unsafe { libc::geteuid() }).unwrap();
     let mut socket = BufReader::new(UnixStream::connect(&path).unwrap());
     socket
@@ -272,6 +301,9 @@ fn shutdown_closes_a_partial_reader_and_removes_the_owned_socket() {
 fn real_binary_removes_socket_after_idle_controller_startup_timeout() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("control/viewer.sock");
+    if support::refused_below_an_unmapped_root(&path) {
+        return;
+    }
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_korri-viewer"))
         .args([
             "--lifecycle-socket",

@@ -106,6 +106,25 @@ immediate parent must not exist: the viewer creates it atomically with mode
 search access to the directory and read/write access to the socket through Linux
 POSIX ACLs. The owning group and all other users get no access. A filesystem
 without ACL support fails closed. Ancestors must be traversable by both UIDs.
+
+The launcher provides the directory above the new one, for example a systemd
+`RuntimeDirectory=` with mode 0700 that the viewer user owns. Before it creates
+anything, the viewer reads every directory from there up to `/` with `lstat`.
+Root or the viewer UID must own each one, and the group and other users must
+have no write access; a root-owned sticky directory such as `/tmp` is the only
+exception. A symlink in the path is refused, so give the real path. The
+controller can have search access to those directories, but not write access.
+A user namespace that does not map root, such as the Nix build sandbox, shows
+`/` with an unmapped owner, and the viewer refuses every location there.
+
+The viewer then opens its new directory without following a symlink and keeps
+that descriptor. It binds the socket and sets the socket's ACL through
+`/proc/self/fd/<descriptor>/<name>`; mode, the directory's ACL and removal use
+the descriptor. After `bind()` the directory must hold a socket that the viewer
+UID owns, and the directory must still be at its path. If not, or if `/proc` is
+missing, or if that address is longer than `sun_path`, the viewer removes what
+it made and exits. A replaced directory name cannot move the socket.
+
 The viewer authenticates `SO_PEERCRED` on every accept against the supplied
 controller UID. A refused peer is logged and cannot take the controller slot.
 korrid's adapter requires the expected viewer UID from its launcher and checks
@@ -153,5 +172,7 @@ in the viewer development shell, then run that printed test executable as root
 with `--exact separate_viewer_and_controller_uids_are_the_only_users_with_socket_access --ignored`.
 It drops the viewer, controller and an unrelated peer to UIDs 65534, 65532 and
 65533 in a temporary directory. It changes no accounts or services. Normal
-checks also cover umask-zero directory creation, missing controller authority
-and rejected peer credentials.
+checks also cover umask-zero directory creation, missing controller authority,
+rejected peer credentials, an ancestor that another user could write, and a
+directory replaced by a symlink before `bind()`. In the Nix build sandbox the
+tests that need a bound socket prove only the refusal described above.
