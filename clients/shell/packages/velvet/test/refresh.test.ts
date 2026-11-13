@@ -26,7 +26,8 @@ const MINUTE = 60_000
 describe("artwork published after the lists loaded", () => {
   test("a hero shows on the stage; the row, the lobby and the detail get their pictures", () => {
     const run = new Play(bare())
-    expect(run.view.stage.artShown).toBe(false)
+    // No picture yet: the card lights the stage (its plate), until the hero comes.
+    expect(run.view.stage.key.startsWith("plate:")).toBe(true)
     expect((run.view.homeRow as any[]).filter(tile => tile.kind === "game" && tile.shown).every(tile => tile.artKind === "none")).toBe(true)
     run.swap(art())
     expect(run.view.home.mark.key).toBe("ember-road")
@@ -313,7 +314,7 @@ describe("a game Velvet draws changes outside the published window", () => {
     const run = new Play(library())
     expect(run.view.home.mark.key).toBe("g0")
     expect(run.state.lists.kept.recent!.some(game => game.id === "g0")).toBe(false)
-    expect(run.view.stage.artShown).toBe(false)
+    expect(run.view.stage.key).toBe("plate:g0")
     const before = moves(run).length
     run.swap(withMedia(["g0", "g1", "g2", "g3", "g4", "g5", "g6", "g7"], hero))
     expect(run.view.stage.artShown).toBe(true)
@@ -364,9 +365,9 @@ describe("a game Velvet draws changes outside the published window", () => {
     run.press("confirm")
     expect(run.view.page).toBe("detail")
     expect(run.view.detail.mark.key).toBe("g0")
-    expect(run.view.stage.artShown).toBe(false)
+    expect(run.view.stage.key).toBe("plate:g0")
     run.swap(withMedia(["g0"], hero))
-    expect(run.view.stage.artShown).toBe(true)
+    expect(run.view.stage.key).toBe("preview/art/hero-g0.png")
   })
 
   test("an open set draws from the published window: its art shows with no question", () => {

@@ -2324,6 +2324,7 @@ dependencies = [
  "korri-window-sdl",
  "libc",
  "pollster",
+ "resvg",
  "rquickjs",
  "serde",
  "serde_json",

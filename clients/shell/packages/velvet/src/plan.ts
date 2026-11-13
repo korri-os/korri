@@ -11,7 +11,10 @@
  *
  * Yield order (intrinsic-design rule 6): pads and gaps scale with the window
  * down to their floors, then type falls to its floor, then a readout (the
- * clock, the "now" line) leaves; a control never does.
+ * clock, the "now" line) leaves; a control never does. Space and type yield at
+ * different rates (owner, 2026-11-13, #423): spacing follows `k`, the smaller
+ * axis; type follows `kt`, which shrinks more slowly (the mockup's round-5
+ * plan), so type does not reach its floor while the stage still has room.
  */
 import { clamp } from "./colour"
 import { onForget } from "./memo"
@@ -34,6 +37,8 @@ export const SHELF_SLOTS = 5
 export const MOST_COLUMNS = 5
 /** A list page stands beside its panel only when the window is this wide for its height. */
 export const PANEL_BESIDE_RATIO = 1.25
+/** Type never grows past this many times the smaller axis's scale: a thin strip cannot set type its width cannot hold. */
+export const TYPE_REACH = 2.5
 /** The keyboard's grid. */
 export const KEY_COLUMNS = 10
 export const KEY_ROWS = 5
@@ -41,8 +46,10 @@ export const KEY_ROWS = 5
 export interface Plan {
   readonly width: number
   readonly height: number
-  /** The type scale's factor. */
+  /** The space scale's factor. */
   readonly k: number
+  /** The type scale's factor: `k` at or above the reference stage, larger below it. */
+  readonly kt: number
   readonly padX: number
   readonly padY: number
   readonly narrow: boolean
@@ -154,13 +161,20 @@ export function plan(width: number, height: number): Plan {
   const W = Math.max(1, width)
   const H = Math.max(1, height)
   const k = clamp(Math.min(W / 1600, H / 900), 0.4, 1.25)
+  // Below the 1600 x 900 reference, type follows the fourth root of the area's
+  // ratio: it shrinks slowly, and a tall or a wide window pays for it with its
+  // plentiful axis. 933 x 704: k 0.58, kt 0.82 (facts 17 px, not 13).
+  const kRaw = Math.min(W / 1600, H / 900)
+  const kt = k >= 1 ? k : clamp(Math.min(Math.pow((W / 1600) * (H / 900), 0.25), TYPE_REACH * kRaw), Math.max(k, 0.4), 1)
+  // Space: pads, gaps and room. `ft`: type.
   const fs = (px: number, min: number) => Math.max(min, Math.round(px * k))
+  const ft = (px: number, min: number) => Math.max(min, Math.round(px * kt))
   const padX = Math.round(clamp(W * 0.05, 18, 110))
   const padY = Math.round(clamp(H * 0.055, 14, 80))
   const narrow = W / H < NARROW_RATIO
   const R = TILE_RATIO
-  const fact = fs(21, 13)
-  const label = fs(22, 13)
+  const fact = ft(21, 13)
+  const label = ft(22, 13)
 
   // Home.
   const stripH = Math.round(clamp(H * 0.11, 44, 130))
@@ -192,7 +206,7 @@ export function plan(width: number, height: number): Plan {
     textW = W - 2 * padX
     textH = Math.max(0, Math.round(stripY - textY - fs(20, 10)))
     markH = Math.round(clamp(H * 0.1, 44, 120))
-    pickTitle = fs(104, 30)
+    pickTitle = ft(104, 30)
     rowH = Math.round(clamp((W - 2 * padX) / 2.3 / R, 100, 360))
     rowY = Math.round(H * 0.47)
     rowMarkW = W - 2 * padX
@@ -203,13 +217,14 @@ export function plan(width: number, height: number): Plan {
   // The focused tile grows up by half its growth: the facts stay clear of it.
   const rowMarkH = Math.max(0, rowY - padY - Math.round(Math.max(fs(40, 16), (rowH * (FOCUS_SCALE - 1)) / 2 + fs(18, 12))))
   const peek = rowY + Math.round(rowH * FOCUS_SCALE) + Math.round(rowGap * 2)
-  const heroW = narrow ? W - 2 * padX : Math.round(W * 0.56)
+  // The marquee widens as type outgrows space (kt over k), so the facts keep one line.
+  const heroW = narrow ? W - 2 * padX : Math.round(W * Math.min(0.8, (0.56 * kt) / k))
   // A narrow window stacks: the hero's band (about 3.1 to 1) across the top, the words under it.
   const heroY = narrow ? Math.round(W / HERO_RATIO + padY * 0.6) : posterY
   const heroH = narrow ? Math.max(0, Math.round(stripY - padY - heroY)) : posterH
 
   // The library.
-  const head = fs(48, 22)
+  const head = ft(48, 22)
   const headH = Math.round(head * 1.2)
   const libTop = padY + headH + fs(26, 10) + (narrow ? Math.round(fact * 1.7) : 0)
   const shelfLabel = Math.round(label * 1.75)
@@ -247,8 +262,8 @@ export function plan(width: number, height: number): Plan {
   const keysY = H - Math.round(padY * 0.8) - KEY_ROWS * keyH - (KEY_ROWS - 1) * keyGap
 
   last = {
-    width: W, height: H, k, padX, padY, narrow,
-    title: fs(104, narrow ? 30 : 28), head, body: fs(24, 14), fact, label, button: fs(28, 15), small: fs(18, 12),
+    width: W, height: H, k, kt, padX, padY, narrow,
+    title: ft(104, narrow ? 30 : 28), head, body: ft(24, 14), fact, label, button: ft(28, 15), small: ft(18, 12),
     posterX, posterY, posterH, textX, textY, textW, textH,
     heroX: padX, heroY, heroW, heroH, markH, pickTitle,
     stripY, stripH, stripGap: gapOf(stripH),
@@ -257,13 +272,13 @@ export function plan(width: number, height: number): Plan {
     headY: padY, headH, libTop, shelfLabel, shelfRowY, shelfH, shelfGap, shelfPitch, halo,
     columns, tileW, tileH, gridGap, gridInset, gridRows, poolRows,
     sheetW: Math.round(Math.min(W, clamp(W * 0.3, 260, 420))),
-    detailLogoH, detailLogoW: narrow ? Math.round(W * 0.9) - padX : Math.round(W * 0.5), detailTitle, detailFact: fs(19, 12),
+    detailLogoH, detailLogoW: narrow ? Math.round(W * 0.9) - padX : Math.round(W * 0.5), detailTitle, detailFact: ft(19, 12),
     detailY: narrow ? Math.round(H * 0.3) : Math.round(H * 0.34), detailW,
     stack: narrow,
     pageW, rowHeight, panelBeside, panelW,
     keyW, keyH, keyGap, keysY,
     curtainW: Math.round(Math.min(W - 2 * padX, clamp(W * 0.6, 280, 980))),
-    kicker: fs(72, 26),
+    kicker: ft(72, 26),
     emptyWide: W / H >= EMPTY_WIDE_RATIO,
     pauseW: Math.round(Math.min(W, clamp(W * 0.42, 280, 640))),
   }

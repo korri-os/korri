@@ -45,15 +45,6 @@ export component VelvetTile inherits Rectangle {
     accessible-label: tile.label;
     accessible-item-selectable: tile.shown && tile.focus-id != "" && !inert;
     accessible-item-selected: tile.shown && tile.focus-id != "" && tile.focused;
-    // The shade under the tile: deeper while it is focused.
-    Rectangle {
-        x: card.x;
-        y: card.y + card.height;
-        width: card.width;
-        height: root.height * (root.lit ? 0.09 : 0.05);
-        opacity: card.opacity;
-        background: @linear-gradient(180deg, Tokens.shade-72 0%, Tokens.shade-00 100%);
-    }
     card := Rectangle {
         x: (root.width - self.width) / 2;
         y: root.height - self.height;
@@ -68,6 +59,9 @@ export component VelvetTile inherits Rectangle {
         // half-shown card would show its no-art card through its picture.
         opacity: root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "none") ? 1 : 0;
         animate opacity { duration: Tokens.t-focus; easing: ease-in-out; }
+        // The prototype's corner: 3 % of the tile's height, at least 4 px. The card clips its
+        // picture, its drawing and its veil to it (the shell's renderer, vendor/README.md).
+        border-radius: Tokens.card-radius(root.height);
         background: root.tile.kind == "nav" ? Tokens.light-05 : Tokens.house-down;
         if root.tile.kind != "nav": VelvetPoster {
             width: parent.width;
@@ -189,6 +183,7 @@ export component VelvetTile inherits Rectangle {
         VelvetEdge {
             width: parent.width;
             height: parent.height;
+            radius: Tokens.card-radius(root.height);
             lit: root.lit;
         }
     }

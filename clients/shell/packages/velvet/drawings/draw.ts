@@ -356,38 +356,57 @@ export interface Draft {
   readonly badgeTop: boolean
 }
 
-/** The four compositions of a system poster, over one part library. */
+/**
+ * The card's anatomy (owner, 2026-11-13, #423): every no-art card is the same
+ * object in two parts that never move. The field holds the machine's art, the
+ * top FIELD_H of the card's 90 units; the plate holds the title, the rest,
+ * under a RULE_H accent rule. The title always stands at the plate's foot,
+ * with the same MARGIN on its left, its right and under it. Only the field's
+ * composition varies from game to game.
+ */
+export const FIELD_H = 58
+export const RULE_H = 1.2
+export const MARGIN = 5
+const TITLE_BOX: TitleBox = { x: MARGIN, y: FIELD_H + RULE_H + 4, w: CARD_W - 2 * MARGIN, h: CARD_H - MARGIN - (FIELD_H + RULE_H + 4) }
+/** The title's largest size, as a share of the card's height. */
+const TITLE_MAX = 0.15
+
+/** The plate and its rule, drawn last: they cover anything the field's art lets spill below the field. */
+function plate(p: Palette, accent: number): Shape[] {
+  const full: Place = { x: 0, y: 0, s: 1, r: 0 }
+  return [{ d: box(full, 0, FIELD_H, CARD_W, CARD_H - FIELD_H), c: p.ink }, { d: box(full, 0, FIELD_H, CARD_W, RULE_H), c: accent }]
+}
+
+const draft = (shapes: Shape[]): Draft => ({ shapes, box: TITLE_BOX, ink: "band", top: false, max: TITLE_MAX, badgeTop: true })
+
+/** The four compositions of a system poster's field, over one part library. */
 export function systemPoster(language: Language, seed: string): Draft {
   const next = rng(hash(seed))
   const p = slots(language)
   const shapes: Shape[] = []
   const full: Place = { x: 0, y: 0, s: 1, r: 0 }
-  // The card's own light: a little lift at the head, a little weight at the foot.
-  const lit = () => shapes.push({ d: box(full, 0, 0, CARD_W, 30), c: SLOT.white, o: 0.05 }, { d: box(full, 0, 62, CARD_W, 28), c: SLOT.black, o: 0.1 })
+  const centre = FIELD_H / 2
+  // The field's own light: a little lift at its head, a little weight at its foot.
+  const lit = () => shapes.push({ d: box(full, 0, 0, CARD_W, 24), c: SLOT.white, o: 0.05 }, { d: box(full, 0, 40, CARD_W, FIELD_H - 40), c: SLOT.black, o: 0.1 })
+  const accents = p.acc.length > 0 ? p.acc : [p.lite]
   const composition = pick(next, ["bleed", "label", "screen", "face"] as const)
   if (composition === "bleed") {
-    // One part, larger than the card and cut by it, tone on tone.
+    // One part, larger than the field and cut by it, tone on tone.
     const name = pick(next, language.parts)
     const scale = 1.9 + next() * 1.1
     const turn = pick(next, [0, 0, -12, 14, 45])
     const [x, y] = pick(next, [[46, 16], [14, 18], [52, 34], [30, 12], [8, 40]] as const)
-    if (next() < 0.5) shapes.push(...texture(language.tex, p, 0, 0, CARD_W, CARD_H, 0.7))
+    if (next() < 0.5) shapes.push(...texture(language.tex, p, 0, 0, CARD_W, FIELD_H, 0.7))
     lit()
     shapes.push(...part(name, p, language.cart, { x, y, s: scale, r: turn }, p.deep))
     const others = language.parts.filter(other => other !== name)
-    // The small part keeps clear of the top-left corner, where the focus badge sits.
-    const [sx, sy] = pick(next, [[47, 12], [47, 46], [13, 46]] as const)
+    // The small part keeps clear of the top-left corner, where the system badge sits.
+    const [sx, sy] = pick(next, [[47, 12], [47, 44], [14, 44]] as const)
     if (others.length > 0) shapes.push(...part(pick(next, others), p, language.cart, { x: sx, y: sy, s: 0.44, r: 0 }))
-    return { shapes, box: { x: 5, y: 56, w: 50, h: 29 }, ink: "paper", top: false, max: 0.2, badgeTop: true }
-  }
-  if (composition === "label") {
-    // The cartridge label: a light label with stripes at its head, down its side or at its foot.
+  } else if (composition === "label") {
+    // The cartridge label filling the field: stripes at its head, down its side or at its foot, a part printed in the room they leave.
     lit()
-    const ly = 38 + Math.floor(next() * 3) * 3
-    const label = { x: 5, y: ly, w: 50, h: 85 - ly }
-    const loose = language.parts.filter(name => name !== "cart")
-    shapes.push(...part(pick(next, loose.length > 0 ? loose : language.parts), p, language.cart, { x: pick(next, [16, 30, 44]), y: label.y / 2, s: 0.9 + next() * 0.5, r: 0 }))
-    const accents = p.acc.length > 0 ? p.acc : [p.deep]
+    const label = { x: 5, y: 5, w: 50, h: FIELD_H - 10 }
     const count = 2 + Math.floor(next() * 2)
     const offset = Math.floor(next() * accents.length)
     const where = pick(next, ["head", "head", "side", "foot"] as const)
@@ -405,115 +424,86 @@ export function systemPoster(language: Language, seed: string): Draft {
       shapes.push({ d: where === "side" ? box(full, at0, label.y, t, label.h) : box(full, label.x, at0, label.w, t), c: colour })
       at0 += t + 0.8
     })
-    const titleBox = where === "head" ? { x: label.x + 4, y: at0 + 2, w: label.w - 8, h: label.y + label.h - 3 - at0 - 2 }
-      : where === "foot" ? { x: label.x + 4, y: label.y + 3, w: label.w - 8, h: label.h - 3 - total - 5 }
-        : { x: at0 + 2.5, y: label.y + 3, w: label.x + label.w - 3 - at0 - 2.5, h: label.h - 6 }
-    return { shapes, box: titleBox, ink: "label", top: where === "foot", max: 0.2, badgeTop: true }
-  }
-  if (composition === "screen") {
-    // The machine's screen, a seeded figure inside.
+    const loose = language.parts.filter(name => name !== "cart")
+    const py = where === "head" ? (at0 + label.y + label.h) / 2 : where === "foot" ? (label.y + label.h - 3 - total + label.y) / 2 : label.y + label.h / 2
+    const px = where === "side" ? (at0 + label.x + label.w) / 2 : 30
+    shapes.push(...part(pick(next, loose.length > 0 ? loose : language.parts), p, language.cart, { x: px, y: py, s: 0.7 + next() * 0.25, r: 0 }))
+  } else if (composition === "screen") {
+    // The machine's screen, a seeded figure inside, in the middle of the field.
     const scale = 0.92 + next() * 0.12
-    const cy = 26 + Math.floor(next() * 3) * 2
-    if (next() < 0.6) shapes.push(...texture(language.tex, p, 0, 0, CARD_W, CARD_H, 0.6))
+    if (next() < 0.6) shapes.push(...texture(language.tex, p, 0, 0, CARD_W, FIELD_H, 0.6))
     lit()
-    shapes.push(...screen(language.bezel, p, { x: 30, y: cy, s: scale, r: 0 }, next))
-    return { shapes, box: { x: 5, y: cy + 25, w: 50, h: 85 - cy - 25 }, ink: "paper", top: false, max: 0.2, badgeTop: false }
-  }
-  // The controller's face and an ink band with the title reversed: face over
-  // band, band over face, or the face so close that the card cuts it.
-  const mode = pick(next, ["over", "under", "close"] as const)
-  const accents = p.acc.length > 0 ? p.acc : [p.lite]
-  const bandH = 36 + Math.floor(next() * 3) * 3
-  const bandY = mode === "under" ? 0 : CARD_H - bandH
-  const faceY = mode === "under" ? bandH : 0
-  const faceH = CARD_H - bandH
-  if (next() < 0.5) shapes.push(...texture(language.tex, p, 0, faceY, CARD_W, faceH, 0.6))
-  const close = mode === "close"
-  const scale = close ? 1.45 + next() * 0.35 : 0.8 + next() * 0.3
-  const cy = faceY + faceH * (close ? 0.52 : 0.5 + (next() - 0.5) * 0.12)
-  const spread = close ? 21 : 14
-  if (language.face.length === 2) {
-    shapes.push(...part(language.face[0]!, p, language.cart, { x: 30 - spread, y: cy, s: scale, r: 0 }))
-    shapes.push(...part(language.face[1]!, p, language.cart, { x: 30 + spread, y: cy + (next() < 0.5 ? -3 : 3), s: scale, r: 0 }))
+    shapes.push(...screen(language.bezel, p, { x: 30, y: centre + 1, s: scale, r: 0 }, next))
   } else {
-    shapes.push(...part(language.face[0]!, p, language.cart, { x: 30, y: cy + 4, s: scale * 1.25, r: 0 }))
-  }
-  shapes.push({ d: box(full, 0, bandY, CARD_W, bandH), c: p.ink }, { d: box(full, 0, mode === "under" ? bandH - 1.4 : bandY, CARD_W, 1.4), c: pick(next, accents) })
-  return {
-    shapes, box: { x: 5, y: bandY + 5, w: 50, h: bandH - 10 }, ink: "band",
-    top: false, max: 0.2, badgeTop: mode !== "under",
-  }
-}
-
-export const MOTIFS = ["rings", "bars", "chevrons", "checks", "discs", "slants", "steps", "weave"] as const
-export type Motif = (typeof MOTIFS)[number]
-
-function motif(kind: Motif, next: () => number, tone: number, other: number): Shape[] {
-  const here: Place = { x: 0, y: 0, s: 1, r: 0 }
-  const cell = 11 + Math.floor(next() * 4) * 3
-  const ox = -next() * cell
-  const oy = -next() * cell
-  let a = ""
-  let b = ""
-  switch (kind) {
-    case "rings":
-      for (let y = oy; y < CARD_H + cell; y += cell) for (let x = ox + (Math.round((y - oy) / cell) % 2 === 1 ? cell / 2 : 0); x < CARD_W + cell; x += cell) a += circle(here, x, y, cell * 0.42) + circle(here, x, y, cell * 0.27)
-      return [{ d: a, c: tone, e: true }]
-    case "bars": {
-      let x = ox
-      let i = 0
-      while (x < CARD_W) {
-        const w = cell * (0.18 + next() * 0.5)
-        if (i % 2 === 0) a += box(here, x, 0, w, CARD_H)
-        else b += box(here, x, CARD_H * (0.2 + next() * 0.3), w, CARD_H)
-        x += w + cell * 0.22
-        i++
-      }
-      return [{ d: a, c: tone }, { d: b, c: other }]
+    // The controller's face, at rest or so close that the field cuts it.
+    const close = next() < 0.34
+    if (next() < 0.5) shapes.push(...texture(language.tex, p, 0, 0, CARD_W, FIELD_H, 0.6))
+    lit()
+    const scale = close ? 1.45 + next() * 0.35 : 0.8 + next() * 0.3
+    const cy = centre + (close ? 2 : (next() - 0.5) * 6)
+    const spread = close ? 21 : 14
+    if (language.face.length === 2) {
+      shapes.push(...part(language.face[0]!, p, language.cart, { x: 30 - spread, y: cy, s: scale, r: 0 }))
+      shapes.push(...part(language.face[1]!, p, language.cart, { x: 30 + spread, y: cy + (next() < 0.5 ? -3 : 3), s: scale, r: 0 }))
+    } else {
+      shapes.push(...part(language.face[0]!, p, language.cart, { x: 30, y: cy + 4, s: scale * 1.25, r: 0 }))
     }
-    case "chevrons":
-      for (let y = oy; y < CARD_H + cell; y += cell * 0.8) a += polygon(here, [[0, y], [30, y - cell * 0.6], [60, y], [60, y + cell * 0.3], [30, y - cell * 0.3], [0, y + cell * 0.3]])
-      return [{ d: a, c: tone }]
-    case "checks":
-      for (let i = 0; ox + i * cell < CARD_W; i += 2) a += box(here, ox + i * cell, 0, cell, CARD_H)
-      for (let j = 0; oy + j * cell < CARD_H; j += 2) a += box(here, 0, oy + j * cell, CARD_W, cell)
-      return [{ d: a, c: tone, e: true }]
-    case "discs":
-      for (let y = oy, j = 0; y < CARD_H + cell; y += cell, j++) {
-        for (let x = ox, i = 0; x < CARD_W + cell; x += cell, i++) {
-          if ((i + j) % 2 === 0) a += circle(here, x, y, cell * 0.36)
-          else b += circle(here, x, y, cell * 0.16)
-        }
-      }
-      return [{ d: a, c: tone }, { d: b, c: other }]
-    case "slants":
-      for (let x = ox - CARD_H; x < CARD_W; x += cell) a += polygon(here, [[x, 0], [x + cell * 0.45, 0], [x + cell * 0.45 + CARD_H * 0.6, CARD_H], [x + CARD_H * 0.6, CARD_H]])
-      return [{ d: a, c: tone }]
-    case "steps":
-      for (let y = oy, j = 0; y < CARD_H + cell; y += cell, j++) a += box(here, ((j * cell * 0.6) % CARD_W) - cell, y, cell * 2.4, cell * 0.5) + box(here, ((j * cell * 0.6 + 34) % CARD_W) - cell, y, cell * 1.4, cell * 0.5)
-      return [{ d: a, c: tone }]
-    case "weave":
-      for (let y = oy, j = 0; y < CARD_H + cell; y += cell, j++) {
-        for (let x = ox, i = 0; x < CARD_W + cell; x += cell, i++) {
-          if ((i + j) % 2 === 0) a += box(here, x, y + cell * 0.3, cell * 0.9, cell * 0.3)
-          else b += box(here, x + cell * 0.3, y, cell * 0.3, cell * 0.9)
-        }
-      }
-      return [{ d: a, c: tone }, { d: b, c: other }]
   }
+  shapes.push(...plate(p, pick(next, accents)))
+  return draft(shapes)
 }
 
 /**
- * The pattern tile, for a system Velvet has no parts for, or none: a motif
- * over the paper and a plate for the title. The variant picks the motif's
- * size and place and where the plate stands.
+ * The pattern tile's motifs: two of the generic machine's parts (no machine of
+ * its own to quote), repeated. Owner, 2026-11-13: the prototype's look, not
+ * abstract motifs.
  */
-export function patternTile(kind: Motif, variant: number): Draft {
-  const next = rng(hash(`${variant}|pattern|${kind}`))
-  const full: Place = { x: 0, y: 0, s: 1, r: 0 }
-  const shapes: Shape[] = motif(kind, next, SLOT.deep, SLOT.other).map(shape => ({ ...shape, o: 0.85 }))
-  const top = next() < 0.3
-  const plateY = top ? 0 : 58
-  shapes.push({ d: box(full, 0, plateY, CARD_W, 32), c: SLOT.ink }, { d: box(full, 0, top ? 31 : 58, CARD_W, 1.2), c: SLOT.acc })
-  return { shapes, box: { x: 5, y: plateY + 5, w: 50, h: 23 }, ink: "band", top, max: 0.15, badgeTop: !top }
+export const MOTIFS = [
+  ["keycap", "cursor"], ["floppy", "disc"], ["disc", "keycap"], ["cursor", "floppy"],
+  ["keycap", "floppy"], ["disc", "cursor"], ["floppy", "floppy"], ["keycap", "disc"],
+] as const satisfies readonly (readonly [PartName, PartName])[]
+export type Motif = (typeof MOTIFS)[number]
+
+/**
+ * The pattern tile, for a system Velvet has no parts for, or none: the motif's
+ * two parts repeated tone on tone over the field, and the plate. The variant
+ * picks the repeat's size, its offset and its turn.
+ */
+export function patternTile(generic: Language, kind: Motif, variant: number): Draft {
+  const next = rng(hash(`${variant}|pattern|${kind.join("+")}`))
+  const p = slots(generic)
+  const cell = 13 + Math.floor(next() * 4) * 3
+  const turn = pick(next, [0, 0, 30, -20])
+  const ox = next() * cell
+  const oy = next() * cell
+  const scale = cell / 30
+  const shapes: Shape[] = []
+  // Turned about the field's centre: each part's place turns with the repeat.
+  const a = (turn * Math.PI) / 180
+  const cx = CARD_W / 2
+  const cy = FIELD_H / 2
+  for (let y = -2; y * cell < CARD_H; y++) {
+    for (let x = -2; x * cell < CARD_W + cell * 2; x++) {
+      const odd = (x + y) & 1
+      const px = x * cell + ox + (y & 1 ? cell / 2 : 0) - cx
+      const py = y * cell + oy - cy
+      const tx = cx + px * Math.cos(a) - py * Math.sin(a)
+      const ty = cy + px * Math.sin(a) + py * Math.cos(a)
+      if (ty < -cell || ty > FIELD_H + cell || tx < -cell || tx > CARD_W + cell) continue
+      shapes.push(...part(kind[odd]!, p, generic.cart, { x: tx, y: ty, s: scale, r: turn }, odd ? SLOT.deep : SLOT.other).map(shape => ({ ...shape, o: 0.85 })))
+    }
+  }
+  // One layer per tone and fill rule: a repeat is dozens of parts, a view sends every layer.
+  const merged = new Map<string, Shape>()
+  for (const shape of shapes) {
+    const key = `${shape.c}|${shape.o ?? 1}|${shape.e === true}`
+    const before = merged.get(key)
+    merged.set(key, before === undefined ? shape : { ...before, d: before.d + shape.d })
+  }
+  return draft([...merged.values(), ...plate(p, SLOT.acc)])
+}
+
+/** One part of a machine at a place, in one tone: the stage plates are made of these (drawings/plates.ts). */
+export function partShapes(language: Language, name: PartName, place: { x: number; y: number; s: number; r: number }, tone: number): Shape[] {
+  return part(name, slots(language), language.cart, place, tone)
 }

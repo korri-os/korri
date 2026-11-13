@@ -6,11 +6,11 @@ import { VelvetPreview } from "../preview-frame.slint";
 import { VelvetPick } from "VelvetPick.slint";
 
 export component Hero inherits VelvetPreview {
-    VelvetPick { x: 0; y: 0; width: parent.width; height: parent.height; hero: true; cards: []; mark: { key: "ember-road", logo-shown: true, logo: @image-url("../../preview/art/logo-ember.png"), logo-w: 578, logo-h: 249, lines: 1, line1: "EMBER ROAD", size: 83, badge: "PC", facts: { count: 1, first: { count: 4, a: { icon: "resume", text: "Ready to resume", strong: true }, b: { icon: "clock", text: "2 hours ago" }, c: { icon: "watch", text: "61 h 19 min" }, d: { icon: "here", text: "This device" } } } }; buttons: [{ shown: true, label: "Resume", icon: "play", focus-id: "play", focused: true }]; }
+    VelvetPick { x: 0; y: 0; width: parent.width; height: parent.height; hero: true; cards: []; mark: { key: "ember-road", logo-shown: true, logo: @image-url("../../preview/art/logo-ember.png"), logo-w: 578, logo-h: 249, lines: 1, line1: "EMBER ROAD", size: 93, badge: "PC", facts: { count: 1, first: { count: 4, a: { icon: "resume", text: "Ready to resume", strong: true }, b: { icon: "clock", text: "2 hours ago" }, c: { icon: "watch", text: "61 h 19 min" }, d: { icon: "here", text: "This device" } } } }; buttons: [{ shown: true, label: "Resume", icon: "play", focus-id: "play", focused: true }]; }
 }
 
 export component NoArt inherits VelvetPreview {
-    VelvetPick { x: 0; y: 0; width: parent.width; height: parent.height; hero: false; cards: [{ shown: true, kind: "game", art-kind: "none", poster: { shown: true, drawing: 82, palette: 47, lines: ["EMBER", "ROAD"], size: 17.73, ink: 14732216 }, label: "Ember Road" }]; mark: { key: "ember-road", badge: "PC", facts: { count: 1, first: { count: 4, a: { icon: "resume", text: "Ready to resume", strong: true }, b: { icon: "clock", text: "2 hours ago" }, c: { icon: "watch", text: "61 h 19 min" }, d: { icon: "here", text: "This device" } } } }; buttons: [{ shown: true, label: "Resume", icon: "play", focus-id: "play", focused: true }]; }
+    VelvetPick { x: 0; y: 0; width: parent.width; height: parent.height; hero: false; cards: [{ shown: true, kind: "game", art-kind: "none", poster: { shown: true, drawing: 82, palette: 47, lines: ["EMBER", "ROAD"], size: 11.102, ink: 14732216 }, label: "Ember Road", focus-id: "play", focused: true, badge: "PC", badge-top: true }]; mark: { key: "ember-road", badge: "PC", facts: { count: 1, first: { count: 4, a: { icon: "resume", text: "Ready to resume", strong: true }, b: { icon: "clock", text: "2 hours ago" }, c: { icon: "watch", text: "61 h 19 min" }, d: { icon: "here", text: "This device" } } } }; buttons: [{ shown: true, label: "Resume", icon: "play" }]; }
 }
 
 export component Cinema inherits VelvetPreview {
@@ -18,7 +18,7 @@ export component Cinema inherits VelvetPreview {
 }
 
 export component CinemaNoArt inherits VelvetPreview {
-    VelvetPick { x: 0; y: 0; width: parent.width; height: parent.height; hero: false; cards: [{ shown: true, kind: "game", art-kind: "none", poster: { shown: true, drawing: 82, palette: 47, lines: ["EMBER", "ROAD"], size: 17.73, ink: 14732216 }, label: "Ember Road" }]; mark: { key: "ember-road" }; buttons: [{ shown: true, label: "Resume", icon: "play", focus-id: "d:play", focused: true }]; stack: false; cinema: true; foot-facts: { count: 1, first: { count: 4, a: { icon: "resume", text: "Ready to resume", strong: true }, b: { icon: "clock", text: "Played 2 hours ago" }, c: { icon: "watch", text: "61 h 19 min" }, d: { icon: "here", text: "This device" } } }; foot-badge: "PC"; note: ""; }
+    VelvetPick { x: 0; y: 0; width: parent.width; height: parent.height; hero: true; cards: []; mark: { key: "ember-road", lines: 1, line1: "EMBER ROAD", size: 95 }; buttons: [{ shown: true, label: "Resume", icon: "play", focus-id: "d:play", focused: true }]; stack: false; cinema: true; foot-facts: { count: 1, first: { count: 4, a: { icon: "resume", text: "Ready to resume", strong: true }, b: { icon: "clock", text: "Played 2 hours ago" }, c: { icon: "watch", text: "61 h 19 min" }, d: { icon: "here", text: "This device" } } }; foot-badge: "PC"; note: ""; }
 }
 
 export component TwoPlaces inherits VelvetPreview {

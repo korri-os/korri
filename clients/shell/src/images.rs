@@ -14,6 +14,12 @@
 //! so `get` answers an empty image at once and `arrived` takes the pixels
 //! later. The shell then converts again the view values that name it. A
 //! korrid image that cannot be loaded stays empty; it never fails a view.
+//!
+//! An SVG `data:` URL goes the same way (`svg_data_url`, `render_svg`): it is
+//! rendered once, at the size its `width` and `height` give, on the image
+//! thread. A surface makes such a picture from its own data (Velvet's stage
+//! plates: a few shapes under a large blur), and drawn as a vector it would be
+//! rendered again at every size an animation passes through, on the UI thread.
 
 use crate::pico8;
 use anyhow::{bail, Context, Result};
@@ -52,6 +58,52 @@ pub fn asset_id(url: &str) -> Option<&str> {
         && hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
         && matches!(extension, "png" | "jpg" | "webp"))
     .then_some(id)
+}
+
+/// Whether `url` is an SVG `data:` URL: rendered off the UI thread, like a korrid image.
+pub fn svg_data_url(url: &str) -> bool {
+    url.strip_prefix("data:")
+        .is_some_and(|rest| rest.starts_with("image/svg+xml"))
+}
+
+/// Render an SVG `data:` URL to pixels at the size the SVG gives itself, within
+/// the shell's limits. Runs on any thread.
+pub fn render_svg(url: &str) -> Result<Pixels> {
+    let rest = url.strip_prefix("data:").context("not a data URL")?;
+    let (header, data) = rest.split_once(',').context("data URL has no comma")?;
+    if data.len() > MAX_ENCODED_BYTES * 2 {
+        bail!("data URL is too large");
+    }
+    let bytes = if header.ends_with(";base64") {
+        base64::engine::general_purpose::STANDARD.decode(data)?
+    } else {
+        percent_decode(data)?
+    };
+    let tree = resvg::usvg::Tree::from_data(&bytes, &resvg::usvg::Options::default())
+        .map_err(|_| anyhow::anyhow!("SVG does not parse"))?;
+    let size = tree.size().to_int_size();
+    let (width, height) = (size.width(), size.height());
+    if width == 0 || height == 0 || width > MAX_SIDE || height > MAX_SIDE {
+        bail!("SVG size {width}x{height} is out of bounds");
+    }
+    let mut pixmap =
+        resvg::tiny_skia::Pixmap::new(width, height).context("no pixmap for the SVG")?;
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::default(),
+        &mut pixmap.as_mut(),
+    );
+    let mut pixels = Pixels::new(width, height);
+    for (out, pixel) in pixels.make_mut_slice().iter_mut().zip(pixmap.pixels()) {
+        let colour = pixel.demultiply();
+        *out = Rgba8Pixel {
+            r: colour.red(),
+            g: colour.green(),
+            b: colour.blue(),
+            a: colour.alpha(),
+        };
+    }
+    Ok(pixels)
 }
 
 /// Decode a raster image within the shell's limits. Runs on any thread.
@@ -200,7 +252,7 @@ impl ImageCache {
             self.order.push_back(key);
             return Ok(image);
         }
-        if asset_id(url).is_some() {
+        if asset_id(url).is_some() || svg_data_url(url) {
             if !self.failed.contains(&key) && !self.waiting.contains(&key) {
                 if let Some(ask) = &self.ask {
                     ask(url, mode);

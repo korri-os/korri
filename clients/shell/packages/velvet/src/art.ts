@@ -20,6 +20,7 @@ import { breakLines, fitCaps, fitCapsOnce, textWidth } from "./fit"
 import { sameGame } from "./lists"
 import { onForget } from "./memo"
 import { NO_POSTER, posterFor, posterView, type PosterView } from "./poster"
+import { plateOf } from "./plate"
 import type { Game } from "./types"
 import { ago, caps, playtime } from "./words"
 
@@ -336,11 +337,18 @@ export interface StageView {
 export const HOUSE_GLOW = 0x2a2620
 
 /** What a game does to the stage: its hero as the backdrop, and its art's colour (the title's gel without one) as the light. */
-export function stageOf(asked: Pictures, game: Game | undefined, veil: number, drift: boolean, fill = false, lit = false): StageView {
+export function stageOf(asked: Pictures, game: Game | undefined, veil: number, drift: boolean, fill = false, lit = false, width = 0, height = 0): StageView {
   if (game === undefined) return { key: "", light: HOUSE_GLOW, artShown: false, art: NO_IMAGE, fill, veil, drift: false }
   // `lit`: the stage is far from the game (the library's pages): its colour, without its picture.
   const hero = lit ? undefined : mediaOf(game, "hero")
-  const light = stageLight(mediaOf(game, "hero")?.color ?? mediaOf(game, "poster")?.color ?? mediaOf(game, "logo")?.color, game.title)
+  // A game with no picture at all: its card lights the stage (owner, 2026-11-13, #423), and the
+  // light takes the card's own colour, so the card and its light are one.
+  const noArt = madeOf(game).art.artKind === "none" && mediaOf(game, "hero") === undefined
+  const card = noArt ? posterFor(game.title, game.systemId) : undefined
+  const light = stageLight(mediaOf(game, "hero")?.color ?? mediaOf(game, "poster")?.color ?? mediaOf(game, "logo")?.color ?? (card === undefined ? undefined : `#${(card.paper & 0xffffff).toString(16).padStart(6, "0")}`), game.title)
+  if (card !== undefined && !lit && width > 0 && height > 0) {
+    return { key: `plate:${game.id}`, light, artShown: true, art: { $image: plateOf(card, width, height) }, fill: true, veil, drift }
+  }
   return hero === undefined || !take(asked, hero.url, hero.width, hero.height)
     ? { key: `light:${game.id}`, light, artShown: false, art: NO_IMAGE, fill, veil, drift: false }
     : { key: hero.url, light, artShown: true, art: { $image: hero.url }, fill, veil, drift }

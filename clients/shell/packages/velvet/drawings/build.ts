@@ -27,6 +27,7 @@ import { LANGUAGES } from "../src/systems"
 import { CARD_H, CARD_W, MOTIFS, patternTile, systemPoster, type Draft } from "./draw"
 import { PALETTE_LENGTH, SLOT, type InkRule } from "../src/drawings-slots"
 import { GEL_SHELLS, inkOf, PATTERN_ACCENTS, PATTERN_SHELLS, patternPalettes, systemPalettes } from "./palettes"
+import { patternPlate, PLATE_H, PLATE_W, posterPlate, type Ellipse } from "./plates"
 
 const PACKAGE = join(import.meta.dir, "..")
 /** Drawings a title picks from, for one machine or one motif. */
@@ -55,10 +56,22 @@ function place(draft: Draft): Entry {
 }
 
 const systems: Record<string, Entry[]> = {}
+/** Each drawing's stage plate (drawings/plates.ts), by its number. */
+const plates: Ellipse[][] = []
 for (const [id, language] of Object.entries(LANGUAGES)) {
-  systems[id] = Array.from({ length: VARIANTS }, (_, variant) => place(systemPoster(language, `${id}|${variant}`)))
+  systems[id] = Array.from({ length: VARIANTS }, (_, variant) => {
+    const draft = systemPoster(language, `${id}|${variant}`)
+    const entry = place(draft)
+    plates[entry.index] = posterPlate(draft.shapes)
+    return entry
+  })
 }
-const motifs: Entry[][] = MOTIFS.map(kind => Array.from({ length: VARIANTS }, (_, variant) => place(patternTile(kind, variant))))
+// Unknown systems quote no machine: the generic one's parts (src/systems.ts, `pc`).
+const motifs: Entry[][] = MOTIFS.map(kind => Array.from({ length: VARIANTS }, (_, variant) => {
+  const entry = place(patternTile(LANGUAGES.pc!, kind, variant))
+  plates[entry.index] = patternPlate(LANGUAGES.pc!, kind, variant)
+  return entry
+}))
 
 // The palettes: a machine's, then the patterns'.
 const palettes: number[][] = []
@@ -159,7 +172,7 @@ const ts = [
   ...Object.entries(systems).map(([id, list]) => `  ${id}: [\n${list.map(e => `    ${entry(e)},`).join("\n")}\n  ],`),
   "}",
   "",
-  `/** The motifs' drawings, in this order: ${MOTIFS.join(", ")}. */`,
+  `/** The motifs' drawings, in this order: ${MOTIFS.map(kind => kind.join(" and ")).join("; ")}. */`,
   "export const MOTIF_DRAWINGS: readonly (readonly Drawing[])[] = [",
   ...motifs.map(list => `  [\n${list.map(e => `    ${entry(e)},`).join("\n")}\n  ],`),
   "]",
@@ -171,6 +184,24 @@ const ts = [
   "",
   "/** The first pattern palette: then gel by gel, shell by shell, accent by accent. */",
   `export const PATTERN_PALETTES = ${patternFirst}`,
+  "",
+  "/**",
+  " * Each drawing's stage plate (drawings/plates.ts), by the drawing's number:",
+  " * soft ellipses, six numbers each: the palette slot, the centre, the radii",
+  " * and the opacity. A machine's drawing is in card units; a motif's (from",
+  ` * PATTERN_DRAWINGS on) in a ${PLATE_W} x ${PLATE_H} stage box.`,
+  " */",
+  `export const PATTERN_DRAWINGS = ${motifs[0]![0]!.index}`,
+  `export const PLATE_W = ${PLATE_W}`,
+  `export const PLATE_H = ${PLATE_H}`,
+  "export const PLATES: readonly (readonly number[])[] = [",
+  ...plates.map(list => `  [${list.flatMap(e => [e.slot, e.cx, e.cy, e.rx, e.ry, e.o]).map(number).join(",")}],`),
+  "]",
+  "",
+  `/** Every palette's ${PALETTE_LENGTH} colours, one palette after another (the plates read them). */`,
+  "export const COLOURS: readonly number[] = [",
+  ...palettes.map(palette => `  ${palette.join(",")},`),
+  "]",
   "",
   "/** Every palette: its paper, then the title's colour under the paper, label and band rules. */",
   "export const PALETTES: readonly (readonly [number, number, number, number])[] = [",

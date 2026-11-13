@@ -27,7 +27,7 @@ export global Tokens {
     in-out property <length> height: 480px;
     // The plan for the window (src/plan.ts).
     in-out property <Screen> screen: {
-        width: 640, height: 480, k: 0.4, pad-x: 32, pad-y: 26, narrow: false,
+        width: 640, height: 480, k: 0.4, kt: 0.68, pad-x: 32, pad-y: 26, narrow: false,
         title: 42, head: 22, body: 14, fact: 13, label: 13, button: 15, small: 12,
         poster-x: 32, poster-y: 26, poster-h: 317, text-x: 277, text-y: 26, text-w: 331, text-h: 317,
         hero-x: 32, hero-y: 26, hero-w: 358, hero-h: 317, mark-h: 133, pick-title: 54,
@@ -112,8 +112,9 @@ export global Tokens {
     out property <int> text-weight: 400;
     out property <int> strong-weight: 700;
     // The display face's line pitch, where its caps start under a Text's top,
-    // and how tall they are, in font sizes (src/fit.ts holds the same).
-    out property <float> display-line: 0.9;
+    // and how tall they are, in font sizes (src/fit.ts holds the same). The caps
+    // are 0.8 tall: a 0.98 pitch leaves 0.18 between lines, 22 % of a cap (#423).
+    out property <float> display-line: 0.98;
     out property <float> display-cap-top: 0.186;
     out property <float> display-cap: 0.8;
 
@@ -151,6 +152,10 @@ export global Tokens {
     out property <duration> drift: 18s;
     out property <float> drift-scale: 0.10;
 
+    // A card's corner, by the height of the tile it stands in: the prototype's 3 %, at least 4 px.
+    pure public function card-radius(height: length) -> length {
+        return Math.max(4px, Math.round(height * 0.03 / 1px) * 1px);
+    }
     // An int from the logic, 0xRRGGBB, as a colour.
     pure public function tint(v: int) -> color {
         return rgb(Math.floor(v / 65536), Math.mod(Math.floor(v / 256), 256), Math.mod(v, 256));

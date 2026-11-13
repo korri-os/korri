@@ -274,14 +274,21 @@ impl Shell {
             .name("korrid-images".into())
             .spawn(move || {
                 for job in receiver {
-                    let pixels = worker_korrid
-                        .asset(&job.url, crate::images::MAX_ENCODED_BYTES)
-                        .map_err(|error| error.to_string())
-                        .and_then(|bytes| {
-                            crate::images::decode_stored(&bytes, job.mode)
-                                .map(crate::images::Arrival)
-                                .map_err(|_| "it does not decode".to_owned())
-                        });
+                    // An SVG data URL is the surface's own picture: rendered here, not fetched.
+                    let pixels = if crate::images::svg_data_url(&job.url) {
+                        crate::images::render_svg(&job.url)
+                            .map(crate::images::Arrival)
+                            .map_err(|_| "it does not render".to_owned())
+                    } else {
+                        worker_korrid
+                            .asset(&job.url, crate::images::MAX_ENCODED_BYTES)
+                            .map_err(|error| error.to_string())
+                            .and_then(|bytes| {
+                                crate::images::decode_stored(&bytes, job.mode)
+                                    .map(crate::images::Arrival)
+                                    .map_err(|_| "it does not decode".to_owned())
+                            })
+                    };
                     worker_post.post(Event::Image {
                         generation: job.generation,
                         url: job.url,

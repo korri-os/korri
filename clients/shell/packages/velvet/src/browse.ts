@@ -22,7 +22,7 @@
  * launches. Back closes each level.
  */
 import type { CatalogQuery, SurfaceCatalog, SurfaceModel as Model } from "../../../../../contracts/generated/surface"
-import { blankTile, factLines, factsOf, gameCard, gameTile, hasHero, marqueeOf, mediaOf, navTile, NO_IMAGE, NO_MARQUEE, NO_TILE, setTile, systemTile, type Pictures, type Standing, titleLines, waitingTile, type FactView, type MarqueeView, type TileView } from "./art"
+import { blankTile, factLines, factsOf, gameTile, hasHero, marqueeOf, mediaOf, navTile, NO_IMAGE, NO_MARQUEE, NO_TILE, setTile, systemTile, type Pictures, type Standing, titleLines, waitingTile, whereOf, type FactView, type MarqueeView, type TileView } from "./art"
 import { fitCaps, textWidth } from "./fit"
 import { gridMove, lineMove } from "./focus"
 import { homeOf, sameQuery, shelvesOf, type ShelfItem, type ShelfSpec } from "./lists"
@@ -245,7 +245,10 @@ export function homeView(asked: Pictures, state: State, model: Model, plan: Plan
   const rowMark = rowGame === undefined ? NO_MARQUEE : rowGame.kind === "game"
     ? marqueeOf(asked, rowGame.game, { width: plan.rowMarkW, logoH: Math.max(24, plan.rowMarkH - plan.fact * 3.2), title: Math.min(plan.title, Math.max(24, (plan.rowMarkH - plan.fact * 3.2) / 2)), fact: plan.fact, mark: true, badge: false, lines: 2 }, model.publishedAt)
     : { ...NO_MARQUEE, key: "all", ...fitMark("Library", plan.rowMarkW, plan), facts: factLines([{ icon: "grid", text: gamesWords(state.lists.total), strong: false }], plan.fact, plan.rowMarkW) }
-  const cards = pick === undefined || hero ? [] : [gameCard(asked, pick)]
+  // The pick's card is the focus (owner, 2026-11-13: the prototype's pick): it grows, takes the
+  // edge and shows its badge, and Play beside it is the filled prompt. With the hero as the
+  // stage there is no card, and the prompt carries the focus.
+  const cards = pick === undefined || hero ? [] : [gameTile(asked, pick, "pick", "play", onPick, 0)]
   const rowTiles: TileView[] = row.map(() => NO_TILE)
   const fillRow = () => {
     const standing = depth === 0 ? ROW_RESTS : ROW_UP
@@ -298,7 +301,9 @@ export function homeView(asked: Pictures, state: State, model: Model, plan: Plan
       depth,
       hero,
       mark,
-      play: pick === undefined ? NO_PILL : pill(pick.resumable === true ? "Resume" : "Play", "pick", "play", onPick, { icon: "play" }),
+      play: pick === undefined ? NO_PILL : hero
+        ? pill(pick.resumable === true ? "Resume" : "Play", "pick", "play", onPick, { icon: "play" })
+        : { ...NO_PILL, shown: true, label: pick.resumable === true ? "Resume" : "Play", icon: "play" },
       menu: pill("Menu", "menu", "menu", live && state.onMenu, { icon: "menu", quiet: true }),
       clock: model.clockLabel ?? "",
       rowAt: state.scrolled?.row ?? rowAt,
@@ -634,7 +639,10 @@ export function detailButtons(game: Game, model: Model): readonly DetailButton[]
     }))
   } else {
     const only = places[0]
-    buttons.push({ id: "d:play", label: verb, icon: "play", quiet: false, act: send(only === undefined ? { _tag: "LaunchGame", gameId: game.id } : { _tag: "LaunchGame", gameId: game.id, launchLocationId: only.id }) })
+    // One place: named when it is another device ("Play on aka", the prototype's Cinema).
+    const where = only?.label ?? whereOf(game)
+    const label = where === undefined || where === "" || where === "This device" || where === "Other devices" ? verb : `${verb} on ${where}`
+    buttons.push({ id: "d:play", label, icon: "play", quiet: false, act: send(only === undefined ? { _tag: "LaunchGame", gameId: game.id } : { _tag: "LaunchGame", gameId: game.id, launchLocationId: only.id }) })
   }
   if (game.saves?._tag === "Split") {
     const choose = game.saves.choose
@@ -717,18 +725,20 @@ export function detailView(asked: Pictures, state: State, model: Model, plan: Pl
     ...(savesWords(game) === undefined ? [] : [{ icon: "save", text: savesWords(game)!, strong: false }]),
   ]
   const facts = [...factsOf(game, model.publishedAt, true), ...extra]
-  const mark: MarqueeView = marqueeOf(asked, game, { width: hero ? plan.detailLogoW : plan.textW, logoH: hero ? plan.detailLogoH : plan.markH, title: hero ? plan.detailTitle : plan.pickTitle, fact: plan.detailFact, mark: hero || !cardNames(game), badge: false }, model.publishedAt, [])
+  // Cinema (owner, 2026-11-13): no card. The hero lights the stage when there is one; the
+  // logo, or the title set large, stands at the left either way.
+  const mark: MarqueeView = marqueeOf(asked, game, { width: plan.detailLogoW, logoH: plan.detailLogoH, title: plan.detailTitle, fact: plan.detailFact, mark: true, badge: false }, model.publishedAt, [])
   return {
     detail: {
       shown: true,
-      hero,
+      hero: true,
       mark,
       stack: detailStacks(buttons, plan),
       badge: game.system ?? "",
       facts: factLines(facts, plan.detailFact, plan.width - 2 * plan.padX, game.system === undefined ? 0 : plan.detailFact * (1.6 + textWidth(game.system, true))),
       note: downloadWords(game),
     },
-    cards: hero ? [] : [gameCard(asked, game)],
+    cards: [],
     buttons: buttons.map((button, index) => pill(button.label, "detail", button.id, live && index === at, { icon: button.icon, quiet: button.quiet })),
   }
 }

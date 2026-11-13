@@ -12,7 +12,7 @@ import { caps } from "./words"
 /** Kerning and rounding room: Slint shapes the line, the table only adds advances. */
 const SAFETY = 1.03
 /** Line pitch of the display face, in font sizes. */
-export const DISPLAY_LINE = 0.9
+export const DISPLAY_LINE = 0.98
 /** Where the caps' top stands under a Text's own top, and how tall they are, in font sizes. */
 export const DISPLAY_CAP_TOP = 0.186
 export const DISPLAY_CAP_HEIGHT = 0.8

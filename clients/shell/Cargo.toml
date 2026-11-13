@@ -62,6 +62,8 @@ sha2 = "0.10"
 anyhow = "1"
 libc = "0.2"
 pollster = "0.4"
+# An SVG data URL is rendered off the UI thread (src/images.rs). Slint 1.18.1's own version.
+resvg = { version = "=0.48.1", default-features = false }
 zeroize = "1"
 getrandom = { version = "0.3", optional = true }
 korri-window-sdl = { path = "window-sdl", optional = true }

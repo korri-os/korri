@@ -49,7 +49,8 @@ describe("the drawings (data, made at build time)", () => {
     for (const drawing of drawn) {
       expect(drawing.start).toBe(at)
       expect(drawing.count).toBeGreaterThan(1)
-      expect(drawing.count).toBeLessThanOrEqual(14)
+      // Every card now ends in its plate and rule (owner, 2026-11-13: one fixed split): two more layers.
+      expect(drawing.count).toBeLessThanOrEqual(16)
       at += drawing.count
     }
     expect(at).toBe(LAYERS)
@@ -102,7 +103,8 @@ describe("the drawings (data, made at build time)", () => {
   })
 
   test("the data stays small: a card is a few shapes, not a picture", () => {
-    expect(slint.length).toBeLessThan(360_000)
+    // The pattern tiles repeat the generic machine's parts (owner, 2026-11-13), not flat motifs.
+    expect(slint.length).toBeLessThan(430_000)
     expect(LAYERS).toBeLessThan(1300)
   })
 })

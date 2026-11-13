@@ -6,10 +6,12 @@
 //   no hero                 the game's card stands at the left (over the
 //                           words when the window is narrow) and the words
 //                           beside it; a card that already names the game
-//                           is not named twice
+//                           is not named twice. The card is the focus: it
+//                           grows and takes the edge, and Play beside it is
+//                           the filled prompt (the prototype's pick).
 //
-// `cinema` is the detail: the facts leave the mark for the stage's foot and
-// show at once.
+// `cinema` is the detail: never a card (the prototype's Cinema); the facts
+// leave the mark for the stage's foot and show at once.
 
 import { Tokens } from "../tokens.slint";
 import { Tile, Marquee, Pill, Facts } from "../types.slint";
@@ -53,8 +55,8 @@ export component VelvetPick inherits Rectangle {
         width: Tokens.screen.poster-h * root.u * Tokens.tile-ratio;
         height: Tokens.screen.poster-h * root.u;
         tile: card;
-        fixed: true;
-        inert: true;
+        inert: root.inert;
+        activated(target, at, released) => { root.activated(target, at, released); }
     }
     mark-box := VelvetMarquee {
         x: root.box-x;

@@ -271,7 +271,7 @@ describe("no art, no hole", () => {
       }
     }
   })
-  test("the stage is lit by the art's colour, else by a colour from the title; never unlit", () => {
+  test("the stage is lit by the art's colour, else by the card's own; never unlit", () => {
     for (const name of ["home", "home-no-art", "row", "row-no-art", "detail-no-art"]) {
       const scene = scenario(name)
       const run = new Play(scene.models[0])
@@ -280,7 +280,10 @@ describe("no art, no hole", () => {
     }
     const art = new Play(model("home")), bare = new Play(model("home-no-art"))
     expect(art.view.stage.light).not.toBe(bare.view.stage.light)
-    expect(bare.view.stage.artShown).toBe(false)
+    // A game with no picture: its card lights the stage as a picture does (owner, 2026-11-13).
+    expect(bare.view.stage.artShown).toBe(true)
+    expect(bare.view.stage.art.$image.startsWith("data:image/svg+xml,")).toBe(true)
+    expect(bare.view.stage.fill).toBe(true)
   })
 })
 

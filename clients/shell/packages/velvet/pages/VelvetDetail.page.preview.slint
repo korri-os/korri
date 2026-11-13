@@ -10,11 +10,11 @@ export component Cinema inherits VelvetPreview {
 }
 
 export component NoArt inherits VelvetPreview {
-    VelvetDetail { x: 0; y: 0; width: parent.width; height: parent.height; detail: { shown: true, mark: { key: "ember-road" }, badge: "PC", facts: { count: 1, first: { count: 4, a: { icon: "resume", text: "Ready to resume", strong: true }, b: { icon: "clock", text: "Played 2 hours ago" }, c: { icon: "watch", text: "61 h 19 min" }, d: { icon: "here", text: "This device" } } } }; cards: [{ shown: true, kind: "game", art-kind: "none", poster: { shown: true, drawing: 82, palette: 47, lines: ["EMBER", "ROAD"], size: 17.73, ink: 14732216 }, label: "Ember Road" }]; buttons: [{ shown: true, label: "Resume", icon: "play", focus-id: "d:play", focused: true }]; }
+    VelvetDetail { x: 0; y: 0; width: parent.width; height: parent.height; detail: { shown: true, hero: true, mark: { key: "ember-road", lines: 1, line1: "EMBER ROAD", size: 95 }, badge: "PC", facts: { count: 1, first: { count: 4, a: { icon: "resume", text: "Ready to resume", strong: true }, b: { icon: "clock", text: "Played 2 hours ago" }, c: { icon: "watch", text: "61 h 19 min" }, d: { icon: "here", text: "This device" } } } }; cards: []; buttons: [{ shown: true, label: "Resume", icon: "play", focus-id: "d:play", focused: true }]; }
 }
 
 export component LongTitle inherits VelvetPreview {
-    VelvetDetail { x: 0; y: 0; width: parent.width; height: parent.height; detail: { shown: true, mark: { key: "ucity" }, badge: "GBC", facts: { count: 1, first: { count: 3, a: { icon: "clock", text: "Played 2 months ago" }, b: { icon: "watch", text: "12 h 6 min" }, c: { icon: "here", text: "This device" } } } }; cards: [{ shown: true, kind: "game", art-kind: "none", poster: { shown: true, drawing: 15, palette: 10, lines: ["µCITY"], size: 18, ink: 1709872 }, label: "µCity" }]; buttons: [{ shown: true, label: "Play", icon: "play", focus-id: "d:play", focused: true }]; }
+    VelvetDetail { x: 0; y: 0; width: parent.width; height: parent.height; detail: { shown: true, hero: true, mark: { key: "ucity", lines: 1, line1: "µCITY", size: 95 }, badge: "GBC", facts: { count: 1, first: { count: 3, a: { icon: "clock", text: "Played 2 months ago" }, b: { icon: "watch", text: "12 h 6 min" }, c: { icon: "here", text: "This device" } } } }; cards: []; buttons: [{ shown: true, label: "Play", icon: "play", focus-id: "d:play", focused: true }]; }
 }
 
 export component TwoPlaces inherits VelvetPreview {
@@ -22,5 +22,5 @@ export component TwoPlaces inherits VelvetPreview {
 }
 
 export component Poster inherits VelvetPreview {
-    VelvetDetail { x: 0; y: 0; width: parent.width; height: parent.height; detail: { shown: true, mark: { key: "moss-and-stone", logo-shown: true, logo: @image-url("../preview/art/logo-moss.png"), logo-w: 312, logo-h: 200, lines: 1, line1: "MOSS AND STONE", size: 81 }, badge: "SNES", facts: { count: 1, first: { count: 3, a: { icon: "clock", text: "Played 3 days ago" }, b: { icon: "watch", text: "19 h 6 min" }, c: { icon: "here", text: "This device" } } } }; cards: [{ shown: true, kind: "game", art-kind: "poster", art: @image-url("../preview/art/poster-moss.png"), poster: { shown: true, drawing: 35, palette: 21, lines: ["MOSS AND", "STONE"], size: 12.879, ink: 2301999 }, label: "Moss and Stone" }]; buttons: [{ shown: true, label: "Play", icon: "play", focus-id: "d:play", focused: true }]; }
+    VelvetDetail { x: 0; y: 0; width: parent.width; height: parent.height; detail: { shown: true, hero: true, mark: { key: "moss-and-stone", logo-shown: true, logo: @image-url("../preview/art/logo-moss.png"), logo-w: 336, logo-h: 216, lines: 1, line1: "MOSS AND STONE", size: 95 }, badge: "SNES", facts: { count: 1, first: { count: 3, a: { icon: "clock", text: "Played 3 days ago" }, b: { icon: "watch", text: "19 h 6 min" }, c: { icon: "here", text: "This device" } } } }; cards: []; buttons: [{ shown: true, label: "Play", icon: "play", focus-id: "d:play", focused: true }]; }
 }
