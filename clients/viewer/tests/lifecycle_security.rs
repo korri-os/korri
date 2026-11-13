@@ -20,7 +20,7 @@ fn uid() -> u32 {
 
 #[test]
 fn wrong_uid_is_refused_or_acl_unavailability_fails_closed() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::scratch();
     let path = dir.path().join("control/viewer.sock");
     if support::refused_below_an_unmapped_root(&path) {
         return;
@@ -65,12 +65,14 @@ fn wrong_uid_is_refused_or_acl_unavailability_fails_closed() {
 // needs no second UID.
 #[test]
 fn location_another_user_could_rewrite_is_refused_before_anything_is_created() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::scratch();
+    if support::refused_below_an_unmapped_root(&root.path().join("control/viewer.sock")) {
+        return;
+    }
     let cases: [(&str, u32, &str); 5] = [
         ("other-writable", 0o707, "control/viewer.sock"),
         ("group-writable", 0o770, "control/viewer.sock"),
-        // The sticky exception is for root-owned directories such as /tmp.
-        ("own-sticky", 0o1777, "control/viewer.sock"),
+        ("sticky", 0o1777, "control/viewer.sock"),
         ("writable-grandparent", 0o777, "private/control/viewer.sock"),
         ("private", 0o700, "link/control/viewer.sock"),
     ];
@@ -80,9 +82,6 @@ fn location_another_user_could_rewrite_is_refused_before_anything_is_created() {
         std::fs::create_dir(parent.join("private")).unwrap();
         std::os::unix::fs::symlink("private", parent.join("link")).unwrap();
         std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(mode)).unwrap();
-        if uid() == 0 && mode == 0o1777 {
-            continue; // Root's own sticky directory is the documented exception.
-        }
         let socket = parent.join(socket);
         let error = match Lifecycle::bind(&socket, "a", uid()) {
             Ok(_) => panic!("{name}: the viewer bound a socket in an unsafe location"),
@@ -108,22 +107,54 @@ fn location_another_user_could_rewrite_is_refused_before_anything_is_created() {
     }
 }
 
+// A sticky directory lets another user own a name in it. The third review
+// (#435) turned that into a socket under the attacker's directory, so no
+// shared directory is a trusted ancestor, whoever owns it.
+#[test]
+fn shared_sticky_directory_is_not_a_trusted_ancestor() {
+    use std::os::unix::fs::MetadataExt;
+    let shared = Path::new("/tmp");
+    let Ok(metadata) = std::fs::metadata(shared) else {
+        return;
+    };
+    if metadata.uid() != 0 || metadata.mode() & 0o1002 != 0o1002 {
+        return; // No root-owned sticky /tmp here, as in the Nix build sandbox.
+    }
+    // The viewer's own private directory inside it does not make it safe.
+    let private = tempfile::tempdir_in(shared).unwrap();
+    let socket = private.path().join("control/viewer.sock");
+    let error = match Lifecycle::bind(&socket, "a", uid()) {
+        Ok(_) => panic!("the viewer bound a socket below a shared sticky directory"),
+        Err(error) => format!("{error:#}"),
+    };
+    assert!(error.contains("ancestor /tmp is writable"), "{error}");
+    assert!(!socket.parent().unwrap().exists());
+}
+
 // Run explicitly as root. All three participants drop to distinct unprivileged
 // UIDs. No account, service, network connection or shared file is changed.
 #[test]
 #[ignore = "requires root to create three real, unprivileged UID processes"]
 fn separate_viewer_and_controller_uids_are_the_only_users_with_socket_access() {
     assert_eq!(uid(), 0, "run this proof as root");
-    let directory = tempfile::tempdir().unwrap();
-    // The viewer must create its own private child; it cannot write a root-owned
-    // 0755 test directory. Sticky mode protects the copied executable.
-    std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o1777)).unwrap();
+    // As a launcher does it: root owns the path down from `/`, no other user
+    // can write it, and the viewer owns the last directory. /tmp is refused.
+    let directory = tempfile::Builder::new()
+        .prefix("korri-viewer-proof.")
+        .tempdir_in("/run")
+        .unwrap();
+    std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
     let executable = directory.path().join("security-test");
     std::fs::copy(std::env::current_exe().unwrap(), &executable).unwrap();
     std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let socket = directory.path().join("control/viewer.sock");
     let viewer_uid = 65534;
     let controller_uid = 65532;
+    // The controller needs search access here. Nobody but the viewer can write.
+    let runtime = directory.path().join("viewer");
+    std::fs::create_dir(&runtime).unwrap();
+    std::fs::set_permissions(&runtime, std::fs::Permissions::from_mode(0o711)).unwrap();
+    std::os::unix::fs::chown(&runtime, Some(viewer_uid), Some(viewer_uid)).unwrap();
+    let socket = runtime.join("control/viewer.sock");
     let mut viewer = helper(&executable, &socket, "viewer", viewer_uid, controller_uid)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

@@ -3,13 +3,13 @@
 use anyhow::{Context, Result, ensure};
 use std::{
     ffi::{CStr, CString, OsStr},
-    fs::File,
+    fs::{File, Metadata},
     io,
     os::{
-        fd::AsRawFd,
+        fd::{AsRawFd, FromRawFd, RawFd},
         unix::{
             ffi::OsStrExt,
-            fs::{DirBuilderExt, MetadataExt, OpenOptionsExt},
+            fs::MetadataExt,
             net::{UnixListener, UnixStream},
         },
     },
@@ -18,36 +18,101 @@ use std::{
 
 const ACL: &CStr = c"system.posix_acl_access";
 
-/// The new directory, held by descriptor. Its pathname is resolved once, to
-/// open it. A later replacement of that name cannot redirect an operation.
+/// One directory, by its name in an open directory. A symlink is refused.
+fn open_directory(parent: RawFd, name: &CStr, access: libc::c_int) -> io::Result<File> {
+    let flags = access | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
+    // SAFETY: the name is a live C string. The new descriptor has no other owner.
+    let descriptor = unsafe { libc::openat(parent, name.as_ptr(), flags) };
+    if descriptor < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(unsafe { File::from_raw_fd(descriptor) })
+}
+
+/// Reach `path` from `/`, one component at a time. Each directory is judged
+/// through its own descriptor before the next name is looked up in it. A name
+/// that changes later changes neither what was judged nor what is used.
+fn open_from_root(path: &Path, admit: impl Fn(&Metadata, &Path) -> Result<()>) -> Result<File> {
+    ensure!(path.is_absolute(), "lifecycle socket has no directory");
+    let mut reached = PathBuf::new();
+    let mut directory = None;
+    for component in path.components() {
+        reached.push(component);
+        let name = CString::new(component.as_os_str().as_bytes())?;
+        let parent = directory
+            .as_ref()
+            .map_or(libc::AT_FDCWD, AsRawFd::as_raw_fd);
+        // O_PATH: the viewer needs search access to an ancestor, not read access.
+        let opened = open_directory(parent, &name, libc::O_PATH).with_context(|| {
+            format!(
+                "lifecycle socket ancestor {} is not a directory the viewer can open",
+                reached.display()
+            )
+        })?;
+        admit(&opened.metadata()?, &reached)?;
+        directory = Some(opened);
+    }
+    directory.context("lifecycle socket requires a new parent directory")
+}
+
+/// Another local user who can write an ancestor can replace a name in it.
+/// Only root and the viewer may be able to. A sticky directory is no
+/// exception: another user can own a name there and replace that one.
+fn require_trusted(ancestor: &Metadata, shown: &Path) -> Result<()> {
+    let shown = shown.display();
+    let owner = ancestor.uid();
+    ensure!(
+        owner == 0 || owner == unsafe { libc::geteuid() },
+        "lifecycle socket ancestor {shown} is owned by UID {owner}, not root or the viewer"
+    );
+    ensure!(
+        ancestor.mode() & 0o022 == 0,
+        "lifecycle socket ancestor {shown} is writable by its group or other users"
+    );
+    Ok(())
+}
+
+fn entry(directory: &File, name: &CStr) -> io::Result<libc::stat> {
+    // SAFETY: stat is plain data; fstatat fills it before it is read.
+    let mut status: libc::stat = unsafe { std::mem::zeroed() };
+    succeeded(unsafe {
+        libc::fstatat(
+            directory.as_raw_fd(),
+            name.as_ptr(),
+            &mut status,
+            libc::AT_SYMLINK_NOFOLLOW,
+        )
+    })?;
+    Ok(status)
+}
+
+/// The new directory and its trusted parent, both held by descriptor. No
+/// pathname is resolved after the walk from `/`.
 struct PrivateDirectory {
-    path: PathBuf,
+    parent: File,
+    name: CString,
     pinned: File,
     identity: (u64, u64),
 }
 impl PrivateDirectory {
     fn create(path: &Path) -> Result<Self> {
         let path = std::path::absolute(path).context("lifecycle socket has no directory")?;
-        let parent = path
-            .parent()
-            .context("lifecycle socket requires a new parent directory")?;
-        require_trusted_ancestors(parent)?;
-        Self::create_pinned(path)
+        let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+            anyhow::bail!("lifecycle socket requires a new parent directory");
+        };
+        Self::create_in(open_from_root(parent, require_trusted)?, name)
     }
-    fn create_pinned(path: PathBuf) -> Result<Self> {
+    fn create_in(parent: File, name: &OsStr) -> Result<Self> {
+        let name = CString::new(name.as_bytes())?;
         // mkdir's mode is atomic, even with umask=0. Do not reuse or chmod a
         // pre-existing directory: it may belong to another launch.
-        std::fs::DirBuilder::new()
-            .mode(0o700)
-            .create(&path)
+        // SAFETY: the descriptor and the name are live for these calls.
+        succeeded(unsafe { libc::mkdirat(parent.as_raw_fd(), name.as_ptr(), 0o700) })
             .context("create private lifecycle directory")?;
-        // The ancestors let only root and this UID replace the new name, and
-        // O_NOFOLLOW refuses a symlink there. rmdir never follows one either.
-        let pinned = std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
-            .open(&path)
-            .inspect_err(|_| drop(std::fs::remove_dir(&path)))
+        let pinned = open_directory(parent.as_raw_fd(), &name, libc::O_RDONLY)
+            .inspect_err(|_| unsafe {
+                libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), libc::AT_REMOVEDIR);
+            })
             .context("open private lifecycle directory")?;
         let metadata = pinned.metadata()?;
         ensure!(
@@ -55,7 +120,8 @@ impl PrivateDirectory {
             "private lifecycle directory was replaced after its creation"
         );
         Ok(Self {
-            path,
+            parent,
+            name,
             pinned,
             identity: (metadata.dev(), metadata.ino()),
         })
@@ -65,26 +131,21 @@ impl PrivateDirectory {
     fn pinned_path(&self, name: &OsStr) -> PathBuf {
         PathBuf::from(format!("/proc/self/fd/{}", self.pinned.as_raw_fd())).join(name)
     }
-    fn entry(&self, name: &CStr) -> io::Result<libc::stat> {
-        // SAFETY: stat is plain data; fstatat fills it before it is read.
-        let mut status: libc::stat = unsafe { std::mem::zeroed() };
-        succeeded(unsafe {
-            libc::fstatat(
-                self.pinned.as_raw_fd(),
-                name.as_ptr(),
-                &mut status,
-                libc::AT_SYMLINK_NOFOLLOW,
-            )
-        })?;
-        Ok(status)
-    }
-    fn is_at_its_path(&self) -> bool {
-        std::fs::symlink_metadata(&self.path)
-            .is_ok_and(|metadata| (metadata.dev(), metadata.ino()) == self.identity)
+    /// Its name in the parent can hold another launch's directory by now.
+    fn is_in_its_parent(&self) -> bool {
+        entry(&self.parent, &self.name)
+            .is_ok_and(|entry| (entry.st_dev, entry.st_ino) == self.identity)
     }
     fn remove(&self) {
-        if self.is_at_its_path() {
-            let _ = std::fs::remove_dir(&self.path);
+        if self.is_in_its_parent() {
+            // SAFETY: the descriptor and the name are live for the call.
+            unsafe {
+                libc::unlinkat(
+                    self.parent.as_raw_fd(),
+                    self.name.as_ptr(),
+                    libc::AT_REMOVEDIR,
+                )
+            };
         }
     }
 }
@@ -92,36 +153,6 @@ impl Drop for PrivateDirectory {
     fn drop(&mut self) {
         self.remove();
     }
-}
-
-/// Another local user who can write an ancestor can replace the private
-/// directory by name. Refuse such a location before anything is created.
-fn require_trusted_ancestors(parent: &Path) -> Result<()> {
-    let viewer = unsafe { libc::geteuid() };
-    for ancestor in parent.ancestors() {
-        let shown = ancestor.display();
-        // lstat: a symlink is not a directory, so no component is followed
-        // to a location whose own ancestors this walk would not see.
-        let metadata = std::fs::symlink_metadata(ancestor)
-            .with_context(|| format!("inspect lifecycle socket ancestor {shown}"))?;
-        ensure!(
-            metadata.is_dir(),
-            "lifecycle socket ancestor {shown} is not a directory"
-        );
-        let owner = metadata.uid();
-        ensure!(
-            owner == 0 || owner == viewer,
-            "lifecycle socket ancestor {shown} is owned by UID {owner}, not root or the viewer"
-        );
-        // A root-owned sticky directory, such as /tmp, lets only an entry's
-        // owner rename or remove that entry.
-        let sticky_root = owner == 0 && metadata.mode() & libc::S_ISVTX != 0;
-        ensure!(
-            metadata.mode() & 0o022 == 0 || sticky_root,
-            "lifecycle socket ancestor {shown} is writable by its group or other users"
-        );
-    }
-    Ok(())
 }
 
 pub(super) struct SocketPath {
@@ -148,8 +179,7 @@ impl SocketPath {
         let listener = UnixListener::bind(&pinned)
             .context("bind viewer lifecycle socket in its pinned directory")?;
         let name = CString::new(name.as_bytes())?;
-        let socket = directory
-            .entry(&name)
+        let socket = entry(&directory.pinned, &name)
             .context("viewer lifecycle socket is not in its private directory")?;
         ensure!(
             socket.st_mode & libc::S_IFMT == libc::S_IFSOCK && socket.st_uid == viewer_uid,
@@ -187,18 +217,17 @@ impl SocketPath {
             })
             .context("grant lifecycle controller ACL on the directory")?;
         }
-        // The socket is in the pinned directory whatever its name now holds.
-        // A controller that follows the name must still arrive there.
+        // Only root or this UID can take the directory out of its parent, so
+        // this is no defence. It tells a launcher at once that no controller
+        // can reach the socket, instead of after the Start deadline.
         ensure!(
-            paths.directory.is_at_its_path(),
-            "private lifecycle directory was replaced while the viewer bound its socket"
+            paths.directory.is_in_its_parent(),
+            "private lifecycle directory left its parent while the viewer bound its socket"
         );
         Ok((listener, paths))
     }
     pub fn remove(&self) {
-        let bound = self
-            .directory
-            .entry(&self.name)
+        let bound = entry(&self.directory.pinned, &self.name)
             .is_ok_and(|entry| (entry.st_dev, entry.st_ino) == self.identity);
         if bound {
             // SAFETY: the descriptor and the name are live for the call.
@@ -275,6 +304,7 @@ pub(super) fn check_peer(socket: &UnixStream, expected_uid: u32) -> io::Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::{FileTypeExt, PermissionsExt};
     #[test]
     fn permissive_umask_cannot_publish_the_private_directory() {
         use std::os::unix::process::CommandExt;
@@ -306,9 +336,10 @@ mod tests {
     fn observe_directory_birth() {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("private");
-        // umask=0 also published this test's own parent, which the ancestor
-        // check refuses. This test observes only the new directory's mode.
-        let _directory = PrivateDirectory::create_pinned(path.clone()).unwrap();
+        // umask=0 also published this test's own parent, which the viewer
+        // refuses. This test observes only the new directory's mode.
+        let _directory =
+            PrivateDirectory::create_in(open_unjudged(root.path()), OsStr::new("private")).unwrap();
         // Observe before bind or any later chmod/ACL operation can hide a
         // publication window. The real mkdir call must already be private.
         assert_eq!(std::fs::metadata(path).unwrap().mode() & 0o777, 0o700);
@@ -316,7 +347,7 @@ mod tests {
 
     // The reviewed race (#435): another actor replaces the new directory with
     // a symlink while bind() is delayed. The test is that actor, between the
-    // two steps, so no timing is involved. The ancestor check already keeps
+    // two steps, so no timing is involved. The ancestor rule already keeps
     // another UID out; this proves the descriptor alone, against any actor.
     #[test]
     fn directory_replaced_before_a_delayed_bind_is_refused_with_no_socket_outside() {
@@ -325,7 +356,8 @@ mod tests {
         let moved = root.path().join("moved");
         let outside = root.path().join("outside");
         std::fs::create_dir(&outside).unwrap();
-        let directory = PrivateDirectory::create_pinned(private.clone()).unwrap();
+        let directory =
+            PrivateDirectory::create_in(open_unjudged(root.path()), OsStr::new("control")).unwrap();
         std::fs::rename(&private, &moved).unwrap();
         std::os::unix::fs::symlink(&outside, &private).unwrap();
 
@@ -339,13 +371,108 @@ mod tests {
         );
         assert!(
             result.is_err(),
-            "a viewer whose directory left its path must refuse to serve"
+            "a viewer whose directory left its parent must refuse to serve"
         );
         assert!(
             std::fs::read_dir(&moved).unwrap().next().is_none(),
             "the refused viewer must remove the socket from its own directory"
         );
         assert!(std::fs::symlink_metadata(&private).unwrap().is_symlink());
+    }
+
+    // The third review's race (#435): an ancestor is replaced with a symlink
+    // after the walk judged it and before the directory is created. The test
+    // is that actor, between the two steps, so no timing is involved.
+    #[test]
+    fn ancestor_replaced_after_its_check_cannot_move_the_directory_or_its_cleanup() {
+        let root = tempfile::tempdir().unwrap();
+        let launcher = root.path().join("launcher");
+        let held = root.path().join("held");
+        let attacker = root.path().join("attacker");
+        std::fs::create_dir(&launcher).unwrap();
+        std::fs::create_dir(&attacker).unwrap();
+        let parent = open_unjudged(&launcher);
+        std::fs::rename(&launcher, &held).unwrap();
+        std::os::unix::fs::symlink(&attacker, &launcher).unwrap();
+
+        let bound =
+            PrivateDirectory::create_in(parent, OsStr::new("control")).and_then(|directory| {
+                SocketPath::bind_in(directory, OsStr::new("viewer.sock"), unsafe {
+                    libc::geteuid()
+                })
+            });
+
+        assert!(
+            std::fs::read_dir(&attacker).unwrap().next().is_none(),
+            "nothing may be created through the replaced ancestor"
+        );
+        assert!(
+            std::fs::symlink_metadata(held.join("control/viewer.sock"))
+                .unwrap()
+                .file_type()
+                .is_socket(),
+            "the socket belongs in the parent that the walk opened"
+        );
+        drop(bound);
+        assert!(std::fs::read_dir(&attacker).unwrap().next().is_none());
+        assert!(
+            std::fs::read_dir(&held).unwrap().next().is_none(),
+            "cleanup must remove the directory from the parent that was judged"
+        );
+    }
+
+    /// The descriptor walk alone. Who may own an ancestor is a separate rule,
+    /// and the Nix build sandbox has no location that passes it.
+    fn open_unjudged(path: &Path) -> File {
+        open_from_root(path, |_, _| Ok(())).unwrap()
+    }
+
+    #[test]
+    fn walk_refuses_a_symlink_and_judges_every_directory_it_opens() {
+        let root = tempfile::tempdir().unwrap();
+        let real = root.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        std::os::unix::fs::symlink(&real, root.path().join("link")).unwrap();
+        let through_link = open_from_root(&root.path().join("link"), |_, _| Ok(()));
+        assert!(format!("{:#}", through_link.unwrap_err()).contains("link is not a directory"));
+
+        let judged = std::cell::RefCell::new(Vec::new());
+        open_from_root(&real, |_, reached| {
+            judged.borrow_mut().push(reached.to_owned());
+            Ok(())
+        })
+        .unwrap();
+        let mut expected: Vec<_> = real.ancestors().map(Path::to_owned).collect();
+        expected.reverse();
+        assert_eq!(judged.into_inner(), expected);
+        assert!(open_from_root(Path::new("real"), |_, _| Ok(())).is_err());
+    }
+
+    #[test]
+    fn only_root_and_the_viewer_may_be_able_to_write_an_ancestor() {
+        let root = tempfile::tempdir().unwrap();
+        for (mode, trusted) in [
+            (0o700, true),
+            (0o755, true),
+            (0o770, false),
+            (0o707, false),
+            // No sticky exception: /tmp is 1777.
+            (0o1777, false),
+        ] {
+            let path = root.path().join(format!("{mode:o}"));
+            std::fs::create_dir(&path).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+            let metadata = std::fs::metadata(&path).unwrap();
+            assert_eq!(
+                require_trusted(&metadata, &path).is_ok(),
+                trusted,
+                "{mode:o}"
+            );
+        }
+        // The Nix build sandbox shows `/` with an unmapped owner.
+        let top = std::fs::metadata("/").unwrap();
+        let foreign = top.uid() != 0 && top.uid() != unsafe { libc::geteuid() };
+        assert_eq!(require_trusted(&top, Path::new("/")).is_err(), foreign);
     }
 
     #[test]

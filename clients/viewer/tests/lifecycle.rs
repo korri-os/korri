@@ -28,7 +28,7 @@ fn request(socket: &mut BufReader<UnixStream>, launch: &str, command: C) -> R {
 
 #[test]
 fn exact_launch_connected_events_and_confirmed_stop_over_real_socket() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::scratch();
     let path = dir.path().join("control/viewer.sock");
     if support::refused_below_an_unmapped_root(&path) {
         return;
@@ -133,7 +133,7 @@ fn exact_launch_connected_events_and_confirmed_stop_over_real_socket() {
 
 #[test]
 fn existing_path_is_not_deleted() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::scratch();
     let path = dir.path().join("control/viewer.sock");
     std::fs::create_dir(path.parent().unwrap()).unwrap();
     std::fs::write(&path, "keep").unwrap();
@@ -143,7 +143,7 @@ fn existing_path_is_not_deleted() {
 
 #[test]
 fn socket_name_too_long_for_its_pinned_address_fails_closed() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::scratch();
     // The address is /proc/self/fd/<descriptor>/<name> in 108 bytes.
     let path = dir.path().join("control").join("s".repeat(100));
     if support::refused_below_an_unmapped_root(&path) {
@@ -158,7 +158,7 @@ fn socket_name_too_long_for_its_pinned_address_fails_closed() {
 
 #[test]
 fn startup_failure_returns_typed_error_and_stopped_event() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::scratch();
     let path = dir.path().join("control/viewer.sock");
     if support::refused_below_an_unmapped_root(&path) {
         return;
@@ -182,7 +182,7 @@ fn startup_failure_returns_typed_error_and_stopped_event() {
 
 #[test]
 fn real_binary_reports_missing_pin_over_socket_and_exits() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::scratch();
     let path = dir.path().join("control/viewer.sock");
     if support::refused_below_an_unmapped_root(&path) {
         return;
@@ -268,7 +268,7 @@ fn start_address_preserves_port_and_ipv6_and_rejects_url_injection() {
 #[test]
 fn shutdown_closes_a_partial_reader_and_removes_the_owned_socket() {
     use std::io::{Read, Write};
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::scratch();
     let path = dir.path().join("control/viewer.sock");
     if support::refused_below_an_unmapped_root(&path) {
         return;
@@ -299,7 +299,7 @@ fn shutdown_closes_a_partial_reader_and_removes_the_owned_socket() {
 
 #[test]
 fn real_binary_removes_socket_after_idle_controller_startup_timeout() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::scratch();
     let path = dir.path().join("control/viewer.sock");
     if support::refused_below_an_unmapped_root(&path) {
         return;
@@ -354,7 +354,7 @@ fn real_binary_removes_socket_after_idle_controller_startup_timeout() {
 
 #[test]
 fn lifecycle_socket_requires_an_explicit_controller_uid() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::scratch();
     let path = dir.path().join("control/viewer.sock");
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_korri-viewer"))
         .args([

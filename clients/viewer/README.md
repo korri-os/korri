@@ -108,28 +108,29 @@ POSIX ACLs. The owning group and all other users get no access. A filesystem
 without ACL support fails closed. Ancestors must be traversable by both UIDs.
 
 The launcher provides the directory above the new one, for example a systemd
-`RuntimeDirectory=` with mode 0700 that the viewer user owns. Before it creates
-anything, the viewer reads every directory from there up to `/` with `lstat`.
+`RuntimeDirectory=` that the viewer user owns, below the root-owned `/run`.
+Before it creates anything, the viewer walks from `/` to that directory. It
+opens each directory by its name in the directory before it, with
+`O_DIRECTORY|O_NOFOLLOW`, and judges it with `fstat` on the open descriptor.
 Root or the viewer UID must own each one, and the group and other users must
-have no write access; a root-owned sticky directory such as `/tmp` is the only
-exception. A symlink in the path is refused, so give the real path. The
-controller can have search access to those directories, but not write access.
-A user namespace that does not map root, such as the Nix build sandbox, shows
-`/` with an unmapped owner, and the viewer refuses every location there.
+have no write access. A sticky directory such as `/tmp` is refused like any
+other: another user can own a name in it. A symlink in the path is refused, so
+give the real path. The controller can have search access to those directories,
+but not write access. A user namespace that does not map root, such as the Nix
+build sandbox, shows `/` with an unmapped owner, and the viewer refuses every
+location there.
 
-The viewer then opens its new directory without following a symlink and keeps
-that descriptor. It binds the socket and sets the socket's ACL through
-`/proc/self/fd/<descriptor>/<name>`; mode, the directory's ACL and removal use
-the descriptor. After `bind()` the directory must hold a socket that the viewer
-UID owns, and the directory must still be at its path. If not, or if `/proc` is
+The viewer resolves no pathname after that walk. It creates its directory with
+`mkdirat` in the last descriptor, opens it there without following a symlink,
+and keeps both descriptors. It binds the socket and sets the socket's ACL
+through `/proc/self/fd/<descriptor>/<name>`; mode, the directory's ACL and
+removal of the socket and the directory use the descriptors. After `bind()` the
+directory must hold a socket that the viewer UID owns. If not, or if `/proc` is
 missing, or if that address is longer than `sun_path`, the viewer removes what
-it made and exits. A replaced directory name cannot move the socket.
-
-The viewer authenticates `SO_PEERCRED` on every accept against the supplied
-controller UID. A refused peer is logged and cannot take the controller slot.
-korrid's adapter requires the expected viewer UID from its launcher and checks
-both socket ownership and peer credentials against it, not against korrid's UID.
-No installed launcher or plugin changes in this slice.
+it made and exits. A replaced name anywhere in the path cannot move the socket
+or the cleanup. The viewer also exits if its directory is no longer in its
+parent after `bind()`. Only root or the viewer UID can cause that, so it is not
+a defence; it reports at once a socket that no controller can reach.
 
 The process waits for `Start` before connecting. Start's address includes the optional HTTP
 port, as in korrid's Moonlight adapter. Its optional display is the local logical
@@ -171,8 +172,11 @@ The cross-UID socket proof is an explicit root-only test: build
 in the viewer development shell, then run that printed test executable as root
 with `--exact separate_viewer_and_controller_uids_are_the_only_users_with_socket_access --ignored`.
 It drops the viewer, controller and an unrelated peer to UIDs 65534, 65532 and
-65533 in a temporary directory. It changes no accounts or services. Normal
-checks also cover umask-zero directory creation, missing controller authority,
-rejected peer credentials, an ancestor that another user could write, and a
-directory replaced by a symlink before `bind()`. In the Nix build sandbox the
-tests that need a bound socket prove only the refusal described above.
+65533 in a temporary directory below `/run`, because `/tmp` is refused. It
+changes no accounts or services. Normal checks also cover umask-zero directory
+creation, missing controller authority, rejected peer credentials, an ancestor
+that another user could write, the sticky `/tmp`, and an ancestor or the
+directory replaced by a symlink between two steps. The tests bind below
+`XDG_RUNTIME_DIR`, which must be a private directory as a login session
+provides it. In the Nix build sandbox the tests that need a bound socket prove
+only the refusal described above.
