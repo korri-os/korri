@@ -129,6 +129,7 @@ let
         nativeBuildInputs = [
           python
           pkgs.ffmpeg
+          pkgs.alsa-utils
           pkgs.openssh
           pkgs.stdenv.cc
           pkgs.openssl

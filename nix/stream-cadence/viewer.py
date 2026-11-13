@@ -542,11 +542,9 @@ class Session:
             KORRI_MOONLIGHT_SERVER_CERTIFICATE=str(self.root / "server.pem"),
         )
         if self.fixture:
-            # The dummy audio driver keeps the fixture free of the device's sound.
-            # The plugin's binary shows through SDL on the fixture's Wayland
-            # display. korrid's DISPLAY=:0 is left out on purpose: it names the
-            # X server of the device's own compositor, and nothing of a fixture
-            # run may reach the device's display.
+            # Sound is the intentional difference from a product start: SDL
+            # uses its dummy driver; X11 uses Pulse/ALSA. Keep those on private
+            # nonexistent servers and an ALSA null device, not the host's sound.
             return dict(
                 self.environment(),
                 **({
@@ -558,6 +556,11 @@ class Session:
                 WAYLAND_DISPLAY=DISPLAY,
                 SDL_VIDEODRIVER="x11" if self.x_namespace else "wayland",
                 SDL_AUDIODRIVER="dummy",
+                ALSA_CONFIG_PATH=str(self.root / "asound.conf"),
+                PULSE_SERVER="unix:" + str(self.root / "rt/no-pulse"),
+                PULSE_CLIENTCONFIG=str(self.root / "pulse-client.conf"),
+                PIPEWIRE_RUNTIME_DIR=str(self.root / "rt"),
+                PIPEWIRE_REMOTE="no-pipewire",
             )
         # What korrid's linux_viewer gives the viewer unit, with two changes.
         # HOME is the run directory, so the test writes nothing into the product's
@@ -787,6 +790,10 @@ class Session:
         # change. The programs read them and cannot put a link in their place.
         write_new(self.root / "server.pem", request["server_certificate"])
         if self.fixture:
+            # A standalone config, with no include of the host ALSA config.
+            # These stay agent-owned, outside home/rt handed to the children.
+            write_new(self.root / "asound.conf", "pcm.!default { type null }\npcm.sysdefault { type null }\n")
+            write_new(self.root / "pulse-client.conf", "autospawn = no\n")
             write_new(
                 self.root / "sway.conf",
                 f"output {OUTPUT} mode {int(request['width'])}x{int(request['height'])}"
@@ -845,6 +852,7 @@ class Session:
             "hardware_path": self.hardware_path(),
             "live_games": live,
             "renderer": self.renderer,
+            "viewer_audio": "null",
         }
 
     def handle(self, request: dict) -> dict:

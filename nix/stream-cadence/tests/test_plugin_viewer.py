@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -125,6 +126,26 @@ class PluginViewerInTheFixture(unittest.TestCase):
         self.assertNotIn("DISPLAY", environment)
         self.assertEqual(environment["HOME"], str(session.root / "home"))
         self.assertTrue(session.fixture)
+
+    def test_non_sdl_audio_is_null_and_cannot_find_a_product_sound_server(self):
+        session = self.session()
+        prepared = self.prepare(session)
+        environment = session.viewer_environment()
+        self.assertEqual(prepared["viewer_audio"], "null")
+        config = Path(environment["ALSA_CONFIG_PATH"])
+        self.assertEqual(config.parent, session.root)
+        self.assertEqual(config.read_text(), "pcm.!default { type null }\npcm.sysdefault { type null }\n")
+        for name in ("PULSE_SERVER", "PULSE_CLIENTCONFIG", "PIPEWIRE_RUNTIME_DIR"):
+            self.assertIn(str(session.root), environment[name])
+        self.assertIn("autospawn = no", Path(environment["PULSE_CLIENTCONFIG"]).read_text())
+        self.assertFalse(Path(environment["PULSE_SERVER"].removeprefix("unix:")).exists())
+        # Run the real ALSA playback path, with no driver or physical sound card.
+        for output in ("default", "sysdefault"):
+            played = subprocess.run(
+                ["aplay", "-q", "-D", output, "-t", "raw", "-f", "S16_LE", "-c", "2", "-r", "48000"],
+                input=b"\0" * 1920, env=environment, capture_output=True, timeout=5,
+            )
+            self.assertEqual(played.returncode, 0, played.stderr.decode())
 
     def test_pc_product_fixture_refuses_before_it_can_contact_the_products_x_server(self):
         for package in (None, "copied"):

@@ -896,6 +896,17 @@ fixture process or the directory is left, and also when a listed process
 belongs to the fixture's user, because it may be a fixture process that left
 its session.
 
+**Viewer sound is null.** Sound is the intentional difference from a product
+start: the arguments still match korrid, but the fixture never plays sound.
+SDL uses `SDL_AUDIODRIVER=dummy`. A non-SDL viewer uses an agent-owned
+`asound.conf` in the run directory with only null `default` and `sysdefault`
+PCMs, selected by `ALSA_CONFIG_PATH`. It includes no host configuration.
+Pulse uses a private nonexistent Unix socket and an agent-owned client
+configuration with autospawn off. PipeWire uses the run's runtime directory
+and a nonexistent remote name. The result records `viewer_fixture.audio`
+as `null` (a string). This keeps X11 VA-API from opening the host's sound or
+exiting because its default ALSA card is absent. This does not measure audio.
+
 **What the fixture does not prove.** It is not the product's sender. It does
 not use the product's KMS capture, its encoder settings, its pacing or its
 display. Sound is off. With both targets on one host the stream uses

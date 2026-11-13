@@ -1322,7 +1322,7 @@ def view_case(
         facts["live_game"]["viewer_at_start"] = prepared.get("live_games", [])
         if not on_display:
             # What draws the fixture's output; verdict keeps two renderers apart.
-            facts["viewer_fixture"] = {"renderer": prepared.get("renderer"), "private_x_namespace": private_x}
+            facts["viewer_fixture"] = {"renderer": prepared.get("renderer"), "private_x_namespace": private_x, "audio": prepared["viewer_audio"]}
         # Which viewer this run measures, and where it shows the stream.
         facts["viewer_ran"] = viewer_ran(
             plugin, paths["viewer"], DISPLAY if on_display else FIXTURE, copied=copied
