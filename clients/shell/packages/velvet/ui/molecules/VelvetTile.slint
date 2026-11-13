@@ -38,7 +38,7 @@ export component VelvetTile inherits Rectangle {
     // own flag for its pictures, sent with every one.
     // An animated place is written out from the tile itself, never through a property
     // worked out here (README, "What the interpreter taught us").
-    property <bool> lit: tile.shown && ((tile.focus-id != "" && tile.focused) || tile.lit) && Tokens.ring && !inert;
+    property <bool> lit: tile.shown && ((tile.focus-id != "" && tile.focused) || tile.lit) && !inert;
     // Focused, it grows from its foot; arriving, it comes in a little small and clears.
     property <bool> ready: tile.shown && (tile.poster.shown || tile.kind != "game" || tile.art-kind != "none");
     accessible-role: button;
@@ -51,8 +51,8 @@ export component VelvetTile inherits Rectangle {
         // An animated binding names its inputs itself (the component's `in` properties, the tokens,
         // its own geometry), never a property worked out from them: the shell's Slint can lose
         // the value of an animated binding that reads a derived property.
-        width: root.width * (!(root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "none")) ? 0.95 : (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && Tokens.ring && !root.inert && !root.fixed ? Tokens.focus-scale : 1);
-        height: root.height * (!(root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "none")) ? 0.95 : (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && Tokens.ring && !root.inert && !root.fixed ? Tokens.focus-scale : 1);
+        width: root.width * (!(root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "none")) ? 0.95 : (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && !root.inert && !root.fixed ? Tokens.focus-scale : 1);
+        height: root.height * (!(root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "none")) ? 0.95 : (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && !root.inert && !root.fixed ? Tokens.focus-scale : 1);
         animate width, height { duration: Tokens.t-focus; easing: cubic-bezier(0.16, 1, 0.3, 1); }
         clip: true;
         // In or out, never between for long: the renderer fades each part by itself, so a
@@ -169,8 +169,8 @@ export component VelvetTile inherits Rectangle {
             y: root.tile.badge-top ? self.x : parent.height - self.height - self.x;
             text: root.tile.badge;
             size: Math.clamp(root.height * 0.045, Tokens.tile-type-least, Tokens.tile-type-most);
-            opacity: (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && Tokens.ring && !root.inert && root.tile.badge != "" ? 1 : 0;
-            animate opacity { duration: Tokens.t-meta; delay: (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && Tokens.ring && !root.inert && root.tile.badge != "" ? Tokens.dwell : 0ms; easing: ease-out; }
+            opacity: (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && !root.inert && root.tile.badge != "" ? 1 : 0;
+            animate opacity { duration: Tokens.t-meta; delay: (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && !root.inert && root.tile.badge != "" ? Tokens.dwell : 0ms; easing: ease-out; }
         }
         // A tile on a row that is not the focused one steps back under a veil.
         Rectangle {

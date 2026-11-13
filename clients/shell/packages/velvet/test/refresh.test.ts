@@ -362,7 +362,8 @@ describe("a game Velvet draws changes outside the published window", () => {
 
   test("the open detail of the pick shows its art when it arrives", () => {
     const run = new Play(library())
-    run.press("confirm")
+    // Play holds the pick's focus; its card, Left of it, opens the detail.
+    run.press("left", "confirm")
     expect(run.view.page).toBe("detail")
     expect(run.view.detail.mark.key).toBe("g0")
     expect(run.view.stage.key).toBe("plate:g0")

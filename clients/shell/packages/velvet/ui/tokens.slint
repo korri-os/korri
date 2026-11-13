@@ -40,14 +40,14 @@ export global Tokens {
         page-w: 334, row-height: 37, panel-beside: true, panel-w: 216,
         key-w: 53, key-h: 48, key-gap: 2, keys-y: 211, curtain-w: 384, kicker: 29, empty-wide: false, pause-w: 280,
     };
-    // A tap or a drag came last, not a button (ADR 0055): the focus
-    // highlight hides until the next button press.
+    // A tap or a drag came last, not a button (ADR 0055). The highlight stays (owner,
+    // 2026-11-13: a tapped game must show it is chosen); the next button press brings a
+    // list the finger scrolled back to its focus.
     in-out property <bool> touching;
     // Reduced motion: every change lands at once.
     in-out property <bool> still;
 
     // ---- Derived inputs ----
-    out property <bool> ring: !touching;
     out property <length> unit: 1px;
     // How far a press may move before it is a drag and no longer a tap.
     out property <length> drag-start: 8px;

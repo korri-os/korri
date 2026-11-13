@@ -5,12 +5,12 @@
  *
  *  - A tap on a game tile moves the focus there; a second tap opens it.
  *  - A tap on a button does what Confirm does there.
- *  - While touch is in use the focus highlight hides (`touching`); the next
- *    button press brings it back, and brings a dragged row back to its focus.
+ *  - The focus highlight stays while touch is in use (a tapped game shows it
+ *    is chosen); `touching` says touch came last, and the next button press
+ *    brings a dragged row back to its focus.
  *  - A drag moves what is shown, never the focus.
- *  - A touch screen has no Back button: `wayBack` shows the chip wherever
- *    there is a level to go back to, and its tap is Back. A tap beside a
- *    sheet, or over the keyboard's field, is Back too.
+ *  - A tap on `back` is Back; a tap beside a sheet, or over the keyboard's
+ *    field, is Back too. There is no Back chip (owner, 2026-11-13).
  *  - Under a curtain, only the curtain's buttons answer.
  */
 import { describe, expect, test } from "bun:test"
@@ -33,11 +33,13 @@ describe("a tap", () => {
     expect(run.view.page).toBe("detail")
     expect(run.view.detail.mark.key).toBe("moss-and-stone")
   })
-  test("on Play: what Confirm does", () => {
+  test("on Play: what Confirm does, it plays; on the pick's card: its detail", () => {
     const run = home()
-    tap(run, "play")
-    expect(run.view.page).toBe("detail")
-    expect(tap(run, "d:play")).toEqual([{ _tag: "LaunchGame", gameId: "ember-road" }] as any)
+    expect(tap(run, "play")).toEqual([{ _tag: "LaunchGame", gameId: "ember-road" }] as any)
+    expect(run.view.page).toBe("home")
+    const bare = new Play(scenario("home-no-art").models[0])
+    tap(bare, "card")
+    expect(bare.view.page).toBe("detail")
   })
   test("on the Menu pill: the house menu; on a row of it: that row's page", () => {
     const run = home()
@@ -57,8 +59,8 @@ describe("a tap", () => {
   })
 })
 
-describe("the highlight", () => {
-  test("hides while touch is in use, and the next button press brings it back", () => {
+describe("touch in use", () => {
+  test("a tap or a drag says touch came last; the next button press says it no longer is", () => {
     const run = home()
     expect(run.view.touching).toBe(false)
     run.deliver({ _tag: "Touched" })
@@ -99,33 +101,23 @@ describe("a drag", () => {
     const before = JSON.stringify(run.view)
     run.deliver({ _tag: "Dragged", region: "grid", by: 2 })
     run.deliver({ _tag: "Dragged", region: "row", by: 0 })
-    expect(JSON.stringify({ ...run.view, touching: false, wayBack: false })).toBe(before)
+    expect(JSON.stringify({ ...run.view, touching: false })).toBe(before)
   })
 })
 
 describe("the way back", () => {
-  test("no chip while buttons are in use, and none where there is no level to go back to", () => {
-    const run = home()
-    expect(run.view.wayBack).toBe(false)
-    run.deliver({ _tag: "Touched" })
-    expect(run.view.wayBack).toBe(false)
-  })
-  test("the chip stands on the row, the lobby, a set, the detail and a list page; its tap is Back", () => {
+  test("a tap on back (Android's gesture arrives as Back) leaves the detail, the row and a list page", () => {
     const run = home()
     tap(run, "row:1")
-    expect(run.view.wayBack).toBe(true)
     tap(run, "row:1")
     expect(run.view.page).toBe("detail")
-    expect(run.view.wayBack).toBe(true)
     tap(run, "back")
     expect(run.view.page).toBe("home")
     expect(run.view.home.depth).toBe(1)
     tap(run, "back")
     expect(run.view.home.depth).toBe(0)
-    expect(run.view.wayBack).toBe(false)
     tap(run, "menu")
     tap(run, "m:settings")
-    expect(run.view.wayBack).toBe(true)
     tap(run, "back")
     expect(run.view.page).toBe("home")
   })

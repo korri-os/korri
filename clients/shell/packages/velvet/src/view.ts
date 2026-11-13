@@ -250,7 +250,6 @@ export function view(state: State, model: Model) {
     still: state.still,
     touching: state.touched,
     // A finger's way back, where there is a level to go back to.
-    wayBack: state.touched && (page === "set" || page === "detail" || page === "list" || (page === "home" && state.depth > 0)),
     layer: top,
     page,
     stage,

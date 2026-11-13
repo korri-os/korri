@@ -18,7 +18,7 @@ export component VelvetPill inherits Rectangle {
     // Under another layer: drawn, but no target.
     in property <bool> inert;
     // `focused` counts only on a pill that is a target now (see VelvetRow).
-    property <bool> lit: pill.shown && pill.focus-id != "" && pill.focused && Tokens.ring && !inert;
+    property <bool> lit: pill.shown && pill.focus-id != "" && pill.focused && !inert;
     property <bool> filled: lit || prompt;
     property <color> words: filled ? Tokens.ink : pill.danger ? Tokens.exit : pill.quiet ? Tokens.usher : Tokens.house-light;
     out property <length> natural: content.preferred-width + size * 2.6;
@@ -37,14 +37,14 @@ export component VelvetPill inherits Rectangle {
         height: parent.height + size * 0.48;
         border-radius: self.height / 2;
         background: Tokens.light-20;
-        opacity: (root.pill.shown && root.pill.focus-id != "" && root.pill.focused) && Tokens.ring && !root.inert ? 1 : 0;
+        opacity: (root.pill.shown && root.pill.focus-id != "" && root.pill.focused) && !root.inert ? 1 : 0;
         animate opacity { duration: Tokens.t-ring; easing: ease-in-out; }
     }
     Rectangle {
         width: parent.width;
         height: parent.height;
         border-radius: self.height / 2;
-        background: ((root.pill.shown && root.pill.focus-id != "" && root.pill.focused) && Tokens.ring && !root.inert) || root.prompt ? (root.pill.danger ? Tokens.exit : Tokens.house-light) : root.pill.quiet ? Tokens.clear : Tokens.light-10;
+        background: ((root.pill.shown && root.pill.focus-id != "" && root.pill.focused) && !root.inert) || root.prompt ? (root.pill.danger ? Tokens.exit : Tokens.house-light) : root.pill.quiet ? Tokens.clear : Tokens.light-10;
         border-width: root.filled || root.pill.quiet ? 0px : Tokens.hair * 1.5;
         border-color: Tokens.light-20;
         animate background { duration: Tokens.t-ring; easing: ease-in-out; }

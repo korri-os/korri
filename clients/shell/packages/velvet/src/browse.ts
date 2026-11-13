@@ -101,9 +101,16 @@ export function pressHome(state: State, button: Direction | "confirm" | "back", 
   }
   if (home.pick === undefined) return stay(state)
   if (state.depth === 0) {
+    // Play holds focus and A plays it (owner, 2026-11-13). The card beside it, Left of Play,
+    // opens the detail: where it plays, its saves, everything else.
+    const card = !hasHero(home.pick)
+    const onCard = card && state.onCard
     if (button === "up") return stay({ ...state, onMenu: true })
     if (button === "down" && row.length > 1) return stay({ ...state, depth: 1, rowAt: Math.max(1, Math.min(state.rowAt, row.length - 1)) })
-    if (button === "confirm") return { state, act: { t: "detail", game: home.pick } }
+    if (button === "left" && card) return stay({ ...state, onCard: true })
+    if (button === "right" && onCard) return stay({ ...state, onCard: false })
+    if (button === "back" && onCard) return stay({ ...state, onCard: false })
+    if (button === "confirm") return onCard ? { state, act: { t: "detail", game: home.pick } } : { state, act: detailButtons(home.pick, model)[0]!.act }
     return stay(state)
   }
   if (state.depth === 1) {
@@ -112,7 +119,7 @@ export function pressHome(state: State, button: Direction | "confirm" | "back", 
       const next = lineMove(at, row.length, button === "left" ? -1 : 1)
       return stay(next === undefined ? state : { ...state, rowAt: next })
     }
-    if (button === "up" || button === "back") return stay({ ...state, depth: 0, rowAt: at })
+    if (button === "up" || button === "back") return stay({ ...state, depth: 0, rowAt: at, onCard: false })
     if (button === "down") return stay(shelves.length === 0 ? state : { ...state, depth: 2, shelf: shelves[shelfAt(state, shelves)]!.key })
     const item = row[at]
     if (item === undefined) return stay(state)
@@ -133,7 +140,7 @@ export function pressHome(state: State, button: Direction | "confirm" | "back", 
     case "down":
       return stay(at >= shelves.length - 1 ? state : { ...state, shelf: shelves[at + 1]!.key })
     case "back":
-      return stay({ ...state, depth: 0 })
+      return stay({ ...state, depth: 0, onCard: false })
     case "confirm": {
       const item = shelf.items[column]
       if (item === undefined) return stay(state)
@@ -145,7 +152,8 @@ export function pressHome(state: State, button: Direction | "confirm" | "back", 
 /** A finger on a tile of the home or the lobby: it takes focus; on a game that had it already, it opens. */
 export function tapHome(state: State, target: string, model: Model): Step | undefined {
   if (target === "menu") return { state: { ...state, onMenu: true }, act: { t: "sheet", sheet: "menu" } }
-  if (target === "play") return pressHome({ ...state, onMenu: false, depth: 0 }, "confirm", model)
+  if (target === "play") return pressHome({ ...state, onMenu: false, depth: 0, onCard: false }, "confirm", model)
+  if (target === "card") return pressHome({ ...state, onMenu: false, depth: 0, onCard: true }, "confirm", model)
   if (target.startsWith("row:")) {
     const at = Number(target.slice(4))
     const item = rowItems(state, model)[at]
@@ -245,10 +253,11 @@ export function homeView(asked: Pictures, state: State, model: Model, plan: Plan
   const rowMark = rowGame === undefined ? NO_MARQUEE : rowGame.kind === "game"
     ? marqueeOf(asked, rowGame.game, { width: plan.rowMarkW, logoH: Math.max(24, plan.rowMarkH - plan.fact * 3.2), title: Math.min(plan.title, Math.max(24, (plan.rowMarkH - plan.fact * 3.2) / 2)), fact: plan.fact, mark: true, badge: false }, model.publishedAt)
     : { ...NO_MARQUEE, key: "all", ...fitMark("Library", plan.rowMarkW, plan), facts: factLines([{ icon: "grid", text: gamesWords(state.lists.total), strong: false }], plan.fact, plan.rowMarkW) }
-  // The pick's card is the focus (owner, 2026-11-13: the prototype's pick): it grows, takes the
-  // edge and shows its badge, and Play beside it is the filled prompt. With the hero as the
-  // stage there is no card, and the prompt carries the focus.
-  const cards = pick === undefined || hero ? [] : [gameTile(asked, pick, "pick", "play", onPick, 0)]
+  // Play holds the pick's focus (owner, 2026-11-13, on usu: A should feel like it plays).
+  // The card beside it takes focus with Left and opens the detail; with the hero as the
+  // stage there is no card.
+  const onCard = !hero && state.onCard
+  const cards = pick === undefined || hero ? [] : [gameTile(asked, pick, "pick", "card", onPick && onCard, 0)]
   const rowTiles: TileView[] = row.map(() => NO_TILE)
   const fillRow = () => {
     const standing = depth === 0 ? ROW_RESTS : ROW_UP
@@ -301,9 +310,7 @@ export function homeView(asked: Pictures, state: State, model: Model, plan: Plan
       depth,
       hero,
       mark,
-      play: pick === undefined ? NO_PILL : hero
-        ? pill(pick.resumable === true ? "Resume" : "Play", "pick", "play", onPick, { icon: "play" })
-        : { ...NO_PILL, shown: true, label: pick.resumable === true ? "Resume" : "Play", icon: "play" },
+      play: pick === undefined ? NO_PILL : pill(pick.resumable === true ? "Resume" : "Play", "pick", "play", onPick && !onCard, { icon: "play" }),
       menu: pill("Menu", "menu", "menu", live && state.onMenu, { icon: "menu", quiet: true }),
       clock: model.clockLabel ?? "",
       rowAt: state.scrolled?.row ?? rowAt,
@@ -639,10 +646,9 @@ export function detailButtons(game: Game, model: Model): readonly DetailButton[]
     }))
   } else {
     const only = places[0]
-    // One place: named when it is another device ("Play on aka", the prototype's Cinema).
-    const where = only?.label ?? whereOf(game)
-    const label = where === undefined || where === "" || where === "This device" || where === "Other devices" ? verb : `${verb} on ${where}`
-    buttons.push({ id: "d:play", label, icon: "play", quiet: false, act: send(only === undefined ? { _tag: "LaunchGame", gameId: game.id } : { _tag: "LaunchGame", gameId: game.id, launchLocationId: only.id }) })
+    // One place: the button says the verb, and the facts say where (owner, 2026-11-13:
+    // "Play on aka" on the button read as generated copy).
+    buttons.push({ id: "d:play", label: verb, icon: "play", quiet: false, act: send(only === undefined ? { _tag: "LaunchGame", gameId: game.id } : { _tag: "LaunchGame", gameId: game.id, launchLocationId: only.id }) })
   }
   if (game.saves?._tag === "Split") {
     const choose = game.saves.choose

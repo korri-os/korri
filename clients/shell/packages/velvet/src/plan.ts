@@ -176,14 +176,15 @@ export function plan(width: number, height: number): Plan {
   const fact = ft(21, 13)
   const label = ft(22, 13)
 
-  // Home.
-  const stripH = Math.round(clamp(H * 0.11, 44, 130))
+  // Home. The card and the strip under it are about 3 to 1 (owner, 2026-11-13, on usu: the
+  // prototype's 6 to 1 made the card loom and the games under it too small to read).
+  const stripH = Math.round(clamp(H * 0.17, 56, 200))
   const stripY = H - padY - stripH
   let posterH: number, posterX: number, posterY: number, gap: number
   let textX: number, textY: number, textW: number, textH: number
   let markH: number, pickTitle: number, rowH: number, rowY: number, rowMarkW: number
   if (!narrow) {
-    posterH = Math.round(Math.min(H * 0.66, stripY - padY * 1.6, (W * 0.36) / R))
+    posterH = Math.round(Math.min(H * 0.52, stripY - padY * 1.6, (W * 0.3) / R))
     posterX = padX
     posterY = Math.round(Math.max(padY, (stripY - posterH) * 0.45))
     gap = Math.round(Math.max(24, posterH * R * 0.16))
@@ -197,7 +198,7 @@ export function plan(width: number, height: number): Plan {
     rowY = Math.round(H * 0.46)
     rowMarkW = Math.round(W * 0.6)
   } else {
-    posterH = Math.round(Math.min(H * 0.42, ((W - 2 * padX) * 0.62) / R))
+    posterH = Math.round(Math.min(H * 0.36, ((W - 2 * padX) * 0.52) / R))
     posterX = Math.round((W - posterH * R) / 2)
     posterY = Math.round(padY * 1.3)
     gap = fs(24, 14)

@@ -47,7 +47,6 @@ const one = (component: string, props: string) => `${component} { ${props} }`
   const l = lit("atoms")
   const home = view("home"), keys = view("settings-text").keys as any[]
   const pills = view("detail-two-places").detailButtons as any[]
-  add("atoms", "VelvetBack", [{ name: "Shown", body: one("VelvetBack", "x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; shown: true;") }])
   add("atoms", "VelvetBadge", [
     { name: "Short", body: one("VelvetBadge", 'x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; text: "GBA";') },
     { name: "Long", body: one("VelvetBadge", 'x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; text: "Nintendo 64";') },

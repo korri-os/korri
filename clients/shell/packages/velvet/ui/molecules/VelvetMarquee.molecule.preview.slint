@@ -6,7 +6,7 @@ import { VelvetPreview } from "../preview-frame.slint";
 import { VelvetMarquee } from "VelvetMarquee.slint";
 
 export component Logo inherits VelvetPreview {
-    VelvetMarquee { x: Tokens.screen.pad-x * Tokens.unit; y: Tokens.screen.pad-y * Tokens.unit; width: Tokens.screen.hero-w * Tokens.unit; height: parent.height * 0.7; mq: { key: "ember-road", logo-shown: true, logo: @image-url("../../preview/art/logo-ember.png"), logo-w: 578, logo-h: 249, lines: 1, line1: "EMBER ROAD", size: 93, badge: "PC", facts: { count: 1, first: { count: 4, a: { icon: "resume", text: "Ready to resume", strong: true }, b: { icon: "clock", text: "2 hours ago" }, c: { icon: "watch", text: "61 h 19 min" }, d: { icon: "here", text: "This device" } } } }; }
+    VelvetMarquee { x: Tokens.screen.pad-x * Tokens.unit; y: Tokens.screen.pad-y * Tokens.unit; width: Tokens.screen.hero-w * Tokens.unit; height: parent.height * 0.7; mq: { key: "ember-road", logo-shown: true, logo: @image-url("../../preview/art/logo-ember.png"), logo-w: 453, logo-h: 195, lines: 1, line1: "EMBER ROAD", size: 93, badge: "PC", facts: { count: 1, first: { count: 4, a: { icon: "resume", text: "Ready to resume", strong: true }, b: { icon: "clock", text: "2 hours ago" }, c: { icon: "watch", text: "61 h 19 min" }, d: { icon: "here", text: "This device" } } } }; }
 }
 
 export component Title inherits VelvetPreview {

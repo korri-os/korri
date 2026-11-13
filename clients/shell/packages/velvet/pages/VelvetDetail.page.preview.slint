@@ -6,11 +6,11 @@ import { VelvetPreview } from "../ui/preview-frame.slint";
 import { VelvetDetail } from "VelvetDetail.slint";
 
 export component Cinema inherits VelvetPreview {
-    VelvetDetail { x: 0; y: 0; width: parent.width; height: parent.height; detail: { shown: true, hero: true, mark: { key: "ember-road", logo-shown: true, logo: @image-url("../preview/art/logo-ember.png"), logo-w: 499, logo-h: 215, lines: 1, line1: "EMBER ROAD", size: 95 }, badge: "PC", facts: { count: 1, first: { count: 4, a: { icon: "resume", text: "Ready to resume", strong: true }, b: { icon: "clock", text: "Played 2 hours ago" }, c: { icon: "watch", text: "61 h 19 min" }, d: { icon: "here", text: "This device" } } } }; cards: []; buttons: [{ shown: true, label: "Resume", icon: "play", focus-id: "d:play", focused: true }]; }
+    VelvetDetail { x: 0; y: 0; width: parent.width; height: parent.height; detail: {  }; cards: []; buttons: []; }
 }
 
 export component NoArt inherits VelvetPreview {
-    VelvetDetail { x: 0; y: 0; width: parent.width; height: parent.height; detail: { shown: true, hero: true, mark: { key: "ember-road", lines: 1, line1: "EMBER ROAD", size: 95 }, badge: "PC", facts: { count: 1, first: { count: 4, a: { icon: "resume", text: "Ready to resume", strong: true }, b: { icon: "clock", text: "Played 2 hours ago" }, c: { icon: "watch", text: "61 h 19 min" }, d: { icon: "here", text: "This device" } } } }; cards: []; buttons: [{ shown: true, label: "Resume", icon: "play", focus-id: "d:play", focused: true }]; }
+    VelvetDetail { x: 0; y: 0; width: parent.width; height: parent.height; detail: {  }; cards: []; buttons: []; }
 }
 
 export component LongTitle inherits VelvetPreview {

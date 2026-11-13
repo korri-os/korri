@@ -2,7 +2,7 @@
 // stands in view (a cut row at an edge shows more is there, and a fade
 // marks the edge). A finger scrolls it too (ADR 0055): it is a Flickable,
 // and the place focus gives it is set again whenever focus moves, or a
-// button brings the highlight back.
+// button follows touch.
 
 import { Tokens } from "../tokens.slint";
 import { Row } from "../types.slint";
@@ -19,7 +19,7 @@ export component VelvetRows inherits Rectangle {
     in-out property <length> focus-h;
     property <length> list-h: list.preferred-height;
     property <length> scroll: list-h <= self.height ? 0 : Math.clamp(focus-y + focus-h / 2 - self.height / 2, 0, list-h - self.height);
-    property <bool> ring: Tokens.ring;
+    property <bool> touching: Tokens.touching;
     out property <length> content: list-h;
     function follow() {
         flick.content-y = -scroll;
@@ -27,8 +27,8 @@ export component VelvetRows inherits Rectangle {
     init => { follow(); }
     changed scroll => { follow(); }
     changed focus-y => { follow(); }
-    changed ring => {
-        if (ring) {
+    changed touching => {
+        if (!touching) {
             follow();
         }
     }

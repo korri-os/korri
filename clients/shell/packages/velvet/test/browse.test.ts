@@ -208,17 +208,31 @@ describe("sort and filter", () => {
 })
 
 describe("the detail", () => {
-  test("Confirm opens it, Confirm again launches, Back closes", () => {
+  test("on the pick, Play holds focus and Confirm plays (owner, 2026-11-13)", () => {
     const run = new Play(model("home"))
+    expect(focus(run)?.focusId).toBe("play")
+    expect(run.press("confirm")).toEqual([{ _tag: "LaunchGame", gameId: "ember-road" }] as any)
+    expect(run.view.page).toBe("home")
+  })
+  test("Left reaches the pick's card; its Confirm opens the detail; Back closes it", () => {
+    const run = new Play(model("home-no-art"))
+    expect(focus(run)?.focusId).toBe("play")
+    run.press("left")
+    expect(focus(run)?.focusId).toBe("card")
     expect(tags(run.press("confirm"))).not.toContain("LaunchGame")
     expect(run.view.page).toBe("detail")
-    expect(run.view.stage.fill).toBe(true)
     expect(focus(run)?.focusId).toBe("d:play")
     run.press("back")
     expect(run.view.page).toBe("home")
-    // The pick's hero fills the stage too (the prototype).
+    run.press("right")
+    expect(focus(run)?.focusId).toBe("play")
+  })
+  test("a hero's pick has no card: its detail opens from the row, Confirm there launches", () => {
+    const run = new Play(model("home"))
+    run.press("down", "left")
+    expect(tags(run.press("confirm"))).not.toContain("LaunchGame")
+    expect(run.view.page).toBe("detail")
     expect(run.view.stage.fill).toBe(true)
-    run.press("confirm")
     expect(run.press("confirm")).toEqual([{ _tag: "LaunchGame", gameId: "ember-road" }] as any)
   })
   test("the detail is the next view: one press, no wait on Korri", () => {

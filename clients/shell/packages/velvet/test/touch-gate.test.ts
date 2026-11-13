@@ -12,8 +12,8 @@
  *  - VelvetTap is the one place a press becomes an activation: a drag never
  *    activates, a cancel completes nothing, and a lift the area did not see
  *    begin completes nothing.
- *  - A touch screen has no Back button: the roots hold the way back
- *    (VelvetBack, and a tap beside a sheet or over the keyboard's field).
+ *  - A tap beside a sheet or over the keyboard's field is Back (Android's
+ *    back gesture arrives as Back too; the Back chip went, owner 2026-11-13).
  */
 import { describe, expect, test } from "bun:test"
 import { componentsIn, isPreview, read, slintFiles, stripComments } from "./slint-source"
@@ -130,10 +130,8 @@ describe("what is not there takes no finger", () => {
 
 describe("the way back for a finger", () => {
   const main = source("main.slint")
-  test("the stage holds the Back chip, shown only while touch is in use", () => {
-    expect(main).toMatch(/VelvetBack\s*\{[^}]*shown: root\.way-back && root\.layer == "screen";/)
-    expect(source("ui/atoms/VelvetBack.slint")).toMatch(/target: root\.shown \? "back" : "";/)
-    expect(source("ui/atoms/VelvetBack.slint")).not.toMatch(/accessible-item-selectable/)
+  test("no Back chip: it floated over the design (owner, 2026-11-13)", () => {
+    expect(main).not.toMatch(/VelvetBack/)
   })
   test("a tap beside a sheet or over the keyboard's field is Back", () => {
     expect(main).toMatch(/if root\.layer == "sheet" \|\| root\.layer == "keyboard": VelvetTap\s*\{[^}]*target: "back";/)

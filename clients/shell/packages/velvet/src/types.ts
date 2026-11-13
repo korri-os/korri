@@ -326,6 +326,8 @@ export interface State {
   readonly depth: 0 | 1 | 2
   /** On the home's top line: the menu pill holds focus. */
   readonly onMenu: boolean
+  /** On the pick: its card holds focus, not Play (Left from Play; Confirm opens the detail). */
+  readonly onCard: boolean
   readonly rowAt: number
   /** The focused shelf's key, and each shelf's column. */
   readonly shelf: string

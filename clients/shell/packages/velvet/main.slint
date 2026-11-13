@@ -17,13 +17,12 @@
 // reports its id through `activated(target, at, released)`; `at` is the
 // finger's place along a range's track, 0 to 1 (`at < 0`: absent). A finger
 // that drags a set's rows sends `dragged("grid", by)` once for each whole
-// row. `touching` hides the focus edge while touch is in use, until the next
-// button press.
+// row. `touching`: touch came last; the next button press brings a list the
+// finger scrolled back to its focus.
 
 import { Tokens } from "ui/tokens.slint";
 import { Screen, Poster, Tile, Fact, FactLine, Facts, Marquee, Pill, Stage, Shelf, Row, Key, Keyboard, Step, Curtain, Sheet, Page, Home, Mark, Set, Detail, Empty, Notice } from "ui/types.slint";
 import { VelvetStage } from "ui/organisms/VelvetStage.slint";
-import { VelvetBack } from "ui/atoms/VelvetBack.slint";
 import { VelvetTap } from "ui/atoms/VelvetTap.slint";
 import { VelvetSheet } from "ui/organisms/VelvetSheet.slint";
 import { VelvetKeyboard } from "ui/organisms/VelvetKeyboard.slint";
@@ -93,7 +92,6 @@ export component Surface inherits Window {
     in property <[Pill]> curtain-buttons;
     in property <Notice> notice;
     // Touch is in use and there is a level to go back to: the way back shows.
-    in property <bool> way-back;
     // The page is in sight: the keyboard and the curtain take the house.
     property <bool> paged: layer == "screen" || layer == "sheet";
 
@@ -187,12 +185,6 @@ export component Surface inherits Window {
         panel-lines: root.list-panel-lines;
         tiles: root.list-tiles;
         inert: root.layer != "screen";
-        activated(target, at, released) => { root.activated(target, at, released); }
-    }
-    VelvetBack {
-        x: root.width - self.width - Tokens.screen.pad-x * Tokens.unit * 0.5;
-        y: root.height - self.height - Tokens.screen.pad-y * Tokens.unit * 0.5;
-        shown: root.way-back && root.layer == "screen";
         activated(target, at, released) => { root.activated(target, at, released); }
     }
     // A tap beside a sheet, or over the keyboard's field, is Back.

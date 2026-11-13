@@ -49,6 +49,7 @@ export function start(model: Model, preferences: Readonly<Record<string, string>
     lists: LISTS_START,
     depth: 0,
     onMenu: false,
+    onCard: false,
     rowAt: 1,
     shelf: "",
     columns: {},

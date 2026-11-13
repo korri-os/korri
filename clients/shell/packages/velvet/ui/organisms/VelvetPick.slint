@@ -6,9 +6,9 @@
 //   no hero                 the game's card stands at the left (over the
 //                           words when the window is narrow) and the words
 //                           beside it; a card that already names the game
-//                           is not named twice. The card is the focus: it
-//                           grows and takes the edge, and Play beside it is
-//                           the filled prompt (the prototype's pick).
+//                           is not named twice. Play holds the focus (A
+//                           plays); Left reaches the card, which opens the
+//                           detail.
 //
 // `cinema` is the detail: never a card (the prototype's Cinema); the facts
 // leave the mark for the stage's foot and show at once.
@@ -74,7 +74,7 @@ export component VelvetPick inherits Rectangle {
         pills: root.buttons;
         stack: root.stack;
         inert: root.inert;
-        prompt: !root.cinema;
+        prompt: false;
         size: root.button;
         activated(target, at, released) => { root.activated(target, at, released); }
     }

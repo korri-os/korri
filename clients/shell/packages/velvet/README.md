@@ -149,10 +149,12 @@ shell, `VELVET_FRAMES` (below) through the test harness.
 - Touch (ADR 0055): a `VelvetTap` over every target reports its id through
   the root's one `activated`. A game tile takes the focus on the first tap
   and opens on the second. Shelves and the row drag by whole tiles, a set by
-  whole rows (`dragged`). `Touched` hides the highlight until the next
-  button. A touch screen has no Back button: while touch is in use a round
-  chip stands in the lower right corner (`VelvetBack`, target `back`), and a
-  tap beside a sheet or over the keyboard's field is Back too.
+  whole rows (`dragged`). The highlight stays while touch is in use, so a
+  first tap visibly chooses a game (owner, 2026-11-13); `Touched` only says
+  touch came last, and the next button brings a dragged row back to focus.
+  Back is Android's gesture, or a tap beside a sheet or over the keyboard's
+  field; the round Back chip went (owner, 2026-11-13: it floated over the
+  design).
 - `Tick`: the stage drifts after two seconds of rest and stops on any press.
 - Images (ADR 0065): a picture is empty until it arrives. The no-art card is
   drawn under every picture, so there is never a hole. Only the detail cuts

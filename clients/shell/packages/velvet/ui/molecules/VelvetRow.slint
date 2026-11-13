@@ -26,7 +26,7 @@ export component VelvetRow inherits Rectangle {
     in property <bool> inert;
     in property <length> size: Tokens.screen.body * Tokens.unit;
     property <bool> target: (it.kind == "row" || it.kind == "range") && it.focus-id != "";
-    property <bool> lit: target && it.focused && Tokens.ring && !inert;
+    property <bool> lit: target && it.focused && !inert;
     property <bool> noted: it.note != "" && (lit || it.kind == "range");
     property <length> line: Math.max(Tokens.screen.row-height * Tokens.unit, size * 2.1);
     property <color> ink: lit ? Tokens.ink : it.danger ? Tokens.exit : Tokens.house-light;
@@ -50,7 +50,7 @@ export component VelvetRow inherits Rectangle {
         height: root.height;
         border-radius: Math.min(root.size * 0.55, Tokens.round-row);
         background: Tokens.house-light;
-        opacity: root.target && root.it.focused && Tokens.ring && !root.inert ? 1 : 0;
+        opacity: root.target && root.it.focused && !root.inert ? 1 : 0;
         animate opacity { duration: Tokens.t-ring; easing: ease-in-out; }
     }
     if root.it.kind == "head": Text {
