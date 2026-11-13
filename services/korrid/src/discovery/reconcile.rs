@@ -707,47 +707,82 @@ pub(crate) struct ArtworkGame {
 }
 pub(crate) fn artwork_games(
     readable_root: &Path,
+    private_root: &Path,
     registry: &crate::plugin::PluginRegistry,
 ) -> Result<Vec<ArtworkGame>, DiscoveryError> {
     let snapshot = Documents::read(readable_root)?.validate()?;
+    let private = PrivateState::read(private_root)?;
     Ok(snapshot
         .library
         .iter()
         .filter_map(|(id, game)| {
-            // Use the same release order and sources as Linux routes, without
-            // requiring an installed runner. An old folder release can have
-            // no location after replacement; absence alone is not readiness.
-            let key = game.releases.iter().find_map(|release| {
-                let key = release.identity.as_ref()?.value();
-                let located = snapshot.locations.get(key).is_some_and(|locations| {
-                    locations.iter().any(|location| {
-                        !matches!(location,
+            // Keep source-backed releases ahead of library-only identities,
+            // in the existing oldest-first library order (ADR 0032).
+            let key = game
+                .releases
+                .iter()
+                .find_map(|release| {
+                    let key = release.identity.as_ref()?.value();
+                    let located = snapshot.locations.get(key).is_some_and(|locations| {
+                        locations.iter().any(|location| {
+                            !matches!(location,
                             config::Location::File { discovery: Some(meta), .. }
                             | config::Location::FileSet { discovery: Some(meta), .. }
                             if meta.missing_since.is_some())
-                    })
-                });
-                let declared = registry.declared_hash(key).iter().any(|declared| {
-                    matches!(
-                        declared.release.file,
-                        Some(
-                            crate::plugin::DeclaredReleaseFile::Artifact(_)
-                                | crate::plugin::DeclaredReleaseFile::Package(_)
+                        })
+                    });
+                    let declared = registry.declared_hash(key).iter().any(|declared| {
+                        matches!(
+                            declared.release.file,
+                            Some(
+                                crate::plugin::DeclaredReleaseFile::Artifact(_)
+                                    | crate::plugin::DeclaredReleaseFile::Package(_)
+                            )
                         )
-                    )
-                });
-                (located
-                    || declared
-                    || crate::acquisition::acquired_game_content(
-                        readable_root,
-                        registry,
-                        &snapshot,
-                        id,
-                        key,
-                    )
-                    .is_some())
-                .then_some(key)
-            })?;
+                    });
+                    (located
+                        || declared
+                        || crate::acquisition::acquired_game_content(
+                            readable_root,
+                            registry,
+                            &snapshot,
+                            id,
+                            key,
+                        )
+                        .is_some())
+                    .then_some(key)
+                })
+                .or_else(|| {
+                    // A library lobby can have art before its content arrives.
+                    // Replacement can erase an old folder location, so retain
+                    // its existing journal provenance instead of treating that
+                    // historical release as an uninstalled lobby release.
+                    game.releases.iter().find_map(|release| {
+                        let identity = release.identity.as_ref()?;
+                        let key = identity.value();
+                        let folder_origin =
+                            !matches!(identity, config::library::LibraryIdentity::Provider { .. })
+                                && private.ownership.origins.contains_key(key);
+                        let folder_location =
+                            snapshot.locations.get(key).is_some_and(|locations| {
+                                locations.iter().any(|location| {
+                                    matches!(
+                                        location,
+                                        config::Location::File {
+                                            discovery: Some(_),
+                                            ..
+                                        } | config::Location::FileSet {
+                                            discovery: Some(_),
+                                            ..
+                                        }
+                                    )
+                                })
+                            });
+                        // The first pass found no non-missing location. Any
+                        // folder release left here is absent or only missing.
+                        (!folder_origin && !folder_location).then_some(key)
+                    })
+                })?;
             Some(ArtworkGame {
                 playable_id: id.clone(),
                 title: game.title.clone().unwrap_or_default(),
@@ -762,10 +797,11 @@ pub(crate) fn artwork_games(
 }
 pub(crate) fn current_artwork_game(
     readable_root: &Path,
+    private_root: &Path,
     registry: &crate::plugin::PluginRegistry,
     expected: &ArtworkGame,
 ) -> Result<Option<ArtworkGame>, DiscoveryError> {
-    Ok(artwork_games(readable_root, registry)?
+    Ok(artwork_games(readable_root, private_root, registry)?
         .into_iter()
         .find(|game| game == expected))
 }

@@ -1,0 +1,33 @@
+# Exact game records captured read-only from ibuki for #464, 2026-11-13.
+# No locations or cache are needed to identify these library releases.
+library:
+  2048gb:
+    args:
+      prepend: []
+      append: []
+    profiles: {}
+    title: 2048gb
+    releases:
+    - id: 3ea2376b15b3
+      system: gb
+      identity:
+        kind: hash
+        value: sha256:3ea2376b15b34bd26b10e6b31d2753bf8b086098dbdb5ee84d9c0f03d66d3d7f
+      args:
+        prepend: []
+        append: []
+  air-delivery:
+    args:
+      prepend: []
+      append: []
+    profiles: {}
+    title: Air Delivery
+    releases:
+    - id: original
+      system: pico8
+      identity:
+        kind: hash
+        value: sha256:683adaf19233595077a904465343c2bc4e38eebf17e4b57a111f001ff7b7a0a3
+      args:
+        prepend: []
+        append: []

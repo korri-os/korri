@@ -110,7 +110,7 @@ fn source_views_is_read_only_and_can_run_under_the_shared_write_lock() {
 
 #[test]
 fn enrichment_uses_available_replacement_without_discarding_release_history() {
-    let (root, _private, writer, mut report) = fixture();
+    let (root, private, writer, mut report) = fixture();
     let registry = crate::plugin_test_fixtures::claims_only_registry();
     writer.run(&report, &DiscoveryOptions::default()).unwrap();
     report.scanned[0].units[0].identity = ContentIdentity::Hash {
@@ -118,7 +118,7 @@ fn enrichment_uses_available_replacement_without_discarding_release_history() {
         sha1: format!("sha1:{}", "b".repeat(40)),
     };
     writer.run(&report, &DiscoveryOptions::default()).unwrap();
-    let games = artwork_games(root.path(), &registry).unwrap();
+    let games = artwork_games(root.path(), private.path(), &registry).unwrap();
     assert_eq!(games.len(), 1);
     assert_eq!(games[0].release_id, format!("sha256:{}", "b".repeat(64)));
     assert_eq!(
@@ -133,7 +133,9 @@ fn enrichment_uses_available_replacement_without_discarding_release_history() {
     );
     report.scanned[0].units.clear();
     writer.run(&report, &DiscoveryOptions::default()).unwrap();
-    assert!(artwork_games(root.path(), &registry).unwrap().is_empty());
+    assert!(artwork_games(root.path(), private.path(), &registry)
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -418,7 +420,7 @@ fn artwork_uses_acquired_content_identities_without_discovery_ownership() {
             .join(crate::acquisition::placement::ready_name(identity.value()).unwrap());
         fs::create_dir_all(&ready).unwrap();
         fs::write(ready.join("game.gba"), b"verified acquisition content").unwrap();
-        let game = artwork_games(root.path(), &registry)
+        let game = artwork_games(root.path(), private.path(), &registry)
             .unwrap()
             .into_iter()
             .find(|game| game.playable_id == id)
@@ -429,5 +431,112 @@ fn artwork_uses_acquired_content_identities_without_discovery_ownership() {
         assert!(game.release_fingerprint.starts_with("sha256:"));
         assert!(writer.published().unwrap().locations.is_empty());
     }
-    assert_eq!(artwork_games(root.path(), &registry).unwrap().len(), 3);
+    assert_eq!(
+        artwork_games(root.path(), private.path(), &registry)
+            .unwrap()
+            .len(),
+        3
+    );
+}
+
+fn ibuki_lobby_fixture() -> (
+    tempfile::TempDir,
+    tempfile::TempDir,
+    crate::plugin::PluginRegistry,
+) {
+    let root = tempfile::tempdir().unwrap();
+    let private = tempfile::tempdir().unwrap();
+    ensure_fixed_files(root.path()).unwrap();
+    fs::write(
+        root.path().join(LIBRARY_FILE_NAME),
+        include_str!("../../../tests/fixtures/artwork-library-lobby.yaml"),
+    )
+    .unwrap();
+    let package = root.path().join("starter-pack");
+    fs::create_dir(&package).unwrap();
+    fs::write(
+        package.join("plugin.ts"),
+        include_str!("../../../tests/fixtures/artwork-starter-pack.plugin.ts"),
+    )
+    .unwrap();
+    let registry = crate::plugin::PluginRegistry::from_installed(vec![
+        crate::plugin_installation::EnabledPackage {
+            id: "@korri:starter-pack".into(),
+            package,
+            files: BTreeMap::from([("cartridges".into(), root.path().join("cartridges"))]),
+            entry: "plugin.ts".into(),
+            sources: vec!["plugin.ts".into()],
+            requires: Vec::new(),
+            hosts: Vec::new(),
+            credential_host: None,
+        },
+    ])
+    .unwrap();
+    (root, private, registry)
+}
+
+#[test]
+fn artwork_includes_ibuki_library_only_and_starter_pack_games_before_download() {
+    let (root, private, registry) = ibuki_lobby_fixture();
+    let games = artwork_games(root.path(), private.path(), &registry).unwrap();
+    assert_eq!(
+        games
+            .iter()
+            .map(|g| g.playable_id.as_str())
+            .collect::<Vec<_>>(),
+        ["2048gb", "air-delivery"]
+    );
+    let snapshot = Documents::read(root.path()).unwrap().validate().unwrap();
+    assert!(snapshot.locations.is_empty());
+    assert!(!root.path().join("cache").exists());
+    for game in games {
+        let key = snapshot.library[&game.playable_id].releases[0]
+            .identity
+            .as_ref()
+            .unwrap()
+            .value();
+        assert_eq!(game.release_id, key);
+        assert_eq!(game.rom_identity, key);
+    }
+    let empty = crate::plugin::PluginRegistry::new(Vec::new(), Vec::<String>::new()).unwrap();
+    assert_eq!(
+        artwork_games(root.path(), private.path(), &empty)
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn a_source_backed_release_precedes_an_earlier_library_only_release_for_artwork() {
+    let (root, private, registry) = ibuki_lobby_fixture();
+    let mut snapshot = Documents::read(root.path()).unwrap().validate().unwrap();
+    let packaged = snapshot
+        .library
+        .remove("air-delivery")
+        .unwrap()
+        .releases
+        .remove(0);
+    let key = packaged.identity.as_ref().unwrap().value().to_owned();
+    snapshot
+        .library
+        .get_mut("2048gb")
+        .unwrap()
+        .releases
+        .push(packaged);
+    fs::write(
+        root.path().join(LIBRARY_FILE_NAME),
+        serde_yaml::to_string(&BTreeMap::from([("library", snapshot.library)])).unwrap(),
+    )
+    .unwrap();
+    let games = artwork_games(root.path(), private.path(), &registry).unwrap();
+    assert_eq!(games.len(), 1);
+    assert_eq!(games[0].release_id, key);
+    // With no source-backed release, the same oldest-first order applies.
+    let empty = crate::plugin::PluginRegistry::new(Vec::new(), Vec::<String>::new()).unwrap();
+    let games = artwork_games(root.path(), private.path(), &empty).unwrap();
+    assert_eq!(
+        games[0].release_id,
+        "sha256:3ea2376b15b34bd26b10e6b31d2753bf8b086098dbdb5ee84d9c0f03d66d3d7f"
+    );
 }

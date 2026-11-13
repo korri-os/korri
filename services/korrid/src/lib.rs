@@ -7750,6 +7750,7 @@ mod tests {
         wait_for_discovery_idle(app.clone()).await;
         let game = discovery::reconcile::artwork_games(
             readable.path(),
+            private.path(),
             &plugin_test_fixtures::installed(readable.path()),
         )
         .unwrap()

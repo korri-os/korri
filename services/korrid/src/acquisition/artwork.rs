@@ -414,17 +414,18 @@ impl ArtworkPass {
         if plugins.is_empty() {
             return report;
         }
-        let games = match reconcile::artwork_games(&self.readable_root, &registry) {
-            Ok(games) => games,
-            Err(error) => {
-                report.diagnostics.push(diagnostic(
-                    "EnrichmentCatalogUnavailable",
-                    &error.to_string(),
-                    None,
-                ));
-                return report;
-            }
-        };
+        let games =
+            match reconcile::artwork_games(&self.readable_root, &self.private_root, &registry) {
+                Ok(games) => games,
+                Err(error) => {
+                    report.diagnostics.push(diagnostic(
+                        "EnrichmentCatalogUnavailable",
+                        &error.to_string(),
+                        None,
+                    ));
+                    return report;
+                }
+            };
         for plugin in plugins {
             self.plugin_pass(plugin, &registry, &games, &mut report)
                 .await;
@@ -720,8 +721,13 @@ impl ArtworkPass {
         bytes: Vec<u8>,
     ) -> Result<bool, Stored> {
         let _guard = self.lock();
-        let Some(current) = reconcile::current_artwork_game(&self.readable_root, registry, game)
-            .map_err(|error| Stored::Catalog(error.to_string()))?
+        let Some(current) = reconcile::current_artwork_game(
+            &self.readable_root,
+            &self.private_root,
+            registry,
+            game,
+        )
+        .map_err(|error| Stored::Catalog(error.to_string()))?
         else {
             return Ok(false);
         };

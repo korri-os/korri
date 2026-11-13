@@ -232,6 +232,7 @@ impl Fixture {
     fn games(&self) -> Vec<ArtworkGame> {
         reconcile::artwork_games(
             self.readable.path(),
+            self.private.path(),
             &installed_with_art(
                 self.readable.path(),
                 art_package(self.readable.path(), &plugin_source(""), &[], None),
@@ -1187,4 +1188,63 @@ fn an_acquired_release_that_changes_during_download_does_not_store_stale_art() {
         .is_empty());
     fixture.image("/img/poster.png", png(60, 90));
     assert_eq!(fixture.pass().run().stored, 1);
+}
+
+#[test]
+fn library_lobby_games_get_art_without_downloads_or_installed_declarations() {
+    let fixture = Fixture::new(&[]);
+    fs::write(
+        fixture.readable.path().join("catalog/library.yaml"),
+        include_str!("../../tests/fixtures/artwork-library-lobby.yaml"),
+    )
+    .unwrap();
+    for slug in ["2048gb", "air-delivery"] {
+        fixture.candidates(
+            slug,
+            serde_json::json!([
+                { "role": "poster", "source": { "url": fixture.cdn("/img/poster.png") } }
+            ]),
+        );
+    }
+    fixture.image("/img/poster.png", png(60, 90));
+    assert!(!fixture.readable.path().join("cache").exists());
+    fixture.secrets().clear(ART_PLUGIN_ID).unwrap();
+    let missing = fixture.pass().run();
+    assert_eq!(codes(&missing), ["CredentialMissing"]);
+    assert_eq!((missing.attempted, missing.stored), (0, 0));
+    assert!(fixture.server.received().is_empty());
+    fixture.secrets().set(ART_PLUGIN_ID, SECRET).unwrap();
+    let report = fixture.pass().run();
+    assert_eq!((report.attempted, report.stored), (2, 2));
+    assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+    for title in ["2048gb", "Air Delivery"] {
+        let game = fixture.game(title);
+        assert_eq!(fixture.outcome(&game), Some(AttemptOutcome::Assigned));
+        assert!(fixture
+            .repository()
+            .matching_assignment(&owner_identity(&game), GameAssetRole::Poster)
+            .unwrap()
+            .is_some());
+    }
+    assert_eq!(fixture.requests_to("/search/").len(), 2);
+    assert_eq!(fixture.pass().run(), ArtworkReport::default());
+
+    // Even a release-record edit that keeps the content hash must drop art.
+    let before = fixture.game("2048gb");
+    let path = fixture.readable.path().join("catalog/library.yaml");
+    let mut document: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    document["library"]["2048gb"]["releases"][0]["id"] = "gb".into();
+    fs::write(path, serde_yaml::to_string(&document).unwrap()).unwrap();
+    let after = fixture.game("2048gb");
+    assert_eq!(before.release_id, after.release_id);
+    assert_ne!(before.release_fingerprint, after.release_fingerprint);
+    assert!(fixture
+        .repository()
+        .matching_assignment(&owner_identity(&after), GameAssetRole::Poster)
+        .unwrap()
+        .is_none());
+    let report = fixture.pass().run();
+    assert_eq!((report.attempted, report.stored), (1, 1));
+    assert_eq!(fixture.requests_to("/search/2048gb").len(), 2);
 }

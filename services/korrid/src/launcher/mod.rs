@@ -135,7 +135,8 @@ struct StoredArt {
 }
 
 fn stored_art(readable_root: &Path, private_root: &Path, registry: &PluginRegistry) -> StoredArt {
-    let Ok(games) = discovery::reconcile::artwork_games(readable_root, registry) else {
+    let Ok(games) = discovery::reconcile::artwork_games(readable_root, private_root, registry)
+    else {
         return StoredArt::default();
     };
     let repo = GameAssetRepository::new(private_root);
@@ -248,7 +249,7 @@ mod tests {
         let bare = listed(Some(private.path()));
         assert_eq!((bare.cover_asset_id, bare.media), (None, None));
 
-        let game = discovery::reconcile::artwork_games(root.path(), &registry)
+        let game = discovery::reconcile::artwork_games(root.path(), private.path(), &registry)
             .unwrap()
             .remove(0);
         let repository = GameAssetRepository::new(private.path());

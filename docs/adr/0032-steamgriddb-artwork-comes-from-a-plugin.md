@@ -389,20 +389,53 @@ owned by folder discovery. Acquired games and starter-pack acquisitions use
 that same library. No new persisted fields, wire types, provider identities,
 or fallback reads are introduced.
 
-`discovery::reconcile::artwork_games` selects the first release with an
-identity that has a non-missing saved location, a ready acquired or copied
-cache, or an enabled artifact/package declaration. These are the existing
-content sources used by `config/linux_routes.rs`. Library releases are ordered
-oldest first (`config/library.rs`). The selector uses that order without
-requiring an installed runner.
+**Coordinator decision for #464 (`guess: true`; the owner may overturn):**
+art follows the library shown to surfaces, including a lobby game whose
+content is not downloaded. A release identity is enough to own art; a current
+file, cache or enabled declaration is not required.
 
-A removed folder location is not proof of an acquired release: replacement
-can remove the old location while keeping the historical library release
-(`reconcile/change.rs::add_unit`). `acquisition/game.rs::acquired_game_dirs`
-provides the ready content keys instead. It reads the library release
-identities, provider links and existing cache layout; artwork adds no
-acquisition marker. `record_content` writes no saved location for an acquired
-game. A plugin that declares a key is still never called without it.
+`discovery::reconcile::artwork_games` uses two passes over the existing
+oldest-first `LibraryItemPayload.releases` order (`config/library.rs`):
+
+1. Preserve `ee2dc075c`'s source-backed selection: the first identity with a
+   non-missing saved location, a ready acquired/copied cache, or an enabled
+   Artifact/Package declaration. These are the existing content sources used
+   by `config/linux_routes.rs`. A declaration is enough here: the artifact
+   need not be downloaded, as with the existing library/launch gate.
+2. If that pass finds none, select the first release identity that is not a
+   missing folder release. This includes library-only records and an
+   unresolved AccountRoot declaration. No installed runner is required.
+
+The missing-folder guard uses only existing provenance. A File/FileSet
+location with `discovery` identifies folder content. The private discovery
+journal's `ownership.origins` also identifies content keys written by
+`reconcile/change.rs::add_unit`; its Provider identity keys come from
+`reconcile_providers`, so those are not classified as folder origins.
+Replacement can erase an old folder location while retaining the release
+and its origin. The fallback therefore must not treat an origin-backed
+content key with no remaining location as a never-downloaded lobby release.
+With no first-pass candidate, a release with folder provenance has no live
+location and is excluded. A later current release always wins before any
+fallback is considered. A game with only absent/missing folder releases
+remains unenriched, as before.
+
+Acquisition's `record_content` writes identities and provider links without
+folder origins or saved locations. Ibuki's captured `2048gb` library record
+has identity `sha256:3ea2376b…` even without a downloaded ROM. This is an
+honest source for the same four owner fields below; no new marker, persisted
+schema or identity rule is introduced. The existing journal is read by the
+pass, its under-lock revalidation and `launcher::stored_art` so all three
+make the same selection. A plugin declaring a key still makes no call
+without it.
+
+**Live diagnosis, 2026-11-13:** the installed starter-pack uses Package, not
+AccountRoot. Captured `ee2dc075c` selected all 83 ibuki games, including all
+31 acquired/declared games. Ibuki's active bundle was still running the
+`460b0c2f2` daemon, despite its system/CLI update. The per-game sources and
+pinned binary evidence are in
+[the ibuki artwork diagnosis](../research/2026-11-13-ibuki-artwork-catalog.md).
+The lobby extension is a separate product change, not the explanation for
+that stale-bundle deployment.
 
 The existing `AssetOwnerIdentity` rule is used for both sources:
 
