@@ -5,7 +5,7 @@ status: accepted
 # A device uses its own metadata first, and a peer's when it has none
 
 **Owner decision, 2026-11-13**, given after the first look at Velvet on usu
-(a Fold7 that only streams from peers). Verbatim:
+(a Galaxy Z Fold8 that only streams from peers). Verbatim:
 
 > The client is always the winner if it has the information needed. So in this
 > case, since there's no art, of course we would fall back to the remotes for
