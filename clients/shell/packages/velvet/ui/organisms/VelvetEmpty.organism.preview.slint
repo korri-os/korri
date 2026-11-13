@@ -6,15 +6,15 @@ import { VelvetPreview } from "../preview-frame.slint";
 import { VelvetEmpty } from "VelvetEmpty.slint";
 
 export component Invitation inherits VelvetPreview {
-    VelvetEmpty { x: 0; y: 0; width: parent.width; height: parent.height; empty: { shown: true, title-size: 79.2, menu: { shown: true, label: "Menu", icon: "menu", quiet: true, focus-id: "menu" }, clock: "21:47", ghosts: true }; title: ["THE STAGE IS", "YOURS"]; lines: ["Bring your first games in through a plugin. Once you play, the", "game you come back to waits for you right here."]; buttons: [{ shown: true, label: "Find games", icon: "plus", focus-id: "e:find", focused: true }, { shown: true, label: "Open settings", icon: "gear", quiet: true, focus-id: "e:settings" }]; }
+    VelvetEmpty { x: 0; y: 0; width: parent.width; height: parent.height; empty: { shown: true, title-size: 79.2, menu: { shown: true, label: "Menu", icon: "menu", quiet: true, focus-id: "menu" }, clock: "21:47", ghosts: true }; title: ["THE STAGE", "IS YOURS"]; lines: ["Bring your first games in through a plugin. Once you play, the", "game you come back to waits for you right here."]; buttons: [{ shown: true, label: "Find games", icon: "plus", focus-id: "e:find", focused: true }, { shown: true, label: "Open settings", icon: "gear", quiet: true, focus-id: "e:settings" }]; }
 }
 
 export component NoStore inherits VelvetPreview {
-    VelvetEmpty { x: 0; y: 0; width: parent.width; height: parent.height; empty: { shown: true, title-size: 79.2, menu: { shown: true, label: "Menu", icon: "menu", quiet: true, focus-id: "menu" }, clock: "21:47", ghosts: true }; title: ["THE STAGE IS", "YOURS"]; lines: ["Bring your first games in through a plugin. Once you play, the", "game you come back to waits for you right here."]; buttons: [{ shown: true, label: "Open settings", icon: "gear", focus-id: "e:settings", focused: true }]; }
+    VelvetEmpty { x: 0; y: 0; width: parent.width; height: parent.height; empty: { shown: true, title-size: 79.2, menu: { shown: true, label: "Menu", icon: "menu", quiet: true, focus-id: "menu" }, clock: "21:47", ghosts: true }; title: ["THE STAGE", "IS YOURS"]; lines: ["Bring your first games in through a plugin. Once you play, the", "game you come back to waits for you right here."]; buttons: [{ shown: true, label: "Open settings", icon: "gear", focus-id: "e:settings", focused: true }]; }
 }
 
 export component Error inherits VelvetPreview {
-    VelvetEmpty { x: 0; y: 0; width: parent.width; height: parent.height; empty: { shown: true, title-size: 79.2, menu: { shown: true, label: "Menu", icon: "menu", quiet: true, focus-id: "menu" }, clock: "21:47" }; title: ["THE LIBRARY DID", "NOT OPEN"]; lines: ["Korri could not read the library on this device. The storage it is", "on may be missing."]; buttons: [{ shown: true, label: "Try again", icon: "again", focus-id: "e:reload", focused: true }, { shown: true, label: "Open settings", icon: "gear", quiet: true, focus-id: "e:settings" }]; }
+    VelvetEmpty { x: 0; y: 0; width: parent.width; height: parent.height; empty: { shown: true, title-size: 79.2, menu: { shown: true, label: "Menu", icon: "menu", quiet: true, focus-id: "menu" }, clock: "21:47" }; title: ["THE LIBRARY", "DID NOT OPEN"]; lines: ["Korri could not read the library on this device. The storage it is", "on may be missing."]; buttons: [{ shown: true, label: "Try again", icon: "again", focus-id: "e:reload", focused: true }, { shown: true, label: "Open settings", icon: "gear", quiet: true, focus-id: "e:settings" }]; }
 }
 
 export component Loading inherits VelvetPreview {

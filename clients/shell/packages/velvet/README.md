@@ -19,13 +19,14 @@ table and its capability map are in `docs/design/surfaces/velvet/DIRECTION.md`.
 | `src/browse.ts`, `src/lists.ts` | Home, the row, the lobby, a set, the detail; the lists home keeps over the one catalog window. |
 | `src/pages.ts`, `src/settings.ts`, `src/curtain.ts`, `src/keys.ts` | Every other screen Korri publishes, as one list page; status and questions as the curtain; the keyboard. |
 | `src/art.ts`, `src/poster.ts`, `src/colour.ts` | Which picture a tile shows, the pixel budget, which no-art card a game gets, the stage light. |
-| `drawings/` | The no-art cards, drawn at build time. `draw.ts` is the geometry (a shape names a palette place, never a colour), `palettes.ts` the colours, `build.ts` writes the two files below. `bun packages/velvet/drawings/build.ts` in `clients/shell`; `velvet-check` runs it and fails on any difference. |
+| `drawings/` | The no-art cards, drawn at build time. `draw.ts` is the geometry (a shape names a palette place, never a colour), `palettes.ts` the colours, `plates.ts` each card's stage plate (a few soft ellipses), `build.ts` writes the two files below. Every card has one anatomy (owner, 2026-11-13, #423): the field (the top 58 of 90 units) holds the machine's art, the plate and its rule hold the title, always at its foot. An unknown system repeats the generic machine's parts. `bun packages/velvet/drawings/build.ts` in `clients/shell`; `velvet-check` runs it and fails on any difference. |
+| `src/plate.ts` | A no-art game's stage plate: its card's soft shapes in its colours, as an SVG with a Gaussian blur and a fine dither, set at half the window's size. The shell renders it once, on its image thread. |
 | `ui/drawings.slint`, `src/drawings.ts` | Generated. The view's side: `global Drawings`, every card's layers and every palette. The logic's side: each drawing's number, its title box and its ink rule. |
 | `src/systems.ts`, `src/drawings-slots.ts` | The machines Velvet has a drawing for; the palette's places. Shared by the logic and the build. |
 | `src/memo.ts` | The one rule for everything kept between calls: a kept answer is found by all it depends on, exactly, and forgetting it changes only time. Every module says there how to forget what it keeps. |
 | `src/fit.ts`, `src/measure.ts`, `src/words.ts` | Fitting caps titles and fact lines from the fonts' advance tables; words about time and size. |
 | `src/qr.ts` | The backup's QR code (own encoder, held equal to `qrcode` by test). |
-| `fonts/` | Big Shoulders ExtraBold (display, caps), Archivo semi-condensed 400 and 700; their OFL texts; `fonts/source/` the scripts that cut them. |
+| `fonts/` | Big Shoulders ExtraBold (display, caps) at opsz 72, and at opsz 28 as Big Shoulders Text for display type under 48 px (looser spacing; the fit measures with it); Archivo semi-condensed 400 and 700; their OFL texts; `fonts/source/` the scripts that cut them. |
 | `test/` | The gates and tests (`bun test packages/velvet/test` in `clients/shell`). |
 | `preview/` | `scenarios.ts` → `scenarios/*.json` (99 models with the presses to each screen), `fixtures/korri.json` (Korri's slices), `art/` (self-drawn test pictures and `build.py`), `previews.ts`, `shots.sh` (the real shell under Xvfb), `probe.sh` (the shell's probe over every scenario). |
 
@@ -163,8 +164,9 @@ shell, `VELVET_FRAMES` (below) through the test harness.
 
 ## The stage
 
-Nothing on the stage is blurred, live or not; the shell's renderer has no
-blur and the authoring gate forbids it. From the back:
+Nothing on the stage is blurred live; the shell's renderer has no blur and
+the authoring gate forbids it. A no-art game's plate is blurred once, as a
+picture, before it reaches the stage (`src/plate.ts`). From the back:
 
 1. House down, the window's ground.
 2. The stage light (`VelvetLight`): two radial gradients in the focused
@@ -174,9 +176,12 @@ blur and the authoring gate forbids it. From the back:
    changes. The colour is the art's (`color` of the hero, else the poster),
    else one of twelve gels by the title, at a brightness that keeps House
    light at 4.5 to 1 on its core (`src/colour.ts`).
-3. The hero, when there is one: a band across the top in its own shape,
-   with a linear gradient that takes its foot into the dark; the detail
-   cuts it to fill instead.
+3. The game's picture. A hero: the pick and the detail cut it to fill the
+   stage (the prototype); elsewhere a band across the top in its own shape,
+   with a linear gradient that takes its foot into the dark. A game with no
+   picture at all: its card lights the stage as a picture does (owner,
+   2026-11-13, #423), a plate of its own shapes and colours under a large
+   blur, cut to fill; the light under it takes the card's colour.
 4. The vignette (`VelvetScrim`), one overlay the size of the window at
    every size: a radial fall-off towards the corners, a linear gradient
    from the foot, and on a wide window a linear gradient from the left

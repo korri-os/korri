@@ -243,7 +243,7 @@ export function homeView(asked: Pictures, state: State, model: Model, plan: Plan
   }, model.publishedAt)
   const rowGame = depth === 1 ? row[state.rowAt] : undefined
   const rowMark = rowGame === undefined ? NO_MARQUEE : rowGame.kind === "game"
-    ? marqueeOf(asked, rowGame.game, { width: plan.rowMarkW, logoH: Math.max(24, plan.rowMarkH - plan.fact * 3.2), title: Math.min(plan.title, Math.max(24, (plan.rowMarkH - plan.fact * 3.2) / 2)), fact: plan.fact, mark: true, badge: false, lines: 2 }, model.publishedAt)
+    ? marqueeOf(asked, rowGame.game, { width: plan.rowMarkW, logoH: Math.max(24, plan.rowMarkH - plan.fact * 3.2), title: Math.min(plan.title, Math.max(24, (plan.rowMarkH - plan.fact * 3.2) / 2)), fact: plan.fact, mark: true, badge: false }, model.publishedAt)
     : { ...NO_MARQUEE, key: "all", ...fitMark("Library", plan.rowMarkW, plan), facts: factLines([{ icon: "grid", text: gamesWords(state.lists.total), strong: false }], plan.fact, plan.rowMarkW) }
   // The pick's card is the focus (owner, 2026-11-13: the prototype's pick): it grows, takes the
   // edge and shows its badge, and Play beside it is the filled prompt. With the hero as the

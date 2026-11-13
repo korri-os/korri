@@ -12,7 +12,7 @@
  */
 import { describe, expect, test } from "bun:test"
 import { hash } from "../src/colour"
-import { fitCaps } from "../src/fit"
+import { capsWidth, fitCaps } from "../src/fit"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { contrast } from "../src/colour"
@@ -232,5 +232,28 @@ describe("the hash that picks a card", () => {
       const fit = fitCaps(title, 400, 400, 20, 4)
       expect(fit.lines.join(" ").split(" ")).toEqual([...words])
     }
+  })
+})
+
+describe("display lines (the prototype sets them with text-wrap: balance)", () => {
+  test("the lines are balanced: the same count, none left short under a long one", () => {
+    const title = "Mario Kart Wii: Retro Rewind"
+    // Wide enough for "MARIO KART WII: RETRO" on one line: greedy breaking leaves "REWIND" alone.
+    const width = (capsWidth("Mario Kart Wii: Retro") + 0.05) * 60
+    const fit = fitCaps(title, width, 1000, 60, 10)
+    expect(fit.size).toBe(60)
+    expect(fit.lines).toEqual(["MARIO KART WII:", "RETRO REWIND"])
+  })
+  test("a title that fits one line stays on one line", () => {
+    expect(fitCaps("Ember Road", 2000, 1000, 60, 10).lines).toEqual(["EMBER ROAD"])
+  })
+  test("held to three lines, it sets smaller and keeps every word", () => {
+    const title = "The Elder Scrolls V: Skyrim Special Edition"
+    const free = fitCaps(title, 200, 1000, 60, 10)
+    const held = fitCaps(title, 200, 1000, 60, 10, 3)
+    expect(free.lines.length).toBeGreaterThan(3)
+    expect(held.lines.length).toBeLessThanOrEqual(3)
+    expect(held.size).toBeLessThan(free.size)
+    expect(held.lines.join(" ")).toBe(free.lines.join(" "))
   })
 })

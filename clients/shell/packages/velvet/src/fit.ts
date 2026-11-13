@@ -93,6 +93,7 @@ interface Fitted {
   readonly height: number
   readonly max: number
   readonly min: number
+  readonly most: number
   readonly fit: Fit
 }
 const fits = new Map<string, Fitted[]>()
@@ -101,27 +102,28 @@ const fits = new Map<string, Fitted[]>()
  * The largest size up to `max` at which `text`, wrapped by words, stands
  * inside `width` x `height`. Never under `min`: a title that cannot fit at
  * `min` is cut to the lines that do, the last one ending in an ellipsis.
+ * `most` holds it to that many lines: it sets smaller before it takes another.
  */
-export function fitCaps(text: string, width: number, height: number, max: number, min = 1): Fit {
+export function fitCaps(text: string, width: number, height: number, max: number, min = 1, most = Infinity): Fit {
   let known = fits.get(text)
   if (known !== undefined) {
     for (let i = 0; i < known.length; i++) {
       const one = known[i]!
-      if (one.width === width && one.height === height && one.max === max && one.min === min) return one.fit
+      if (one.width === width && one.height === height && one.max === max && one.min === min && one.most === most) return one.fit
     }
   }
-  const fit = fitCapsOnce(text, width, height, max, min)
+  const fit = fitCapsOnce(text, width, height, max, min, most)
   if (known === undefined || known.length >= 8) {
     if (fits.size > 2000) fits.clear()
     known = []
     fits.set(text, known)
   }
-  known.push({ width, height, max, min, fit })
+  known.push({ width, height, max, min, most, fit })
   return fit
 }
 
 /** `fitCaps` without its memory, for a caller that keeps the answer itself (a game's card is fitted once and kept by the game). */
-export function fitCapsOnce(text: string, width: number, height: number, max: number, min = 1): Fit {
+export function fitCapsOnce(text: string, width: number, height: number, max: number, min = 1, most = Infinity): Fit {
   // In caps from the start: the words are measured and set as they will be drawn.
   const words = wordsOf(caps(text))
   // The search works on numbers: each word's width once, a space's width between them
@@ -145,7 +147,7 @@ export function fitCapsOnce(text: string, width: number, height: number, max: nu
       }
     }
     if (line > widest) widest = line
-    return widest * size <= width && lines * size * DISPLAY_LINE <= height
+    return widest * size <= width && lines <= most && lines * size * DISPLAY_LINE <= height
   }
   let low = min
   let high = Math.max(min, max)
@@ -163,7 +165,37 @@ export function fitCapsOnce(text: string, width: number, height: number, max: nu
   }
   let best: Fit | undefined
   if (found !== undefined) {
-    // The lines at that size, by the same sums.
+    // How many lines the words take at `size` in `measure`, by the same sums.
+    const count = (size: number, measure: number): number => {
+      let lines = 1
+      let line = widths[0] ?? 0
+      for (let i = 1; i < widths.length; i++) {
+        const tried = line + space + widths[i]!
+        if (tried * size <= measure) line = tried
+        else {
+          lines++
+          line = widths[i]!
+        }
+      }
+      return lines
+    }
+    // Balanced, as the prototype sets its display type (`text-wrap: balance`): the
+    // narrowest measure that keeps the same number of lines, so no line is left short
+    // under a long one ("MARIO KART WII: / RETRO REWIND", not "… RETRO / REWIND").
+    let measure = width
+    const many = count(found, width)
+    if (many > 1) {
+      let low = 0
+      for (let i = 0; i < widths.length; i++) low = Math.max(low, widths[i]! * found)
+      let high = width
+      for (let i = 0; i < 12 && high - low > 0.5; i++) {
+        const mid = (low + high) / 2
+        if (count(found, mid) <= many) high = mid
+        else low = mid
+      }
+      measure = high
+    }
+    // The lines at that size and measure.
     const lines: string[] = []
     let text = ""
     let line = 0
@@ -172,7 +204,7 @@ export function fitCapsOnce(text: string, width: number, height: number, max: nu
       if (text === "" ) {
         text = words[i]!
         line = widths[i]!
-      } else if (tried * found <= width) {
+      } else if (tried * found <= measure) {
         text += " " + words[i]!
         line = tried
       } else {
@@ -189,7 +221,7 @@ export function fitCapsOnce(text: string, width: number, height: number, max: nu
     // ends; then the lines that fit are kept, and the last one says more was there.
     const pieces = words.flatMap(word => split(word, min, width))
     const lines = wrap(pieces, min, width)
-    const room = Math.max(1, Math.floor(height / (min * DISPLAY_LINE)))
+    const room = Math.max(1, Math.min(most, Math.floor(height / (min * DISPLAY_LINE))))
     const kept = lines.slice(0, room)
     if (lines.length > room && kept.length > 0) kept[kept.length - 1] = cut(`${kept[kept.length - 1]}…`, min, width, true)
     best = { size: min, lines: kept.map(caps) }

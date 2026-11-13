@@ -467,7 +467,6 @@ export interface MarqueeBox {
   /** Draw the mark (logo or title); false beside a card that already names the game. */
   readonly mark: boolean
   readonly badge: boolean
-  readonly lines?: number
 }
 
 /** The shape a usual logo has (about 2.3 to 1): the one that stands as tall as its box. */
@@ -496,9 +495,8 @@ export function logoBox(width: number, height: number, boxW: number, boxH: numbe
 export function marqueeOf(asked: Pictures, game: Game, box: MarqueeBox, publishedAt: number | undefined, facts: readonly FactView[] = factsOf(game, publishedAt)): MarqueeView {
   const wanted = box.mark ? mediaOf(game, "logo") : undefined
   const logo = wanted !== undefined && take(asked, wanted.url, wanted.width, wanted.height) ? wanted : undefined
-  const most = box.lines ?? 3
-  const fit = box.mark ? fitCaps(game.title, box.width, Math.max(box.title, box.logoH), box.title, Math.min(box.title, 18)) : undefined
-  const lines = fit === undefined ? [] : fit.lines.slice(0, Math.min(3, Math.max(most, 1)))
+  const fit = box.mark ? fitCaps(game.title, box.width, Math.max(box.title, box.logoH), box.title, Math.min(box.title, 18), 3) : undefined
+  const lines = fit === undefined ? [] : fit.lines
   const mark = logo === undefined ? { width: 0, height: 0 } : logoBox(logo.width, logo.height, box.width * 0.92, box.logoH)
   const badge = box.badge ? game.system ?? "" : ""
   const lead = badge === "" ? 0 : box.fact * (1.6 + textWidth(badge, true))
