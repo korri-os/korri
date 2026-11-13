@@ -795,6 +795,29 @@ class Session:
         self.cursor = len(read_plain(self.home() / "sunshine.log"))
         return {"run_folder": str(self.root), "source_pid": source.pid}
 
+    def begin(self) -> dict:
+        """Start a turn without restarting the private sender or its namespace."""
+        self.check()
+        self.inputs, self.appeared, self.gone = input_devices(), set(), set()
+        self.units = product_units() if self.watch_games else None
+        self.facts["live_games_at_start"] = live_games() if self.watch_games else []
+        assert self.root is not None
+        (self.root / "source.out").unlink(missing_ok=True)
+        return {"live_games": self.facts["live_games_at_start"], "input_rule": self.input_rule}
+
+    def checkpoint(self) -> dict:
+        """Stop this turn's source and check guards; session cleanup is still due."""
+        self.stop("source")
+        self.check()
+        return {
+            "pass": True,
+            "live_games": live_games() if self.watch_games else [],
+            "product_units": units_record(self.units) if self.units_read else None,
+            "new_input_devices": self.new_inputs(),
+            "gone_input_devices": sorted(self.gone),
+            "input_rule": self.input_rule,
+        }
+
     def handle(self, request: dict) -> dict:
         operation = request["operation"]
         if operation == "discover":
@@ -807,6 +830,10 @@ class Session:
             return self.close()
         if self.root is None:
             raise RuntimeError("sender fixture is not prepared")
+        if operation == "begin":
+            return self.begin()
+        if operation == "checkpoint":
+            return self.checkpoint()
         if operation == "wake":
             # A headless output is always on.
             return output(self.sway_message("-t", "get_outputs"))

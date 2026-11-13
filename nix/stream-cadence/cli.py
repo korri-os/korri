@@ -572,7 +572,7 @@ PACKAGE_OPTION = "--viewer-package"
 PRODUCT_MAPPING = "share/moonlight/korri-inputplumber-gamecontrollerdb.txt"
 
 
-def product_package(path: str) -> dict:
+def product_package(path: str, option: str = PACKAGE_OPTION) -> dict:
     """The product viewer package that the build host names: its binary and its mapping.
 
     A device with no viewer plugin, as aka, must not get one installed. The
@@ -582,12 +582,12 @@ def product_package(path: str) -> dict:
     package = Path(path.rstrip("/"))
     if package.parent != NIX_STORE or not package.is_dir():
         raise Refusal(
-            f"{PACKAGE_OPTION} {path} is not a store path on this host: give the package itself, a directory directly under {NIX_STORE}. Bring it here with nix copy from a device or a cache that holds it."
+            f"{option} {path} is not a store path on this host: give the package itself, a directory directly under {NIX_STORE}. Bring it here with nix copy from a device or a cache that holds it."
         )
     for needed in ("bin/moonlight", PRODUCT_MAPPING):
         if not (package / needed).is_file():
             raise Refusal(
-                f"{PACKAGE_OPTION} {path} is no product viewer package: it has no {needed}."
+                f"{option} {path} is no product viewer package: it has no {needed}."
             )
     return {
         "package": str(package),
@@ -1127,6 +1127,7 @@ def view_case(
     directory: Path,
     certificate: str | None,
     index: int,
+    session: dict | None = None,
 ) -> dict:
     record: dict = {
         "label": directory.name,
@@ -1138,6 +1139,8 @@ def view_case(
     facts["valid"] = False
     facts["imported_store_paths"] = args.imported_store_paths
     facts["run_index"] = index
+    if session is not None:
+        facts["turn"] = {"order": args.turn_order, "side": args.turn_side}
     facts["bridge_uncertainty_ms"] = None
     samples: list[dict] = []
     sender_looks: list[dict | None] = []
@@ -1234,7 +1237,7 @@ def view_case(
                 refused = panel_refusal(steady_refresh_mhz(fps) / 1000, viewer_refresh)
                 if refused:
                     raise Refusal(refused)
-            built = sender.request(
+            built = (session or {}).get("sender") or sender.request(
                 "prepare",
                 sway=paths["sway"],
                 sunshine=paths["sunshine"],
@@ -1243,6 +1246,10 @@ def view_case(
                 height=height,
                 fps=fps,
             )
+            if session is not None:
+                session["sender"] = built
+                begun = sender.request("begin")
+                built["facts"]["live_games_at_start"] = begun["live_games"]
             facts.update(built["facts"])
             facts["live_game"]["sender_at_start"] = facts.pop("live_games_at_start", [])
             # `record`: an entry under /dev/input during the run is no fault,
@@ -1295,7 +1302,7 @@ def view_case(
             sender_host=host,
             loopback=loopback,
         )
-        prepared = viewer.request(
+        prepared = (session or {}).get("viewer") or viewer.request(
             "prepare",
             fixture=not on_display,
             # The plugin's own binary in the fixture gets korrid's environment there.
@@ -1319,6 +1326,10 @@ def view_case(
             private_pair=args.sender_fixture,
             pair_namespace=facts.get("pair_namespace"),
         )
+        if session is not None:
+            session["viewer"] = prepared
+            begun = viewer.request("begin")
+            prepared["live_games"] = begun["live_games"]
         facts["live_game"]["viewer_at_start"] = prepared.get("live_games", [])
         if not on_display:
             # What draws the fixture's output; verdict keeps two renderers apart.
@@ -1328,7 +1339,7 @@ def view_case(
             plugin, paths["viewer"], DISPLAY if on_display else FIXTURE, copied=copied
         )
         moonlight = facts["viewer_ran"]["moonlight"]
-        if args.sender_fixture:
+        if args.sender_fixture and not (session or {}).get("paired"):
             # Pairing replaces the certificate grant. The viewer binary of this
             # run shows a PIN, and the sender's agent posts it to its Sunshine.
             pin = viewer.request(
@@ -1345,6 +1356,8 @@ def view_case(
             )["pin"]
             sender.request("pin", pin=pin)
             viewer.request("paired")
+            if session is not None:
+                session["paired"] = True
         request = [
             "-verbose",
             "-width",
@@ -1608,7 +1621,7 @@ def view_case(
         }
         for name, remote in (("viewer_restore", viewer), ("restore", sender)):
             try:
-                facts[name] = remote.close()
+                facts[name] = remote.request("checkpoint") if session is not None else remote.close()
             except Exception as error:
                 facts[name] = dict(failed, errors=[str(error)])
         if "live_game" in facts:
@@ -1637,7 +1650,13 @@ def view_case(
             facts["error"] = (
                 "Device restore check failed. Stop device work and inspect restore evidence."
             )
-        (directory / "result.json").write_text(json.dumps(record, indent=2) + "\n")
+        saved = record
+        if session is not None and facts["valid"]:
+            # A checkpoint is not cleanup. No persisted run is valid before the
+            # shared pair has actually gone and both final restores have passed.
+            saved = {**record, "discovered": {**facts, "valid": False,
+                     "error": "Private pair session cleanup is pending."}}
+        (directory / "result.json").write_text(json.dumps(saved, indent=2) + "\n")
         if "source_counter" in record:
             print(summary(record), flush=True)
             measured = record["viewer"]
@@ -1648,12 +1667,32 @@ def view_case(
                 f"output_repeats={measured['output_repeats']}",
                 flush=True,
             )
-        if not restored:
+        if not restored and session is None:
             raise Refusal(facts["error"])
     return record
 
 
+def view_order(runs: int, candidate: bool) -> list[str]:
+    return [side for _ in range(runs) for side in (("baseline", "candidate") if candidate else ("baseline",))]
+
+
+def restore_view_session(results: list[dict], cleanup: dict) -> None:
+    """Apply the pair's final cleanup to every turn, retaining each checkpoint."""
+    for row in results:
+        facts = row["discovered"]
+        for name in ("restore", "viewer_restore"):
+            checkpoint = facts[name]
+            final = cleanup.get(name, {"pass": False})
+            facts[name] = {**final, **checkpoint, "session_cleanup": final,
+                           "pass": checkpoint["pass"] and final["pass"]}
+            if not facts[name]["pass"]:
+                facts["valid"] = False
+                facts["error"] = "Device restore check failed. Stop device work and inspect restore evidence."
+
+
 def view(args: argparse.Namespace) -> int:
+    if args.candidate_package and not (args.viewer_package and args.sender_fixture):
+        raise Refusal("--candidate-package requires --viewer-package and --sender-fixture.")
     sender_target, sender_options = endpoint(args.sender, args.ssh_option)
     viewer_target, viewer_options = endpoint(args.viewer, args.ssh_option)
     if sender_target is None and not args.sender_fixture:
@@ -1693,6 +1732,7 @@ def view(args: argparse.Namespace) -> int:
     # copied like the other pieces, and run in the viewer fixture. Checked
     # before any device is asked.
     copied = product_package(args.viewer_package) if args.viewer_package else None
+    candidate = product_package(args.candidate_package, "--candidate-package") if args.candidate_package else None
     sender_agent, sender_paths = built(
         sender_target,
         sender_options,
@@ -1738,18 +1778,20 @@ def view(args: argparse.Namespace) -> int:
             return Remote(shlex.split(command), log, detached=True)
         return Remote(["ssh", *options, target, command], log)
 
-    if copied:
+    for package in (copied, candidate):
+        if package is None:
+            continue
         # Who has signed it in this host's store: the publisher, and after the
         # first copy also this host's own cache key, which deliver adds.
-        copied["signed_by"] = signer_names(
+        package["signed_by"] = signer_names(
             execute(
-                ["nix", "path-info", "--sigs", "--json", copied["package"]], timeout=60
+                ["nix", "path-info", "--sigs", "--json", package["package"]], timeout=60
             ).stdout
         )
-        copied["copied_from"] = socket.gethostname()
+        package["copied_from"] = socket.gethostname()
         if viewer_target is not None:
-            deliver(viewer_target, viewer_options, [copied["package"]])
-        seat_paths = [*seat_paths, copied["package"]]
+            deliver(viewer_target, viewer_options, [package["package"]])
+        seat_paths = [*seat_paths, package["package"]]
     args.product_viewer = copied
     args.imported_store_paths = sorted(set(sender_paths + seat_paths))
     args.out = (
@@ -1762,8 +1804,8 @@ def view(args: argparse.Namespace) -> int:
     results: list[dict] = []
     with contextlib.ExitStack() as held:
         certificate = None
-        # The sender fixture has no certificate grant. Each run pairs a key pair
-        # that the viewer makes in its own run directory.
+        # The sender fixture has no certificate grant. The viewer makes its own
+        # keys: per run normally, or once for a session measured in turns.
         if not args.sender_fixture:
             args.keydir.mkdir(mode=0o700, parents=True, exist_ok=True)
             lock = held.enter_context((args.keydir / "lock").open("a"))
@@ -1775,37 +1817,61 @@ def view(args: argparse.Namespace) -> int:
                 ) from error
             certificate = keypair(args.keydir)
         print("Results:", args.out, flush=True)
-        for index in range(args.runs):
-            directory = args.out / f"run-{index + 1}"
-            directory.mkdir()
-            remotes = [
-                agent(
-                    sender_target, sender_options, sender_agent, directory / "device-agent.log"
-                ),
-                agent(
-                    viewer_target, viewer_options, seat_agent, directory / "viewer-agent.log"
-                ),
-            ]
-            try:
-                result = view_case(
-                    args, remotes[0], remotes[1], paths, directory, certificate, index
-                )
+        remotes: list[Remote] = []
+        session: dict | None = {} if candidate else None
+
+        def save() -> None:
+            for side in (("baseline", "candidate") if candidate else ("baseline",)):
+                destination = args.out / side if candidate else args.out
+                destination.mkdir(parents=True, exist_ok=True)
+                selected = [row for row in results if row["discovered"]["turn"]["side"] == side] if candidate else results
+                (destination / "results.json").write_text(json.dumps(selected, indent=2) + "\n")
+            for row in results:
+                destination = args.out / row["discovered"]["turn"]["side"] if candidate else args.out
+                (destination / row["label"] / "result.json").write_text(json.dumps(row, indent=2) + "\n")
+
+        try:
+            for order, side in enumerate(view_order(args.runs, bool(candidate))):
+                index = order // 2 if candidate else order
+                args.product_viewer = candidate if side == "candidate" else copied
+                args.turn_order, args.turn_side = order + 1, side
+                directory = (args.out / side if candidate else args.out) / f"run-{index + 1}"
+                directory.mkdir(parents=True)
+                if not remotes or session is None:
+                    remotes = [
+                        agent(sender_target, sender_options, sender_agent, directory / "device-agent.log"),
+                        agent(viewer_target, viewer_options, seat_agent, directory / "viewer-agent.log"),
+                    ]
+                if candidate:
+                    print(f"Turn {order + 1}: {side}/{directory.name}", flush=True)
+                try:
+                    result = view_case(
+                        args, remotes[0], remotes[1], paths, directory, certificate, index, session
+                    )
+                except BaseException:
+                    # A signal or failed checkpoint still leaves its run in the
+                    # batch, with the same final session restore as earlier turns.
+                    if (directory / "result.json").exists():
+                        results.append(json.loads((directory / "result.json").read_text()))
+                    raise
                 results.append(result)
                 if not result["discovered"]["valid"]:
                     raise Refusal(result["discovered"]["error"])
-            except Exception:
-                for remote in remotes:
-                    if not remote.closed:
-                        # EOF also triggers device cleanup if initialization refused.
-                        if remote.process.stdin and not remote.process.stdin.closed:
-                            remote.process.stdin.close()
-                        remote.process.wait(timeout=30)
-                        remote.log.close()
-                raise
-            finally:
-                (args.out / "results.json").write_text(
-                    json.dumps(results, indent=2) + "\n"
-                )
+        finally:
+            # One real cleanup for a pair measured in turns. Every run keeps its
+            # own checkpoint, plus this shared session's complete restore proof.
+            cleanup: dict = {}
+            for name, remote in zip(("restore", "viewer_restore"), remotes):
+                if not remote.closed:
+                    try:
+                        cleanup[name] = remote.close()
+                    except Exception as error:
+                        cleanup[name] = {"pass": False, "errors": [str(error)]}
+            if session is not None:
+                restore_view_session(results, cleanup)
+            save()
+        if any(not row["discovered"]["valid"] for row in results):
+            raise Refusal("Device restore check failed. Stop device work and inspect restore evidence.")
     return 0
 
 
@@ -2050,6 +2116,10 @@ def parser() -> argparse.ArgumentParser:
     watch.add_argument(
         "--viewer-package",
         help="a product viewer package in this host's Nix store (the plugin's moonlight-embedded-korri) to copy to a viewer device that has no viewer plugin and to run in the viewer fixture there, with korrid's arguments and environment",
+    )
+    watch.add_argument(
+        "--candidate-package",
+        help="copy a second viewer package and alternate baseline then candidate, --runs each, in one private sender session; requires --viewer-package and --sender-fixture",
     )
     watch.add_argument("--ssh-option", action="append", default=[])
     watch.add_argument("--stream-host", help="sender address as this host reaches it")

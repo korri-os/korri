@@ -857,6 +857,43 @@ class Session:
             "viewer_audio": "null",
         }
 
+    def begin(self) -> dict:
+        """Keep the paired identity and compositor, but no earlier turn's evidence."""
+        self.check()
+        assert self.root is not None
+        if not self.fixture or not self.beside_game:
+            raise RuntimeError("Only a private pair can reuse the viewer session.")
+        for name in ("viewer", "capture", "pair"):
+            if name in self.processes:
+                raise RuntimeError(f"{name} still runs at the next turn")
+        for name in ("viewer.log", "viewer.earlier.log", "capture.log", "pair.log"):
+            (self.root / name).unlink(missing_ok=True)
+        for name in ("display.csv", "display.rows", "probe.pgm"):
+            (self.home() / name).unlink(missing_ok=True)
+        self.units = product_units() if self.watch_games else None
+        return {"live_games": live_games() if self.watch_games else []}
+
+    def checkpoint(self) -> dict:
+        """Check this turn's restore invariants before another package can run."""
+        for name in ("viewer", "capture", "pair"):
+            self.stop(name)
+        self.check()
+        if self.processes["fixture"].poll() is not None:
+            raise RuntimeError("The private viewer compositor exited between turns.")
+        unchanged = {}
+        if self.compositor:
+            now = proc(int(unit("korri-compositor")["MainPID"]))
+            unchanged["compositor"] = (
+                now["pid"] == self.compositor["pid"]
+                and now["start_ticks"] == self.compositor["start_ticks"]
+            )
+        return {
+            "pass": all(unchanged.values()),
+            "pids_unchanged": unchanged,
+            "live_games": live_games() if self.watch_games else [],
+            "product_units": units_record(self.units) if self.units_read else None,
+        }
+
     def handle(self, request: dict) -> dict:
         operation = request["operation"]
         if operation == "discover":
@@ -872,6 +909,10 @@ class Session:
             return self.close()
         if self.root is None:
             raise RuntimeError("viewer session is not prepared")
+        if operation == "begin":
+            return self.begin()
+        if operation == "checkpoint":
+            return self.checkpoint()
         if operation == "probe":
             frame = self.home() / "probe.pgm"
             result = subprocess.run(

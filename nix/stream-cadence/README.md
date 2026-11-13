@@ -192,6 +192,41 @@ nix run .#stream-cadence -- view --sender operator@sender --viewer operator@view
 nix run .#stream-cadence -- verdict baseline/results.json candidate/results.json
 ```
 
+### Two viewers in turns
+
+```sh
+nix run .#stream-cadence -- view --sender operator@sender --sender-fixture \
+  --viewer operator@viewer --viewer-package /nix/store/BASELINE-PACKAGE \
+  --candidate-package /nix/store/CANDIDATE-PACKAGE --runs 5 --out ./turns
+nix run .#stream-cadence -- verdict turns/baseline/results.json turns/candidate/results.json
+```
+
+`--candidate-package` requires `--viewer-package` and `--sender-fixture`.
+Both packages are checked and copied in the same way. Each supplies
+`bin/moonlight` and the controller mapping described below; `bin/moonlight`
+may be another program that accepts Moonlight's arguments and uses its paired
+keys. `--runs N` means N runs **of each** package, in the order A B A B,
+starting with the baseline. `discovered.turn` records the one-based session
+`order` and `side` (`baseline` or `candidate`) in each run.
+
+The pair keeps one private Sunshine, sender compositor, viewer compositor and
+key directory for the session. The baseline pairs once; both viewers use that
+identity. Each turn starts a new source, viewer and capture. Each turn retains
+its own decode and isolation proof, load samples, live-game and input records,
+product-unit comparison, logs and scoring. Between turns the agents stop the
+source, viewer and capture and check guards and restore invariants. Session
+exit removes both fixtures and their keys. Each run's restore record includes
+`session_cleanup`, the final cleanup proof shared by all turns. A pending
+cleanup is not a valid result, and a failed cleanup invalidates every turn.
+
+Use turns on a shared machine: two batches recorded minutes apart can see
+different work from other tests. Adjacent A and B runs sample that work nearer
+together. Turns do not remove a load that follows one viewer, including kernel
+work or other processes caused by that viewer. The verdict's load rule is
+unchanged: when the two `machine.other` ranges are separated by at least five
+percentage points, it still refuses. Game-state and all other condition rules
+also stay. Turns do not promise equal conditions when a game starts or stops.
+
 The sender runs Sunshine and the frame-ID source, as in `run`. On the viewer
 device, `capture.c` reads the ID bar from the compositor through
 wlr-screencopy. It samples the 36 cells of both bar rows on every output frame
@@ -1515,8 +1550,9 @@ at least one positive X proof, no lost proof after that, and no open
 `/dev/input` node. Missing or failed evidence makes the run invalid. Startup
 samples before the first X connection remain evidence, not a failure.
 
-Every agent serves one run. Closing ends its children, removes its run
-directory and exits the agent. The kernel then removes the namespaces and
+Normally every agent serves one run. With `--candidate-package`, each agent
+serves the alternating session and keeps run evidence separate between turns.
+Closing ends its children, removes its run directory and exits the agent. The kernel then removes the namespaces and
 their tmpfs files. The controller checks product services as before; the
 acceptance runs also check product Xwayland clients and namespace leftovers.
 
