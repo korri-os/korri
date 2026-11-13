@@ -11,7 +11,7 @@ export component VelvetEdge inherits Rectangle {
     border-width: Tokens.edge;
     border-color: Tokens.house-light;
     opacity: lit ? 1 : 0;
-    animate opacity { duration: Tokens.t-ring; easing: ease-in-out; }
+    animate opacity { duration: Tokens.t-ring; easing: cubic-bezier(0.4, 0, 0.2, 1); }
     Rectangle {
         x: Tokens.edge;
         y: Tokens.edge;

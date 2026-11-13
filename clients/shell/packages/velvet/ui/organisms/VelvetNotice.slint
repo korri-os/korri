@@ -20,7 +20,7 @@ export component VelvetNotice inherits Rectangle {
     border-width: Tokens.hair;
     border-color: Tokens.light-20;
     opacity: in ? 1 : 0;
-    animate opacity { duration: Tokens.t-sheet; easing: ease-in-out; }
+    animate opacity { duration: Tokens.t-sheet; easing: cubic-bezier(0.4, 0, 0.2, 1); }
     row := HorizontalLayout {
         x: root.size * 1.2;
         width: Math.min(self.preferred-width, root.width - root.size * 2.4);

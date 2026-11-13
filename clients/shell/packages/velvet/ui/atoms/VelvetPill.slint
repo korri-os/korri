@@ -38,7 +38,6 @@ export component VelvetPill inherits Rectangle {
         border-radius: self.height / 2;
         background: Tokens.light-20;
         opacity: (root.pill.shown && root.pill.focus-id != "" && root.pill.focused) && !root.inert ? 1 : 0;
-        animate opacity { duration: Tokens.t-ring; easing: ease-in-out; }
     }
     Rectangle {
         width: parent.width;
@@ -47,7 +46,6 @@ export component VelvetPill inherits Rectangle {
         background: ((root.pill.shown && root.pill.focus-id != "" && root.pill.focused) && !root.inert) || root.prompt ? (root.pill.danger ? Tokens.exit : Tokens.house-light) : root.pill.quiet ? Tokens.clear : Tokens.light-10;
         border-width: root.filled || root.pill.quiet ? 0px : Tokens.hair * 1.5;
         border-color: Tokens.light-20;
-        animate background { duration: Tokens.t-ring; easing: ease-in-out; }
     }
     content := HorizontalLayout {
         x: (parent.width - self.width) / 2;

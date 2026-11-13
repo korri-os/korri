@@ -45,20 +45,24 @@ export component VelvetTile inherits Rectangle {
     accessible-label: tile.label;
     accessible-item-selectable: tile.shown && tile.focus-id != "" && !inert;
     accessible-item-selected: tile.shown && tile.focus-id != "" && tile.focused;
+    // How much the art grows: the focus's 1.08, an arriving card's 0.95. Only this animates; the
+    // art's size follows the box at once. (Animating the size itself chased a box that was
+    // itself moving into the row, restarting every frame: the tiles stood small, then jumped.)
+    // An animated binding names its inputs itself (the component's `in` properties, the tokens),
+    // never a property worked out from them: the shell's Slint can lose the value of an
+    // animated binding that reads a derived property.
+    property <float> grow: !(root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "none")) ? 0.95 : (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && !root.inert && !root.fixed ? Tokens.focus-scale : 1;
+    animate grow { duration: Tokens.t-focus; easing: cubic-bezier(0.16, 1, 0.3, 1); }
     card := Rectangle {
         x: (root.width - self.width) / 2;
         y: root.height - self.height;
-        // An animated binding names its inputs itself (the component's `in` properties, the tokens,
-        // its own geometry), never a property worked out from them: the shell's Slint can lose
-        // the value of an animated binding that reads a derived property.
-        width: root.width * (!(root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "none")) ? 0.95 : (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && !root.inert && !root.fixed ? Tokens.focus-scale : 1);
-        height: root.height * (!(root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "none")) ? 0.95 : (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && !root.inert && !root.fixed ? Tokens.focus-scale : 1);
-        animate width, height { duration: Tokens.t-focus; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+        width: root.width * root.grow;
+        height: root.height * root.grow;
         clip: true;
         // In or out, never between for long: the renderer fades each part by itself, so a
         // half-shown card would show its no-art card through its picture.
         opacity: root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "none") ? 1 : 0;
-        animate opacity { duration: Tokens.t-focus; easing: ease-in-out; }
+        animate opacity { duration: Tokens.t-focus; easing: cubic-bezier(0.4, 0, 0.2, 1); }
         // The prototype's corner: 3 % of the tile's height, at least 4 px. The card clips its
         // picture, its drawing and its veil to it (the shell's renderer, vendor/README.md).
         border-radius: Tokens.card-radius(root.height);
@@ -75,7 +79,7 @@ export component VelvetTile inherits Rectangle {
             source: root.tile.art;
             image-fit: cover;
             opacity: self.source.width > 1 ? 1 : 0;
-            animate opacity { duration: Tokens.t-reveal; easing: ease-in-out; }
+            animate opacity { duration: Tokens.t-reveal; easing: cubic-bezier(0.4, 0, 0.2, 1); }
         }
         // A square cover: over a field, the title under it. The field comes with the picture.
         if root.tile.kind == "game" && root.tile.art-kind == "cover": Rectangle {
@@ -83,7 +87,7 @@ export component VelvetTile inherits Rectangle {
             height: parent.height;
             background: Tokens.tint(root.tile.field);
             opacity: cover.source.width > 1 ? 1 : 0;
-            animate opacity { duration: Tokens.t-reveal; easing: ease-in-out; }
+            animate opacity { duration: Tokens.t-reveal; easing: cubic-bezier(0.4, 0, 0.2, 1); }
             cover := Image {
                 x: 0;
                 y: 0;
@@ -106,7 +110,7 @@ export component VelvetTile inherits Rectangle {
             height: parent.height;
             background: @linear-gradient(180deg, Tokens.tint(root.tile.field) 0%, Tokens.house-down 135%);
             opacity: logo.source.width > 1 ? 1 : 0;
-            animate opacity { duration: Tokens.t-reveal; easing: ease-in-out; }
+            animate opacity { duration: Tokens.t-reveal; easing: cubic-bezier(0.4, 0, 0.2, 1); }
             logo := Image {
                 x: parent.width * 0.1;
                 y: parent.height * 0.26;
@@ -178,7 +182,7 @@ export component VelvetTile inherits Rectangle {
             height: parent.height;
             background: Tokens.velvet-55;
             opacity: root.tile.rests ? 1 : 0;
-            animate opacity { duration: Tokens.t-focus; easing: ease-in-out; }
+            animate opacity { duration: Tokens.t-focus; easing: cubic-bezier(0.4, 0, 0.2, 1); }
         }
         VelvetEdge {
             width: parent.width;

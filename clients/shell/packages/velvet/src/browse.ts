@@ -22,7 +22,7 @@
  * launches. Back closes each level.
  */
 import type { CatalogQuery, SurfaceCatalog, SurfaceModel as Model } from "../../../../../contracts/generated/surface"
-import { blankTile, factLines, factsOf, gameTile, hasHero, marqueeOf, mediaOf, navTile, NO_IMAGE, NO_MARQUEE, NO_TILE, setTile, systemTile, type Pictures, type Standing, titleLines, waitingTile, whereOf, type FactView, type MarqueeView, type TileView } from "./art"
+import { blankTile, factLines, factsOf, gameTile, hasHero, marqueeOf, mediaOf, navTile, NO_IMAGE, NO_MARQUEE, NO_TILE, setTile, systemTile, type Pictures, type Standing, titleLines, whereOf, type FactView, type MarqueeView, type TileView } from "./art"
 import { fitCaps, textWidth } from "./fit"
 import { gridMove, lineMove } from "./focus"
 import { homeOf, sameQuery, shelvesOf, type ShelfItem, type ShelfSpec } from "./lists"
@@ -266,8 +266,8 @@ export function homeView(asked: Pictures, state: State, model: Model, plan: Plan
       const id = ROW_IDS[at] ?? `row:${at}`
       const focused = live && !state.onMenu && depth === 1 && state.rowAt === at
       if (item.kind === "all") rowTiles[at] = navTile("All games", String(state.lists.total), "row", id, focused, at, standing)
-      // The pick takes its place in the row once the row is the shelf.
-      else if (item.pick && depth === 0) rowTiles[at] = waitingTile("row", id, focused, at)
+      // The pick's own place, at the row's head, stands off the stage's left edge while the
+      // row is a strip; it keeps its game, so nothing changes in it as it slides in or away.
       else rowTiles[at] = gameTile(asked, item.game, "row", id, focused, at, standing)
     }
   }

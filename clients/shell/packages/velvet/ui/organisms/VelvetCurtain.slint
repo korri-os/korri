@@ -30,7 +30,7 @@ export component VelvetCurtain inherits Rectangle {
     init => { in = true; }
     background: root.curtain.solid ? Tokens.house-down : Tokens.velvet-86;
     opacity: in ? 1 : 0;
-    animate opacity { duration: Tokens.t-sheet; easing: ease-in-out; }
+    animate opacity { duration: Tokens.t-sheet; easing: cubic-bezier(0.4, 0, 0.2, 1); }
     // A press outside the words does nothing; it must not reach what is under the curtain.
     TouchArea { }
     column := VerticalLayout {

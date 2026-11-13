@@ -317,10 +317,6 @@ onForget(() => {
   systems.clear()
 })
 
-/** The pick's place in the row while the pick stands over it: a focus target the view does not draw. */
-export const waitingTile = (region: string, focusId: string, focused: boolean, at: number): TileView =>
-  ({ ...BLANK, shown: false, focusId, focused, focusRegion: region, at })
-
 // ---- The stage ----
 
 export interface StageView {

@@ -74,7 +74,10 @@ describe("authoring: views", () => {
   })
 
   test("an animation is of an element's own geometry, opacity or ground", () => {
-    const allowed = new Set(["x", "y", "width", "height", "opacity", "background", "content-x", "content-y", "color", "border-color"])
+    // `grow`: a tile's growth factor (VelvetTile). Its binding reads only the tile's `in`
+    // properties and the tokens; its art's size reads it, unanimated, so the art follows its
+    // box at once instead of chasing it (README, What the interpreter taught us, 1).
+    const allowed = new Set(["x", "y", "width", "height", "opacity", "background", "content-x", "content-y", "color", "border-color", "grow"])
     const wrong: string[] = []
     for (const file of files) {
       for (const match of stripComments(read(file)).matchAll(/\banimate\s+([\w\-,\s]+?)\s*\{/g)) {

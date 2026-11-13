@@ -134,7 +134,7 @@ export component VelvetBrowse inherits Rectangle {
             height: Tokens.screen.head-h * root.u;
             spacing: Tokens.screen.fact * root.u * 0.8;
             opacity: root.depth == 2 ? 1 : 0;
-            animate opacity { duration: Tokens.t-level; easing: ease-in-out; }
+            animate opacity { duration: Tokens.t-level; easing: cubic-bezier(0.4, 0, 0.2, 1); }
             lib := VelvetHead {
                 horizontal-stretch: 0;
                 text: root.home.lib-title;
@@ -156,7 +156,7 @@ export component VelvetBrowse inherits Rectangle {
             alignment: Tokens.screen.narrow ? start : end;
             spacing: Tokens.screen.fact * root.u * 0.6;
             opacity: root.depth == 2 ? 1 : 0;
-            animate opacity { duration: Tokens.t-level; easing: ease-in-out; }
+            animate opacity { duration: Tokens.t-level; easing: cubic-bezier(0.4, 0, 0.2, 1); }
             VelvetWords {
                 text: root.home.now-title;
                 ink: Tokens.house-light;

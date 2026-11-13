@@ -80,7 +80,7 @@ export component VelvetStage inherits Rectangle {
         glow: Tokens.tint(root.light-b);
         narrow: root.narrow;
         opacity: root.turn ? 1 : 0;
-        animate opacity { duration: Tokens.t-light; easing: ease-in-out; }
+        animate opacity { duration: Tokens.t-light; easing: cubic-bezier(0.4, 0, 0.2, 1); }
     }
     first := Image {
         property <bool> there: self.source.width > 1;
@@ -94,7 +94,7 @@ export component VelvetStage inherits Rectangle {
         image-fit: fill;
         // Under the second while that one shows; gone when the second is still on its way.
         opacity: (root.turn ? second.source.width > 1 : self.source.width > 1) ? 1 : 0;
-        animate opacity { duration: Tokens.t-backdrop; easing: ease-in-out; }
+        animate opacity { duration: Tokens.t-backdrop; easing: cubic-bezier(0.4, 0, 0.2, 1); }
     }
     second := Image {
         property <bool> there: self.source.width > 1;
@@ -107,7 +107,7 @@ export component VelvetStage inherits Rectangle {
         source: root.art-b;
         image-fit: fill;
         opacity: root.turn && self.source.width > 1 ? 1 : 0;
-        animate opacity { duration: Tokens.t-backdrop; easing: ease-in-out; }
+        animate opacity { duration: Tokens.t-backdrop; easing: cubic-bezier(0.4, 0, 0.2, 1); }
     }
     // A band's foot sinks into a belt of dark, which lets go into the stage's light under it.
     Rectangle {
@@ -132,7 +132,7 @@ export component VelvetStage inherits Rectangle {
         height: parent.height;
         background: Tokens.velvet-30;
         opacity: (root.turn ? second.source.width > 1 : first.source.width > 1) ? 1 : 0;
-        animate opacity { duration: Tokens.t-backdrop; easing: ease-in-out; }
+        animate opacity { duration: Tokens.t-backdrop; easing: cubic-bezier(0.4, 0, 0.2, 1); }
     }
     VelvetScrim {
         width: parent.width;

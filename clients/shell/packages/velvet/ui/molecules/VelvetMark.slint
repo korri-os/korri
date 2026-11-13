@@ -41,7 +41,7 @@ export component VelvetMark inherits Rectangle {
             size: root.mq.size * Tokens.unit;
             // The title steps back once the logo is there.
             opacity: root.mq.logo-shown && logo.source.width > 1 ? 0 : 1;
-            animate opacity { duration: Tokens.t-mark-in; easing: ease-in-out; }
+            animate opacity { duration: Tokens.t-mark-in; easing: cubic-bezier(0.4, 0, 0.2, 1); }
         }
         logo := Image {
             x: 0;
@@ -54,7 +54,7 @@ export component VelvetMark inherits Rectangle {
             vertical-alignment: bottom;
             visible: root.mq.logo-shown;
             opacity: self.source.width > 1 ? 1 : 0;
-            animate opacity { duration: Tokens.t-mark-in; easing: ease-in-out; }
+            animate opacity { duration: Tokens.t-mark-in; easing: cubic-bezier(0.4, 0, 0.2, 1); }
         }
     }
     facts := VelvetFacts {
@@ -75,8 +75,8 @@ export component VelvetMark inherits Rectangle {
                 animate facts.opacity { duration: Tokens.t-meta; delay: root.prompt ? 0ms : Tokens.dwell; easing: cubic-bezier(0.16, 1, 0.3, 1); }
             }
             out {
-                animate name.opacity { duration: Tokens.t-mark-out; easing: ease-in-out; }
-                animate facts.opacity { duration: Tokens.t-mark-out; easing: ease-in-out; }
+                animate name.opacity { duration: Tokens.t-mark-out; easing: cubic-bezier(0.4, 0, 0.2, 1); }
+                animate facts.opacity { duration: Tokens.t-mark-out; easing: cubic-bezier(0.4, 0, 0.2, 1); }
             }
         }
     ]

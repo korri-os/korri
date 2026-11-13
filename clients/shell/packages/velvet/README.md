@@ -253,7 +253,11 @@ a pattern can see; `velvet_package.rs` holds the rest.
    reads a property worked out in the component, or an `in` property bound
    to an expression over a row (a tile's `rests` was one), loses its value:
    the element stands at 0, or the interpreter panics at `rtti.rs:370`. What
-   a tile needs for a motion is a field of the tile.
+   a tile needs for a motion is a field of the tile. One exception, a tile's
+   `grow` (its focus growth): an animated factor over the tile's own fields,
+   which its art's size reads without animating. Animating the art's size
+   itself chased the tile's box while the box moved into the row, starting
+   again every frame: the tiles stood small and far apart, then jumped.
 2. An animated place must not hang on a struct the view sends. The shell
    sets a struct again with every view that changes any field of it, and an
    animated binding under it starts again from zero when that happens twice
