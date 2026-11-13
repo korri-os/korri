@@ -59,9 +59,18 @@ class Cooldown(unittest.TestCase):
     setUp = test_hwmon.HwmonHeat.setUp
     sensor = test_hwmon.HwmonHeat.sensor
 
+    def viewer_session(self):
+        # A peer stand-in, as the other agent tests use: no product compositor or
+        # systemctl lookup, which the build sandbox does not have.
+        peer = self.root / "peer"
+        if not peer.exists():
+            peer.write_text(f'#!/bin/sh\nexec {sys.executable} -B {Path(__file__).with_name("host-peer.py")} "$@"\n')
+            peer.chmod(0o755)
+        return viewer.Session(str(peer))
+
     def wait(self, temperatures):
         stem = self.sensor("k10temp", "Tctl", temperatures[0])
-        session = viewer.Session()
+        session = self.viewer_session()
         self.addCleanup(session.close)
         sending = sender.Session()
         self.addCleanup(sending.close)
@@ -98,7 +107,7 @@ class Cooldown(unittest.TestCase):
 
     def test_unreadable_sensor_is_not_treated_as_cooling(self):
         stem = self.sensor("k10temp", "Tctl")
-        session = viewer.Session()
+        session = self.viewer_session()
         self.addCleanup(session.close)
         Path(f"{stem}_input").write_text("unreadable")
         with self.assertRaisesRegex(RuntimeError, "cannot read"):
