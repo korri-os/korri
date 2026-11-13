@@ -118,12 +118,14 @@ describe("the lobby", () => {
     expect(tiles.filter(tile => tile.shelf === 0 && tile.focusId !== "").length).toBe(SHELF_SLOTS + 1)
     expect(focus(run)?.focusId).toBe("shelf:lately:0")
   })
-  test("a library with no systems calls its last shelf 'Every game'", () => {
+  test("a library with no systems keeps By system, with A to Z on it alone (the prototype)", () => {
     const base = model("home")
     const games = base.catalog.games.map(({ systemId: _id, system: _system, ...game }: any) => game)
     const run = new Play({ ...base, catalog: { _tag: "Ready", games } })
     run.press("down", "down")
-    expect((run.view.shelves as any[]).at(-1).label).toBe("Every game")
+    const last = (run.view.shelves as any[]).at(-1)
+    expect(last.label).toBe("By system")
+    expect(last.count).toBe(1)
   })
   test("Not started holds only games never played", () => {
     const run = new Play(model("home"))
@@ -214,7 +216,8 @@ describe("the detail", () => {
     expect(focus(run)?.focusId).toBe("d:play")
     run.press("back")
     expect(run.view.page).toBe("home")
-    expect(run.view.stage.fill).toBe(false)
+    // The pick's hero fills the stage too (the prototype).
+    expect(run.view.stage.fill).toBe(true)
     run.press("confirm")
     expect(run.press("confirm")).toEqual([{ _tag: "LaunchGame", gameId: "ember-road" }] as any)
   })
@@ -234,11 +237,11 @@ describe("the detail", () => {
     run.press("right")
     expect(run.press("confirm")).toEqual([{ _tag: "LaunchGame", gameId: "tide-pool", launchLocationId: "zao" }] as any)
   })
-  test("only the Cinema detail cuts the hero; everywhere else it keeps its shape", () => {
+  test("the pick and the Cinema detail cut the hero to fill the stage (the prototype)", () => {
     const run = new Play(model("home"))
-    expect(run.view.stage.fill).toBe(false)
+    expect(run.view.stage.fill).toBe(true)
     run.press("down")
-    expect(run.view.stage.fill).toBe(false)
+    expect(run.view.stage.fill).toBe(true)
     run.press("confirm")
     expect(run.view.stage.fill).toBe(true)
   })
