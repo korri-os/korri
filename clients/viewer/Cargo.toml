@@ -1,0 +1,21 @@
+[package]
+name = "korri-viewer"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+anyhow = "1"
+curl = "0.4"
+openssl = "0.10"
+roxmltree = "0.21"
+libc = "0.2"
+uuid = { version = "1", features = ["v4"] }
+
+[build-dependencies]
+bindgen = "0.72"
+cc = "1"
+pkg-config = "0.3"
+
+[dev-dependencies]
+tempfile = "3"

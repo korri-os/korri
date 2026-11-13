@@ -114,6 +114,7 @@
           sunshinePlugin = publishedPlugins.korri-plugin-sunshine;
           hostModule = nixosModules.korri-plugin-host;
         };
+        viewer = import ./clients/viewer { inherit pkgs; };
         cli = import ./clients/cli {
           inherit pkgs crane proseql;
           buildIdentity = self.rev or self.dirtyRev or null;
@@ -173,6 +174,7 @@
           inherit pkgs;
           hooksInstall = tasks.hooks-install.program;
         };
+        devShells.viewer = viewer.devShell;
         devShells.android = import ./clients/android/devshell.nix {
           inherit pkgs;
           korri = self;
@@ -196,6 +198,7 @@
             rgds-update-renderer = import ./nix/devices/rgds/update/renderer.nix { inherit pkgs; };
             rpminiv2-inputplumber-data = rpminiv2.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             h700-inputplumber-data = h700.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
+            korri-viewer = viewer.package;
             korri-shell = shell.package;
             korri-shell-surfaces = shell.surfaces;
             korri-plymouth-theme = pkgs.callPackage ./brand/plymouth/package.nix { };
@@ -260,6 +263,7 @@
             hostPackage = pluginHost.packages.korri-plugin-host;
           })
           // {
+            korri-viewer-picture = viewer.pictureCheck;
             korri-cli-build-identity-eval = import ./clients/cli/build-identity-check.nix {
               inherit pkgs crane proseql;
               buildBinaries = false;
