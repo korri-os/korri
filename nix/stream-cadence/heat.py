@@ -202,7 +202,10 @@ def too_hot(zones: list[dict], limits: dict[str, dict | None], rule: str) -> str
     return None
 
 
-def no_start(zones: list[dict], limits: dict[str, dict | None], hardware_path: bool) -> str | None:
+def no_start(
+    zones: list[dict], limits: dict[str, dict | None], hardware_path: bool,
+    *, check_temperature: bool = True,
+) -> str | None:
     """Why a run must not start on this device, or None.
 
     The guard is blind, the device has a hardware picture path and no zone
@@ -217,10 +220,22 @@ def no_start(zones: list[dict], limits: dict[str, dict | None], hardware_path: b
             "trip point or CPU package sensor with a limit. The heat guard has no limit "
             "for it, so a run does not start."
         )
-    hot = too_hot(zones, limits, "start_below")
+    hot = too_hot(zones, limits, "start_below") if check_temperature else None
     if hot:
         return "The device is hot. " + hot + " Let it cool, then run again."
     return None
+
+
+def start_status(limits: dict[str, dict | None], hardware_path: bool) -> dict:
+    """Fresh start temperatures; unsafe/unreadable guards fail instead of waiting."""
+    zones = thermal_zones()
+    refused = no_start(zones, limits, hardware_path, check_temperature=False)
+    if refused:
+        raise RuntimeError(refused)
+    return {
+        "thermal": [dict(zone, limits=limits.get(zone["zone"])) for zone in zones],
+        "hot": too_hot(zones, limits, "start_below"),
+    }
 
 
 def must_end(zones: list[dict], limits: dict[str, dict | None]) -> str | None:

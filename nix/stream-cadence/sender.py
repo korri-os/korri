@@ -60,7 +60,7 @@ from device import (
 )
 from fixture_namespace import PairNamespace
 from discovery import encoder_probe, output, properties
-from heat import must_end, no_start, thermal_limits, thermal_zones
+from heat import must_end, no_start, start_status, thermal_limits, thermal_zones
 from viewer import (
     GUARD_PERIOD,
     board,
@@ -831,6 +831,8 @@ class Session:
             return self.facts
         if operation == "clock":
             return {"device_ns": time.monotonic_ns()}
+        if operation == "heat":
+            return start_status(self.limits, self.hardware_path)
         if operation == "prepare":
             return self.prepare(request)
         if operation == "close":

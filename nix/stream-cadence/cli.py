@@ -1,6 +1,7 @@
 """Installed-plugin stream cadence CLI. All effects are bounded at this edge."""
 
 import argparse
+from collections.abc import Callable, Mapping
 import base64
 import contextlib
 import fcntl
@@ -1119,6 +1120,32 @@ def locate(
     )
 
 
+def wait_for_cooldown(
+    checks: Mapping[str, Callable[[str], dict]],
+    *, sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> dict:
+    """Wait only between runs; never turn start heat into a restore failure."""
+    began = clock()
+    start = None
+    while True:
+        readings = {name: check("heat") for name, check in checks.items()}
+        temperatures = {name: row["thermal"] for name, row in readings.items()}
+        hot = "; ".join(f"{name}: {row['hot']}" for name, row in readings.items() if row["hot"])
+        elapsed = clock() - began
+        if start is None:
+            start = temperatures
+            if hot:
+                print(f"Waiting for the next run to cool (10 s polls, 600 s limit): {hot}", flush=True)
+        if not hot:
+            if elapsed >= 10:
+                print(f"Device cooled; waited {elapsed:.1f} seconds before the next run.", flush=True)
+            return {"seconds": elapsed, "start": start, "end": temperatures}
+        if elapsed >= 600:
+            raise Refusal(f"Waited {elapsed:.0f} seconds; device did not cool below its start limit. Session ended; results so far are kept. {hot}")
+        sleep(min(10, 600 - elapsed))
+
+
 def view_case(
     args: argparse.Namespace,
     sender: Remote,
@@ -1128,6 +1155,7 @@ def view_case(
     certificate: str | None,
     index: int,
     session: dict | None = None,
+    cooldown: dict | None = None,
 ) -> dict:
     record: dict = {
         "label": directory.name,
@@ -1139,6 +1167,8 @@ def view_case(
     facts["valid"] = False
     facts["imported_store_paths"] = args.imported_store_paths
     facts["run_index"] = index
+    if cooldown is not None:
+        facts["cooldown"] = cooldown
     if session is not None:
         facts["turn"] = {"order": args.turn_order, "side": args.turn_side}
     facts["bridge_uncertainty_ms"] = None
@@ -1851,9 +1881,17 @@ def view(args: argparse.Namespace) -> int:
                     ]
                 if candidate:
                     print(f"Turn {order + 1}: {side}/{directory.name}", flush=True)
+                # The first run still refuses a hot device. Later runs wait before
+                # any start/prepare/begin, for both turns and separate sessions.
+                cooldown = None
+                if order:
+                    checks = {"viewer": remotes[1].request}
+                    if args.sender_fixture:
+                        checks["sender"] = remotes[0].request
+                    cooldown = wait_for_cooldown(checks)
                 try:
                     result = view_case(
-                        args, remotes[0], remotes[1], paths, directory, certificate, index, session
+                        args, remotes[0], remotes[1], paths, directory, certificate, index, session, cooldown
                     )
                 except BaseException:
                     # A signal or failed checkpoint still leaves its run in the

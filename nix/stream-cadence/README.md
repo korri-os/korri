@@ -693,7 +693,27 @@ or the fixture's Sunshine, compositor and source. A slow host or link cannot
 delay the stop. The run ends as invalid with the reason, also when the stop
 comes after the last sample, and cleanup runs as after any run.
 
-A hot host is therefore refused as viewer and as sender. That is intended.
+A hot host is therefore refused as viewer and as sender on the first run.
+
+Between later `view` runs, including alternating turns, the controller waits
+while either guarded device is at or above its start limit. It polls every
+10 seconds for at most 10 minutes, before starting the next source, viewer or
+capture. An unreadable guard still refuses at once. If the device does not
+cool in time, the session closes, keeps completed results, prints the reason
+and exits non-zero. The first run still refuses a hot device without waiting.
+The product-sender-only `run` path has no heat guard or between-run heat check.
+
+Each later run records `discovered.cooldown`: `seconds` waited and `start` and
+`end` thermal readings for the viewer and, with a sender fixture, the sender.
+The readings use the existing `thermal` fact shape and millidegrees Celsius.
+A device already below its start limit needs no polling delay.
+
+The start limit is not a judgement of a finished run. A turn can end above
+its start limit while remaining below its end limit: on an unbounded AMD
+package sensor, 86 °C permits a completed run but not the next start.
+Checkpoints keep the other guard and restore checks, without applying the
+start temperature rule to the finished turn. The end rule during a run is
+unchanged.
 
 Each viewer start writes its own `viewer.log`; the log of the locating start
 is kept as `viewer.earlier.log`. Each viewer sample holds `thermal` (a list:

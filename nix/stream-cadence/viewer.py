@@ -34,7 +34,7 @@ from typing import TextIO
 
 from fixture_namespace import PairNamespace, fixture_xwayland, hide_input, isolation, unix_peers
 from discovery import watched_display
-from heat import END_MARGIN, must_end, no_start, thermal_limits, thermal_zones
+from heat import END_MARGIN, must_end, no_start, start_status, thermal_limits, thermal_zones
 import device
 from device import (
     append_log,
@@ -710,7 +710,7 @@ class Session:
                 return
             time.sleep(GUARD_PERIOD)
 
-    def check(self) -> None:
+    def check(self, *, check_temperature: bool = True) -> None:
         """Refuse a run that the heat guard cannot watch, or that would start hot.
 
         The tool asks this before it starts anything on any target, and the
@@ -718,7 +718,8 @@ class Session:
         refused here too: the rules of this agent depend on the board.
         """
         refused = board_unread() or no_start(
-            thermal_zones(), self.limits, self.hardware_path()
+            thermal_zones(), self.limits, self.hardware_path(),
+            check_temperature=check_temperature,
         )
         if refused:
             raise RuntimeError(refused)
@@ -909,7 +910,8 @@ class Session:
         """Check this turn's restore invariants before another package can run."""
         for name in ("viewer", "capture", "pair"):
             self.stop(name)
-        self.check()
+        # Start heat belongs to the next turn, not this finished turn's restore.
+        self.check(check_temperature=False)
         if self.processes["fixture"].poll() is not None:
             raise RuntimeError("The private viewer compositor exited between turns.")
         unchanged = {}
@@ -942,6 +944,8 @@ class Session:
             return self.facts
         if operation == "clock":
             return {"device_ns": time.monotonic_ns()}
+        if operation == "heat":
+            return start_status(self.limits, self.hardware_path())
         if operation == "check":
             self.check()
             return {}
