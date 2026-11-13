@@ -1294,38 +1294,48 @@ directory for each measure.
 
 | Baseline | Recorded | Pair | Runs |
 | --- | --- | --- | --- |
-| `baselines/aka/private-pair/base/results.json` | 2026-11-12, tool at `a2bfded2e` | Sender fixture and viewer fixture on aka, no game live, load about 1 | 5 valid of 5 |
-| `baselines/aka/private-pair/queue/results.json` | 2026-11-12, tool at `a2bfded2e` | The same, with `--queue-measure` | 5 valid of 5 |
+| `baselines/aka/private-pair/base/results.json` | 2026-11-13 02:26 UTC, tool at `b53b8d111` | Sender fixture and viewer fixture on aka, no game and no other test live, 1-minute load below 1.0 at the start | 5 valid of 5 |
+| `baselines/aka/private-pair/queue/results.json` | 2026-11-13 02:38 UTC, the same tool | The same, with `--queue-measure` | 5 valid of 5 |
 
-**These two baselines are stale.** They were recorded with the pixman
-renderer, which was the only one then, so the viewer's OpenGL in them is
-Mesa's software rasterizer: most of the 1.25 CPU seconds each second below
-is that rasterizer and not the viewer. `verdict` refuses them against a
-result of today's default (`viewer_renderer`). They must be recorded again
-with gles2 before any comparison.
-
-The viewer in both is the fixture viewer: nixpkgs `moonlight-embedded` 2.7.1
-with its `sdl` system. These baselines prove the measure and give stage 1 of
-#391 its first comparison for the session part on aka. They are not a
-baseline of the published `@korri:moonlight` plugin, and they say nothing
-about a handheld's picture path.
+The viewer in both is the product's: the copied package
+`/nix/store/ycag8ysjam9a02nxjyvfyazqck9vg7vk-moonlight-embedded-korri-2.7.1-korri`
+of release `build-6a16a09421bf-shared-settings` (`--viewer-package`), in the
+viewer fixture with gles2, inside the pair's namespaces. korrid asks it for
+`x11_vaapi`, and it decodes in software (`decode=software`), as the product
+does on every PC today (#439). When #439 is fixed, the next result says
+`vaapi` and `verdict` refuses it against this baseline: record it again.
+The stream is 1920x1080 at 60 fps.
 
 | Metric | Base, range of the five runs | Queue, range of the five runs |
 | --- | --- | --- |
-| Sender presentation to display, p50 by window | 15.4 to 15.9 ms | 59.1 to 61.9 ms |
-| Dropped frames | 0 | 213 to 236, the sender's floor, not judged |
-| Viewer CPU seconds each second | 1.253 to 1.260 | 1.302 to 1.305 |
-| Startup | 754 to 803 ms | 770 to 803 ms |
+| Sender presentation to display, p50 by window | 11.62 to 12.22 ms | 56.39 to 56.81 ms |
+| Sender presentation to display, p95 by window | up to 19.39 ms | up to 63.59 ms |
+| Dropped frames | 0 | 230 to 234, the sender's floor, not judged |
+| Viewer CPU seconds each second | 0.157 to 0.164 | 0.170 to 0.175 |
+| Startup | 738 to 769 ms in four runs; 10,009 ms in run 5 | 753 to 770 ms |
 | Capture gaps, stalls, viewer exits | 0 | 0 |
+| What else ran on the viewer device, share of all CPUs | 0.9% to 4.7% | 0.9% to 3.5% |
+
+The startup of base run 5 is kept. That viewer received its first video
+packet at once (`viewer.log`), and its first readable frame reached the
+display 10 s after the start. The cause is not known. The other nine starts
+of this baseline took 738 to 770 ms. Because the rule of a
+metric is that ranges must not overlap, this baseline judges `startup_ms`
+only against a candidate slower than 10 s or faster than 738 ms in every run.
+
+The recording script kept a set only when all five runs were valid and what
+else ran stayed below 5% of all CPUs in each run. It threw away one base set
+for load (37% to 50%), never for its measured numbers. Against the quiet
+acceptance set B of 2026-11-12, `verdict` gives `equal` on every measured
+row.
 
 In the queue baseline the delay is about two and a half refresh periods above
-the base delay in every window. The fixture viewer queues frames and never
-drops one to catch up. This is that viewer's own behaviour, not a fault of
-the measure.
+the base delay in every window. The viewer queues frames and never drops one
+to catch up.
 
-An earlier baseline against the product sender, recorded on 2026-11-11, is
-removed. It predated the gap rule, the heat guard and the conditions that
-`verdict` compares.
+The baselines that this pair replaces (2026-11-12, tool at `a2bfded2e`) ran
+the nixpkgs stand-in under the pixman renderer and are removed. An earlier
+baseline against the product sender, recorded on 2026-11-11, is removed too.
 
 ## Pairing and cleanup
 
