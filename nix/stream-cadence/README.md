@@ -309,7 +309,9 @@ This is not a korrid launch. The differences:
   inside a korrid launch.
 - `HOME`, `XDG_RUNTIME_DIR`, `XDG_CACHE_HOME`, `TMPDIR` and the key directory
   are in the run directory. The viewer's shader cache therefore starts empty
-  in each run.
+  in each separate session. In turns (`--candidate-package`), one session
+  keeps one viewer home, so every turn after the first of each viewer can
+  find a warm cache.
 - The agent, not korrid, asks sway for fullscreen and focus. It tries every
   0.1 s until sway knows the window. `startup_ms` contains that step.
 - korrid's own launch path and its lifecycle reports are not used.
