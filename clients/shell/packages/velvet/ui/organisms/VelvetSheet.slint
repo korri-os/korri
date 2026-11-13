@@ -15,16 +15,24 @@ export component VelvetSheet inherits Rectangle {
     property <length> w: Tokens.screen.sheet-w * u;
     property <length> pad-y: Math.max(Tokens.sheet-pad-least, Tokens.screen.pad-y * u * 0.8);
     property <length> pad-x: Math.max(Tokens.type-least, Tokens.screen.pad-x * u * 0.3);
-    // It comes in from the edge.
+    // It comes in from the edge, as the prototype's: 6 % of its width, fading up. `in` turns
+    // true a frame after the sheet exists; set in `init`, it landed before the first frame
+    // and the sheet opened in one. The first frame keeps the rows inside the window (the
+    // shift is never more than the inset) and not transparent.
     property <bool> in;
-    init => { in = true; }
+    Timer {
+        interval: 16ms;
+        running: !root.in;
+        triggered => { root.in = true; }
+    }
+    property <length> shift: Math.min(root.w * 0.06, root.pad-x);
     panel := Rectangle {
-        x: root.width - Tokens.screen.sheet-w * Tokens.unit * (root.in ? 1 : 0.8);
+        x: root.width - root.w + (root.in ? 0px : root.shift);
         y: 0;
         width: root.w;
         height: root.height;
         background: @linear-gradient(90deg, Tokens.velvet-94 0%, Tokens.house-down 100%);
-        opacity: root.in ? 1 : 0;
+        opacity: root.in ? 1 : 0.3;
         animate x, opacity { duration: Tokens.t-sheet; easing: cubic-bezier(0.16, 1, 0.3, 1); }
         // A tap on the sheet itself is no tap beside it.
         TouchArea { }
