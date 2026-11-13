@@ -1519,3 +1519,9 @@ in decode within or between the two results. Even
 fixed, the next result can say `vaapi`; it will not compare silently with
 today's software baseline. The stand-in's SDL-on-Wayland path remains a
 different presentation path, even when both results decode in software.
+
+
+The [2026-11-12 PC acceptance](acceptance-pc-2026-11-12.md) records the short
+run, two five-run base sets, their refused/diagnostic verdicts, and one
+five-run queue set. All sixteen runs passed isolation and restore checks.
+They are acceptance evidence, not a quiet performance baseline.
