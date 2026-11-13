@@ -21,6 +21,22 @@ class DecodePath(unittest.TestCase):
             self.assertEqual(decode_path(log, 'x11_vaapi', nodes), 'unknown')
         self.assertEqual(decode_path(log + 'No VA display found for device :0.\n', 'x11_vaapi', ['/dev/dri/renderD128']), 'unknown')
 
+    def test_real_vaapi_log_has_decoder_on_the_video_start_progress_line(self):
+        log = (Path(__file__).parent / "fixtures/moonlight/aka-x11-vaapi.log").read_text()
+        self.assertEqual(decode_path(log, "x11_vaapi", ["/dev/dri/renderD129"]), "vaapi")
+        for absent in ("Platform X Window System (VAAPI)", "Using FFmpeg decoder: h264"):
+            self.assertEqual(decode_path(log.replace(absent, ""), "x11_vaapi", ["/dev/dri/renderD129"]), "unknown")
+        self.assertEqual(decode_path(log, "x11_vaapi", []), "unknown")
+
+    def test_software_fallback_decoder_on_a_later_line_still_is_software(self):
+        log = "Platform SDL (software decoding)\nCouldn't open codec: h264_v4l2m2m\nUsing FFmpeg decoder: h264\n"
+        self.assertEqual(decode_path(log, "x11_vaapi", ["/dev/dri/renderD129"]), "software")
+
+    def test_decoder_embedded_in_arbitrary_text_does_not_prove_vaapi(self):
+        for prefix in ("unexpected ", "unexpected...", "prefix Starting video stream..."):
+            log = "Platform X Window System (VAAPI)\n" + prefix + "Using FFmpeg decoder: h264\n"
+            self.assertEqual(decode_path(log, "x11_vaapi", ["/dev/dri/renderD129"]), "unknown")
+
     def test_an_ordinary_decoder_name_alone_does_not_prove_software_on_vaapi(self):
         self.assertEqual(decode_path('Using FFmpeg decoder: h264\n', 'x11_vaapi', ['/dev/dri/renderD128']), 'unknown')
         self.assertEqual(decode_path('Using FFmpeg decoder: h264\n', 'sdl', ['/dev/dri/renderD128']), 'software')

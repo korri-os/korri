@@ -1,0 +1,43 @@
+libva info: VA-API version 1.24.0
+libva info: Trying to open /run/opengl-driver/lib/dri/radeonsi_drv_video.so
+libva info: Found init function __vaDriverInit_1_24
+libva info: va_openDriver() returns 0
+Moonlight Embedded 2.7.1 (CEC;FFMPEG_DRM;V4L2M2M;SDL;X11;VDPAU;VAAPI;ALSA;PULSE;EMBEDDED)
+Connecting to 127.0.0.1...
+GPU: , GFE: 3.23.0.74 (, 7.1.431.-1)
+Server codec flags: 0x30301
+Platform X Window System (VAAPI)
+View-only mode enabled, no input will be sent to the host computer
+Stream 1920 x 1080, 60 fps, 10000 kbps
+RTSP port: 56894
+Initializing platform...done
+Resolving host name...done
+Packet size capped at 1024 bytes for remote IPv4 streaming
+Initializing audio stream...done
+Starting RTSP handshake...Reference frame invalidation is not supported by this host
+Audio port: 56884
+Video port: 56882
+Control port: 56883
+done
+Initializing control stream...done
+Initializing video stream...done
+Initializing input stream...done
+Starting control stream...done
+Starting video stream...Using FFmpeg decoder: h264
+done
+Starting audio stream...done
+Starting input stream...done
+Received first video packet after 0 ms
+Stopping input stream...done
+Stopping audio stream...No audio traffic was ever received from the host!
+ENet wait interrupted
+Control stream connection failed: 4
+done
+Stopping video stream...done
+Stopping control stream...ENet peer acknowledged disconnection
+done
+Cleaning up input stream...done
+Cleaning up video stream...done
+Cleaning up control stream...done
+Cleaning up audio stream...done
+Cleaning up platform...done

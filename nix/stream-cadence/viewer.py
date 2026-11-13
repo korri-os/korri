@@ -105,7 +105,9 @@ def decode_path(log: str, requested_platform: str, render_nodes: list[str] | Non
     The positive platform line (enabled by -verbose) disambiguates VA-API;
     a failed VA display plus a successful ordinary decoder proves fallback.
     """
-    codecs = re.findall(r"^Using FFmpeg decoder: (\S+)\s*$", log, re.MULTILINE)
+    # Moonlight prints this progress label without a newline before the
+    # decoder announces itself. Accept only that exact upstream prefix.
+    codecs = re.findall(r"^(?:Starting video stream\.\.\.)?Using FFmpeg decoder: (\S+)\s*$", log, re.MULTILINE)
     ordinary = bool(codecs) and all(name in ("h264", "hevc", "av1", "libdav1d") for name in codecs)
     vaapi = bool(re.search(r"^Platform X Window System \(VAAPI\)\s*$", log, re.MULTILINE))
     failed = "No VA display found" in log
