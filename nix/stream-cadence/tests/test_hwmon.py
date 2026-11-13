@@ -37,23 +37,23 @@ class HwmonHeat(unittest.TestCase):
         self.assertTrue(zones, "CPU package sensor must be discovered without thermal zones")
         return zones, {zone["zone"]: heat.thermal_limits(zone) for zone in zones}
 
-    def test_k10temp_without_limits_starts_below_85_and_ends_at_95(self):
+    def test_k10temp_without_limits_starts_below_85_and_ends_at_100(self):
         stem = self.sensor("k10temp", "Tctl", 84999)
         zones, limits = self.readings()
         self.assertEqual(zones[0]["type"], "k10temp Tctl")
         self.assertEqual(next(iter(limits.values())), {
-            "critical": None, "start_below": 85000, "end_at": 95000,
+            "critical": None, "start_below": 85000, "end_at": 100000,
         })
         self.assertIsNone(heat.no_start(zones, limits, False))
-        for value, start_hot, end_hot in [(85000, True, False), (94999, True, False), (95000, True, True)]:
+        for value, start_hot, end_hot in [(85000, True, False), (95000, True, False), (99999, True, False), (100000, True, True)]:
             with self.subTest(value=value):
                 Path(f"{stem}_input").write_text(str(value))
                 current = heat.thermal_zones()
                 self.assertEqual(heat.no_start(current, limits, False) is not None, start_hot)
                 self.assertEqual(heat.must_end(current, limits) is not None, end_hot)
         self.assertNotIn("critical trip point", heat.must_end(current, limits))
-        self.assertEqual(heat.thermal_limits(zones[0], 30000)["end_at"], 75000)
-        self.assertEqual(heat.thermal_limits(zones[0], 1000)["end_at"], 95000)
+        self.assertEqual(heat.thermal_limits(zones[0], 30000)["end_at"], 80000)
+        self.assertEqual(heat.thermal_limits(zones[0], 1000)["end_at"], 100000)
 
     def test_amd_uses_tdie_when_present_and_ignores_ccd(self):
         for driver in ["k10temp", "zenpower"]:
@@ -161,10 +161,10 @@ class HwmonHeat(unittest.TestCase):
         session.handle({"operation": "start", "command": ["sleep", "60"]})
         process = session.processes["viewer"]
         fresh = self.root / "reading"
-        fresh.write_text("95000")
+        fresh.write_text("100000")
         fresh.replace(Path(f"{stem}_input"))
         self.assertIsNotNone(process.wait(timeout=5))
-        with self.assertRaisesRegex(RuntimeError, "k10temp Tctl reads 95.0.*ends at 95.0"):
+        with self.assertRaisesRegex(RuntimeError, "k10temp Tctl reads 100.0.*ends at 100.0"):
             session.handle({"operation": "sample"})
         self.assertTrue(session.close()["pass"])
         Path(f"{stem}_input").write_text("95500")

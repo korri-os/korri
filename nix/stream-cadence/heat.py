@@ -1,7 +1,7 @@
 """Shared heat rules for thermal zones and hwmon CPU package sensors.
 
 Reported limits take margins. AMD package sensors without reported limits
-use the fixed 85/95 °C start/stop rule documented in the README.
+use the fixed 85/100 °C start/stop rule documented in the README.
 """
 
 from pathlib import Path
@@ -9,7 +9,7 @@ from pathlib import Path
 THERMAL = Path("/sys/class/thermal")
 END_MARGIN = 10_000  # millidegrees: a run ends at least this far below a critical trip
 AMD_START_BELOW = 85_000
-AMD_END_AT = 95_000
+AMD_END_AT = 100_000
 
 
 def cpu_sensors() -> list[dict]:

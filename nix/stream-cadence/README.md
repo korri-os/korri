@@ -652,10 +652,14 @@ unreadable or malformed limits are. Values are in millidegrees Celsius, as
 specified by the [Linux hwmon interface](https://docs.kernel.org/hwmon/sysfs-interface.html).
 
 AMD package sensors with neither limit use a fixed rule: **start only below
-85 °C; end at 95 °C**. This is a guard policy, not a reported critical trip.
+85 °C; end at 100 °C**. This is a guard policy, not a reported critical trip.
 Ryzen 7000 regulates at 95 °C by design; AMD lists 95 °C as the
 [maximum operating temperature (Tjmax) of the Ryzen 5 7600X](https://www.amd.com/en/products/processors/desktops/ryzen/7000-series/amd-ryzen-5-7600x.html).
-The 10 °C start margin leaves room before that ceiling. This rule also applies
+The 10 °C start margin leaves room before that ceiling. A run ends 5 °C above
+it, where the processor's own regulation has failed. An end at 95 °C was
+tried first: on 2026-11-13 it ended a run on aka that had started at 63 °C,
+because load that began during the run drove the processor to its normal
+95 °C ceiling. This rule also applies
 to `zenpower` without limits; it is fixed, not a CPU-model lookup. It can
 refuse a safe load and does not replace the processor's own thermal controls.
 
