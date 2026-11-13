@@ -1,0 +1,37 @@
+evaluation warning: stdenv.isLinux is deprecated, use stdenv.hostPlatform.isLinux instead
+this derivation will be built:
+  /nix/store/0hy8y04s2d0adllgxd32nl5h0kl40y65-stream-cadence.drv
+building '/nix/store/0hy8y04s2d0adllgxd32nl5h0kl40y65-stream-cadence.drv'...
+Building prebuilt tools for x86_64 on this host or its builders.
+Building prebuilt tools for x86_64 on this host or its builders.
+Results: /tmp/korri-slice2-aka/base
+Turn 1: baseline/run-1
+Traceback (most recent call last):
+  File "/nix/store/jnykqnz6wdszw4qlpzg6x74lp7ml4ldx-source/cli.py", line 2227, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/nix/store/jnykqnz6wdszw4qlpzg6x74lp7ml4ldx-source/cli.py", line 2218, in main
+    return {"run": run, "view": view, "verdict": verdicts, "compare": compare}[
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        args.command
+        ~~~~~~~~~~~~
+    ](args)
+    ~^^^^^^
+  File "/nix/store/jnykqnz6wdszw4qlpzg6x74lp7ml4ldx-source/cli.py", line 1855, in view
+    result = view_case(
+        args, remotes[0], remotes[1], paths, directory, certificate, index, session
+    )
+  File "/nix/store/jnykqnz6wdszw4qlpzg6x74lp7ml4ldx-source/cli.py", line 1240, in view_case
+    built = (session or {}).get("sender") or sender.request(
+                                             ~~~~~~~~~~~~~~^
+        "prepare",
+        ^^^^^^^^^^
+    ...<5 lines>...
+        fps=fps,
+        ^^^^^^^^
+    )
+    ^
+  File "/nix/store/jnykqnz6wdszw4qlpzg6x74lp7ml4ldx-source/cli.py", line 220, in request
+    line = self.process.stdout.readline()
+  File "<frozen codecs>", line 322, in decode
+KeyboardInterrupt

@@ -1,0 +1,128 @@
+{
+  "label": "run-1",
+  "primary_clock": "display_ns",
+  "warmup_seconds": 10,
+  "discovered": {
+    "model": "System Product Name",
+    "architecture": "x86_64",
+    "boot_id": "6c04d35a-b6d0-48de-a773-e6d881fb90fd",
+    "os_release": {
+      "ANSI_COLOR": "\"0;38;2;126;186;228\"",
+      "BUG_REPORT_URL": "\"https://github.com/NixOS/nixpkgs/issues\"",
+      "BUILD_ID": "\"26.11.20260923.4975466\"",
+      "CPE_NAME": "\"cpe:/o:nixos:nixos:26.11\"",
+      "DEFAULT_HOSTNAME": "nixos",
+      "DOCUMENTATION_URL": "\"https://nixos.org/learn.html\"",
+      "HOME_URL": "\"https://nixos.org/\"",
+      "ID": "nixos",
+      "LOGO": "\"nix-snowflake\"",
+      "NAME": "NixOS",
+      "PRETTY_NAME": "\"NixOS 26.11 (Zokor)\"",
+      "SUPPORT_URL": "\"https://nixos.org/community.html\"",
+      "VENDOR_NAME": "NixOS",
+      "VENDOR_URL": "\"https://nixos.org/\"",
+      "VERSION": "\"26.11 (Zokor)\"",
+      "VERSION_CODENAME": "zokor",
+      "VERSION_ID": "\"26.11\""
+    },
+    "display": null,
+    "sunshine_version": null,
+    "working_encoders": [],
+    "fixture_user": "korri",
+    "thermal": [],
+    "heat_guarded": false,
+    "hardware_picture_path": false,
+    "board": [],
+    "valid": false,
+    "imported_store_paths": [
+      "/nix/store/00n5q0wbi7i9sy9wb44fz16cckpnx6hf-stream-cadence-motion",
+      "/nix/store/0ljy1wxzpsail1kn9ki2cvgr8nlr5c7v-stream-cadence-capture-1",
+      "/nix/store/38crl2m37akjqqscrmnq1gbwrp8l3rcx-moonlight-embedded-korri-2.7.1-korri",
+      "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+      "/nix/store/jh2y4bkbdd6a0dkpw6ryz0j8cgy6hg7k-sway-unwrapped-1.12",
+      "/nix/store/lszz3rnnzx3p96b6f8yzb87pkyf623n6-sunshine-2026.516.143833",
+      "/nix/store/wfmv69aki2q7lv19lr8vzi9pagx56466-source",
+      "/nix/store/z3pdx54250q24isdkpkaqszp8fpryhf1-korri-viewer-0.1.0"
+    ],
+    "run_index": 0,
+    "turn": {
+      "order": 1,
+      "side": "baseline"
+    },
+    "bridge_uncertainty_ms": null,
+    "viewer": {
+      "model": "System Product Name",
+      "architecture": "x86_64",
+      "boot_id": "6c04d35a-b6d0-48de-a773-e6d881fb90fd",
+      "clock_ticks_per_second": 100,
+      "compositor": {
+        "pid": 748122,
+        "uid": 56774,
+        "gid": 1000,
+        "user": "korri",
+        "exe": "/nix/store/zbv448cirqfydprf0s5q4jvqqzbg80bx-sway-unwrapped-1.12/bin/sway",
+        "start_ticks": "8795728",
+        "environment": {
+          "HOME": "/home/korri",
+          "XDG_RUNTIME_DIR": "/run/user/56774",
+          "XDG_CONFIG_HOME": "/run/korri-compositor/config",
+          "KORRI_WAYLAND_DISPLAY": "korri-wayland",
+          "SWAYSOCK": "/run/korri-compositor/sway-ipc.sock"
+        }
+      },
+      "display": null,
+      "display_unread": null,
+      "watched_display": null,
+      "plugin": null,
+      "plugin_missing": "korri-plugin status ended with 1: korri-plugin: plugin is not installed",
+      "platform": "x11_vaapi",
+      "hardware_picture_path": false,
+      "board": [],
+      "no_fixture": null,
+      "controller_address": "100.114.19.92",
+      "thermal": [],
+      "heat_guarded": false
+    },
+    "live_game": {
+      "sender_at_start": [],
+      "viewer_at_start": [],
+      "sender_at_end": [],
+      "viewer_at_end": [],
+      "input_devices_appeared": [],
+      "input_devices_disappeared": []
+    },
+    "error": "Device restore check failed. Stop device work and inspect restore evidence.",
+    "viewer_restore": {
+      "pass": false,
+      "errors": [
+        "[Errno 32] Broken pipe"
+      ],
+      "run_folder_removed": null,
+      "pids_unchanged": {},
+      "session_cleanup": {
+        "pass": false,
+        "errors": [
+          "[Errno 32] Broken pipe"
+        ]
+      }
+    },
+    "restore": {
+      "pass": false,
+      "errors": [
+        "[Errno 32] Broken pipe"
+      ],
+      "run_folder_removed": null,
+      "pids_unchanged": {},
+      "session_cleanup": {
+        "pass": false,
+        "errors": [
+          "[Errno 32] Broken pipe"
+        ]
+      }
+    },
+    "product_units": {
+      "sender": null,
+      "viewer": null
+    }
+  }
+}

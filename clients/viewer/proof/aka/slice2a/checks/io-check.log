@@ -1,0 +1,27 @@
+evaluation warning: stdenv.isLinux is deprecated, use stdenv.hostPlatform.isLinux instead
+this derivation will be built:
+  /nix/store/fbkf8gkw7x78d3mah0w2b04hb9x8mcs9-korri-viewer-io-check.drv
+building '/nix/store/fbkf8gkw7x78d3mah0w2b04hb9x8mcs9-korri-viewer-io-check.drv'...
+korri-viewer-io-check> /nix/store/dpvwlabraclj8kzlai155iyy3xwd85h9-source/io/input/evdev.c: In function 'evdev_rumble':
+korri-viewer-io-check> /nix/store/dpvwlabraclj8kzlai155iyy3xwd85h9-source/io/input/evdev.c:1150:3: warning: ignoring return value of 'write' declared with attribute 'warn_unused_result' [-Wunused-result]
+korri-viewer-io-check>  1150 |   write(device->fd, (const void*) &event, sizeof(event));
+korri-viewer-io-check>       |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+korri-viewer-io-check> Opus -> ALSA null: 2 channels, 4 packets, PCM verified
+korri-viewer-io-check> Opus -> ALSA null: 6 channels, 4 packets, PCM verified
+korri-viewer-io-check> Opus -> ALSA null: 8 channels, 4 packets, PCM verified
+korri-viewer-io-check> /nix/store/dpvwlabraclj8kzlai155iyy3xwd85h9-source/io/input/evdev.c: In function 'evdev_rumble':
+korri-viewer-io-check> /nix/store/dpvwlabraclj8kzlai155iyy3xwd85h9-source/io/input/evdev.c:1150:3: warning: ignoring return value of 'write' declared with attribute 'warn_unused_result' [-Wunused-result]
+korri-viewer-io-check>  1150 |   write(device->fd, (const void*) &event, sizeof(event));
+korri-viewer-io-check>       |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+korri-viewer-io-check> In file included from /nix/store/dpvwlabraclj8kzlai155iyy3xwd85h9-source/tests/test-evdev-input.c:4:
+korri-viewer-io-check> /nix/store/dpvwlabraclj8kzlai155iyy3xwd85h9-source/io/input/evdev.c: In function 'evdev_rumble':
+korri-viewer-io-check> /nix/store/dpvwlabraclj8kzlai155iyy3xwd85h9-source/io/input/evdev.c:1150:3: warning: ignoring return value of 'write' declared with attribute 'warn_unused_result' [-Wunused-result]
+korri-viewer-io-check>  1150 |   write(device->fd, (const void*) &event, sizeof(event));
+korri-viewer-io-check>       |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+korri-viewer-io-check> Assigned Korri build check as player 1
+korri-viewer-io-check> libevdev error in libevdev_next_event: BUG: device not initialized. call libevdev_set_fd() first
+korri-viewer-io-check> Input device removed:  (player 0)
+korri-viewer-io-check> evdev keyboard, mouse, mapped controller, first-press seat, quit ownership and producer shutdown passed
+korri-viewer-io-check> X11 keyboard, mouse motion/button and scroll passed
+korri-viewer-io-check> SDL keyboard, mouse, virtual controller, hotplug and quit ownership passed
+korri-viewer-io-check> viewonly: no input forwarding or discovery on either PC platform

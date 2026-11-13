@@ -1,0 +1,123 @@
+Source: Moonlight Embedded 775444287305849ebdf4736c75298ad0713e2d5d
+Plugin patch stack: 2094c1e77471, applied in filename order
+Candidate code: 77ae2b6b792beba7695e931f6a4367cb80e90821
+
+IDENTICAL audio/alsa.c sha256=97da7663a5f36720c2c16b05b43e7737adc2dd170e1ea100026f133ad97a25a9
+IDENTICAL audio/audio.h sha256=f1b5c4d2a1a6ec13628fa1e458f5184825c298d7bddc01549f07d1f58f4ace2f
+IDENTICAL audio/pulse.c sha256=e611df22319bfa1e640fbfe073267da231e36f372694d77e7b37209234e884e2
+IDENTICAL audio/sdl.c sha256=55e86bf350d271b468b533040bc146e92c15088932b6f4ef3ec0b73c0fa4a4ec
+ADAPTED input/evdev.c sha256=323a4d9f6a322bcf735c6b7e33cb9e657e47c1abcc858a80ef855eea95a5c27c
+--- patched-moonlight/input/evdev.c
++++ viewer/io/input/evdev.c
+@@ -21,7 +21,7 @@
+ 
+ #include "keyboard.h"
+ 
+-#include "../loop.h"
++#include "../../picture/loop.h"
+ 
+ #include "libevdev/libevdev.h"
+ #include <Limelight.h>
+@@ -1087,7 +1087,25 @@
+ }
+ 
+ void evdev_stop() {
++  // Korri adaptation: stop producers before Rust stops the network core.
++  for (int i = 0; i < numDevices; ++i) {
++    if (devices[i].mouseEmulation) {
++      devices[i].mouseEmulation = false;
++      pthread_join(devices[i].meThread, NULL);
++      devices[i].meThread = 0;
++    }
++  }
+   evdev_drain();
++}
++
++// Korri adaptation: a Rust-owned session releases every opened node after
++// the network callbacks have stopped. Moonlight relied on process exit.
++void evdev_destroy(void) {
++  while (numDevices > 0) evdev_remove(numDevices - 1);
++  free(devices);
++  devices = NULL;
++  evdev_gamepads = 0;
++  grabbingDevices = false;
+ }
+ 
+ void evdev_init(bool mouse_emulation_enabled) {
+ADAPTED input/evdev.h sha256=279c3c39bdea023920443fe76debf0d71854e070f522ca87d8e66263fb718f40
+--- patched-moonlight/input/evdev.h
++++ viewer/io/input/evdev.h
+@@ -27,5 +27,6 @@
+ void evdev_init(bool mouse_emulation_enabled);
+ void evdev_start();
+ void evdev_stop();
++void evdev_destroy(void);
+ void evdev_map(char* device);
+ void evdev_rumble(unsigned short controller_id, unsigned short low_freq_motor, unsigned short high_freq_motor);
+IDENTICAL input/keyboard.h sha256=7863e83c3e1190bc578cafed005d06cefe6b3e6929c4de2f7b9492d2a7d931f1
+IDENTICAL input/mapping.c sha256=16658aadbe1fd5111810a2311bbae8db4a7a275f237d6cfeab6a94cd168b9cd1
+IDENTICAL input/mapping.h sha256=f5cd1bca7f2a55b45fa773ed8ee9c1156d4de0c6caced71d69b2a6f4ee97e07d
+ADAPTED input/sdl.c sha256=1149b8589e37bd948b9e0baf2bf5e5652e46e4f68c62cecf315364208c1f75d0
+--- patched-moonlight/input/sdl.c
++++ viewer/io/input/sdl.c
+@@ -18,7 +18,7 @@
+  */
+ 
+ #include "sdl.h"
+-#include "../sdl.h"
++#include "../../picture/sdl.h"
+ 
+ #include <Limelight.h>
+ 
+@@ -446,6 +446,14 @@
+   }
+ }
+ 
++// Korri adaptation: release controllers after the network callbacks stop.
++void sdlinput_destroy(void) {
++  for (int i = 0; i < MAX_GAMEPADS; ++i)
++    if (gamepads[i].initialized) remove_gamepad(gamepads[i].sdl_id);
++  activeGamepadMask = 0;
++  SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
++}
++
+ int sdlinput_handle_event(SDL_Window* window, SDL_Event* event) {
+   int button = 0;
+   unsigned char touchEventType;
+ADAPTED input/sdl.h sha256=71bbb98971ef494b7944fbb9bf9c6522977fdb0da8a1e2c442ccbee9e3b1fea5
+--- patched-moonlight/input/sdl.h
++++ viewer/io/input/sdl.h
+@@ -23,6 +23,7 @@
+ extern int sdl_gamepads;
+ 
+ void sdlinput_init(char* mappings);
++void sdlinput_destroy(void);
+ int sdlinput_handle_event(SDL_Window* window, SDL_Event* event);
+ void sdlinput_rumble(unsigned short controller_id, unsigned short low_freq_motor, unsigned short high_freq_motor);
+ void sdlinput_rumble_triggers(unsigned short controller_id, unsigned short left_trigger, unsigned short right_trigger);
+ADAPTED input/udev.c sha256=b8dd020547063ce888538426c9219915eca7e0aa995d4f85f8bbf4415aab1650
+--- patched-moonlight/input/udev.c
++++ viewer/io/input/udev.c
+@@ -17,7 +17,7 @@
+  * along with Moonlight; if not, see <http://www.gnu.org/licenses/>.
+  */
+ 
+-#include "../loop.h"
++#include "../../picture/loop.h"
+ 
+ #include "udev.h"
+ #include "evdev.h"
+IDENTICAL input/udev.h sha256=b6548ccc32465d5c5431803c056c8881392056f8ab0ce6e16dc6b8a46355037b
+ADAPTED input/x11.c sha256=e7fc1eb2c88c9a4d3c03845691906d6fee54042637034cc30c7c3d57cc6aa97d
+--- patched-moonlight/input/x11.c
++++ viewer/io/input/x11.c
+@@ -20,7 +20,7 @@
+ #include "x11.h"
+ #include "keyboard.h"
+ 
+-#include "../loop.h"
++#include "../../picture/loop.h"
+ 
+ #include <Limelight.h>
+ 
+IDENTICAL input/x11.h sha256=451780387230fd8dbf7e69d779fe2c6e3a5862769304a936e718a71f7ebf7267

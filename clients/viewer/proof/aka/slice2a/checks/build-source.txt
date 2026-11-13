@@ -1,0 +1,7 @@
+Build host: zao
+Architecture: x86_64
+Code commit: 77ae2b6b792beba7695e931f6a4367cb80e90821
+Tool main commit: 3f37f55a97ed2a1fb8e8c89ea249d3540ff0b4d3
+Package: /nix/store/z3pdx54250q24isdkpkaqszp8fpryhf1-korri-viewer-0.1.0
+Picture check: /nix/store/v070dl5dd40kh387v6m4pyhqbqxjv9bh-korri-viewer-picture-check
+I/O check: /nix/store/64qycrivyspzflvxm4k2xjhi9g8l1l5k-korri-viewer-io-check

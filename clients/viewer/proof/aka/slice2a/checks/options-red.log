@@ -1,0 +1,109 @@
+evaluation warning: stdenv.isLinux is deprecated, use stdenv.hostPlatform.isLinux instead
+   Compiling find-msvc-tools v0.1.15
+   Compiling shlex v2.0.1
+   Compiling pkg-config v0.3.34
+   Compiling vcpkg v0.2.15
+   Compiling libc v0.2.191
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling cfg-if v1.0.5
+   Compiling quote v1.0.47
+   Compiling glob v0.3.4
+   Compiling memchr v2.8.3
+   Compiling prettyplease v0.2.37
+   Compiling minimal-lexical v0.2.1
+   Compiling regex-syntax v0.8.11
+   Compiling bindgen v0.72.1
+   Compiling libloading v0.8.9
+   Compiling getrandom v0.4.3
+   Compiling cc v1.11.2
+   Compiling either v1.19.0
+   Compiling log v0.4.35
+   Compiling bitflags v2.13.2
+   Compiling clang-sys v1.9.1
+   Compiling itertools v0.13.0
+   Compiling shlex v1.3.0
+   Compiling rustc-hash v2.1.3
+   Compiling openssl v0.10.82
+   Compiling curl v0.4.51
+   Compiling foreign-types-shared v0.1.1
+   Compiling nom v7.1.3
+   Compiling anyhow v1.0.104
+   Compiling foreign-types v0.3.2
+   Compiling rustix v1.1.6
+   Compiling openssl-probe v0.1.6
+   Compiling roxmltree v0.21.2
+   Compiling linux-raw-sys v0.12.1
+   Compiling once_cell v1.21.4
+   Compiling fastrand v2.5.0
+   Compiling syn v2.0.119
+   Compiling regex-automata v0.4.18
+   Compiling openssl-sys v0.9.118
+   Compiling libz-sys v1.1.33
+   Compiling curl-sys v0.4.91+curl-8.22.0
+   Compiling socket2 v0.6.5
+   Compiling uuid v1.29.2
+   Compiling cexpr v0.6.0
+   Compiling tempfile v3.27.0
+   Compiling regex v1.13.1
+   Compiling openssl-macros v0.1.1
+   Compiling korri-viewer v0.1.0 (/home/simonwjackson/code/sandbox/korri/.worktrees/c-89c7c029d02ac68e50a831c4a7e88f54ffb9db482274afedbd8aad82e695cfd6/clients/viewer)
+error[E0609]: no field `viewonly` on type `options::Options`
+   --> src/options.rs:177:19
+    |
+177 |         assert!(o.viewonly);
+    |                   ^^^^^^^^ unknown field
+    |
+    = note: available fields are: `action`, `host`, `port`, `keydir`, `app` ... and 15 others
+
+error[E0609]: no field `mouse_emulation` on type `options::Options`
+   --> src/options.rs:178:20
+    |
+178 |         assert!(!o.mouse_emulation);
+    |                    ^^^^^^^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `action`, `host`, `port`, `keydir`, `app` ... and 15 others
+
+error[E0609]: no field `mapping` on type `options::Options`
+   --> src/options.rs:179:22
+    |
+179 |         assert_eq!(o.mapping.as_deref(), Some("/tmp/controllers"));
+    |                      ^^^^^^^ unknown field
+    |
+    = note: available fields are: `action`, `host`, `port`, `keydir`, `app` ... and 15 others
+
+error[E0609]: no field `audio_device` on type `options::Options`
+   --> src/options.rs:180:22
+    |
+180 |         assert_eq!(o.audio_device.as_deref(), Some("null"));
+    |                      ^^^^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `action`, `host`, `port`, `keydir`, `app` ... and 15 others
+
+error[E0609]: no field `viewonly` on type `options::Options`
+   --> src/options.rs:182:20
+    |
+182 |         assert!(!o.viewonly);
+    |                    ^^^^^^^^ unknown field
+    |
+    = note: available fields are: `action`, `host`, `port`, `keydir`, `app` ... and 15 others
+
+error[E0609]: no field `mouse_emulation` on type `options::Options`
+   --> src/options.rs:183:19
+    |
+183 |         assert!(o.mouse_emulation);
+    |                   ^^^^^^^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `action`, `host`, `port`, `keydir`, `app` ... and 15 others
+
+error[E0609]: no field `audio_device` on type `options::Options`
+   --> src/options.rs:184:19
+    |
+184 |         assert!(o.audio_device.is_none());
+    |                   ^^^^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `action`, `host`, `port`, `keydir`, `app` ... and 15 others
+
+For more information about this error, try `rustc --explain E0609`.
+error: could not compile `korri-viewer` (lib test) due to 7 previous errors
+warning: build failed, waiting for other jobs to finish...

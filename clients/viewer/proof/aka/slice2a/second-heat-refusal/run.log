@@ -1,0 +1,9 @@
+evaluation warning: stdenv.isLinux is deprecated, use stdenv.hostPlatform.isLinux instead
+this derivation will be built:
+  /nix/store/yryb92g23jg1njrlvnmrf7srnj2q5x41-stream-cadence.drv
+building '/nix/store/yryb92g23jg1njrlvnmrf7srnj2q5x41-stream-cadence.drv'...
+Building prebuilt tools for x86_64 on this host or its builders.
+Building prebuilt tools for x86_64 on this host or its builders.
+Results: /tmp/korri-slice2-aka/attempt-2/base
+Turn 1: baseline/run-1
+Device restore check failed. Stop device work and inspect restore evidence.

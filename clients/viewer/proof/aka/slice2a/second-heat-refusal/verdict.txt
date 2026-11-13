@@ -1,0 +1,2 @@
+evaluation warning: stdenv.isLinux is deprecated, use stdenv.hostPlatform.isLinux instead
+0 valid viewer runs; a verdict needs 5 in each result

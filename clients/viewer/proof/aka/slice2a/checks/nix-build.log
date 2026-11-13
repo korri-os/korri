@@ -1,0 +1,280 @@
+evaluation warning: stdenv.isLinux is deprecated, use stdenv.hostPlatform.isLinux instead
+these 2 derivations will be built:
+  /nix/store/4z0b24kik13y8krasgm9hl7gh719id2j-korri-viewer-picture-check.drv
+  /nix/store/h9wdm3gfabdnfa9rjgw0vndbiqclnkwh-korri-viewer-0.1.0.drv
+building '/nix/store/h9wdm3gfabdnfa9rjgw0vndbiqclnkwh-korri-viewer-0.1.0.drv'...
+building '/nix/store/4z0b24kik13y8krasgm9hl7gh719id2j-korri-viewer-picture-check.drv'...
+korri-viewer> Running phase: unpackPhase
+korri-viewer> unpacking source archive /nix/store/dpvwlabraclj8kzlai155iyy3xwd85h9-source
+korri-viewer> source root is source
+korri-viewer> Executing cargoSetupPostUnpackHook
+korri-viewer> Finished cargoSetupPostUnpackHook
+korri-viewer> Running phase: patchPhase
+korri-viewer> Executing cargoSetupPostPatchHook
+korri-viewer> Validating consistency between /build/source/Cargo.lock and /build/cargo-vendor-dir/Cargo.lock
+korri-viewer> Finished cargoSetupPostPatchHook
+korri-viewer> Running phase: updateAutotoolsGnuConfigScriptsPhase
+korri-viewer> Running phase: configurePhase
+korri-viewer> Running phase: buildPhase
+korri-viewer> Executing cargoBuildHook
+korri-viewer> cargoBuildHook flags: -j 16 --target x86_64-unknown-linux-gnu --offline --profile release
+korri-viewer>    Compiling shlex v2.0.1
+korri-viewer>    Compiling find-msvc-tools v0.1.15
+korri-viewer>    Compiling pkg-config v0.3.34
+korri-viewer>    Compiling vcpkg v0.2.15
+korri-viewer>    Compiling libc v0.2.191
+korri-viewer>    Compiling proc-macro2 v1.0.107
+korri-viewer>    Compiling unicode-ident v1.0.27
+korri-viewer>    Compiling quote v1.0.47
+korri-viewer>    Compiling glob v0.3.4
+korri-viewer>    Compiling prettyplease v0.2.37
+korri-viewer>    Compiling memchr v2.8.3
+korri-viewer>    Compiling minimal-lexical v0.2.1
+korri-viewer>    Compiling cfg-if v1.0.5
+korri-viewer>    Compiling regex-syntax v0.8.11
+korri-viewer>    Compiling bindgen v0.72.1
+korri-viewer>    Compiling libloading v0.8.9
+korri-viewer>    Compiling either v1.19.0
+korri-viewer>    Compiling cc v1.11.2
+korri-viewer>    Compiling bitflags v2.13.2
+korri-viewer>    Compiling rustc-hash v2.1.3
+korri-viewer>    Compiling getrandom v0.4.3
+korri-viewer>    Compiling itertools v0.13.0
+korri-viewer>    Compiling shlex v1.3.0
+korri-viewer>    Compiling log v0.4.35
+korri-viewer>    Compiling curl v0.4.51
+korri-viewer>    Compiling anyhow v1.0.104
+korri-viewer>    Compiling clang-sys v1.9.1
+korri-viewer>    Compiling openssl v0.10.82
+korri-viewer>    Compiling foreign-types-shared v0.1.1
+korri-viewer>    Compiling nom v7.1.3
+korri-viewer>    Compiling foreign-types v0.3.2
+korri-viewer>    Compiling openssl-probe v0.1.6
+korri-viewer>    Compiling regex-automata v0.4.18
+korri-viewer>    Compiling syn v2.0.119
+korri-viewer>    Compiling roxmltree v0.21.2
+korri-viewer>    Compiling openssl-sys v0.9.118
+korri-viewer>    Compiling libz-sys v1.1.33
+korri-viewer>    Compiling curl-sys v0.4.91+curl-8.22.0
+korri-viewer>    Compiling socket2 v0.6.5
+korri-viewer>    Compiling uuid v1.29.2
+korri-viewer-picture-check> libva info: VA-API version 1.24.0
+korri-viewer-picture-check> libva error: vaGetDriverNames() failed with unknown libva error
+korri-viewer-picture-check> libva info: User environment variable requested driver 'korri_missing_driver'
+korri-viewer-picture-check> libva info: Trying to open /run/opengl-driver/lib/dri/korri_missing_driver_drv_video.so
+korri-viewer-picture-check> libva info: Trying to open /usr/lib/dri/korri_missing_driver_drv_video.so
+korri-viewer-picture-check> libva info: Trying to open /usr/lib32/dri/korri_missing_driver_drv_video.so
+korri-viewer-picture-check> libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/korri_missing_driver_drv_video.so
+korri-viewer-picture-check> libva info: Trying to open /usr/lib/i386-linux-gnu/dri/korri_missing_driver_drv_video.so
+korri-viewer-picture-check> libva info: va_openDriver() returns -1
+korri-viewer-picture-check> Failed to initialize X11 VAAPI display: unknown libva error
+korri-viewer-picture-check> libva info: VA-API version 1.24.0
+korri-viewer-picture-check> libva error: vaGetDriverNames() failed with unknown libva error
+korri-viewer-picture-check> libva info: User environment variable requested driver 'korri_missing_driver'
+korri-viewer-picture-check> libva info: Trying to open /run/opengl-driver/lib/dri/korri_missing_driver_drv_video.so
+korri-viewer-picture-check> libva info: Trying to open /usr/lib/dri/korri_missing_driver_drv_video.so
+korri-viewer-picture-check> libva info: Trying to open /usr/lib32/dri/korri_missing_driver_drv_video.so
+korri-viewer-picture-check> libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/korri_missing_driver_drv_video.so
+korri-viewer-picture-check> libva info: Trying to open /usr/lib/i386-linux-gnu/dri/korri_missing_driver_drv_video.so
+korri-viewer-picture-check> libva info: va_openDriver() returns -1
+korri-viewer-picture-check> Failed to initialize X11 VAAPI display: unknown libva error
+korri-viewer-picture-check> libva info: VA-API version 1.24.0
+korri-viewer-picture-check> libva error: vaGetDriverNames() failed with unknown libva error
+korri-viewer-picture-check> libva info: User environment variable requested driver 'korri_missing_driver'
+korri-viewer-picture-check> libva info: Trying to open /run/opengl-driver/lib/dri/korri_missing_driver_drv_video.so
+korri-viewer-picture-check> libva info: Trying to open /usr/lib/dri/korri_missing_driver_drv_video.so
+korri-viewer-picture-check> libva info: Trying to open /usr/lib32/dri/korri_missing_driver_drv_video.so
+korri-viewer-picture-check> libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/korri_missing_driver_drv_video.so
+korri-viewer-picture-check> libva info: Trying to open /usr/lib/i386-linux-gnu/dri/korri_missing_driver_drv_video.so
+korri-viewer-picture-check> libva info: va_openDriver() returns -1
+korri-viewer-picture-check> Failed to initialize X11 VAAPI display: unknown libva error
+korri-viewer>    Compiling cexpr v0.6.0
+korri-viewer>    Compiling regex v1.13.1
+korri-viewer-picture-check> VA-API presentation follows actual X11 window geometry across resizes
+korri-viewer>    Compiling openssl-macros v0.1.1
+korri-viewer-picture-check> /nix/store/dpvwlabraclj8kzlai155iyy3xwd85h9-source/io/input/evdev.c: In function 'evdev_rumble':
+korri-viewer-picture-check> /nix/store/dpvwlabraclj8kzlai155iyy3xwd85h9-source/io/input/evdev.c:1150:3: warning: ignoring return value of 'write' declared with attribute 'warn_unused_result' [-Wunused-result]
+korri-viewer-picture-check>  1150 |   write(device->fd, (const void*) &event, sizeof(event));
+korri-viewer-picture-check>       |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+korri-viewer>    Compiling korri-viewer v0.1.0 (/build/source)
+korri-viewer-picture-check> Couldn't open codec: h264_v4l2m2m
+korri-viewer-picture-check> Using FFmpeg decoder: h264
+korri-viewer-picture-check> SDL software fallback decoded and presented four H.264 frames
+korri-viewer> warning: korri-viewer@0.1.0: io/audio/alsa.c: In function 'alsa_renderer_decode_and_play_sample':
+korri-viewer> warning: korri-viewer@0.1.0: io/audio/alsa.c:115:52: warning: pointer targets in passing argument 2 of 'opus_multistream_decode' differ in signedness [-Wpointer-sign]
+korri-viewer> warning: korri-viewer@0.1.0:   115 |   int decodeLen = opus_multistream_decode(decoder, data, length, pcmBuffer, samplesPerFrame, 0);
+korri-viewer> warning: korri-viewer@0.1.0:       |                                                    ^~~~
+korri-viewer> warning: korri-viewer@0.1.0:       |                                                    |
+korri-viewer> warning: korri-viewer@0.1.0:       |                                                    char *
+korri-viewer> warning: korri-viewer@0.1.0: In file included from io/audio/alsa.c:25:
+korri-viewer> warning: korri-viewer@0.1.0: /nix/store/2qi5qhb83iqgfghi5nifj32m43cjwbqb-libopus-1.6.1-dev/include/opus/opus_multistream.h:625:26: note: expected 'const unsigned char *' but argument is of type 'char *'
+korri-viewer> warning: korri-viewer@0.1.0:   625 |     const unsigned char *data,
+korri-viewer> warning: korri-viewer@0.1.0:       |     ~~~~~~~~~~~~~~~~~~~~~^~~~
+korri-viewer> warning: korri-viewer@0.1.0: io/audio/pulse.c: In function 'pulse_renderer_decode_and_play_sample':
+korri-viewer> warning: korri-viewer@0.1.0: io/audio/pulse.c:97:52: warning: pointer targets in passing argument 2 of 'opus_multistream_decode' differ in signedness [-Wpointer-sign]
+korri-viewer> warning: korri-viewer@0.1.0:    97 |   int decodeLen = opus_multistream_decode(decoder, data, length, pcmBuffer, samplesPerFrame, 0);
+korri-viewer> warning: korri-viewer@0.1.0:       |                                                    ^~~~
+korri-viewer> warning: korri-viewer@0.1.0:       |                                                    |
+korri-viewer> warning: korri-viewer@0.1.0:       |                                                    char *
+korri-viewer> warning: korri-viewer@0.1.0: In file included from io/audio/pulse.c:26:
+korri-viewer> warning: korri-viewer@0.1.0: /nix/store/2qi5qhb83iqgfghi5nifj32m43cjwbqb-libopus-1.6.1-dev/include/opus/opus_multistream.h:625:26: note: expected 'const unsigned char *' but argument is of type 'char *'
+korri-viewer> warning: korri-viewer@0.1.0:   625 |     const unsigned char *data,
+korri-viewer> warning: korri-viewer@0.1.0:       |     ~~~~~~~~~~~~~~~~~~~~~^~~~
+korri-viewer> warning: korri-viewer@0.1.0: io/audio/sdl.c: In function 'sdl_renderer_decode_and_play_sample':
+korri-viewer> warning: korri-viewer@0.1.0: io/audio/sdl.c:82:52: warning: pointer targets in passing argument 2 of 'opus_multistream_decode' differ in signedness [-Wpointer-sign]
+korri-viewer> warning: korri-viewer@0.1.0:    82 |   int decodeLen = opus_multistream_decode(decoder, data, length, pcmBuffer, samplesPerFrame, 0);
+korri-viewer> warning: korri-viewer@0.1.0:       |                                                    ^~~~
+korri-viewer> warning: korri-viewer@0.1.0:       |                                                    |
+korri-viewer> warning: korri-viewer@0.1.0:       |                                                    char *
+korri-viewer> warning: korri-viewer@0.1.0: In file included from io/audio/sdl.c:26:
+korri-viewer> warning: korri-viewer@0.1.0: /nix/store/2qi5qhb83iqgfghi5nifj32m43cjwbqb-libopus-1.6.1-dev/include/opus/opus_multistream.h:625:26: note: expected 'const unsigned char *' but argument is of type 'char *'
+korri-viewer> warning: korri-viewer@0.1.0:   625 |     const unsigned char *data,
+korri-viewer> warning: korri-viewer@0.1.0:       |     ~~~~~~~~~~~~~~~~~~~~~^~~~
+korri-viewer> warning: korri-viewer@0.1.0: io/input/evdev.c: In function 'evdev_rumble':
+korri-viewer> warning: korri-viewer@0.1.0: io/input/evdev.c:1150:3: warning: ignoring return value of 'write' declared with attribute 'warn_unused_result' [-Wunused-result]
+korri-viewer> warning: korri-viewer@0.1.0:  1150 |   write(device->fd, (const void*) &event, sizeof(event));
+korri-viewer> warning: korri-viewer@0.1.0:       |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+korri-viewer> warning: korri-viewer@0.1.0: io/input/evdev.c: In function 'evdev_map':
+korri-viewer> warning: korri-viewer@0.1.0: io/input/evdev.c:1034:3: warning: '__builtin_strncpy' output may be truncated copying 32 bytes from a string of length 32 [-Wstringop-truncation]
+korri-viewer> warning: korri-viewer@0.1.0:  1034 |   strncpy(map.guid, str_guid, sizeof(map.guid) - 1);
+korri-viewer> warning: korri-viewer@0.1.0:       |   ^
+korri-viewer> warning: korri-viewer@0.1.0: io/input/sdl.c: In function 'send_controller_arrival':
+korri-viewer> warning: korri-viewer@0.1.0: io/input/sdl.c:294:21: warning: comparison of integer expressions of different signedness: 'int' and 'long unsigned int' [-Wsign-compare]
+korri-viewer> warning: korri-viewer@0.1.0:   294 |   for (int i = 0; i < SDL_arraysize(SDL_TO_LI_BUTTON_MAP); i++) {
+korri-viewer> warning: korri-viewer@0.1.0:       |                     ^
+korri-viewer> warning: korri-viewer@0.1.0: io/input/sdl.c:316:3: warning: enumeration value 'SDL_CONTROLLER_TYPE_UNKNOWN' not handled in switch [-Wswitch]
+korri-viewer> warning: korri-viewer@0.1.0:   316 |   switch (SDL_GameControllerGetType(state->controller)) {
+korri-viewer> warning: korri-viewer@0.1.0:       |   ^~~~~~
+korri-viewer> warning: korri-viewer@0.1.0: io/input/sdl.c:316:3: warning: enumeration value 'SDL_CONTROLLER_TYPE_VIRTUAL' not handled in switch [-Wswitch]
+korri-viewer> warning: korri-viewer@0.1.0: io/input/sdl.c:316:3: warning: enumeration value 'SDL_CONTROLLER_TYPE_AMAZON_LUNA' not handled in switch [-Wswitch]
+korri-viewer> warning: korri-viewer@0.1.0: io/input/sdl.c:316:3: warning: enumeration value 'SDL_CONTROLLER_TYPE_GOOGLE_STADIA' not handled in switch [-Wswitch]
+korri-viewer> warning: korri-viewer@0.1.0: io/input/sdl.c:316:3: warning: enumeration value 'SDL_CONTROLLER_TYPE_NVIDIA_SHIELD' not handled in switch [-Wswitch]
+korri-viewer> warning: korri-viewer@0.1.0: io/input/sdl.c:316:3: warning: enumeration value 'SDL_CONTROLLER_TYPE_MAX' not handled in switch [-Wswitch]
+korri-viewer> warning: korri-viewer@0.1.0: io/input/x11.c: In function 'x11_handler':
+korri-viewer> warning: korri-viewer@0.1.0: io/input/x11.c:146:35: warning: comparison of integer expressions of different signedness: 'long int' and 'Atom' {aka 'long unsigned int'} [-Wsign-compare]
+korri-viewer> warning: korri-viewer@0.1.0:   146 |       if (event.xclient.data.l[0] == wm_deletemessage)
+korri-viewer> warning: korri-viewer@0.1.0:       |                                   ^~
+korri-viewer>     Finished `release` profile [optimized] target(s) in 20.91s
+korri-viewer> Executing cargoInstallPostBuildHook
+korri-viewer> Finished cargoInstallPostBuildHook
+korri-viewer> Finished cargoBuildHook
+korri-viewer> Running phase: checkPhase
+korri-viewer> Executing cargoCheckHook
+korri-viewer> cargoCheckHook flags: -j 16 --profile release --target x86_64-unknown-linux-gnu --offline --
+korri-viewer>    Compiling bitflags v2.13.2
+korri-viewer>    Compiling rustix v1.1.6
+korri-viewer>    Compiling linux-raw-sys v0.12.1
+korri-viewer>    Compiling fastrand v2.5.0
+korri-viewer>    Compiling once_cell v1.21.4
+korri-viewer> warning: korri-viewer@0.1.0: io/audio/alsa.c: In function 'alsa_renderer_decode_and_play_sample':
+korri-viewer> warning: korri-viewer@0.1.0: io/audio/alsa.c:115:52: warning: pointer targets in passing argument 2 of 'opus_multistream_decode' differ in signedness [-Wpointer-sign]
+korri-viewer> warning: korri-viewer@0.1.0:   115 |   int decodeLen = opus_multistream_decode(decoder, data, length, pcmBuffer, samplesPerFrame, 0);
+korri-viewer> warning: korri-viewer@0.1.0:       |                                                    ^~~~
+korri-viewer> warning: korri-viewer@0.1.0:       |                                                    |
+korri-viewer> warning: korri-viewer@0.1.0:       |                                                    char *
+korri-viewer> warning: korri-viewer@0.1.0: In file included from io/audio/alsa.c:25:
+korri-viewer> warning: korri-viewer@0.1.0: /nix/store/2qi5qhb83iqgfghi5nifj32m43cjwbqb-libopus-1.6.1-dev/include/opus/opus_multistream.h:625:26: note: expected 'const unsigned char *' but argument is of type 'char *'
+korri-viewer> warning: korri-viewer@0.1.0:   625 |     const unsigned char *data,
+korri-viewer> warning: korri-viewer@0.1.0:       |     ~~~~~~~~~~~~~~~~~~~~~^~~~
+korri-viewer> warning: korri-viewer@0.1.0: io/audio/pulse.c: In function 'pulse_renderer_decode_and_play_sample':
+korri-viewer> warning: korri-viewer@0.1.0: io/audio/pulse.c:97:52: warning: pointer targets in passing argument 2 of 'opus_multistream_decode' differ in signedness [-Wpointer-sign]
+korri-viewer> warning: korri-viewer@0.1.0:    97 |   int decodeLen = opus_multistream_decode(decoder, data, length, pcmBuffer, samplesPerFrame, 0);
+korri-viewer> warning: korri-viewer@0.1.0:       |                                                    ^~~~
+korri-viewer> warning: korri-viewer@0.1.0:       |                                                    |
+korri-viewer> warning: korri-viewer@0.1.0:       |                                                    char *
+korri-viewer> warning: korri-viewer@0.1.0: In file included from io/audio/pulse.c:26:
+korri-viewer> warning: korri-viewer@0.1.0: /nix/store/2qi5qhb83iqgfghi5nifj32m43cjwbqb-libopus-1.6.1-dev/include/opus/opus_multistream.h:625:26: note: expected 'const unsigned char *' but argument is of type 'char *'
+korri-viewer> warning: korri-viewer@0.1.0:   625 |     const unsigned char *data,
+korri-viewer> warning: korri-viewer@0.1.0:       |     ~~~~~~~~~~~~~~~~~~~~~^~~~
+korri-viewer> warning: korri-viewer@0.1.0: io/audio/sdl.c: In function 'sdl_renderer_decode_and_play_sample':
+korri-viewer> warning: korri-viewer@0.1.0: io/audio/sdl.c:82:52: warning: pointer targets in passing argument 2 of 'opus_multistream_decode' differ in signedness [-Wpointer-sign]
+korri-viewer> warning: korri-viewer@0.1.0:    82 |   int decodeLen = opus_multistream_decode(decoder, data, length, pcmBuffer, samplesPerFrame, 0);
+korri-viewer> warning: korri-viewer@0.1.0:       |                                                    ^~~~
+korri-viewer> warning: korri-viewer@0.1.0:       |                                                    |
+korri-viewer> warning: korri-viewer@0.1.0:       |                                                    char *
+korri-viewer> warning: korri-viewer@0.1.0: In file included from io/audio/sdl.c:26:
+korri-viewer> warning: korri-viewer@0.1.0: /nix/store/2qi5qhb83iqgfghi5nifj32m43cjwbqb-libopus-1.6.1-dev/include/opus/opus_multistream.h:625:26: note: expected 'const unsigned char *' but argument is of type 'char *'
+korri-viewer> warning: korri-viewer@0.1.0:   625 |     const unsigned char *data,
+korri-viewer> warning: korri-viewer@0.1.0:       |     ~~~~~~~~~~~~~~~~~~~~~^~~~
+korri-viewer> warning: korri-viewer@0.1.0: io/input/evdev.c: In function 'evdev_rumble':
+korri-viewer> warning: korri-viewer@0.1.0: io/input/evdev.c:1150:3: warning: ignoring return value of 'write' declared with attribute 'warn_unused_result' [-Wunused-result]
+korri-viewer> warning: korri-viewer@0.1.0:  1150 |   write(device->fd, (const void*) &event, sizeof(event));
+korri-viewer> warning: korri-viewer@0.1.0:       |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+korri-viewer> warning: korri-viewer@0.1.0: io/input/evdev.c: In function 'evdev_map':
+korri-viewer> warning: korri-viewer@0.1.0: io/input/evdev.c:1034:3: warning: '__builtin_strncpy' output may be truncated copying 32 bytes from a string of length 32 [-Wstringop-truncation]
+korri-viewer> warning: korri-viewer@0.1.0:  1034 |   strncpy(map.guid, str_guid, sizeof(map.guid) - 1);
+korri-viewer> warning: korri-viewer@0.1.0:       |   ^
+korri-viewer> warning: korri-viewer@0.1.0: io/input/sdl.c: In function 'send_controller_arrival':
+korri-viewer> warning: korri-viewer@0.1.0: io/input/sdl.c:294:21: warning: comparison of integer expressions of different signedness: 'int' and 'long unsigned int' [-Wsign-compare]
+korri-viewer> warning: korri-viewer@0.1.0:   294 |   for (int i = 0; i < SDL_arraysize(SDL_TO_LI_BUTTON_MAP); i++) {
+korri-viewer> warning: korri-viewer@0.1.0:       |                     ^
+korri-viewer> warning: korri-viewer@0.1.0: io/input/sdl.c:316:3: warning: enumeration value 'SDL_CONTROLLER_TYPE_UNKNOWN' not handled in switch [-Wswitch]
+korri-viewer> warning: korri-viewer@0.1.0:   316 |   switch (SDL_GameControllerGetType(state->controller)) {
+korri-viewer> warning: korri-viewer@0.1.0:       |   ^~~~~~
+korri-viewer> warning: korri-viewer@0.1.0: io/input/sdl.c:316:3: warning: enumeration value 'SDL_CONTROLLER_TYPE_VIRTUAL' not handled in switch [-Wswitch]
+korri-viewer> warning: korri-viewer@0.1.0: io/input/sdl.c:316:3: warning: enumeration value 'SDL_CONTROLLER_TYPE_AMAZON_LUNA' not handled in switch [-Wswitch]
+korri-viewer> warning: korri-viewer@0.1.0: io/input/sdl.c:316:3: warning: enumeration value 'SDL_CONTROLLER_TYPE_GOOGLE_STADIA' not handled in switch [-Wswitch]
+korri-viewer> warning: korri-viewer@0.1.0: io/input/sdl.c:316:3: warning: enumeration value 'SDL_CONTROLLER_TYPE_NVIDIA_SHIELD' not handled in switch [-Wswitch]
+korri-viewer> warning: korri-viewer@0.1.0: io/input/sdl.c:316:3: warning: enumeration value 'SDL_CONTROLLER_TYPE_MAX' not handled in switch [-Wswitch]
+korri-viewer> warning: korri-viewer@0.1.0: io/input/x11.c: In function 'x11_handler':
+korri-viewer> warning: korri-viewer@0.1.0: io/input/x11.c:146:35: warning: comparison of integer expressions of different signedness: 'long int' and 'Atom' {aka 'long unsigned int'} [-Wsign-compare]
+korri-viewer> warning: korri-viewer@0.1.0:   146 |       if (event.xclient.data.l[0] == wm_deletemessage)
+korri-viewer> warning: korri-viewer@0.1.0:       |                                   ^~
+korri-viewer>    Compiling openssl v0.10.82
+korri-viewer>    Compiling tempfile v3.27.0
+korri-viewer>    Compiling korri-viewer v0.1.0 (/build/source)
+korri-viewer>     Finished `release` profile [optimized] target(s) in 6.85s
+korri-viewer>      Running unittests src/lib.rs (target/x86_64-unknown-linux-gnu/release/deps/korri_viewer-3137617a2e13c5d8)
+korri-viewer> 
+korri-viewer> running 2 tests
+korri-viewer> test options::tests::refuses_bad_boundary_values ... ok
+korri-viewer> test options::tests::retains_player_io_options ... ok
+korri-viewer> 
+korri-viewer> test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+korri-viewer> 
+korri-viewer>      Running unittests src/main.rs (target/x86_64-unknown-linux-gnu/release/deps/korri_viewer-e226f9cc14634815)
+korri-viewer> 
+korri-viewer> running 0 tests
+korri-viewer> 
+korri-viewer> test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+korri-viewer> 
+korri-viewer>      Running tests/cli.rs (target/x86_64-unknown-linux-gnu/release/deps/cli-90f60d19dcc962a1)
+korri-viewer> 
+korri-viewer> running 3 tests
+korri-viewer> test accepts_rendered_pc_settings_without_connecting_without_a_pin ... ok
+korri-viewer> test unsupported_input_is_not_silently_ignored ... ok
+korri-viewer> test missing_pin_fails_before_connecting ... ok
+korri-viewer> 
+korri-viewer> test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+korri-viewer> 
+korri-viewer>      Running tests/https.rs (target/x86_64-unknown-linux-gnu/release/deps/https-7ce3de18d6e73193)
+korri-viewer> 
+korri-viewer> running 4 tests
+korri-viewer> Platform SDL
+korri-viewer> test malformed_pin_fails_without_a_network_request ... ok
+korri-viewer> test each_https_connection_performs_fresh_client_authentication ... ok
+korri-viewer> Failed to create /homeless-shelter for shader cache (Permission denied)---disabling.
+korri-viewer> test https_accepts_only_the_authorized_certificate ... ok
+korri-viewer> test rust_launch_chain_uses_authenticated_serverinfo_and_the_selected_app ... ok
+korri-viewer> 
+korri-viewer> test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+korri-viewer> 
+korri-viewer>    Doc-tests korri_viewer
+korri-viewer> 
+korri-viewer> running 0 tests
+korri-viewer> 
+korri-viewer> test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+korri-viewer> 
+korri-viewer> Finished cargoCheckHook
+korri-viewer> Running phase: installPhase
+korri-viewer> Executing cargoInstallHook
+korri-viewer> Finished cargoInstallHook
+korri-viewer> Running phase: fixupPhase
+korri-viewer> shrinking RPATHs of ELF executables and libraries in /nix/store/z3pdx54250q24isdkpkaqszp8fpryhf1-korri-viewer-0.1.0
+korri-viewer> shrinking /nix/store/z3pdx54250q24isdkpkaqszp8fpryhf1-korri-viewer-0.1.0/bin/korri-viewer
+korri-viewer> checking for references to /build/ in /nix/store/z3pdx54250q24isdkpkaqszp8fpryhf1-korri-viewer-0.1.0...
+korri-viewer> patching script interpreter paths in /nix/store/z3pdx54250q24isdkpkaqszp8fpryhf1-korri-viewer-0.1.0
+korri-viewer> stripping (with command strip and flags -S -p) in /nix/store/z3pdx54250q24isdkpkaqszp8fpryhf1-korri-viewer-0.1.0/bin
+/nix/store/z3pdx54250q24isdkpkaqszp8fpryhf1-korri-viewer-0.1.0
+/nix/store/v070dl5dd40kh387v6m4pyhqbqxjv9bh-korri-viewer-picture-check
+/nix/store/64qycrivyspzflvxm4k2xjhi9g8l1l5k-korri-viewer-io-check

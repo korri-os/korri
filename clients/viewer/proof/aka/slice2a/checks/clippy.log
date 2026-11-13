@@ -1,0 +1,56 @@
+   Compiling korri-viewer v0.1.0 (/home/simonwjackson/code/sandbox/korri/.worktrees/c-89c7c029d02ac68e50a831c4a7e88f54ffb9db482274afedbd8aad82e695cfd6/clients/viewer)
+warning: korri-viewer@0.1.0: io/audio/alsa.c: In function 'alsa_renderer_decode_and_play_sample':
+warning: korri-viewer@0.1.0: io/audio/alsa.c:115:52: warning: pointer targets in passing argument 2 of 'opus_multistream_decode' differ in signedness [-Wpointer-sign]
+warning: korri-viewer@0.1.0:   115 |   int decodeLen = opus_multistream_decode(decoder, data, length, pcmBuffer, samplesPerFrame, 0);
+warning: korri-viewer@0.1.0:       |                                                    ^~~~
+warning: korri-viewer@0.1.0:       |                                                    |
+warning: korri-viewer@0.1.0:       |                                                    char *
+warning: korri-viewer@0.1.0: In file included from io/audio/alsa.c:25:
+warning: korri-viewer@0.1.0: /nix/store/2qi5qhb83iqgfghi5nifj32m43cjwbqb-libopus-1.6.1-dev/include/opus/opus_multistream.h:625:26: note: expected 'const unsigned char *' but argument is of type 'char *'
+warning: korri-viewer@0.1.0:   625 |     const unsigned char *data,
+warning: korri-viewer@0.1.0:       |     ~~~~~~~~~~~~~~~~~~~~~^~~~
+warning: korri-viewer@0.1.0: io/audio/pulse.c: In function 'pulse_renderer_decode_and_play_sample':
+warning: korri-viewer@0.1.0: io/audio/pulse.c:97:52: warning: pointer targets in passing argument 2 of 'opus_multistream_decode' differ in signedness [-Wpointer-sign]
+warning: korri-viewer@0.1.0:    97 |   int decodeLen = opus_multistream_decode(decoder, data, length, pcmBuffer, samplesPerFrame, 0);
+warning: korri-viewer@0.1.0:       |                                                    ^~~~
+warning: korri-viewer@0.1.0:       |                                                    |
+warning: korri-viewer@0.1.0:       |                                                    char *
+warning: korri-viewer@0.1.0: In file included from io/audio/pulse.c:26:
+warning: korri-viewer@0.1.0: /nix/store/2qi5qhb83iqgfghi5nifj32m43cjwbqb-libopus-1.6.1-dev/include/opus/opus_multistream.h:625:26: note: expected 'const unsigned char *' but argument is of type 'char *'
+warning: korri-viewer@0.1.0:   625 |     const unsigned char *data,
+warning: korri-viewer@0.1.0:       |     ~~~~~~~~~~~~~~~~~~~~~^~~~
+warning: korri-viewer@0.1.0: io/audio/sdl.c: In function 'sdl_renderer_decode_and_play_sample':
+warning: korri-viewer@0.1.0: io/audio/sdl.c:82:52: warning: pointer targets in passing argument 2 of 'opus_multistream_decode' differ in signedness [-Wpointer-sign]
+warning: korri-viewer@0.1.0:    82 |   int decodeLen = opus_multistream_decode(decoder, data, length, pcmBuffer, samplesPerFrame, 0);
+warning: korri-viewer@0.1.0:       |                                                    ^~~~
+warning: korri-viewer@0.1.0:       |                                                    |
+warning: korri-viewer@0.1.0:       |                                                    char *
+warning: korri-viewer@0.1.0: In file included from io/audio/sdl.c:26:
+warning: korri-viewer@0.1.0: /nix/store/2qi5qhb83iqgfghi5nifj32m43cjwbqb-libopus-1.6.1-dev/include/opus/opus_multistream.h:625:26: note: expected 'const unsigned char *' but argument is of type 'char *'
+warning: korri-viewer@0.1.0:   625 |     const unsigned char *data,
+warning: korri-viewer@0.1.0:       |     ~~~~~~~~~~~~~~~~~~~~~^~~~
+warning: korri-viewer@0.1.0: io/input/evdev.c: In function 'evdev_rumble':
+warning: korri-viewer@0.1.0: io/input/evdev.c:1150:3: warning: ignoring return value of 'write' declared with attribute 'warn_unused_result' [-Wunused-result]
+warning: korri-viewer@0.1.0:  1150 |   write(device->fd, (const void*) &event, sizeof(event));
+warning: korri-viewer@0.1.0:       |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+warning: korri-viewer@0.1.0: io/input/evdev.c: In function 'evdev_map':
+warning: korri-viewer@0.1.0: io/input/evdev.c:1034:3: warning: '__builtin_strncpy' output may be truncated copying 32 bytes from a string of length 32 [-Wstringop-truncation]
+warning: korri-viewer@0.1.0:  1034 |   strncpy(map.guid, str_guid, sizeof(map.guid) - 1);
+warning: korri-viewer@0.1.0:       |   ^
+warning: korri-viewer@0.1.0: io/input/sdl.c: In function 'send_controller_arrival':
+warning: korri-viewer@0.1.0: io/input/sdl.c:294:21: warning: comparison of integer expressions of different signedness: 'int' and 'long unsigned int' [-Wsign-compare]
+warning: korri-viewer@0.1.0:   294 |   for (int i = 0; i < SDL_arraysize(SDL_TO_LI_BUTTON_MAP); i++) {
+warning: korri-viewer@0.1.0:       |                     ^
+warning: korri-viewer@0.1.0: io/input/sdl.c:316:3: warning: enumeration value 'SDL_CONTROLLER_TYPE_UNKNOWN' not handled in switch [-Wswitch]
+warning: korri-viewer@0.1.0:   316 |   switch (SDL_GameControllerGetType(state->controller)) {
+warning: korri-viewer@0.1.0:       |   ^~~~~~
+warning: korri-viewer@0.1.0: io/input/sdl.c:316:3: warning: enumeration value 'SDL_CONTROLLER_TYPE_VIRTUAL' not handled in switch [-Wswitch]
+warning: korri-viewer@0.1.0: io/input/sdl.c:316:3: warning: enumeration value 'SDL_CONTROLLER_TYPE_AMAZON_LUNA' not handled in switch [-Wswitch]
+warning: korri-viewer@0.1.0: io/input/sdl.c:316:3: warning: enumeration value 'SDL_CONTROLLER_TYPE_GOOGLE_STADIA' not handled in switch [-Wswitch]
+warning: korri-viewer@0.1.0: io/input/sdl.c:316:3: warning: enumeration value 'SDL_CONTROLLER_TYPE_NVIDIA_SHIELD' not handled in switch [-Wswitch]
+warning: korri-viewer@0.1.0: io/input/sdl.c:316:3: warning: enumeration value 'SDL_CONTROLLER_TYPE_MAX' not handled in switch [-Wswitch]
+warning: korri-viewer@0.1.0: io/input/x11.c: In function 'x11_handler':
+warning: korri-viewer@0.1.0: io/input/x11.c:146:35: warning: comparison of integer expressions of different signedness: 'long int' and 'Atom' {aka 'long unsigned int'} [-Wsign-compare]
+warning: korri-viewer@0.1.0:   146 |       if (event.xclient.data.l[0] == wm_deletemessage)
+warning: korri-viewer@0.1.0:       |                                   ^~
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.54s

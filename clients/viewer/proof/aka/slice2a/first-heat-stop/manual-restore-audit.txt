@@ -1,0 +1,16 @@
+Fri Nov 13 07:38:05 PM UTC 2026
+Id=korri-sunshine.service
+ActiveState=active
+MainPID=2569277
+ExecMainStartTimestamp=Thu 2026-11-12 08:06:37 UTC
+
+Id=korri-compositor.service
+ActiveState=active
+MainPID=748122
+ExecMainStartTimestamp=Tue 2026-11-10 19:26:36 UTC
+
+Id=korrid.service
+ActiveState=active
+MainPID=2569267
+ExecMainStartTimestamp=Thu 2026-11-12 08:06:37 UTC
+95875

@@ -1,0 +1,51 @@
+evaluation warning: stdenv.isLinux is deprecated, use stdenv.hostPlatform.isLinux instead
+this derivation will be built:
+  /nix/store/xb8lgfz4fphvib3rvd1lrxw76y4x38s5-korri-viewer-io-check.drv
+building '/nix/store/xb8lgfz4fphvib3rvd1lrxw76y4x38s5-korri-viewer-io-check.drv'...
+korri-viewer-io-check> /nix/store/1wk8ka9dqdkmzaj61sp4b6jn7c6h2i1x-source/io/input/evdev.c: In function 'evdev_rumble':
+korri-viewer-io-check> /nix/store/1wk8ka9dqdkmzaj61sp4b6jn7c6h2i1x-source/io/input/evdev.c:1142:3: warning: ignoring return value of 'write' declared with attribute 'warn_unused_result' [-Wunused-result]
+korri-viewer-io-check>  1142 |   write(device->fd, (const void*) &event, sizeof(event));
+korri-viewer-io-check>       |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+korri-viewer-io-check> Opus -> ALSA null: 2 channels, 4 packets, PCM verified
+korri-viewer-io-check> Opus -> ALSA null: 6 channels, 4 packets, PCM verified
+korri-viewer-io-check> Opus -> ALSA null: 8 channels, 4 packets, PCM verified
+korri-viewer-io-check> /nix/store/1wk8ka9dqdkmzaj61sp4b6jn7c6h2i1x-source/io/input/evdev.c: In function 'evdev_rumble':
+korri-viewer-io-check> /nix/store/1wk8ka9dqdkmzaj61sp4b6jn7c6h2i1x-source/io/input/evdev.c:1142:3: warning: ignoring return value of 'write' declared with attribute 'warn_unused_result' [-Wunused-result]
+korri-viewer-io-check>  1142 |   write(device->fd, (const void*) &event, sizeof(event));
+korri-viewer-io-check>       |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+korri-viewer-io-check> In file included from /nix/store/1wk8ka9dqdkmzaj61sp4b6jn7c6h2i1x-source/tests/test-evdev-input.c:4:
+korri-viewer-io-check> /nix/store/1wk8ka9dqdkmzaj61sp4b6jn7c6h2i1x-source/io/input/evdev.c: In function 'evdev_rumble':
+korri-viewer-io-check> /nix/store/1wk8ka9dqdkmzaj61sp4b6jn7c6h2i1x-source/io/input/evdev.c:1142:3: warning: ignoring return value of 'write' declared with attribute 'warn_unused_result' [-Wunused-result]
+korri-viewer-io-check>  1142 |   write(device->fd, (const void*) &event, sizeof(event));
+korri-viewer-io-check>       |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+korri-viewer-io-check> Assigned Korri build check as player 1
+korri-viewer-io-check> libevdev error in libevdev_next_event: BUG: device not initialized. call libevdev_set_fd() first
+korri-viewer-io-check> check-evdev-input: /nix/store/1WK8KA9DQDKMZAJ61SP4B6JN7C6H2I1X-source/tests/test-evdev-input.c:70: main: Assertion `!devices[0].mouseEmulation' failed.
+korri-viewer-io-check> /build/.attr-0l2nkwhif96f51f4amnlf414lhl4rv9vh8iffyp431v6s28gsr90: line 28:   387 Aborted                    (core dumped) ./check-evdev-input /nix/store/w51kfd7cqbj6bifx9dwar2l3g30bfj2s-source/third_party/SDL_GameControllerDB/gamecontrollerdb.txt
+error: Cannot build '/nix/store/xb8lgfz4fphvib3rvd1lrxw76y4x38s5-korri-viewer-io-check.drv'.
+       Reason: builder failed with exit code 134.
+       Output paths:
+         /nix/store/wa220km2qjhk1cgvlj7b6wa5i6cam5gi-korri-viewer-io-check
+       Last 20 log lines:
+       > /nix/store/1wk8ka9dqdkmzaj61sp4b6jn7c6h2i1x-source/io/input/evdev.c: In function 'evdev_rumble':
+       > /nix/store/1wk8ka9dqdkmzaj61sp4b6jn7c6h2i1x-source/io/input/evdev.c:1142:3: warning: ignoring return value of 'write' declared with attribute 'warn_unused_result' [-Wunused-result]
+       >  1142 |   write(device->fd, (const void*) &event, sizeof(event));
+       >       |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+       > Opus -> ALSA null: 2 channels, 4 packets, PCM verified
+       > Opus -> ALSA null: 6 channels, 4 packets, PCM verified
+       > Opus -> ALSA null: 8 channels, 4 packets, PCM verified
+       > /nix/store/1wk8ka9dqdkmzaj61sp4b6jn7c6h2i1x-source/io/input/evdev.c: In function 'evdev_rumble':
+       > /nix/store/1wk8ka9dqdkmzaj61sp4b6jn7c6h2i1x-source/io/input/evdev.c:1142:3: warning: ignoring return value of 'write' declared with attribute 'warn_unused_result' [-Wunused-result]
+       >  1142 |   write(device->fd, (const void*) &event, sizeof(event));
+       >       |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+       > In file included from /nix/store/1wk8ka9dqdkmzaj61sp4b6jn7c6h2i1x-source/tests/test-evdev-input.c:4:
+       > /nix/store/1wk8ka9dqdkmzaj61sp4b6jn7c6h2i1x-source/io/input/evdev.c: In function 'evdev_rumble':
+       > /nix/store/1wk8ka9dqdkmzaj61sp4b6jn7c6h2i1x-source/io/input/evdev.c:1142:3: warning: ignoring return value of 'write' declared with attribute 'warn_unused_result' [-Wunused-result]
+       >  1142 |   write(device->fd, (const void*) &event, sizeof(event));
+       >       |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+       > Assigned Korri build check as player 1
+       > libevdev error in libevdev_next_event: BUG: device not initialized. call libevdev_set_fd() first
+       > check-evdev-input: /nix/store/1WK8KA9DQDKMZAJ61SP4B6JN7C6H2I1X-source/tests/test-evdev-input.c:70: main: Assertion `!devices[0].mouseEmulation' failed.
+       > /build/.attr-0l2nkwhif96f51f4amnlf414lhl4rv9vh8iffyp431v6s28gsr90: line 28:   387 Aborted                    (core dumped) ./check-evdev-input /nix/store/w51kfd7cqbj6bifx9dwar2l3g30bfj2s-source/third_party/SDL_GameControllerDB/gamecontrollerdb.txt
+       For full logs, run:
+         nix log /nix/store/xb8lgfz4fphvib3rvd1lrxw76y4x38s5-korri-viewer-io-check.drv
