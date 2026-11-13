@@ -241,6 +241,30 @@ belongs to the second start: the first frame with an ID that the sender
 presented at or after that start. A picture that the first start left on a
 real panel has an older ID and does not count.
 
+**The second start waits for the sender.** After the first start stops, the
+tool starts the second only when the sender's Sunshine has no stream session
+left: no thread named `session::video` or `session::audio` (the agent's
+`threads` in each sample). It looks every 0.1 s, for at most 20 s, and then
+refuses the run. `discovered.locating_session` holds the wait (`seconds`) and
+the session threads at its first look (`threads`).
+
+Without the wait, some starts read about 10 s
+([#467](https://github.com/korri-os/korri/issues/467)): up to 2 of 5 in a
+set. Sunshine's audio
+thread waits up to its `ping_timeout` (10 s) for the viewer's first audio
+ping, and a stopped session does not end that wait. Moonlight sends its first
+audio ping at the RTSP SETUP, before Sunshine starts the session at the
+ANNOUNCE, so Sunshine drops it. The next ping comes 500 ms later. When the
+first start found the bar sooner, it stopped before that ping. The session
+then lasted 10 s, and Sunshine's next `/resume` waited for it
+(`session_count` joins a stopping session). In the 158 saved runs of #432 and
+#466 with a sender log, the 11 slow starts (10,009 to 10,244 ms) each have one
+`Initial Ping Timeout`, 10.000 s after the first session started; their first
+start stopped 0.30 to 0.40 s after its session started. The other 147 have
+none, and their first start stopped 0.50 s or more after its session started.
+A player sees the same 10 s only when a stream ends within about 0.5 s of its
+start and the next start follows within 10 s.
+
 `display_ns` is the compositor's commit time for the output frame. It is not
 panel scanout, and it tells nothing about panel response or how a stream
 feels. While the capture runs, the compositor composes every frame, so direct

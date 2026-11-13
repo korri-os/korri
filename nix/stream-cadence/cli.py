@@ -1145,6 +1145,46 @@ def locate(
     )
 
 
+# The two threads of one Sunshine stream session (stream.cpp: videoThread and
+# audioThread). Sunshine removes a session only after both have ended.
+SESSION_THREADS = {"session::video", "session::audio"}
+# Sunshine's ping_timeout (10 s by default) plus the 10 s after which it ends
+# itself for a session that does not stop (stream.cpp: session::join).
+SESSION_END_LIMIT = 20.0
+
+
+def wait_for_session_end(
+    sample: Callable[[], dict],
+    *, sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> dict:
+    """Wait until the sender's Sunshine has no stream session left (#467).
+
+    Sunshine's audio thread waits up to its ping_timeout for the viewer's first
+    audio ping, and a stopped session does not end that wait. Moonlight sends
+    its first audio ping before Sunshine starts the session, which drops it,
+    and the next one 500 ms later. A locating start that ends before that ping
+    leaves a session that lasts 10 s, and Sunshine starts the next session only
+    after it.
+    """
+    began = clock()
+    first = None
+    while True:
+        live = sorted(row["name"] for row in sample()["threads"] if row["name"] in SESSION_THREADS)
+        elapsed = clock() - began
+        if first is None:
+            first = live
+        if not live:
+            return {"seconds": elapsed, "threads": first}
+        if elapsed >= SESSION_END_LIMIT:
+            raise Refusal(
+                f"The sender's Sunshine still runs a stream session ({', '.join(live)}) "
+                f"{SESSION_END_LIMIT:.0f} seconds after the locating start ended; "
+                "the measured start would wait for it. Read journal.log."
+            )
+        sleep(0.1)
+
+
 def wait_for_cooldown(
     checks: Mapping[str, Callable[[str], dict]],
     *, sleep: Callable[[float], None] = time.sleep,
@@ -1474,6 +1514,15 @@ def view_case(
         viewer.request("start", command=command)
         location, output_width = locate(viewer, sender, paths["capture"], samples)
         viewer.request("stop")
+        def look() -> dict:
+            # A refusal keeps the sender's log as journal.log.
+            nonlocal latest
+            sent = sender.request("sample")
+            latest = sent["journal"]
+            return sent
+
+        # The measured start must not wait for the locating start's session.
+        facts["locating_session"] = wait_for_session_end(look)
         facts["bar_location"] = {"x": location.x, "y": location.y, "cell": location.cell}
         before, seat_before = clock(sender), clock(viewer)
         viewer.request(

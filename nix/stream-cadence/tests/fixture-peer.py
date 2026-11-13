@@ -7,6 +7,10 @@ caller supplies it. Behaviour comes from files in the wrapper's directory:
   hardware encoder; on any other node it falls back to its CPU encoder.
 - `arguments.log` receives one line for each start, so a test can see what
   was visible in the process list.
+- `stream-session`, when a test writes it, makes "Sunshine" run one thread
+  named `session::audio` for the number of seconds in the file, as a real
+  Sunshine's audio thread waits for a viewer's first audio ping. The
+  stand-in writes `stream-session-started` once the thread has its name.
 """
 
 import json
@@ -16,6 +20,7 @@ import re
 import signal
 import socket
 import sys
+import threading
 import time
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "sender"
@@ -71,7 +76,19 @@ elif role == "sunshine":
     hardware = (knobs / "hardware-nodes").read_text().split()
     kind = "hardware" if values["adapter_name"] in hardware else "software"
     Path(values["log_path"]).write_text((FIXTURES / f"sunshine-startup-{kind}.log").read_text())
+
+    def session(seconds: float) -> None:
+        # The name that Sunshine gives the thread (stream.cpp, audioThread).
+        Path(f"/proc/self/task/{threading.get_native_id()}/comm").write_text("session::audio")
+        (knobs / "stream-session-started").touch()
+        time.sleep(seconds)
+
     while True:
-        time.sleep(1)
+        request = knobs / "stream-session"
+        if request.exists():
+            seconds = float(request.read_text())
+            request.unlink()
+            threading.Thread(target=session, args=(seconds,), daemon=True).start()
+        time.sleep(0.01)
 else:
     raise SystemExit(2)
