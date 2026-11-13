@@ -264,6 +264,7 @@
           })
           // {
             korri-viewer-picture = viewer.pictureCheck;
+            korri-viewer-io = viewer.ioCheck;
             korri-cli-build-identity-eval = import ./clients/cli/build-identity-check.nix {
               inherit pkgs crane proseql;
               buildBinaries = false;

@@ -14,7 +14,7 @@ fn run() -> Result<()> {
         Some("--help" | "-help" | "--version")
     ) {
         println!(
-            "korri-viewer 0.1.0 (GPL-3.0-or-later)\nUsage: korri-viewer stream|pair [Moonlight arguments] HOST\nPC picture paths only. Input and audio output are not included."
+            "korri-viewer 0.1.0 (GPL-3.0-or-later)\nUsage: korri-viewer stream|pair [Moonlight arguments] HOST\nPC picture, sound and input. -viewonly disables input discovery and forwarding."
         );
         return Ok(());
     }

@@ -33,6 +33,11 @@ let
     libX11
     libglvnd
     SDL2
+    alsa-lib
+    libpulseaudio
+    libevdev
+    systemdMinimal
+    (libopus.override { withCustomModes = false; })
   ];
   native = with pkgs; [
     pkg-config
@@ -43,37 +48,61 @@ let
     MOONLIGHT_COMMON_INCLUDE = "${network}/include";
     MOONLIGHT_COMMON_LIB = "${network}/lib";
   };
+  repositorySource = pkgs.lib.fileset.toSource {
+    root = ../..;
+    fileset = pkgs.lib.fileset.unions [
+      ./Cargo.toml
+      ./Cargo.lock
+      ./build.rs
+      ./LICENSE
+      ./src
+      ./picture
+      ./io
+      ./tests
+      ../../contracts/viewer/Cargo.toml
+      ../../contracts/viewer/src
+      ../../contracts/surface/Cargo.toml
+      ../../contracts/surface/src
+    ];
+  };
+  source = "${repositorySource}/clients/viewer";
   package = pkgs.rustPlatform.buildRustPackage (
     environment
     // {
       pname = "korri-viewer";
       version = "0.1.0";
-      src = pkgs.lib.fileset.toSource {
-        root = ../..;
-        fileset = pkgs.lib.fileset.unions [
-          ./Cargo.toml
-          ./Cargo.lock
-          ./build.rs
-          ./LICENSE
-          ./src
-          ./picture
-          ./tests
-          ../../contracts/viewer/Cargo.toml
-          ../../contracts/viewer/src
-          ../../contracts/surface/Cargo.toml
-          ../../contracts/surface/src
-        ];
-      };
+      src = repositorySource;
       sourceRoot = "source/clients/viewer";
       cargoLock.lockFile = ./Cargo.lock;
       nativeBuildInputs = native;
       buildInputs = libraries ++ [ network ];
+      preCheck = ''
+        export XDG_RUNTIME_DIR="$TMPDIR/viewer-runtime"
+        mkdir -m 700 "$XDG_RUNTIME_DIR"
+        export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="${pkgs.xvfb-run}/bin/xvfb-run -a"
+        export SDL_VIDEODRIVER=x11 SDL_RENDER_DRIVER=software
+        export LIBGL_ALWAYS_SOFTWARE=1 __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_DRIVERS_PATH=${pkgs.mesa}/lib/dri
+        export LD_LIBRARY_PATH=${
+          pkgs.lib.makeLibraryPath [
+            network
+            pkgs.libglvnd
+            pkgs.mesa
+          ]
+        }
+      '';
       postInstall = ''
         # The unchanged stage-0 tool asks every candidate package for this name.
         ln -s korri-viewer $out/bin/moonlight
         mkdir -p $out/share/moonlight
         cp ${upstream}/third_party/SDL_GameControllerDB/gamecontrollerdb.txt \
           $out/share/moonlight/korri-inputplumber-gamecontrollerdb.txt
+        korriInputplumberMapping="$out/share/moonlight/korri-inputplumber-gamecontrollerdb.txt"
+        substituteInPlace "$korriInputplumberMapping" \
+          --replace-fail '030000005e0400008e02000001000000,Microsoft Xbox 360,a:b0,b:b1,back:b6,dpdown:h0.1,dpleft:h0.2,dpright:h0.8,dpup:h0.4,leftshoulder:b4,leftstick:b9,lefttrigger:a2,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b10,righttrigger:a5,rightx:a3,righty:a4,start:b7,x:b2,y:b3,platform:Linux,' \
+          '030000005e0400008e02000001000000,Microsoft Xbox 360,a:b0,b:b1,back:b6,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,leftshoulder:b4,leftstick:b9,lefttrigger:a2,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b10,righttrigger:a5,rightx:a3,righty:a4,start:b7,x:b2,y:b3,platform:Linux,'
+        printf '%s\n' \
+          '030000005e040000120b000001000000,Microsoft Xbox Series S|X Controller,a:b0,b:b1,x:b2,y:b3,back:b6,start:b7,guide:b8,leftstick:b9,rightstick:b10,leftshoulder:b4,rightshoulder:b5,dpup:h0.1,dpright:h0.2,dpdown:h0.4,dpleft:h0.8,leftx:a0,lefty:a1,rightx:a3,righty:a4,lefttrigger:a2,righttrigger:a5,platform:Linux,' \
+          >> "$korriInputplumberMapping"
         mkdir -p $out/share/licenses/korri-viewer
         cp LICENSE $out/share/licenses/korri-viewer/
       '';
@@ -84,6 +113,78 @@ let
       };
     }
   );
+  ioSources = pkgs.lib.concatMapStringsSep " " (file: "${source}/io/${file}") [
+    "bridge.c"
+    "audio/alsa.c"
+    "audio/pulse.c"
+    "audio/sdl.c"
+    "input/evdev.c"
+    "input/udev.c"
+    "input/mapping.c"
+    "input/sdl.c"
+    "input/x11.c"
+  ];
+  ioFlags = "-DHAVE_X11 -DHAVE_VAAPI -DHAVE_SDL -DHAVE_ALSA -DHAVE_PULSE -I${source} -I${network}/include -ffunction-sections -fdata-sections -Wl,--gc-sections";
+  ioLibraries = "opus alsa libpulse-simple libevdev libudev sdl2 x11";
+  ioCheck =
+    pkgs.runCommand "korri-viewer-io-check"
+      {
+        nativeBuildInputs = [
+          pkgs.stdenv.cc
+          pkgs.pkg-config
+          pkgs.xvfb-run
+          pkgs.strace
+        ];
+        buildInputs = libraries ++ [ network ];
+      }
+      ''
+        cc -std=gnu11 ${ioFlags} ${source}/tests/test-audio.c ${ioSources} \
+          $(pkg-config --cflags --libs ${ioLibraries}) -lm -pthread -o check-audio
+        export HOME="$TMPDIR" PULSE_SERVER=unix:/no-pulse-server
+        cat > alsa.conf <<EOF
+        pcm.null { type null }
+        pcm.korri_test { type file slave.pcm null file "$TMPDIR/decoded.pcm" format raw }
+        EOF
+        export ALSA_CONFIG_PATH="$PWD/alsa.conf"
+        ./check-audio "$TMPDIR/decoded.pcm"
+        cc -std=gnu11 ${ioFlags} -I${source}/picture \
+          ${source}/tests/test-input.c ${ioSources} ${source}/picture/bridge.c \
+          $(pkg-config --cflags --libs ${ioLibraries}) \
+          -L${network}/lib -lmoonlight-common-c -pthread -lm \
+          -Wl,--wrap=LiSendKeyboardEvent,--wrap=LiSendMouseButtonEvent,--wrap=LiSendMousePositionEvent,--wrap=LiSendMultiControllerEvent \
+          -o check-input
+        cc -std=gnu11 ${ioFlags} -I${source}/picture \
+          ${source}/tests/test-x11-input.c ${source}/picture/bridge.c \
+          $(pkg-config --cflags --libs ${ioLibraries}) \
+          -L${network}/lib -lmoonlight-common-c -pthread -lm \
+          -Wl,--wrap=LiSendKeyboardEvent,--wrap=LiSendMouseButtonEvent,--wrap=LiSendMouseMoveEvent,--wrap=LiSendScrollEvent \
+          -o check-x11-input
+        cc -std=gnu11 ${ioFlags} -I${source}/picture \
+          ${source}/tests/test-evdev-input.c ${source}/io/input/mapping.c ${source}/picture/bridge.c \
+          $(pkg-config --cflags --libs ${ioLibraries}) \
+          -L${network}/lib -lmoonlight-common-c -pthread -lm \
+          -Wl,--wrap=LiSendKeyboardEvent,--wrap=LiSendMouseButtonEvent,--wrap=LiSendMouseMoveEvent,--wrap=LiSendMultiControllerEvent \
+          -o check-evdev-input
+        ./check-evdev-input ${upstream}/third_party/SDL_GameControllerDB/gamecontrollerdb.txt
+        xvfb-run -a ./check-x11-input
+        export LD_LIBRARY_PATH=${
+          pkgs.lib.makeLibraryPath [
+            network
+            pkgs.libglvnd
+            pkgs.mesa
+          ]
+        }
+        export LIBGL_ALWAYS_SOFTWARE=1 __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_DRIVERS_PATH=${pkgs.mesa}/lib/dri
+        export SDL_VIDEODRIVER=x11 SDL_RENDER_DRIVER=software
+        xvfb-run -a ./check-input
+        xvfb-run -a strace -f -e trace=open,openat,openat2 -o viewonly.trace ./check-input viewonly
+        if grep '/dev/input' viewonly.trace; then
+          echo 'viewonly attempted input discovery' >&2
+          exit 1
+        fi
+        mkdir -p "$out"
+        cp viewonly.trace "$out/"
+      '';
   pictureCheck =
     pkgs.runCommand "korri-viewer-picture-check"
       {
@@ -96,25 +197,26 @@ let
         buildInputs = libraries;
       }
       ''
-          cc -Wall -Wextra -Werror -Wno-unused-parameter -I${./picture} \
-            ${./picture}/video/ffmpeg_vaapi.c ${./tests/test-vaapi.c} \
+          cc -Wall -Wextra -Werror -Wno-unused-parameter -I${source}/picture \
+            ${source}/picture/video/ffmpeg_vaapi.c ${source}/tests/test-vaapi.c \
             $(pkg-config --cflags --libs libavcodec libavutil libva-x11 x11) -o check-vaapi
           export HOME="$TMPDIR" LIBVA_DRIVER_NAME=korri_missing_driver
           xvfb-run -a -s '-screen 0 640x480x24 -nolisten tcp' ./check-vaapi
           cc -std=gnu11 -DHAVE_X11 -DHAVE_VAAPI \
             -ffunction-sections -fdata-sections -Wl,--gc-sections \
-            -I${./picture} -I${network}/include \
-            ${./tests/test-x11-vaapi-size.c} ${./picture}/video/egl.c \
+            -I${source}/picture -I${network}/include \
+            ${source}/tests/test-x11-vaapi-size.c ${source}/picture/video/egl.c \
             $(pkg-config --cflags --libs libavcodec libavutil libva-x11 x11 egl glesv2) -o check-size
           xvfb-run -a -s '-screen 0 4096x2304x24 -nolisten tcp' ./check-size
-          cc -std=gnu11 -DHAVE_SDL -I${./picture} -I${network}/include \
-          ${./tests/test-sdl.c} ${./picture}/video/sdl.c \
-          ${./picture}/video/ffmpeg.c ${./picture}/util.c \
-          $(pkg-config --cflags --libs libavcodec libavutil sdl2) -o check-sdl
+          cc -std=gnu11 -DHAVE_SDL -I${source}/picture -I${network}/include \
+          ${ioFlags} ${source}/tests/test-sdl.c ${ioSources} ${source}/picture/bridge.c ${source}/picture/video/sdl.c \
+          ${source}/picture/video/ffmpeg.c ${source}/picture/video/ffmpeg_vaapi.c ${source}/picture/util.c \
+          $(pkg-config --cflags --libs libavcodec libavutil libva-x11 ${ioLibraries}) -L${network}/lib -lmoonlight-common-c -pthread -lm -o check-sdl
         ffmpeg -v error -f lavfi -i testsrc=size=128x72:rate=30 -frames:v 4 \
           -c:v libx264 -pix_fmt yuv420p -tune zerolatency -f h264 frames.h264
         LD_LIBRARY_PATH=${
           pkgs.lib.makeLibraryPath [
+            network
             pkgs.libglvnd
             pkgs.mesa
           ]
@@ -126,7 +228,12 @@ let
       '';
 in
 {
-  inherit package network pictureCheck;
+  inherit
+    package
+    network
+    pictureCheck
+    ioCheck
+    ;
   devShell = pkgs.mkShell (
     environment
     // {
@@ -137,9 +244,15 @@ in
           rustc
           rustfmt
           clippy
+          xvfb-run
         ]);
       buildInputs = libraries;
-      LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ network ];
+      LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+        network
+        pkgs.libglvnd
+        pkgs.mesa
+      ];
+      LIBGL_DRIVERS_PATH = "${pkgs.mesa}/lib/dri";
     }
   );
 }

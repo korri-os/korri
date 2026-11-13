@@ -7,9 +7,10 @@ The code belongs in Korri, not the plugin repository (ADR 0061). It is in
 
 ```sh
 nix build .#korri-viewer
-nix develop .#viewer --command cargo test --manifest-path clients/viewer/Cargo.toml
+nix develop .#viewer --command xvfb-run -a env SDL_RENDER_DRIVER=software cargo test --manifest-path clients/viewer/Cargo.toml
 nix develop .#viewer --command cargo clippy --manifest-path clients/viewer/Cargo.toml --all-targets -- -D warnings
 nix build .#checks.x86_64-linux.korri-viewer-picture
+nix build .#checks.x86_64-linux.korri-viewer-io
 ```
 
 ## Boundaries
@@ -25,18 +26,22 @@ nix build .#checks.x86_64-linux.korri-viewer-picture
   `b126e481a195fdc7152d211def17190e3434bcce` from Moonlight Embedded
   `775444287305849ebdf4736c75298ad0713e2d5d`. `default.nix` pins the recursive
   source by its NAR hash. No second network core is linked.
-- `picture/` holds the C decoder and presenters. `build.rs` compiles those
-  files, not Moonlight's C session, HTTP, input or audio code.
-- Audio packets are consumed by the core's null callbacks. No audio decoder
-  or audio output runs. This slice measures pictures, not sound; its CPU
-  number does not include the old viewer's Opus and null PCM work.
+- `picture/` holds the carried C decoder and presenters. `io/` holds the
+  carried C Opus/output and input code. Rust still owns the session and its
+  lifetime. No Moonlight C session or HTTP code is compiled.
+- Sound follows Moonlight's platform selection: SDL audio on the software
+  fallback; on X11 VA-API, probe Pulse first, then use ALSA. The fixture's
+  isolated null ALSA configuration works without a sound server.
 - The unchanged stage-0 tool needs `bin/moonlight` and the mapping path
   `share/moonlight/korri-inputplumber-gamecontrollerdb.txt`. The binary name
   is a package-entry symlink, not a second implementation. The mapping is
-  the pinned upstream controller database; this input-free slice does not
-  read it. It accepts the PC flags emitted by `linux_viewer::stream_args`
-  and the plugin's rendered settings. `-input` and handheld platforms fail
-  explicitly. Input is never enumerated, opened or forwarded.
+  the pinned upstream controller database with the plugin package's two
+  InputPlumber corrections. It accepts the PC flags emitted by
+  `linux_viewer::stream_args` and the plugin's rendered settings. `-input`
+  and handheld platforms still fail explicitly: korrid passes no explicit
+  input node on PC. X11 VA-API uses evdev/udev discovery plus X11 keyboard
+  and mouse. SDL fallback uses SDL controllers, keyboard and mouse.
+  `-viewonly` skips ALL input discovery, initialization and forwarding.
 
 `KORRI_MOONLIGHT_SERVER_CERTIFICATE` is mandatory, including for fixture
 pairing. HTTPS checks both that trust anchor and its SPKI, with hostname
@@ -70,8 +75,8 @@ FFmpeg in this package. The generic FFmpeg decoder selection stays unchanged.
 
 The adaptations do not change decode, queue or presentation policy:
 
-- `video/x11.c` removes the input include and `x11_input_init` call.
-- `sdl.c` removes the input include and event forwarding. Its existing event
+- `video/x11.c` routes input setup through the view-only guard in `io/`.
+- `sdl.c` routes event forwarding through the same guard. Its existing event
   loop becomes a single timed poll, so Rust owns the lifetime. Texture
   updates, two-frame skip rule, renderer, vsync and rendering calls stay the
   same. Teardown also releases its SDL texture, renderer and mutex.
@@ -159,11 +164,22 @@ slice must supply its per-launch socket location, sandbox access, native unit
 command, certificate provisioning, focus/cleanup effects, version check and
 installed-plugin selection. Moonlight remains the production path.
 
+## Sound and input provenance and checks
+
+See `io/README.md` for every C adaptation and its source. The I/O check
+encodes real Opus packets, decodes stereo/5.1/7.1 and verifies the PCM written
+through ALSA's file plugin over null. It exercises the SDL event loop with a
+virtual controller, X11 events on a real Xvfb window, and evdev's event and
+mapping code with real libevdev capabilities. It checks forwarding at the
+network-core boundary; it does not measure button-to-packet delay. A strace
+of both view-only platform branches proves no `/dev/input` open is attempted.
+The aka comparison and isolation records are in `proof/`.
+
 ## Next slices
 
 The removable `@korri:viewer`
 plugin and version check; handheld `v4l2request` picture paths and their bench
-proof; input; audio; frame timing grounded in the stage-0 frame record. Android
+proof; frame timing grounded in the stage-0 frame record. Android
 integration comes after the Linux stage. This package is not installed in the
 product by this slice.
 

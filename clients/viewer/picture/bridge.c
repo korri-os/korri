@@ -11,12 +11,14 @@
 #include <stdarg.h>
 
 static int using_vaapi;
-static struct pollfd fds[16];
-static FdHandler handlers[16];
+static struct pollfd* fds;
+static FdHandler* handlers;
 static int count;
 
 void loop_add_fd(int fd, FdHandler handler, int events) {
-  if (count == 16) abort();
+  fds = realloc(fds, sizeof(*fds) * (count + 1));
+  handlers = realloc(handlers, sizeof(*handlers) * (count + 1));
+  if (!fds || !handlers) abort();
   fds[count] = (struct pollfd){.fd = fd, .events = events};
   handlers[count++] = handler;
 }
@@ -55,6 +57,11 @@ int picture_poll(int timeout) {
 }
 void picture_destroy(void) {
   if (!using_vaapi) sdl_destroy();
+  free(fds);
+  free(handlers);
+  fds = NULL;
+  handlers = NULL;
+  count = 0;
 }
 // Rust cannot define a C-variadic function. No session logic belongs here.
 void picture_log(const char* format, ...) {

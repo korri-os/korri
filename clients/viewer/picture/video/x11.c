@@ -1,3 +1,4 @@
+#include "../../io/bridge.h"
 /*
  * This file is part of Moonlight Embedded.
  *
@@ -164,6 +165,7 @@ int x11_setup(int videoFormat, int width, int height, int redrawRate, void* cont
     XSendEvent(display, DefaultRootWindow(display), False, SubstructureRedirectMask | SubstructureNotifyMask, &xev);
   }
   XFlush(display);
+  viewer_input_x11(display, window);
 
   int avc_flags;
   if (drFlags & X11_VDPAU_ACCELERATION)

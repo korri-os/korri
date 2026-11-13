@@ -20,6 +20,7 @@
 #ifdef HAVE_SDL
 
 #include "sdl.h"
+#include "../io/bridge.h"
 
 #include <Limelight.h>
 
@@ -36,6 +37,7 @@ int sdlCurrentFrame, sdlNextFrame;
 
 void sdl_init(int width, int height, bool fullscreen) {
   sdlCurrentFrame = sdlNextFrame = 0;
+  done = false;
 
   if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
     fprintf(stderr, "Could not initialize SDL - %s\n", SDL_GetError());
@@ -72,7 +74,7 @@ int sdl_poll(int timeout) {
   SDL_Event event;
 
   if (!done && SDL_WaitEventTimeout(&event, timeout)) {
-    switch (SDL_NOTHING) {
+    switch (viewer_input_sdl(window, &event)) {
     case SDL_QUIT_APPLICATION:
       done = true;
       break;

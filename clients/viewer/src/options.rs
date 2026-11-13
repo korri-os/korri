@@ -24,6 +24,11 @@ pub struct Options {
     pub rotation: i32,
     pub audio_channels: i32,
     pub allow_unsupported: bool,
+    pub viewonly: bool,
+    pub mouse_emulation: bool,
+    pub mapping: Option<String>,
+    pub audio_device: Option<String>,
+    pub verbose: bool,
 }
 
 impl Options {
@@ -55,6 +60,11 @@ impl Options {
             rotation: 0,
             audio_channels: 2,
             allow_unsupported: true,
+            viewonly: false,
+            mouse_emulation: true,
+            mapping: None,
+            audio_device: None,
+            verbose: false,
         };
         while let Some(arg) = args.next() {
             if !arg.starts_with('-') {
@@ -66,8 +76,10 @@ impl Options {
             match flag {
                 "windowed" => o.fullscreen = false,
                 "fullscreen" => o.fullscreen = true,
-                // Existing picture and input metadata. This slice is view-only.
-                "autowindowresize" | "viewonly" | "verbose" | "debug" | "nomouseemulation" => (),
+                "autowindowresize" => (),
+                "viewonly" => o.viewonly = true,
+                "nomouseemulation" => o.mouse_emulation = false,
+                "verbose" | "debug" => o.verbose = true,
                 "hdr" => o.hdr = true,
                 "nounsupported" => o.allow_unsupported = false,
                 "nosops" => o.sops = false,
@@ -121,13 +133,13 @@ impl Options {
                                 _ => bail!("invalid remote mode"),
                             }
                         }
-                        // No controller or audio output in this slice.
-                        "mapping" | "audio" => (),
+                        "mapping" => o.mapping = Some(value),
+                        "audio" => o.audio_device = Some(value),
                         _ => unreachable!(),
                     }
                 }
                 _ => bail!(
-                    "unsupported argument: {arg} (input, audio output and handheld paths are not in this slice)"
+                    "unsupported argument: {arg} (explicit input devices and handheld paths are not in this slice)"
                 ),
             }
         }
@@ -168,6 +180,35 @@ impl Options {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn retains_player_io_options() {
+        let o = Options::parse(
+            [
+                "stream",
+                "-keydir",
+                "/tmp/keys",
+                "-viewonly",
+                "-nomouseemulation",
+                "-mapping",
+                "/tmp/controllers",
+                "-audio",
+                "null",
+                "host",
+            ]
+            .map(str::to_owned),
+        )
+        .unwrap();
+        assert!(o.viewonly);
+        assert!(!o.mouse_emulation);
+        assert_eq!(o.mapping.as_deref(), Some("/tmp/controllers"));
+        assert_eq!(o.audio_device.as_deref(), Some("null"));
+        let o =
+            Options::parse(["stream", "-keydir", "/tmp/keys", "host"].map(str::to_owned)).unwrap();
+        assert!(!o.viewonly);
+        assert!(o.mouse_emulation);
+        assert!(o.audio_device.is_none());
+    }
+
     #[test]
     fn refuses_bad_boundary_values() {
         for (flag, value) in [

@@ -3,6 +3,7 @@ use crate::{
     network as ffi,
     options::Options,
     pair::hex,
+    player_io::PlayerIo,
     session::{Transport, app_id, field, required},
 };
 use anyhow::{Result, ensure};
@@ -69,6 +70,7 @@ pub fn run_with_lifecycle(
         "client is not paired"
     );
     let app = app_id(&t.get(true, "applist", &[])?, &o.app)?;
+    let io = PlayerIo::new(o)?;
     let app_version = CString::new(required(&info, "appversion")?)?;
     let gfe_version = CString::new(field(&info, "GfeVersion")?.unwrap_or_default())?;
     let host = CString::new(o.host.as_str())?;
@@ -86,8 +88,7 @@ pub fn run_with_lifecycle(
     config.bitrate = o.bitrate;
     config.packetSize = o.packet_size;
     config.streamingRemotely = o.remote;
-    // Limelight.h MAKE_AUDIO_CONFIGURATION(2, 3). Audio callbacks remain null:
-    // consume the network audio stream, with no decode or host sound output.
+    // Limelight.h MAKE_AUDIO_CONFIGURATION(channel_count, channel_mask).
     let channel_mask = match o.audio_channels {
         6 => 0x3f,
         8 => 0x63f,
@@ -169,8 +170,8 @@ pub fn run_with_lifecycle(
             "surroundAudioInfo",
             ((channel_mask << 16) | o.audio_channels).to_string(),
         ),
-        ("remoteControllersBitmap", "0".into()),
-        ("gcmap", "0".into()),
+        ("remoteControllersBitmap", io.gamepad_mask().to_string()),
+        ("gcmap", io.gamepad_mask().to_string()),
     ];
     for part in extra
         .trim_start_matches('&')
@@ -226,23 +227,17 @@ pub fn run_with_lifecycle(
         )
     });
     let _lifecycle_guard = LifecycleGuard;
-    // No input enumeration, event forwarding or device opens in this slice.
+    io.connection_callbacks(&mut callbacks);
     unsafe {
         for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP, libc::SIGQUIT] {
             libc::signal(signal, signal_stop as *const () as libc::sighandler_t);
         }
-        ffi::picture_init(
-            i32::from(o.platform == "x11_vaapi"),
-            o.width,
-            o.height,
-            i32::from(o.fullscreen),
-        );
         let result = ffi::LiStartConnection(
             &mut server,
             &mut config,
             &mut callbacks,
             ffi::picture_callbacks(),
-            std::ptr::null_mut(),
+            io.audio_callbacks(),
             std::ptr::null_mut(),
             i32::from(o.fullscreen)
                 | match o.rotation {
@@ -251,13 +246,13 @@ pub fn run_with_lifecycle(
                     270 => 24,
                     _ => 0,
                 },
-            std::ptr::null_mut(),
+            io.audio_context(),
             0,
         );
         if result != 0 {
-            ffi::picture_destroy();
             anyhow::bail!("stream connection failed: {result}");
         }
+        io.start();
         let mut poll_error = false;
         while !STOP.load(Ordering::Relaxed) && !lifecycle.is_some_and(|l| l.stop_requested()) {
             let event = ffi::picture_poll(100);
@@ -266,8 +261,8 @@ pub fn run_with_lifecycle(
                 break;
             }
         }
+        io.stop();
         ffi::LiStopConnection();
-        ffi::picture_destroy();
         ensure!(!poll_error, "picture event loop failed");
     }
     let error = TERMINATED.load(Ordering::Relaxed);

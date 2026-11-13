@@ -88,7 +88,7 @@ fn rust_launch_chain_uses_authenticated_serverinfo_and_the_selected_app() {
         for body in [
             "<PairStatus>1</PairStatus><appversion>7.1.431.0</appversion><ServerCodecModeSupport>1</ServerCodecModeSupport><currentgame>0</currentgame><state>SUNSHINE_SERVER_FREE</state>",
             "<App><AppTitle>Not this app</AppTitle><ID>1</ID></App><App><AppTitle>Korri Stream</AppTitle><ID>42</ID></App>",
-            // Stop before opening a display or connecting the network core.
+            // Stop after input/presenter setup, before connecting the network core.
             "<gamesession>0</gamesession>",
         ] {
             let (socket, _) = server.accept().unwrap();
@@ -123,6 +123,7 @@ fn rust_launch_chain_uses_authenticated_serverinfo_and_the_selected_app() {
     let options = Options::parse(
         [
             "stream",
+            "-viewonly",
             "-keydir",
             dir.path().to_str().unwrap(),
             "-app",
