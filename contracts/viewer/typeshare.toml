@@ -1,0 +1,4 @@
+[typescript.type_mappings]
+SurfaceGameplayControl = 'import("./surface").SurfaceGameplayControl'
+SurfaceGameplayControlValue = 'import("./surface").SurfaceGameplayControlValue'
+SurfaceStreamHealth = 'import("./surface").SurfaceStreamHealth'

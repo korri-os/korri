@@ -8,7 +8,7 @@ if [[ $# -gt 1 || ( "$mode" != --check && "$mode" != --write ) ]]; then
   echo 'usage: check-treaty.sh [--check | --write]' >&2
   exit 2
 fi
-# One generated file per Rust treaty: korrid's RPC and the surface treaty.
+# One generated file per Rust treaty.
 generate() {
   local crate="$1" output="$2" generated
   generated="$(mktemp)"
@@ -30,3 +30,4 @@ generate() {
 generate "$ROOT/services/korrid" "$ROOT/contracts/generated/korrid.ts"
 generate "$ROOT/contracts/settings" "$ROOT/contracts/generated/settings.ts"
 generate "$ROOT/contracts/surface" "$ROOT/contracts/generated/surface.ts"
+generate "$ROOT/contracts/viewer" "$ROOT/contracts/generated/viewer.ts"

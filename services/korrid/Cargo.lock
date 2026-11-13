@@ -2466,6 +2466,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "korri-viewer-treaty"
+version = "0.0.0"
+dependencies = [
+ "korri-surface-treaty",
+ "serde",
+ "serde_json",
+ "typeshare",
+]
+
+[[package]]
 name = "korrid"
 version = "0.0.0"
 dependencies = [
@@ -2491,6 +2501,7 @@ dependencies = [
  "korri-inputd",
  "korri-settings-treaty",
  "korri-surface-treaty",
+ "korri-viewer-treaty",
  "libc",
  "log",
  "lzma-rs",

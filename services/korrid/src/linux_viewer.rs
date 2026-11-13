@@ -4,6 +4,11 @@
 //! certificate through the broker, and uses exact-launch systemd and focus.
 
 mod production;
+mod socket;
+pub use socket::{FocusSocketViewer, SocketLinuxStreamViewer, StartSocketViewer, StopSocketViewer};
+#[cfg(test)]
+#[path = "linux_viewer/socket_tests.rs"]
+mod socket_tests;
 pub(crate) use production::render_settings;
 pub use production::{production_viewer, CertificateProvision, LocalSeats, ViewerSettings};
 

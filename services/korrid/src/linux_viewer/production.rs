@@ -103,7 +103,7 @@ fn installed_files() -> Result<MoonlightFiles, LinuxViewerError> {
     })
 }
 
-fn validate_launch(launch: &str) -> Result<(), LinuxViewerError> {
+pub(super) fn validate_launch(launch: &str) -> Result<(), LinuxViewerError> {
     if launch.len() == 32
         && launch
             .bytes()
@@ -115,7 +115,7 @@ fn validate_launch(launch: &str) -> Result<(), LinuxViewerError> {
     }
 }
 
-fn server_url(address: &str) -> Result<url::Url, LinuxViewerError> {
+pub(super) fn server_url(address: &str) -> Result<url::Url, LinuxViewerError> {
     let mut url = url::Url::parse(&format!("http://{address}/serverinfo")).map_err(error)?;
     if url.host_str().is_none()
         || !url.username().is_empty()

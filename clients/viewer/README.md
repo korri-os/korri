@@ -87,9 +87,47 @@ then reads the rendered pixels. It uses Xvfb and Mesa software rendering,
 not a device. Rust tests exercise real TLS and HTTP requests, CLI compatibility,
 pin failure, fresh mutual-TLS authentication and launch selection.
 
+## Lifecycle socket (opt-in, not installed)
+
+The Rust treaty is `contracts/viewer`; `contracts/generated/viewer.ts` is
+Typeshare output. Its requests and replies extract `LinuxStreamViewer` and its
+snapshot types. Native connection callbacks, as in Moonlight patch `0023`, emit
+connection snapshots. The opaque connection identity uses that patch's PID and
+monotonic timestamp. No frame-timing fields are added by this slice.
+
+```sh
+korri-viewer --lifecycle-socket PATH --launch-id ID stream [Moonlight arguments] HOST
+```
+
+This binds a private (0600) Unix stream socket for one exact launch. The process
+waits for `Start` before connecting. Start's address includes the optional HTTP
+port, as in korrid's Moonlight adapter. Its optional display is the local logical
+screen; encoded dimensions still come from rendered settings. No screen means
+no shape observation. Linux keeps its local dimensions, not the holder's size.
+
+Messages are newline-delimited JSON, at most 64 KiB each, with one request in
+flight. `ViewerMessage` separates unsolicited events from replies. `Start`
+confirms the native connection callback; `Stop` confirms network/picture
+teardown, then the process exits. A lost controlling socket requests teardown.
+Existing paths are not replaced. Requests and connection setup have 30-second
+deadlines; a cancelled exchange cannot reuse a late reply.
+
+korrid's inactive `SocketLinuxStreamViewer` takes injected unit-start, failure
+cleanup and compositor-focus effects. It never reads unit state or compositor
+PIDs for lifecycle observations. korrid confirms compositor focus before
+sending `Background` or `ResumeAndFocus`; the socket reports that confirmed
+state, not an independent X11 focus model. Live resize, apply and notice return
+typed unavailable errors, as the existing Linux trait defaults do. Snapshots
+have no battery, health or controls until a real producer supplies them.
+
+No installed plugin or production factory selects this adapter. The plugin
+slice must supply its per-launch socket location, sandbox access, native unit
+command, certificate provisioning, focus/cleanup effects, version check and
+installed-plugin selection. Moonlight remains the production path.
+
 ## Next slices
 
-The typed lifecycle socket and Typeshare treaty; the removable `@korri:viewer`
+The removable `@korri:viewer`
 plugin and version check; handheld `v4l2request` picture paths and their bench
 proof; input; audio; frame timing grounded in the stage-0 frame record. Android
 integration comes after the Linux stage. This package is not installed in the

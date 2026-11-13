@@ -14,6 +14,25 @@ use std::{
     },
 };
 
+static LIFECYCLE: Mutex<
+    Option<(
+        crate::lifecycle::Lifecycle,
+        korri_viewer_treaty::ViewerDisplay,
+    )>,
+> = Mutex::new(None);
+unsafe extern "C" fn connection_started() {
+    if let Some((lifecycle, display)) = &*LIFECYCLE.lock().unwrap()
+        && lifecycle.connected(display.clone()).is_err()
+    {
+        STOP.store(true, Ordering::Relaxed);
+    }
+}
+struct LifecycleGuard;
+impl Drop for LifecycleGuard {
+    fn drop(&mut self) {
+        *LIFECYCLE.lock().unwrap() = None;
+    }
+}
 static CONNECTION: Mutex<()> = Mutex::new(());
 static STOP: AtomicBool = AtomicBool::new(false);
 static TERMINATED: AtomicI32 = AtomicI32::new(0);
@@ -21,6 +40,9 @@ extern "C" fn signal_stop(_: libc::c_int) {
     STOP.store(true, Ordering::Relaxed);
 }
 unsafe extern "C" fn terminated(code: i32) {
+    if let Some((lifecycle, _)) = &*LIFECYCLE.lock().unwrap() {
+        lifecycle.disconnected();
+    }
     TERMINATED.store(code, Ordering::Relaxed);
     STOP.store(true, Ordering::Relaxed);
 }
@@ -29,6 +51,13 @@ unsafe extern "C" fn stage_failed(stage: i32, error: i32) {
 }
 
 pub fn run(t: &mut Transport, o: &Options) -> Result<()> {
+    run_with_lifecycle(t, o, None)
+}
+pub fn run_with_lifecycle(
+    t: &mut Transport,
+    o: &Options,
+    lifecycle: Option<&crate::lifecycle::Lifecycle>,
+) -> Result<()> {
     let _connection = CONNECTION
         .try_lock()
         .map_err(|_| anyhow::anyhow!("a stream connection is already active"))?;
@@ -183,9 +212,20 @@ pub fn run(t: &mut Transport, o: &Options) -> Result<()> {
     unsafe {
         ffi::LiInitializeConnectionCallbacks(&mut callbacks);
     }
+    callbacks.connectionStarted = Some(connection_started);
     callbacks.connectionTerminated = Some(terminated);
     callbacks.stageFailed = Some(stage_failed);
     callbacks.logMessage = Some(ffi::picture_log);
+    *LIFECYCLE.lock().unwrap() = lifecycle.map(|l| {
+        (
+            l.clone(),
+            korri_viewer_treaty::ViewerDisplay {
+                width: o.width as u32,
+                height: o.height as u32,
+            },
+        )
+    });
+    let _lifecycle_guard = LifecycleGuard;
     // No input enumeration, event forwarding or device opens in this slice.
     unsafe {
         for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP, libc::SIGQUIT] {
@@ -219,7 +259,7 @@ pub fn run(t: &mut Transport, o: &Options) -> Result<()> {
             anyhow::bail!("stream connection failed: {result}");
         }
         let mut poll_error = false;
-        while !STOP.load(Ordering::Relaxed) {
+        while !STOP.load(Ordering::Relaxed) && !lifecycle.is_some_and(|l| l.stop_requested()) {
             let event = ffi::picture_poll(100);
             if event != 0 {
                 poll_error = event < 0;

@@ -5,11 +5,13 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 
 [dependencies]
+korri-viewer-treaty = { path = "../../contracts/viewer" }
 anyhow = "1"
 curl = "0.4"
 openssl = "0.10"
 roxmltree = "0.21"
 libc = "0.2"
+url = "2.5"
 uuid = { version = "1", features = ["v4"] }
 
 [build-dependencies]

@@ -35,6 +35,13 @@ class TreatyDriftTest(unittest.TestCase):
                 "#[typeshare]\npub struct CheckSurface { pub count: u32 }\n"
             )
             (root / "contracts/surface/typeshare.toml").write_text("")
+            for treaty in ("settings", "viewer"):
+                (root / f"contracts/{treaty}/src").mkdir(parents=True)
+                (root / f"contracts/{treaty}/src/lib.rs").write_text(
+                    f"#[typeshare]\npub struct Check{treaty.title()} {{ pub count: u32 }}\n"
+                )
+                (root / f"contracts/{treaty}/typeshare.toml").write_text("")
+                (root / f"contracts/generated/{treaty}.ts").write_text("")
             (root / "services/korrid/typeshare.toml").write_text("")
             (root / "contracts/generated/surface.ts").write_text("")
             (root / "services/korrid/src/lib.rs").write_text(
@@ -60,6 +67,13 @@ class TreatyDriftTest(unittest.TestCase):
             )
             subprocess.run(command, env=env, check=True, capture_output=True)
             self.assertEqual(output.read_text(), generated)
+            viewer = root / "contracts/generated/viewer.ts"
+            self.assertIn("CheckViewer", viewer.read_text())
+            viewer.write_text("stale viewer treaty\n")
+            drift = subprocess.run(command, env=env, capture_output=True, text=True)
+            self.assertEqual(drift.returncode, 1, drift.stderr)
+            self.assertIn("Treaty drift", drift.stderr)
+            self.assertEqual(viewer.read_text(), "stale viewer treaty\n")
             output.unlink()
             self.assertNotEqual(
                 subprocess.run(

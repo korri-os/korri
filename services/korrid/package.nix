@@ -23,7 +23,8 @@ let
         inTreaty =
           lib.hasPrefix "contracts/settings/" relative
           || lib.hasPrefix "contracts/input/" relative
-          || lib.hasPrefix "contracts/surface/" relative;
+          || lib.hasPrefix "contracts/surface/" relative
+          || lib.hasPrefix "contracts/viewer/" relative;
       in
       toString path == sourceRootString
       || builtins.elem relative [
@@ -36,6 +37,7 @@ let
         "contracts/settings"
         "contracts/input"
         "contracts/surface"
+        "contracts/viewer"
       ]
       # Immutable producer declaration snapshots for consumer tests only.
       || lib.hasPrefix "services/korrid/tests/fixtures/first-party/" relative

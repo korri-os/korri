@@ -30,6 +30,7 @@ KORRI_SCRIPT_FIXTURES_IN_SHELL=1 bash "$CRATE/script-fixtures-setup.sh"
 "$CRATE/deploy/test-migrate-plugin-settings.py"
 "$CRATE/deploy/test-migrate-plugin-artwork.py"
 cargo test --manifest-path "$ROOT/contracts/settings/Cargo.toml"
+cargo test --manifest-path "$ROOT/contracts/viewer/Cargo.toml"
 cargo test
 KORRI_CONFIG_REVIEW_IN_SHELL=1 "$CRATE/config-snapshot-review.sh"
 if [[ "$mode" == --full ]]; then

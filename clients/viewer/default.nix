@@ -49,7 +49,7 @@ let
       pname = "korri-viewer";
       version = "0.1.0";
       src = pkgs.lib.fileset.toSource {
-        root = ./.;
+        root = ../..;
         fileset = pkgs.lib.fileset.unions [
           ./Cargo.toml
           ./Cargo.lock
@@ -58,8 +58,13 @@ let
           ./src
           ./picture
           ./tests
+          ../../contracts/viewer/Cargo.toml
+          ../../contracts/viewer/src
+          ../../contracts/surface/Cargo.toml
+          ../../contracts/surface/src
         ];
       };
+      sourceRoot = "source/clients/viewer";
       cargoLock.lockFile = ./Cargo.lock;
       nativeBuildInputs = native;
       buildInputs = libraries ++ [ network ];
