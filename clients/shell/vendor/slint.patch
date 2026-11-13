@@ -3230,8 +3230,8 @@ diff -ruN a/i-slint-renderer-software/fonts/vectorfont.rs b/i-slint-renderer-sof
          })
      }
 diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
---- a/i-slint-renderer-software/lib.rs	2026-11-05 01:39:57.341897572 -0700
-+++ b/i-slint-renderer-software/lib.rs	2026-11-05 01:39:57.342932240 -0700
+--- a/i-slint-renderer-software/lib.rs	2026-11-13 10:27:46.177393839 -0700
++++ b/i-slint-renderer-software/lib.rs	2026-11-13 10:27:46.178393830 -0700
 @@ -22,6 +22,10 @@
  #[cfg(feature = "path")]
  mod path;
@@ -4332,7 +4332,14 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      ) -> Self {
          Self {
              processor,
-@@ -2227,6 +3005,227 @@
+@@ -2221,12 +2999,290 @@
+                     LogicalPoint::default(),
+                     (screen_size.cast() / scale_factor).cast(),
+                 ),
++                rounded: None,
+             },
+             scale_factor,
+             window,
              rotation: RotationInfo { orientation, screen_size },
              #[cfg(feature = "systemfonts")]
              text_layout_cache,
@@ -4557,10 +4564,66 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +                    stroke_miter_limit,
 +                );
 +            }
++        }
++    }
++
++    /// Draws an item of local geometry `geom` with `draw`, inside the current clip
++    /// and, when a `Clip` with a border radius is active, inside its rounded
++    /// corners. An item that reaches no corner is drawn once, as before. One that
++    /// does is drawn once per band of `rounded_clip_bands`: the straight middle,
++    /// and each physical row through a corner, its edge pixels at their coverage.
++    /// An edge pixel is approximate when several items overlap there.
++    fn with_rounded_clip(&mut self, geom: LogicalRect, mut draw: impl FnMut(&mut Self)) {
++        let Some(rounded) = self.current_state.rounded else {
++            return draw(self);
++        };
++        let s = self.scale_factor.get();
++        let offset = self.current_state.offset.to_vector();
++        let clip = rounded.rect.translate(offset);
++        let item = geom.translate(offset);
++        let radius = rounded.radius;
++        let corner = |x: f32, y: f32, r: f32| {
++            r > 0.
++                && LogicalRect::new(LogicalPoint::new(x, y), LogicalSize::new(r, r)).intersects(&item)
++        };
++        let reaches_corner = corner(clip.min_x(), clip.min_y(), radius.top_left)
++            || corner(clip.max_x() - radius.top_right, clip.min_y(), radius.top_right)
++            || corner(
++                clip.max_x() - radius.bottom_right,
++                clip.max_y() - radius.bottom_right,
++                radius.bottom_right,
++            )
++            || corner(clip.min_x(), clip.max_y() - radius.bottom_left, radius.bottom_left);
++        if !reaches_corner {
++            return draw(self);
++        }
++        let bands = rounded_clip_bands(
++            (clip.min_x() * s, clip.min_y() * s, clip.max_x() * s, clip.max_y() * s),
++            [radius.top_left, radius.top_right, radius.bottom_right, radius.bottom_left]
++                .map(|r| r * s),
++        );
++        for band in bands {
++            let band = LogicalRect::new(
++                LogicalPoint::new(band.x0 / s, band.y0 / s),
++                LogicalSize::new((band.x1 - band.x0) / s, (band.y1 - band.y0) / s),
++            )
++            .translate(-offset)
++            .intersection(&self.current_state.clip)
++            .map(|r| (r, band.coverage));
++            let Some((band, coverage)) = band else { continue };
++            if !band.intersects(&geom) {
++                continue;
++            }
++            let saved = self.current_state;
++            self.current_state.clip = band;
++            self.current_state.rounded = None;
++            self.current_state.alpha *= coverage;
++            draw(self);
++            self.current_state = saved;
          }
      }
  
-@@ -2239,6 +3238,21 @@
+@@ -2239,6 +3295,21 @@
      fn draw_image_impl(
          &mut self,
          image_inner: &ImageInner,
@@ -4582,7 +4645,128 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          i_slint_core::graphics::FitResult {
              clip_rect: source_rect,
              source_to_target_x,
-@@ -2660,6 +3674,7 @@
+@@ -2646,20 +3717,123 @@
+     alpha: f32,
+     offset: LogicalPoint,
+     clip: LogicalRect,
++    /// The innermost clip with a border radius, in the same coordinates as `clip`.
++    /// `clip` already holds its bounding box; this adds its rounded corners.
++    rounded: Option<RoundedClip>,
+ }
+ 
+-impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilder<'_, T> {
+-    fn global_alpha_transparent(&self) -> bool {
+-        self.current_state.alpha == 0.0
++/// A clip rectangle and its corner radii (`Clip` with `border-radius`).
++#[derive(Clone, Copy, Debug)]
++struct RoundedClip {
++    rect: LogicalRect,
++    radius: LogicalBorderRadius,
++}
++
++/// One horizontal band of a rounded clip, in physical screen pixels: the rows
++/// `y0..y1`, the columns `x0..x1`, drawn at `coverage` (1 inside, less on an
++/// anti-aliased corner edge).
++struct ClipBand {
++    x0: f32,
++    x1: f32,
++    y0: f32,
++    y1: f32,
++    coverage: f32,
++}
++
++/// The bands that make up a rounded rectangle (`x0, y0, x1, y1`, physical) with
++/// physical corner radii `tl, tr, br, bl`: one band for the straight middle, and
++/// for each physical row through a corner, its fully covered span plus its two
++/// edge pixels with their coverage (sampled at the row's centre).
++fn rounded_clip_bands(
++    (x0, y0, x1, y1): (f32, f32, f32, f32),
++    [tl, tr, br, bl]: [f32; 4],
++) -> alloc::vec::Vec<ClipBand> {
++    let mut bands = alloc::vec::Vec::new();
++    let (w, h) = (x1 - x0, y1 - y0);
++    if w <= 0. || h <= 0. {
++        return bands;
++    }
++    // Corner radii that don't fit scale down together, as in CSS.
++    let f = [w / (tl + tr), w / (bl + br), h / (tl + bl), h / (tr + br)]
++        .into_iter()
++        .filter(|f| f.is_finite())
++        .fold(1f32, f32::min);
++    let (tl, tr, br, bl) = (tl * f, tr * f, br * f, bl * f);
++    // How far a row whose centre is `yc` is inset by a top or a bottom corner of
++    // radius `r`; `None` when the row's centre is outside that corner entirely.
++    let top_inset = |r: f32, yc: f32| -> Option<f32> {
++        let cy = y0 + r;
++        if r <= 0. || yc >= cy {
++            return Some(0.);
++        }
++        let dy = cy - yc;
++        (dy < r).then(|| r - (r * r - dy * dy).sqrt())
++    };
++    let bottom_inset = |r: f32, yc: f32| -> Option<f32> {
++        let cy = y1 - r;
++        if r <= 0. || yc <= cy {
++            return Some(0.);
++        }
++        let dy = yc - cy;
++        (dy < r).then(|| r - (r * r - dy * dy).sqrt())
++    };
++    let mut corner_row = |y: f32| {
++        let yc = y + 0.5;
++        let (Some(a), Some(b), Some(c), Some(d)) =
++            (top_inset(tl, yc), bottom_inset(bl, yc), top_inset(tr, yc), bottom_inset(br, yc))
++        else {
++            return;
++        };
++        let (l, r) = (x0 + a.max(b), x1 - c.max(d));
++        if r <= l {
++            return;
++        }
++        let (lc, rf) = (l.ceil(), r.floor());
++        if lc < rf {
++            bands.push(ClipBand { x0: lc, x1: rf, y0: y, y1: y + 1., coverage: 1. });
++        }
++        if lc > l {
++            bands.push(ClipBand { x0: l.floor(), x1: lc, y0: y, y1: y + 1., coverage: lc - l });
++        }
++        if r > rf && rf >= lc {
++            bands.push(ClipBand { x0: rf, x1: rf + 1., y0: y, y1: y + 1., coverage: r - rf });
++        }
++    };
++    let top_end = (y0 + tl.max(tr)).ceil();
++    let bottom_start = (y1 - bl.max(br)).floor();
++    if top_end < bottom_start {
++        let mut y = y0.floor();
++        while y < top_end {
++            corner_row(y);
++            y += 1.;
++        }
++        let mut y = bottom_start;
++        while y < y1 {
++            corner_row(y);
++            y += 1.;
++        }
++        bands.push(ClipBand { x0, x1, y0: top_end, y1: bottom_start, coverage: 1. });
++    } else {
++        // The corners meet: every row passes through one.
++        let mut y = y0.floor();
++        while y < y1 {
++            corner_row(y);
++            y += 1.;
++        }
+     }
++    bands
++}
+ 
+-    fn draw_rectangle(
++/// The drawing methods `with_rounded_clip` wraps, as the trait had them.
++impl<T: ProcessScene> SceneBuilder<'_, T> {
++    fn draw_rectangle_unclipped(
+         &mut self,
+         rect: Pin<&dyn RenderRectangle>,
+-        _: &ItemRc,
++        _item: &ItemRc,
          size: LogicalSize,
          _cache: &CachedRenderingData,
      ) {
@@ -4590,31 +4774,152 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          let geom = LogicalRect::from(size);
          if self.should_draw(&geom) {
              let geom = (geom.translate(self.current_state.offset.to_vector()).cast()
-@@ -2679,6 +3694,7 @@
+@@ -2679,15 +3853,17 @@
              args.rotation = self.rotation.orientation;
              self.processor.process_rectangle(&args, clipped);
          }
 +            })
      }
  
-     fn draw_border_rectangle(
-@@ -2688,6 +3704,7 @@
+-    fn draw_border_rectangle(
++    fn draw_border_rectangle_unclipped(
+         &mut self,
+         rect: Pin<&dyn RenderBorderRectangle>,
+-        _: &ItemRc,
++        _item: &ItemRc,
          size: LogicalSize,
-         _: &CachedRenderingData,
+-        _: &CachedRenderingData,
++        _cache: &CachedRenderingData,
      ) {
 +        i_slint_core::frame_profile::time(|p| &mut p.rect_draw, || {
          let geom = LogicalRect::from(size);
          if self.should_draw(&geom) {
              let geom = (geom.translate(self.current_state.offset.to_vector()).cast()
-@@ -2728,6 +3745,7 @@
+@@ -2728,25 +3904,15 @@
  
              self.processor.process_rectangle(&args, clipped);
          }
 +            })
      }
  
-     fn draw_window_background(
-@@ -2980,80 +3998,10 @@
+-    fn draw_window_background(
+-        &mut self,
+-        rect: Pin<&dyn RenderRectangle>,
+-        _self_rc: &ItemRc,
+-        _size: LogicalSize,
+-        _cache: &CachedRenderingData,
+-    ) {
+-        // register a dependency for the partial renderer's dirty tracker. The actual rendering is done earlier in the software renderer.
+-        let _ = rect.background();
+-    }
+-
+-    fn draw_image(
++    fn draw_image_unclipped(
+         &mut self,
+         image: Pin<&dyn RenderImage>,
+-        _: &ItemRc,
++        _item: &ItemRc,
+         size: LogicalSize,
+-        _: &CachedRenderingData,
++        _cache: &CachedRenderingData,
+     ) {
+         let geom = LogicalRect::from(size);
+         if self.should_draw(&geom) {
+@@ -2790,7 +3956,7 @@
+         }
+     }
+ 
+-    fn draw_text(
++    fn draw_text_unclipped(
+         &mut self,
+         text: Pin<&dyn i_slint_core::item_rendering::RenderText>,
+         self_rc: &ItemRc,
+@@ -2868,6 +4034,84 @@
+         });
+     }
+ 
++    #[cfg(feature = "path")]
++    fn draw_path_unclipped(
++        &mut self,
++        path: Pin<&i_slint_core::items::Path>,
++        self_rc: &ItemRc,
++        size: LogicalSize,
++    ) {
++        i_slint_core::frame_profile::time(
++            |p| &mut p.path_draw,
++            || self.draw_path_inner(path, self_rc, size),
++        )
++    }
++}
++
++impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilder<'_, T> {
++    fn global_alpha_transparent(&self) -> bool {
++        self.current_state.alpha == 0.0
++    }
++
++    fn draw_rectangle(
++        &mut self,
++        rect: Pin<&dyn RenderRectangle>,
++        item: &ItemRc,
++        size: LogicalSize,
++        cache: &CachedRenderingData,
++    ) {
++        self.with_rounded_clip(LogicalRect::from(size), |s| {
++            s.draw_rectangle_unclipped(rect, item, size, cache)
++        });
++    }
++
++    fn draw_border_rectangle(
++        &mut self,
++        rect: Pin<&dyn RenderBorderRectangle>,
++        item: &ItemRc,
++        size: LogicalSize,
++        cache: &CachedRenderingData,
++    ) {
++        self.with_rounded_clip(LogicalRect::from(size), |s| {
++            s.draw_border_rectangle_unclipped(rect, item, size, cache)
++        });
++    }
++
++    fn draw_window_background(
++        &mut self,
++        rect: Pin<&dyn RenderRectangle>,
++        _self_rc: &ItemRc,
++        _size: LogicalSize,
++        _cache: &CachedRenderingData,
++    ) {
++        // register a dependency for the partial renderer's dirty tracker. The actual rendering is done earlier in the software renderer.
++        let _ = rect.background();
++    }
++
++    fn draw_image(
++        &mut self,
++        image: Pin<&dyn RenderImage>,
++        item: &ItemRc,
++        size: LogicalSize,
++        cache: &CachedRenderingData,
++    ) {
++        self.with_rounded_clip(LogicalRect::from(size), |s| {
++            s.draw_image_unclipped(image, item, size, cache)
++        });
++    }
++
++    fn draw_text(
++        &mut self,
++        text: Pin<&dyn i_slint_core::item_rendering::RenderText>,
++        self_rc: &ItemRc,
++        size: LogicalSize,
++        cache: &CachedRenderingData,
++    ) {
++        self.with_rounded_clip(LogicalRect::from(size), |s| {
++            s.draw_text_unclipped(text, self_rc, size, cache)
++        });
++    }
++
+     fn draw_text_input(
+         &mut self,
+         text_input: Pin<&i_slint_core::items::TextInput>,
+@@ -2980,80 +4224,9 @@
          self_rc: &ItemRc,
          size: LogicalSize,
      ) {
@@ -4692,17 +4997,17 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 -                );
 -            }
 -        }
-+        i_slint_core::frame_profile::time(
-+            |p| &mut p.path_draw,
-+            || self.draw_path_inner(path, self_rc, size),
-+        )
++        self.with_rounded_clip(LogicalRect::from(size), |s| {
++            s.draw_path_unclipped(path, self_rc, size)
++        });
      }
  
      fn draw_box_shadow(
-@@ -3065,6 +4013,78 @@
+@@ -3065,7 +4238,84 @@
          // TODO
      }
  
+-    fn combine_clip(&mut self, other: LogicalRect, _radius: LogicalBorderRadius) -> bool {
 +    fn visit_layer(
 +        &mut self,
 +        layer: Pin<&i_slint_core::items::Layer>,
@@ -4775,10 +5080,36 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +            })
 +    }
 +
-     fn combine_clip(&mut self, other: LogicalRect, _radius: LogicalBorderRadius) -> bool {
++    fn combine_clip(&mut self, other: LogicalRect, radius: LogicalBorderRadius) -> bool {
++        // The innermost clip with a radius rounds its children's corners; an outer
++        // rounded clip around it no longer does (nested rounded clips are rare).
++        if !radius.is_zero() {
++            self.current_state.rounded = Some(RoundedClip { rect: other, radius });
++        }
          match self.current_state.clip.intersection(&other) {
              Some(r) => {
-@@ -3225,6 +4245,11 @@
+                 self.current_state.clip = r;
+@@ -3076,7 +4326,6 @@
+                 false
+             }
+         }
+-        // TODO: handle radius
+     }
+ 
+     fn get_current_clip(&self) -> LogicalRect {
+@@ -3085,7 +4334,10 @@
+ 
+     fn translate(&mut self, distance: LogicalVector) {
+         self.current_state.offset += distance;
+-        self.current_state.clip = self.current_state.clip.translate(-distance)
++        self.current_state.clip = self.current_state.clip.translate(-distance);
++        if let Some(rounded) = &mut self.current_state.rounded {
++            rounded.rect = rounded.rect.translate(-distance);
++        }
+     }
+ 
+     fn current_transform(&self) -> i_slint_core::lengths::ItemTransform {
+@@ -3225,6 +4477,11 @@
          self.window
      }
  
@@ -4790,7 +5121,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      fn as_any(&mut self) -> Option<&mut dyn core::any::Any> {
          None
      }
-@@ -3330,15 +4355,38 @@
+@@ -3330,15 +4587,38 @@
          glyphs_it: &mut dyn Iterator<Item = sharedparley::parley::layout::Glyph>,
      ) {
          let slint_context = self.window.context();
@@ -4838,7 +5169,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          );
  
          let global_offset: euclid::Vector2D<f32, PhysicalPx> =
-@@ -3376,6 +4424,7 @@
+@@ -3376,6 +4656,7 @@
              let Some(glyph) = font.render_vector_glyph(id, subpixel_bin, slint_context) else {
                  continue;
              };

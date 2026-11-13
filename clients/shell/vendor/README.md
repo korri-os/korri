@@ -58,6 +58,23 @@ the hosted window adapter, then checks that a fresh tap still activates.
 `tests/shell.rs` checks cancellation and outside-panel taps through the full
 shell and logic path.
 
+## Rounded clip (Velvet, #423)
+
+Slint 1.18.1's software renderer ignored a `Clip`'s border radius
+(`combine_clip(…, _radius)`, "TODO: handle radius"): a picture or a drawing
+inside a rounded `clip: true` rectangle kept square corners on the Linux
+devices. Skia (Android) already clipped them. Upstream has the equivalent on
+its unreleased 1.19 branch ("`Clip` follows `border-radius`", 11a7d7d6d3), built
+on a rewrite of the scene's clip runs that does not apply to this patched copy.
+
+The scene builder keeps the innermost rounded clip beside its rectangular
+clip. An item that reaches into one of its corner squares is drawn once per
+band: the straight middle in one band, and each physical row through a corner
+as its fully covered span plus its two edge pixels, each at its coverage
+(sampled at the row centre) as an opacity. Items that reach no corner are drawn
+once, as before. Pictures, rectangles, border rectangles, texts and paths are
+clipped; text inputs and cached layers' blits are not.
+
 ## Changes, by function
 
 | File | Function or item | Change |
@@ -143,6 +160,7 @@ shell and logic path.
 | `i-slint-renderer-software/draw_functions.rs` | `draw_texture_line`, `scaled_runs`, `fill_scaled_runs`, `SCALED_RUNS`, `SoftwareRenderer::set_scaled_runs` (doc-hidden; `KORRI_BENCH_NO_RUNS`) | A colour texture (RGB, RGBA, premultiplied RGBA; not colourised, full opacity, unrotated) is drawn a run at a time: each source pixel is read and converted once for the run of target pixels it covers, then stored in (opaque), blended into (translucent) or skipped over (transparent premultiplied) each of them, as the general path does per pixel. Same pixels. Zone's attract pans a cover scaled about 5.5 times: 7 % fewer instructions over the attract (workstation bench, 2 runs each). A pixel-shifted copy of the panning cover is not an option: a clipped texture's source offset is kept to 1/16 source pixel from the clip (`SceneTextureExtra::off_x`), so the same image one whole pixel further left samples other columns (5 to 35 of 640 per shift, measured). |
 | `slint-interpreter/component.rs` | `build_from_document`, `shrink_to_fit` (new) | The lowered unit's growable containers (each sub-component's properties, items, bindings in `property_init`, geometries, init code, `prop_analysis`, and the unit's lists) give back their spare capacity before the definition is kept. Lowering fills them a push at a time, so each held up to twice what it needs: Zone's `property_init` lists held room for 32 712 bindings of 376 bytes for 18 580 (5 MB). Zone's live heap after a compile 37.7 to 30.8 MB; shell PSS with 10 000 games, Zone idle 94.6 to 91.1 MB, Pico 110.4 to 104.5 MB (workstation, Xvfb 640x480). Nothing a definition evaluates changes. |
 | `slint-interpreter/component.rs` | `build_from_document`, `build_from_source`, `drop_tooling_tables` (new) | A definition built without type loaders (`set_retain_type_loaders(false)`: no highlighting, no live preview) drops what only the code generators and the tooling read: each sub-component's and global's property analysis (`prop_analysis`, read through `EvaluationContext::property_info` by the generators) and the items' source locations (`debug_info`, read by `highlight.rs`). The element infos that `ElementHandle` queries read stay. 10 000 games, Zone after 30 moves: shell PSS 95 617 to 84 313 KiB (Xvfb 640x480). |
+| `i-slint-renderer-software/lib.rs` | `RenderState::rounded`, `RoundedClip`, `ClipBand`, `rounded_clip_bands` (new), `SceneBuilder::with_rounded_clip` (new), `combine_clip`, `translate`; `draw_rectangle`, `draw_border_rectangle`, `draw_image`, `draw_text`, `draw_path` now forward to `*_unclipped` through `with_rounded_clip` | A `Clip` with a border radius clips its children's corners (section "Rounded clip"). Corner radii that don't fit scale down together, as in CSS. |
 
 ## Verification
 
@@ -167,6 +185,7 @@ shell and logic path.
 | `window_item_cache.rs` | Creates, measures and drops 201 windows with text in a repeater, without drawing a frame between them. Every row uses its explicit font, even when the allocator reuses a destroyed row's address. Before the fix the second window measures 103 px instead of 391 px. |
 | `text_reshape.rs` | Six texts whose width, text and font size depend on an animated size, with the text and size values unchanged: no text is shaped again over four size steps, and each frame equals a fresh window at that size. A new font size shapes all six again. Comparing nothing (always reshaping) fails it (checked by planting it). |
 | `memory_probe.rs` | 20 rounds of compiling, creating, showing and dropping Zone and Pico grow by less than 48 KiB a round. The measured growth is 0 to 10 KiB a round; before the change it was 153 KiB a round. |
+| `rounded_clip.rs` | A picture, a filled rectangle and a path inside a 60x80 rectangle with `border-radius: 12px; clip: true`, at scale 1 and 2: its four corners outside the arc stay empty, its inside and straight sides are filled, and the curved edge has blended pixels. All three fail on the unpatched renderer (corners drawn). |
 
 Zone on the workstation (Xvfb, 640x480, Zone marks its still parts with
 the hint): 27.5–37.6 % of one core before, 6.2–8.1 % after
@@ -188,6 +207,9 @@ the hint): 27.5–37.6 % of one core before, 6.2–8.1 % after
 - Font files: a font registered by path stays registered until the process
   ends. Unregistering it would not return its memory while the swash cache
   holds the blob.
+- A rounded clip inside another keeps only its own corners; the outer one's
+  no longer clip. An edge pixel where several clipped items overlap blends
+  each at the edge coverage, so lower items show through it slightly.
 
 ## Draft upstream issue
 
