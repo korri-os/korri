@@ -108,13 +108,19 @@
         <!-- Samsung DeX support requires explicit placement of android:resizeableActivity="true"
              in each activity even though it is implied by targeting API 24+ -->
 
-        <!-- Native Slint shell; Artemis Game remains the stream viewer. -->
+        <!-- Native Slint shell; Artemis Game remains the stream viewer.
+             stateAlwaysHidden: Slint adds a focusable text-editor view (SlintInputView) to
+             the window. On a large screen (usu's inner display) an unspecified soft-input
+             state then shows the system keyboard whenever the window gains focus, and the
+             native input queue hands D-pad keys to it first: presses vanished. Velvet has
+             its own keyboard; an explicit request from a text field still shows the IME. -->
         <activity
             android:name=".KorriShellActivity"
             android:exported="true"
             android:label="Korri"
             android:resizeableActivity="true"
             android:enableOnBackInvokedCallback="false"
+            android:windowSoftInputMode="stateAlwaysHidden"
             android:configChanges="mcc|mnc|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|layoutDirection">
             <meta-data android:name="android.app.lib_name" android:value="korri_shell" />
             <intent-filter>
