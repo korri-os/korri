@@ -1,0 +1,745 @@
+[
+  {
+    "label": "run-1",
+    "primary_clock": "display_ns",
+    "warmup_seconds": 10,
+    "discovered": {
+      "model": "System Product Name",
+      "architecture": "x86_64",
+      "boot_id": "6c04d35a-b6d0-48de-a773-e6d881fb90fd",
+      "os_release": {
+        "ANSI_COLOR": "\"0;38;2;126;186;228\"",
+        "BUG_REPORT_URL": "\"https://github.com/NixOS/nixpkgs/issues\"",
+        "BUILD_ID": "\"26.11.20260923.4975466\"",
+        "CPE_NAME": "\"cpe:/o:nixos:nixos:26.11\"",
+        "DEFAULT_HOSTNAME": "nixos",
+        "DOCUMENTATION_URL": "\"https://nixos.org/learn.html\"",
+        "HOME_URL": "\"https://nixos.org/\"",
+        "ID": "nixos",
+        "LOGO": "\"nix-snowflake\"",
+        "NAME": "NixOS",
+        "PRETTY_NAME": "\"NixOS 26.11 (Zokor)\"",
+        "SUPPORT_URL": "\"https://nixos.org/community.html\"",
+        "VENDOR_NAME": "NixOS",
+        "VENDOR_URL": "\"https://nixos.org/\"",
+        "VERSION": "\"26.11 (Zokor)\"",
+        "VERSION_CODENAME": "zokor",
+        "VERSION_ID": "\"26.11\""
+      },
+      "display": {
+        "name": "HEADLESS-1",
+        "mode": {
+          "width": 1920,
+          "height": 1080,
+          "refresh": 58823
+        },
+        "refresh_hz": 58.823,
+        "transform": "normal",
+        "power": true,
+        "scale": 1.0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "sunshine_version": "2026.516.143833",
+      "working_encoders": [
+        "h264_vaapi",
+        "hevc_vaapi",
+        "av1_vaapi"
+      ],
+      "fixture_user": "korri",
+      "thermal": [],
+      "heat_guarded": false,
+      "hardware_picture_path": false,
+      "board": [],
+      "valid": false,
+      "imported_store_paths": [
+        "/nix/store/00n5q0wbi7i9sy9wb44fz16cckpnx6hf-stream-cadence-motion",
+        "/nix/store/0ljy1wxzpsail1kn9ki2cvgr8nlr5c7v-stream-cadence-capture-1",
+        "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+        "/nix/store/jh2y4bkbdd6a0dkpw6ryz0j8cgy6hg7k-sway-unwrapped-1.12",
+        "/nix/store/lszz3rnnzx3p96b6f8yzb87pkyf623n6-sunshine-2026.516.143833",
+        "/nix/store/vqmzknrbdvbw9p5wrpjjhlz0xjk9nq03-korri-viewer-0.1.0",
+        "/nix/store/y8vdw0j52p0qrc3w6xbaccr41am3dva0-source"
+      ],
+      "run_index": 0,
+      "bridge_uncertainty_ms": null,
+      "viewer": {
+        "model": "System Product Name",
+        "architecture": "x86_64",
+        "boot_id": "6c04d35a-b6d0-48de-a773-e6d881fb90fd",
+        "clock_ticks_per_second": 100,
+        "compositor": {
+          "pid": 748122,
+          "uid": 56774,
+          "gid": 1000,
+          "user": "korri",
+          "exe": "/nix/store/zbv448cirqfydprf0s5q4jvqqzbg80bx-sway-unwrapped-1.12/bin/sway",
+          "start_ticks": "8795728",
+          "environment": {
+            "HOME": "/home/korri",
+            "XDG_RUNTIME_DIR": "/run/user/56774",
+            "XDG_CONFIG_HOME": "/run/korri-compositor/config",
+            "KORRI_WAYLAND_DISPLAY": "korri-wayland",
+            "SWAYSOCK": "/run/korri-compositor/sway-ipc.sock"
+          }
+        },
+        "display": null,
+        "display_unread": null,
+        "watched_display": null,
+        "plugin": null,
+        "plugin_missing": "korri-plugin status ended with 1: korri-plugin: plugin is not installed",
+        "platform": "x11_vaapi",
+        "hardware_picture_path": false,
+        "board": [],
+        "no_fixture": null,
+        "controller_address": "100.114.19.92",
+        "thermal": [],
+        "heat_guarded": false
+      },
+      "live_game": {
+        "sender_at_start": [],
+        "viewer_at_start": [],
+        "sender_at_end": [],
+        "viewer_at_end": [],
+        "input_rule": "record",
+        "input_devices_appeared": [],
+        "input_devices_disappeared": []
+      },
+      "pair_namespace": {
+        "pid": 856507,
+        "net": "net:[4026532856]",
+        "mnt": "mnt:[4026532834]"
+      },
+      "sunshine_port": 44083,
+      "listening_tcp_ports": [
+        44083
+      ],
+      "processes": {
+        "compositor": {
+          "pid": 856519
+        },
+        "sunshine": {
+          "pid": 856538
+        }
+      },
+      "sender_fixture": {
+        "application": "Desktop",
+        "renderer": "gles2",
+        "render_node": "/dev/dri/renderD128",
+        "hardware_encoder": true,
+        "attempts": [
+          {
+            "render_node": "/dev/dri/renderD128",
+            "working_encoders": [
+              "h264_vaapi",
+              "hevc_vaapi",
+              "av1_vaapi"
+            ],
+            "hardware_encoder": true,
+            "port": 44083,
+            "sunshine_version": "2026.516.143833"
+          }
+        ],
+        "run_folder": "/tmp/korri-stream-cadence-sender-okqlz_zp"
+      },
+      "requested_fps": 60.0,
+      "requested_resolution": {
+        "width": 1920,
+        "height": 1080
+      },
+      "requested_codec": "h264",
+      "requested_bitrate": 10000,
+      "viewer_refresh_hz": 60.0,
+      "max_capture_gaps": 0,
+      "measure": "base",
+      "stream_host": "aka",
+      "viewer_fixture": {
+        "renderer": "gles2",
+        "private_x_namespace": true,
+        "audio": "null"
+      },
+      "viewer_ran": {
+        "kind": "copied-product",
+        "place": "fixture",
+        "moonlight": "/nix/store/vqmzknrbdvbw9p5wrpjjhlz0xjk9nq03-korri-viewer-0.1.0/bin/moonlight",
+        "release_version": null,
+        "package": "/nix/store/vqmzknrbdvbw9p5wrpjjhlz0xjk9nq03-korri-viewer-0.1.0",
+        "copied_from": "zao",
+        "signed_by": [],
+        "requested_platform": "x11_vaapi",
+        "decode": "unknown",
+        "render_nodes": []
+      },
+      "viewer_command": [
+        "/nix/store/vqmzknrbdvbw9p5wrpjjhlz0xjk9nq03-korri-viewer-0.1.0/bin/moonlight",
+        "stream",
+        "-app",
+        "Desktop",
+        "-platform",
+        "x11_vaapi",
+        "-mapping",
+        "/nix/store/vqmzknrbdvbw9p5wrpjjhlz0xjk9nq03-korri-viewer-0.1.0/share/moonlight/korri-inputplumber-gamecontrollerdb.txt",
+        "-keydir",
+        "/tmp/korri-stream-cadence-view-zero2ezd/home/keys",
+        "-windowed",
+        "-autowindowresize",
+        "-viewonly",
+        "-verbose",
+        "-width",
+        "1920",
+        "-height",
+        "1080",
+        "-fps",
+        "60",
+        "-codec",
+        "h264",
+        "-bitrate",
+        "10000",
+        "-port",
+        "44083",
+        "127.0.0.1"
+      ],
+      "error": "Viewer exited (1); read viewer.log",
+      "viewer_restore": {
+        "live_games": [],
+        "product_units": {
+          "at_start": {
+            "korri-boot-splash-handoff.service": {
+              "pid": 0,
+              "started": 8317014
+            },
+            "korri-bundle-selector.service": {
+              "pid": 0,
+              "started": 219956135598
+            },
+            "korri-clock-governor.service": {
+              "pid": 3896,
+              "started": 164324721
+            },
+            "korri-compositor.service": {
+              "pid": 748122,
+              "started": 87957282465
+            },
+            "korri-input-seat-receiver.service": {
+              "pid": 2569242,
+              "started": 219957620000
+            },
+            "korri-input-source-guard.service": {
+              "pid": 0,
+              "started": 164531729
+            },
+            "korri-limits.service": {
+              "pid": 4035,
+              "started": 164533214
+            },
+            "korri-local-signer.service": {
+              "pid": 2569201,
+              "started": 219956806525
+            },
+            "korri-plugin-admin.service": {
+              "pid": 748266,
+              "started": 87969764633
+            },
+            "korri-plugin-host.service": {
+              "pid": 0,
+              "started": 87893718128
+            },
+            "korri-portal-credentials.service": {
+              "pid": 0,
+              "started": 162355048
+            },
+            "korri-portal-initialize.service": {
+              "pid": 0,
+              "started": 8321684
+            },
+            "korri-sunshine-input-setup.service": {
+              "pid": 1489945,
+              "started": 168435600000
+            },
+            "korri-sunshine.service": {
+              "pid": 2569277,
+              "started": 219957810561
+            },
+            "korrid.service": {
+              "pid": 2569267,
+              "started": 219957786116
+            }
+          },
+          "at_end": {
+            "korri-boot-splash-handoff.service": {
+              "pid": 0,
+              "started": 8317014
+            },
+            "korri-bundle-selector.service": {
+              "pid": 0,
+              "started": 219956135598
+            },
+            "korri-clock-governor.service": {
+              "pid": 3896,
+              "started": 164324721
+            },
+            "korri-compositor.service": {
+              "pid": 748122,
+              "started": 87957282465
+            },
+            "korri-input-seat-receiver.service": {
+              "pid": 2569242,
+              "started": 219957620000
+            },
+            "korri-input-source-guard.service": {
+              "pid": 0,
+              "started": 164531729
+            },
+            "korri-limits.service": {
+              "pid": 4035,
+              "started": 164533214
+            },
+            "korri-local-signer.service": {
+              "pid": 2569201,
+              "started": 219956806525
+            },
+            "korri-plugin-admin.service": {
+              "pid": 748266,
+              "started": 87969764633
+            },
+            "korri-plugin-host.service": {
+              "pid": 0,
+              "started": 87893718128
+            },
+            "korri-portal-credentials.service": {
+              "pid": 0,
+              "started": 162355048
+            },
+            "korri-portal-initialize.service": {
+              "pid": 0,
+              "started": 8321684
+            },
+            "korri-sunshine-input-setup.service": {
+              "pid": 1489945,
+              "started": 168435600000
+            },
+            "korri-sunshine.service": {
+              "pid": 2569277,
+              "started": 219957810561
+            },
+            "korrid.service": {
+              "pid": 2569267,
+              "started": 219957786116
+            }
+          },
+          "changed": []
+        },
+        "pass": true,
+        "pids_unchanged": {
+          "compositor": true
+        },
+        "run_folder": "/tmp/korri-stream-cadence-view-zero2ezd",
+        "run_folder_removed": true,
+        "remaining_processes": [],
+        "errors": []
+      },
+      "restore": {
+        "live_games": [],
+        "product_units": {
+          "at_start": {
+            "korri-boot-splash-handoff.service": {
+              "pid": 0,
+              "started": 8317014
+            },
+            "korri-bundle-selector.service": {
+              "pid": 0,
+              "started": 219956135598
+            },
+            "korri-clock-governor.service": {
+              "pid": 3896,
+              "started": 164324721
+            },
+            "korri-compositor.service": {
+              "pid": 748122,
+              "started": 87957282465
+            },
+            "korri-input-seat-receiver.service": {
+              "pid": 2569242,
+              "started": 219957620000
+            },
+            "korri-input-source-guard.service": {
+              "pid": 0,
+              "started": 164531729
+            },
+            "korri-limits.service": {
+              "pid": 4035,
+              "started": 164533214
+            },
+            "korri-local-signer.service": {
+              "pid": 2569201,
+              "started": 219956806525
+            },
+            "korri-plugin-admin.service": {
+              "pid": 748266,
+              "started": 87969764633
+            },
+            "korri-plugin-host.service": {
+              "pid": 0,
+              "started": 87893718128
+            },
+            "korri-portal-credentials.service": {
+              "pid": 0,
+              "started": 162355048
+            },
+            "korri-portal-initialize.service": {
+              "pid": 0,
+              "started": 8321684
+            },
+            "korri-sunshine-input-setup.service": {
+              "pid": 1489945,
+              "started": 168435600000
+            },
+            "korri-sunshine.service": {
+              "pid": 2569277,
+              "started": 219957810561
+            },
+            "korrid.service": {
+              "pid": 2569267,
+              "started": 219957786116
+            }
+          },
+          "at_end": {
+            "korri-boot-splash-handoff.service": {
+              "pid": 0,
+              "started": 8317014
+            },
+            "korri-bundle-selector.service": {
+              "pid": 0,
+              "started": 219956135598
+            },
+            "korri-clock-governor.service": {
+              "pid": 3896,
+              "started": 164324721
+            },
+            "korri-compositor.service": {
+              "pid": 748122,
+              "started": 87957282465
+            },
+            "korri-input-seat-receiver.service": {
+              "pid": 2569242,
+              "started": 219957620000
+            },
+            "korri-input-source-guard.service": {
+              "pid": 0,
+              "started": 164531729
+            },
+            "korri-limits.service": {
+              "pid": 4035,
+              "started": 164533214
+            },
+            "korri-local-signer.service": {
+              "pid": 2569201,
+              "started": 219956806525
+            },
+            "korri-plugin-admin.service": {
+              "pid": 748266,
+              "started": 87969764633
+            },
+            "korri-plugin-host.service": {
+              "pid": 0,
+              "started": 87893718128
+            },
+            "korri-portal-credentials.service": {
+              "pid": 0,
+              "started": 162355048
+            },
+            "korri-portal-initialize.service": {
+              "pid": 0,
+              "started": 8321684
+            },
+            "korri-sunshine-input-setup.service": {
+              "pid": 1489945,
+              "started": 168435600000
+            },
+            "korri-sunshine.service": {
+              "pid": 2569277,
+              "started": 219957810561
+            },
+            "korrid.service": {
+              "pid": 2569267,
+              "started": 219957786116
+            }
+          },
+          "changed": []
+        },
+        "pass": true,
+        "pids_unchanged": {},
+        "run_folder": "/tmp/korri-stream-cadence-sender-okqlz_zp",
+        "run_folder_bytes": 2159675,
+        "run_folder_removed": true,
+        "stray_processes_killed": [],
+        "remaining_processes": [],
+        "other_processes": [],
+        "new_input_devices": [],
+        "gone_input_devices": [],
+        "input_rule": "record",
+        "errors": []
+      },
+      "product_units": {
+        "sender": {
+          "at_start": {
+            "korri-boot-splash-handoff.service": {
+              "pid": 0,
+              "started": 8317014
+            },
+            "korri-bundle-selector.service": {
+              "pid": 0,
+              "started": 219956135598
+            },
+            "korri-clock-governor.service": {
+              "pid": 3896,
+              "started": 164324721
+            },
+            "korri-compositor.service": {
+              "pid": 748122,
+              "started": 87957282465
+            },
+            "korri-input-seat-receiver.service": {
+              "pid": 2569242,
+              "started": 219957620000
+            },
+            "korri-input-source-guard.service": {
+              "pid": 0,
+              "started": 164531729
+            },
+            "korri-limits.service": {
+              "pid": 4035,
+              "started": 164533214
+            },
+            "korri-local-signer.service": {
+              "pid": 2569201,
+              "started": 219956806525
+            },
+            "korri-plugin-admin.service": {
+              "pid": 748266,
+              "started": 87969764633
+            },
+            "korri-plugin-host.service": {
+              "pid": 0,
+              "started": 87893718128
+            },
+            "korri-portal-credentials.service": {
+              "pid": 0,
+              "started": 162355048
+            },
+            "korri-portal-initialize.service": {
+              "pid": 0,
+              "started": 8321684
+            },
+            "korri-sunshine-input-setup.service": {
+              "pid": 1489945,
+              "started": 168435600000
+            },
+            "korri-sunshine.service": {
+              "pid": 2569277,
+              "started": 219957810561
+            },
+            "korrid.service": {
+              "pid": 2569267,
+              "started": 219957786116
+            }
+          },
+          "at_end": {
+            "korri-boot-splash-handoff.service": {
+              "pid": 0,
+              "started": 8317014
+            },
+            "korri-bundle-selector.service": {
+              "pid": 0,
+              "started": 219956135598
+            },
+            "korri-clock-governor.service": {
+              "pid": 3896,
+              "started": 164324721
+            },
+            "korri-compositor.service": {
+              "pid": 748122,
+              "started": 87957282465
+            },
+            "korri-input-seat-receiver.service": {
+              "pid": 2569242,
+              "started": 219957620000
+            },
+            "korri-input-source-guard.service": {
+              "pid": 0,
+              "started": 164531729
+            },
+            "korri-limits.service": {
+              "pid": 4035,
+              "started": 164533214
+            },
+            "korri-local-signer.service": {
+              "pid": 2569201,
+              "started": 219956806525
+            },
+            "korri-plugin-admin.service": {
+              "pid": 748266,
+              "started": 87969764633
+            },
+            "korri-plugin-host.service": {
+              "pid": 0,
+              "started": 87893718128
+            },
+            "korri-portal-credentials.service": {
+              "pid": 0,
+              "started": 162355048
+            },
+            "korri-portal-initialize.service": {
+              "pid": 0,
+              "started": 8321684
+            },
+            "korri-sunshine-input-setup.service": {
+              "pid": 1489945,
+              "started": 168435600000
+            },
+            "korri-sunshine.service": {
+              "pid": 2569277,
+              "started": 219957810561
+            },
+            "korrid.service": {
+              "pid": 2569267,
+              "started": 219957786116
+            }
+          },
+          "changed": []
+        },
+        "viewer": {
+          "at_start": {
+            "korri-boot-splash-handoff.service": {
+              "pid": 0,
+              "started": 8317014
+            },
+            "korri-bundle-selector.service": {
+              "pid": 0,
+              "started": 219956135598
+            },
+            "korri-clock-governor.service": {
+              "pid": 3896,
+              "started": 164324721
+            },
+            "korri-compositor.service": {
+              "pid": 748122,
+              "started": 87957282465
+            },
+            "korri-input-seat-receiver.service": {
+              "pid": 2569242,
+              "started": 219957620000
+            },
+            "korri-input-source-guard.service": {
+              "pid": 0,
+              "started": 164531729
+            },
+            "korri-limits.service": {
+              "pid": 4035,
+              "started": 164533214
+            },
+            "korri-local-signer.service": {
+              "pid": 2569201,
+              "started": 219956806525
+            },
+            "korri-plugin-admin.service": {
+              "pid": 748266,
+              "started": 87969764633
+            },
+            "korri-plugin-host.service": {
+              "pid": 0,
+              "started": 87893718128
+            },
+            "korri-portal-credentials.service": {
+              "pid": 0,
+              "started": 162355048
+            },
+            "korri-portal-initialize.service": {
+              "pid": 0,
+              "started": 8321684
+            },
+            "korri-sunshine-input-setup.service": {
+              "pid": 1489945,
+              "started": 168435600000
+            },
+            "korri-sunshine.service": {
+              "pid": 2569277,
+              "started": 219957810561
+            },
+            "korrid.service": {
+              "pid": 2569267,
+              "started": 219957786116
+            }
+          },
+          "at_end": {
+            "korri-boot-splash-handoff.service": {
+              "pid": 0,
+              "started": 8317014
+            },
+            "korri-bundle-selector.service": {
+              "pid": 0,
+              "started": 219956135598
+            },
+            "korri-clock-governor.service": {
+              "pid": 3896,
+              "started": 164324721
+            },
+            "korri-compositor.service": {
+              "pid": 748122,
+              "started": 87957282465
+            },
+            "korri-input-seat-receiver.service": {
+              "pid": 2569242,
+              "started": 219957620000
+            },
+            "korri-input-source-guard.service": {
+              "pid": 0,
+              "started": 164531729
+            },
+            "korri-limits.service": {
+              "pid": 4035,
+              "started": 164533214
+            },
+            "korri-local-signer.service": {
+              "pid": 2569201,
+              "started": 219956806525
+            },
+            "korri-plugin-admin.service": {
+              "pid": 748266,
+              "started": 87969764633
+            },
+            "korri-plugin-host.service": {
+              "pid": 0,
+              "started": 87893718128
+            },
+            "korri-portal-credentials.service": {
+              "pid": 0,
+              "started": 162355048
+            },
+            "korri-portal-initialize.service": {
+              "pid": 0,
+              "started": 8321684
+            },
+            "korri-sunshine-input-setup.service": {
+              "pid": 1489945,
+              "started": 168435600000
+            },
+            "korri-sunshine.service": {
+              "pid": 2569277,
+              "started": 219957810561
+            },
+            "korrid.service": {
+              "pid": 2569267,
+              "started": 219957786116
+            }
+          },
+          "changed": []
+        }
+      }
+    }
+  }
+]

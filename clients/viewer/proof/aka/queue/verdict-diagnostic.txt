@@ -1,0 +1,23 @@
+baseline viewer: copied product package (/nix/store/b87wcqr972gny6ckdnpgamxiij725rls-moonlight-embedded-korri-2.7.1-korri/bin/moonlight, copied from zao, signed by korri-cache-zao-1), in the fixture, OpenGL on /dev/dri/renderD129
+candidate viewer: copied product package (/nix/store/mac720f6dl57mx7bb7xjyyvb11dgvdkp-korri-viewer-0.1.0/bin/moonlight, copied from zao, signed by korri-cache-zao-1), in the fixture, OpenGL on /dev/dri/renderD129
+The two results ran different viewers; every verdict below compares these two.
+baseline picture: requested_platform=x11_vaapi, decode=vaapi
+candidate picture: requested_platform=x11_vaapi, decode=vaapi
+Allowed by --allow-different-conditions. The machine was busier in one result: on the sender device what else ran took 0.8%..0.9% of all CPUs in the baseline and 6.9%..29.5% in the candidate; on the viewer device what else ran took 0.9%..0.9% of all CPUs in the baseline and 6.9%..29.5% in the candidate. Another load on the device changes a pair's numbers; record both results on an equally quiet machine.
+what else ran on the machine, share of all CPUs: baseline: sender device 0.8%..0.9%, viewer device 0.9%..0.9%; candidate: sender device 6.9%..29.5%, viewer device 6.9%..29.5%
+number | metric | baseline runs | candidate runs | verdict
+1 packet arrival to display | packet_to_display_ms | not measured | not measured | not measured
+1 sender presentation to display | latency_p50_ms | 749.230..829.532 | 40.247..41.720 | better
+1 sender presentation to display | latency_p95_ms | 1201.321..1267.822 | 47.099..48.732 | better
+2 smoothness | dropped_frames | not measured | not measured | not measured
+2 smoothness | repeated_frames | 2.000..3.000 | 0.000..0.000 | better
+2 smoothness | late_frames | 2.000..3.000 | 0.000..0.000 | better
+2 smoothness | torn_frames | 0.000..0.000 | 0.000..0.000 | equal
+2 smoothness | unreadable_frames | 0.000..0.000 | 0.000..0.000 | equal
+2 smoothness | output_repeats | 0.000..0.000 | 0.000..0.000 | equal
+3 CPU and battery | cpu_seconds_per_second | 0.012..0.012 | 0.014..0.024 | worse
+3 CPU and battery | battery_mw | not measured | not measured | not measured
+4 startup | startup_ms | 721.025..766.808 | 658.795..739.236 | equal
+5 input | input_ms | not measured | not measured | not measured
+6 stability | stream_stalls | 0.000..0.000 | 0.000..0.000 | equal
+6 stability | viewer_exits | 0.000..0.000 | 0.000..0.000 | equal

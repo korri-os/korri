@@ -47,6 +47,11 @@ the PIN exchange. Authenticated serverinfo, applist and launch/resume have no
 HTTP fallback. The existing `client.pem`, `key.pem` and `uniqueid.dat` names
 come from Moonlight's key-directory producer; korrid provisioning is unchanged.
 
+The Rust HTTP/session and PIN exchange follow Moonlight Embedded's
+`libgamestream/client.c`, Copyright (C) 2015–2017 Iwan Timmer. The Rust
+adaptation is Korri work dated 2026-11-13, under the same GPL-3.0-or-later
+terms. Original notices remain on the carried C files.
+
 ## Picture provenance
 
 The source is Moonlight Embedded at the pin above, with the plugin patch stack
@@ -60,8 +65,8 @@ through `korri-plugins` commit `2094c1e77471` (#466). In particular:
 | Independent presentation display, retained newest frame, released frame references | `9445f79`, `2094c1e`, patch 0026 and regression tests (#466) |
 
 `video/{ffmpeg,ffmpeg_vaapi,egl,sdl}.c` and their headers are copied, not
-rewritten. Only the PC files cross over. There is no V4L2 Request decoder,
-Qualcomm decoder, DRM/KMS presenter or patched FFmpeg in this package.
+rewritten. Only the PC files cross over. There is no handheld-specific decoder module, DRM/KMS presenter or patched
+FFmpeg in this package. The generic FFmpeg decoder selection stays unchanged.
 
 The adaptations do not change decode, queue or presentation policy:
 
@@ -76,8 +81,11 @@ The adaptations do not change decode, queue or presentation policy:
 
 The two copied C regression tests use a real Xvfb. They exercise VA failure
 cleanup, resize destinations, newest-frame replacement during presentation,
-and frame references after drops and presentation. Rust tests exercise real
-TLS and HTTP requests, CLI compatibility, pin failure and launch selection.
+and frame references after drops and presentation. A third C test decodes
+and presents four actual H.264 frames through the SDL software fallback,
+then reads the rendered pixels. It uses Xvfb and Mesa software rendering,
+not a device. Rust tests exercise real TLS and HTTP requests, CLI compatibility,
+pin failure, fresh mutual-TLS authentication and launch selection.
 
 ## Next slices
 
