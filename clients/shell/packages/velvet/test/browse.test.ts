@@ -261,6 +261,28 @@ describe("the detail", () => {
   })
 })
 
+describe("the global menu (owner, 2026-11-13: a pad's Guide, which the shell gives as System)", () => {
+  test("System opens the house menu from the pick, the row, a set, the detail and a page; again closes it", () => {
+    const run = new Play(model("home"))
+    run.press("system")
+    expect(run.view.layer).toBe("sheet")
+    expect(run.view.sheet.title).toBe("Menu")
+    run.press("system")
+    expect(run.view.layer).toBe("screen")
+    run.press("down", "system")
+    expect(run.view.sheet.title).toBe("Menu")
+    run.press("system", "down", "confirm")
+    expect(run.view.page).toBe("detail")
+    run.press("system")
+    expect(run.view.sheet.title).toBe("Menu")
+    run.press("down", "confirm")
+    expect(run.view.list.title).toBe("SETTINGS")
+    run.press("system")
+    expect(run.view.layer).toBe("sheet")
+    expect(run.view.sheet.title).toBe("Menu")
+  })
+})
+
 describe("FocusGame", () => {
   test("Velvet tells Korri the game in focus, once a change", () => {
     const run = new Play(model("home"))

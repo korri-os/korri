@@ -49,6 +49,7 @@ impl Android {
         let front: Front = Default::default();
         let events = front.clone();
         let touch = front.clone();
+        let guide = front.clone();
         let input = Rc::new(RefCell::new(AndroidInput::default()));
         let focus_input = input.clone();
         let event_input = input.clone();
@@ -92,6 +93,18 @@ impl Android {
                     KeyAction::Up => false,
                     _ => return false,
                 };
+                // A gamepad's Guide (KEYCODE_BUTTON_MODE) is the surface's System button,
+                // as a keyboard's S is: Velvet opens its global menu with it (owner,
+                // 2026-11-13). In a game the Guide edge stays the overlay's (ADR 0054).
+                if code == 110 {
+                    if let Some((sink, ..)) = guide.borrow().as_ref() {
+                        sink(HostEvent::Key {
+                            key: crate::input::Key::S,
+                            pressed,
+                        });
+                    }
+                    return true;
+                }
                 return if let Some(events) = input.borrow_mut().key(key.device_id(), code, pressed)
                 {
                     send(events);

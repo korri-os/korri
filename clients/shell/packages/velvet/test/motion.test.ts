@@ -59,7 +59,7 @@ describe("velvet.motion", () => {
   })
   test("Settings holds the row; choosing it asks the shell to remember", () => {
     const run = new Play(model())
-    run.press("system")
+    run.press("menu", "down", "confirm")
     expect(run.view.list.title).toBe("SETTINGS")
     const rows = run.view.listRows as any[]
     const row = rows.find(entry => entry.focusId === "v:motion")

@@ -35,7 +35,8 @@ pub enum Key {
     Backspace,
     M,
     O,
-    /// The system button, which no gamepad mapping sends to a surface.
+    /// The system button: a keyboard's S, and on Android a gamepad's Guide (the backend
+    /// gives it as this key; the mapper never sends a pad's Mode to a surface).
     S,
     F2,
 }

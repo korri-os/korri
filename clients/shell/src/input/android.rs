@@ -25,7 +25,7 @@ fn key_code(code: u32) -> Option<u16> {
         103 => 0x137,          // R1
         108 | 82 => 0x13b,     // START, MENU
         109 => 0x13a,          // SELECT
-        110 => 0x13c,          // MODE: reserved by host, never sent to surface
+        110 => 0x13c,          // MODE: the backend gives it to the surface as System first
         _ => return None,
     })
 }

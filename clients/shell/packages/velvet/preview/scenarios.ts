@@ -165,7 +165,7 @@ interface Scenario {
 }
 
 const toMenu = ["menu"]
-const toSettings = ["system"]
+const toSettings = ["menu", "down", "confirm"]
 const toWifi = ["menu", "down", "down", "confirm"]
 const toIdentity = ["menu", "down", "down", "down", "confirm"]
 const toStore = ["menu", "confirm"]

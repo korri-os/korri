@@ -35,7 +35,13 @@ export component VelvetPause inherits Rectangle {
     property <length> fact: Tokens.screen.fact * u;
     // Facts two to a line.
     property <int> fact-rows: Math.ceil(facts.length / 2);
-    property <length> strip-h: (clock != "" || facts.length > 0 ? fact * 1.7 : 0px) + fact-rows * fact * 1.6;
+    // The head's rhythm, one step roomier than it was (owner, 2026-11-13): title to the clock,
+    // the clock's line, each line of facts, and the facts to the rows.
+    property <length> after-title: fact * 0.95;
+    property <length> clock-pitch: fact * 2.0;
+    property <length> fact-pitch: fact * 1.95;
+    property <length> before-rows: fact * 1.9;
+    property <length> strip-h: (clock != "" || facts.length > 0 ? clock-pitch : 0px) + fact-rows * fact-pitch;
     // A press beside the panel does nothing, and never reaches the game.
     TouchArea { }
     Rectangle {
@@ -59,7 +65,7 @@ export component VelvetPause inherits Rectangle {
         }
         if root.clock != "": VelvetWords {
             x: root.pad-x;
-            y: root.pad-y + head.block + root.fact * 0.6;
+            y: root.pad-y + head.block + root.after-title;
             width: parent.width - 2 * root.pad-x;
             height: root.fact * 1.5;
             text: root.clock;
@@ -68,7 +74,7 @@ export component VelvetPause inherits Rectangle {
         }
         for item[n] in root.facts: HorizontalLayout {
             x: root.pad-x + Math.mod(n, 2) * (parent.width - 2 * root.pad-x) / 2;
-            y: root.pad-y + head.block + root.fact * 0.6 + (root.clock != "" ? root.fact * 1.7 : 0px) + Math.floor(n / 2) * root.fact * 1.6;
+            y: root.pad-y + head.block + root.after-title + (root.clock != "" ? root.clock-pitch : 0px) + Math.floor(n / 2) * root.fact-pitch;
             width: (parent.width - 2 * root.pad-x) / 2 - root.fact * 0.5;
             height: root.fact * 1.5;
             spacing: root.fact * 0.45;
@@ -87,7 +93,7 @@ export component VelvetPause inherits Rectangle {
         }
         VelvetRows {
             x: root.pad-x - root.fact * 0.6;
-            y: root.pad-y + head.block + root.fact * 1.4 + root.strip-h;
+            y: root.pad-y + head.block + root.after-title + root.before-rows - root.fact * 0.5 + root.strip-h;
             width: parent.width - 2 * root.pad-x + root.fact * 1.2;
             height: parent.height - self.y - root.pad-y;
             rows: root.rows;

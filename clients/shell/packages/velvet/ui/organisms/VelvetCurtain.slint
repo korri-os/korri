@@ -41,7 +41,8 @@ export component VelvetCurtain inherits Rectangle {
         y: self.preferred-height + 2 * Tokens.screen.pad-y * root.u <= root.height ? (root.height - self.preferred-height) / 2 : root.height - Tokens.screen.pad-y * root.u * 0.6 - self.preferred-height;
         width: root.w;
         height: self.preferred-height;
-        spacing: root.body * 0.7;
+        // A launch stands roomier: its few lines read as a title card (owner, 2026-11-13).
+        spacing: root.curtain.solid ? root.body * 1.15 : root.body * 0.7;
         alignment: start;
         if root.curtain.name != "": Text {
             text: root.curtain.name;
@@ -91,7 +92,7 @@ export component VelvetCurtain inherits Rectangle {
         if root.lines.length > 0: VerticalLayout {
             spacing: 0;
             for line in root.lines: Text {
-                height: root.body * 1.35;
+                height: root.body * (root.curtain.solid ? 1.6 : 1.35);
                 text: line;
                 color: root.curtain.solid ? Tokens.usher : Tokens.house-light;
                 font-family: Tokens.text;

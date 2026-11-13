@@ -322,7 +322,9 @@ function pressed(state: State, button: SurfaceButton, model: Model, out: Request
   if (curtain !== undefined) return done(curtainPress(state, curtain, button, p))
   if (state.keyboard !== undefined) return done(keyboardPress(state, state.keyboard, button, p))
   if (state.sheet !== undefined) {
-    // The button that opened a sheet closes it too.
+    // The button that opened a sheet closes it too. System (a pad's Guide) is the global
+    // menu's own button: it closes the menu, and over any other sheet it brings the menu.
+    if (button === "system") return state.sheet.kind === "menu" ? { ...state, sheet: undefined } : perform({ ...state, sheet: undefined }, { t: "sheet", sheet: "menu" }, model, out)
     if ((button === "options" && state.sheet.kind !== "menu") || (button === "menu" && state.sheet.kind === "menu")) return { ...state, sheet: undefined }
     return done(panelPress(state, sheetPanel(state.sheet.kind, state, model), button, p))
   }
@@ -331,12 +333,13 @@ function pressed(state: State, button: SurfaceButton, model: Model, out: Request
   if (panel !== undefined) {
     // Korri was asked to close the overlay: the focus still moves, and nothing is asked twice.
     if (what === "overlay" && state.overlay.leaving && button !== "up" && button !== "down") return state
-    if (button === "system" && what === "page" && state.pages[state.pages.length - 1]?.p !== "settings") return perform(state, { t: "open", page: { p: "settings" } }, model, out)
+    // System (a pad's Guide) opens the global menu over any page (owner, 2026-11-13).
+    if (button === "system" && what === "page") return perform(state, { t: "sheet", sheet: "menu" }, model, out)
     return done(panelPress(state, panel, button, p))
   }
   // The library.
   if (button === "menu") return perform(state, { t: "sheet", sheet: "menu" }, model, out)
-  if (button === "system") return perform(state, { t: "open", page: { p: "settings" } }, model, out)
+  if (button === "system") return perform(state, { t: "sheet", sheet: "menu" }, model, out)
   if (what === "detail") {
     if (button === "options") {
       const game = detailGame(state, model)
