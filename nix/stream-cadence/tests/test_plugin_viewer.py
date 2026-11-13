@@ -147,6 +147,16 @@ class PluginViewerInTheFixture(unittest.TestCase):
             )
             self.assertEqual(played.returncode, 0, played.stderr.decode())
 
+    def test_an_exited_viewer_names_its_exit_not_an_open_file_failure(self):
+        session = self.session()
+        self.prepare(session)
+        process = session.spawn("viewer", [sys.executable, "-c", "raise SystemExit(23)"], session.viewer_environment())
+        self.assertEqual(process.wait(timeout=5), 23)
+        # Isolation used to read /proc/PID/fd before it checked process exit.
+        session.x_namespace = True
+        with self.assertRaisesRegex(RuntimeError, r"Viewer exited.*23.*viewer.log"):
+            session.handle({"operation": "sample"})
+
     def test_pc_product_fixture_refuses_before_it_can_contact_the_products_x_server(self):
         for package in (None, "copied"):
             with self.subTest(package=package):

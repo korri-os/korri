@@ -975,10 +975,18 @@ class Session:
                     self.end(unsafe, viewer)
             if self.ended:
                 raise RuntimeError(self.ended)
-            proof = (
-                isolation(viewer.pid, self.processes["fixture"].pid)
-                if self.x_namespace and viewer else None
-            )
+            # A dead viewer has no /proc/PID/fd to inspect. Name the exit,
+            # including a process that ends between poll and isolation's read.
+            if viewer and viewer.poll() is not None:
+                raise RuntimeError(f"Viewer exited ({viewer.returncode}); read viewer.log")
+            proof = None
+            if self.x_namespace and viewer:
+                try:
+                    proof = isolation(viewer.pid, self.processes["fixture"].pid)
+                except (RuntimeError, OSError):
+                    if viewer.poll() is not None:
+                        raise RuntimeError(f"Viewer exited ({viewer.returncode}); read viewer.log") from None
+                    raise
             return {
                 "device_ns": time.monotonic_ns(),
                 "viewer_ticks": ticks(viewer.pid) if viewer else None,
