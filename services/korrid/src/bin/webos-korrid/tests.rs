@@ -5,7 +5,22 @@ use nostr::{
     key::Keys,
     types::Timestamp,
 };
-use std::io::Cursor;
+use std::{
+    io::Cursor,
+    sync::{Mutex, MutexGuard},
+};
+
+/// `start` serves through korrid's one embedded server per process, and the
+/// test harness runs tests on parallel threads of one process. Every test that
+/// serves holds this guard, so no test starts while another one serves.
+/// Poison is ignored: a test that panics has already stopped its server.
+static EMBEDDED_SERVER_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+fn embedded_server_guard() -> MutexGuard<'static, ()> {
+    EMBEDDED_SERVER_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 #[test]
 fn only_existing_public_identity_and_explicit_setup_tools_are_exposed() {
@@ -121,6 +136,7 @@ fn signed_binding(template: &str, owner: &Keys) -> String {
 
 #[test]
 fn exact_offline_request_import_survives_restart_and_real_brain_has_no_local_games() {
+    let _serving = embedded_server_guard();
     let parent = tempfile::tempdir().unwrap();
     let root = parent.path().join("state");
     let owner = Keys::generate();
@@ -264,6 +280,7 @@ fn emulate_devmode_boot(root: &Path) {
 
 #[test]
 fn devmode_world_writable_tree_is_repaired_before_real_startup_and_offline_commands() {
+    let _serving = embedded_server_guard();
     let parent = tempfile::tempdir().unwrap();
     let root = parent.path().join("state");
     let state = State::open(&root).unwrap();
