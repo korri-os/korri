@@ -203,12 +203,12 @@ const scenarios: Scenario[] = [
   { name: "set-peer", models: [crowd], steps: [...toLobby, "down", "down", "right", "right", "right", "right", "right", "confirm", "right"] },
   { name: "detail-peer", models: [ready], steps: [...toLobby, "down", "down", "right", "right", "confirm"] },
   // The detail.
-  { name: "detail", models: [ready], steps: ["confirm"] },
-  { name: "detail-no-art", models: [bare], steps: ["confirm"] },
+  { name: "detail", models: [ready], steps: ["down", "left", "confirm"] },
+  { name: "detail-no-art", models: [bare], steps: ["left", "confirm"] },
   { name: "detail-two-places", models: [ready], steps: ["down", "confirm"] },
   { name: "detail-poster", models: [ready], steps: ["down", "right", "confirm"] },
-  { name: "detail-actions", models: [withActions(ready)], steps: ["confirm", "options"] },
-  { name: "detail-actions-asking", models: [withActions(ready)], steps: ["confirm", "options", "down", "confirm"] },
+  { name: "detail-actions", models: [withActions(ready)], steps: ["down", "left", "confirm", "options"] },
+  { name: "detail-actions-asking", models: [withActions(ready)], steps: ["down", "left", "confirm", "options", "down", "confirm"] },
   { name: "detail-long-title", models: [bare], steps: [...toSet, "options", "down", "confirm", "back", "down", "down", "down", "down", "down", "right", "right", "confirm"] },
   // The library with no pick.
   { name: "empty", models: [{ ...base, catalog: { _tag: "Empty" } }], steps: [] },

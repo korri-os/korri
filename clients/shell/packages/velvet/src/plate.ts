@@ -19,6 +19,23 @@ import { PALETTE_LENGTH, SLOT } from "./drawings-slots"
 import { onForget } from "./memo"
 import type { Poster } from "./poster"
 
+// A drawing's plate numbers, split out of their text the first time the plate is drawn.
+const shapesOf = new Map<number, readonly number[]>()
+function plateShapes(drawing: number): readonly number[] {
+  let shapes = shapesOf.get(drawing)
+  if (shapes === undefined) {
+    const text = PLATES[drawing]
+    shapes = text === undefined || text === "" ? [] : text.split(",").map(Number)
+    shapesOf.set(drawing, shapes)
+  }
+  return shapes
+}
+/** Colour `at` of COLOURS (palette * PALETTE_LENGTH + slot), as 0xRRGGBB. */
+const colourAt = (at: number): number => {
+  const hex = COLOURS.slice(at * 6, at * 6 + 6)
+  return hex.length === 6 ? parseInt(hex, 16) : 0
+}
+
 /** The blur, as a share of the stage's longer side (the mockup's 5.5 %). */
 const BLUR = 0.055
 /** How bright the plate stands: the card's 55 %, a pattern's 62 % (the mockup). */
@@ -33,7 +50,10 @@ const hex = (colour: number): string => `#${(colour & 0xffffff).toString(16).pad
 const n = (value: number): string => String(Math.round(value * 10) / 10)
 
 const plates = new Map<string, string>()
-onForget(() => plates.clear())
+onForget(() => {
+  plates.clear()
+  shapesOf.clear()
+})
 
 /** The plate of a card in a `width` x `height` window, as an SVG data URL. */
 export function plateOf(poster: Poster, width: number, height: number): string {
@@ -42,8 +62,8 @@ export function plateOf(poster: Poster, width: number, height: number): string {
   const key = `${poster.drawing}|${poster.palette}|${w}x${h}`
   const known = plates.get(key)
   if (known !== undefined) return known
-  const colour = (slot: number) => hex(COLOURS[poster.palette * PALETTE_LENGTH + slot] ?? 0)
-  const shapes = PLATES[poster.drawing] ?? []
+  const colour = (slot: number) => hex(colourAt(poster.palette * PALETTE_LENGTH + slot))
+  const shapes = plateShapes(poster.drawing)
   const pattern = poster.drawing >= PATTERN_DRAWINGS
   // The box the shapes are set in (the window shows all of it on one axis, a slice of it on the other).
   let vx: number, vy: number, vw: number, vh: number, ground: string, unit: number

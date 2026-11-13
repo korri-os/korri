@@ -335,7 +335,9 @@ fn every_preview_state_draws_at_every_size() {
     walk(&root.join("ui"), &mut files);
     walk(&root.join("pages"), &mut files);
     files.sort();
-    assert!(files.len() >= 45, "only {} preview files", files.len());
+    // 44 since the Back chip went (owner, 2026-11-13); a floor, so a walk that finds
+    // none fails rather than passing over nothing.
+    assert!(files.len() >= 44, "only {} preview files", files.len());
     let home = scenario(&root, "home");
     let planned: BTreeMap<(u32, u32), Value> = PREVIEW_SIZES
         .iter()

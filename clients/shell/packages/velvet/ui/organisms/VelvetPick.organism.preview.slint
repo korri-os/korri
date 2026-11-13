@@ -14,11 +14,11 @@ export component NoArt inherits VelvetPreview {
 }
 
 export component Cinema inherits VelvetPreview {
-    VelvetPick { x: 0; y: 0; width: parent.width; height: parent.height; hero: undefined; cards: []; mark: ""; buttons: []; stack: undefined; cinema: true; foot-facts: ""; foot-badge: undefined; note: undefined; }
+    VelvetPick { x: 0; y: 0; width: parent.width; height: parent.height; hero: true; cards: []; mark: { key: "ember-road", logo-shown: true, logo: @image-url("../../preview/art/logo-ember.png"), logo-w: 499, logo-h: 215, lines: 1, line1: "EMBER ROAD", size: 95 }; buttons: [{ shown: true, label: "Resume", icon: "play", focus-id: "d:play", focused: true }]; stack: false; cinema: true; foot-facts: { count: 1, first: { count: 4, a: { icon: "resume", text: "Ready to resume", strong: true }, b: { icon: "clock", text: "Played 2 hours ago" }, c: { icon: "watch", text: "61 h 19 min" }, d: { icon: "here", text: "This device" } } }; foot-badge: "PC"; note: ""; }
 }
 
 export component CinemaNoArt inherits VelvetPreview {
-    VelvetPick { x: 0; y: 0; width: parent.width; height: parent.height; hero: undefined; cards: []; mark: ""; buttons: []; stack: undefined; cinema: true; foot-facts: ""; foot-badge: undefined; note: undefined; }
+    VelvetPick { x: 0; y: 0; width: parent.width; height: parent.height; hero: true; cards: []; mark: { key: "ember-road", lines: 1, line1: "EMBER ROAD", size: 95 }; buttons: [{ shown: true, label: "Resume", icon: "play", focus-id: "d:play", focused: true }]; stack: false; cinema: true; foot-facts: { count: 1, first: { count: 4, a: { icon: "resume", text: "Ready to resume", strong: true }, b: { icon: "clock", text: "Played 2 hours ago" }, c: { icon: "watch", text: "61 h 19 min" }, d: { icon: "here", text: "This device" } } }; foot-badge: "PC"; note: ""; }
 }
 
 export component TwoPlaces inherits VelvetPreview {

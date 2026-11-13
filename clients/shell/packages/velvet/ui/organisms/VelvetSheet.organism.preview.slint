@@ -14,5 +14,5 @@ export component Menu inherits VelvetPreview {
 }
 
 export component Actions inherits VelvetPreview {
-    VelvetSheet { x: 0; y: 0; width: parent.width; height: parent.height; sheet: {  }; rows: []; }
+    VelvetSheet { x: 0; y: 0; width: parent.width; height: parent.height; sheet: { shown: true, title: "Ember Road" }; rows: [{ kind: "row", label: "Verify files", note: "Check the game's files against the library", mark: "none", focus-id: "g:verify-files", focused: true }, { kind: "row", label: "Delete save", note: "The save on this device is removed. Saves on zao stay.", mark: "none", danger: true, focus-id: "g:delete-save" }, { kind: "row", label: "Copy to zao", note: "zao is not on the network", mark: "none", dim: true, focus-id: "g:copy-to-zao" }]; }
 }
