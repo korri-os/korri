@@ -93,8 +93,9 @@ export component VelvetBrowse inherits Rectangle {
         // An animated binding names its inputs itself (the component's `in` properties, the tokens,
         // its own geometry), never a property worked out from them: the shell's Slint can lose
         // the value of an animated binding that reads a derived property.
+        // At rest the pick's own place (n 0) stands wholly off the stage's left edge.
         x: root.depth == 0
-            ? Tokens.screen.pad-x * Tokens.unit + (n - 1) * (Tokens.screen.strip-h * Tokens.tile-ratio + Tokens.screen.strip-gap) * Tokens.unit
+            ? Tokens.screen.pad-x * Tokens.unit + (n - 1) * (Tokens.screen.strip-h * Tokens.tile-ratio + Tokens.screen.strip-gap) * Tokens.unit - (n == 0 ? Tokens.screen.pad-x * Tokens.unit : 0px)
             : Tokens.screen.pad-x * Tokens.unit + n * (Tokens.screen.row-h * Tokens.tile-ratio + Tokens.screen.row-gap) * Tokens.unit
                 - Math.clamp(
                     root.home.row-at * (Tokens.screen.row-h * Tokens.tile-ratio + Tokens.screen.row-gap) * Tokens.unit - (root.width - 2 * Tokens.screen.pad-x * Tokens.unit - Tokens.screen.row-h * Tokens.tile-ratio * Tokens.unit * 1.75),
