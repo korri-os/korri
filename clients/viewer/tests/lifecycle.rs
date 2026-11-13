@@ -27,8 +27,8 @@ fn request(socket: &mut BufReader<UnixStream>, launch: &str, command: C) -> R {
 #[test]
 fn exact_launch_connected_events_and_confirmed_stop_over_real_socket() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("viewer.sock");
-    let lifecycle = Lifecycle::bind(&path, "launch-a").unwrap();
+    let path = dir.path().join("control/viewer.sock");
+    let lifecycle = Lifecycle::bind(&path, "launch-a", unsafe { libc::geteuid() }).unwrap();
     let mut socket = BufReader::new(UnixStream::connect(&path).unwrap());
     socket
         .get_mut()
@@ -129,17 +129,18 @@ fn exact_launch_connected_events_and_confirmed_stop_over_real_socket() {
 #[test]
 fn existing_path_is_not_deleted() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("viewer.sock");
+    let path = dir.path().join("control/viewer.sock");
+    std::fs::create_dir(path.parent().unwrap()).unwrap();
     std::fs::write(&path, "keep").unwrap();
-    assert!(Lifecycle::bind(&path, "a").is_err());
+    assert!(Lifecycle::bind(&path, "a", unsafe { libc::geteuid() }).is_err());
     assert_eq!(std::fs::read_to_string(path).unwrap(), "keep");
 }
 
 #[test]
 fn startup_failure_returns_typed_error_and_stopped_event() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("viewer.sock");
-    let lifecycle = Lifecycle::bind(&path, "a").unwrap();
+    let path = dir.path().join("control/viewer.sock");
+    let lifecycle = Lifecycle::bind(&path, "a", unsafe { libc::geteuid() }).unwrap();
     let mut socket = BufReader::new(UnixStream::connect(&path).unwrap());
     socket
         .get_mut()
@@ -159,13 +160,15 @@ fn startup_failure_returns_typed_error_and_stopped_event() {
 #[test]
 fn real_binary_reports_missing_pin_over_socket_and_exits() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("viewer.sock");
+    let path = dir.path().join("control/viewer.sock");
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_korri-viewer"))
         .args([
             "--lifecycle-socket",
             path.to_str().unwrap(),
             "--launch-id",
             "a",
+            "--controller-uid",
+            &unsafe { libc::geteuid() }.to_string(),
             "stream",
             "-keydir",
             dir.path().to_str().unwrap(),
@@ -234,4 +237,121 @@ fn start_address_preserves_port_and_ipv6_and_rejects_url_injection() {
             .is_err()
         );
     }
+}
+
+#[test]
+fn shutdown_closes_a_partial_reader_and_removes_the_owned_socket() {
+    use std::io::{Read, Write};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("control/viewer.sock");
+    let lifecycle = Lifecycle::bind(&path, "a", unsafe { libc::geteuid() }).unwrap();
+    let mut socket = BufReader::new(UnixStream::connect(&path).unwrap());
+    socket
+        .get_mut()
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    // A reply proves the server accepted this controller before shutdown.
+    assert!(matches!(
+        request(&mut socket, "a", C::Status),
+        R::Error { .. }
+    ));
+    socket.get_mut().write_all(b"{\"launchId\":").unwrap();
+    lifecycle.failed("startup deadline".into());
+    lifecycle.drain();
+    assert!(
+        !path.exists(),
+        "shutdown must unlink its socket even while the runtime handle exists"
+    );
+    let mut remaining = Vec::new();
+    socket
+        .read_to_end(&mut remaining)
+        .expect("shutdown must release the blocked socket reader");
+}
+
+#[test]
+fn real_binary_removes_socket_after_idle_controller_startup_timeout() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("control/viewer.sock");
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_korri-viewer"))
+        .args([
+            "--lifecycle-socket",
+            path.to_str().unwrap(),
+            "--launch-id",
+            "a",
+            "--controller-uid",
+            &unsafe { libc::geteuid() }.to_string(),
+            "stream",
+            "-keydir",
+            dir.path().to_str().unwrap(),
+            "127.0.0.1",
+        ])
+        .env_remove("KORRI_MOONLIGHT_SERVER_CERTIFICATE")
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let until = std::time::Instant::now() + Duration::from_secs(2);
+    let _idle_controller = loop {
+        match UnixStream::connect(&path) {
+            Ok(socket) => break socket,
+            Err(_) if std::time::Instant::now() < until => {
+                std::thread::sleep(Duration::from_millis(5))
+            }
+            error => {
+                let _ = child.kill();
+                panic!("viewer socket did not start: {error:?}");
+            }
+        }
+    };
+    let until = std::time::Instant::now() + Duration::from_secs(35);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if std::time::Instant::now() >= until {
+            child.kill().unwrap();
+            panic!("viewer did not honor its startup deadline");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    assert!(!status.success());
+    assert!(
+        !path.exists(),
+        "the idle controller must not keep the exited viewer's socket path alive"
+    );
+}
+
+#[test]
+fn lifecycle_socket_requires_an_explicit_controller_uid() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("control/viewer.sock");
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_korri-viewer"))
+        .args([
+            "--lifecycle-socket",
+            path.to_str().unwrap(),
+            "--launch-id",
+            "a",
+            "stream",
+            "-keydir",
+            dir.path().to_str().unwrap(),
+            "127.0.0.1",
+        ])
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let until = std::time::Instant::now() + Duration::from_secs(1);
+    loop {
+        if child.try_wait().unwrap().is_some() {
+            break;
+        }
+        if std::time::Instant::now() >= until {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("viewer accepted a lifecycle socket with no controller UID");
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let output = child.wait_with_output().unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--controller-uid"));
+    assert!(!path.exists());
 }

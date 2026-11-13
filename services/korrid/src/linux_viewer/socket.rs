@@ -54,6 +54,7 @@ pub type StopSocketViewer =
 
 pub struct SocketLinuxStreamViewer {
     display: Option<PluginDisplay>,
+    expected_viewer_uid: u32,
     start_process: StartSocketViewer,
     focus: FocusSocketViewer,
     stop_process: StopSocketViewer,
@@ -89,12 +90,14 @@ impl Drop for InFlight<'_> {
 impl SocketLinuxStreamViewer {
     pub fn new(
         display: Option<PluginDisplay>,
+        expected_viewer_uid: u32,
         start_process: StartSocketViewer,
         focus: FocusSocketViewer,
         stop_process: StopSocketViewer,
     ) -> Self {
         Self {
             display,
+            expected_viewer_uid,
             start_process,
             focus,
             stop_process,
@@ -157,6 +160,7 @@ impl Connection {
         path: PathBuf,
         launch: String,
         changed: Arc<Notify>,
+        expected_viewer_uid: u32,
     ) -> Result<Arc<Self>, LinuxViewerError> {
         let until = Instant::now() + DEADLINE;
         let socket = loop {
@@ -175,10 +179,15 @@ impl Connection {
         };
         let metadata = std::fs::symlink_metadata(path).map_err(error)?;
         if !metadata.file_type().is_socket()
-            || metadata.permissions().mode() & 0o077 != 0
-            || socket.peer_cred().map_err(error)?.uid() != metadata.uid()
+            // Named controller ACLs use the group-class mask. Other users
+            // still get no access; peer identity comes from the launcher.
+            || metadata.permissions().mode() & 0o007 != 0
+            || metadata.uid() != expected_viewer_uid
+            || socket.peer_cred().map_err(error)?.uid() != expected_viewer_uid
         {
-            return Err(error("viewer socket must be private and owned by its peer"));
+            return Err(error(
+                "viewer socket owner and peer must match the expected viewer UID",
+            ));
         }
         let (read, write) = socket.into_split();
         let (send, receive) = mpsc::channel(1);
@@ -305,8 +314,13 @@ impl LinuxStreamViewer for SocketLinuxStreamViewer {
                 )
                 .await
                 .map_err(|_| error("viewer process start deadline exceeded"))??;
-                let connection =
-                    Connection::connect(path, launch.into(), self.changed.clone()).await?;
+                let connection = Connection::connect(
+                    path,
+                    launch.into(),
+                    self.changed.clone(),
+                    self.expected_viewer_uid,
+                )
+                .await?;
                 ok(connection
                     .request(C::Start {
                         address: address.into(),

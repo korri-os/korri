@@ -5,13 +5,13 @@ use korri_viewer_treaty::{
     ViewerCommand as C, ViewerDisplay, ViewerEvent as E, ViewerMessage as M, ViewerReply as R,
     ViewerRequest, ViewerShape, ViewerSnapshot, ViewerStatus as S, read_message, write_message,
 };
+mod access;
+
 use std::{
     io::BufReader,
-    os::unix::{
-        fs::{MetadataExt, PermissionsExt},
-        net::{UnixListener, UnixStream},
-    },
-    path::{Path, PathBuf},
+    net::Shutdown,
+    os::unix::net::{UnixListener, UnixStream},
+    path::Path,
     sync::{Arc, Condvar, Mutex, Weak},
     time::Duration,
 };
@@ -69,37 +69,25 @@ struct State {
 }
 struct Inner {
     launch: String,
-    path: PathBuf,
-    inode: u64,
+    paths: access::SocketPath,
+    controller_uid: u32,
     state: Mutex<State>,
     changed: Condvar,
-}
-impl Drop for Inner {
-    fn drop(&mut self) {
-        // Never remove a path another process replaced.
-        if std::fs::symlink_metadata(&self.path).is_ok_and(|m| m.ino() == self.inode) {
-            let _ = std::fs::remove_file(&self.path);
-        }
-    }
 }
 
 #[derive(Clone)]
 pub struct Lifecycle(Arc<Inner>);
 impl Lifecycle {
-    pub fn bind(path: &Path, launch: &str) -> Result<Self> {
+    pub fn bind(path: &Path, launch: &str, controller_uid: u32) -> Result<Self> {
         ensure!(!launch.is_empty(), "empty launch identity");
-        // bind fails on any existing path, including a stale socket. Its owner
-        // must remove it; guessing that another launch is stale is unsafe.
-        let listener = UnixListener::bind(path).context("bind viewer lifecycle socket")?;
-        let inode = std::fs::symlink_metadata(path)?.ino();
+        let (listener, paths) = access::SocketPath::bind(path, controller_uid)?;
         let inner = Arc::new(Inner {
             launch: launch.into(),
-            path: path.into(),
-            inode,
+            paths,
+            controller_uid,
             state: Mutex::new(State::default()),
             changed: Condvar::new(),
         });
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
         listener.set_nonblocking(true)?;
         let weak = Arc::downgrade(&inner);
         std::thread::Builder::new()
@@ -182,6 +170,12 @@ impl Lifecycle {
         state.status = Some(S::Stopped);
         state.finished = true;
         emit(&mut state, E::Status(S::Stopped));
+        // The reader may be idle or hold an incomplete JSON line. Wake it
+        // without closing the write half needed for an in-flight terminal reply.
+        if let Some(writer) = &state.writer {
+            let _ = writer.shutdown(Shutdown::Read);
+        }
+        self.0.paths.remove();
         self.0.changed.notify_all();
     }
     /// Let the socket thread deliver the terminal reply before process exit.
@@ -210,6 +204,10 @@ fn serve(listener: UnixListener, weak: Weak<Inner>) {
         }
         match listener.accept() {
             Ok((socket, _)) => {
+                if let Err(error) = access::check_peer(&socket, inner.controller_uid) {
+                    eprintln!("korri-viewer: refused lifecycle peer {error}");
+                    continue;
+                }
                 let _ = connection(&inner, socket);
                 let mut state = inner.state.lock().unwrap();
                 state.writer = None;
@@ -227,7 +225,11 @@ fn serve(listener: UnixListener, weak: Weak<Inner>) {
 }
 fn connection(inner: &Inner, socket: UnixStream) -> Result<()> {
     socket.set_write_timeout(Some(Duration::from_secs(2)))?;
-    inner.state.lock().unwrap().writer = Some(socket.try_clone()?);
+    {
+        let mut state = inner.state.lock().unwrap();
+        ensure!(!state.finished, "viewer already stopped");
+        state.writer = Some(socket.try_clone()?);
+    }
     let mut reader = BufReader::new(socket);
     while let Some(request) = read_message::<ViewerRequest>(&mut reader)? {
         let reply = if request.launch_id != inner.launch {
@@ -333,10 +335,11 @@ pub fn from_args(args: &mut Vec<String>) -> Result<Option<Lifecycle>> {
         return Ok(None);
     }
     ensure!(
-        args.len() >= 5 && args[2] == "--launch-id",
-        "expected --lifecycle-socket PATH --launch-id ID stream ..."
+        args.len() >= 7 && args[2] == "--launch-id" && args[4] == "--controller-uid",
+        "expected --lifecycle-socket PATH --launch-id ID --controller-uid UID stream ..."
     );
-    let lifecycle = Lifecycle::bind(Path::new(&args[1]), &args[3])?;
-    args.drain(..4);
+    let controller_uid = args[5].parse::<u32>().context("invalid --controller-uid")?;
+    let lifecycle = Lifecycle::bind(Path::new(&args[1]), &args[3], controller_uid)?;
+    args.drain(..6);
     Ok(Some(lifecycle))
 }

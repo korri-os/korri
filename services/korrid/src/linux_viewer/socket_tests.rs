@@ -80,6 +80,7 @@ async fn socket_viewer_uses_exact_launch_typed_events_and_no_unit_observation() 
     let effects = focused.clone();
     let viewer = SocketLinuxStreamViewer::new(
         None,
+        unsafe { libc::geteuid() },
         Arc::new(move |_, _, _| {
             let path = path.clone();
             Box::pin(async move { Ok(path) })
@@ -164,6 +165,7 @@ async fn unexpected_eof_is_not_reported_as_a_confirmed_stop() {
     let cleanup = cleaned.clone();
     let viewer = SocketLinuxStreamViewer::new(
         None,
+        unsafe { libc::geteuid() },
         Arc::new(move |_, _, _| {
             let path = path.clone();
             Box::pin(async move { Ok(path) })
@@ -203,6 +205,7 @@ async fn cancelled_request_cannot_confirm_a_later_request() {
     });
     let viewer = Arc::new(SocketLinuxStreamViewer::new(
         None,
+        unsafe { libc::geteuid() },
         Arc::new(move |_, _, _| {
             let path = path.clone();
             Box::pin(async move { Ok(path) })
@@ -218,5 +221,35 @@ async fn cancelled_request_cannot_confirm_a_later_request() {
     assert!(task.await.unwrap_err().is_cancelled());
     release.send(()).unwrap();
     assert!(viewer.status(LAUNCH).await.is_err());
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn socket_owner_and_peer_must_match_the_launchers_expected_viewer_uid() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("viewer.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let server = std::thread::spawn(move || {
+        let mut socket = BufReader::new(listener.accept().unwrap().0);
+        assert!(
+            read_message::<ViewerRequest>(&mut socket)
+                .unwrap()
+                .is_none(),
+            "an unexpected viewer must receive no commands"
+        );
+    });
+    let viewer = SocketLinuxStreamViewer::new(
+        None,
+        unsafe { libc::geteuid() } + 1,
+        Arc::new(move |_, _, _| {
+            let path = path.clone();
+            Box::pin(async move { Ok(path) })
+        }),
+        Arc::new(|_, _| Box::pin(async { panic!("an unexpected viewer must not get focus") })),
+        Arc::new(|_| Box::pin(async { Ok(()) })),
+    );
+    assert!(viewer.start(LAUNCH, "127.0.0.1", None).await.is_err());
     server.join().unwrap();
 }

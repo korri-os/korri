@@ -96,11 +96,23 @@ connection snapshots. The opaque connection identity uses that patch's PID and
 monotonic timestamp. No frame-timing fields are added by this slice.
 
 ```sh
-korri-viewer --lifecycle-socket PATH --launch-id ID stream [Moonlight arguments] HOST
+korri-viewer --lifecycle-socket PATH --launch-id ID --controller-uid UID stream [Moonlight arguments] HOST
 ```
 
-This binds a private (0600) Unix stream socket for one exact launch. The process
-waits for `Start` before connecting. Start's address includes the optional HTTP
+The launcher must supply korrid's numeric UID with `--controller-uid`; there is
+no default. The viewer keeps its own runtime UID, separate from korrid. `PATH`'s
+immediate parent must not exist: the viewer creates it atomically with mode
+0700, binds and restricts the socket inside it, then grants only the controller
+search access to the directory and read/write access to the socket through Linux
+POSIX ACLs. The owning group and all other users get no access. A filesystem
+without ACL support fails closed. Ancestors must be traversable by both UIDs.
+The viewer authenticates `SO_PEERCRED` on every accept against the supplied
+controller UID. A refused peer is logged and cannot take the controller slot.
+korrid's adapter requires the expected viewer UID from its launcher and checks
+both socket ownership and peer credentials against it, not against korrid's UID.
+No installed launcher or plugin changes in this slice.
+
+The process waits for `Start` before connecting. Start's address includes the optional HTTP
 port, as in korrid's Moonlight adapter. Its optional display is the local logical
 screen; encoded dimensions still come from rendered settings. No screen means
 no shape observation. Linux keeps its local dimensions, not the holder's size.
@@ -109,7 +121,9 @@ Messages are newline-delimited JSON, at most 64 KiB each, with one request in
 flight. `ViewerMessage` separates unsolicited events from replies. `Start`
 confirms the native connection callback; `Stop` confirms network/picture
 teardown, then the process exits. A lost controlling socket requests teardown.
-Existing paths are not replaced. Requests and connection setup have 30-second
+Existing paths are not replaced. Shutdown closes an idle or partial reader and
+removes only the socket and empty directory the viewer owns. Requests and
+connection setup have 30-second
 deadlines; a cancelled exchange cannot reuse a late reply.
 
 korrid's inactive `SocketLinuxStreamViewer` takes injected unit-start, failure
@@ -132,3 +146,12 @@ plugin and version check; handheld `v4l2request` picture paths and their bench
 proof; input; audio; frame timing grounded in the stage-0 frame record. Android
 integration comes after the Linux stage. This package is not installed in the
 product by this slice.
+
+The cross-UID socket proof is an explicit root-only test: build
+`cargo test --manifest-path clients/viewer/Cargo.toml --test lifecycle_security --no-run`
+in the viewer development shell, then run that printed test executable as root
+with `--exact separate_viewer_and_controller_uids_are_the_only_users_with_socket_access --ignored`.
+It drops the viewer, controller and an unrelated peer to UIDs 65534, 65532 and
+65533 in a temporary directory. It changes no accounts or services. Normal
+checks also cover umask-zero directory creation, missing controller authority
+and rejected peer credentials.
