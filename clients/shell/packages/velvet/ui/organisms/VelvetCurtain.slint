@@ -21,7 +21,10 @@ export component VelvetCurtain inherits Rectangle {
     in property <[Step]> steps;
     in property <[Pill]> buttons;
     property <length> u: Tokens.unit;
-    property <length> w: Math.min(Tokens.screen.curtain-w * u, self.width - 2 * Tokens.screen.pad-x * u);
+    // A launch's column is three fifths of the window (the prototype's); src/view.ts fits its title to it.
+    property <length> w: root.curtain.solid
+        ? Math.min(self.width * 0.6, self.width - 2 * Tokens.screen.pad-x * u)
+        : Math.min(Tokens.screen.curtain-w * u, self.width - 2 * Tokens.screen.pad-x * u);
     property <length> body: Tokens.screen.body * u;
     property <bool> in;
     init => { in = true; }
@@ -114,9 +117,10 @@ export component VelvetCurtain inherits Rectangle {
         if root.curtain.progress == "indeterminate" || root.curtain.progress == "measured": Rectangle {
             height: root.curtain.progress-line == "" ? root.body * 0.6 : root.body * 2.2;
             VelvetBar {
-                x: parent.width * 0.2;
+                // A launch's bar is a short rule, 22 % of the window (the prototype's).
+                width: root.curtain.solid ? Math.min(root.width * 0.22, parent.width) : parent.width * 0.6;
+                x: (parent.width - self.width) / 2;
                 y: root.body * 0.2;
-                width: parent.width * 0.6;
                 travels: root.curtain.progress == "indeterminate";
                 share: root.curtain.progress-share;
             }

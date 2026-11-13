@@ -139,7 +139,7 @@ function curtainView(asked: Pictures, state: State, model: Model, p: Plan) {
   // has one, else its title at the pick's size, in three fifths of the width.
   const launch = spec.kind === "busy" && spec.game !== undefined
   const mark = launch
-    ? marqueeOf(asked, spec.game!, { width: p.width * 0.6, logoH: Math.round(Math.min(220, Math.max(56, p.height * 0.2))), title: p.title, fact: p.fact, mark: true, badge: false }, model.publishedAt, [])
+    ? marqueeOf(asked, spec.game!, { width: Math.min(p.width * 0.6, p.width - 2 * p.padX), logoH: Math.round(Math.min(220, Math.max(56, p.height * 0.2))), title: p.title, fact: p.fact, mark: true, badge: false }, model.publishedAt, [])
     : undefined
   const layout = curtainLayout(spec, p)
   const line = Math.max(0, Math.min(state.curtain.line, Math.max(0, layout.lines.length - layout.room)))
