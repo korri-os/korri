@@ -32,7 +32,7 @@ import threading
 import time
 from typing import TextIO
 
-from fixture_namespace import PairNamespace, hide_input, isolation
+from fixture_namespace import PairNamespace, fixture_xwayland, hide_input, isolation, unix_peers
 from discovery import watched_display
 from heat import END_MARGIN, must_end, no_start, thermal_limits, thermal_zones
 import device
@@ -377,6 +377,38 @@ def product_compositor() -> dict:
     if Path(compositor["exe"]).name != "sway":
         raise RuntimeError("The measure needs sway; this compositor is not sway.")
     return not_root(compositor)
+
+
+def process_tree(pid: int) -> set[int]:
+    """The fixture compositor and its live helpers, not a stopped viewer's children."""
+    parents = {}
+    for stat in Path("/proc").glob("[0-9]*/stat"):
+        try:
+            fields = stat.read_text().rsplit(")", 1)[1].split()
+            parents[int(stat.parent.name)] = int(fields[1])
+        except (OSError, ValueError, IndexError):
+            continue
+    found = {pid}
+    while True:
+        children = {child for child, parent in parents.items() if parent in found} - found
+        if not children:
+            return found
+        found.update(children)
+
+
+def remaining_processes(root: Path, keep: set[int]) -> list[str]:
+    remaining = []
+    for process in Path("/proc").glob("[0-9]*/cmdline"):
+        if int(process.parent.name) in keep:
+            continue
+        try:
+            if str(root).encode() in process.read_bytes() or str(
+                (process.parent / "cwd").resolve()
+            ).startswith(str(root)):
+                remaining.append(str(process.parent))
+        except (FileNotFoundError, PermissionError, ProcessLookupError):
+            pass
+    return remaining
 
 
 class Session:
@@ -887,11 +919,21 @@ class Session:
                 now["pid"] == self.compositor["pid"]
                 and now["start_ticks"] == self.compositor["start_ticks"]
             )
+        assert self.root is not None
+        compositor = self.processes["fixture"].pid
+        keep = process_tree(compositor)
+        if self.x_namespace:
+            # wlroots double-forks Xwayland. Reuse the isolation proof instead
+            # of treating a proven private X server as an abandoned viewer.
+            _, servers = fixture_xwayland(compositor, unix_peers())
+            keep.update(servers)
+        remaining = remaining_processes(self.root, keep)
         return {
-            "pass": all(unchanged.values()),
+            "pass": all(unchanged.values()) and not remaining,
             "pids_unchanged": unchanged,
             "live_games": live_games() if self.watch_games else [],
             "product_units": units_record(self.units) if self.units_read else None,
+            "remaining_processes": remaining,
         }
 
     def handle(self, request: dict) -> dict:
@@ -1086,16 +1128,7 @@ class Session:
                 shutil.rmtree(root)
             except Exception as error:
                 errors.append("run folder cleanup: " + str(error))
-        remaining = []
-        if root:
-            for process in Path("/proc").glob("[0-9]*/cmdline"):
-                try:
-                    if str(root).encode() in process.read_bytes() or str(
-                        (process.parent / "cwd").resolve()
-                    ).startswith(str(root)):
-                        remaining.append(str(process.parent))
-                except (FileNotFoundError, PermissionError, ProcessLookupError):
-                    pass
+        remaining = remaining_processes(root, set()) if root else []
         unchanged = {}
         if self.compositor:
             try:

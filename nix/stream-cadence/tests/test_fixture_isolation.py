@@ -1,7 +1,9 @@
 """Native Unix socket evidence joins a viewer FD to its actual X server."""
 import os
 from pathlib import Path
+import shutil
 import socket
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -24,6 +26,29 @@ class SocketEvidence(unittest.TestCase):
                     peers = unix_peers()
                     self.assertEqual(peers[inode(client.fileno())]['peer'], inode(accepted.fileno()))
                     self.assertEqual(peers[inode(accepted.fileno())]['name'], address)
+
+    def test_private_xwayland_is_identified_by_its_live_compositor_socket(self):
+        from fixture_namespace import fixture_xwayland
+        with tempfile.TemporaryDirectory() as temporary:
+            program = Path(temporary) / "Xwayland"
+            shutil.copyfile(shutil.which("sleep"), program)
+            program.chmod(0o755)
+            compositor, server = socket.socketpair()
+            with compositor, server:
+                child = subprocess.Popen(["sleep", "60"], executable=str(program), pass_fds=(server.fileno(),))
+                try:
+                    server.close()
+                    scope = Path(temporary) / "proc"
+                    scope.mkdir()
+                    (scope / str(child.pid)).symlink_to(f"/proc/{child.pid}")
+                    _, servers = fixture_xwayland(os.getpid(), unix_peers(), scope)
+                    self.assertIn(child.pid, servers)
+                    # An arbitrary process with no end of this socket is not its compositor.
+                    _, unrelated = fixture_xwayland(child.pid, unix_peers(), scope)
+                    self.assertNotIn(child.pid, unrelated)
+                finally:
+                    child.terminate()
+                    child.wait(timeout=5)
 
     def test_connection_must_have_a_private_xwayland_peer_and_no_other_x_server(self):
         sockets = {10: {'peer': 20, 'name': ''}, 20: {'peer': 10, 'name': '@/tmp/.X11-unix/X0'}}

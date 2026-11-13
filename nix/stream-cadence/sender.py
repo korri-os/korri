@@ -809,8 +809,15 @@ class Session:
         """Stop this turn's source and check guards; session cleanup is still due."""
         self.stop("source")
         self.check()
+        assert self.root is not None
+        persistent = {self.processes[name].pid for name in ("compositor", "sunshine")}
+        remaining = [
+            row for pid in survivors(self.root)
+            if (row := describe(pid)) and row["uid"] == self.user_id() and row["session"] not in persistent
+        ]
         return {
-            "pass": True,
+            "pass": not remaining,
+            "remaining_processes": [f"/proc/{row['pid']}" for row in remaining],
             "live_games": live_games() if self.watch_games else [],
             "product_units": units_record(self.units) if self.units_read else None,
             "new_input_devices": self.new_inputs(),

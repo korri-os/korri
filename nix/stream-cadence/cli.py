@@ -1676,6 +1676,18 @@ def view_order(runs: int, candidate: bool) -> list[str]:
     return [side for _ in range(runs) for side in (("baseline", "candidate") if candidate else ("baseline",))]
 
 
+def view_output(out: Path | None, runs: int, candidate: bool) -> Path:
+    """Refuse any output collision before starting a device session."""
+    root = out.resolve() if out else Path(tempfile.mkdtemp(prefix="stream-cadence-view-"))
+    for side in (("baseline", "candidate") if candidate else ("",)):
+        destination = root / side
+        for path in [destination / "results.json", *(destination / f"run-{n + 1}" for n in range(runs))]:
+            if os.path.lexists(path):
+                raise Refusal(f"View output {path} already exists; choose a new --out directory.")
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
 def restore_view_session(results: list[dict], cleanup: dict) -> None:
     """Apply the pair's final cleanup to every turn, retaining each checkpoint."""
     for row in results:
@@ -1733,6 +1745,7 @@ def view(args: argparse.Namespace) -> int:
     # before any device is asked.
     copied = product_package(args.viewer_package) if args.viewer_package else None
     candidate = product_package(args.candidate_package, "--candidate-package") if args.candidate_package else None
+    args.out = view_output(args.out, args.runs, bool(candidate))
     sender_agent, sender_paths = built(
         sender_target,
         sender_options,
@@ -1794,12 +1807,6 @@ def view(args: argparse.Namespace) -> int:
         seat_paths = [*seat_paths, package["package"]]
     args.product_viewer = copied
     args.imported_store_paths = sorted(set(sender_paths + seat_paths))
-    args.out = (
-        args.out.resolve()
-        if args.out
-        else Path(tempfile.mkdtemp(prefix="stream-cadence-view-"))
-    )
-    args.out.mkdir(parents=True, exist_ok=True)
     args.keydir = args.keydir.expanduser().resolve()
     results: list[dict] = []
     with contextlib.ExitStack() as held:

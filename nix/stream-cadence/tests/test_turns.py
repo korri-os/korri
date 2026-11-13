@@ -1,8 +1,10 @@
 """Alternating packages keep the pair, but not the evidence of an earlier run."""
 
 from pathlib import Path
+import subprocess
 import sys
 import time
+import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -26,6 +28,21 @@ class Options(unittest.TestCase):
         self.assertEqual(cli.view_order(2, True), ["baseline", "candidate", "baseline", "candidate"])
         self.assertEqual(cli.view_order(2, False), ["baseline", "baseline"])
 
+    def test_existing_results_or_later_turn_are_refused_without_overwriting(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            baseline = root / "baseline"
+            baseline.mkdir()
+            saved = baseline / "results.json"
+            saved.write_text("existing evidence")
+            with self.assertRaisesRegex(cli.Refusal, "already exists"):
+                cli.view_output(root, 2, True)
+            self.assertEqual(saved.read_text(), "existing evidence")
+            saved.unlink()
+            (root / "candidate" / "run-2").mkdir(parents=True)
+            with self.assertRaisesRegex(cli.Refusal, "already exists"):
+                cli.view_output(root, 2, True)
+
 
 class SenderTurns(test_private_sender.Machine):
     def test_checkpoint_keeps_one_sunshine_and_resets_run_evidence(self):
@@ -40,6 +57,18 @@ class SenderTurns(test_private_sender.Machine):
         self.assertEqual(session.processes["sunshine"].pid, original)
         self.assertEqual(session.new_inputs(), [])
         self.assertTrue(session.close()["run_folder_removed"])
+
+    def test_checkpoint_refuses_a_leftover_source_process_before_the_next_turn(self):
+        session = self.session()
+        self.prepare(session)
+        leftover = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], cwd=session.home())
+        try:
+            checkpoint = session.handle({"operation": "checkpoint"})
+            self.assertFalse(checkpoint["pass"], checkpoint)
+            self.assertIn(f"/proc/{leftover.pid}", checkpoint["remaining_processes"])
+        finally:
+            leftover.terminate()
+            leftover.wait(timeout=5)
 
 
 class ViewerTurns(test_plugin_viewer.PluginViewerInTheFixture):
@@ -92,6 +121,18 @@ class ViewerTurns(test_plugin_viewer.PluginViewerInTheFixture):
             self.assertTrue(session.handle({"operation": "checkpoint"})["pass"])
             self.assertNotIn("viewer", session.processes)
 
+
+    def test_checkpoint_refuses_a_leftover_viewer_process_before_the_next_turn(self):
+        session = self.session()
+        self.prepare(session, private_pair=True)
+        leftover = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], cwd=session.home())
+        try:
+            checkpoint = session.handle({"operation": "checkpoint"})
+            self.assertFalse(checkpoint["pass"], checkpoint)
+            self.assertIn(f"/proc/{leftover.pid}", checkpoint["remaining_processes"])
+        finally:
+            leftover.terminate()
+            leftover.wait(timeout=5)
 
 
 class SessionRestore(unittest.TestCase):
