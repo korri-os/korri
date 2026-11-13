@@ -91,12 +91,14 @@ class Cooldown(unittest.TestCase):
             sleep=sleep, clock=lambda: elapsed[0],
         )
 
-    def test_cooling_below_not_at_the_start_limit_continues(self):
-        waited = self.wait([86000, 85000, 84999])
-        self.assertEqual(waited["seconds"], 20)
+    def test_cooling_continues_only_below_the_cooldown_margin(self):
+        # 84.9 °C passes the start rule but sits on its edge: on aka the next
+        # start check then read 85.0 °C and refused. The wait ends 3 °C below.
+        waited = self.wait([86000, 85000, 84999, 82000, 81999])
+        self.assertEqual(waited["seconds"], 40)
         self.assertEqual(waited["start"]["viewer"][0]["temp"], 86000)
-        self.assertEqual(waited["end"]["viewer"][0]["temp"], 84999)
-        self.assertEqual(waited["end"]["sender"][0]["temp"], 84999)
+        self.assertEqual(waited["end"]["viewer"][0]["temp"], 81999)
+        self.assertEqual(waited["end"]["sender"][0]["temp"], 81999)
 
     def test_no_wait_is_recorded_as_zero(self):
         self.assertEqual(self.wait([74000])["seconds"], 0)

@@ -696,7 +696,10 @@ comes after the last sample, and cleanup runs as after any run.
 A hot host is therefore refused as viewer and as sender on the first run.
 
 Between later `view` runs, including alternating turns, the controller waits
-while either guarded device is at or above its start limit. It polls every
+while either guarded device is less than 3 °C below its start limit. The
+margin keeps the start check right after the wait from refusing on a reading
+at the limit's edge: on aka on 2026-11-13 a wait ended at 84.9 °C and the next
+start check read 85.0 °C and refused. It polls every
 10 seconds for at most 10 minutes, before starting the next source, viewer or
 capture. An unreadable guard still refuses at once. If the device does not
 cool in time, the session closes, keeps completed results, prints the reason

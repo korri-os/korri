@@ -226,15 +226,24 @@ def no_start(
     return None
 
 
+# A wait between runs ends this far below the start limit, so that the start
+# check right after it does not refuse on a reading at the limit's edge.
+COOLDOWN_MARGIN = 3_000
+
+
 def start_status(limits: dict[str, dict | None], hardware_path: bool) -> dict:
     """Fresh start temperatures; unsafe/unreadable guards fail instead of waiting."""
     zones = thermal_zones()
     refused = no_start(zones, limits, hardware_path, check_temperature=False)
     if refused:
         raise RuntimeError(refused)
+    cooler = {
+        name: dict(limit, start_below=limit["start_below"] - COOLDOWN_MARGIN) if limit else limit
+        for name, limit in limits.items()
+    }
     return {
         "thermal": [dict(zone, limits=limits.get(zone["zone"])) for zone in zones],
-        "hot": too_hot(zones, limits, "start_below"),
+        "hot": too_hot(zones, cooler, "start_below"),
     }
 
 
