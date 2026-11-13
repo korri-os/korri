@@ -44,6 +44,8 @@ export component VelvetBrowse inherits Rectangle {
     property <length> tile-h: (depth == 0 ? Tokens.screen.strip-h : Tokens.screen.row-h) * u;
     property <length> tile-gap: (depth == 0 ? Tokens.screen.strip-gap : Tokens.screen.row-gap) * u;
     property <length> tile-w: tile-h * Tokens.tile-ratio;
+    // The load reveal (main.slint turns `Tokens.revealed` once): the pick rises in and the
+    // strip follows tile by tile.
     clip: true;
     Rectangle {
         x: 0;
@@ -52,8 +54,11 @@ export component VelvetBrowse inherits Rectangle {
         height: root.height;
         animate y { duration: Tokens.t-layer; easing: cubic-bezier(0.22, 1, 0.36, 1); }
         VelvetPick {
+            y: Tokens.revealed ? 0px : Tokens.screen.pad-y * Tokens.unit * 0.35;
             width: parent.width;
             height: parent.height;
+            opacity: Tokens.revealed ? 1 : 0;
+            animate y, opacity { duration: Tokens.still ? 0ms : Tokens.t-reveal + 80ms; delay: Tokens.still ? 0ms : 120ms; easing: cubic-bezier(0.16, 1, 0.3, 1); }
             hero: root.home.hero;
             cards: root.cards;
             mark: root.home.mark;
@@ -107,6 +112,9 @@ export component VelvetBrowse inherits Rectangle {
         tile: tile;
         inert: root.inert;
         slides: root.depth == 1;
+        // The load reveal: the strip's tiles come in one after another.
+        opacity: Tokens.revealed ? 1 : 0;
+        animate opacity { duration: Tokens.still ? 0ms : Tokens.t-reveal; delay: Tokens.still ? 0ms : 160ms + n * Tokens.t-stagger; easing: cubic-bezier(0.16, 1, 0.3, 1); }
         animate x, y, width, height { duration: Tokens.t-layer; easing: cubic-bezier(0.22, 1, 0.36, 1); }
         activated(target, at, released) => { root.activated(target, at, released); }
         slide(by) => {

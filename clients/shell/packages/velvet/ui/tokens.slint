@@ -46,6 +46,8 @@ export global Tokens {
     in-out property <bool> touching;
     // Reduced motion: every change lands at once.
     in-out property <bool> still;
+    // The home has been revealed: its load reveal has played (pages/VelvetBrowse.slint).
+    in-out property <bool> revealed;
 
     // ---- Derived inputs ----
     out property <length> unit: 1px;

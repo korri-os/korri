@@ -104,6 +104,13 @@ export component Surface inherits Window {
         running: !root.up;
         triggered => { root.up = true; }
     }
+    // The home's load reveal, once (owner, 2026-11-13): a frame after the home first has
+    // its game. A home made again later (back from a set or the detail) starts revealed.
+    Timer {
+        interval: 30ms;
+        running: !Tokens.revealed && root.page == "home" && root.home.shown;
+        triggered => { Tokens.revealed = true; }
+    }
     init => {
         Tokens.width = self.width;
         Tokens.height = self.height;
