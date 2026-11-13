@@ -6,7 +6,7 @@ import { VelvetPreview } from "../preview-frame.slint";
 import { VelvetStage } from "VelvetStage.slint";
 
 export component Band inherits VelvetPreview {
-    VelvetStage { x: 0; y: 0; width: parent.width; height: parent.height; stage: { key: "preview/art/hero-ember.png", light: 11355177, art-shown: true, art: @image-url("../../preview/art/hero-ember.png") }; }
+    VelvetStage { x: 0; y: 0; width: parent.width; height: parent.height; stage: { key: "preview/art/hero-ember.png", light: 11355177, art-shown: true, art: @image-url("../../preview/art/hero-ember.png"), fill: true }; }
 }
 
 export component Cinema inherits VelvetPreview {
@@ -18,7 +18,7 @@ export component LightOnly inherits VelvetPreview {
 }
 
 export component Library inherits VelvetPreview {
-    VelvetStage { x: 0; y: 0; width: parent.width; height: parent.height; stage: { key: "light:ember-road", light: 11355177, veil: 0.78 }; }
+    VelvetStage { x: 0; y: 0; width: parent.width; height: parent.height; stage: { key: "light:ember-road", light: 11355177, fill: true, veil: 0.78 }; }
 }
 
 export component House inherits VelvetPreview {

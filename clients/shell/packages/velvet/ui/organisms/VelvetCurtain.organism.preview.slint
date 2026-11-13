@@ -6,11 +6,11 @@ import { VelvetPreview } from "../preview-frame.slint";
 import { VelvetCurtain } from "VelvetCurtain.slint";
 
 export component Steps inherits VelvetPreview {
-    VelvetCurtain { x: 0; y: 0; width: parent.width; height: parent.height; curtain: { shown: true, kind: "busy", kicker-size: 64, name: "Tide Pool", step-line: "Step 3 of 4 · Getting the game ready", progress: "none" }; kicker: ["STARTING TIDE POOL"]; lines: []; steps: [{ label: "Checking saves", state: "done" }, { label: "Downloading", state: "done" }, { label: "Getting the game ready", state: "now" }, { label: "Starting the game", state: "next" }]; buttons: [{ shown: true, label: "Cancel", focus-id: "x:0", focused: true }]; }
+    VelvetCurtain { x: 0; y: 0; width: parent.width; height: parent.height; curtain: { shown: true, kind: "busy", kicker-size: 64, step-line: "Step 3 of 4 · Getting the game ready", progress: "none", solid: true }; kicker: ["TIDE POOL"]; lines: ["Starting on This device, zao", "Starting Tide Pool"]; steps: [{ label: "Checking saves", state: "done" }, { label: "Downloading", state: "done" }, { label: "Getting the game ready", state: "now" }, { label: "Starting the game", state: "next" }]; buttons: [{ shown: true, label: "Cancel", focus-id: "x:0", focused: true }]; }
 }
 
 export component Progress inherits VelvetPreview {
-    VelvetCurtain { x: 0; y: 0; width: parent.width; height: parent.height; curtain: { shown: true, kind: "busy", kicker-size: 64, name: "Tide Pool", progress: "measured", progress-share: 0.528 }; kicker: ["DOWNLOADING FEX ROOTFS"]; lines: ["612 MB of 1.2 GB · 6.4 MB/s · 1:30 left"]; steps: []; buttons: [{ shown: true, label: "Cancel", focus-id: "x:0", focused: true }]; }
+    VelvetCurtain { x: 0; y: 0; width: parent.width; height: parent.height; curtain: { shown: true, kind: "busy", kicker-size: 64, progress: "measured", progress-share: 0.528, solid: true }; kicker: ["TIDE POOL"]; lines: ["Starting on This device, zao", "Downloading FEX rootfs", "612 MB of 1.2 GB · 6.4 MB/s · 1:30 left"]; steps: []; buttons: [{ shown: true, label: "Cancel", focus-id: "x:0", focused: true }]; }
 }
 
 export component Problem inherits VelvetPreview {

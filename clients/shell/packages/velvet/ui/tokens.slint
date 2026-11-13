@@ -17,6 +17,7 @@
 // none, and the authoring gate forbids it.
 
 import "../fonts/BigShoulders-ExtraBold.ttf";
+import "../fonts/BigShoulders-ExtraBold-Text.ttf";
 import "../fonts/Archivo-SemiCondensed.ttf";
 import "../fonts/Archivo-SemiCondensed-Bold.ttf";
 import { Screen } from "types.slint";
@@ -107,6 +108,10 @@ export global Tokens {
 
     // ---- Type ----
     out property <string> display: "Big Shoulders";
+    // The display face's small optical size (opsz 28): looser spacing for a title set under
+    // `display-small-below` (the prototype lets the optical size follow the set size).
+    out property <string> display-small: "Big Shoulders Text";
+    out property <length> display-small-below: 48px;
     out property <string> text: "Archivo";
     out property <int> display-weight: 800;
     out property <int> text-weight: 400;
@@ -141,8 +146,8 @@ export global Tokens {
     out property <duration> t-layer: still ? 0ms : 420ms;
     out property <duration> t-level: still ? 0ms : 360ms;
     out property <duration> t-sheet: still ? 0ms : 220ms;
-    // The house lights come up, once, when Velvet opens.
-    out property <duration> t-open: still ? 0ms : 700ms;
+    // The house lights come up, once, when Velvet opens: the prototype's load reveal (600 ms).
+    out property <duration> t-open: still ? 0ms : 600ms;
     out property <duration> t-detail: still ? 0ms : 150ms;
     out property <duration> t-reveal: still ? 0ms : 420ms;
     out property <duration> t-stagger: still ? 0ms : 40ms;

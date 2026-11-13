@@ -24,7 +24,7 @@ export component VelvetCaps inherits Rectangle {
         text: line;
         visible: i < root.shown;
         color: root.ink;
-        font-family: Tokens.display;
+        font-family: root.size < Tokens.display-small-below ? Tokens.display-small : Tokens.display;
         font-weight: Tokens.display-weight;
         font-size: root.size;
         horizontal-alignment: root.centred ? center : left;

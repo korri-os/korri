@@ -21,6 +21,7 @@
  * action it singles out is the one Korri marks (`declineActionId`).
  */
 import type { SurfaceAction, SurfaceModel as Model, SurfaceStatus, SurfaceSteps } from "../../../../../contracts/generated/surface"
+import { whereOf } from "./art"
 import { breakLines, textWidth } from "./fit"
 import { gameById } from "./lists"
 import { onForget } from "./memo"
@@ -101,9 +102,15 @@ function statusCurtain(state: State, model: Model): CurtainSpec | undefined {
     case "Busy": {
       const actions = status.actions ?? []
       const progress = status.progress
+      // A game on its way (owner, 2026-11-13: the prototype's launch curtain): its name is the
+      // display line, where it starts under it, and Korri's own words after that.
+      const where = game === undefined ? undefined : whereOf(game)
+      const starting = where === undefined || where === "" || where === "This device" || where === "Other devices" ? "Starting" : `Starting on ${where}`
       return {
-        key: `busy:${status.kicker}:${status.gameId ?? ""}`, kind: "busy", kicker: status.kicker, ...named,
-        words: status.detail === undefined ? [] : [status.detail],
+        key: `busy:${status.kicker}:${status.gameId ?? ""}`, kind: "busy",
+        ...(game === undefined
+          ? { kicker: status.kicker, words: status.detail === undefined ? [] : [status.detail] }
+          : { kicker: game.title, game, words: [starting, status.kicker, ...(status.detail === undefined ? [] : [status.detail])] }),
         ...(status.steps === undefined || status.steps.labels.length === 0 ? {} : { steps: status.steps }),
         // Steps say where the work is; with neither steps nor a measure the bar only says it is under way.
         progress: progress === undefined ? (status.steps === undefined ? UNDER_WAY : NO_PROGRESS)

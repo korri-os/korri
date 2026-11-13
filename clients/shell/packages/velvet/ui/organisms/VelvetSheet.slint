@@ -35,22 +35,10 @@ export component VelvetSheet inherits Rectangle {
             height: parent.height;
             background: @linear-gradient(90deg, Tokens.clear 0%, Tokens.velvet-55 100%);
         }
-        Text {
-            x: root.pad-x + Tokens.screen.body * root.u * 0.9;
-            y: root.pad-y;
-            width: parent.width - 2 * self.x;
-            height: Tokens.screen.body * root.u * 1.6;
-            text: root.sheet.title;
-            color: Tokens.house-light;
-            font-family: Tokens.text;
-            font-weight: Tokens.strong-weight;
-            font-size: Tokens.screen.body * root.u;
-            vertical-alignment: center;
-            overflow: elide;
-        }
+        // No heading: the rows say what the sheet is (the prototype's sheets).
         VelvetRows {
             x: root.pad-x;
-            y: root.pad-y + Tokens.screen.body * root.u * 2;
+            y: root.pad-y;
             width: parent.width - 2 * root.pad-x;
             height: parent.height - self.y - root.pad-y;
             rows: root.rows;

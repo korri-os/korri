@@ -25,7 +25,7 @@ export component VelvetCurtain inherits Rectangle {
     property <length> body: Tokens.screen.body * u;
     property <bool> in;
     init => { in = true; }
-    background: Tokens.velvet-86;
+    background: root.curtain.solid ? Tokens.house-down : Tokens.velvet-86;
     opacity: in ? 1 : 0;
     animate opacity { duration: Tokens.t-sheet; easing: ease-in-out; }
     // A press outside the words does nothing; it must not reach what is under the curtain.

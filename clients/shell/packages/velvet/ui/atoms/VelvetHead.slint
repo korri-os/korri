@@ -9,7 +9,7 @@ export component VelvetHead inherits Text {
     in property <length> size: Tokens.screen.head * Tokens.unit;
     out property <length> drop: size * 0.214;
     color: Tokens.house-light;
-    font-family: Tokens.display;
+    font-family: root.size < Tokens.display-small-below ? Tokens.display-small : Tokens.display;
     font-weight: Tokens.display-weight;
     font-size: size;
     overflow: elide;

@@ -156,6 +156,8 @@ function curtainView(state: State, model: Model, p: Plan) {
       // Korri's own words about the progress stand; Velvet adds its count only when Korri says nothing.
       progressLine: spec.words.length > 0 ? "" : spec.progressLine ?? "",
       stack: layout.stack,
+      // A game on its way: black, as the prototype's launch curtain; anything else dims the screen.
+      solid: spec.kind === "busy" && spec.game !== undefined,
     },
     kicker: kicker.lines,
     lines: layout.lines.slice(line, line + layout.room),
@@ -216,7 +218,7 @@ export function view(state: State, model: Model) {
   const veil = page === "list" ? 0.86 : page === "set" ? 0.8 : page === "home" && state.depth === 2 ? 0.78 : page === "home" && state.depth === 1 ? 0.3 : 0
   // The keyboard and the curtain take the house: its lights go down further.
   const taken = top === "curtain" || top === "keyboard"
-  const stage: StageView = page === "empty" ? stageOf(asked, undefined, 0, false) : stageOf(asked, lead, taken ? Math.max(veil, 0.84) : veil, state.drift && top === "screen" && (page === "home" || page === "detail"), page === "detail", page === "set" || page === "list" || (page === "home" && state.depth === 2), p.width, p.height)
+  const stage: StageView = page === "empty" ? stageOf(asked, undefined, 0, false) : stageOf(asked, lead, taken ? Math.max(veil, 0.84) : veil, state.drift && top === "screen" && (page === "home" || page === "detail"), page === "detail" || page === "home", page === "set" || page === "list" || (page === "home" && state.depth === 2), p.width, p.height)
   const sheet = state.sheet === undefined ? undefined : sheetPanel(state.sheet.kind, state, model)
   const exits = top !== "screen" ? {}
     : page === "home" ? homeExits(state, model)

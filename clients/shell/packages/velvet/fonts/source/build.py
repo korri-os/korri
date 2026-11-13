@@ -35,5 +35,8 @@ def cut(file, axes, name, family, style, weight):
 
 
 cut("BigShoulders.woff", {"wght": 800, "opsz": 72}, "BigShoulders-ExtraBold.ttf", "Big Shoulders", "ExtraBold", 800)
+# The small optical size: looser spacing, for titles set under 48 px (owner, 2026-11-13, #423:
+# the prototype lets the optical size follow the set size; this is its small end).
+cut("BigShoulders.woff", {"wght": 800, "opsz": 28}, "BigShoulders-ExtraBold-Text.ttf", "Big Shoulders Text", "ExtraBold", 800)
 cut("Archivo.woff", {"wght": 450, "wdth": 88}, "Archivo-SemiCondensed.ttf", "Archivo", "Regular", 400)
 cut("Archivo.woff", {"wght": 650, "wdth": 88}, "Archivo-SemiCondensed-Bold.ttf", "Archivo", "Bold", 700)

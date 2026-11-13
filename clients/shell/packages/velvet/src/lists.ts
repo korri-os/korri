@@ -613,7 +613,8 @@ export function shelvesOf(lists: Lists, model: Model): readonly ShelfSpec[] {
   }
   const systems = (model.systems ?? []).filter(system => system.total > 0)
   shelves.push({
-    key: "systems", label: systems.length > 0 ? "By system" : "Every game",
+    // Always By system (the prototype): with no system Korri names, A to Z stands on it alone.
+    key: "systems", label: "By system",
     items: [
       ...systems.map((system): ShelfItem => ({ kind: "system", systemId: system.systemId, system: system.system, count: system.total, set: systemSet(system.systemId, system.system) })),
       { kind: "more", label: "A to Z", count: lists.total, set: everySet("title") },

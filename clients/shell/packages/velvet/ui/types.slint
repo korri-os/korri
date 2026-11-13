@@ -283,6 +283,8 @@ export struct Curtain {
     progress-share: float,
     progress-line: string,
     stack: bool,
+    // Opaque house-down (a game on its way), else the screen dims under it.
+    solid: bool,
 }
 
 // A sheet over the right edge: the sort and filter, the house menu, a game's actions.

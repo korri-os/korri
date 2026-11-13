@@ -84,11 +84,5 @@ export component VelvetGrid inherits Rectangle {
             }
         }
     }
-    // A cut row at the foot fades: more is there.
-    Rectangle {
-        y: root.height - self.height;
-        width: root.width;
-        height: Tokens.screen.pad-y * root.u;
-        background: @linear-gradient(0deg, Tokens.house-down 0%, Tokens.clear 100%);
-    }
+    // A row cut at the foot says more is there (the prototype): no fade over it.
 }
