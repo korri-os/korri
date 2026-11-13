@@ -151,7 +151,7 @@ let
           ${source}/tests/test-input.c ${ioSources} ${source}/picture/bridge.c \
           $(pkg-config --cflags --libs ${ioLibraries}) \
           -L${network}/lib -lmoonlight-common-c -pthread -lm \
-          -Wl,--wrap=LiSendKeyboardEvent,--wrap=LiSendMouseButtonEvent,--wrap=LiSendMousePositionEvent,--wrap=LiSendMultiControllerEvent \
+          -Wl,--wrap=LiSendKeyboardEvent,--wrap=LiSendMouseButtonEvent,--wrap=LiSendMousePositionEvent,--wrap=LiSendMouseMoveEvent,--wrap=LiSendMultiControllerEvent \
           -o check-input
         cc -std=gnu11 ${ioFlags} -I${source}/picture \
           ${source}/tests/test-x11-input.c ${source}/picture/bridge.c \

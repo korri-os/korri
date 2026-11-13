@@ -2,6 +2,11 @@
 
 GPL-3.0-or-later. Original notices stay on every carried file.
 
+## Modification notice (GPL-3 §5a)
+
+Korri's modifications and adaptations identified below are dated 2026-11-13,
+including the SDL startup mouse-capture correction.
+
 Source: Moonlight Embedded `775444287305849ebdf4736c75298ad0713e2d5d`, with
 `korri-plugins`' `services/moonlight/patches/` at
 `2094c1e77471` applied in order. This is the same source as the picture slice.
@@ -24,12 +29,21 @@ changes these three audio backends.
 The boundary checks `viewonly` before either input initializer and before X11
 or SDL forwarding. This is an intentional difference from Moonlight's X11
 setup, which installed keyboard/mouse input even with `-viewonly`. It is
-required by the fixture's no-input contract. The bridge returns errors for
-missing/invalid mapping setup instead of exiting. It duplicates
+required by the fixture's no-input contract. Bridge-owned checks for missing
+mapping configuration or malformed `SDL_GAMECONTROLLERCONFIG` return errors.
+The carried C still has `exit()` paths, including `input/mapping.c:179`,
+`input/evdev.c:780,896` and `input/udev.c:62`. Those exits bypass Rust's
+lifecycle failure report and socket removal; they are not converted to Rust
+errors by this slice. The bridge duplicates
 `SDL_GAMECONTROLLERCONFIG` before Moonlight's tokenizing parser, so the process
 environment is not modified. It caps the launch mask at the protocol's existing
 16-controller limit. It omits embedded-only CEC and explicit input nodes: korrid
 passes neither on PC. Existing C backend failure and buffering policies stay.
+The bridge calls `evdev_init` before `udev_init` (`bridge.c:43-44`); Moonlight's
+`main.c` called them in the opposite order. For SDL, `viewer_input_start` now
+makes the one initial `SDL_SetRelativeMouseMode(SDL_TRUE)` call from Moonlight's
+`sdl_loop`, only when input is enabled. Timed polls do not recapture an
+explicitly released mouse, and `-viewonly` never enables relative mode.
 
 Rust `player_io.rs` keeps the C strings alive and releases input and the
 presenter on all Rust error paths. Input discovery now precedes launch, as in
@@ -39,6 +53,8 @@ releases devices. No C session, signal handler or HTTP code is linked.
 
 The picture adaptations are limited to:
 - `picture/video/x11.c`: restore input setup through the guarded boundary.
+  That setup now precedes `ffmpeg_init` (`picture/video/x11.c:168`); the patched
+  Moonlight source called it after decoder and pipe setup.
 - `picture/sdl.c`: restore forwarding through that guard; reset its quit state
   on initialization. The timed poll and rendering policy remain unchanged.
 - `picture/bridge.c`: grow the descriptor registry for input discovery instead

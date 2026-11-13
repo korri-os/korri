@@ -6,7 +6,12 @@ Built and checked on zao, not on a device:
 The source starts at `origin/main` / `c00fe2680`. No plugin or product update
 was installed. No tool source changed. No push or landing was done.
 
-## Checks
+The rebased landing commits are `ca4f091cd` and `fdcd8562b`, with package
+`/nix/store/bpdhn0vnwk1dbj70l3p3hiqf0ff3vxdr-korri-viewer-0.1.0` and 27
+passing tests; `io/`, `picture/`, `src/player_io.rs`, `src/options.rs` and
+`build.rs` are identical between that package and the pre-rebase package above.
+
+## Archived checks (pre-rebase)
 
 | Check | Result |
 | --- | --- |

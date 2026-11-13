@@ -7,7 +7,7 @@
 #include <string.h>
 #include <unistd.h>
 
-static int keys, buttons, positions, controllers;
+static int keys, buttons, positions, moves, controllers;
 static unsigned short last_key;
 static int last_buttons;
 static short last_y;
@@ -20,7 +20,11 @@ int __wrap_LiSendMouseButtonEvent(char action, int button) {
 }
 int __wrap_LiSendMousePositionEvent(short x, short y, short width, short height) {
   assert(width == 128 && height == 72);
-  if (x == 17 && y == 29) positions++;
+  positions++;
+  return 0;
+}
+int __wrap_LiSendMouseMoveEvent(short x, short y) {
+  if (x == 7 && y == 11) moves++;
   return 0;
 }
 int __wrap_LiSendMultiControllerEvent(short id, short mask, int flags,
@@ -39,6 +43,7 @@ static void send_events(void) {
   assert(SDL_PushEvent(&button) == 1);
   SDL_Event motion = {.type = SDL_MOUSEMOTION};
   motion.motion.x = 17; motion.motion.y = 29;
+  motion.motion.xrel = 7; motion.motion.yrel = 11;
   assert(SDL_PushEvent(&motion) == 1);
   pump();
 }
@@ -52,16 +57,36 @@ int main(int argc, char** argv) {
       CONNECTION_LISTENER_CALLBACKS cb = {0};
       viewer_input_callbacks(&cb);
       assert(!cb.rumble && !cb.rumbleTriggers && !cb.setControllerLED);
+      viewer_input_start();
+      pump();
+      assert(SDL_GetRelativeMouseMode() == SDL_FALSE);
       send_events();
-      assert(!keys && !buttons && !positions && !controllers);
-      viewer_input_start(); viewer_input_stop(); viewer_input_destroy();
+      assert(!keys && !buttons && !positions && !moves && !controllers);
+      viewer_input_stop(); viewer_input_destroy();
     }
     puts("viewonly: no input forwarding or discovery on either PC platform");
   } else {
     assert(viewer_input_init(0, 0, NULL, 1, 0, 0) == 0);
+    viewer_input_start();
+    pump();
+    assert(SDL_GetRelativeMouseMode() == SDL_TRUE);
     send_events();
     assert(keys == 1 && last_key == 0x8041);
-    assert(buttons == 1 && positions == 1);
+    assert(buttons == 1 && moves == 1 && positions == 0);
+    // Startup capture must not be reapplied on each timed poll: preserve
+    // Moonlight's keyboard toggle to release and recapture the mouse.
+    SDL_Event toggle = {.type = SDL_KEYUP};
+    toggle.key.keysym.scancode = SDL_SCANCODE_Z;
+    toggle.key.keysym.sym = SDLK_z;
+    toggle.key.keysym.mod = KMOD_CTRL | KMOD_ALT | KMOD_SHIFT;
+    assert(SDL_PushEvent(&toggle) == 1);
+    pump();
+    assert(SDL_GetRelativeMouseMode() == SDL_FALSE);
+    pump();
+    assert(SDL_GetRelativeMouseMode() == SDL_FALSE);
+    assert(SDL_PushEvent(&toggle) == 1);
+    pump();
+    assert(SDL_GetRelativeMouseMode() == SDL_TRUE);
     int index = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER,
       SDL_CONTROLLER_AXIS_MAX, SDL_CONTROLLER_BUTTON_MAX, 0);
     assert(index >= 0);
@@ -91,7 +116,7 @@ int main(int argc, char** argv) {
     pump();
     assert(viewer_input_gamepad_mask() == 0);
     viewer_input_stop(); viewer_input_destroy();
-    puts("SDL keyboard, mouse, virtual controller, hotplug and quit ownership passed");
+    puts("SDL keyboard, relative mouse capture/toggle, virtual controller, hotplug and quit ownership passed");
   }
   sdl_destroy();
 }

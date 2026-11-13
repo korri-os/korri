@@ -67,6 +67,9 @@ void viewer_input_start(void) {
   if (enabled && using_evdev) {
     evdev_start();
     started = 1;
+  } else if (enabled) {
+    // Moonlight's sdl_loop captures once on entry, not on every timed poll.
+    SDL_SetRelativeMouseMode(SDL_TRUE);
   }
 }
 void viewer_input_stop(void) {
