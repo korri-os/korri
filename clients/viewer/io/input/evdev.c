@@ -1087,6 +1087,14 @@ void evdev_start() {
 }
 
 void evdev_stop() {
+  // Korri adaptation: stop producers before Rust stops the network core.
+  for (int i = 0; i < numDevices; ++i) {
+    if (devices[i].mouseEmulation) {
+      devices[i].mouseEmulation = false;
+      pthread_join(devices[i].meThread, NULL);
+      devices[i].meThread = 0;
+    }
+  }
   evdev_drain();
 }
 

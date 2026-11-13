@@ -17,7 +17,7 @@ changes these three audio backends.
 | `input/{keyboard.h,mapping.c,mapping.h,udev.h,x11.h}` | None. |
 | `input/{evdev.c,udev.c,x11.c}` | Include `../../picture/loop.h` instead of `../loop.h`; use the existing Rust-polled descriptor registry, not Moonlight's session loop. |
 | `input/sdl.c` | Include `../../picture/sdl.h` instead of `../sdl.h`. Add `sdlinput_destroy` to close controllers after the core joins its threads. |
-| `input/evdev.c` | Add `evdev_destroy` to remove devices, join mouse-emulation threads, close nodes and release grabs after the core joins its threads. |
+| `input/evdev.c` | Extend `evdev_stop` to join mouse-emulation producers before the core stops. Add `evdev_destroy` to remove devices, join mouse-emulation threads, close nodes and release grabs after the core joins its threads. |
 | `input/{evdev.h,sdl.h}` | Declare those teardown functions. |
 | `bridge.{c,h}` | New narrow C boundary. Extract the PC branches of `main.c` input setup, controller count and rumble callbacks, and `platform.c` audio selection. Keep all session/launch/stop decisions in Rust. |
 

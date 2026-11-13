@@ -58,5 +58,17 @@ int main(int argc, char** argv) {
   assert((flags & A_FLAG) && (flags & QUIT_BUTTONS) == QUIT_BUTTONS);
   libevdev_free(dev.dev);
   while (maps) { struct mapping* next = maps->next; free(maps); maps = next; }
-  puts("evdev keyboard, mouse, mapped controller, first-press seat and quit ownership passed");
+  // Mouse-emulation producers must stop before Rust stops the network core.
+  devices = calloc(1, sizeof(*devices));
+  numDevices = 1;
+  devices[0].dev = libevdev_new();
+  devices[0].fd = -1;
+  devices[0].controllerId = -1;
+  devices[0].mouseEmulation = true;
+  assert(pthread_create(&devices[0].meThread, NULL, HandleMouseEmulation, &devices[0]) == 0);
+  evdev_stop();
+  assert(!devices[0].mouseEmulation);
+  assert(devices[0].meThread == 0);
+  evdev_destroy();
+  puts("evdev keyboard, mouse, mapped controller, first-press seat, quit ownership and producer shutdown passed");
 }
