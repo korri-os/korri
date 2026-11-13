@@ -19,7 +19,7 @@ The tool imports immutable Nix closures and owns its temporary fixtures.
 | `cargo clippy --all-targets -- -D warnings` | Passed |
 | `cargo fmt --check`, Nixfmt, staged whitespace check | Passed |
 | `checks.x86_64-linux.korri-viewer-picture` | Passed: VA failure cleanup; X11 newest-frame ownership and resize; actual H.264 software decode and SDL presentation |
-| Compare carried PC files and copied tests against the patch stack extracted from `korri-plugins` history at `2094c1e` | Passed; only the documented X11 input removal differs |
+| Compare carried PC files and copied tests against the patch stack extracted from `korri-plugins` history at `2094c1e` | Passed. The decoder and presenter files under `picture/video/` match. Two adaptations differ: X11 input is removed, and `picture/sdl.c` (lines 71 to 121) and `picture/sdl.h` (lines 37 to 39) change SDL event forwarding, polling and teardown for the Rust session |
 | Secret-scanning pre-commit hook | Passed |
 
 The SDL test initially lacked Mesa's driver search path inside the Nix sandbox.
