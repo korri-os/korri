@@ -310,6 +310,36 @@ describe("progress is a state, not a number", () => {
   })
 })
 
+describe("the launch curtain (the prototype's)", () => {
+  const launching = (pick: (games: any[]) => any) => {
+    const base = model("busy-plain")
+    const game = pick(base.catalog.games)
+    const run = new Play({ ...base, status: { ...base.status, gameId: game.id } })
+    return { view: run.view as any, game }
+  }
+  test("a game with a logo: black, its logo, where it starts and Korri's words under it", () => {
+    const { view } = launching(games => games.find(game => game.id === "ember-road"))
+    expect(view.curtain.solid).toBe(true)
+    expect(view.curtain.logoShown).toBe(true)
+    expect(view.curtain.logo.$image).toBe("preview/art/logo-ember.png")
+    expect(view.curtainKicker).toEqual([])
+    expect(view.curtainLines.slice(0, 2)).toEqual(["Starting", "Checking saves"])
+  })
+  test("a game with no logo: its name in the display face at the pick's size", () => {
+    const { view, game } = launching(games => games.find(game => !(game.media ?? []).some((media: any) => media.role === "logo")))
+    expect(view.curtain.solid).toBe(true)
+    expect(view.curtain.logoShown).toBe(false)
+    expect(view.curtainKicker.join(" ")).toBe(game.title.toUpperCase())
+    expect(view.curtain.kickerSize).toBeGreaterThan(view.screen.kicker)
+  })
+  test("anything else Korri is busy with dims the screen and keeps its kicker", () => {
+    const run = new Play(model("busy-plain"))
+    expect((run.view as any).curtain.solid).toBe(false)
+    expect((run.view as any).curtain.logoShown).toBe(false)
+    expect((run.view as any).curtainKicker).toEqual(["CHECKING SAVES"])
+  })
+})
+
 describe("launch settings are one list (ADR 0066)", () => {
   const open = (name: string) => {
     const scene = scenario(name)

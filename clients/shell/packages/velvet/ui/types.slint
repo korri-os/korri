@@ -285,6 +285,11 @@ export struct Curtain {
     stack: bool,
     // Opaque house-down (a game on its way), else the screen dims under it.
     solid: bool,
+    // A launch's mark: the game's logo, when it has one, in place of its name.
+    logo-shown: bool,
+    logo: image,
+    logo-w: float,
+    logo-h: float,
 }
 
 // A sheet over the right edge: the sort and filter, the house menu, a game's actions.

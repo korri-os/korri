@@ -49,7 +49,18 @@ export component VelvetCurtain inherits Rectangle {
             horizontal-alignment: center;
             overflow: elide;
         }
-        Rectangle {
+        if root.curtain.logo-shown: Rectangle {
+            height: root.curtain.logo-h * root.u + root.body * 0.5;
+            Image {
+                x: (parent.width - self.width) / 2;
+                y: 0;
+                width: root.curtain.logo-w * root.u;
+                height: root.curtain.logo-h * root.u;
+                source: root.curtain.logo;
+                image-fit: contain;
+            }
+        }
+        if !root.curtain.logo-shown: Rectangle {
             height: caps.block + (root.curtain.kind == "problem" ? root.body * 1.8 : 0px);
             if root.curtain.kind == "problem": VelvetIcon {
                 x: (parent.width - self.width) / 2;
@@ -79,7 +90,7 @@ export component VelvetCurtain inherits Rectangle {
             for line in root.lines: Text {
                 height: root.body * 1.35;
                 text: line;
-                color: Tokens.house-light;
+                color: root.curtain.solid ? Tokens.usher : Tokens.house-light;
                 font-family: Tokens.text;
                 font-weight: Tokens.text-weight;
                 font-size: root.body;

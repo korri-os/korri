@@ -15,7 +15,7 @@
  * under it is drawn inert (no target, no tap).
  */
 import type { SurfaceModel as Model } from "../../../../../contracts/generated/surface"
-import { gameCard, NO_IMAGE, NO_MARQUEE, pictures, stageOf, type Pictures, type StageView } from "./art"
+import { gameCard, marqueeOf, NO_IMAGE, NO_MARQUEE, pictures, stageOf, type Pictures, type StageView } from "./art"
 import { detailGame, detailView, focusedGame, homeExits, homeView, NO_PILL, pill, setExits, setView, type PillView } from "./browse"
 import { curtainLayout, curtainOf } from "./curtain"
 import { breakLines, fitCaps } from "./fit"
@@ -132,14 +132,22 @@ function keyboardView(state: State, live: boolean) {
   }
 }
 
-function curtainView(state: State, model: Model, p: Plan) {
+function curtainView(asked: Pictures, state: State, model: Model, p: Plan) {
   const spec = curtainOf(state, model)
   if (spec === undefined) return { curtain: NO_CURTAIN, kicker: [], lines: [], steps: [], buttons: [] }
+  // A game on its way: its mark as the prototype's launch sets it, the logo when the game
+  // has one, else its title at the pick's size, in three fifths of the width.
+  const launch = spec.kind === "busy" && spec.game !== undefined
+  const mark = launch
+    ? marqueeOf(asked, spec.game!, { width: p.width * 0.6, logoH: Math.round(Math.min(220, Math.max(56, p.height * 0.2))), title: p.title, fact: p.fact, mark: true, badge: false }, model.publishedAt, [])
+    : undefined
   const layout = curtainLayout(spec, p)
   const line = Math.max(0, Math.min(state.curtain.line, Math.max(0, layout.lines.length - layout.room)))
   const steps = spec.steps
   const at = Math.max(0, Math.min(state.curtain.at, spec.buttons.length - 1))
-  const kicker = fitCaps(spec.kicker, p.curtainW, p.kicker * 3, p.kicker, Math.min(p.kicker, 18))
+  const kicker = mark !== undefined
+    ? { size: mark.size, lines: mark.logoShown ? [] : [mark.line1, mark.line2, mark.line3].slice(0, mark.lines) }
+    : fitCaps(spec.kicker, p.curtainW, p.kicker * 3, p.kicker, Math.min(p.kicker, 18))
   const now = steps === undefined ? 0 : Math.max(0, Math.min(steps.current, steps.labels.length - 1))
   return {
     curtain: {
@@ -157,7 +165,11 @@ function curtainView(state: State, model: Model, p: Plan) {
       progressLine: spec.words.length > 0 ? "" : spec.progressLine ?? "",
       stack: layout.stack,
       // A game on its way: black, as the prototype's launch curtain; anything else dims the screen.
-      solid: spec.kind === "busy" && spec.game !== undefined,
+      solid: launch,
+      logoShown: mark?.logoShown ?? false,
+      logo: mark?.logoShown === true ? mark.logo : NO_IMAGE,
+      logoW: mark?.logoShown === true ? mark.logoW : 0,
+      logoH: mark?.logoShown === true ? mark.logoH : 0,
     },
     kicker: kicker.lines,
     lines: layout.lines.slice(line, line + layout.room),
@@ -208,6 +220,8 @@ export function view(state: State, model: Model) {
   const p = plan(state.size.width, state.size.height)
   const top = topLayer(state, model)
   const live = top === "screen"
+  // A launch's curtain is black and holds the game's logo: it asks for its picture first.
+  const curtain = curtainView(asked, state, model, p)
   const what = shown(state, model)
   const panel = screenPanel(state, model)
   const lists = homeOf(state.lists, model.publishedAt)
@@ -231,7 +245,6 @@ export function view(state: State, model: Model) {
   const empty = page === "empty" ? emptyView(state, model, p, live) : undefined
   const list = page === "list" && panel !== undefined ? pageView(asked, panel, state, p, live) : undefined
   const keyboard = keyboardView(state, top === "keyboard")
-  const curtain = curtainView(state, model, p)
   return {
     screen: screenOf(p),
     still: state.still,
@@ -292,7 +305,7 @@ export function overlayView(state: State, model: Model) {
   const focus = panel === undefined ? "" : panelFocus(panel, state.panels[panel.key]).focus
   const health = overlay?.streamHealth
   const keyboard = keyboardView(state, top === "keyboard")
-  const curtain = curtainView(state, model, p)
+  const curtain = curtainView(pictures(), state, model, p)
   const facts = [
     ...(overlay?.batteryPercent === undefined ? [] : [{ icon: "note", text: `Battery ${Math.round(overlay.batteryPercent)}%`, strong: false }]),
     ...(health?.rttMs === undefined ? [] : [{ icon: "wifi", text: `${Math.round(health.rttMs)} ms`, strong: false }]),
