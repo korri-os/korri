@@ -1369,51 +1369,43 @@ directory for each measure.
 
 | Baseline | Recorded | Pair | Runs |
 | --- | --- | --- | --- |
-| `baselines/aka/private-pair/base/results.json` | 2026-11-13 06:11 UTC, tool at `cc13ac42b` | Sender fixture and viewer fixture on aka, no game and no other test live, 1-minute load below 1.0 at the start | 5 valid of 5 |
-| `baselines/aka/private-pair/queue/results.json` | 2026-11-13 06:19 UTC, the same tool | The same, with `--queue-measure` | 5 valid of 5 |
+| `baselines/aka/private-pair/base/results.json` | 2026-11-13 21:08 UTC, tool at `3f37f55a9` | Sender fixture and viewer fixture on aka, no game and no other test live, 1-minute load below 1.0 and k10temp Tctl below 80 °C at the start | 5 valid of 5 |
+| `baselines/aka/private-pair/queue/results.json` | 2026-11-13 22:29 UTC, tool at `849e74149` | The same, with `--queue-measure` | 5 valid of 5 |
 
 The viewer in both is the product's: the copied package
-`/nix/store/b87wcqr972gny6ckdnpgamxiij725rls-moonlight-embedded-korri-2.7.1-korri`
-of release `build-01aa869233bd-moonlight-vaapi` (`--viewer-package`), in the
-viewer fixture with gles2, inside the pair's namespaces. korrid asks it for
-`x11_vaapi`, and it decodes with VA-API on aka's graphics card
-(`decode=vaapi`, `renderD129`), as the product does on a PC since #439. The
-stream is 1920x1080 at 60 fps.
+`/nix/store/38crl2m37akjqqscrmnq1gbwrp8l3rcx-moonlight-embedded-korri-2.7.1-korri`
+of release `build-2094c1e77471-moonlight-latest-frame` (#466, which includes
+#439), in the viewer fixture with gles2, inside the pair's namespaces. korrid
+asks it for `x11_vaapi`, and it decodes with VA-API on aka's graphics card
+(`decode=vaapi`). The stream is 1920x1080 at 60 fps.
 
 | Metric | Base, range of the five runs | Queue, range of the five runs |
 | --- | --- | --- |
-| Sender presentation to display, p50 by window | 10.20 to 10.57 ms | 316.72 to 1318.83 ms |
-| Sender presentation to display, p95 by window | up to 17.84 ms | up to 1557.58 ms |
-| Dropped frames | 0 | 202 to 211, the sender's floor, not judged |
-| Viewer CPU seconds each second | 0.011 | 0.012 |
-| Startup | 641 to 785 ms in three runs; 10,047 and 10,075 ms in two | 721 to 767 ms |
+| Sender presentation to display, p50 by window | 11.78 to 12.16 ms | 40.11 to 40.97 ms |
+| Sender presentation to display, p95 by window | up to 19.31 ms | up to 47.79 ms |
+| Dropped frames | 0 | 230 to 234, the sender's floor, not judged |
+| Viewer CPU seconds each second | 0.011 | 0.012 to 0.013 |
+| Startup | 753 to 785 ms | 754 to 801 ms |
 | Capture gaps, stalls, viewer exits | 0 | 0 |
-| What else ran on the viewer device, share of all CPUs | 0.8% to 0.9% | 0.9% |
+| What else ran on the viewer device, share of all CPUs | 0.9% to 1.0% | 0.9% to 2.5% |
 
-Against the five VA-API runs of the #439 proof (2026-11-13, same package),
-`verdict` gives `equal` on every measured row.
+Against the five-run sets of the #466 proof (same package, recorded by its
+worker), `verdict` gives `equal` on every measured row of both measures.
 
-**The queue measure shows a sawtooth.** When frames arrive faster than the
-display shows them, this viewer keeps them. The delay climbs to about 1.3 s,
-then about 100 frames are dropped at once and the delay falls back to about
-350 ms, again and again. Run 1 by window of 10 s: 878, 1279, 468, 1055, 363,
-725 ms. The same measure with software decode (release
-`build-6a16a09421bf-shared-settings`) settled at 56.4 to 56.8 ms. The cause
-is not known.
-
-**Slow starts.** Two base runs reached their first readable frame about 10 s
-after the start, though the first video packet arrived at once. The software
-baseline had one such start in five. Because the rule of a metric is that
-ranges must not overlap, this baseline judges `startup_ms` only against a
-candidate slower than 10 s or faster than 641 ms in every run.
+#466 traded about 1.4 ms of base delay (the required `vaSyncSurface` before
+the presentation display takes a frame) for a steady queue delay: the release
+before it climbed to about 1.3 s in the queue measure.
 
 The recording script kept a set only when all five runs were valid and what
-else ran stayed below 5% of all CPUs in each run. Both sets were kept on the
-first try.
+else ran stayed below 5% of all CPUs in each run. The base set was kept on its
+first try. The queue set was kept on its fourth: try 1 ended at the old 95 °C
+end rule, try 2 was stopped when the tool changed, and try 3 stopped between
+runs at the start rule (87.4 °C), a fault the cooldown wait fixes. No set was
+dropped for its measured numbers.
 
-Earlier baselines are removed: the software-decode pair of 2026-11-13
-02:26 UTC, the nixpkgs stand-in under pixman of 2026-11-12, and the product
-sender baseline of 2026-11-11.
+Earlier baselines are removed: VA-API before #466 (2026-11-13 06:11 UTC),
+software decode (2026-11-13 02:26 UTC), the nixpkgs stand-in under pixman
+(2026-11-12), and the product-sender baseline (2026-11-11).
 
 ## Pairing and cleanup
 
