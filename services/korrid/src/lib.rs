@@ -7484,7 +7484,17 @@ mod tests {
         private: &Path,
         grants: discovery::FolderSelectionGrantStore,
     ) -> Router {
-        router_with_capability_local_root_provision_and_grants(
+        discovery_test_router_with_publication_lock(readable, private, grants).0
+    }
+
+    /// The discovery test router and the publication lock its discovery
+    /// worker takes for every scan.
+    fn discovery_test_router_with_publication_lock(
+        readable: &Path,
+        private: &Path,
+        grants: discovery::FolderSelectionGrantStore,
+    ) -> (Router, Arc<Mutex<()>>) {
+        let (state, ()) = brain_app_state(
             "right-token",
             "https://shell.example",
             readable,
@@ -7497,7 +7507,46 @@ mod tests {
             None,
             None,
             None,
-        )
+        );
+        let ServerMode::Brain(brain) = &state.mode else {
+            unreachable!("brain_app_state composes brain mode")
+        };
+        let publication = brain.settings_write_lock.clone();
+        (surface_host_router_from_state(state), publication)
+    }
+
+    /// Holds discovery's publication lock on its own thread. A scan that
+    /// starts meanwhile waits for the lock, so discovery stays in `Scanning`
+    /// until `release`. Without it the worker can pass to `Enriching`, or
+    /// finish, before a reply takes its snapshot. The holder lets go by
+    /// itself after ten seconds, so a request that waits on the lock fails
+    /// the test instead of hanging it.
+    struct HeldPublicationLock {
+        release: std::sync::mpsc::Sender<()>,
+        holder: std::thread::JoinHandle<bool>,
+    }
+
+    impl HeldPublicationLock {
+        fn hold(lock: Arc<Mutex<()>>) -> Self {
+            let (held, is_held) = std::sync::mpsc::channel();
+            let (release, released) = std::sync::mpsc::channel::<()>();
+            let holder = std::thread::spawn(move || {
+                let _guard = lock.lock().expect("discovery write lock poisoned");
+                held.send(()).expect("test waits for the lock");
+                released
+                    .recv_timeout(std::time::Duration::from_secs(10))
+                    .is_ok()
+            });
+            is_held.recv().expect("lock holder started");
+            Self { release, holder }
+        }
+
+        /// Lets waiting scans go on. False when the holder had already let
+        /// go by itself.
+        fn release(self) -> bool {
+            let _ = self.release.send(());
+            self.holder.join().expect("lock holder panicked")
+        }
     }
 
     async fn wait_for_discovery_idle(app: Router) -> serde_json::Value {
@@ -7696,7 +7745,12 @@ mod tests {
         std::fs::write(folder.path().join("game.gba"), b"rom").unwrap();
         let grants = discovery::FolderSelectionGrantStore::default();
         let receipt = grants.issue_approved_path(folder.path()).unwrap().token;
-        let app = discovery_test_router(readable.path(), private.path(), grants);
+        let (app, publication) =
+            discovery_test_router_with_publication_lock(readable.path(), private.path(), grants);
+        // The startup rescan settles first; the add's scan then waits on the
+        // held lock, so the reply shows it scanning.
+        wait_for_discovery_idle(app.clone()).await;
+        let publication = HeldPublicationLock::hold(publication);
 
         let body = rpc_body_authorized(
             app.clone(),
@@ -7706,6 +7760,10 @@ mod tests {
         .await;
         assert_eq!(body["outcome"]["_tag"], "Ok");
         assert_eq!(body["outcome"]["payload"]["state"]["_tag"], "Scanning");
+        assert!(
+            publication.release(),
+            "the add reply must not wait for the publication lock"
+        );
 
         let idle = wait_for_discovery_idle(app.clone()).await;
         assert_eq!(idle["outcome"]["payload"]["state"]["_tag"], "Idle");
@@ -8152,7 +8210,12 @@ mod tests {
         std::fs::write(folder.path().join("one.gba"), b"one").unwrap();
         let grants = discovery::FolderSelectionGrantStore::default();
         let receipt = grants.issue_approved_path(folder.path()).unwrap().token;
-        let app = discovery_test_router(readable.path(), private.path(), grants);
+        let (app, publication) =
+            discovery_test_router_with_publication_lock(readable.path(), private.path(), grants);
+        // The startup rescan settles first; the add's scan then waits on the
+        // held lock, so the rescan and the catalog read both arrive during it.
+        wait_for_discovery_idle(app.clone()).await;
+        let publication = HeldPublicationLock::hold(publication);
         rpc_body_authorized(
             app.clone(),
             &serde_json::json!({"_tag":"app.library.folders.add","payload":{"receipt": receipt,"system":"gba"}}).to_string(),
@@ -8173,6 +8236,10 @@ mod tests {
         )
         .await;
         assert_eq!(games["outcome"]["_tag"], "Ok");
+        assert!(
+            publication.release(),
+            "the rescan reply and the catalog read must not wait for the publication lock"
+        );
         let idle = wait_for_discovery_idle(app).await;
         assert_eq!(idle["outcome"]["payload"]["state"]["_tag"], "Idle");
     }
