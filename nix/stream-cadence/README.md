@@ -638,9 +638,26 @@ handheld's hardware picture path.
 A viewer measure can heat a passive device, and a hot host must not get more
 load from this tool. The viewer's agent guards the viewer side of every run,
 and the sender's agent guards the sender fixture with the same rules. Each
-reads the thermal zones and their trip points from `/sys/class/thermal` at
-run time. No temperature of a device is in the tool. The product sender
+reads thermal zones and their trip points from `/sys/class/thermal`, plus CPU
+package sensors from `/sys/class/hwmon`, at run time. The product sender
 (`device.py`) starts nothing but the source and has no guard.
+
+The hwmon driver (`name`) and `temp*_label` select the package sensor:
+`k10temp` and `zenpower` use `Tdie` when present, otherwise `Tctl`;
+`coretemp` uses `Package id 0`. Core, CCD, disk and other sensors do not decide.
+Each selected sensor supplies `temp*_input`. A positive `temp*_crit`, or
+`temp*_max` when no positive critical limit exists, supplies the critical
+limit for the existing margin rule below. Missing limits are not read errors;
+unreadable or malformed limits are. Values are in millidegrees Celsius, as
+specified by the [Linux hwmon interface](https://docs.kernel.org/hwmon/sysfs-interface.html).
+
+AMD package sensors with neither limit use a fixed rule: **start only below
+85 °C; end at 95 °C**. This is a guard policy, not a reported critical trip.
+Ryzen 7000 regulates at 95 °C by design; AMD lists 95 °C as the
+[maximum operating temperature (Tjmax) of the Ryzen 5 7600X](https://www.amd.com/en/products/processors/desktops/ryzen/7000-series/amd-ryzen-5-7600x.html).
+The 10 °C start margin leaves room before that ceiling. This rule also applies
+to `zenpower` without limits; it is fixed, not a CPU-model lookup. It can
+refuse a safe load and does not replace the processor's own thermal controls.
 
 The tool's own rules, in `heat.py` for both agents and in `viewer.py` for the
 viewer alone:
@@ -649,18 +666,18 @@ viewer alone:
 | --- | --- |
 | A run does not start | at or above a zone's lowest passive trip point. With no passive trip point: within 20 °C of its critical trip point. |
 | A run ends at once | 10 °C below a zone's critical trip point, or half-way between its highest passive trip point and its critical trip point when that is lower. |
-| A run does not start, and a running viewer is stopped | when the guard cannot read: a zone that has a limit is gone or gives no temperature, a zone's trip points cannot be read, or the guard's own thread fails. |
-| A device with a hardware picture path does not run | when no zone has a critical trip point: the guard has no limit for it. |
+| A run does not start, and a running viewer is stopped | when the guard cannot read: a zone or CPU sensor that has a limit is gone or gives no temperature, trip points or sensor limits cannot be read, or the guard's own thread fails. |
+| A device with a hardware picture path does not run | when no zone or CPU package sensor gives a limit: the guard has no limit for it. |
 | A board with a device tree (a root node with a `compatible` that is not empty) hosts no fixture | ever: no software viewer and no sender fixture. |
 | A viewer on a hardware picture path is stopped | when any line of its log says that a frame did not come from the hardware decoder, or when it uses more than 1.0 CPU second each second for 2 s. |
 | A valid run on a hardware picture path | needs the log line of the measured start that says hardware decode started. |
 
-**A device with no thermal zone.** The decision: a device with a hardware
-picture path does not run without a zone that gives a limit, because such a
-device is a passive handheld. Any other device with no such zone runs
-unguarded, and `discovered.viewer.heat_guarded` is then false. aka is such a
-device: it has no zone under `/sys/class/thermal` at all and no hardware
-picture path, so a viewer measure on aka runs with no heat guard.
+**A device with no thermal zone or supported CPU sensor.** A device with a
+hardware picture path still does not run without a limit, because such a
+device is a passive handheld. Any other device with no limit runs unguarded,
+and `discovered.viewer.heat_guarded` is then false. aka has no thermal zone,
+but its `k10temp Tctl` now guards both halves of a private pair. Thermal-zone
+trip-point rules are unchanged; hwmon readings add CPU package coverage.
 
 A zone with readable trip points and no critical one is recorded and not
 judged. A trip point at or below zero is a placeholder and counts as absent.
@@ -679,8 +696,14 @@ is kept as `viewer.earlier.log`. Each viewer sample holds `thermal` (a list:
 zone, type and temperature in millidegrees, or no temperature when it cannot
 be read) and `hardware_decode`, and the samples of the locating start are
 kept too. Each run prints the lowest and highest temperature of the guarded
-zones. `discovered.viewer.thermal` in the result holds the zones, their trip
-points and the limits that the tool derived.
+zones. `discovered.viewer.thermal` in the result holds the zones and CPU sensors,
+their trip points and the limits that the tool derived. CPU sensors use the
+same fact shape: `zone` identifies `hwmonN/tempN`, `type` names the driver and
+label, and `driver` retains the hwmon name. `trips` holds the reported limit
+(or an empty list), not an invented critical trip for the fixed rule.
+Sender-fixture facts retain the same readings under
+`discovered.thermal`; viewer samples retain CPU temperatures
+alongside zone temperatures.
 
 `--test-heat-end-margin DEGREES` is for a test of the guard only. It moves
 the end limit down, so that the guard ends a run on a cool device. It cannot

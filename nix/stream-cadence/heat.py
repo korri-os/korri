@@ -1,18 +1,84 @@
-"""The heat guard's rules: what a device's own thermal zones allow.
+"""Shared heat rules for thermal zones and hwmon CPU package sensors.
 
-Both agents use them. Each limit comes from the trip points that the device
-itself reports at run time; the rules here add only margins. No temperature
-of a device is in this file.
+Reported limits take margins. AMD package sensors without reported limits
+use the fixed 85/95 °C start/stop rule documented in the README.
 """
 
 from pathlib import Path
 
 THERMAL = Path("/sys/class/thermal")
 END_MARGIN = 10_000  # millidegrees: a run ends at least this far below a critical trip
+AMD_START_BELOW = 85_000
+AMD_END_AT = 95_000
+
+
+def cpu_sensors() -> list[dict]:
+    """Read only CPU package labels of known hwmon drivers, in the zone fact shape.
+
+    hwmon is a sibling of the thermal class, including in sysfs fixture trees.
+    Prefer AMD's die temperature to its control temperature when both exist.
+    A selected sensor with unreadable input or limits remains visible and blinds
+    the guard, just like an unreadable thermal zone.
+    """
+    sensors = []
+    for device in sorted((THERMAL.parent / "hwmon").glob("hwmon*")):
+        try:
+            driver = (device / "name").read_text().strip()
+        except OSError:
+            continue
+        if driver not in ("k10temp", "coretemp", "zenpower"):
+            continue
+        labels = {}
+        for path in sorted(device.glob("temp*_label")):
+            try:
+                labels[path] = path.read_text().strip()
+            except OSError as error:
+                # This could be the package sensor; do not silently run unguarded.
+                sensors.append({
+                    "zone": f"{device.name}/{path.name.removesuffix('_label')}",
+                    "type": driver,
+                    "driver": driver,
+                    "temp": None,
+                    "trips": None,
+                    "unreadable": f"its sensor label: {error}",
+                })
+        wanted = "Package id 0" if driver == "coretemp" else (
+            "Tdie" if "Tdie" in labels.values() else "Tctl"
+        )
+        for path, label in labels.items():
+            if label != wanted:
+                continue
+            stem = path.name.removesuffix("_label")
+            row: dict = {
+                "zone": f"{device.name}/{stem}",
+                "type": f"{driver} {label}",
+                "driver": driver,
+                "temp": None,
+                "trips": [],
+                "unreadable": None,
+            }
+            try:
+                for kind in ("crit", "max"):
+                    try:
+                        limit = int((device / f"{stem}_{kind}").read_text())
+                    except FileNotFoundError:
+                        continue
+                    if limit > 0:
+                        row["trips"] = [{"type": "critical", "temp": limit}]
+                        break
+            except (OSError, ValueError) as error:
+                row["trips"] = None
+                row["unreadable"] = f"its limits: {error}"
+            try:
+                row["temp"] = int((device / f"{stem}_input").read_text())
+            except (OSError, ValueError) as error:
+                row["unreadable"] = row["unreadable"] or f"its temperature: {error}"
+            sensors.append(row)
+    return sensors
 
 
 def thermal_zones() -> list[dict]:
-    """Each thermal zone with its temperature and trip points, in millidegrees Celsius.
+    """Thermal zones and CPU sensors, with temperatures and limits in millidegrees Celsius.
 
     No zone is dropped. What cannot be read is None (`temp`, or `trips` as a
     whole), and `unreadable` says why: the guard must know that it is blind.
@@ -43,7 +109,7 @@ def thermal_zones() -> list[dict]:
         except (OSError, ValueError) as error:
             row["unreadable"] = row["unreadable"] or f"its temperature: {error}"
         zones.append(row)
-    return zones
+    return zones + cpu_sensors()
 
 
 def blind(zones: list[dict], limits: dict[str, dict | None]) -> str | None:
@@ -71,9 +137,9 @@ def blind(zones: list[dict], limits: dict[str, dict | None]) -> str | None:
 
 
 def thermal_limits(zone: dict, end_margin: int = END_MARGIN) -> dict | None:
-    """When a run may start and when it must end, from one zone's own trip points.
+    """Start/stop limits from reported trips, or the fixed rule for unbounded AMD sensors.
 
-    A zone with no critical trip point gives no limit. A run ends END_MARGIN
+    A thermal zone with no critical trip point gives no limit. A run ends END_MARGIN
     below the critical trip, or half-way between the highest passive trip and
     the critical trip when that is lower. A run does not start at or above the
     lowest passive trip: the device already slows itself there. With no
@@ -88,6 +154,12 @@ def thermal_limits(zone: dict, end_margin: int = END_MARGIN) -> dict | None:
         default=None,
     )
     if critical is None:
+        if zone.get("driver") in ("k10temp", "zenpower"):
+            return {
+                "critical": None,
+                "start_below": AMD_START_BELOW,
+                "end_at": AMD_END_AT - (max(end_margin, END_MARGIN) - END_MARGIN),
+            }
         return None
     passive = [
         trip["temp"]
@@ -120,8 +192,12 @@ def too_hot(zones: list[dict], limits: dict[str, dict | None], rule: str) -> str
                     if rule == "start_below"
                     else "A run ends at"
                 )
-                + f" {limit[rule] / 1000:.1f} °C; the device's critical trip point is "
-                f"{limit['critical'] / 1000:.1f} °C."
+                + f" {limit[rule] / 1000:.1f} °C; "
+                + (
+                    f"the device's critical trip point is {limit['critical'] / 1000:.1f} °C."
+                    if limit["critical"] is not None
+                    else "the AMD package sensor has no reported limit, so the fixed margin rule applies."
+                )
             )
     return None
 
@@ -138,7 +214,8 @@ def no_start(zones: list[dict], limits: dict[str, dict | None], hardware_path: b
     if hardware_path and not any(limits.values()):
         return (
             "This device has a hardware picture path and no thermal zone with a critical "
-            "trip point. The heat guard has no limit for it, so a run does not start."
+            "trip point or CPU package sensor with a limit. The heat guard has no limit "
+            "for it, so a run does not start."
         )
     hot = too_hot(zones, limits, "start_below")
     if hot:
