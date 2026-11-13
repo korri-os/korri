@@ -235,11 +235,13 @@ export function plan(width: number, height: number): Plan {
   const shelfRowY = shelfLabel + growOf(shelfH) + fs(10, 5)
   const shelfPitch = shelfRowY + shelfH + Math.round(shelfGap * 1.2)
 
-  // A set.
-  const wanted = clamp(Math.min(H * 0.34, (W * 0.24) / R), 96, 330)
-  const gridGap = gapOf(wanted)
-  const columns = Math.min(MOST_COLUMNS, Math.max(2, Math.floor((W - 2 * padX + gridGap) / (wanted * R + gridGap))))
-  const tileW = Math.floor((W - 2 * padX - (columns - 1) * gridGap) / columns)
+  // A set: its tiles are the lobby's (owner, 2026-11-13: larger ones felt too big beside the
+  // library's), as many across as fit and the pixel budget holds; the grid stands at the left.
+  // At least 60 px wide, where the lobby's smallest are 56: a set is read title by title.
+  const gridH = Math.max(shelfH, 90)
+  const gridGap = gapOf(gridH)
+  const columns = Math.min(MOST_COLUMNS, Math.max(2, Math.floor((W - 2 * padX + gridGap) / (gridH * R + gridGap))))
+  const tileW = Math.min(Math.round(gridH * R), Math.floor((W - 2 * padX - (columns - 1) * gridGap) / columns))
   const tileH = Math.round(tileW / R)
   const gridInset = growOf(tileH) + halo
   const gridRows = Math.max(1, Math.floor((H - libTop - gridInset + gridGap) / (tileH + gridGap)))
