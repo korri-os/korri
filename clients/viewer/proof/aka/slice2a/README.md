@@ -165,3 +165,31 @@ an option in the unchanged measure. Do not connect it to product audio.
 
 Not measured: audible sound, physical input, button-to-packet delay, battery,
 or packet-arrival-to-display timing.
+
+## Full proof in turns (coordinator, 2026-11-13)
+
+After the tool fixes `84a68e52c` (a hot checkpoint keeps a finished run, and
+the wait between runs ends 3 °C below the start limit), the coordinator ran
+the full proof with the tool on `main` at that commit:
+
+- A: Moonlight with #466,
+  `/nix/store/38crl2m37akjqqscrmnq1gbwrp8l3rcx-moonlight-embedded-korri-2.7.1-korri`.
+- B: this viewer with the SDL mouse fix (`1ff54c502`),
+  `/nix/store/hvmgv9g2g4pgd9i4ayv0jz5rh5ngirq9-korri-viewer-0.1.0`.
+  The fix touches only the SDL path; both sides ran VA-API.
+- Five turns each, started only with no game or other test unit live, load
+  below 1.5 and Tctl below 80 °C. Both measures were kept on their first try.
+
+Results and the unaltered verdicts are in `full/{base,queue}/`.
+
+| Measure | Started (UTC) | Verdict | Other load, A / B |
+| --- | --- | --- | --- |
+| Base | 23:15 | equal on every measured row | 4.1–47.2% / 10.4–20.9% |
+| Queue | 23:44 | equal on every measured row | 0.8–2.9% / 0.9–7.5% |
+
+Base: delay p50 11.9–13.7 ms (A) and 12.0–12.2 ms (B), CPU 0.012–0.018 on
+both. Queue: delay p50 40.3–40.8 ms (A) and 40.3–40.5 ms (B). All 20 runs
+are valid, pass the isolation proof (no input node held), and record
+`viewer_fixture.audio: "null"` (the ALSA null device). Earlier attempts,
+refused for a game or stopped by the hot-checkpoint fault, are not part of
+this verdict. The `turns/` folder above is the worker's partial attempt.
