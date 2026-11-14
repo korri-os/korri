@@ -402,6 +402,13 @@ def frame_record(times: Path, recording: Path, out: Path) -> dict:
     summary["handed_off_readable_ids"] = len(ids)
     summary["handed_off_distinct_ids"] = len(set(ids))
     summary["handed_off_ids_increase"] = all(b > a for a, b in zip(ids, ids[1:]))
+    summary["handed_off_ids_never_go_back"] = all(b >= a for a, b in zip(ids, ids[1:]))
+    # Where they do not, with the hand-off's time (CLOCK_MONOTONIC, as
+    # logcat's), for the record.
+    clean = [(at, frame.ident) for at, frame in handed if isinstance(frame, bar.Clean)]
+    summary["handed_off_ids_not_increasing"] = [
+        {"handoff_s": round(b[0] / 1e9, 3), "ids": [a[1], b[1]]}
+        for a, b in zip(clean, clean[1:]) if b[1] <= a[1]][:20]
     summary["first_handed_off_id"] = ids[0] if ids else None
     summary["last_handed_off_id"] = ids[-1] if ids else None
     summary["first_handoff_ns"] = handed[0][0] if handed else None
@@ -1267,7 +1274,11 @@ def main() -> int:
             result["frame_record"] = record
             checks["frame_record_written"] = (record["header"] == RECORD_HEADER and record["in_order"]
                                               and record["handed_off"] > 0 and record["recording_units"] == record["rows"])
-            checks["frame_record_ids_move"] = record["handed_off_distinct_ids"] >= 2 and record["handed_off_ids_increase"]
+            # Two decode units can carry one ID: the sender encoded one
+            # picture twice (in the D5 runs, each time within 0.7 s after
+            # the decoder asked for an IDR frame). An ID that goes back is
+            # the viewer's fault.
+            checks["frame_record_ids_move"] = record["handed_off_distinct_ids"] >= 2 and record["handed_off_ids_never_go_back"]
         else:
             checks["frame_record_written"] = False
         recording.unlink(missing_ok=True)
