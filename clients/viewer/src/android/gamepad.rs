@@ -329,11 +329,14 @@ impl Controllers {
             KeyAction::Up => {
                 // A press shorter than this is held a little: an instant
                 // press and release would be lost by a host that polls.
-                let held = event.event_time_ms - event.down_time_ms;
-                if held < MINIMUM_BUTTON_DOWN_TIME_MS {
-                    std::thread::sleep(std::time::Duration::from_millis(
-                        (MINIMUM_BUTTON_DOWN_TIME_MS - held) as u64,
-                    ));
+                // Never longer than 25 ms, whatever the event's times say:
+                // this thread handles all the input.
+                let held = event.event_time_ms.saturating_sub(event.down_time_ms);
+                let pause = MINIMUM_BUTTON_DOWN_TIME_MS
+                    .saturating_sub(held)
+                    .clamp(0, MINIMUM_BUTTON_DOWN_TIME_MS);
+                if pause > 0 {
+                    std::thread::sleep(std::time::Duration::from_millis(pause as u64));
                 }
                 button_up(context, key_code, event, mouse_emulation)
             }

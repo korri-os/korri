@@ -1527,6 +1527,29 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_press_with_a_strange_down_time_holds_no_longer_than_25_ms() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        let mut devices = Known::with([pad(16, 0x045e)]);
+        // A down time after the event's own time: the press would seem to
+        // have lasted -1 s.
+        input.key(
+            &key(16, code::BUTTON_A, 304, KeyAction::Down, 1000, 1000),
+            1000,
+            &mut devices,
+            &mut sink,
+        );
+        let began = std::time::Instant::now();
+        input.key(
+            &key(16, code::BUTTON_A, 304, KeyAction::Up, 1000, 2000),
+            1000,
+            &mut devices,
+            &mut sink,
+        );
+        let held = began.elapsed();
+        assert!(held <= std::time::Duration::from_millis(60), "{held:?}");
+    }
+
+    #[test]
     fn the_heartbeat_repeats_the_last_state_and_a_removed_pad_lets_go() {
         let (mut input, mut sink) = (input(), Recorded::default());
         let mut devices = Known::with([pad(16, 0x045e)]);
