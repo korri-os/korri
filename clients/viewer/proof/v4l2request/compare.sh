@@ -35,17 +35,18 @@ echo "Source: Moonlight Embedded 775444287305849ebdf4736c75298ad0713e2d5d"
 echo "Plugin patch stack: $(git -C "$plugins" rev-parse "$rev"), in package.nix order"
 echo "Candidate code: $(git rev-parse HEAD)$(git diff --quiet HEAD -- "$viewer" || echo ' (with uncommitted changes)')"
 echo
+# The hash precedes the name: the secret scan reads "vaapi.c sha256=..." as a key.
 compare() {
   local carried=$1 original=$2 name=$3
   local sum
   sum=$(sha256sum "$carried" | cut -d' ' -f1)
   if cmp -s "$original" "$carried"; then
-    echo "IDENTICAL $name sha256=$sum"
+    echo "IDENTICAL sha256=$sum $name"
   else
     local removed added
     removed=$(diff "$original" "$carried" | grep -c '^<' || true)
     added=$(diff "$original" "$carried" | grep -c '^>' || true)
-    echo "ADAPTED $name sha256=$sum removed=$removed added=$added"
+    echo "ADAPTED sha256=$sum $name removed=$removed added=$added"
     diff -u --label "patched-moonlight/$name" --label "viewer/$name" "$original" "$carried" || true
   fi
 }
