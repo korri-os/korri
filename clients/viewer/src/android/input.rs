@@ -363,10 +363,11 @@ impl Gate {
 #[cfg(target_os = "android")]
 pub(crate) static CORE_GATE: Gate = Gate::closed();
 
-/// A sink behind a gate.
+/// A sink behind a gate. Only this crate makes one: no sink of the app
+/// reaches the core past its gate.
 pub struct Gated<'g, S> {
-    pub gate: &'g Gate,
-    pub sink: S,
+    pub(crate) gate: &'g Gate,
+    pub(crate) sink: S,
 }
 
 impl<S: Sink> Sink for Gated<'_, S> {
@@ -808,21 +809,29 @@ pub(crate) fn everything(devices: &mut dyn Devices) -> Vec<Device> {
 }
 
 /// The core's input, behind its gate (`CORE_GATE`): what the app sends to.
+/// The only way to the core from outside this crate.
 #[cfg(target_os = "android")]
-pub type CoreSink = Gated<'static, Core>;
+pub struct CoreSink(Gated<'static, Core>);
+
+#[cfg(target_os = "android")]
+impl Sink for CoreSink {
+    fn send(&mut self, packet: Packet) -> i32 {
+        self.0.send(packet)
+    }
+}
 
 #[cfg(target_os = "android")]
 pub fn core_sink() -> CoreSink {
-    Gated {
+    CoreSink(Gated {
         gate: &CORE_GATE,
         sink: Core,
-    }
+    })
 }
 
 /// The core itself: each packet is one `LiSend*` call, which queues it for
 /// the core's input thread. Only through the gate.
 #[cfg(target_os = "android")]
-pub struct Core;
+pub(crate) struct Core;
 
 #[cfg(target_os = "android")]
 impl Sink for Core {
@@ -2165,8 +2174,13 @@ pub(crate) mod tests {
                 }
             });
             // The viewer's thread, in the middle of a send: the stream ends,
-            // and the core may stop once `close` returns.
-            std::thread::sleep(std::time::Duration::from_millis(120));
+            // and the core may stop once `close` returns. On a loaded
+            // builder the app's thread can start late: wait for its sends,
+            // not for a fixed time.
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+            while sent.load(Ordering::SeqCst) < 2 && std::time::Instant::now() < until {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
             gate.close();
             closed.store(true, Ordering::SeqCst);
         });
