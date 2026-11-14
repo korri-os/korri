@@ -1,0 +1,12 @@
+Archive:  /tmp/korri-d4/proof-2/korri-viewer-debug.apk
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+     2416  01-01-1980 00:00   AndroidManifest.xml
+       40  01-01-1980 00:00   resources.arsc
+ 11000864  01-01-1980 00:00   lib/arm64-v8a/libkorri_viewer_android.so
+ 10981896  01-01-1980 00:00   lib/x86_64/libkorri_viewer_android.so
+      550  01-01-1980 00:00   META-INF/ANDROIDD.SF
+     1167  01-01-1980 00:00   META-INF/ANDROIDD.RSA
+      423  01-01-1980 00:00   META-INF/MANIFEST.MF
+---------                     -------
+ 21987356                     7 files
