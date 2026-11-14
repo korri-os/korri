@@ -592,10 +592,12 @@ fn focus_stays_in_sight_through_every_scenario_at_every_size() {
     let mut failures = Vec::new();
     let mut checked = 0;
     let mut focused_views = 0;
+    // Three: the home's load reveal turns on a timer after its first frame, and the motion it
+    // starts begins on the draw that runs the timer.
     let rounds: usize = std::env::var("VELVET_ROUNDS")
         .ok()
         .and_then(|r| r.parse().ok())
-        .unwrap_or(2);
+        .unwrap_or(3);
     let sizes: Vec<(u32, u32)> = match std::env::var("VELVET_SIZES") {
         Ok(list) => list
             .split(',')
@@ -758,8 +760,13 @@ fn every_focus_entry_selects_one_drawn_target() {
             engine.view().unwrap()
         };
         binder.apply(&instance, &view, &mut images).unwrap();
-        render(width, height);
-        settle();
+        // Three draws, the clock stepped past every motion between them: the home's load
+        // reveal turns on a timer after its first frame, and its motion starts on the draw
+        // that runs the timer.
+        for _ in 0..3 {
+            render(width, height);
+            settle();
+        }
         render(width, height);
         match targets::drawn(&instance, &mut binder, &view, &mut images) {
             Ok(found) => entries += found.len(),
