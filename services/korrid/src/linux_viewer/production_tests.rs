@@ -250,6 +250,16 @@ impl LaunchUnitBackend for ViewerUnits {
     ) -> Result<std::collections::BTreeSet<i32>, crate::host::LaunchUnitError> {
         Ok([4242].into())
     }
+    fn runner_id(&self, id: &str) -> Result<Option<String>, crate::host::LaunchUnitError> {
+        Ok(self
+            .launches
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|launch| launch.id == id)
+            .and_then(|launch| launch.environment.get(crate::host::RUNNER_ID_ENV).cloned()))
+    }
 }
 
 #[tokio::test]
@@ -424,6 +434,15 @@ esac
             "1"
         );
     }
+    // After a korrid restart its unit still names Moonlight as its viewer,
+    // and Moonlight's unit carries nothing it did not carry before.
+    assert_eq!(
+        viewer.running(launch).unwrap(),
+        Some(ViewerPlugin::Moonlight)
+    );
+    assert!(!units.launches.lock().unwrap()[0]
+        .environment
+        .contains_key(crate::host::RUNNER_ID_ENV));
     units
         .refuse_stop
         .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -439,6 +458,7 @@ esac
         viewer.status(launch).await.unwrap(),
         LinuxViewerStatus::Stopped
     );
+    assert_eq!(viewer.running(launch).unwrap(), None);
     task.abort();
 }
 
@@ -767,6 +787,13 @@ esac
     assert!(command.ends_with(&["-codec".into(), "h264".into(), "-localaudio".into()]));
     // No focus yet: the socket adapter asks for it after Start is confirmed.
     assert!(!commands.exists());
+    // The unit names its viewer, so a restarted korrid can route to it.
+    assert_eq!(
+        launches[0].environment.get(crate::host::RUNNER_ID_ENV),
+        Some(&"@korri:viewer/viewer".to_owned())
+    );
+    drop(launches);
+    assert_eq!(viewer.running(launch).unwrap(), Some(ViewerPlugin::Korri));
     task.abort();
 }
 

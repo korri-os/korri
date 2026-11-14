@@ -590,6 +590,28 @@ impl ProductionLinuxStreamViewer {
             std::thread::sleep(Duration::from_millis(50));
         }
     }
+    /// Whose viewer unit holds this launch now, from systemd: None when no
+    /// unit does. Only the Korri viewer's unit names its runner (start_unit),
+    /// so a unit without that name is Moonlight's, including one started by
+    /// a korrid before this marker existed.
+    pub(super) fn running(&self, launch: &str) -> Result<Option<ViewerPlugin>, LinuxViewerError> {
+        validate_launch(launch)?;
+        match self.units.state(launch) {
+            Ok(LaunchUnitState::Completed) => return Ok(None),
+            Ok(_) => {}
+            // A failed unit still holds the name until a stop resets it.
+            Err(failed) if failed.kind == crate::host::LaunchUnitErrorKind::UnitFailed => {}
+            Err(other) => return Err(unit_error(other)),
+        }
+        let runner = self.units.runner_id(launch).map_err(unit_error)?;
+        Ok(Some(
+            if runner.as_deref() == Some(ViewerPlugin::Korri.runner()) {
+                ViewerPlugin::Korri
+            } else {
+                ViewerPlugin::Moonlight
+            },
+        ))
+    }
     fn confirmed_stop(&self, launch: &str) -> Result<(), LinuxViewerError> {
         let stop = self.units.stop(launch);
         if self.units.state(launch).map_err(unit_error)? == LaunchUnitState::Completed {
@@ -806,7 +828,7 @@ impl ProductionLinuxStreamViewer {
                     Some(controller)
                 }
             };
-            let environment = BTreeMap::from([
+            let mut environment = BTreeMap::from([
                 ("KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT".into(), "1".into()),
                 // SDL drops gamepad events while its window lacks X11
                 // focus. Under Xwayland the viewer can hold compositor
@@ -819,6 +841,11 @@ impl ProductionLinuxStreamViewer {
                     "unix:/run/korri-game-audio/native".into(),
                 ),
             ]);
+            if controller.is_some() {
+                // The live-unit runner marker game units carry: a restarted
+                // korrid reads it to route this launch (`running`).
+                environment.insert(crate::host::RUNNER_ID_ENV.into(), plugin.runner().into());
+            }
             let sandbox = LaunchSandbox::new(&command, &environment);
             this.units
                 .launch_viewer(

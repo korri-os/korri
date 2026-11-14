@@ -71,7 +71,7 @@ use std::{
 };
 pub(crate) use systemd_unit::{
     viewer_lifecycle_socket, LaunchSandbox, LaunchUnitBackend, LaunchUnitError,
-    LaunchUnitErrorKind, LaunchUnitState, SystemdLaunchUnitBackend,
+    LaunchUnitErrorKind, LaunchUnitState, SystemdLaunchUnitBackend, RUNNER_ID_ENV,
 };
 
 #[derive(Clone)]

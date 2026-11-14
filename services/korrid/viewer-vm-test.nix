@@ -416,7 +416,10 @@ pkgs.testers.runNixOSTest {
         assert "other::---" in socket_acl.splitlines(), socket_acl
         # The server certificate arrives as Moonlight's does: a unit credential.
         machine.succeed(f"cmp /run/credentials/{unit}/moonlight-server.pem /run/viewer-test/server.pem")
-        assert "KORRI_MOONLIGHT_SERVER_CERTIFICATE=/run/credentials/" + unit + "/moonlight-server.pem" in machine.succeed(f"systemctl show {unit} -p Environment --value")
+        environment = machine.succeed(f"systemctl show {unit} -p Environment --value")
+        assert "KORRI_MOONLIGHT_SERVER_CERTIFICATE=/run/credentials/" + unit + "/moonlight-server.pem" in environment
+        # The unit names its viewer, for a restarted korrid.
+        assert "KORRI_LIVE_RUNNER_ID=@korri:viewer/viewer" in environment, environment
         # korrid focused the viewer's window after Start was confirmed.
         window = focused(tree())
         assert window and window.get("app_id") != "korri-shell" and window.get("fullscreen_mode") == 1, window
@@ -452,8 +455,18 @@ pkgs.testers.runNixOSTest {
         assert moonlight["moonlight"] in command and "--lifecycle-socket" not in command, command
         assert machine.succeed(f"systemctl show {moonlight_unit} -p RuntimeDirectory --value").strip() == ""
         assert ok("status", moonlight_launch) == "Running"
+        assert "KORRI_LIVE_RUNNER_ID" not in machine.succeed(f"systemctl show {moonlight_unit} -p Environment --value")
+
+    with subtest("after a korrid restart the running Moonlight unit, not the new choice, answers"):
+        # Both plugins are enabled again, so a start would now choose
+        # @korri:viewer, and a new korrid process knows no launch.
+        machine.succeed("korri-plugin enable @korri:viewer")
+        machine.succeed("systemctl restart viewer-probe.service")
+        machine.wait_for_unit("viewer-probe.service")
+        assert ok("status", moonlight_launch) == "Running"
         stop_moonlight(moonlight_launch)
         machine.fail(f"systemctl is-active {moonlight_unit}")
+        machine.succeed("korri-plugin disable @korri:viewer")
 
     with subtest("a viewer built from another contract is refused, and Moonlight stays"):
         name = machine.succeed("korri-plugin unit-name @korri:viewer").strip()

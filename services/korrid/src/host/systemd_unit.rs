@@ -80,7 +80,7 @@ impl LaunchUnitError {
 pub(super) const DISPLAY_ENV: &str = "KORRI_LIVE_DISPLAY";
 pub(super) const PLACEMENT_ENV: &str = "KORRI_LIVE_PLACEMENT";
 
-pub(super) const RUNNER_ID_ENV: &str = "KORRI_LIVE_RUNNER_ID";
+pub(crate) const RUNNER_ID_ENV: &str = "KORRI_LIVE_RUNNER_ID";
 
 /// Mount-driving launch facts are resolved once from the game unit's baseline.
 /// Process environment changes never grant a hook a different sandbox.

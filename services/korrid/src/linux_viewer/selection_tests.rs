@@ -101,6 +101,7 @@ async fn each_launch_stays_with_the_viewer_that_started_it() {
         Arc::new(moonlight.clone()),
         Arc::new(korri.clone()),
         Arc::new(move || chosen.lock().unwrap().clone()),
+        Arc::new(|_| Ok(None)),
     );
     let first = "0123456789abcdef0123456789abcdef";
     let second = "fedcba9876543210fedcba9876543210";
@@ -167,5 +168,56 @@ async fn each_launch_stays_with_the_viewer_that_started_it() {
     assert_eq!(
         actions(&moonlight).last(),
         Some(&(fourth.to_owned(), LinuxViewerAction::Status))
+    );
+}
+
+#[tokio::test]
+async fn after_a_restart_an_unknown_launch_goes_to_the_viewer_whose_unit_runs_it() {
+    let moonlight = TestLinuxStreamViewer::default();
+    let korri = TestLinuxStreamViewer::default();
+    let moonlight_unit = "11111111111111111111111111111111";
+    let korri_unit = "22222222222222222222222222222222";
+    let no_unit = "33333333333333333333333333333333";
+    let unreadable = "44444444444444444444444444444444";
+    // Both plugins are installed, so a start would choose the Korri viewer.
+    let viewer = InstalledLinuxStreamViewer::new(
+        Arc::new(moonlight.clone()),
+        Arc::new(korri.clone()),
+        Arc::new(|| Ok(ViewerPlugin::Korri)),
+        Arc::new(move |launch| match launch.as_str() {
+            "11111111111111111111111111111111" => Ok(Some(ViewerPlugin::Moonlight)),
+            "22222222222222222222222222222222" => Ok(Some(ViewerPlugin::Korri)),
+            "33333333333333333333333333333333" => Ok(None),
+            _ => Err(LinuxViewerError::new("systemd unreachable")),
+        }),
+    );
+    for launch in [moonlight_unit, korri_unit, no_unit, unreadable] {
+        viewer.status(launch).await.unwrap();
+    }
+    // The Moonlight unit is observed by Moonlight's adapter, not answered
+    // Stopped by the Korri adapter, which has no connection to it; so is
+    // its stop.
+    viewer.stop(moonlight_unit).await.unwrap();
+    let launches = |backend: &TestLinuxStreamViewer| {
+        backend
+            .calls()
+            .into_iter()
+            .map(|call| (call.launch_id, call.action))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        launches(&moonlight),
+        vec![
+            (moonlight_unit.to_owned(), LinuxViewerAction::Status),
+            (unreadable.to_owned(), LinuxViewerAction::Status),
+            (moonlight_unit.to_owned(), LinuxViewerAction::Stop),
+        ]
+    );
+    assert_eq!(
+        launches(&korri),
+        vec![
+            (korri_unit.to_owned(), LinuxViewerAction::Status),
+            (no_unit.to_owned(), LinuxViewerAction::Status),
+        ]
     );
 }

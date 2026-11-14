@@ -285,8 +285,13 @@ korrid (`services/korrid/src/linux_viewer/selection.rs`) chooses at each start:
 - `@korri:viewer` enabled and its `files.treaty` equal, byte for byte, to
   korrid's own `contracts/generated/viewer.ts`: the socket adapter.
 - Otherwise Moonlight, exactly as before. A refused `@korri:viewer` is logged
-  with both SHA-256 hashes. Without Moonlight the refusal is the start's
-  error. A launch stays with the viewer that started it.
+  with korrid's treaty hash, and with the plugin's when it declares a treaty
+  file. Without Moonlight the refusal is the start's error. A launch stays
+  with the viewer that started it.
+- After a korrid restart, a launch it no longer knows goes to the viewer whose
+  unit holds it. The Korri viewer's unit carries the live-unit runner marker
+  `KORRI_LIVE_RUNNER_ID=@korri:viewer/viewer`; a unit without it is
+  Moonlight's. With no unit, the launch goes where a start would go.
 
 The treaty check covers the wire types only. A change to the launch
 arguments, or to behaviour that keeps the wire types, is not caught before
@@ -303,6 +308,7 @@ korri-viewer --lifecycle-socket /run/korri-game-<launch>/control/viewer.sock \
   --launch-id <launch> --controller-uid <korrid's UID> stream [Moonlight arguments] HOST
 RuntimeDirectory=korri-game-<launch>   RuntimeDirectoryMode=0700
 ExecStartPost=<KORRID_SETFACL> -m u:<korrid's UID>:x /run/korri-game-<launch>
+Environment=KORRI_LIVE_RUNNER_ID=@korri:viewer/viewer
 ```
 
 systemd applies `RuntimeDirectoryMode` again before each Exec command, and a

@@ -110,6 +110,7 @@ pub(super) fn select(
 }
 
 type Choose = Arc<dyn Fn() -> Result<ViewerPlugin, LinuxViewerError> + Send + Sync>;
+type Running = Arc<dyn Fn(String) -> Result<Option<ViewerPlugin>, LinuxViewerError> + Send + Sync>;
 
 /// The daemon's Linux viewer. The certificate broker, the occupied seats and
 /// the settings renderer are the caller's; everything else is production.
@@ -140,6 +141,7 @@ pub fn installed_viewer(
             Box::pin(async move { effects.end_unit(&launch).await })
         }),
     );
+    let running = effects.clone();
     Arc::new(InstalledLinuxStreamViewer::new(
         Arc::new(effects),
         Arc::new(korri),
@@ -147,6 +149,7 @@ pub fn installed_viewer(
             let packages = crate::plugin_installation::read().map_err(error)?;
             select(&packages, &read_immutable)
         }),
+        Arc::new(move |launch| running.running(&launch)),
     ))
 }
 
@@ -156,6 +159,7 @@ pub(super) struct InstalledLinuxStreamViewer {
     moonlight: Arc<dyn LinuxStreamViewer>,
     korri: Arc<dyn LinuxStreamViewer>,
     choose: Choose,
+    running: Running,
     launches: Mutex<HashMap<String, ViewerPlugin>>,
 }
 
@@ -164,11 +168,13 @@ impl InstalledLinuxStreamViewer {
         moonlight: Arc<dyn LinuxStreamViewer>,
         korri: Arc<dyn LinuxStreamViewer>,
         choose: Choose,
+        running: Running,
     ) -> Self {
         Self {
             moonlight,
             korri,
             choose,
+            running,
             launches: Mutex::new(HashMap::new()),
         }
     }
@@ -186,8 +192,9 @@ impl InstalledLinuxStreamViewer {
             .map_err(error)?
     }
     /// A launch that this process did not start (after a korrid restart)
-    /// goes to the viewer that a start would choose now. When that choice
-    /// fails it goes to Moonlight, which observes its unit as it always did.
+    /// goes to the viewer whose unit holds it, and is kept with it. With no
+    /// unit it goes where a start would go now. When systemd or the choice
+    /// cannot answer it goes to Moonlight, which observes its unit itself.
     async fn route(&self, launch: &str) -> Result<Arc<dyn LinuxStreamViewer>, LinuxViewerError> {
         let recorded = self
             .launches
@@ -195,9 +202,28 @@ impl InstalledLinuxStreamViewer {
             .expect("viewer launches poisoned")
             .get(launch)
             .copied();
-        let plugin = match recorded {
-            Some(plugin) => plugin,
-            None => self.choose().await.unwrap_or(ViewerPlugin::Moonlight),
+        if let Some(plugin) = recorded {
+            return Ok(self.viewer(plugin).clone());
+        }
+        let running = self.running.clone();
+        let asked = launch.to_owned();
+        let plugin = match tokio::task::spawn_blocking(move || running(asked)).await {
+            Ok(Ok(Some(plugin))) => {
+                self.launches
+                    .lock()
+                    .expect("viewer launches poisoned")
+                    .insert(launch.into(), plugin);
+                plugin
+            }
+            Ok(Ok(None)) => self.choose().await.unwrap_or(ViewerPlugin::Moonlight),
+            Ok(Err(cause)) => {
+                eprintln!("korrid viewer: launch {launch} unit unreadable, Moonlight observes it: {cause}");
+                ViewerPlugin::Moonlight
+            }
+            Err(cause) => {
+                eprintln!("korrid viewer: launch {launch} unit unreadable, Moonlight observes it: {cause}");
+                ViewerPlugin::Moonlight
+            }
         };
         Ok(self.viewer(plugin).clone())
     }
