@@ -724,7 +724,6 @@ fn prospective_catalog(
                 }
                 // A planned move never touches korrid's cache.
                 Some(DeclaredReleaseFile::Artifact(_) | DeclaredReleaseFile::Package(_)) | None => {
-                    ()
                 }
             }
         }

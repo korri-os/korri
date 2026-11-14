@@ -93,16 +93,17 @@ struct Startup {
 type Hook = Box<dyn Fn() + Send + Sync>;
 type Taker = Box<dyn Fn(&str) -> bool + Send + Sync>;
 type Changer = Box<dyn Fn(&str, &str) -> bool + Send + Sync>;
+type OverrideTaker = Box<
+    dyn Fn(&str, Option<&str>) -> (u64, Option<crate::launch_settings::LaunchOverride>)
+        + Send
+        + Sync,
+>;
 
 /// The parts of the portal the launchables brain calls back into.
 pub struct LaunchablesHooks {
     /// The one-launch values of a game for the runner its launch names. No
     /// runner: the launch names none. The ticket goes back on completion.
-    pub launch_overrides: Box<
-        dyn Fn(&str, Option<&str>) -> (u64, Option<crate::launch_settings::LaunchOverride>)
-            + Send
-            + Sync,
-    >,
+    pub launch_overrides: OverrideTaker,
     /// The launch of that ticket started or failed. On a start, what it
     /// carried ends with it.
     pub launch_overrides_complete: Box<dyn Fn(u64, bool) + Send + Sync>,

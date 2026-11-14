@@ -2646,19 +2646,20 @@ mod tests {
         observed.shape.as_mut().unwrap().ready = true;
         viewer.set_snapshot(Some(observed));
         registry.synchronize_shape(&selected).await.unwrap();
-        let requests = holder.shape_requests.lock().unwrap();
-        assert_eq!(requests.len(), 3);
-        assert!(
-            matches!(&requests[1].event, ViewerDisplayEvent::Report{display,..} if display.width==2448 && display.height==1848)
-        );
-        assert!(
-            matches!(&requests[2].event, ViewerDisplayEvent::Applied{revision,..} if revision=="revision-one")
-        );
-        assert_eq!(
-            requests[0].event.connection(),
-            requests[1].event.connection()
-        );
-        drop(requests);
+        {
+            let requests = holder.shape_requests.lock().unwrap();
+            assert_eq!(requests.len(), 3);
+            assert!(
+                matches!(&requests[1].event, ViewerDisplayEvent::Report{display,..} if display.width==2448 && display.height==1848)
+            );
+            assert!(
+                matches!(&requests[2].event, ViewerDisplayEvent::Applied{revision,..} if revision=="revision-one")
+            );
+            assert_eq!(
+                requests[0].event.connection(),
+                requests[1].event.connection()
+            );
+        }
         let snapshot = registry
             .local_viewer()
             .snapshot(&selected.launch_id)

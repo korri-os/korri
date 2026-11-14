@@ -100,7 +100,7 @@ enum Next {
     Ticket(PathBuf, tokio::sync::oneshot::Sender<watch::Sender<bool>>),
     Artifact(
         PathBuf,
-        ArtifactRecord,
+        Box<ArtifactRecord>,
         Option<PathBuf>,
         PathBuf,
         PathBuf,
@@ -467,7 +467,15 @@ impl AcquisitionCoordinator {
                         stop,
                         done: done_rx,
                     });
-                    Next::Artifact(next.0, next.1, next.2, next.3, next.4, stop_rx, done)
+                    Next::Artifact(
+                        next.0,
+                        Box::new(next.1),
+                        next.2,
+                        next.3,
+                        next.4,
+                        stop_rx,
+                        done,
+                    )
                 }
             };
             if sleep_guard.is_none() {
@@ -475,7 +483,7 @@ impl AcquisitionCoordinator {
             }
             let (base, artifact, unpack, root, private_root, stop, done) = match next {
                 Next::Artifact(base, artifact, unpack, root, private_root, stop, done) => {
-                    (base, artifact, unpack, root, private_root, stop, done)
+                    (base, *artifact, unpack, root, private_root, stop, done)
                 }
                 Next::Ticket(base, go) => {
                     let (done, mut finished) = watch::channel(false);

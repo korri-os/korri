@@ -17,6 +17,9 @@ use std::{
     time::Duration,
 };
 
+/// One hook run: its command, timeout and environment.
+type RecordedHook = (String, Duration, BTreeMap<String, String>);
+
 #[derive(Default)]
 struct RecordingBackend {
     events: Arc<Mutex<Vec<String>>>,
@@ -27,7 +30,7 @@ struct RecordingBackend {
     pending_stop: Mutex<bool>,
     exit_unknown: Mutex<bool>,
     interrupt_step_once: Mutex<Option<String>>,
-    hooks: Mutex<Vec<(String, Duration, BTreeMap<String, String>)>>,
+    hooks: Mutex<Vec<RecordedHook>>,
 }
 impl LaunchUnitBackend for RecordingBackend {
     fn launch(

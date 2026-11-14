@@ -1981,6 +1981,6 @@ mod badge_ids_tests {
             Some("local")
         );
         // Catalog actions (launch settings, save history) stay off the running card.
-        assert!(local_game_ids_by_surface_id(&running).get(&key).is_none());
+        assert!(!local_game_ids_by_surface_id(&running).contains_key(&key));
     }
 }

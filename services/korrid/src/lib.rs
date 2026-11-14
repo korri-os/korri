@@ -5459,21 +5459,6 @@ fn test_router_with_capability_and_local_root(
     allowed_origin: &str,
     local_storage_root: impl AsRef<Path>,
 ) -> Router {
-    test_router_with_provision(
-        rpc_capability,
-        allowed_origin,
-        local_storage_root,
-        launcher::FileProvisionMode::Deferred,
-    )
-}
-
-#[cfg(test)]
-fn test_router_with_provision(
-    rpc_capability: &str,
-    allowed_origin: &str,
-    local_storage_root: impl AsRef<Path>,
-    provision: launcher::FileProvisionMode,
-) -> Router {
     let local_storage_root = local_storage_root.as_ref().to_owned();
     let config_snapshot = config::snapshot::ConfigSnapshotCoordinator::new(&local_storage_root);
     router_with_capability_local_root_and_provision(

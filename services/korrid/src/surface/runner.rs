@@ -31,14 +31,14 @@ use crate::{
 };
 
 pub type StartFuture = Pin<Box<dyn Future<Output = Option<SessionStartResult>> + Send>>;
+type StartLaunch = Box<dyn Fn(String, Option<String>, Option<String>) -> StartFuture + Send + Sync>;
 
 /// The chooser's road into the shared launch lifecycle.
 pub struct RunnerLaunchIntegration {
     /// Starts in the shared Busy; the chooser owns choices, not startup. The
     /// game, the device that runs it when that is another device, and the
     /// chosen runner. No runner: the holder already has one selected.
-    pub start_launch:
-        Box<dyn Fn(String, Option<String>, Option<String>) -> StartFuture + Send + Sync>,
+    pub start_launch: StartLaunch,
     pub return_session: Box<dyn Fn(ActiveSession) + Send + Sync>,
     pub reload: Box<dyn Fn() + Send + Sync>,
 }

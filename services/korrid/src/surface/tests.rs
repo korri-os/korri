@@ -4827,7 +4827,7 @@ mod plugin_repositories {
         let groups = plugin_setting_groups(
             &art_facts(),
             Some(&installed_plugins(Some("NotConfigured"))),
-            &[row.clone()],
+            std::slice::from_ref(&row),
         );
         let other = group(&groups, OTHER_GROUP);
         assert_eq!(
@@ -4855,7 +4855,7 @@ mod plugin_repositories {
         let groups = plugin_setting_groups(
             &art_facts(),
             Some(&installed_plugins(Some("Configured"))),
-            &[row.clone()],
+            std::slice::from_ref(&row),
         );
         let secret = &group(&groups, OTHER_GROUP).items[1];
         assert_eq!(secret.value.as_deref(), Some("Configured"));
@@ -4891,7 +4891,7 @@ mod plugin_repositories {
             let groups = plugin_setting_groups(
                 &facts,
                 Some(&installed_plugins(Some("NotConfigured"))),
-                &[row.clone()],
+                std::slice::from_ref(&row),
             );
             assert_eq!(groups[0].title, PLUGINS_GROUP);
             assert_eq!(groups[0].items.last().unwrap().id, row);

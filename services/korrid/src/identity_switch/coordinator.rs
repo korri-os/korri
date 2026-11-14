@@ -576,13 +576,9 @@ fn coordinated(
     identity: &DeviceIdentity,
     relays: RelayList,
 ) -> Result<Arc<CoordinatedRelays<WebSocketRelayTransport>>, String> {
-    CoordinatedRelays::new(
-        relays,
-        identity.clone(),
-        Arc::new(WebSocketRelayTransport::default()),
-    )
-    .map(Arc::new)
-    .map_err(|error| error.to_string())
+    CoordinatedRelays::new(relays, identity.clone(), Arc::new(WebSocketRelayTransport))
+        .map(Arc::new)
+        .map_err(|error| error.to_string())
 }
 
 fn signer_socket_from_environment() -> Result<PathBuf, String> {

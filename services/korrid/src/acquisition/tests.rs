@@ -126,8 +126,7 @@ async fn resumes_verifies_restarts_wrong_hash_and_416_and_fails_a_stall() {
 
 #[test]
 fn failures_expose_only_bounded_plain_copy() {
-    let storage = Failure::from(std::io::Error::new(
-        std::io::ErrorKind::Other,
+    let storage = Failure::from(std::io::Error::other(
         "https://user:password@example.com/token sha256:private /private/path",
     ));
     for error in [
@@ -404,7 +403,12 @@ async fn cancellation_deletes_partial_bytes_and_cross_process_lock_blocks_a_seco
     let lock = placement::lock(&base).unwrap().unwrap();
     assert!(placement::lock(&base).unwrap().is_none());
     coordinator
-        .start(root.path(), root.path(), &registry, &[artifact.id.clone()])
+        .start(
+            root.path(),
+            root.path(),
+            &registry,
+            std::slice::from_ref(&artifact.id),
+        )
         .unwrap();
     until(&coordinator, root.path(), &registry, |state| {
         matches!(state, ArtifactState::Downloading { .. })
@@ -515,7 +519,12 @@ async fn unpacking_is_observable_and_cannot_be_cancelled() {
     fs::write(downloads.join(digest), b"data").unwrap();
     let coordinator = AcquisitionCoordinator::default();
     coordinator
-        .start(root.path(), root.path(), &registry, &[artifact.id.clone()])
+        .start(
+            root.path(),
+            root.path(),
+            &registry,
+            std::slice::from_ref(&artifact.id),
+        )
         .unwrap();
     let work = tokio::time::timeout(Duration::from_secs(5), async {
         loop {

@@ -264,8 +264,10 @@ fn embedded_owner_binding_platform_keeps_its_identity_rpc_and_surface_watch() {
         let readable = tempfile::tempdir().unwrap();
         let private = tempfile::tempdir().unwrap();
         std::fs::set_permissions(private.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
-        let mut platform = EmbeddedPlatform::default();
-        platform.owner_binding = Some(owner_binding::OwnerBindingCoordinator::default());
+        let platform = EmbeddedPlatform {
+            owner_binding: Some(owner_binding::OwnerBindingCoordinator::default()),
+            ..EmbeddedPlatform::default()
+        };
         let origin = "https://android-shell.example";
         let port = start_local_server(
             origin,
@@ -356,8 +358,7 @@ fn embedded_input_edge_feeds_native_socket_and_controller_facts_and_is_joined() 
         let mark = stopped.clone();
         let (send, mut commands) = tokio::sync::mpsc::channel::<()>(1);
         let (ready, initialized) = tokio::sync::oneshot::channel();
-        let mut platform = EmbeddedPlatform::default();
-        platform.native_input = Some(Box::new(move |source| {
+        let native_input: EmbeddedNativeInput = Box::new(move |source| {
             tokio::spawn(async move {
                 let _stopped = Stopped(mark);
                 source
@@ -391,7 +392,11 @@ fn embedded_input_edge_feeds_native_socket_and_controller_facts_and_is_joined() 
                 }
                 std::future::pending::<()>().await;
             })
-        }));
+        });
+        let platform = EmbeddedPlatform {
+            native_input: Some(native_input),
+            ..EmbeddedPlatform::default()
+        };
         let port = start_local_shell_server(
             readable.path().to_str().unwrap(),
             private.path().to_str().unwrap(),

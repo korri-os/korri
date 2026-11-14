@@ -12,10 +12,8 @@ use std::{
 #[derive(Clone)]
 pub(super) enum SleepBlock {
     /// `org.freedesktop.login1.Manager.Inhibit("sleep", …, "block")`.
-    #[cfg_attr(test, allow(dead_code))]
     Logind,
     /// Counts held blocks instead of calling the system bus.
-    #[cfg_attr(not(test), allow(dead_code))]
     InMemory(Arc<InMemoryBlocks>),
 }
 
@@ -28,10 +26,11 @@ pub(super) struct InMemoryBlocks {
 impl Default for SleepBlock {
     fn default() -> Self {
         // Unit tests must never take a real inhibitor on the build machine.
-        #[cfg(test)]
-        return Self::InMemory(Arc::default());
-        #[cfg(not(test))]
-        Self::Logind
+        if cfg!(test) {
+            Self::InMemory(Arc::default())
+        } else {
+            Self::Logind
+        }
     }
 }
 

@@ -3313,14 +3313,11 @@ mod tests {
                 "{\"relay\":\"wss://relay.example.com\",\"secret\":\"protected\"}",
             )
             .unwrap();
-        assert_eq!(
-            connection
-                .load_connection_data()
-                .unwrap()
-                .unwrap()
-                .contains("protected"),
-            true
-        );
+        assert!(connection
+            .load_connection_data()
+            .unwrap()
+            .unwrap()
+            .contains("protected"));
         let path = root.path().join("identity/nip46.connection.json");
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(

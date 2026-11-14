@@ -580,7 +580,7 @@ mod tests {
         let path = root.path().join("Config.toml");
         fs::write(&path, "x = 1\n").unwrap();
         let update = update(&path, "x = 4\n");
-        let temp = changes(&[], &[update.clone()]).unwrap();
+        let temp = changes(&[], std::slice::from_ref(&update)).unwrap();
         let active = Transaction::begin(root.path(), &[], &temp).unwrap();
         Transaction::begin(root.path(), &[], &[])
             .unwrap()

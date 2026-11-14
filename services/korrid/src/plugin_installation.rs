@@ -51,13 +51,14 @@ pub fn read() -> Result<Vec<EnabledPackage>, String> {
     read_owned(Path::new(REGISTRY_PATH), 0, Path::new("/"))
 }
 
-static READ_OVERRIDE: std::sync::OnceLock<fn() -> Result<Vec<EnabledPackage>, String>> =
-    std::sync::OnceLock::new();
+type EnabledPackagesRead = fn() -> Result<Vec<EnabledPackage>, String>;
+
+static READ_OVERRIDE: std::sync::OnceLock<EnabledPackagesRead> = std::sync::OnceLock::new();
 
 /// Replace the root registry read for this process, once. The plugin host
 /// shares this file and never calls it.
 #[allow(dead_code)]
-pub(crate) fn override_read(read: fn() -> Result<Vec<EnabledPackage>, String>) {
+pub(crate) fn override_read(read: EnabledPackagesRead) {
     let _ = READ_OVERRIDE.set(read);
 }
 

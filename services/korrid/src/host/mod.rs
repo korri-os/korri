@@ -242,6 +242,10 @@ struct HostLaunchCommand {
     warnings: Vec<crate::launcher::typed_settings::LaunchWarning>,
 }
 
+/// Runs after a session RPC with the RPC's method name.
+#[cfg(test)]
+type SessionRpcProbe = Arc<dyn Fn(&str) + Send + Sync>;
+
 #[derive(Clone)]
 pub struct HostRuntime {
     save_service: Arc<std::sync::OnceLock<Arc<crate::saves::peer::SavePeerService>>>,
@@ -264,7 +268,7 @@ pub struct HostRuntime {
     #[cfg(test)]
     after_reserved_start: Option<Arc<dyn Fn() + Send + Sync>>,
     #[cfg(test)]
-    after_session_rpc: Option<Arc<dyn Fn(&str) + Send + Sync>>,
+    after_session_rpc: Option<SessionRpcProbe>,
     config: Result<HostConfig, HostConfigError>,
     launcher: Option<HostLauncher>,
     dynamic: Option<DynamicHostSource>,
@@ -1382,7 +1386,7 @@ impl HostRuntime {
     }
 
     #[cfg(test)]
-    pub(crate) fn with_session_rpc_probe(mut self, probe: Arc<dyn Fn(&str) + Send + Sync>) -> Self {
+    pub(crate) fn with_session_rpc_probe(mut self, probe: SessionRpcProbe) -> Self {
         self.after_session_rpc = Some(probe);
         self
     }

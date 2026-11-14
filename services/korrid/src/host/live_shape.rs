@@ -38,6 +38,7 @@ pub(super) struct ShapeAttempt {
     pub deadline: Instant,
 }
 
+#[derive(Default)]
 pub(super) struct LiveShape {
     pub pending: Option<ShapeAttempt>,
     pub failed_target: Option<(String, String, PluginDisplay)>,
@@ -46,20 +47,6 @@ pub(super) struct LiveShape {
     viewers: HashMap<String, Viewer>,
     retired: HashSet<(String, String)>,
     pub portrait: bool,
-}
-
-impl Default for LiveShape {
-    fn default() -> Self {
-        Self {
-            pending: None,
-            failed_target: None,
-            notice_owner: None,
-            order: ShapeOwners::default(),
-            viewers: HashMap::new(),
-            retired: HashSet::new(),
-            portrait: false,
-        }
-    }
 }
 
 impl LiveShape {

@@ -208,11 +208,11 @@ async fn read(bus: &Connection) -> zbus::Result<NetworkSnapshot> {
     Ok(NetworkSnapshot { connection, wifi })
 }
 async fn scan(bus: &Connection) -> Result<(), NetworkFailure> {
-    let device = wifi_device(&bus)
+    let device = wifi_device(bus)
         .await
         .map_err(|_| NetworkFailure::unavailable())?
         .ok_or_else(NetworkFailure::unavailable)?;
-    let wireless = proxy(&bus, device.as_str(), WIRELESS)
+    let wireless = proxy(bus, device.as_str(), WIRELESS)
         .await
         .map_err(|_| NetworkFailure::unavailable())?;
     let previous: i64 = wireless
@@ -324,14 +324,14 @@ async fn connect(
     hidden: bool,
     password: Option<&str>,
 ) -> Result<(), NetworkFailure> {
-    let device = wifi_device(&bus)
+    let device = wifi_device(bus)
         .await
         .map_err(|_| NetworkFailure::unavailable())?
         .ok_or_else(NetworkFailure::unavailable)?;
-    let manager = proxy(&bus, ROOT, NM)
+    let manager = proxy(bus, ROOT, NM)
         .await
         .map_err(|_| NetworkFailure::unavailable())?;
-    let saved = saved(&bus)
+    let saved = saved(bus)
         .await
         .map_err(|_| NetworkFailure::unavailable())?;
     let root = OwnedObjectPath::try_from("/").expect("root path");
@@ -339,7 +339,7 @@ async fn connect(
         (target.to_owned(), root.clone())
     } else {
         let point = OwnedObjectPath::try_from(target).map_err(|_| NetworkFailure::unavailable())?;
-        let network = access_point(&bus, &point, &saved)
+        let network = access_point(bus, &point, &saved)
             .await
             .map_err(|_| NetworkFailure::unavailable())?
             .ok_or_else(NetworkFailure::unavailable)?;
@@ -347,7 +347,7 @@ async fn connect(
     };
     let profile = saved.get(&ssid).filter(|_| !hidden);
     if let (Some(profile), Some(password)) = (profile, password) {
-        store_password(&bus, profile, password)
+        store_password(bus, profile, password)
             .await
             .map_err(|_| NetworkFailure::unavailable())?;
     }
@@ -370,7 +370,7 @@ async fn connect(
         Err(_) => {
             // Immediate activation errors may already have a device reason.
             // Do not expose the D-Bus error: it is dependency-controlled text.
-            if let Ok(device) = proxy(&bus, device.as_str(), DEVICE).await {
+            if let Ok(device) = proxy(bus, device.as_str(), DEVICE).await {
                 if let Ok((_, reason)) = device.get_property::<(u32, u32)>("StateReason").await {
                     if (7..=11).contains(&reason) {
                         return Err(NetworkFailure::state_reason(reason));
@@ -380,10 +380,10 @@ async fn connect(
             return Err(NetworkFailure::unavailable());
         }
     };
-    let active = proxy(&bus, active.as_str(), ACTIVE)
+    let active = proxy(bus, active.as_str(), ACTIVE)
         .await
         .map_err(|_| NetworkFailure::unavailable())?;
-    let device = proxy(&bus, device.as_str(), DEVICE)
+    let device = proxy(bus, device.as_str(), DEVICE)
         .await
         .map_err(|_| NetworkFailure::unavailable())?;
     loop {

@@ -300,10 +300,7 @@ mod netplay_tests {
             let mut bytes = [0; 128];
             let started = std::time::Instant::now();
             let mut listening = false;
-            loop {
-                let Ok((n, source)) = control.recv_from(&mut bytes) else {
-                    break;
-                };
+            while let Ok((n, source)) = control.recv_from(&mut bytes) {
                 if !listening && started.elapsed() >= Duration::from_millis(1500) {
                     hosting.listen(4).unwrap();
                     listening = true;
@@ -322,7 +319,6 @@ mod netplay_tests {
             .prepare(RetroarchCommand::NetplayHostToggle)
             .unwrap();
         let result = executor.invoke(command);
-        drop(executor);
         assert!(result.is_ok(), "{result:?}");
         let _ = runtime;
     }

@@ -201,7 +201,7 @@ impl PlayLogRepository {
 fn write_atomically(path: &Path, content: &[u8]) -> io::Result<()> {
     let parent = path
         .parent()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "missing parent directory"))?;
+        .ok_or_else(|| io::Error::other("missing parent directory"))?;
     let temp_name = format!(
         ".{}.{}.tmp",
         path.file_name().and_then(|n| n.to_str()).unwrap_or("log"),

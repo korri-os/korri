@@ -391,6 +391,9 @@ impl TransitionTrace {
 #[path = "live_shape_session.rs"]
 mod live_shape_session;
 
+/// The input seats one launch holds, with that launch's id.
+type LaunchSeatLease = (String, Box<dyn InputSeatLease>);
+
 #[derive(Clone)]
 pub struct HostSessionControl {
     // Authenticated call context, used only when creating a fresh journal.
@@ -411,7 +414,7 @@ pub struct HostSessionControl {
     recovery_helper_error: Arc<Mutex<Option<String>>>,
     /// Diagnostics only; never authorizes a state transition.
     state_owner: Arc<Mutex<Option<(&'static str, Instant)>>>,
-    seat_lease: Arc<Mutex<Option<(String, Box<dyn InputSeatLease>)>>>,
+    seat_lease: Arc<Mutex<Option<LaunchSeatLease>>>,
     /// One startup-only exact handoff reconstructed from live compositor facts.
     /// Surface host status consumes it into the server's process-local overlay intent.
     recovered_overlay_intent: Arc<Mutex<Option<String>>>,
@@ -4803,7 +4806,7 @@ mod tests {
                 );
             }
             assert_eq!(backend.state(&id).unwrap(), LaunchUnitState::Running);
-            assert_eq!(backend.state.lock().unwrap().frozen, [id.clone()]);
+            assert_eq!(backend.state.lock().unwrap().frozen, [id.as_str()]);
             assert_eq!(backend.state.lock().unwrap().thawed, [id]);
             assert_eq!(*compositor.focused.lock().unwrap(), [2, 3]);
         }
@@ -5060,7 +5063,6 @@ printf '[{{"success":true}}]'
                 placed
             );
             fs::write(root.path().join("tree"), &shell_tree).unwrap();
-            let commands = placed;
             fs::write(root.path().join("reads"), "").unwrap();
             fs::write(root.path().join("commands"), "").unwrap();
             let identity_reads = shell.identity_reads();

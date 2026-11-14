@@ -60,7 +60,7 @@ async fn local_person_signer_stores_a_name_that_survives_restart_without_a_netwo
     let mut identity = DeviceIdentity::load_or_create(root.path()).unwrap();
     let signer = LocalPersonSigner::load_or_create(
         signer_root.path(),
-        &identity.device_public_key().unwrap(),
+        identity.device_public_key().unwrap(),
     )
     .unwrap();
     let binding = identity

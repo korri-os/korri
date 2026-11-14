@@ -499,7 +499,11 @@ fn an_artifact_release_is_in_the_library_before_its_download_without_a_location(
     // Declared order is not key order: `v2` is preferred over `v1`.
     let declared = artifact_game(&[("v2", 'e'), ("v1", 'd')]);
     let initial = snapshot();
-    let change = reconcile(&declared_report(&[declared.clone()]), &initial, NOW);
+    let change = reconcile(
+        &declared_report(std::slice::from_ref(&declared)),
+        &initial,
+        NOW,
+    );
     let snapshot = apply(&initial, &change);
     assert_eq!(snapshot.library.len(), 1);
     assert_eq!(release_ids(&snapshot, "rock-n-roll"), ["v2", "v1"]);
@@ -552,7 +556,11 @@ fn a_release_no_longer_declared_stays_as_history_and_a_new_one_keeps_declared_or
 fn a_copy_discovered_in_a_source_joins_the_artifact_release() {
     let declared = artifact_game(&[("v1", 'a')]);
     let initial = snapshot();
-    let first = reconcile(&declared_report(&[declared.clone()]), &initial, NOW);
+    let first = reconcile(
+        &declared_report(std::slice::from_ref(&declared)),
+        &initial,
+        NOW,
+    );
     let before = apply(&initial, &first);
     let mut scan = with_history(report(vec![unit("rock.gba", 'a')]), &first);
     scan.declared_games = BTreeMap::from([declared.clone()]);

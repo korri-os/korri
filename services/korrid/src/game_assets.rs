@@ -460,7 +460,7 @@ fn validate_image(
     header_reader.limits(image_limits());
     let (width, height) = header_reader
         .into_dimensions()
-        .map_err(|error| image_dimension_error(error))?;
+        .map_err(image_dimension_error)?;
     if !role_admits_dimensions(role, width, height) {
         return Err(AssetError::UnsafeDimensions);
     }
@@ -471,7 +471,7 @@ fn validate_image(
     }
     let mut reader = ImageReader::with_format(Cursor::new(&candidate.bytes), format);
     reader.limits(image_limits());
-    let image = reader.decode().map_err(|error| image_decode_error(error))?;
+    let image = reader.decode().map_err(image_decode_error)?;
     let (width, height) = image.dimensions();
     if !role_admits_dimensions(role, width, height) {
         return Err(AssetError::UnsafeDimensions);
