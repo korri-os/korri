@@ -25,11 +25,13 @@ static LIFECYCLE: Mutex<
     )>,
 > = Mutex::new(None);
 unsafe extern "C" fn connection_started() {
-    if let Some((lifecycle, display)) = &*LIFECYCLE.lock().unwrap()
-        && lifecycle.connected(display.clone()).is_err()
-    {
-        STOP.store(true, Ordering::Relaxed);
-    }
+    crate::callback::guarded("connection started", (), || {
+        if let Some((lifecycle, display)) = &*LIFECYCLE.lock().unwrap()
+            && lifecycle.connected(display.clone()).is_err()
+        {
+            STOP.store(true, Ordering::Relaxed);
+        }
+    });
 }
 struct LifecycleGuard;
 impl Drop for LifecycleGuard {
@@ -45,14 +47,18 @@ extern "C" fn signal_stop(_: libc::c_int) {
     STOP.store(true, Ordering::Relaxed);
 }
 unsafe extern "C" fn terminated(code: i32) {
-    if let Some((lifecycle, _)) = &*LIFECYCLE.lock().unwrap() {
-        lifecycle.disconnected();
-    }
+    crate::callback::guarded("connection terminated", (), || {
+        if let Some((lifecycle, _)) = &*LIFECYCLE.lock().unwrap() {
+            lifecycle.disconnected();
+        }
+    });
     TERMINATED.store(code, Ordering::Relaxed);
     STOP.store(true, Ordering::Relaxed);
 }
 unsafe extern "C" fn stage_failed(stage: i32, error: i32) {
-    eprintln!("connection stage {stage} failed: {error}");
+    crate::callback::guarded("stage failed", (), || {
+        eprintln!("connection stage {stage} failed: {error}");
+    });
 }
 /// LiStartConnection blocks for its whole handshake. Interrupted, the core
 /// ends it at its own points: before each RTSP exchange, between RTSP connect

@@ -58,9 +58,14 @@ impl PlayerIo {
     }
     pub(crate) fn start(&self) {}
     pub(crate) fn stop(&self) {}
-    /// No event loop to turn: wait until the stream's stop.
+    /// No event loop to turn: wait until the stream's stop. A failed
+    /// decoder ends the stream (negative: the picture failed); its reason is
+    /// in the log.
     pub(crate) fn poll(&self, timeout_ms: i32) -> i32 {
         std::thread::sleep(Duration::from_millis(timeout_ms.max(0) as u64));
+        if self.picture && picture::failure().is_some() {
+            return -1;
+        }
         0
     }
     /// After the core has stopped: the frame record's last rows, and whether

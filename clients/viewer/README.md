@@ -573,8 +573,12 @@ buffer queue, and the compositor reads the same buffer.
   waits for the app in `onDestroy`.
 - No `AImageReader`: the decoder renders into the layer's own Surface, so
   the spike's retry after release (its silent stall) does not apply.
-- The decoder (`src/android/picture.rs`): the core's decoder callbacks, in
-  Rust. Android's decoder list comes from `android.media.MediaCodecList`
+- The decoder: the core's decoder callbacks, in Rust
+  (`src/android/picture.rs`), over `AMediaCodec` through ndk-sys, and the
+  decoder's two loops (`src/android/decoder.rs`), which the tests run over
+  a scripted codec. No panic leaves a callback for the core: each body runs
+  under `catch_unwind` (`src/callback.rs`), and gives the core its fallback
+  (`DR_NEED_IDR`, or -1 from setup); Rust would abort the app instead. Android's decoder list comes from `android.media.MediaCodecList`
   through JNI, as ADR 0064 says (no NDK list before API 36), and
   `src/android/codec.rs` chooses as Artemis's `MediaCodecHelper` does
   (brief, finding 20): a decoder with `FEATURE_LowLatency` and High profile
@@ -598,7 +602,19 @@ buffer queue, and the compositor reads the same buffer.
 - Input: on each IDR frame the parameter sets go first in their own
   `CODEC_CONFIG` buffer, then the frame. With no input buffer free, the
   decoder thread waits in 10 ms steps until the stream stops, as Artemis
-  does; a frame given up would cost an IDR frame.
+  does; a frame given up would cost an IDR frame. A dequeued buffer that
+  takes no frame goes back to the codec empty: when
+  `AMediaCodec_getInputBuffer` gives NULL, as it does after a decoder
+  error, and when a frame is too large for it.
+- Decoder errors: each side (input, output) backs off, 10 ms doubling to
+  160 ms, so that a failed decoder costs no CPU. Errors that still come 3 s
+  after the first, with no success between, end the stream, as Artemis
+  ends it (`EXCEPTION_REPORT_DELAY_MS`); a reclaimed or deleted codec ends
+  it at once. Once the decoder has failed, frames ask for no IDR frame;
+  the player reports the failure (`picture: the decoder failed; the stream
+  ends: …`) and the stream stops with `picture or input event loop
+  failed`. Artemis first tries to flush, restart and reset the codec; this
+  does not yet.
 - Pacing: upstream Moonlight's lowest-latency mode. An output thread hands
   each frame to the display at once
   (`AMediaCodec_releaseOutputBufferAtTime` with the time now); when the

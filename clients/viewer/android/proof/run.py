@@ -58,7 +58,7 @@ PROBE_ACTIVITY = f"{PROBE}/android.app.NativeActivity"
 # The frame record's header, as picture/frame_times.c writes it on Linux.
 RECORD_HEADER = "index,frame_number,enqueue_ns,decoded_ns,display_ns"
 # The Android tests of the session part, and the picture's pure parts.
-LIB_TESTS = ["sps::", "codec::", "frame_record::", "placement::"]
+LIB_TESTS = ["sps::", "codec::", "decoder::", "callback::", "frame_record::", "placement::"]
 
 # stream-cadence's frame-ID bar decoder: one decoder for the bar.
 sys.path.insert(0, str(Path(os.environ["KORRI_ROOT"]) / "nix/stream-cadence"))

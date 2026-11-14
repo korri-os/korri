@@ -1,19 +1,32 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: GPL-3.0-only
 //! One stream's picture on Android (#391 step D, slice D2): Android's own
 //! H.264 decoder (`AMediaCodec`) renders each frame straight into the
 //! Surface that the app gives, the Surface of its video layer. No frame
 //! passes through this code: the decoder writes into the layer's buffer
 //! queue, and the compositor reads the same buffer.
 //!
-//! The decoder and its keys follow Artemis, as the research brief lists them
-//! (`codec.rs`); the SPS rewrite too (`sps.rs`). Each frame is handed to the
-//! display as soon as the decoder returns it, and a frame that a newer one
-//! overtook is dropped: upstream Moonlight's lowest-latency pacing.
+//! This file holds the core's decoder callbacks, the decoder's making, and
+//! `AMediaCodec` itself. The decoder's two loops are in `decoder.rs`, the
+//! choice of decoder and its keys in `codec.rs`, the SPS rewrite in
+//! `sps.rs`; those follow Artemis.
 //!
 //! The network core's decoder callbacks carry no context, so one stream's
-//! state is process-wide, as the core itself is.
+//! state is process-wide, as the core itself is. No panic leaves a callback
+//! (`callback::guarded`): it would abort the app.
+//!
+//! The decoder list's queries, the configure tries and the base format's
+//! colour keys are ported from Korri's copy of Artemis (`clients/android`, from
+//! `simonwjackson/artemis` at `cf12c432`, a fork of
+//! `ClassicOldSong/moonlight-android`, itself a fork of
+//! `moonlight-stream/moonlight-android`), `MediaCodecHelper.java` and
+//! `MediaCodecDecoderRenderer.java` (`createBaseMediaFormat`, the tries in
+//! `initializeDecoder`). Artemis ships under the GNU GPL version 3 with no "or later" grant, so
+//! this file does too. The Rust adaptation is Korri work dated 2026-11-14.
 use crate::{
-    codec, frame_record,
+    callback::guarded,
+    codec,
+    decoder::{self, Codec, Decoder, Frame, Health, Output, Queued, Records, Status},
+    frame_record, log,
     network::{self as ffi, DECODE_UNIT, DECODER_RENDERER_CALLBACKS},
     sps,
 };
@@ -22,26 +35,12 @@ use jni::{
     JNIEnv, JavaVM,
     objects::{JObject, JObjectArray, JString, JValue},
 };
-use ndk::{
-    media::{
-        media_codec::{
-            DequeuedInputBufferResult, DequeuedOutputBufferInfoResult, MediaCodec,
-            MediaCodecDirection,
-        },
-        media_format::MediaFormat,
-    },
-    native_window::NativeWindow,
-};
+use ndk::{media::media_format::MediaFormat, native_window::NativeWindow};
 use std::{
-    collections::VecDeque,
     ffi::{CString, c_char, c_int, c_void},
-    fs::File,
     path::PathBuf,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
-    thread::JoinHandle,
+    ptr::{NonNull, null_mut},
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
     time::Duration,
 };
 
@@ -65,16 +64,15 @@ pub struct FrameRecord {
 struct Stream {
     surface: NativeWindow,
     records: Arc<Records>,
-    decoder: Option<Arc<Decoder>>,
-}
-
-#[derive(Default)]
-struct Records {
-    times: Option<Mutex<frame_record::Record<File>>>,
-    recording: Option<Mutex<frame_record::Recording<File>>>,
+    decoder: Option<Arc<Decoder<NdkCodec>>>,
 }
 
 static STREAM: Mutex<Option<Stream>> = Mutex::new(None);
+
+/// The stream's state. A panic that a callback caught leaves it usable.
+fn stream() -> MutexGuard<'static, Option<Stream>> {
+    STREAM.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// Make the record's files and hold the picture for the core's callbacks.
 /// Before the launch: a record that cannot be made stops nothing that ran.
@@ -99,7 +97,7 @@ pub(crate) fn open(picture: Picture) -> Result<()> {
             )))
         })
         .transpose()?;
-    let mut stream = STREAM.lock().unwrap();
+    let mut stream = stream();
     anyhow::ensure!(stream.is_none(), "a picture is already open");
     *stream = Some(Stream {
         surface: picture.surface,
@@ -112,7 +110,7 @@ pub(crate) fn open(picture: Picture) -> Result<()> {
 /// After the core has stopped: write the record's last rows, report whether
 /// the whole record was written, and let the Surface go.
 pub(crate) fn close() -> Result<()> {
-    let Some(stream) = STREAM.lock().unwrap().take() else {
+    let Some(stream) = stream().take() else {
         return Ok(());
     };
     // The core calls cleanup after a setup; this covers a stream it did not.
@@ -135,6 +133,11 @@ pub(crate) fn close() -> Result<()> {
     Ok(())
 }
 
+/// Why the decoder failed, once it has: the stream then ends.
+pub(crate) fn failure() -> Option<String> {
+    stream().as_ref()?.decoder.as_ref()?.failure()
+}
+
 /// The core's decoder callbacks for this picture.
 pub(crate) fn callbacks() -> *mut DECODER_RENDERER_CALLBACKS {
     // The core reads the table during LiStartConnection and keeps the pointer.
@@ -149,29 +152,6 @@ pub(crate) fn callbacks() -> *mut DECODER_RENDERER_CALLBACKS {
     &raw mut CALLBACKS
 }
 
-/// `AMediaCodec` is safe to use from two threads at once: one queues input,
-/// the other releases output, as Android's own MediaCodec users do.
-struct Codec(MediaCodec);
-// SAFETY: see above; the codec is deleted only after both threads stop.
-unsafe impl Send for Codec {}
-unsafe impl Sync for Codec {}
-
-struct Decoder {
-    codec: Codec,
-    patch: sps::Patch,
-    input: Mutex<Input>,
-    records: Arc<Records>,
-    stopping: AtomicBool,
-    output: Mutex<Option<JoinHandle<()>>>,
-}
-
-#[derive(Default)]
-struct Input {
-    last_pts: u64,
-    /// Each queued frame's presentation time and record index, in order.
-    queued: VecDeque<(u64, Option<u64>)>,
-}
-
 /// One H.264 frame: the stream's size and rate; the codec's own.
 const MIME: &str = "video/avc";
 /// `MediaFormat`: `COLOR_RANGE_LIMITED`, `COLOR_STANDARD_BT601_NTSC` and
@@ -181,8 +161,6 @@ const COLOR_KEYS: [(&str, i32); 3] = [
     ("color-standard", 4),
     ("color-transfer", 3),
 ];
-const CODEC_CONFIG: u32 = 2;
-const KEY_FRAME: u32 = 1;
 
 unsafe extern "C" fn setup(
     format: c_int,
@@ -192,13 +170,15 @@ unsafe extern "C" fn setup(
     _: *mut c_void,
     _: c_int,
 ) -> c_int {
-    match make_decoder(format, width, height, fps) {
-        Ok(()) => 0,
-        Err(error) => {
-            log(&format!("picture: no decoder: {error:#}"));
-            -1
+    guarded("picture setup", -1, || {
+        match make_decoder(format, width, height, fps) {
+            Ok(()) => 0,
+            Err(error) => {
+                log::line(&format!("picture: no decoder: {error:#}"));
+                -1
+            }
         }
-    }
+    })
 }
 
 fn make_decoder(format: c_int, width: c_int, height: c_int, fps: c_int) -> Result<()> {
@@ -206,7 +186,7 @@ fn make_decoder(format: c_int, width: c_int, height: c_int, fps: c_int) -> Resul
         bail!("the stream is not H.264 (format {format:#x}); this slice decodes H.264 only");
     }
     let decoders = decoder_list()?;
-    log(&format!(
+    log::line(&format!(
         "picture: decoders for {MIME}: {}",
         decoders
             .iter()
@@ -220,12 +200,12 @@ fn make_decoder(format: c_int, width: c_int, height: c_int, fps: c_int) -> Resul
     let emulator = system_property("ro.hardware").as_deref() == Some("ranchu");
     let chosen = codec::choose(&decoders, emulator)
         .with_context(|| format!("no usable {MIME} decoder (emulator {emulator})"))?;
-    let mut stream = STREAM.lock().unwrap();
+    let mut stream = stream();
     let stream = stream.as_mut().context("no picture is open")?;
     let mut number = 0;
     let (codec, keys) = loop {
         let attempt = codec::low_latency_try(chosen, number);
-        let codec = MediaCodec::from_codec_name(&chosen.name)
+        let codec = NdkCodec::by_name(&chosen.name)
             .with_context(|| format!("cannot make the decoder {}", chosen.name))?;
         let mut media = MediaFormat::new();
         media.set_str("mime", MIME);
@@ -235,25 +215,27 @@ fn make_decoder(format: c_int, width: c_int, height: c_int, fps: c_int) -> Resul
         for (key, value) in COLOR_KEYS.iter().chain(&attempt.keys) {
             media.set_i32(key, *value);
         }
-        match codec.configure(&media, Some(&stream.surface), MediaCodecDirection::Decoder) {
+        match codec.configure(&media, &stream.surface) {
             Ok(()) => break (codec, attempt.keys),
-            Err(error) if !attempt.last => {
-                log(&format!(
-                    "picture: {} try {number} refused: {error:?}",
+            Err(status) if !attempt.last => {
+                log::line(&format!(
+                    "picture: {} try {number} refused: {status}",
                     chosen.name
                 ));
                 number += 1;
             }
-            Err(error) => bail!("{} refused its last configuration: {error:?}", chosen.name),
+            Err(status) => bail!("{} refused its last configuration: {status}", chosen.name),
         }
     };
-    codec.start().context("cannot start the decoder")?;
+    codec
+        .start()
+        .map_err(|status| anyhow!("cannot start the decoder: {status}"))?;
     let keys: Vec<_> = keys
         .iter()
         .map(|(key, value)| format!("{key}={value}"))
         .collect();
     // The picture path, as the Linux viewer reports its own: `decode`.
-    log(&format!(
+    log::line(&format!(
         "picture: decode {} decoder {} hardware {} software-only {} low-latency-feature {} try {number} keys {} size {width}x{height}@{fps}",
         chosen.decode(),
         chosen.name,
@@ -266,64 +248,80 @@ fn make_decoder(format: c_int, width: c_int, height: c_int, fps: c_int) -> Resul
             keys.join(",")
         },
     ));
-    let decoder = Arc::new(Decoder {
-        codec: Codec(codec),
-        patch: sps::Patch::for_stream(width, height, fps, &chosen.name),
-        input: Mutex::default(),
-        records: stream.records.clone(),
-        stopping: AtomicBool::new(false),
-        output: Mutex::new(None),
-    });
-    let output = {
-        let decoder = decoder.clone();
-        std::thread::Builder::new()
-            .name("viewer-picture".into())
-            .spawn(move || decoder.release_frames())?
-    };
-    *decoder.output.lock().unwrap() = Some(output);
+    let decoder = Decoder::new(
+        codec,
+        sps::Patch::for_stream(width, height, fps, &chosen.name),
+        stream.records.clone(),
+        Health::default(),
+    );
+    decoder.start_output()?;
     stream.decoder = Some(decoder);
     Ok(())
 }
 
-unsafe extern "C" fn start() {}
+unsafe extern "C" fn start() {
+    guarded("picture start", (), || {});
+}
 
 unsafe extern "C" fn stop() {
-    if let Some(decoder) = current() {
-        decoder.stopping.store(true, Ordering::Relaxed);
-    }
+    guarded("picture stop", (), || {
+        if let Some(decoder) = current() {
+            decoder.stop();
+        }
+    });
 }
 
 unsafe extern "C" fn cleanup() {
-    let decoder = STREAM
-        .lock()
-        .unwrap()
-        .as_mut()
-        .and_then(|stream| stream.decoder.take());
-    if let Some(decoder) = decoder {
-        decoder.finish();
-    }
+    guarded("picture cleanup", (), || {
+        let decoder = stream().as_mut().and_then(|stream| stream.decoder.take());
+        if let Some(decoder) = decoder {
+            decoder.finish();
+        }
+    });
 }
 
 unsafe extern "C" fn submit(unit: *mut DECODE_UNIT) -> c_int {
-    let Some(decoder) = current() else {
-        return ffi::DR_NEED_IDR;
-    };
-    // SAFETY: the core keeps the unit and its buffer list for this call.
-    let unit = unsafe { &*unit };
-    match decoder.queue(unit) {
-        Ok(()) => ffi::DR_OK as c_int,
-        Err(error) => {
-            log(&format!(
-                "picture: frame {} not decoded: {error:#}",
-                unit.frameNumber
-            ));
-            ffi::DR_NEED_IDR
+    guarded("picture submit", ffi::DR_NEED_IDR, || {
+        let Some(decoder) = current() else {
+            return ffi::DR_NEED_IDR;
+        };
+        // SAFETY: the core keeps the unit and its buffer list for this call.
+        let unit = unsafe { &*unit };
+        let parts = parts(unit);
+        let record =
+            decoder
+                .records
+                .unit(unit.frameNumber, || enqueue_ns(unit.enqueueTimeUs), &parts);
+        let frame = Frame {
+            number: unit.frameNumber,
+            idr: unit.frameType == ffi::FRAME_TYPE_IDR as c_int,
+            enqueue_us: unit.enqueueTimeUs,
+            parts,
+            record,
+        };
+        match decoder.queue(frame) {
+            Queued::Taken => ffi::DR_OK as c_int,
+            Queued::NeedIdr => ffi::DR_NEED_IDR,
         }
-    }
+    })
 }
 
-fn current() -> Option<Arc<Decoder>> {
-    STREAM.lock().unwrap().as_ref()?.decoder.clone()
+fn current() -> Option<Arc<Decoder<NdkCodec>>> {
+    stream().as_ref()?.decoder.clone()
+}
+
+/// The core's clock is its own: microseconds of MONOTONIC_RAW since the
+/// process first asked. Carry the enqueue time to CLOCK_MONOTONIC through the
+/// short delay since then, as frame_times.c does. False when the enqueue
+/// time is later than the core's clock.
+fn enqueue_ns(enqueue_us: u64) -> (u64, bool) {
+    let before = decoder::monotonic_ns();
+    // SAFETY: no preconditions.
+    let native_us = unsafe { ffi::LiGetMicroseconds() };
+    let after = decoder::monotonic_ns();
+    let ns =
+        (before + (after - before) / 2).saturating_sub(native_us.saturating_sub(enqueue_us) * 1000);
+    (ns, native_us >= enqueue_us)
 }
 
 /// The unit's buffers, in order, with their types.
@@ -341,204 +339,138 @@ fn parts(unit: &DECODE_UNIT) -> Vec<(c_int, &[u8])> {
     parts
 }
 
-impl Decoder {
-    /// Stop the output thread and the codec. The codec is deleted with the
-    /// last reference, after the output thread's.
-    fn finish(&self) {
-        self.stopping.store(true, Ordering::Relaxed);
-        if let Some(output) = self.output.lock().unwrap().take() {
-            let _ = output.join();
-        }
-        let _ = self.codec.0.stop();
-        log("picture: decoder stopped");
-    }
+/// `AMediaCodec`, through ndk-sys. The ndk crate's input buffer panics when
+/// `AMediaCodec_getInputBuffer` gives NULL, as it does after a decoder error;
+/// this gives none instead.
+struct NdkCodec(NonNull<ndk_sys::AMediaCodec>);
 
-    fn queue(&self, unit: &DECODE_UNIT) -> Result<()> {
-        let parts = parts(unit);
-        let index = self.record_unit(unit, &parts);
-        if self.stopping.load(Ordering::Relaxed) {
-            return Ok(());
-        }
-        let idr = unit.frameType == ffi::FRAME_TYPE_IDR as c_int;
-        let mut config = Vec::new();
-        let mut picture = Vec::with_capacity(unit.fullLength.max(0) as usize);
-        for (kind, data) in parts {
-            match kind as u32 {
-                ffi::BUFFER_TYPE_SPS => config.extend(self.rewrite_sps(data)),
-                ffi::BUFFER_TYPE_PPS | ffi::BUFFER_TYPE_VPS => config.extend_from_slice(data),
-                _ => picture.extend_from_slice(data),
-            }
-        }
-        // The frame is known to the output thread before the decoder has it.
-        // The lock is not held while this thread waits for an input buffer:
-        // the output thread needs it to release the frames that free one.
-        let (config_pts, pts) = {
-            let mut input = self.input.lock().unwrap();
-            let config_pts =
-                (idr && !config.is_empty()).then(|| input.next_pts(unit.enqueueTimeUs));
-            let pts = input.next_pts(unit.enqueueTimeUs);
-            input.queued.push_back((pts, index));
-            if input.queued.len() > 256 {
-                input.queued.pop_front();
-            }
-            (config_pts, pts)
-        };
-        // The parameter sets go first, in their own buffer, per Android's
-        // MediaCodec documentation; they produce no frame.
-        if let Some(config_pts) = config_pts {
-            self.queue_buffer(&config, config_pts, CODEC_CONFIG)?;
-        }
-        self.queue_buffer(&picture, pts, if idr { KEY_FRAME } else { 0 })
-    }
+// SAFETY: AMediaCodec is safe to use from two threads at once: one queues
+// input, the other releases output, as Android's own MediaCodec users do.
+// It is deleted only after both threads stop (the last reference).
+unsafe impl Send for NdkCodec {}
+unsafe impl Sync for NdkCodec {}
 
-    fn queue_buffer(&self, data: &[u8], pts: u64, flags: u32) -> Result<()> {
-        let codec = &self.codec.0;
-        // Wait for a buffer as Artemis does, in 10 ms steps until the stream
-        // stops: a frame given up here would cost a new IDR frame.
-        let mut buffer = loop {
-            match codec
-                .dequeue_input_buffer(Duration::from_millis(10))
-                .map_err(|error| anyhow!("no input buffer: {error:?}"))?
-            {
-                DequeuedInputBufferResult::Buffer(buffer) => break buffer,
-                DequeuedInputBufferResult::TryAgainLater
-                    if self.stopping.load(Ordering::Relaxed) =>
-                {
-                    bail!("the stream stopped before the decoder took the frame")
-                }
-                DequeuedInputBufferResult::TryAgainLater => {}
-            }
-        };
-        let room = buffer.buffer_mut();
-        anyhow::ensure!(
-            data.len() <= room.len(),
-            "a frame of {} bytes is too large for its buffer",
-            data.len()
-        );
-        // SAFETY: `room` holds at least `data.len()` bytes.
-        unsafe {
-            std::ptr::copy_nonoverlapping(data.as_ptr(), room.as_mut_ptr().cast(), data.len())
-        };
-        codec
-            .queue_input_buffer(buffer, 0, data.len(), pts, flags)
-            .map_err(|error| anyhow!("cannot queue the frame: {error:?}"))
-    }
+/// `AMEDIACODEC_INFO_*`.
+const TRY_AGAIN_LATER: isize = -1;
+const OUTPUT_FORMAT_CHANGED: isize = -2;
+const OUTPUT_BUFFERS_CHANGED: isize = -3;
 
-    /// Artemis's SPS patch; an SPS that cannot be read goes as it came.
-    fn rewrite_sps(&self, data: &[u8]) -> Vec<u8> {
-        let start = if data.starts_with(&[0, 0, 1]) { 3 } else { 4 };
-        match data.get(start..).map(|nal| sps::rewrite(nal, self.patch)) {
-            Some(Ok(nal)) => [&data[..start], &nal].concat(),
-            Some(Err(error)) => {
-                log(&format!("picture: SPS left as it came: {error:#}"));
-                data.to_vec()
-            }
-            None => data.to_vec(),
-        }
-    }
-
-    fn record_unit(&self, unit: &DECODE_UNIT, parts: &[(c_int, &[u8])]) -> Option<u64> {
-        if let Some(recording) = &self.records.recording {
-            recording
-                .lock()
-                .unwrap()
-                .unit(parts.iter().map(|(_, data)| *data));
-        }
-        let times = self.records.times.as_ref()?;
-        // The core's clock is its own: microseconds of MONOTONIC_RAW since
-        // the process first asked. Carry the enqueue time to CLOCK_MONOTONIC
-        // through the short delay since then, as frame_times.c does.
-        let before = monotonic_ns();
-        // SAFETY: no preconditions.
-        let native_us = unsafe { ffi::LiGetMicroseconds() };
-        let after = monotonic_ns();
-        let mut times = times.lock().unwrap();
-        if native_us < unit.enqueueTimeUs {
-            times.fail(std::io::Error::other(
-                "the core's enqueue time is later than its clock",
-            ));
-        }
-        let enqueue_ns = (before + (after - before) / 2)
-            .saturating_sub(native_us.saturating_sub(unit.enqueueTimeUs) * 1000);
-        Some(times.unit(unit.frameNumber, enqueue_ns))
-    }
-
-    /// The output thread: hand each frame to the display at once. When more
-    /// than one frame is ready, only the newest goes; the older ones were
-    /// overtaken and are dropped.
-    fn release_frames(&self) {
-        let codec = &self.codec.0;
-        while !self.stopping.load(Ordering::Relaxed) {
-            let mut newest = None;
-            let mut wait = Duration::from_millis(20);
-            loop {
-                match codec.dequeue_output_buffer(wait) {
-                    Ok(DequeuedOutputBufferInfoResult::Buffer(buffer)) => {
-                        let index = self.decoded(buffer.info().presentation_time_us() as u64);
-                        if let Some((older, _)) = newest.replace((buffer, index)) {
-                            let _ = codec.release_output_buffer(older, false);
-                        }
-                        wait = Duration::ZERO;
-                    }
-                    Ok(DequeuedOutputBufferInfoResult::OutputFormatChanged) => {
-                        log(&format!("picture: output format {}", codec.output_format()));
-                    }
-                    Ok(_) => break,
-                    Err(error) => {
-                        log(&format!("picture: output failed: {error:?}"));
-                        break;
-                    }
-                }
-            }
-            if let Some((buffer, index)) = newest {
-                let released = codec.release_output_buffer_at_time(buffer, monotonic_ns() as i64);
-                let handed = monotonic_ns();
-                match released {
-                    Ok(()) => self.displayed(index, handed),
-                    Err(error) => log(&format!("picture: frame not released: {error:?}")),
-                }
-            }
-        }
-    }
-
-    /// The decoder returned the frame of this presentation time: its record index.
-    fn decoded(&self, pts: u64) -> Option<u64> {
-        let now = monotonic_ns();
-        let index = {
-            let mut input = self.input.lock().unwrap();
-            // Frames come out in the order they went in; one that the
-            // decoder dropped has no output and leaves the queue here.
-            loop {
-                match input.queued.front() {
-                    Some(&(queued, index)) if queued <= pts => {
-                        input.queued.pop_front();
-                        if queued == pts {
-                            break index;
-                        }
-                    }
-                    _ => break None,
-                }
-            }
-        };
-        if let (Some(index), Some(times)) = (index, &self.records.times) {
-            times.lock().unwrap().decoded(index, now);
-        }
-        index
-    }
-
-    fn displayed(&self, index: Option<u64>, now: u64) {
-        if let (Some(index), Some(times)) = (index, &self.records.times) {
-            times.lock().unwrap().displayed(index, now);
-        }
+fn checked(status: ndk_sys::media_status_t) -> Result<(), Status> {
+    if status.0 == 0 {
+        Ok(())
+    } else {
+        Err(Status(status.0))
     }
 }
 
-impl Input {
-    /// A presentation time from the core's enqueue time, never repeated:
-    /// MediaCodec refuses two buffers at the same time.
-    fn next_pts(&mut self, enqueue_us: u64) -> u64 {
-        self.last_pts = enqueue_us.max(self.last_pts + 1);
-        self.last_pts
+fn micros(timeout: Duration) -> i64 {
+    timeout.as_micros().try_into().unwrap_or(i64::MAX)
+}
+
+impl NdkCodec {
+    fn by_name(name: &str) -> Option<Self> {
+        let name = CString::new(name).ok()?;
+        // SAFETY: a live C string.
+        NonNull::new(unsafe { ndk_sys::AMediaCodec_createCodecByName(name.as_ptr()) }).map(Self)
+    }
+
+    fn configure(&self, format: &MediaFormat, surface: &NativeWindow) -> Result<(), Status> {
+        // SAFETY: a live codec, format and window; no crypto; a decoder.
+        checked(unsafe {
+            ndk_sys::AMediaCodec_configure(
+                self.0.as_ptr(),
+                format.as_ptr(),
+                surface.ptr().as_ptr(),
+                null_mut(),
+                0,
+            )
+        })
+    }
+
+    fn start(&self) -> Result<(), Status> {
+        // SAFETY: a live, configured codec.
+        checked(unsafe { ndk_sys::AMediaCodec_start(self.0.as_ptr()) })
+    }
+}
+
+impl Drop for NdkCodec {
+    fn drop(&mut self) {
+        // SAFETY: the last reference; no thread uses the codec any more.
+        unsafe { ndk_sys::AMediaCodec_delete(self.0.as_ptr()) };
+    }
+}
+
+impl Codec for NdkCodec {
+    fn dequeue_input(&self, timeout: Duration) -> Result<Option<usize>, Status> {
+        // SAFETY: a live codec.
+        let index =
+            unsafe { ndk_sys::AMediaCodec_dequeueInputBuffer(self.0.as_ptr(), micros(timeout)) };
+        match index {
+            0.. => Ok(Some(index as usize)),
+            TRY_AGAIN_LATER => Ok(None),
+            status => Err(Status(status as i32)),
+        }
+    }
+
+    fn input_buffer(&self, index: usize) -> Option<(NonNull<u8>, usize)> {
+        let mut size = 0;
+        // SAFETY: a live codec and an index it gave; it writes the size.
+        let memory =
+            unsafe { ndk_sys::AMediaCodec_getInputBuffer(self.0.as_ptr(), index, &mut size) };
+        NonNull::new(memory).map(|memory| (memory, size))
+    }
+
+    fn queue_input(&self, index: usize, size: usize, pts: u64, flags: u32) -> Result<(), Status> {
+        // SAFETY: a live codec and an index it gave.
+        checked(unsafe {
+            ndk_sys::AMediaCodec_queueInputBuffer(self.0.as_ptr(), index, 0, size, pts, flags)
+        })
+    }
+
+    fn dequeue_output(&self, timeout: Duration) -> Result<Output, Status> {
+        let mut info = ndk_sys::AMediaCodecBufferInfo {
+            offset: 0,
+            size: 0,
+            presentationTimeUs: 0,
+            flags: 0,
+        };
+        // SAFETY: a live codec and a buffer info to fill.
+        let index = unsafe {
+            ndk_sys::AMediaCodec_dequeueOutputBuffer(self.0.as_ptr(), &mut info, micros(timeout))
+        };
+        match index {
+            0.. => Ok(Output::Frame {
+                index: index as usize,
+                pts: info.presentationTimeUs.max(0) as u64,
+            }),
+            OUTPUT_FORMAT_CHANGED => Ok(Output::FormatChanged),
+            TRY_AGAIN_LATER | OUTPUT_BUFFERS_CHANGED => Ok(Output::TryAgain),
+            status => Err(Status(status as i32)),
+        }
+    }
+
+    fn release_output(&self, index: usize, render: Option<i64>) -> Result<(), Status> {
+        // SAFETY: a live codec and an index it gave.
+        checked(unsafe {
+            match render {
+                None => ndk_sys::AMediaCodec_releaseOutputBuffer(self.0.as_ptr(), index, false),
+                Some(at) => {
+                    ndk_sys::AMediaCodec_releaseOutputBufferAtTime(self.0.as_ptr(), index, at)
+                }
+            }
+        })
+    }
+
+    fn output_format(&self) -> String {
+        // SAFETY: a live codec; the format is ours to delete.
+        NonNull::new(unsafe { ndk_sys::AMediaCodec_getOutputFormat(self.0.as_ptr()) })
+            .map(|format| unsafe { MediaFormat::from_ptr(format) }.to_string())
+            .unwrap_or_default()
+    }
+
+    fn stop(&self) {
+        // SAFETY: a live codec.
+        unsafe { ndk_sys::AMediaCodec_stop(self.0.as_ptr()) };
     }
 }
 
@@ -662,26 +594,4 @@ fn system_property(name: &str) -> Option<String> {
         let bytes: Vec<u8> = value[..length as usize].iter().map(|&c| c as u8).collect();
         String::from_utf8_lossy(&bytes).into_owned()
     })
-}
-
-fn monotonic_ns() -> u64 {
-    let mut now = libc::timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    };
-    // SAFETY: a valid timespec to fill.
-    unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut now) };
-    now.tv_sec as u64 * 1_000_000_000 + now.tv_nsec as u64
-}
-
-#[link(name = "log")]
-unsafe extern "C" {
-    fn __android_log_write(priority: c_int, tag: *const c_char, text: *const c_char) -> c_int;
-}
-
-/// A line in logcat with the tag of the core's and the app's lines.
-fn log(text: &str) {
-    let text = CString::new(text.replace('\0', "")).unwrap_or_default();
-    // SAFETY: both are live C strings. 4: ANDROID_LOG_INFO.
-    unsafe { __android_log_write(4, c"korri-viewer".as_ptr(), text.as_ptr()) };
 }

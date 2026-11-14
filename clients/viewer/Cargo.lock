@@ -517,6 +517,7 @@ dependencies = [
  "libc",
  "ndk",
  "ndk-context",
+ "ndk-sys",
  "openssl",
  "pkg-config",
  "roxmltree",
