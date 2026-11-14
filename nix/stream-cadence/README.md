@@ -330,9 +330,11 @@ that the viewer handed to the display. Then:
 **Number 1 ends at the viewer's hand-off, not at the display.** The display
 time that the capture records comes later: Xwayland and the compositor carry
 the frame to the next output frame. `handoff_to_display_ms` is that
-difference, as measured in each run; the measured values on aka are in
-`clients/viewer/proof/`. The two are not summed: the capture's time exists
-only where the capture runs.
+difference, as measured in each run. On aka on 2026-11-14 (five turns,
+`clients/viewer/proof/aka/frame-times/`) number 1 was 1.62 to 1.63 ms at the
+p50 of each run, and the hand-off to display 0.08 to 16.1 ms, p50 8.1 ms:
+about one output frame of the fixture's 16 ms headless output. The two are
+not summed: the capture's time exists only where the capture runs.
 
 **No value, and why.** `viewer.not_measured.packet_to_display_ms` keeps the
 reason when number 1 has no value. A viewer that wrote no record keeps

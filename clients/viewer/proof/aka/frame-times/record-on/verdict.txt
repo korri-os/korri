@@ -1,0 +1,1 @@
+The runs were not measured under the same conditions: frame_record. Some runs wrote the viewer's frame record and others did not. The record costs the viewer CPU: on aka it made cpu_seconds_per_second worse in five turns. Judge the other numbers with no record, and take number 1 from runs of its own (--frame-record).

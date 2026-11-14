@@ -1,0 +1,22 @@
+baseline viewer: copied product package (/nix/store/38crl2m37akjqqscrmnq1gbwrp8l3rcx-moonlight-embedded-korri-2.7.1-korri/bin/moonlight, copied from zao, signed by korri-cache-zao-1), in the fixture, OpenGL on /dev/dri/renderD129
+candidate viewer: copied product package (/nix/store/cbgy3i6mqmcrxfy3x5094x30mxjw5hgb-korri-viewer-0.1.0/bin/moonlight, copied from zao, signed by korri-cache-zao-1), in the fixture, OpenGL on /dev/dri/renderD129
+The two results ran different viewers; every verdict below compares these two.
+baseline picture: requested_platform=x11_vaapi, decode=vaapi
+candidate picture: requested_platform=x11_vaapi, decode=vaapi
+what else ran on the machine, share of all CPUs: baseline: sender device 0.8%..2.4%, viewer device 0.8%..2.4%; candidate: sender device 0.8%..2.3%, viewer device 0.8%..2.3%
+number | metric | baseline runs | candidate runs | verdict
+1 packet arrival to display | packet_to_display_ms | not measured | not measured | not measured
+1 sender presentation to display | latency_p50_ms | 11.768..11.989 | 11.824..11.986 | equal
+1 sender presentation to display | latency_p95_ms | 18.984..19.175 | 19.024..19.170 | equal
+2 smoothness | dropped_frames | 0.000..0.000 | 0.000..0.000 | equal
+2 smoothness | repeated_frames | 230.000..235.000 | 231.000..234.000 | equal
+2 smoothness | late_frames | 230.000..235.000 | 231.000..234.000 | equal
+2 smoothness | torn_frames | 0.000..0.000 | 0.000..0.000 | equal
+2 smoothness | unreadable_frames | 0.000..0.000 | 0.000..0.000 | equal
+2 smoothness | output_repeats | 0.000..0.000 | 0.000..0.000 | equal
+3 CPU and battery | cpu_seconds_per_second | 0.011..0.012 | 0.011..0.012 | equal
+3 CPU and battery | battery_mw | not measured | not measured | not measured
+4 startup | startup_ms | 768.891..785.100 | 768.633..801.187 | equal
+5 input | input_ms | not measured | not measured | not measured
+6 stability | stream_stalls | 0.000..0.000 | 0.000..0.000 | equal
+6 stability | viewer_exits | 0.000..0.000 | 0.000..0.000 | equal

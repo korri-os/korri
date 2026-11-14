@@ -7,6 +7,8 @@ is blocked by a tool checkpoint fault. The record below is slice 1 only.
 The handheld `v4l2request` build proof (aarch64, no device) is at
 `v4l2request/README.md`.
 
+The frame record and number 1 (#435) are at `aka/frame-times/README.md`.
+
 Implementation commit: `095a66d00efad764d0ce60846a6501ffbdc30760`.
 Built on zao with `nix build .#korri-viewer`:
 `/nix/store/mac720f6dl57mx7bb7xjyyvb11dgvdkp-korri-viewer-0.1.0`.
