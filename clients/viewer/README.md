@@ -18,7 +18,7 @@ nix build .#checks.x86_64-linux.korri-viewer-aarch64
 clients/viewer/proof/v4l2request/compare.sh ../korri-plugins
 # The session part for Android, both ABIs (below). No device or emulator.
 nix build .#checks.x86_64-linux.korri-viewer-android
-# The Android app (slices D1 to D3, below), and its proof on one headless
+# The Android app (slices D1 to D4, below), and its proof on one headless
 # emulator against a private Sunshine on aka.
 nix build .#korri-viewer-android-apk
 nix run .#viewer-android-proof
@@ -433,7 +433,8 @@ of `clients/android/sdk.nix`: `aarch64-linux-android` for phones and
   and the binding are the same files on both platforms.
 - Platform parts: `player_io.rs` is Linux's picture, sound and input.
   `src/android/player_io.rs` has the same interface; since slice D2 it has
-  the picture and since slice D3 the sound (below), and no input yet.
+  the picture, since slice D3 the sound and since slice D4 the launch's
+  controller mask (below); the input itself runs on the app's thread.
   Without the app's picture, as in the session tests, the core runs its own
   empty decoder and audio callbacks. The core's log goes to logcat, tag
   `korri-viewer`, through `src/android/log.c`: the callback is C-variadic,
@@ -796,10 +797,135 @@ screenshots show the picture still moving.
   prove the reopen and the end over the scripted output; the emulator
   raised no AAudio error.
 
+## Android input (#391 step D, slice D4)
+
+Slice D4 of the research brief: game controllers, a keyboard, a mouse and
+the touch screen reach the stream from the NativeActivity, mapped as
+Artemis maps them. The mapping is Rust and pure, and its tests run on the
+host and in the emulator over scripted events:
+
+| File | Port of (Korri's copy of Artemis) |
+| --- | --- |
+| `src/android/input.rs` | `Game.java`'s routing: `handleKeyDown`, `handleKeyUp`, `handleMotionEvent`; the events, the packets and the core's sink |
+| `src/android/keyboard.rs` | `KeyboardTranslator.translate`, `KeyMapper.getWindowsKeyCode`, `Game.java`'s modifiers and Ctrl+Alt+Shift keys |
+| `src/android/gamepad.rs` | `ControllerHandler.java` and `ControllerHeartbeat.java` |
+| `src/android/touch.rs` | `Game.java`'s touch and mouse branches, `AbsoluteTouchContext.java` |
+| `src/android/controller_list.rs` | Valve's `controller_list.h` and SDL's `minisdl.c` from the same copy (zlib), as data |
+| `src/android/devices.rs` | `android.view.InputDevice` through JNI |
+
+These files port Artemis code and are GPL-3.0-only, as the D2 and D3 files
+are; `controller_list.rs` keeps the zlib notice of Valve and SDL, and
+`devices.rs` is Korri's own JNI code.
+
+- Where it runs: android-activity gives the app's thread each key and
+  motion event (`android/src/input.rs` turns them into plain values). That
+  thread hands them to `Input`, which sends each packet with the core's own
+  `LiSend*` call (`CoreSink`); the core queues it for its input thread. The
+  core calls no new Rust function: D4 adds no `extern "C"` callback. A panic
+  in the input is caught on that thread (`Guarded` in `android/src/lib.rs`):
+  the input ends, the stream goes on, and no panic reaches android-activity.
+  When the app sends Stop, the input is dropped first, so nothing more is
+  sent to a stream that stops; its counts go to the log
+  (`input: ended: … keys, … controller states, … arrivals, … mouse, …
+  touches sent; … unsupported, … failed`).
+- Identity: the NDK gives an event's device ID and nothing more. Name,
+  vendor, product, descriptor, `isExternal`, sources, keyboard type, the
+  joystick axes' motion ranges (`SOURCE_JOYSTICK`, then `SOURCE_GAMEPAD`)
+  and which controller keys it has (`hasKeys`) come from `InputDevice`
+  through JNI, once for each device. The controller's kind for its arrival
+  follows Artemis: Microsoft, Sony and Nintendo by vendor, others by SDL's
+  list. Android tells no native code that a device went (that needs
+  `InputDeviceListener`, a Java interface): the app asks for
+  `InputDevice.getDeviceIds()` twice a second, and a controller that went
+  frees its number and sends a state with no buttons and its bit out of the
+  mask, as Artemis does on `onInputDeviceRemoved`.
+- Numbers: Artemis's defaults. A built-in controller is number 0; an
+  external one with joystick axes takes the lowest free number; a device
+  without axes takes the number of the joystick beside it with the same
+  descriptor (a DualShock 4's touchpad). The launch's `remoteControllersBitmap`
+  and `gcmap` hold a bit for each joystick attached when the stream starts,
+  as Artemis's `getAttachedControllerMask` does; each packet's active mask
+  is those bits and the numbers in use.
+- Mapping: Artemis's button table, its corrections by vendor, product and
+  scan code (DualShock 4 face buttons and clickpad, Xbox One S over
+  Bluetooth, 8BitDo, HORIPAD for Switch, Razer Serval, ROG Kunai, ADT-1,
+  ASUS Gamepad, SHIELD, raw d-pad scan codes), its axis choice (triggers on
+  LTRIGGER and RTRIGGER, else BRAKE and GAS, else BRAKE and THROTTLE, else
+  Z and RZ beside RX and RY, idling at -1), a hat as the d-pad, analog
+  triggers over digital ones, Start+LB as Select and Start+Select (or
+  Start+RB) as Guide on a pad that has none, and a press shorter than
+  25 ms held to 25 ms. Back from a controller is its Select; Back from
+  anything else leaves the stream, as before.
+- Deadzones: Artemis's default, 5 % for each stick, a circle with no
+  rescale (the host has its own). A trigger's deadzone is the larger flat
+  of its two axes, 13 % when that is not between 13 % and 30 %.
+- Heartbeat: Korri's addition to its Artemis copy. Each controller's last
+  state goes again every 250 ms; a controller that went sends its last
+  state four more times. A Korri sender's input seat (`services/inputd`)
+  drops a source that is quiet for 1.25 s.
+- Mouse mode: Artemis's default, "multi-touch" (mode 0). Each finger is a
+  touch on the host (`LiSendTouchEvent`), placed in the picture from 0 to
+  1, with its pressure, contact area and rotation. A host that takes no
+  touch gets Artemis's absolute mouse: a tap clicks where it was, a long
+  press (650 ms) right-clicks, a second finger scrolls. A mouse moves the
+  host's pointer to the same place in the picture (`LiSendMousePositionEvent`,
+  with the picture's size), and clicks and scrolls. Start held for 750 ms
+  turns a controller into a mouse, as in Artemis; `-nomouseemulation`
+  turns that off, as in Moonlight.
+- Keyboard: Android's key code to the Windows virtual key, then the Linux
+  scan code; modifiers from the keys themselves and the meta state; a
+  repeated key is not sent again. Ctrl+Alt+Shift+Q leaves the stream.
+- Unbuffered dispatch: the app asks the window's decor view for
+  `requestUnbufferedDispatch` of every input class, as Artemis asks its
+  views. NativeActivity's input queue is fed by the same view root, so it
+  should apply (inferred); the emulator cannot show a difference, and a
+  phone's measure (number 5 of ADR 0062) is step H's.
+- Motion sensors: left for later. They need a `SensorEventListener`, a Java
+  interface. #434 allows Java bundled unchanged inside a dependency; D4
+  takes no such dependency, and the arrival claims no gyroscope or
+  accelerometer.
+
+**What differs from Artemis:**
+
+| | Artemis | Korri D4 |
+| --- | --- | --- |
+| Rumble, trigger rumble, RGB light, battery reports | `VibratorManager`, `LightsManager`, `BatteryState`, SHIELD's API | Not carried; the arrival claims none of them. Possible through JNI (brief, finding 10) |
+| Motion sensors | Controller or phone sensors through `SensorEventListener` | Not carried (above) |
+| A controller's own touchpad | `LiSendControllerTouchEvent` | Not carried; the arrival claims no touchpad |
+| USB driver for Xbox and Switch Pro pads | Its own, in Java | Dropped (ADR 0064) |
+| Guide and the Start double press | Open Korri's overlay | Guide goes to the host: the overlay is slice D5 |
+| Pointer capture (relative mouse), Ctrl+Alt+Shift+Z and C | Captures a mouse when one is attached | Not carried: a mouse is absolute, as Artemis's is without capture |
+| Mouse modes 1 to 5 and their menu | Absolute, trackpad (two kinds), off, swapped buttons | Multi-touch only, Artemis's default; korrid passes no mode |
+| Pen and eraser | `LiSendPenEvent` when the host takes it | A mouse, as Artemis falls back to |
+| A touchpad's own gestures, two-finger click | `TrackpadContext`, `getActionButton` | Not carried; `AMotionEvent_getActionButton` is API 33 |
+| Text from a soft keyboard, unmapped printable keys | `LiSendUtf8TextEvent` | Not carried: the NDK gives no characters |
+| QWERTY normalization | API 33 and newer | Never, as Artemis at API 31 and 32: every key has the non-normalized flag |
+| Key flags | Android's virtual navigation keys pass; the "Tablet Remote" fix | android-activity gives no key flags |
+| A device that changes | Its context is made again | Not followed |
+| A device that goes | `InputDeviceListener` | Asked twice a second |
+| Settings | Deadzone, flip face buttons, Back as Guide or Meta, Joy-Con fix, one controller only, mouse buttons, touch sensitivity, gestures, vibration fallback | Artemis's defaults; mouse emulation follows `-nomouseemulation` |
+| Input held under the overlay | `NvConnection.setInputHeld` | Slice D5 |
+
+**Proof** (`nix run .#viewer-android-proof`, record `proof/android-d4/`):
+D3's run, with input. While the stream runs, the proof uses Android's own
+tools in the emulator: `input keyevent` (K, O, R, R, I), `input tap` and
+`input swipe` on the picture, `input mouse tap`, and a USB game pad that
+the emulator's `hid` command makes through `/dev/uhid` (Microsoft's
+vendor ID, an unknown product: `hid-generic` and `Generic.kl`): A, the left
+stick, the right trigger, the hat, B, and X held for a second; then the pad
+goes. The sender fixture's Sunshine logs each input packet that it
+receives (`log_input`, `nix/stream-cadence/README.md`) and passes none on;
+the proof reads what arrived there. Screenshots after the input show the
+picture still moving.
+
+- Not proven: a real phone's controllers, touch screen and keyboard, and
+  any time from a press to its packet (step H, the Galaxy Z Fold3). That
+  unbuffered dispatch changes anything on NativeActivity.
+
 ## Next slices
 
-The bench proof of the handheld `v4l2request` path. On Android, slice D4:
-input. No device installs `@korri:viewer` yet.
+The bench proof of the handheld `v4l2request` path. On Android, slice D5:
+the overlay over the video. No device installs `@korri:viewer` yet.
 
 The cross-UID socket proof is an explicit root-only test: build
 `cargo test --manifest-path clients/viewer/Cargo.toml --test lifecycle_security --no-run`
