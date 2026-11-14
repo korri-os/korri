@@ -210,5 +210,7 @@ in
     # no Korri also takes this sway for the viewer fixture.
     sway = pkgs.sway-unwrapped;
     sunshine = pkgs.sunshine;
+    # The private sound server of the sender fixture's tone, when asked for.
+    pulseaudio = pkgs.pulseaudio;
   };
 }

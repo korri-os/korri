@@ -973,6 +973,33 @@ Sunshine announces each host through Avahi and has no setting against it.
 The fixture gives its Sunshine a system bus address that does not exist, so
 the private sender does not appear in the host lists of the network.
 
+**A known tone, on request.** By default the fixture's Sunshine finds no
+sound server and sends no sound ("Unable to initialize audio capture" in
+its log). An agent request can ask for a tone instead: `prepare` with
+`pulseaudio` (the path of nixpkgs' `pulseaudio`, `runtime.pulseaudio`) and
+`tone_hz` (20 to 20000, default 1000). No tool command asks for it today;
+the Android viewer's proof (`clients/viewer/android/proof/run.py`, slice
+D3) does. The agent then starts a private PulseAudio as the fixture's user,
+before Sunshine, with this configuration and nothing else
+(`sender.tone_script`):
+
+- a socket in the run's `rt`, `rt/pulse-native`, which only the fixture's
+  user can reach;
+- a null sink, `korri-tone`, the default sink, and PulseAudio's
+  `module-sine` playing the tone into it.
+
+It starts with no default script (`-n`), refuses to load modules after
+these (`--disallow-module-loading`), and reaches no D-Bus: its bus
+addresses are sockets in `rt` that do not exist. So it opens no sound card,
+Bluetooth device or bus of the host, and the sound of a product stream is
+never read or changed. Sunshine gets `PULSE_SERVER` for that socket and a
+client configuration with autospawn off. Sunshine's own virtual sinks need a
+module load, which the server refuses; Sunshine then captures the default
+sink, as it does on a host where it cannot make them
+(`src/audio.cpp`, `capture`): the tone. The result's `tone` names the
+frequency and the sink, or is `null`. The server ends with the fixture,
+and a server that stops during the run stops the run.
+
 **The steady refresh.** A headless output has no clock. After each frame it
 waits a whole number of milliseconds: an output that says 60 Hz waits 16 ms
 and shows about 62 frames each second. Sunshine takes one frame for each
@@ -1102,7 +1129,7 @@ exiting because its default ALSA card is absent. This does not measure audio.
 
 **What the fixture does not prove.** It is not the product's sender. It does
 not use the product's KMS capture, its encoder settings, its pacing or its
-display. Sound is off. With both targets on one host the stream uses
+display. Sound is off, or a tone when an agent request asks for one. With both targets on one host the stream uses
 loopback, so the network is not measured, and the sender and the viewer
 share one machine's CPU. The numbers compare an old and a new viewer against
 the same test sender. `run` still measures the product sender. `verdict`
@@ -1777,7 +1804,7 @@ nix build --no-link --impure --expr \
 
 `default.nix` exports `app`, `shim`, `motion`, `capture`, `press`, `device`, `tests`, and `sourceCheck`.
 `runtime` holds what an agent needs on its target, including the sender
-fixture's `sway` and `sunshine` from nixpkgs.
+fixture's `sway` and `sunshine` from nixpkgs, and `pulseaudio` for its tone.
 Use the same expression with an architecture-appropriate `pkgs` to build each
 output for either supported architecture. Tests compile the actual C bar,
 round-trip it through lossy libx264 at three resolutions, inject source discards

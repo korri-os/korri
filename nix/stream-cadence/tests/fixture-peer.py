@@ -1,4 +1,4 @@
-"""Stand-ins for the three programs that the sender fixture starts.
+"""Stand-ins for the programs that the sender fixture starts.
 
 The first argument names the role; a wrapper script next to this file's
 caller supplies it. Behaviour comes from files in the wrapper's directory:
@@ -6,7 +6,10 @@ caller supplies it. Behaviour comes from files in the wrapper's directory:
 - `hardware-nodes` lists the render nodes on which "Sunshine" finds a
   hardware encoder; on any other node it falls back to its CPU encoder.
 - `arguments.log` receives one line for each start, so a test can see what
-  was visible in the process list.
+  was visible in the process list, and `environment.log` the start's sound
+  and bus variables (`PULSE_*`, `DBUS_*`).
+- `pulseaudio-fails`, when a test writes it, makes "PulseAudio" exit at
+  once. Otherwise it listens on the socket that its -F script names.
 - `stream-session`, when a test writes it, makes "Sunshine" run one thread
   named `session::audio` for the number of seconds in the file, as a real
   Sunshine's audio thread waits for a viewer's first audio ping. The
@@ -35,6 +38,9 @@ signal.signal(signal.SIGINT, stop)
 knobs, role, arguments = Path(sys.argv[1]), sys.argv[2], sys.argv[3:]
 with (knobs / "arguments.log").open("a") as record:
     record.write(json.dumps([role, *arguments]) + "\n")
+with (knobs / "environment.log").open("a") as record:
+    sound = {k: v for k, v in os.environ.items() if k.startswith(("PULSE_", "DBUS_"))}
+    record.write(json.dumps([role, sound]) + "\n")
 if role == "sway":
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as display:
         display.bind(str(Path(os.environ["XDG_RUNTIME_DIR"]) / "wayland-1"))
@@ -90,5 +96,17 @@ elif role == "sunshine":
             request.unlink()
             threading.Thread(target=session, args=(seconds,), daemon=True).start()
         time.sleep(0.01)
+elif role == "pulseaudio":
+    if (knobs / "pulseaudio-fails").exists():
+        print("E: [pulseaudio] main.c: the stand-in was told to fail")
+        raise SystemExit(1)
+    script = Path(arguments[arguments.index("-F") + 1]).read_text()
+    found = re.search(r"module-native-protocol-unix socket=(\S+)", script)
+    assert found
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
+        server.bind(found.group(1))
+        server.listen(1)
+        while True:
+            time.sleep(1)
 else:
     raise SystemExit(2)

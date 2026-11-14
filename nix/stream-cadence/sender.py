@@ -14,6 +14,10 @@ directory and writes only there; the programs write in `home` and `rt`.
 The fixture does not start on a handheld (a hardware picture path, or any
 board with a device tree), on a hot host, or where its Sunshine could make
 an input device. A game on a Korri device does not stop it; the result names the game.
+
+On request the fixture's Sunshine sends a known tone (`tone_script`): a
+private PulseAudio in the run directory has one null sink with a sine on it
+and nothing else, so the sound of a product stream is never read or changed.
 """
 
 import base64
@@ -94,6 +98,8 @@ CONTROL_OFFSET = 10
 # nothing of a Sunshine that is configured for other ports.
 SUNSHINE_DEFAULT_BASE = 47989
 READY = "Configuration UI available at"
+# The tone's null sink in the fixture's private sound server.
+TONE_SINK = "korri-tone"
 
 
 def steady_refresh_mhz(rate: float) -> int:
@@ -243,6 +249,23 @@ def configuration(root: Path, base: int, node: str) -> str:
     return "".join(f"{key} = {value}\n" for key, value in values.items())
 
 
+def tone_script(socket_path: Path, hertz: int) -> str:
+    """The private sound server's whole configuration, as PulseAudio's -F script.
+
+    One socket in the run's `rt`, one null sink and a sine on it, nothing
+    else: no module that opens a sound card, Bluetooth or a bus. The server
+    also refuses to load modules after these (`--disallow-module-loading`).
+    So the fixture's Sunshine cannot make its own virtual sinks, and captures
+    the default sink, as it does when it finds no virtual sink: the tone.
+    """
+    return (
+        f"load-module module-native-protocol-unix socket={socket_path} auth-anonymous=1\n"
+        f"load-module module-null-sink sink_name={TONE_SINK} rate=48000 channels=2\n"
+        f"load-module module-sine sink={TONE_SINK} frequency={hertz}\n"
+        f"set-default-sink {TONE_SINK}\n"
+    )
+
+
 def survivors(root: Path) -> list[int]:
     """Processes that still carry the run directory in their arguments, environment or cwd."""
     mark = str(root).encode()
@@ -348,6 +371,8 @@ class Session:
         self.root: Path | None = None
         self.sway = ""
         self.sunshine = ""
+        # The private sound server of the tone, when one was asked for.
+        self.tone: dict | None = None
         self.login: tuple[str, str] | None = None
         self.cursor: int | None = None
         self.processes: dict[str, subprocess.Popen] = {}
@@ -531,6 +556,15 @@ class Session:
         (self.root / "sunshine.conf").unlink(missing_ok=True)
         write_new(self.root / "sunshine.conf", configuration(self.root, base, node))
         (self.home() / "sunshine.log").unlink(missing_ok=True)
+        # With a tone, Sunshine reads the private sound server and never starts one.
+        sound = (
+            {
+                "PULSE_SERVER": "unix:" + self.tone["socket"],
+                "PULSE_CLIENTCONFIG": str(self.root / "pulse-client.conf"),
+            }
+            if self.tone
+            else {}
+        )
         self.spawn(
             "sunshine",
             [self.sunshine, str(self.root / "sunshine.conf")],
@@ -540,6 +574,7 @@ class Session:
                 # no setting against it. A system bus address that does not exist
                 # keeps the private sender off the network's host lists.
                 DBUS_SYSTEM_BUS_ADDRESS="unix:path=" + str(runtime / "no-system-bus"),
+                **sound,
             ),
         )
         for _ in range(300):
@@ -568,6 +603,44 @@ class Session:
     def stop_stack(self) -> None:
         for name in ("source", "sunshine", "compositor"):
             self.stop(name)
+
+    def start_tone(self, pulseaudio: str, hertz: int) -> None:
+        """The private sound server with the tone, before Sunshine starts."""
+        assert self.root is not None
+        runtime = self.root / "rt"
+        socket_path = runtime / "pulse-native"
+        self.spawn(
+            "sound",
+            [
+                pulseaudio,
+                "--daemonize=no",
+                "--system=no",
+                "--use-pid-file=no",
+                "--exit-idle-time=-1",
+                "--disallow-exit",
+                "--disallow-module-loading",
+                "--realtime=no",
+                "--high-priority=no",
+                "--log-target=stderr",
+                "-n",
+                "-F",
+                str(self.root / "tone.pa"),
+            ],
+            self.environment(
+                # No bus: the server registers nowhere and no client finds it.
+                DBUS_SESSION_BUS_ADDRESS="unix:path=" + str(runtime / "no-session-bus"),
+                DBUS_SYSTEM_BUS_ADDRESS="unix:path=" + str(runtime / "no-system-bus"),
+            ),
+        )
+        for _ in range(100):
+            if socket_path.is_socket() or not self.alive("sound"):
+                break
+            time.sleep(0.1)
+        if not self.alive("sound") or not socket_path.is_socket():
+            raise RuntimeError(
+                "The fixture's sound server did not start: " + self.text("sound.out")[-2000:]
+            )
+        self.tone = {"hz": hertz, "sink": TONE_SINK, "socket": str(socket_path)}
 
     def prepare(self, request: dict) -> dict:
         if self.root is not None:
@@ -615,6 +688,10 @@ class Session:
         self.sway, self.sunshine = str(request["sway"]), str(request["sunshine"])
         width, height = int(request["width"]), int(request["height"])
         hertz = steady_refresh_mhz(float(request["fps"])) / 1000
+        pulseaudio = request.get("pulseaudio")
+        tone_hz = int(request.get("tone_hz", 1000))
+        if pulseaudio and not 20 <= tone_hz <= 20000:
+            raise ValueError("a tone lies between 20 and 20000 Hz")
         nodes = self.render_nodes()
         if not nodes:
             raise RuntimeError(
@@ -643,6 +720,9 @@ class Session:
         # It lives in this process and, hashed, in Sunshine's private home.
         self.login = (secrets.token_hex(8), secrets.token_urlsafe(24))
         write_new(home / "credentials.json", credentials(*self.login), 0o600)
+        if pulseaudio:
+            write_new(self.root / "tone.pa", tone_script(runtime / "pulse-native", tone_hz))
+            write_new(self.root / "pulse-client.conf", "autospawn = no\n")
         # The last step: from here on the agent writes nothing under home or rt.
         if self.identity:
             hand_over(
@@ -655,6 +735,8 @@ class Session:
                 runtime,
             )
         let_in(self.root)
+        if pulseaudio:
+            self.start_tone(str(pulseaudio), tone_hz)
         # Prefer a hardware encoder: take the first render node on which Sunshine
         # finds one. Without one, take the first node that encodes at all.
         attempts: list[dict] = []
@@ -682,12 +764,16 @@ class Session:
             display=output(self.sway_message("-t", "get_outputs")),
             sunshine_version=chosen["sunshine_version"],
             working_encoders=chosen["working_encoders"],
+            # None: Sunshine finds no sound server and sends no sound.
+            tone={"hz": self.tone["hz"], "sink": self.tone["sink"]} if self.tone else None,
             sunshine_port=chosen["port"],
             sunshine_control_port=chosen["port"] + CONTROL_OFFSET,
             listening_tcp_ports=[chosen["port"]],
             # Only the PIDs: the fixture's own children have no identity to restore.
             processes={
-                name: {"pid": self.processes[name].pid} for name in ("compositor", "sunshine")
+                name: {"pid": self.processes[name].pid}
+                for name in ("compositor", "sunshine", "sound")
+                if name in self.processes
             },
             sender_fixture={
                 "application": APPLICATION,
@@ -759,7 +845,7 @@ class Session:
                 self.end(unsafe)
         if self.ended:
             raise RuntimeError(self.ended)
-        for name in ("compositor", "sunshine"):
+        for name in ("compositor", "sunshine", *(("sound",) if self.tone else ())):
             if not self.alive(name):
                 raise RuntimeError(
                     f"The fixture's {name} stopped: " + self.text(f"{name}.out")[-2000:]
@@ -813,7 +899,9 @@ class Session:
         self.stop("source")
         self.check()
         assert self.root is not None
-        persistent = {self.processes[name].pid for name in ("compositor", "sunshine")}
+        persistent = {
+            self.processes[name].pid for name in ("compositor", "sunshine", "sound") if name in self.processes
+        }
         remaining = [
             row for pid in survivors(self.root)
             if (row := describe(pid)) and row["uid"] == self.user_id() and row["session"] not in persistent
@@ -893,11 +981,12 @@ class Session:
         errors = []
         # Before anything stops: a device that the fixture's Sunshine made would go with it.
         appeared = self.new_inputs() if self.root else []
-        for name in ("source", "sunshine", "compositor"):
+        for name in ("source", "sunshine", "compositor", "sound"):
             try:
                 self.stop(name)
             except Exception as error:
                 errors.append(f"{name}: {error}")
+        self.tone = None
         root = self.root
         strays: list[int] = []
         others: list[dict] = []
