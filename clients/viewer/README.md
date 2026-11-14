@@ -566,6 +566,10 @@ buffer queue, and the compositor reads the same buffer.
   transaction puts the layer above the window's own buffer and places it
   with one `setGeometry` call: the stream's whole picture into the largest
   rectangle of its shape in the window, centred (`src/android/placement.rs`).
+  When the window's size changes, the app places the layer again with one
+  more `setGeometry`, posted to the main thread: the turn to landscape can
+  come after Android gives the window (one emulator run saw a 1x1 window
+  then), and a fold changes the size too.
   The app fills its own window black once; it shows in the bars. The layer
   is made on Android's main thread, with the app's own global reference to
   the activity, after the window exists and outside android-activity's
@@ -643,8 +647,9 @@ buffer queue, and the compositor reads the same buffer.
 - Lifecycle: the app sends Start once the layer exists. Back sends Stop,
   and so does the loss of the window, which Android takes when the app
   leaves the screen, as Artemis's Game activity ends the stream in
-  `onStop`. The proof presses Back; it does not press Home. A window resize (a fold) does not move the
-  layer yet; resize of the stream stays unavailable (#476).
+  `onStop`. The proof presses Back; it does not press Home. The layer
+  follows a window resize (above); resize of the stream stays unavailable
+  (#476).
 - Not carried from Artemis: reference frame invalidation (Artemis turns it
   on for Qualcomm, NVIDIA and MediaTek), the vendor keys of NVIDIA,
   MediaTek, Kirin, Exynos and Amlogic (not in the brief's list), the

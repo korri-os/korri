@@ -35,6 +35,9 @@ pub struct VideoLayer {
     /// would remove the layer; the app releases both itself.
     layer: GlobalRef,
     java_surface: GlobalRef,
+    pub stream: (i32, i32),
+    /// The window's size that the placement follows.
+    pub window: (i32, i32),
     pub placed: Rect,
 }
 
@@ -50,7 +53,8 @@ impl VideoLayer {
         window: &NativeWindow,
         stream: (i32, i32),
     ) -> Result<Option<Self>> {
-        let placed = letterbox(stream, (window.width(), window.height()));
+        let size = (window.width(), window.height());
+        let placed = letterbox(stream, size);
         let vm = app.vm_as_ptr() as usize;
         // Our own reference to the activity, taken here: android-activity's
         // may be gone by the time the main thread runs the closure.
@@ -99,8 +103,36 @@ impl VideoLayer {
             surface,
             layer,
             java_surface,
+            stream,
+            window: size,
             placed,
         }))
+    }
+
+    /// Place the layer again when the window's size has changed: the turn
+    /// to landscape can come after Android gives the window (it was 1x1 in
+    /// one emulator run), and a fold changes it too. One `setGeometry`,
+    /// posted to the main thread without waiting. False when the size is
+    /// the same.
+    pub fn follow(&mut self, app: &AndroidApp, window: &NativeWindow) -> bool {
+        let size = (window.width(), window.height());
+        if size == self.window {
+            return false;
+        }
+        self.window = size;
+        self.placed = letterbox(self.stream, size);
+        let vm = app.vm_as_ptr() as usize;
+        let (layer, stream, placed) = (self.layer.clone(), self.stream, self.placed);
+        app.run_on_java_main_thread(Box::new(move || {
+            let _ = attached(vm, |env| {
+                let transaction =
+                    env.new_object("android/view/SurfaceControl$Transaction", "()V", &[])?;
+                set_geometry(env, &transaction, layer.as_obj(), stream, placed)?;
+                env.call_method(&transaction, "apply", "()V", &[])?;
+                Ok(())
+            });
+        }));
+        true
     }
 
     /// The Surface that the decoder renders into.
@@ -158,6 +190,39 @@ fn remove(
     env.call_method(&transaction, "apply", "()V", &[])?;
     env.call_method(java_surface, "release", "()V", &[])?;
     env.call_method(layer, "release", "()V", &[])?;
+    Ok(())
+}
+
+/// The placement: the stream's whole picture into its letterbox, with no
+/// rotation. API 29; deprecated at 33 for setPosition, setScale and setCrop.
+fn set_geometry(
+    env: &mut JNIEnv,
+    transaction: &JObject,
+    layer: &JObject,
+    stream: (i32, i32),
+    placed: Rect,
+) -> jni::errors::Result<()> {
+    let source = rect(
+        env,
+        Rect {
+            left: 0,
+            top: 0,
+            right: stream.0,
+            bottom: stream.1,
+        },
+    )?;
+    let destination = rect(env, placed)?;
+    env.call_method(
+        transaction,
+        "setGeometry",
+        "(Landroid/view/SurfaceControl;Landroid/graphics/Rect;Landroid/graphics/Rect;I)Landroid/view/SurfaceControl$Transaction;",
+        &[
+            JValue::Object(layer),
+            JValue::Object(&source),
+            JValue::Object(&destination),
+            0.into(),
+        ],
+    )?;
     Ok(())
 }
 
@@ -235,29 +300,7 @@ fn make(
         format!("(Landroid/view/SurfaceControl;Z){TRANSACTION}"),
         &[JValue::Object(&layer), true.into()],
     )?;
-    // The placement: the stream's whole picture into its letterbox, with no
-    // rotation. API 29; deprecated at 33 for setPosition, setScale and setCrop.
-    let source = rect(
-        env,
-        Rect {
-            left: 0,
-            top: 0,
-            right: stream.0,
-            bottom: stream.1,
-        },
-    )?;
-    let destination = rect(env, placed)?;
-    env.call_method(
-        &transaction,
-        "setGeometry",
-        format!("(Landroid/view/SurfaceControl;Landroid/graphics/Rect;Landroid/graphics/Rect;I){TRANSACTION}"),
-        &[
-            JValue::Object(&layer),
-            JValue::Object(&source),
-            JValue::Object(&destination),
-            0.into(),
-        ],
-    )?;
+    set_geometry(env, &transaction, &layer, stream, placed)?;
     env.call_method(&transaction, "apply", "()V", &[])?;
     let java_surface = env.new_object(
         "android/view/Surface",

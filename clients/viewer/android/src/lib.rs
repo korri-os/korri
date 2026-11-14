@@ -171,43 +171,35 @@ fn run(app: &AndroidApp) -> Result<()> {
         logcat::info("left before the window was shown; nothing started");
         return Ok(());
     };
-    let Some(layer) = layer::VideoLayer::make(app, &window, (options.width, options.height))?
+    let Some(mut layer) = layer::VideoLayer::make(app, &window, (options.width, options.height))?
     else {
         logcat::info("left while the video layer was made; nothing started");
         return Ok(());
     };
-    let placed = layer.placed;
+    placed(&layer, &window);
+    // The app's window is Android's; after it goes, it must not be used.
+    drop(window);
+    let picture = Picture {
+        surface: layer.surface(),
+        record,
+    };
+    let ended = stream(app, id, address, options, pin, picture, &mut layer);
+    layer.release(app);
+    ended
+}
+
+/// The placement in the log, and the window's one black fill for the bars.
+fn placed(layer: &layer::VideoLayer, window: &NativeWindow) {
+    let (placed, stream, size) = (layer.placed, layer.stream, layer.window);
     logcat::info(&format!(
         "picture: video layer {}x{} placed at ({}, {})-({}, {}) in the window {}x{}",
-        options.width,
-        options.height,
-        placed.left,
-        placed.top,
-        placed.right,
-        placed.bottom,
-        window.width(),
-        window.height()
+        stream.0, stream.1, placed.left, placed.top, placed.right, placed.bottom, size.0, size.1
     ));
-    if let Err(error) = layer::fill_black(&window) {
+    if let Err(error) = layer::fill_black(window) {
         logcat::error(&format!(
             "picture: the bars keep the window's content: {error:#}"
         ));
     }
-    // The app's window is Android's; after it goes, it must not be used.
-    drop(window);
-    let ended = stream(
-        app,
-        id,
-        address,
-        options,
-        pin,
-        Picture {
-            surface: layer.surface(),
-            record,
-        },
-    );
-    layer.release(app);
-    ended
 }
 
 fn stream(
@@ -217,6 +209,7 @@ fn stream(
     options: Options,
     pin: PathBuf,
     picture: Picture,
+    layer: &mut layer::VideoLayer,
 ) -> Result<()> {
     let lifecycle = Lifecycle::in_process(&id, |event| {
         let event = serde_json::to_string(event).unwrap_or_default();
@@ -235,7 +228,7 @@ fn stream(
         launch: id,
         requests: Vec::new(),
     };
-    let driven = drive(app, &mut controller, address, &runtime);
+    let driven = drive(app, &mut controller, address, &runtime, layer);
     if driven.is_err() {
         // A request that could not go leaves the runtime streaming, or
         // waiting for Start: stop it from this thread, which needs no other.
@@ -251,12 +244,14 @@ fn stream(
     driven.and(ended)
 }
 
-/// Start, then Stop when the user leaves, until the runtime ends.
+/// Start, then Stop when the user leaves, until the runtime ends. The video
+/// layer follows the window's size meanwhile.
 fn drive(
     app: &AndroidApp,
     controller: &mut Controller,
     address: String,
     runtime: &JoinHandle<Result<()>>,
+    layer: &mut layer::VideoLayer,
 ) -> Result<()> {
     controller.send(ViewerCommand::Start {
         address,
@@ -276,6 +271,12 @@ fn drive(
         if stop && !stopping {
             stopping = true;
             controller.send(ViewerCommand::Stop)?;
+        }
+        if !stop
+            && let Some(window) = app.native_window()
+            && layer.follow(app, &window)
+        {
+            placed(layer, &window);
         }
     }
     Ok(())
