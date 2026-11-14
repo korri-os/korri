@@ -60,7 +60,11 @@ METRICS: list[tuple[str, str, Callable[[dict], Value]]] = [
     ("3 CPU and battery", "cpu_seconds_per_second", measured("cpu_seconds_per_second")),
     ("3 CPU and battery", "battery_mw", measured("battery_mw")),
     ("4 startup", "startup_ms", measured("startup_ms")),
+    # The median time from a key press to the viewer's input packet, and the
+    # presses that the viewer answered with no packet. A viewer that sends no
+    # input has no time; its count makes it worse, not unmeasured.
     ("5 input", "input_ms", measured("input_ms")),
+    ("5 input", "input_missed", measured("input_missed")),
     ("6 stability", "stream_stalls", measured("stream_stalls")),
     ("6 stability", "viewer_exits", measured("viewer_exits")),
 ]

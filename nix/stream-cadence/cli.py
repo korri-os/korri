@@ -29,6 +29,7 @@ import numpy as np
 from bar import BITS, Location, decode_rows, search
 from decode import decode
 from discovery import session_log
+from input_measure import PressFailed, summarize as summarize_input
 from score import (
     InvalidMeasurement,
     battery_mw,
@@ -712,7 +713,6 @@ def viewer_notes(measure: str) -> dict[str, str]:
     """Why a number of a viewer result has no value, or is not the viewer's (`viewer.not_measured`)."""
     notes = {
         "packet_to_display_ms": "Today's viewer reports no packet arrival time. The gate is sender presentation to viewer display.",
-        "input_ms": "The press-to-packet measure is not built.",
     }
     if measure == QUEUE:
         notes["dropped_frames"] = (
@@ -722,6 +722,30 @@ def viewer_notes(measure: str) -> dict[str, str]:
             "viewer's own drops."
         )
     return notes
+
+
+INPUT_ROUTE = (
+    "The press needs the private X server and network namespace of a same-device PC pair: "
+    "a product viewer in the fixture that asks for x11_vaapi. This run had neither, so no key "
+    "was pressed."
+)
+
+
+def input_numbers(pressed: dict | None) -> tuple[dict, dict[str, str]]:
+    """Number 5 of a run: `viewer.input_ms`, `input_missed` and `input`, and why a value is absent.
+
+    `pressed` is input_measure.summarize of the run's presses; None when the
+    run had no press. A viewer that answers no press has a count and no time.
+    """
+    if pressed is None:
+        return {"input_ms": None, "input_missed": None}, {"input_ms": INPUT_ROUTE, "input_missed": INPUT_ROUTE}
+    notes = {}
+    if pressed["input_ms"] is None:
+        notes["input_ms"] = (
+            f"No press of {pressed['input']['presses']} was answered by a key-down and a key-up "
+            "packet: the viewer sent no input for them (input_missed)."
+        )
+    return dict(pressed), notes
 
 
 def plugin_enabled(code: int, status: str) -> bool:
@@ -1478,6 +1502,23 @@ def view_case(
             if state["capture_exit"] is not None:
                 raise Refusal("Capture client exited during the measure; read capture.log")
             time.sleep(0.5)
+        pressed = None
+        if private_x:
+            # Number 5, after the scored time, so the presses do not share it with
+            # the picture's numbers. The viewer still streams.
+            evidence = viewer.request(
+                "input", press=paths["press"], control_port=facts["sunshine_control_port"]
+            )
+            (directory / "input.json").write_text(json.dumps(evidence, indent=2) + "\n")
+            try:
+                pressed = summarize_input(evidence)
+            except PressFailed as error:
+                raise Refusal(f"Number 5, the press, failed: {error} Read input.json.") from error
+            # The isolation proof and the viewer's life go on after the presses.
+            state = viewer.request("sample")
+            samples.append(state)
+            if state["viewer_exit"] is not None:
+                raise Refusal(f"Viewer exited during the presses ({state['viewer_exit']}); read viewer.log")
         finished = viewer.request("stop")
         # Whether the viewer's own OpenGL was on the graphics card: the render nodes
         # that it held open in any sample. None when no sample could read them.
@@ -1573,9 +1614,11 @@ def view_case(
             "capture_gaps": gaps,
             "output_repeats": repeats,
             "packet_to_display_ms": None,
-            "input_ms": None,
             "not_measured": viewer_notes(facts["measure"]),
         }
+        numbers, notes = input_numbers(pressed)
+        record["viewer"].update(numbers)
+        record["viewer"]["not_measured"].update(notes)
         if record["viewer"]["battery_mw"] is None:
             record["viewer"]["not_measured"]["battery_mw"] = (
                 "No battery discharged through the whole scored time."
@@ -1694,7 +1737,8 @@ def view_case(
                 f"{record['label']} viewer: startup_ms={measured['startup_ms']:.1f} "
                 f"cpu={measured['cpu_seconds_per_second']} stalls={measured['stream_stalls']} "
                 f"capture_gaps={measured['capture_gaps']}/{measured['capture_frames']} "
-                f"output_repeats={measured['output_repeats']}",
+                f"output_repeats={measured['output_repeats']} "
+                f"input_ms={measured.get('input_ms')} input_missed={measured.get('input_missed')}",
                 flush=True,
             )
         if not restored and session is None:
@@ -1800,7 +1844,7 @@ def view(args: argparse.Namespace) -> int:
         if refused:
             raise Refusal(refused)
     seat_parts: tuple[str, ...] = (
-        ("capture",) if installed or copied else ("capture", "viewer")
+        ("capture", "press") if installed or copied else ("capture", "press", "viewer")
     )
     if viewer_target is None:
         seat_parts += ("sway",)
@@ -1813,6 +1857,7 @@ def view(args: argparse.Namespace) -> int:
         "sway": part(sender_paths, "-sway-unwrapped-", "/bin/sway"),
         "sunshine": part(sender_paths, "-sunshine-", "/bin/sunshine"),
         "capture": part(seat_paths, "-stream-cadence-capture-", "/bin/stream-cadence-capture"),
+        "press": part(seat_paths, "-stream-cadence-press-", "/bin/stream-cadence-press"),
         "viewer": part(seat_paths, "-moonlight-embedded-"),
     }
 

@@ -92,9 +92,9 @@ class Conditions(unittest.TestCase):
             # The measure is the cause; the rate and the mode follow from it.
             self.assertNotIn("same sender, request and devices", words)
             self.assertNotIn("recorded before", words)
-        self.assertEqual(len(judge(queue, queue, 5)), 15)
+        self.assertEqual(len(judge(queue, queue, 5)), 16)
         # A result from before the tool named its measure is a base result.
-        self.assertEqual(len(judge(pair(None, 60.0, 58823), base, 5)), 15)
+        self.assertEqual(len(judge(pair(None, 60.0, 58823), base, 5)), 16)
         # verdict reads the result's own label. A build before the periods named the
         # measure called a faster sender `base` when --fps asked for it.
         with self.assertRaisesRegex(ValueError, "queue measure"):
@@ -114,7 +114,7 @@ class Conditions(unittest.TestCase):
     def test_the_override_still_says_which_conditions_differ(self):
         pixman = self.result(viewer_fixture={"renderer": "pixman"})
         gles2 = self.result(viewer_fixture={"renderer": "gles2"})
-        self.assertEqual(len(judge(pixman, gles2, 5, allow_different_conditions=True)), 15)
+        self.assertEqual(len(judge(pixman, gles2, 5, allow_different_conditions=True)), 16)
         words = conditions_that_differ(pixman, gles2)
         self.assertRegex(words, "viewer_renderer")
         self.assertIn("software rasterizer", words)
@@ -128,7 +128,7 @@ class Conditions(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "max_capture_gaps") as refused:
             judge(self.result(), self.result(max_capture_gaps=3), 5)
         self.assertIn("same sender, request and devices", str(refused.exception))
-        self.assertEqual(len(judge(self.result(max_capture_gaps=3), self.result(max_capture_gaps=3), 5)), 15)
+        self.assertEqual(len(judge(self.result(max_capture_gaps=3), self.result(max_capture_gaps=3), 5)), 16)
 
     def test_a_result_beside_a_game_is_not_compared_with_one_without(self):
         game = "korri-game-0123456789abcdef.service"
@@ -146,7 +146,7 @@ class Conditions(unittest.TestCase):
             judge(free, beside, 5)
         self.assertIn("while a game ran on the device", str(refused.exception))
         self.assertNotIn("recorded before", str(refused.exception))
-        self.assertEqual(len(judge(beside, beside, 5)), 15)
+        self.assertEqual(len(judge(beside, beside, 5)), 16)
         # A game at any moment of a run counts: here only at its end, on one side.
         with self.assertRaisesRegex(ValueError, "beside_a_game"):
             judge(free, self.result(**live(sender_at_end=[game])), 5)
@@ -155,9 +155,9 @@ class Conditions(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "beside_a_game"):
             judge(mixed, mixed, 5)
         # A result from before the record was kept ran with no game: the tool refused beside one.
-        self.assertEqual(len(judge(self.result(), free, 5)), 15)
+        self.assertEqual(len(judge(self.result(), free, 5)), 16)
         # Only the lists of units decide; the trial's results also hold the old key `allowed`.
-        self.assertEqual(len(judge(self.result(**live(allowed=True)), free, 5)), 15)
+        self.assertEqual(len(judge(self.result(**live(allowed=True)), free, 5)), 16)
 
     def test_a_product_sender_has_no_render_node_and_predates_nothing_for_it(self):
         product = self.result()

@@ -268,8 +268,8 @@ class AGameThatStartsDuringARun(Device):
             judge(free, between, 5)
         with self.assertRaisesRegex(ValueError, "beside_a_game"):
             judge(free, result(input_devices_disappeared=["js0"]), 5)
-        self.assertEqual(len(judge(between, result(sender_at_start=[GAME]), 5)), 15)
-        self.assertEqual(len(judge(free, free, 5)), 15)
+        self.assertEqual(len(judge(between, result(sender_at_start=[GAME]), 5)), 16)
+        self.assertEqual(len(judge(free, free, 5)), 16)
 
 
 class WhatUsesTheDisplayStillRefuses(Device):

@@ -33,6 +33,7 @@ let
       ./sender.py
       ./viewer.py
       ./fixture_namespace.py
+      ./input_measure.py
     ];
   };
   captureSource = pkgs.lib.fileset.toSource {
@@ -63,6 +64,34 @@ let
     installPhase = ''
       mkdir -p "$out/bin"
       cp stream-cadence-capture "$out/bin/"
+    '';
+  };
+  # Number 5's press: an X client of the pair's private X server. XTest.h
+  # includes the XInput headers.
+  pressLibraries = [
+    pkgs.libx11
+    pkgs.libxext
+    pkgs.libxi
+    pkgs.libxres
+    pkgs.libxtst
+  ];
+  press = pkgs.stdenv.mkDerivation {
+    pname = "stream-cadence-press";
+    version = "1";
+    src = pkgs.lib.fileset.toSource {
+      root = ./.;
+      fileset = ./press.c;
+    };
+    buildInputs = pressLibraries;
+    dontConfigure = true;
+    buildPhase = ''
+      runHook preBuild
+      $CC -std=c11 -Wall -Wextra -Werror -O2 press.c -o stream-cadence-press -lX11 -lXtst -lXRes
+      runHook postBuild
+    '';
+    installPhase = ''
+      mkdir -p "$out/bin"
+      cp stream-cadence-press "$out/bin/"
     '';
   };
   python = pkgs.python3.withPackages (p: [ p.numpy ]);
@@ -135,9 +164,13 @@ let
           pkgs.openssl
           pkgs.python3Packages.ruff
           pkgs.python3Packages.mypy
+          pkgs.xvfb
         ];
+        buildInputs = [ pkgs.libx11 ];
         # The same check runs in sourceCheck; here it runs with all other tests.
         CADENCE_KORRID_VIEWER = korridViewer;
+        # The press that the agents copy, against a real X server.
+        CADENCE_PRESS = "${press}/bin/stream-cadence-press";
       }
       ''
             export PYTHONDONTWRITEBYTECODE=1
@@ -146,7 +179,9 @@ let
             cd source
             cc -std=c11 -Wall -Wextra -Werror tests/bar-render.c -o bar-render
             cc -std=c11 -Wall -Wextra -Werror tests/receive-clock.c -o receive-clock
+            cc -std=c11 -Wall -Wextra -Werror tests/key-window.c -o key-window -lX11
         ./receive-clock
+        export CADENCE_KEY_WINDOW="$PWD/key-window"
         export CADENCE_BAR_RENDER="$PWD/bar-render"
             python3 -m unittest discover -s tests -v
             ruff check --select E9,F .
@@ -160,12 +195,13 @@ in
     shim
     motion
     capture
+    press
     device
     tests
     sourceCheck
     ;
   runtime = {
-    inherit motion capture;
+    inherit motion capture press;
     python = pkgs.python3;
     source = deviceSource;
     # aka is server-only and has no viewer plugin. The fixture copies this one.

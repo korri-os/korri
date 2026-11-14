@@ -304,10 +304,10 @@ class FixtureRenderer(PluginViewerInTheFixture):
         self.assertIn("software rasterizer", str(refused.exception))
         # A result from before the fact ran with pixman: the fixture had no other renderer.
         # So the landed baseline of that time does not compare with a result of today's default.
-        self.assertEqual(len(judge(result(None), result("pixman"), 5)), 15)
+        self.assertEqual(len(judge(result(None), result("pixman"), 5)), 16)
         with self.assertRaisesRegex(ValueError, "viewer_renderer"):
             judge(result(None), result("gles2"), 5)
-        self.assertEqual(len(judge(result("gles2"), result("gles2"), 5)), 15)
+        self.assertEqual(len(judge(result("gles2"), result("gles2"), 5)), 16)
 
 
 class CopiedProductViewer(PluginViewerInTheFixture):
@@ -452,7 +452,7 @@ class CopiedProductViewer(PluginViewerInTheFixture):
         # The same binary, installed as a plugin on one device and copied to the other.
         installed = viewer_ran(PLUGIN, "", FIXTURE)
         self.assertRegex(viewers(result(copied), result(installed))[2], "same viewer binary")
-        self.assertEqual(len(judge(result(copied), result(stand_in), 5)), 15)
+        self.assertEqual(len(judge(result(copied), result(stand_in), 5)), 16)
 
 
 class ProductUnits(unittest.TestCase):
@@ -528,7 +528,7 @@ class ProductUnits(unittest.TestCase):
             "^candidate: the product changed during run-3: korri-shell.service \\(restarted\\), korrid.service \\(restarted\\)",
         )
         # The run stays valid and is judged; the line is what tells.
-        self.assertEqual(len(judge(quiet, switched, 5)), 15)
+        self.assertEqual(len(judge(quiet, switched, 5)), 16)
         # A result from before the record says nothing about its product.
         self.assertEqual(product_changes(result(None), quiet), ["baseline: the product's units were not recorded."])
 
@@ -590,7 +590,7 @@ class WhichViewerAVerdictCompares(unittest.TestCase):
         plugin = self.result(viewer_ran(PLUGIN, "", FIXTURE))
         stand_in = self.result(viewer_ran(None, "/nix/store/cccc-moonlight-embedded-2.7.1", FIXTURE))
         # The viewer is what a comparison changes on purpose: it is compared, and it is said.
-        self.assertEqual(len(judge(plugin, stand_in, 5)), 15)
+        self.assertEqual(len(judge(plugin, stand_in, 5)), 16)
         lines = viewers(plugin, stand_in)
         self.assertRegex(lines[0], "^baseline viewer: plugin build-0123456789ab-test .*bbbb-moonlight-embedded-korri.*in the fixture")
         self.assertRegex(lines[1], "^candidate viewer: stand-in .*cccc-moonlight-embedded-2.7.1.*in the fixture")

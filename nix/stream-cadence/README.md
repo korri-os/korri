@@ -1202,7 +1202,7 @@ display. A long tail in the first is the sender's own.
 | 2 Late, repeated, dropped | `capture_misses`, `repeated_frames`, `late_frames`, `torn_frames`, `undecodable_frames` in each window; `viewer.output_repeats` | A dropped ID was presented and never displayed. A repeated frame shows no new ID. A late frame is a new ID more than 1.5 refresh periods after the previous new ID. An output repeat is a gap in the display record that loses no ID: the panel showed one picture across it. |
 | 3 CPU and battery | `viewer.cpu_seconds_per_second`, `viewer.battery_mw` | Viewer process CPU time from procfs over the scored time. Battery power only while a battery discharges in every sample; else not measured. |
 | 4 Startup | `viewer.startup_ms` | Viewer process start to the first displayed frame of that start: the first ID that the sender presented at or after it. korrid's launch path is not included. On a handheld the time contains the agent's fullscreen and focus step. |
-| 5 Input | `viewer.input_ms` | Not measured: the press-to-packet measure is not built. |
+| 5 Input | `viewer.input_ms`, `viewer.input_missed`, `viewer.input` | In a same-device PC pair only: a key that the X server presses on the viewer's window, to the first send of the viewer's keyboard packet on loopback. The median of 20 presses after the scored time, and the count of presses that the viewer answered with no packet. See "Number 5: the press". Elsewhere not measured. |
 | 6 Stability | `viewer.stream_stalls`, `viewer.viewer_exits` | A stall is one second without a new ID in the scored time. A viewer exit ends the run as invalid. |
 
 `viewer.not_measured` gives the reason for each number that has no value. No
@@ -1279,6 +1279,106 @@ and 1.25 periods (one short run each on 2026-11-11, `tests/intervals.py`):
 In that RG353M run the earlier rule called one gap an output repeat although
 an ID was lost in it. From the first readable frame on, 14 of 15 gaps lose
 an ID by the rule above; 3 more gaps lie before that frame.
+
+### Number 5: the press
+
+ADR 0062 asks for the time from a button press to the packet that leaves the
+device. In a same-device PC pair (the private X route of "PC VA-API fixture
+isolation") each run now has it. After the scored time, while the viewer
+still streams, the viewer's agent presses one key 20 times and reads the
+packets that the viewer sends to the fixture's Sunshine.
+
+**The press.** `press.c` is an X client of the pair's private X server. It
+takes the one viewable top-level window that the viewer process made and that
+asks for key presses (the owner comes from the server's X-Resource
+extension), checks that the server's keyboard focus is on it, and presses and
+releases the key `a` through the XTEST extension. The X server queues that key
+as it queues a key from a keyboard and gives it to the focused window. The
+press time is read just before the request leaves for the server. The key is
+held 30 ms; two presses are 200 to 300 ms apart, with a random gap, so the
+presses do not lock to a frame period. One warm-up press comes first and is
+not measured: Xwayland 24.1 under a headless sway gave no event for the first
+key that XTEST sent it (seen on the build host, 2026-11-13); every later key
+arrived.
+
+**The packet.** Moonlight sends input on its control stream: ENet over UDP to
+Sunshine's control port, the base port + 10 (Sunshine's `stream.h`). ENet's
+headers are plain; the payload is encrypted. Keyboard events, and only they,
+go on ENet channel 2 (`CTRL_CHANNEL_KEYBOARD` of moonlight-common-c). A root
+agent's packet socket on the pair's loopback keeps only UDP to that port and
+takes the kernel's time of each packet: the moment when the viewer's send put
+it on loopback. A reliable command that ENet sends again counts once.
+
+**The match.** A press is answered when, from it to the next press, exactly
+two keyboard sends arrive and the second is not before the release: the key
+down and the key up. `input_ms` is the median time from press to key-down
+packet of the answered presses. `input_missed` counts the presses that were
+not answered. A viewer that sends no keyboard input (Korri's stage-1 viewer)
+has `input_missed` 20 and no `input_ms`. `viewer.input` keeps each press, the
+95th percentile, the largest time and the counts, and `input.json` in the run
+directory keeps every packet and line of the press.
+
+**When the run is invalid.** The measure says nothing about a viewer, and the
+run is invalid, when: the press program fails or finds no single window of
+the viewer; the focus was not on that window before a press or a release;
+the wall clock moved by more than 1 ms against the monotonic clock (packet
+times are wall-clock); the capture saw no packet of the control stream; a
+datagram to the control port is no ENet that the tool reads; or a keyboard
+packet came that no press explains.
+
+**Why it is safe.** The press makes no device and opens none:
+
+- It is an X request on the private X server of the pair, which runs in the
+  pair's network and mount namespaces, on `:0` there. It is not the product's
+  X server and not the product compositor; a key of the press goes nowhere
+  else.
+- The press program runs as the viewer does: the compositor's user, only the
+  groups that own a render node, an empty tmpfs over `/dev/input`, and a
+  child that ends with its agent. That user cannot open `/dev/uinput` or
+  `/dev/uhid`; the sender fixture already refuses to start where it can.
+- The packet socket reads only. The agent opens it only in a thread that is
+  in the pair's network namespace and not in the product's
+  (`PairNamespace.inside`). That namespace has only its own loopback.
+- The fixture's Sunshine has `keyboard`, `mouse` and `controller` off: the key
+  reaches nothing on the sender either.
+- The viewer keeps `-viewonly`. Moonlight's X11 platforms (`x11`,
+  `x11_vaapi`) read keys from their own window in that mode too
+  (`src/video/x11.c` calls `x11_input_init` whatever `-viewonly` says), so
+  nothing has to be lifted. Lifting `-viewonly` would not be safe: Moonlight
+  then enumerates input devices through udev, opens evdev nodes, and starts
+  libcec, which the product build links and which opens a CEC adapter, a
+  real device outside `/dev/input`.
+
+Other ways were looked at and not taken:
+
+| Way | Why not |
+| --- | --- |
+| A uinput device for the viewer alone | A uinput device is a kernel device of the whole machine. Its node, its sysfs entry and its udev event reach the product's input stack; no namespace hides it. |
+| A virtual keyboard of the fixture's compositor (`zwp_virtual_keyboard_v1`) | Possible, and the key would also cross the compositor and Xwayland's Wayland side. It needs a second Wayland client and gives the same packet; the X press is shorter and is checked against the owner and the focus. A later change can add it. |
+| A controller button | Moonlight reads a controller through evdev or SDL's joystick, from a node under `/dev/input`. No such node can exist for the viewer alone (the uinput row). |
+
+**What it covers, and what not.**
+
+- It covers the viewer's own part: from its X server's key event, through the
+  viewer's event loop, Moonlight's input queue, encryption and ENet, to the
+  send. It does not cover the kernel, a real keyboard or controller, the
+  compositor, the network card or the network.
+- It measures a keyboard key, not a controller button. Moonlight's
+  controller path (evdev or SDL, then the same input queue and ENet) is not
+  measured: no controller can exist for the viewer alone.
+- The key is pressed on the viewer's window after the scored time, so the
+  presses do not change the picture's numbers. The CPU of the presses is not
+  in `cpu_seconds_per_second`.
+- It needs the pair's private X server: a same-device PC pair with a product
+  viewer that asks for `x11_vaapi`. The stand-in (SDL on Wayland), an
+  installed viewer on a display and a viewer on another device are not
+  measured, and `viewer.not_measured` says why.
+- No korrid is in the path. A product launch gets controller input from
+  korrid's input stack; this measure does not.
+
+`verdict` judges `input_ms` and `input_missed` by its usual rule. A viewer that
+answers no press is worse in `input_missed` than one that answers all; its
+`input_ms` is not measured.
 
 ### Verdict
 
@@ -1472,7 +1572,7 @@ nix build --no-link --impure --expr \
   'let pkgs = import NIXPKGS_PATH { system = "x86_64-linux"; }; in (import ./nix/stream-cadence { inherit pkgs; }).tests'
 ```
 
-`default.nix` exports `app`, `shim`, `motion`, `capture`, `device`, `tests`, and `sourceCheck`.
+`default.nix` exports `app`, `shim`, `motion`, `capture`, `press`, `device`, `tests`, and `sourceCheck`.
 `runtime` holds what an agent needs on its target, including the sender
 fixture's `sway` and `sunshine` from nixpkgs.
 Use the same expression with an architecture-appropriate `pkgs` to build each
@@ -1482,7 +1582,7 @@ and capture drops, test three display ceilings, parse recorded SP procfs/native
 IPC/journal samples, exercise real SEQPACKET requests and compare limits, and
 reject device constants in production source. A C regression test covers the
 process-relative receive-clock bridge that otherwise causes an immediate stop.
-Sender-fixture tests bind real ports, parse recorded Sunshine startup logs,
+The shipped press runs against a real Xvfb with a client of Moonlight's window shape, and the packet capture reads a real kernel loopback in an unprivileged user and network namespace. Sender-fixture tests bind real ports, parse recorded Sunshine startup logs,
 end real stray processes, and run the host-mode viewer fixture with stand-in
 programs. The app build depends on the source gate. Tests also run Ruff and
 Mypy over every production Python module.

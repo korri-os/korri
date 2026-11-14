@@ -87,6 +87,8 @@ APPLICATION = "Desktop"
 # (rtsp.h), and the UDP streams between them (stream.h).
 PORT_SPAN = range(-5, 22)
 WEB_UI_OFFSET = 1
+# The UDP control stream (stream.h: CONTROL_PORT). A viewer's input travels on it.
+CONTROL_OFFSET = 10
 # Sunshine's built-in default. The fixture never takes a span that touches it,
 # so it stays out of the way of a Sunshine that runs with its default. It knows
 # nothing of a Sunshine that is configured for other ports.
@@ -681,6 +683,7 @@ class Session:
             sunshine_version=chosen["sunshine_version"],
             working_encoders=chosen["working_encoders"],
             sunshine_port=chosen["port"],
+            sunshine_control_port=chosen["port"] + CONTROL_OFFSET,
             listening_tcp_ports=[chosen["port"]],
             # Only the PIDs: the fixture's own children have no identity to restore.
             processes={

@@ -103,6 +103,19 @@ class PairNamespace:
     def record(self) -> dict:
         return {'pid': os.getpid(), **{name: os.readlink(f'/proc/self/ns/{name}') for name in ('net', 'mnt')}}
 
+    def inside(self) -> str:
+        """The pair's network identity, when the calling thread is in it; else refuse.
+
+        A socket belongs to the network namespace of the thread that makes it.
+        Nothing that reads packets may ever see the product's network.
+        """
+        if not self.active or 'net' not in self.original:
+            raise RuntimeError('This agent is in no pair namespace.')
+        here = '/proc/thread-self/ns/net'
+        if os.stat(here).st_ino == os.fstat(self.original['net']).st_ino:
+            raise RuntimeError('This thread is in the product network namespace.')
+        return os.readlink(here)
+
     def close(self) -> None:
         # An agent serves exactly one run and exits after close. Stay in its
         # namespace through cleanup: its guard thread may still share fs_struct,

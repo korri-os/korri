@@ -51,7 +51,7 @@ class DecodeConditions(unittest.TestCase):
         return [copy.deepcopy(record) for _ in range(5)]
 
     def test_same_decode_compares_but_different_decode_never_does_even_with_override(self):
-        self.assertEqual(len(judge(self.result(), self.result(), 5)), 15)
+        self.assertEqual(len(judge(self.result(), self.result(), 5)), 16)
         for override in (False, True):
             with self.assertRaisesRegex(ValueError, 'decode'):
                 judge(self.result(), self.result('vaapi'), 5, override)

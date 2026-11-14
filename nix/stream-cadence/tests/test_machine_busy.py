@@ -148,13 +148,13 @@ class WhatAVerdictMakesOfIt(unittest.TestCase):
         self.assertIn("0.4%..0.7%", words)
         self.assertEqual(conditions_that_differ(loaded, quiet), words)
         # The override lets the verdict go on, and the line stays.
-        self.assertEqual(len(judge(loaded, quiet, 5, allow_different_conditions=True)), 15)
+        self.assertEqual(len(judge(loaded, quiet, 5, allow_different_conditions=True)), 16)
         self.assertRegex(machine_line(loaded, quiet), "baseline.*21.0%..24.0%.*candidate.*0.4%..0.7%")
 
     def test_ranges_that_overlap_are_the_same_machine(self):
         one = self.result([0.004, 0.006, 0.005, 0.004, 0.007])
         other = self.result([0.006, 0.009, 0.005, 0.008, 0.007])
-        self.assertEqual(len(judge(one, other, 5)), 15)
+        self.assertEqual(len(judge(one, other, 5)), 16)
         self.assertIsNone(conditions_that_differ(one, other))
         self.assertRegex(machine_line(one, other), "what else ran.*0.4%..0.7%.*0.5%..0.9%")
 
@@ -162,7 +162,7 @@ class WhatAVerdictMakesOfIt(unittest.TestCase):
         # Two quiet sets whose ranges miss each other by 1 point of all CPUs.
         one = self.result([0.020, 0.025, 0.030, 0.022, 0.028])
         other = self.result([0.040, 0.045, 0.050, 0.042, 0.048])
-        self.assertEqual(len(judge(one, other, 5)), 15)
+        self.assertEqual(len(judge(one, other, 5)), 16)
         self.assertIsNone(conditions_that_differ(one, other))
         self.assertRegex(machine_line(one, other), "2.0%..3.0%.*4.0%..5.0%")
 
@@ -182,7 +182,7 @@ class WhatAVerdictMakesOfIt(unittest.TestCase):
             judge(old, new, 5)
         self.assertRegex(machine_line(old, new), "baseline: not recorded")
         # Two results from before it have nothing to compare and are not refused for it.
-        self.assertEqual(len(judge(old, old, 5)), 15)
+        self.assertEqual(len(judge(old, old, 5)), 16)
         self.assertRegex(machine_line(old, old), "not recorded")
 
 

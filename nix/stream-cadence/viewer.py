@@ -23,6 +23,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
 import signal
 import subprocess
@@ -33,6 +34,7 @@ import time
 from typing import TextIO
 
 from fixture_namespace import PairNamespace, fixture_xwayland, hide_input, isolation, unix_peers
+from input_measure import GAP_MS, HOLD_MS, JITTER_MS, PRESSES, TAIL_SECONDS, Capture, clock_offset_ns
 from discovery import watched_display
 from heat import END_MARGIN, must_end, no_start, start_status, thermal_limits, thermal_zones
 import device
@@ -68,6 +70,9 @@ GUARD_PERIOD = 0.25  # seconds between two looks at a running viewer
 BUSY_RATE = 1.0  # CPU seconds each second that no hardware-decode viewer needs
 BUSY_SECONDS = 2.0  # for this long
 GAME_CHECK_SECONDS = 2.0
+# The press program's whole time: it waits up to 5 s for the viewer's window,
+# then about 1 s and one gap of up to GAP_MS + JITTER_MS for each press.
+PRESS_SECONDS = 60
 # The installed viewer's own words for its first decoded frame (the plugin's
 # Moonlight patches 0002 and 0021): a dma-buf frame comes from a hardware decoder.
 DECODE_STARTED = re.compile(r"first frame from decoder format=\S+ \(DRM_PRIME=(YES|NO)\)")
@@ -938,6 +943,67 @@ class Session:
             "remaining_processes": remaining,
         }
 
+    def press(self, request: dict) -> dict:
+        """Number 5: keys into the viewer's own window, and the packets that it then sends.
+
+        Only inside the pair: the keys go to the pair's private X server, and
+        the capture reads the pair's loopback. The press program takes the
+        viewer's restrictions, with real input nodes hidden; it opens and
+        makes no device. The viewer keeps -viewonly: Moonlight's X11 platforms
+        read keys from their window in that mode too (video/x11.c).
+        """
+        if not self.x_namespace:
+            raise RuntimeError(
+                "The press needs the private X server and network namespace of a same-device "
+                "PC pair; this viewer has neither."
+            )
+        viewer = self.processes.get("viewer")
+        if viewer is None or viewer.poll() is not None:
+            raise RuntimeError("The press needs a running viewer.")
+        network = self.namespace.inside()
+        settings = {
+            "presses": PRESSES,
+            "hold_ms": HOLD_MS,
+            "gap_ms": GAP_MS,
+            "jitter_ms": JITTER_MS,
+            "seed": secrets.randbelow(1 << 31),
+        }
+        port = int(request["control_port"])
+        capture = Capture(port)
+        try:
+            offsets = [clock_offset_ns()]
+            result = subprocess.run(
+                [
+                    request["press"],
+                    str(viewer.pid),
+                    *(str(settings[name]) for name in ("presses", "hold_ms", "gap_ms", "jitter_ms", "seed")),
+                ],
+                cwd=self.home(),
+                env=self.viewer_environment(),
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=PRESS_SECONDS,
+                preexec_fn=self.restrict,
+            )
+            # The last press's packets count until the capture stops.
+            time.sleep(TAIL_SECONDS)
+            offsets.append(clock_offset_ns())
+        finally:
+            packets, end = capture.close()
+        return {
+            "settings": settings,
+            "press_exit": result.returncode,
+            "press_log": result.stdout,
+            "press_errors": result.stderr[-4000:],
+            "packets": packets,
+            "capture_end_ns": end,
+            "clock_offsets_ns": offsets,
+            "viewer_pid": viewer.pid,
+            "control_port": port,
+            "network": network,
+        }
+
     def handle(self, request: dict) -> dict:
         operation = request["operation"]
         if operation == "discover":
@@ -1042,6 +1108,8 @@ class Session:
             if not self.fixture:
                 threading.Thread(target=self.focus, args=(process.pid,), daemon=True).start()
             return {"pid": process.pid, "start_ns": start}
+        if operation == "input":
+            return self.press(request)
         if operation == "sample":
             if (
                 self.watch_games

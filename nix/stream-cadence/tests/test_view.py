@@ -369,10 +369,10 @@ class Verdict(unittest.TestCase):
         new[4]["discovered"]["sunshine_version"] = "2"
         with self.assertRaisesRegex(ValueError, "display, sunshine_version"):
             judge(old, new, 5)
-        self.assertEqual(len(judge(old, new, 5, allow_different_conditions=True)), 15)
+        self.assertEqual(len(judge(old, new, 5, allow_different_conditions=True)), 16)
         # The power state of the sender's display is not a condition.
         old[0]["discovered"]["display"]["power"] = False
-        self.assertEqual(len(judge(old, old, 5)), 15)
+        self.assertEqual(len(judge(old, old, 5)), 16)
 
     def test_result_from_before_a_metric_existed_is_not_measured(self):
         old = [run(20 + n, 900) for n in range(5)]
