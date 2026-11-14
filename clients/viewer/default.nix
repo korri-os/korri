@@ -84,6 +84,8 @@ let
       ../../contracts/viewer/src
       ../../contracts/surface/Cargo.toml
       ../../contracts/surface/src
+      # korrid refuses @korri:viewer unless this file equals its own copy.
+      ../../contracts/generated/viewer.ts
     ];
   };
   source = "${repositorySource}/clients/viewer";
@@ -126,6 +128,9 @@ let
           >> "$korriInputplumberMapping"
         mkdir -p $out/share/licenses/korri-viewer
         cp LICENSE $out/share/licenses/korri-viewer/
+        # The wire contract this binary speaks, as Typeshare generated it. The
+        # plugin declares it as files.treaty; korrid compares the bytes.
+        install -Dm0444 ../../contracts/generated/viewer.ts $out/share/korri-viewer/viewer.ts
       '';
       # The FFmpeg the viewer links, for the aarch64 check.
       passthru = { inherit ffmpeg; };
@@ -252,6 +257,52 @@ let
           xvfb-run -a -s '-screen 0 640x480x24 -nolisten tcp' ./check-sdl frames.h264
         touch "$out"
       '';
+  # GPL-3 corresponding source of `package` (ADR 0059): this package's Rust,
+  # C and recipe, the network core with its ENet, and the vendored crates.
+  # The plugin carries it beside the binary. nixpkgs' shared libraries are
+  # system libraries here and come with their own sources from nixpkgs.
+  correspondingSource =
+    pkgs.runCommand "korri-viewer-corresponding-source-${package.version}"
+      {
+        nativeBuildInputs = [
+          pkgs.gnutar
+          pkgs.xz
+        ];
+      }
+      ''
+        root=korri-viewer-source
+        mkdir -p $root/korri $root/moonlight-common-c $root/vendor
+        cp -r ${repositorySource}/. $root/korri/
+        chmod -R u+w $root/korri
+        cp ${./default.nix} $root/korri/clients/viewer/default.nix
+        cp ${./README.md} $root/korri/clients/viewer/README.md
+        # The FFmpeg patch of the aarch64 build; nixpkgs FFmpeg is its base.
+        cp -r ${./ffmpeg} $root/korri/clients/viewer/ffmpeg
+        cp -r ${upstream}/third_party/moonlight-common-c/. $root/moonlight-common-c/
+        # The vendor directory links each crate; the archive holds their files.
+        cp -rL ${package.cargoDeps}/. $root/vendor/
+        cat > $root/BUILDING.txt <<'EOF'
+        korri-viewer ${package.version}, GPL-3.0-or-later.
+
+        korri/                The Korri repository files that build the viewer.
+                              clients/viewer/default.nix is the Nix recipe.
+        moonlight-common-c/   The network core at b126e481a195fdc7152d211def17190e3434bcce,
+                              with its ENet, from Moonlight Embedded
+                              775444287305849ebdf4736c75298ad0713e2d5d.
+        vendor/               The Rust crates of korri/clients/viewer/Cargo.lock.
+
+        On aarch64 the viewer links nixpkgs FFmpeg with
+        korri/clients/viewer/ffmpeg/0001-v4l2-request.patch, as default.nix says.
+
+        Build the network core with CMake, then run cargo build --release
+        --offline in korri/clients/viewer with MOONLIGHT_COMMON_INCLUDE and
+        MOONLIGHT_COMMON_LIB set to its headers and shared library, and
+        vendor/ configured as the crates.io source.
+        EOF
+        mkdir -p $out/share/korri-viewer
+        tar --sort=name --mtime=@1 --owner=0 --group=0 --numeric-owner \
+          -cJf $out/share/korri-viewer/korri-viewer-source.tar.xz $root
+      '';
 in
 {
   inherit
@@ -259,6 +310,7 @@ in
     network
     pictureCheck
     ioCheck
+    correspondingSource
     ;
   devShell = pkgs.mkShell (
     environment
