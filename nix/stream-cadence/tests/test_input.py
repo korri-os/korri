@@ -127,19 +127,55 @@ class Matching(unittest.TestCase):
     def test_a_press_is_answered_by_one_key_down_and_one_key_up(self):
         log = input_measure.press_log(press_log(TIMES))
         sends = [wall(at) for at, data in answered_packets() if data != ping()]
-        rows = match(log["events"], sends, wall(2000))
+        rows, attribution = match(log["events"], sends, wall(2000))
+        self.assertEqual(attribution, "order")
         self.assertEqual([row["index"] for row in rows], [0, 1, 2])
         for row in rows:
             self.assertAlmostEqual(row["latency_ms"], 0.4, places=6)
             self.assertAlmostEqual(row["release_latency_ms"], 0.4, places=6)
 
+    def test_a_late_key_up_that_leaves_with_the_next_key_down_keeps_its_own_delay(self):
+        # aka, 2026-11-14 UTC: the key-up of one press left in the datagram of the next key-down.
+        log = input_measure.press_log(press_log(TIMES))
+        sends = [wall(TIMES[0] + 0.05), wall(TIMES[1] + 0.06), wall(TIMES[1] + 0.06),
+                 wall(TIMES[1] + 30.05), wall(TIMES[2] + 0.05), wall(TIMES[2] + 30.05)]
+        rows, attribution = match(log["events"], sends, wall(2000))
+        self.assertEqual(attribution, "order")
+        self.assertAlmostEqual(rows[1]["latency_ms"], 0.06, places=6)
+        self.assertAlmostEqual(rows[0]["release_latency_ms"], TIMES[1] + 0.06 - TIMES[0] - 30, places=6)
+
+    def test_the_warmups_two_packets_come_first_when_its_key_arrived(self):
+        log = input_measure.press_log(press_log(TIMES))
+        sends = [wall(0.1), wall(30.1)] + [wall(at) for at, data in answered_packets() if data != ping()]
+        rows, attribution = match(log["events"], sends, wall(2000))
+        self.assertEqual(attribution, "order")
+        self.assertTrue(all(abs(row["latency_ms"] - 0.4) < 1e-6 for row in rows))
+
+    def test_a_viewer_that_lost_a_key_is_judged_press_by_press(self):
+        log = input_measure.press_log(press_log(TIMES))
+        sends = [wall(at) for at, data in answered_packets() if data != ping()]
+        del sends[3]  # the second key-up never left
+        rows, attribution = match(log["events"], sends, wall(2000))
+        self.assertEqual(attribution, "interval")
+        self.assertEqual([row["packets"] for row in rows], [2, 1, 2])
+        self.assertEqual([row["latency_ms"] is None for row in rows], [False, True, False])
+
     def test_no_packet_one_packet_or_an_early_second_packet_answers_nothing(self):
         log = input_measure.press_log(press_log(TIMES))
         sends = [wall(TIMES[1] + 1), wall(TIMES[2] + 1), wall(TIMES[2] + 2)]
-        rows = match(log["events"], sends, wall(2000))
+        rows, attribution = match(log["events"], sends, wall(2000))
+        self.assertEqual(attribution, "interval")
         self.assertEqual([row["packets"] for row in rows], [0, 1, 2])
         # The third press has two packets, but the second came before its release.
         self.assertEqual([row["latency_ms"] for row in rows], [None, None, None])
+
+    def test_a_packet_before_its_own_key_is_no_answer_in_order(self):
+        log = input_measure.press_log(press_log(TIMES))
+        sends = [wall(at) for at, data in answered_packets() if data != ping()]
+        sends[0] = wall(TIMES[0] - 50)  # before the first press: not its key-down
+        rows, attribution = match(log["events"], sends, wall(2000))
+        self.assertEqual(attribution, "interval")
+        self.assertIsNone(rows[0]["latency_ms"])
 
 
 class Summary(unittest.TestCase):
@@ -151,6 +187,8 @@ class Summary(unittest.TestCase):
         self.assertEqual(result["input_missed"], 0)
         record = result["input"]
         self.assertEqual(record["method"], "x11-xtest-key")
+        self.assertEqual(record["attribution"], "order")
+        self.assertAlmostEqual(record["release_max_ms"], 0.4, places=6)
         self.assertEqual((record["presses"], record["answered"], record["missed"]), (3, 3, 0))
         self.assertAlmostEqual(record["max_ms"], 2.0, places=6)
         self.assertEqual(record["control_packets"], 7)
@@ -180,6 +218,7 @@ class Summary(unittest.TestCase):
             "stepped": evidence(good, TIMES, clock_offsets_ns=[OFFSET, OFFSET + 2 * MS]),
             "no packet": evidence([], TIMES),
             "no press explains": evidence([(-50.0, key(99))] + good, TIMES),
+            "explains": evidence(good + [(1500.0, key(90)), (1501.0, key(91)), (1502.0, key(92))], TIMES),
             "no ENet": evidence(good + [(900.0, b"\x80")], TIMES),
             "did not finish": evidence(good, TIMES, press_log=press_log(TIMES).replace("done\n", "")),
             "another number": evidence(good, TIMES, settings={"presses": 4}),

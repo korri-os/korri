@@ -1309,14 +1309,26 @@ agent's packet socket on the pair's loopback keeps only UDP to that port and
 takes the kernel's time of each packet: the moment when the viewer's send put
 it on loopback. A reliable command that ENet sends again counts once.
 
-**The match.** A press is answered when, from it to the next press, exactly
-two keyboard sends arrive and the second is not before the release: the key
-down and the key up. `input_ms` is the median time from press to key-down
-packet of the answered presses. `input_missed` counts the presses that were
-not answered. A viewer that sends no keyboard input (Korri's stage-1 viewer)
-has `input_missed` 20 and no `input_ms`. `viewer.input` keeps each press, the
-95th percentile, the largest time and the counts, and `input.json` in the run
-directory keeps every packet and line of the press.
+**The match.** Moonlight sends one keyboard command for each key event of its
+window, in the order of the events. When the count of keyboard sends is one
+for each key event (plus two when the warm-up's key arrived) and no send comes
+before its own event, the order gives each key its packet
+(`viewer.input.attribution` is `order`). A packet can wait for a later event:
+in the first turn on aka (2026-11-14 UTC, under another test's load) one
+key-up left 173 ms late, in one datagram with the next key-down. The order
+keeps that delay with the key-up and the next key-down's own 0.06 ms with
+the key-down. When the count or the times do not fit, the viewer did not send
+one packet for each key (`interval`): a press is then answered only when,
+from it to the next press, exactly two keyboard sends arrive and the second
+is not before the release. No packet is guessed for a press.
+
+`input_ms` is the median time from press to key-down packet of the answered
+presses. `input_missed` counts the presses that were not answered. A viewer
+that sends no keyboard input (Korri's stage-1 viewer) has `input_missed` 20
+and no `input_ms`. `viewer.input` keeps each press, the 95th percentile, the
+largest time, the key-up times (`release_p50_ms`, `release_max_ms`: a key-up
+is no press, and `input_ms` leaves it out) and the counts. `input.json` in the
+run directory keeps every packet and line of the press.
 
 **When the run is invalid.** The measure says nothing about a viewer, and the
 run is invalid, when: the press program fails or finds no single window of
@@ -1324,7 +1336,8 @@ the viewer; the focus was not on that window before a press or a release;
 the wall clock moved by more than 1 ms against the monotonic clock (packet
 times are wall-clock); the capture saw no packet of the control stream; a
 datagram to the control port is no ENet that the tool reads; or a keyboard
-packet came that no press explains.
+packet came that no press explains (before the warm-up, or more packets than
+key events).
 
 **Why it is safe.** The press makes no device and opens none:
 

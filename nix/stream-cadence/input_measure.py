@@ -142,12 +142,47 @@ def keyboard_sends(packets: list[dict]) -> tuple[list[int], int]:
     return times, unreadable
 
 
-def match(events: list[dict], sends: list[int], end_ns: int) -> list[dict]:
+# How a packet was given to its key event (`viewer.input.attribution`).
+ORDER, INTERVAL = "order", "interval"
+
+
+def in_order(events: list[dict], sends: list[int]) -> list[dict] | None:
+    """Each measured press with its packets, when the viewer sent one packet for each key event, in order.
+
+    Moonlight sends one keyboard command for each key event that its window
+    gets, in the order of the events: one input queue, one ENet channel. A
+    packet can still wait for a later event: on aka on 2026-11-14 UTC a key-up
+    left together with the next key-down, 173 ms late. The order, not the
+    time, then says which packet answers which key. When the warm-up's key
+    arrived, its two packets come first. None when the counts or the times do
+    not fit: another number of packets, or a packet before its own event.
+    `sends` are the keyboard sends from the warm-up press on.
+    """
+    measured = sorted((row for row in events if row["index"] >= 0), key=lambda row: row["realtime_ns"])
+    if len(sends) == len(measured) + 2:
+        sends = sends[2:]
+    if len(sends) != len(measured) or any(ns < row["realtime_ns"] for ns, row in zip(sends, measured)):
+        return None
+    if [row["kind"] for row in measured] != ["press", "release"] * (len(measured) // 2):
+        return None
+    return [
+        {
+            "index": press["index"],
+            "packets": 2,
+            "latency_ms": (down - press["realtime_ns"]) / 1e6,
+            "release_latency_ms": (up - release["realtime_ns"]) / 1e6,
+        }
+        for press, release, down, up in zip(measured[::2], measured[1::2], sends[::2], sends[1::2])
+    ]
+
+
+def by_interval(events: list[dict], sends: list[int], end_ns: int) -> list[dict]:
     """Each measured press with the keyboard sends in its interval: from it to the next press, the last to `end_ns`.
 
-    A press is answered when its interval holds exactly two sends, the second
-    one not before the release: the key down and the key up. Any other count
-    leaves the press unanswered, and no packet is guessed for it.
+    For a viewer that did not send one packet for each key event. A press is
+    answered when its interval holds exactly two sends, the second one not
+    before the release: the key down and the key up. Any other count leaves
+    the press unanswered, and no packet is guessed for it.
     """
     presses = [row for row in events if row["kind"] == "press" and row["index"] >= 0]
     releases = {row["index"]: row for row in events if row["kind"] == "release" and row["index"] >= 0}
@@ -168,6 +203,14 @@ def match(events: list[dict], sends: list[int], end_ns: int) -> list[dict]:
             }
         )
     return rows
+
+
+def match(events: list[dict], sends: list[int], end_ns: int) -> tuple[list[dict], str]:
+    """Each measured press with its answer, and how the answers were found (ORDER or INTERVAL)."""
+    rows = in_order(events, sends)
+    if rows is not None:
+        return rows, ORDER
+    return by_interval(events, sends, end_ns), INTERVAL
 
 
 def nearest_rank(values: list[float], share: float) -> float:
@@ -219,19 +262,23 @@ def summarize(evidence: dict) -> dict:
         raise PressFailed(f"{unreadable} datagrams to the control port are no ENet that this tool reads.")
     warmup = min(row["realtime_ns"] for row in events)
     first = min((row["realtime_ns"] for row in measured), default=evidence["capture_end_ns"])
-    stray = [ns for ns in sends if ns < warmup]
-    if stray or len([ns for ns in sends if warmup <= ns < first]) > 2:
+    if any(ns < warmup for ns in sends) or len(sends) > len(events):
         raise PressFailed("A keyboard packet came that no press explains.")
-    rows = match(events, sends, evidence["capture_end_ns"])
+    rows, attribution = match(events, sends, evidence["capture_end_ns"])
     latencies = [row["latency_ms"] for row in rows if row["latency_ms"] is not None]
+    releases = [row["release_latency_ms"] for row in rows if row["release_latency_ms"] is not None]
     record = {
         "method": METHOD,
+        "attribution": attribution,
         "presses": len(rows),
         "answered": len(latencies),
         "missed": len(rows) - len(latencies),
         "p50_ms": statistics.median(latencies) if latencies else None,
         "p95_ms": nearest_rank(latencies, 0.95) if latencies else None,
         "max_ms": max(latencies) if latencies else None,
+        # A key-up is no press, and input_ms leaves it out; a late one is kept here.
+        "release_p50_ms": statistics.median(releases) if releases else None,
+        "release_max_ms": max(releases) if releases else None,
         "control_packets": len(packets),
         "keyboard_packets": len(sends),
         "warmup_packets": len([ns for ns in sends if warmup <= ns < first]),
