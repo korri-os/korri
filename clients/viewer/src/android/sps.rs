@@ -1,8 +1,16 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: GPL-3.0-only
 //! The H.264 SPS rewrite that Artemis applies before Android's decoder sees
 //! the stream (`MediaCodecDecoderRenderer.submitDecodeUnit`, jcodec's
 //! `SeqParameterSet`), so that the decoder holds no more frames than the
 //! stream needs. Pure: the decoder calls it with each SPS that arrives.
+//!
+//! The patch is ported from Korri's copy of Artemis (`clients/android`, from
+//! `simonwjackson/artemis` at `cf12c432`, a fork of
+//! `ClassicOldSong/moonlight-android`, itself a fork of
+//! `moonlight-stream/moonlight-android`), `MediaCodecDecoderRenderer.java`
+//! (`submitDecodeUnit`, `doProfileSpecificSpsPatching`). Artemis ships under the GNU GPL version 3 with no "or later" grant, so
+//! this file does too. The Rust adaptation is Korri work dated 2026-11-14. The
+//! bit reader and writer are Korri's, after ITU-T H.264; no jcodec code.
 //!
 //! The rewrite reads every syntax element of the SPS (ITU-T H.264, 7.3.2.1.1
 //! and E.1.1) and writes it again, changing only the fields of a [`Patch`].

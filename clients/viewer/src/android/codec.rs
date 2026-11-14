@@ -1,9 +1,18 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: GPL-3.0-only
 //! Which Android decoder takes the H.264 stream, and the low-latency format
 //! keys it is configured with: Artemis's `MediaCodecHelper`, as the research
 //! brief lists it (`docs/research/2026-11-13-viewer-rust-android.md`,
 //! findings 20 and 21). Pure: `picture.rs` reads the decoder list through JNI
 //! and configures the codec with each try in turn.
+//!
+//! Ported from Korri's copy of Artemis (`clients/android`, from
+//! `simonwjackson/artemis` at `cf12c432`, a fork of
+//! `ClassicOldSong/moonlight-android`, itself a fork of
+//! `moonlight-stream/moonlight-android`), `MediaCodecHelper.java`: the decoder rounds
+//! (`findProbableSafeDecoder`, `findKnownSafeDecoder`, `findFirstDecoder`,
+//! `isCodecBlacklisted`), the decoder name lists, and
+//! `setDecoderLowLatencyOptions`. Artemis ships under the GNU GPL version 3 with no "or later" grant, so
+//! this file does too. The Rust adaptation is Korri work dated 2026-11-14.
 
 /// One entry of Android's `MediaCodecList` (REGULAR_CODECS) that decodes H.264.
 #[derive(Clone, Debug, PartialEq, Eq)]

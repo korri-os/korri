@@ -626,6 +626,11 @@ buffer queue, and the compositor reads the same buffer.
   each frame to the display at once
   (`AMediaCodec_releaseOutputBufferAtTime` with the time now); when the
   decoder has returned more than one, only the newest goes.
+- Licence: `codec.rs`, `sps.rs`, `decoder.rs` and `picture.rs` port
+  Artemis code (each names its source). Artemis ships under the GNU GPL
+  version 3 with no "or later" grant, so these files are `GPL-3.0-only`
+  and keep that attribution, and the Android library is under
+  GPL-3.0-only. The Linux binary does not build them.
 - The picture path in the log, as the Linux viewer reports its own:
   `picture: decode <decode> decoder <name> … try <n> keys <keys>`, with the
   list it chose from (`picture: decoders for video/avc: …`) and the

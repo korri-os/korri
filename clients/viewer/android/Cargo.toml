@@ -2,7 +2,7 @@
 name = "korri-viewer-android"
 version = "0.1.0"
 edition = "2024"
-license = "GPL-3.0-or-later"
+license = "GPL-3.0-only"
 publish = false
 
 # The library that Android's own NativeActivity loads (AndroidManifest.xml).
