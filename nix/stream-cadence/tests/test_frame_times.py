@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import cli  # noqa: E402
 from bar import Clean, paint  # noqa: E402
-from score import frame_times, packet_to_display  # noqa: E402
+from score import frame_times, number_one, packet_to_display  # noqa: E402
 import test_plugin_viewer  # noqa: E402
 import viewer  # noqa: E402
 
@@ -101,16 +101,60 @@ class NumberOne(unittest.TestCase):
         report = packet_to_display(UNITS, CARRIED, rows, shown, 0, 100 * MS)
         self.assertEqual((report["frames"], report["unreported"], report["unreported_ids"]), (3, 1, [3]))
 
-    def test_a_display_before_the_hand_off_is_counted_not_hidden(self):
-        rows, shown = display([(10, 1), (19, 2)])
+    def test_a_display_before_the_hand_off_is_counted_and_left_out_of_number_one(self):
+        rows, shown = display([(10, 1), (19, 2), (46, 4)])
         report = packet_to_display(UNITS, CARRIED, rows, shown, 0, 100 * MS)
-        self.assertEqual(report["handoff_after_display"], 1)
+        self.assertEqual((report["handoff_after_display"], report["handoff_after_display_ids"]), (1, [2]))
+        # The check keeps it; number 1 has the other two IDs only.
+        self.assertEqual(report["frames"], 3)
         self.assertEqual(report["handoff_to_display_ms"]["min"], -1.0)
+        self.assertEqual(report["packet_to_display_ms"]["count"], 2)
+        self.assertEqual(report["packet_to_display_ms"]["max"], 4.0)
 
     def test_a_recording_that_decodes_to_another_count_is_refused(self):
         rows, shown = display([(10, 1)])
         with self.assertRaisesRegex(ValueError, "decodes to 6 frames"):
             packet_to_display(UNITS, CARRIED[:-1], rows, shown, 0, 100 * MS)
+
+
+def evidence(frames: int, early: int = 0, unreported: int = 0) -> dict:
+    return {
+        "frames": frames,
+        "unreported": unreported,
+        "handoff_after_display": early,
+        "packet_to_display_ms": {"p50": 2.5 if frames > early else None},
+    }
+
+
+class NumberOneRule(unittest.TestCase):
+    def test_up_to_one_percent_of_early_hand_offs_keeps_the_value(self):
+        self.assertEqual(number_one(evidence(1000, early=10)), (2.5, None))
+
+    def test_more_than_one_percent_of_early_hand_offs_gives_no_value(self):
+        value, reason = number_one(evidence(1000, early=11))
+        self.assertIsNone(value)
+        assert reason is not None
+        self.assertIn("11 of 1000 matched IDs were on the display before the viewer's hand-off", reason)
+        self.assertEqual(number_one(evidence(1, early=1))[0], None)
+
+    def test_an_unreported_id_or_no_match_gives_no_value(self):
+        self.assertIn("incomplete", number_one(evidence(1000, unreported=1))[1] or "")
+        self.assertIn("no new ID", number_one(evidence(0))[1] or "")
+
+
+class UnaskedReason(unittest.TestCase):
+    TODAY = cli.viewer_notes(cli.BASE)["packet_to_display_ms"]
+
+    def test_moonlight_keeps_its_own_reason_and_the_disk_note_follows(self):
+        reason = cli.number_one_unasked(self.TODAY, True, "No room for the recording.")
+        self.assertEqual(reason, self.TODAY + " No room for the recording.")
+        self.assertIn("no packet arrival time", reason)
+
+    def test_a_viewer_that_was_asked_and_wrote_nothing_keeps_its_reason(self):
+        self.assertEqual(cli.number_one_unasked(self.TODAY, True, None), self.TODAY)
+
+    def test_the_option_that_leaves_the_ask_out_is_named(self):
+        self.assertEqual(cli.number_one_unasked(self.TODAY, False, None), f"{self.TODAY} {cli.NOT_ASKED}")
 
 
 class Option(unittest.TestCase):
@@ -210,6 +254,17 @@ PROGRAM = (
 
 
 class Agent(test_plugin_viewer.PluginViewerInTheFixture):
+    def setUp(self):
+        super().setUp()
+        self.meminfo = Path(self.directory.name) / "meminfo"
+        self.available(1 << 40)
+        previous = viewer.MEMINFO
+        viewer.MEMINFO = self.meminfo
+        self.addCleanup(setattr, viewer, "MEMINFO", previous)
+
+    def available(self, size: int) -> None:
+        self.meminfo.write_text(f"MemTotal:       {2 << 30 >> 10} kB\nMemAvailable:   {size >> 10} kB\n")
+
     def start(self, session: viewer.Session, **ask) -> dict:
         program = Path(self.directory.name) / "moonlight"
         program.write_text(f"#!{sys.executable}\n" + PROGRAM)
@@ -255,6 +310,37 @@ class Agent(test_plugin_viewer.PluginViewerInTheFixture):
         started = self.start(session, frame_times=True, recording_bytes=free)
         self.assertIn("no frame record was asked for", started["frame_times_refused"])
         self.assertIn("asked: None None", session.tail("viewer"))
+
+    def test_free_memory_bounds_the_room_as_a_tmpfs_size_does_not(self):
+        session = self.session()
+        self.prepare(session)
+        self.available(3 << 20)
+        started = self.start(session, frame_times=True, recording_bytes=2 << 20)
+        self.assertIn("3 MiB of memory available", started["frame_times_refused"])
+        self.assertIn("asked: None None", session.tail("viewer"))
+
+    def test_the_run_ends_when_room_falls_below_half_the_recording(self):
+        session = self.session()
+        self.prepare(session)
+        program = Path(self.directory.name) / "moonlight"
+        program.write_text(f"#!{sys.executable}\n" + PROGRAM)
+        program.chmod(0o755)
+        session.handle({
+            "operation": "start", "command": [str(program), "stream"],
+            "frame_times": True, "recording_bytes": 8 << 20,
+        })
+        for _ in range(500):
+            if "asked:" in session.tail("viewer"):
+                break
+            time.sleep(0.01)
+        self.assertIsNotNone(session.handle({"operation": "sample"})["memory_available"])
+        self.available(3 << 20)
+        with self.assertRaisesRegex(RuntimeError, "below the 4 MiB that the viewer's recording leaves"):
+            session.handle({"operation": "sample"})
+        # The guard's one action: the viewer is stopped, and the reason stays.
+        self.assertIsNotNone(session.processes["viewer"].poll())
+        with self.assertRaisesRegex(RuntimeError, "recording leaves"):
+            session.handle({"operation": "stop"})
 
 
 if __name__ == "__main__":

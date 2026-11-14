@@ -289,12 +289,15 @@ the tool asked, and number 1 then has no value with that reason.
 
 **Room for the recording.** The recording is the stream as it arrived: about
 the requested bitrate times the measured start's time, 109 MB at the
-defaults. A private pair's run directory is a tmpfs in memory. The agent
-first removes an earlier start's two names, then asks only when the
-filesystem has twice that size free; otherwise number 1 has no value and
-says so. While the viewer runs, the agent ends the run as invalid when free
-space falls below half that size. Each sample records `run_directory_free`
-and `recording_bytes`.
+defaults. A private pair's run directory is a tmpfs in memory, and a tmpfs
+reports its size limit, not memory that is free. So the room is the smaller
+of the filesystem's free space and the device's `MemAvailable`. The agent
+first removes an earlier start's two names, then asks only when the room is
+twice that size; otherwise number 1 has no value and says so. While the
+viewer runs, the agent ends the run as invalid when the room falls below
+half that size. On a disk the memory bound can refuse a recording that would
+fit; the agent does not tell the two apart. Each sample records
+`run_directory_free`, `memory_available` and `recording_bytes`.
 
 **Collection.** After the viewer stops, the agent returns `times.csv` with
 the evidence. The tool copies the recording to the host run directory in
@@ -313,8 +316,8 @@ that the viewer handed to the display. Then:
 | --- | --- |
 | `viewer.packet_to_display_ms` | The median over those IDs of the unit's `display_ns` less its `enqueue_ns`, both from the viewer: last packet to the viewer's hand-off |
 | `viewer.frame_times.packet_to_display_ms` | The same values: `count`, `p50`, `p95`, `max` |
-| `viewer.frame_times.handoff_to_display_ms` | The check: the display record's `display_ns` less the viewer's hand-off, for the same IDs. `count`, `p50`, `p95`, `max`, `min` |
-| `viewer.frame_times.handoff_after_display` | IDs that the display record shows before the viewer's hand-off. Counted, not hidden; such a time is wrong |
+| `viewer.frame_times.handoff_to_display_ms` | The check: the display record's `display_ns` less the viewer's hand-off, for every matched ID. `count`, `p50`, `p95`, `max`, `min` |
+| `viewer.frame_times.handoff_after_display`, `handoff_after_display_ids` | IDs that the display record shows before the viewer's hand-off, and the first 20 of them. Such a hand-off time is wrong: the ID stays in the check and is left out of number 1 |
 | `viewer.frame_times.frames`, `unreported`, `unreported_ids` | IDs matched; IDs shown in the scored time that no handed-off unit carries, and the first 20 of them |
 | `viewer.frame_times.recording_bytes` | The size of the copied recording |
 
@@ -327,9 +330,12 @@ only where the capture runs.
 
 **No value, and why.** `viewer.not_measured.packet_to_display_ms` keeps the
 reason when number 1 has no value. A viewer that wrote no record keeps
-today's reason. A record that leaves a shown ID unreported, that is out of
-order, or whose recording does not decode to one frame for each unit gives
-no value either, with its own reason. In each of these cases every other
+today's reason; when the tool did not ask, because of `--no-frame-record` or
+for lack of room, that note follows it. A record that leaves a shown ID
+unreported, that has more than 1% of its matched IDs on the display before
+their hand-off (`score.py:HANDOFF_AFTER_DISPLAY_LIMIT`, a review rule chosen
+without data), that is out of order, or whose recording does not decode to
+one frame for each unit gives no value either, with its own reason. In each of these cases every other
 number of the run stands, and the run stays valid. The recording stays in
 the host run directory only when number 1 has no value; else the tool
 removes it there too. `times.csv` stays.

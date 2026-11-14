@@ -42,6 +42,7 @@ from score import (
     first_measured_frame,
     frame_times,
     machine_use,
+    number_one,
     packet_to_display,
     score,
     stamps,
@@ -827,16 +828,26 @@ def viewer_frame_record(
     carried = decode_alive(video, directory / "recording-decode.log", keepalive)
     evidence = packet_to_display(units, carried, rows, shown, *scored)
     evidence["recording_bytes"] = copied
-    if not evidence["frames"]:
-        return evidence, "The display record shows no new ID in the scored time that the viewer handed over."
-    if evidence["unreported"]:
-        return evidence, (
-            f"{evidence['unreported']} IDs that the display record shows in the scored time "
-            "are in no unit that the viewer reports as handed to the display; the record is incomplete."
-        )
-    # About 110 MB a run at the defaults. Kept only when number 1 has no value.
-    video.unlink()
-    return evidence, None
+    _, missing = number_one(evidence)
+    if missing is None:
+        # About 110 MB a run at the defaults. Kept only when number 1 has no value.
+        video.unlink()
+    return evidence, missing
+
+
+# Why number 1 has no value when the tool did not ask for the frame record.
+NOT_ASKED = "The tool did not ask for the viewer's frame record (--no-frame-record)."
+
+
+def number_one_unasked(today: str, asked: bool, refused: str | None) -> str:
+    """Why a viewer that wrote no frame record has no number 1.
+
+    The viewer's own reason comes first, Moonlight's included. When the tool
+    did not ask, because of `--no-frame-record` or because the run directory
+    had no room, that note follows it.
+    """
+    note = NOT_ASKED if not asked else refused
+    return f"{today} {note}" if note else today
 
 
 def plugin_enabled(code: int, status: str) -> bool:
@@ -1774,25 +1785,29 @@ def view_case(
             sender.request("clock")
             viewer.request("clock")
 
-        try:
-            frame_record, missing = viewer_frame_record(
-                viewer, keepalive, directory, shown["frame_times"], times[first:], frames[first:], scored
+        notes = record["viewer"]["not_measured"]
+        if not (facts["frame_record_asked"] and started.get("frame_times_refused") is None
+                and shown["frame_times"] is not None):
+            notes["packet_to_display_ms"] = number_one_unasked(
+                notes["packet_to_display_ms"], facts["frame_record_asked"],
+                started.get("frame_times_refused"),
             )
-        except Exception as error:
-            # Number 1 alone has no value; every other number of the run stands.
-            frame_record, missing = None, f"The viewer's frame record could not be read: {error}"
-        if frame_record is not None:
-            record["viewer"]["frame_times"] = frame_record
-        if shown["frame_times"] is None and started.get("frame_times_refused"):
-            missing = started["frame_times_refused"]
-        if not facts["frame_record_asked"]:
-            missing = "The tool did not ask for the viewer's frame record (--no-frame-record)."
-        if shown["frame_times"] is not None and missing is None:
-            assert frame_record is not None
-            record["viewer"]["packet_to_display_ms"] = frame_record["packet_to_display_ms"]["p50"]
-            del record["viewer"]["not_measured"]["packet_to_display_ms"]
-        elif missing is not None:
-            record["viewer"]["not_measured"]["packet_to_display_ms"] = missing
+        else:
+            try:
+                frame_record, missing = viewer_frame_record(
+                    viewer, keepalive, directory, shown["frame_times"], times[first:], frames[first:], scored
+                )
+            except Exception as error:
+                # Number 1 alone has no value; every other number of the run stands.
+                frame_record, missing = None, f"The viewer's frame record could not be read: {error}"
+            if frame_record is not None:
+                record["viewer"]["frame_times"] = frame_record
+            if missing is None:
+                assert frame_record is not None
+                record["viewer"]["packet_to_display_ms"] = frame_record["packet_to_display_ms"]["p50"]
+                del notes["packet_to_display_ms"]
+            else:
+                notes["packet_to_display_ms"] = missing
         record.update(decoded_frames=len(frames), decode_errors=0, decode_warnings=0)
         source = score(
             frames[first:],

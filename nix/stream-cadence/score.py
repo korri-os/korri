@@ -309,7 +309,9 @@ def packet_to_display(
     packet-to-display time is that hand-off less the unit's arrival, both from
     the viewer. The check is the capture's display time less the same hand-off:
     a frame cannot be on the display before the viewer handed it over. An ID
-    that no handed-off unit carries is unreported.
+    that is on the display before its hand-off has a wrong hand-off time: it
+    stays in the check and is counted, and its time is left out of number 1.
+    An ID that no handed-off unit carries is unreported.
     """
     if len(units) != len(carried):
         raise ValueError(
@@ -326,6 +328,7 @@ def packet_to_display(
     arrival: list[float] = []
     difference: list[float] = []
     unreported: list[int] = []
+    early: list[int] = []
     for row, frame in zip(rows, shown):
         for ident in frame_ids(frame):
             if ident in seen:
@@ -337,18 +340,45 @@ def packet_to_display(
                 unreported.append(ident)
                 continue
             unit = handed[ident]
-            arrival.append((unit["display_ns"] - unit["enqueue_ns"]) / 1e6)
             difference.append((row["display_ns"] - unit["display_ns"]) / 1e6)
+            if difference[-1] < 0:
+                early.append(ident)
+                continue
+            arrival.append((unit["display_ns"] - unit["enqueue_ns"]) / 1e6)
     return {
-        "frames": len(arrival),
+        "frames": len(difference),
         "unreported": len(unreported),
         "unreported_ids": unreported[:20],
         "packet_to_display_ms": latency(arrival),
         "handoff_to_display_ms": dict(
             latency(difference), min=min(difference) if difference else None
         ),
-        "handoff_after_display": sum(1 for value in difference if value < 0),
+        "handoff_after_display": len(early),
+        "handoff_after_display_ids": early[:20],
     }
+
+
+# The share of matched IDs that may show on the display before the viewer's
+# hand-off. Above it the viewer's hand-off times are not trusted (review of #435).
+HANDOFF_AFTER_DISPLAY_LIMIT = 0.01
+
+
+def number_one(evidence: dict) -> tuple[float | None, str | None]:
+    """Number 1 from `packet_to_display`'s evidence, or no value and the reason."""
+    frames, early = evidence["frames"], evidence["handoff_after_display"]
+    if not frames:
+        return None, "The display record shows no new ID in the scored time that the viewer handed over."
+    if evidence["unreported"]:
+        return None, (
+            f"{evidence['unreported']} IDs that the display record shows in the scored time "
+            "are in no unit that the viewer reports as handed to the display; the record is incomplete."
+        )
+    if early > HANDOFF_AFTER_DISPLAY_LIMIT * frames:
+        return None, (
+            f"{early} of {frames} matched IDs were on the display before the viewer's hand-off, "
+            f"more than {HANDOFF_AFTER_DISPLAY_LIMIT:.0%}; the viewer's hand-off times are not trusted."
+        )
+    return evidence["packet_to_display_ms"]["p50"], None
 
 
 def score(

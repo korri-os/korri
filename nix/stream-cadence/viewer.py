@@ -78,6 +78,18 @@ PRESS_SECONDS = 60
 # A viewer that knows the names writes both files; any other ignores them.
 FRAME_TIMES = "times.csv"
 RECORDING = "recording.video"
+# A private pair's run directory is a tmpfs: its free space is a size limit,
+# not memory that is free. The recording's room is the smaller of the two.
+MEMINFO = Path("/proc/meminfo")
+
+
+def memory_available() -> int:
+    """The kernel's estimate of memory that can be used without swapping (proc(5))."""
+    for line in MEMINFO.read_text().splitlines():
+        name, _, value = line.partition(":")
+        if name == "MemAvailable":
+            return int(value.split()[0]) * 1024
+    raise RuntimeError(f"{MEMINFO} has no MemAvailable; the recording's room cannot be judged")
 # The installed viewer's own words for its first decoded frame (the plugin's
 # Moonlight patches 0002 and 0021): a dma-buf frame comes from a hardware decoder.
 DECODE_STARTED = re.compile(r"first frame from decoder format=\S+ \(DRM_PRIME=(YES|NO)\)")
@@ -615,26 +627,35 @@ class Session:
         # only inside a korrid launch, and without one the viewer ends the stream.
         return dict(self.environment(), **product, DISPLAY=":0", SDL_AUDIODRIVER="dummy")
 
-    def free_bytes(self) -> int:
-        """Free space for the programs of the run on the filesystem of home."""
+    def room(self) -> dict[str, int]:
+        """Room for the recording: free space on home's filesystem, and free memory.
+
+        On a disk the memory bound can refuse a recording that would fit; the
+        cost is accepted, because the agent does not tell a tmpfs from a disk.
+        """
         stats = os.statvfs(self.home())
-        return stats.f_bavail * stats.f_frsize
+        return {
+            "run_directory_free": stats.f_bavail * stats.f_frsize,
+            "memory_available": memory_available(),
+        }
 
     def frame_record(self, expected: int) -> tuple[dict[str, str], str | None]:
         """Ask the viewer for its frame record: its frame times and the stream as it arrived.
 
         The recording needs room, and a private pair's run directory is a
-        tmpfs in memory. It is not asked for when the filesystem has less than
-        twice the expected size free; the reason says so.
+        tmpfs in memory. It is not asked for when the run directory's
+        filesystem or the free memory holds less than twice the expected size;
+        the reason says so.
         """
         for name in (FRAME_TIMES, RECORDING):
             (self.home() / name).unlink(missing_ok=True)
-        free = self.free_bytes()
-        if free < 2 * expected:
+        room = self.room()
+        if min(room.values()) < 2 * expected:
             return {}, (
-                f"The run directory's filesystem had {free >> 20} MiB free. The viewer's recording "
-                f"needs about {expected >> 20} MiB and the tool keeps as much again free, so no "
-                "frame record was asked for."
+                f"The run directory's filesystem had {room['run_directory_free'] >> 20} MiB free "
+                f"and the device {room['memory_available'] >> 20} MiB of memory available. The "
+                f"viewer's recording needs about {expected >> 20} MiB and the tool keeps as much "
+                "again free, so no frame record was asked for."
             )
         self.recording_floor = expected // 2
         return {
@@ -1183,12 +1204,17 @@ class Session:
                 unsafe = must_end(zones, self.limits)
                 if unsafe:
                     self.end(unsafe, viewer)
-            free = self.free_bytes()
-            if self.ended is None and self.recording_floor is not None and free < self.recording_floor:
+            room = self.room()
+            if (
+                self.ended is None
+                and self.recording_floor is not None
+                and min(room.values()) < self.recording_floor
+            ):
                 self.end(
-                    f"The run directory's filesystem has {free >> 20} MiB free, below the "
-                    f"{self.recording_floor >> 20} MiB that the viewer's recording leaves. The run "
-                    "ends before the recording fills it.",
+                    f"The run directory's filesystem has {room['run_directory_free'] >> 20} MiB free "
+                    f"and the device {room['memory_available'] >> 20} MiB of memory available, below "
+                    f"the {self.recording_floor >> 20} MiB that the viewer's recording leaves. The run "
+                    "ends before the recording fills them.",
                     viewer,
                 )
             if self.ended:
@@ -1224,7 +1250,7 @@ class Session:
                 # Whether the viewer's own OpenGL is on the graphics card.
                 "viewer_render_nodes": render_nodes_open(viewer.pid) if viewer else None,
                 # Room left for the programs of the run, and the recording's share.
-                "run_directory_free": free,
+                **room,
                 "recording_bytes": self.recording_size(),
             }
         if operation == "stop":
