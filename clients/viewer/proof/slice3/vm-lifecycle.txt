@@ -1,0 +1,55 @@
+# korri-viewer-lifecycle: plugins feat/viewer-plugin-435 at 1fb0c6d, Korri pinned at fa70de684
+# result: /nix/store/fanibcqc9cyd3ddak65cjnqxsan493hp-vm-test-run-korri-viewer-lifecycle
+# The test driver's own output, filtered to subtests, probe replies, printed evidence and korrid's lines.
+subtest: the plugin host installs and enables both viewers
+(finished: subtest: the plugin host installs and enables both viewers, in 0.05 seconds)
+subtest: a sender pairs the viewer's own bootstrap identity
+(finished: subtest: a sender pairs the viewer's own bootstrap identity, in 3.76 seconds)
+subtest: korrid starts @korri:viewer and talks to it through its socket
+probe start 0123456789abcdef0123456789abcdef: {'action': 'start', 'launch': '0123456789abcdef0123456789abcdef', 'ok': True, 'result': None}
+viewer unit command: { path=/nix/store/qir0f40m7z5hvjlvnk7rhhbbk4ldsr0d-korri-viewer-0.1.0/bin/korri-viewer ; argv[]=/nix/store/qir0f40m7z5hvjlvnk7rhhbbk4ldsr0d-korri-viewer-0.1.0/bin/korri-viewer --lifecycle-socket /run/korri-game-0123456789abcdef0123456789abcdef/control/viewer.sock --launch-id 0123456789abcdef0123456789abcdef --controller-uid 976 stream -app Korri Stream -platform x11 -mapping /nix/store/qir0f40m7z5hvjlvnk7rhhbbk4ldsr0d-korri-viewer-0.1.0/share/moonlight/korri-inputplumber-gamecontrollerdb.txt -keydir /home/korri/.config/moonlight -windowed -autowindowresize -viewonly -port 47989 127.0.0.1 -width 1280 -height 720 -bitrate 20000 -codec h264 -localaudio ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=1298 ; code=(null) ; status=0/0 }
+runtime directory: # file: /run/korri-game-0123456789abcdef0123456789abcdef
+# owner: 1000
+user::rwx
+user:976:--x
+group::---
+mask::--x
+other::---
+lifecycle socket: # file: /run/korri-game-0123456789abcdef0123456789abcdef/control/viewer.sock
+# owner: 1000
+user::rw-
+user:976:rw-
+group::---
+mask::rw-
+other::---
+(finished: subtest: korrid starts @korri:viewer and talks to it through its socket, in 3.31 seconds)
+subtest: korrid observes the stream only through the socket
+probe status 0123456789abcdef0123456789abcdef: {'action': 'status', 'launch': '0123456789abcdef0123456789abcdef', 'ok': True, 'result': 'Running'}
+probe snapshot 0123456789abcdef0123456789abcdef: {'action': 'snapshot', 'launch': '0123456789abcdef0123456789abcdef', 'ok': True, 'result': {'connected': True, 'shape': {'connection': '1:16:38984220', 'screen': {'width': 1280, 'height': 720}, 'encoded': {'width': 1280, 'height': 720}, 'ready': False}, 'sampledAtMs': None, 'batteryPercent': None, 'streamHealth': None, 'controls': []}}
+probe background 0123456789abcdef0123456789abcdef: {'action': 'background', 'launch': '0123456789abcdef0123456789abcdef', 'ok': True, 'result': None}
+probe status 0123456789abcdef0123456789abcdef: {'action': 'status', 'launch': '0123456789abcdef0123456789abcdef', 'ok': True, 'result': 'Backgrounded'}
+probe resume 0123456789abcdef0123456789abcdef: {'action': 'resume', 'launch': '0123456789abcdef0123456789abcdef', 'ok': True, 'result': None}
+probe status 0123456789abcdef0123456789abcdef: {'action': 'status', 'launch': '0123456789abcdef0123456789abcdef', 'ok': True, 'result': 'Running'}
+(finished: subtest: korrid observes the stream only through the socket, in 0.29 seconds)
+subtest: korrid stops the viewer and its unit and directory are gone
+probe stop 0123456789abcdef0123456789abcdef: {'action': 'stop', 'launch': '0123456789abcdef0123456789abcdef', 'ok': True, 'result': None}
+probe status 0123456789abcdef0123456789abcdef: {'action': 'status', 'launch': '0123456789abcdef0123456789abcdef', 'ok': True, 'result': 'Stopped'}
+(finished: subtest: korrid stops the viewer and its unit and directory are gone, in 1.20 seconds)
+subtest: with @korri:viewer disabled, the same selection gives Moonlight
+probe start 11111111111111111111111111111111: {'action': 'start', 'launch': '11111111111111111111111111111111', 'ok': True, 'result': None}
+probe status 11111111111111111111111111111111: {'action': 'status', 'launch': '11111111111111111111111111111111', 'ok': True, 'result': 'Running'}
+probe stop 11111111111111111111111111111111: {'action': 'stop', 'launch': '11111111111111111111111111111111', 'ok': False, 'error': 'viewer stop was not confirmed'}
+probe stop 11111111111111111111111111111111: {'action': 'stop', 'launch': '11111111111111111111111111111111', 'ok': True, 'result': None}
+(finished: subtest: with @korri:viewer disabled, the same selection gives Moonlight, in 4.16 seconds)
+subtest: a viewer built from another contract is refused, and Moonlight stays
+probe start 22222222222222222222222222222222: {'action': 'start', 'launch': '22222222222222222222222222222222', 'ok': True, 'result': None}
+korrid viewer: launch 0123456789abcdef0123456789abcdef uses @korri:viewer
+korrid viewer: launch 11111111111111111111111111111111 uses @korri:moonlight
+korrid viewer: korrid refuses @korri:viewer: it was built from a different viewer contract (its treaty is sha256 14d44e80cb55c69fe8d877a3b9029cbae872f327dc0886144a00a5cabc7d678a, korrid's is sha256 e9178296902fad5842fdd2d5eac1d7111ba14851a2c0e1d98a87b07df3fd8565)
+korrid viewer: launch 22222222222222222222222222222222 uses @korri:moonlight
+probe stop 22222222222222222222222222222222: {'action': 'stop', 'launch': '22222222222222222222222222222222', 'ok': False, 'error': 'viewer stop was not confirmed'}
+probe stop 22222222222222222222222222222222: {'action': 'stop', 'launch': '22222222222222222222222222222222', 'ok': True, 'result': None}
+probe start 33333333333333333333333333333333: {'action': 'start', 'launch': '33333333333333333333333333333333', 'ok': False, 'error': "korrid refuses @korri:viewer: it was built from a different viewer contract (its treaty is sha256 14d44e80cb55c69fe8d877a3b9029cbae872f327dc0886144a00a5cabc7d678a, korrid's is sha256 e9178296902fad5842fdd2d5eac1d7111ba14851a2c0e1d98a87b07df3fd8565)"}
+(finished: subtest: a viewer built from another contract is refused, and Moonlight stays, in 4.86 seconds)
+Moonlight stops that needed a second request: ['11111111111111111111111111111111', '22222222222222222222222222222222']
+(finished: run the VM test script, in 28.31 seconds)
