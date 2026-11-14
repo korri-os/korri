@@ -57,6 +57,7 @@ pub type SocketViewerDisplay = Arc<dyn Fn() -> Option<PluginDisplay> + Send + Sy
 
 pub struct SocketLinuxStreamViewer {
     display: SocketViewerDisplay,
+    connect_deadline: Duration,
     expected_viewer_uid: u32,
     start_process: StartSocketViewer,
     focus: FocusSocketViewer,
@@ -100,6 +101,7 @@ impl SocketLinuxStreamViewer {
     ) -> Self {
         Self {
             display,
+            connect_deadline: DEADLINE,
             expected_viewer_uid,
             start_process,
             focus,
@@ -108,6 +110,11 @@ impl SocketLinuxStreamViewer {
             operation: Mutex::new(()),
             changed: Arc::new(Notify::new()),
         }
+    }
+    #[cfg(test)]
+    pub(super) fn with_connect_deadline(mut self, deadline: Duration) -> Self {
+        self.connect_deadline = deadline;
+        self
     }
     async fn connection(&self, launch: &str) -> Result<Arc<Connection>, LinuxViewerError> {
         self.connections
@@ -164,17 +171,32 @@ impl Connection {
         launch: String,
         changed: Arc<Notify>,
         expected_viewer_uid: u32,
+        deadline: Duration,
     ) -> Result<Arc<Self>, LinuxViewerError> {
-        let until = Instant::now() + DEADLINE;
+        let until = Instant::now() + deadline;
         let socket = loop {
             match UnixStream::connect(&path).await {
                 Ok(socket) => break socket,
+                // Not bound yet, not listening yet, or not yet searchable:
+                // the viewer makes its directory 0700 before the unit's
+                // ExecStartPost grants korrid search access.
                 Err(e)
                     if matches!(
                         e.kind(),
-                        std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
-                    ) && Instant::now() < until =>
+                        std::io::ErrorKind::NotFound
+                            | std::io::ErrorKind::ConnectionRefused
+                            | std::io::ErrorKind::PermissionDenied
+                    ) =>
                 {
+                    if Instant::now() >= until {
+                        eprintln!(
+                            "korrid viewer: launch {launch} lifecycle socket {} still unreachable after {deadline:?}: {e}",
+                            path.display()
+                        );
+                        return Err(error(format!(
+                            "viewer lifecycle socket unreachable after {deadline:?}: {e}"
+                        )));
+                    }
                     tokio::time::sleep(Duration::from_millis(20)).await
                 }
                 Err(e) => return Err(error(e)),
@@ -322,6 +344,7 @@ impl LinuxStreamViewer for SocketLinuxStreamViewer {
                     launch.into(),
                     self.changed.clone(),
                     self.expected_viewer_uid,
+                    self.connect_deadline,
                 )
                 .await?;
                 ok(connection

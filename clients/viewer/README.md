@@ -261,8 +261,10 @@ korrid's `SocketLinuxStreamViewer` takes injected unit-start, cleanup and
 compositor-focus effects. It never reads unit state or compositor PIDs for
 lifecycle observations. korrid confirms compositor focus before sending
 `Background` or `ResumeAndFocus`; the socket reports that confirmed state, not
-an independent X11 focus model. After `Stop`, korrid also stops the unit and
-waits until systemd confirms it, also when the socket was lost. Live resize,
+an independent X11 focus model. korrid retries a socket it cannot reach yet,
+including one it may not yet search, for 30 s, then logs the last error.
+After `Stop`, korrid also stops the unit and waits until systemd confirms it,
+also when the socket was lost. Live resize,
 apply and notice return typed unavailable errors, as the existing Linux trait
 defaults do. Snapshots have no battery, health or controls until a real
 producer supplies them.
@@ -304,8 +306,9 @@ ExecStartPost=<KORRID_SETFACL> -m u:<korrid's UID>:x /run/korri-game-<launch>
 
 systemd applies `RuntimeDirectoryMode` again before each Exec command, and a
 chmod resets an ACL mask. So the search grant comes after the main process
-starts, and `systemd-run` returns only after `ExecStartPost`. systemd removes
-the directory when the unit stops. Moonlight's units do not change.
+starts, and `systemd-run` returns only after `ExecStartPost`. A connect that
+still comes before the grant gets `EACCES`, which korrid retries. systemd
+removes the directory when the unit stops. Moonlight's units do not change.
 
 `services/korrid/viewer-vm-test.nix`, run by the plugins repository as
 `korri-viewer-lifecycle`, proves this on a cold NixOS guest with the real

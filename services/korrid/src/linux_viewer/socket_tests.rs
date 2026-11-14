@@ -3,7 +3,7 @@ use korri_viewer_treaty::{
     read_message, write_message, ViewerCommand as C, ViewerEvent as E, ViewerMessage as M,
     ViewerReply as R, ViewerRequest, ViewerStatus as S,
 };
-use std::{io::BufReader, os::unix::net::UnixListener, sync::Arc};
+use std::{io::BufReader, os::unix::net::UnixListener, path::PathBuf, sync::Arc};
 
 const LAUNCH: &str = "0123456789abcdef0123456789abcdef";
 
@@ -306,4 +306,80 @@ async fn stop_after_a_lost_connection_still_ends_the_unit() {
         viewer.status(LAUNCH).await.unwrap(),
         LinuxViewerStatus::Stopped
     );
+}
+
+fn mode(path: &std::path::Path, mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+}
+
+/// The viewer makes its directory 0700 before the unit's ExecStartPost grants
+/// korrid search access. A connect in between gets EACCES.
+fn ungranted_socket() -> (tempfile::TempDir, PathBuf, PathBuf, UnixListener) {
+    let dir = tempfile::tempdir().unwrap();
+    let control = dir.path().join("control");
+    std::fs::create_dir(&control).unwrap();
+    let path = control.join("viewer.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+    mode(&path, 0o600);
+    mode(&control, 0o000);
+    (dir, control, path, listener)
+}
+
+fn plain_viewer(path: PathBuf) -> SocketLinuxStreamViewer {
+    SocketLinuxStreamViewer::new(
+        Arc::new(|| None),
+        unsafe { libc::geteuid() },
+        Arc::new(move |_, _, _| {
+            let path = path.clone();
+            Box::pin(async move { Ok(path) })
+        }),
+        Arc::new(|_, _| Box::pin(async { Ok(()) })),
+        Arc::new(|_| Box::pin(async { Ok(()) })),
+    )
+}
+
+#[tokio::test]
+async fn a_socket_korrid_may_not_yet_search_is_retried_until_its_grant_arrives() {
+    // Root ignores directory modes, so the refusal cannot be made there.
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let (_dir, control, path, listener) = ungranted_socket();
+    let server = std::thread::spawn(move || {
+        let mut socket = BufReader::new(listener.accept().unwrap().0);
+        let request: ViewerRequest = read_message(&mut socket).unwrap().unwrap();
+        assert!(matches!(request.command, C::Start { .. }));
+        write_message(socket.get_mut(), &M::Reply(R::Ok)).unwrap();
+    });
+    let granted = control.clone();
+    let grant = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        mode(&granted, 0o700);
+    });
+    plain_viewer(path)
+        .start(LAUNCH, "127.0.0.1", None)
+        .await
+        .unwrap();
+    grant.join().unwrap();
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn a_socket_that_stays_unreachable_fails_at_the_deadline_with_its_last_error() {
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let (_dir, control, path, _listener) = ungranted_socket();
+    let deadline = std::time::Duration::from_millis(300);
+    let viewer = plain_viewer(path).with_connect_deadline(deadline);
+    let started = std::time::Instant::now();
+    let refused = viewer
+        .start(LAUNCH, "127.0.0.1", None)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(started.elapsed() >= deadline, "gave up early: {refused}");
+    assert!(refused.contains("Permission denied"), "{refused}");
+    mode(&control, 0o700);
 }
