@@ -675,7 +675,7 @@ buffer queue, and the compositor reads the same buffer.
   allowed after `pm grant`. It also runs the picture's pure parts' tests
   on the emulator. Record: `proof/android-d2/`.
 - Not proven: the arm64 library and a real phone's decoder, HWC composition
-  and speed (step H, the Galaxy Z Fold3). The emulator's decoder
+  and speed (step H, the Galaxy Z Fold 8). The emulator's decoder
   (`c2.goldfish.h264.decoder`) is backed by the host, and its numbers mean
   nothing (ADR 0063).
 
@@ -791,7 +791,7 @@ screenshots show the picture still moving.
 - Not proven: the low-latency path. The emulator's mixer runs at 44.1 kHz
   with no fast mixer, so AAudio refused low latency for a 48 kHz stream
   and took its standard path, with 20 ms bursts. A phone's latency,
-  underruns, MMAP and Bluetooth: step H, on the Galaxy Z Fold3. Surround:
+  underruns, MMAP and Bluetooth: step H, on the Galaxy Z Fold 8. Surround:
   the proof plays stereo; the tests decode 5.1 and 7.1 over the scripted
   output only. A lost device on a phone (an unplugged headset): the tests
   prove the reopen and the end over the scripted output; the emulator
@@ -929,7 +929,7 @@ the proof reads what arrived there. Screenshots after the input show the
 picture still moving.
 
 - Not proven: a real phone's controllers, touch screen and keyboard, and
-  any time from a press to its packet (step H, the Galaxy Z Fold3). That
+  any time from a press to its packet (step H, the Galaxy Z Fold 8). That
   unbuffered dispatch changes anything on NativeActivity.
 - Cost: the zlib notice of Valve's and SDL's controller lists
   (`controller_list.rs`) is not yet in the APK, as those of OpenSSL, curl

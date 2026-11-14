@@ -26,7 +26,7 @@ from, and what happens to a device that has none.
   the device's own limit. An RG353M reset during a test before these rules
   existed.
 - A device bench proves each picture path. The bench is the RG353M (RK3566),
-  the RG35XX Pro (H700) and a Galaxy Z Fold3 for Android. The RG35XX SP has the
+  the RG35XX Pro (H700) and a Galaxy Z Fold 8 for Android (ADR 0064). The RG35XX SP has the
   Pro's chip and is not measured separately. Bench devices stay powered and
   reachable, and agents restart them at any time. An Android emulator also
   runs for every change.
