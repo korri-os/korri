@@ -1,28 +1,34 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Slices D1 and D2 of #391 step D, proven with no person (ADR 0063).
+"""Slices D1 to D3 of #391 step D, proven with no person (ADR 0063).
 
 One headless Android 12 emulator on this host runs the viewer app. A private
 Sunshine on the sender (stream-cadence's sender fixture, aka by default) is
-the host. Its picture source draws stream-cadence's frame-ID bar. The steps:
+the host. Its picture source draws stream-cadence's frame-ID bar, and its
+private sound server plays a 1000 Hz tone (the fixture's `tone`). The
+emulator writes everything that Android plays to a WAV file on this host
+(QEMU's `wav` audio driver), so no sound reaches this host's speakers. The
+steps:
 
 1. Build the APK, the refusal probe, the Linux viewer (to pair) and the
    x86_64 Android tests on this host. Nothing is built on the sender or the
    emulator.
-2. Start the sender fixture, pair a fresh key pair with the Linux viewer's
-   pair command, and start the fixture's picture source.
-3. Start the emulator (2 cores), run the Android tests in it, install the
-   APK signed with the user's debug key, and give the app the key pair and
-   the pinned certificate.
+2. Start the sender fixture with its tone, pair a fresh key pair with the
+   Linux viewer's pair command, and start the fixture's picture source.
+3. Start the emulator (2 cores) with its sound to the WAV file, run the
+   Android tests in it (one plays real Opus packets of a 440 Hz tone through
+   AAudio), install the APK signed with the user's debug key, and give the
+   app the key pair and the pinned certificate.
 4. Start the app with a launch and the frame record's ask. Take screenshots
    until one shows a readable frame-ID bar (the startup), wait for the
    Running event and the Start reply, take screenshots while it streams and
    read the bar in each, press Back, wait for Stopped.
 5. Read the frame record from the app, decode its recording, and read the
-   picture path (`decode`) from logcat.
+   picture path (`decode`) and the sound's report from logcat.
 6. The refusal probe, an ordinary app, asks Android to start the viewer: it
    is refused. Granted DUMP through adb, it is allowed.
-7. Read the fixture's Sunshine log, close the fixture, stop the emulator.
+7. Read the fixture's Sunshine log, close the fixture, stop the emulator,
+   and find the tones in the WAV file.
 
 stream-cadence's capture (capture.c) reads a wlr-screencopy compositor, and
 the emulator's screen is not one. The bar is read from screenshots instead,
@@ -52,13 +58,16 @@ FILES = f"/data/user/0/{PACKAGE}/files"
 # stream-cadence's sender fixture names its one application so (sender.py).
 APPLICATION = "Desktop"
 AVD = "korri-viewer-d1-api31"
+# The sender fixture's tone, and the Android test's own (audio.rs, sound.rs).
+TONE_HZ = 1000
+TEST_TONE_HZ = 440
 TESTS = "/data/local/tmp/korri-viewer-tests"
 PROBE = "com.simonwjackson.korri.viewer.refusal"
 PROBE_ACTIVITY = f"{PROBE}/android.app.NativeActivity"
 # The frame record's header, as picture/frame_times.c writes it on Linux.
 RECORD_HEADER = "index,frame_number,enqueue_ns,decoded_ns,display_ns"
 # The Android tests of the session part, and the picture's pure parts.
-LIB_TESTS = ["sps::", "codec::", "decoder::", "callback::", "frame_record::", "placement::"]
+LIB_TESTS = ["sps::", "codec::", "decoder::", "callback::", "frame_record::", "placement::", "audio::", "sound::"]
 
 # stream-cadence's frame-ID bar decoder: one decoder for the bar.
 sys.path.insert(0, str(Path(os.environ["KORRI_ROOT"]) / "nix/stream-cadence"))
@@ -135,7 +144,7 @@ def sender_tools(root: Path, target: str) -> tuple[list[str], dict]:
     nixpkgs = os.environ["CADENCE_NIXPKGS"]
     tools = f"import {json.dumps(str(root / 'nix/stream-cadence/default.nix'))} {{ inherit pkgs; }}"
     head = f"let pkgs = import {json.dumps(nixpkgs)} {{ system = \"x86_64-linux\"; }}; tools = {tools}; in "
-    names = ["python", "motion", "sway", "sunshine"]
+    names = ["python", "motion", "sway", "sunshine", "pulseaudio"]
     log("building the sender fixture's parts")
     outputs = json.loads(
         run(
@@ -147,7 +156,7 @@ def sender_tools(root: Path, target: str) -> tuple[list[str], dict]:
     # nix build --json does not keep the order of the list.
     built = [row["outputs"]["out"] for row in outputs]
     marks = {"python": r"-python3-[\d.]", "motion": r"-stream-cadence-motion$",
-             "sway": r"-sway-unwrapped-", "sunshine": r"-sunshine-"}
+             "sway": r"-sway-unwrapped-", "sunshine": r"-sunshine-", "pulseaudio": r"-pulseaudio-\d"}
     paths = {name: next(p for p in built if re.search(mark, p)) for name, mark in marks.items()}
     paths["source"] = run(
         ["nix", "eval", "--raw", "--impure", "--expr", head + "toString tools.runtime.source"],
@@ -170,6 +179,8 @@ class Emulator:
         self.serial = f"emulator-{port}"
         self.port = port
         self.out = out
+        # Everything that Android plays, as the emulator's sound card gave it.
+        self.sound = out / "emulator-sound.wav"
         self.process: subprocess.Popen | None = None
         self.env = dict(
             os.environ,
@@ -191,21 +202,21 @@ class Emulator:
 
     def create(self, image: str) -> None:
         avd = self.home / "avd" / f"{AVD}.avd"
-        if avd.is_dir():
-            return
-        log(f"creating the AVD {AVD}")
-        (self.home / "avd").mkdir(parents=True, exist_ok=True)
-        manager = next(Path(self.sdk, "cmdline-tools").glob("*/bin/avdmanager"))
-        subprocess.run(
-            [str(manager), "create", "avd", "--force", "-n", AVD, "-k", image, "-p", str(avd)],
-            input="no\n", check=True, text=True, capture_output=True, env=self.env, timeout=300,
-        )
+        if not avd.is_dir():
+            log(f"creating the AVD {AVD}")
+            (self.home / "avd").mkdir(parents=True, exist_ok=True)
+            manager = next(Path(self.sdk, "cmdline-tools").glob("*/bin/avdmanager"))
+            subprocess.run(
+                [str(manager), "create", "avd", "--force", "-n", AVD, "-k", image, "-p", str(avd)],
+                input="no\n", check=True, text=True, capture_output=True, env=self.env, timeout=300,
+            )
         # A phone-shaped panel, few resources: this host builds for others.
+        # Sound output on (slice D3); every run writes the settings again.
         settings = {
             "hw.lcd.width": "1080", "hw.lcd.height": "2400", "hw.lcd.density": "420",
             "hw.ramSize": "2048", "hw.cpu.ncore": "2", "hw.gpu.enabled": "yes",
             "hw.gpu.mode": "swiftshader_indirect", "hw.keyboard": "yes",
-            "hw.audioInput": "no", "hw.audioOutput": "no", "hw.camera.back": "none",
+            "hw.audioInput": "no", "hw.audioOutput": "yes", "hw.camera.back": "none",
             "hw.camera.front": "none", "fastboot.forceColdBoot": "yes",
         }
         config = avd / "config.ini"
@@ -214,13 +225,15 @@ class Emulator:
 
     def start(self) -> None:
         log(f"starting the emulator on {self.serial} (2 cores)")
+        # Android's sound goes to a WAV file, never to this host's speakers.
+        sound = dict(QEMU_AUDIO_DRV="wav", QEMU_WAV_PATH=str(self.sound), QEMU_WAV_FREQUENCY="48000")
         self.process = subprocess.Popen(
             ["nice", "-n", "10", f"{self.sdk}/emulator/emulator", "-avd", AVD,
-             "-port", str(self.port), "-no-window", "-no-audio", "-no-boot-anim",
+             "-port", str(self.port), "-no-window", "-no-boot-anim",
              "-no-snapshot", "-no-metrics", "-gpu", "swiftshader_indirect",
              "-cores", "2", "-memory", "2048", "-accel", "on"],
             stdout=(self.out / "emulator.log").open("w"), stderr=subprocess.STDOUT,
-            env=self.env, start_new_session=True,
+            env=dict(self.env, **sound), start_new_session=True,
         )
         until = time.monotonic() + 600
         while time.monotonic() < until:
@@ -382,6 +395,68 @@ def frame_record(times: Path, recording: Path, out: Path) -> dict:
     return summary
 
 
+def tones(wav: Path) -> dict:
+    """What the emulator played: its seconds of sound, and of each tone.
+
+    The file is QEMU's: a 44-byte RIFF header, then 16-bit PCM. The data's
+    length in the header is written only when the emulator ends, so the
+    length is taken from the file. Each 100 ms window counts as sound when
+    its RMS is above 100, and as a tone when the strongest frequency of its
+    spectrum is that tone, within 3 %.
+    """
+    import numpy as np
+
+    data = wav.read_bytes()
+    if len(data) < 44 or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+        return {"error": f"not a WAV file ({len(data)} bytes)"}
+    channels = int.from_bytes(data[22:24], "little")
+    rate = int.from_bytes(data[24:28], "little")
+    bits = int.from_bytes(data[34:36], "little")
+    if bits != 16 or channels < 1 or rate < 8000:
+        return {"error": f"{bits}-bit, {channels} channels, {rate} Hz"}
+    body = data[44:]
+    body = body[: len(body) // (2 * channels) * 2 * channels]
+    samples = np.frombuffer(body, dtype="<i2").reshape(-1, channels).astype(np.float64).mean(axis=1)
+    window = rate // 10
+    found: dict = {"rate": rate, "channels": channels, "seconds": round(len(samples) / rate, 1)}
+    loud = []
+    for at in range(0, len(samples) - window + 1, window):
+        chunk = samples[at:at + window]
+        rms = float(np.sqrt(np.mean(chunk * chunk)))
+        if rms <= 100:
+            continue
+        spectrum = np.abs(np.fft.rfft(chunk * np.hanning(window)))
+        peak = int(np.argmax(spectrum[1:])) + 1
+        loud.append((rms, peak * rate / window))
+    found["seconds_of_sound"] = len(loud) / 10
+    for hz in (TONE_HZ, TEST_TONE_HZ):
+        at_hz = [rms for rms, peak in loud if abs(peak - hz) <= hz * 0.03]
+        found[f"seconds_at_{hz}_hz"] = len(at_hz) / 10
+        found[f"median_rms_at_{hz}_hz"] = round(float(np.median(at_hz)), 1) if at_hz else None
+    return found
+
+
+def sound_report(lines: list[str]) -> dict:
+    """The sound's own lines in logcat: its output and what it played."""
+    report: dict = {}
+    output = next((l for l in lines if "korri-viewer: sound: output try " in l and "sound test" not in l), "")
+    if output:
+        report["output"] = output.split("korri-viewer: ", 1)[1]
+    ended = next((l for l in lines if "korri-viewer: sound: ended: " in l), "")
+    if ended:
+        text = ended.split("sound: ended: ", 1)[1]
+        report["ended"] = text
+        names = {"callbacks": r"(\d+) callbacks", "played": r"(\d+) frames played",
+                 "silent": r"(\d+) frames silent", "short": r"(\d+) short callbacks",
+                 "packets": r"(\d+) packets", "concealed": r"(\d+) concealed",
+                 "dropped": r"(\d+) dropped", "decode_errors": r"(\d+) not decoded",
+                 "xruns": r"(-?\d+) device xruns", "reopened": r"(\d+) reopened"}
+        for name, pattern in names.items():
+            found = re.search(pattern, text)
+            report[name] = int(found.group(1)) if found else None
+    return report
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--sender", default="root@aka", help="SSH target of the sender fixture")
@@ -426,9 +501,11 @@ def main() -> int:
     try:
         prepared = fixture.request("prepare", sway=f"{parts['sway']}/bin/sway",
                                    sunshine=f"{parts['sunshine']}/bin/sunshine",
-                                   width=1280, height=720, fps=60)
+                                   pulseaudio=f"{parts['pulseaudio']}/bin/pulseaudio",
+                                   tone_hz=TONE_HZ, width=1280, height=720, fps=60)
         facts = prepared["facts"]
         (out / "sender-facts.json").write_text(json.dumps(facts, indent=2))
+        checks["sender_plays_the_tone"] = facts.get("tone") == {"hz": TONE_HZ, "sink": "korri-tone"}
         port = facts["sunshine_port"]
         result["sunshine_port"] = port
         pin = out / "server.pem"
@@ -518,6 +595,11 @@ def main() -> int:
         layers = emulator.shell("dumpsys SurfaceFlinger --list", check=False).stdout
         (out / "surfaceflinger-layers.txt").write_text(layers)
         checks["video_layer_exists"] = "korri-viewer-video" in layers
+        # Android's mixer, while the app plays: its track and the output.
+        pid = emulator.shell(f"pidof {PACKAGE}", check=False).stdout.strip()
+        flinger = emulator.shell("dumpsys media.audio_flinger", check=False).stdout
+        (out / "audioflinger-while-streaming.txt").write_text(flinger)
+        result["app_pid"] = pid
         # The picture moves: a later screenshot shows a later frame ID.
         moving = []
         for shot in range(4):
@@ -552,6 +634,17 @@ def main() -> int:
         app = [l for l in lines if " korri-viewer" in l or "AndroidRuntime" in l or " DEBUG " in l]
         (out / "logcat.txt").write_text("\n".join(app) + "\n")
         checks["no_crash"] = not any("Fatal signal" in l or "FATAL EXCEPTION" in l or "panic:" in l for l in lines)
+
+        # The sound, as the app reports it: its output, what it played, and
+        # its end, which closes its last stream, before the viewer reported
+        # Stopped.
+        sound = sound_report(app)
+        result["sound"] = sound
+        checks["sound_output_reported"] = "output" in sound
+        checks["sound_played"] = (sound.get("played") or 0) >= 5 * 48000 and (sound.get("decode_errors") or 0) == 0
+        ended_at = next((at for at, l in enumerate(app) if "korri-viewer: sound: ended: " in l), None)
+        stopped_at = next((at for at, l in enumerate(app) if '"value":"Stopped"' in l), None)
+        checks["sound_closed_before_stopped"] = ended_at is not None and stopped_at is not None and ended_at < stopped_at
 
         # The picture path, as the app reports it.
         chosen = next((re.search(r"picture: decode (\S+) decoder (\S+)", l) for l in app if "picture: decode " in l), None)
@@ -609,6 +702,8 @@ def main() -> int:
         journal = fixture.request("sample")["journal"]
         (out / "sunshine.log").write_text(journal)
         checks["sunshine_saw_the_end"] = "CLIENT DISCONNECTED" in journal
+        # Sunshine says so when it captures no sound for a session.
+        checks["sunshine_captured_sound"] = "Unable to initialize audio capture" not in journal
     except Exception as error:
         result["error"] = f"{type(error).__name__}: {error}"
         log(f"failed: {result['error']}")
@@ -619,6 +714,14 @@ def main() -> int:
             result["sender_restore_error"] = str(error)
         result["emulator_stop"] = emulator.stop()
         shutil.rmtree(out / "keys", ignore_errors=True)
+    # After the emulator's end: its WAV file is complete.
+    if emulator.sound.is_file():
+        heard = tones(emulator.sound)
+        result["emulator_sound"] = heard
+        checks["emulator_played_the_streams_tone"] = heard.get(f"seconds_at_{TONE_HZ}_hz", 0) >= 5
+        checks["emulator_played_the_tests_tone"] = heard.get(f"seconds_at_{TEST_TONE_HZ}_hz", 0) >= 1
+    elif emulator.process is not None:
+        checks["emulator_played_the_streams_tone"] = False
     result["pass"] = "error" not in result and all(checks.values()) and result.get("sender_restore", {}).get("pass", False) and not result["emulator_stop"].get("processes_left")
     (out / "result.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps({"pass": result["pass"], "checks": checks, "error": result.get("error")}, indent=2))
