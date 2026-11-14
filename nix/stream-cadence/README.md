@@ -1315,17 +1315,23 @@ window, in the order of the events. The order gives each key its packet
 (`viewer.input.attribution` is `order`) when all of these hold:
 
 - the count of keyboard sends is one for each key event, or two more when the
-  warm-up's key arrived, and then the first send comes before the first
-  measured press;
+  warm-up's key arrived, and then both of the first two sends come before the
+  first measured press;
 - no send comes before its own key event;
+- a send at or after the next key event leaves in one datagram (the same
+  kernel time) with the send after it: it waited for that event;
 - no send comes at or after the key event two places later.
 
-A packet can wait for one later event, and the order keeps that delay with
+A packet can wait for the next event, and the order keeps that delay with
 its own key: in the first turn on aka (2026-11-14 UTC, under another test's
 load) one key-up left 173 ms late, in one datagram with the next key-down,
-whose own time stayed 0.06 ms. The last rule stops a shift: a dropped key and
-an extra one give the same count, and without it every packet after them
-would answer the key before its own. When the rules do not hold, the viewer
+whose own time stayed 0.06 ms; two key-downs left about 30 ms late, each in
+one datagram with its own key-up. The last two rules stop a shift. A lost
+send and an extra one give the same count; without the rules every packet
+after the loss would answer the key before its own: one place on for one
+lost send, two places for a lost key pair. A review found both shifts in
+built cases (an `input_ms` of 15.4 and 250.4 ms where every key took 0.4 ms).
+When the rules do not hold, the viewer
 did not send one packet for each key (`interval`): a press is then answered
 only when, from it to the next press, exactly two keyboard sends arrive and
 the second is not before the release. No packet is guessed for a press.
@@ -1447,9 +1453,13 @@ with modification times, was the same before and after each session.
 Two earlier sessions are not in the table. In the first, under another
 test's load, the first run was invalid by a capture gap. The second ended
 after four runs of each side, when aka stayed above its start limit for 10
-minutes; `verdict --min-runs 4` gave `equal` for every number there. Every
-`input.json` of these sessions scores the same under the rules of
-`f7b57b111`.
+minutes; `verdict --min-runs 4` gave `equal` for every number there. The 30
+`input.json` files of all these sessions, the trial and the slice-1 session
+give the same numbers and the same answer for every press under today's
+rules as under those of `f7b57b111`. Each matches its `result.json` except
+run 1 of the first session: it was recorded before the order rule
+(`fb3187ee3`) with `input_missed` 2, and the order gives 0 (its 173 ms
+key-up).
 
 Open points of the press:
 

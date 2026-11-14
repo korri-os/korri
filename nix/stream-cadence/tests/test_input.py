@@ -91,6 +91,17 @@ def evidence(packets: list[tuple[float, bytes]], times_ms: list[float], **change
 
 
 TIMES = [500.0, 760.0, 1010.0]
+TWENTY = [500.0 + 250.0 * n for n in range(20)]
+
+
+def answers(times: list[float], delay_ms: float = 0.4) -> list[float]:
+    """The key-down and key-up send of each press, each `delay_ms` after its key."""
+    return [at + offset + delay_ms for at in times for offset in (0.0, 30.0)]
+
+
+def packets_at(sends_ms: list[float]) -> list[tuple[float, bytes]]:
+    """One ping, and one keyboard datagram at each time, with rising sequences."""
+    return [(100.0, ping())] + [(at, key(n + 1)) for n, at in enumerate(sorted(sends_ms))]
 
 
 def answered_packets(delay_ms: float = 0.4) -> list[tuple[float, bytes]]:
@@ -246,6 +257,29 @@ class Summary(unittest.TestCase):
         self.assertEqual(result["input_missed"], 1)
         self.assertEqual(result["input"]["attribution"], "interval")
 
+    def test_a_lost_key_down_and_one_extra_send_shift_nothing(self):
+        # Review, 2026-11-14: press 0's key-down is lost and one extra keyboard
+        # send comes after press 9. The count fits, and in order every packet
+        # would answer the key before its own: input_ms 15.4, input_missed 0.
+        times = TWENTY
+        sends = answers(times)
+        del sends[0]
+        sends.append(times[9] + 100)
+        result = summarize(evidence(packets_at(sends), times))
+        self.assertEqual(result["input"]["attribution"], "interval")
+        self.assertAlmostEqual(result["input_ms"], 0.4, places=6)
+        self.assertEqual(result["input_missed"], 2)  # press 0 (one send) and press 9 (three)
+
+    def test_a_warmup_with_one_send_and_one_extra_send_shift_nothing(self):
+        # Review, 2026-11-14: the warm-up gives one send only, and one extra
+        # send comes later. Dropping two sends as the warm-up's shifted every key.
+        times = TWENTY
+        sends = [0.4] + answers(times) + [times[9] + 100]
+        result = summarize(evidence(packets_at(sorted(sends)), times))
+        self.assertEqual(result["input"]["attribution"], "interval")
+        self.assertAlmostEqual(result["input_ms"], 0.4, places=6)
+        self.assertEqual(result["input_missed"], 1)  # press 9 (three sends)
+
     def test_a_hold_that_auto_repeat_can_lengthen_is_refused(self):
         settings = {"presses": 3, "hold_ms": 500, "gap_ms": 1000, "jitter_ms": 0, "seed": 1}
         with self.assertRaisesRegex(PressFailed, "auto-repeat"):
@@ -353,7 +387,8 @@ class InputVerdict(unittest.TestCase):
         self.assertEqual(rows["input_ms"]["verdict"], "not measured")
 
     def test_a_viewer_silent_in_every_run_gets_a_line_about_view_only_mode(self):
-        # Korri's viewer since #435 slice 2a also stops its window's keys under -viewonly.
+        # Korri's viewer from #435 slice 2a until a137107dc stopped its window's
+        # keys under -viewonly, as a viewer can.
         moonlight = [run(0.3, 0) for _ in range(5)]
         silent = [run(None, 20, keyboard_packets=0) for _ in range(5)]
         lines = input_lines(moonlight, silent)

@@ -273,9 +273,9 @@ def input_lines(baseline: list[dict], candidate: list[dict]) -> list[str]:
 
     In the fixture every viewer runs with -viewonly. Moonlight's X11
     platforms still read keys from their window then; a viewer whose
-    -viewonly also stops those keys (Korri's viewer since #435 slice 2a)
-    answers no press. Its input_missed then says that, not how its input
-    path performs.
+    -viewonly also stops those keys answers no press, as Korri's viewer did
+    from #435 slice 2a until a137107dc. Its input_missed then says that, not
+    how its input path performs.
     """
     lines = []
     for name, records in (("baseline", baseline), ("candidate", candidate)):

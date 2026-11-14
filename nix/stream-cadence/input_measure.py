@@ -170,20 +170,29 @@ def in_order(events: list[dict], sends: list[int]) -> list[dict] | None:
 
     Moonlight sends one keyboard command for each key event that its window
     gets, in the order of the events: one input queue, one ENet channel. A
-    packet can still wait for a later event: on aka on 2026-11-14 UTC a key-up
-    left together with the next key-down, 173 ms late. The order, not the
-    time, then says which packet answers which key. When the warm-up's key
-    arrived, its two packets come first, the first of them before the first
-    measured press. None when the counts or the times do not fit: another
-    number of packets, a packet before its own event, or a packet at or after
-    the event two places later. A packet waits for one later event at most
-    (the 173 ms key-up, and a key-down that left with its own key-up); a
-    dropped key and an extra one would otherwise give the same count and
-    shift every packet onto the key before it. `sends` are the keyboard sends
-    from the warm-up press on.
+    packet can still wait for the next event and leave in one datagram with
+    that event's packet: on aka on 2026-11-14 UTC a key-up left with the next
+    key-down, 173 ms late, and a key-down left with its own key-up, 30.1 ms
+    late. The order, not the time, then says which packet answers which key.
+
+    None when the counts or the times do not fit:
+    - another number of packets; two more are the warm-up's only when both
+      come before the first measured press;
+    - a packet before its own event;
+    - a packet at or after the next event that does not share its datagram
+      (the same kernel time) with the packet after it;
+    - a packet at or after the event two places later.
+    A lost send and an extra one give the same count; without these rules
+    every packet after the loss would answer the key before its own, by one
+    place for a lost send and by two for a lost press. `sends` are the
+    keyboard sends from the warm-up press on, in time order.
     """
     measured = sorted((row for row in events if row["index"] >= 0), key=lambda row: row["realtime_ns"])
-    if len(sends) == len(measured) + 2 and measured and sends[0] < measured[0]["realtime_ns"]:
+    if (
+        len(sends) == len(measured) + 2
+        and measured
+        and sends[1] < measured[0]["realtime_ns"]
+    ):
         sends = sends[2:]
     if len(sends) != len(measured):
         return None
@@ -191,6 +200,9 @@ def in_order(events: list[dict], sends: list[int]) -> list[dict] | None:
         if ns < row["realtime_ns"]:
             return None
         if place + 2 < len(measured) and ns >= measured[place + 2]["realtime_ns"]:
+            return None
+        waited = place + 1 < len(measured) and ns >= measured[place + 1]["realtime_ns"]
+        if waited and (place + 1 >= len(sends) or sends[place + 1] != ns):
             return None
     if [row["kind"] for row in measured] != ["press", "release"] * (len(measured) // 2):
         return None
