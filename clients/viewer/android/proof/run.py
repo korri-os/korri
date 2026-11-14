@@ -472,6 +472,9 @@ def main() -> int:
                     stdin=data, check=True, env=emulator.env, timeout=60,
                 )
 
+        # The sender's agent ends a session it has not heard from for 75 s
+        # (stream-cadence's device.py): tell it the host is alive.
+        fixture.request("clock")
         logcat = Logcat(emulator, out / "logcat-all.txt")
         moonlight = ["stream", "-app", APPLICATION, "-width", "1280", "-height", "720",
                      "-fps", "60", "-keydir", f"{FILES}/keys", host]
@@ -490,7 +493,11 @@ def main() -> int:
         startup: dict = {"shots": []}
         shots = out / "startup"
         shots.mkdir()
-        while time.monotonic() - began < 60:
+        heard = time.monotonic()
+        while time.monotonic() - began < 45:
+            if time.monotonic() - heard >= 10:
+                fixture.request("clock")
+                heard = time.monotonic()
             path = shots / f"{len(startup['shots']):02d}.png"
             before, after = screenshot(emulator, path)
             frame = read_bar(path)
@@ -522,6 +529,7 @@ def main() -> int:
         ids = [shot["id"] for shot in moving if "id" in shot]
         checks["screenshots_read_the_bar"] = len(ids) == len(moving)
         checks["screenshots_show_it_moving"] = len(ids) >= 2 and all(b > a for a, b in zip(ids, ids[1:]))
+        fixture.request("clock")
         log(f"streaming for {args.seconds} s")
         time.sleep(args.seconds)
         # Sunshine's log since the picture source started, while the app streams.
