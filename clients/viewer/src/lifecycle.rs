@@ -6,6 +6,7 @@ use korri_viewer_treaty::{
     ViewerRequest, ViewerShape, ViewerSnapshot, ViewerStatus as S, read_message, write_message,
 };
 mod access;
+mod termination;
 
 use std::{
     io::BufReader,
@@ -97,17 +98,22 @@ impl Lifecycle {
     }
 
     /// The CLI supplies native settings and credentials; Start supplies only
-    /// LinuxStreamViewer.start's address and optional dimensions.
-    pub fn wait_start(&self) -> Result<Start> {
+    /// LinuxStreamViewer.start's address and optional dimensions. `None`: a
+    /// stop came first (Stop, a lost controller or a termination signal).
+    pub fn wait_start(&self) -> Result<Option<Start>> {
         let state = self.0.state.lock().unwrap();
         let (mut state, _) = self
             .0
             .changed
             .wait_timeout_while(state, DEADLINE, |s| s.start.is_none() && !s.stop)
             .unwrap();
+        if state.stop {
+            return Ok(None);
+        }
         state
             .start
             .take()
+            .map(Some)
             .context("viewer Start was not received before deadline")
     }
 
@@ -154,6 +160,16 @@ impl Lifecycle {
     }
     pub fn stop_requested(&self) -> bool {
         self.0.state.lock().unwrap().stop
+    }
+    /// A termination signal stops the launch as Stop does. The socket and its
+    /// directory go at once, by descriptor, while the runtime may still be
+    /// busy with Start; Stopped follows its teardown as usual.
+    fn terminate(&self) {
+        let mut state = self.0.state.lock().unwrap();
+        // Under the lock, as in finish: one removal at a time.
+        self.0.paths.remove();
+        state.stop = true;
+        self.0.changed.notify_all();
     }
 
     /// Publish Stopped only after the network core and picture threads stop.
@@ -339,7 +355,16 @@ pub fn from_args(args: &mut Vec<String>) -> Result<Option<Lifecycle>> {
         "expected --lifecycle-socket PATH --launch-id ID --controller-uid UID stream ..."
     );
     let controller_uid = args[5].parse::<u32>().context("invalid --controller-uid")?;
+    // Before the socket exists and before any thread starts. From here a
+    // termination signal cannot end the process past the socket's removal.
+    let signals = termination::Held::block()?;
     let lifecycle = Lifecycle::bind(Path::new(&args[1]), &args[3], controller_uid)?;
+    let weak = Arc::downgrade(&lifecycle.0);
+    signals.receive(move || {
+        if let Some(inner) = weak.upgrade() {
+            Lifecycle(inner).terminate();
+        }
+    })?;
     args.drain(..6);
     Ok(Some(lifecycle))
 }

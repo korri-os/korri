@@ -5,7 +5,14 @@ use korri_viewer_treaty::{
     ViewerRequest, ViewerStatus,
 };
 use korri_viewer_treaty::{read_message, write_message};
-use std::{io::BufReader, os::unix::net::UnixStream, time::Duration};
+use std::{
+    io::BufReader,
+    net::TcpListener,
+    os::unix::net::UnixStream,
+    path::Path,
+    process::{Child, Command, ExitStatus, Stdio},
+    time::{Duration, Instant},
+};
 
 mod support;
 
@@ -45,7 +52,7 @@ fn exact_launch_connected_events_and_confirmed_stop_over_real_socket() {
     ));
     let runtime = lifecycle.clone();
     let running = std::thread::spawn(move || {
-        let start = runtime.wait_start().unwrap();
+        let start = runtime.wait_start().unwrap().expect("Start came first");
         assert_eq!(start.address, "127.0.0.1");
         runtime
             .connected(ViewerDisplay {
@@ -171,7 +178,7 @@ fn startup_failure_returns_typed_error_and_stopped_event() {
         .unwrap();
     let runtime = lifecycle.clone();
     let failed = std::thread::spawn(move || {
-        runtime.wait_start().unwrap();
+        runtime.wait_start().unwrap().expect("Start came first");
         runtime.failed("certificate rejected".into());
     });
     assert!(
@@ -350,6 +357,219 @@ fn real_binary_removes_socket_after_idle_controller_startup_timeout() {
         !path.exists(),
         "the idle controller must not keep the exited viewer's socket path alive"
     );
+}
+
+/// The real process, as a launcher starts it. Nothing in it can connect a
+/// stream without a certificate pin, so it waits for Start or fails after it.
+fn lifecycle_viewer(path: &Path, keys: &Path) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_korri-viewer"));
+    command
+        .args([
+            "--lifecycle-socket",
+            path.to_str().unwrap(),
+            "--launch-id",
+            "a",
+            "--controller-uid",
+            &unsafe { libc::geteuid() }.to_string(),
+            "stream",
+            "-keydir",
+            keys.to_str().unwrap(),
+            "127.0.0.1",
+        ])
+        .env_remove("KORRI_MOONLIGHT_SERVER_CERTIFICATE")
+        .stderr(Stdio::null());
+    command
+}
+
+/// A controller that the viewer has accepted: its first request has a reply.
+fn accepted_controller(path: &Path, child: &mut Child) -> BufReader<UnixStream> {
+    let until = Instant::now() + Duration::from_secs(2);
+    let socket = loop {
+        match UnixStream::connect(path) {
+            Ok(socket) => break socket,
+            Err(_) if Instant::now() < until => std::thread::sleep(Duration::from_millis(5)),
+            error => {
+                let _ = child.kill();
+                panic!("viewer socket did not start: {error:?}");
+            }
+        }
+    };
+    socket
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let mut socket = BufReader::new(socket);
+    assert!(matches!(
+        request(&mut socket, "a", C::Status),
+        R::Error { .. }
+    ));
+    socket
+}
+
+fn signal(child: &Child, signal: libc::c_int) {
+    assert_eq!(unsafe { libc::kill(child.id() as libc::pid_t, signal) }, 0);
+}
+
+fn exit_within(child: &mut Child, limit: Duration) -> ExitStatus {
+    let until = Instant::now() + limit;
+    loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            return status;
+        }
+        if Instant::now() >= until {
+            child.kill().unwrap();
+            panic!("viewer did not exit within {limit:?}");
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+/// Every message until the viewer closes the controller's connection.
+fn remaining_messages(socket: &mut BufReader<UnixStream>) -> Vec<M> {
+    std::iter::from_fn(|| read_message(socket).unwrap()).collect()
+}
+
+// #468: a signal before Start used to kill the process with its default
+// action and leave the socket and its private directory on disk.
+#[test]
+fn real_binary_stops_and_removes_socket_and_directory_on_a_signal_before_start() {
+    for number in [libc::SIGTERM, libc::SIGINT, libc::SIGHUP, libc::SIGQUIT] {
+        let dir = support::scratch();
+        let path = dir.path().join("control/viewer.sock");
+        if support::refused_below_an_unmapped_root(&path) {
+            return;
+        }
+        let mut child = lifecycle_viewer(&path, dir.path()).spawn().unwrap();
+        let mut controller = accepted_controller(&path, &mut child);
+
+        signal(&child, number);
+
+        let status = exit_within(&mut child, Duration::from_secs(5));
+        assert!(
+            status.success(),
+            "signal {number}: a stop before Start is not a failure: {status:?}"
+        );
+        assert!(
+            remaining_messages(&mut controller)
+                .iter()
+                .any(|m| matches!(m, M::Event(E::Status(ViewerStatus::Stopped)))),
+            "signal {number}: the controller must see Stopped"
+        );
+        assert!(!path.exists(), "signal {number}: socket left behind");
+        assert!(
+            !path.parent().unwrap().exists(),
+            "signal {number}: private directory left behind"
+        );
+    }
+}
+
+// The main thread is busy with Start's first request and cannot clean up
+// until that returns. The signal must not wait for it.
+#[test]
+fn real_binary_removes_socket_at_once_on_a_signal_while_connecting_after_start() {
+    let dir = support::scratch();
+    let path = dir.path().join("control/viewer.sock");
+    if support::refused_below_an_unmapped_root(&path) {
+        return;
+    }
+    let keys = dir.path().join("keys");
+    korri_viewer::session::Identity::load_or_generate(&keys).unwrap();
+    let server = TcpListener::bind("127.0.0.1:0").unwrap();
+    server.set_nonblocking(true).unwrap();
+    let port = server.local_addr().unwrap().port();
+    let mut child = lifecycle_viewer(&path, &keys)
+        .env(
+            "KORRI_MOONLIGHT_SERVER_CERTIFICATE",
+            keys.join("client.pem"),
+        )
+        .spawn()
+        .unwrap();
+    let mut controller = accepted_controller(&path, &mut child);
+    write_message(
+        controller.get_mut(),
+        &ViewerRequest {
+            launch_id: "a".into(),
+            command: C::Start {
+                address: format!("127.0.0.1:{port}"),
+                display: None,
+            },
+        },
+    )
+    .unwrap();
+    // The viewer's first request after Start. Hold it without an answer.
+    let until = Instant::now() + Duration::from_secs(5);
+    let held = loop {
+        match server.accept() {
+            Ok((socket, _)) => break socket,
+            Err(_) if Instant::now() < until => std::thread::sleep(Duration::from_millis(5)),
+            error => {
+                let _ = child.kill();
+                panic!("viewer did not connect after Start: {error:?}");
+            }
+        }
+    };
+
+    signal(&child, libc::SIGTERM);
+
+    let until = Instant::now() + Duration::from_secs(2);
+    while path.parent().unwrap().exists() && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        !path.parent().unwrap().exists(),
+        "the socket and its directory must go at once"
+    );
+    assert!(
+        child.try_wait().unwrap().is_none(),
+        "removal must not wait for the main thread"
+    );
+    drop(held);
+    let messages = remaining_messages(&mut controller);
+    assert!(
+        messages
+            .iter()
+            .any(|m| matches!(m, M::Reply(R::Error { .. }))),
+        "Start must still get its reply: {messages:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|m| matches!(m, M::Event(E::Status(ViewerStatus::Stopped)))),
+        "{messages:?}"
+    );
+    exit_within(&mut child, Duration::from_secs(10));
+    assert!(!path.parent().unwrap().exists());
+}
+
+// The signal may arrive before, during or after the socket's creation. None
+// of those moments may leave the socket or its directory behind.
+#[test]
+fn a_signal_at_any_moment_of_startup_leaves_no_socket_or_directory() {
+    let dir = support::scratch();
+    if support::refused_below_an_unmapped_root(&dir.path().join("control/viewer.sock")) {
+        return;
+    }
+    // Step the delay until several signals arrive after the socket exists.
+    // Earlier ones end the process before it makes anything.
+    let mut handled = 0;
+    let mut attempt = 0u64;
+    while handled < 5 {
+        assert!(
+            attempt < 500,
+            "no signal reached the viewer after its socket existed"
+        );
+        let path = dir.path().join(format!("control-{attempt}/viewer.sock"));
+        let mut child = lifecycle_viewer(&path, dir.path()).spawn().unwrap();
+        std::thread::sleep(Duration::from_micros(attempt * 200));
+        signal(&child, libc::SIGTERM);
+        let status = exit_within(&mut child, Duration::from_secs(5));
+        handled += usize::from(status.success());
+        assert!(
+            !path.parent().unwrap().exists(),
+            "attempt {attempt} ({status:?}) left {} behind",
+            path.parent().unwrap().display()
+        );
+        attempt += 1;
+    }
 }
 
 #[test]

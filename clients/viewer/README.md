@@ -240,6 +240,15 @@ removes only the socket and empty directory the viewer owns. Requests and
 connection setup have 30-second
 deadlines; a cancelled exchange cannot reuse a late reply.
 
+The viewer blocks SIGINT, SIGTERM, SIGHUP and SIGQUIT before it creates its
+directory and before it starts a thread, and one thread takes them. A signal
+at any time, before or after `Start`, removes the socket and the directory at
+once through the held descriptors, then requests teardown as `Stop` does. A
+signal that arrives while the socket is made waits until it exists. Before
+`Start`, a stop by a signal, `Stop` or a lost controller emits `Stopped` and
+exits with status 0. While the viewer connects after `Start`, the removal does
+not wait for the connection step; `Stopped` and the process exit do.
+
 korrid's inactive `SocketLinuxStreamViewer` takes injected unit-start, failure
 cleanup and compositor-focus effects. It never reads unit state or compositor
 PIDs for lifecycle observations. korrid confirms compositor focus before

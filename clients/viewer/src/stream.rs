@@ -236,6 +236,8 @@ pub fn run_with_lifecycle(
     let _lifecycle_guard = LifecycleGuard;
     io.connection_callbacks(&mut callbacks);
     unsafe {
+        // With a lifecycle socket these signals stay blocked from before its
+        // creation; lifecycle's receiver requests the stop instead.
         for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP, libc::SIGQUIT] {
             libc::signal(signal, signal_stop as *const () as libc::sighandler_t);
         }

@@ -28,7 +28,11 @@ fn run() -> Result<()> {
                 options.action == "stream",
                 "lifecycle socket requires stream"
             );
-            lifecycle.wait_start()?.configure(&mut options)?;
+            let Some(start) = lifecycle.wait_start()? else {
+                // Stopped before Start: nothing to connect or tear down.
+                return Ok(());
+            };
+            start.configure(&mut options)?;
         }
         let pin = std::env::var_os("KORRI_MOONLIGHT_SERVER_CERTIFICATE")
             .context("KORRI_MOONLIGHT_SERVER_CERTIFICATE is required")?;

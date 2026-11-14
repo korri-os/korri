@@ -242,7 +242,7 @@ fn credential_process() {
             let runtime = Lifecycle::bind(path, "a", controller).unwrap();
             println!("ready");
             std::io::stdout().flush().unwrap();
-            runtime.wait_start().unwrap();
+            runtime.wait_start().unwrap().expect("Start came first");
             runtime
                 .connected(ViewerDisplay {
                     width: 640,
