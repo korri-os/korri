@@ -136,16 +136,20 @@ def enet_commands(payload: bytes) -> list[tuple[int, int, int]] | None:
     return commands
 
 
-def keyboard_sends(packets: list[dict]) -> tuple[list[int], int]:
-    """The times of the keyboard channel's sends, each reliable command once, and the count of unreadable datagrams.
+def keyboard_sends(packets: list[dict]) -> tuple[list[int], list[int], int]:
+    """The keyboard channel's sends: their times, the datagram of each, and the count of unreadable datagrams.
 
     ENet sends a reliable command again until it is acknowledged, with the
     same sequence number. Only the first send left the viewer for the press.
+    A datagram is named by its place among all captured datagrams in time
+    order, so two sends that left together have one datagram, and two that
+    only share a kernel time have two.
     """
     seen: set[int] = set()
     times = []
+    datagrams = []
     unreadable = 0
-    for packet in sorted(packets, key=lambda row: row["ns"]):
+    for place, packet in enumerate(sorted(packets, key=lambda row: row["ns"])):
         commands = enet_commands(bytes.fromhex(packet["payload"]))
         if commands is None:
             unreadable += 1
@@ -158,14 +162,15 @@ def keyboard_sends(packets: list[dict]) -> tuple[list[int], int]:
                     continue
                 seen.add(sequence)
             times.append(packet["ns"])
-    return times, unreadable
+            datagrams.append(place)
+    return times, datagrams, unreadable
 
 
 # How a packet was given to its key event (`viewer.input.attribution`).
 ORDER, INTERVAL = "order", "interval"
 
 
-def in_order(events: list[dict], sends: list[int]) -> list[dict] | None:
+def in_order(events: list[dict], sends: list[int], datagrams: list[int]) -> list[dict] | None:
     """Each measured press with its packets, when the viewer sent one packet for each key event, in order.
 
     Moonlight sends one keyboard command for each key event that its window
@@ -179,8 +184,8 @@ def in_order(events: list[dict], sends: list[int]) -> list[dict] | None:
     - another number of packets; two more are the warm-up's only when both
       come before the first measured press;
     - a packet before its own event;
-    - a packet at or after the next event that does not share its datagram
-      (the same kernel time) with the packet after it;
+    - a packet at or after the next event that did not leave in one datagram
+      with the packet after it (`datagrams`, from keyboard_sends);
     - a packet at or after the event two places later.
     A lost send and an extra one give the same count; without these rules
     every packet after the loss would answer the key before its own, by one
@@ -193,7 +198,7 @@ def in_order(events: list[dict], sends: list[int]) -> list[dict] | None:
         and measured
         and sends[1] < measured[0]["realtime_ns"]
     ):
-        sends = sends[2:]
+        sends, datagrams = sends[2:], datagrams[2:]
     if len(sends) != len(measured):
         return None
     for place, (ns, row) in enumerate(zip(sends, measured)):
@@ -202,7 +207,7 @@ def in_order(events: list[dict], sends: list[int]) -> list[dict] | None:
         if place + 2 < len(measured) and ns >= measured[place + 2]["realtime_ns"]:
             return None
         waited = place + 1 < len(measured) and ns >= measured[place + 1]["realtime_ns"]
-        if waited and (place + 1 >= len(sends) or sends[place + 1] != ns):
+        if waited and (place + 1 >= len(sends) or datagrams[place + 1] != datagrams[place]):
             return None
     if [row["kind"] for row in measured] != ["press", "release"] * (len(measured) // 2):
         return None
@@ -246,9 +251,11 @@ def by_interval(events: list[dict], sends: list[int], end_ns: int) -> list[dict]
     return rows
 
 
-def match(events: list[dict], sends: list[int], end_ns: int) -> tuple[list[dict], str]:
+def match(
+    events: list[dict], sends: list[int], datagrams: list[int], end_ns: int
+) -> tuple[list[dict], str]:
     """Each measured press with its answer, and how the answers were found (ORDER or INTERVAL)."""
-    rows = in_order(events, sends)
+    rows = in_order(events, sends, datagrams)
     if rows is not None:
         return rows, ORDER
     return by_interval(events, sends, end_ns), INTERVAL
@@ -303,14 +310,14 @@ def summarize(evidence: dict) -> dict:
         raise PressFailed(
             "The capture saw no packet of the viewer's control stream: the capture or the port is wrong."
         )
-    sends, unreadable = keyboard_sends(packets)
+    sends, datagrams, unreadable = keyboard_sends(packets)
     if unreadable:
         raise PressFailed(f"{unreadable} datagrams to the control port are no ENet that this tool reads.")
     warmup = min(row["realtime_ns"] for row in events)
     first = min((row["realtime_ns"] for row in measured), default=evidence["capture_end_ns"])
     if any(ns < warmup for ns in sends) or len(sends) > len(events):
         raise PressFailed("A keyboard packet came that no press explains.")
-    rows, attribution = match(events, sends, evidence["capture_end_ns"])
+    rows, attribution = match(events, sends, datagrams, evidence["capture_end_ns"])
     latencies = [row["latency_ms"] for row in rows if row["latency_ms"] is not None]
     releases = [row["release_latency_ms"] for row in rows if row["release_latency_ms"] is not None]
     record = {

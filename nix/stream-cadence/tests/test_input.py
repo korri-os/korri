@@ -133,14 +133,42 @@ class EnetDatagrams(unittest.TestCase):
             {"ns": 40, "payload": key(6).hex()},
             {"ns": 50, "payload": "00"},
         ]
-        self.assertEqual(keyboard_sends(packets), ([10, 40], 1))
+        # The datagram of each send: its place among all captured datagrams, by time.
+        self.assertEqual(keyboard_sends(packets), ([10, 40], [0, 3], 1))
+
+    def test_two_commands_of_one_datagram_have_one_datagram(self):
+        packets = [{"ns": 10, "payload": datagram(command(0x80 | 6, KEYBOARD_CHANNEL, 1, bytes(38)),
+                                                  command(0x80 | 6, KEYBOARD_CHANNEL, 2, bytes(38))).hex()},
+                   {"ns": 10, "payload": key(3).hex()}]
+        self.assertEqual(keyboard_sends(packets), ([10, 10, 10], [0, 0, 1], 0))
+
+
+def captured(*datagrams: float | tuple[float, int]) -> tuple[list[int], list[int]]:
+    """keyboard_sends of real datagrams: a time is one keyboard send; (time, n) is n sends that left in one datagram."""
+    packets, sequence = [], 0
+    for row in datagrams:
+        at, count = row if isinstance(row, tuple) else (row, 1)
+        commands = []
+        for _ in range(count):
+            sequence += 1
+            commands.append(command(0x80 | 6, KEYBOARD_CHANNEL, sequence, bytes(38)))
+        packets.append({"ns": wall(at), "payload": datagram(*commands).hex()})
+    sends, places, unreadable = keyboard_sends(packets)
+    assert unreadable == 0
+    return sends, places
+
+
+ANSWERS = [at for at, data in answered_packets() if data != ping()]
 
 
 class Matching(unittest.TestCase):
-    def test_a_press_is_answered_by_one_key_down_and_one_key_up(self):
+    def matched(self, *datagrams: float | tuple[float, int]) -> tuple[list[dict], str]:
         log = input_measure.press_log(press_log(TIMES))
-        sends = [wall(at) for at, data in answered_packets() if data != ping()]
-        rows, attribution = match(log["events"], sends, wall(2000))
+        sends, places = captured(*datagrams)
+        return match(log["events"], sends, places, wall(2000))
+
+    def test_a_press_is_answered_by_one_key_down_and_one_key_up(self):
+        rows, attribution = self.matched(*ANSWERS)
         self.assertEqual(attribution, "order")
         self.assertEqual([row["index"] for row in rows], [0, 1, 2])
         for row in rows:
@@ -149,40 +177,38 @@ class Matching(unittest.TestCase):
 
     def test_a_late_key_up_that_leaves_with_the_next_key_down_keeps_its_own_delay(self):
         # aka, 2026-11-14 UTC: the key-up of one press left in the datagram of the next key-down.
-        log = input_measure.press_log(press_log(TIMES))
-        sends = [wall(TIMES[0] + 0.05), wall(TIMES[1] + 0.06), wall(TIMES[1] + 0.06),
-                 wall(TIMES[1] + 30.05), wall(TIMES[2] + 0.05), wall(TIMES[2] + 30.05)]
-        rows, attribution = match(log["events"], sends, wall(2000))
+        rows, attribution = self.matched(
+            TIMES[0] + 0.05, (TIMES[1] + 0.06, 2), TIMES[1] + 30.05, TIMES[2] + 0.05, TIMES[2] + 30.05
+        )
         self.assertEqual(attribution, "order")
         self.assertAlmostEqual(rows[1]["latency_ms"], 0.06, places=6)
         self.assertAlmostEqual(rows[0]["release_latency_ms"], TIMES[1] + 0.06 - TIMES[0] - 30, places=6)
 
     def test_the_warmups_two_packets_come_first_when_its_key_arrived(self):
-        log = input_measure.press_log(press_log(TIMES))
-        sends = [wall(0.1), wall(30.1)] + [wall(at) for at, data in answered_packets() if data != ping()]
-        rows, attribution = match(log["events"], sends, wall(2000))
+        rows, attribution = self.matched(0.1, 30.1, *ANSWERS)
         self.assertEqual(attribution, "order")
         self.assertTrue(all(abs(row["latency_ms"] - 0.4) < 1e-6 for row in rows))
 
     def test_a_key_down_that_waits_for_its_own_key_up_keeps_its_delay(self):
         # aka, 2026-11-14 UTC: one key-down left with its own key-up, 30.1 ms late.
-        log = input_measure.press_log(press_log(TIMES))
-        sends = [wall(TIMES[0] + 0.05), wall(TIMES[0] + 30.05)]
-        sends += [wall(TIMES[1] + 30.06), wall(TIMES[1] + 30.06)]
-        sends += [wall(TIMES[2] + 0.05), wall(TIMES[2] + 30.05)]
-        rows, attribution = match(log["events"], sends, wall(2000))
+        rows, attribution = self.matched(
+            TIMES[0] + 0.05, TIMES[0] + 30.05, (TIMES[1] + 30.06, 2), TIMES[2] + 0.05, TIMES[2] + 30.05
+        )
         self.assertEqual(attribution, "order")
         self.assertAlmostEqual(rows[1]["latency_ms"], 30.06, places=6)
+
+    def test_a_late_send_alone_in_its_datagram_did_not_wait_for_the_next_key(self):
+        # The same times as the 173 ms case, in two datagrams: equal kernel
+        # times do not show that the key-up left with the next key-down.
+        rows, attribution = self.matched(
+            TIMES[0] + 0.05, TIMES[1] + 0.06, TIMES[1] + 0.06, TIMES[1] + 30.05, TIMES[2] + 0.05, TIMES[2] + 30.05
+        )
+        self.assertEqual(attribution, "interval")
 
     def test_two_extra_packets_with_no_warmup_are_no_warmup(self):
         # The review's case: no warm-up packet, and one extra key pair in the
         # second press. Dropping the first two sends shifted every key.
-        log = input_measure.press_log(press_log(TIMES))
-        sends = sorted(
-            [wall(at) for at, data in answered_packets() if data != ping()]
-            + [wall(TIMES[1] + 100), wall(TIMES[1] + 130)]
-        )
-        rows, attribution = match(log["events"], sends, wall(2000))
+        rows, attribution = self.matched(*sorted(ANSWERS + [TIMES[1] + 100, TIMES[1] + 130]))
         self.assertEqual(attribution, "interval")
         self.assertEqual([row["packets"] for row in rows], [2, 4, 2])
         self.assertAlmostEqual(rows[0]["latency_ms"], 0.4, places=6)
@@ -192,36 +218,28 @@ class Matching(unittest.TestCase):
     def test_a_dropped_press_and_an_extra_pair_do_not_cancel_out(self):
         # The same count as one packet for each key, but the first press has
         # none: in order, every later packet would answer the key before it.
-        log = input_measure.press_log(press_log(TIMES))
-        sends = [wall(TIMES[1] + 0.4), wall(TIMES[1] + 30.4), wall(TIMES[2] + 0.4),
-                 wall(TIMES[2] + 30.4), wall(TIMES[2] + 100), wall(TIMES[2] + 130)]
-        rows, attribution = match(log["events"], sends, wall(2000))
+        rows, attribution = self.matched(
+            TIMES[1] + 0.4, TIMES[1] + 30.4, TIMES[2] + 0.4, TIMES[2] + 30.4, TIMES[2] + 100, TIMES[2] + 130
+        )
         self.assertEqual(attribution, "interval")
         self.assertEqual([row["latency_ms"] is None for row in rows], [True, False, True])
 
     def test_a_viewer_that_lost_a_key_is_judged_press_by_press(self):
-        log = input_measure.press_log(press_log(TIMES))
-        sends = [wall(at) for at, data in answered_packets() if data != ping()]
-        del sends[3]  # the second key-up never left
-        rows, attribution = match(log["events"], sends, wall(2000))
+        rows, attribution = self.matched(*(ANSWERS[:3] + ANSWERS[4:]))  # the second key-up never left
         self.assertEqual(attribution, "interval")
         self.assertEqual([row["packets"] for row in rows], [2, 1, 2])
         self.assertEqual([row["latency_ms"] is None for row in rows], [False, True, False])
 
     def test_no_packet_one_packet_or_an_early_second_packet_answers_nothing(self):
-        log = input_measure.press_log(press_log(TIMES))
-        sends = [wall(TIMES[1] + 1), wall(TIMES[2] + 1), wall(TIMES[2] + 2)]
-        rows, attribution = match(log["events"], sends, wall(2000))
+        rows, attribution = self.matched(TIMES[1] + 1, TIMES[2] + 1, TIMES[2] + 2)
         self.assertEqual(attribution, "interval")
         self.assertEqual([row["packets"] for row in rows], [0, 1, 2])
         # The third press has two packets, but the second came before its release.
         self.assertEqual([row["latency_ms"] for row in rows], [None, None, None])
 
     def test_a_packet_before_its_own_key_is_no_answer_in_order(self):
-        log = input_measure.press_log(press_log(TIMES))
-        sends = [wall(at) for at, data in answered_packets() if data != ping()]
-        sends[0] = wall(TIMES[0] - 50)  # before the first press: not its key-down
-        rows, attribution = match(log["events"], sends, wall(2000))
+        # Before the first press: not its key-down.
+        rows, attribution = self.matched(TIMES[0] - 50, *ANSWERS[1:])
         self.assertEqual(attribution, "interval")
         self.assertIsNone(rows[0]["latency_ms"])
 
@@ -279,6 +297,17 @@ class Summary(unittest.TestCase):
         self.assertEqual(result["input"]["attribution"], "interval")
         self.assertAlmostEqual(result["input_ms"], 0.4, places=6)
         self.assertEqual(result["input_missed"], 1)  # press 9 (three sends)
+
+    def test_one_datagram_not_one_kernel_time_says_a_send_waited(self):
+        late = [(TIMES[0] + 0.05, key(1)), (TIMES[1] + 0.06, key(2)), (TIMES[1] + 0.06, key(3)),
+                (TIMES[1] + 30.05, key(4)), (TIMES[2] + 0.05, key(5)), (TIMES[2] + 30.05, key(6))]
+        self.assertEqual(summarize(evidence(late, TIMES))["input"]["attribution"], "interval")
+        together = datagram(command(0x80 | 6, KEYBOARD_CHANNEL, 2, bytes(38)),
+                            command(0x80 | 6, KEYBOARD_CHANNEL, 3, bytes(38)))
+        shared = late[:1] + [(TIMES[1] + 0.06, together)] + late[3:]
+        result = summarize(evidence(shared, TIMES))
+        self.assertEqual(result["input"]["attribution"], "order")
+        self.assertEqual(result["input_missed"], 0)
 
     def test_a_hold_that_auto_repeat_can_lengthen_is_refused(self):
         settings = {"presses": 3, "hold_ms": 500, "gap_ms": 1000, "jitter_ms": 0, "seed": 1}

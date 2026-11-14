@@ -1318,8 +1318,9 @@ window, in the order of the events. The order gives each key its packet
   warm-up's key arrived, and then both of the first two sends come before the
   first measured press;
 - no send comes before its own key event;
-- a send at or after the next key event leaves in one datagram (the same
-  kernel time) with the send after it: it waited for that event;
+- a send at or after the next key event leaves in one captured datagram with
+  the send after it: it waited for that event. The capture names each
+  datagram; two sends that only share a kernel time do not count;
 - no send comes at or after the key event two places later.
 
 A packet can wait for the next event, and the order keeps that delay with
@@ -1470,6 +1471,10 @@ Open points of the press:
   173 ms late, in one datagram with the next key-down. Moonlight's X11
   platforms read keys when the X connection's socket becomes readable; the
   cause is not shown. Nothing is filed yet.
+- **The interval rule can give a press another key's packet.** When press 5's
+  key-down is lost and press 4's key-up leaves alone just after press 5,
+  press 5 reads as answered in 0.2 ms and press 4 as missed. The order rule
+  does not apply (one send fewer than key events). Known limit, to be filed.
 - No controller button and no compositor are in the path (above).
 - The baselines in `baselines/aka` were recorded before this measure and
   have no `input_ms`.
