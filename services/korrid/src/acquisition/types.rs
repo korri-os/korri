@@ -249,6 +249,8 @@ pub enum SearchOutcome {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
+// One owned response per RPC; preserve the shared projection constructors.
+#[allow(clippy::large_enum_variant)]
 pub enum DetailsOutcome {
     Ok(super::claims::ProviderClaimDetails),
     Err(RpcFailure),

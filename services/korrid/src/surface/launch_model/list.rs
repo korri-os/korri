@@ -304,6 +304,7 @@ impl Builder<'_> {
 
     /// A row with a closed set of values that are not a plugin's: a clock
     /// limit, the governor, a modifier's switch.
+    #[allow(clippy::too_many_arguments)]
     fn fixed_choice(
         &mut self,
         id: String,

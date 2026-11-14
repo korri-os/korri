@@ -1281,6 +1281,8 @@ pub enum SessionReserveOutcome {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
+// One owned response per RPC; preserve the shared projection constructors.
+#[allow(clippy::large_enum_variant)]
 pub enum SessionStatusOutcome {
     Ok(SessionStatus),
     Err(RpcFailure),
@@ -1751,6 +1753,8 @@ pub enum RpcRequest {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "outcome")]
+// One owned response per RPC; preserve the shared projection constructors.
+#[allow(clippy::large_enum_variant)]
 pub enum RpcResponse {
     #[serde(rename = "app.displays.idle")]
     DisplayIdle(host::display_placement::DisplayIdleOutcome),
@@ -5495,6 +5499,7 @@ fn router_with_capability_local_root_and_provision(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn router_with_capability_local_root_provision_and_grants(
     rpc_capability: &str,
     allowed_origin: &str,

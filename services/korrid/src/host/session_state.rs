@@ -2154,6 +2154,7 @@ impl HostSessionControl {
         mutation()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn prepare_with_limits(
         &self,
         game_id: &str,
@@ -2284,6 +2285,7 @@ impl HostSessionControl {
         Ok(crate::game_routes::SelectedGameLaunch { session, warnings })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn prepare_inner(
         &self,
         game_id: &str,

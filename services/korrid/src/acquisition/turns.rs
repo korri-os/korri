@@ -148,6 +148,8 @@ pub enum PluginSearchOutput {
 #[typeshare(serialized_as = "PluginDetailsOutputWire")]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(untagged)]
+// One plugin turn's output, decoded once and consumed.
+#[allow(clippy::large_enum_variant)]
 pub enum PluginDetailsOutput {
     Requests(PluginHttpRequests),
     Result(ProviderClaimDetails),

@@ -153,6 +153,7 @@ pub trait LaunchUnitBackend: Send + Sync {
         ))
     }
     /// Runs one bounded hook in the game's runtime sandbox, waiting for completion.
+    #[allow(clippy::too_many_arguments)]
     fn run_hook(
         &self,
         _launch_id: &str,
@@ -1093,6 +1094,7 @@ impl SystemdLaunchUnitBackend {
     }
 
     #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
     pub fn with_protected_paths(
         systemd_run: PathBuf,
         systemctl: PathBuf,
@@ -1849,6 +1851,7 @@ impl SystemdLaunchUnitBackend {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn hook_arguments_in_sandbox(
         &self,
         launch_id: &str,

@@ -25,6 +25,8 @@ const MAX_GAME_ID_BYTES: usize = 1_024;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "phase", rename_all = "camelCase", deny_unknown_fields)]
+// One journal record, read and written whole; never held in bulk.
+#[allow(clippy::large_enum_variant)]
 pub(super) enum ActiveSession {
     Running {
         #[serde(

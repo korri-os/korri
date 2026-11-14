@@ -93,6 +93,8 @@ pub struct UpstreamActiveSession {
 /// forwards are decoded; everything else is tolerated and dropped.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "_tag")]
+// One decoded reply per call; this client goes at switchover (AGENTS.md).
+#[allow(clippy::large_enum_variant)]
 pub enum UpstreamSessionStatus {
     SessionStatus {
         #[serde(default)]
