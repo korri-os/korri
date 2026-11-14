@@ -89,11 +89,26 @@ let
       };
     }
   );
+  # The @korri:viewer VM proof drives the daemon's viewer selection with this
+  # (src/bin/viewer_probe.rs, viewer-vm-test.nix). It never ships to a device.
+  viewerProbe = craneLib.buildPackage (
+    commonArgs
+    // {
+      inherit cargoArtifacts;
+      pname = "korrid-viewer-probe";
+      cargoBuildExtraArgs = "--bin viewer_probe";
+      doCheck = false;
+      meta = commonArgs.meta // {
+        mainProgram = "viewer_probe";
+      };
+    }
+  );
 in
 craneLib.buildPackage (
   commonArgs
   // {
     inherit cargoArtifacts;
+    passthru = { inherit viewerProbe; };
     # Keep reusable compilation outputs separate from the shipped runtime.
     outputs = [
       "out"
