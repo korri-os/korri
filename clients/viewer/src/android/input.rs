@@ -1515,6 +1515,27 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn the_heartbeat_has_no_deadline_before_its_first_tick() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        let mut devices = Known::with([pad(16, 0x045e)]);
+        input.key(
+            &key(16, code::BUTTON_A, 304, KeyAction::Down, 1000, 1000),
+            1000,
+            &mut devices,
+            &mut sink,
+        );
+        // The app waits `deadline - now`: a moment far in the past would
+        // overflow it.
+        let deadline = input.next_deadline();
+        assert!(
+            deadline.is_none_or(|at| at.checked_sub(1000).is_some()),
+            "{deadline:?}"
+        );
+        input.tick(1000, &mut sink);
+        assert_eq!(input.next_deadline(), Some(1000 + HEARTBEAT_MS));
+    }
+
+    #[test]
     fn start_held_turns_the_pad_into_a_mouse() {
         let (mut input, mut sink) = (input(), Recorded::default());
         let mut devices = Known::with([pad(16, 0x045e)]);

@@ -1292,11 +1292,11 @@ impl Heartbeat {
         }
     }
 
+    /// None until the first tick sets the clock: the app ticks on every
+    /// turn of its loop anyway.
     fn next_deadline(&self) -> Option<i64> {
-        self.states
-            .iter()
-            .any(Option::is_some)
-            .then(|| self.next_ms.unwrap_or(i64::MIN))
+        self.next_ms
+            .filter(|_| self.states.iter().any(Option::is_some))
     }
 }
 

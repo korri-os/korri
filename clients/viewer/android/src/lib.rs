@@ -299,7 +299,7 @@ fn drive(
         // controllers' heartbeat) wake the loop, or it waits for 100 ms.
         let wait = input
             .next_deadline()
-            .map_or(100, |at| (at - now_ms()).clamp(0, 100));
+            .map_or(100, |at| at.saturating_sub(now_ms()).clamp(0, 100));
         let mut stop = false;
         app.poll_events(Some(Duration::from_millis(wait as u64)), |event| {
             // Leaving the app ends the stream, as Artemis's Game activity
