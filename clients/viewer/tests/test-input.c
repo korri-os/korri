@@ -2,6 +2,8 @@
 // Actual SDL event loop, SDL virtual controller and carried input handlers.
 // Record their network-core boundary, without a live streaming peer.
 #include "sdl.c"
+// The real descriptor loop, compiled here so this check can select its X11 branch.
+#include "picture/bridge.c"
 #include "io/bridge.h"
 #include <assert.h>
 #include <string.h>
@@ -30,6 +32,42 @@ int __wrap_LiSendMouseMoveEvent(short x, short y) {
 int __wrap_LiSendMultiControllerEvent(short id, short mask, int flags,
     unsigned char lt, unsigned char rt, short lx, short ly, short rx, short ry) {
   controllers++; last_buttons = flags; last_y = ly; return 0;
+}
+// The only failure of udev_new is an allocation failure; refuse it on demand.
+static int refuse_udev;
+struct udev* __real_udev_new(void);
+struct udev* __wrap_udev_new(void) {
+  return refuse_udev ? NULL : __real_udev_new();
+}
+// #468: these evdev-branch failures used to exit() the process, past Rust's
+// lifecycle report and socket removal. Neither reaches /dev/input.
+static void evdev_setup_failures_return_errors(void) {
+  assert(viewer_input_init(1, 0, "/nonexistent/korri-mapping.txt", 0, 0, 0) == -1);
+  assert(viewer_input_gamepad_mask() == 0);
+  viewer_input_destroy();
+  setenv("SDL_GAMECONTROLLERCONFIG", "030000005e0400008e02000001000000,Microsoft Xbox 360,a:b0,", 1);
+  refuse_udev = 1;
+  assert(viewer_input_init(1, 0, NULL, 0, 0, 0) == -1);
+  refuse_udev = 0;
+  unsetenv("SDL_GAMECONTROLLERCONFIG");
+  assert(viewer_input_gamepad_mask() == 0);
+  viewer_input_destroy();
+  puts("evdev mapping and udev setup failures return errors");
+}
+// #468: an input handler's failure, such as an evdev read error, ends the
+// Rust-polled loop with an error instead of a normal return.
+static int failing_handler(int fd) { return -1; }
+static void handler_failure_ends_the_loop_with_an_error(void) {
+  int pipes[2];
+  assert(pipe(pipes) == 0);
+  assert(write(pipes[1], "x", 1) == 1);
+  loop_add_fd(pipes[0], failing_handler, POLLIN);
+  using_vaapi = 1;
+  assert(picture_poll(1000) == -1);
+  using_vaapi = 0;
+  loop_remove_fd(pipes[0]);
+  close(pipes[0]);
+  close(pipes[1]);
 }
 static void pump(void) {
   for (int i = 0; i < 50; ++i) assert(sdl_poll(2) == 0);
@@ -66,6 +104,8 @@ int main(int argc, char** argv) {
     }
     puts("viewonly: no input forwarding or discovery on either PC platform");
   } else {
+    evdev_setup_failures_return_errors();
+    handler_failure_ends_the_loop_with_an_error();
     assert(viewer_input_init(0, 0, NULL, 1, 0, 0) == 0);
     viewer_input_start();
     pump();

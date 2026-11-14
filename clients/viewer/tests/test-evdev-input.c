@@ -3,6 +3,72 @@
 // input node is opened or grabbed on the build machine.
 #include "io/input/evdev.c"
 #include <assert.h>
+#include <errno.h>
+// Allocation fails only when a check asks for it.
+static int refuse_calloc, refuse_realloc;
+void* __real_calloc(size_t count, size_t size);
+void* __wrap_calloc(size_t count, size_t size) {
+  if (refuse_calloc) { errno = ENOMEM; return NULL; }
+  return __real_calloc(count, size);
+}
+void* __real_realloc(void* old, size_t size);
+void* __wrap_realloc(void* old, size_t size) {
+  if (refuse_realloc) { errno = ENOMEM; return NULL; }
+  return __real_realloc(old, size);
+}
+static void quiet(const struct libevdev* dev, enum libevdev_log_priority priority, void* data,
+    const char* file, int line, const char* func, const char* format, va_list args) {}
+static int lowest_free_descriptor(void) {
+  int probe = dup(0);
+  assert(probe >= 0);
+  close(probe);
+  return probe;
+}
+// #468: each of these used to exit() the process, past Rust's lifecycle
+// report and socket removal. Each now returns its failure to the caller.
+static void failures_return_errors(void) {
+  struct mapping* none = NULL;
+  assert(mapping_load("/nonexistent/korri-mapping.txt", false, &none) == -1 && !none);
+
+  char line[] = "030000005e0400008e02000001000000,Microsoft Xbox 360,a:b0,";
+  refuse_calloc = 1;
+  errno = 0;
+  assert(mapping_parse(line) == NULL && errno == ENOMEM);
+  char file[4096];
+  const char* scratch = getenv("TMPDIR");
+  snprintf(file, sizeof(file), "%s/korri-mapping-XXXXXX", scratch ? scratch : "/tmp");
+  int written = mkstemp(file);
+  assert(written >= 0);
+  const char* record = "030000005e0400008e02000001000000,Microsoft Xbox 360,a:b0,\n";
+  assert(write(written, record, strlen(record)) == (ssize_t)strlen(record));
+  close(written);
+  assert(mapping_load(file, false, &none) == -1 && !none);
+  refuse_calloc = 0;
+  assert(mapping_load(file, false, &none) == 0 && none && !none->next);
+  free(none);
+  unlink(file);
+
+  // /dev/null is no input device. Its node classifies as neither a gamepad
+  // nor an accelerometer, so evdev_create reaches its allocation.
+  int descriptor = lowest_free_descriptor();
+  refuse_realloc = 1;
+  assert(evdev_create("/dev/null", NULL, false, 0) == -1);
+  refuse_realloc = 0;
+  assert(numDevices == 0 && devices == NULL);
+  assert(lowest_free_descriptor() == descriptor);
+
+  // A read error other than EAGAIN or ENODEV ends the Rust-polled loop with
+  // an error. An unattached libevdev reports EBADF without reading.
+  devices = calloc(1, sizeof(*devices));
+  numDevices = 1;
+  devices[0].dev = libevdev_new();
+  libevdev_set_device_log_function(devices[0].dev, quiet, LIBEVDEV_LOG_ERROR, NULL);
+  devices[0].fd = -1;
+  devices[0].controllerId = -1;
+  assert(evdev_handle(-1) < 0);
+  evdev_destroy();
+  puts("mapping, allocation, device and read failures return errors");
+}
 static int keys, buttons, moves, controllers;
 static short player;
 static int active, flags;
@@ -28,7 +94,9 @@ static void event(struct input_device* dev, int type, int code, int value) {
 int main(int argc, char** argv) {
   assert(argc == 2);
   // The real shipped controller database is the mapping producer.
-  struct mapping* maps = mapping_load(argv[1], false);
+  failures_return_errors();
+  struct mapping* maps = NULL;
+  assert(mapping_load(argv[1], false, &maps) == 0);
   struct mapping* map = maps;
   while (map && strcmp(map->guid, "030000005e0400008e02000001000000")) map = map->next;
   assert(map);

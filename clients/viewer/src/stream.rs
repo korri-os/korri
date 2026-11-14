@@ -272,7 +272,7 @@ pub fn run_with_lifecycle(
         }
         io.stop();
         ffi::LiStopConnection();
-        ensure!(!poll_error, "picture event loop failed");
+        ensure!(!poll_error, "picture or input event loop failed");
     }
     let error = TERMINATED.load(Ordering::Relaxed);
     ensure!(error == 0, "stream terminated: {error}");

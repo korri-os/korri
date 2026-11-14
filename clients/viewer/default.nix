@@ -174,10 +174,10 @@ let
         export ALSA_CONFIG_PATH="$PWD/alsa.conf"
         ./check-audio "$TMPDIR/decoded.pcm"
         cc -std=gnu11 ${ioFlags} -I${source}/picture \
-          ${source}/tests/test-input.c ${ioSources} ${source}/picture/bridge.c \
+          ${source}/tests/test-input.c ${ioSources} \
           $(pkg-config --cflags --libs ${ioLibraries}) \
           -L${network}/lib -lmoonlight-common-c -pthread -lm \
-          -Wl,--wrap=LiSendKeyboardEvent,--wrap=LiSendMouseButtonEvent,--wrap=LiSendMousePositionEvent,--wrap=LiSendMouseMoveEvent,--wrap=LiSendMultiControllerEvent \
+          -Wl,--wrap=LiSendKeyboardEvent,--wrap=LiSendMouseButtonEvent,--wrap=LiSendMousePositionEvent,--wrap=LiSendMouseMoveEvent,--wrap=LiSendMultiControllerEvent,--wrap=udev_new \
           -o check-input
         cc -std=gnu11 ${ioFlags} -I${source}/picture \
           ${source}/tests/test-x11-input.c ${source}/picture/bridge.c \
@@ -189,7 +189,7 @@ let
           ${source}/tests/test-evdev-input.c ${source}/io/input/mapping.c ${source}/picture/bridge.c \
           $(pkg-config --cflags --libs ${ioLibraries}) \
           -L${network}/lib -lmoonlight-common-c -pthread -lm \
-          -Wl,--wrap=LiSendKeyboardEvent,--wrap=LiSendMouseButtonEvent,--wrap=LiSendMouseMoveEvent,--wrap=LiSendMultiControllerEvent \
+          -Wl,--wrap=LiSendKeyboardEvent,--wrap=LiSendMouseButtonEvent,--wrap=LiSendMouseMoveEvent,--wrap=LiSendMultiControllerEvent,--wrap=calloc,--wrap=realloc \
           -o check-evdev-input
         ./check-evdev-input ${upstream}/third_party/SDL_GameControllerDB/gamecontrollerdb.txt
         xvfb-run -a ./check-x11-input

@@ -73,7 +73,11 @@ int picture_poll(int timeout) {
   int result = poll(fds, count, timeout);
   if (result < 0) return errno == EINTR ? 0 : -1;
   for (int i = 0; i < count; ++i) {
-    if (fds[i].revents && handlers[i](fds[i].fd) == LOOP_RETURN) return 1;
+    if (!fds[i].revents) continue;
+    int handled = handlers[i](fds[i].fd);
+    // A negative result is a handler failure, such as an evdev read error.
+    if (handled < 0) return -1;
+    if (handled == LOOP_RETURN) return 1;
   }
   return 0;
 }

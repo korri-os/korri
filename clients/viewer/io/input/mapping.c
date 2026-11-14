@@ -19,6 +19,7 @@
 
 #include "mapping.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -35,7 +36,10 @@ struct mapping* mapping_parse(char* mapping) {
   struct mapping* map = calloc(1, sizeof(struct mapping));
   if (map == NULL) {
     fprintf(stderr, "Not enough memory");
-    exit(EXIT_FAILURE);
+    // Korri adaptation: return the failure, not exit. ENOMEM tells it from
+    // a line that is not a mapping.
+    errno = ENOMEM;
+    return NULL;
   }
 
   strncpy(map->guid, guid, sizeof(map->guid) - 1);
@@ -171,27 +175,42 @@ struct mapping* mapping_parse(char* mapping) {
   return map;
 }
 
-struct mapping* mapping_load(char* fileName, bool verbose) {
+// Korri adaptation: return -1, not exit, when the file cannot be opened or a
+// mapping cannot be allocated. Close the file.
+int mapping_load(char* fileName, bool verbose, struct mapping** loaded) {
   struct mapping* mappings = NULL;
   FILE* fd = fopen(fileName, "r");
   if (fd == NULL) {
     fprintf(stderr, "Can't open mapping file: %s\n", fileName);
-    exit(EXIT_FAILURE);
+    return -1;
   } else if (verbose)
     printf("Loading mappingfile %s\n", fileName);
 
   char *line = NULL;
   size_t len = 0;
-  while (getline(&line, &len, fd) != -1) {
+  bool failed = false;
+  while (!failed && getline(&line, &len, fd) != -1) {
+    errno = 0;
     struct mapping* map = mapping_parse(line);
     if (map) {
       map->next = mappings;
       mappings = map;
-    }
+    } else
+      failed = errno == ENOMEM;
   }
   free(line);
+  fclose(fd);
 
-  return mappings;
+  if (failed) {
+    while (mappings) {
+      struct mapping* next = mappings->next;
+      free(mappings);
+      mappings = next;
+    }
+    return -1;
+  }
+  *loaded = mappings;
+  return 0;
 }
 
 #define print_btn(btn, code) if (code > -1) printf("%s:b%d,", btn, code)

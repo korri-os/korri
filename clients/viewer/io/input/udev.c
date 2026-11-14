@@ -46,7 +46,11 @@ static int udev_handle(int fd) {
       const char *devnode = udev_device_get_devnode(dev);
       int id;
       if (devnode != NULL && sscanf(devnode, "/dev/input/event%d", &id) == 1) {
-        evdev_create(devnode, defaultMappings, debug, inputRotate);
+        // Korri adaptation: end the Rust-polled loop with the device's failure.
+        if (evdev_create(devnode, defaultMappings, debug, inputRotate) < 0) {
+          udev_device_unref(dev);
+          return -1;
+        }
       }
     }
     udev_device_unref(dev);
@@ -54,12 +58,14 @@ static int udev_handle(int fd) {
   return LOOP_OK;
 }
 
-void udev_init(bool autoload, struct mapping* mappings, bool verbose, int rotate) {
+// Korri adaptation: return -1, not exit, when udev or a device cannot be
+// allocated. The caller closes the devices that were opened before it.
+int udev_init(bool autoload, struct mapping* mappings, bool verbose, int rotate) {
   udev = udev_new();
   debug = verbose;
   if (!udev) {
     fprintf(stderr, "Can't create udev\n");
-    exit(1);
+    return -1;
   }
 
   autoadd = autoload;
@@ -75,8 +81,12 @@ void udev_init(bool autoload, struct mapping* mappings, bool verbose, int rotate
       struct udev_device *dev = udev_device_new_from_syspath(udev, path);
       const char *devnode = udev_device_get_devnode(dev);
       int id;
-      if (devnode != NULL && sscanf(devnode, "/dev/input/event%d", &id) == 1) {
-        evdev_create(devnode, mappings, verbose, rotate);
+      if (devnode != NULL && sscanf(devnode, "/dev/input/event%d", &id) == 1 &&
+          evdev_create(devnode, mappings, verbose, rotate) < 0) {
+        udev_device_unref(dev);
+        udev_enumerate_unref(enumerate);
+        udev = udev_unref(udev);
+        return -1;
       }
       udev_device_unref(dev);
     }
@@ -92,6 +102,7 @@ void udev_init(bool autoload, struct mapping* mappings, bool verbose, int rotate
   inputRotate = rotate;
 
   loop_add_fd(udev_monitor_get_fd(udev_mon), &udev_handle, POLLIN);
+  return 0;
 }
 
 void udev_destroy() {

@@ -777,19 +777,22 @@ static int evdev_handle(int fd) {
         evdev_remove(i);
       } else if (rc != -EAGAIN && rc < 0) {
         fprintf(stderr, "Error: %s\n", strerror(-rc));
-        exit(EXIT_FAILURE);
+        // Korri adaptation: end the Rust-polled loop with an error, not exit.
+        return -1;
       }
     }
   }
   return LOOP_OK;
 }
 
-void evdev_create(const char* device, struct mapping* mappings, bool verbose, int rotate) {
+// Korri adaptation: return -1, not exit, when the device cannot be allocated.
+// A device that is skipped is not a failure.
+int evdev_create(const char* device, struct mapping* mappings, bool verbose, int rotate) {
   int fd = open(device, O_RDWR|O_NONBLOCK);
   if (fd <= 0) {
     fprintf(stderr, "Failed to open device %s\n", device);
     fflush(stderr);
-    return;
+    return 0;
   }
 
   struct libevdev *evdev = libevdev_new();
@@ -866,7 +869,7 @@ void evdev_create(const char* device, struct mapping* mappings, bool verbose, in
       printf("Ignoring accelerometer: %s\n", name);
     libevdev_free(evdev);
     close(fd);
-    return;
+    return 0;
   }
 
   if (is_gamepad) {
@@ -882,19 +885,20 @@ void evdev_create(const char* device, struct mapping* mappings, bool verbose, in
     mappings = NULL;
   }
 
+  // Korri adaptation: keep the existing devices when the array cannot grow.
+  struct input_device* grown = realloc(devices, sizeof(struct input_device)*(numDevices + 1));
+  if (grown == NULL) {
+    fprintf(stderr, "Not enough memory\n");
+    if (is_gamepad)
+      evdev_gamepads--;
+    libevdev_free(evdev);
+    close(fd);
+    return -1;
+  }
+  devices = grown;
+
   int dev = numDevices;
   numDevices++;
-
-  if (devices == NULL) {
-    devices = malloc(sizeof(struct input_device));
-  } else {
-    devices = realloc(devices, sizeof(struct input_device)*numDevices);
-  }
-
-  if (devices == NULL) {
-    fprintf(stderr, "Not enough memory\n");
-    exit(EXIT_FAILURE);
-  }
 
   memset(&devices[dev], 0, sizeof(devices[0]));
   devices[dev].fd = fd;
@@ -955,6 +959,7 @@ void evdev_create(const char* device, struct mapping* mappings, bool verbose, in
   }
 
   loop_add_fd(devices[dev].fd, &evdev_handle, POLLIN);
+  return 0;
 }
 
 static void evdev_map_key(char* keyName, short* key) {

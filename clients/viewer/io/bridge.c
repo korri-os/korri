@@ -29,7 +29,7 @@ static int input_init(int evdev, int viewonly, char* mapping, char** inputs, int
       fprintf(stderr, "Please specify mapping file as default mapping could not be found.\n");
       return -1;
     }
-    if (mapping) mappings = mapping_load(mapping, verbose);
+    if (mapping && mapping_load(mapping, verbose, &mappings) < 0) return -1;
     if (env) {
       // mapping_parse tokenizes its argument. Do not alter the environment.
       char* copy = strdup(env);
@@ -42,12 +42,19 @@ static int input_init(int evdev, int viewonly, char* mapping, char** inputs, int
     }
     evdev_init(mouse_emulation);
     // main.c: explicit -input nodes first; udev then adds none at start or
-    // on hotplug.
+    // on hotplug. A failure closes the devices opened before it;
+    // viewer_input_destroy frees the mappings.
     for (int i = 0; i < inputs_count; i++) {
       if (verbose) printf("Adding input device %s...\n", inputs[i]);
-      evdev_create(inputs[i], mappings, verbose, rotate);
+      if (evdev_create(inputs[i], mappings, verbose, rotate) < 0) {
+        evdev_destroy();
+        return -1;
+      }
     }
-    udev_init(inputs_count == 0, mappings, verbose, rotate);
+    if (udev_init(inputs_count == 0, mappings, verbose, rotate) < 0) {
+      evdev_destroy();
+      return -1;
+    }
   } else {
     sdlinput_init(mapping);
   }
