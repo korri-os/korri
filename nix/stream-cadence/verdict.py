@@ -144,6 +144,14 @@ def conditions(record: dict) -> dict:
     # Whether the viewer wrote its frame record (#435) in the run. The record
     # costs the viewer CPU. A result from before the fact had no record.
     values["frame_record"] = bool(facts.get("frame_record_written"))
+    # The network condition of the pair's loopback, in netem's words (--net).
+    # A result with none, and one from before the option, streamed over a
+    # loopback with no loss and no delay.
+    values["net"] = (facts.get("net") or {}).get("netem")
+    # Whether the sender fixture's Sunshine required encryption of video and
+    # audio (--require-encryption). Without it Sunshine's defaults decide: on a
+    # LAN, and loopback is one, they encrypt no video.
+    values["encryption"] = bool((facts.get("encryption") or {}).get("required"))
     return values
 
 
@@ -271,6 +279,41 @@ def product_changes(baseline: list[dict], candidate: list[dict]) -> list[str]:
     return lines
 
 
+def span(values: list) -> str:
+    known = [value for value in values if value is not None]
+    if len(known) != len(values) or not known:
+        return "not recorded"
+    return f"{min(known)}..{max(known)}"
+
+
+def net_lines(baseline: list[dict], candidate: list[dict]) -> list[str]:
+    """The network condition of each result, and what it did, for lines of their own.
+
+    netem's count of the packets that it passed and dropped while the
+    measured start ran, and the viewer core's own lines of loss and recovery
+    in that start. A drop that leaves no unrecoverable frame was repaired by
+    FEC: the core's release build logs no repair. Nothing here is judged.
+    """
+    if not any((record["discovered"].get("net") or {}).get("netem") for record in baseline + candidate):
+        return []
+    lines = []
+    for name, records in (("baseline", baseline), ("candidate", candidate)):
+        nets = [record["discovered"].get("net") or {} for record in records]
+        words = sorted({str(net.get("netem")) for net in nets})
+        started = [net.get("measured_start") or {} for net in nets]
+        core = [net.get("core_log") or {} for net in nets]
+        lines.append(
+            f"{name} network: {', '.join(words)} on the pair's own loopback; in the measured start "
+            f"netem dropped {span([row.get('dropped') for row in started])} and passed "
+            f"{span([row.get('passed') for row in started])} packets; the viewer's core logged "
+            f"unrecoverable frames {span([row.get('unrecoverable_frames') for row in core])}, "
+            f"network-dropped frames {span([row.get('network_dropped_frames') for row in core])}, "
+            f"RFI requests {span([row.get('rfi_requests') for row in core])}, "
+            f"IDR requests {span([row.get('idr_requests') for row in core])}"
+        )
+    return lines
+
+
 def input_lines(baseline: list[dict], candidate: list[dict]) -> list[str]:
     """A result whose viewer sent no keyboard packet for any press, for a line of its own.
 
@@ -354,7 +397,7 @@ def conditions_that_differ(old: list[dict], new: list[dict]) -> str | None:
         and len({json.dumps(row[name], sort_keys=True) for row in every if row[name] is not None}) == 1
     ]
     # These have their own words. The measure also sets the rate and the mode.
-    named = {"beside_a_game", "viewer_place", "viewer_renderer", "frame_record"}
+    named = {"beside_a_game", "viewer_place", "viewer_renderer", "frame_record", "net", "encryption"}
     if "measure" in changed:
         named |= {"measure", "requested_fps", "display"}
     differ = [name for name in changed if name not in absent and name not in named]
@@ -372,6 +415,19 @@ def conditions_that_differ(old: list[dict], new: list[dict]) -> str | None:
             "costs the viewer CPU: on aka it made cpu_seconds_per_second worse in five "
             "turns. Judge the other numbers with no record, and take number 1 from "
             "runs of its own (--frame-record)."
+        )
+    if "net" in changed:
+        found = sorted({str(row["net"]) for row in every})
+        advice.append(
+            "Some runs streamed over the pair's loopback with another network condition "
+            "(--net, in netem's words; None is no condition): " + "; ".join(found) + ". Loss "
+            "and delay change every number of a pair; compare two results of one condition."
+        )
+    if "encryption" in changed:
+        advice.append(
+            "Some runs had a sender fixture that required encryption of video and audio "
+            "(--require-encryption) and others had Sunshine's default, which encrypts no video "
+            "on a LAN. Decryption costs the viewer CPU; record both results with the same setting."
         )
     if "viewer_place" in changed:
         advice.append(

@@ -1141,8 +1141,9 @@ exiting because its default ALSA card is absent. This does not measure audio.
 **What the fixture does not prove.** It is not the product's sender. It does
 not use the product's KMS capture, its encoder settings, its pacing or its
 display. Sound is off, or a tone when an agent request asks for one. With both targets on one host the stream uses
-loopback, so the network is not measured, and the sender and the viewer
-share one machine's CPU. The numbers compare an old and a new viewer against
+loopback, so the network is not measured unless `--net` gives that loopback
+a network's conditions (see "Network conditions and encryption"), and the
+sender and the viewer share one machine's CPU. The numbers compare an old and a new viewer against
 the same test sender. `run` still measures the product sender. `verdict`
 refuses to compare a fixture result with a product-sender result: the
 capture backend and the display mode differ. It also refuses two fixture
@@ -1623,6 +1624,125 @@ Open points of the press:
 - The baselines in `baselines/aka` were recorded before this measure and
   have no `input_ms`.
 
+### Network conditions and encryption: `--net`, `--require-encryption`
+
+A private pair streams over a loopback: no packet is lost or late, so the
+viewer's FEC, its IDR and RFI recovery, its timers under delay and its
+decryption of video never run. Step E of #391 replaces that network core,
+so the measure must make them run (#470).
+
+```sh
+nix run .#stream-cadence -- view --sender root@aka --sender-fixture \
+  --viewer root@aka --viewer-package /nix/store/…-moonlight-embedded-korri-2.7.1-korri \
+  --candidate-package /nix/store/… --runs 5 --net 'loss random 1%'
+# Burst loss: Gilbert's model, mean loss p / (p + r) = 5%, mean burst 1 / r = 4 packets.
+  … --net 'loss gemodel 1.3158% 25%'
+  … --net 'delay 30ms'
+  … --require-encryption
+```
+
+**`--net NETEM`** gives the loopback of the pair's own network namespace
+the conditions of a real network, in the words of tc-netem(8). The tool
+takes a part of them:
+
+| Words | Meaning |
+| --- | --- |
+| `loss random P%` | Each packet is lost with chance P. |
+| `loss gemodel P% R%` | Burst loss, Gilbert's model: P is the chance to enter the state of loss, R the chance to leave it, and every packet in that state is lost. The mean loss is P / (P + R), the mean burst 1 / R packets. |
+| `delay Nms` | Each packet waits N ms, at most 1000. |
+| `reorder P%` | With a delay only: netem sends P of the packets at once and delays the others. |
+
+The words can be combined (`delay 30ms loss random 1%`). Jitter,
+correlation and netem's other words are refused, and so is any word that
+is given twice. The tool checks the words before it asks any device, and
+the sender's agent checks them again.
+
+**Where it applies, and nowhere else.** Only a same-device pair that has
+its own network namespace takes `--net`: a PC pair whose product viewer
+asks for `x11_vaapi` (see "PC VA-API fixture isolation"). That namespace has
+one interface, its own loopback. The stand-in, a viewer on another device
+and a product sender are refused before the sender starts, with
+`--sender-fixture` asked first. The sender's agent applies the condition
+right after it makes the namespace, before anything uses the loopback, and
+only from a thread that `PairNamespace.inside` proves to be in the pair's
+namespace and not in the product's. Every command names `dev lo`.
+
+**The conditions apply to every packet on that loopback, in both
+directions.** A delay of 30 ms gives a round trip of 60 ms. Loss falls on
+video, audio, the control stream, RTSP and the pairing's HTTPS alike.
+
+**Why a token bucket comes first.** Sunshine sends the packets of a frame's
+FEC block in one `sendmsg` with `UDP_SEGMENT` (`send_batch`,
+`src/platform/linux/misc.cpp`), up to 43 packets. A qdisc sees that batch as
+one buffer, because the kernel splits it only after the qdisc. netem alone
+would then lose whole frames and never a packet that FEC can repair. So the
+loopback gets three commands (`net_condition.commands`):
+
+```
+ip link set dev lo mtu 1500
+tc qdisc add dev lo root handle 1: tbf rate 100gbit burst 1514 limit 100000
+tc qdisc add dev lo parent 1:1 handle 10: netem NETEM
+```
+
+The token bucket (`tbf`) splits each buffer larger than its burst into its
+datagrams before netem, its one child, sees them (`tbf_segment` in the
+kernel's `sch_tbf.c`). Its burst is one Ethernet frame. The loopback takes
+Ethernet's MTU of 1500, because a TCP buffer at the loopback's own MTU of
+65536 has segments that no burst of one frame passes. Its rate is far above
+a stream's, so it shapes nothing. `tests/test_net.py` proves the split in a
+real namespace: 100 batches of 20 datagrams sent as Sunshine sends them,
+50% loss, and no batch arrives whole or not at all; with netem alone every
+batch does.
+
+**The record.** `discovered.net` holds:
+
+| Field | Meaning |
+| --- | --- |
+| `netem` | The condition, in netem's words and in one order. It is the condition `net` of `verdict`. |
+| `delay_ms`, `mean_loss_percent`, `mean_burst_packets`, `reorder_percent` | What the words mean. `mean_burst_packets` is `null` for random loss. |
+| `commands` | The three commands as the agent ran them. |
+| `namespace`, `product_namespace`, `init_namespace` | The network namespace in which they ran, the agent's own before it made the pair's, and PID 1's. |
+| `interfaces` | The interfaces of the pair's namespace: `lo` only, else nothing is applied. |
+| `mtu`, `qdiscs` | The loopback after the commands. |
+| `product_before`, `product_after` | The MTU of each interface and every qdisc of the product's namespace: read before the commands and after each run's measured start, in that namespace, with `ip -j link show` and `tc -j qdisc show`. They only read. |
+| `product_changes` | What changed there that the tool could have changed: a `netem` or `tbf` qdisc that was not there before, or the MTU of an interface that was. An interface that appears, as a container's, is not a change. A change ends the run as invalid. |
+| `measured_start` | netem's counters over the measured start: packets `passed` and `dropped`. |
+| `core_log` | The viewer core's own lines of loss and recovery in the measured start's `viewer.log` (`net_condition.recovery`): `unrecoverable_frames`, `network_dropped_frames`, `rfi_requests`, `idr_requests`, `audio_dropped`, `audio_unrecovered_blocks`. |
+
+**FEC shows by its effect.** moonlight-common-c's release build logs no
+repair: its "Recovered … shards" line needs `FEC_VERBOSE`. A packet that
+netem dropped and that left no unrecoverable frame, no RFI and no lost ID
+on the display was repaired by FEC. `verdict` prints the condition and these
+counts of each result in a line of its own; it judges none of them.
+
+**Number 5 under `--net`.** The packet capture sees a packet when netem
+releases it, after the qdisc. Under a delay, `input_ms` holds that delay
+once; under loss, a key whose packet netem dropped is answered by ENet's
+resend, or missed. Two results of one condition still compare.
+
+**`--require-encryption`** gives the sender fixture's Sunshine
+`lan_encryption_mode = 2` and `wan_encryption_mode = 2`: encryption is
+mandatory for a client at any address (a loopback client counts as LAN in
+Sunshine's `network.cpp`). Sunshine then refuses a client whose RTSP
+ANNOUNCE does not enable both video and audio encryption, with a 403
+(`rtsp.cpp`, `cmd_announce`), and a launch with no encrypted RTSP
+(`nvhttp.cpp`). So a stream that runs is encrypted. Without the option the
+file names no encryption, as before: Sunshine's defaults encrypt no video
+on a LAN. `discovered.encryption` holds `required`, the two settings, and
+the lines of the measured start's `viewer.log` that name encryption.
+Moonlight Embedded asks for video encryption itself on a CPU with fast AES,
+as aka has; the core then logs nothing about it. It logs "Enabling video
+encryption by host request despite client opt-out" when the viewer did
+not ask.
+
+**Defaults.** With neither option nothing changes: no command runs on the
+loopback, its MTU stays, and Sunshine's file is the same. A result with no
+`net` and no `encryption`, and every result from before the options, has
+the conditions `net` `null` and `encryption` `false`, so the baselines in
+`baselines/aka` keep comparing with today's default runs.
+
+**The proof on aka.** See "The network conditions on aka" below.
+
 ### Verdict
 
 `verdict` compares two `view` results, five valid runs each by default. Every
@@ -1641,9 +1761,11 @@ the requested resolution, frame rate, codec, bitrate and viewer refresh,
 the limit `max_capture_gaps` of the run, whether a game ran on a device
 during a run, the measure of a private pair (base or queue), where the
 viewer showed the stream (in the fixture or on the device's own display),
-the renderer of the fixture's compositor, and whether the viewer wrote its
-frame record. A difference there would judge the sender, the device or the
-record's own cost, not the viewer.
+the renderer of the fixture's compositor, whether the viewer wrote its
+frame record, the network condition of the pair's loopback (`net`, in
+netem's words) and whether the sender fixture required encryption
+(`encryption`). A difference there would judge the sender, the device, the
+network or the record's own cost, not the viewer.
 
 Which viewer ran is no condition. `verdict` prints it above the table, one
 line for each result and a third that says whether they are the same
@@ -1815,7 +1937,8 @@ nix build --no-link --impure --expr \
 
 `default.nix` exports `app`, `shim`, `motion`, `capture`, `press`, `device`, `tests`, and `sourceCheck`.
 `runtime` holds what an agent needs on its target, including the sender
-fixture's `sway` and `sunshine` from nixpkgs, and `pulseaudio` for its tone.
+fixture's `sway` and `sunshine` from nixpkgs, `pulseaudio` for its tone, and
+`iproute2` for `--net`.
 Use the same expression with an architecture-appropriate `pkgs` to build each
 output for either supported architecture. Tests compile the actual C bar,
 round-trip it through lossy libx264 at three resolutions, inject source discards

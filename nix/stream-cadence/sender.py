@@ -18,6 +18,10 @@ an input device. A game on a Korri device does not stop it; the result names the
 On request the fixture's Sunshine sends a known tone (`tone_script`): a
 private PulseAudio in the run directory has one null sink with a sine on it
 and nothing else, so the sound of a product stream is never read or changed.
+
+On request the pair's own loopback gets the conditions of a real network
+(`net_condition`), and the fixture's Sunshine requires encryption of video
+and audio.
 """
 
 import base64
@@ -65,6 +69,7 @@ from device import (
 from fixture_namespace import PairNamespace
 from discovery import encoder_probe, output, properties
 from heat import must_end, no_start, start_status, thermal_limits, thermal_zones
+import net_condition
 from viewer import (
     GUARD_PERIOD,
     board,
@@ -100,6 +105,11 @@ SUNSHINE_DEFAULT_BASE = 47989
 READY = "Configuration UI available at"
 # The tone's null sink in the fixture's private sound server.
 TONE_SINK = "korri-tone"
+# Sunshine's ENCRYPTION_MODE_MANDATORY (config.h). In this mode its RTSP
+# ANNOUNCE refuses a client that does not enable both video and audio
+# encryption (rtsp.cpp, cmd_announce), and its launch refuses one with no
+# encrypted RTSP (nvhttp.cpp). A stream that runs is then encrypted.
+ENCRYPTION_MANDATORY = 2
 
 
 def steady_refresh_mhz(rate: float) -> int:
@@ -220,7 +230,9 @@ def credentials(name: str, password: str) -> str:
     )
 
 
-def configuration(root: Path, base: int, node: str, log_input: bool = False) -> str:
+def configuration(
+    root: Path, base: int, node: str, log_input: bool = False, encryption_required: bool = False
+) -> str:
     """Sunshine's own file format. No encoder is named: Sunshine probes hardware first.
 
     Every file that Sunshine reads or writes lies in `home`, which its user
@@ -228,6 +240,10 @@ def configuration(root: Path, base: int, node: str, log_input: bool = False) -> 
     With `log_input` Sunshine logs each input packet it receives: controller
     packets at its verbose level, the other kinds at debug. It still sends
     none of them on: input stays off.
+    With `encryption_required`, Sunshine requires encryption from a client at
+    any address: a loopback client counts as LAN (network.cpp). Without it
+    the file names no encryption, and Sunshine's defaults decide: no video
+    encryption on a LAN.
     """
     home = root / "home"
     values = {
@@ -251,6 +267,8 @@ def configuration(root: Path, base: int, node: str, log_input: bool = False) -> 
     }
     if log_input:
         values["min_log_level"] = "verbose"
+    if encryption_required:
+        values.update(lan_encryption_mode=ENCRYPTION_MANDATORY, wan_encryption_mode=ENCRYPTION_MANDATORY)
     return "".join(f"{key} = {value}\n" for key, value in values.items())
 
 
@@ -420,6 +438,11 @@ class Session:
         self.tone: dict | None = None
         # Sunshine logs each input packet, when asked (`configuration`).
         self.log_input = False
+        # The network condition of the pair's loopback, when one was asked for,
+        # and the iproute2 that applied it and reads its counters.
+        self.net: dict | None = None
+        self.iproute2 = ""
+        self.encryption_required = False
         self.login: tuple[str, str] | None = None
         self.cursor: int | None = None
         self.processes: dict[str, subprocess.Popen] = {}
@@ -602,7 +625,10 @@ class Session:
         # Each attempt gets a new file: whatever has that name is removed, not written.
         (self.root / "sunshine.conf").unlink(missing_ok=True)
         write_new(
-            self.root / "sunshine.conf", configuration(self.root, base, node, self.log_input)
+            self.root / "sunshine.conf",
+            configuration(
+                self.root, base, node, self.log_input, encryption_required=self.encryption_required
+            ),
         )
         (self.home() / "sunshine.log").unlink(missing_ok=True)
         # With a tone, Sunshine reads the private sound server and never starts one.
@@ -694,6 +720,13 @@ class Session:
     def prepare(self, request: dict) -> dict:
         if self.root is not None:
             raise RuntimeError("sender fixture already prepared")
+        # Checked here too, at the agent's own boundary, before anything starts.
+        netem = net_condition.condition(request["net"])["netem"] if request.get("net") else None
+        if netem and not request.get("private_x_namespace"):
+            raise RuntimeError(
+                "--net is applied only on the private pair's own network namespace, and this "
+                "pair has none. No real interface is ever changed; the sender fixture does not start."
+            )
         # A game on the device does not stop the fixture: it uses neither the
         # device's display nor the product Sunshine. A game changes the pair's
         # numbers, so the result names the units that are live.
@@ -733,6 +766,20 @@ class Session:
             raise RuntimeError(refused)
         if request.get("private_x_namespace"):
             self.facts["pair_namespace"] = self.namespace.create()
+        if netem:
+            # Before anything of the fixture uses the loopback.
+            self.iproute2 = str(request["iproute2"])
+            self.net = net_condition.apply(self.namespace, netem, self.iproute2)
+            self.facts["net"] = {**net_condition.condition(netem), **self.net}
+        self.encryption_required = bool(request.get("encryption_required"))
+        if self.encryption_required:
+            self.facts["encryption"] = {
+                "required": True,
+                "sunshine": {
+                    "lan_encryption_mode": ENCRYPTION_MANDATORY,
+                    "wan_encryption_mode": ENCRYPTION_MANDATORY,
+                },
+            }
         self.inputs, self.appeared, self.gone = input_devices(), set(), set()
         self.sway, self.sunshine = str(request["sway"]), str(request["sunshine"])
         width, height = int(request["width"]), int(request["height"])
@@ -869,6 +916,18 @@ class Session:
             raise RuntimeError("Sunshine refused the pairing PIN: " + json.dumps(answer))
         return {}
 
+    def net_now(self) -> dict:
+        """netem's counters on the pair's loopback, and the product's network as it is now."""
+        if self.net is None:
+            raise RuntimeError("This sender fixture has no network condition.")
+        now = net_condition.product_network(self.namespace, self.iproute2)
+        return {
+            "counters": net_condition.counters(self.iproute2),
+            "namespace": self.namespace.inside(),
+            "product_after": now,
+            "product_changes": net_condition.untouched(self.net["product_before"], now),
+        }
+
     def end(self, reason: str) -> None:
         """The guard's one action: stop the fixture's programs at once and keep the reason."""
         self.ended = reason
@@ -1004,6 +1063,8 @@ class Session:
             return output(self.sway_message("-t", "get_outputs"))
         if operation == "pin":
             return self.pin(str(request["pin"]))
+        if operation == "net":
+            return self.net_now()
         if operation == "start":
             return self.start(request)
         if operation == "sample":

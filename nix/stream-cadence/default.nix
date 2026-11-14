@@ -34,6 +34,7 @@ let
       ./viewer.py
       ./fixture_namespace.py
       ./input_measure.py
+      ./net_condition.py
     ];
   };
   captureSource = pkgs.lib.fileset.toSource {
@@ -171,6 +172,8 @@ let
         CADENCE_KORRID_VIEWER = korridViewer;
         # The press that the agents copy, against a real X server.
         CADENCE_PRESS = "${press}/bin/stream-cadence-press";
+        # The ip and tc that the sender's agent runs for --net, in real namespaces.
+        CADENCE_IPROUTE2 = "${pkgs.iproute2}";
       }
       ''
             export PYTHONDONTWRITEBYTECODE=1
@@ -212,5 +215,7 @@ in
     sunshine = pkgs.sunshine;
     # The private sound server of the sender fixture's tone, when asked for.
     pulseaudio = pkgs.pulseaudio;
+    # ip and tc for a network condition on the private pair's own loopback (--net).
+    iproute2 = pkgs.iproute2;
   };
 }

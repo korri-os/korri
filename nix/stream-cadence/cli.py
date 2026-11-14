@@ -31,6 +31,7 @@ from bar import BITS, Frame, Location, decode_rows, search
 from decode import decode
 from discovery import session_log
 from input_measure import PressFailed, summarize as summarize_input
+from net_condition import condition as net_condition, difference as net_difference, recovery
 from score import (
     InvalidMeasurement,
     battery_mw,
@@ -61,6 +62,7 @@ from verdict import (
     input_lines,
     judge,
     machine_line,
+    net_lines,
     product_changes,
     valid_runs,
     viewers,
@@ -553,6 +555,26 @@ def pc_fixture_namespace(*, product: bool, fixture: bool, private_pair: bool, sa
     if not (private_pair and same_device):
         raise ValueError("A PC product fixture needs a private pair on the same device: its decoder hardcodes :0. Across devices a private network namespace cannot carry the stream, and no safe private X display is available.")
     return True
+
+
+NET_OPTION = "--net"
+ENCRYPTION_OPTION = "--require-encryption"
+
+
+def net_refusal(net: dict | None, private_x: bool) -> str | None:
+    """Why this pair cannot take a network condition, or None. Asked before the sender starts.
+
+    netem goes only on the loopback of the pair's own network namespace. A
+    pair with no such namespace (the stand-in, or a viewer on another device)
+    streams over a loopback or a link that is not the pair's alone.
+    """
+    if net is None or private_x:
+        return None
+    return (
+        f"{NET_OPTION} needs the private pair's own network namespace: a same-device PC pair whose "
+        "product viewer asks for x11_vaapi. This pair has none, and the tool changes no real "
+        "interface, so no run starts."
+    )
 
 
 def viewer_place(plugin: bool, sender_fixture: bool, same_device: bool) -> str:
@@ -1418,6 +1440,10 @@ def view_case(
             product=bool(product), fixture=not on_display, private_pair=args.sender_fixture,
             same_device=same_clock, platform=seat["platform"],
         )
+        refused = net_refusal(args.net_condition, private_x)
+        if refused:
+            # Before the sender starts.
+            raise Refusal(refused)
         loopback = str(ipaddress.IPv4Address(socket.INADDR_LOOPBACK))
         measure = BASE
         if args.sender_fixture:
@@ -1441,6 +1467,9 @@ def view_case(
                 width=width,
                 height=height,
                 fps=fps,
+                net=args.net_condition["netem"] if args.net_condition else None,
+                iproute2=paths.get("iproute2"),
+                encryption_required=args.require_encryption,
             )
             if session is not None:
                 session["sender"] = built
@@ -1639,6 +1668,8 @@ def view_case(
         # A viewer that keeps a frame record writes it now; any other ignores the
         # ask. The record costs the viewer CPU, so the tool asks only on request.
         facts["frame_record_asked"] = args.frame_record
+        # netem's counters bracket the measured start, as its viewer.log does.
+        net_before = sender.request("net") if args.net_condition else None
         started = viewer.request(
             "start", command=command, frame_times=facts["frame_record_asked"],
             recording_bytes=recording_bytes(args, duration),
@@ -1677,6 +1708,29 @@ def view_case(
             if state["viewer_exit"] is not None:
                 raise Refusal(f"Viewer exited during the presses ({state['viewer_exit']}); read viewer.log")
         finished = viewer.request("stop")
+        if net_before is not None:
+            net_after = sender.request("net")
+            # A new dict: the session's facts are shared by its turns.
+            facts["net"] = {
+                **facts["net"],
+                "measured_start": net_difference(net_before["counters"], net_after["counters"]),
+                "core_log": recovery(finished["log"]),
+                "product_after": net_after["product_after"],
+                "product_changes": net_after["product_changes"],
+            }
+            if net_after["product_changes"]:
+                raise Refusal(
+                    "The product's network changed during the run: "
+                    + "; ".join(net_after["product_changes"])
+                    + ". Stop device work and read discovered.net."
+                )
+        if args.require_encryption:
+            # Sunshine refuses a client that does not encrypt video and audio; the
+            # core says so only when it was not the client's own choice.
+            facts["encryption"] = {
+                **facts["encryption"],
+                "viewer_log": [line for line in finished["log"].splitlines() if "ncrypt" in line][:20],
+            }
         # Whether the viewer's own OpenGL was on the graphics card: the render nodes
         # that it held open in any sample. None when no sample could read them.
         facts["viewer_ran"]["render_nodes"] = viewer_render_nodes(
@@ -1933,6 +1987,14 @@ def view_case(
                 ),
                 flush=True,
             )
+            net = facts.get("net") or {}
+            if "measured_start" in net:
+                print(
+                    f"{record['label']} net: {net['netem']}; measured start: "
+                    f"passed={net['measured_start']['passed']} dropped={net['measured_start']['dropped']} "
+                    + " ".join(f"{name}={value}" for name, value in net["core_log"].items()),
+                    flush=True,
+                )
         if not restored and session is None:
             raise Refusal(facts["error"])
     return record
@@ -1984,6 +2046,14 @@ def restore_view_session(results: list[dict], cleanup: dict) -> None:
 def view(args: argparse.Namespace) -> int:
     if args.candidate_package and not (args.viewer_package and args.sender_fixture):
         raise Refusal("--candidate-package requires --viewer-package and --sender-fixture.")
+    # Before any device is asked. Both change only the private pair.
+    for option, given in ((NET_OPTION, args.net), (ENCRYPTION_OPTION, args.require_encryption)):
+        if given and not args.sender_fixture:
+            raise Refusal(
+                f"{option} is accepted only with --sender-fixture: it changes the private pair alone, "
+                "never a product sender or a real link."
+            )
+    args.net_condition = net_condition(args.net) if args.net else None
     sender_target, sender_options = endpoint(args.sender, args.ssh_option)
     viewer_target, viewer_options = endpoint(args.viewer, args.ssh_option)
     if sender_target is None and not args.sender_fixture:
@@ -2028,7 +2098,9 @@ def view(args: argparse.Namespace) -> int:
     sender_agent, sender_paths = built(
         sender_target,
         sender_options,
-        ("motion", "sway", "sunshine") if args.sender_fixture else ("motion",),
+        ("motion", "sway", "sunshine", *(("iproute2",) if args.net_condition else ()))
+        if args.sender_fixture
+        else ("motion",),
     )
     if args.sender_fixture:
         sender_agent = sender_agent.replace("/device.py", "/sender.py")
@@ -2064,6 +2136,7 @@ def view(args: argparse.Namespace) -> int:
         "capture": part(seat_paths, "-stream-cadence-capture-", "/bin/stream-cadence-capture"),
         "press": part(seat_paths, "-stream-cadence-press-", "/bin/stream-cadence-press"),
         "viewer": part(seat_paths, "-moonlight-embedded-"),
+        "iproute2": part(sender_paths, "-iproute2-"),
     }
 
     def agent(target: str | None, options: list[str], command: str, log: Path) -> Remote:
@@ -2195,6 +2268,9 @@ def verdicts(args: argparse.Namespace) -> int:
     print(machine_line(old, new))
     # A product process that restarted during a run: valid, and said here.
     for line in product_changes(old, new):
+        print(line)
+    # The network condition of the pair, and what netem and the viewer's core saw.
+    for line in net_lines(old, new):
         print(line)
     # A viewer that answered no press at all: its view-only mode may stop keys.
     for line in input_lines(old, new):
@@ -2466,6 +2542,18 @@ def parser() -> argparse.ArgumentParser:
         "--keydir", type=Path, default=state / "korri/stream-cadence/keys"
     )
     watch.add_argument("--max-capture-gaps", type=nonnegative_integer, default=0)
+    watch.add_argument(
+        NET_OPTION,
+        metavar="NETEM",
+        help="give the private pair's own loopback a real network's conditions, in netem's words: 'loss random 1%%', 'loss gemodel P%% R%%' (burst loss), 'delay 30ms' (each direction), 'reorder 25%%' (with a delay), or several together. Only a same-device pair with its own network namespace; verdict keeps two conditions apart",
+    )
+    watch.add_argument(
+        ENCRYPTION_OPTION,
+        action="store_true",
+        help="the sender fixture's Sunshine requires encryption of video and audio from the viewer. verdict keeps it apart from Sunshine's default, which encrypts no video on a LAN",
+    )
+    # The checked words of --net; view() sets them before any device is asked.
+    watch.set_defaults(net_condition=None)
     watch.add_argument(
         "--frame-record",
         action="store_true",
