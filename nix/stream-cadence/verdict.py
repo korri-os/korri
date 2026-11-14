@@ -268,6 +268,30 @@ def product_changes(baseline: list[dict], candidate: list[dict]) -> list[str]:
     return lines
 
 
+def input_lines(baseline: list[dict], candidate: list[dict]) -> list[str]:
+    """A result whose viewer sent no keyboard packet for any press, for a line of its own.
+
+    In the fixture every viewer runs with -viewonly. Moonlight's X11
+    platforms still read keys from their window then; a viewer whose
+    -viewonly also stops those keys (Korri's viewer since #435 slice 2a)
+    answers no press. Its input_missed then says that, not how its input
+    path performs.
+    """
+    lines = []
+    for name, records in (("baseline", baseline), ("candidate", candidate)):
+        pressed = [record["viewer"].get("input") for record in records]
+        if pressed and all(
+            row is not None and row.get("answered") == 0 and row.get("keyboard_packets") == 0
+            for row in pressed
+        ):
+            lines.append(
+                f"{name}: the viewer sent no keyboard packet for any press in any run. A viewer "
+                "can take no keys in view-only mode (-viewonly), as the fixture runs it; "
+                "input_missed then says that, not how its input path performs."
+            )
+    return lines
+
+
 def differences(baseline: list[dict], candidate: list[dict]) -> list[str]:
     """Conditions that differ between any two runs; a verdict then judges the sender too."""
     reference = conditions(baseline[0])

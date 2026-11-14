@@ -54,6 +54,7 @@ from verdict import (
     QUEUE,
     STAND_IN,
     conditions_that_differ,
+    input_lines,
     judge,
     machine_line,
     product_changes,
@@ -1981,6 +1982,9 @@ def verdicts(args: argparse.Namespace) -> int:
     print(machine_line(old, new))
     # A product process that restarted during a run: valid, and said here.
     for line in product_changes(old, new):
+        print(line)
+    # A viewer that answered no press at all: its view-only mode may stop keys.
+    for line in input_lines(old, new):
         print(line)
 
     def text(values: list[float | None]) -> str:

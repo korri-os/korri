@@ -22,7 +22,7 @@ from input_measure import (  # noqa: E402
     match,
     summarize,
 )
-from verdict import judge  # noqa: E402
+from verdict import input_lines, judge  # noqa: E402
 import viewer  # noqa: E402
 
 GENERIC_CHANNEL = 0x00
@@ -248,7 +248,7 @@ class RunRecord(unittest.TestCase):
         self.assertEqual(notes, {})
 
 
-def run(input_ms: float | None, missed: int | None) -> dict:
+def run(input_ms: float | None, missed: int | None, keyboard_packets: int = 40) -> dict:
     window = {
         "latency_ms": {"p50": 12.0, "p95": 14.0},
         "capture_misses": 0,
@@ -264,7 +264,12 @@ def run(input_ms: float | None, missed: int | None) -> dict:
             "display": {"mode": {"width": 640, "height": 480}},
         },
         "source_counter": {"windows": [window]},
-        "viewer": {"startup_ms": 700.0, "input_ms": input_ms, "input_missed": missed},
+        "viewer": {
+            "startup_ms": 700.0,
+            "input_ms": input_ms,
+            "input_missed": missed,
+            "input": {"answered": 20 - (missed or 0), "keyboard_packets": keyboard_packets},
+        },
     }
 
 
@@ -281,10 +286,26 @@ class InputVerdict(unittest.TestCase):
 
     def test_a_viewer_that_sends_no_input_is_worse_not_hidden(self):
         moonlight = [run(0.3, 0) for _ in range(5)]
-        silent = [run(None, 20) for _ in range(5)]
+        silent = [run(None, 20, keyboard_packets=0) for _ in range(5)]
         rows = {row["metric"]: row for row in judge(moonlight, silent, 5)}
         self.assertEqual(rows["input_missed"]["verdict"], "worse")
         self.assertEqual(rows["input_ms"]["verdict"], "not measured")
+
+    def test_a_viewer_silent_in_every_run_gets_a_line_about_view_only_mode(self):
+        # Korri's viewer since #435 slice 2a also stops its window's keys under -viewonly.
+        moonlight = [run(0.3, 0) for _ in range(5)]
+        silent = [run(None, 20, keyboard_packets=0) for _ in range(5)]
+        lines = input_lines(moonlight, silent)
+        self.assertEqual(len(lines), 1)
+        self.assertRegex(lines[0], "^candidate: .*-viewonly")
+        self.assertEqual(input_lines(moonlight, moonlight), [])
+        once = silent[:4] + [run(0.3, 0)]
+        self.assertEqual(input_lines(moonlight, once), [])
+        # A result from before the measure has no line.
+        old = [run(None, None) for _ in range(5)]
+        for record in old:
+            del record["viewer"]["input"]
+        self.assertEqual(input_lines(old, moonlight), [])
 
 
 def loopback_up() -> None:

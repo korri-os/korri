@@ -1325,8 +1325,11 @@ is not before the release. No packet is guessed for a press.
 
 `input_ms` is the median time from press to key-down packet of the answered
 presses. `input_missed` counts the presses that were not answered. A viewer
-that sends no keyboard input (Korri's stage-1 viewer) has `input_missed` 20
-and no `input_ms`. `viewer.input` keeps each press, the 95th percentile, the
+that sends no keyboard input (Korri's viewer of slice 1) has `input_missed` 20
+and no `input_ms`. So has a viewer that takes no keys in view-only mode, as
+Korri's viewer does since #435 slice 2a (`91aace4d2`), by its own rule: in the
+fixture it runs with `-viewonly`. `verdict` prints a line for a result whose
+viewer sent no keyboard packet in any run. `viewer.input` keeps each press, the 95th percentile, the
 largest time, the key-up times (`release_p50_ms`, `release_max_ms`: a key-up
 is no press, and `input_ms` leaves it out) and the counts. `input.json` in the
 run directory keeps every packet and line of the press.
@@ -1383,6 +1386,13 @@ Other ways were looked at and not taken:
 - The key is pressed on the viewer's window after the scored time, so the
   presses do not change the picture's numbers. The CPU of the presses is not
   in `cpu_seconds_per_second`.
+- It needs a viewer that reads keys from its window in view-only mode.
+  Moonlight does. Korri's viewer since slice 2a does not: its `-viewonly`
+  stops X11 keys too. Its input needs `-viewonly` lifted for the X11 keys
+  alone, which it has no option for; lifting `-viewonly` whole would also
+  start its udev and evdev discovery. The tool lifts nothing. For such a
+  viewer `input_missed` says that it takes no keys, not how its input path
+  performs.
 - It needs the pair's private X server: a same-device PC pair with a product
   viewer that asks for `x11_vaapi`. The stand-in (SDL on Wayland), an
   installed viewer on a display and a viewer on another device are not
@@ -1406,14 +1416,15 @@ run at 14.4%. All 20 runs are valid. These sets are evidence, not a baseline.
 | --- | --- | --- | --- | --- | --- |
 | Moonlight against itself | baseline | 0.050 to 0.054 ms | 0 | 1.5 to 30.1 ms | |
 | | candidate | 0.052 to 0.059 ms | 0 | 0.06 to 2.4 ms | `equal`, `equal` |
-| Moonlight against Korri's viewer (`korri-viewer-0.1.0`, `iafw7i6b…`) | Moonlight | 0.050 to 0.056 ms | 0 | 0.2 to 1.5 ms | |
+| Moonlight against Korri's viewer of slice 1 (`iafw7i6b…-korri-viewer-0.1.0`, from `ff45275e6`) | Moonlight | 0.050 to 0.056 ms | 0 | 0.2 to 1.5 ms | |
 | | Korri's viewer | not measured | 20 | none | `not measured`, `worse` |
 
 In the first session every other number is `equal` as well. In the second,
-every number but `input_missed` is `equal`. Korri's stage-1 viewer has no
+every number but `input_missed` is `equal`. Korri's viewer of slice 1 has no
 input path: the key reached its window (the X-Resource owner was the
 viewer's PID and the focus was on it), its control stream sent 74 to 78
-packets in each press phase, and none was a keyboard packet.
+packets in each press phase, and none was a keyboard packet. Korri's viewer
+of slice 2a was not measured; with `-viewonly` it takes no keys (above).
 
 The proof of each run: `input.json`'s network identity was the pair's
 (`net:[4026532902]`), not the product's (`net:[4026531833]`, that of PID 1 and
