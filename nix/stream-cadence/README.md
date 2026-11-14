@@ -1311,23 +1311,30 @@ takes the kernel's time of each packet: the moment when the viewer's send put
 it on loopback. A reliable command that ENet sends again counts once.
 
 **The match.** Moonlight sends one keyboard command for each key event of its
-window, in the order of the events. When the count of keyboard sends is one
-for each key event (plus two when the warm-up's key arrived) and no send comes
-before its own event, the order gives each key its packet
-(`viewer.input.attribution` is `order`). A packet can wait for a later event:
-in the first turn on aka (2026-11-14 UTC, under another test's load) one
-key-up left 173 ms late, in one datagram with the next key-down. The order
-keeps that delay with the key-up and the next key-down's own 0.06 ms with
-the key-down. When the count or the times do not fit, the viewer did not send
-one packet for each key (`interval`): a press is then answered only when,
-from it to the next press, exactly two keyboard sends arrive and the second
-is not before the release. No packet is guessed for a press.
+window, in the order of the events. The order gives each key its packet
+(`viewer.input.attribution` is `order`) when all of these hold:
+
+- the count of keyboard sends is one for each key event, or two more when the
+  warm-up's key arrived, and then the first send comes before the first
+  measured press;
+- no send comes before its own key event;
+- no send comes at or after the key event two places later.
+
+A packet can wait for one later event, and the order keeps that delay with
+its own key: in the first turn on aka (2026-11-14 UTC, under another test's
+load) one key-up left 173 ms late, in one datagram with the next key-down,
+whose own time stayed 0.06 ms. The last rule stops a shift: a dropped key and
+an extra one give the same count, and without it every packet after them
+would answer the key before its own. When the rules do not hold, the viewer
+did not send one packet for each key (`interval`): a press is then answered
+only when, from it to the next press, exactly two keyboard sends arrive and
+the second is not before the release. No packet is guessed for a press.
 
 `input_ms` is the median time from press to key-down packet of the answered
 presses. `input_missed` counts the presses that were not answered. A viewer
 that sends no keyboard input (Korri's viewer of slice 1) has `input_missed` 20
 and no `input_ms`. So has a viewer that takes no keys in view-only mode, as
-Korri's viewer does since #435 slice 2a (`91aace4d2`), by its own rule: in the
+Korri's viewer did from #435 slice 2a (`91aace4d2`) until `a137107dc`: in the
 fixture it runs with `-viewonly`. `verdict` prints a line for a result whose
 viewer sent no keyboard packet in any run. `viewer.input` keeps each press, the 95th percentile, the
 largest time, the key-up times (`release_p50_ms`, `release_max_ms`: a key-up
@@ -1337,8 +1344,11 @@ run directory keeps every packet and line of the press.
 **When the run is invalid.** The measure says nothing about a viewer, and the
 run is invalid, when: the press program fails or finds no single window of
 the viewer; the focus was not on that window before a press or a release;
-the wall clock moved by more than 1 ms against the monotonic clock (packet
-times are wall-clock); the capture saw no packet of the control stream; a
+the hold was 500 ms or more (the X server's auto-repeat could add keys; the
+press program refuses it too); the wall clock moved by more than 50 µs
+against the monotonic clock (packet times are wall-clock; each side reads
+the wall clock between two monotonic reads); the capture saw no packet of
+the control stream; a
 datagram to the control port is no ENet that the tool reads; or a keyboard
 packet came that no press explains (before the warm-up, or more packets than
 key events).
@@ -1355,7 +1365,8 @@ key events).
   `/dev/uhid`; the sender fixture already refuses to start where it can.
 - The packet socket reads only. The agent opens it only in a thread that is
   in the pair's network namespace and not in the product's
-  (`PairNamespace.inside`). That namespace has only its own loopback.
+  (`PairNamespace.inside`), and the capture itself refuses a thread in any
+  other namespace than the pair's. That namespace has only its own loopback.
 - The fixture's Sunshine has `keyboard`, `mouse` and `controller` off: the key
   reaches nothing on the sender either.
 - The viewer keeps `-viewonly`. Moonlight's X11 platforms (`x11`,
@@ -1386,13 +1397,12 @@ Other ways were looked at and not taken:
 - The key is pressed on the viewer's window after the scored time, so the
   presses do not change the picture's numbers. The CPU of the presses is not
   in `cpu_seconds_per_second`.
-- It needs a viewer that reads keys from its window in view-only mode.
-  Moonlight does. Korri's viewer since slice 2a does not: its `-viewonly`
-  stops X11 keys too. Its input needs `-viewonly` lifted for the X11 keys
-  alone, which it has no option for; lifting `-viewonly` whole would also
-  start its udev and evdev discovery. The tool lifts nothing. For such a
-  viewer `input_missed` says that it takes no keys, not how its input path
-  performs.
+- It needs a viewer that reads keys from its window in view-only mode, as
+  Moonlight does. Korri's viewer did not from slice 2a until `a137107dc`,
+  which removed that difference: it now forwards the window's keyboard and
+  mouse under `-viewonly` as Moonlight does, and still starts no udev,
+  evdev, SDL controller or CEC. The tool lifts nothing. For a viewer that
+  takes no keys, `input_missed` says that, not how its input path performs.
 - It needs the pair's private X server: a same-device PC pair with a product
   viewer that asks for `x11_vaapi`. The stand-in (SDL on Wayland), an
   installed viewer on a display and a viewer on another device are not
@@ -1406,7 +1416,7 @@ answers no press is worse in `input_missed` than one that answers all; its
 
 **The press on aka, 2026-11-14 UTC.** Two sessions in turns (five runs of
 each side), private pair on aka at the defaults (1920x1080, base measure, 60
-scored seconds), tool at `97b314033`. The baseline in both is the #466 product
+scored seconds), tool at `97b314033` (`fb3187ee3` after a rebase onto `main`). The baseline in both is the #466 product
 viewer (`/nix/store/38crl2m37akjqqscrmnq1gbwrp8l3rcx-moonlight-embedded-korri-2.7.1-korri`).
 A game unit was live on aka in every run, so every run is "beside a game";
 what else ran stayed at 0.9% to 3.5% of all CPUs, except one Korri-viewer
@@ -1423,8 +1433,7 @@ In the first session every other number is `equal` as well. In the second,
 every number but `input_missed` is `equal`. Korri's viewer of slice 1 has no
 input path: the key reached its window (the X-Resource owner was the
 viewer's PID and the focus was on it), its control stream sent 74 to 78
-packets in each press phase, and none was a keyboard packet. Korri's viewer
-of slice 2a was not measured; with `-viewonly` it takes no keys (above).
+packets in each press phase, and none was a keyboard packet.
 
 The proof of each run: `input.json`'s network identity was the pair's
 (`net:[4026532902]`), not the product's (`net:[4026531833]`, that of PID 1 and
@@ -1435,15 +1444,25 @@ product's units kept their PIDs; both restore checks passed. A listing of
 `/dev/input`, its `by-id` and `by-path` and `/dev/uinput` and `/dev/uhid`,
 with modification times, was the same before and after each session.
 
-One press in 200 of Moonlight took 30.1 ms, the length of the hold: its
-key-down left together with its own key-up. Two earlier sessions are not in
-the table. In the first, under another test's load, the first run was
-invalid by a capture gap; in it one key-up left 173 ms late, with the next
-key-down. The second ended after four runs of each side, when aka stayed
-above its start limit for 10 minutes; `verdict --min-runs 4` gave `equal`
-for every number there. Moonlight's X11 platforms read keys when the X
-connection's socket becomes readable; why a key sometimes waits for the next
-one is not shown here.
+Two earlier sessions are not in the table. In the first, under another
+test's load, the first run was invalid by a capture gap. The second ended
+after four runs of each side, when aka stayed above its start limit for 10
+minutes; `verdict --min-runs 4` gave `equal` for every number there. Every
+`input.json` of these sessions scores the same under the rules of
+`f7b57b111`.
+
+Open points of the press:
+
+- **A Moonlight key can wait for the next key event.** Two observations on
+  aka, 2026-11-14 UTC, in 500 presses of the #466 viewer: two key-downs left
+  30.1 and 30.2 ms late, each in one datagram with its own key-up, 30 ms
+  later; and in the session under another test's load one key-up left
+  173 ms late, in one datagram with the next key-down. Moonlight's X11
+  platforms read keys when the X connection's socket becomes readable; the
+  cause is not shown. Nothing is filed yet.
+- No controller button and no compositor are in the path (above).
+- The baselines in `baselines/aka` were recorded before this measure and
+  have no `input_ms`.
 
 ### Verdict
 
