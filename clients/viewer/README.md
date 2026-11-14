@@ -264,7 +264,8 @@ lifecycle observations. korrid confirms compositor focus before sending
 an independent X11 focus model. korrid retries a socket it cannot reach yet,
 including one it may not yet search, for 30 s, then logs the last error.
 After `Stop`, korrid also stops the unit and waits until systemd confirms it,
-also when the socket was lost. Live resize,
+also when the socket was lost; that wait outlasts the unit's own stop timeout
+and SIGKILL. Live resize,
 apply and notice return typed unavailable errors, as the existing Linux trait
 defaults do. Snapshots have no battery, health or controls until a real
 producer supplies them.

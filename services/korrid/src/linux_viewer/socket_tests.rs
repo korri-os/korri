@@ -383,3 +383,48 @@ async fn a_socket_that_stays_unreachable_fails_at_the_deadline_with_its_last_err
     assert!(refused.contains("Permission denied"), "{refused}");
     mode(&control, 0o700);
 }
+
+#[tokio::test]
+async fn stop_waits_for_a_unit_end_longer_than_the_request_deadline() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("viewer.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+    mode(&path, 0o600);
+    let server = std::thread::spawn(move || {
+        let mut socket = BufReader::new(listener.accept().unwrap().0);
+        let _: ViewerRequest = read_message(&mut socket).unwrap().unwrap();
+        write_message(socket.get_mut(), &M::Reply(R::Ok)).unwrap();
+        // The viewer ends without being asked; its unit takes long to go.
+        write_message(socket.get_mut(), &M::Event(E::Status(S::Stopped))).unwrap();
+    });
+    let ended = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let unit = ended.clone();
+    let viewer = SocketLinuxStreamViewer::new(
+        Arc::new(|| None),
+        unsafe { libc::geteuid() },
+        Arc::new(move |_, _, _| {
+            let path = path.clone();
+            Box::pin(async move { Ok(path) })
+        }),
+        Arc::new(|_, _| Box::pin(async { Ok(()) })),
+        Arc::new(move |_| {
+            let unit = unit.clone();
+            Box::pin(async move {
+                // Past the 30 s request deadline, inside the unit's own
+                // 30 s stop timeout plus korrid's wait for its end.
+                tokio::time::sleep(std::time::Duration::from_secs(45)).await;
+                unit.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            })
+        }),
+    );
+    let changed = viewer.change_signal().unwrap();
+    viewer.start(LAUNCH, "127.0.0.1", None).await.unwrap();
+    server.join().unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(1), changed.notified())
+        .await
+        .unwrap();
+    tokio::time::pause();
+    viewer.stop(LAUNCH).await.unwrap();
+    assert!(ended.load(std::sync::atomic::Ordering::SeqCst));
+}

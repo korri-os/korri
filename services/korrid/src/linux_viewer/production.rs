@@ -570,9 +570,9 @@ impl ProductionLinuxStreamViewer {
     }
     /// Stops the unit and waits until systemd reports it gone. A unit that
     /// failed is reset by the stop. The bound covers the unit's own 30 s
-    /// stop timeout (systemd_unit.rs).
+    /// stop timeout (systemd_unit.rs); the socket adapter waits longer.
     fn ended(&self, launch: &str) -> Result<(), LinuxViewerError> {
-        let deadline = Instant::now() + Duration::from_secs(40);
+        let deadline = Instant::now() + super::socket::UNIT_END;
         let mut stop = self.units.stop(launch);
         loop {
             match self.units.state(launch) {

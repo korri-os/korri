@@ -30,6 +30,13 @@ use tokio::{
 };
 
 const DEADLINE: Duration = Duration::from_secs(30);
+/// The longest production cleanup waits for a viewer unit to end: its own
+/// 30 s stop timeout, then SIGKILL, plus margin (production.rs `ended`).
+pub(super) const UNIT_END: Duration = Duration::from_secs(40);
+/// Cleanup must outlast that wait, or a SIGKILL'd viewer would report a
+/// deadline while its unit is still being confirmed gone.
+const CLEANUP_DEADLINE: Duration = Duration::from_secs(50);
+const _: () = assert!(CLEANUP_DEADLINE.as_secs() > UNIT_END.as_secs());
 const ALIVE: u8 = 0;
 const STOPPED: u8 = 1;
 const LOST: u8 = 2;
@@ -365,7 +372,7 @@ impl LinuxStreamViewer for SocketLinuxStreamViewer {
             .await;
             if let Err(start_error) = result {
                 // An unconnected or unfocused process must not survive failure.
-                timeout(DEADLINE, (self.stop_process)(launch.into()))
+                timeout(CLEANUP_DEADLINE, (self.stop_process)(launch.into()))
                     .await
                     .map_err(|_| error("viewer failure cleanup deadline exceeded"))??;
                 return Err(start_error);
@@ -417,7 +424,7 @@ impl LinuxStreamViewer for SocketLinuxStreamViewer {
             // korrid keeps cleanup: the unit must be gone whatever the socket
             // said, including after a lost connection. Stop returns only once
             // the unit stop is confirmed.
-            timeout(DEADLINE, (self.stop_process)(launch.into()))
+            timeout(CLEANUP_DEADLINE, (self.stop_process)(launch.into()))
                 .await
                 .map_err(|_| error("viewer stop cleanup deadline exceeded"))??;
             self.connections.lock().await.remove(launch);
