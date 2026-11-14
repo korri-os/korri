@@ -181,7 +181,7 @@ parse, and that `v4l2m2m` is refused. Moonlight had no C test for this path,
 so none is carried. Not proven here: any decode, presentation, input or
 sound on RK3566 or H700 hardware. Records are in `proof/v4l2request/`.
 
-## Lifecycle socket (opt-in, not installed)
+## Lifecycle socket
 
 The Rust treaty is `contracts/viewer`; `contracts/generated/viewer.ts` is
 Typeshare output. Its requests and replies extract `LinuxStreamViewer` and its
@@ -257,18 +257,65 @@ retries and in its ENet waits. One TCP connect or RTSP exchange inside it can
 still take its 10 s or 15 s timeout. A `Start` that arrives after a stop gets
 the error `viewer is stopping`.
 
-korrid's inactive `SocketLinuxStreamViewer` takes injected unit-start, failure
-cleanup and compositor-focus effects. It never reads unit state or compositor
-PIDs for lifecycle observations. korrid confirms compositor focus before
-sending `Background` or `ResumeAndFocus`; the socket reports that confirmed
-state, not an independent X11 focus model. Live resize, apply and notice return
-typed unavailable errors, as the existing Linux trait defaults do. Snapshots
-have no battery, health or controls until a real producer supplies them.
+korrid's `SocketLinuxStreamViewer` takes injected unit-start, cleanup and
+compositor-focus effects. It never reads unit state or compositor PIDs for
+lifecycle observations. korrid confirms compositor focus before sending
+`Background` or `ResumeAndFocus`; the socket reports that confirmed state, not
+an independent X11 focus model. After `Stop`, korrid also stops the unit and
+waits until systemd confirms it, also when the socket was lost. Live resize,
+apply and notice return typed unavailable errors, as the existing Linux trait
+defaults do. Snapshots have no battery, health or controls until a real
+producer supplies them.
 
-No installed plugin or production factory selects this adapter. The plugin
-slice must supply its per-launch socket location, sandbox access, native unit
-command, certificate provisioning, focus/cleanup effects, version check and
-installed-plugin selection. Moonlight remains the production path.
+## The `@korri:viewer` plugin and korrid (slice 3)
+
+The plugin is built in the plugins repository from this directory
+(`plugins/viewer/` there, ADR 0061). It declares the viewer, the controller
+mapping, an identity-bootstrap helper, `treaty` (this package's
+`share/korri-viewer/viewer.ts`) and `packages.source`, the GPL-3
+corresponding source that `default.nix` builds as `correspondingSource`
+(ADR 0059). Its settings are `@korri:moonlight`'s, under the runner
+`@korri:viewer/viewer`.
+
+korrid (`services/korrid/src/linux_viewer/selection.rs`) chooses at each start:
+
+- `@korri:viewer` enabled and its `files.treaty` equal, byte for byte, to
+  korrid's own `contracts/generated/viewer.ts`: the socket adapter.
+- Otherwise Moonlight, exactly as before. A refused `@korri:viewer` is logged
+  with both SHA-256 hashes. Without Moonlight the refusal is the start's
+  error. A launch stays with the viewer that started it.
+
+The treaty check covers the wire types only. A change to the launch
+arguments, or to behaviour that keeps the wire types, is not caught before
+start: the viewer then fails at start. If that happens, the next step is to
+put the launch arguments into the contract crate, so that the same check
+covers them.
+
+korrid starts the viewer in its exact-launch unit `korri-game-<launch>`, as it
+starts Moonlight: same user, sandbox, environment, broker certificate
+credential and key directory. The lifecycle viewer's unit adds:
+
+```text
+korri-viewer --lifecycle-socket /run/korri-game-<launch>/control/viewer.sock \
+  --launch-id <launch> --controller-uid <korrid's UID> stream [Moonlight arguments] HOST
+RuntimeDirectory=korri-game-<launch>   RuntimeDirectoryMode=0700
+ExecStartPost=<KORRID_SETFACL> -m u:<korrid's UID>:x /run/korri-game-<launch>
+```
+
+systemd applies `RuntimeDirectoryMode` again before each Exec command, and a
+chmod resets an ACL mask. So the search grant comes after the main process
+starts, and `systemd-run` returns only after `ExecStartPost`. systemd removes
+the directory when the unit stops. Moonlight's units do not change.
+
+`services/korrid/viewer-vm-test.nix`, run by the plugins repository as
+`korri-viewer-lifecycle`, proves this on a cold NixOS guest with the real
+plugin host, korrid module, units and sandbox. It does not exercise the
+federated path: the peer request that makes korrid start a viewer in a real
+stream. The probe (`services/korrid/src/bin/viewer_probe.rs`) calls the
+daemon's own `installed_viewer` instead, as user `korrid` in korrid's service
+sandbox, with a broker that serves a private Sunshine in the guest. The aka
+binary proof and the owner's one game after the autonomous proof (ADR 0063)
+cover that path first.
 
 ## Sound and input provenance and checks
 
@@ -283,10 +330,9 @@ The aka comparison and isolation records are in `proof/`.
 
 ## Next slices
 
-The removable `@korri:viewer` plugin and version check; the bench proof of
-the handheld `v4l2request` path; frame timing grounded in the stage-0 frame
-record. Android integration comes after the Linux stage. This package is not
-installed in the product by this slice.
+The bench proof of the handheld `v4l2request` path; frame timing grounded
+in the stage-0 frame record. Android integration comes after the Linux stage.
+No device installs `@korri:viewer` yet.
 
 The cross-UID socket proof is an explicit root-only test: build
 `cargo test --manifest-path clients/viewer/Cargo.toml --test lifecycle_security --no-run`
