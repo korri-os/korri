@@ -1,5 +1,5 @@
 # The shared session part on Android (#391 step D) and the viewer app around
-# it (slices D1 and D2), at API 31 (ADR 0064) with the NDK that clients/android uses.
+# it (slices D1 to D3), at API 31 (ADR 0064) with the NDK that clients/android uses.
 # Two ABIs: arm64-v8a for phones, x86_64 for the emulator.
 #
 # - check: builds the library and links its own tests and the HTTPS and
@@ -109,6 +109,40 @@ let
       '';
     };
 
+  # The sound's Opus decoder (slice D3): the libopus release that the Linux
+  # viewer links (default.nix, without custom modes), from nixpkgs' source,
+  # with its own CMake recipe and the NDK's toolchain file, as a static
+  # archive. Artemis links prebuilt archives of moonlight-mobile-deps instead.
+  opusFor =
+    name:
+    pkgs.stdenv.mkDerivation {
+      pname = "korri-viewer-android-opus-${name}";
+      inherit (pkgs.libopus) version src;
+      nativeBuildInputs = [ pkgs.cmake ];
+      dontUseCmakeConfigure = true;
+      dontStrip = true;
+      configurePhase = ''
+        runHook preConfigure
+        cmake -S . -B build \
+          -DCMAKE_TOOLCHAIN_FILE=${ndk}/build/cmake/android.toolchain.cmake \
+          -DANDROID_ABI=${name} -DANDROID_PLATFORM=android-${api} \
+          -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
+          -DOPUS_CUSTOM_MODES=OFF -DOPUS_BUILD_PROGRAMS=OFF -DOPUS_BUILD_TESTING=OFF \
+          -DCMAKE_INSTALL_PREFIX=$out -DCMAKE_INSTALL_LIBDIR=lib
+        runHook postConfigure
+      '';
+      buildPhase = ''
+        runHook preBuild
+        cmake --build build -j$NIX_BUILD_CORES
+        runHook postBuild
+      '';
+      installPhase = ''
+        runHook preInstall
+        cmake --install build
+        runHook postInstall
+      '';
+    };
+
   parts = lib.mapAttrs (
     name: abi:
     let
@@ -118,6 +152,7 @@ let
     // {
       inherit name openssl;
       network = networkFor name openssl;
+      opus = opusFor name;
     }
   ) abis;
 
@@ -134,6 +169,7 @@ let
     ''
       export MOONLIGHT_COMMON_INCLUDE=${part.network}/include
       export MOONLIGHT_COMMON_LIB=${part.network}/lib
+      export OPUS_LIB=${part.opus}/lib
       export ${cargoTarget}_OPENSSL_DIR=${part.openssl}
       export ${cargoTarget}_OPENSSL_STATIC=1
       export CC_${target}=${cc}
@@ -175,6 +211,8 @@ let
     # The picture (slice D2): AMediaCodec, and ANativeWindow for its Surface.
     "libmediandk.so"
     "libandroid.so"
+    # The sound (slice D3): AAudio.
+    "libaaudio.so"
   ];
 
   check = pkgs.stdenv.mkDerivation (
@@ -222,7 +260,7 @@ let
           # curl, OpenSSL and the core are inside the executable. The crate's
           # curl hides its symbols, so they are local (t), not global.
           "${toolchain}/bin/llvm-nm" --defined-only "$https" > symbols.txt
-          for symbol in LiStartConnection LiStopConnection curl_multi_perform SSL_CTX_new EVP_aes_128_gcm viewer_android_log; do
+          for symbol in LiStartConnection LiStopConnection curl_multi_perform SSL_CTX_new EVP_aes_128_gcm viewer_android_log opus_multistream_decode; do
             grep -Eq " [Tt] $symbol$" symbols.txt || { echo "missing $symbol" >&2; exit 1; }
             echo "$symbol" >> $out/${part.name}/symbols.txt
           done

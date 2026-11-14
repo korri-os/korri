@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! One session's picture, sound and input on Android, with the interface
 //! that `player_io.rs` gives Linux. The picture is Android's hardware
-//! decoder into the app's video layer (`picture.rs`, slice D2). Without a
-//! picture, as in the session tests, the core runs its own empty decoder.
-//! Sound (D3) and input (D4) are not here yet: the core runs its own empty
-//! audio callbacks, and the stream offers no controller. The core's log goes
-//! to logcat.
-use crate::{network as ffi, options::Options, picture};
+//! decoder into the app's video layer (`picture.rs`, slice D2); the sound is
+//! Opus into AAudio (`sound.rs`, slice D3). Without the app's picture, as in
+//! the session tests, the core runs its own empty decoder and audio
+//! callbacks. Input (D4) is not here yet: the stream offers no controller.
+//! The core's log goes to logcat.
+use crate::{network as ffi, options::Options, picture, sound};
 use anyhow::Result;
 use std::{
     ffi::{c_char, c_void},
@@ -47,8 +47,13 @@ impl PlayerIo {
             null_mut()
         }
     }
+    /// The app's stream has sound; the session tests have none.
     pub(crate) fn audio_callbacks(&self) -> *mut ffi::AUDIO_RENDERER_CALLBACKS {
-        null_mut()
+        if self.picture {
+            sound::callbacks()
+        } else {
+            null_mut()
+        }
     }
     pub(crate) fn audio_context(&self) -> *mut c_void {
         null_mut()
@@ -68,10 +73,12 @@ impl PlayerIo {
         }
         0
     }
-    /// After the core has stopped: the frame record's last rows, and whether
-    /// the whole record was written.
-    pub(crate) fn close_record(&mut self) -> Result<()> {
+    /// After the core has stopped: a sound stream that the core's cleanup
+    /// did not close, the frame record's last rows, and whether the whole
+    /// record was written.
+    pub(crate) fn close(&mut self) -> Result<()> {
         if std::mem::take(&mut self.picture) {
+            sound::close();
             picture::close()
         } else {
             Ok(())
@@ -81,6 +88,6 @@ impl PlayerIo {
 impl Drop for PlayerIo {
     fn drop(&mut self) {
         // An early return: its own error is the one reported.
-        let _ = self.close_record();
+        let _ = self.close();
     }
 }

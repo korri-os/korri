@@ -134,7 +134,8 @@ pub(crate) struct Frame<'a> {
 
 /// Artemis ends the stream when decoder errors still come 3 s after the
 /// first (`EXCEPTION_REPORT_DELAY_MS`, after its recovery tries). Until then
-/// each side backs off, so that a failed decoder costs no CPU.
+/// each side backs off, so that a failed decoder costs no CPU. The sound's
+/// output (`audio.rs`) uses the same rule when its device stays lost.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Health {
     window: Duration,
@@ -143,7 +144,7 @@ pub(crate) struct Health {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Verdict {
+pub(crate) enum Verdict {
     BackOff(Duration),
     End,
 }
@@ -166,12 +167,12 @@ impl Health {
         }
     }
 
-    fn success(&mut self) {
+    pub(crate) fn success(&mut self) {
         self.since = None;
         self.back_off = FIRST_BACK_OFF;
     }
 
-    fn failure(&mut self, fatal: bool, now: Instant) -> Verdict {
+    pub(crate) fn failure(&mut self, fatal: bool, now: Instant) -> Verdict {
         let since = *self.since.get_or_insert(now);
         if fatal || now.duration_since(since) >= self.window {
             return Verdict::End;

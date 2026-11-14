@@ -25,8 +25,9 @@ curl-sys = "0.4"
 # android-activity uses.
 jni = "0.21"
 ndk = { version = "0.9", default-features = false, features = ["media", "nativewindow"] }
-# AMediaCodec's buffer calls without the ndk crate's panic on a NULL buffer.
-ndk-sys = { version = "0.6", features = ["media"] }
+# AMediaCodec's buffer calls without the ndk crate's panic on a NULL buffer,
+# and AAudio with Korri's own callbacks (src/android/sound.rs).
+ndk-sys = { version = "0.6", features = ["media", "audio"] }
 ndk-context = "0.1"
 
 [build-dependencies]

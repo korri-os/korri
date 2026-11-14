@@ -29,11 +29,12 @@ fn main() {
             builder.header(header)
         })
         .clang_arg(format!("-I{include}"))
-        .allowlist_function("Li(Initialize(ServerInformation|StreamConfiguration|ConnectionCallbacks)|StartConnection|StopConnection|InterruptConnection|GetLaunchUrlQueryParameters|GetMicroseconds)")
+        .allowlist_function("Li(Initialize(ServerInformation|StreamConfiguration|ConnectionCallbacks)|StartConnection|StopConnection|InterruptConnection|GetLaunchUrlQueryParameters|GetMicroseconds|GetPendingAudioDuration)")
         .allowlist_function("picture_.*|viewer_.*")
-        .allowlist_type("(STREAM_CONFIGURATION|SERVER_INFORMATION|CONNECTION_LISTENER_CALLBACKS|DECODER_RENDERER_CALLBACKS|AUDIO_RENDERER_CALLBACKS|DECODE_UNIT|LENTRY)")
-        // Android's decoder (src/android/picture.rs) reads decode units.
-        .allowlist_var("(VIDEO_FORMAT_.*|STREAM_CFG_.*|ENCFLG_.*|BUFFER_TYPE_.*|FRAME_TYPE_.*|DR_.*)")
+        .allowlist_type("(STREAM_CONFIGURATION|SERVER_INFORMATION|CONNECTION_LISTENER_CALLBACKS|DECODER_RENDERER_CALLBACKS|AUDIO_RENDERER_CALLBACKS|OPUS_MULTISTREAM_CONFIGURATION|DECODE_UNIT|LENTRY)")
+        // Android's decoder (src/android/picture.rs) reads decode units; its
+        // sound (src/android/sound.rs) names its capabilities.
+        .allowlist_var("(VIDEO_FORMAT_.*|STREAM_CFG_.*|ENCFLG_.*|BUFFER_TYPE_.*|FRAME_TYPE_.*|DR_.*|CAPABILITY_.*)")
         .derive_default(true)
         .generate().expect("generate binding from the pinned core's actual header");
     bindings
@@ -50,6 +51,12 @@ fn main() {
         println!("cargo:rustc-link-search=native={lib}");
         println!("cargo:rustc-link-lib=static=moonlight-common-c");
         println!("cargo:rustc-link-lib=static=enet");
+        // The sound's Opus decoder (src/android/audio.rs): the libopus
+        // release that Linux links, built for Android by android.nix.
+        let opus = env::var("OPUS_LIB").expect("missing Opus library path");
+        println!("cargo:rerun-if-env-changed=OPUS_LIB");
+        println!("cargo:rustc-link-search=native={opus}");
+        println!("cargo:rustc-link-lib=static=opus");
         return;
     }
     let mut c = cc::Build::new();

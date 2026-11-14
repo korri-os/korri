@@ -5,8 +5,9 @@
 //! The app is that lifecycle's controller: it sends Start once its window
 //! exists, and Stop on Back or when the window goes, and writes every event
 //! and reply to logcat. The picture is Android's hardware decoder rendering
-//! into a video layer that the app makes (slice D2, `layer.rs`); there is no
-//! sound or input yet (D3, D4).
+//! into a video layer that the app makes (slice D2, `layer.rs`). The sound is
+//! Opus into AAudio inside the shared viewer (slice D3); the app adds
+//! nothing for it. There is no input yet (D4).
 //!
 //! Until korrid drives the viewer in this process, the launch comes from the
 //! starting intent's extras, with the names of their sources:

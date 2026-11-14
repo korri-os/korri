@@ -330,7 +330,7 @@ pub(crate) fn run_with_lifecycle(
     #[cfg(not(target_os = "android"))]
     let recorded = frame_times.close();
     #[cfg(target_os = "android")]
-    let recorded = io.close_record();
+    let recorded = io.close();
     ensure!(!poll_error, "picture or input event loop failed");
     let error = TERMINATED.load(Ordering::Relaxed);
     ensure!(error == 0, "stream terminated: {error}");
