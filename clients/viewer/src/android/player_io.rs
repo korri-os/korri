@@ -4,8 +4,9 @@
 //! decoder into the app's video layer (`picture.rs`, slice D2); the sound is
 //! Opus into AAudio (`sound.rs`, slice D3). Without the app's picture, as in
 //! the session tests, the core runs its own empty decoder and audio
-//! callbacks. Input (D4) is not here yet: the stream offers no controller.
-//! The core's log goes to logcat.
+//! callbacks. The input (`input.rs`, slice D4) runs on the app's own thread
+//! and sends through the core's calls; here it gives only the launch its
+//! controller mask. The core's log goes to logcat.
 use crate::{network as ffi, options::Options, picture, sound};
 use anyhow::Result;
 use std::{
@@ -19,24 +20,39 @@ unsafe extern "C" {
     fn viewer_android_log(format: *const c_char, ...);
 }
 
-/// What the app gives one stream: its picture, or none.
-pub(crate) type Platform = Option<picture::Picture>;
+/// What the app gives one stream; none in the session tests.
+pub(crate) type Platform = Option<App>;
+
+/// The app's part of one stream: its picture, and the controllers attached
+/// when it starts (`input::attached`), the launch's controller mask.
+pub(crate) struct App {
+    pub picture: picture::Picture,
+    pub controllers: u16,
+}
 
 pub(crate) struct PlayerIo {
     picture: bool,
+    controllers: u16,
 }
 impl PlayerIo {
     /// Makes the picture's frame record files, when asked: before the
     /// launch, so a record that cannot be made stops nothing that ran.
     pub(crate) fn new(_: &Options, platform: Platform) -> Result<Self> {
         let picture = platform.is_some();
-        if let Some(platform) = platform {
-            picture::open(platform)?;
+        let mut controllers = 0;
+        if let Some(app) = platform {
+            controllers = app.controllers;
+            picture::open(app.picture)?;
         }
-        Ok(Self { picture })
+        Ok(Self {
+            picture,
+            controllers,
+        })
     }
+    /// `remoteControllersBitmap` and `gcmap` of the launch, as Artemis sends
+    /// its attached controllers.
     pub(crate) fn gamepad_mask(&self) -> i32 {
-        0
+        i32::from(self.controllers)
     }
     /// Without a picture, no callbacks: `LiStartConnection` uses the core's
     /// empty ones.

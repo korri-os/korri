@@ -7,7 +7,10 @@
 //! and reply to logcat. The picture is Android's hardware decoder rendering
 //! into a video layer that the app makes (slice D2, `layer.rs`). The sound is
 //! Opus into AAudio inside the shared viewer (slice D3); the app adds
-//! nothing for it. There is no input yet (D4).
+//! nothing for it. The input (slice D4) is the shared viewer's mapping of
+//! Artemis's: this thread hands it each key and motion event (`input.rs`),
+//! and it sends through the core. Back from anything but a controller, and
+//! Ctrl+Alt+Shift+Q, leave the stream.
 //!
 //! Until korrid drives the viewer in this process, the launch comes from the
 //! starting intent's extras, with the names of their sources:
@@ -21,6 +24,7 @@
 //! | `CADENCE_FRAME_TIMES`, `CADENCE_DUMP` | string | optional: the frame record's new files, the measure's ask (`clients/viewer/README.md`) |
 #![cfg(target_os = "android")]
 
+mod input;
 mod intent;
 mod layer;
 mod logcat;
@@ -31,6 +35,8 @@ use android_activity::{
 };
 use anyhow::{Context, Result, anyhow};
 use korri_viewer::{
+    devices::{AndroidDevices, now_ms},
+    input::{self as stream_input, CoreSink, Devices, Input, Outcome, Settings},
     launch,
     lifecycle::Lifecycle,
     options::Options,
@@ -39,6 +45,7 @@ use korri_viewer::{
 use korri_viewer_treaty::{ViewerCommand, ViewerRequest};
 use ndk::native_window::NativeWindow;
 use std::{
+    panic::{AssertUnwindSafe, catch_unwind},
     path::PathBuf,
     thread::{self, JoinHandle},
     time::Duration,
@@ -123,7 +130,7 @@ impl Controller {
     }
 }
 
-/// Back ends the stream, as leaving a game does; the activity then finishes.
+/// Before the stream's input exists: Back leaves, as it ends a stream.
 fn back_pressed(app: &AndroidApp) -> bool {
     let mut pressed = false;
     if let Ok(mut input) = app.input_events_iter() {
@@ -216,12 +223,22 @@ fn stream(
         let event = serde_json::to_string(event).unwrap_or_default();
         logcat::info(&format!("event {event}"));
     })?;
+    // The controllers attached now are the launch's controller mask, as in
+    // Artemis.
+    let mut devices = AndroidDevices::new()?;
+    let attached = stream_input::attached(&mut devices);
+    logcat::info(&format!(
+        "input: controllers attached at the start: mask {attached:#x}"
+    ));
+    let settings = Settings {
+        mouse_emulation: options.mouse_emulation,
+    };
     let runtime = {
         let lifecycle = lifecycle.clone();
         thread::Builder::new()
             .name("viewer".into())
             .spawn(move || {
-                launch::run_with_picture(options, Some(&lifecycle), Some(pin), picture)
+                launch::run_in_app(options, Some(&lifecycle), Some(pin), picture, attached)
             })?
     };
     let mut controller = Controller {
@@ -229,7 +246,16 @@ fn stream(
         launch: id,
         requests: Vec::new(),
     };
-    let driven = drive(app, &mut controller, address, &runtime, layer);
+    let input = Input::new(settings, attached, layer.placed);
+    let driven = drive(
+        app,
+        &mut controller,
+        address,
+        &runtime,
+        layer,
+        input,
+        &mut devices,
+    );
     if driven.is_err() {
         // A request that could not go leaves the runtime streaming, or
         // waiting for Start: stop it from this thread, which needs no other.
@@ -245,32 +271,57 @@ fn stream(
     driven.and(ended)
 }
 
-/// Start, then Stop when the user leaves, until the runtime ends. The video
-/// layer follows the window's size meanwhile.
+/// Start, then Stop when the user leaves, until the runtime ends. Each key
+/// and motion event goes to the stream's input meanwhile, and the video
+/// layer follows the window's size.
 fn drive(
     app: &AndroidApp,
     controller: &mut Controller,
     address: String,
     runtime: &JoinHandle<Result<()>>,
     layer: &mut layer::VideoLayer,
+    input: Input,
+    devices: &mut AndroidDevices,
 ) -> Result<()> {
     controller.send(ViewerCommand::Start {
         address,
         display: None,
     })?;
+    input::unbuffered(app);
+    let mut input = Guarded(Some(input));
+    let mut sink = CoreSink;
     let mut stopping = false;
+    let mut checked = now_ms();
     while !runtime.is_finished() {
+        // The input's timers (a touch's click, the emulated mouse, the
+        // controllers' heartbeat) wake the loop, or it waits for 100 ms.
+        let wait = input
+            .next_deadline()
+            .map_or(100, |at| (at - now_ms()).clamp(0, 100));
         let mut stop = false;
-        app.poll_events(Some(Duration::from_millis(100)), |event| {
+        app.poll_events(Some(Duration::from_millis(wait as u64)), |event| {
             // Leaving the app ends the stream, as Artemis's Game activity
             // does in onStop: its window and the layer's parent go.
             if let PollEvent::Main(MainEvent::Destroy | MainEvent::TerminateWindow { .. }) = event {
                 stop = true;
             }
         });
-        stop |= back_pressed(app);
+        stop |= events(app, &mut input, devices, &mut sink);
+        input.run("tick", |input| input.tick(now_ms(), &mut sink));
+        // Android tells no native code that a device went: ask twice a
+        // second, as Artemis's listener would have told it.
+        if now_ms() - checked >= 500 {
+            checked = now_ms();
+            let present = devices.ids();
+            devices.keep(&present);
+            input.run("devices", |input| input.present(&present, &mut sink));
+        }
         if stop && !stopping {
             stopping = true;
+            // Nothing more goes to a stream that stops.
+            if let Some(input) = input.0.take() {
+                logcat::info(&format!("input: ended: {}", input.report()));
+            }
             controller.send(ViewerCommand::Stop)?;
         }
         if !stop
@@ -278,9 +329,88 @@ fn drive(
             && layer.follow(app, &window)
         {
             placed(layer, &window);
+            input.run("place", |input| input.place(layer.placed));
         }
     }
+    if let Some(input) = input.0.take() {
+        logcat::info(&format!("input: ended: {}", input.report()));
+    }
     Ok(())
+}
+
+/// The stream's input, which a panic in it ends: the stream goes on
+/// without it. No panic reaches android-activity's input queue.
+struct Guarded(Option<Input>);
+
+impl Guarded {
+    fn run<T>(&mut self, what: &str, work: impl FnOnce(&mut Input) -> T) -> Option<T> {
+        let input = self.0.as_mut()?;
+        match catch_unwind(AssertUnwindSafe(|| work(input))) {
+            Ok(value) => Some(value),
+            Err(_) => {
+                logcat::error(&format!(
+                    "input: {what} panicked; the stream goes on without input"
+                ));
+                self.0 = None;
+                None
+            }
+        }
+    }
+
+    fn next_deadline(&self) -> Option<i64> {
+        self.0.as_ref().and_then(Input::next_deadline)
+    }
+}
+
+/// Every pending key and motion event, to the stream's input. True: the
+/// user leaves (Back from anything but a controller, or Ctrl+Alt+Shift+Q).
+fn events(
+    app: &AndroidApp,
+    input: &mut Guarded,
+    devices: &mut AndroidDevices,
+    sink: &mut CoreSink,
+) -> bool {
+    let mut leave = false;
+    let Ok(mut events) = app.input_events_iter() else {
+        return false;
+    };
+    while events.next(|event| match event {
+        InputEvent::KeyEvent(key) => {
+            let event = input::key(key);
+            let outcome = input
+                .run("key", |input| input.key(&event, now_ms(), devices, sink))
+                .unwrap_or(Outcome::Unhandled);
+            match outcome {
+                Outcome::Handled => InputStatus::Handled,
+                Outcome::Leave => {
+                    leave = true;
+                    InputStatus::Handled
+                }
+                // Back ends the stream, as leaving a game does; the activity
+                // then finishes.
+                Outcome::Unhandled if key.key_code() == Keycode::Back => {
+                    leave |= key.action() == KeyAction::Up;
+                    InputStatus::Handled
+                }
+                Outcome::Unhandled => InputStatus::Unhandled,
+            }
+        }
+        InputEvent::MotionEvent(motion) => {
+            let event = input::motion(motion);
+            let handled = input
+                .run("motion", |input| {
+                    input.motion(&event, now_ms(), devices, sink)
+                })
+                .unwrap_or(false);
+            if handled {
+                InputStatus::Handled
+            } else {
+                InputStatus::Unhandled
+            }
+        }
+        _ => InputStatus::Unhandled,
+    }) {}
+    leave
 }
 
 #[unsafe(no_mangle)]

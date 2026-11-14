@@ -24,15 +24,21 @@ pub fn run(options: Options, lifecycle: Option<&Lifecycle>, pin: Option<PathBuf>
     run_on(options, lifecycle, pin, Platform::default())
 }
 
-/// The same run on Android, with the picture that the app gives.
+/// The same run on Android, with the picture that the app gives and the
+/// controllers attached at the start (`input::attached`).
 #[cfg(target_os = "android")]
-pub fn run_with_picture(
+pub fn run_in_app(
     options: Options,
     lifecycle: Option<&Lifecycle>,
     pin: Option<PathBuf>,
     picture: crate::picture::Picture,
+    controllers: u16,
 ) -> Result<()> {
-    run_on(options, lifecycle, pin, Some(picture))
+    let app = crate::player_io::App {
+        picture,
+        controllers,
+    };
+    run_on(options, lifecycle, pin, Some(app))
 }
 
 fn run_on(
