@@ -220,11 +220,14 @@ def credentials(name: str, password: str) -> str:
     )
 
 
-def configuration(root: Path, base: int, node: str) -> str:
+def configuration(root: Path, base: int, node: str, log_input: bool = False) -> str:
     """Sunshine's own file format. No encoder is named: Sunshine probes hardware first.
 
     Every file that Sunshine reads or writes lies in `home`, which its user
     owns. This file itself lies beside `home`, where only the agent writes.
+    With `log_input` Sunshine logs each input packet it receives: controller
+    packets at its verbose level, the other kinds at debug. It still sends
+    none of them on: input stays off.
     """
     home = root / "home"
     values = {
@@ -246,7 +249,49 @@ def configuration(root: Path, base: int, node: str) -> str:
         # Only this host posts the PIN.
         "origin_web_ui_allowed": "pc",
     }
+    if log_input:
+        values["min_log_level"] = "verbose"
     return "".join(f"{key} = {value}\n" for key, value in values.items())
+
+
+# Sunshine's log line: "[time]: Level: text". A packet's other lines follow
+# with no prefix (src/input.cpp, `print`).
+LOG_LINE = re.compile(r"^\[([^\]]+)\]: (\w+): (.*)$")
+PACKET_BEGIN = re.compile(r"^--begin (.+) packet--$")
+PACKET_FIELD = re.compile(r"^(\w+) *\[(.*)\]$")
+
+
+def input_packets(log: str) -> tuple[list[dict], str]:
+    """The input packets that Sunshine logged, and the log without its debug detail.
+
+    Each packet keeps its kind, its time and its fields. The log that is
+    kept has the info, warning and error lines only: debug and verbose lines
+    can hold a session's keys (the launch request's `rikey`).
+    """
+    packets: list[dict] = []
+    kept: list[str] = []
+    current: dict | None = None
+    for line in log.splitlines():
+        found = LOG_LINE.match(line)
+        if found:
+            current = None
+            time_text, level, text = found.groups()
+            begin = PACKET_BEGIN.match(text)
+            if begin:
+                current = {"kind": begin.group(1), "time": time_text, "fields": {}}
+                packets.append(current)
+            elif level not in ("Debug", "Verbose"):
+                kept.append(line)
+            continue
+        if current is None:
+            continue
+        if line.startswith("--end "):
+            current = None
+            continue
+        field = PACKET_FIELD.match(line)
+        if field:
+            current["fields"][field.group(1)] = field.group(2)
+    return packets, "".join(f"{line}\n" for line in kept)
 
 
 def tone_script(socket_path: Path, hertz: int) -> str:
@@ -373,6 +418,8 @@ class Session:
         self.sunshine = ""
         # The private sound server of the tone, when one was asked for.
         self.tone: dict | None = None
+        # Sunshine logs each input packet, when asked (`configuration`).
+        self.log_input = False
         self.login: tuple[str, str] | None = None
         self.cursor: int | None = None
         self.processes: dict[str, subprocess.Popen] = {}
@@ -554,7 +601,9 @@ class Session:
         attempt["port"] = base
         # Each attempt gets a new file: whatever has that name is removed, not written.
         (self.root / "sunshine.conf").unlink(missing_ok=True)
-        write_new(self.root / "sunshine.conf", configuration(self.root, base, node))
+        write_new(
+            self.root / "sunshine.conf", configuration(self.root, base, node, self.log_input)
+        )
         (self.home() / "sunshine.log").unlink(missing_ok=True)
         # With a tone, Sunshine reads the private sound server and never starts one.
         sound = (
@@ -689,6 +738,7 @@ class Session:
         width, height = int(request["width"]), int(request["height"])
         hertz = steady_refresh_mhz(float(request["fps"])) / 1000
         pulseaudio = request.get("pulseaudio")
+        self.log_input = bool(request.get("log_input", False))
         tone_hz = int(request.get("tone_hz", 1000))
         if pulseaudio and not 20 <= tone_hz <= 20000:
             raise ValueError("a tone lies between 20 and 20000 Hz")
@@ -766,6 +816,7 @@ class Session:
             working_encoders=chosen["working_encoders"],
             # None: Sunshine finds no sound server and sends no sound.
             tone={"hz": self.tone["hz"], "sink": self.tone["sink"]} if self.tone else None,
+            log_input=self.log_input,
             sunshine_port=chosen["port"],
             sunshine_control_port=chosen["port"] + CONTROL_OFFSET,
             listening_tcp_ports=[chosen["port"]],

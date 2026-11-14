@@ -237,6 +237,57 @@ class SunshineContract(unittest.TestCase):
         for key in ("file_apps", "file_state", "credentials_file", "pkey", "cert", "log_path"):
             self.assertTrue(values[key].startswith(str(root) + "/"), key)
 
+    def test_input_log_raises_sunshine_to_verbose_and_still_takes_no_input(self):
+        def values(**extra) -> dict:
+            return dict(
+                line.split(" = ", 1)
+                for line in sender.configuration(Path("/tmp/run"), 40123, "/dev/dri/renderD999", **extra).splitlines()
+            )
+
+        self.assertNotIn("min_log_level", values())
+        logged = values(log_input=True)
+        # Sunshine logs controller packets at verbose, other input at debug.
+        self.assertEqual(logged["min_log_level"], "verbose")
+        for key in ("mouse", "keyboard", "controller"):
+            self.assertEqual(logged[key], "disabled")
+
+    def test_input_blocks_are_read_from_the_log_and_nothing_else_of_its_detail(self):
+        log = "\n".join(
+            [
+                "[2026-11-14 20:41:04.712]: Info: CLIENT CONNECTED",
+                "[2026-11-14 20:41:05.001]: Debug: TUNNEL :: launch rikey -- 0011",
+                "[2026-11-14 20:41:06.002]: Debug: --begin keyboard packet--",
+                "keyAction [0x00000003]",
+                "keyCode [0x8041]",
+                "modifiers [0x00]",
+                "flags [0x01]",
+                "--end keyboard packet--",
+                "[2026-11-14 20:41:06.010]: Verbose: type [IDX_INPUT_DATA]",
+                "[2026-11-14 20:41:06.020]: Verbose: --begin controller packet--",
+                "controllerNumber [0]",
+                "buttonFlags [0x00001000]",
+                "--end controller packet--",
+            ]
+        )
+        packets, kept = sender.input_packets(log)
+        self.assertEqual(
+            packets,
+            [
+                {
+                    "kind": "keyboard",
+                    "time": "2026-11-14 20:41:06.002",
+                    "fields": {"keyAction": "0x00000003", "keyCode": "0x8041", "modifiers": "0x00", "flags": "0x01"},
+                },
+                {
+                    "kind": "controller",
+                    "time": "2026-11-14 20:41:06.020",
+                    "fields": {"controllerNumber": "0", "buttonFlags": "0x00001000"},
+                },
+            ],
+        )
+        # The log to keep has the info lines, not the launch's key.
+        self.assertEqual(kept, "[2026-11-14 20:41:04.712]: Info: CLIENT CONNECTED\n")
+
     def test_startup_log_with_a_hardware_encoder(self):
         found = sender.startup((FIXTURES / "sunshine-startup-hardware.log").read_text())
         self.assertEqual(found["sunshine_version"], "2026.516.143833")

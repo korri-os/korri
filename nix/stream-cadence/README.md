@@ -1000,6 +1000,17 @@ sink, as it does on a host where it cannot make them
 frequency and the sink, or is `null`. The server ends with the fixture,
 and a server that stops during the run stops the run.
 
+**The input it receives, on request.** `prepare` with `log_input` true
+sets the fixture's Sunshine to `min_log_level = verbose`: Sunshine then
+logs each input packet that it receives, controller packets at verbose
+and the other kinds at debug (`src/input.cpp`, `print`), before it decides
+what to do with them. Its `mouse`, `keyboard` and `controller` stay
+`disabled`, so the packets still reach nothing on the sender. The result's
+`log_input` says whether it was asked. No tool command asks for it today;
+the Android viewer's proof (slice D4) does, and reads the packets with
+`sender.input_packets`, which also gives the log without its debug and
+verbose lines: those can hold the launch request's input key (`rikey`).
+
 **The steady refresh.** A headless output has no clock. After each frame it
 waits a whole number of milliseconds: an output that says 60 Hz waits 16 ms
 and shows about 62 frames each second. Sunshine takes one frame for each
