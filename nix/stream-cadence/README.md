@@ -1297,9 +1297,10 @@ as it queues a key from a keyboard and gives it to the focused window. The
 press time is read just before the request leaves for the server. The key is
 held 30 ms; two presses are 200 to 300 ms apart, with a random gap, so the
 presses do not lock to a frame period. One warm-up press comes first and is
-not measured: Xwayland 24.1 under a headless sway gave no event for the first
-key that XTEST sent it (seen on the build host, 2026-11-13); every later key
-arrived.
+not measured: a new Xwayland 24.1 under a headless sway gave no event for the
+first key that XTEST sent it (on the build host, 2026-11-13); every later key
+arrived. On aka the warm-up gave no packet in the first run of a session and
+two packets in each later turn, which keeps the same Xwayland.
 
 **The packet.** Moonlight sends input on its control stream: ENet over UDP to
 Sunshine's control port, the base port + 10 (Sunshine's `stream.h`). ENet's

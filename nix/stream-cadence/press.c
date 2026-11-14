@@ -16,9 +16,9 @@
  *   press INDEX REALTIME_NS MONOTONIC_NS FOCUSED
  *   release INDEX REALTIME_NS MONOTONIC_NS FOCUSED
  *   done
- * INDEX -1 is a warm-up press that is not measured. Xwayland delivers no
- * event of the first key that XTEST sends it (seen with Xwayland 24.1 under
- * a headless sway, 2026-11-13); every later key arrives.
+ * INDEX -1 is a warm-up press that is not measured. A new Xwayland delivers
+ * no event of the first key that XTEST sends it (Xwayland 24.1 under a
+ * headless sway, 2026-11-13); every later key arrives.
  * A press time is read just before the request leaves for the server.
  * CLOCK_REALTIME is the clock of the kernel's packet times; CLOCK_MONOTONIC
  * lets the reader see a step of the wall clock. FOCUSED is 1 when the focus
