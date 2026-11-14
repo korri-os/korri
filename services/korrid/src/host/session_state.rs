@@ -909,8 +909,9 @@ impl HostSessionControl {
                     .lock()
                     .expect("display content mutex poisoned") = occupied;
             }
+            // One display: the shell covers the game (`present_shell_window`).
             trace.focus_target = Some(trace.time("shell_focus", || {
-                super::compositor_focus::focus_shell_window(compositor.as_ref(), &shell_pids)
+                super::compositor_focus::present_shell_window(compositor.as_ref(), &shell_pids)
             })?);
         }
         Ok(())
@@ -1451,6 +1452,16 @@ impl HostSessionControl {
                         &Default::default(),
                         &Default::default(),
                     )?;
+                } else if matches!(&*state, ActiveState::Frozen { launch_id, .. }
+                    if !request.overlay || request.launch_id.as_deref() == Some(launch_id.as_str()))
+                {
+                    // After Leave the shell owns the one screen. A window it maps
+                    // then (the overlay, or the catalog from Open Korri) covers
+                    // the game, as Leave's own placement did.
+                    super::compositor_focus::present_shell_window(
+                        control.as_ref(),
+                        &self.shell_pids()?,
+                    )?;
                 }
                 let logical = super::compositor_focus::display_from_outputs(&control.outputs()?)
                     .ok_or("main display geometry unavailable")?;
@@ -1651,6 +1662,17 @@ impl HostSessionControl {
                 Ok(_) => FocusOutcome::Failed("compositor did not confirm game focus".into()),
                 Err(reason) => FocusOutcome::Failed(reason),
             },
+            // One display: the game takes the screen back from the shell.
+            Ok(None)
+                if super::display_placement::configured_displays()
+                    .is_ok_and(|displays| displays.len() <= 1) =>
+            {
+                super::compositor_focus::cover_with_launch_window(
+                    compositor.as_ref(),
+                    &pids,
+                    &excluded,
+                )
+            }
             Ok(None) => focus_launch_window(compositor.as_ref(), &pids, &excluded),
             Err(reason) => FocusOutcome::Failed(reason),
         };
@@ -7193,6 +7215,8 @@ printf '[{{"success":true}}]'
     #[derive(Debug, Default)]
     struct RecordingCompositor {
         tree: Mutex<String>,
+        outputs: Mutex<String>,
+        commands: Mutex<Vec<String>>,
         focused: Mutex<Vec<i64>>,
         focus_fails: AtomicBool,
         shell_focus_fails: AtomicBool,
@@ -7204,7 +7228,16 @@ printf '[{{"success":true}}]'
             Ok(self.tree.lock().unwrap().clone())
         }
 
-        fn command(&self, _: &str) -> Result<(), String> {
+        fn outputs(&self) -> Result<String, String> {
+            let outputs = self.outputs.lock().unwrap().clone();
+            if outputs.is_empty() {
+                return Err("output observation unavailable".into());
+            }
+            Ok(outputs)
+        }
+
+        fn command(&self, command: &str) -> Result<(), String> {
+            self.commands.lock().unwrap().push(command.to_owned());
             Ok(())
         }
 
@@ -7454,6 +7487,115 @@ printf '[{{"success":true}}]'
             HostSessionFreezeChange::Unchanged { .. }
         ));
         assert_eq!(shell.requests(), ["thaw", "freeze", "thaw"]);
+    }
+
+    /// ibuki, 2026-11-14: on one display Sway's focus took the game's
+    /// fullscreen, and the overlay sat beside the game.
+    #[test]
+    fn on_one_display_leave_covers_the_game_with_the_shell_and_return_gives_the_screen_back() {
+        const CHILD: &str = "KORRI_ONE_DISPLAY_COVER_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            for displays in [
+                None,
+                Some(
+                    r#"[{"name":"DP-1","main":true,"unwatched":false,"mode":"3840x2160@60Hz","x":0,"y":0,"width":3840,"height":2160,"touch":null}]"#,
+                ),
+            ] {
+                let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+                child
+                    .args(["--exact", "host::session_state::tests::on_one_display_leave_covers_the_game_with_the_shell_and_return_gives_the_screen_back", "--nocapture"])
+                    .env(CHILD, "1")
+                    .env_remove("KORRID_DISPLAYS");
+                if let Some(displays) = displays {
+                    child.env("KORRID_DISPLAYS", displays);
+                }
+                let result = child.output().unwrap();
+                assert!(
+                    result.status.success(),
+                    "{}\n{}",
+                    String::from_utf8_lossy(&result.stdout),
+                    String::from_utf8_lossy(&result.stderr)
+                );
+            }
+            return;
+        }
+        let one_display = std::env::var_os("KORRID_DISPLAYS").is_some();
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        *compositor.outputs.lock().unwrap() =
+            r#"[{"active":true,"rect":{"x":0,"y":0,"width":3840,"height":2160}}]"#.into();
+        let control = shell_control(
+            root.path(),
+            backend.clone(),
+            compositor.clone(),
+            Arc::new(RecordingShellUnit::default()),
+        );
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        let fullscreen = |node: i64| format!("[con_id={node}] fullscreen enable");
+
+        assert!(matches!(
+            control.freeze(&id),
+            HostSessionFreezeChange::Changed { .. }
+        ));
+        assert!(
+            compositor.commands.lock().unwrap().contains(&fullscreen(2)),
+            "{:?}",
+            compositor.commands.lock().unwrap()
+        );
+        assert_eq!(*compositor.focused.lock().unwrap(), [2]);
+
+        if one_display {
+            // The window the shell maps after Leave (the overlay, or the
+            // catalog from Open Korri) covers the game as well.
+            for overlay in [true, false] {
+                compositor.commands.lock().unwrap().clear();
+                control
+                    .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
+                        displays: super::super::display_placement::SurfaceDisplayScope::All,
+                        overlay,
+                        launch_id: overlay.then(|| id.clone()),
+                    })
+                    .unwrap();
+                assert_eq!(*compositor.commands.lock().unwrap(), [fullscreen(2)]);
+            }
+            // Another launch's overlay is not this one's to place.
+            compositor.commands.lock().unwrap().clear();
+            let _ =
+                control.surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
+                    displays: super::super::display_placement::SurfaceDisplayScope::All,
+                    overlay: true,
+                    launch_id: Some("another".into()),
+                });
+            assert!(compositor.commands.lock().unwrap().is_empty());
+        }
+
+        compositor.commands.lock().unwrap().clear();
+        compositor.focused.lock().unwrap().clear();
+        assert!(matches!(
+            control.thaw(&id),
+            HostSessionFreezeChange::Changed { .. }
+        ));
+        assert!(
+            compositor.commands.lock().unwrap().contains(&fullscreen(3)),
+            "{:?}",
+            compositor.commands.lock().unwrap()
+        );
+        assert_eq!(*compositor.focused.lock().unwrap(), [3]);
+
+        // While the game plays, a window the shell maps never covers it.
+        if one_display {
+            compositor.commands.lock().unwrap().clear();
+            let _ =
+                control.surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
+                    displays: super::super::display_placement::SurfaceDisplayScope::All,
+                    overlay: false,
+                    launch_id: None,
+                });
+            assert!(compositor.commands.lock().unwrap().is_empty());
+        }
     }
 
     #[test]

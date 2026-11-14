@@ -277,13 +277,24 @@ fn is_excluded(node: &TreeNode, shell_pids: &BTreeSet<i32>) -> bool {
     node.pid.is_some_and(|pid| shell_pids.contains(&pid))
 }
 
-/// Focus only the unique window owned by the shell unit, then prove it kept
-/// focus. Acknowledgement alone cannot complete Leave.
-pub(crate) fn focus_shell_window(
+/// One display: the unique window owned by the shell unit takes the whole
+/// screen and focus, then korrid proves it kept focus. Acknowledgement alone
+/// cannot complete Leave. Focus alone is not enough either: Sway's `focus`
+/// first takes fullscreen from a window that hides the one focused
+/// (sway/commands/focus.c), so the game drops to a tile, and the shell's own
+/// fullscreen request does not hold under Sway (`--placement fullscreen`
+/// leaves `fullscreen_mode` 0). The overlay then sat beside the game (ibuki,
+/// 2026-11-14).
+pub(crate) fn present_shell_window(
     control: &dyn CompositorControl,
     pids: &BTreeSet<i32>,
 ) -> Result<i64, String> {
     let id = shell_node(&control.tree()?, pids)?;
+    // A refused fullscreen leaves the two windows side by side, but input
+    // still reaches the shell: report it, and let the proven focus decide.
+    if let Err(reason) = control.command(&format!("[con_id={id}] fullscreen enable")) {
+        eprintln!("korrid: ShellFullscreenFailed {{ node: {id}, reason: {reason} }}");
+    }
     control.focus(id)?;
     let focused = shell_focus_target(&control.tree()?, pids)?;
     if focused != id {
@@ -323,6 +334,25 @@ pub(crate) fn focus_launch_window(
     launch_pids: &BTreeSet<i32>,
     shell_pids: &BTreeSet<i32>,
 ) -> FocusOutcome {
+    front_launch_window(control, launch_pids, shell_pids, false)
+}
+
+/// One display: the resumed game takes the whole screen back from the shell
+/// (`present_shell_window`), then focus.
+pub(crate) fn cover_with_launch_window(
+    control: &dyn CompositorControl,
+    launch_pids: &BTreeSet<i32>,
+    shell_pids: &BTreeSet<i32>,
+) -> FocusOutcome {
+    front_launch_window(control, launch_pids, shell_pids, true)
+}
+
+fn front_launch_window(
+    control: &dyn CompositorControl,
+    launch_pids: &BTreeSet<i32>,
+    shell_pids: &BTreeSet<i32>,
+    fullscreen: bool,
+) -> FocusOutcome {
     // A launch with no processes owns no window, so the compositor is not
     // consulted at all and a compositor problem cannot fail that resume.
     if launch_pids.is_empty() {
@@ -333,10 +363,20 @@ pub(crate) fn focus_launch_window(
         Err(error) => return FocusOutcome::Failed(error),
     };
     match select_focus_target(&tree, launch_pids, shell_pids) {
-        FocusTarget::Window(candidate) => match control.focus_game(candidate.node_id) {
-            Ok(()) => FocusOutcome::Focused(candidate.node_id),
-            Err(error) => FocusOutcome::Failed(error),
-        },
+        FocusTarget::Window(candidate) => {
+            let node = candidate.node_id;
+            // As in `present_shell_window`: only the proven focus decides.
+            if fullscreen {
+                if let Err(reason) = control.command(&format!("[con_id={node}] fullscreen enable"))
+                {
+                    eprintln!("korrid: GameFullscreenFailed {{ node: {node}, reason: {reason} }}");
+                }
+            }
+            match control.focus_game(node) {
+                Ok(()) => FocusOutcome::Focused(node),
+                Err(error) => FocusOutcome::Failed(error),
+            }
+        }
         FocusTarget::NoWindow | FocusTarget::Ambiguous(_) => FocusOutcome::NothingToFocus,
         FocusTarget::Unreadable(error) => FocusOutcome::Failed(error),
     }
