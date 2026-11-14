@@ -481,10 +481,14 @@ until D7, so D1 removes none of its Java.
   viewer's crates at the same versions, `android-activity` 0.6.1 and `jni`),
   and `AndroidManifest.xml`. Android's own `android.app.NativeActivity`
   loads the library; the APK has no `classes.dex` (`hasCode="false"`) and no
-  resources of its own. Only the shell user and the system may start the
-  activity (the `DUMP` permission), because it connects where its intent
-  says. Package `com.simonwjackson.korri.viewer`, minimum API 31, target 34
-  as the Artemis app.
+  resources of its own. The activity connects where its intent says, so a
+  caller needs the `DUMP` permission to start it: the shell user and the
+  system, a privileged app that holds `DUMP`, and any app that asks for
+  `DUMP` and is granted it through adb (`pm grant`; `DUMP` is a development
+  permission). Other apps are refused. The app allows no backup (its files
+  hold a client key pair), and a finished stream leaves no entry in Recents
+  to start it again. Package `com.simonwjackson.korri.viewer`, minimum API
+  31, target 34 as the Artemis app.
 - In-process lifecycle: `Lifecycle::in_process` is the same runtime and the
   same replies as the socket, with no socket, UID check or signals. Its
   controller calls `Lifecycle::request` with the treaty's `ViewerRequest`,
