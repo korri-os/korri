@@ -216,8 +216,10 @@ location there.
 
 The viewer resolves no pathname after that walk. It creates its directory with
 `mkdirat` in the last descriptor, opens it there without following a symlink,
-and keeps both descriptors. It binds the socket and sets the socket's ACL
-through `/proc/self/fd/<descriptor>/<name>`; mode, the directory's ACL and
+and keeps both descriptors. If the opened directory is not owned by the viewer
+UID, the viewer removes it from the parent descriptor and exits. It binds the
+socket and sets the socket's ACL through `/proc/self/fd/<descriptor>/<name>`;
+mode, the directory's ACL and
 removal of the socket and the directory use the descriptors. After `bind()` the
 directory must hold a socket that the viewer UID owns. If not, or if `/proc` is
 missing, or if that address is longer than `sun_path`, the viewer removes what
@@ -286,10 +288,16 @@ in the viewer development shell, then run that printed test executable as root
 with `--exact separate_viewer_and_controller_uids_are_the_only_users_with_socket_access --ignored`.
 It drops the viewer, controller and an unrelated peer to UIDs 65534, 65532 and
 65533 in a temporary directory below `/run`, because `/tmp` is refused. It
-changes no accounts or services. Normal checks also cover umask-zero directory
-creation, missing controller authority, rejected peer credentials, an ancestor
-that another user could write, the sticky `/tmp`, and an ancestor or the
-directory replaced by a symlink between two steps. The tests bind below
+changes no accounts or services. Run
+`--exact filesystem_without_acls_fails_closed_and_keeps_nothing_the_viewer_made --ignored`
+the same way: in a private mount namespace it mounts a `ramfs`, which has no
+POSIX ACLs, below `/run`, and proves that the viewer refuses it with
+`EOPNOTSUPP` and leaves nothing there. Normal checks also cover umask-zero
+directory creation, missing controller authority, rejected peer credentials,
+an ancestor that another user could write, the sticky `/tmp`, an ancestor or
+the directory replaced by a symlink between two steps, a directory that fails
+its owner check, and a real signal before `Start`, while connecting after it,
+and at stepped moments of startup. The tests bind below
 `XDG_RUNTIME_DIR`, which must be a private directory as a login session
 provides it. In the Nix build sandbox the tests that need a bound socket prove
 only the refusal described above.

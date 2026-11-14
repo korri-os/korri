@@ -204,6 +204,84 @@ fn separate_viewer_and_controller_uids_are_the_only_users_with_socket_access() {
     assert!(!socket.parent().unwrap().exists());
 }
 
+// #468: the EOPNOTSUPP arm of the test above never runs. The Nix build
+// sandbox refuses at `/` first, and a login session's runtime directory has
+// ACLs. ramfs has none. Run explicitly as root, like the proof above; the
+// mount exists only in the child's own mount namespace.
+#[test]
+#[ignore = "requires root to mount a filesystem without POSIX ACLs"]
+fn filesystem_without_acls_fails_closed_and_keeps_nothing_the_viewer_made() {
+    use std::ffi::CString;
+    assert_eq!(uid(), 0, "run this proof as root");
+    let directory = tempfile::Builder::new()
+        .prefix("korri-viewer-acl.")
+        .tempdir_in("/run")
+        .unwrap();
+    let target = CString::new(directory.path().as_os_str().as_encoded_bytes()).unwrap();
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command
+        .args(["--exact", "acl_free_process", "--ignored", "--nocapture"])
+        .env(
+            "VIEWER_SECURITY_SOCKET",
+            directory.path().join("control/viewer.sock"),
+        );
+    // SAFETY: only system calls on data prepared before fork.
+    unsafe {
+        command.pre_exec(move || {
+            let private = libc::unshare(libc::CLONE_NEWNS) == 0
+                && libc::mount(
+                    std::ptr::null(),
+                    c"/".as_ptr(),
+                    std::ptr::null(),
+                    libc::MS_REC | libc::MS_PRIVATE,
+                    std::ptr::null(),
+                ) == 0
+                && libc::mount(
+                    c"korri-viewer-acl".as_ptr(),
+                    target.as_ptr(),
+                    c"ramfs".as_ptr(),
+                    0,
+                    c"mode=0755".as_ptr().cast(),
+                ) == 0;
+            if private {
+                Ok(())
+            } else {
+                Err(std::io::Error::last_os_error())
+            }
+        });
+    }
+    let output = command.output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success() && stdout.contains("test acl_free_process ... ok"),
+        "{stdout}{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+#[ignore = "subprocess entry for the ACL-free filesystem proof"]
+fn acl_free_process() {
+    let path = std::env::var_os("VIEWER_SECURITY_SOCKET").expect("start through the ACL proof");
+    let socket = Path::new(&path);
+    let error = match Lifecycle::bind(socket, "a", 65532) {
+        Ok(_) => panic!("the viewer published a socket on a filesystem without ACLs"),
+        Err(error) => error,
+    };
+    assert_eq!(
+        error
+            .downcast_ref::<std::io::Error>()
+            .and_then(|e| e.raw_os_error()),
+        Some(libc::EOPNOTSUPP),
+        "{error:#}"
+    );
+    let mount = socket.parent().unwrap().parent().unwrap();
+    assert!(
+        std::fs::read_dir(mount).unwrap().next().is_none(),
+        "the refused viewer must remove its socket and its directory"
+    );
+}
+
 fn helper(
     executable: &Path,
     socket: &Path,

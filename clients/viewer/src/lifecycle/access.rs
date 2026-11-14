@@ -100,31 +100,42 @@ impl PrivateDirectory {
         let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
             anyhow::bail!("lifecycle socket requires a new parent directory");
         };
-        Self::create_in(open_from_root(parent, require_trusted)?, name)
+        Self::create_in(open_from_root(parent, require_trusted)?, name, unsafe {
+            libc::geteuid()
+        })
     }
-    fn create_in(parent: File, name: &OsStr) -> Result<Self> {
+    fn create_in(parent: File, name: &OsStr, owner: u32) -> Result<Self> {
         let name = CString::new(name.as_bytes())?;
         // mkdir's mode is atomic, even with umask=0. Do not reuse or chmod a
         // pre-existing directory: it may belong to another launch.
         // SAFETY: the descriptor and the name are live for these calls.
         succeeded(unsafe { libc::mkdirat(parent.as_raw_fd(), name.as_ptr(), 0o700) })
             .context("create private lifecycle directory")?;
+        // Until the directory is pinned and identified, only its name in the
+        // parent descriptor can remove it.
+        let discard = |_: &io::Error| {
+            // SAFETY: the descriptor and the name are live for the call.
+            unsafe { libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), libc::AT_REMOVEDIR) };
+        };
         let pinned = open_directory(parent.as_raw_fd(), &name, libc::O_RDONLY)
-            .inspect_err(|_| unsafe {
-                libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), libc::AT_REMOVEDIR);
-            })
+            .inspect_err(discard)
             .context("open private lifecycle directory")?;
-        let metadata = pinned.metadata()?;
-        ensure!(
-            metadata.uid() == unsafe { libc::geteuid() },
-            "private lifecycle directory was replaced after its creation"
-        );
-        Ok(Self {
+        let metadata = pinned
+            .metadata()
+            .inspect_err(discard)
+            .context("inspect private lifecycle directory")?;
+        // From here a failure removes the directory: Drop owns this identity.
+        let directory = Self {
             parent,
             name,
             pinned,
             identity: (metadata.dev(), metadata.ino()),
-        })
+        };
+        ensure!(
+            metadata.uid() == owner,
+            "private lifecycle directory was replaced after its creation"
+        );
+        Ok(directory)
     }
     /// For system calls that take only a pathname: resolution starts at the
     /// descriptor. A missing /proc makes those calls fail.
@@ -338,8 +349,12 @@ mod tests {
         let path = root.path().join("private");
         // umask=0 also published this test's own parent, which the viewer
         // refuses. This test observes only the new directory's mode.
-        let _directory =
-            PrivateDirectory::create_in(open_unjudged(root.path()), OsStr::new("private")).unwrap();
+        let _directory = PrivateDirectory::create_in(
+            open_unjudged(root.path()),
+            OsStr::new("private"),
+            unsafe { libc::geteuid() },
+        )
+        .unwrap();
         // Observe before bind or any later chmod/ACL operation can hide a
         // publication window. The real mkdir call must already be private.
         assert_eq!(std::fs::metadata(path).unwrap().mode() & 0o777, 0o700);
@@ -356,8 +371,12 @@ mod tests {
         let moved = root.path().join("moved");
         let outside = root.path().join("outside");
         std::fs::create_dir(&outside).unwrap();
-        let directory =
-            PrivateDirectory::create_in(open_unjudged(root.path()), OsStr::new("control")).unwrap();
+        let directory = PrivateDirectory::create_in(
+            open_unjudged(root.path()),
+            OsStr::new("control"),
+            unsafe { libc::geteuid() },
+        )
+        .unwrap();
         std::fs::rename(&private, &moved).unwrap();
         std::os::unix::fs::symlink(&outside, &private).unwrap();
 
@@ -396,11 +415,12 @@ mod tests {
         std::os::unix::fs::symlink(&attacker, &launcher).unwrap();
 
         let bound =
-            PrivateDirectory::create_in(parent, OsStr::new("control")).and_then(|directory| {
-                SocketPath::bind_in(directory, OsStr::new("viewer.sock"), unsafe {
-                    libc::geteuid()
-                })
-            });
+            PrivateDirectory::create_in(parent, OsStr::new("control"), unsafe { libc::geteuid() })
+                .and_then(|directory| {
+                    SocketPath::bind_in(directory, OsStr::new("viewer.sock"), unsafe {
+                        libc::geteuid()
+                    })
+                });
 
         assert!(
             std::fs::read_dir(&attacker).unwrap().next().is_none(),
@@ -418,6 +438,27 @@ mod tests {
         assert!(
             std::fs::read_dir(&held).unwrap().next().is_none(),
             "cleanup must remove the directory from the parent that was judged"
+        );
+    }
+
+    // #468: a failed check after mkdirat returned with the new directory still
+    // in its parent. The test names another owner, so the check fails on a
+    // directory that this process did make.
+    #[test]
+    fn directory_that_fails_its_post_create_owner_check_is_removed() {
+        let root = tempfile::tempdir().unwrap();
+        let another_owner = unsafe { libc::geteuid() } + 1;
+
+        let created = PrivateDirectory::create_in(
+            open_unjudged(root.path()),
+            OsStr::new("control"),
+            another_owner,
+        );
+
+        assert!(format!("{:#}", created.err().unwrap()).contains("replaced after its creation"));
+        assert!(
+            std::fs::read_dir(root.path()).unwrap().next().is_none(),
+            "a refused directory must not stay in its parent"
         );
     }
 
