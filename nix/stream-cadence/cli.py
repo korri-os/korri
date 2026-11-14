@@ -1766,8 +1766,11 @@ RESTORE_FAILED = "Device restore check failed. Stop device work and inspect rest
 
 def restore_failed(earlier: str | None) -> str:
     """The error of a run whose restore check failed. The run's own refusal stays in it."""
-    if not earlier or earlier.startswith(RESTORE_FAILED):
+    if not earlier:
         return RESTORE_FAILED
+    if earlier.startswith(RESTORE_FAILED):
+        # Said once already, with the refusal that it keeps.
+        return earlier
     return f"{RESTORE_FAILED} The run had ended before that: {earlier}"
 
 
@@ -1969,6 +1972,15 @@ def view(args: argparse.Namespace) -> int:
             if session is not None:
                 restore_view_session(results, cleanup)
             save()
+            if any(not row["pass"] for row in cleanup.values()):
+                # The console says it, not only results.json. A refusal that
+                # ended the batch stays after it.
+                ending = sys.exc_info()[1]
+                if ending is not None and not isinstance(ending, Exception):
+                    # A signal or an exit keeps its way out; the words still show.
+                    print(restore_failed(None), file=sys.stderr, flush=True)
+                else:
+                    raise Refusal(restore_failed(str(ending) if ending else None))
         if any(not row["discovered"]["valid"] for row in results):
             raise Refusal("Device restore check failed. Stop device work and inspect restore evidence.")
     return 0

@@ -1,11 +1,15 @@
 """Alternating packages keep the pair, but not the evidence of an earlier run."""
 
+import contextlib
+import io
+import json
 from pathlib import Path
 import subprocess
 import sys
 import time
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -188,6 +192,44 @@ class FirstTurnRefusedBeforePrepare(test_private_sender.Machine):
         cli.restore_view_session([record], {"restore": quiet.close(), "viewer_restore": seat.close()})
         self.assertRegex(facts["error"], "The device is hot")
         self.assertTrue(facts["restore"]["session_cleanup"]["run_folder_removed"] is not False)
+
+
+class FinalCleanupOnTheConsole(unittest.TestCase):
+    def test_a_failed_final_cleanup_after_a_refused_turn_is_the_console_error(self):
+        # Review: the refusal reached the console, the failed cleanup only results.json.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            args = cli.parser().parse_args([
+                "view", "--sender", "local", "--viewer", "local", "--sender-fixture",
+                "--runs", "1", "--out", str(root / "results"),
+                "--viewer-package", "/baseline", "--candidate-package", "/candidate",
+            ])
+            peer = f"{sys.executable} {Path(__file__).with_name('reply-peer.py')} close-fails"
+
+            def refused(args, sender, viewer, paths, directory, certificate, index, session, cooldown=None):
+                facts = {
+                    "valid": False, "error": "The device is hot. Let it cool, then run again.",
+                    "turn": {"side": args.turn_side, "order": args.turn_order},
+                    "restore": {"pass": True, "prepared": False},
+                    "viewer_restore": {"pass": True, "prepared": False},
+                }
+                return {"label": directory.name, "discovered": facts}
+
+            with contextlib.ExitStack() as held:
+                for name, value in {
+                    "tools": lambda *a: (peer, "motion", []),
+                    "product_package": lambda path, *a: {"package": path},
+                    "execute": lambda *a, **k: subprocess.CompletedProcess([], 0, stdout="[]"),
+                    "view_case": refused,
+                }.items():
+                    held.enter_context(patch.object(cli, name, new=value))
+                with self.assertRaises(cli.Refusal) as raised, contextlib.redirect_stdout(io.StringIO()):
+                    cli.view(args)
+            message = str(raised.exception)
+            self.assertTrue(message.startswith("Device restore check failed."), message)
+            self.assertIn("The device is hot.", message)
+            rows = json.loads((root / "results" / "baseline" / "results.json").read_text())
+            self.assertEqual(rows[0]["discovered"]["error"], message)
 
 
 class SessionRestore(unittest.TestCase):
