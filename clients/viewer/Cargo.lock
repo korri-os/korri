@@ -423,6 +423,7 @@ dependencies = [
  "bindgen",
  "cc",
  "curl",
+ "curl-sys",
  "korri-viewer-treaty",
  "libc",
  "openssl",

@@ -101,6 +101,8 @@ impl Transport {
         // certificate's CN is not a DNS identity. Never disable peer verification.
         let spki = cert.public_key()?.public_key_to_pem()?;
         let mut easy = Easy2::new(Response(Vec::new()));
+        #[cfg(target_os = "android")]
+        only_the_pinned_anchor(&mut easy)?;
         // Sunshine requires a fresh mutual-TLS authentication on each new
         // connection. Moonlight http_init disables the session cache too.
         easy.ssl_sessionid_cache(false)?;
@@ -227,6 +229,28 @@ impl Transport {
         }
         Ok(())
     }
+}
+
+/// The curl crate's own libcurl (Android) gets the CA directory that the
+/// crate probes for when it makes a handle. Reset it, so that the pinned
+/// certificate is the only trust anchor, as with Linux's libcurl, which has
+/// no CA directory. `cainfo` then replaces the probed CA file.
+#[cfg(target_os = "android")]
+fn only_the_pinned_anchor(easy: &mut Easy2<Response>) -> Result<()> {
+    // SAFETY: a live handle; NULL resets this string option.
+    let code = unsafe {
+        curl_sys::curl_easy_setopt(
+            easy.raw(),
+            curl_sys::CURLOPT_CAPATH,
+            std::ptr::null::<std::ffi::c_char>(),
+        )
+    };
+    ensure!(
+        code == curl_sys::CURLE_OK,
+        "reset the CA directory: {}",
+        curl::Error::new(code)
+    );
+    Ok(())
 }
 
 pub fn field(xml: &str, name: &str) -> Result<Option<String>> {
