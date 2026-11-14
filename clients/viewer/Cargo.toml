@@ -2,7 +2,8 @@
 name = "korri-viewer"
 version = "0.1.0"
 edition = "2024"
-license = "GPL-3.0-or-later AND GPL-3.0-only"
+# Zlib: the controller lists of Valve and SDL (src/android/controller_list.rs).
+license = "GPL-3.0-or-later AND GPL-3.0-only AND Zlib"
 
 [dependencies]
 korri-viewer-treaty = { path = "../../contracts/viewer" }

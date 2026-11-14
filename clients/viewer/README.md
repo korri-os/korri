@@ -824,10 +824,20 @@ are; `controller_list.rs` keeps the zlib notice of Valve and SDL, and
   core calls no new Rust function: D4 adds no `extern "C"` callback. A panic
   in the input is caught on that thread (`Guarded` in `android/src/lib.rs`):
   the input ends, the stream goes on, and no panic reaches android-activity.
-  When the app sends Stop, the input is dropped first, so nothing more is
-  sent to a stream that stops; its counts go to the log
-  (`input: ended: … keys, … controller states, … arrivals, … mouse, …
-  touches sent; … unsupported, … failed`).
+- The core's gate (`CORE_GATE` in `src/android/input.rs`): the stream can
+  end while the app's thread sends (the host or the network ends it, and
+  the heartbeat sends on). The core's own guard is a plain flag that a send
+  reads once, and its stop then destroys the mutex and the queue that the
+  send goes on to use (`InputStream.c`, `initialized`). So each send holds a
+  read lock for its whole call into the core. `stream.rs` opens the gate
+  after `LiStartConnection` succeeds; before `LiStopConnection` it closes
+  it, which waits for the send in progress and lets none in after (logged
+  as `input: the core takes no more input`). Artemis stops its controller
+  handler before it stops the connection. When the app itself sends Stop,
+  it also drops the input first. Its counts go to the log (`input: ended:
+  … keys, … controller states, … arrivals, … mouse, … touches sent; …
+  unsupported, … outside the stream, … failed`); a send that the closed
+  gate refused counts as outside the stream.
 - Identity: the NDK gives an event's device ID and nothing more. Name,
   vendor, product, descriptor, `isExternal`, sources, keyboard type, the
   joystick axes' motion ranges (`SOURCE_JOYSTICK`, then `SOURCE_GAMEPAD`)
@@ -889,7 +899,7 @@ are; `controller_list.rs` keeps the zlib notice of Valve and SDL, and
 
 | | Artemis | Korri D4 |
 | --- | --- | --- |
-| Rumble, trigger rumble, RGB light, battery reports | `VibratorManager`, `LightsManager`, `BatteryState`, SHIELD's API | Not carried; the arrival claims none of them. Possible through JNI (brief, finding 10) |
+| Rumble, trigger rumble, RGB light, battery reports | `VibratorManager`, `LightsManager`, `BatteryState`, SHIELD's API | Not carried; the arrival claims none of them. Slice D4b carries them (below) |
 | Motion sensors | Controller or phone sensors through `SensorEventListener` | Not carried (above) |
 | A controller's own touchpad | `LiSendControllerTouchEvent` | Not carried; the arrival claims no touchpad |
 | USB driver for Xbox and Switch Pro pads | Its own, in Java | Dropped (ADR 0064) |
@@ -921,11 +931,26 @@ picture still moving.
 - Not proven: a real phone's controllers, touch screen and keyboard, and
   any time from a press to its packet (step H, the Galaxy Z Fold3). That
   unbuffered dispatch changes anything on NativeActivity.
+- Cost: the zlib notice of Valve's and SDL's controller lists
+  (`controller_list.rs`) is not yet in the APK, as those of OpenSSL, curl
+  and ENet (slice D1) and libopus (slice D3) are not.
+
+**Rumble and battery: slice D4b.** The brief put rumble and battery in D4;
+they are a slice of their own, D4b, before D7. D4b carries rumble and
+trigger rumble (the core's rumble callbacks into `VibratorManager`), the
+RGB light (`LightsManager`) and battery reports (`BatteryState`), all
+calls into Android's own classes through JNI (brief, finding 10), and
+the arrival's capabilities that go with them. Those callbacks are the
+first that D4's input gets from the core, so each runs under
+`catch_unwind`. **Gate:** D7, which removes `Game.java`, does not ship
+until D4b works: Artemis has all four today, and dropping a live feature
+is not "equal or better" (ADR 0062). Motion sensors are not in D4b: they
+need a Java listener (above).
 
 ## Next slices
 
 The bench proof of the handheld `v4l2request` path. On Android, slice D5:
-the overlay over the video. No device installs `@korri:viewer` yet.
+the overlay over the video, and slice D4b: rumble and battery. No device installs `@korri:viewer` yet.
 
 The cross-UID socket proof is an explicit root-only test: build
 `cargo test --manifest-path clients/viewer/Cargo.toml --test lifecycle_security --no-run`
