@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A test app for the viewer's proof (../run.py), never shipped. It asks
+     Android to start the viewer's activity as an ordinary app would, and
+     logs the answer. It asks for DUMP so that the proof can grant it through
+     adb and see the start allowed; until then it does not hold it. No Java
+     (hasCode="false"). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.simonwjackson.korri.viewer.refusal"
+    android:versionCode="1"
+    android:versionName="0.1.0">
+    <uses-sdk android:minSdkVersion="31" android:targetSdkVersion="34" />
+    <uses-permission android:name="android.permission.DUMP" />
+    <application
+        android:label="Korri viewer refusal probe"
+        android:hasCode="false"
+        android:allowBackup="false">
+        <activity
+            android:name="android.app.NativeActivity"
+            android:exported="true"
+            android:autoRemoveFromRecents="true">
+            <meta-data android:name="android.app.lib_name" android:value="korri_viewer_refusal_probe" />
+        </activity>
+    </application>
+</manifest>

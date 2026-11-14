@@ -255,6 +255,8 @@
           h700-kernel = h700.kernelCross;
           # The NDK's compilers run on x86_64 Linux only.
           korri-viewer-android-apk = viewer.android.apk;
+          # A test app for the viewer's emulator proof, never shipped.
+          korri-viewer-android-refusal-probe = viewer.android.refusalProbe;
         };
         checks = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
           inputplumber.checks

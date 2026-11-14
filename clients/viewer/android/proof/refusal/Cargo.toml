@@ -1,0 +1,16 @@
+[package]
+name = "korri-viewer-refusal-probe"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+# A test app for the viewer's proof (../run.py), never shipped: an ordinary
+# app that asks Android to start the viewer's activity, and logs the answer.
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+ndk-sys = "0.6"

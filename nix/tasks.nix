@@ -138,10 +138,13 @@ let
         emulator = import ../clients/viewer/android/emulator.nix { inherit pkgs; };
       in
       {
-        description = "Prove the Rust viewer app (#391 D1) on one headless Android 12 emulator against a private Sunshine on aka.";
+        description = "Prove the Rust viewer app (#391 D1, D2) on one headless Android 12 emulator against a private Sunshine on aka.";
         usageSuffix = " -- [--sender ssh-target] [--seconds N] [--out DIRECTORY]";
         runtimeInputs = [
-          pkgs.python3
+          # numpy and FFmpeg: stream-cadence's frame-ID bar decoder (bar.py,
+          # decode.py) reads the screenshots and the frame record's recording.
+          (pkgs.python3.withPackages (p: [ p.numpy ]))
+          pkgs.ffmpeg
           pkgs.nix
           pkgs.openssh
           pkgs.jdk17

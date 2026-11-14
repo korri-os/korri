@@ -1,21 +1,32 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Slice D1 of #391 step D, proven with no person (ADR 0063).
+"""Slices D1 and D2 of #391 step D, proven with no person (ADR 0063).
 
 One headless Android 12 emulator on this host runs the viewer app. A private
 Sunshine on the sender (stream-cadence's sender fixture, aka by default) is
-the host. The steps:
+the host. Its picture source draws stream-cadence's frame-ID bar. The steps:
 
-1. Build the APK, the Linux viewer (to pair) and the x86_64 Android tests on
-   this host. Nothing is built on the sender or the emulator.
+1. Build the APK, the refusal probe, the Linux viewer (to pair) and the
+   x86_64 Android tests on this host. Nothing is built on the sender or the
+   emulator.
 2. Start the sender fixture, pair a fresh key pair with the Linux viewer's
    pair command, and start the fixture's picture source.
-3. Start the emulator (2 cores), run the Android trust-anchor and HTTPS
-   tests in it, install the APK signed with the user's debug key, and give
-   the app the key pair and the pinned certificate.
-4. Start the app with a launch. Wait for the Running event and the Start
-   reply in logcat, take a screenshot, stream, press Back, wait for Stopped.
-5. Read the fixture's Sunshine log, close the fixture, stop the emulator.
+3. Start the emulator (2 cores), run the Android tests in it, install the
+   APK signed with the user's debug key, and give the app the key pair and
+   the pinned certificate.
+4. Start the app with a launch and the frame record's ask. Take screenshots
+   until one shows a readable frame-ID bar (the startup), wait for the
+   Running event and the Start reply, take screenshots while it streams and
+   read the bar in each, press Back, wait for Stopped.
+5. Read the frame record from the app, decode its recording, and read the
+   picture path (`decode`) from logcat.
+6. The refusal probe, an ordinary app, asks Android to start the viewer: it
+   is refused. Granted DUMP through adb, it is allowed.
+7. Read the fixture's Sunshine log, close the fixture, stop the emulator.
+
+stream-cadence's capture (capture.c) reads a wlr-screencopy compositor, and
+the emulator's screen is not one. The bar is read from screenshots instead,
+with stream-cadence's own decoder (bar.py).
 
 The record goes to --out. The exit status is 0 only when every check passed.
 """
@@ -42,6 +53,17 @@ FILES = f"/data/user/0/{PACKAGE}/files"
 APPLICATION = "Desktop"
 AVD = "korri-viewer-d1-api31"
 TESTS = "/data/local/tmp/korri-viewer-tests"
+PROBE = "com.simonwjackson.korri.viewer.refusal"
+PROBE_ACTIVITY = f"{PROBE}/android.app.NativeActivity"
+# The frame record's header, as picture/frame_times.c writes it on Linux.
+RECORD_HEADER = "index,frame_number,enqueue_ns,decoded_ns,display_ns"
+# The Android tests of the session part, and the picture's pure parts.
+LIB_TESTS = ["sps::", "codec::", "frame_record::", "placement::"]
+
+# stream-cadence's frame-ID bar decoder: one decoder for the bar.
+sys.path.insert(0, str(Path(os.environ["KORRI_ROOT"]) / "nix/stream-cadence"))
+import bar  # noqa: E402
+import decode  # noqa: E402
 
 
 def log(text: str) -> None:
@@ -232,7 +254,8 @@ class Logcat:
         self.path = path
         emulator.adb("logcat", "-c")
         self.process = subprocess.Popen(
-            [f"{emulator.sdk}/platform-tools/adb", "-s", emulator.serial, "logcat", "-v", "threadtime"],
+            # CLOCK_MONOTONIC seconds, the clock of the frame record.
+            [f"{emulator.sdk}/platform-tools/adb", "-s", emulator.serial, "logcat", "-v", "threadtime", "-v", "monotonic"],
             stdout=path.open("w"), stderr=subprocess.STDOUT, env=emulator.env,
         )
 
@@ -284,6 +307,81 @@ def debug_key() -> Path:
     return keystore
 
 
+def sign(build_tools: Path, apk: str, out: Path) -> Path:
+    run([str(build_tools / "apksigner"), "sign", "--ks", str(debug_key()), "--ks-pass", "pass:android",
+         "--key-pass", "pass:android", "--out", str(out), apk])
+    run([str(build_tools / "apksigner"), "verify", str(out)])
+    return out
+
+
+def screenshot(emulator: "Emulator", path: Path) -> tuple[float, float]:
+    """A screenshot to `path`; the host's monotonic time before and after."""
+    began = time.monotonic()
+    with path.open("wb") as png:
+        subprocess.run([f"{emulator.sdk}/platform-tools/adb", "-s", emulator.serial, "exec-out", "screencap", "-p"],
+                       stdout=png, check=True, env=emulator.env, timeout=60)
+    return began, time.monotonic()
+
+
+def read_bar(png: Path) -> "bar.Frame":
+    """The frame-ID bar in a screenshot, with stream-cadence's decoder."""
+    import numpy as np
+
+    header = png.read_bytes()[:24]
+    width, height = int.from_bytes(header[16:20], "big"), int.from_bytes(header[20:24], "big")
+    gray = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", str(png), "-vf", "format=gray",
+                           "-f", "rawvideo", "-"], check=True, capture_output=True, timeout=60).stdout
+    image = np.frombuffer(gray, dtype=np.uint8).reshape(height, width)
+    try:
+        return bar.read(image, bar.search(image))
+    except ValueError as error:
+        return bar.Unreadable(str(error))
+
+
+def describe(frame: "bar.Frame") -> dict:
+    if isinstance(frame, bar.Clean):
+        return {"id": frame.ident}
+    if isinstance(frame, bar.Torn):
+        return {"torn": [frame.upper_id, frame.lower_id]}
+    return {"unreadable": frame.reason}
+
+
+def read_app_file(emulator: "Emulator", name: str, out: Path) -> bool:
+    with out.open("wb") as data:
+        done = subprocess.run([f"{emulator.sdk}/platform-tools/adb", "-s", emulator.serial, "exec-out",
+                               "run-as", PACKAGE, "cat", f"files/{name}"],
+                              stdout=data, env=emulator.env, timeout=300)
+    return done.returncode == 0 and out.stat().st_size > 0
+
+
+def frame_record(times: Path, recording: Path, out: Path) -> dict:
+    """The rows of times.csv, joined with the ID that each decode unit carries."""
+    lines = times.read_text().splitlines()
+    rows = [line.split(",") for line in lines[1:]]
+    summary: dict = {
+        "header": lines[0] if lines else "",
+        "rows": len(rows),
+        "in_order": all(int(row[0]) == at for at, row in enumerate(rows)),
+        "decoded": sum(1 for row in rows if row[3]),
+        "handed_off": sum(1 for row in rows if row[4]),
+    }
+    try:
+        frames = decode.decode(recording, out / "recording-decode.txt")
+    except ValueError as error:
+        summary["recording_error"] = str(error)
+        frames = []
+    summary["recording_units"] = len(frames)
+    handed = [(int(row[4]), frames[int(row[0])]) for row in rows if row[4] and int(row[0]) < len(frames)]
+    ids = [frame.ident for _, frame in handed if isinstance(frame, bar.Clean)]
+    summary["handed_off_readable_ids"] = len(ids)
+    summary["handed_off_distinct_ids"] = len(set(ids))
+    summary["handed_off_ids_increase"] = all(b > a for a, b in zip(ids, ids[1:]))
+    summary["first_handed_off_id"] = ids[0] if ids else None
+    summary["last_handed_off_id"] = ids[-1] if ids else None
+    summary["first_handoff_ns"] = handed[0][0] if handed else None
+    return summary
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--sender", default="root@aka", help="SSH target of the sender fixture")
@@ -305,20 +403,21 @@ def main() -> int:
     checks = result["checks"]
 
     apk = nix_build(root, "korri-viewer-android-apk") + "/korri-viewer-unsigned.apk"
+    probe_apk = nix_build(root, "korri-viewer-android-refusal-probe") + "/korri-viewer-refusal-probe-unsigned.apk"
     viewer = nix_build(root, "korri-viewer")
     tests = nix_build(root, "checks.x86_64-linux.korri-viewer-android") + "/x86_64/tests"
-    result["store"] = {"apk": apk, "viewer": viewer, "tests": tests}
+    result["store"] = {"apk": apk, "refusal_probe": probe_apk, "viewer": viewer, "tests": tests}
 
-    signed = out / "korri-viewer-debug.apk"
-    run([str(build_tools / "apksigner"), "sign", "--ks", str(debug_key()), "--ks-pass", "pass:android",
-         "--key-pass", "pass:android", "--out", str(signed), apk])
-    run([str(build_tools / "apksigner"), "verify", str(signed)])
+    signed = sign(build_tools, apk, out / "korri-viewer-debug.apk")
+    probe = sign(build_tools, probe_apk, out / "korri-viewer-refusal-probe-debug.apk")
     (out / "apk-badging.txt").write_text(run([str(build_tools / "aapt2"), "dump", "badging", str(signed)]).stdout)
     entries = run(["unzip", "-l", str(signed)]).stdout
     (out / "apk-contents.txt").write_text(entries)
     manifest = run([str(build_tools / "aapt2"), "dump", "xmltree", str(signed), "--file", "AndroidManifest.xml"]).stdout
     (out / "apk-manifest.txt").write_text(manifest)
     checks["apk_has_no_code"] = ".dex" not in entries and re.search(r"hasCode.*=false", manifest) is not None
+    checks["apk_allows_no_backup"] = re.search(r"allowBackup.*=false", manifest) is not None
+    checks["apk_leaves_no_recents_entry"] = re.search(r"autoRemoveFromRecents.*=true", manifest) is not None
     checks["apk_has_both_abis"] = all(f"lib/{abi}/libkorri_viewer_android.so" in entries for abi in ("arm64-v8a", "x86_64"))
 
     command, parts = sender_tools(root, args.sender)
@@ -350,14 +449,17 @@ def main() -> int:
         # The session part's own tests, on Android: the pinned certificate is
         # the only trust anchor, and pinned HTTPS works.
         emulator.shell(f"rm -rf {TESTS} && mkdir -p {TESTS}")
-        for test in ("trust_anchor", "https"):
+        for test, filters in (("trust_anchor", []), ("https", []), ("lib", LIB_TESTS)):
             emulator.adb("push", f"{tests}/{test}", f"{TESTS}/{test}")
-            ran = emulator.shell(f"cd {TESTS} && TMPDIR={TESTS} ./{test} --test-threads=1", check=False, timeout=300)
+            ran = emulator.shell(f"cd {TESTS} && TMPDIR={TESTS} ./{test} --test-threads=1 {' '.join(filters)}",
+                                 check=False, timeout=300)
             (out / f"android-test-{test}.txt").write_text(ran.stdout + ran.stderr)
             checks[f"android_test_{test}"] = ran.returncode == 0 and "test result: ok" in ran.stdout
         emulator.shell(f"rm -rf {TESTS}")
 
-        emulator.adb("install", "-r", "-g", str(signed), timeout=300)
+        # A clean install: the frame record takes only new file names.
+        emulator.adb("uninstall", PACKAGE, check=False, timeout=120)
+        emulator.adb("install", "-g", str(signed), timeout=300)
         for local, remote in ((keys / "client.pem", "keys/client.pem"),
                               (keys / "key.pem", "keys/key.pem"),
                               (pin, "server.pem")):
@@ -374,13 +476,30 @@ def main() -> int:
         moonlight = ["stream", "-app", APPLICATION, "-width", "1280", "-height", "720",
                      "-fps", "60", "-keydir", f"{FILES}/keys", host]
         start = ["am", "start", "-W", "-n", ACTIVITY,
-                 "--es", "launch_id", "d1-proof",
+                 "--es", "launch_id", "d2-proof",
                  "--es", "address", f"{host}:{port}",
                  "--es", "KORRI_MOONLIGHT_SERVER_CERTIFICATE", f"{FILES}/server.pem",
+                 "--es", "CADENCE_FRAME_TIMES", f"{FILES}/times.csv",
+                 "--es", "CADENCE_DUMP", f"{FILES}/recording.video",
                  "--esa", "args", ",".join(moonlight)]
         log("starting the app")
+        began = time.monotonic()
         started = emulator.shell(shlex.join(start))
         (out / "am-start.txt").write_text(started.stdout)
+        # The startup as the screen shows it: screenshots until the bar reads.
+        startup: dict = {"shots": []}
+        shots = out / "startup"
+        shots.mkdir()
+        while time.monotonic() - began < 60:
+            path = shots / f"{len(startup['shots']):02d}.png"
+            before, after = screenshot(emulator, path)
+            frame = read_bar(path)
+            startup["shots"].append({"file": path.name, "from_start_ms": [round((before - began) * 1000), round((after - began) * 1000)], **describe(frame)})
+            if not isinstance(frame, bar.Unreadable):
+                startup["first_readable"] = startup["shots"][-1]
+                break
+        result["startup_screenshots"] = startup
+        checks["startup_shows_the_bar"] = "first_readable" in startup
         running = logcat.wait_for(r'korri-viewer: event \{"kind":"Status","value":"Running"\}', 60)
         replied = logcat.wait_for(r'korri-viewer: reply Start \{"kind":"Ok"\}', 30)
         checks["running_event"] = bool(running)
@@ -389,9 +508,20 @@ def main() -> int:
         top = emulator.shell("dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity'", check=False).stdout
         (out / "resumed-while-streaming.txt").write_text(top)
         checks["app_in_front_while_streaming"] = PACKAGE in top
-        with (out / "streaming.png").open("wb") as png:
-            subprocess.run([f"{sdk}/platform-tools/adb", "-s", emulator.serial, "exec-out", "screencap", "-p"],
-                           stdout=png, check=True, env=emulator.env, timeout=60)
+        layers = emulator.shell("dumpsys SurfaceFlinger --list", check=False).stdout
+        (out / "surfaceflinger-layers.txt").write_text(layers)
+        checks["video_layer_exists"] = "korri-viewer-video" in layers
+        # The picture moves: a later screenshot shows a later frame ID.
+        moving = []
+        for shot in range(4):
+            path = out / f"streaming-{shot + 1}.png"
+            screenshot(emulator, path)
+            moving.append({"file": path.name, **describe(read_bar(path))})
+            time.sleep(1)
+        result["streaming_screenshots"] = moving
+        ids = [shot["id"] for shot in moving if "id" in shot]
+        checks["screenshots_read_the_bar"] = len(ids) == len(moving)
+        checks["screenshots_show_it_moving"] = len(ids) >= 2 and all(b > a for a, b in zip(ids, ids[1:]))
         log(f"streaming for {args.seconds} s")
         time.sleep(args.seconds)
         # Sunshine's log since the picture source started, while the app streams.
@@ -409,13 +539,65 @@ def main() -> int:
         top = emulator.shell("dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity'", check=False).stdout
         (out / "resumed-after-back.txt").write_text(top)
         checks["app_finished_after_back"] = PACKAGE not in top
-        with (out / "after-back.png").open("wb") as png:
-            subprocess.run([f"{sdk}/platform-tools/adb", "-s", emulator.serial, "exec-out", "screencap", "-p"],
-                           stdout=png, check=True, env=emulator.env, timeout=60)
-        logcat.close()
-        app = [l for l in logcat.lines() if " korri-viewer" in l or "AndroidRuntime" in l or " DEBUG " in l]
+        screenshot(emulator, out / "after-back.png")
+        lines = logcat.lines()
+        app = [l for l in lines if " korri-viewer" in l or "AndroidRuntime" in l or " DEBUG " in l]
         (out / "logcat.txt").write_text("\n".join(app) + "\n")
-        checks["no_crash"] = not any("Fatal signal" in l or "FATAL EXCEPTION" in l or "panic:" in l for l in logcat.lines())
+        checks["no_crash"] = not any("Fatal signal" in l or "FATAL EXCEPTION" in l or "panic:" in l for l in lines)
+
+        # The picture path, as the app reports it.
+        chosen = next((re.search(r"picture: decode (\S+) decoder (\S+)", l) for l in app if "picture: decode " in l), None)
+        result["viewer_ran"] = {"decode": chosen.group(1), "decoder": chosen.group(2)} if chosen else {}
+        checks["picture_path_reported"] = bool(chosen) and chosen.group(1) in ("mediacodec", "software")
+        # Not checks: how often the stream lost frames, for the record.
+        result["picture_losses"] = {
+            "idr_requested_by_the_decoder": sum("Requesting IDR frame on behalf of DR" in l for l in app),
+            "frames_not_decoded": sum("not decoded:" in l for l in app),
+            "decode_unit_queue_overflows": sum("Video decode unit queue overflow" in l for l in app),
+            "frames_the_network_dropped": sum(int(m.group(1)) for l in app if (m := re.search(r"Network dropped (\d+) frames", l))),
+        }
+
+        # The frame record, and the startup it shows: the system's START of
+        # the activity to the first frame handed to the display.
+        times, recording = out / "times.csv", out / "recording.video"
+        if read_app_file(emulator, "times.csv", times) and read_app_file(emulator, "recording.video", recording):
+            record = frame_record(times, recording, out)
+            launched = next((l for l in lines if "ActivityTaskManager: START u0" in l and ACTIVITY in l and "from uid 2000" in l), "")
+            stamp = re.match(r"\s*(\d+\.\d+)", launched)
+            if stamp and record["first_handoff_ns"]:
+                record["startup_ms"] = round(record["first_handoff_ns"] / 1e6 - float(stamp.group(1)) * 1000, 1)
+            result["frame_record"] = record
+            checks["frame_record_written"] = (record["header"] == RECORD_HEADER and record["in_order"]
+                                              and record["handed_off"] > 0 and record["recording_units"] == record["rows"])
+            checks["frame_record_ids_move"] = record["handed_off_distinct_ids"] >= 2 and record["handed_off_ids_increase"]
+        else:
+            checks["frame_record_written"] = False
+        recording.unlink(missing_ok=True)
+
+        # The refusal probe: an ordinary app may not start the viewer; one
+        # that adb granted DUMP may.
+        emulator.adb("install", str(probe), timeout=300)
+        refusal: dict = {}
+        first_mark = len(logcat.lines())
+        for step, grant in (("without_dump", False), ("with_dump_granted", True)):
+            if grant:
+                emulator.shell(f"pm grant {PROBE} android.permission.DUMP")
+            mark = len(logcat.lines())
+            emulator.shell(f"am start -W -n {PROBE_ACTIVITY}")
+            until = time.monotonic() + 30
+            answer = ""
+            while time.monotonic() < until and not answer:
+                answer = next((l for l in logcat.lines()[mark:] if "korri-refusal: " in l), "")
+                time.sleep(0.5)
+            refusal[step] = answer.split("korri-refusal: ", 1)[-1]
+        time.sleep(3)
+        refusal["viewer_lines_after_the_grant"] = [l for l in logcat.lines()[mark:] if " korri-viewer" in l]
+        emulator.adb("uninstall", PROBE, check=False, timeout=120)
+        result["refusal"] = refusal
+        checks["a_start_without_dump_is_refused"] = "requires android.permission.DUMP" in refusal["without_dump"]
+        checks["a_start_with_dump_granted_is_allowed"] = refusal["with_dump_granted"] == "started"
+        logcat.close()
+        (out / "logcat-refusal.txt").write_text("\n".join(l for l in logcat.lines()[first_mark:] if "korri-" in l or "Permission Denial" in l or "START u0" in l) + "\n")
         journal = fixture.request("sample")["journal"]
         (out / "sunshine.log").write_text(journal)
         checks["sunshine_saw_the_end"] = "CLIENT DISCONNECTED" in journal

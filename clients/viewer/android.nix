@@ -2,8 +2,9 @@
 # it (slices D1 and D2), at API 31 (ADR 0064) with the NDK that clients/android uses.
 # Two ABIs: arm64-v8a for phones, x86_64 for the emulator.
 #
-# - check: builds the library and links the HTTPS and trust-anchor test
-#   executables for each ABI, then reads them. Nothing runs here.
+# - check: builds the library and links its own tests and the HTTPS and
+#   trust-anchor test executables for each ABI, then reads them. Nothing runs
+#   here; the app's proof runs the x86_64 ones on the emulator.
 # - apk: the app. Android's own NativeActivity loads the Rust library; no
 #   Java and no Gradle. Nix builds the libraries with cargo and packs them with
 #   aapt2 and zipalign. The APK is not signed; android/proof/run.py signs it
@@ -211,6 +212,10 @@ let
             test -x "$executable"
             cp "$executable" $out/${part.name}/tests/$test
           done
+          # The library's own tests: the proof runs the picture's pure parts.
+          executable=$(grep -o "\"executable\":\"[^\"]*/korri_viewer-[^\"]*\"" tests-${part.name}.json | cut -d'"' -f4)
+          test -x "$executable"
+          cp "$executable" $out/${part.name}/tests/lib
           https=$out/${part.name}/tests/https
           ${readElf part sessionLibraries "$https" "$out/${part.name}/https-elf.txt"}
           grep -q 'Requesting program interpreter: /system/bin/linker64' $out/${part.name}/https-elf.txt
@@ -282,7 +287,54 @@ let
       '';
     }
   );
+  # The proof's refusal probe (android/proof/refusal): an ordinary app that
+  # asks Android to start the viewer's activity. x86_64 only, for the
+  # emulator; never shipped. Unsigned, as the APK above.
+  refusalProbe =
+    let
+      part = parts.x86_64;
+    in
+    pkgs.stdenv.mkDerivation (
+      common
+      // {
+        pname = "korri-viewer-refusal-probe-apk";
+        version = "0.1.0";
+        src = lib.fileset.toSource {
+          root = ./android/proof/refusal;
+          fileset = ./android/proof/refusal;
+        };
+        cargoDeps = pkgs.rustPlatform.importCargoLock {
+          lockFile = ./android/proof/refusal/Cargo.lock;
+        };
+        nativeBuildInputs = common.nativeBuildInputs ++ [ pkgs.zip ];
+        buildPhase = ''
+          runHook preBuild
+          export HOME=$TMPDIR
+          ${environmentFor part}
+          cargo build --locked --release --offline --lib --target ${part.target}
+          mkdir -p stage/lib/${part.name}
+          cp target/${part.target}/release/libkorri_viewer_refusal_probe.so stage/lib/${part.name}/
+          ${buildTools}/aapt2 link -o unsigned.apk -I ${framework} \
+            --manifest AndroidManifest.xml --debug-mode
+          find stage -exec touch -h -d @315532800 {} +
+          (cd stage && zip -q -r -X ../unsigned.apk lib)
+          ${buildTools}/zipalign -p -f 4 unsigned.apk aligned.apk
+          runHook postBuild
+        '';
+        installPhase = ''
+          runHook preInstall
+          mkdir -p $out
+          cp aligned.apk $out/korri-viewer-refusal-probe-unsigned.apk
+          runHook postInstall
+        '';
+      }
+    );
 in
 {
-  inherit parts check apk;
+  inherit
+    parts
+    check
+    apk
+    refusalProbe
+    ;
 }
