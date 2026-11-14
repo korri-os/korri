@@ -14,6 +14,11 @@
 //! of it. Timers (a touch's click, the emulated mouse, the controllers'
 //! heartbeat) run when the app calls `tick`, by `next_deadline`.
 //!
+//! While the gameplay overlay is open the input is held (slice D5,
+//! `hold`): one gate below every producer, as Artemis's
+//! `NvConnection.setInputHeld` is, keeps everything but a controller's
+//! arrival from the stream.
+//!
 //! Ported from Korri's copy of Artemis (`clients/android`, from
 //! `simonwjackson/artemis` at `cf12c432`, a fork of
 //! `ClassicOldSong/moonlight-android`, itself a fork of
@@ -27,6 +32,7 @@ use super::{
 };
 use crate::{log, placement::Rect};
 use std::{
+    collections::{BTreeMap, BTreeSet},
     rc::Rc,
     sync::{
         PoisonError, RwLock,
@@ -379,6 +385,9 @@ pub enum Outcome {
     Unhandled,
     /// Ctrl+Alt+Shift+Q: leave the stream.
     Leave,
+    /// Start pressed twice quickly and held the second time: open the
+    /// gameplay overlay (Artemis's quick menu).
+    Overlay,
 }
 
 /// The settings of the stream's input. Artemis's defaults for the rest:
@@ -398,7 +407,102 @@ pub struct Input {
     mouse: Mouse,
     /// Where the picture is in the window.
     video: Rect,
+    hold: Hold,
     counts: Counts,
+}
+
+/// Artemis's input hold (`NvConnection.setInputHeld`): one gate below every
+/// producer, so the controllers' heartbeat and the touch's and the emulated
+/// mouse's timers are held too. It knows what the host holds down from what
+/// the core took. It sends only into the sink it is given: in the app, the
+/// core behind its gate (`CORE_GATE`).
+#[derive(Debug, Default)]
+struct Hold {
+    held: bool,
+    /// Each key that went down and not up, with the flags it went with.
+    keys: BTreeMap<i16, u8>,
+    /// Each mouse button that went down and not up.
+    buttons: BTreeSet<u8>,
+    /// Each controller that sent a state, with its last active mask.
+    controllers: BTreeMap<u16, u16>,
+    /// A touch went that was no cancel of every touch.
+    touch: bool,
+}
+
+impl Hold {
+    /// What the core took: the host holds it down now, or no longer.
+    fn went(&mut self, packet: &Packet) {
+        match *packet {
+            Packet::Keyboard {
+                code, down, flags, ..
+            } => {
+                if down {
+                    self.keys.insert(code, flags);
+                } else {
+                    self.keys.remove(&code);
+                }
+            }
+            Packet::MouseButton { pressed, button } => {
+                if pressed {
+                    self.buttons.insert(button);
+                } else {
+                    self.buttons.remove(&button);
+                }
+            }
+            Packet::Controller(state) => {
+                self.controllers.insert(state.number, state.active_mask);
+            }
+            Packet::Touch { kind, .. } => self.touch = kind != super::touch::kind::CANCEL_ALL,
+            _ => {}
+        }
+    }
+
+    /// `setInputHeld(true)`: the host lets go of every controller, key,
+    /// mouse button and touch. Artemis releases a key with no flags; here it
+    /// keeps the flags it went down with, so that the host releases the key
+    /// it pressed.
+    fn let_go(&mut self) -> Vec<Packet> {
+        let mut packets: Vec<Packet> = self
+            .controllers
+            .iter()
+            .map(|(&number, &active_mask)| {
+                Packet::Controller(ControllerState {
+                    number,
+                    active_mask,
+                    ..Default::default()
+                })
+            })
+            .collect();
+        packets.extend(
+            std::mem::take(&mut self.keys)
+                .into_iter()
+                .map(|(code, flags)| Packet::Keyboard {
+                    code,
+                    down: false,
+                    modifiers: 0,
+                    flags,
+                }),
+        );
+        packets.extend(std::mem::take(&mut self.buttons).into_iter().map(|button| {
+            Packet::MouseButton {
+                pressed: false,
+                button,
+            }
+        }));
+        if std::mem::take(&mut self.touch) {
+            packets.push(Packet::Touch {
+                kind: super::touch::kind::CANCEL_ALL,
+                pointer: 0,
+                x: 0.0,
+                y: 0.0,
+                pressure: 0.0,
+                contact_major: 0.0,
+                contact_minor: 0.0,
+                rotation: 0,
+            });
+        }
+        packets
+    }
 }
 
 /// What `Input` sent, for the log at the end.
@@ -409,22 +513,37 @@ struct Counts {
     arrivals: u32,
     mouse: u32,
     touches: u32,
+    /// Kept from the stream by the hold.
+    held: u32,
     unsupported: u32,
     /// Refused by the closed gate: the stream had not started or had ended.
     closed: u32,
     failed: u32,
 }
 
-/// The sink that counts what passes through it.
+/// The sink that holds and counts what passes through it.
 struct Counting<'a> {
     sink: &'a mut dyn Sink,
+    hold: &'a mut Hold,
     counts: &'a mut Counts,
 }
 
 impl Sink for Counting<'_> {
     fn send(&mut self, packet: Packet) -> i32 {
-        let result = self.sink.send(packet);
         let counts = &mut *self.counts;
+        if self.hold.held && !matches!(packet, Packet::Arrival { .. }) {
+            counts.held += 1;
+            // As Artemis answers a held touch.
+            return if matches!(packet, Packet::Touch { .. }) {
+                super::touch::UNSUPPORTED
+            } else {
+                0
+            };
+        }
+        let result = self.sink.send(packet);
+        if result == 0 {
+            self.hold.went(&packet);
+        }
         match result {
             0 => {}
             touch_unsupported if touch_unsupported == super::touch::UNSUPPORTED => {
@@ -455,8 +574,48 @@ impl Input {
             touch: Touch::default(),
             mouse: Mouse::default(),
             video,
+            hold: Hold::default(),
             counts: Counts::default(),
         }
+    }
+
+    /// The gameplay overlay opened (`Game.showSurfaceOverlay`): the host
+    /// lets go of everything it holds down, and nothing more goes to it but
+    /// a controller's arrival until `release`. The mapping starts clean.
+    pub fn hold(&mut self, sink: &mut dyn Sink) {
+        if self.hold.held {
+            return;
+        }
+        self.hold.held = true;
+        let mut counted = Counting {
+            sink,
+            hold: &mut Hold::default(),
+            counts: &mut self.counts,
+        };
+        for packet in self.hold.let_go() {
+            counted.send(packet);
+        }
+        self.reset(sink);
+    }
+
+    /// The gameplay overlay closed (`Game.hideSurfaceOverlay`): the mapping
+    /// starts clean again, then input goes to the stream. Nothing is sent.
+    pub fn release(&mut self, sink: &mut dyn Sink) {
+        self.reset(sink);
+        self.hold.held = false;
+    }
+
+    /// `resetStreamInputState`, while held: what it would send is held.
+    fn reset(&mut self, sink: &mut dyn Sink) {
+        let sink = &mut Counting {
+            sink,
+            hold: &mut self.hold,
+            counts: &mut self.counts,
+        };
+        self.controllers.reset();
+        self.keyboard.reset();
+        self.mouse = Mouse::default();
+        self.touch.cancel(sink);
     }
 
     /// The picture moved in the window (a turn or a fold).
@@ -474,6 +633,7 @@ impl Input {
     ) -> Outcome {
         let sink = &mut Counting {
             sink,
+            hold: &mut self.hold,
             counts: &mut self.counts,
         };
         // Android's own virtual navigation keys.
@@ -495,13 +655,15 @@ impl Input {
             return Outcome::Handled;
         }
         let device = devices.describe(event.device);
-        if gamepad::is_game_controller(device.as_deref())
-            && self
+        if gamepad::is_game_controller(device.as_deref()) {
+            match self
                 .controllers
                 .key(event, device.as_deref(), devices, now_ms, sink)
-                == Key::Handled
-        {
-            return Outcome::Handled;
+            {
+                Key::Handled => return Outcome::Handled,
+                Key::Overlay => return Outcome::Overlay,
+                Key::Unhandled => {}
+            }
         }
         match self.keyboard.special(event.key_code, down) {
             Special::Eaten => return Outcome::Handled,
@@ -538,6 +700,7 @@ impl Input {
     ) -> bool {
         let sink = &mut Counting {
             sink,
+            hold: &mut self.hold,
             counts: &mut self.counts,
         };
         let class = |class: u32| event.source & class != 0;
@@ -581,6 +744,7 @@ impl Input {
     fn present(&mut self, ids: &[i32], sink: &mut dyn Sink) {
         let sink = &mut Counting {
             sink,
+            hold: &mut self.hold,
             counts: &mut self.counts,
         };
         let gone: Vec<i32> = self
@@ -597,6 +761,7 @@ impl Input {
     pub fn tick(&mut self, now_ms: i64, sink: &mut dyn Sink) {
         let sink = &mut Counting {
             sink,
+            hold: &mut self.hold,
             counts: &mut self.counts,
         };
         self.touch.tick(now_ms, self.video, sink);
@@ -615,12 +780,13 @@ impl Input {
     pub fn report(&self) -> String {
         let c = &self.counts;
         format!(
-            "{} keys, {} controller states, {} arrivals, {} mouse, {} touches sent; {} unsupported, {} outside the stream, {} failed",
+            "{} keys, {} controller states, {} arrivals, {} mouse, {} touches sent; {} held; {} unsupported, {} outside the stream, {} failed",
             c.keys,
             c.controllers,
             c.arrivals,
             c.mouse,
             c.touches,
+            c.held,
             c.unsupported,
             c.closed,
             c.failed
@@ -1941,7 +2107,7 @@ pub(crate) mod tests {
         );
         assert_eq!(
             input.report(),
-            "2 keys, 2 controller states, 1 arrivals, 0 mouse, 0 touches sent; 0 unsupported, 0 outside the stream, 0 failed"
+            "2 keys, 2 controller states, 1 arrivals, 0 mouse, 0 touches sent; 0 held; 0 unsupported, 0 outside the stream, 0 failed"
         );
     }
 
@@ -2012,6 +2178,282 @@ pub(crate) mod tests {
         assert!(
             !after_close.load(Ordering::SeqCst),
             "a send ran into the core after the gate closed"
+        );
+    }
+
+    fn mouse_button(time_ms: i64) -> MotionEvent {
+        MotionEvent {
+            device: 5,
+            source: source::MOUSE,
+            action: action::BUTTON_PRESS,
+            button_state: 0x01,
+            event_time_ms: time_ms,
+            pointers: vec![Pointer {
+                tool_type: tool::MOUSE,
+                x: 540.0,
+                y: 514.0,
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn the_hold_lets_go_of_everything_the_host_holds_down() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        let mut devices = Known::with([keyboard_device(-1), pad(16, 0x045e), touchscreen(3)]);
+        input.key(
+            &key(16, code::BUTTON_A, 304, KeyAction::Down, 1000, 1000),
+            1000,
+            &mut devices,
+            &mut sink,
+        );
+        input.key(
+            &key(-1, code::A + 10, 37, KeyAction::Down, 1010, 1010),
+            1010,
+            &mut devices,
+            &mut sink,
+        );
+        input.motion(&mouse_button(1020), 1020, &mut devices, &mut sink);
+        input.motion(
+            &touch_event(action::DOWN, 0, &[(540.0, 514.0)], 1030),
+            1030,
+            &mut devices,
+            &mut sink,
+        );
+        sink.take();
+        input.hold(&mut sink);
+        assert_eq!(
+            sink.take(),
+            [
+                Packet::Controller(controller(0, 1, 0)),
+                // K, with the flags it went down with.
+                Packet::Keyboard {
+                    code: 0x804bu16 as i16,
+                    down: false,
+                    modifiers: 0,
+                    flags: 1
+                },
+                Packet::MouseButton {
+                    pressed: false,
+                    button: MOUSE_LEFT
+                },
+                Packet::Touch {
+                    kind: kind::CANCEL_ALL,
+                    pointer: 0,
+                    x: 0.0,
+                    y: 0.0,
+                    pressure: 0.0,
+                    contact_major: 0.0,
+                    contact_minor: 0.0,
+                    rotation: 0
+                },
+            ]
+        );
+        // Held already: nothing more.
+        input.hold(&mut sink);
+        assert!(sink.take().is_empty());
+    }
+
+    #[test]
+    fn while_held_only_a_controllers_arrival_reaches_the_stream() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        let mut devices = Known::with([keyboard_device(-1), pad(16, 0x045e)]);
+        press(
+            &mut input,
+            &mut devices,
+            &mut sink,
+            16,
+            code::BUTTON_A,
+            304,
+            1000,
+        );
+        input.hold(&mut sink);
+        sink.take();
+        // The heartbeat, a key, the pad's buttons, a new pad and the first
+        // pad going: only the new pad's arrival goes.
+        input.tick(2000, &mut sink);
+        input.tick(2000 + HEARTBEAT_MS, &mut sink);
+        press(&mut input, &mut devices, &mut sink, -1, code::A, 30, 3000);
+        press(
+            &mut input,
+            &mut devices,
+            &mut sink,
+            16,
+            code::BUTTON_B,
+            305,
+            3100,
+        );
+        devices.devices.insert(18, Rc::new(pad(18, 0x054c)));
+        press(
+            &mut input,
+            &mut devices,
+            &mut sink,
+            18,
+            code::BUTTON_A,
+            304,
+            3200,
+        );
+        devices.devices.remove(&16);
+        input.present(&[-1, 18], &mut sink);
+        let packets = sink.take();
+        assert!(
+            matches!(packets.as_slice(), [Packet::Arrival { number: 1, .. }]),
+            "{packets:?}"
+        );
+        assert_eq!(
+            input.report(),
+            "0 keys, 3 controller states, 2 arrivals, 0 mouse, 0 touches sent; 8 held; 0 unsupported, 0 outside the stream, 0 failed"
+        );
+    }
+
+    #[test]
+    fn after_the_hold_the_mapping_starts_clean() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        let mut devices = Known::with([keyboard_device(-1), pad(16, 0x045e)]);
+        // A and Shift are down when the overlay opens; their ups go to the
+        // overlay, never to the stream's input.
+        input.key(
+            &key(16, code::BUTTON_A, 304, KeyAction::Down, 1000, 1000),
+            1000,
+            &mut devices,
+            &mut sink,
+        );
+        input.key(
+            &key(-1, code::SHIFT_LEFT, 42, KeyAction::Down, 1010, 1010),
+            1010,
+            &mut devices,
+            &mut sink,
+        );
+        input.hold(&mut sink);
+        input.release(&mut sink);
+        sink.take();
+        // The heartbeat repeats the pad's state with nothing pressed.
+        input.tick(2000, &mut sink);
+        input.tick(2000 + HEARTBEAT_MS, &mut sink);
+        assert_eq!(sink.take(), [Packet::Controller(controller(0, 1, 0))]);
+        // B alone, not A and B; a key with no Shift.
+        input.key(
+            &key(16, code::BUTTON_B, 305, KeyAction::Down, 3000, 3000),
+            3000,
+            &mut devices,
+            &mut sink,
+        );
+        input.key(
+            &key(-1, code::A, 30, KeyAction::Down, 3010, 3010),
+            3010,
+            &mut devices,
+            &mut sink,
+        );
+        assert_eq!(
+            sink.take(),
+            [
+                Packet::Controller(controller(0, 1, button::B)),
+                Packet::Keyboard {
+                    code: 0x8041u16 as i16,
+                    down: true,
+                    modifiers: 0,
+                    flags: 1
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_quick_second_start_held_opens_the_overlay() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        let mut devices = Known::with([pad(16, 0x045e)]);
+        let start = |action, at, down| key(16, code::BUTTON_START, 315, action, at, down);
+        input.key(
+            &start(KeyAction::Down, 1000, 1000),
+            1000,
+            &mut devices,
+            &mut sink,
+        );
+        input.key(
+            &start(KeyAction::Up, 1050, 1000),
+            1050,
+            &mut devices,
+            &mut sink,
+        );
+        // Down again within 200 ms of the up, then held for 800 ms.
+        input.key(
+            &start(KeyAction::Down, 1200, 1200),
+            1200,
+            &mut devices,
+            &mut sink,
+        );
+        sink.take();
+        assert_eq!(
+            input.key(
+                &start(KeyAction::Up, 2000, 1200),
+                2000,
+                &mut devices,
+                &mut sink
+            ),
+            Outcome::Overlay
+        );
+        // The hold that follows lets go of Start; the up itself sends
+        // nothing, and the pad does not become a mouse.
+        assert!(sink.take().is_empty());
+        input.motion(
+            &joystick(16, &[(axis::X, 1.0)], 2010),
+            2010,
+            &mut devices,
+            &mut sink,
+        );
+        input.tick(2100, &mut sink);
+        assert!(
+            sink.take()
+                .iter()
+                .all(|p| !matches!(p, Packet::MouseMove { .. }))
+        );
+    }
+
+    #[test]
+    fn a_slow_second_start_held_still_turns_the_pad_into_a_mouse() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        let mut devices = Known::with([pad(16, 0x045e)]);
+        let start = |action, at, down| key(16, code::BUTTON_START, 315, action, at, down);
+        input.key(
+            &start(KeyAction::Down, 1000, 1000),
+            1000,
+            &mut devices,
+            &mut sink,
+        );
+        input.key(
+            &start(KeyAction::Up, 1050, 1000),
+            1050,
+            &mut devices,
+            &mut sink,
+        );
+        input.key(
+            &start(KeyAction::Down, 1300, 1300),
+            1300,
+            &mut devices,
+            &mut sink,
+        );
+        assert_eq!(
+            input.key(
+                &start(KeyAction::Up, 2100, 1300),
+                2100,
+                &mut devices,
+                &mut sink
+            ),
+            Outcome::Handled
+        );
+        sink.take();
+        input.motion(
+            &joystick(16, &[(axis::X, 1.0)], 2110),
+            2110,
+            &mut devices,
+            &mut sink,
+        );
+        input.tick(2200, &mut sink);
+        assert!(
+            sink.take()
+                .iter()
+                .any(|p| matches!(p, Packet::MouseMove { .. }))
         );
     }
 

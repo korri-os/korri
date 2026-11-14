@@ -46,6 +46,9 @@ pub mod input;
 #[cfg(any(test, target_os = "android"))]
 #[path = "android/keyboard.rs"]
 mod keyboard;
+#[cfg(any(test, target_os = "android"))]
+#[path = "android/overlay.rs"]
+pub mod overlay;
 #[cfg(target_os = "android")]
 #[path = "android/picture.rs"]
 pub mod picture;
