@@ -15,7 +15,7 @@
 //!
 //! The decoder renders into the layer's Surface; the app runs no code for a
 //! frame. One `setGeometry` places the video, letterboxed in the window.
-use android_activity::AndroidApp;
+use android_activity::{AndroidApp, MainEvent, PollEvent};
 use anyhow::{Context, Result, anyhow};
 use jni::{
     JNIEnv, JavaVM,
@@ -23,7 +23,11 @@ use jni::{
 };
 use korri_viewer::placement::{Rect, letterbox};
 use ndk::{hardware_buffer_format::HardwareBufferFormat, native_window::NativeWindow};
-use std::{ptr::NonNull, sync::mpsc, time::Duration};
+use std::{
+    ptr::NonNull,
+    sync::mpsc::{self, RecvTimeoutError},
+    time::{Duration, Instant},
+};
 
 pub struct VideoLayer {
     surface: NativeWindow,
@@ -35,32 +39,68 @@ pub struct VideoLayer {
 }
 
 impl VideoLayer {
-    /// The layer for a stream of `stream` pixels, placed in `window`. Waits
-    /// for Android's main thread, so never call it inside an event callback
-    /// of android-activity: the main thread waits there for this thread.
-    pub fn make(app: &AndroidApp, window: &NativeWindow, stream: (i32, i32)) -> Result<Self> {
+    /// The layer for a stream of `stream` pixels, placed in `window`; none
+    /// when the app leaves (its window or the activity goes) first. The
+    /// layer is made on Android's main thread. While this thread waits for
+    /// it, it handles android-activity's events, so that the main thread,
+    /// which waits for this one in `onDestroy`, is not held. Never call it
+    /// inside an event callback of android-activity.
+    pub fn make(
+        app: &AndroidApp,
+        window: &NativeWindow,
+        stream: (i32, i32),
+    ) -> Result<Option<Self>> {
         let placed = letterbox(stream, (window.width(), window.height()));
-        let (sender, receiver) = mpsc::channel();
         let vm = app.vm_as_ptr() as usize;
-        let activity = app.activity_as_ptr() as usize;
+        // Our own reference to the activity, taken here: android-activity's
+        // may be gone by the time the main thread runs the closure.
+        let activity = attached(vm, |env| {
+            // SAFETY: android-activity's global reference to the activity,
+            // valid on this thread until it handles Destroy.
+            let activity = unsafe { JObject::from_raw(app.activity_as_ptr() as jni::sys::jobject) };
+            env.new_global_ref(activity)
+        })?;
+        let (sender, receiver) = mpsc::channel();
         app.run_on_java_main_thread(Box::new(move || {
-            let made = on_main_thread(vm, |env| {
-                // SAFETY: android-activity's global reference to the
-                // activity, borrowed for this call.
-                let activity = unsafe { JObject::from_raw(activity as jni::sys::jobject) };
-                make(env, &activity, stream, placed)
-            });
-            let _ = sender.send(made);
+            let made = attached(vm, |env| make(env, activity.as_obj(), stream, placed));
+            // This thread stopped waiting: remove what it will never use.
+            if let Err(mpsc::SendError(Ok((surface, layer, java_surface)))) = sender.send(made) {
+                drop(surface);
+                let _ = attached(vm, |env| remove(env, &layer, &java_surface));
+            }
         }));
-        let (surface, layer, java_surface) = receiver
-            .recv_timeout(Duration::from_secs(5))
-            .map_err(|_| anyhow!("Android's main thread did not make the video layer in 5 s"))??;
-        Ok(Self {
+        let until = Instant::now() + Duration::from_secs(5);
+        let (surface, layer, java_surface) = loop {
+            match receiver.recv_timeout(Duration::from_millis(10)) {
+                Ok(made) => break made?,
+                Err(RecvTimeoutError::Disconnected) => {
+                    return Err(anyhow!("Android's main thread dropped the video layer"));
+                }
+                Err(RecvTimeoutError::Timeout) if Instant::now() >= until => {
+                    return Err(anyhow!(
+                        "Android's main thread did not make the video layer in 5 s"
+                    ));
+                }
+                Err(RecvTimeoutError::Timeout) => {}
+            }
+            let mut left = false;
+            app.poll_events(Some(Duration::ZERO), |event| {
+                if let PollEvent::Main(MainEvent::Destroy | MainEvent::TerminateWindow { .. }) =
+                    event
+                {
+                    left = true;
+                }
+            });
+            if left {
+                return Ok(None);
+            }
+        };
+        Ok(Some(Self {
             surface,
             layer,
             java_surface,
             placed,
-        })
+        }))
     }
 
     /// The Surface that the decoder renders into.
@@ -80,21 +120,15 @@ impl VideoLayer {
         } = self;
         drop(surface);
         app.run_on_java_main_thread(Box::new(move || {
-            let _ = on_main_thread(vm, |env| {
-                env.call_method(&java_surface, "release", "()V", &[])?;
-                env.call_method(&layer, "release", "()V", &[])?;
-                Ok(())
-            });
+            let _ = attached(vm, |env| remove(env, &layer, &java_surface));
         }));
     }
 }
 
 type Made = (NativeWindow, GlobalRef, GlobalRef);
 
-fn on_main_thread<T>(
-    vm: usize,
-    work: impl FnOnce(&mut JNIEnv) -> jni::errors::Result<T>,
-) -> Result<T> {
+/// Work with this thread attached to the VM, in a local frame.
+fn attached<T>(vm: usize, work: impl FnOnce(&mut JNIEnv) -> jni::errors::Result<T>) -> Result<T> {
     // SAFETY: android-activity's VM, alive for the process.
     let vm = unsafe { JavaVM::from_raw(vm as *mut jni::sys::JavaVM) }?;
     let mut env = vm.attach_current_thread()?;
@@ -104,6 +138,27 @@ fn on_main_thread<T>(
         let _ = env.exception_clear();
     }
     result.map_err(|error| anyhow!("{error}"))
+}
+
+/// Take the layer off the screen at once, as the spike did, then release
+/// its Surface and its SurfaceControl. A layer that keeps its parent stays
+/// in the window's tree after release.
+fn remove(
+    env: &mut JNIEnv,
+    layer: &GlobalRef,
+    java_surface: &GlobalRef,
+) -> jni::errors::Result<()> {
+    let transaction = env.new_object("android/view/SurfaceControl$Transaction", "()V", &[])?;
+    env.call_method(
+        &transaction,
+        "reparent",
+        "(Landroid/view/SurfaceControl;Landroid/view/SurfaceControl;)Landroid/view/SurfaceControl$Transaction;",
+        &[JValue::Object(layer.as_obj()), JValue::Object(&JObject::null())],
+    )?;
+    env.call_method(&transaction, "apply", "()V", &[])?;
+    env.call_method(java_surface, "release", "()V", &[])?;
+    env.call_method(layer, "release", "()V", &[])?;
+    Ok(())
 }
 
 fn rect<'a>(env: &mut JNIEnv<'a>, r: Rect) -> jni::errors::Result<JObject<'a>> {

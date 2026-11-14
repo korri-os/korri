@@ -105,6 +105,16 @@ impl Controller {
         Ok(())
     }
 
+    /// Stop on this thread, waiting for the runtime's reply.
+    fn stop_here(&self) {
+        let reply = self.lifecycle.request(ViewerRequest {
+            launch_id: self.launch.clone(),
+            command: ViewerCommand::Stop,
+        });
+        let reply = serde_json::to_string(&reply).unwrap_or_default();
+        logcat::info(&format!("reply Stop {reply}"));
+    }
+
     fn join(self) {
         for request in self.requests {
             let _ = request.join();
@@ -161,7 +171,11 @@ fn run(app: &AndroidApp) -> Result<()> {
         logcat::info("left before the window was shown; nothing started");
         return Ok(());
     };
-    let layer = layer::VideoLayer::make(app, &window, (options.width, options.height))?;
+    let Some(layer) = layer::VideoLayer::make(app, &window, (options.width, options.height))?
+    else {
+        logcat::info("left while the video layer was made; nothing started");
+        return Ok(());
+    };
     let placed = layer.placed;
     logcat::info(&format!(
         "picture: video layer {}x{} placed at ({}, {})-({}, {}) in the window {}x{}",
@@ -221,6 +235,29 @@ fn stream(
         launch: id,
         requests: Vec::new(),
     };
+    let driven = drive(app, &mut controller, address, &runtime);
+    if driven.is_err() {
+        // A request that could not go leaves the runtime streaming, or
+        // waiting for Start: stop it from this thread, which needs no other.
+        controller.stop_here();
+    }
+    // Always joined: the caller releases the video layer only after this,
+    // so the layer outlives the decoder.
+    let ended = runtime
+        .join()
+        .map_err(|_| anyhow!("the viewer thread panicked"))
+        .and_then(|ended| ended);
+    controller.join();
+    driven.and(ended)
+}
+
+/// Start, then Stop when the user leaves, until the runtime ends.
+fn drive(
+    app: &AndroidApp,
+    controller: &mut Controller,
+    address: String,
+    runtime: &JoinHandle<Result<()>>,
+) -> Result<()> {
     controller.send(ViewerCommand::Start {
         address,
         display: None,
@@ -241,11 +278,7 @@ fn stream(
             controller.send(ViewerCommand::Stop)?;
         }
     }
-    let ended = runtime
-        .join()
-        .map_err(|_| anyhow!("the viewer thread panicked"))?;
-    controller.join();
-    ended
+    Ok(())
 }
 
 #[unsafe(no_mangle)]

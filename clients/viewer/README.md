@@ -567,10 +567,17 @@ buffer queue, and the compositor reads the same buffer.
   with one `setGeometry` call: the stream's whole picture into the largest
   rectangle of its shape in the window, centred (`src/android/placement.rs`).
   The app fills its own window black once; it shows in the bars. The layer
-  waits for Android's main thread, so the app makes it after the window
-  exists and outside android-activity's event callback; it releases it with
-  a post to the main thread that does not wait, because the main thread
-  waits for the app in `onDestroy`.
+  is made on Android's main thread, with the app's own global reference to
+  the activity, after the window exists and outside android-activity's
+  event callback. While the app waits for it, it keeps handling
+  android-activity's events: if the window or the activity goes first, it
+  starts nothing, and the main thread, which waits for the app in
+  `onDestroy`, is not held. A layer made after the app stopped waiting is
+  removed at once. The app releases the layer only after the viewer's
+  runtime has ended, so the layer outlives the decoder, and it does so with
+  a post to the main thread that does not wait: one transaction reparents
+  the layer to nothing, as the spike did, then its Surface and its
+  SurfaceControl are released.
 - No `AImageReader`: the decoder renders into the layer's own Surface, so
   the spike's retry after release (its silent stall) does not apply.
 - The decoder: the core's decoder callbacks, in Rust
