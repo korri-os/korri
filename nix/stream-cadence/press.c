@@ -20,8 +20,9 @@
  * no event of the first key that XTEST sends it (Xwayland 24.1 under a
  * headless sway, 2026-11-13); every later key arrives.
  * A press time is read just before the request leaves for the server.
- * CLOCK_REALTIME is the clock of the kernel's packet times; CLOCK_MONOTONIC
- * lets the reader see a step of the wall clock. FOCUSED is 1 when the focus
+ * CLOCK_REALTIME is the clock of the kernel's packet times; CLOCK_MONOTONIC,
+ * the middle of two reads around it, lets the reader see a step of the wall
+ * clock. OWNER_PID is the window's owner from X-Resource. FOCUSED is 1 when the focus
  * was on the target just before the press or release was sent.
  */
 #define _GNU_SOURCE
@@ -51,6 +52,14 @@ enum {
 /* The warm-up press waits this long after the target is found, and the
  * first measured press this long after the warm-up. */
 #define SETTLE_NS 500000000LL
+/* An X server repeats a held key after its repeat delay (660 ms by default).
+ * A hold this long or longer could add keys that no press sent. */
+#define HOLD_LIMIT_MS 500
+/* The wall clock is read between two monotonic reads, at most this many
+ * times, until the two are this close: the reader sees a step of the wall
+ * clock against the monotonic one of a few microseconds. */
+#define CLOCK_TRIES 5
+#define CLOCK_BRACKET_NS 5000LL
 
 static int x_error;
 
@@ -146,10 +155,16 @@ static void send_key(Display *display, Window target, KeyCode key, int down,
                      const char *name, long index) {
     int on_target = focused(display, target);
     XTestFakeKeyEvent(display, key, down ? True : False, CurrentTime);
-    long long realtime = now_ns(CLOCK_REALTIME);
-    long long monotonic = now_ns(CLOCK_MONOTONIC);
+    long long realtime = 0, before = 0, after = 0;
+    for (int try = 0; try < CLOCK_TRIES; try++) {
+        before = now_ns(CLOCK_MONOTONIC);
+        realtime = now_ns(CLOCK_REALTIME);
+        after = now_ns(CLOCK_MONOTONIC);
+        if (after - before < CLOCK_BRACKET_NS)
+            break;
+    }
     XFlush(display);
-    printf("%s %ld %lld %lld %d\n", name, index, realtime, monotonic, on_target);
+    printf("%s %ld %lld %lld %d\n", name, index, realtime, before + (after - before) / 2, on_target);
 }
 
 int main(int argc, char **argv) {
@@ -163,6 +178,8 @@ int main(int argc, char **argv) {
     unsigned int seed = (unsigned int)parse(argv[6], 0, 0x7fffffff);
     if (hold_ms >= gap_ms)
         die(EXIT_USAGE, "the hold must be shorter than the gap between two presses");
+    if (hold_ms >= HOLD_LIMIT_MS)
+        die(EXIT_USAGE, "a hold of 500 ms or more lets the X server's auto-repeat add keys");
     setvbuf(stdout, NULL, _IOLBF, 0);
 
     Display *display = XOpenDisplay(NULL);
@@ -198,7 +215,8 @@ int main(int argc, char **argv) {
     KeyCode key = XKeysymToKeycode(display, XK_a);
     if (!key)
         die(EXIT_EXTENSION, "the X server's keymap has no key for the letter a");
-    printf("target %ld %ld %d\n", target, viewer, key);
+    /* The owner as the server names it, not the PID that this program was given. */
+    printf("target %ld %ld %d\n", target, owner(display, (Window)target), key);
 
     long long next = now_ns(CLOCK_MONOTONIC) + SETTLE_NS;
     for (long index = -1; index < presses; index++) {

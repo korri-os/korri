@@ -969,7 +969,7 @@ class Session:
             "seed": secrets.randbelow(1 << 31),
         }
         port = int(request["control_port"])
-        capture = Capture(port)
+        capture = Capture(port, network)
         try:
             offsets = [clock_offset_ns()]
             result = subprocess.run(

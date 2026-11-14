@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import socket
 import struct
+import subprocess
 import sys
 import time
 import unittest
@@ -13,6 +14,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import cli  # noqa: E402
+from fixture_namespace import PairNamespace  # noqa: E402
 import input_measure  # noqa: E402
 from input_measure import (  # noqa: E402
     KEYBOARD_CHANNEL,
@@ -151,6 +153,41 @@ class Matching(unittest.TestCase):
         self.assertEqual(attribution, "order")
         self.assertTrue(all(abs(row["latency_ms"] - 0.4) < 1e-6 for row in rows))
 
+    def test_a_key_down_that_waits_for_its_own_key_up_keeps_its_delay(self):
+        # aka, 2026-11-14 UTC: one key-down left with its own key-up, 30.1 ms late.
+        log = input_measure.press_log(press_log(TIMES))
+        sends = [wall(TIMES[0] + 0.05), wall(TIMES[0] + 30.05)]
+        sends += [wall(TIMES[1] + 30.06), wall(TIMES[1] + 30.06)]
+        sends += [wall(TIMES[2] + 0.05), wall(TIMES[2] + 30.05)]
+        rows, attribution = match(log["events"], sends, wall(2000))
+        self.assertEqual(attribution, "order")
+        self.assertAlmostEqual(rows[1]["latency_ms"], 30.06, places=6)
+
+    def test_two_extra_packets_with_no_warmup_are_no_warmup(self):
+        # The review's case: no warm-up packet, and one extra key pair in the
+        # second press. Dropping the first two sends shifted every key.
+        log = input_measure.press_log(press_log(TIMES))
+        sends = sorted(
+            [wall(at) for at, data in answered_packets() if data != ping()]
+            + [wall(TIMES[1] + 100), wall(TIMES[1] + 130)]
+        )
+        rows, attribution = match(log["events"], sends, wall(2000))
+        self.assertEqual(attribution, "interval")
+        self.assertEqual([row["packets"] for row in rows], [2, 4, 2])
+        self.assertAlmostEqual(rows[0]["latency_ms"], 0.4, places=6)
+        self.assertIsNone(rows[1]["latency_ms"])
+        self.assertAlmostEqual(rows[2]["latency_ms"], 0.4, places=6)
+
+    def test_a_dropped_press_and_an_extra_pair_do_not_cancel_out(self):
+        # The same count as one packet for each key, but the first press has
+        # none: in order, every later packet would answer the key before it.
+        log = input_measure.press_log(press_log(TIMES))
+        sends = [wall(TIMES[1] + 0.4), wall(TIMES[1] + 30.4), wall(TIMES[2] + 0.4),
+                 wall(TIMES[2] + 30.4), wall(TIMES[2] + 100), wall(TIMES[2] + 130)]
+        rows, attribution = match(log["events"], sends, wall(2000))
+        self.assertEqual(attribution, "interval")
+        self.assertEqual([row["latency_ms"] is None for row in rows], [True, False, True])
+
     def test_a_viewer_that_lost_a_key_is_judged_press_by_press(self):
         log = input_measure.press_log(press_log(TIMES))
         sends = [wall(at) for at, data in answered_packets() if data != ping()]
@@ -195,6 +232,30 @@ class Summary(unittest.TestCase):
         self.assertEqual(record["keyboard_packets"], 6)
         self.assertEqual(record["target"]["owner_pid"], 4242)
 
+    def test_an_extra_key_pair_with_no_warmup_gives_no_shifted_time(self):
+        # The review fed this to summarize and got input_ms 250.4 with input_missed 0.
+        times = [500.0 + 250.0 * n for n in range(20)]
+        packets: list[tuple[float, bytes]] = [(100.0, ping())]
+        for at in times:
+            packets += [(at + 0.4, key(0)), (at + 30.4, key(0))]
+        packets += [(times[1] + 100, key(0)), (times[1] + 130, key(0))]
+        packets = [(at, key(n + 1)) if data != ping() else (at, data)
+                   for n, (at, data) in enumerate(sorted(packets))]
+        result = summarize(evidence(packets, times))
+        self.assertAlmostEqual(result["input_ms"], 0.4, places=6)
+        self.assertEqual(result["input_missed"], 1)
+        self.assertEqual(result["input"]["attribution"], "interval")
+
+    def test_a_hold_that_auto_repeat_can_lengthen_is_refused(self):
+        settings = {"presses": 3, "hold_ms": 500, "gap_ms": 1000, "jitter_ms": 0, "seed": 1}
+        with self.assertRaisesRegex(PressFailed, "auto-repeat"):
+            summarize(evidence(answered_packets(), TIMES, settings=settings))
+
+    def test_a_wall_clock_that_moves_by_more_than_50_us_is_a_step(self):
+        with self.assertRaisesRegex(PressFailed, "stepped"):
+            summarize(evidence(answered_packets(), TIMES, clock_offsets_ns=[OFFSET, OFFSET + 60_000]))
+        summarize(evidence(answered_packets(), TIMES, clock_offsets_ns=[OFFSET, OFFSET + 40_000]))
+
     def test_a_viewer_that_sends_no_input_is_a_measurement_not_a_failure(self):
         # Korri's stage-1 viewer: the key reaches its window, and no input packet follows.
         result = summarize(evidence([(100.0, ping()), (900.0, ping())], TIMES))
@@ -221,7 +282,7 @@ class Summary(unittest.TestCase):
             "explains": evidence(good + [(1500.0, key(90)), (1501.0, key(91)), (1502.0, key(92))], TIMES),
             "no ENet": evidence(good + [(900.0, b"\x80")], TIMES),
             "did not finish": evidence(good, TIMES, press_log=press_log(TIMES).replace("done\n", "")),
-            "another number": evidence(good, TIMES, settings={"presses": 4}),
+            "another number": evidence(good, TIMES, settings={"presses": 4, "hold_ms": 30, "gap_ms": 200, "jitter_ms": 100, "seed": 7}),
         }
         for words, row in cases.items():
             with self.subTest(words):
@@ -323,12 +384,14 @@ def in_private_network(work) -> dict:
         os.close(read)
         try:
             uid, gid = os.getuid(), os.getgid()
+            # The namespace that the child leaves: the "product" side.
+            left = os.open("/proc/self/ns/net", os.O_RDONLY | os.O_CLOEXEC)
             os.unshare(os.CLONE_NEWUSER | os.CLONE_NEWNET)
             Path("/proc/self/setgroups").write_text("deny")
             Path("/proc/self/uid_map").write_text(f"0 {uid} 1")
             Path("/proc/self/gid_map").write_text(f"0 {gid} 1")
             loopback_up()
-            result = {"ok": work()}
+            result = {"ok": work(left)}
         except BaseException as error:  # noqa: BLE001 - the parent reports it
             result = {"error": repr(error)}
         os.write(write, json.dumps(result).encode())
@@ -345,7 +408,11 @@ def in_private_network(work) -> dict:
     return result["ok"]
 
 
-def capture_on_loopback() -> dict:
+def here() -> str:
+    return os.readlink("/proc/thread-self/ns/net")
+
+
+def capture_on_loopback(_left: int) -> dict:
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as control_port, socket.socket(
         socket.AF_INET, socket.SOCK_DGRAM
     ) as other_port:
@@ -353,7 +420,7 @@ def capture_on_loopback() -> dict:
         control_port.bind((loopback, 0))
         other_port.bind((loopback, 0))
         port = control_port.getsockname()[1]
-        capture = input_measure.Capture(port)
+        capture = input_measure.Capture(port, here())
         sent = []
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as viewer_socket:
             for number in range(3):
@@ -382,7 +449,43 @@ class LoopbackCapture(unittest.TestCase):
 
     def test_a_port_that_is_no_udp_port_is_refused_before_any_socket(self):
         with self.assertRaisesRegex(ValueError, "No UDP port"):
-            input_measure.Capture(0)
+            input_measure.Capture(0, here())
+
+    def test_the_capture_refuses_any_network_but_the_pairs(self):
+        def outside(left: int) -> str:
+            # The identity of the namespace that this thread left, not its own.
+            with self.assertRaises(PressFailed) as refused:
+                input_measure.Capture(9, os.readlink(f"/proc/self/fd/{left}"))
+            return str(refused.exception)
+
+        self.assertRegex(in_private_network(outside), "not in the pair's network namespace")
+
+
+def pair_refusals(left: int) -> dict:
+    """PairNamespace.inside and the agent's press, in a thread that is or is not in the pair."""
+    inside = PairNamespace()
+    inside.original, inside.active = {"net": left}, True
+    product = PairNamespace()
+    product.original = {"net": os.open("/proc/self/ns/net", os.O_RDONLY | os.O_CLOEXEC)}
+    product.active = True
+    found = {"inside": inside.inside(), "here": here()}
+    try:
+        product.inside()
+    except RuntimeError as error:
+        found["product"] = str(error)
+    session = object.__new__(viewer.Session)
+    session.x_namespace = True
+    session.namespace = product
+    running = subprocess.Popen(["sleep", "30"])
+    session.processes = {"viewer": running}
+    try:
+        session.press({"press": "/bin/false", "control_port": 9})
+    except RuntimeError as error:
+        found["press"] = str(error)
+    finally:
+        running.kill()
+        running.wait()
+    return found
 
 
 class AgentRoute(unittest.TestCase):
@@ -395,6 +498,12 @@ class AgentRoute(unittest.TestCase):
         session.x_namespace = True
         with self.assertRaisesRegex(RuntimeError, "running viewer"):
             session.press({"press": "/bin/false", "control_port": 1})
+
+    def test_no_capture_opens_in_the_product_network_namespace(self):
+        found = in_private_network(pair_refusals)
+        self.assertEqual(found["inside"], found["here"])
+        self.assertRegex(found["product"], "product network namespace")
+        self.assertRegex(found["press"], "product network namespace")
 
 
 if __name__ == "__main__":

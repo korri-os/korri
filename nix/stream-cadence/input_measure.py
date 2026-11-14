@@ -14,6 +14,7 @@ scored again.
 
 import ctypes
 import math
+from os import readlink as os_readlink
 import socket
 import statistics
 import struct
@@ -29,9 +30,14 @@ JITTER_MS = 100
 # How long the capture stays open after the last release: the window in which
 # the last press's packets count.
 TAIL_SECONDS = 0.5
+# An X server repeats a held key after its repeat delay (660 ms by default):
+# a hold this long or longer could add keys that no press sent.
+HOLD_LIMIT_MS = 500
 # A wall clock that moves against the monotonic clock by more than this
 # during the presses has been stepped: kernel packet times are wall-clock.
-CLOCK_STEP_LIMIT_NS = 1_000_000
+# A press is answered in about 50 us, so the limit is that small; each side
+# reads the wall clock between two monotonic reads to stay inside it.
+CLOCK_STEP_LIMIT_NS = 50_000
 METHOD = "x11-xtest-key"
 
 # ENet as moonlight-common-c carries it (enet/include/enet/protocol.h). Header
@@ -58,8 +64,21 @@ class PressFailed(ValueError):
 
 
 def clock_offset_ns() -> int:
-    """The wall clock against the monotonic clock: it changes only when the wall clock is stepped."""
-    return time.clock_gettime_ns(time.CLOCK_REALTIME) - time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+    """The wall clock against the monotonic clock: it changes only when the wall clock is stepped.
+
+    The wall clock is read between two monotonic reads, five times; the
+    narrowest pair wins, so a preemption between two reads does not look
+    like a step.
+    """
+    best: tuple[int, int] | None = None
+    for _ in range(5):
+        before = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+        wall = time.clock_gettime_ns(time.CLOCK_REALTIME)
+        after = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+        if best is None or after - before < best[0]:
+            best = (after - before, wall - (before + after) // 2)
+    assert best is not None
+    return best[1]
 
 
 def press_log(text: str) -> dict:
@@ -154,15 +173,25 @@ def in_order(events: list[dict], sends: list[int]) -> list[dict] | None:
     packet can still wait for a later event: on aka on 2026-11-14 UTC a key-up
     left together with the next key-down, 173 ms late. The order, not the
     time, then says which packet answers which key. When the warm-up's key
-    arrived, its two packets come first. None when the counts or the times do
-    not fit: another number of packets, or a packet before its own event.
-    `sends` are the keyboard sends from the warm-up press on.
+    arrived, its two packets come first, the first of them before the first
+    measured press. None when the counts or the times do not fit: another
+    number of packets, a packet before its own event, or a packet at or after
+    the event two places later. A packet waits for one later event at most
+    (the 173 ms key-up, and a key-down that left with its own key-up); a
+    dropped key and an extra one would otherwise give the same count and
+    shift every packet onto the key before it. `sends` are the keyboard sends
+    from the warm-up press on.
     """
     measured = sorted((row for row in events if row["index"] >= 0), key=lambda row: row["realtime_ns"])
-    if len(sends) == len(measured) + 2:
+    if len(sends) == len(measured) + 2 and measured and sends[0] < measured[0]["realtime_ns"]:
         sends = sends[2:]
-    if len(sends) != len(measured) or any(ns < row["realtime_ns"] for ns, row in zip(sends, measured)):
+    if len(sends) != len(measured):
         return None
+    for place, (ns, row) in enumerate(zip(sends, measured)):
+        if ns < row["realtime_ns"]:
+            return None
+        if place + 2 < len(measured) and ns >= measured[place + 2]["realtime_ns"]:
+            return None
     if [row["kind"] for row in measured] != ["press", "release"] * (len(measured) // 2):
         return None
     return [
@@ -227,6 +256,11 @@ def summarize(evidence: dict) -> dict:
     came that no press explains.
     """
     settings = evidence["settings"]
+    if settings["hold_ms"] >= HOLD_LIMIT_MS:
+        raise PressFailed(
+            f"A hold of {settings['hold_ms']} ms lets the X server's auto-repeat add keys; "
+            f"the limit is below {HOLD_LIMIT_MS} ms."
+        )
     if evidence["press_exit"] != 0:
         raise PressFailed(
             f"The press program ended with {evidence['press_exit']}: "
@@ -325,9 +359,16 @@ class Capture:
     only interface. It reads, and sends nothing.
     """
 
-    def __init__(self, port: int, interface: str = "lo") -> None:
+    def __init__(self, port: int, network: str, interface: str = "lo") -> None:
         if not 0 < port < 1 << 16:
             raise ValueError(f"No UDP port: {port}.")
+        # The socket takes the namespace of this thread: it must be the pair's.
+        here = os_readlink("/proc/thread-self/ns/net")
+        if here != network:
+            raise PressFailed(
+                f"The capture's thread is in {here}, not in the pair's network namespace "
+                f"{network}; no packet socket opens there."
+            )
         self.port = port
         self.packets: list[dict] = []
         self.socket = socket.socket(socket.AF_PACKET, socket.SOCK_DGRAM, socket.htons(ETH_P_IP))

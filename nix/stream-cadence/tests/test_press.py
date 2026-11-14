@@ -130,6 +130,12 @@ class Press(unittest.TestCase):
         result = self.press(1, "1", "60", "60", "0", "1")
         self.assertEqual(result.returncode, 2)
 
+    def test_a_hold_that_auto_repeat_can_lengthen_is_refused(self):
+        # An X server repeats a held key after its repeat delay (660 ms by default).
+        result = self.press(1, "1", "500", "2000", "0", "1")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("auto-repeat", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
