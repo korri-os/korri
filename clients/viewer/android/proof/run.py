@@ -891,6 +891,11 @@ def main() -> int:
         ended_input = next((l.split("input: ended: ", 1)[1] for l in app if "input: ended: " in l), "")
         result["input_report"] = ended_input
         checks["input_report_has_no_failure"] = bool(ended_input) and ended_input.endswith(" 0 failed")
+        # The core's input gate closed before the core began to stop.
+        closed_at = next((at for at, l in enumerate(app) if "input: the core takes no more input" in l), None)
+        stopping_at = next((at for at, l in enumerate(app) if "korri-viewer: Stopping input stream" in l), None)
+        checks["input_gate_closed_before_the_core_stopped"] = (closed_at is not None and stopping_at is not None
+                                                               and closed_at < stopping_at)
 
         # The picture path, as the app reports it.
         chosen = next((re.search(r"picture: decode (\S+) decoder (\S+)", l) for l in app if "picture: decode " in l), None)
