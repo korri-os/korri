@@ -22,7 +22,8 @@ steps:
 4. Start the app with a launch and the frame record's ask. Take screenshots
    until one shows a readable frame-ID bar (the startup), wait for the
    Running event and the Start reply, take screenshots while it streams and
-   read the bar in each, press Back, wait for Stopped.
+   read the bar in each. Stop Android's audio server, a real device error,
+   and let init start it again; stream on, press Back, wait for Stopped.
 5. Read the frame record from the app, decode its recording, and read the
    picture path (`decode`) and the sound's report from logcat.
 6. The refusal probe, an ordinary app, asks Android to start the viewer: it
@@ -612,8 +613,26 @@ def main() -> int:
         checks["screenshots_read_the_bar"] = len(ids) == len(moving)
         checks["screenshots_show_it_moving"] = len(ids) >= 2 and all(b > a for a, b in zip(ids, ids[1:]))
         fixture.request("clock")
+        # A real device error: Android's audio server dies, and init starts it
+        # again. The app's sound must come back, or end; the picture goes on.
+        restart_mark = len(logcat.lines())
+        server_before = emulator.shell("pidof audioserver", check=False).stdout.strip()
+        log(f"stopping Android's audio server (pid {server_before})")
+        emulator.shell("su 0 killall audioserver", check=False)
+        server_after = ""
+        until = time.monotonic() + 30
+        while time.monotonic() < until and not server_after:
+            running_now = emulator.shell("pidof audioserver", check=False).stdout.strip()
+            server_after = running_now if running_now and running_now != server_before else ""
+            time.sleep(0.5)
+        result["audio_server_restart"] = {"before": server_before, "after": server_after}
+        checks["audio_server_restarted"] = bool(server_after)
         log(f"streaming for {args.seconds} s")
         time.sleep(args.seconds)
+        result["sound_after_the_restart"] = [
+            l.split("korri-viewer: ", 1)[1] for l in logcat.lines()[restart_mark:]
+            if "korri-viewer: sound: " in l and "packets dropped" not in l
+        ]
         # Sunshine's log since the picture source started, while the app streams.
         during = fixture.request("sample")["journal"]
         checks["sunshine_saw_the_session"] = "CLIENT CONNECTED" in during and "CLIENT DISCONNECTED" not in during
@@ -645,6 +664,21 @@ def main() -> int:
         ended_at = next((at for at, l in enumerate(app) if "korri-viewer: sound: ended: " in l), None)
         stopped_at = next((at for at, l in enumerate(app) if '"value":"Stopped"' in l), None)
         checks["sound_closed_before_stopped"] = ended_at is not None and stopped_at is not None and ended_at < stopped_at
+        # Android's own audio lines of the app's process: AAudio and its AudioTrack.
+        own = [l for l in lines if len(l.split()) > 4 and l.split()[1] == pid
+               and l.split()[4].rstrip(":") in ("AAudio", "AAudioStream", "AudioTrack", "AudioSystem")]
+        (out / "logcat-sound.txt").write_text("\n".join(own) + "\n")
+        # The sound went on after the audio server came back: the app played
+        # more sound than the stream had run before the server died.
+        playing = next((l for l in app if "korri-viewer: sound: playing" in l), "")
+        died = next((l for l in own if "AudioFlinger server died!" in l), "")
+        if playing and died and sound.get("played"):
+            before = float(died.split()[0]) - float(playing.split()[0])
+            result["sound_restart"] = {"seconds_before_the_server_died": round(before, 1),
+                                       "seconds_played": round(sound["played"] / 48000, 1)}
+            checks["sound_went_on_after_the_audio_server_restarted"] = bool(server_after) and sound["played"] / 48000 > before + 3
+        else:
+            checks["sound_went_on_after_the_audio_server_restarted"] = False
 
         # The picture path, as the app reports it.
         chosen = next((re.search(r"picture: decode (\S+) decoder (\S+)", l) for l in app if "picture: decode " in l), None)
