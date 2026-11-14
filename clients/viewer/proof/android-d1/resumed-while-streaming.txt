@@ -1,0 +1,1 @@
+    mResumedActivity: ActivityRecord{c1c620f u0 com.simonwjackson.korri.viewer/android.app.NativeActivity t12}

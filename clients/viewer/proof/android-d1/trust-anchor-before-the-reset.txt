@@ -1,0 +1,18 @@
+
+running 1 test
+test a_ca_in_the_probed_directory_does_not_vouch_for_a_server ... FAILED
+
+failures:
+
+---- a_ca_in_the_probed_directory_does_not_vouch_for_a_server stdout ----
+
+thread 'a_ca_in_the_probed_directory_does_not_vouch_for_a_server' (1412) panicked at tests/trust_anchor.rs:124:5:
+a CA directory anchored the server: Ok("<root status_code=\"200\"><PairStatus>1</PairStatus></root>")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    a_ca_in_the_probed_directory_does_not_vouch_for_a_server
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.78s
+

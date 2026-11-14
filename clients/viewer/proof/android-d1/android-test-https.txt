@@ -1,0 +1,9 @@
+
+running 4 tests
+test each_https_connection_performs_fresh_client_authentication ... ok
+test https_accepts_only_the_authorized_certificate ... ok
+test malformed_pin_fails_without_a_network_request ... ok
+test rust_launch_chain_uses_authenticated_serverinfo_and_the_selected_app ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.12s
+

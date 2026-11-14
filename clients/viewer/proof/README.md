@@ -9,6 +9,9 @@ The handheld `v4l2request` build proof (aarch64, no device) is at
 
 The frame record and number 1 (#435) are at `aka/frame-times/README.md`.
 
+The Android app's emulator proof (#391 step D, slice D1) is at
+`android-d1/README.md`.
+
 Implementation commit: `095a66d00efad764d0ce60846a6501ffbdc30760`.
 Built on zao with `nix build .#korri-viewer`:
 `/nix/store/mac720f6dl57mx7bb7xjyyvb11dgvdkp-korri-viewer-0.1.0`.
