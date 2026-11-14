@@ -54,8 +54,24 @@ assert profile["source_devices"] == [
         },
         "capability_map_id": "anbernic_rg353m_fn",
     },
+    {
+        "group": "gamepad",
+        "evdev": {"name": "adc-joystick", "handler": "event*"},
+        "capability_map_id": "anbernic_rg353m_sticks",
+    },
 ]
-assert profile["maximum_sources"] == 3
+assert profile["maximum_sources"] == 4
+sticks = load("capability_maps/anbernic_rg353m_sticks.yaml")
+assert sticks["id"] == profile["source_devices"][3]["capability_map_id"]
+assert [
+    ([(source["evdev"]["event_type"], source["evdev"]["event_code"], source["evdev"]["value_type"])
+      for source in mapping["source_events"]], mapping["target_event"])
+    for mapping in sticks["mapping"]
+] == [
+    ([("ABS", "ABS_X", "joystick_x"), ("ABS", "ABS_Y", "joystick_y")], {"gamepad": {"axis": {"name": "LeftStick"}}}),
+    ([("ABS", "ABS_RX", "joystick_x"), ("ABS", "ABS_RY", "joystick_y")], {"gamepad": {"axis": {"name": "RightStick"}}}),
+]
+assert sticks["filtered_events"] == []
 # The F key is the only adc-keys button in rk3566-anbernic-rgxx3.dtsi and
 # sends BTN_MODE. It is the Guide button on this device.
 fn_key = load("capability_maps/anbernic_rg353m_fn.yaml")

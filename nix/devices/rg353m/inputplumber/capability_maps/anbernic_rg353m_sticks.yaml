@@ -1,0 +1,20 @@
+# The native adc-joystick declares ABS_X/Y/RX/RY (abs bitmap 0x1b).
+# Use the same paired-axis translation as anbernic_h700_gamepad.yaml.
+version: 2
+kind: CapabilityMap
+name: RG353M Sticks
+id: anbernic_rg353m_sticks
+mapping:
+  - name: Left Stick
+    source_events:
+      - evdev: { event_type: ABS, event_code: ABS_X, value_type: joystick_x }
+      - evdev: { event_type: ABS, event_code: ABS_Y, value_type: joystick_y }
+    target_event:
+      gamepad: { axis: { name: LeftStick } }
+  - name: Right Stick
+    source_events:
+      - evdev: { event_type: ABS, event_code: ABS_RX, value_type: joystick_x }
+      - evdev: { event_type: ABS, event_code: ABS_RY, value_type: joystick_y }
+    target_event:
+      gamepad: { axis: { name: RightStick } }
+filtered_events: []

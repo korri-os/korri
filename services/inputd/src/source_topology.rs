@@ -3,9 +3,12 @@
 //! A composite may merge several evdev sources on purpose. The Retroid Pocket
 //! Mini V2 profile (`nix/devices/rpminiv2/inputplumber/devices/
 //! 01-retroid-pocket-mini-v2.yaml`) merges its gamepad with two keyboard-only
-//! volume-key devices. Only more than one gamepad-class source makes the
-//! composite ambiguous. The RG353M and RG DS profiles also merge an adc-keys
+//! volume-key devices. Two gamepad-class sources remain ambiguous, except for
+//! the split-stick case below. The RG353M and RG DS profiles also merge an adc-keys
 //! device that carries only the Fn key as `BTN_MODE`, which they map to Guide.
+//! The RG353M additionally has one keyless adc-joystick source with exactly
+//! ABS_X/Y/RX/RY (0x1b). It may supplement one button-only gamepad, never a
+//! pad that already has axes. It cannot own a controller or reconnect identity.
 //!
 //! Inputd runs unprivileged and must not open raw `/dev/input` nodes. It reads
 //! the world-readable sysfs capability bitmaps instead:
@@ -23,6 +26,9 @@
 //!   key is a lone Fn/Guide key, not a second gamepad. A gamepad that also
 //!   reports `BTN_MODE` still sets other bits in these ranges;
 //! - the ABS bitmap sets no axis at all.
+//!
+//! The exact keyless four-axis source above is classified separately. All other
+//! sources with axes still count as gamepad-class, including touch devices.
 //!
 //! Zero gamepad-class sources means the gamepad is missing, even when
 //! keyboard-only sources remain in the composite.
@@ -50,6 +56,7 @@ const BTN_MODE: usize = 0x13c;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SourceClass {
     Gamepad,
+    StickAxes,
     NonGamepad,
     Unknown,
 }
@@ -78,15 +85,12 @@ impl SysfsSourceClassifier {
     }
 
     pub fn classify(&self, source_path: &str) -> SourceClass {
-        match self.is_non_gamepad(source_path) {
-            Some(true) => SourceClass::NonGamepad,
-            Some(false) => SourceClass::Gamepad,
-            None => SourceClass::Unknown,
-        }
+        self.capabilities(source_path)
+            .map_or(SourceClass::Unknown, |(class, _)| class)
     }
 
     /// `None` means the source cannot be classified.
-    fn is_non_gamepad(&self, source_path: &str) -> Option<bool> {
+    fn capabilities(&self, source_path: &str) -> Option<(SourceClass, bool)> {
         let event = source_path.strip_prefix("/dev/input/")?;
         let number = event.strip_prefix("event")?;
         if number.is_empty() || !number.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -108,18 +112,37 @@ impl SysfsSourceClassifier {
             (first..=last).any(|bit| bit != BTN_MODE && bitmap_has(&keys, bit))
         });
         let has_axis = axes.iter().any(|word| *word != 0);
-        Some(!has_gamepad_key && !has_axis)
+        let class = if keys.iter().all(|word| *word == 0)
+            && axes.first() == Some(&0x1b)
+            && axes.iter().skip(1).all(|word| *word == 0)
+        {
+            SourceClass::StickAxes
+        } else if !has_gamepad_key && !has_axis {
+            SourceClass::NonGamepad
+        } else {
+            SourceClass::Gamepad
+        };
+        Some((class, has_axis))
     }
 
     pub fn topology(&self, source_paths: &[String]) -> SourceTopology {
         let mut gamepads = 0;
+        let mut sticks = 0;
+        let mut gamepad_has_axes = false;
         for path in source_paths {
-            match self.classify(path) {
-                SourceClass::Gamepad => gamepads += 1,
-                SourceClass::NonGamepad => {}
-                SourceClass::Unknown if source_paths.len() == 1 => gamepads += 1,
-                SourceClass::Unknown => return SourceTopology::AmbiguousGamepads,
+            match self.capabilities(path) {
+                Some((SourceClass::Gamepad, has_axes)) => {
+                    gamepads += 1;
+                    gamepad_has_axes |= has_axes;
+                }
+                Some((SourceClass::StickAxes, _)) => sticks += 1,
+                Some((SourceClass::NonGamepad, _)) => {}
+                _ if source_paths.len() == 1 => gamepads += 1,
+                _ => return SourceTopology::AmbiguousGamepads,
             }
+        }
+        if sticks > 1 || (sticks == 1 && gamepad_has_axes) {
+            return SourceTopology::AmbiguousGamepads;
         }
         match gamepads {
             0 => SourceTopology::MissingGamepad,
@@ -369,6 +392,93 @@ mod tests {
             classifier.topology(&paths(&["/dev/input/event3", "/dev/input/event5"])),
             SourceTopology::MissingGamepad
         );
+    }
+
+    #[test]
+    fn rg353m_button_pad_and_separate_sticks_form_one_controller() {
+        let root = tempfile::tempdir().unwrap();
+        // Observed on haku, 2026-11-14. adc-joystick has no keys and ABS=1b.
+        write_source(
+            root.path(),
+            "event0",
+            Some("f00000000 0 0 0 6fdb000000000000 0 0 0 0"),
+            Some("0"),
+        );
+        write_source(root.path(), "event5", Some("0"), Some("1b"));
+        write_source(root.path(), "event1", Some("c000000000000 0"), Some("0"));
+        write_source(root.path(), "event4", Some(LONE_MODE_KEY), Some("0"));
+        let classifier = SysfsSourceClassifier::new(root.path());
+        assert_eq!(
+            classifier.topology(&paths(&[
+                "/dev/input/event0",
+                "/dev/input/event5",
+                "/dev/input/event1",
+                "/dev/input/event4"
+            ])),
+            SourceTopology::OneGamepad
+        );
+        // The button pad owns the reconnect identity; sticks cannot replace it.
+        assert_eq!(
+            classifier.topology(&paths(&[
+                "/dev/input/event5",
+                "/dev/input/event1",
+                "/dev/input/event4"
+            ])),
+            SourceTopology::MissingGamepad
+        );
+        assert_eq!(
+            classifier.topology(&paths(&["/dev/input/event5"])),
+            SourceTopology::MissingGamepad
+        );
+        // Reject a second stick unit and any axes overlapping the main pad.
+        write_source(root.path(), "event6", Some("0"), Some("1b"));
+        assert_eq!(
+            classifier.topology(&paths(&[
+                "/dev/input/event0",
+                "/dev/input/event5",
+                "/dev/input/event6"
+            ])),
+            SourceTopology::AmbiguousGamepads
+        );
+        for abs in ["1", "1b", "30003f"] {
+            write_source(
+                root.path(),
+                "event0",
+                Some("1000000000000 0 0 0 0"),
+                Some(abs),
+            );
+            assert_eq!(
+                classifier.topology(&paths(&["/dev/input/event0", "/dev/input/event5"])),
+                SourceTopology::AmbiguousGamepads
+            );
+        }
+    }
+
+    #[test]
+    fn supplemental_sticks_must_have_only_the_four_axes_and_no_keys() {
+        let root = tempfile::tempdir().unwrap();
+        write_source(
+            root.path(),
+            "event0",
+            Some("1000000000000 0 0 0 0"),
+            Some("0"),
+        );
+        let classifier = SysfsSourceClassifier::new(root.path());
+        for (key, abs) in [
+            ("1", "1b"),
+            (LONE_MODE_KEY, "1b"),
+            ("0", "3"),
+            ("0", "3f"),
+            ("0", "3001b"),
+            ("0", "1 1b"),
+        ] {
+            write_source(root.path(), "event5", Some(key), Some(abs));
+            assert_eq!(
+                classifier.topology(&paths(&["/dev/input/event0", "/dev/input/event5"])),
+                SourceTopology::AmbiguousGamepads,
+                "key={key} abs={abs}"
+            );
+        }
     }
 
     #[test]

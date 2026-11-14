@@ -323,6 +323,48 @@ async fn wired_xbox_360_source_is_adopted_without_a_composite_name() {
 }
 
 #[tokio::test]
+async fn split_sticks_are_adopted_with_the_button_pads_reconnect_identity() {
+    let bus = PrivateBus::start().await;
+    write_capabilities(
+        bus._root.path(),
+        "event4",
+        "f00000000 0 0 0 6fdb000000000000 0 0 0 0",
+        "0",
+    );
+    write_capabilities(bus._root.path(), "event5", "0", "1b");
+    let composite = Composite::new(
+        &[
+            "/dev/input/event4",
+            "/dev/input/event5",
+            "/dev/input/event3",
+        ],
+        &[TARGET0],
+    );
+    let _server = bus
+        .serve(
+            std::slice::from_ref(&composite),
+            &[(TARGET0, Target::new(&["/dev/input/event10"]))],
+        )
+        .await;
+    let mut devices = descriptors();
+    devices[2].name = "gpio-keys-control".into();
+    devices[2].physical_path = Some("gpio-keys/input0".into());
+    let discovered = bus.discover(&devices).await.unwrap();
+    let identities =
+        korri_inputd::physical_sources::identify_sources(&discovered, &devices, &bus.classifier)
+            .unwrap();
+    assert_eq!(identities.len(), 1);
+    assert_eq!(identities[0].device_id, "gpio-keys/input0");
+    assert_eq!(identities[0].raw, devices[2]);
+    composite
+        .sources
+        .lock()
+        .unwrap()
+        .retain(|path| path != "/dev/input/event4");
+    assert!(bus.discover(&devices).await.unwrap().controllers.is_empty());
+}
+
+#[tokio::test]
 async fn identical_controllers_resolve_independently_without_dbus0_or_get_all() {
     let bus = PrivateBus::start().await;
     let first = Target::new(&["/dev/input/event10"]);
