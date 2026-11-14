@@ -1,8 +1,8 @@
-    72.595   509  2068 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.simonwjackson.korri.viewer.refusal/android.app.NativeActivity} from uid 2000
-    73.204   509  2097 I ActivityTaskManager: START u0 {cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity} from uid 10150
-    73.204   509  2097 W ActivityTaskManager: Permission Denial: starting Intent { cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity } from ProcessRecord{bdba4dc 4391:com.simonwjackson.korri.viewer.refusal/u0a150} (pid=4391, uid=10150) requires android.permission.DUMP
-    73.206  4391  4391 I korri-refusal: refused: java.lang.SecurityException: Permission Denial: starting Intent { cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity } from ProcessRecord{bdba4dc 4391:com.simonwjackson.korri.viewer.refusal/u0a150} (pid=4391, uid=10150) requires android.permission.DUMP
-    73.900   509  1763 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.simonwjackson.korri.viewer.refusal/android.app.NativeActivity} from uid 2000
-    74.144   509  1765 I ActivityTaskManager: START u0 {cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity} from uid 10150
-    74.176  4391  4391 I korri-refusal: started
-    74.338  2176  4463 E korri-viewer: viewer failed: no intent extra args
+    78.564   512  3836 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.simonwjackson.korri.viewer.refusal/android.app.NativeActivity} from uid 2000
+    79.085   512  3689 I ActivityTaskManager: START u0 {cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity} from uid 10152
+    79.086   512  3689 W ActivityTaskManager: Permission Denial: starting Intent { cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity } from ProcessRecord{efd207e 4468:com.simonwjackson.korri.viewer.refusal/u0a152} (pid=4468, uid=10152) requires android.permission.DUMP
+    79.089  4468  4468 I korri-refusal: refused: java.lang.SecurityException: Permission Denial: starting Intent { cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity } from ProcessRecord{efd207e 4468:com.simonwjackson.korri.viewer.refusal/u0a152} (pid=4468, uid=10152) requires android.permission.DUMP
+    79.904   512  3941 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.simonwjackson.korri.viewer.refusal/android.app.NativeActivity} from uid 2000
+    79.965   512   571 I ActivityTaskManager: START u0 {cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity} from uid 10152
+    79.995  4468  4468 I korri-refusal: started
+    80.160  3187  4540 E korri-viewer: viewer failed: no intent extra args

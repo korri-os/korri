@@ -2,5 +2,5 @@
 running 1 test
 test a_ca_in_the_probed_directory_does_not_vouch_for_a_server ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.13s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.97s
 

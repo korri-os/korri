@@ -1,0 +1,1086 @@
+{
+  "sender": "root@aka",
+  "stream_host": "100.117.97.45",
+  "checks": {
+    "apk_has_no_code": true,
+    "apk_allows_no_backup": true,
+    "apk_leaves_no_recents_entry": true,
+    "apk_has_both_abis": true,
+    "android_test_trust_anchor": true,
+    "android_test_https": true,
+    "android_test_lib": true,
+    "startup_shows_the_bar": false,
+    "running_event": true,
+    "start_reply_ok": true,
+    "app_in_front_while_streaming": false,
+    "video_layer_exists": false,
+    "screenshots_read_the_bar": false,
+    "screenshots_show_it_moving": false
+  },
+  "store": {
+    "apk": "/nix/store/cm0yk945lqhxay9ma84418vfg07s7ab9-korri-viewer-android-apk-0.1.0/korri-viewer-unsigned.apk",
+    "refusal_probe": "/nix/store/3y07vb7nnqdgdcy6h248bywlk9c9i0h7-korri-viewer-refusal-probe-apk-0.1.0/korri-viewer-refusal-probe-unsigned.apk",
+    "viewer": "/nix/store/3b4plhadfp2y12xh0m074li9bhj2818h-korri-viewer-0.1.0",
+    "tests": "/nix/store/9hm5mcfky2iirgbwmxlsjyf93041rpkf-korri-viewer-android-check/x86_64/tests"
+  },
+  "sunshine_port": 48295,
+  "emulator": {
+    "release": "12",
+    "sdk": "31",
+    "abi": "x86_64"
+  },
+  "startup_screenshots": {
+    "shots": [
+      {
+        "file": "00.png",
+        "from_start_ms": [
+          1054,
+          1973
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "01.png",
+        "from_start_ms": [
+          2083,
+          2398
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "02.png",
+        "from_start_ms": [
+          2466,
+          2931
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "03.png",
+        "from_start_ms": [
+          2997,
+          3311
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "04.png",
+        "from_start_ms": [
+          3383,
+          3647
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "05.png",
+        "from_start_ms": [
+          3716,
+          3981
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "06.png",
+        "from_start_ms": [
+          4052,
+          4366
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "07.png",
+        "from_start_ms": [
+          4421,
+          4686
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "08.png",
+        "from_start_ms": [
+          4743,
+          5108
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "09.png",
+        "from_start_ms": [
+          5181,
+          5495
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "10.png",
+        "from_start_ms": [
+          5559,
+          6024
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "11.png",
+        "from_start_ms": [
+          6082,
+          6497
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "12.png",
+        "from_start_ms": [
+          6552,
+          7417
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "13.png",
+        "from_start_ms": [
+          7487,
+          8554
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "14.png",
+        "from_start_ms": [
+          8623,
+          9288
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "15.png",
+        "from_start_ms": [
+          9354,
+          10120
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "16.png",
+        "from_start_ms": [
+          10192,
+          10757
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "17.png",
+        "from_start_ms": [
+          10829,
+          11494
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "18.png",
+        "from_start_ms": [
+          11570,
+          12237
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "19.png",
+        "from_start_ms": [
+          12327,
+          12943
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "20.png",
+        "from_start_ms": [
+          13007,
+          13522
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "21.png",
+        "from_start_ms": [
+          13584,
+          14098
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "22.png",
+        "from_start_ms": [
+          14175,
+          14690
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "23.png",
+        "from_start_ms": [
+          14756,
+          15371
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "24.png",
+        "from_start_ms": [
+          15438,
+          15904
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "25.png",
+        "from_start_ms": [
+          15972,
+          16487
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "26.png",
+        "from_start_ms": [
+          16559,
+          16873
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "27.png",
+        "from_start_ms": [
+          16929,
+          17193
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "28.png",
+        "from_start_ms": [
+          17263,
+          17578
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "29.png",
+        "from_start_ms": [
+          17635,
+          17899
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "30.png",
+        "from_start_ms": [
+          17968,
+          18332
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "31.png",
+        "from_start_ms": [
+          18393,
+          18708
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "32.png",
+        "from_start_ms": [
+          18775,
+          19141
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "33.png",
+        "from_start_ms": [
+          19198,
+          19462
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "34.png",
+        "from_start_ms": [
+          19535,
+          19849
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "35.png",
+        "from_start_ms": [
+          19908,
+          20172
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "36.png",
+        "from_start_ms": [
+          20244,
+          20558
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "37.png",
+        "from_start_ms": [
+          20623,
+          20887
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "38.png",
+        "from_start_ms": [
+          20962,
+          21326
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "39.png",
+        "from_start_ms": [
+          21386,
+          21650
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "40.png",
+        "from_start_ms": [
+          21725,
+          22039
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "41.png",
+        "from_start_ms": [
+          22099,
+          22363
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "42.png",
+        "from_start_ms": [
+          22420,
+          22685
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "43.png",
+        "from_start_ms": [
+          22751,
+          23065
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "44.png",
+        "from_start_ms": [
+          23136,
+          23400
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "45.png",
+        "from_start_ms": [
+          23454,
+          23718
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "46.png",
+        "from_start_ms": [
+          23783,
+          24049
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "47.png",
+        "from_start_ms": [
+          24106,
+          24420
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "48.png",
+        "from_start_ms": [
+          24481,
+          24746
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "49.png",
+        "from_start_ms": [
+          24802,
+          25066
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "50.png",
+        "from_start_ms": [
+          25135,
+          25399
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "51.png",
+        "from_start_ms": [
+          25466,
+          25731
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "52.png",
+        "from_start_ms": [
+          25815,
+          26279
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "53.png",
+        "from_start_ms": [
+          26339,
+          26604
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "54.png",
+        "from_start_ms": [
+          26677,
+          26992
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "55.png",
+        "from_start_ms": [
+          27052,
+          27317
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "56.png",
+        "from_start_ms": [
+          27380,
+          27644
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "57.png",
+        "from_start_ms": [
+          27715,
+          27979
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "58.png",
+        "from_start_ms": [
+          28037,
+          28352
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "59.png",
+        "from_start_ms": [
+          28415,
+          28681
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "60.png",
+        "from_start_ms": [
+          28749,
+          29013
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "61.png",
+        "from_start_ms": [
+          29070,
+          29384
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "62.png",
+        "from_start_ms": [
+          29453,
+          29718
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "63.png",
+        "from_start_ms": [
+          29776,
+          30090
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "64.png",
+        "from_start_ms": [
+          30160,
+          30424
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "65.png",
+        "from_start_ms": [
+          30494,
+          30809
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "66.png",
+        "from_start_ms": [
+          30886,
+          31200
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "67.png",
+        "from_start_ms": [
+          31258,
+          31573
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "68.png",
+        "from_start_ms": [
+          31635,
+          31949
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "69.png",
+        "from_start_ms": [
+          32010,
+          32274
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "70.png",
+        "from_start_ms": [
+          32342,
+          32656
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "71.png",
+        "from_start_ms": [
+          32725,
+          33039
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "72.png",
+        "from_start_ms": [
+          33098,
+          33413
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "73.png",
+        "from_start_ms": [
+          33468,
+          33733
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "74.png",
+        "from_start_ms": [
+          33804,
+          34119
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "75.png",
+        "from_start_ms": [
+          34192,
+          34457
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "76.png",
+        "from_start_ms": [
+          34519,
+          34834
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "77.png",
+        "from_start_ms": [
+          34892,
+          35157
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "78.png",
+        "from_start_ms": [
+          35224,
+          35538
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "79.png",
+        "from_start_ms": [
+          35599,
+          35863
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "80.png",
+        "from_start_ms": [
+          35926,
+          36291
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "81.png",
+        "from_start_ms": [
+          36365,
+          36679
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "82.png",
+        "from_start_ms": [
+          36749,
+          37114
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "83.png",
+        "from_start_ms": [
+          37190,
+          37504
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "84.png",
+        "from_start_ms": [
+          37567,
+          37882
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "85.png",
+        "from_start_ms": [
+          37958,
+          38273
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "86.png",
+        "from_start_ms": [
+          38334,
+          38649
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "87.png",
+        "from_start_ms": [
+          38706,
+          38970
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "88.png",
+        "from_start_ms": [
+          39030,
+          40247
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "89.png",
+        "from_start_ms": [
+          40402,
+          40950
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "90.png",
+        "from_start_ms": [
+          41053,
+          41467
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "91.png",
+        "from_start_ms": [
+          41559,
+          41974
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "92.png",
+        "from_start_ms": [
+          42070,
+          42435
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "93.png",
+        "from_start_ms": [
+          42518,
+          42933
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "94.png",
+        "from_start_ms": [
+          43025,
+          43440
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "95.png",
+        "from_start_ms": [
+          43533,
+          43948
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "96.png",
+        "from_start_ms": [
+          44037,
+          44454
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "97.png",
+        "from_start_ms": [
+          44537,
+          44952
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "98.png",
+        "from_start_ms": [
+          45036,
+          45451
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "99.png",
+        "from_start_ms": [
+          45532,
+          45947
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "100.png",
+        "from_start_ms": [
+          46042,
+          46507
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "101.png",
+        "from_start_ms": [
+          46588,
+          47003
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "102.png",
+        "from_start_ms": [
+          47101,
+          47516
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "103.png",
+        "from_start_ms": [
+          47604,
+          48019
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "104.png",
+        "from_start_ms": [
+          48110,
+          48525
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "105.png",
+        "from_start_ms": [
+          48615,
+          49080
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "106.png",
+        "from_start_ms": [
+          49177,
+          49591
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "107.png",
+        "from_start_ms": [
+          49680,
+          50094
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "108.png",
+        "from_start_ms": [
+          50193,
+          50658
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "109.png",
+        "from_start_ms": [
+          50752,
+          51166
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "110.png",
+        "from_start_ms": [
+          51260,
+          51675
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "111.png",
+        "from_start_ms": [
+          51774,
+          52238
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "112.png",
+        "from_start_ms": [
+          52333,
+          52798
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "113.png",
+        "from_start_ms": [
+          52891,
+          53305
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "114.png",
+        "from_start_ms": [
+          53398,
+          53863
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "115.png",
+        "from_start_ms": [
+          53944,
+          54358
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "116.png",
+        "from_start_ms": [
+          54463,
+          54878
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "117.png",
+        "from_start_ms": [
+          54967,
+          55382
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "118.png",
+        "from_start_ms": [
+          55476,
+          55890
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "119.png",
+        "from_start_ms": [
+          55975,
+          56390
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "120.png",
+        "from_start_ms": [
+          56477,
+          56842
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "121.png",
+        "from_start_ms": [
+          56935,
+          57350
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "122.png",
+        "from_start_ms": [
+          57444,
+          57809
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "123.png",
+        "from_start_ms": [
+          57899,
+          58314
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "124.png",
+        "from_start_ms": [
+          58397,
+          58862
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "125.png",
+        "from_start_ms": [
+          58946,
+          59360
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "126.png",
+        "from_start_ms": [
+          59452,
+          59867
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "127.png",
+        "from_start_ms": [
+          59960,
+          60325
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      }
+    ]
+  },
+  "streaming_screenshots": [
+    {
+      "file": "streaming-1.png",
+      "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+    },
+    {
+      "file": "streaming-2.png",
+      "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+    },
+    {
+      "file": "streaming-3.png",
+      "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+    },
+    {
+      "file": "streaming-4.png",
+      "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+    }
+  ],
+  "error": "BrokenPipeError: [Errno 32] Broken pipe",
+  "sender_restore_error": "[Errno 32] Broken pipe",
+  "emulator_stop": {
+    "started": true,
+    "exit_code": 0,
+    "processes_left": []
+  },
+  "pass": false
+}

@@ -1,0 +1,45 @@
+    33.159  3122  3165 I korri-viewer: picture: video layer 1280x720 placed at (0, 0)-(1, 1) in the window 1x1
+    33.394  3122  3165 I korri-viewer: request {"launchId":"d2-proof","command":{"kind":"Start","value":{"address":"100.117.97.45:48295"}}}
+    35.197  3122  3179 I korri-viewer: RTSP port: 48316
+    35.197  3122  3179 I korri-viewer: Initializing platform...
+    35.197  3122  3179 I korri-viewer: done
+    35.197  3122  3179 I korri-viewer: Resolving host name...
+    35.197  3122  3179 I korri-viewer: done
+    35.198  3122  3179 I korri-viewer: Packet size capped at 1024 bytes for remote IPv4 streaming
+    35.198  3122  3179 I korri-viewer: Initializing audio stream...
+    35.198  3122  3179 I korri-viewer: done
+    35.198  3122  3179 I korri-viewer: Starting RTSP handshake...
+    36.552  3122  3179 I korri-viewer: Reference frame invalidation is not supported by this host
+    36.604  3122  3179 I korri-viewer: Audio port: 48306
+    37.107  3122  3179 I korri-viewer: Video port: 48304
+    37.627  3122  3179 I korri-viewer: Control port: 48305
+    38.660  3122  3179 I korri-viewer: done
+    38.660  3122  3179 I korri-viewer: Initializing control stream...
+    38.660  3122  3179 I korri-viewer: done
+    38.660  3122  3179 I korri-viewer: Initializing video stream...
+    38.660  3122  3179 I korri-viewer: done
+    38.660  3122  3179 I korri-viewer: Initializing input stream...
+    38.660  3122  3179 I korri-viewer: done
+    38.660  3122  3179 I korri-viewer: Starting control stream...
+    39.164  3122  3179 I korri-viewer: done
+    39.164  3122  3179 I korri-viewer: Starting video stream...
+    39.240  3122  3179 I korri-viewer: picture: decoders for video/avc: c2.goldfish.h264.decoder (hardware true, software-only false, alias false, low-latency false, high true); c2.android.avc.decoder (hardware false, software-only true, alias false, low-latency false, high true); OMX.google.h264.decoder (hardware false, software-only true, alias true, low-latency false, high true)
+    39.415  3122  3179 I korri-viewer: picture: decode mediacodec decoder c2.goldfish.h264.decoder hardware true software-only false low-latency-feature false try 0 keys low-latency=1,vdec-lowlatency=1,priority=0 size 1280x720@60
+    39.416  3122  3179 I korri-viewer: done
+    39.416  3122  3179 I korri-viewer: Starting audio stream...
+    39.416  3122  3179 I korri-viewer: done
+    39.416  3122  3179 I korri-viewer: Starting input stream...
+    39.416  3122  3179 I korri-viewer: done
+    39.443  3122  3637 I korri-viewer: Received first video packet after 0 ms
+    39.444  3122  3179 I korri-viewer: event {"kind":"Status","value":"Running"}
+    39.445  3122  3179 I korri-viewer: event {"kind":"Snapshot","value":{"connected":true,"controls":[]}}
+    39.445  3122  3181 I korri-viewer: reply Start {"kind":"Ok"}
+    39.604  3122  3636 I korri-viewer: picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 1279, 719), width: int32(1280), height: int32(720), max-height: int32(720), max-width: int32(1280), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}
+    39.884  3122  3637 I korri-viewer: Video decode unit queue overflow
+    39.886  3122  3620 I korri-viewer: IDR frame request sent
+    39.903  3122  3637 I korri-viewer: Waiting for IDR frame
+    71.023  3122  3618 I korri-viewer: Control stream received unexpected disconnect event
+    71.024  3122  4490 I korri-viewer: event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+    71.033  3122  3179 I korri-viewer: Stopping input stream...
+    71.033  3122  3179 I korri-viewer: done
+    71.033  3122  3179 I korri-viewer: Stopping audio stream...

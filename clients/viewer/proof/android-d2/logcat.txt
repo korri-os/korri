@@ -1,69 +1,68 @@
-    31.556  2176  2247 I korri-viewer: picture: video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
-    31.686  2176  2247 I korri-viewer: request {"launchId":"d2-proof","command":{"kind":"Start","value":{"address":"100.117.97.45:48119"}}}
-    33.753  2176  2275 I korri-viewer: RTSP port: 48140
-    33.753  2176  2275 I korri-viewer: Initializing platform...
-    33.755  2176  2275 I korri-viewer: done
-    33.755  2176  2275 I korri-viewer: Resolving host name...
-    33.755  2176  2275 I korri-viewer: done
-    33.755  2176  2275 I korri-viewer: Packet size capped at 1024 bytes for remote IPv4 streaming
-    33.755  2176  2275 I korri-viewer: Initializing audio stream...
-    33.755  2176  2275 I korri-viewer: done
-    33.755  2176  2275 I korri-viewer: Starting RTSP handshake...
-    34.786  2176  2275 I korri-viewer: Reference frame invalidation is not supported by this host
-    34.866  2176  2275 I korri-viewer: Audio port: 48130
-    34.993  2176  2275 I korri-viewer: Video port: 48128
-    35.310  2176  2275 I korri-viewer: Control port: 48129
-    36.272  2176  2275 I korri-viewer: done
-    36.272  2176  2275 I korri-viewer: Initializing control stream...
-    36.272  2176  2275 I korri-viewer: done
-    36.272  2176  2275 I korri-viewer: Initializing video stream...
-    36.272  2176  2275 I korri-viewer: done
-    36.272  2176  2275 I korri-viewer: Initializing input stream...
-    36.272  2176  2275 I korri-viewer: done
-    36.272  2176  2275 I korri-viewer: Starting control stream...
-    36.773  2176  2275 I korri-viewer: done
-    36.773  2176  2275 I korri-viewer: Starting video stream...
-    36.814  2176  2275 I korri-viewer: picture: decoders for video/avc: c2.goldfish.h264.decoder (hardware true, software-only false, alias false, low-latency false, high true); c2.android.avc.decoder (hardware false, software-only true, alias false, low-latency false, high true); OMX.google.h264.decoder (hardware false, software-only true, alias true, low-latency false, high true)
-    36.912  2176  2275 I korri-viewer: picture: decode mediacodec decoder c2.goldfish.h264.decoder hardware true software-only false low-latency-feature false try 0 keys low-latency=1,vdec-lowlatency=1,priority=0 size 1280x720@60
-    36.916  2176  2275 I korri-viewer: done
-    36.916  2176  2275 I korri-viewer: Starting audio stream...
-    36.917  2176  2275 I korri-viewer: done
-    36.917  2176  2275 I korri-viewer: Starting input stream...
-    36.917  2176  2275 I korri-viewer: done
-    36.947  2176  2275 I korri-viewer: event {"kind":"Status","value":"Running"}
-    36.947  2176  2275 I korri-viewer: event {"kind":"Snapshot","value":{"connected":true,"controls":[]}}
-    36.948  2176  2276 I korri-viewer: reply Start {"kind":"Ok"}
-    36.987  2176  2674 I korri-viewer: Received first video packet after 0 ms
-    37.083  2176  2673 I korri-viewer: picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 1279, 719), width: int32(1280), height: int32(720), max-height: int32(720), max-width: int32(1280), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}
-    37.499  2176  2674 I korri-viewer: Video decode unit queue overflow
-    37.501  2176  2658 I korri-viewer: IDR frame request sent
-    37.522  2176  2674 I korri-viewer: Waiting for IDR frame
-    43.983  2908  2925 I AndroidRuntime: VM exiting with result code 0, cleanup skipped.
-    65.460  2176  2247 I korri-viewer: request {"launchId":"d2-proof","command":{"kind":"Stop"}}
-    65.470  2176  2275 I korri-viewer: Stopping input stream...
-    65.471  2176  2275 I korri-viewer: done
-    65.471  2176  2275 I korri-viewer: Stopping audio stream...
-    65.471  2176  2275 I korri-viewer: No audio traffic was ever received from the host!
-    65.476  2176  2656 I korri-viewer: ENet wait interrupted
-    65.479  2176  2656 I korri-viewer: Control stream connection failed: 4
-    65.496  2176  2275 I korri-viewer: done
-    65.496  2176  2275 I korri-viewer: Stopping video stream...
-    65.544  2176  2275 I korri-viewer: picture: decoder stopped
-    65.549  2176  2275 I korri-viewer: done
-    65.549  2176  2275 I korri-viewer: Stopping control stream...
-    65.591  2176  2275 I korri-viewer: ENet peer acknowledged disconnection
-    65.591  2176  2275 I korri-viewer: done
-    65.591  2176  2275 I korri-viewer: Cleaning up input stream...
-    65.591  2176  2275 I korri-viewer: done
-    65.591  2176  2275 I korri-viewer: Cleaning up video stream...
-    65.591  2176  2275 I korri-viewer: done
-    65.591  2176  2275 I korri-viewer: Cleaning up control stream...
-    65.591  2176  2275 I korri-viewer: done
-    65.592  2176  2275 I korri-viewer: Cleaning up audio stream...
-    65.639  2176  2275 I korri-viewer: done
-    65.639  2176  2275 I korri-viewer: Cleaning up platform...
-    65.639  2176  2275 I korri-viewer: done
-    65.641  2176  2275 I korri-viewer: event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
-    65.641  2176  2275 I korri-viewer: event {"kind":"Status","value":"Stopped"}
-    65.641  2176  3844 I korri-viewer: reply Stop {"kind":"Ok"}
-    65.661  2176  2247 I korri-viewer: viewer ended
+    34.617  3187  3228 I korri-viewer: picture: video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+    34.754  3187  3228 I korri-viewer: request {"launchId":"d2-proof","command":{"kind":"Start","value":{"address":"100.117.97.45:58501"}}}
+    37.313  3187  3239 I korri-viewer: RTSP port: 58522
+    37.313  3187  3239 I korri-viewer: Initializing platform...
+    37.313  3187  3239 I korri-viewer: done
+    37.313  3187  3239 I korri-viewer: Resolving host name...
+    37.314  3187  3239 I korri-viewer: done
+    37.314  3187  3239 I korri-viewer: Packet size capped at 1024 bytes for remote IPv4 streaming
+    37.314  3187  3239 I korri-viewer: Initializing audio stream...
+    37.314  3187  3239 I korri-viewer: done
+    37.314  3187  3239 I korri-viewer: Starting RTSP handshake...
+    38.730  3187  3239 I korri-viewer: Reference frame invalidation is not supported by this host
+    39.262  3187  3239 I korri-viewer: Audio port: 58512
+    39.766  3187  3239 I korri-viewer: Video port: 58510
+    40.268  3187  3239 I korri-viewer: Control port: 58511
+    41.408  3187  3239 I korri-viewer: done
+    41.408  3187  3239 I korri-viewer: Initializing control stream...
+    41.408  3187  3239 I korri-viewer: done
+    41.408  3187  3239 I korri-viewer: Initializing video stream...
+    41.409  3187  3239 I korri-viewer: done
+    41.409  3187  3239 I korri-viewer: Initializing input stream...
+    41.409  3187  3239 I korri-viewer: done
+    41.409  3187  3239 I korri-viewer: Starting control stream...
+    41.432  3187  3239 I korri-viewer: done
+    41.432  3187  3239 I korri-viewer: Starting video stream...
+    41.510  3187  3239 I korri-viewer: picture: decoders for video/avc: c2.goldfish.h264.decoder (hardware true, software-only false, alias false, low-latency false, high true); c2.android.avc.decoder (hardware false, software-only true, alias false, low-latency false, high true); OMX.google.h264.decoder (hardware false, software-only true, alias true, low-latency false, high true)
+    41.709  3187  3239 I korri-viewer: picture: decode mediacodec decoder c2.goldfish.h264.decoder hardware true software-only false low-latency-feature false try 0 keys low-latency=1,vdec-lowlatency=1,priority=0 size 1280x720@60
+    41.709  3187  3239 I korri-viewer: done
+    41.709  3187  3239 I korri-viewer: Starting audio stream...
+    41.709  3187  3239 I korri-viewer: done
+    41.709  3187  3239 I korri-viewer: Starting input stream...
+    41.710  3187  3239 I korri-viewer: done
+    41.732  3187  3239 I korri-viewer: event {"kind":"Status","value":"Running"}
+    41.732  3187  3239 I korri-viewer: event {"kind":"Snapshot","value":{"connected":true,"controls":[]}}
+    41.732  3187  3240 I korri-viewer: reply Start {"kind":"Ok"}
+    41.738  3187  3843 I korri-viewer: Received first video packet after 0 ms
+    41.876  3187  3842 I korri-viewer: picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 1279, 719), width: int32(1280), height: int32(720), max-height: int32(720), max-width: int32(1280), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}
+    42.158  3187  3843 I korri-viewer: Video decode unit queue overflow
+    42.158  3187  3798 I korri-viewer: IDR frame request sent
+    42.175  3187  3843 I korri-viewer: Waiting for IDR frame
+    71.729  3187  3228 I korri-viewer: request {"launchId":"d2-proof","command":{"kind":"Stop"}}
+    71.802  3187  3239 I korri-viewer: Stopping input stream...
+    71.802  3187  3239 I korri-viewer: done
+    71.802  3187  3239 I korri-viewer: Stopping audio stream...
+    71.802  3187  3239 I korri-viewer: No audio traffic was ever received from the host!
+    71.810  3187  3796 I korri-viewer: ENet wait interrupted
+    71.810  3187  3796 I korri-viewer: Control stream connection failed: 4
+    71.888  3187  3239 I korri-viewer: done
+    71.888  3187  3239 I korri-viewer: Stopping video stream...
+    71.915  3187  3239 I korri-viewer: picture: decoder stopped
+    71.920  3187  3239 I korri-viewer: done
+    71.920  3187  3239 I korri-viewer: Stopping control stream...
+    71.964  3187  3239 I korri-viewer: ENet peer acknowledged disconnection
+    71.964  3187  3239 I korri-viewer: done
+    71.964  3187  3239 I korri-viewer: Cleaning up input stream...
+    71.964  3187  3239 I korri-viewer: done
+    71.964  3187  3239 I korri-viewer: Cleaning up video stream...
+    71.964  3187  3239 I korri-viewer: done
+    71.964  3187  3239 I korri-viewer: Cleaning up control stream...
+    71.964  3187  3239 I korri-viewer: done
+    71.964  3187  3239 I korri-viewer: Cleaning up audio stream...
+    72.013  3187  3239 I korri-viewer: done
+    72.013  3187  3239 I korri-viewer: Cleaning up platform...
+    72.013  3187  3239 I korri-viewer: done
+    72.015  3187  3239 I korri-viewer: event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+    72.015  3187  3239 I korri-viewer: event {"kind":"Status","value":"Stopped"}
+    72.015  3187  4427 I korri-viewer: reply Stop {"kind":"Ok"}
+    72.031  3187  3228 I korri-viewer: viewer ended
