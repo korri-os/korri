@@ -46,7 +46,8 @@ export component VelvetRows inherits Rectangle {
             spacing: Math.max(Tokens.thin, root.size * 0.12);
             for r in root.rows: VelvetRow {
                 it: r;
-                size: root.size;
+                // The overlay's tiers: its session's controls larger, a plugin's smaller.
+                size: r.tier == "lead" ? root.size * 1.12 : r.tier == "minor" ? root.size * 0.9 : root.size;
                 inert: root.inert;
                 // Slint cannot read a repeated row's place from outside, so the row reports it.
                 function keep() {

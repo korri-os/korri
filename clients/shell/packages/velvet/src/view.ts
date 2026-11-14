@@ -47,7 +47,7 @@ interface RowView {
 function rowView(row: RowSpec, region: string, focus: string, live: boolean): RowView {
   const base = {
     kind: row.kind, label: row.label, value: row.value ?? "", note: row.note ?? "", mark: row.mark ?? "none", signal: row.bars !== undefined, bars: row.bars ?? 0,
-    dim: row.dim === true, danger: row.danger === true, share: row.share ?? 0,
+    dim: row.dim === true, danger: row.danger === true, share: row.share ?? 0, tier: row.tier ?? "",
   }
   return takesFocus(row) ? { ...base, focusId: row.id, focused: live && row.id === focus, focusRegion: region } : { ...base, focusId: "" }
 }

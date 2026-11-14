@@ -492,8 +492,18 @@ function controlRows(control: SurfaceGameplayControl, state: State): RowSpec {
 }
 
 export function overlayPanel(overlay: SurfaceGameplayOverlayPresentation, state: State): PanelSpec {
-  const rows: RowSpec[] = overlay.controls.map(control => controlRows(control, state))
-  for (const group of overlay.groups) rows.push(head(`c:head:${group.id}`, group.label), ...group.controls.map(control => controlRows(control, state)))
+  // Two tiers (owner, 2026-11-13, the list's version c): the session's own controls large,
+  // the one that cannot be undone apart at their foot; a rule; then each of the plugin's
+  // groups, compact, under its label.
+  const lead = (control: SurfaceGameplayControl): RowSpec => ({ ...controlRows(control, state), tier: "lead" })
+  const minor = (control: SurfaceGameplayControl): RowSpec => ({ ...controlRows(control, state), tier: "minor" })
+  const own = overlay.controls.filter(control => !control.destructive)
+  const ending = overlay.controls.filter(control => control.destructive)
+  const rows: RowSpec[] = own.map(lead)
+  if (ending.length > 0 && own.length > 0) rows.push({ id: "c:apart", kind: "space", label: "" })
+  rows.push(...ending.map(lead))
+  if (overlay.groups.length > 0 && overlay.controls.length > 0) rows.push({ id: "c:rule", kind: "rule", label: "" })
+  for (const group of overlay.groups) rows.push({ ...head(`c:head:${group.id}`, group.label), tier: "minor" }, ...group.controls.map(minor))
   const leave = send({ _tag: "DismissGameplayOverlay" })
   return { key: "overlay", title: overlay.title ?? "Paused", rows, buttons: [], back: leave, menu: leave }
 }

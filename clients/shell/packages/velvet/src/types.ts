@@ -165,8 +165,10 @@ export const seq = (...acts: Act[]): Act => ({ t: "seq", acts })
 
 export interface RowSpec {
   readonly id: string
-  readonly kind: "row" | "head" | "note" | "problem" | "range" | "meter"
+  readonly kind: "row" | "head" | "note" | "problem" | "range" | "meter" | "rule" | "space"
   readonly label: string
+  /** A tier of the overlay's list: "lead" (the session's own, large), "minor" (a plugin's, compact). */
+  readonly tier?: "lead" | "minor"
   readonly value?: string
   readonly note?: string
   readonly mark?: "check" | "more" | "step" | "busy" | "lock" | "on" | "off"

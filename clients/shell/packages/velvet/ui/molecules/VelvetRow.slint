@@ -10,6 +10,11 @@
 //   problem  what went wrong, with the Exit mark
 //   range    a value on a track, set with left and right or a finger
 //   meter    measured progress
+//   rule     a hairline between the overlay's tiers, no focus
+//   space    a small gap, no focus
+//
+// `tier` (the overlay's): "lead" rows are large and roomy, "minor" ones compact, and a
+// minor head sits close above its rows.
 //
 // A dim row is something Korri cannot do now; its note says why.
 
@@ -28,14 +33,16 @@ export component VelvetRow inherits Rectangle {
     property <bool> target: (it.kind == "row" || it.kind == "range") && it.focus-id != "";
     property <bool> lit: target && it.focused && !inert;
     property <bool> noted: it.note != "" && (lit || it.kind == "range");
-    property <length> line: Math.max(Tokens.screen.row-height * Tokens.unit, size * 2.1);
+    property <length> line: it.tier == "lead" ? size * 2.6 : it.tier == "minor" ? Math.max(Tokens.screen.row-height * Tokens.unit * 0.9, size * 2.3) : Math.max(Tokens.screen.row-height * Tokens.unit, size * 2.1);
     property <color> ink: lit ? Tokens.ink : it.danger ? Tokens.exit : Tokens.house-light;
     property <color> quiet: lit ? Tokens.ink-quiet : Tokens.usher;
     property <length> pad: size * 0.9;
     property <length> track-x: self.width * 0.45;
     property <length> track-w: self.width * 0.55 - pad - size * 3.2;
     out property <bool> holds: target && it.focused;
-    height: it.kind == "head" ? size * 2.5
+    height: it.kind == "head" ? (it.tier == "minor" ? size * 1.9 : size * 2.5)
+        : it.kind == "rule" ? size * 2.2
+        : it.kind == "space" ? size * 0.55
         : it.kind == "note" || it.kind == "problem" ? words.preferred-height + size * 0.7
         : it.kind == "meter" ? size * 2.6
         : line + (noted ? note.preferred-height + size * 0.35 : 0px);
@@ -53,9 +60,16 @@ export component VelvetRow inherits Rectangle {
         opacity: root.target && root.it.focused && !root.inert ? 1 : 0;
         animate opacity { duration: Tokens.t-ring; easing: cubic-bezier(0.4, 0, 0.2, 1); }
     }
+    if root.it.kind == "rule": Rectangle {
+        x: root.pad;
+        y: root.height * 0.55;
+        width: root.width - 2 * root.pad;
+        height: Tokens.hair;
+        background: Tokens.light-20;
+    }
     if root.it.kind == "head": Text {
         x: root.pad;
-        y: root.size * 0.9;
+        y: root.it.tier == "minor" ? root.size * 0.5 : root.size * 0.9;
         width: root.width - 2 * root.pad;
         height: root.size * 1.4;
         text: root.it.label;
