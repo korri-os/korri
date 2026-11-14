@@ -76,11 +76,6 @@ pub fn identify_sources(
     let mut identities = HashSet::new();
     let mut result = Vec::new();
     for source in &sources.controllers {
-        if classifier.topology(&source.source_device_paths) != SourceTopology::OneGamepad {
-            return Err(rejected(
-                "physical identity requires one controller topology",
-            ));
-        }
         if source
             .source_device_paths
             .iter()
