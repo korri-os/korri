@@ -199,9 +199,16 @@ export function plan(width: number, height: number): Plan {
     rowMarkW = Math.round(W * 0.6)
   } else {
     posterH = Math.round(Math.min(H * 0.36, ((W - 2 * padX) * 0.52) / R))
-    posterX = Math.round((W - posterH * R) / 2)
-    posterY = Math.round(padY * 1.3)
+    // One left edge for the card, its words, Play and the strip (owner, 2026-11-13: a centred
+    // card over words set at the left read as misaligned).
+    posterX = padX
     gap = fs(24, 14)
+    // The card and its words stand in the middle of the room above the strip, not hung from
+    // the top over an empty band. The words: two lines of facts, a gap, the buttons.
+    const words = Math.round(fact * 1.5 * 2 + gap + ft(28, 15) * 2.3)
+    const top = Math.round(padY * 1.3)
+    const room = stripY - fs(24, 12) - top
+    posterY = top + Math.round(Math.max(0, room - (posterH + gap + words)) * 0.5)
     textX = padX
     textY = posterY + posterH + gap
     textW = W - 2 * padX
