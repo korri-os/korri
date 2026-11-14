@@ -6,7 +6,8 @@
 //! does (`handleKeyDown`, `handleKeyUp`, `handleMotionEvent`) to the
 //! keyboard (`keyboard.rs`), the game controllers (`gamepad.rs`), the touch
 //! screen and the mouse (`touch.rs`), and gives each packet to a `Sink`:
-//! the core (`CoreSink`) in the app, a recording in the tests.
+//! the core (`CoreSink`, behind `CORE_GATE`) in the app, a recording in
+//! the tests.
 //!
 //! A device's identity (name, vendor, product, axes and keys) comes from
 //! `android.view.InputDevice` through JNI (`devices.rs`): the NDK has none
@@ -25,7 +26,13 @@ use super::{
     touch::{Mouse, Touch},
 };
 use crate::{log, placement::Rect};
-use std::rc::Rc;
+use std::{
+    rc::Rc,
+    sync::{
+        PoisonError, RwLock,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 /// `MotionEvent`'s masked actions.
 pub mod action {
@@ -299,6 +306,69 @@ pub trait Sink {
     fn send(&mut self, packet: Packet) -> i32;
 }
 
+/// What a closed gate answers: the core's own answer before its input
+/// stream starts.
+pub const CLOSED: i32 = -2;
+
+/// Whether the core takes input: open from a started connection until its
+/// stop begins. The core's own check is a plain flag that a send reads once
+/// (`InputStream.c`, `initialized`); its stop then destroys the mutex and the
+/// queue that the send goes on to use. So each send holds the read lock
+/// for its whole call into the core, and `close` takes the write lock: it
+/// returns once no send is inside the core, and none enters after.
+/// `closing` turns new sends away before `close` waits: a thread that sends
+/// again and again would otherwise take the read lock back each time before
+/// the woken writer runs, and hold the stop off.
+pub struct Gate {
+    open: RwLock<bool>,
+    closing: AtomicBool,
+}
+
+impl Gate {
+    pub const fn closed() -> Self {
+        Self {
+            open: RwLock::new(false),
+            closing: AtomicBool::new(false),
+        }
+    }
+    pub fn open(&self) {
+        let mut open = self.open.write().unwrap_or_else(PoisonError::into_inner);
+        self.closing.store(false, Ordering::SeqCst);
+        *open = true;
+    }
+    /// Waits for the send in progress, if any.
+    pub fn close(&self) {
+        self.closing.store(true, Ordering::SeqCst);
+        *self.open.write().unwrap_or_else(PoisonError::into_inner) = false;
+    }
+    fn pass(&self, send: impl FnOnce() -> i32) -> i32 {
+        if self.closing.load(Ordering::SeqCst) {
+            return CLOSED;
+        }
+        let open = self.open.read().unwrap_or_else(PoisonError::into_inner);
+        if *open { send() } else { CLOSED }
+    }
+}
+
+/// The gate of the core's input, for the process: the core is one per
+/// process. `stream.rs` opens it after `LiStartConnection` succeeds and
+/// closes it before `LiStopConnection`.
+#[cfg(target_os = "android")]
+pub(crate) static CORE_GATE: Gate = Gate::closed();
+
+/// A sink behind a gate.
+pub struct Gated<'g, S> {
+    pub gate: &'g Gate,
+    pub sink: S,
+}
+
+impl<S: Sink> Sink for Gated<'_, S> {
+    fn send(&mut self, packet: Packet) -> i32 {
+        let sink = &mut self.sink;
+        self.gate.pass(|| sink.send(packet))
+    }
+}
+
 /// What the app does with a key after `Input` saw it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
@@ -339,6 +409,8 @@ struct Counts {
     mouse: u32,
     touches: u32,
     unsupported: u32,
+    /// Refused by the closed gate: the stream had not started or had ended.
+    closed: u32,
     failed: u32,
 }
 
@@ -357,6 +429,7 @@ impl Sink for Counting<'_> {
             touch_unsupported if touch_unsupported == super::touch::UNSUPPORTED => {
                 counts.unsupported += 1
             }
+            CLOSED => counts.closed += 1,
             _ => counts.failed += 1,
         }
         if result == 0 {
@@ -532,8 +605,15 @@ impl Input {
     pub fn report(&self) -> String {
         let c = &self.counts;
         format!(
-            "{} keys, {} controller states, {} arrivals, {} mouse, {} touches sent; {} unsupported, {} failed",
-            c.keys, c.controllers, c.arrivals, c.mouse, c.touches, c.unsupported, c.failed
+            "{} keys, {} controller states, {} arrivals, {} mouse, {} touches sent; {} unsupported, {} outside the stream, {} failed",
+            c.keys,
+            c.controllers,
+            c.arrivals,
+            c.mouse,
+            c.touches,
+            c.unsupported,
+            c.closed,
+            c.failed
         )
     }
 }
@@ -550,14 +630,25 @@ pub(crate) fn everything(devices: &mut dyn Devices) -> Vec<Device> {
         .collect()
 }
 
-/// The core: each packet is one `LiSend*` call. The core queues it for its
-/// input thread; before the connection starts and after it ends, the call
-/// fails and the packet is dropped.
+/// The core's input, behind its gate (`CORE_GATE`): what the app sends to.
 #[cfg(target_os = "android")]
-pub struct CoreSink;
+pub type CoreSink = Gated<'static, Core>;
 
 #[cfg(target_os = "android")]
-impl Sink for CoreSink {
+pub fn core_sink() -> CoreSink {
+    Gated {
+        gate: &CORE_GATE,
+        sink: Core,
+    }
+}
+
+/// The core itself: each packet is one `LiSend*` call, which queues it for
+/// the core's input thread. Only through the gate.
+#[cfg(target_os = "android")]
+pub struct Core;
+
+#[cfg(target_os = "android")]
+impl Sink for Core {
     fn send(&mut self, packet: Packet) -> i32 {
         use crate::network as ffi;
         // SAFETY: each call copies its arguments into the core's queue.
@@ -650,7 +741,13 @@ pub(crate) mod tests {
         gamepad::{CAPABILITY_ANALOG_TRIGGERS, HEARTBEAT_MS, MOUSE_LEFT, MOUSE_RIGHT, button},
         touch::{UNSUPPORTED, kind},
     };
-    use std::collections::BTreeMap;
+    use std::{
+        collections::BTreeMap,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, AtomicUsize, Ordering},
+        },
+    };
 
     /// A sink that records each packet. With `touch` false the host takes
     /// no touch, as `LiSendTouchEvent` answers then.
@@ -1729,7 +1826,77 @@ pub(crate) mod tests {
         );
         assert_eq!(
             input.report(),
-            "2 keys, 2 controller states, 1 arrivals, 0 mouse, 0 touches sent; 0 unsupported, 0 failed"
+            "2 keys, 2 controller states, 1 arrivals, 0 mouse, 0 touches sent; 0 unsupported, 0 outside the stream, 0 failed"
+        );
+    }
+
+    /// A sink whose send takes 50 ms, and which notes a send that runs, or
+    /// is still running, once the gate has closed.
+    struct Slow {
+        closed: Arc<AtomicBool>,
+        after_close: Arc<AtomicBool>,
+        sent: Arc<AtomicUsize>,
+    }
+
+    impl Sink for Slow {
+        fn send(&mut self, _: Packet) -> i32 {
+            let late = || self.closed.load(Ordering::SeqCst);
+            if late() {
+                self.after_close.store(true, Ordering::SeqCst);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            if late() {
+                self.after_close.store(true, Ordering::SeqCst);
+            }
+            self.sent.fetch_add(1, Ordering::SeqCst);
+            0
+        }
+    }
+
+    #[test]
+    fn no_send_reaches_the_core_once_the_gate_has_closed() {
+        let gate = Gate::closed();
+        let closed = Arc::new(AtomicBool::new(false));
+        let after_close = Arc::new(AtomicBool::new(false));
+        let sent = Arc::new(AtomicUsize::new(0));
+        let packet = Packet::Controller(controller(0, 1, 0));
+        let mut early = Gated {
+            gate: &gate,
+            sink: Recorded::default(),
+        };
+        // Before the connection starts, nothing passes.
+        assert_eq!(early.send(packet), CLOSED);
+        assert!(early.sink.packets.is_empty());
+        gate.open();
+        std::thread::scope(|scope| {
+            // The app's thread: its heartbeat sends on and on.
+            scope.spawn(|| {
+                let mut sink = Gated {
+                    gate: &gate,
+                    sink: Slow {
+                        closed: closed.clone(),
+                        after_close: after_close.clone(),
+                        sent: sent.clone(),
+                    },
+                };
+                for _ in 0..10 {
+                    sink.send(packet);
+                }
+            });
+            // The viewer's thread, in the middle of a send: the stream ends,
+            // and the core may stop once `close` returns.
+            std::thread::sleep(std::time::Duration::from_millis(120));
+            gate.close();
+            closed.store(true, Ordering::SeqCst);
+        });
+        let sent = sent.load(Ordering::SeqCst);
+        assert!(sent >= 2, "sends passed while open");
+        // The stop waits for the send in progress, not for every send that
+        // the app's thread would make: no send starves it.
+        assert!(sent < 10, "the gate closed only after all {sent} sends");
+        assert!(
+            !after_close.load(Ordering::SeqCst),
+            "a send ran into the core after the gate closed"
         );
     }
 

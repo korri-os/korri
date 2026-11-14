@@ -314,6 +314,10 @@ pub(crate) fn run_with_lifecycle(
         running()?;
         anyhow::bail!("stream connection failed: {result}");
     }
+    // On Android the app's thread sends input into the core: from here until
+    // the stop begins (`input::CORE_GATE`).
+    #[cfg(target_os = "android")]
+    crate::input::CORE_GATE.open();
     let mut poll_error = false;
     unsafe {
         io.start();
@@ -325,6 +329,13 @@ pub(crate) fn run_with_lifecycle(
             }
         }
         io.stop();
+        // No send is inside the core when it stops, and none enters after:
+        // its stop destroys what a send uses.
+        #[cfg(target_os = "android")]
+        {
+            crate::input::CORE_GATE.close();
+            crate::log::line("input: the core takes no more input");
+        }
         ffi::LiStopConnection();
     }
     #[cfg(not(target_os = "android"))]

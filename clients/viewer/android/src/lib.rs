@@ -36,7 +36,7 @@ use android_activity::{
 use anyhow::{Context, Result, anyhow};
 use korri_viewer::{
     devices::{AndroidDevices, now_ms},
-    input::{self as stream_input, CoreSink, Devices, Input, Outcome, Settings},
+    input::{self as stream_input, CoreSink, Devices, Input, Outcome, Settings, core_sink},
     launch,
     lifecycle::Lifecycle,
     options::Options,
@@ -289,7 +289,9 @@ fn drive(
     })?;
     input::unbuffered(app);
     let mut input = Guarded(Some(input));
-    let mut sink = CoreSink;
+    // The core's input behind its gate: closed before the core stops, also
+    // when the host or the network ends the stream while this thread sends.
+    let mut sink = core_sink();
     let mut stopping = false;
     let mut checked = now_ms();
     while !runtime.is_finished() {
