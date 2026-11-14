@@ -305,22 +305,26 @@ export function overlayView(state: State, model: Model) {
   const health = overlay?.streamHealth
   const keyboard = keyboardView(state, top === "keyboard")
   const curtain = curtainView(pictures(), state, model, p)
-  const facts = [
-    ...(overlay?.batteryPercent === undefined ? [] : [{ icon: "note", text: `Battery ${Math.round(overlay.batteryPercent)}%`, strong: false }]),
-    ...(health?.rttMs === undefined ? [] : [{ icon: "wifi", text: `${Math.round(health.rttMs)} ms`, strong: false }]),
-    ...(health?.deliveredBitrateKbps === undefined ? [] : [{ icon: "down", text: health.deliveredBitrateKbps >= 1000 ? `${(health.deliveredBitrateKbps / 1000).toFixed(1)} Mbit/s` : `${Math.round(health.deliveredBitrateKbps)} kbit/s`, strong: false }]),
-    ...(health?.framesDropped === undefined ? [] : [{ icon: "note", text: health.framesDropped === 1 ? "1 frame dropped" : `${health.framesDropped} frames dropped`, strong: false }]),
-    ...((overlay?.streamPlayers ?? []).length === 0 ? [] : [{ icon: "person", text: (overlay?.streamPlayers ?? []).join(", "), strong: false }]),
+  // Value first, its name under it (owner, 2026-11-13: the overlay's head, version h2):
+  // the number is what a glance at the stream's health looks for.
+  const readouts = [
+    ...(overlay?.batteryPercent === undefined ? [] : [{ value: `${Math.round(overlay.batteryPercent)}%`, label: "Battery" }]),
+    ...(health?.rttMs === undefined ? [] : [{ value: `${Math.round(health.rttMs)} ms`, label: "Latency" }]),
+    ...(health?.deliveredBitrateKbps === undefined ? [] : [{ value: health.deliveredBitrateKbps >= 1000 ? `${(health.deliveredBitrateKbps / 1000).toFixed(1)} Mbit/s` : `${Math.round(health.deliveredBitrateKbps)} kbit/s`, label: "Stream" }]),
+    ...(health?.framesDropped === undefined ? [] : [{ value: String(health.framesDropped), label: health.framesDropped === 1 ? "Frame dropped" : "Frames dropped" }]),
+    ...((overlay?.streamPlayers ?? []).length === 0 ? [] : [{ value: (overlay?.streamPlayers ?? []).join(", "), label: "Playing" }]),
   ]
+  // The title shares its line with the clock at the right.
+  const titleWidth = p.pauseW * 0.8 - (model.clockLabel === undefined || model.clockLabel === "" ? 0 : p.fact * 4.6)
   return {
     screen: screenOf(p),
     still: state.still,
     touching: state.touched,
     layer: top,
-    titleLines: fitCaps(overlay?.title ?? "Paused", p.pauseW * 0.8, p.head * 2.2, p.head, 16).lines,
-    titleSize: fitCaps(overlay?.title ?? "Paused", p.pauseW * 0.8, p.head * 2.2, p.head, 16).size,
+    titleLines: fitCaps(overlay?.title ?? "Paused", titleWidth, p.head * 2.2, p.head, 16).lines,
+    titleSize: fitCaps(overlay?.title ?? "Paused", titleWidth, p.head * 2.2, p.head, 16).size,
     clock: model.clockLabel ?? "",
-    facts,
+    readouts,
     rows: panel === undefined ? [] : panel.rows.map(row => rowView(row, "rows", focus, top === "screen")),
     leaving: state.overlay.leaving,
     keyboard: keyboard.keyboard,

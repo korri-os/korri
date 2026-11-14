@@ -1,14 +1,14 @@
 // VelvetPause: the gameplay overlay's panel. The game keeps running and
 // shows through beside it (ADR 0053): a velvet panel at the left edge, never
-// a full screen. In it: the game's name, a strip of facts that shows only
-// here (time, battery, the stream's health, who else plays), then Korri's
-// controls as rows: Resume, End, what the game's plugin offers.
+// a full screen. In it: the game's name with the clock at the right of its
+// line; the readouts that show only here (battery, the stream's health, who
+// else plays), each value first and its name under it, two across; then
+// Korri's controls as rows, in two tiers (src/pages.ts).
 
 import { Tokens } from "../tokens.slint";
-import { Row, Fact } from "../types.slint";
+import { Row, Readout } from "../types.slint";
 import { VelvetCaps } from "../atoms/VelvetCaps.slint";
 import { VelvetWords } from "../atoms/VelvetWords.slint";
-import { VelvetIcon } from "../atoms/VelvetIcon.slint";
 import { VelvetRows } from "VelvetRows.slint";
 
 export component VelvetPause inherits Rectangle {
@@ -16,7 +16,7 @@ export component VelvetPause inherits Rectangle {
     in property <[string]> title;
     in property <length> title-size;
     in property <string> clock;
-    in property <[Fact]> facts;
+    in property <[Readout]> readouts;
     in property <[Row]> rows;
     in property <bool> inert;
     // The panel's words come in a moment after the panel (and so the first view is drawn
@@ -33,15 +33,18 @@ export component VelvetPause inherits Rectangle {
     property <length> pad-x: Math.min(Tokens.screen.pad-x * u, w * 0.1);
     property <length> pad-y: Tokens.screen.pad-y * u;
     property <length> fact: Tokens.screen.fact * u;
-    // Facts two to a line.
-    property <int> fact-rows: Math.ceil(facts.length / 2);
-    // The head's rhythm, one step roomier than it was (owner, 2026-11-13): title to the clock,
-    // the clock's line, each line of facts, and the facts to the rows.
-    property <length> after-title: fact * 0.95;
-    property <length> clock-pitch: fact * 2.0;
-    property <length> fact-pitch: fact * 1.95;
+    // Readouts two to a line: a value (large), its name under it.
+    property <int> readout-rows: Math.ceil(readouts.length / 2);
+    property <length> value-size: fact * 1.45;
+    property <length> label-size: fact * 0.83;
+    property <length> readout-h: value-size * 1.1 + label-size * 1.5;
+    // The head's rhythm (owner, 2026-11-13): the title to the readouts, each line of them,
+    // and the readouts to the rows.
+    property <length> after-title: fact * 1.25;
+    property <length> readout-pitch: readout-h + fact * 0.9;
     property <length> before-rows: fact * 1.9;
-    property <length> strip-h: (clock != "" || facts.length > 0 ? clock-pitch : 0px) + fact-rows * fact-pitch;
+    property <length> clock-w: clock == "" ? 0px : fact * 4.6;
+    property <length> strip-h: readouts.length > 0 ? after-title + readout-rows * readout-pitch - fact * 0.9 : 0px;
     // A press beside the panel does nothing, and never reaches the game.
     TouchArea { }
     Rectangle {
@@ -59,41 +62,56 @@ export component VelvetPause inherits Rectangle {
         head := VelvetCaps {
             x: root.pad-x;
             y: root.pad-y;
-            width: parent.width - 2 * root.pad-x;
+            width: parent.width - 2 * root.pad-x - root.clock-w;
             lines: root.title;
             size: root.title-size;
         }
+        // The clock on the title's first line, at the right: its words' top at the caps' top.
         if root.clock != "": VelvetWords {
-            x: root.pad-x;
-            y: root.pad-y + head.block + root.after-title;
-            width: parent.width - 2 * root.pad-x;
+            x: parent.width - root.pad-x - root.clock-w;
+            y: root.pad-y + root.title-size * Tokens.display-cap-top - root.fact * 0.2;
+            width: root.clock-w;
             height: root.fact * 1.5;
             text: root.clock;
             ink: Tokens.house-light;
             strong: true;
+            horizontal-alignment: right;
         }
-        for item[n] in root.facts: HorizontalLayout {
+        for item[n] in root.readouts: Rectangle {
             x: root.pad-x + Math.mod(n, 2) * (parent.width - 2 * root.pad-x) / 2;
-            y: root.pad-y + head.block + root.after-title + (root.clock != "" ? root.clock-pitch : 0px) + Math.floor(n / 2) * root.fact-pitch;
+            y: root.pad-y + head.block + root.after-title + Math.floor(n / 2) * root.readout-pitch;
             width: (parent.width - 2 * root.pad-x) / 2 - root.fact * 0.5;
-            height: root.fact * 1.5;
-            spacing: root.fact * 0.45;
-            VerticalLayout {
-                alignment: center;
-                horizontal-stretch: 0;
-                VelvetIcon {
-                    name: item.icon;
-                    size: root.fact;
-                }
+            height: root.readout-h;
+            Text {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: root.value-size * 1.1;
+                text: item.value;
+                color: Tokens.house-light;
+                font-family: Tokens.text;
+                font-weight: Tokens.strong-weight;
+                font-size: root.value-size;
+                vertical-alignment: center;
+                overflow: elide;
             }
-            VelvetWords {
-                text: item.text;
-                size: root.fact * 0.92;
+            Text {
+                x: 0;
+                y: root.value-size * 1.1 + root.label-size * 0.2;
+                width: parent.width;
+                height: root.label-size * 1.3;
+                text: item.label;
+                color: Tokens.usher;
+                font-family: Tokens.text;
+                font-weight: Tokens.text-weight;
+                font-size: root.label-size;
+                vertical-alignment: center;
+                overflow: elide;
             }
         }
         VelvetRows {
             x: root.pad-x - root.fact * 0.6;
-            y: root.pad-y + head.block + root.after-title + root.before-rows - root.fact * 0.5 + root.strip-h;
+            y: root.pad-y + head.block + root.before-rows - root.fact * 0.5 + root.strip-h;
             width: parent.width - 2 * root.pad-x + root.fact * 1.2;
             height: parent.height - self.y - root.pad-y;
             rows: root.rows;

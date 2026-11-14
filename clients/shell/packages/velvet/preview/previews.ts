@@ -188,7 +188,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
   add("organisms", "VelvetNotice", [{ name: "Invite", body: one("VelvetNotice", `x: (parent.width - self.width) / 2; y: parent.height - self.height - Tokens.screen.pad-y * ${U}; notice: ${l(view("invite-notice").notice)};`) }])
   const pause = (component: string, layer: Layer) => (name: string, scene: string) => {
     const v = view(scene)
-    return { name, body: one(component, `${FILL} title: ${lit(layer)(v.titleLines)}; title-size: ${v.titleSize} * ${U}; clock: ${JSON.stringify(v.clock)}; facts: ${lit(layer)(v.facts)}; rows: ${lit(layer)(v.rows)};`) }
+    return { name, body: one(component, `${FILL} title: ${lit(layer)(v.titleLines)}; title-size: ${v.titleSize} * ${U}; clock: ${JSON.stringify(v.clock)}; readouts: ${lit(layer)(v.readouts)}; rows: ${lit(layer)(v.rows)};`) }
   }
   add("organisms", "VelvetPause", [pause("VelvetPause", "organisms")("Plain", "overlay"), pause("VelvetPause", "organisms")("Groups", "overlay-groups"), pause("VelvetPause", "organisms")("Stream", "overlay-stream")])
   const pick = (name: string, scene: string) => {

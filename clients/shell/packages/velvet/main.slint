@@ -21,7 +21,7 @@
 // finger scrolled back to its focus.
 
 import { Tokens } from "ui/tokens.slint";
-import { Screen, Poster, Tile, Fact, FactLine, Facts, Marquee, Pill, Stage, Shelf, Row, Key, Keyboard, Step, Curtain, Sheet, Page, Home, Mark, Set, Detail, Empty, Notice } from "ui/types.slint";
+import { Screen, Poster, Tile, Fact, FactLine, Facts, Marquee, Pill, Stage, Shelf, Row, Key, Keyboard, Step, Curtain, Sheet, Page, Home, Mark, Set, Detail, Empty, Notice, Readout } from "ui/types.slint";
 import { VelvetStage } from "ui/organisms/VelvetStage.slint";
 import { VelvetTap } from "ui/atoms/VelvetTap.slint";
 import { VelvetSheet } from "ui/organisms/VelvetSheet.slint";
@@ -259,7 +259,7 @@ export component Overlay inherits Window {
     in property <[string]> title-lines;
     in property <float> title-size;
     in property <string> clock;
-    in property <[Fact]> facts;
+    in property <[Readout]> readouts;
     in property <[Row]> rows;
     // Korri was asked to close the overlay. The rows stay as they are until it does.
     in property <bool> leaving;
@@ -298,7 +298,7 @@ export component Overlay inherits Window {
         title: root.title-lines;
         title-size: root.title-size * Tokens.unit;
         clock: root.clock;
-        facts: root.facts;
+        readouts: root.readouts;
         rows: root.rows;
         activated(target, at, released) => { root.activated(target, at, released); }
     }

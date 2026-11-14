@@ -139,6 +139,12 @@ export struct Fact {
     strong: bool,
 }
 
+// A readout of the gameplay overlay: its value, then what it is ("82%", "Battery").
+export struct Readout {
+    value: string,
+    label: string,
+}
+
 // One line of facts, already broken to fit by the logic (src/fit.ts): up to four.
 export struct FactLine {
     count: int,

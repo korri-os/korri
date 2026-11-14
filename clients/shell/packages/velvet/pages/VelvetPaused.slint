@@ -2,7 +2,7 @@
 // running; Velvet's panel stands at its left edge with Korri's controls.
 
 import { Tokens } from "../ui/tokens.slint";
-import { Row, Fact } from "../ui/types.slint";
+import { Row, Readout } from "../ui/types.slint";
 import { VelvetPause } from "../ui/organisms/VelvetPause.slint";
 
 export component VelvetPaused inherits Rectangle {
@@ -10,7 +10,7 @@ export component VelvetPaused inherits Rectangle {
     in property <[string]> title;
     in property <length> title-size;
     in property <string> clock;
-    in property <[Fact]> facts;
+    in property <[Readout]> readouts;
     in property <[Row]> rows;
     in property <bool> inert;
     VelvetPause {
@@ -19,7 +19,7 @@ export component VelvetPaused inherits Rectangle {
         title: root.title;
         title-size: root.title-size;
         clock: root.clock;
-        facts: root.facts;
+        readouts: root.readouts;
         rows: root.rows;
         inert: root.inert;
         activated(target, at, released) => { root.activated(target, at, released); }
