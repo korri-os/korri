@@ -1,0 +1,30 @@
+
+running 25 tests
+test codec::tests::a_decoder_with_the_feature_gets_low_latency_alone_first ... ok
+test codec::tests::a_low_latency_decoder_listed_later_wins ... ok
+test codec::tests::aliases_and_software_decoders_are_skipped_on_a_phone ... ok
+test codec::tests::high_profile_comes_before_the_first_decoder ... ok
+test codec::tests::qualcomm_gets_its_vendor_keys_until_the_last_tries ... ok
+test codec::tests::the_emulator_may_use_a_software_decoder ... ok
+test codec::tests::tries_drop_the_riskiest_keys_first ... ok
+test frame_record::tests::a_failed_write_is_reported_at_close ... ok
+test frame_record::tests::a_unit_that_waits_for_256_units_is_written_as_not_shown ... ok
+test frame_record::tests::late_reports_for_written_rows_change_nothing ... ok
+test frame_record::tests::rows_are_in_index_order_with_empty_times_for_frames_not_shown ... ok
+test frame_record::tests::the_record_takes_only_a_new_name ... ok
+test placement::tests::a_tall_window_gets_bars_above_and_below ... ok
+test placement::tests::a_wide_window_gets_bars_at_the_sides ... ok
+test placement::tests::a_window_of_the_same_shape_is_filled ... ok
+test placement::tests::an_empty_window_gives_an_empty_rectangle ... ok
+test placement::tests::odd_sizes_stay_centred_and_inside ... ok
+test sps::tests::a_patch_that_changes_nothing_gives_the_same_bytes ... ok
+test sps::tests::a_short_or_foreign_nal_is_refused ... ok
+test sps::tests::an_sps_without_vui_gains_artemis_bitstream_restriction ... ok
+test sps::tests::artemis_patch_sets_level_references_and_buffering ... ok
+test sps::tests::constrained_high_is_set_only_for_profile_100_on_intel ... ok
+test sps::tests::emulation_prevention_survives_the_round_trip ... ok
+test sps::tests::levels_follow_the_stream_size_and_rate ... ok
+test sps::tests::the_synthetic_sample_reads_past_its_scaling_lists ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.10s
+
