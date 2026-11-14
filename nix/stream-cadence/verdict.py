@@ -141,6 +141,9 @@ def conditions(record: dict) -> dict:
         if values["viewer_place"] == FIXTURE
         else None
     )
+    # Whether the viewer wrote its frame record (#435) in the run. The record
+    # costs the viewer CPU. A result from before the fact had no record.
+    values["frame_record"] = bool(facts.get("frame_record_written"))
     return values
 
 
@@ -351,7 +354,7 @@ def conditions_that_differ(old: list[dict], new: list[dict]) -> str | None:
         and len({json.dumps(row[name], sort_keys=True) for row in every if row[name] is not None}) == 1
     ]
     # These have their own words. The measure also sets the rate and the mode.
-    named = {"beside_a_game", "viewer_place", "viewer_renderer"}
+    named = {"beside_a_game", "viewer_place", "viewer_renderer", "frame_record"}
     if "measure" in changed:
         named |= {"measure", "requested_fps", "display"}
     differ = [name for name in changed if name not in absent and name not in named]
@@ -362,6 +365,13 @@ def conditions_that_differ(old: list[dict], new: list[dict]) -> str | None:
             "OpenGL is Mesa's software rasterizer, and others with gles2 on the graphics "
             "card. A result from before the tool recorded the renderer ran with pixman. "
             "Record both results with the same renderer."
+        )
+    if "frame_record" in changed:
+        advice.append(
+            "Some runs wrote the viewer's frame record and others did not. The record "
+            "costs the viewer CPU: on aka it made cpu_seconds_per_second worse in five "
+            "turns. Judge the other numbers with no record, and take number 1 from "
+            "runs of its own (--frame-record)."
         )
     if "viewer_place" in changed:
         advice.append(

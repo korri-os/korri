@@ -15,6 +15,8 @@ import cli  # noqa: E402
 from bar import Clean, paint  # noqa: E402
 from score import frame_times, number_one, packet_to_display  # noqa: E402
 import test_plugin_viewer  # noqa: E402
+import test_view  # noqa: E402
+from verdict import METRICS, judge  # noqa: E402
 import viewer  # noqa: E402
 
 HEADER = "index,frame_number,enqueue_ns,decoded_ns,display_ns\n"
@@ -153,15 +155,36 @@ class UnaskedReason(unittest.TestCase):
     def test_a_viewer_that_was_asked_and_wrote_nothing_keeps_its_reason(self):
         self.assertEqual(cli.number_one_unasked(self.TODAY, True, None), self.TODAY)
 
-    def test_the_option_that_leaves_the_ask_out_is_named(self):
+    def test_the_option_that_asks_is_named_when_it_was_not_given(self):
         self.assertEqual(cli.number_one_unasked(self.TODAY, False, None), f"{self.TODAY} {cli.NOT_ASKED}")
 
 
 class Option(unittest.TestCase):
-    def test_the_record_is_asked_for_unless_the_option_says_no(self):
+    def test_the_record_is_asked_for_only_with_the_option(self):
         common = ["view", "--sender", "local", "--viewer", "local"]
-        self.assertFalse(cli.parser().parse_args(common).no_frame_record)
-        self.assertTrue(cli.parser().parse_args([*common, "--no-frame-record"]).no_frame_record)
+        self.assertFalse(cli.parser().parse_args(common).frame_record)
+        self.assertTrue(cli.parser().parse_args([*common, "--frame-record"]).frame_record)
+
+
+def runs(written: bool | None) -> list[dict]:
+    result = [test_view.run(20 + n, 900) for n in range(5)]
+    if written is not None:
+        for record in result:
+            record["discovered"]["frame_record_written"] = written
+    return result
+
+
+class RecordCondition(unittest.TestCase):
+    def test_a_run_with_a_record_is_not_judged_against_one_without(self):
+        with self.assertRaisesRegex(ValueError, "frame_record.*wrote the viewer's frame record"):
+            judge(runs(False), runs(True), 5)
+        self.assertEqual(len(judge(runs(False), runs(True), 5, allow_different_conditions=True)), len(METRICS))
+        self.assertEqual(len(judge(runs(True), runs(True), 5)), len(METRICS))
+
+    def test_a_result_from_before_the_fact_wrote_no_record(self):
+        self.assertEqual(len(judge(runs(None), runs(False), 5)), len(METRICS))
+        with self.assertRaisesRegex(ValueError, "frame_record"):
+            judge(runs(None), runs(True), 5)
 
 
 class Collection(unittest.TestCase):

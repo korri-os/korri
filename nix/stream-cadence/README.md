@@ -278,14 +278,20 @@ display. The capture cannot see a packet arrive, and Moonlight reports no
 arrival time. Korri's viewer can report it (#435): `clients/viewer/README.md`,
 "Frame record", names its fields and their grounding.
 
-**The ask.** At the measured start only, the viewer's agent names two new
-files in `home` with the environment names of the stage-0 client shim:
-`CADENCE_FRAME_TIMES` for `times.csv` and `CADENCE_DUMP` for
-`recording.video`, the file names of `run`. A viewer that knows the names
-writes both; any other, Moonlight included, ignores them. A korrid launch
-never makes the ask. `--no-frame-record` leaves it out, so that a session can
-measure what the record costs; `discovered.frame_record_asked` says whether
-the tool asked, and number 1 then has no value with that reason.
+**The ask, only with `--frame-record`.** The record costs the viewer CPU:
+in five turns on aka it made `cpu_seconds_per_second` worse, and five turns
+without it were equal (`clients/viewer/proof/aka/frame-times/`). So the tool
+asks only with `--frame-record`, number 1 comes from runs of its own, and
+the other numbers from runs with no record. With the option, at the
+measured start only, the viewer's agent names two new files in `home` with
+the environment names of the stage-0 client shim: `CADENCE_FRAME_TIMES` for
+`times.csv` and `CADENCE_DUMP` for `recording.video`, the file names of
+`run`. A viewer that knows the names writes both; any other, Moonlight
+included, ignores them. A korrid launch never makes the ask.
+`discovered.frame_record_asked` says whether the tool asked, and
+`discovered.frame_record_written` whether the viewer wrote a record.
+`verdict` does not judge a run with a record against one without (condition
+`frame_record`).
 
 **Room for the recording.** The recording is the stream as it arrived: about
 the requested bitrate times the measured start's time, 109 MB at the
@@ -330,7 +336,7 @@ only where the capture runs.
 
 **No value, and why.** `viewer.not_measured.packet_to_display_ms` keeps the
 reason when number 1 has no value. A viewer that wrote no record keeps
-today's reason; when the tool did not ask, because of `--no-frame-record` or
+today's reason; when the tool did not ask, for want of `--frame-record` or
 for lack of room, that note follows it. A record that leaves a shown ID
 unreported, that has more than 1% of its matched IDs on the display before
 their hand-off (`score.py:HANDOFF_AFTER_DISPLAY_LIMIT`, a review rule chosen
@@ -340,8 +346,10 @@ number of the run stands, and the run stays valid. The recording stays in
 the host run directory only when number 1 has no value; else the tool
 removes it there too. `times.csv` stays.
 
-`verdict` compares `packet_to_display_ms` as any other number. Against
-Moonlight, which writes no record, that row is `not measured`.
+`verdict` compares `packet_to_display_ms` as any other number, between two
+results that both wrote a record. Against Moonlight, which writes none, the
+condition `frame_record` differs; with `--allow-different-conditions` that
+row is `not measured`.
 
 ### The fixture
 
@@ -1294,7 +1302,7 @@ display. A long tail in the first is the sender's own.
 
 | Number | Fields | Method |
 | --- | --- | --- |
-| 1 Packet arrival to display | `viewer.packet_to_display_ms`, `viewer.frame_times` | From the viewer's own frame record, matched to the display record by frame ID: last packet to the viewer's hand-off to the display (see "The viewer's frame record: number 1"). Not measured for a viewer that writes no record, such as Moonlight: it reports no arrival time. The gate for any viewer is `latency_ms`, sender presentation to viewer display, on the same sender and link. |
+| 1 Packet arrival to display | `viewer.packet_to_display_ms`, `viewer.frame_times` | From the viewer's own frame record, in runs with `--frame-record`, matched to the display record by frame ID: last packet to the viewer's hand-off to the display (see "The viewer's frame record: number 1"). Not measured without the option, or for a viewer that writes no record, such as Moonlight: it reports no arrival time. The gate for any viewer is `latency_ms`, sender presentation to viewer display, on the same sender and link. |
 | 2 Late, repeated, dropped | `capture_misses`, `repeated_frames`, `late_frames`, `torn_frames`, `undecodable_frames` in each window; `viewer.output_repeats` | A dropped ID was presented and never displayed. A repeated frame shows no new ID. A late frame is a new ID more than 1.5 refresh periods after the previous new ID. An output repeat is a gap in the display record that loses no ID: the panel showed one picture across it. |
 | 3 CPU and battery | `viewer.cpu_seconds_per_second`, `viewer.battery_mw` | Viewer process CPU time from procfs over the scored time. Battery power only while a battery discharges in every sample; else not measured. |
 | 4 Startup | `viewer.startup_ms` | Viewer process start to the first displayed frame of that start: the first ID that the sender presented at or after it. korrid's launch path is not included. On a handheld the time contains the agent's fullscreen and focus step. |
@@ -1593,8 +1601,9 @@ the requested resolution, frame rate, codec, bitrate and viewer refresh,
 the limit `max_capture_gaps` of the run, whether a game ran on a device
 during a run, the measure of a private pair (base or queue), where the
 viewer showed the stream (in the fixture or on the device's own display),
-and the renderer of the fixture's compositor. A
-difference there would judge the sender or the device, not the viewer.
+the renderer of the fixture's compositor, and whether the viewer wrote its
+frame record. A difference there would judge the sender, the device or the
+record's own cost, not the viewer.
 
 Which viewer ran is no condition. `verdict` prints it above the table, one
 line for each result and a third that says whether they are the same

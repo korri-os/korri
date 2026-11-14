@@ -836,14 +836,14 @@ def viewer_frame_record(
 
 
 # Why number 1 has no value when the tool did not ask for the frame record.
-NOT_ASKED = "The tool did not ask for the viewer's frame record (--no-frame-record)."
+NOT_ASKED = "The tool did not ask for the viewer's frame record; --frame-record asks for it."
 
 
 def number_one_unasked(today: str, asked: bool, refused: str | None) -> str:
     """Why a viewer that wrote no frame record has no number 1.
 
     The viewer's own reason comes first, Moonlight's included. When the tool
-    did not ask, because of `--no-frame-record` or because the run directory
+    did not ask, for want of `--frame-record` or because the run directory
     had no room, that note follows it.
     """
     note = NOT_ASKED if not asked else refused
@@ -1636,8 +1636,9 @@ def view_case(
             cell=location.cell,
         )
         duration = math.floor(args.seconds / args.window) * args.window
-        # A viewer that keeps a frame record writes it now; any other ignores the ask.
-        facts["frame_record_asked"] = not args.no_frame_record
+        # A viewer that keeps a frame record writes it now; any other ignores the
+        # ask. The record costs the viewer CPU, so the tool asks only on request.
+        facts["frame_record_asked"] = args.frame_record
         started = viewer.request(
             "start", command=command, frame_times=facts["frame_record_asked"],
             recording_bytes=recording_bytes(args, duration),
@@ -1785,11 +1786,13 @@ def view_case(
             sender.request("clock")
             viewer.request("clock")
 
-        notes = record["viewer"]["not_measured"]
+        # Whether the viewer wrote a record in this run: verdict keeps the two apart.
+        facts["frame_record_written"] = facts["frame_record_asked"] and shown["frame_times"] is not None
+        reasons = record["viewer"]["not_measured"]
         if not (facts["frame_record_asked"] and started.get("frame_times_refused") is None
                 and shown["frame_times"] is not None):
-            notes["packet_to_display_ms"] = number_one_unasked(
-                notes["packet_to_display_ms"], facts["frame_record_asked"],
+            reasons["packet_to_display_ms"] = number_one_unasked(
+                reasons["packet_to_display_ms"], facts["frame_record_asked"],
                 started.get("frame_times_refused"),
             )
         else:
@@ -1805,9 +1808,9 @@ def view_case(
             if missing is None:
                 assert frame_record is not None
                 record["viewer"]["packet_to_display_ms"] = frame_record["packet_to_display_ms"]["p50"]
-                del notes["packet_to_display_ms"]
+                del reasons["packet_to_display_ms"]
             else:
-                notes["packet_to_display_ms"] = missing
+                reasons["packet_to_display_ms"] = missing
         record.update(decoded_frames=len(frames), decode_errors=0, decode_warnings=0)
         source = score(
             frames[first:],
@@ -2464,9 +2467,9 @@ def parser() -> argparse.ArgumentParser:
     )
     watch.add_argument("--max-capture-gaps", type=nonnegative_integer, default=0)
     watch.add_argument(
-        "--no-frame-record",
+        "--frame-record",
         action="store_true",
-        help="do not ask the viewer for its frame record, so number 1 has no value; for a measure of what the record costs",
+        help="ask the viewer for its frame record, from which number 1 comes. The record costs the viewer CPU, so verdict does not compare a run with a record against one without",
     )
     # For a test of the heat guard only: end a run this many degrees below each
     # critical trip point, so that the guard ends a run on a cool device.
