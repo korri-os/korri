@@ -4,6 +4,8 @@
 
 PAUDIO_RENDERER_CALLBACKS viewer_audio_callbacks(int vaapi, char* device);
 int viewer_input_init(int vaapi, int viewonly, char* mapping, int mouse_emulation, int verbose, int rotate);
+// Defined only in builds with the handheld path (HAVE_V4L2M2M, aarch64).
+int viewer_input_init_evdev(int viewonly, char* mapping, char** inputs, int inputs_count, int mouse_emulation, int verbose, int rotate);
 int viewer_input_gamepad_mask(void);
 void viewer_input_callbacks(PCONNECTION_LISTENER_CALLBACKS callbacks);
 void viewer_input_start(void);

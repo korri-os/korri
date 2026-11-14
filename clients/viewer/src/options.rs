@@ -29,7 +29,22 @@ pub struct Options {
     pub mapping: Option<String>,
     pub audio_device: Option<String>,
     pub verbose: bool,
+    pub auto_window_resize: bool,
+    /// Explicit evdev nodes, only with `-platform v4l2request`.
+    pub inputs: Vec<String>,
 }
+
+/// Moonlight's `MAX_INPUTS` (config.h).
+#[cfg(v4l2request)]
+const MAX_INPUTS: usize = 6;
+#[cfg(v4l2request)]
+const PLATFORMS: &[&str] = &["x11", "x11_vaapi", "sdl", "auto", "v4l2request"];
+#[cfg(not(v4l2request))]
+const PLATFORMS: &[&str] = &["x11", "x11_vaapi", "sdl", "auto"];
+#[cfg(v4l2request)]
+const UNSUPPORTED: &str = "";
+#[cfg(not(v4l2request))]
+const UNSUPPORTED: &str = " (explicit input devices and handheld paths are not in this slice)";
 
 impl Options {
     pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Self> {
@@ -65,6 +80,8 @@ impl Options {
             mapping: None,
             audio_device: None,
             verbose: false,
+            auto_window_resize: false,
+            inputs: Vec::new(),
         };
         while let Some(arg) = args.next() {
             if !arg.starts_with('-') {
@@ -76,7 +93,7 @@ impl Options {
             match flag {
                 "windowed" => o.fullscreen = false,
                 "fullscreen" => o.fullscreen = true,
-                "autowindowresize" => (),
+                "autowindowresize" => o.auto_window_resize = true,
                 "viewonly" => o.viewonly = true,
                 "nomouseemulation" => o.mouse_emulation = false,
                 "verbose" | "debug" => o.verbose = true,
@@ -138,11 +155,23 @@ impl Options {
                         _ => unreachable!(),
                     }
                 }
-                _ => bail!(
-                    "unsupported argument: {arg} (explicit input devices and handheld paths are not in this slice)"
-                ),
+                #[cfg(v4l2request)]
+                "input" => {
+                    let value = args
+                        .next()
+                        .ok_or_else(|| anyhow::anyhow!("missing value for {arg}"))?;
+                    ensure!(o.inputs.len() < MAX_INPUTS, "Too many inputs specified");
+                    o.inputs.push(value);
+                }
+                _ => bail!("unsupported argument: {arg}{UNSUPPORTED}"),
             }
         }
+        // Moonlight opens explicit nodes on its embedded platforms. On PC,
+        // korrid passes none and this viewer keeps udev discovery only.
+        ensure!(
+            o.inputs.is_empty() || o.platform == "v4l2request",
+            "explicit input devices need -platform v4l2request"
+        );
         ensure!(
             !o.host.is_empty() && !o.keydir.as_os_str().is_empty(),
             "host and -keydir are required"
@@ -164,7 +193,7 @@ impl Options {
             "invalid stream dimensions, rate, bitrate, port or packet size"
         );
         ensure!(
-            matches!(o.platform.as_str(), "x11" | "x11_vaapi" | "sdl" | "auto"),
+            PLATFORMS.contains(&o.platform.as_str()),
             "unsupported platform {}",
             o.platform
         );
@@ -216,7 +245,9 @@ mod tests {
             ("width", "-1"),
             ("port", "65536"),
             ("codec", "vp9"),
+            #[cfg(not(v4l2request))]
             ("platform", "v4l2request"),
+            ("platform", "v4l2m2m"),
         ] {
             assert!(
                 Options::parse(
@@ -233,5 +264,49 @@ mod tests {
                 .is_err()
             );
         }
+    }
+
+    #[cfg(v4l2request)]
+    #[test]
+    fn handheld_arguments_from_korrid() {
+        let parse = |extra: &[&str]| {
+            let mut args = vec!["stream", "-platform", "v4l2request", "-keydir", "/k"];
+            args.extend_from_slice(extra);
+            args.push("host");
+            Options::parse(args.into_iter().map(str::to_owned))
+        };
+        let o = parse(&[
+            "-mapping",
+            "/m",
+            "-windowed",
+            "-autowindowresize",
+            "-input",
+            "/dev/input/event3",
+            "-input",
+            "/dev/input/event7",
+        ])
+        .unwrap();
+        assert_eq!(o.platform, "v4l2request");
+        assert_eq!(o.inputs, ["/dev/input/event3", "/dev/input/event7"]);
+        assert!(o.auto_window_resize && !o.fullscreen && !o.viewonly);
+        assert!(parse(&["-viewonly"]).unwrap().inputs.is_empty());
+        let six: Vec<&str> = ["-input", "/dev/input/event1"].repeat(6);
+        assert_eq!(parse(&six).unwrap().inputs.len(), 6);
+        let seven = ["-input", "/dev/input/event1"].repeat(7);
+        assert!(parse(&seven).is_err());
+        let pc = Options::parse(
+            [
+                "stream",
+                "-platform",
+                "x11_vaapi",
+                "-input",
+                "/dev/input/event1",
+                "-keydir",
+                "/k",
+                "host",
+            ]
+            .map(str::to_owned),
+        );
+        assert!(pc.is_err());
     }
 }

@@ -25,6 +25,7 @@ changes these three audio backends.
 | `input/evdev.c` | Extend `evdev_stop` to join mouse-emulation producers before the core stops. Add `evdev_destroy` to remove devices, join mouse-emulation threads, close nodes and release grabs after the core joins its threads. |
 | `input/{evdev.h,sdl.h}` | Declare those teardown functions. |
 | `bridge.{c,h}` | New narrow C boundary. Extract the PC branches of `main.c` input setup, controller count and rumble callbacks, and `platform.c` audio selection. Keep all session/launch/stop decisions in Rust. |
+| `bridge.{c,h}` (aarch64) | `viewer_input_init_evdev` is `main.c`'s embedded branch for `-platform v4l2request`: `evdev_create` for each `-input` node, then `udev_init` without autoload when a node was given. It shares the PC evdev setup. Compiled only with `HAVE_V4L2M2M`. |
 
 The boundary checks `viewonly` before either input initializer and before X11
 or SDL forwarding. This is an intentional difference from Moonlight's X11
@@ -37,10 +38,13 @@ lifecycle failure report and socket removal; they are not converted to Rust
 errors by this slice. The bridge duplicates
 `SDL_GAMECONTROLLERCONFIG` before Moonlight's tokenizing parser, so the process
 environment is not modified. It caps the launch mask at the protocol's existing
-16-controller limit. It omits embedded-only CEC and explicit input nodes: korrid
-passes neither on PC. Existing C backend failure and buffering policies stay.
-The bridge calls `evdev_init` before `udev_init` (`bridge.c:43-44`); Moonlight's
-`main.c` called them in the opposite order. For SDL, `viewer_input_start` now
+16-controller limit. It omits embedded-only CEC on every platform, including
+`v4l2request`. It takes explicit input nodes only with `-platform v4l2request`
+on aarch64; korrid passes none on PC. Existing C backend failure and buffering
+policies stay. The bridge calls `evdev_init` before `udev_init`
+(`bridge.c:43,50`); Moonlight's `main.c` called them in the opposite order.
+Explicit nodes are opened between the two, so they still precede udev, as in
+`main.c`. For SDL, `viewer_input_start` now
 makes the one initial `SDL_SetRelativeMouseMode(SDL_TRUE)` call from Moonlight's
 `sdl_loop`, only when input is enabled. Timed polls do not recapture an
 explicitly released mouse, and `-viewonly` never enables relative mode.

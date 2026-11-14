@@ -4,6 +4,13 @@ fn main() {
     let include =
         env::var("MOONLIGHT_COMMON_INCLUDE").expect("use the viewer Nix development shell");
     let lib = env::var("MOONLIGHT_COMMON_LIB").expect("missing network library path");
+    // The handheld path (Moonlight's v4l2request decoder) is aarch64 only. It
+    // needs FFmpeg with the V4L2 Request hwaccel; default.nix supplies it.
+    let request = env::var("CARGO_CFG_TARGET_ARCH").unwrap() == "aarch64";
+    println!("cargo::rustc-check-cfg=cfg(v4l2request)");
+    if request {
+        println!("cargo::rustc-cfg=v4l2request");
+    }
     let bindings = bindgen::Builder::default()
         .header("picture/bridge.h")
         .header("io/bridge.h")
@@ -25,6 +32,10 @@ fn main() {
         .define("HAVE_SDL", None)
         .define("HAVE_ALSA", None)
         .define("HAVE_PULSE", None);
+    if request {
+        c.define("HAVE_V4L2M2M", None);
+    }
+    let handheld: &[&str] = if request { &["libdrm"] } else { &[] };
     for lib in [
         "libavcodec",
         "libavutil",
@@ -38,7 +49,10 @@ fn main() {
         "libpulse-simple",
         "libevdev",
         "libudev",
-    ] {
+    ]
+    .iter()
+    .chain(handheld)
+    {
         let library = pkg_config::Config::new().probe(lib).unwrap();
         for path in library.include_paths {
             c.include(path);
@@ -55,6 +69,9 @@ fn main() {
         "video/egl.c",
     ] {
         c.file(format!("picture/{file}"));
+    }
+    if request {
+        c.file("picture/video/v4l2m2m.c");
     }
     for file in [
         "bridge.c",

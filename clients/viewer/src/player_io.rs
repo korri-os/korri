@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! One PC session's carried presenters, audio callbacks and input discovery.
+//! One session's carried presenters, audio callbacks and input discovery.
 use crate::{network as ffi, options::Options};
 use anyhow::{Result, ensure};
 use std::ffi::CString;
@@ -9,11 +9,17 @@ pub(crate) struct PlayerIo {
     _mapping: Option<CString>,
     audio_device: Option<CString>,
     vaapi: bool,
+    #[cfg(v4l2request)]
+    _inputs: Vec<CString>,
 }
 impl PlayerIo {
     pub(crate) fn new(o: &Options) -> Result<Self> {
         let mapping = o.mapping.as_deref().map(CString::new).transpose()?;
         let audio_device = o.audio_device.as_deref().map(CString::new).transpose()?;
+        #[cfg(v4l2request)]
+        if o.platform == "v4l2request" {
+            return Self::request(o, mapping, audio_device);
+        }
         // SAFETY: called under stream's connection lock, on its event thread.
         let vaapi = unsafe {
             ffi::picture_init(
@@ -27,6 +33,8 @@ impl PlayerIo {
             _mapping: mapping,
             audio_device,
             vaapi,
+            #[cfg(v4l2request)]
+            _inputs: Vec::new(),
         };
         ensure!(
             vaapi || io.audio_device.is_none(),
@@ -41,6 +49,49 @@ impl PlayerIo {
                 i32::from(vaapi),
                 i32::from(o.viewonly),
                 mapping,
+                i32::from(o.mouse_emulation),
+                i32::from(o.verbose),
+                o.rotation,
+            )
+        };
+        ensure!(result == 0, "input initialization failed");
+        Ok(io)
+    }
+    /// Moonlight's `-platform v4l2request`: the v4l2request decoder, SDL
+    /// audio, and evdev input from korrid's explicit nodes. Moonlight refuses
+    /// an audio device only on its SDL platform; SDL audio ignores it here.
+    #[cfg(v4l2request)]
+    fn request(
+        o: &Options,
+        mapping: Option<CString>,
+        audio_device: Option<CString>,
+    ) -> Result<Self> {
+        let inputs = o
+            .inputs
+            .iter()
+            .map(|i| CString::new(i.as_str()))
+            .collect::<Result<Vec<_>, _>>()?;
+        // SAFETY: called under stream's connection lock, before the core and
+        // the decoder's display thread start.
+        unsafe { ffi::picture_init_request(i32::from(o.auto_window_resize)) };
+        let io = Self {
+            _mapping: mapping,
+            audio_device,
+            vaapi: false,
+            _inputs: inputs,
+        };
+        let mapping = io
+            ._mapping
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |s| s.as_ptr().cast_mut());
+        let mut nodes: Vec<_> = io._inputs.iter().map(|s| s.as_ptr().cast_mut()).collect();
+        // SAFETY: C reads the node strings during this call only.
+        let result = unsafe {
+            ffi::viewer_input_init_evdev(
+                i32::from(o.viewonly),
+                mapping,
+                nodes.as_mut_ptr(),
+                nodes.len() as i32,
                 i32::from(o.mouse_emulation),
                 i32::from(o.verbose),
                 o.rotation,

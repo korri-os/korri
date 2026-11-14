@@ -398,6 +398,12 @@
           // pkgs.lib.optionalAttrs (system == "aarch64-linux") {
             r36tmax-mpp-compile = r36tmax.mppCompileCheck;
           }
+          // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
+            korri-viewer-aarch64 = import ./clients/viewer/aarch64-check.nix {
+              inherit pkgs;
+              package = self.packages.aarch64-linux.korri-viewer;
+            };
+          }
         );
       }
     );

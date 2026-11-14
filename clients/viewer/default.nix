@@ -25,20 +25,41 @@ let
       cp ../src/Limelight.h $out/include/
     '';
   };
-  libraries = with pkgs; [
-    openssl
-    curl
-    ffmpeg
-    libva
-    libX11
-    libglvnd
-    SDL2
-    alsa-lib
-    libpulseaudio
-    libevdev
-    systemdMinimal
-    (libopus.override { withCustomModes = false; })
-  ];
+  opusStandardModes = pkgs.libopus.override { withCustomModes = false; };
+  # The handheld path is aarch64 only. Its decoder needs FFmpeg's V4L2
+  # Request hwaccel, which upstream FFmpeg does not carry. This is the
+  # `@korri:moonlight` package's ffmpegV4l2Request, copied from
+  # korri-plugins services/moonlight/package.nix at 2094c1e77471 with its
+  # patch byte for byte, on this repository's nixpkgs FFmpeg. The PC paths
+  # keep the unpatched FFmpeg.
+  request = pkgs.stdenv.hostPlatform.isAarch64;
+  ffmpegV4l2Request = (pkgs.ffmpeg.override { libopus = opusStandardModes; }).overrideAttrs (old: {
+    patches = (old.patches or [ ]) ++ [ ./ffmpeg/0001-v4l2-request.patch ];
+    configureFlags = (old.configureFlags or [ ]) ++ [
+      "--enable-libudev"
+      "--enable-v4l2-request"
+    ];
+    buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.systemdMinimal ];
+  });
+  ffmpeg = if request then ffmpegV4l2Request else pkgs.ffmpeg;
+  libraries =
+    with pkgs;
+    [
+      openssl
+      curl
+      ffmpeg
+      libva
+      libX11
+      libglvnd
+      SDL2
+      alsa-lib
+      libpulseaudio
+      libevdev
+      systemdMinimal
+      opusStandardModes
+    ]
+    # drm_fourcc.h for the v4l2request presenter.
+    ++ pkgs.lib.optional request pkgs.libdrm;
   native = with pkgs; [
     pkg-config
     clang
@@ -79,7 +100,7 @@ let
       preCheck = ''
         export XDG_RUNTIME_DIR="$TMPDIR/viewer-runtime"
         mkdir -m 700 "$XDG_RUNTIME_DIR"
-        export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="${pkgs.xvfb-run}/bin/xvfb-run -a"
+        export CARGO_TARGET_${pkgs.stdenv.hostPlatform.rust.cargoEnvVarTarget}_RUNNER="${pkgs.xvfb-run}/bin/xvfb-run -a"
         export SDL_VIDEODRIVER=x11 SDL_RENDER_DRIVER=software
         export LIBGL_ALWAYS_SOFTWARE=1 __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_DRIVERS_PATH=${pkgs.mesa}/lib/dri
         export LD_LIBRARY_PATH=${
@@ -106,10 +127,15 @@ let
         mkdir -p $out/share/licenses/korri-viewer
         cp LICENSE $out/share/licenses/korri-viewer/
       '';
+      # The FFmpeg the viewer links, for the aarch64 check.
+      passthru = { inherit ffmpeg; };
       meta = {
         license = pkgs.lib.licenses.gpl3Plus;
         mainProgram = "korri-viewer";
-        platforms = [ "x86_64-linux" ];
+        platforms = [
+          "x86_64-linux"
+          "aarch64-linux"
+        ];
       };
     }
   );

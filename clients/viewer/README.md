@@ -1,4 +1,4 @@
-# Korri viewer — stage 1, PC slice
+# Korri viewer — stage 1
 
 A Linux process owned by Korri, under GPL-3.0-or-later (ADR 0059).
 The code belongs in Korri, not the plugin repository (ADR 0061). It is in
@@ -11,6 +11,11 @@ nix develop .#viewer --command xvfb-run -a env SDL_RENDER_DRIVER=software cargo 
 nix develop .#viewer --command cargo clippy --manifest-path clients/viewer/Cargo.toml --all-targets -- -D warnings
 nix build .#checks.x86_64-linux.korri-viewer-picture
 nix build .#checks.x86_64-linux.korri-viewer-io
+# Handheld path: aarch64 builds on aarch64 builders (here fuji or yari), never
+# on a device. The x86_64 check then starts that build under qemu-aarch64.
+nix build .#packages.aarch64-linux.korri-viewer
+nix build .#checks.x86_64-linux.korri-viewer-aarch64
+clients/viewer/proof/v4l2request/compare.sh ../korri-plugins
 ```
 
 ## Boundaries
@@ -30,18 +35,20 @@ nix build .#checks.x86_64-linux.korri-viewer-io
   carried C Opus/output and input code. Rust still owns the session and its
   lifetime. No Moonlight C session or HTTP code is compiled.
 - Sound follows Moonlight's platform selection: SDL audio on the software
-  fallback; on X11 VA-API, probe Pulse first, then use ALSA. The fixture's
+  fallback and on `v4l2request`; on X11 VA-API, probe Pulse first, then use
+  ALSA. The fixture's
   isolated null ALSA configuration works without a sound server.
 - The unchanged stage-0 tool needs `bin/moonlight` and the mapping path
   `share/moonlight/korri-inputplumber-gamecontrollerdb.txt`. The binary name
   is a package-entry symlink, not a second implementation. The mapping is
   the pinned upstream controller database with the plugin package's two
   InputPlumber corrections. It accepts the PC flags emitted by
-  `linux_viewer::stream_args` and the plugin's rendered settings. `-input`
-  and handheld platforms still fail explicitly: korrid passes no explicit
-  input node on PC. X11 VA-API uses evdev/udev discovery plus X11 keyboard
-  and mouse. SDL fallback uses SDL controllers, keyboard and mouse.
-  `-viewonly` skips ALL input discovery, initialization and forwarding.
+  `linux_viewer::stream_args` and the plugin's rendered settings. On PC,
+  `-input` fails explicitly: korrid passes no explicit input node there.
+  X11 VA-API uses evdev/udev discovery plus X11 keyboard and mouse. SDL
+  fallback uses SDL controllers, keyboard and mouse. The aarch64 build also
+  accepts the handheld arguments (below). `-viewonly` skips ALL input
+  discovery, initialization and forwarding.
 
 `KORRI_MOONLIGHT_SERVER_CERTIFICATE` is mandatory, including for fixture
 pairing. HTTPS checks both that trust anchor and its SPKI, with hostname
@@ -70,8 +77,9 @@ through `korri-plugins` commit `2094c1e77471` (#466). In particular:
 | Independent presentation display, retained newest frame, released frame references | `9445f79`, `2094c1e`, patch 0026 and regression tests (#466) |
 
 `video/{ffmpeg,ffmpeg_vaapi,egl,sdl}.c` and their headers are copied, not
-rewritten. Only the PC files cross over. There is no handheld-specific decoder module, DRM/KMS presenter or patched
-FFmpeg in this package. The generic FFmpeg decoder selection stays unchanged.
+rewritten. The generic FFmpeg decoder selection stays unchanged. The x86_64
+package compiles only these PC files and links the unpatched FFmpeg. The
+handheld file and its FFmpeg are in the next section.
 
 The adaptations do not change decode, queue or presentation policy:
 
@@ -91,6 +99,87 @@ and presents four actual H.264 frames through the SDL software fallback,
 then reads the rendered pixels. It uses Xvfb and Mesa software rendering,
 not a device. Rust tests exercise real TLS and HTTP requests, CLI compatibility,
 pin failure, fresh mutual-TLS authentication and launch selection.
+
+## Handheld picture path (`v4l2request`, aarch64 only)
+
+Moonlight's `v4l2request` platform, used on the RK3566 (RG353M) and the H700
+(RG35XX Pro, RG35XX SP), from the same source and patch stack as above
+(patches 0021 and 0022 add it). It is carried for `aarch64-linux` only, as
+groundwork for step G of #391. No device ran it in this slice; the bench
+proof is a later step. The `v4l2m2m` (Qualcomm) path is not carried:
+ADR 0063 postpones those devices.
+
+Moonlight keeps both platforms in one file, `src/video/v4l2m2m.c`.
+`picture/video/v4l2m2m.c` is that file with 1016 lines removed and 1 line
+changed. Nothing is added. The removed code is all code that the
+`v4l2request` platform cannot reach:
+
+| Removed from the patched file | Why the request path cannot reach it |
+| --- | --- |
+| The stateful decoder setup, `get_drm_prime_fmt`, `find_v4l2m2m_decoder`, `v4l2m2m_setup_stateful`, `decoder_callbacks_v4l2m2m` | Only `-platform v4l2m2m` selects them. |
+| The "Plan C" direct V4L2 decoder: its state, ioctls, setup, submit and cleanup, and its dma-buf presenter and caches | `v4l2m2m_setup` sets `direct_v4l2` to false in request mode, after reading `MOONLIGHT_V4L2M2M_DIRECT`. The read and the flag go. |
+| The SDL renderer presenter: `draw_frame_nv12`, its texture and the renderer branch of `display_loop` | Request mode sets `direct_dmabuf_present`, so `display_loop` makes a GLES context, never a renderer. `get_request_fmt` accepts only DRM PRIME frames, so no NV12 frame reaches `draw_frame`. |
+| `import_dmabuf` | Moonlight never calls it. |
+| The blocking tail of `v4l2m2m_setup` | Request mode returns before it. The final `return 0;` stays. |
+
+The changed line is in `draw_frame`. The dispatch that started with the
+removed direct-presenter branch now starts at
+`if (frame->format == AV_PIX_FMT_DRM_PRIME)`. If an NV12 frame did arrive,
+Moonlight's removed branch would return without drawing; here the remaining
+`else` logs it once and draws nothing. The header comment, the
+`v4l2m2m:` log prefix and the `v4l2m2m_*` names stay as Moonlight wrote them.
+`video/video.h` is unchanged; `HAVE_V4L2M2M` is Moonlight's guard for the
+`decoder_callbacks_v4l2request` declaration, so aarch64 builds define it.
+Modification notice (GPL-3 §5a): Korri modified `picture/video/v4l2m2m.c`
+on 2026-11-13 by these removals and the one changed line.
+
+`ffmpeg/0001-v4l2-request.patch` is byte for byte the plugin's FFmpeg patch
+(Jonas Karlman's V4L2 Request hwaccel series as LibreELEC ships it).
+`default.nix` copies the plugin's `ffmpegV4l2Request` expression: Opus
+without custom modes, that patch, `--enable-libudev`,
+`--enable-v4l2-request` and `systemdMinimal`. One difference: it patches
+this repository's nixpkgs FFmpeg, 9.0.1; the plugin's pin is 9.0.2. Applied
+to both releases, the patch makes the same text in the 27 files it touches,
+except where 9.0.2's own fixes differ: `h264_slice.c` (error concealment for
+a second field, which only field-coded H.264 has), `hevc/hevcdec.c` (slices
+of a skipped picture), `vp8.c` and `vp9.c`. The x86_64 viewer already uses
+9.0.1.
+
+The platform follows Moonlight's `main.c` and `platform.c` for
+`V4L2REQUEST`, from korrid's arguments
+(`linux_viewer::production::stream_args`):
+
+- `-platform v4l2request` selects it. `build.rs` compiles the file and sets
+  the `v4l2request` Rust cfg only for an aarch64 target. Other platforms keep
+  their PC behaviour on aarch64. `-platform v4l2m2m` fails.
+- Video: `decoder_callbacks_v4l2request`. Nothing initializes SDL or X11
+  before it; the decoder's display thread makes its own window. `auto` codec
+  means H.264 only, as `platform_prefers_codec` says.
+- `-autowindowresize` sets `MOONLIGHT_AUTO_WINDOW_RESIZE` to `1`, otherwise
+  `0`, as `main.c` does; the presenter reads it. `picture/bridge.c` sets it
+  before the network core and the display thread start.
+- Sound: SDL audio, as `platform_get_audio` chooses. `-audio` is accepted and
+  ignored, as Moonlight does outside its SDL platform.
+- Input: Moonlight's embedded branch. korrid's `-input` nodes (at most six,
+  Moonlight's `MAX_INPUTS`) are opened before udev starts, and udev adds no
+  other device. With no `-input`, udev discovers devices, as on X11 VA-API.
+  `-viewonly` skips input. CEC stays omitted, as on PC.
+- The loop: Rust polls Moonlight's descriptor loop (evdev and udev), as on
+  X11 VA-API, and owns signals and teardown. The display thread pumps its own
+  SDL window events, as in Moonlight.
+- Encryption: on aarch64 the viewer reads `HWCAP_AES` from the auxiliary
+  vector, as Moonlight's `has_fast_aes` does on ARM. With it, audio and video
+  are encrypted; without it, audio only. `stream.rs` keeps the x86 CPU check
+  for x86 targets; `is_x86_feature_detected!` does not exist on aarch64.
+
+Checks: the aarch64 build runs the Rust tests on its builder, including the
+handheld argument test. `checks.x86_64-linux.korri-viewer-aarch64` starts the
+aarch64 binary under `qemu-aarch64` with `LD_BIND_NOW=1` and `--help`. It
+checks that the loader resolves `libavcodec` to the patched FFmpeg, that this
+FFmpeg lists the `v4l2request` hwaccel, that korrid's handheld arguments
+parse, and that `v4l2m2m` is refused. Moonlight had no C test for this path,
+so none is carried. Not proven here: any decode, presentation, input or
+sound on RK3566 or H700 hardware. Records are in `proof/v4l2request/`.
 
 ## Lifecycle socket (opt-in, not installed)
 
@@ -177,11 +266,10 @@ The aka comparison and isolation records are in `proof/`.
 
 ## Next slices
 
-The removable `@korri:viewer`
-plugin and version check; handheld `v4l2request` picture paths and their bench
-proof; frame timing grounded in the stage-0 frame record. Android
-integration comes after the Linux stage. This package is not installed in the
-product by this slice.
+The removable `@korri:viewer` plugin and version check; the bench proof of
+the handheld `v4l2request` path; frame timing grounded in the stage-0 frame
+record. Android integration comes after the Linux stage. This package is not
+installed in the product by this slice.
 
 The cross-UID socket proof is an explicit root-only test: build
 `cargo test --manifest-path clients/viewer/Cargo.toml --test lifecycle_security --no-run`

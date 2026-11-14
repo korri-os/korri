@@ -20,9 +20,9 @@ PAUDIO_RENDERER_CALLBACKS viewer_audio_callbacks(int vaapi, char* device) {
   return &audio_callbacks_alsa;
 }
 
-int viewer_input_init(int vaapi, int viewonly, char* mapping, int mouse_emulation, int verbose, int rotate) {
+static int input_init(int evdev, int viewonly, char* mapping, char** inputs, int inputs_count, int mouse_emulation, int verbose, int rotate) {
   if (viewonly) return 0;
-  using_evdev = vaapi;
+  using_evdev = evdev;
   if (using_evdev) {
     const char* env = getenv("SDL_GAMECONTROLLERCONFIG");
     if (!mapping && !env) {
@@ -41,13 +41,31 @@ int viewer_input_init(int vaapi, int viewonly, char* mapping, int mouse_emulatio
       mappings = map;
     }
     evdev_init(mouse_emulation);
-    udev_init(true, mappings, verbose, rotate);
+    // main.c: explicit -input nodes first; udev then adds none at start or
+    // on hotplug.
+    for (int i = 0; i < inputs_count; i++) {
+      if (verbose) printf("Adding input device %s...\n", inputs[i]);
+      evdev_create(inputs[i], mappings, verbose, rotate);
+    }
+    udev_init(inputs_count == 0, mappings, verbose, rotate);
   } else {
     sdlinput_init(mapping);
   }
   enabled = 1;
   return 0;
 }
+
+int viewer_input_init(int vaapi, int viewonly, char* mapping, int mouse_emulation, int verbose, int rotate) {
+  return input_init(vaapi, viewonly, mapping, NULL, 0, mouse_emulation, verbose, rotate);
+}
+
+#ifdef HAVE_V4L2M2M
+// main.c's embedded branch for -platform v4l2request, with korrid's
+// explicit -input nodes.
+int viewer_input_init_evdev(int viewonly, char* mapping, char** inputs, int inputs_count, int mouse_emulation, int verbose, int rotate) {
+  return input_init(1, viewonly, mapping, inputs, inputs_count, mouse_emulation, verbose, rotate);
+}
+#endif
 
 int viewer_input_gamepad_mask(void) {
   if (!enabled) return 0;

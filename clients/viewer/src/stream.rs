@@ -135,8 +135,15 @@ pub fn run_with_lifecycle(
             "server does not support requested display mode"
         );
     }
-    // Match Moonlight's has_fast_aes decision on the PC path.
-    config.encryptionFlags = if std::arch::is_x86_feature_detected!("aes") {
+    // Match Moonlight's has_fast_aes decision (src/cpu.c). It never reports
+    // slow AES on these architectures, so the fallback keeps audio encrypted.
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    let fast_aes = std::arch::is_x86_feature_detected!("aes");
+    // On aarch64 Moonlight reads the AES bit of the auxiliary vector.
+    #[cfg(target_arch = "aarch64")]
+    // SAFETY: getauxval has no preconditions.
+    let fast_aes = unsafe { libc::getauxval(libc::AT_HWCAP) } & libc::HWCAP_AES != 0;
+    config.encryptionFlags = if fast_aes {
         ffi::ENCFLG_ALL
     } else {
         ffi::ENCFLG_AUDIO
