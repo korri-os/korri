@@ -358,6 +358,7 @@ assert
     KORRID_RELAYS = ''["wss://relay.example.com"]'';
     KORRID_STORAGE_ROOT = "/var/lib/korri";
     KORRID_STREAM_PRIVATE_STATE_ROOT = "/home/korri/.config/sunshine";
+    KORRID_SETFACL = "${pkgs.acl.bin}/bin/setfacl";
     KORRID_SYSTEMCTL = "${pkgs.systemd}/bin/systemctl";
     KORRID_SYSTEMD_RUN = "${pkgs.systemd}/bin/systemd-run";
     KORRID_UPSTREAMS = ''[{"baseUrl":"http://zao:43117","devicePublicKey":"${peerPublicKey}","kind":"native","label":"zao","moonlightAddress":"zao:47989"}]'';

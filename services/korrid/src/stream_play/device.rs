@@ -2,7 +2,7 @@
 //! second federation hop. Peer catalog and status always describe this holder.
 use crate::authorization::AuthorizationContext;
 use crate::linux_viewer::LinuxViewerError;
-use crate::linux_viewer::{production_viewer, CertificateProvision, LocalSeats};
+use crate::linux_viewer::{installed_viewer, CertificateProvision, LocalSeats};
 use crate::*;
 
 /// Unreserved preparation and peer selection share one admission fence.
@@ -55,7 +55,7 @@ pub(crate) fn registry(
     });
     let settings_host = host.clone();
     let settings_registry = registry.clone();
-    let settings: crate::linux_viewer::ViewerSettings = Arc::new(move |display| {
+    let settings: crate::linux_viewer::ViewerSettings = Arc::new(move |plugin, display| {
         let root = settings_host
             .route_root()
             .map_err(|e| LinuxViewerError::new(e.message))?;
@@ -65,13 +65,14 @@ pub(crate) fn registry(
         crate::linux_viewer::render_settings(
             root,
             &plugins,
+            plugin.runner(),
             settings_registry.stream_play_game_id().as_deref(),
             display,
         )
     });
     let selection = registry.clone();
     let viewer = host.viewer_with_local_input(
-        production_viewer(provision, local_seats, settings),
+        installed_viewer(provision, local_seats, settings),
         Arc::new(move || selection.has_selected_session()),
     );
     registry.with_linux_viewer(viewer)

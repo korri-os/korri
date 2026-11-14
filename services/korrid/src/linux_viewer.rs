@@ -1,16 +1,24 @@
 //! Injected authority for one exact local Linux stream viewer.
 //!
-//! The production adapter resolves the enabled Moonlight plugin, provisions its
-//! certificate through the broker, and uses exact-launch systemd and focus.
+//! `installed_viewer` chooses the enabled viewer plugin at each start
+//! (`selection.rs`): `@korri:viewer` through its lifecycle socket, or Moonlight.
+//! Both provision their certificate through the broker and run in an
+//! exact-launch systemd unit; korrid keeps compositor focus and cleanup.
 
 mod production;
+mod selection;
 mod socket;
-pub use socket::{FocusSocketViewer, SocketLinuxStreamViewer, StartSocketViewer, StopSocketViewer};
+pub use selection::installed_viewer;
+pub use socket::{
+    FocusSocketViewer, SocketLinuxStreamViewer, SocketViewerDisplay, StartSocketViewer,
+    StopSocketViewer,
+};
 #[cfg(test)]
 #[path = "linux_viewer/socket_tests.rs"]
 mod socket_tests;
-pub(crate) use production::render_settings;
-pub use production::{production_viewer, CertificateProvision, LocalSeats, ViewerSettings};
+pub use production::{
+    render_settings, CertificateProvision, LocalSeats, ViewerPlugin, ViewerSettings,
+};
 
 use futures::future::BoxFuture;
 

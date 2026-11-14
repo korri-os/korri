@@ -78,8 +78,10 @@ async fn socket_viewer_uses_exact_launch_typed_events_and_no_unit_observation() 
     });
     let focused = Arc::new(std::sync::Mutex::new(Vec::new()));
     let effects = focused.clone();
+    let stopped = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let cleanup = stopped.clone();
     let viewer = SocketLinuxStreamViewer::new(
-        None,
+        Arc::new(|| None),
         unsafe { libc::geteuid() },
         Arc::new(move |_, _, _| {
             let path = path.clone();
@@ -89,7 +91,10 @@ async fn socket_viewer_uses_exact_launch_typed_events_and_no_unit_observation() 
             effects.lock().unwrap().push((launch, background));
             Box::pin(async { Ok(()) })
         }),
-        Arc::new(|_| Box::pin(async { Ok(()) })),
+        Arc::new(move |launch| {
+            cleanup.lock().unwrap().push(launch);
+            Box::pin(async { Ok(()) })
+        }),
     );
     viewer.start(LAUNCH, "127.0.0.1", None).await.unwrap();
     assert!(viewer.snapshot(LAUNCH).await.unwrap().is_some());
@@ -126,7 +131,10 @@ async fn socket_viewer_uses_exact_launch_typed_events_and_no_unit_observation() 
         .is_err());
     assert!(viewer.notice(LAUNCH, "notice").await.is_err());
     let changed = viewer.change_signal().unwrap();
+    assert!(stopped.lock().unwrap().is_empty());
     viewer.stop(LAUNCH).await.unwrap();
+    // korrid still confirms that the unit ended after the viewer's Stop reply.
+    assert_eq!(*stopped.lock().unwrap(), vec![LAUNCH.to_owned()]);
     tokio::time::timeout(std::time::Duration::from_secs(1), changed.notified())
         .await
         .unwrap();
@@ -164,7 +172,7 @@ async fn unexpected_eof_is_not_reported_as_a_confirmed_stop() {
     let cleaned = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let cleanup = cleaned.clone();
     let viewer = SocketLinuxStreamViewer::new(
-        None,
+        Arc::new(|| None),
         unsafe { libc::geteuid() },
         Arc::new(move |_, _, _| {
             let path = path.clone();
@@ -204,7 +212,7 @@ async fn cancelled_request_cannot_confirm_a_later_request() {
         let _ = write_message(socket.get_mut(), &M::Reply(R::Snapshot { snapshot: None }));
     });
     let viewer = Arc::new(SocketLinuxStreamViewer::new(
-        None,
+        Arc::new(|| None),
         unsafe { libc::geteuid() },
         Arc::new(move |_, _, _| {
             let path = path.clone();
@@ -241,7 +249,7 @@ async fn socket_owner_and_peer_must_match_the_launchers_expected_viewer_uid() {
         );
     });
     let viewer = SocketLinuxStreamViewer::new(
-        None,
+        Arc::new(|| None),
         unsafe { libc::geteuid() } + 1,
         Arc::new(move |_, _, _| {
             let path = path.clone();
@@ -252,4 +260,50 @@ async fn socket_owner_and_peer_must_match_the_launchers_expected_viewer_uid() {
     );
     assert!(viewer.start(LAUNCH, "127.0.0.1", None).await.is_err());
     server.join().unwrap();
+}
+
+#[tokio::test]
+async fn stop_after_a_lost_connection_still_ends_the_unit() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("viewer.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let server = std::thread::spawn(move || {
+        let mut socket = BufReader::new(listener.accept().unwrap().0);
+        let _: ViewerRequest = read_message(&mut socket).unwrap().unwrap();
+        write_message(socket.get_mut(), &M::Reply(R::Ok)).unwrap();
+        // The viewer goes away without a Stopped event.
+    });
+    let stopped = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let cleanup = stopped.clone();
+    let viewer = SocketLinuxStreamViewer::new(
+        Arc::new(|| None),
+        unsafe { libc::geteuid() },
+        Arc::new(move |_, _, _| {
+            let path = path.clone();
+            Box::pin(async move { Ok(path) })
+        }),
+        Arc::new(|_, _| Box::pin(async { Ok(()) })),
+        Arc::new(move |launch| {
+            cleanup.lock().unwrap().push(launch);
+            Box::pin(async { Ok(()) })
+        }),
+    );
+    let changed = viewer.change_signal().unwrap();
+    viewer.start(LAUNCH, "127.0.0.1", None).await.unwrap();
+    server.join().unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(1), changed.notified())
+        .await
+        .unwrap();
+    assert!(
+        viewer.status(LAUNCH).await.is_err(),
+        "a lost viewer is not a stopped one"
+    );
+    viewer.stop(LAUNCH).await.unwrap();
+    assert_eq!(*stopped.lock().unwrap(), vec![LAUNCH.to_owned()]);
+    assert_eq!(
+        viewer.status(LAUNCH).await.unwrap(),
+        LinuxViewerStatus::Stopped
+    );
 }

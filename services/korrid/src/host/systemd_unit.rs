@@ -10,6 +10,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+pub(crate) use viewer_units::viewer_lifecycle_socket;
 
 #[cfg(test)]
 use std::sync::Mutex;
@@ -127,6 +128,7 @@ pub trait LaunchUnitBackend: Send + Sync {
         environment: &BTreeMap<String, String>,
         _sandbox: &super::systemd_unit::LaunchSandbox,
     ) -> Result<(), LaunchUnitError>;
+    /// `controller`: korrid's UID, for a viewer with a lifecycle socket.
     fn launch_viewer(
         &self,
         _launch: &str,
@@ -134,6 +136,7 @@ pub trait LaunchUnitBackend: Send + Sync {
         _environment: &BTreeMap<String, String>,
         _sandbox: &LaunchSandbox,
         _certificate: &str,
+        _controller: Option<u32>,
     ) -> Result<(), LaunchUnitError> {
         Err(LaunchUnitError::new(
             LaunchUnitErrorKind::Failed,
@@ -618,6 +621,8 @@ pub struct SystemdLaunchUnitBackend {
     compositor_wayland_socket: Option<PathBuf>,
     diagnostics_root: PathBuf,
     helper_timeout: Duration,
+    /// setfacl, for a lifecycle viewer's runtime directory (KORRID_SETFACL).
+    acl_editor: Option<PathBuf>,
 }
 
 impl Default for SystemdLaunchUnitBackend {
@@ -1256,6 +1261,7 @@ impl SystemdLaunchUnitBackend {
             compositor_wayland_socket: None,
             diagnostics_root: PathBuf::from("/run/korrid/launches"),
             helper_timeout,
+            acl_editor: None,
         })
     }
 
@@ -1319,10 +1325,17 @@ impl SystemdLaunchUnitBackend {
             compositor_wayland_socket: None,
             diagnostics_root: PathBuf::from("/run/korrid/launches"),
             helper_timeout: DEFAULT_HELPER_TIMEOUT,
+            acl_editor: None,
         })
         .with_compositor_wayland_socket(
             std::env::var_os("KORRID_COMPOSITOR_WAYLAND_SOCKET").map(PathBuf::from),
         )
+        .with_acl_editor(std::env::var_os("KORRID_SETFACL").map(PathBuf::from))
+    }
+
+    pub(super) fn with_acl_editor(mut self, setfacl: Option<PathBuf>) -> Self {
+        self.acl_editor = setfacl;
+        self
     }
 
     pub(super) fn with_compositor_wayland_socket(mut self, socket: Option<PathBuf>) -> Self {
@@ -2298,9 +2311,16 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         environment: &BTreeMap<String, String>,
         sandbox: &LaunchSandbox,
         certificate: &str,
+        controller: Option<u32>,
     ) -> Result<(), LaunchUnitError> {
-        let args =
-            self.viewer_arguments(launch, command, environment, sandbox, Some(certificate))?;
+        let args = self.viewer_arguments(
+            launch,
+            command,
+            environment,
+            sandbox,
+            Some(certificate),
+            controller,
+        )?;
         self.require_success(&self.systemd_run, &args).map(|_| ())
     }
     fn bootstrap_viewer(

@@ -3,7 +3,25 @@
 use super::*;
 
 const PIN: &str = "moonlight-server.pem";
+
+/// Where a lifecycle viewer binds its socket (ADR 0060). systemd creates the
+/// unit's runtime directory and removes it when the unit stops. The viewer
+/// creates `control/` inside it itself (clients/viewer/README.md): that name
+/// must not exist before the viewer starts.
+pub(crate) fn viewer_lifecycle_socket(launch: &str) -> Result<PathBuf, LaunchUnitError> {
+    Ok(Path::new("/run")
+        .join(runtime_directory(launch)?)
+        .join("control/viewer.sock"))
+}
+
+/// The unit's own name, as plugin launches name theirs.
+fn runtime_directory(launch: &str) -> Result<String, LaunchUnitError> {
+    let unit = SystemdLaunchUnitBackend::unit_name(launch)?;
+    Ok(unit.trim_end_matches(UNIT_SUFFIX).to_owned())
+}
+
 impl SystemdLaunchUnitBackend {
+    /// `controller` is korrid's UID for a lifecycle viewer, None for Moonlight.
     pub(super) fn viewer_arguments(
         &self,
         launch: &str,
@@ -11,6 +29,7 @@ impl SystemdLaunchUnitBackend {
         environment: &BTreeMap<String, String>,
         sandbox: &LaunchSandbox,
         certificate: Option<&str>,
+        controller: Option<u32>,
     ) -> Result<Vec<String>, LaunchUnitError> {
         if !self.stream_viewer {
             return Err(LaunchUnitError::new(
@@ -49,6 +68,39 @@ impl SystemdLaunchUnitBackend {
                 format!("--property=SetCredential={PIN}:{escaped}"),
             );
         }
+        if let Some(controller) = controller {
+            let setfacl = self
+                .acl_editor
+                .as_ref()
+                .filter(|path| valid_protected_path(path))
+                .ok_or_else(|| {
+                    LaunchUnitError::new(
+                        LaunchUnitErrorKind::InvalidConfiguration,
+                        "a lifecycle viewer needs KORRID_SETFACL",
+                    )
+                })?;
+            let runtime = runtime_directory(launch)?;
+            let position = args
+                .iter()
+                .position(|arg| arg == "--")
+                .expect("unit command separator");
+            // The viewer refuses a parent that its group or other users can
+            // write, and korrid needs search access to reach the socket. systemd
+            // applies RuntimeDirectoryMode again before each Exec command, which
+            // resets an ACL mask, so the grant follows the main process start.
+            // systemd-run returns only after ExecStartPost has finished.
+            args.splice(
+                position..position,
+                [
+                    format!("--property=RuntimeDirectory={runtime}"),
+                    "--property=RuntimeDirectoryMode=0700".into(),
+                    format!(
+                        "--property=ExecStartPost={} -m u:{controller}:x /run/{runtime}",
+                        setfacl.display()
+                    ),
+                ],
+            );
+        }
         Ok(args)
     }
     pub(super) fn run_viewer_bootstrap(
@@ -58,7 +110,7 @@ impl SystemdLaunchUnitBackend {
         environment: &BTreeMap<String, String>,
         sandbox: &LaunchSandbox,
     ) -> Result<String, LaunchUnitError> {
-        let mut args = self.viewer_arguments(launch, command, environment, sandbox, None)?;
+        let mut args = self.viewer_arguments(launch, command, environment, sandbox, None, None)?;
         args.splice(
             0..0,
             [
@@ -125,14 +177,21 @@ mod tests {
         let sandbox = LaunchSandbox::new(&command, &env);
         let cert = "-----BEGIN CERTIFICATE-----\nY2VydA==\n-----END CERTIFICATE-----\n";
         assert!(backend
-            .viewer_arguments(launch, &command, &env, &sandbox, Some(cert))
+            .viewer_arguments(launch, &command, &env, &sandbox, Some(cert), None)
             .is_err());
         let viewer = backend.for_stream_viewer();
         assert!(viewer
-            .viewer_arguments(launch, &command, &env, &sandbox, Some("not a certificate"))
+            .viewer_arguments(
+                launch,
+                &command,
+                &env,
+                &sandbox,
+                Some("not a certificate"),
+                None
+            )
             .is_err());
         let args = viewer
-            .viewer_arguments(launch, &command, &env, &sandbox, Some(cert))
+            .viewer_arguments(launch, &command, &env, &sandbox, Some(cert), None)
             .unwrap();
         assert!(args.iter().any(
             |arg| arg == "--setenv=KORRI_MOONLIGHT_SERVER_CERTIFICATE=/run/credentials/korri-game-0123456789abcdef0123456789abcdef.service/moonlight-server.pem"
@@ -146,11 +205,65 @@ mod tests {
             .iter()
             .any(|arg| arg.contains("server-0123456789abcdef")));
         let bootstrap = viewer
-            .viewer_arguments(launch, &command, &env, &sandbox, None)
+            .viewer_arguments(launch, &command, &env, &sandbox, None, None)
             .unwrap();
         assert!(!bootstrap.iter().any(|arg| arg.contains("SetCredential=")
             || arg.contains("KORRI_MOONLIGHT_SERVER_CERTIFICATE=")));
     }
+    #[test]
+    fn lifecycle_viewer_gets_its_runtime_directory_and_a_search_grant_for_korrid_only() {
+        let launch = "0123456789abcdef0123456789abcdef";
+        let command = vec!["/nix/store/viewer/bin/korri-viewer".into()];
+        let env = BTreeMap::new();
+        let sandbox = LaunchSandbox::new(&command, &env);
+        let cert = "-----BEGIN CERTIFICATE-----\nY2VydA==\n-----END CERTIFICATE-----\n";
+        let backend = SystemdLaunchUnitBackend::new(
+            "/nix/store/systemd/bin/systemd-run".into(),
+            "/nix/store/systemd/bin/systemctl".into(),
+            1001,
+            1002,
+        )
+        .unwrap()
+        .for_stream_viewer();
+        let refused = backend
+            .viewer_arguments(launch, &command, &env, &sandbox, Some(cert), Some(976))
+            .unwrap_err();
+        assert!(refused.message.contains("KORRID_SETFACL"), "{refused:?}");
+        let backend = backend.with_acl_editor(Some("/nix/store/acl/bin/setfacl".into()));
+        let args = backend
+            .viewer_arguments(launch, &command, &env, &sandbox, Some(cert), Some(976))
+            .unwrap();
+        let separator = args.iter().position(|arg| arg == "--").unwrap();
+        let unit = format!("korri-game-{launch}");
+        for expected in [
+            format!("--property=RuntimeDirectory={unit}"),
+            "--property=RuntimeDirectoryMode=0700".into(),
+            format!("--property=ExecStartPost=/nix/store/acl/bin/setfacl -m u:976:x /run/{unit}"),
+        ] {
+            let position = args.iter().position(|arg| *arg == expected);
+            assert!(
+                position.is_some_and(|position| position < separator),
+                "missing unit property {expected}"
+            );
+        }
+        // The certificate reaches the lifecycle viewer as it reaches Moonlight.
+        assert!(args
+            .iter()
+            .any(|arg| arg.starts_with("--property=SetCredential=moonlight-server.pem:")));
+        assert_eq!(
+            viewer_lifecycle_socket(launch).unwrap(),
+            Path::new("/run").join(&unit).join("control/viewer.sock")
+        );
+        assert!(viewer_lifecycle_socket("../escape").is_err());
+        // Moonlight's unit is unchanged: no runtime directory, no grant.
+        let moonlight = backend
+            .viewer_arguments(launch, &command, &env, &sandbox, Some(cert), None)
+            .unwrap();
+        assert!(!moonlight
+            .iter()
+            .any(|arg| arg.contains("RuntimeDirectory") || arg.contains("ExecStartPost")));
+    }
+
     #[test]
     fn linux_viewer_sandbox_keeps_render_nodes_and_libva_drivers_visible() {
         let backend = SystemdLaunchUnitBackend::new(
@@ -170,6 +283,7 @@ mod tests {
                 &command,
                 &environment,
                 &sandbox,
+                None,
                 None,
             )
             .unwrap();
@@ -225,7 +339,14 @@ mod tests {
         let sandbox = LaunchSandbox::new(&command, &environment);
         let certificate = "-----BEGIN CERTIFICATE-----\nY2VydA==\n-----END CERTIFICATE-----\n";
         let args = backend
-            .viewer_arguments(launch, &command, &environment, &sandbox, Some(certificate))
+            .viewer_arguments(
+                launch,
+                &command,
+                &environment,
+                &sandbox,
+                Some(certificate),
+                None,
+            )
             .unwrap();
         let unit = args
             .iter()
@@ -251,6 +372,7 @@ mod tests {
                 &environment,
                 &sandbox,
                 Some(certificate),
+                None,
             )
             .unwrap();
         let other_unit = other_args

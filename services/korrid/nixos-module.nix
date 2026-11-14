@@ -788,6 +788,9 @@ in
         KORRID_LIMITS_SOCKET = cfg.limitsSocket;
         KORRID_SYSTEMD_RUN = "${pkgs.systemd}/bin/systemd-run";
         KORRID_SYSTEMCTL = "${pkgs.systemd}/bin/systemctl";
+        # A lifecycle viewer's unit grants korrid search access to its runtime
+        # directory with this (linux_viewer/selection.rs, ADR 0060).
+        KORRID_SETFACL = "${pkgs.acl.bin}/bin/setfacl";
       }
       // lib.optionalAttrs (cfg.stun != [ ]) {
         KORRID_STUN = builtins.toJSON cfg.stun;

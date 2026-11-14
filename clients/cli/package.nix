@@ -34,6 +34,8 @@ let
         # korrid.ts imports the surface treaty's types from ./surface.
         "contracts/generated/surface.ts"
         "contracts/generated/settings.ts"
+        # korrid's selection.rs compares @korri:viewer's treaty with this one.
+        "contracts/generated/viewer.ts"
       ]
       || (
         (

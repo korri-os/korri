@@ -70,7 +70,8 @@ use std::{
     sync::Arc,
 };
 pub(crate) use systemd_unit::{
-    LaunchSandbox, LaunchUnitBackend, LaunchUnitError, LaunchUnitState, SystemdLaunchUnitBackend,
+    viewer_lifecycle_socket, LaunchSandbox, LaunchUnitBackend, LaunchUnitError,
+    LaunchUnitErrorKind, LaunchUnitState, SystemdLaunchUnitBackend,
 };
 
 #[derive(Clone)]

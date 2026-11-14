@@ -1,7 +1,7 @@
 use super::*;
 #[test]
 fn linux_viewer_argv_uses_fixed_app_and_explicit_occupied_seats() {
-    let files = MoonlightFiles {
+    let files = ViewerFiles {
         executable: "/nix/store/viewer/bin/moonlight".into(),
         mapping: "/nix/store/viewer/mapping".into(),
         bootstrap: "/nix/store/viewer/bootstrap".into(),
@@ -64,7 +64,7 @@ fn linux_viewer_argv_uses_fixed_app_and_explicit_occupied_seats() {
 }
 #[test]
 fn linux_viewer_vaapi_argv_keeps_sdl_fallback_interactive() {
-    let files = MoonlightFiles {
+    let files = ViewerFiles {
         executable: "/nix/store/viewer/bin/moonlight".into(),
         mapping: "/nix/store/viewer/mapping".into(),
         bootstrap: "/nix/store/viewer/bootstrap".into(),
@@ -84,7 +84,7 @@ fn linux_viewer_vaapi_argv_keeps_sdl_fallback_interactive() {
 
 #[test]
 fn linux_viewer_argv_unbrackets_ipv6_without_changing_the_control_url() {
-    let files = MoonlightFiles {
+    let files = ViewerFiles {
         executable: "/nix/store/viewer/bin/moonlight".into(),
         mapping: "/nix/store/viewer/mapping".into(),
         bootstrap: "/nix/store/viewer/bootstrap".into(),
@@ -149,7 +149,13 @@ struct ViewerUnits {
     running: std::sync::atomic::AtomicBool,
     refuse_stop: std::sync::atomic::AtomicBool,
     certificates: std::sync::Mutex<Vec<String>>,
+    controllers: std::sync::Mutex<Vec<Option<u32>>>,
     bootstraps: std::sync::Mutex<Vec<String>>,
+    /// State reads that still see the unit deactivating after a stop.
+    deactivating: std::sync::atomic::AtomicUsize,
+    /// The next state read sees a unit whose process ended unsuccessfully.
+    failed: std::sync::atomic::AtomicBool,
+    stops: std::sync::atomic::AtomicUsize,
 }
 impl LaunchUnitBackend for ViewerUnits {
     fn launch(
@@ -185,11 +191,27 @@ impl LaunchUnitBackend for ViewerUnits {
         env: &BTreeMap<String, String>,
         sandbox: &LaunchSandbox,
         certificate: &str,
+        controller: Option<u32>,
     ) -> Result<(), crate::host::LaunchUnitError> {
         self.certificates.lock().unwrap().push(certificate.into());
+        self.controllers.lock().unwrap().push(controller);
         self.launch(id, command, env, sandbox)
     }
     fn state(&self, _: &str) -> Result<LaunchUnitState, crate::host::LaunchUnitError> {
+        use std::sync::atomic::Ordering::SeqCst;
+        if self.failed.swap(false, SeqCst) {
+            return Err(crate::host::LaunchUnitError {
+                kind: crate::host::LaunchUnitErrorKind::UnitFailed,
+                message: "viewer exited with status 1".into(),
+            });
+        }
+        if self
+            .deactivating
+            .fetch_update(SeqCst, SeqCst, |left| left.checked_sub(1))
+            .is_ok()
+        {
+            return Ok(LaunchUnitState::Stopping);
+        }
         Ok(if self.running.load(std::sync::atomic::Ordering::SeqCst) {
             LaunchUnitState::Running
         } else {
@@ -197,6 +219,7 @@ impl LaunchUnitBackend for ViewerUnits {
         })
     }
     fn stop(&self, _: &str) -> Result<(), crate::host::LaunchUnitError> {
+        self.stops.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         if !self.refuse_stop.load(std::sync::atomic::Ordering::SeqCst) {
             self.running
                 .store(false, std::sync::atomic::Ordering::SeqCst);
@@ -271,7 +294,8 @@ esac
     let _sway_peer =
         crate::host::sway_test_peer::SwayTestPeer::start(compositor, root.path().join("sway.sock"));
     let viewer = ProductionLinuxStreamViewer {
-        settings: Arc::new(|display| {
+        settings: Arc::new(|plugin, display| {
+            assert_eq!(plugin, ViewerPlugin::Moonlight);
             Ok(vec![
                 "-width".into(),
                 display.width.to_string(),
@@ -291,8 +315,9 @@ esac
             })
         }),
         local_seats: Arc::new(|| Box::pin(async { Ok(vec!["/dev/input/event12".into()]) })),
-        resolve_files: Arc::new(|| {
-            Ok(MoonlightFiles {
+        resolve_files: Arc::new(|plugin| {
+            assert_eq!(plugin, ViewerPlugin::Moonlight);
+            Ok(ViewerFiles {
                 executable: "/nix/store/viewer/bin/moonlight".into(),
                 mapping: "/nix/store/viewer/mapping".into(),
                 bootstrap: "/nix/store/viewer/bootstrap".into(),
@@ -335,6 +360,8 @@ esac
         &*units.certificates.lock().unwrap(),
         &[certificate.to_owned()]
     );
+    // Moonlight's unit gets no lifecycle runtime directory or controller.
+    assert_eq!(&*units.controllers.lock().unwrap(), &[None]);
     assert!(
         !viewer.keydir.exists(),
         "korrid never opens or creates the identity directory"
@@ -580,7 +607,7 @@ fn linux_viewer_settings_use_local_device_and_matching_game_system_selected_prof
         width: 854,
         height: 480,
     };
-    let args = render_settings(root.path(), &registry, Some("game"), display.clone()).unwrap();
+    let args = render_settings(root.path(), &registry, ID, Some("game"), display.clone()).unwrap();
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&args[0]).unwrap(),
         json!({"plugin":{"video":{"fps":90,"codec":"h265"}}})
@@ -589,6 +616,7 @@ fn linux_viewer_settings_use_local_device_and_matching_game_system_selected_prof
     let args = render_settings(
         root.path(),
         &registry,
+        ID,
         Some("not-in-local-library"),
         display.clone(),
     )
@@ -612,7 +640,7 @@ fn linux_viewer_settings_use_local_device_and_matching_game_system_selected_prof
 
 #[test]
 fn linux_viewer_passes_plugin_audio_and_bitrate_unchanged_without_host_defaults() {
-    let files = MoonlightFiles {
+    let files = ViewerFiles {
         executable: "/nix/store/viewer/bin/moonlight".into(),
         mapping: "/nix/store/viewer/mapping".into(),
         bootstrap: "/nix/store/viewer/bootstrap".into(),
@@ -634,4 +662,137 @@ fn linux_viewer_passes_plugin_audio_and_bitrate_unchanged_without_host_defaults(
     ] {
         assert!(!defaults.iter().any(|arg| arg == flag), "{flag}");
     }
+}
+
+#[tokio::test]
+async fn korri_viewer_unit_reports_to_korrid_and_waits_for_start_before_focus() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let commands = root.path().join("commands");
+    let compositor = root.path().join("swaymsg");
+    std::fs::write(
+        &compositor,
+        format!(
+            r##"#!/bin/sh
+case "$*" in
+ *get_outputs*) printf '[{{"active":true,"current_mode":{{"width":1280,"height":720}}}}]' ;;
+ *) printf '%s\n' "$*" >> '{commands}'; exit 1 ;;
+esac
+"##,
+            commands = commands.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&compositor, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let server = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = server.local_addr().unwrap().to_string();
+    let task = tokio::spawn(async move {
+        axum::serve(
+            server,
+            axum::Router::new().route(
+                "/serverinfo",
+                axum::routing::get(|| async { "<root><uniqueid>sunshine-host</uniqueid></root>" }),
+            ),
+        )
+        .await
+        .unwrap();
+    });
+    let units = Arc::new(ViewerUnits::default());
+    let _sway_peer =
+        crate::host::sway_test_peer::SwayTestPeer::start(compositor, root.path().join("sway.sock"));
+    let certificate = "-----BEGIN CERTIFICATE-----\nY2VydA==\n-----END CERTIFICATE-----\n";
+    let viewer = ProductionLinuxStreamViewer {
+        settings: Arc::new(|plugin, _| {
+            // The viewer's own runner, never Moonlight's stored settings.
+            assert_eq!(plugin.runner(), "@korri:viewer/viewer");
+            Ok(vec!["-codec".into(), "h264".into(), "-localaudio".into()])
+        }),
+        provision: Arc::new(move |_, _| {
+            Box::pin(async move {
+                Ok(crate::MoonlightCertificateProvisioned {
+                    server_certificate: certificate.into(),
+                })
+            })
+        }),
+        local_seats: Arc::new(|| Box::pin(async { Ok(vec![]) })),
+        resolve_files: Arc::new(|plugin| {
+            assert_eq!(plugin, ViewerPlugin::Korri);
+            Ok(ViewerFiles {
+                executable: "/nix/store/viewer/bin/korri-viewer".into(),
+                mapping: "/nix/store/viewer/mapping".into(),
+                bootstrap: "/nix/store/viewer/bootstrap".into(),
+            })
+        }),
+        units: units.clone(),
+        compositor: SwayCompositorControl::new(
+            root.path().join("sway.sock"),
+            Duration::from_secs(3),
+        ),
+        shell: Some(Arc::new(ViewerShell)),
+        keydir: root.path().join("unreadable-identity"),
+        operation: Arc::new(tokio::sync::Mutex::new(())),
+    };
+    let launch = "0123456789abcdef0123456789abcdef";
+    let socket = viewer.start_lifecycle(launch, &address).await.unwrap();
+    assert_eq!(
+        socket,
+        Path::new("/run/korri-game-0123456789abcdef0123456789abcdef/control/viewer.sock")
+    );
+    let controller = unsafe { libc::geteuid() };
+    assert_eq!(&*units.controllers.lock().unwrap(), &[Some(controller)]);
+    assert_eq!(
+        &*units.certificates.lock().unwrap(),
+        &[certificate.to_owned()]
+    );
+    let launches = units.launches.lock().unwrap();
+    let command = &launches[0].command;
+    assert_eq!(
+        command[..8],
+        [
+            "/nix/store/viewer/bin/korri-viewer".to_owned(),
+            "--lifecycle-socket".into(),
+            socket.display().to_string(),
+            "--launch-id".into(),
+            launch.into(),
+            "--controller-uid".into(),
+            controller.to_string(),
+            "stream".into(),
+        ]
+    );
+    // Moonlight's arguments follow unchanged, with the rendered settings last.
+    assert!(command
+        .windows(2)
+        .any(|pair| pair == ["-app", "Korri Stream"]));
+    assert!(command.contains(&"-viewonly".to_owned()));
+    assert!(command.ends_with(&["-codec".into(), "h264".into(), "-localaudio".into()]));
+    // No focus yet: the socket adapter asks for it after Start is confirmed.
+    assert!(!commands.exists());
+    task.abort();
+}
+
+#[test]
+fn korri_viewer_cleanup_waits_for_its_unit_to_end_and_resets_a_failed_one() {
+    use std::sync::atomic::Ordering::SeqCst;
+    let units = Arc::new(ViewerUnits::default());
+    let viewer = ProductionLinuxStreamViewer {
+        settings: Arc::new(|_, _| Ok(vec![])),
+        provision: Arc::new(|_, _| Box::pin(async { Err(LinuxViewerError::new("unused")) })),
+        local_seats: Arc::new(|| Box::pin(async { Ok(vec![]) })),
+        resolve_files: Arc::new(|_| Err(LinuxViewerError::new("unused"))),
+        units: units.clone(),
+        compositor: None,
+        shell: None,
+        keydir: "/unused".into(),
+        operation: Arc::new(tokio::sync::Mutex::new(())),
+    };
+    let launch = "0123456789abcdef0123456789abcdef";
+    // A --no-block stop leaves the unit deactivating for a moment.
+    units.deactivating.store(3, SeqCst);
+    viewer.ended(launch).unwrap();
+    assert_eq!(units.deactivating.load(SeqCst), 0);
+    // A viewer that ended unsuccessfully is reset by a second stop.
+    let before = units.stops.load(SeqCst);
+    units.failed.store(true, SeqCst);
+    viewer.ended(launch).unwrap();
+    assert_eq!(units.stops.load(SeqCst), before + 2);
 }

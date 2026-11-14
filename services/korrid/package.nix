@@ -38,6 +38,9 @@ let
         "contracts/input"
         "contracts/surface"
         "contracts/viewer"
+        "contracts/generated"
+        # selection.rs compares @korri:viewer's treaty file with this one.
+        "contracts/generated/viewer.ts"
       ]
       # Immutable producer declaration snapshots for consumer tests only.
       || lib.hasPrefix "services/korrid/tests/fixtures/first-party/" relative

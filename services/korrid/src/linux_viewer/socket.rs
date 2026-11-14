@@ -1,5 +1,6 @@
-//! Inactive until the real @korri:viewer plugin supplies process effects.
-//! Units start/clean up processes; only the typed socket supplies observations.
+//! The `@korri:viewer` adapter. Production effects (selection.rs) start and
+//! clean up the unit and confirm compositor focus; only the typed socket
+//! supplies observations.
 use super::{LinuxStreamViewer, LinuxViewerError, LinuxViewerStatus, ViewerSnapshot};
 use crate::launcher::plugin_launch::PluginDisplay;
 use futures::future::BoxFuture;
@@ -36,8 +37,8 @@ fn error(message: impl ToString) -> LinuxViewerError {
     LinuxViewerError::new(message.to_string())
 }
 
-/// The plugin slice supplies these using the existing viewer-unit launcher,
-/// broker provisioning and compositor focus. No plugin metadata is guessed here.
+/// Production supplies these from the existing viewer-unit launcher, broker
+/// provisioning and compositor focus. No plugin metadata is guessed here.
 pub type StartSocketViewer = Arc<
     dyn Fn(
             String,
@@ -51,9 +52,11 @@ pub type FocusSocketViewer =
     Arc<dyn Fn(String, bool) -> BoxFuture<'static, Result<(), LinuxViewerError>> + Send + Sync>;
 pub type StopSocketViewer =
     Arc<dyn Fn(String) -> BoxFuture<'static, Result<(), LinuxViewerError>> + Send + Sync>;
+/// The local logical screen when asked, as Moonlight's adapter reads it.
+pub type SocketViewerDisplay = Arc<dyn Fn() -> Option<PluginDisplay> + Send + Sync>;
 
 pub struct SocketLinuxStreamViewer {
-    display: Option<PluginDisplay>,
+    display: SocketViewerDisplay,
     expected_viewer_uid: u32,
     start_process: StartSocketViewer,
     focus: FocusSocketViewer,
@@ -89,7 +92,7 @@ impl Drop for InFlight<'_> {
 
 impl SocketLinuxStreamViewer {
     pub fn new(
-        display: Option<PluginDisplay>,
+        display: SocketViewerDisplay,
         expected_viewer_uid: u32,
         start_process: StartSocketViewer,
         focus: FocusSocketViewer,
@@ -291,7 +294,7 @@ impl LinuxStreamViewer for SocketLinuxStreamViewer {
         Some(self.changed.clone())
     }
     fn display(&self) -> Option<PluginDisplay> {
-        self.display.clone()
+        (self.display)()
     }
     fn start<'a>(
         &'a self,
@@ -306,7 +309,7 @@ impl LinuxStreamViewer for SocketLinuxStreamViewer {
             if self.connections.lock().await.contains_key(launch) {
                 return Err(error("viewer launch already started"));
             }
-            let size = self.display.clone();
+            let size = (self.display)();
             let result = async {
                 let path = timeout(
                     DEADLINE,
@@ -383,15 +386,22 @@ impl LinuxStreamViewer for SocketLinuxStreamViewer {
             let Some(connection) = self.connections.lock().await.get(launch).cloned() else {
                 return Ok(());
             };
-            let result = if connection.terminal.load(Ordering::Acquire) == STOPPED {
+            let exchange = if connection.terminal.load(Ordering::Acquire) == STOPPED {
                 Ok(())
             } else {
-                ok(connection.request(C::Stop).await?)
+                connection.request(C::Stop).await.and_then(ok)
             };
-            if result.is_ok() {
-                self.connections.lock().await.remove(launch);
+            // korrid keeps cleanup: the unit must be gone whatever the socket
+            // said, including after a lost connection. Stop returns only once
+            // the unit stop is confirmed.
+            timeout(DEADLINE, (self.stop_process)(launch.into()))
+                .await
+                .map_err(|_| error("viewer stop cleanup deadline exceeded"))??;
+            self.connections.lock().await.remove(launch);
+            if let Err(stop_error) = exchange {
+                eprintln!("korrid viewer: launch {launch} ended by its unit stop, not by Stop: {stop_error}");
             }
-            result
+            Ok(())
         })
     }
     fn snapshot<'a>(
