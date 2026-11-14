@@ -92,13 +92,24 @@ The adaptations do not change decode, queue or presentation policy:
 - `bridge.c` supplies the descriptor loop used by X11 and the C-variadic log
   callback. Rust polls either presenter, then stops and joins the network
   core before destroying the presenter. No connection logic lives in C.
+- The frame record (below) adds calls and no policy. `video/ffmpeg.c` gives
+  each packet a pts, so that the frame that the decoder returns names its
+  decode unit. `video/x11.c` and `video/sdl.c` report each unit and its
+  decoded frame. `video/ffmpeg_vaapi.c` reports the hand-off after a
+  successful `vaPutSurface`. `video/sdl.c` puts the decoded `AVFrame` in its
+  event, not its two arrays; `sdl.c` reads the same planes and the pts from
+  it under the same mutex, and reports the hand-off after
+  `SDL_RenderPresent`. With no record, each call returns at once and every
+  pts stays `AV_NOPTS_VALUE`, as before.
 
 The two copied C regression tests use a real Xvfb. They exercise VA failure
 cleanup, resize destinations, newest-frame replacement during presentation,
 and frame references after drops and presentation. A third C test decodes
 and presents four actual H.264 frames through the SDL software fallback,
-then reads the rendered pixels. It uses Xvfb and Mesa software rendering,
-not a device. Rust tests exercise real TLS and HTTP requests, CLI compatibility,
+then reads the rendered pixels and the frame record of those four frames.
+It uses Xvfb and Mesa software rendering, not a device. A fourth checks the
+frame record's rows, empty times and recording with real files and the
+network core's own clock. Rust tests exercise real TLS and HTTP requests, CLI compatibility,
 pin failure, fresh mutual-TLS authentication and launch selection.
 
 ## Handheld picture path (`v4l2request`, aarch64 only)
@@ -188,7 +199,8 @@ The Rust treaty is `contracts/viewer`; `contracts/generated/viewer.ts` is
 Typeshare output. Its requests and replies extract `LinuxStreamViewer` and its
 snapshot types. Native connection callbacks, as in Moonlight patch `0023`, emit
 connection snapshots. The opaque connection identity uses that patch's PID and
-monotonic timestamp. No frame-timing fields are added by this slice.
+monotonic timestamp. The socket carries no frame timing: the frame record
+below is a file for the outside measure.
 
 ```sh
 korri-viewer --lifecycle-socket PATH --launch-id ID --controller-uid UID stream [Moonlight arguments] HOST
@@ -328,6 +340,52 @@ sandbox, with a broker that serves a private Sunshine in the guest. The aka
 binary proof and the owner's one game after the autonomous proof (ADR 0063)
 cover that path first.
 
+## Frame record (#435)
+
+The outside measure (`nix/stream-cadence`) asks for it. A korrid launch does
+not. The tool names two new files in its run directory with the environment
+names of its stage-0 client shim (`client-shim.c`):
+
+| Variable | File | What the viewer writes |
+| --- | --- | --- |
+| `CADENCE_FRAME_TIMES` | `times.csv` | One row for each decode unit |
+| `CADENCE_DUMP` | `recording.video` | Each decode unit's bytes as they arrived, in the same order |
+
+Rust creates each file with `O_EXCL` and mode 0600, before the launch; an
+existing name, a link included, stops the stream before it starts.
+`picture/frame_times.c` writes both. It closes them after the network core
+has joined its threads. After a failed write it writes nothing more, and the
+viewer exits with an error when the stream ends.
+
+Each row is `index,frame_number,enqueue_ns,decoded_ns,display_ns`, in index
+order. Every time is `CLOCK_MONOTONIC` in nanoseconds, the clock of the
+measure's display record.
+
+| Field | Meaning | Grounding |
+| --- | --- | --- |
+| `index` | The unit's place in the stream as it arrived and in `recording.video` | Every stage-0 record (`index`) |
+| `frame_number` | The stream's frame index | `DECODE_UNIT.frameNumber`; the stage-0 receive record's `frame_number` |
+| `enqueue_ns` | The network core had the whole frame: about when its last packet arrived | `DECODE_UNIT.enqueueTimeUs` (`Limelight.h`), carried to `CLOCK_MONOTONIC` through the short delay since then, as the stage-0 shim carries `receiveTimeUs` |
+| `decoded_ns` | The decoder returned the frame; empty when it returned none | The viewer's own moment, after `avcodec_receive_frame`. With VA-API the GPU can still be decoding; presentation waits for it with `vaSyncSurface` |
+| `display_ns` | The call that hands the frame to the display returned (`vaPutSurface`, `SDL_RenderPresent`); empty for a frame that a newer one replaced | The viewer's own moment. The stage-0 display record's `display_ns` is the compositor's commit, later |
+
+The viewer does not read the frame ID that the sender drew into the picture:
+with VA-API the picture stays in GPU memory, and a readback for each frame
+is not cheap. The tool decodes `recording.video` instead, as `run` decodes its
+own recording, and so knows the drawn ID of each unit. `decoded_ns` has no
+earlier field name; it is the moment that #435 asks for.
+
+The cost for each frame is one `write` of the unit's bytes and four clock
+reads on the decode thread, and one clock read and one buffered CSV row on
+the presenter's thread. The record writes no row until a frame is handed over or known
+to be passed over, so the CSV stays in index order. A unit that no
+presenter took for 256 units is written as not shown.
+
+Only the PC presenters report so far. The handheld `v4l2request` path
+(`picture/video/v4l2m2m.c`) has its own decode loop and calls none of the
+record; with the variables set it writes a header and an empty recording,
+and the tool then gives number 1 no value.
+
 ## Sound and input provenance and checks
 
 See `io/README.md` for every C adaptation and its source. The I/O check
@@ -342,9 +400,8 @@ The aka comparison and isolation records are in `proof/`.
 
 ## Next slices
 
-The bench proof of the handheld `v4l2request` path; frame timing grounded
-in the stage-0 frame record. Android integration comes after the Linux stage.
-No device installs `@korri:viewer` yet.
+The bench proof of the handheld `v4l2request` path. Android integration
+comes after the Linux stage. No device installs `@korri:viewer` yet.
 
 The cross-UID socket proof is an explicit root-only test: build
 `cargo test --manifest-path clients/viewer/Cargo.toml --test lifecycle_security --no-run`

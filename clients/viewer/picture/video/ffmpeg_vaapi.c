@@ -27,6 +27,8 @@
 #include <libavutil/hwcontext_vaapi.h>
 #include <X11/Xlib.h>
 
+#include "../frame_times.h"
+
 #define MAX_SURFACES 16
 
 static AVBufferRef* device_ref;
@@ -216,8 +218,10 @@ void vaapi_queue(AVFrame* dec_frame, Window win, int width, int height) {
   status = vaPutSurface(target, surface, win, 0, 0, dec_frame->width,
       dec_frame->height, 0, 0, width, height, NULL, 0, 0);
   // Keep the decoded buffer alive until the GPU has finished reading it.
-  if (status == VA_STATUS_SUCCESS)
+  if (status == VA_STATUS_SUCCESS) {
+    frame_times_displayed(dec_frame->pts);
     status = vaSyncSurface(target, surface);
+  }
   if (status == VA_STATUS_SUCCESS)
     return;
 error:

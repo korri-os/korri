@@ -35,4 +35,4 @@ void ffmpeg_destroy(void);
 
 int ffmpeg_draw_frame(AVFrame *pict);
 AVFrame* ffmpeg_get_frame(bool native_frame);
-int ffmpeg_decode(unsigned char* indata, int inlen);
+int ffmpeg_decode(unsigned char* indata, int inlen, int64_t pts);

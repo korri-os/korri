@@ -179,7 +179,7 @@ let
         export ALSA_CONFIG_PATH="$PWD/alsa.conf"
         ./check-audio "$TMPDIR/decoded.pcm"
         cc -std=gnu11 ${ioFlags} -I${source}/picture \
-          ${source}/tests/test-input.c ${ioSources} \
+          ${source}/tests/test-input.c ${ioSources} ${source}/picture/frame_times.c \
           $(pkg-config --cflags --libs ${ioLibraries}) \
           -L${network}/lib -lmoonlight-common-c -pthread -lm \
           -Wl,--wrap=LiSendKeyboardEvent,--wrap=LiSendMouseButtonEvent,--wrap=LiSendMousePositionEvent,--wrap=LiSendMouseMoveEvent,--wrap=LiSendMultiControllerEvent,--wrap=udev_new \
@@ -228,9 +228,15 @@ let
         buildInputs = libraries;
       }
       ''
-          cc -Wall -Wextra -Werror -Wno-unused-parameter -I${source}/picture \
-            ${source}/picture/video/ffmpeg_vaapi.c ${source}/tests/test-vaapi.c \
-            $(pkg-config --cflags --libs libavcodec libavutil libva-x11 x11) -o check-vaapi
+          cc -std=gnu11 -Wall -Wextra -Werror -Wno-unused-parameter -I${source}/picture -I${network}/include \
+            ${source}/picture/frame_times.c ${source}/tests/test-frame-times.c \
+            $(pkg-config --cflags --libs libavutil) -L${network}/lib -Wl,-rpath,${network}/lib \
+            -lmoonlight-common-c -pthread -o check-frame-times
+          ./check-frame-times
+          cc -Wall -Wextra -Werror -Wno-unused-parameter -I${source}/picture -I${network}/include \
+            ${source}/picture/video/ffmpeg_vaapi.c ${source}/picture/frame_times.c ${source}/tests/test-vaapi.c \
+            $(pkg-config --cflags --libs libavcodec libavutil libva-x11 x11) -L${network}/lib -Wl,-rpath,${network}/lib \
+            -lmoonlight-common-c -pthread -o check-vaapi
           export HOME="$TMPDIR" LIBVA_DRIVER_NAME=korri_missing_driver
           xvfb-run -a -s '-screen 0 640x480x24 -nolisten tcp' ./check-vaapi
           cc -std=gnu11 -DHAVE_X11 -DHAVE_VAAPI \
@@ -242,6 +248,7 @@ let
           cc -std=gnu11 -DHAVE_SDL -I${source}/picture -I${network}/include \
           ${ioFlags} ${source}/tests/test-sdl.c ${ioSources} ${source}/picture/bridge.c ${source}/picture/video/sdl.c \
           ${source}/picture/video/ffmpeg.c ${source}/picture/video/ffmpeg_vaapi.c ${source}/picture/util.c \
+          ${source}/picture/frame_times.c \
           $(pkg-config --cflags --libs libavcodec libavutil libva-x11 ${ioLibraries}) -L${network}/lib -lmoonlight-common-c -pthread -lm -o check-sdl
         ffmpeg -v error -f lavfi -i testsrc=size=128x72:rate=30 -frames:v 4 \
           -c:v libx264 -pix_fmt yuv420p -tune zerolatency -f h264 frames.h264

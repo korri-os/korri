@@ -6,4 +6,8 @@ void picture_init_request(int auto_window_resize);
 PDECODER_RENDERER_CALLBACKS picture_callbacks(void);
 int picture_poll(int timeout);
 void picture_destroy(void);
+// The opt-in frame record (frame_times.c). Each descriptor may be -1; both
+// belong to C from here on. Open before the connection; close after it stops.
+int picture_frame_times_open(int times_fd, int recording_fd);
+int picture_frame_times_close(void);
 void picture_log(const char* format, ...);

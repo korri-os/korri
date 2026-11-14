@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+mod frame_times;
 mod network;
 pub mod options;
 pub mod pair;

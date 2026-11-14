@@ -25,6 +25,7 @@
 #include "ffmpeg_vaapi.h"
 #endif
 
+#include "../frame_times.h"
 #include "../loop.h"
 #include "../util.h"
 
@@ -231,11 +232,13 @@ int x11_submit_decode_unit(PDECODE_UNIT decodeUnit) {
     entry = entry->next;
   }
 
-  ffmpeg_decode(ffmpeg_buffer, length);
+  ffmpeg_decode(ffmpeg_buffer, length, frame_times_unit(decodeUnit, ffmpeg_buffer, length));
 
   AVFrame* frame = ffmpeg_get_frame(true);
-  if (frame != NULL)
+  if (frame != NULL) {
+    frame_times_decoded(frame->pts);
     queue_frame(frame);
+  }
 
   return DR_OK;
 }

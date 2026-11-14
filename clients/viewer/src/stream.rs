@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 use crate::{
+    frame_times::FrameTimes,
     network as ffi,
     options::Options,
     pair::hex,
@@ -89,6 +90,8 @@ pub fn run_with_lifecycle(
     let app = app_id(&t.get(true, "applist", &[])?, &o.app)?;
     running()?;
     let io = PlayerIo::new(o)?;
+    // Before the launch: a record that cannot be created stops nothing that ran.
+    let frame_times = FrameTimes::from_environment()?;
     let app_version = CString::new(required(&info, "appversion")?)?;
     let gfe_version = CString::new(field(&info, "GfeVersion")?.unwrap_or_default())?;
     let host = CString::new(o.host.as_str())?;
@@ -293,9 +296,9 @@ pub fn run_with_lifecycle(
         running()?;
         anyhow::bail!("stream connection failed: {result}");
     }
+    let mut poll_error = false;
     unsafe {
         io.start();
-        let mut poll_error = false;
         while !STOP.load(Ordering::Relaxed) && !lifecycle.is_some_and(|l| l.stop_requested()) {
             let event = ffi::picture_poll(100);
             if event != 0 {
@@ -305,9 +308,10 @@ pub fn run_with_lifecycle(
         }
         io.stop();
         ffi::LiStopConnection();
-        ensure!(!poll_error, "picture or input event loop failed");
     }
+    let recorded = frame_times.close();
+    ensure!(!poll_error, "picture or input event loop failed");
     let error = TERMINATED.load(Ordering::Relaxed);
     ensure!(error == 0, "stream terminated: {error}");
-    Ok(())
+    recorded
 }

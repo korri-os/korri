@@ -191,11 +191,13 @@ AVFrame* ffmpeg_get_frame(bool native_frame) {
 
 // packets must be decoded in order
 // indata must be inlen + AV_INPUT_BUFFER_PADDING_SIZE in length
-int ffmpeg_decode(unsigned char* indata, int inlen) {
+// pts comes back on the decoded frame: the frame record's unit index.
+int ffmpeg_decode(unsigned char* indata, int inlen, int64_t pts) {
   int err;
 
   pkt->data = indata;
   pkt->size = inlen;
+  pkt->pts = pts;
 
   err = avcodec_send_packet(decoder_ctx, pkt);
   if (err < 0) {

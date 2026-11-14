@@ -20,9 +20,11 @@
 #ifdef HAVE_SDL
 
 #include "sdl.h"
+#include "frame_times.h"
 #include "../io/bridge.h"
 
 #include <Limelight.h>
+#include <libavutil/frame.h>
 
 static bool done;
 static int fullscreen_flags;
@@ -98,13 +100,16 @@ int sdl_poll(int timeout) {
           if (++sdlCurrentFrame <= sdlNextFrame - SDL_BUFFER_FRAMES) {
             //Skip frame
           } else if (SDL_LockMutex(mutex) == 0) {
-            Uint8** data = ((Uint8**) event.user.data1);
-            int* linesize = ((int*) event.user.data2);
+            AVFrame* frame = event.user.data1;
+            Uint8** data = frame->data;
+            int* linesize = frame->linesize;
+            int64_t pts = frame->pts;
             SDL_UpdateYUVTexture(bmp, NULL, data[0], linesize[0], data[1], linesize[1], data[2], linesize[2]);
             SDL_UnlockMutex(mutex);
             SDL_RenderClear(renderer);
             SDL_RenderCopy(renderer, bmp, NULL, NULL);
             SDL_RenderPresent(renderer);
+            frame_times_displayed(pts);
           } else
             fprintf(stderr, "Couldn't lock mutex\n");
         }

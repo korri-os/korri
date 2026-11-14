@@ -20,6 +20,7 @@
 #include "video.h"
 #include "ffmpeg.h"
 
+#include "../frame_times.h"
 #include "../sdl.h"
 #include "../util.h"
 
@@ -60,18 +61,20 @@ static int sdl_submit_decode_unit(PDECODE_UNIT decodeUnit) {
     length += entry->length;
     entry = entry->next;
   }
-  ffmpeg_decode(ffmpeg_buffer, length);
+  ffmpeg_decode(ffmpeg_buffer, length, frame_times_unit(decodeUnit, ffmpeg_buffer, length));
 
   SDL_LockMutex(mutex);
   AVFrame* frame = ffmpeg_get_frame(false);
   if (frame != NULL) {
+    frame_times_decoded(frame->pts);
     sdlNextFrame++;
 
+    // The presenter reads the frame's planes and its pts under the mutex.
     SDL_Event event;
     event.type = SDL_USEREVENT;
     event.user.code = SDL_CODE_FRAME;
-    event.user.data1 = &frame->data;
-    event.user.data2 = &frame->linesize;
+    event.user.data1 = frame;
+    event.user.data2 = NULL;
     SDL_PushEvent(&event);
   }
   SDL_UnlockMutex(mutex);
