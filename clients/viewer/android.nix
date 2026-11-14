@@ -1,9 +1,13 @@
-# The shared session part on Android (#391 step D) at API 31 (ADR 0064),
-# with the NDK that clients/android uses. Two ABIs: arm64-v8a for phones,
-# x86_64 for the emulator.
+# The shared session part on Android (#391 step D) and the viewer app around
+# it (slice D1), at API 31 (ADR 0064) with the NDK that clients/android uses.
+# Two ABIs: arm64-v8a for phones, x86_64 for the emulator.
 #
 # - check: builds the library and links the HTTPS and trust-anchor test
 #   executables for each ABI, then reads them. Nothing runs here.
+# - apk: the app. Android's own NativeActivity loads the Rust library; no
+#   Java and no Gradle. Nix builds the libraries with cargo and packs them with
+#   aapt2 and zipalign. The APK is not signed; android/proof/run.py signs it
+#   with the user's debug key.
 {
   pkgs,
   upstream,
@@ -16,6 +20,9 @@ let
   api = "31";
   ndk = sdk.ndkRoot;
   toolchain = "${ndk}/toolchains/llvm/prebuilt/linux-x86_64";
+  buildTools = "${sdk.sdkRoot}/build-tools/${sdk.buildToolsVersion}";
+  # The newest platform in sdk.nix, for aapt2's view of the framework.
+  framework = "${sdk.sdkRoot}/platforms/android-36/android.jar";
 
   abis = {
     arm64-v8a = {
@@ -217,7 +224,65 @@ let
     }
   );
 
+  # The app's own crate has its own lock: the viewer's crates at the same
+  # versions, and android-activity and jni.
+  appFiles = lib.fileset.unions [
+    sourceFiles
+    ./android/Cargo.toml
+    ./android/Cargo.lock
+    ./android/src
+    ./android/AndroidManifest.xml
+  ];
+  library = "libkorri_viewer_android.so";
+
+  apk = pkgs.stdenv.mkDerivation (
+    common
+    // {
+      pname = "korri-viewer-android-apk";
+      version = "0.1.0";
+      src = lib.fileset.toSource {
+        root = ../..;
+        fileset = appFiles;
+      };
+      sourceRoot = "source/clients/viewer/android";
+      cargoDeps = pkgs.rustPlatform.importCargoLock { lockFile = ./android/Cargo.lock; };
+      nativeBuildInputs = common.nativeBuildInputs ++ [ pkgs.zip ];
+      buildPhase = ''
+        runHook preBuild
+        export HOME=$TMPDIR
+        ${forEachPart (part: ''
+          (
+            ${environmentFor part}
+            cargo build --locked --release --offline --lib --target ${part.target}
+          )
+          mkdir -p stage/lib/${part.name}
+          cp target/${part.target}/release/${library} stage/lib/${part.name}/
+          # The activity glue adds libandroid.
+          ${readElf part (
+            sessionLibraries ++ [ "libandroid.so" ]
+          ) "stage/lib/${part.name}/${library}" "elf-${part.name}.txt"}
+          grep -q 'Shared library' elf-${part.name}.txt
+          "${toolchain}/bin/llvm-nm" --defined-only --extern-only stage/lib/${part.name}/${library} \
+            | grep -q ' T ANativeActivity_onCreate$'
+        '')}
+        ${buildTools}/aapt2 link -o unsigned.apk -I ${framework} \
+          --manifest AndroidManifest.xml --debug-mode
+        # Fixed times and no extra attributes, as aapt2 writes its entries.
+        find stage -exec touch -h -d @315532800 {} +
+        (cd stage && zip -q -r -X ../unsigned.apk lib)
+        ${buildTools}/zipalign -p -f 4 unsigned.apk aligned.apk
+        runHook postBuild
+      '';
+      installPhase = ''
+        runHook preInstall
+        mkdir -p $out
+        cp aligned.apk $out/korri-viewer-unsigned.apk
+        cp elf-*.txt $out/
+        runHook postInstall
+      '';
+    }
+  );
 in
 {
-  inherit parts check;
+  inherit parts check apk;
 }

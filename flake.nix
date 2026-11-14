@@ -253,6 +253,8 @@
           odin2portal-firmware = odin2portal.firmwareCross;
           h700-uboot = h700.ubootCross;
           h700-kernel = h700.kernelCross;
+          # The NDK's compilers run on x86_64 Linux only.
+          korri-viewer-android-apk = viewer.android.apk;
         };
         checks = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
           inputplumber.checks

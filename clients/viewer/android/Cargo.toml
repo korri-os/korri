@@ -1,0 +1,22 @@
+[package]
+name = "korri-viewer-android"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+# The library that Android's own NativeActivity loads (AndroidManifest.xml).
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+korri-viewer = { path = ".." }
+korri-viewer-treaty = { path = "../../../contracts/viewer" }
+anyhow = "1"
+serde_json = "1"
+
+[target.'cfg(target_os = "android")'.dependencies]
+# The release that the shell's Slint backend and the D5 spike use.
+android-activity = { version = "=0.6.1", features = ["native-activity"] }
+jni = "0.21"

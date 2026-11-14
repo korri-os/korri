@@ -133,6 +133,32 @@ let
         exec stream-cadence "$@"
       '';
     };
+    viewer-android-proof =
+      let
+        emulator = import ../clients/viewer/android/emulator.nix { inherit pkgs; };
+      in
+      {
+        description = "Prove the Rust viewer app (#391 D1) on one headless Android 12 emulator against a private Sunshine on aka.";
+        usageSuffix = " -- [--sender ssh-target] [--seconds N] [--out DIRECTORY]";
+        runtimeInputs = [
+          pkgs.python3
+          pkgs.nix
+          pkgs.openssh
+          pkgs.jdk17
+          pkgs.unzip
+          pkgs.procps
+        ];
+        env = {
+          KORRI_VIEWER_EMULATOR_SDK = emulator.sdkRoot;
+          KORRI_VIEWER_EMULATOR_IMAGE = emulator.systemImage;
+          KORRI_VIEWER_BUILD_TOOLS = emulator.buildToolsVersion;
+          # stream-cadence builds its sender fixture from this nixpkgs.
+          CADENCE_NIXPKGS = "${pkgs.path}";
+        };
+        script = ''
+          exec python3 "$KORRI_ROOT/clients/viewer/android/proof/run.py" "$@"
+        '';
+      };
     hooks-install = {
       description = "Install the Git hook that refuses a commit which stages a secret.";
       runtimeInputs = [

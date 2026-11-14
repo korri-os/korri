@@ -16,8 +16,12 @@ nix build .#checks.x86_64-linux.korri-viewer-io
 nix build .#packages.aarch64-linux.korri-viewer
 nix build .#checks.x86_64-linux.korri-viewer-aarch64
 clients/viewer/proof/v4l2request/compare.sh ../korri-plugins
-# The session part for Android (below). No device or emulator.
+# The session part for Android, both ABIs (below). No device or emulator.
 nix build .#checks.x86_64-linux.korri-viewer-android
+# The Android app (slice D1, below), and its proof on one headless emulator
+# against a private Sunshine on aka.
+nix build .#korri-viewer-android-apk
+nix run .#viewer-android-proof
 ```
 
 ## Boundaries
@@ -402,17 +406,20 @@ The aka comparison and isolation records are in `proof/`.
 
 ## Android session part (#391 step D, slice D0)
 
-The session part also builds for `aarch64-linux-android` at API 31
-(ADR 0064), with the NDK of `clients/android/sdk.nix`. `android.nix` holds
-the recipe; `checks.x86_64-linux.korri-viewer-android` builds it. No device
-or emulator takes part, and nothing in `clients/android` uses it yet.
+The session part also builds for Android at API 31 (ADR 0064), with the NDK
+of `clients/android/sdk.nix`: `aarch64-linux-android` for phones and
+`x86_64-linux-android` for the emulator. `android.nix` holds the recipe;
+`checks.x86_64-linux.korri-viewer-android` builds both. Nothing in
+`clients/android` uses it.
 
 - Shared: `options.rs`, `session.rs`, `pair.rs`, `stream.rs`, `lifecycle.rs`
   and the binding are the same files on both platforms.
 - Platform parts: `player_io.rs` is Linux's picture, sound and input.
   `src/android/player_io.rs` has the same interface and none of the three
-  yet, so the core runs its own empty decoder and audio callbacks, and its
-  log goes nowhere. The frame record and the signal handlers in `stream.rs`
+  yet, so the core runs its own empty decoder and audio callbacks. The
+  core's log goes to logcat, tag `korri-viewer`, through
+  `src/android/log.c`: the callback is C-variadic, which Rust cannot
+  define. The frame record and the signal handlers in `stream.rs`
   are Linux only: on Android the app owns its process's signals. The
   `v4l2request` cfg stays off.
 - Network core: the same unmodified `b126e481` and ENet as on Linux, built
@@ -425,6 +432,14 @@ or emulator takes part, and nothing in `clients/android` uses it yet.
   release that nixpkgs gives Linux. The core needs libcrypto on Android in
   any case; the core and the session's crates link one OpenSSL. Linux still
   links nixpkgs' shared OpenSSL and curl, so its HTTPS does not change.
+- Trust anchor: the curl crate gives its own libcurl the CA file and the CA
+  directory that it probes for when it makes a handle (`SSL_CERT_FILE`,
+  `SSL_CERT_DIR` or a system path). `Transport::new` resets the directory
+  on Android, and the pin replaces the file, so the pinned certificate is
+  the only trust anchor, as on Linux. `tests/trust_anchor.rs` proves it: a
+  server with the pinned key in a certificate from a CA in the probed
+  directory is refused. On the API 31 emulator that test failed before the
+  reset (the server was accepted) and passes with it.
 - Cost: the app carries OpenSSL and curl as C code that Korri builds, which
   is against ADR 0062's stretch goal. Android's curl has fewer features than
   Linux's (no HTTP/2, so no `h2` offer in the TLS handshake; no PSL, brotli
@@ -432,11 +447,13 @@ or emulator takes part, and nothing in `clients/android` uses it yet.
   remove curl only: the core and the pairing code still need libcrypto, and
   Linux's certificate check, session cache, connection reuse and interrupts
   would need a new proof.
-- The check builds the library and links the HTTPS test executable for
-  Android, which drives `Transport` and the launch chain into the core. It
-  then reads that executable: AArch64, `/system/bin/linker64`, no library
-  beyond `libc.so`, `libm.so`, `libdl.so` and `libz.so`, and the symbols of
-  the core, curl and OpenSSL inside. It does not run it.
+- The check builds the library and links the HTTPS and trust-anchor test
+  executables for each ABI. The HTTPS test drives `Transport` and the
+  launch chain into the core. It then reads the HTTPS executable: its
+  machine, `/system/bin/linker64`, no library beyond `libc.so`, `libm.so`,
+  `libdl.so`, `libz.so` and `liblog.so`, and the symbols of the core, curl,
+  OpenSSL and the log callback inside. It does not run them; the app's
+  proof below runs the x86_64 pair on the emulator.
 
 Live resolution: Android also uses the unpatched core, so the Rust viewer
 answers `Resize` with "Live resolution is unavailable", as on Linux. Today's
@@ -450,12 +467,68 @@ route: a Korri patch on the core (first check its packet type 0x5504 against
 upstream Sunshine, which is reported to use it for player LEDs), the Rust
 network core of step E, or a control channel that korrid owns.
 
+## Android app (#391 step D, slice D1)
+
+Slice D1 of `docs/research/2026-11-13-viewer-rust-android.md`: the viewer in
+the app's own process (ADR 0060), started and stopped through its
+lifecycle, against the private Sunshine, with the core's empty decoder and
+no sound. It is the first Rust viewer that runs on Android. It has no
+picture, sound or input: those are D2 to D4. The Artemis app in
+`clients/android` does not change; it stays the shipping Android viewer
+until D7, so D1 removes none of its Java.
+
+- `android/` is the app: a `cdylib` crate with its own `Cargo.lock` (the
+  viewer's crates at the same versions, `android-activity` 0.6.1 and `jni`),
+  and `AndroidManifest.xml`. Android's own `android.app.NativeActivity`
+  loads the library; the APK has no `classes.dex` (`hasCode="false"`) and no
+  resources of its own. Only the shell user and the system may start the
+  activity (the `DUMP` permission), because it connects where its intent
+  says. Package `com.simonwjackson.korri.viewer`, minimum API 31, target 34
+  as the Artemis app.
+- In-process lifecycle: `Lifecycle::in_process` is the same runtime and the
+  same replies as the socket, with no socket, UID check or signals. Its
+  controller calls `Lifecycle::request` with the treaty's `ViewerRequest`,
+  and each `ViewerEvent` goes to a function. `launch::run` holds the steps
+  that the Linux command ran in `main.rs`; both platforms now call it.
+- The app is that controller. It reads the launch from its starting intent,
+  sends Start, and sends Stop on Back or when the activity is destroyed.
+  When the runtime ends, the activity finishes. Every request, reply and
+  event goes to logcat as the treaty's JSON, with the core's own lines. The
+  intent's extras are D1's entry until korrid drives the viewer in this
+  process; each takes the name of its source: `launch_id`
+  (`ViewerRequest.launch_id`), `address` (`Start.address`), `args` (the
+  command's `stream [Moonlight arguments] HOST`, a string array) and
+  `KORRI_MOONLIGHT_SERVER_CERTIFICATE` (the pin's path). `Resize` stays
+  "Live resolution is unavailable" (#476).
+- Build: `android.nix` builds the library for both ABIs with cargo, links
+  the manifest with `aapt2` against the android-36 framework of `sdk.nix`,
+  adds the libraries and aligns with `zipalign`. No Gradle. The output is
+  unsigned; the proof signs it with the user's debug key
+  (`~/.android/debug.keystore`, made as Android Studio makes it when
+  missing).
+- Proof (`nix run .#viewer-android-proof`, `android/proof/run.py`): one
+  headless Android 12 emulator (google_apis x86_64, 2 cores, `nice` 10,
+  `android/emulator.nix`) on the build host, and stream-cadence's sender
+  fixture on aka. The tool builds everything on the build host, pairs a
+  fresh key pair with the Linux viewer's `pair`, runs the x86_64 HTTPS and
+  trust-anchor tests in the emulator, installs the APK and gives the app the
+  key pair and pin through `run-as`. It starts the app, waits for the
+  Running event and the Start reply, streams, presses Back and waits for the
+  Stopped event, the Stop reply and the activity's end. It reads Sunshine's
+  log for the session, closes the fixture and stops the emulator. The
+  emulator reaches aka's Tailscale address through its own NAT; aka admits
+  any port on `tailscale0`. Record: `proof/android-d1/`.
+- Not proven: the arm64 library on a phone (no device in this slice), and
+  anything about speed. The emulator's numbers mean nothing (ADR 0063).
+- Cost: GPL corresponding source and the notices of OpenSSL, curl and ENet
+  are not yet in the APK. The APK is a debug build for the proof, not one to
+  ship.
+
 ## Next slices
 
-The bench proof of the handheld `v4l2request` path. On Android, slice D1 of
-`docs/research/2026-11-13-viewer-rust-android.md`: the viewer in the app's
-process, with its lifecycle, on the emulator. No device installs
-`@korri:viewer` yet.
+The bench proof of the handheld `v4l2request` path. On Android, slice D2:
+MediaCodec into a layer made through JNI (the D5 spike's design C), with
+decoder choice. No device installs `@korri:viewer` yet.
 
 The cross-UID socket proof is an explicit root-only test: build
 `cargo test --manifest-path clients/viewer/Cargo.toml --test lifecycle_security --no-run`
