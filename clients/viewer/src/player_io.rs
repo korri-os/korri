@@ -103,6 +103,9 @@ impl PlayerIo {
     pub(crate) fn gamepad_mask(&self) -> i32 {
         unsafe { ffi::viewer_input_gamepad_mask() }
     }
+    pub(crate) fn decoder_callbacks(&self) -> *mut ffi::DECODER_RENDERER_CALLBACKS {
+        unsafe { ffi::picture_callbacks() }
+    }
     pub(crate) fn audio_callbacks(&self) -> *mut ffi::AUDIO_RENDERER_CALLBACKS {
         unsafe { ffi::viewer_audio_callbacks(i32::from(self.vaapi), self.audio_context().cast()) }
     }
@@ -112,6 +115,7 @@ impl PlayerIo {
             .map_or(std::ptr::null_mut(), |s| s.as_ptr().cast_mut().cast())
     }
     pub(crate) fn connection_callbacks(&self, callbacks: &mut ffi::CONNECTION_LISTENER_CALLBACKS) {
+        callbacks.logMessage = Some(ffi::picture_log);
         unsafe { ffi::viewer_input_callbacks(callbacks) };
     }
     pub(crate) fn start(&self) {
@@ -119,6 +123,11 @@ impl PlayerIo {
     }
     pub(crate) fn stop(&self) {
         unsafe { ffi::viewer_input_stop() };
+    }
+    /// One turn of the presenter's or the input's event loop: 0 to go on, a
+    /// positive value when the window asks to quit, negative on failure.
+    pub(crate) fn poll(&self, timeout_ms: i32) -> i32 {
+        unsafe { ffi::picture_poll(timeout_ms) }
     }
 }
 impl Drop for PlayerIo {

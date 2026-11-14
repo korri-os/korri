@@ -4,16 +4,30 @@ fn main() {
     let include =
         env::var("MOONLIGHT_COMMON_INCLUDE").expect("use the viewer Nix development shell");
     let lib = env::var("MOONLIGHT_COMMON_LIB").expect("missing network library path");
-    // The handheld path (Moonlight's v4l2request decoder) is aarch64 only. It
-    // needs FFmpeg with the V4L2 Request hwaccel; default.nix supplies it.
-    let request = env::var("CARGO_CFG_TARGET_ARCH").unwrap() == "aarch64";
+    println!("cargo:rerun-if-env-changed=MOONLIGHT_COMMON_INCLUDE");
+    println!("cargo:rerun-if-env-changed=MOONLIGHT_COMMON_LIB");
+    let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    // Android carries none of the Linux picture and I/O C code. android.nix
+    // builds the same core as static archives for the session part alone.
+    let android = os == "android";
+    // The handheld path (Moonlight's v4l2request decoder) is aarch64 Linux
+    // only. It needs FFmpeg with the V4L2 Request hwaccel; default.nix
+    // supplies it.
+    let request = os == "linux" && env::var("CARGO_CFG_TARGET_ARCH").unwrap() == "aarch64";
     println!("cargo::rustc-check-cfg=cfg(v4l2request)");
     if request {
         println!("cargo::rustc-cfg=v4l2request");
     }
-    let bindings = bindgen::Builder::default()
-        .header("picture/bridge.h")
-        .header("io/bridge.h")
+    let headers = if android {
+        vec![format!("{include}/Limelight.h")]
+    } else {
+        vec!["picture/bridge.h".into(), "io/bridge.h".into()]
+    };
+    let bindings = headers
+        .iter()
+        .fold(bindgen::Builder::default(), |builder, header| {
+            builder.header(header)
+        })
         .clang_arg(format!("-I{include}"))
         .allowlist_function("Li(Initialize(ServerInformation|StreamConfiguration|ConnectionCallbacks)|StartConnection|StopConnection|InterruptConnection|GetLaunchUrlQueryParameters)")
         .allowlist_function("picture_.*|viewer_.*")
@@ -24,6 +38,13 @@ fn main() {
     bindings
         .write_to_file(PathBuf::from(env::var("OUT_DIR").unwrap()).join("network.rs"))
         .unwrap();
+    if android {
+        // The core needs libcrypto, which openssl-sys links after it.
+        println!("cargo:rustc-link-search=native={lib}");
+        println!("cargo:rustc-link-lib=static=moonlight-common-c");
+        println!("cargo:rustc-link-lib=static=enet");
+        return;
+    }
     let mut c = cc::Build::new();
     c.include("picture")
         .include(include)
@@ -95,6 +116,4 @@ fn main() {
     println!("cargo:rustc-link-lib=pthread");
     println!("cargo:rerun-if-changed=picture");
     println!("cargo:rerun-if-changed=io");
-    println!("cargo:rerun-if-env-changed=MOONLIGHT_COMMON_INCLUDE");
-    println!("cargo:rerun-if-env-changed=MOONLIGHT_COMMON_LIB");
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#[cfg(not(target_os = "android"))]
+use crate::frame_times::FrameTimes;
 use crate::{
-    frame_times::FrameTimes,
     network as ffi,
     options::Options,
     pair::hex,
@@ -39,6 +40,7 @@ impl Drop for LifecycleGuard {
 static CONNECTION: Mutex<()> = Mutex::new(());
 static STOP: AtomicBool = AtomicBool::new(false);
 static TERMINATED: AtomicI32 = AtomicI32::new(0);
+#[cfg(not(target_os = "android"))]
 extern "C" fn signal_stop(_: libc::c_int) {
     STOP.store(true, Ordering::Relaxed);
 }
@@ -91,6 +93,7 @@ pub fn run_with_lifecycle(
     running()?;
     let io = PlayerIo::new(o)?;
     // Before the launch: a record that cannot be created stops nothing that ran.
+    #[cfg(not(target_os = "android"))]
     let frame_times = FrameTimes::from_environment()?;
     let app_version = CString::new(required(&info, "appversion")?)?;
     let gfe_version = CString::new(field(&info, "GfeVersion")?.unwrap_or_default())?;
@@ -246,7 +249,6 @@ pub fn run_with_lifecycle(
     callbacks.connectionStarted = Some(connection_started);
     callbacks.connectionTerminated = Some(terminated);
     callbacks.stageFailed = Some(stage_failed);
-    callbacks.logMessage = Some(ffi::picture_log);
     *LIFECYCLE.lock().unwrap() = lifecycle.map(|l| {
         (
             l.clone(),
@@ -259,7 +261,9 @@ pub fn run_with_lifecycle(
     let _lifecycle_guard = LifecycleGuard;
     io.connection_callbacks(&mut callbacks);
     // With a lifecycle socket these signals stay blocked from before its
-    // creation; lifecycle's receiver requests the stop instead.
+    // creation; lifecycle's receiver requests the stop instead. On Android
+    // the viewer is inside the app, and the app owns its process's signals.
+    #[cfg(not(target_os = "android"))]
     for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP, libc::SIGQUIT] {
         unsafe { libc::signal(signal, signal_stop as *const () as libc::sighandler_t) };
     }
@@ -274,7 +278,7 @@ pub fn run_with_lifecycle(
                 &mut server,
                 &mut config,
                 &mut callbacks,
-                ffi::picture_callbacks(),
+                io.decoder_callbacks(),
                 io.audio_callbacks(),
                 std::ptr::null_mut(),
                 i32::from(o.fullscreen)
@@ -300,7 +304,7 @@ pub fn run_with_lifecycle(
     unsafe {
         io.start();
         while !STOP.load(Ordering::Relaxed) && !lifecycle.is_some_and(|l| l.stop_requested()) {
-            let event = ffi::picture_poll(100);
+            let event = io.poll(100);
             if event != 0 {
                 poll_error = event < 0;
                 break;
@@ -309,7 +313,10 @@ pub fn run_with_lifecycle(
         io.stop();
         ffi::LiStopConnection();
     }
+    #[cfg(not(target_os = "android"))]
     let recorded = frame_times.close();
+    #[cfg(target_os = "android")]
+    let recorded = Ok(());
     ensure!(!poll_error, "picture or input event loop failed");
     let error = TERMINATED.load(Ordering::Relaxed);
     ensure!(error == 0, "stream terminated: {error}");

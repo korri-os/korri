@@ -310,6 +310,11 @@ let
         tar --sort=name --mtime=@1 --owner=0 --group=0 --numeric-owner \
           -cJf $out/share/korri-viewer/korri-viewer-source.tar.xz $root
       '';
+  # The same session part and network core for Android (#391 step D).
+  android = import ./android.nix {
+    inherit pkgs upstream repositorySource;
+    inherit (package) cargoDeps;
+  };
 in
 {
   inherit
@@ -318,6 +323,7 @@ in
     pictureCheck
     ioCheck
     correspondingSource
+    android
     ;
   devShell = pkgs.mkShell (
     environment

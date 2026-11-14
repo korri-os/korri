@@ -403,6 +403,8 @@
               inherit pkgs;
               package = self.packages.aarch64-linux.korri-viewer;
             };
+            # The NDK's compilers run on x86_64 Linux only.
+            korri-viewer-android = viewer.android.check;
           }
         );
       }

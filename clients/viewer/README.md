@@ -16,6 +16,8 @@ nix build .#checks.x86_64-linux.korri-viewer-io
 nix build .#packages.aarch64-linux.korri-viewer
 nix build .#checks.x86_64-linux.korri-viewer-aarch64
 clients/viewer/proof/v4l2request/compare.sh ../korri-plugins
+# The session part for Android (below). No device or emulator.
+nix build .#checks.x86_64-linux.korri-viewer-android
 ```
 
 ## Boundaries
@@ -162,7 +164,7 @@ The platform follows Moonlight's `main.c` and `platform.c` for
 (`linux_viewer::production::stream_args`):
 
 - `-platform v4l2request` selects it. `build.rs` compiles the file and sets
-  the `v4l2request` Rust cfg only for an aarch64 target. Other platforms keep
+  the `v4l2request` Rust cfg only for an aarch64 Linux target. Other platforms keep
   their PC behaviour on aarch64. `-platform v4l2m2m` fails.
 - Video: `decoder_callbacks_v4l2request`. Nothing initializes SDL or X11
   before it; the decoder's display thread makes its own window. `auto` codec
@@ -398,10 +400,62 @@ view-only mode both PC platform branches forward a window key, and a strace
 of them proves no `/dev/input` open is attempted.
 The aka comparison and isolation records are in `proof/`.
 
+## Android session part (#391 step D, slice D0)
+
+The session part also builds for `aarch64-linux-android` at API 31
+(ADR 0064), with the NDK of `clients/android/sdk.nix`. `android.nix` holds
+the recipe; `checks.x86_64-linux.korri-viewer-android` builds it. No device
+or emulator takes part, and nothing in `clients/android` uses it yet.
+
+- Shared: `options.rs`, `session.rs`, `pair.rs`, `stream.rs`, `lifecycle.rs`
+  and the binding are the same files on both platforms.
+- Platform parts: `player_io.rs` is Linux's picture, sound and input.
+  `src/android/player_io.rs` has the same interface and none of the three
+  yet, so the core runs its own empty decoder and audio callbacks, and its
+  log goes nowhere. The frame record and the signal handlers in `stream.rs`
+  are Linux only: on Android the app owns its process's signals. The
+  `v4l2request` cfg stays off.
+- Network core: the same unmodified `b126e481` and ENet as on Linux, built
+  with their own CMake recipe and the NDK's toolchain file, as static
+  archives. `build.rs` binds `Limelight.h` alone and links the archives.
+- TLS and HTTP: the code does not change. Android gets the same two C
+  libraries as Linux, built for it: nixpkgs' OpenSSL release (3.6.4 on this
+  date, without nixpkgs' certificate-path patches) as static archives, and
+  curl 8.22.0 from the `curl-sys` crate (`static-curl`, Android only), the
+  release that nixpkgs gives Linux. The core needs libcrypto on Android in
+  any case; the core and the session's crates link one OpenSSL. Linux still
+  links nixpkgs' shared OpenSSL and curl, so its HTTPS does not change.
+- Cost: the app carries OpenSSL and curl as C code that Korri builds, which
+  is against ADR 0062's stretch goal. Android's curl has fewer features than
+  Linux's (no HTTP/2, so no `h2` offer in the TLS handshake; no PSL, brotli
+  or zstd); the session uses none of them. A pure-Rust stack (rustls) would
+  remove curl only: the core and the pairing code still need libcrypto, and
+  Linux's certificate check, session cache, connection reuse and interrupts
+  would need a new proof.
+- The check builds the library and links the HTTPS test executable for
+  Android, which drives `Transport` and the launch chain into the core. It
+  then reads that executable: AArch64, `/system/bin/linker64`, no library
+  beyond `libc.so`, `libm.so`, `libdl.so` and `libz.so`, and the symbols of
+  the core, curl and OpenSSL inside. It does not run it.
+
+Live resolution: Android also uses the unpatched core, so the Rust viewer
+answers `Resize` with "Live resolution is unavailable", as on Linux. Today's
+Android app changes the stream's resolution live (korrid's Portrait control,
+fold and rotation) through `SunshineRuntimeSettings.c`. Korri wrote that file
+in its Artemis copy of the core (`1fd8f951a`); Sunshine patch 0044 in
+`korri-plugins` serves it. **Gate:** slice D7, which removes `Game.java`, does
+not ship until live resolution works in the Rust viewer. Dropping a live
+feature is not "equal or better" (ADR 0062). A slice before D7 chooses the
+route: a Korri patch on the core (first check its packet type 0x5504 against
+upstream Sunshine, which is reported to use it for player LEDs), the Rust
+network core of step E, or a control channel that korrid owns.
+
 ## Next slices
 
-The bench proof of the handheld `v4l2request` path. Android integration
-comes after the Linux stage. No device installs `@korri:viewer` yet.
+The bench proof of the handheld `v4l2request` path. On Android, slice D1 of
+`docs/research/2026-11-13-viewer-rust-android.md`: the viewer in the app's
+process, with its lifecycle, on the emulator. No device installs
+`@korri:viewer` yet.
 
 The cross-UID socket proof is an explicit root-only test: build
 `cargo test --manifest-path clients/viewer/Cargo.toml --test lifecycle_security --no-run`
