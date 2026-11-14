@@ -1019,6 +1019,18 @@ class Session:
             return self.prepare(request)
         if operation == "close":
             return self.close()
+        if operation == "checkpoint" and self.root is None:
+            # A turn refused before the fixture was made has nothing to check
+            # here. The session's final cleanup still checks the device, and
+            # the turn's refusal stays its reported error.
+            return {
+                "pass": True,
+                "prepared": False,
+                "pids_unchanged": {},
+                "live_games": live_games() if self.watch_games else [],
+                "product_units": None,
+                "remaining_processes": [],
+            }
         if self.root is None:
             raise RuntimeError("viewer session is not prepared")
         if operation == "begin":

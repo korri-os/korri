@@ -840,6 +840,20 @@ class Session:
             return self.prepare(request)
         if operation == "close":
             return self.close()
+        if operation == "checkpoint" and self.root is None:
+            # A turn refused before the fixture was made has nothing to check
+            # here. The session's final cleanup still checks the device, and
+            # the turn's refusal stays its reported error.
+            return {
+                "pass": True,
+                "prepared": False,
+                "remaining_processes": [],
+                "live_games": live_games() if self.watch_games else [],
+                "product_units": None,
+                "new_input_devices": [],
+                "gone_input_devices": [],
+                "input_rule": self.input_rule,
+            }
         if self.root is None:
             raise RuntimeError("sender fixture is not prepared")
         if operation == "begin":

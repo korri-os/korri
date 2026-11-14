@@ -10,8 +10,10 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import cli  # noqa: E402
+import sender  # noqa: E402
 import test_private_sender  # noqa: E402
 import test_plugin_viewer  # noqa: E402
+import viewer  # noqa: E402
 
 
 class Options(unittest.TestCase):
@@ -135,7 +137,71 @@ class ViewerTurns(test_plugin_viewer.PluginViewerInTheFixture):
             leftover.wait(timeout=5)
 
 
+class AgentInProcess:
+    """The tool's agent protocol, served by a real agent session in this process."""
+
+    def __init__(self, session) -> None:
+        self.session = session
+
+    def request(self, operation: str, **values) -> dict:
+        try:
+            return self.session.handle({"operation": operation, **values})
+        except Exception as error:
+            # As Remote: the agent's words become the tool's refusal.
+            raise cli.Refusal(str(error)) from error
+
+
+class FirstTurnRefusedBeforePrepare(test_private_sender.Machine):
+    """aka, 2026-11-14 UTC: a hot first turn reported "Device restore check failed"."""
+
+    def test_an_unprepared_agent_has_nothing_to_check_at_a_checkpoint(self):
+        quiet = sender.Session()
+        self.addCleanup(quiet.close)
+        seat = viewer.Session(str(self.peers / "sway"))
+        self.addCleanup(seat.close)
+        for agent in (quiet, seat):
+            checkpoint = agent.handle({"operation": "checkpoint"})
+            self.assertTrue(checkpoint["pass"], checkpoint)
+            self.assertFalse(checkpoint["prepared"])
+            self.assertEqual(checkpoint["remaining_processes"], [])
+
+    def test_the_heat_refusal_stays_the_reported_error_of_a_first_turn(self):
+        self.zone(80000)  # At or above the lowest passive trip point: no start.
+        quiet = sender.Session()
+        seat = viewer.Session(str(self.peers / "sway"))
+        args = cli.parser().parse_args([
+            "view", "--sender", "local", "--viewer", "local", "--sender-fixture",
+            "--viewer-package", "/baseline", "--candidate-package", "/candidate",
+        ])
+        args.imported_store_paths, args.turn_order, args.turn_side = [], 1, "baseline"
+        args.product_viewer, args.ssh_target = None, None
+        paths = {name: "" for name in ("motion", "sway", "sunshine", "capture", "press", "viewer")}
+        with tempfile.TemporaryDirectory() as temporary:
+            run = Path(temporary) / "run-1"
+            run.mkdir()
+            record = cli.view_case(args, AgentInProcess(quiet), AgentInProcess(seat), paths, run, None, 0, {})
+        facts = record["discovered"]
+        self.assertFalse(facts["valid"])
+        self.assertRegex(facts["error"], "The device is hot")
+        self.assertNotIn("restore check failed", facts["error"])
+        self.assertTrue(facts["restore"]["pass"] and facts["viewer_restore"]["pass"])
+        cli.restore_view_session([record], {"restore": quiet.close(), "viewer_restore": seat.close()})
+        self.assertRegex(facts["error"], "The device is hot")
+        self.assertTrue(facts["restore"]["session_cleanup"]["run_folder_removed"] is not False)
+
+
 class SessionRestore(unittest.TestCase):
+    def test_a_failed_restore_after_a_refusal_keeps_the_refusal(self):
+        row = {"discovered": {"valid": False, "error": "The device is hot. Let it cool, then run again.",
+                              "restore": {"pass": True}, "viewer_restore": {"pass": True}}}
+        cli.restore_view_session([row], {
+            "restore": {"pass": False, "errors": ["leftover"]},
+            "viewer_restore": {"pass": True},
+        })
+        error = row["discovered"]["error"]
+        self.assertTrue(error.startswith("Device restore check failed."), error)
+        self.assertIn("The device is hot.", error)
+
     def test_failed_final_cleanup_invalidates_every_turn_and_keeps_its_checkpoint(self):
         rows = [
             {"discovered": {"valid": True, "restore": {"pass": True, "new_input_devices": [str(n)]},

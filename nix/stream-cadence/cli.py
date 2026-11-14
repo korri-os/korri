@@ -1721,9 +1721,7 @@ def view_case(
         restored = facts["restore"]["pass"] and facts["viewer_restore"]["pass"]
         if not restored:
             facts["valid"] = False
-            facts["error"] = (
-                "Device restore check failed. Stop device work and inspect restore evidence."
-            )
+            facts["error"] = restore_failed(facts.get("error"))
         saved = record
         if session is not None and facts["valid"]:
             # A checkpoint is not cleanup. No persisted run is valid before the
@@ -1763,6 +1761,16 @@ def view_output(out: Path | None, runs: int, candidate: bool) -> Path:
     return root
 
 
+RESTORE_FAILED = "Device restore check failed. Stop device work and inspect restore evidence."
+
+
+def restore_failed(earlier: str | None) -> str:
+    """The error of a run whose restore check failed. The run's own refusal stays in it."""
+    if not earlier or earlier.startswith(RESTORE_FAILED):
+        return RESTORE_FAILED
+    return f"{RESTORE_FAILED} The run had ended before that: {earlier}"
+
+
 def restore_view_session(results: list[dict], cleanup: dict) -> None:
     """Apply the pair's final cleanup to every turn, retaining each checkpoint."""
     for row in results:
@@ -1774,7 +1782,7 @@ def restore_view_session(results: list[dict], cleanup: dict) -> None:
                            "pass": checkpoint["pass"] and final["pass"]}
             if not facts[name]["pass"]:
                 facts["valid"] = False
-                facts["error"] = "Device restore check failed. Stop device work and inspect restore evidence."
+                facts["error"] = restore_failed(facts.get("error"))
 
 
 def view(args: argparse.Namespace) -> int:
