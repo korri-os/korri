@@ -1,5 +1,5 @@
 
-running 85 tests
+running 90 tests
 test audio::tests::a_device_that_stays_lost_ends_the_sound_without_a_busy_loop ... ok
 test audio::tests::a_large_burst_sets_a_buffer_of_two_bursts ... ok
 test audio::tests::a_lost_packet_is_concealed_by_opus ... ok
@@ -40,10 +40,12 @@ test frame_record::tests::a_unit_that_waits_for_256_units_is_written_as_not_show
 test frame_record::tests::late_reports_for_written_rows_change_nothing ... ok
 test frame_record::tests::rows_are_in_index_order_with_empty_times_for_frames_not_shown ... ok
 test frame_record::tests::the_record_takes_only_a_new_name ... ok
+test input::tests::a_device_list_that_cannot_be_read_releases_no_controller ... ok
 test input::tests::a_dualshock_4_gets_linuxs_face_buttons_and_its_triggers_idle_at_minus_one ... ok
 test input::tests::a_gamepad_arrives_with_its_kind_and_buttons_then_sends_its_state ... ok
 test input::tests::a_keyboard_key_goes_as_its_windows_code_with_the_modifiers ... ok
 test input::tests::a_mouse_points_into_the_picture_and_clicks ... ok
+test input::tests::a_press_with_a_strange_down_time_holds_no_longer_than_25_ms ... ok
 test input::tests::a_repeated_key_is_not_sent_again ... ok
 test input::tests::a_short_press_is_held_for_25_ms ... ok
 test input::tests::a_tap_is_a_touch_in_the_picture ... ok
@@ -52,13 +54,16 @@ test input::tests::back_from_a_keyboard_and_the_volume_stay_androids ... ok
 test input::tests::back_on_a_gamepad_is_select ... ok
 test input::tests::ctrl_alt_shift_q_leaves ... ok
 test input::tests::guide_reaches_the_host_without_the_overlay ... ok
+test input::tests::no_send_reaches_the_core_once_the_gate_has_closed ... ok
 test input::tests::start_and_select_together_are_guide_on_a_pad_without_one ... ok
 test input::tests::start_held_turns_the_pad_into_a_mouse ... ok
 test input::tests::sticks_have_a_deadzone_and_triggers_their_own ... ok
 test input::tests::the_hat_is_the_dpad_and_then_its_keys_are_not_sent_twice ... ok
+test input::tests::the_heartbeat_has_no_deadline_before_its_first_tick ... ok
 test input::tests::the_heartbeat_repeats_the_last_state_and_a_removed_pad_lets_go ... ok
 test input::tests::the_launch_mask_counts_the_joysticks ... ok
 test input::tests::the_report_counts_what_went ... ok
+test input::tests::two_devices_without_axes_that_point_at_each_other_take_number_0 ... ok
 test input::tests::two_gamepads_take_numbers_in_turn_and_the_mask_holds_both ... ok
 test input::tests::without_mouse_emulation_start_is_only_start ... ok
 test input::tests::without_touch_on_the_host_a_long_press_is_a_right_click ... ok
@@ -86,5 +91,5 @@ test sps::tests::emulation_prevention_survives_the_round_trip ... ok
 test sps::tests::levels_follow_the_stream_size_and_rate ... ok
 test sps::tests::the_synthetic_sample_reads_past_its_scaling_lists ... ok
 
-test result: ok. 85 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 8.97s
+test result: ok. 90 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 9.72s
 

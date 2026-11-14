@@ -35,6 +35,7 @@
     "sound_closed_before_stopped": true,
     "sound_went_on_after_the_audio_server_restarted": true,
     "input_report_has_no_failure": true,
+    "input_gate_closed_before_the_core_stopped": true,
     "picture_path_reported": true,
     "frame_record_written": true,
     "frame_record_ids_move": true,
@@ -54,12 +55,12 @@
     "emulator_played_the_tests_tone": true
   },
   "store": {
-    "apk": "/nix/store/qk428xsfkxky171dwksyphp0gjxdv9gc-korri-viewer-android-apk-0.1.0/korri-viewer-unsigned.apk",
+    "apk": "/nix/store/xmbsfg69n2343rypzxwjw7n1hpc4fk0m-korri-viewer-android-apk-0.1.0/korri-viewer-unsigned.apk",
     "refusal_probe": "/nix/store/00fgx992pnszmr7i0vkmvw9ldjssngkk-korri-viewer-refusal-probe-apk-0.1.0/korri-viewer-refusal-probe-unsigned.apk",
-    "viewer": "/nix/store/73mxhaxnq0g8k7yyij45xvdmfq3di73z-korri-viewer-0.1.0",
-    "tests": "/nix/store/l32q8psc366p3519wm11jm5s6bh81nrh-korri-viewer-android-check/x86_64/tests"
+    "viewer": "/nix/store/jl0j6j1id8c6pyzng4k82yhkciy2y2a0-korri-viewer-0.1.0",
+    "tests": "/nix/store/d3x64sh3xdzn0f7rr62k9xiha49474qz-korri-viewer-android-check/x86_64/tests"
   },
-  "sunshine_port": 50293,
+  "sunshine_port": 45047,
   "emulator": {
     "release": "12",
     "sdk": "31",
@@ -70,134 +71,94 @@
       {
         "file": "00.png",
         "from_start_ms": [
-          627,
-          1964
+          1027,
+          2217
         ],
         "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
       },
       {
         "file": "01.png",
         "from_start_ms": [
-          2054,
-          2469
+          2324,
+          2688
         ],
         "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
       },
       {
         "file": "02.png",
         "from_start_ms": [
-          2532,
-          2846
+          2749,
+          3213
         ],
         "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
       },
       {
         "file": "03.png",
         "from_start_ms": [
-          2906,
-          3170
+          3265,
+          3629
         ],
         "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
       },
       {
         "file": "04.png",
         "from_start_ms": [
-          3226,
-          3490
+          3682,
+          4197
         ],
         "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
       },
       {
         "file": "05.png",
         "from_start_ms": [
-          3554,
-          3969
+          4252,
+          4717
         ],
         "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
       },
       {
         "file": "06.png",
         "from_start_ms": [
-          4041,
-          4356
+          4775,
+          6566
         ],
         "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
       },
       {
         "file": "07.png",
         "from_start_ms": [
-          4418,
-          4782
+          6692,
+          8020
         ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "08.png",
-        "from_start_ms": [
-          4842,
-          5206
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "09.png",
-        "from_start_ms": [
-          5273,
-          5638
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "10.png",
-        "from_start_ms": [
-          5708,
-          6123
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "11.png",
-        "from_start_ms": [
-          6189,
-          8114
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "12.png",
-        "from_start_ms": [
-          8232,
-          9766
-        ],
-        "id": 2692
+        "id": 2783
       }
     ],
     "first_readable": {
-      "file": "12.png",
+      "file": "07.png",
       "from_start_ms": [
-        8232,
-        9766
+        6692,
+        8020
       ],
-      "id": 2692
+      "id": 2783
     }
   },
-  "app_pid": "3357",
+  "app_pid": "3381",
   "streaming_screenshots": [
     {
       "file": "streaming-1.png",
-      "id": 2970
+      "id": 3015
     },
     {
       "file": "streaming-2.png",
-      "id": 3114
+      "id": 3157
     },
     {
       "file": "streaming-3.png",
-      "id": 3266
+      "id": 3300
     },
     {
       "file": "streaming-4.png",
-      "id": 3425
+      "id": 3457
     }
   ],
   "input": {
@@ -255,41 +216,41 @@
   "screenshots_after_input": [
     {
       "file": "after-input-1.png",
-      "id": 4337
+      "id": 4329
     },
     {
       "file": "after-input-2.png",
-      "id": 4435
+      "id": 4424
     },
     {
       "file": "after-input-3.png",
-      "id": 4532
+      "id": 4522
     }
   ],
   "audio_server_restart": {
-    "before": "392",
-    "after": "4726"
+    "before": "396",
+    "after": "4680"
   },
   "sound_after_the_restart": [],
   "sound": {
     "output": "sound: output try 0 asked low-latency granted none sharing shared rate 48000 channels 2 burst 960 capacity 2132 buffer 1920 (asked 1920) packet 240 frames",
-    "ended": "4835 callbacks, 2157297 frames played, 169920 frames silent, 350 short callbacks after the first sound, 9973 packets, 0 concealed, 978 dropped over 40 ms pending, 0 not decoded, 17 device xruns, 0 reopened",
-    "callbacks": 4835,
-    "played": 2157297,
-    "silent": 169920,
-    "short": 350,
-    "packets": 9973,
+    "ended": "4801 callbacks, 2111866 frames played, 186960 frames silent, 323 short callbacks after the first sound, 9556 packets, 0 concealed, 750 dropped over 40 ms pending, 0 not decoded, 7 device xruns, 0 reopened",
+    "callbacks": 4801,
+    "played": 2111866,
+    "silent": 186960,
+    "short": 323,
+    "packets": 9556,
     "concealed": 0,
-    "dropped": 978,
+    "dropped": 750,
     "decode_errors": 0,
-    "xruns": 17,
+    "xruns": 7,
     "reopened": 0
   },
   "sound_restart": {
-    "seconds_before_the_server_died": 35.0,
-    "seconds_played": 44.9
+    "seconds_before_the_server_died": 33.6,
+    "seconds_played": 44.0
   },
-  "input_report": "10 keys, 46 controller states, 1 arrivals, 2 mouse, 124 touches sent; 0 unsupported, 0 failed",
+  "input_report": "10 keys, 47 controller states, 1 arrivals, 2 mouse, 177 touches sent; 0 unsupported, 0 outside the stream, 0 failed",
   "viewer_ran": {
     "decode": "mediacodec",
     "decoder": "c2.goldfish.h264.decoder"
@@ -297,39 +258,39 @@
   "picture_losses": {
     "idr_requested_by_the_decoder": 0,
     "frames_not_decoded": 0,
-    "decode_unit_queue_overflows": 2,
+    "decode_unit_queue_overflows": 1,
     "frames_the_network_dropped": 0
   },
   "frame_record": {
     "header": "index,frame_number,enqueue_ns,decoded_ns,display_ns",
-    "rows": 2991,
+    "rows": 2911,
     "in_order": true,
-    "decoded": 2991,
-    "handed_off": 2827,
-    "recording_units": 2991,
-    "handed_off_readable_ids": 2826,
-    "handed_off_distinct_ids": 2826,
+    "decoded": 2911,
+    "handed_off": 2771,
+    "recording_units": 2911,
+    "handed_off_readable_ids": 2770,
+    "handed_off_distinct_ids": 2770,
     "handed_off_ids_increase": true,
-    "first_handed_off_id": 2568,
-    "last_handed_off_id": 5591,
-    "first_handoff_ns": 39954827530,
-    "startup_ms": 6296.8
+    "first_handed_off_id": 2658,
+    "last_handed_off_id": 5584,
+    "first_handoff_ns": 41171796842,
+    "startup_ms": 5038.8
   },
   "refusal": {
-    "without_dump": "refused: java.lang.SecurityException: Permission Denial: starting Intent { cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity } from ProcessRecord{2c082ab 4861:com.simonwjackson.korri.viewer.refusal/u0a158} (pid=4861, uid=10158) requires android.permission.DUMP",
+    "without_dump": "refused: java.lang.SecurityException: Permission Denial: starting Intent { cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity } from ProcessRecord{f3232ea 4811:com.simonwjackson.korri.viewer.refusal/u0a160} (pid=4811, uid=10160) requires android.permission.DUMP",
     "with_dump_granted": "started",
     "viewer_lines_after_the_grant": [
-      "   101.623  3357  4942 E korri-viewer: viewer failed: no intent extra args"
+      "   101.118  3381  4884 E korri-viewer: viewer failed: no intent extra args"
     ]
   },
   "input_at_the_sender": {
     "counts": {
       "absolute mouse move": 2,
-      "controller": 47,
+      "controller": 48,
       "controller arrival": 1,
       "keyboard": 10,
       "relative mouse move": 2,
-      "touch": 88
+      "touch": 143
     },
     "keyboard": {
       "sent": [
@@ -385,7 +346,7 @@
         2,
         3
       ],
-      "at_the_middle": 7
+      "at_the_middle": 5
     },
     "mouse": {
       "positions": 2,
@@ -405,12 +366,12 @@
       }
     ],
     "controller": {
-      "packets": 47,
+      "packets": 48,
       "a_pressed": true,
       "left_stick_full_right": true,
       "right_trigger_full": true,
       "hat_left": true,
-      "x_held_packets": 17,
+      "x_held_packets": 18,
       "last": {
         "controllerNumber": "0",
         "activeGamepadMask": "0000",
@@ -425,10 +386,10 @@
       "after_it_went": {
         "packets": 5,
         "gaps_ms": [
-          246,
-          251,
-          250,
-          268
+          252,
+          249,
+          254,
+          255
         ]
       }
     }
@@ -566,8 +527,8 @@
     },
     "pass": true,
     "pids_unchanged": {},
-    "run_folder": "/tmp/korri-stream-cadence-sender-d4_m2ewf",
-    "run_folder_bytes": 18435121,
+    "run_folder": "/tmp/korri-stream-cadence-sender-3od0ceib",
+    "run_folder_bytes": 17979118,
     "run_folder_removed": true,
     "stray_processes_killed": [],
     "remaining_processes": [],
@@ -585,11 +546,11 @@
   "emulator_sound": {
     "rate": 48000,
     "channels": 2,
-    "seconds": 56.5,
-    "seconds_of_sound": 47.1,
-    "seconds_at_1000_hz": 43.7,
-    "median_rms_at_1000_hz": 273.4,
-    "seconds_at_440_hz": 2.0,
+    "seconds": 54.6,
+    "seconds_of_sound": 46.3,
+    "seconds_at_1000_hz": 42.8,
+    "median_rms_at_1000_hz": 269.4,
+    "seconds_at_440_hz": 2.1,
     "median_rms_at_440_hz": 200.4
   },
   "pass": true

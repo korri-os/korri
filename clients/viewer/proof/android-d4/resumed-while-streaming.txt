@@ -1,1 +1,1 @@
-    mResumedActivity: ActivityRecord{ec1c228 u0 com.simonwjackson.korri.viewer/android.app.NativeActivity t9}
+    mResumedActivity: ActivityRecord{6bbb86a u0 com.simonwjackson.korri.viewer/android.app.NativeActivity t9}
