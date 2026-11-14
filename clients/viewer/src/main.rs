@@ -47,6 +47,11 @@ fn run() -> Result<()> {
             &options.keydir,
             std::path::Path::new(&pin),
         )?;
+        if let Some(lifecycle) = &lifecycle {
+            lifecycle.ensure_running()?;
+            let lifecycle = lifecycle.clone();
+            transport.interrupt_when(move || lifecycle.ensure_running());
+        }
         transport.discover_port()?;
         if options.action == "pair" {
             pair::pair(&mut transport, &identity)
@@ -54,6 +59,14 @@ fn run() -> Result<()> {
             stream::run_with_lifecycle(&mut transport, &options, lifecycle.as_ref())
         }
     })();
+    // A stop between Start and the stream ends the launch as requested.
+    let result = result.or_else(|error| {
+        if error.is::<lifecycle::Stopping>() {
+            Ok(())
+        } else {
+            Err(error)
+        }
+    });
     if let Some(lifecycle) = &lifecycle {
         match &result {
             Ok(()) => lifecycle.stopped(),

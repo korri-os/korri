@@ -15,7 +15,7 @@ fn main() {
         .header("picture/bridge.h")
         .header("io/bridge.h")
         .clang_arg(format!("-I{include}"))
-        .allowlist_function("Li(Initialize(ServerInformation|StreamConfiguration|ConnectionCallbacks)|StartConnection|StopConnection|GetLaunchUrlQueryParameters)")
+        .allowlist_function("Li(Initialize(ServerInformation|StreamConfiguration|ConnectionCallbacks)|StartConnection|StopConnection|InterruptConnection|GetLaunchUrlQueryParameters)")
         .allowlist_function("picture_.*|viewer_.*")
         .allowlist_type("(STREAM_CONFIGURATION|SERVER_INFORMATION|CONNECTION_LISTENER_CALLBACKS|DECODER_RENDERER_CALLBACKS|AUDIO_RENDERER_CALLBACKS)")
         .allowlist_var("(VIDEO_FORMAT_.*|STREAM_CFG_.*|ENCFLG_.*)")

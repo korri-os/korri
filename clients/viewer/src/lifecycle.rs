@@ -56,6 +56,17 @@ impl Start {
     }
 }
 
+/// A stop (Stop, a lost controller or a termination signal) ended the launch
+/// before its stream ran. It is the requested end, not a failure.
+#[derive(Debug)]
+pub struct Stopping;
+impl std::fmt::Display for Stopping {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("viewer is stopping")
+    }
+}
+impl std::error::Error for Stopping {}
+
 #[derive(Default)]
 struct State {
     start: Option<Start>,
@@ -160,6 +171,15 @@ impl Lifecycle {
     }
     pub fn stop_requested(&self) -> bool {
         self.0.state.lock().unwrap().stop
+    }
+    /// Between the connection steps after Start: `Stopping` once a stop is
+    /// requested, so that no later step runs.
+    pub fn ensure_running(&self) -> Result<()> {
+        if self.stop_requested() {
+            Err(Stopping.into())
+        } else {
+            Ok(())
+        }
     }
     /// A termination signal stops the launch as Stop does. The socket and its
     /// directory go at once, by descriptor, while the runtime may still be
@@ -272,10 +292,8 @@ fn handle(inner: &Inner, command: C) -> Result<R> {
     let mut state = inner.state.lock().unwrap();
     match command {
         C::Start { address, display } => {
-            ensure!(
-                !state.started && !state.finished,
-                "viewer launch already started"
-            );
+            ensure!(!state.stop && !state.finished, Stopping);
+            ensure!(!state.started, "viewer launch already started");
             ensure!(
                 !address.is_empty() && !address.contains('\0'),
                 "invalid viewer address"
@@ -367,4 +385,61 @@ pub fn from_args(args: &mut Vec<String>) -> Result<Option<Lifecycle>> {
     })?;
     args.drain(..6);
     Ok(Some(lifecycle))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::MetadataExt;
+
+    fn request(socket: &mut BufReader<UnixStream>, command: C) -> R {
+        let launch_id = "a".into();
+        write_message(socket.get_mut(), &ViewerRequest { launch_id, command }).unwrap();
+        loop {
+            if let M::Reply(reply) = read_message(socket).unwrap().unwrap() {
+                return reply;
+            }
+        }
+    }
+
+    // #468 review: a Start that arrived after a stop request was admitted,
+    // then waited out the connection deadline, or, once the runtime had
+    // finished, was told that the launch had already started.
+    #[test]
+    fn start_after_a_stop_request_is_refused_at_once_as_stopping() {
+        let root = std::fs::metadata("/").unwrap().uid();
+        if root != 0 && root != unsafe { libc::geteuid() } {
+            return; // The Nix build sandbox: the viewer refuses every location.
+        }
+        let dir = match std::env::var_os("XDG_RUNTIME_DIR") {
+            Some(runtime) => tempfile::tempdir_in(runtime).unwrap(),
+            None => tempfile::tempdir().unwrap(),
+        };
+        let path = dir.path().join("control/viewer.sock");
+        let lifecycle = Lifecycle::bind(&path, "a", unsafe { libc::geteuid() }).unwrap();
+        let socket = UnixStream::connect(&path).unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut socket = BufReader::new(socket);
+        assert!(matches!(request(&mut socket, C::Status), R::Error { .. }));
+
+        lifecycle.terminate();
+        let asked = std::time::Instant::now();
+        let reply = request(
+            &mut socket,
+            C::Start {
+                address: "127.0.0.1".into(),
+                display: None,
+            },
+        );
+
+        assert!(
+            matches!(&reply, R::Error { message } if message == "viewer is stopping"),
+            "{reply:?}"
+        );
+        assert!(asked.elapsed() < Duration::from_secs(1));
+        lifecycle.stopped();
+        lifecycle.drain();
+    }
 }

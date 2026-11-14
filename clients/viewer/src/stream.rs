@@ -13,6 +13,7 @@ use std::{
         Mutex,
         atomic::{AtomicBool, AtomicI32, Ordering},
     },
+    time::Duration,
 };
 
 static LIFECYCLE: Mutex<
@@ -50,6 +51,19 @@ unsafe extern "C" fn terminated(code: i32) {
 unsafe extern "C" fn stage_failed(stage: i32, error: i32) {
     eprintln!("connection stage {stage} failed: {error}");
 }
+/// LiStartConnection blocks for its whole handshake. Interrupted, the core
+/// ends it at its own points: before each RTSP exchange, between RTSP connect
+/// retries, and in its ENet waits. One TCP connect or RTSP exchange can still
+/// take its full timeout.
+fn interrupt_start_on_stop(lifecycle: &crate::lifecycle::Lifecycle, returned: &AtomicBool) {
+    while !returned.load(Ordering::Relaxed) {
+        if lifecycle.stop_requested() {
+            // LiStartConnection clears the flag as it begins: repeat it.
+            unsafe { ffi::LiInterruptConnection() };
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
 
 pub fn run(t: &mut Transport, o: &Options) -> Result<()> {
     run_with_lifecycle(t, o, None)
@@ -64,12 +78,16 @@ pub fn run_with_lifecycle(
         .map_err(|_| anyhow::anyhow!("a stream connection is already active"))?;
     STOP.store(false, Ordering::Relaxed);
     TERMINATED.store(0, Ordering::Relaxed);
+    // Between the connection steps: a stop since Start ends the launch here.
+    let running = || lifecycle.map_or(Ok(()), crate::lifecycle::Lifecycle::ensure_running);
+    running()?;
     let info = t.get(true, "serverinfo", &[])?;
     ensure!(
         required(&info, "PairStatus")? == "1",
         "client is not paired"
     );
     let app = app_id(&t.get(true, "applist", &[])?, &o.app)?;
+    running()?;
     let io = PlayerIo::new(o)?;
     let app_version = CString::new(required(&info, "appversion")?)?;
     let gfe_version = CString::new(field(&info, "GfeVersion")?.unwrap_or_default())?;
@@ -199,6 +217,8 @@ pub fn run_with_lifecycle(
             ("clientHdrCapDisplayData", "0x0x0x0x0x0x0x0x0x0x0".into()),
         ]);
     }
+    // After a stop the host must not start the application for nobody.
+    running()?;
     let launched = t.get(true, endpoint, &params)?;
     let session = field(&launched, "gamesession")?
         .or(field(&launched, "resume")?)
@@ -235,32 +255,45 @@ pub fn run_with_lifecycle(
     });
     let _lifecycle_guard = LifecycleGuard;
     io.connection_callbacks(&mut callbacks);
+    // With a lifecycle socket these signals stay blocked from before its
+    // creation; lifecycle's receiver requests the stop instead.
+    for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP, libc::SIGQUIT] {
+        unsafe { libc::signal(signal, signal_stop as *const () as libc::sighandler_t) };
+    }
+    running()?;
+    let returned = AtomicBool::new(false);
+    let result = std::thread::scope(|scope| {
+        if let Some(lifecycle) = lifecycle {
+            scope.spawn(|| interrupt_start_on_stop(lifecycle, &returned));
+        }
+        let result = unsafe {
+            ffi::LiStartConnection(
+                &mut server,
+                &mut config,
+                &mut callbacks,
+                ffi::picture_callbacks(),
+                io.audio_callbacks(),
+                std::ptr::null_mut(),
+                i32::from(o.fullscreen)
+                    | match o.rotation {
+                        90 => 8,
+                        180 => 16,
+                        270 => 24,
+                        _ => 0,
+                    },
+                io.audio_context(),
+                0,
+            )
+        };
+        returned.store(true, Ordering::Relaxed);
+        result
+    });
+    if result != 0 {
+        // An interrupted start is the requested stop, not a failure.
+        running()?;
+        anyhow::bail!("stream connection failed: {result}");
+    }
     unsafe {
-        // With a lifecycle socket these signals stay blocked from before its
-        // creation; lifecycle's receiver requests the stop instead.
-        for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP, libc::SIGQUIT] {
-            libc::signal(signal, signal_stop as *const () as libc::sighandler_t);
-        }
-        let result = ffi::LiStartConnection(
-            &mut server,
-            &mut config,
-            &mut callbacks,
-            ffi::picture_callbacks(),
-            io.audio_callbacks(),
-            std::ptr::null_mut(),
-            i32::from(o.fullscreen)
-                | match o.rotation {
-                    90 => 8,
-                    180 => 16,
-                    270 => 24,
-                    _ => 0,
-                },
-            io.audio_context(),
-            0,
-        );
-        if result != 0 {
-            anyhow::bail!("stream connection failed: {result}");
-        }
         io.start();
         let mut poll_error = false;
         while !STOP.load(Ordering::Relaxed) && !lifecycle.is_some_and(|l| l.stop_requested()) {

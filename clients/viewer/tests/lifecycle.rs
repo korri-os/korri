@@ -6,11 +6,12 @@ use korri_viewer_treaty::{
 };
 use korri_viewer_treaty::{read_message, write_message};
 use std::{
-    io::BufReader,
+    io::{BufReader, Read, Write},
     net::TcpListener,
     os::unix::net::UnixStream,
     path::Path,
     process::{Child, Command, ExitStatus, Stdio},
+    sync::mpsc,
     time::{Duration, Instant},
 };
 
@@ -372,6 +373,7 @@ fn lifecycle_viewer(path: &Path, keys: &Path) -> Command {
             "--controller-uid",
             &unsafe { libc::geteuid() }.to_string(),
             "stream",
+            "-viewonly",
             "-keydir",
             keys.to_str().unwrap(),
             "127.0.0.1",
@@ -379,6 +381,144 @@ fn lifecycle_viewer(path: &Path, keys: &Path) -> Command {
         .env_remove("KORRI_MOONLIGHT_SERVER_CERTIFICATE")
         .stderr(Stdio::null());
     command
+}
+
+/// The same process with a host to reach: it pins the host's certificate.
+fn viewer_for(host: &Host, path: &Path) -> Command {
+    let mut command = lifecycle_viewer(path, &host.keys);
+    command.env(
+        "KORRI_MOONLIGHT_SERVER_CERTIFICATE",
+        host.keys.join("client.pem"),
+    );
+    command
+}
+
+fn start(controller: &mut BufReader<UnixStream>, port: u16) {
+    write_message(
+        controller.get_mut(),
+        &ViewerRequest {
+            launch_id: "a".into(),
+            command: C::Start {
+                address: format!("127.0.0.1:{port}"),
+                display: None,
+            },
+        },
+    )
+    .unwrap();
+}
+
+/// A GameStream host on loopback, as Sunshine answers the viewer: HTTP port
+/// discovery, then HTTPS serverinfo, applist and launch. It uses the viewer's
+/// own certificate, which the viewer pins. It reports each request path, and
+/// it answers the `held` endpoint only after `release`.
+struct Host {
+    keys: std::path::PathBuf,
+    http_port: u16,
+    requests: mpsc::Receiver<String>,
+    release: mpsc::Sender<()>,
+}
+impl Host {
+    fn start(keys: &Path, held: Option<&'static str>, rtsp: String) -> Self {
+        use openssl::ssl::{SslAcceptor, SslMethod};
+        let identity = korri_viewer::session::Identity::load_or_generate(keys).unwrap();
+        let http = TcpListener::bind("127.0.0.1:0").unwrap();
+        let https = TcpListener::bind("127.0.0.1:0").unwrap();
+        let http_port = http.local_addr().unwrap().port();
+        let https_port = https.local_addr().unwrap().port();
+        let mut acceptor = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
+        acceptor.set_private_key(&identity.key).unwrap();
+        acceptor.set_certificate(&identity.cert).unwrap();
+        let acceptor = acceptor.build();
+        let (report, requests) = mpsc::channel();
+        let (release, released) = mpsc::channel::<()>();
+        let discovery = report.clone();
+        std::thread::spawn(move || {
+            for socket in http.incoming() {
+                let Ok(mut socket) = socket else { return };
+                let Some(path) = request_path(&mut socket) else {
+                    continue;
+                };
+                if discovery.send(path).is_err() {
+                    return;
+                }
+                answer(&mut socket, &format!("<HttpsPort>{https_port}</HttpsPort>"));
+            }
+        });
+        std::thread::spawn(move || {
+            for socket in https.incoming() {
+                let Ok(socket) = socket else { return };
+                let Ok(mut tls) = acceptor.accept(socket) else {
+                    continue;
+                };
+                let Some(path) = request_path(&mut tls) else {
+                    continue;
+                };
+                let endpoint = path[1..].split('?').next().unwrap().to_owned();
+                if report.send(path).is_err()
+                    || held == Some(endpoint.as_str()) && released.recv().is_err()
+                {
+                    return;
+                }
+                let body = match endpoint.as_str() {
+                    "serverinfo" => "<PairStatus>1</PairStatus><appversion>7.1.431.0</appversion><ServerCodecModeSupport>1</ServerCodecModeSupport><currentgame>0</currentgame><state>SUNSHINE_SERVER_FREE</state>".into(),
+                    "applist" => "<App><AppTitle>Korri Stream</AppTitle><ID>42</ID></App>".into(),
+                    _ => format!("<gamesession>1</gamesession><sessionUrl0>{rtsp}</sessionUrl0>"),
+                };
+                answer(&mut tls, &body);
+            }
+        });
+        Self {
+            keys: keys.to_owned(),
+            http_port,
+            requests,
+            release,
+        }
+    }
+
+    /// Every request path up to and including the first one to `endpoint`.
+    fn wait_for(&self, endpoint: &str, child: &mut Child) -> Vec<String> {
+        let mut seen = Vec::new();
+        while !seen
+            .last()
+            .is_some_and(|p: &String| p.starts_with(endpoint))
+        {
+            match self.requests.recv_timeout(Duration::from_secs(10)) {
+                Ok(path) => seen.push(path),
+                Err(error) => {
+                    let _ = child.kill();
+                    panic!("no {endpoint} request after {seen:?}: {error}");
+                }
+            }
+        }
+        seen
+    }
+}
+
+fn request_path(stream: &mut impl Read) -> Option<String> {
+    let mut request = [0; 8192];
+    let length = stream.read(&mut request).ok()?;
+    let text = String::from_utf8_lossy(&request[..length]);
+    text.split_whitespace().nth(1).map(str::to_owned)
+}
+
+fn answer(stream: &mut impl Write, body: &str) {
+    let body = format!("<root status_code=\"200\">{body}</root>");
+    let _ = write!(
+        stream,
+        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+}
+
+fn wait_for_removal(directory: &Path) {
+    let until = Instant::now() + Duration::from_secs(2);
+    while directory.exists() && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        !directory.exists(),
+        "the socket and its directory must go at once"
+    );
 }
 
 /// A controller that the viewer has accepted: its first request has a reply.
@@ -462,10 +602,11 @@ fn real_binary_stops_and_removes_socket_and_directory_on_a_signal_before_start()
     }
 }
 
-// The main thread is busy with Start's first request and cannot clean up
-// until that returns. The signal must not wait for it.
+// #468 review (P1): after Start, the main thread runs the connection steps.
+// A request may take 10 s to connect and 120 s to answer. A signal must end
+// a request that the host never answers, not wait for its timeout.
 #[test]
-fn real_binary_removes_socket_at_once_on_a_signal_while_connecting_after_start() {
+fn real_binary_ends_a_held_request_and_stops_at_once_on_a_signal_after_start() {
     let dir = support::scratch();
     let path = dir.path().join("control/viewer.sock");
     if support::refused_below_an_unmapped_root(&path) {
@@ -484,20 +625,10 @@ fn real_binary_removes_socket_at_once_on_a_signal_while_connecting_after_start()
         .spawn()
         .unwrap();
     let mut controller = accepted_controller(&path, &mut child);
-    write_message(
-        controller.get_mut(),
-        &ViewerRequest {
-            launch_id: "a".into(),
-            command: C::Start {
-                address: format!("127.0.0.1:{port}"),
-                display: None,
-            },
-        },
-    )
-    .unwrap();
+    start(&mut controller, port);
     // The viewer's first request after Start. Hold it without an answer.
     let until = Instant::now() + Duration::from_secs(5);
-    let held = loop {
+    let _held = loop {
         match server.accept() {
             Ok((socket, _)) => break socket,
             Err(_) if Instant::now() < until => std::thread::sleep(Duration::from_millis(5)),
@@ -510,19 +641,12 @@ fn real_binary_removes_socket_at_once_on_a_signal_while_connecting_after_start()
 
     signal(&child, libc::SIGTERM);
 
-    let until = Instant::now() + Duration::from_secs(2);
-    while path.parent().unwrap().exists() && Instant::now() < until {
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    wait_for_removal(path.parent().unwrap());
+    let status = exit_within(&mut child, Duration::from_secs(5));
     assert!(
-        !path.parent().unwrap().exists(),
-        "the socket and its directory must go at once"
+        status.success(),
+        "a stop after Start is not a failure: {status:?}"
     );
-    assert!(
-        child.try_wait().unwrap().is_none(),
-        "removal must not wait for the main thread"
-    );
-    drop(held);
     let messages = remaining_messages(&mut controller);
     assert!(
         messages
@@ -536,8 +660,161 @@ fn real_binary_removes_socket_at_once_on_a_signal_while_connecting_after_start()
             .any(|m| matches!(m, M::Event(E::Status(ViewerStatus::Stopped)))),
         "{messages:?}"
     );
-    exit_within(&mut child, Duration::from_secs(10));
+    assert!(
+        server.accept().is_err(),
+        "no request may follow the stopped one"
+    );
+}
+
+// #468 review (P1): the connection to the host may take 10 s to time out.
+// A signal must end it at once, not wait for the connect timeout.
+#[test]
+fn real_binary_ends_a_hanging_connect_at_once_on_a_signal_after_start() {
+    use std::os::fd::AsRawFd;
+    let dir = support::scratch();
+    let path = dir.path().join("control/viewer.sock");
+    if support::refused_below_an_unmapped_root(&path) {
+        return;
+    }
+    let keys = dir.path().join("keys");
+    korri_viewer::session::Identity::load_or_generate(&keys).unwrap();
+    // A full accept queue: the kernel drops the viewer's connection attempt,
+    // as from a host that does not answer.
+    let host = TcpListener::bind("127.0.0.1:0").unwrap();
+    assert_eq!(unsafe { libc::listen(host.as_raw_fd(), 0) }, 0);
+    let _queued = std::net::TcpStream::connect(host.local_addr().unwrap()).unwrap();
+    let mut child = lifecycle_viewer(&path, &keys)
+        .env(
+            "KORRI_MOONLIGHT_SERVER_CERTIFICATE",
+            keys.join("client.pem"),
+        )
+        .spawn()
+        .unwrap();
+    let mut controller = accepted_controller(&path, &mut child);
+    start(&mut controller, host.local_addr().unwrap().port());
+    // The viewer reaches its first connect within milliseconds of Start.
+    std::thread::sleep(Duration::from_millis(500));
+
+    signal(&child, libc::SIGTERM);
+
+    let status = exit_within(&mut child, Duration::from_secs(3));
+    assert!(
+        status.success(),
+        "a stop after Start is not a failure: {status:?}"
+    );
     assert!(!path.parent().unwrap().exists());
+    assert!(
+        remaining_messages(&mut controller)
+            .iter()
+            .any(|m| matches!(m, M::Event(E::Status(ViewerStatus::Stopped))))
+    );
+}
+
+// #468 review (P1): the host must not start the application after a stop.
+// The signal arrives while applist is held, after discovery and serverinfo.
+#[test]
+fn real_binary_never_launches_after_a_signal_right_after_start() {
+    let dir = support::scratch();
+    let path = dir.path().join("control/viewer.sock");
+    if support::refused_below_an_unmapped_root(&path) {
+        return;
+    }
+    let host = Host::start(
+        &dir.path().join("keys"),
+        Some("applist"),
+        "rtsp://127.0.0.1:9".into(),
+    );
+    let mut child = viewer_for(&host, &path).spawn().unwrap();
+    let mut controller = accepted_controller(&path, &mut child);
+    start(&mut controller, host.http_port);
+    host.wait_for("/applist", &mut child);
+
+    signal(&child, libc::SIGTERM);
+
+    wait_for_removal(path.parent().unwrap());
+    host.release.send(()).unwrap();
+    let status = exit_within(&mut child, Duration::from_secs(5));
+    assert!(
+        status.success(),
+        "a stop after Start is not a failure: {status:?}"
+    );
+    let later: Vec<_> = host.requests.try_iter().collect();
+    assert!(
+        later.is_empty(),
+        "no request, and no launch, may follow a stop: {later:?}"
+    );
+    assert!(
+        remaining_messages(&mut controller)
+            .iter()
+            .any(|m| matches!(m, M::Event(E::Status(ViewerStatus::Stopped))))
+    );
+}
+
+// #468 review (P1): LiStartConnection blocks for the whole handshake. Here
+// no RTSP port listens, so the core retries its connection for 10 s unless
+// it is interrupted. The signal must interrupt it.
+#[test]
+fn real_binary_interrupts_its_stream_connection_on_a_signal() {
+    let dir = support::scratch();
+    let path = dir.path().join("control/viewer.sock");
+    if support::refused_below_an_unmapped_root(&path) {
+        return;
+    }
+    let refused = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let host = Host::start(
+        &dir.path().join("keys"),
+        None,
+        format!("rtsp://127.0.0.1:{refused}"),
+    );
+    let mut child = viewer_for(&host, &path)
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    // The core logs its stages without a line end until each completes.
+    let log = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    let mut stdout = child.stdout.take().unwrap();
+    let written = log.clone();
+    std::thread::spawn(move || {
+        let mut chunk = [0; 4096];
+        while let Ok(length @ 1..) = stdout.read(&mut chunk) {
+            written
+                .lock()
+                .unwrap()
+                .push_str(&String::from_utf8_lossy(&chunk[..length]));
+        }
+    });
+    let mut controller = accepted_controller(&path, &mut child);
+    start(&mut controller, host.http_port);
+    host.wait_for("/launch", &mut child);
+    let until = Instant::now() + Duration::from_secs(5);
+    while !log.lock().unwrap().contains("Starting RTSP handshake") {
+        if Instant::now() >= until {
+            let _ = child.kill();
+            panic!(
+                "the core did not start its handshake: {}",
+                log.lock().unwrap()
+            );
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    signal(&child, libc::SIGTERM);
+
+    let status = exit_within(&mut child, Duration::from_secs(5));
+    assert!(
+        status.success(),
+        "a stop after Start is not a failure: {status:?}"
+    );
+    assert!(!path.parent().unwrap().exists());
+    assert!(
+        remaining_messages(&mut controller)
+            .iter()
+            .any(|m| matches!(m, M::Event(E::Status(ViewerStatus::Stopped))))
+    );
 }
 
 // The signal may arrive before, during or after the socket's creation. None

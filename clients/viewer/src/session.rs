@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // GameStream's HTTP protocol, extracted from Moonlight Embedded libgamestream/client.c.
 use anyhow::{Context, Result, bail, ensure};
-use curl::easy::Easy;
+use curl::{
+    easy::{Easy2, Handler, WriteError},
+    multi::{Easy2Handle, Multi},
+};
 use openssl::{
     asn1::Asn1Time,
     hash::MessageDigest,
@@ -67,12 +70,28 @@ impl Identity {
     }
 }
 
+/// One response body, at most 1 MiB.
+struct Response(Vec<u8>);
+impl Handler for Response {
+    fn write(&mut self, data: &[u8]) -> Result<usize, WriteError> {
+        if self.0.len() + data.len() > 1024 * 1024 {
+            return Ok(0);
+        }
+        self.0.extend_from_slice(data);
+        Ok(data.len())
+    }
+}
+
 pub struct Transport {
-    easy: Easy,
+    // The easy handle is in the multi handle only during a request. The multi
+    // handle lives as long as the transport, and so does its connection cache.
+    multi: Multi,
+    easy: Option<Easy2<Response>>,
     host: String,
     http_port: u16,
     pub https_port: u16,
     unique_id: String,
+    interrupt: Option<Box<dyn Fn() -> Result<()>>>,
 }
 impl Transport {
     pub fn new(host: &str, port: u16, keys: &Path, pin: &Path) -> Result<Self> {
@@ -81,7 +100,7 @@ impl Transport {
         // Same trust anchor AND SPKI check as plugin patch 0020. A Sunshine
         // certificate's CN is not a DNS identity. Never disable peer verification.
         let spki = cert.public_key()?.public_key_to_pem()?;
-        let mut easy = Easy::new();
+        let mut easy = Easy2::new(Response(Vec::new()));
         // Sunshine requires a fresh mutual-TLS authentication on each new
         // connection. Moonlight http_init disables the session cache too.
         easy.ssl_sessionid_cache(false)?;
@@ -120,12 +139,20 @@ impl Transport {
             Err(e) => return Err(e.into()),
         };
         Ok(Self {
-            easy,
+            multi: Multi::new(),
+            easy: Some(easy),
             host,
             http_port: port,
             https_port: 47984,
             unique_id,
+            interrupt: None,
         })
+    }
+    /// End each later request once `check` fails, and return its error. The
+    /// check runs at least every 100 ms while a request connects or waits, so
+    /// a stop does not wait for the connect or request timeout.
+    pub fn interrupt_when(&mut self, check: impl Fn() -> Result<()> + 'static) {
+        self.interrupt = Some(Box::new(check));
     }
     pub fn get(
         &mut self,
@@ -146,28 +173,24 @@ impl Transport {
             self.unique_id,
             uuid::Uuid::new_v4()
         );
+        let mut easy = self
+            .easy
+            .take()
+            .context("viewer HTTP transport failed in an earlier request")?;
         for (key, value) in params {
-            url.push_str(&format!(
-                "&{key}={}",
-                self.easy.url_encode(value.as_bytes())
-            ));
+            url.push_str(&format!("&{key}={}", easy.url_encode(value.as_bytes())));
         }
-        self.easy.url(&url)?;
-        let mut bytes = Vec::new();
-        {
-            let mut transfer = self.easy.transfer();
-            transfer.write_function(|data| {
-                if bytes.len() + data.len() > 1024 * 1024 {
-                    return Ok(0);
-                }
-                bytes.extend_from_slice(data);
-                Ok(data.len())
-            })?;
-            transfer
-                .perform()
-                .with_context(|| format!("{endpoint} request failed"))?;
+        easy.get_mut().0.clear();
+        if let Err(error) = easy.url(&url) {
+            self.easy = Some(easy);
+            return Err(error.into());
         }
-        let xml = String::from_utf8(bytes)?;
+        let request = self.multi.add2(easy)?;
+        let performed = self.perform(&request);
+        // Removal also ends a request that an interruption left running.
+        let easy = self.easy.insert(self.multi.remove2(request)?);
+        performed?.with_context(|| format!("{endpoint} request failed"))?;
+        let xml = String::from_utf8(std::mem::take(&mut easy.get_mut().0))?;
         let doc = roxmltree::Document::parse(&xml)?;
         let root = doc.root_element();
         ensure!(
@@ -176,6 +199,23 @@ impl Transport {
             root.attribute("status_code").unwrap_or("missing status")
         );
         Ok(xml)
+    }
+    /// Run one request to its end. The outer error is an interruption; the
+    /// inner one is the request's own result.
+    fn perform(&self, request: &Easy2Handle<Response>) -> Result<Result<(), curl::Error>> {
+        loop {
+            if let Some(check) = &self.interrupt {
+                check()?;
+            }
+            if self.multi.perform()? == 0 {
+                break;
+            }
+            self.multi.wait(&mut [], Duration::from_millis(100))?;
+        }
+        let mut result = None;
+        self.multi
+            .messages(|message| result = result.take().or(message.result_for2(request)));
+        result.context("request ended without a result")
     }
     pub fn discover_port(&mut self) -> Result<()> {
         // HTTP is used only for port discovery and the PIN exchange, never as

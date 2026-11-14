@@ -246,10 +246,16 @@ The viewer blocks SIGINT, SIGTERM, SIGHUP and SIGQUIT before it creates its
 directory and before it starts a thread, and one thread takes them. A signal
 at any time, before or after `Start`, removes the socket and the directory at
 once through the held descriptors, then requests teardown as `Stop` does. A
-signal that arrives while the socket is made waits until it exists. Before
-`Start`, a stop by a signal, `Stop` or a lost controller emits `Stopped` and
-exits with status 0. While the viewer connects after `Start`, the removal does
-not wait for the connection step; `Stopped` and the process exit do.
+signal that arrives while the socket is made waits until it exists. A stop
+before the stream runs, by a signal, `Stop` or a lost controller, emits
+`Stopped` and exits with status 0. After `Start` the viewer checks for a stop
+before each connection step and never sends the launch request after one. A
+request in progress ends within 100 ms of a stop, while it connects or waits
+for its answer. `LiStartConnection` is interrupted too, but the core ends it
+only at its own points: before each RTSP exchange, between RTSP connect
+retries and in its ENet waits. One TCP connect or RTSP exchange inside it can
+still take its 10 s or 15 s timeout. A `Start` that arrives after a stop gets
+the error `viewer is stopping`.
 
 korrid's inactive `SocketLinuxStreamViewer` takes injected unit-start, failure
 cleanup and compositor-focus effects. It never reads unit state or compositor
@@ -296,8 +302,10 @@ POSIX ACLs, below `/run`, and proves that the viewer refuses it with
 directory creation, missing controller authority, rejected peer credentials,
 an ancestor that another user could write, the sticky `/tmp`, an ancestor or
 the directory replaced by a symlink between two steps, a directory that fails
-its owner check, and a real signal before `Start`, while connecting after it,
-and at stepped moments of startup. The tests bind below
+its owner check, and a real signal before `Start` and at stepped moments of
+startup. After `Start` they send a real signal during a connect that the host
+drops, a request that it holds, and a stream connection that it refuses, and
+prove that no launch request follows a stop. The tests bind below
 `XDG_RUNTIME_DIR`, which must be a private directory as a login session
 provides it. In the Nix build sandbox the tests that need a bound socket prove
 only the refusal described above.
