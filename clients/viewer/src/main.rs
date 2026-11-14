@@ -1,12 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-use anyhow::{Context, Result};
-use korri_viewer::{
-    lifecycle,
-    options::Options,
-    pair,
-    session::{Identity, Transport},
-    stream,
-};
+use anyhow::Result;
+use korri_viewer::{launch, lifecycle, options::Options};
 fn run() -> Result<()> {
     let mut args: Vec<_> = std::env::args().skip(1).collect();
     if matches!(
@@ -21,60 +15,9 @@ fn run() -> Result<()> {
         return Ok(());
     }
     let lifecycle = lifecycle::from_args(&mut args)?;
-    let mut options = Options::parse(args)?;
-    let result = (|| {
-        if let Some(lifecycle) = &lifecycle {
-            anyhow::ensure!(
-                options.action == "stream",
-                "lifecycle socket requires stream"
-            );
-            let Some(start) = lifecycle.wait_start()? else {
-                // Stopped before Start: nothing to connect or tear down.
-                return Ok(());
-            };
-            start.configure(&mut options)?;
-        }
-        let pin = std::env::var_os("KORRI_MOONLIGHT_SERVER_CERTIFICATE")
-            .context("KORRI_MOONLIGHT_SERVER_CERTIFICATE is required")?;
-        let identity = if options.action == "pair" {
-            Identity::load_or_generate(&options.keydir)?
-        } else {
-            Identity::load(&options.keydir)?
-        };
-        let mut transport = Transport::new(
-            &options.host,
-            options.port,
-            &options.keydir,
-            std::path::Path::new(&pin),
-        )?;
-        if let Some(lifecycle) = &lifecycle {
-            lifecycle.ensure_running()?;
-            let lifecycle = lifecycle.clone();
-            transport.interrupt_when(move || lifecycle.ensure_running());
-        }
-        transport.discover_port()?;
-        if options.action == "pair" {
-            pair::pair(&mut transport, &identity)
-        } else {
-            stream::run_with_lifecycle(&mut transport, &options, lifecycle.as_ref())
-        }
-    })();
-    // A stop between Start and the stream ends the launch as requested.
-    let result = result.or_else(|error| {
-        if error.is::<lifecycle::Stopping>() {
-            Ok(())
-        } else {
-            Err(error)
-        }
-    });
-    if let Some(lifecycle) = &lifecycle {
-        match &result {
-            Ok(()) => lifecycle.stopped(),
-            Err(error) => lifecycle.failed(format!("{error:#}")),
-        }
-        lifecycle.drain();
-    }
-    result
+    let options = Options::parse(args)?;
+    let pin = std::env::var_os("KORRI_MOONLIGHT_SERVER_CERTIFICATE").map(Into::into);
+    launch::run(options, lifecycle.as_ref(), pin)
 }
 fn main() {
     if let Err(error) = run() {

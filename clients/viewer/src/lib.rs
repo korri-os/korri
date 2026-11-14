@@ -3,6 +3,7 @@
 // parts. Linux carries Moonlight's C code for them; Android carries none yet.
 #[cfg(not(target_os = "android"))]
 mod frame_times;
+pub mod launch;
 mod network;
 pub mod options;
 pub mod pair;

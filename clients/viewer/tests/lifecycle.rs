@@ -884,3 +884,183 @@ fn lifecycle_socket_requires_an_explicit_controller_uid() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("--controller-uid"));
     assert!(!path.exists());
 }
+
+/// A controller in the viewer's own process, as on Android (ADR 0060).
+fn in_process(launch: &str) -> (Lifecycle, mpsc::Receiver<E>) {
+    let (events, received) = mpsc::channel();
+    let events = std::sync::Mutex::new(events);
+    let lifecycle = Lifecycle::in_process(launch, move |event| {
+        let _ = events.lock().unwrap().send(event.clone());
+    })
+    .unwrap();
+    (lifecycle, received)
+}
+
+fn ask(lifecycle: &Lifecycle, launch: &str, command: C) -> R {
+    lifecycle.request(ViewerRequest {
+        launch_id: launch.into(),
+        command,
+    })
+}
+
+#[test]
+fn in_process_controller_gets_the_socket_replies_and_events_without_a_socket() {
+    let (lifecycle, events) = in_process("launch-a");
+    assert!(matches!(
+        ask(&lifecycle, "launch-b", C::Status),
+        R::Error { message } if message == "viewer launch identity does not match"
+    ));
+    let runtime = lifecycle.clone();
+    let running = std::thread::spawn(move || {
+        let start = runtime.wait_start().unwrap().expect("Start came first");
+        assert_eq!(start.address, "127.0.0.1:47989");
+        runtime
+            .connected(ViewerDisplay {
+                width: 1280,
+                height: 720,
+            })
+            .unwrap();
+        while !runtime.stop_requested() {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        runtime.stopped();
+    });
+    assert!(matches!(
+        ask(
+            &lifecycle,
+            "launch-a",
+            C::Start {
+                address: "127.0.0.1:47989".into(),
+                display: None,
+            }
+        ),
+        R::Ok
+    ));
+    assert!(matches!(
+        events.recv_timeout(Duration::from_secs(2)).unwrap(),
+        E::Status(ViewerStatus::Running)
+    ));
+    assert!(matches!(
+        events.recv_timeout(Duration::from_secs(2)).unwrap(),
+        E::Snapshot(s) if s.connected == Some(true)
+    ));
+    assert!(matches!(ask(&lifecycle, "launch-a", C::Background), R::Ok));
+    assert!(matches!(
+        events.recv_timeout(Duration::from_secs(2)).unwrap(),
+        E::Status(ViewerStatus::Backgrounded)
+    ));
+    // #476: the Rust viewer has no live resolution on either platform.
+    assert!(matches!(
+        ask(
+            &lifecycle,
+            "launch-a",
+            C::Resize {
+                connection: "any".into(),
+                display: ViewerDisplay {
+                    width: 1080,
+                    height: 2340,
+                },
+            }
+        ),
+        R::Error { message } if message == "Live resolution is unavailable"
+    ));
+    assert!(matches!(ask(&lifecycle, "launch-a", C::Stop), R::Ok));
+    let after: Vec<_> = events.try_iter().collect();
+    assert!(
+        matches!(after.last(), Some(E::Status(ViewerStatus::Stopped))),
+        "Stop must not reply before the runtime reports Stopped: {after:?}"
+    );
+    running.join().unwrap();
+}
+
+#[test]
+fn a_socket_lifecycle_takes_no_in_process_request() {
+    let dir = support::scratch();
+    let path = dir.path().join("control/viewer.sock");
+    if support::refused_below_an_unmapped_root(&path) {
+        return;
+    }
+    let lifecycle = Lifecycle::bind(&path, "a", unsafe { libc::geteuid() }).unwrap();
+    assert!(matches!(
+        ask(&lifecycle, "a", C::Stop),
+        R::Error { message } if message.contains("socket")
+    ));
+    assert!(!lifecycle.stop_requested());
+    lifecycle.stopped();
+}
+
+// The steps that the Android app runs: the real launch chain under an
+// in-process controller. Stop while the host holds the launch request ends
+// the request at once; nothing is launched, and the controller sees Stopped.
+#[test]
+fn in_process_stop_ends_a_real_launch_and_reports_stopped() {
+    let dir = support::scratch();
+    let host = Host::start(
+        &dir.path().join("keys"),
+        Some("launch"),
+        "rtsp://127.0.0.1:9".into(),
+    );
+    let (lifecycle, events) = in_process("a");
+    let options = korri_viewer::options::Options::parse(
+        [
+            "stream",
+            "-viewonly",
+            "-keydir",
+            host.keys.to_str().unwrap(),
+            "127.0.0.1",
+        ]
+        .map(str::to_owned),
+    )
+    .unwrap();
+    let runtime = lifecycle.clone();
+    let pin = host.keys.join("client.pem");
+    let viewer =
+        std::thread::spawn(move || korri_viewer::launch::run(options, Some(&runtime), Some(pin)));
+    let controller = lifecycle.clone();
+    let address = format!("127.0.0.1:{}", host.http_port);
+    let started = std::thread::spawn(move || {
+        ask(
+            &controller,
+            "a",
+            C::Start {
+                address,
+                display: None,
+            },
+        )
+    });
+    let until = Instant::now() + Duration::from_secs(10);
+    loop {
+        let path = host
+            .requests
+            .recv_timeout(until.saturating_duration_since(Instant::now()))
+            .expect("the viewer sent no launch request");
+        if path.starts_with("/launch") {
+            break;
+        }
+    }
+
+    let asked = Instant::now();
+    assert!(matches!(ask(&lifecycle, "a", C::Stop), R::Ok));
+
+    assert!(
+        asked.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        asked.elapsed()
+    );
+    assert!(
+        viewer.join().unwrap().is_ok(),
+        "a stop after Start is not a failure"
+    );
+    assert!(matches!(started.join().unwrap(), R::Error { .. }));
+    let seen: Vec<_> = events.try_iter().collect();
+    assert!(
+        matches!(seen.last(), Some(E::Status(ViewerStatus::Stopped))),
+        "{seen:?}"
+    );
+    host.release.send(()).ok();
+    assert!(
+        host.requests
+            .try_iter()
+            .all(|path| !path.starts_with("/launch"))
+    );
+}

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! A socket and one runtime, owned by one launch. No plugin or compositor effects.
+//! One runtime, owned by one launch, and its controller: korrid through a
+//! socket on Linux (ADR 0060), or a controller in the viewer's own process on
+//! Android. No plugin or compositor effects.
 use anyhow::{Context, Result, bail, ensure};
 use korri_viewer_treaty::{
     ViewerCommand as C, ViewerDisplay, ViewerEvent as E, ViewerMessage as M, ViewerReply as R,
@@ -79,12 +81,39 @@ struct State {
     failure: Option<String>,
     writer: Option<UnixStream>,
 }
+/// Where requests come from and where events go.
+enum Controller {
+    /// korrid in its own process and UID, through the socket that `bind` made.
+    Socket { paths: access::SocketPath, uid: u32 },
+    /// A controller in this process. It calls `Lifecycle::request`, and each
+    /// event goes to its function, under the runtime's lock.
+    InProcess(Box<dyn Fn(&E) + Send + Sync>),
+}
 struct Inner {
     launch: String,
-    paths: access::SocketPath,
-    controller_uid: u32,
+    controller: Controller,
     state: Mutex<State>,
     changed: Condvar,
+}
+impl Inner {
+    /// The socket and its directory go; a controller in this process has neither.
+    fn remove_socket(&self) {
+        if let Controller::Socket { paths, .. } = &self.controller {
+            paths.remove();
+        }
+    }
+    fn emit(&self, state: &mut State, event: E) {
+        match &self.controller {
+            Controller::InProcess(events) => events(&event),
+            Controller::Socket { .. } => {
+                if let Some(writer) = &mut state.writer
+                    && write_message(writer, &M::Event(event)).is_err()
+                {
+                    state.stop = true;
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -95,8 +124,10 @@ impl Lifecycle {
         let (listener, paths) = access::SocketPath::bind(path, controller_uid)?;
         let inner = Arc::new(Inner {
             launch: launch.into(),
-            paths,
-            controller_uid,
+            controller: Controller::Socket {
+                paths,
+                uid: controller_uid,
+            },
             state: Mutex::new(State::default()),
             changed: Condvar::new(),
         });
@@ -106,6 +137,32 @@ impl Lifecycle {
             .name("viewer-lifecycle".into())
             .spawn(move || serve(listener, weak))?;
         Ok(Self(inner))
+    }
+
+    /// The viewer inside its controller's process, as on Android (ADR 0060):
+    /// the same runtime and replies, with no socket, UID check or signal
+    /// handling. Each event goes to `events`, which must not call back into
+    /// this lifecycle.
+    pub fn in_process(launch: &str, events: impl Fn(&E) + Send + Sync + 'static) -> Result<Self> {
+        ensure!(!launch.is_empty(), "empty launch identity");
+        Ok(Self(Arc::new(Inner {
+            launch: launch.into(),
+            controller: Controller::InProcess(Box::new(events)),
+            state: Mutex::new(State::default()),
+            changed: Condvar::new(),
+        })))
+    }
+
+    /// One request from a controller in this process, answered as the socket
+    /// answers it. It blocks as the socket's reply does: Start until the
+    /// stream runs or fails, Stop until the runtime has stopped.
+    pub fn request(&self, request: ViewerRequest) -> R {
+        if !matches!(self.0.controller, Controller::InProcess(_)) {
+            return R::Error {
+                message: "this viewer is controlled through its socket".into(),
+            };
+        }
+        reply(&self.0, request)
     }
 
     /// The CLI supplies native settings and credentials; Start supplies only
@@ -152,9 +209,9 @@ impl Lifecycle {
             ..Default::default()
         };
         state.status = Some(S::Running);
-        emit(&mut state, E::Status(S::Running));
+        self.0.emit(&mut state, E::Status(S::Running));
         let snapshot = state.snapshot.clone();
-        emit(&mut state, E::Snapshot(snapshot));
+        self.0.emit(&mut state, E::Snapshot(snapshot));
         self.0.changed.notify_all();
         Ok(())
     }
@@ -166,7 +223,7 @@ impl Lifecycle {
             ..Default::default()
         };
         let snapshot = state.snapshot.clone();
-        emit(&mut state, E::Snapshot(snapshot));
+        self.0.emit(&mut state, E::Snapshot(snapshot));
         self.0.changed.notify_all();
     }
     pub fn stop_requested(&self) -> bool {
@@ -187,7 +244,7 @@ impl Lifecycle {
     fn terminate(&self) {
         let mut state = self.0.state.lock().unwrap();
         // Under the lock, as in finish: one removal at a time.
-        self.0.paths.remove();
+        self.0.remove_socket();
         state.stop = true;
         self.0.changed.notify_all();
     }
@@ -205,13 +262,13 @@ impl Lifecycle {
         state.failure = failure;
         state.status = Some(S::Stopped);
         state.finished = true;
-        emit(&mut state, E::Status(S::Stopped));
+        self.0.emit(&mut state, E::Status(S::Stopped));
         // The reader may be idle or hold an incomplete JSON line. Wake it
         // without closing the write half needed for an in-flight terminal reply.
         if let Some(writer) = &state.writer {
             let _ = writer.shutdown(Shutdown::Read);
         }
-        self.0.paths.remove();
+        self.0.remove_socket();
         self.0.changed.notify_all();
     }
     /// Let the socket thread deliver the terminal reply before process exit.
@@ -223,13 +280,6 @@ impl Lifecycle {
             .wait_timeout_while(state, Duration::from_secs(2), |s| s.writer.is_some());
     }
 }
-fn emit(state: &mut State, event: E) {
-    if let Some(writer) = &mut state.writer
-        && write_message(writer, &M::Event(event)).is_err()
-    {
-        state.stop = true;
-    }
-}
 fn serve(listener: UnixListener, weak: Weak<Inner>) {
     loop {
         let Some(inner) = weak.upgrade() else {
@@ -238,9 +288,12 @@ fn serve(listener: UnixListener, weak: Weak<Inner>) {
         if inner.state.lock().unwrap().finished {
             return;
         }
+        let Controller::Socket { uid, .. } = inner.controller else {
+            return;
+        };
         match listener.accept() {
             Ok((socket, _)) => {
-                if let Err(error) = access::check_peer(&socket, inner.controller_uid) {
+                if let Err(error) = access::check_peer(&socket, uid) {
                     eprintln!("korri-viewer: refused lifecycle peer {error}");
                     continue;
                 }
@@ -268,15 +321,7 @@ fn connection(inner: &Inner, socket: UnixStream) -> Result<()> {
     }
     let mut reader = BufReader::new(socket);
     while let Some(request) = read_message::<ViewerRequest>(&mut reader)? {
-        let reply = if request.launch_id != inner.launch {
-            R::Error {
-                message: "viewer launch identity does not match".into(),
-            }
-        } else {
-            handle(inner, request.command).unwrap_or_else(|e| R::Error {
-                message: e.to_string(),
-            })
-        };
+        let reply = reply(inner, request);
         let mut state = inner.state.lock().unwrap();
         write_message(
             state.writer.as_mut().context("viewer socket closed")?,
@@ -287,6 +332,17 @@ fn connection(inner: &Inner, socket: UnixStream) -> Result<()> {
         }
     }
     Ok(())
+}
+/// Every request, from either controller, for this launch only.
+fn reply(inner: &Inner, request: ViewerRequest) -> R {
+    if request.launch_id != inner.launch {
+        return R::Error {
+            message: "viewer launch identity does not match".into(),
+        };
+    }
+    handle(inner, request.command).unwrap_or_else(|e| R::Error {
+        message: e.to_string(),
+    })
 }
 fn handle(inner: &Inner, command: C) -> Result<R> {
     let mut state = inner.state.lock().unwrap();
@@ -341,7 +397,7 @@ fn handle(inner: &Inner, command: C) -> Result<R> {
                 S::Running
             });
             let status = state.status.unwrap();
-            emit(&mut state, E::Status(status));
+            inner.emit(&mut state, E::Status(status));
             Ok(R::Ok)
         }
         C::Stop => {
