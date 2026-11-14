@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! The Rust viewer as an Android app, slice D1 of #391 step D: Android's own
+//! The Rust viewer as an Android app, #391 step D: Android's own
 //! `NativeActivity` runs one launch of the shared viewer in this process
 //! (ADR 0060), with the in-process lifecycle in the place of korrid's socket.
-//! The app is that lifecycle's controller: it sends Start when it starts and
-//! Stop on Back, and writes every event and reply to logcat. The network
-//! core's empty decoder and audio callbacks run; there is no picture, sound
-//! or input yet (D2 to D4).
+//! The app is that lifecycle's controller: it sends Start once its window
+//! exists, and Stop on Back or when the window goes, and writes every event
+//! and reply to logcat. The picture is Android's hardware decoder rendering
+//! into a video layer that the app makes (slice D2, `layer.rs`); there is no
+//! sound or input yet (D3, D4).
 //!
 //! Until korrid drives the viewer in this process, the launch comes from the
 //! starting intent's extras, with the names of their sources:
@@ -16,9 +17,11 @@
 //! | `address` | string | `ViewerCommand::Start.address` |
 //! | `args` | string array | the command's arguments, `stream [Moonlight arguments] HOST` |
 //! | `KORRI_MOONLIGHT_SERVER_CERTIFICATE` | string | the pinned server certificate's path |
+//! | `CADENCE_FRAME_TIMES`, `CADENCE_DUMP` | string | optional: the frame record's new files, the measure's ask (`clients/viewer/README.md`) |
 #![cfg(target_os = "android")]
 
 mod intent;
+mod layer;
 mod logcat;
 
 use android_activity::{
@@ -26,8 +29,14 @@ use android_activity::{
     input::{InputEvent, KeyAction, Keycode},
 };
 use anyhow::{Context, Result, anyhow};
-use korri_viewer::{launch, lifecycle::Lifecycle, options::Options};
+use korri_viewer::{
+    launch,
+    lifecycle::Lifecycle,
+    options::Options,
+    picture::{FrameRecord, Picture},
+};
 use korri_viewer_treaty::{ViewerCommand, ViewerRequest};
+use ndk::native_window::NativeWindow;
 use std::{
     path::PathBuf,
     thread::{self, JoinHandle},
@@ -39,6 +48,7 @@ struct Launch {
     address: String,
     options: Options,
     pin: PathBuf,
+    record: FrameRecord,
 }
 
 impl Launch {
@@ -55,6 +65,10 @@ impl Launch {
             address: required("address")?,
             options: Options::parse(args)?,
             pin: required("KORRI_MOONLIGHT_SERVER_CERTIFICATE")?.into(),
+            record: FrameRecord {
+                times: extras.string("CADENCE_FRAME_TIMES")?.map(Into::into),
+                recording: extras.string("CADENCE_DUMP")?.map(Into::into),
+            },
         })
     }
 }
@@ -113,13 +127,83 @@ fn back_pressed(app: &AndroidApp) -> bool {
     pressed
 }
 
+/// The app's own window, once Android gives it; none when the user leaves
+/// first. The window is not touched inside the event callback: making the
+/// video layer waits for Android's main thread, which waits there.
+fn wait_for_window(app: &AndroidApp) -> Option<NativeWindow> {
+    loop {
+        let mut left = false;
+        let mut ready = false;
+        app.poll_events(Some(Duration::from_millis(100)), |event| match event {
+            PollEvent::Main(MainEvent::InitWindow { .. }) => ready = true,
+            PollEvent::Main(MainEvent::Destroy) => left = true,
+            _ => {}
+        });
+        left |= back_pressed(app);
+        if left {
+            return None;
+        }
+        if ready && let Some(window) = app.native_window() {
+            return Some(window);
+        }
+    }
+}
+
 fn run(app: &AndroidApp) -> Result<()> {
     let Launch {
         id,
         address,
         options,
         pin,
+        record,
     } = Launch::from_intent(app)?;
+    let Some(window) = wait_for_window(app) else {
+        logcat::info("left before the window was shown; nothing started");
+        return Ok(());
+    };
+    let layer = layer::VideoLayer::make(app, &window, (options.width, options.height))?;
+    let placed = layer.placed;
+    logcat::info(&format!(
+        "picture: video layer {}x{} placed at ({}, {})-({}, {}) in the window {}x{}",
+        options.width,
+        options.height,
+        placed.left,
+        placed.top,
+        placed.right,
+        placed.bottom,
+        window.width(),
+        window.height()
+    ));
+    if let Err(error) = layer::fill_black(&window) {
+        logcat::error(&format!(
+            "picture: the bars keep the window's content: {error:#}"
+        ));
+    }
+    // The app's window is Android's; after it goes, it must not be used.
+    drop(window);
+    let ended = stream(
+        app,
+        id,
+        address,
+        options,
+        pin,
+        Picture {
+            surface: layer.surface(),
+            record,
+        },
+    );
+    layer.release(app);
+    ended
+}
+
+fn stream(
+    app: &AndroidApp,
+    id: String,
+    address: String,
+    options: Options,
+    pin: PathBuf,
+    picture: Picture,
+) -> Result<()> {
     let lifecycle = Lifecycle::in_process(&id, |event| {
         let event = serde_json::to_string(event).unwrap_or_default();
         logcat::info(&format!("event {event}"));
@@ -128,7 +212,9 @@ fn run(app: &AndroidApp) -> Result<()> {
         let lifecycle = lifecycle.clone();
         thread::Builder::new()
             .name("viewer".into())
-            .spawn(move || launch::run(options, Some(&lifecycle), Some(pin)))?
+            .spawn(move || {
+                launch::run_with_picture(options, Some(&lifecycle), Some(pin), picture)
+            })?
     };
     let mut controller = Controller {
         lifecycle,
@@ -143,7 +229,9 @@ fn run(app: &AndroidApp) -> Result<()> {
     while !runtime.is_finished() {
         let mut stop = false;
         app.poll_events(Some(Duration::from_millis(100)), |event| {
-            if let PollEvent::Main(MainEvent::Destroy) = event {
+            // Leaving the app ends the stream, as Artemis's Game activity
+            // does in onStop: its window and the layer's parent go.
+            if let PollEvent::Main(MainEvent::Destroy | MainEvent::TerminateWindow { .. }) = event {
                 stop = true;
             }
         });

@@ -1,5 +1,5 @@
 # The shared session part on Android (#391 step D) and the viewer app around
-# it (slice D1), at API 31 (ADR 0064) with the NDK that clients/android uses.
+# it (slices D1 and D2), at API 31 (ADR 0064) with the NDK that clients/android uses.
 # Two ABIs: arm64-v8a for phones, x86_64 for the emulator.
 #
 # - check: builds the library and links the HTTPS and trust-anchor test
@@ -171,6 +171,9 @@ let
     "libdl.so"
     "libz.so"
     "liblog.so"
+    # The picture (slice D2): AMediaCodec, and ANativeWindow for its Surface.
+    "libmediandk.so"
+    "libandroid.so"
   ];
 
   check = pkgs.stdenv.mkDerivation (
@@ -257,10 +260,7 @@ let
           )
           mkdir -p stage/lib/${part.name}
           cp target/${part.target}/release/${library} stage/lib/${part.name}/
-          # The activity glue adds libandroid.
-          ${readElf part (
-            sessionLibraries ++ [ "libandroid.so" ]
-          ) "stage/lib/${part.name}/${library}" "elf-${part.name}.txt"}
+          ${readElf part sessionLibraries "stage/lib/${part.name}/${library}" "elf-${part.name}.txt"}
           grep -q 'Shared library' elf-${part.name}.txt
           "${toolchain}/bin/llvm-nm" --defined-only --extern-only stage/lib/${part.name}/${library} \
             | grep -q ' T ANativeActivity_onCreate$'

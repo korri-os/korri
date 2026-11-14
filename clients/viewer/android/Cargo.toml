@@ -20,3 +20,5 @@ serde_json = "1"
 # The release that the shell's Slint backend and the D5 spike use.
 android-activity = { version = "=0.6.1", features = ["native-activity"] }
 jni = "0.21"
+# The video layer's Surface and the window's one black fill (src/layer.rs).
+ndk = { version = "0.9", default-features = false, features = ["nativewindow"] }

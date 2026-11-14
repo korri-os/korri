@@ -18,8 +18,8 @@ nix build .#checks.x86_64-linux.korri-viewer-aarch64
 clients/viewer/proof/v4l2request/compare.sh ../korri-plugins
 # The session part for Android, both ABIs (below). No device or emulator.
 nix build .#checks.x86_64-linux.korri-viewer-android
-# The Android app (slice D1, below), and its proof on one headless emulator
-# against a private Sunshine on aka.
+# The Android app (slices D1 and D2, below), and its proof on one headless
+# emulator against a private Sunshine on aka.
 nix build .#korri-viewer-android-apk
 nix run .#viewer-android-proof
 ```
@@ -387,7 +387,24 @@ the presenter's thread. The record writes no row until a frame is handed over or
 to be passed over, so the CSV stays in index order. A unit that no
 presenter took for 256 units is written as not shown.
 
-Only the PC presenters report so far. The handheld `v4l2request` path
+On Android the decoder is Rust (`src/android/picture.rs`), and
+`src/frame_record.rs` writes the same rows, with the same file rules. The
+ask comes in the starting intent, with the same two names
+(`CADENCE_FRAME_TIMES`, `CADENCE_DUMP`) as extras that hold paths in the
+app's files directory; the app's process has no environment that a caller
+can set. There, `decoded_ns` is the moment `AMediaCodec_dequeueOutputBuffer`
+returned the frame, and `display_ns` the moment
+`AMediaCodec_releaseOutputBufferAtTime` returned: the decoder has queued the
+frame to the video layer's buffer queue, and the compositor takes it from
+there. When the decoder returns two frames before the viewer hands one over,
+the older is dropped and has no `display_ns`. **The API 31–32 limit:** at
+Android 12 the NDK gives no later moment. `AMediaCodec_setOnFrameRenderedCallback`,
+which reports when the compositor showed a frame, starts at API 33, so a
+frame that the compositor itself replaced in one refresh still has a
+`display_ns`. The record does not use the callback at API 33 either yet
+(slice D6).
+
+Only the PC presenters and Android report so far. The handheld `v4l2request` path
 (`picture/video/v4l2m2m.c`) has its own decode loop and calls none of the
 record; with the variables set it writes a header and an empty recording,
 and the tool then gives number 1 no value.
@@ -415,13 +432,14 @@ of `clients/android/sdk.nix`: `aarch64-linux-android` for phones and
 - Shared: `options.rs`, `session.rs`, `pair.rs`, `stream.rs`, `lifecycle.rs`
   and the binding are the same files on both platforms.
 - Platform parts: `player_io.rs` is Linux's picture, sound and input.
-  `src/android/player_io.rs` has the same interface and none of the three
-  yet, so the core runs its own empty decoder and audio callbacks. The
-  core's log goes to logcat, tag `korri-viewer`, through
-  `src/android/log.c`: the callback is C-variadic, which Rust cannot
-  define. The frame record and the signal handlers in `stream.rs`
-  are Linux only: on Android the app owns its process's signals. The
-  `v4l2request` cfg stays off.
+  `src/android/player_io.rs` has the same interface; since slice D2 it has
+  the picture (below), and no sound or input yet, so the core runs its own
+  empty audio callbacks. Without a picture, as in the session tests, the
+  core also runs its own empty decoder. The core's log goes to logcat, tag
+  `korri-viewer`, through `src/android/log.c`: the callback is C-variadic,
+  which Rust cannot define. The signal handlers in `stream.rs` are Linux
+  only: on Android the app owns its process's signals. The `v4l2request`
+  cfg stays off.
 - Network core: the same unmodified `b126e481` and ENet as on Linux, built
   with their own CMake recipe and the NDK's toolchain file, as static
   archives. `build.rs` binds `Limelight.h` alone and links the archives.
@@ -485,25 +503,28 @@ until D7, so D1 removes none of its Java.
   caller needs the `DUMP` permission to start it: the shell user and the
   system, a privileged app that holds `DUMP`, and any app that asks for
   `DUMP` and is granted it through adb (`pm grant`; `DUMP` is a development
-  permission). Other apps are refused. The app allows no backup (its files
-  hold a client key pair), and a finished stream leaves no entry in Recents
-  to start it again. Package `com.simonwjackson.korri.viewer`, minimum API
-  31, target 34 as the Artemis app.
+  permission). Other apps are refused; the proof checks both. The app
+  allows no backup (its files hold a client key pair), and a finished
+  stream leaves no entry in Recents to start it again. Package
+  `com.simonwjackson.korri.viewer`, minimum API 31, target 34 as the Artemis
+  app.
 - In-process lifecycle: `Lifecycle::in_process` is the same runtime and the
   same replies as the socket, with no socket, UID check or signals. Its
   controller calls `Lifecycle::request` with the treaty's `ViewerRequest`,
   and each `ViewerEvent` goes to a function. `launch::run` holds the steps
   that the Linux command ran in `main.rs`; both platforms now call it.
 - The app is that controller. It reads the launch from its starting intent,
-  sends Start, and sends Stop on Back or when the activity is destroyed.
+  sends Start once its window exists (slice D2), and sends Stop on Back,
+  when the window goes, or when the activity is destroyed.
   When the runtime ends, the activity finishes. Every request, reply and
   event goes to logcat as the treaty's JSON, with the core's own lines. The
   intent's extras are D1's entry until korrid drives the viewer in this
   process; each takes the name of its source: `launch_id`
   (`ViewerRequest.launch_id`), `address` (`Start.address`), `args` (the
   command's `stream [Moonlight arguments] HOST`, a string array) and
-  `KORRI_MOONLIGHT_SERVER_CERTIFICATE` (the pin's path). `Resize` stays
-  "Live resolution is unavailable" (#476).
+  `KORRI_MOONLIGHT_SERVER_CERTIFICATE` (the pin's path), and, optional,
+  `CADENCE_FRAME_TIMES` and `CADENCE_DUMP` (the frame record's ask).
+  `Resize` stays "Live resolution is unavailable" (#476).
 - Build: `android.nix` builds the library for both ABIs with cargo, links
   the manifest with `aapt2` against the android-36 framework of `sdk.nix`,
   adds the libraries and aligns with `zipalign`. No Gradle. The output is
@@ -528,11 +549,106 @@ until D7, so D1 removes none of its Java.
   are not yet in the APK. The APK is a debug build for the proof, not one to
   ship.
 
+## Android picture (#391 step D, slice D2)
+
+Slice D2 of the research brief, corrected by the D5 spike
+(`docs/research/2026-11-14-android-overlay-spike.md`): Android's hardware
+H.264 decoder renders straight into a video layer that the app makes. No
+frame passes through Korri's code: the decoder writes into the layer's
+buffer queue, and the compositor reads the same buffer.
+
+- The video layer (`android/src/layer.rs`): the spike's design C. JNI calls
+  into Android's own classes make it: `View.getRootSurfaceControl()` (API
+  31), `SurfaceControl.Builder`, `AttachedSurfaceControl.buildReparentTransaction`
+  (API 31), `new Surface(SurfaceControl)` and `ANativeWindow_fromSurface`.
+  The NDK route of the brief fails: `ASurfaceControl_createFromWindow`
+  returns NULL for the NativeActivity window on API 31 and 34. One
+  transaction puts the layer above the window's own buffer and places it
+  with one `setGeometry` call: the stream's whole picture into the largest
+  rectangle of its shape in the window, centred (`src/android/placement.rs`).
+  The app fills its own window black once; it shows in the bars. The layer
+  waits for Android's main thread, so the app makes it after the window
+  exists and outside android-activity's event callback; it releases it with
+  a post to the main thread that does not wait, because the main thread
+  waits for the app in `onDestroy`.
+- No `AImageReader`: the decoder renders into the layer's own Surface, so
+  the spike's retry after release (its silent stall) does not apply.
+- The decoder (`src/android/picture.rs`): the core's decoder callbacks, in
+  Rust. Android's decoder list comes from `android.media.MediaCodecList`
+  through JNI, as ADR 0064 says (no NDK list before API 36), and
+  `src/android/codec.rs` chooses as Artemis's `MediaCodecHelper` does
+  (brief, finding 20): a decoder with `FEATURE_LowLatency` and High profile
+  first, then High profile, then the first; no alias; no software decoder
+  except on the emulator. It is configured with Artemis's low-latency keys
+  in tries, riskiest first (brief, finding 21): `low-latency`,
+  `vdec-lowlatency`, `operating-rate` (Qualcomm and the decoders with
+  reference frame invalidation) or `priority`, and on Qualcomm
+  `vendor.qti-ext-dec-picture-order.enable`,
+  `vendor.qti-ext-dec-low-latency.enable` and the three output-fence keys.
+  A decoder with `FEATURE_LowLatency` gets `low-latency` alone in try 0. The
+  colour keys are the core's defaults: limited range, BT.601, SDR.
+- The SPS rewrite (`src/android/sps.rs`): Artemis's patch for a stream
+  without reference frame invalidation, so that the decoder buffers no
+  frame: `level_idc` 31, 32 or 42 for the stream's size and rate,
+  `max_num_ref_frames` 1, a VUI bitstream restriction with
+  `max_dec_frame_buffering` 1, and Constrained High only on `omx.intel`. It
+  rewrites each syntax element and gives a patch that changes nothing back
+  byte for byte. libavcodec's own parser (`trace_headers`) read the patched
+  SPS of five libx264 streams with the new values, and FFmpeg decoded them.
+- Input: on each IDR frame the parameter sets go first in their own
+  `CODEC_CONFIG` buffer, then the frame. With no input buffer free, the
+  decoder thread waits in 10 ms steps until the stream stops, as Artemis
+  does; a frame given up would cost an IDR frame.
+- Pacing: upstream Moonlight's lowest-latency mode. An output thread hands
+  each frame to the display at once
+  (`AMediaCodec_releaseOutputBufferAtTime` with the time now); when the
+  decoder has returned more than one, only the newest goes.
+- The picture path in the log, as the Linux viewer reports its own:
+  `picture: decode <decode> decoder <name> … try <n> keys <keys>`, with the
+  list it chose from (`picture: decoders for video/avc: …`) and the
+  placement (`picture: video layer … placed at …`). `<decode>` has the
+  meaning of the measure's `viewer_ran.decode`: `mediacodec` for a hardware
+  decoder, `software` for a software one, which only the emulator may use.
+  The proof keeps it as `viewer_ran.decode` in its result. The lifecycle
+  treaty does not carry it; the Linux viewer's does not either.
+- The frame record: see "Frame record" above, and its API 31–32 limit.
+- Lifecycle: the app sends Start once the layer exists. Back sends Stop,
+  and so does the loss of the window, which Android takes when the app
+  leaves the screen, as Artemis's Game activity ends the stream in
+  `onStop`. The proof presses Back; it does not press Home. A window resize (a fold) does not move the
+  layer yet; resize of the stream stays unavailable (#476).
+- Not carried from Artemis: reference frame invalidation (Artemis turns it
+  on for Qualcomm, NVIDIA and MediaTek), the vendor keys of NVIDIA,
+  MediaTek, Kirin, Exynos and Amlogic (not in the brief's list), the
+  Adreno 620 exception of `operating-rate` (it needs the GL renderer's
+  name), the baseline-SPS and bitstream-fixup lists for old devices, fused
+  IDR frames, direct submit, slices per frame, HEVC, AV1 and HDR (H.264
+  only: the stream asks for H.264 unless `-codec` says otherwise, and the
+  decoder refuses another format), the balanced pacing, the frame-rate hint
+  and the display mode (slice D6).
+- Proof (`nix run .#viewer-android-proof`): D1's run, plus the picture. The
+  sender fixture's picture source draws stream-cadence's frame-ID bar.
+  stream-cadence's capture reads a wlr-screencopy compositor, and the
+  emulator's screen is not one, so the proof reads the bar from screenshots
+  with stream-cadence's own decoder (`bar.py`): a burst after the start
+  until the bar reads (the startup as the screen shows it), then four
+  screenshots a second apart, whose IDs must rise. It reads the frame record
+  from the app and decodes its recording with `decode.py`, so each row has
+  the ID of its frame, and it takes the startup from the system's `START` of
+  the activity to the first hand-off. It checks that SurfaceFlinger has the
+  layer. A refusal probe (`android/proof/refusal`, a test app, never
+  shipped) asks Android to start the viewer: refused without `DUMP`,
+  allowed after `pm grant`. It also runs the picture's pure parts' tests
+  on the emulator. Record: `proof/android-d2/`.
+- Not proven: the arm64 library and a real phone's decoder, HWC composition
+  and speed (step H, the Galaxy Z Fold3). The emulator's decoder
+  (`c2.goldfish.h264.decoder`) is backed by the host, and its numbers mean
+  nothing (ADR 0063).
+
 ## Next slices
 
-The bench proof of the handheld `v4l2request` path. On Android, slice D2:
-MediaCodec into a layer made through JNI (the D5 spike's design C), with
-decoder choice. No device installs `@korri:viewer` yet.
+The bench proof of the handheld `v4l2request` path. On Android, slice D3:
+sound (AAudio). No device installs `@korri:viewer` yet.
 
 The cross-UID socket proof is an explicit root-only test: build
 `cargo test --manifest-path clients/viewer/Cargo.toml --test lifecycle_security --no-run`

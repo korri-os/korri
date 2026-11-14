@@ -5,6 +5,7 @@ use crate::{
     lifecycle::{self, Lifecycle},
     options::Options,
     pair,
+    player_io::Platform,
     session::{Identity, Transport},
     stream,
 };
@@ -15,10 +16,30 @@ use std::path::PathBuf;
 /// report Stopped or the failure to the controller. `pin` is the authorized
 /// server certificate (`KORRI_MOONLIGHT_SERVER_CERTIFICATE`); its absence is
 /// a failure after Start, so the controller hears of it.
-pub fn run(
+#[allow(
+    clippy::default_constructed_unit_structs,
+    reason = "Platform is a unit on Linux only; Android's is an Option"
+)]
+pub fn run(options: Options, lifecycle: Option<&Lifecycle>, pin: Option<PathBuf>) -> Result<()> {
+    run_on(options, lifecycle, pin, Platform::default())
+}
+
+/// The same run on Android, with the picture that the app gives.
+#[cfg(target_os = "android")]
+pub fn run_with_picture(
+    options: Options,
+    lifecycle: Option<&Lifecycle>,
+    pin: Option<PathBuf>,
+    picture: crate::picture::Picture,
+) -> Result<()> {
+    run_on(options, lifecycle, pin, Some(picture))
+}
+
+fn run_on(
     mut options: Options,
     lifecycle: Option<&Lifecycle>,
     pin: Option<PathBuf>,
+    platform: Platform,
 ) -> Result<()> {
     let result = (|| {
         if let Some(lifecycle) = lifecycle {
@@ -48,7 +69,7 @@ pub fn run(
         if options.action == "pair" {
             pair::pair(&mut transport, &identity)
         } else {
-            stream::run_with_lifecycle(&mut transport, &options, lifecycle)
+            stream::run_with_lifecycle(&mut transport, &options, lifecycle, platform)
         }
     })();
     // A stop between Start and the stream ends the launch as requested.

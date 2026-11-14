@@ -6,13 +6,9 @@
 //! each frame, `CADENCE_DUMP` for the stream as it arrived. A korrid launch
 //! sets neither, and then nothing is recorded. `picture/frame_times.c`
 //! writes both; its head names the fields.
-use crate::network as ffi;
-use anyhow::{Context, Result, ensure};
-use std::{
-    fs::{File, OpenOptions},
-    os::{fd::IntoRawFd, unix::fs::OpenOptionsExt},
-    path::Path,
-};
+use crate::{frame_record::create, network as ffi};
+use anyhow::{Result, ensure};
+use std::{fs::File, os::fd::IntoRawFd, path::Path};
 
 const TIMES: &str = "CADENCE_FRAME_TIMES";
 const RECORDING: &str = "CADENCE_DUMP";
@@ -62,39 +58,5 @@ impl Drop for FrameTimes {
     fn drop(&mut self) {
         // Only an early return gets here; its own error is the one reported.
         let _ = self.finish();
-    }
-}
-
-/// A new file only: an existing name, a link included, is refused.
-fn create(path: &Path) -> Result<File> {
-    OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(path)
-        .with_context(|| format!("cannot create the frame record {}", path.display()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::create;
-    use std::os::unix::fs::PermissionsExt;
-
-    #[test]
-    fn the_record_takes_only_a_new_name() {
-        let directory = tempfile::tempdir().unwrap();
-        let existing = directory.path().join("times.csv");
-        std::fs::write(&existing, "kept").unwrap();
-        assert!(create(&existing).is_err());
-        assert_eq!(std::fs::read_to_string(&existing).unwrap(), "kept");
-        let link = directory.path().join("recording.video");
-        let target = directory.path().join("elsewhere");
-        std::os::unix::fs::symlink(&target, &link).unwrap();
-        assert!(create(&link).is_err());
-        assert!(!target.exists());
-        let new = directory.path().join("new.csv");
-        create(&new).unwrap();
-        let mode = std::fs::metadata(&new).unwrap().permissions().mode();
-        assert_eq!(mode & 0o777, 0o600);
     }
 }

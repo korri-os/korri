@@ -5,7 +5,7 @@ use crate::{
     network as ffi,
     options::Options,
     pair::hex,
-    player_io::PlayerIo,
+    player_io::{Platform, PlayerIo},
     session::{Transport, app_id, field, required},
 };
 use anyhow::{Result, ensure};
@@ -68,13 +68,20 @@ fn interrupt_start_on_stop(lifecycle: &crate::lifecycle::Lifecycle, returned: &A
     }
 }
 
+/// A stream with no lifecycle. On Android it has no picture: the core runs
+/// its own empty decoder.
+#[allow(
+    clippy::default_constructed_unit_structs,
+    reason = "Platform is a unit on Linux only; Android's is an Option"
+)]
 pub fn run(t: &mut Transport, o: &Options) -> Result<()> {
-    run_with_lifecycle(t, o, None)
+    run_with_lifecycle(t, o, None, Platform::default())
 }
-pub fn run_with_lifecycle(
+pub(crate) fn run_with_lifecycle(
     t: &mut Transport,
     o: &Options,
     lifecycle: Option<&crate::lifecycle::Lifecycle>,
+    platform: Platform,
 ) -> Result<()> {
     let _connection = CONNECTION
         .try_lock()
@@ -91,7 +98,8 @@ pub fn run_with_lifecycle(
     );
     let app = app_id(&t.get(true, "applist", &[])?, &o.app)?;
     running()?;
-    let io = PlayerIo::new(o)?;
+    #[cfg_attr(not(target_os = "android"), allow(unused_mut))]
+    let mut io = PlayerIo::new(o, platform)?;
     // Before the launch: a record that cannot be created stops nothing that ran.
     #[cfg(not(target_os = "android"))]
     let frame_times = FrameTimes::from_environment()?;
@@ -316,7 +324,7 @@ pub fn run_with_lifecycle(
     #[cfg(not(target_os = "android"))]
     let recorded = frame_times.close();
     #[cfg(target_os = "android")]
-    let recorded = Ok(());
+    let recorded = io.close_record();
     ensure!(!poll_error, "picture or input event loop failed");
     let error = TERMINATED.load(Ordering::Relaxed);
     ensure!(error == 0, "stream terminated: {error}");

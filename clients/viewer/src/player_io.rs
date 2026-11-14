@@ -4,6 +4,11 @@ use crate::{network as ffi, options::Options};
 use anyhow::{Result, ensure};
 use std::ffi::CString;
 
+/// What the platform gives one stream: nothing on Linux. The presenters
+/// make their own window, and the frame record's ask is in the environment.
+#[derive(Default)]
+pub(crate) struct Platform;
+
 pub(crate) struct PlayerIo {
     // C keeps these pointers through connection teardown.
     _mapping: Option<CString>,
@@ -13,7 +18,7 @@ pub(crate) struct PlayerIo {
     _inputs: Vec<CString>,
 }
 impl PlayerIo {
-    pub(crate) fn new(o: &Options) -> Result<Self> {
+    pub(crate) fn new(o: &Options, _: Platform) -> Result<Self> {
         let mapping = o.mapping.as_deref().map(CString::new).transpose()?;
         let audio_device = o.audio_device.as_deref().map(CString::new).transpose()?;
         #[cfg(v4l2request)]

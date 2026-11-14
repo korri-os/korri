@@ -20,6 +20,12 @@ uuid = { version = "1", features = ["v4"] }
 curl = { version = "0.4", features = ["static-curl"] }
 # The one option that the curl crate cannot reset: CURLOPT_CAPATH to NULL.
 curl-sys = "0.4"
+# The picture (src/android/picture.rs): AMediaCodec and the app's Surface, and
+# Android's decoder list through JNI. The releases that the app's
+# android-activity uses.
+jni = "0.21"
+ndk = { version = "0.9", default-features = false, features = ["media", "nativewindow"] }
+ndk-context = "0.1"
 
 [build-dependencies]
 bindgen = "0.72"

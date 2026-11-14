@@ -563,8 +563,11 @@ dependencies = [
  "cc",
  "curl",
  "curl-sys",
+ "jni 0.21.1",
  "korri-viewer-treaty",
  "libc",
+ "ndk",
+ "ndk-context",
  "openssl",
  "pkg-config",
  "roxmltree",
@@ -581,6 +584,7 @@ dependencies = [
  "jni 0.21.1",
  "korri-viewer",
  "korri-viewer-treaty",
+ "ndk",
  "serde_json",
 ]
 
