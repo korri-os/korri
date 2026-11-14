@@ -1394,6 +1394,46 @@ Other ways were looked at and not taken:
 answers no press is worse in `input_missed` than one that answers all; its
 `input_ms` is not measured.
 
+**The press on aka, 2026-11-14 UTC.** Two sessions in turns (five runs of
+each side), private pair on aka at the defaults (1920x1080, base measure, 60
+scored seconds), tool at `97b314033`. The baseline in both is the #466 product
+viewer (`/nix/store/38crl2m37akjqqscrmnq1gbwrp8l3rcx-moonlight-embedded-korri-2.7.1-korri`).
+A game unit was live on aka in every run, so every run is "beside a game";
+what else ran stayed at 0.9% to 3.5% of all CPUs, except one Korri-viewer
+run at 14.4%. All 20 runs are valid. These sets are evidence, not a baseline.
+
+| Session | Side | `input_ms`, each run | `input_missed` | Largest press time in a run | `verdict` on number 5 |
+| --- | --- | --- | --- | --- | --- |
+| Moonlight against itself | baseline | 0.050 to 0.054 ms | 0 | 1.5 to 30.1 ms | |
+| | candidate | 0.052 to 0.059 ms | 0 | 0.06 to 2.4 ms | `equal`, `equal` |
+| Moonlight against Korri's viewer (`korri-viewer-0.1.0`, `iafw7i6b…`) | Moonlight | 0.050 to 0.056 ms | 0 | 0.2 to 1.5 ms | |
+| | Korri's viewer | not measured | 20 | none | `not measured`, `worse` |
+
+In the first session every other number is `equal` as well. In the second,
+every number but `input_missed` is `equal`. Korri's stage-1 viewer has no
+input path: the key reached its window (the X-Resource owner was the
+viewer's PID and the focus was on it), its control stream sent 74 to 78
+packets in each press phase, and none was a keyboard packet.
+
+The proof of each run: `input.json`'s network identity was the pair's
+(`net:[4026532902]`), not the product's (`net:[4026531833]`, that of PID 1 and
+of `korri-sunshine`); the viewer's only X peer was the fixture's Xwayland
+(`@/tmp/.X11-unix/X0` in the pair) and it held no `/dev/input` node in any
+sample; no entry under `/dev/input` appeared or went during a run; the
+product's units kept their PIDs; both restore checks passed. A listing of
+`/dev/input`, its `by-id` and `by-path` and `/dev/uinput` and `/dev/uhid`,
+with modification times, was the same before and after each session.
+
+One press in 200 of Moonlight took 30.1 ms, the length of the hold: its
+key-down left together with its own key-up. Two earlier sessions are not in
+the table. In the first, under another test's load, the first run was
+invalid by a capture gap; in it one key-up left 173 ms late, with the next
+key-down. The second ended after four runs of each side, when aka stayed
+above its start limit for 10 minutes; `verdict --min-runs 4` gave `equal`
+for every number there. Moonlight's X11 platforms read keys when the X
+connection's socket becomes readable; why a key sometimes waits for the next
+one is not shown here.
+
 ### Verdict
 
 `verdict` compares two `view` results, five valid runs each by default. Every
