@@ -69,24 +69,25 @@ let
     MOONLIGHT_COMMON_INCLUDE = "${network}/include";
     MOONLIGHT_COMMON_LIB = "${network}/lib";
   };
+  sourceFiles = pkgs.lib.fileset.unions [
+    ./Cargo.toml
+    ./Cargo.lock
+    ./build.rs
+    ./LICENSE
+    ./src
+    ./picture
+    ./io
+    ./tests
+    ../../contracts/viewer/Cargo.toml
+    ../../contracts/viewer/src
+    ../../contracts/surface/Cargo.toml
+    ../../contracts/surface/src
+    # korrid refuses @korri:viewer unless this file equals its own copy.
+    ../../contracts/generated/viewer.ts
+  ];
   repositorySource = pkgs.lib.fileset.toSource {
     root = ../..;
-    fileset = pkgs.lib.fileset.unions [
-      ./Cargo.toml
-      ./Cargo.lock
-      ./build.rs
-      ./LICENSE
-      ./src
-      ./picture
-      ./io
-      ./tests
-      ../../contracts/viewer/Cargo.toml
-      ../../contracts/viewer/src
-      ../../contracts/surface/Cargo.toml
-      ../../contracts/surface/src
-      # korrid refuses @korri:viewer unless this file equals its own copy.
-      ../../contracts/generated/viewer.ts
-    ];
+    fileset = sourceFiles;
   };
   source = "${repositorySource}/clients/viewer";
   package = pkgs.rustPlatform.buildRustPackage (
@@ -312,7 +313,7 @@ let
       '';
   # The same session part and network core for Android (#391 step D).
   android = import ./android.nix {
-    inherit pkgs upstream repositorySource;
+    inherit pkgs upstream sourceFiles;
     inherit (package) cargoDeps;
   };
 in

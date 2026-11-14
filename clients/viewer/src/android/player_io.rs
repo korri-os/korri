@@ -3,10 +3,19 @@
 //! core then runs its own empty decoder and audio callbacks, and the stream
 //! offers no controller. Later slices of #391 step D add decode (D2), sound
 //! (D3) and input (D4) here, with the interface that `player_io.rs` gives
-//! Linux.
+//! Linux. The core's log goes to logcat.
 use crate::{network as ffi, options::Options};
 use anyhow::Result;
-use std::{ffi::c_void, ptr::null_mut, time::Duration};
+use std::{
+    ffi::{c_char, c_void},
+    ptr::null_mut,
+    time::Duration,
+};
+
+unsafe extern "C" {
+    /// `log.c`: the core's log line, to logcat.
+    fn viewer_android_log(format: *const c_char, ...);
+}
 
 pub(crate) struct PlayerIo;
 impl PlayerIo {
@@ -26,7 +35,9 @@ impl PlayerIo {
     pub(crate) fn audio_context(&self) -> *mut c_void {
         null_mut()
     }
-    pub(crate) fn connection_callbacks(&self, _: &mut ffi::CONNECTION_LISTENER_CALLBACKS) {}
+    pub(crate) fn connection_callbacks(&self, callbacks: &mut ffi::CONNECTION_LISTENER_CALLBACKS) {
+        callbacks.logMessage = Some(viewer_android_log);
+    }
     pub(crate) fn start(&self) {}
     pub(crate) fn stop(&self) {}
     /// No event loop to turn: wait until the stream's stop.

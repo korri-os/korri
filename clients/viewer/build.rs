@@ -39,6 +39,12 @@ fn main() {
         .write_to_file(PathBuf::from(env::var("OUT_DIR").unwrap()).join("network.rs"))
         .unwrap();
     if android {
+        // The core's log callback is C-variadic; it writes to logcat.
+        cc::Build::new()
+            .file("src/android/log.c")
+            .compile("korri_android_log");
+        println!("cargo:rustc-link-lib=log");
+        println!("cargo:rerun-if-changed=src/android/log.c");
         // The core needs libcrypto, which openssl-sys links after it.
         println!("cargo:rustc-link-search=native={lib}");
         println!("cargo:rustc-link-lib=static=moonlight-common-c");
