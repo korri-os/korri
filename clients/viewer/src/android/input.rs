@@ -1435,6 +1435,38 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn two_devices_without_axes_that_point_at_each_other_take_number_0() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        // Each one's neighbour is a joystick by its sources, with the same
+        // descriptor and another name, and has no axes either: the search
+        // for the neighbour's number would go round and round.
+        let half = |id: i32, name: &str| Device {
+            id,
+            name: name.into(),
+            descriptor: "one-controller".into(),
+            external: true,
+            sources: source::JOYSTICK | source::GAMEPAD,
+            keys: vec![code::BUTTON_A],
+            ..Default::default()
+        };
+        let mut devices = Known::with([half(30, "left half"), half(31, "right half")]);
+        press(
+            &mut input,
+            &mut devices,
+            &mut sink,
+            30,
+            code::BUTTON_A,
+            304,
+            1000,
+        );
+        let packets = sink.take();
+        assert!(
+            packets.contains(&Packet::Controller(controller(0, 0, button::A))),
+            "{packets:?}"
+        );
+    }
+
+    #[test]
     fn guide_reaches_the_host_without_the_overlay() {
         let (mut input, mut sink) = (input(), Recorded::default());
         let mut devices = Known::with([pad(16, 0x045e)]);

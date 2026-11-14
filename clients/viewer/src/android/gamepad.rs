@@ -410,6 +410,20 @@ impl Controllers {
 
     /// `assignControllerNumberIfNeeded`.
     fn assign(&mut self, id: i32, devices: &mut dyn Devices, sink: &mut dyn Sink) {
+        self.assign_at(id, devices, sink, false);
+    }
+
+    /// `associating`: this device is the neighbour that another device
+    /// takes its number from. It follows no neighbour of its own, so two
+    /// devices without axes that point at each other cannot recurse without
+    /// end, as they would in Artemis; it takes number 0.
+    fn assign_at(
+        &mut self,
+        id: i32,
+        devices: &mut dyn Devices,
+        sink: &mut dyn Sink,
+        associating: bool,
+    ) {
         if self.context(id).assigned {
             return;
         }
@@ -430,6 +444,8 @@ impl Controllers {
                 }
                 None => 0,
             }
+        } else if associating {
+            0
         } else {
             // A device with no joystick axes may belong to one that has
             // them, as a DualShock 4's touchpad does: take its number.
@@ -477,7 +493,7 @@ impl Controllers {
         self.contexts
             .entry(other_id)
             .or_insert_with(|| new_context(other, &all));
-        self.assign(other_id, devices, sink);
+        self.assign_at(other_id, devices, sink, true);
         Some(self.contexts[&other_id].number)
     }
 
