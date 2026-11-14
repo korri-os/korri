@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Slices D1 to D4 of #391 step D, proven with no person (ADR 0063).
+"""Slices D1 to D5 of #391 step D, proven with no person (ADR 0063).
 
 One headless Android 12 emulator on this host runs the viewer app. A private
 Sunshine on the sender (stream-cadence's sender fixture, aka by default) is
@@ -26,7 +26,12 @@ steps:
    Android's `input` command, a mouse, and a game pad that the emulator's
    own `hid` command makes through /dev/uhid; the picture must move on.
    Stop Android's audio server, a real device error, and let init start it
-   again; stream on, press Back, wait for Stopped.
+   again; stream on. Open the gameplay overlay with the pad's Guide (slice
+   D5): the video moves under it, the sound plays, and the pad, keys, a
+   touch and a mouse sent while it is open never reach the sender. Guide
+   closes it, and input goes again; Back opens and closes it too. Press
+   Home (the app leaves the screen, which ends the stream), wait for
+   Stopped.
 5. Read the frame record from the app, decode its recording, and read the
    picture path (`decode`) and the sound's report from logcat.
 6. The refusal probe, an ordinary app, asks Android to start the viewer: it
@@ -74,7 +79,7 @@ PROBE_ACTIVITY = f"{PROBE}/android.app.NativeActivity"
 RECORD_HEADER = "index,frame_number,enqueue_ns,decoded_ns,display_ns"
 # The Android tests of the session part, and the picture's pure parts.
 LIB_TESTS = ["sps::", "codec::", "decoder::", "callback::", "frame_record::", "placement::", "audio::", "sound::",
-             "input::", "gamepad::", "keyboard::", "touch::", "controller_list::"]
+             "input::", "gamepad::", "keyboard::", "touch::", "controller_list::", "overlay::"]
 
 # stream-cadence's frame-ID bar decoder: one decoder for the bar.
 sys.path.insert(0, str(Path(os.environ["KORRI_ROOT"]) / "nix/stream-cadence"))
@@ -643,6 +648,306 @@ def input_arrived(packets: list[dict], placed: dict) -> dict:
     }
 
 
+# Slice D5: the gameplay overlay. The pad's 13th button is BTN_MODE in
+# Linux's HID mapping for a game pad, and BUTTON_MODE (Guide) in Generic.kl.
+PAD_GUIDE = 0x1000
+LI_B = 0x2000
+OVERLAY_LAYER = "korri-viewer-overlay"
+# The stand-in darkens the window's lower half to a quarter of the video;
+# the video's own white is 235 or more.
+STAND_IN_AT_MOST = 90
+VIDEO_AT_LEAST = 150
+
+
+class Pad:
+    """The input proof's game pad again, fed through the hid command's stdin,
+    so that each report goes when the proof says."""
+
+    def __init__(self, emulator: "Emulator", out: Path):
+        self.log = (out / "gamepad-overlay.log").open("w")
+        self.process = subprocess.Popen(
+            [f"{emulator.sdk}/platform-tools/adb", "-s", emulator.serial, "shell", "hid", "-"],
+            stdin=subprocess.PIPE, stdout=self.log, stderr=subprocess.STDOUT, text=True, env=emulator.env,
+        )
+        self.steps: list[dict] = []
+        self.send({"id": 1, "command": "register", "name": PAD_NAME, "vid": PAD_VENDOR, "pid": PAD_PRODUCT,
+                   "bus": "usb", "descriptor": PAD_DESCRIPTOR})
+
+    def send(self, step: dict) -> None:
+        assert self.process.stdin
+        self.steps.append({"at": round(time.monotonic(), 3), **step})
+        self.process.stdin.write(json.dumps(step) + "\n")
+        self.process.stdin.flush()
+
+    def report(self, **values) -> None:
+        self.send({"id": 1, "command": "report", "report": pad_report(**values)})
+
+    def press(self, buttons: int, hold_s: float = 0.15, held: int = 0) -> None:
+        """`buttons` down and up again, with `held` down throughout."""
+        self.report(buttons=held | buttons)
+        time.sleep(hold_s)
+        self.report(buttons=held)
+
+    def close(self) -> int | None:
+        """The end of hid's input: the pad goes."""
+        if self.process.stdin:
+            self.process.stdin.close()
+        try:
+            self.process.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            self.process.terminate()
+        self.log.close()
+        return self.process.returncode
+
+
+def gray(png: Path):
+    import numpy as np
+
+    header = png.read_bytes()[:24]
+    width, height = int.from_bytes(header[16:20], "big"), int.from_bytes(header[20:24], "big")
+    data = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", str(png), "-vf", "format=gray",
+                           "-f", "rawvideo", "-"], check=True, capture_output=True, timeout=60).stdout
+    return np.frombuffer(data, dtype=np.uint8).reshape(height, width)
+
+
+def lower_half(png: Path, placed: dict) -> int:
+    """How bright the picture's part of the window's lower half is: the
+    99th percentile of its gray, so that a few edge pixels do not count."""
+    import numpy as np
+
+    image = gray(png)
+    height = image.shape[0]
+    region = image[height // 2 + 2:, placed["left"]:placed["right"]]
+    return int(np.percentile(region, 99))
+
+
+def audio_track(emulator: "Emulator", pid: str, path: Path) -> dict:
+    """The app's track in Android's mixer, and the mixer's last signal powers.
+
+    The track's Server column counts the frames that the mixer took from it.
+    The output's signal power history holds the level of what it played,
+    about every 50 ms, with the emulator's wall-clock time.
+    """
+    now = emulator.shell("date +%m-%d\\ %H:%M:%S.%N", check=False).stdout.strip()
+    dump = emulator.shell("dumpsys media.audio_flinger", check=False).stdout
+    path.write_text(dump)
+    found: dict = {"emulator_time": now[:18]}
+    for line in dump.splitlines():
+        tokens = line.split()
+        if len(tokens) > 3 and tokens[1] == "yes" and tokens[2] == pid:
+            hex8 = [t for t in tokens if re.fullmatch(r"[0-9A-F]{8}", t)]
+            if len(hex8) >= 3:
+                found["server_frames"] = int(hex8[2], 16)
+    history = [l for l in dump.splitlines() if re.match(r"\s+\d\d-\d\d \d\d:\d\d:\d\d\.\d+: ", l)]
+    if history:
+        last = history[-1].split(": ", 1)
+        found["last_power_row"] = last[0].strip()
+        # The row's powers, without the segment's "sum(…)" at its end.
+        found["last_powers_db"] = [float(v) for v in re.findall(r"-?\d+\.\d", last[1].split("sum(")[0])]
+    return found
+
+
+def hwc_layers(flinger: str) -> list[dict]:
+    """The composer's table in `dumpsys SurfaceFlinger`: each layer's name
+    and its composition (DEVICE, or CLIENT for the GPU)."""
+    table = flinger.split("HWC layers:", 1)[-1].split("\n\n", 1)[0] if "HWC layers:" in flinger else ""
+    rows, name = [], None
+    for line in table.splitlines():
+        if line.startswith("---") or not line.strip():
+            continue
+        if "|" in line and name is not None:
+            rows.append({"layer": name, "composition": line.split("|")[2].strip()})
+            name = None
+        elif "|" not in line and line.strip() != "Layer name":
+            name = line.strip()
+    return rows
+
+
+def missed_frames(emulator: "Emulator") -> dict:
+    """SurfaceFlinger's count of the frames its composer missed, since boot."""
+    text = emulator.shell("dumpsys SurfaceFlinger | grep 'HWC missed frame count'", check=False).stdout
+    found = re.search(r"(\d+)", text)
+    return {"at": round(time.monotonic(), 3), "hwc_missed": int(found.group(1)) if found else None}
+
+
+def overlay_steps(emulator: "Emulator", logcat: "Logcat", fixture: "Remote", pid: str, out: Path) -> dict:
+    """Slice D5: Guide opens the overlay over the moving video, input sent
+    while it is open is held, Guide closes it, input goes again, and Back
+    opens and closes it too."""
+    placed = placement(logcat.lines())
+    if placed is None:
+        raise RuntimeError("the app logged no placement of the picture")
+    width, height = placed["right"] - placed["left"], placed["bottom"] - placed["top"]
+
+    def at(fx: float, fy: float) -> str:
+        return f"{placed['left'] + int(width * fx)} {placed['top'] + int(height * fy)}"
+
+    done: dict = {"placed": placed, "steps": [], "open_shots": [], "closed_shots": []}
+
+    def step(name: str, command: str) -> None:
+        ran = emulator.shell(command, check=False)
+        done["steps"].append({"name": name, "command": command, "at": round(time.monotonic(), 3),
+                              "exit_code": ran.returncode, "output": (ran.stdout + ran.stderr).strip()[-500:]})
+        time.sleep(0.4)
+
+    def wait_log(pattern: str, mark: int, timeout: float = 15) -> str:
+        until = time.monotonic() + timeout
+        while time.monotonic() < until:
+            for line in logcat.lines()[mark:]:
+                if re.search(pattern, line):
+                    return line
+            time.sleep(0.2)
+        raise RuntimeError(f"no logcat line matched {pattern!r} in {timeout:.0f} s")
+
+    def shots(kind: str, count: int) -> None:
+        for shot in range(count):
+            path = out / f"overlay-{kind}-{shot + 1}.png"
+            screenshot(emulator, path)
+            done[f"{kind}_shots"].append({"file": path.name, **describe(read_bar(path)),
+                                          "lower_half_p99": lower_half(path, placed)})
+            time.sleep(1)
+
+    begin = len(logcat.lines())
+    # The marker: the sender's packets after this key are this step's.
+    step("marker", "input keyevent KEYCODE_M")
+    log("overlay: a game pad through hid's stdin")
+    pad = Pad(emulator, out)
+    # hid's README: wait for Android to add the device before reports.
+    time.sleep(2.5)
+    pad.report()
+    time.sleep(0.3)
+    # A held, then Guide: the overlay opens on Guide's release, and the host
+    # must see A let go.
+    pad.report(buttons=PAD_A)
+    time.sleep(0.8)
+    fixture.request("clock")
+    done["missed_before_open"] = missed_frames(emulator)
+    mark = len(logcat.lines())
+    log("overlay: Guide")
+    pad.press(PAD_GUIDE, held=PAD_A)
+    done["opened"] = wait_log(r"korri-viewer: overlay: open on Guide", mark).split("korri-viewer: ", 1)[1]
+    done["shown"] = wait_log(r"korri-viewer: overlay: layer shown", mark).split("korri-viewer: ", 1)[1]
+    layers = emulator.shell("dumpsys SurfaceFlinger --list", check=False).stdout
+    (out / "surfaceflinger-layers-overlay.txt").write_text(layers)
+    done["overlay_layer_listed"] = OVERLAY_LAYER in layers
+    # How the emulator's composer took the layers while the overlay shows:
+    # the rows of its HWC table (DEVICE, or CLIENT for the GPU).
+    flinger = emulator.shell("dumpsys SurfaceFlinger", check=False).stdout
+    (out / "surfaceflinger-overlay-open.txt").write_text(flinger)
+    done["hwc_layers_while_open"] = hwc_layers(flinger)
+    done["sound_open_1"] = audio_track(emulator, pid, out / "audioflinger-overlay-open-1.txt")
+    # The video moves under it: the bar reads through the clear upper half.
+    shots("open", 2)
+    # Input while it is open: none of it may reach the sender.
+    log("overlay: input while it is open")
+    pad.report()
+    time.sleep(0.2)
+    pad.press(PAD_B)
+    time.sleep(0.2)
+    pad.report(x=0xFF)
+    time.sleep(0.3)
+    pad.report()
+    step("keys while open", "input keyevent KEYCODE_H KEYCODE_E KEYCODE_L KEYCODE_D")
+    step("tap while open", f"input tap {at(0.75, 0.25)}")
+    step("mouse while open", f"input mouse tap {at(0.75, 0.75)}")
+    fixture.request("clock")
+    done["sound_open_2"] = audio_track(emulator, pid, out / "audioflinger-overlay-open-2.txt")
+    done["missed_before_close"] = missed_frames(emulator)
+    mark = len(logcat.lines())
+    log("overlay: Guide again")
+    pad.press(PAD_GUIDE)
+    done["closed"] = wait_log(r"korri-viewer: overlay: closed on Guide", mark).split("korri-viewer: ", 1)[1]
+    done["hidden"] = wait_log(r"korri-viewer: overlay: layer hidden", mark).split("korri-viewer: ", 1)[1]
+    time.sleep(0.5)
+    shots("closed", 2)
+    done["missed_after_closed_shots"] = missed_frames(emulator)
+    # Input goes to the stream again.
+    log("overlay: input after it closed")
+    pad.press(PAD_X, hold_s=0.3)
+    step("key after close", "input keyevent KEYCODE_Z")
+    step("tap after close", f"input tap {at(0.25, 0.25)}")
+    fixture.request("clock")
+    # Back opens and closes it too, as in Artemis's device test.
+    mark = len(logcat.lines())
+    log("overlay: Back")
+    step("back opens", "input keyevent KEYCODE_BACK")
+    done["opened_on_back"] = wait_log(r"korri-viewer: overlay: open on Back", mark).split("korri-viewer: ", 1)[1]
+    wait_log(r"korri-viewer: overlay: layer shown", mark)
+    path = out / "overlay-back.png"
+    screenshot(emulator, path)
+    done["back_shot"] = {"file": path.name, **describe(read_bar(path)), "lower_half_p99": lower_half(path, placed)}
+    mark = len(logcat.lines())
+    step("back closes", "input keyevent KEYCODE_BACK")
+    done["closed_on_back"] = wait_log(r"korri-viewer: overlay: closed on Back", mark).split("korri-viewer: ", 1)[1]
+    done["pad_exit_code"] = pad.close()
+    done["pad_steps"] = pad.steps
+    until = time.monotonic() + 10
+    while time.monotonic() < until and not any(" removed" in l and PAD_NAME in l for l in logcat.lines()[begin:]):
+        time.sleep(0.5)
+    time.sleep(1.5)
+    fixture.request("clock")
+    done["app_lines"] = [l.split("korri-viewer: ", 1)[1] for l in logcat.lines()[begin:]
+                         if "korri-viewer: overlay: " in l or "korri-viewer: input: " in l]
+    return done
+
+
+def overlay_held(packets: list[dict]) -> dict:
+    """What the sender received in slice D5, after its marker key."""
+    def value(packet: dict, name: str) -> int:
+        return int(packet["fields"].get(name, "0"), 16 if name in HEX_FIELDS else 10)
+
+    def moment(packet: dict) -> float:
+        stamp = datetime.datetime.strptime(packet["time"], "%Y-%m-%d %H:%M:%S.%f")
+        return stamp.timestamp() * 1000
+
+    marker = [at for at, p in enumerate(packets) if p["kind"] == "keyboard" and value(p, "keyCode") & 0xFF == ord("M")]
+    if not marker:
+        return {"error": "no marker key at the sender", "checks": {"overlay_marker_arrived": False}}
+    after = packets[marker[-1] + 1:]
+    keys = [chr(value(p, "keyCode") & 0xFF) for p in after if p["kind"] == "keyboard"]
+    pads = [p for p in after if p["kind"] == "controller"]
+    buttons = [value(p, "buttonFlags") for p in pads]
+    touches = [p for p in after if p["kind"] == "touch"]
+
+    def near(p: dict, fx: float, fy: float) -> bool:
+        return abs(float(p["fields"]["x"]) - fx) < 0.02 and abs(float(p["fields"]["y"]) - fy) < 0.02
+
+    mice = [p for p in after if p["kind"] == "absolute mouse move"]
+    # A, then the hold's let-go, then nothing from the pad until the overlay
+    # closed, then the heartbeat's neutral state again and X.
+    first_a = next((at for at, flags in enumerate(buttons) if flags == LI_A), None)
+    first_x = next((at for at, flags in enumerate(buttons) if flags == LI_X), None)
+    let_go = None
+    if first_a is not None:
+        let_go = next((at for at in range(first_a, len(buttons)) if buttons[at] == 0), None)
+    gaps = [round(moment(b) - moment(a)) for a, b in zip(pads, pads[1:])]
+    longest = max(range(len(gaps)), key=lambda at: gaps[at]) if gaps else None
+    found = {
+        "keys": keys,
+        "controller_buttons": [f"{flags:08x}" for flags in buttons],
+        "controller_gaps_ms": gaps,
+        "touches": [{k: p["fields"][k] for k in ("eventType", "x", "y")} for p in touches],
+        "mouse": [p["fields"] for p in mice],
+    }
+    found["checks"] = {
+        "overlay_marker_arrived": True,
+        # HELD, typed while it was open, never arrived; Z after it closed did.
+        "overlay_held_the_keys": not set("HELD") & set(keys) and keys == ["Z", "Z"],
+        # B and the stick, pressed while it was open, never arrived.
+        "overlay_held_the_pad": LI_B not in buttons and not any(value(p, "leftStickX") == 32766 for p in pads),
+        # The host saw A let go when it opened, before X after it closed.
+        "overlay_let_go_of_the_held_button": first_a is not None and let_go is not None
+            and first_x is not None and let_go < first_x,
+        # The pad was silent while it was open: the heartbeat is held too.
+        "overlay_pad_silent_while_open": longest is not None and let_go is not None and longest == let_go
+            and gaps[longest] >= 3000,
+        "overlay_held_the_touch": not any(near(p, 0.75, 0.25) for p in touches),
+        "overlay_touch_after_it_closed": any(near(p, 0.25, 0.25) for p in touches),
+        "overlay_held_the_mouse": not mice,
+    }
+    return found
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--sender", default="root@aka", help="SSH target of the sender fixture")
@@ -840,11 +1145,51 @@ def main() -> int:
             l.split("korri-viewer: ", 1)[1] for l in logcat.lines()[restart_mark:]
             if "korri-viewer: sound: " in l and "packets dropped" not in l
         ]
+        # Slice D5: the gameplay overlay over the moving video, after the
+        # audio server's restart, so that the sound plays on under it too.
+        overlay = overlay_steps(emulator, logcat, fixture, pid, out)
+        result["overlay"] = overlay
+        open_ids = [shot["id"] for shot in overlay["open_shots"] if "id" in shot]
+        closed_ids = [shot["id"] for shot in overlay["closed_shots"] if "id" in shot]
+        checks["overlay_layer_listed"] = overlay["overlay_layer_listed"]
+        checks["overlay_video_moves_under_it"] = (len(open_ids) == len(overlay["open_shots"])
+                                                  and all(b > a for a, b in zip(open_ids, open_ids[1:]))
+                                                  and open_ids[0] > after_ids[-1])
+        checks["overlay_stand_in_shows_while_open"] = all(
+            shot["lower_half_p99"] <= STAND_IN_AT_MOST for shot in overlay["open_shots"] + [overlay["back_shot"]])
+        checks["overlay_gone_after_it_closed"] = all(
+            shot["lower_half_p99"] >= VIDEO_AT_LEAST for shot in overlay["closed_shots"])
+        checks["overlay_video_moves_after_it_closed"] = (len(closed_ids) == len(overlay["closed_shots"])
+                                                         and closed_ids[0] > open_ids[-1]
+                                                         and all(b > a for a, b in zip(closed_ids, closed_ids[1:])))
+        checks["overlay_back_opens_it_over_the_moving_video"] = "id" in overlay["back_shot"] and overlay["back_shot"]["id"] > closed_ids[-1]
+        first, second = overlay["sound_open_1"], overlay["sound_open_2"]
+        powers = second.get("last_powers_db") or [-200.0]
+
+        def seconds(stamp: str) -> float:
+            clock = datetime.datetime.strptime(stamp[6:18], "%H:%M:%S.%f")
+            return clock.hour * 3600 + clock.minute * 60 + clock.second + clock.microsecond / 1e6
+
+        # The mixer took the app's frames, and what it played last, within
+        # 3 s of the second look, was the tone (about -42 dB), not silence.
+        recent = "last_power_row" in second and abs(seconds(second["emulator_time"]) - seconds(second["last_power_row"])) <= 3
+        checks["overlay_sound_plays_while_open"] = (
+            second.get("server_frames", 0) - first.get("server_frames", 0) >= 2 * 48000
+            and recent and sum(powers) / len(powers) > -60)
+        app_overlay = overlay["app_lines"]
+        checks["overlay_input_held_in_the_app"] = any(
+            l.startswith("overlay: open on Guide; the stream's input is held") for l in app_overlay)
+        checks["overlay_took_the_input_while_open"] = any(
+            re.match(r"overlay: closed on Guide after [\d.]+ s; it took [1-9]\d* keys and [1-9]\d* motion events", l)
+            for l in app_overlay)
+        fixture.request("clock")
         # Sunshine's log since the picture source started, while the app streams.
         during = fixture.request("sample")["journal"]
         checks["sunshine_saw_the_session"] = "CLIENT CONNECTED" in during and "CLIENT DISCONNECTED" not in during
-        log("pressing Back")
-        emulator.shell("input keyevent KEYCODE_BACK")
+        # Back opens the overlay since slice D5: leaving the app ends the
+        # stream, as Artemis's Game activity ends it in onStop.
+        log("pressing Home")
+        emulator.shell("input keyevent KEYCODE_HOME")
         stopped = logcat.wait_for(r'korri-viewer: event \{"kind":"Status","value":"Stopped"\}', 60)
         stop_reply = logcat.wait_for(r'korri-viewer: reply Stop \{"kind":"Ok"\}', 30)
         ended = logcat.wait_for(r"korri-viewer: viewer (ended|failed)", 30)
@@ -852,10 +1197,11 @@ def main() -> int:
         checks["stop_reply_ok"] = bool(stop_reply)
         checks["viewer_ended_without_failure"] = "viewer ended" in ended
         time.sleep(3)
-        top = emulator.shell("dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity'", check=False).stdout
-        (out / "resumed-after-back.txt").write_text(top)
-        checks["app_finished_after_back"] = PACKAGE not in top
-        screenshot(emulator, out / "after-back.png")
+        activities = emulator.shell("dumpsys activity activities", check=False).stdout
+        (out / "activities-after-home.txt").write_text(activities)
+        # Finished, not only stopped: Android keeps no record of it.
+        checks["app_finished_after_home"] = PACKAGE not in activities
+        screenshot(emulator, out / "after-home.png")
         lines = logcat.lines()
         app = [l for l in lines if " korri-viewer" in l or "AndroidRuntime" in l or " DEBUG " in l]
         (out / "logcat.txt").write_text("\n".join(app) + "\n")
@@ -955,9 +1301,16 @@ def main() -> int:
         # Only info and above: the debug lines can hold the launch's keys.
         (out / "sunshine.log").write_text(kept)
         (out / "sunshine-input.json").write_text(json.dumps(packets, indent=1) + "\n")
-        arrived = input_arrived(packets, result["input"]["placed"])
+        # Slice D4's packets come before slice D5's marker key.
+        marker = next((at for at, p in enumerate(packets) if p["kind"] == "keyboard"
+                       and int(p["fields"].get("keyCode", "0"), 16) & 0xFF == ord("M")), len(packets))
+        arrived = input_arrived(packets[:marker], result["input"]["placed"])
         result["input_at_the_sender"] = {key: value for key, value in arrived.items() if key != "checks"}
         for name, passed in arrived["checks"].items():
+            checks[f"sender_{name}"] = passed
+        held = overlay_held(packets)
+        result["overlay_at_the_sender"] = {key: value for key, value in held.items() if key != "checks"}
+        for name, passed in held["checks"].items():
             checks[f"sender_{name}"] = passed
         checks["sunshine_saw_the_end"] = "CLIENT DISCONNECTED" in journal
         # Sunshine says so when it captures no sound for a session.
@@ -965,6 +1318,13 @@ def main() -> int:
     except Exception as error:
         result["error"] = f"{type(error).__name__}: {error}"
         log(f"failed: {result['error']}")
+        # The sender's side of a failure, before the fixture goes.
+        try:
+            packets, kept = sender.input_packets(fixture.request("sample")["journal"])
+            (out / "sunshine.log").write_text(kept)
+            (out / "sunshine-input.json").write_text(json.dumps(packets, indent=1) + "\n")
+        except Exception as sampled:
+            result["sender_sample_error"] = str(sampled)
     finally:
         try:
             result["sender_restore"] = fixture.close()
