@@ -30,11 +30,14 @@ fn main() {
         })
         .clang_arg(format!("-I{include}"))
         .allowlist_function("Li(Initialize(ServerInformation|StreamConfiguration|ConnectionCallbacks)|StartConnection|StopConnection|InterruptConnection|GetLaunchUrlQueryParameters|GetMicroseconds|GetPendingAudioDuration)")
+        // Android's input (src/android/input.rs) sends with the core's own
+        // calls.
+        .allowlist_function("LiSend(KeyboardEvent2|MultiControllerEvent|ControllerArrivalEvent|MouseMoveEvent|MousePositionEvent|MouseButtonEvent|HighResScrollEvent|HighResHScrollEvent|TouchEvent)")
         .allowlist_function("picture_.*|viewer_.*")
         .allowlist_type("(STREAM_CONFIGURATION|SERVER_INFORMATION|CONNECTION_LISTENER_CALLBACKS|DECODER_RENDERER_CALLBACKS|AUDIO_RENDERER_CALLBACKS|OPUS_MULTISTREAM_CONFIGURATION|DECODE_UNIT|LENTRY)")
         // Android's decoder (src/android/picture.rs) reads decode units; its
         // sound (src/android/sound.rs) names its capabilities.
-        .allowlist_var("(VIDEO_FORMAT_.*|STREAM_CFG_.*|ENCFLG_.*|BUFFER_TYPE_.*|FRAME_TYPE_.*|DR_.*|CAPABILITY_.*)")
+        .allowlist_var("(VIDEO_FORMAT_.*|STREAM_CFG_.*|ENCFLG_.*|BUFFER_TYPE_.*|FRAME_TYPE_.*|DR_.*|CAPABILITY_.*|KEY_ACTION_.*|BUTTON_ACTION_.*)")
         .derive_default(true)
         .generate().expect("generate binding from the pinned core's actual header");
     bindings

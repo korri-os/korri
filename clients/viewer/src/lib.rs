@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The frame record and the player's picture, sound and input are platform
-// parts. Linux carries Moonlight's C code for them; Android's picture and
-// sound are Rust, and it has no input yet.
+// parts. Linux carries Moonlight's C code for them; Android's are Rust.
 mod callback;
 mod frame_record;
 #[cfg(not(target_os = "android"))]
@@ -21,8 +20,8 @@ pub mod stream;
 
 pub mod lifecycle;
 
-// Android's picture and sound. The pure parts also build on the host for
-// their tests.
+// Android's picture, sound and input. The pure parts also build on the host
+// for their tests.
 #[cfg(any(test, target_os = "android"))]
 #[path = "android/audio.rs"]
 mod audio;
@@ -30,8 +29,23 @@ mod audio;
 #[path = "android/codec.rs"]
 mod codec;
 #[cfg(any(test, target_os = "android"))]
+#[path = "android/controller_list.rs"]
+mod controller_list;
+#[cfg(any(test, target_os = "android"))]
 #[path = "android/decoder.rs"]
 mod decoder;
+#[cfg(target_os = "android")]
+#[path = "android/devices.rs"]
+pub mod devices;
+#[cfg(any(test, target_os = "android"))]
+#[path = "android/gamepad.rs"]
+mod gamepad;
+#[cfg(any(test, target_os = "android"))]
+#[path = "android/input.rs"]
+pub mod input;
+#[cfg(any(test, target_os = "android"))]
+#[path = "android/keyboard.rs"]
+mod keyboard;
 #[cfg(target_os = "android")]
 #[path = "android/picture.rs"]
 pub mod picture;
@@ -44,3 +58,6 @@ mod sound;
 #[cfg(any(test, target_os = "android"))]
 #[path = "android/sps.rs"]
 mod sps;
+#[cfg(any(test, target_os = "android"))]
+#[path = "android/touch.rs"]
+mod touch;
