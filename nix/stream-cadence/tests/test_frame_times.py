@@ -113,6 +113,13 @@ class NumberOne(unittest.TestCase):
             packet_to_display(UNITS, CARRIED[:-1], rows, shown, 0, 100 * MS)
 
 
+class Option(unittest.TestCase):
+    def test_the_record_is_asked_for_unless_the_option_says_no(self):
+        common = ["view", "--sender", "local", "--viewer", "local"]
+        self.assertFalse(cli.parser().parse_args(common).no_frame_record)
+        self.assertTrue(cli.parser().parse_args([*common, "--no-frame-record"]).no_frame_record)
+
+
 class Collection(unittest.TestCase):
     """The record comes from a real agent's line protocol and a real H.264 recording."""
 

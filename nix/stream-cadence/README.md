@@ -282,8 +282,10 @@ arrival time. Korri's viewer can report it (#435): `clients/viewer/README.md`,
 files in `home` with the environment names of the stage-0 client shim:
 `CADENCE_FRAME_TIMES` for `times.csv` and `CADENCE_DUMP` for
 `recording.video`, the file names of `run`. A viewer that knows the names
-writes both; any other, Moonlight included, ignores them. No option turns the
-ask on or off, and a korrid launch never makes it.
+writes both; any other, Moonlight included, ignores them. A korrid launch
+never makes the ask. `--no-frame-record` leaves it out, so that a session can
+measure what the record costs; `discovered.frame_record_asked` says whether
+the tool asked, and number 1 then has no value with that reason.
 
 **Room for the recording.** The recording is the stream as it arrived: about
 the requested bitrate times the measured start's time, 109 MB at the

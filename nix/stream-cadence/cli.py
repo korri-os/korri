@@ -1626,8 +1626,9 @@ def view_case(
         )
         duration = math.floor(args.seconds / args.window) * args.window
         # A viewer that keeps a frame record writes it now; any other ignores the ask.
+        facts["frame_record_asked"] = not args.no_frame_record
         started = viewer.request(
-            "start", command=command, frame_times=True,
+            "start", command=command, frame_times=facts["frame_record_asked"],
             recording_bytes=recording_bytes(args, duration),
         )
         deadline = time.monotonic() + args.startup + args.warmup + duration + 2
@@ -1784,6 +1785,8 @@ def view_case(
             record["viewer"]["frame_times"] = frame_record
         if shown["frame_times"] is None and started.get("frame_times_refused"):
             missing = started["frame_times_refused"]
+        if not facts["frame_record_asked"]:
+            missing = "The tool did not ask for the viewer's frame record (--no-frame-record)."
         if shown["frame_times"] is not None and missing is None:
             assert frame_record is not None
             record["viewer"]["packet_to_display_ms"] = frame_record["packet_to_display_ms"]["p50"]
@@ -2445,6 +2448,11 @@ def parser() -> argparse.ArgumentParser:
         "--keydir", type=Path, default=state / "korri/stream-cadence/keys"
     )
     watch.add_argument("--max-capture-gaps", type=nonnegative_integer, default=0)
+    watch.add_argument(
+        "--no-frame-record",
+        action="store_true",
+        help="do not ask the viewer for its frame record, so number 1 has no value; for a measure of what the record costs",
+    )
     # For a test of the heat guard only: end a run this many degrees below each
     # critical trip point, so that the guard ends a run on a cool device.
     watch.add_argument(
