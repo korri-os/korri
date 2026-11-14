@@ -33,6 +33,9 @@ fn main() {
         // Android's input (src/android/input.rs) sends with the core's own
         // calls.
         .allowlist_function("LiSend(KeyboardEvent2|MultiControllerEvent|ControllerArrivalEvent|MouseMoveEvent|MousePositionEvent|MouseButtonEvent|HighResScrollEvent|HighResHScrollEvent|TouchEvent)")
+        // Its feedback (src/android/feedback.rs) reports each controller's
+        // battery.
+        .allowlist_function("LiSendControllerBatteryEvent")
         .allowlist_function("picture_.*|viewer_.*")
         .allowlist_type("(STREAM_CONFIGURATION|SERVER_INFORMATION|CONNECTION_LISTENER_CALLBACKS|DECODER_RENDERER_CALLBACKS|AUDIO_RENDERER_CALLBACKS|OPUS_MULTISTREAM_CONFIGURATION|DECODE_UNIT|LENTRY)")
         // Android's decoder (src/android/picture.rs) reads decode units; its

@@ -330,11 +330,14 @@ pub(crate) fn run_with_lifecycle(
         }
         io.stop();
         // No send is inside the core when it stops, and none enters after:
-        // its stop destroys what a send uses.
+        // its stop destroys what a send uses. Then the controllers'
+        // vibration and lights stop, before the stream ends, as Artemis
+        // stops its controller handler before the connection.
         #[cfg(target_os = "android")]
         {
             crate::input::CORE_GATE.close();
             crate::log::line("input: the core takes no more input");
+            io.stop_feedback();
         }
         ffi::LiStopConnection();
     }

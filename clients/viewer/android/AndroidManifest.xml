@@ -12,6 +12,9 @@
     <!-- ADR 0064: Android 12. The target matches the Artemis app's. -->
     <uses-sdk android:minSdkVersion="31" android:targetSdkVersion="34" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Rumble on the controllers' and the phone's vibrators (slice D4b),
+         as the Artemis app asks for it. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- No backup: the app's files hold a client key pair and a frame record. -->
     <application
         android:label="Korri viewer"

@@ -38,6 +38,12 @@ mod decoder;
 #[path = "android/devices.rs"]
 pub mod devices;
 #[cfg(any(test, target_os = "android"))]
+#[path = "android/feedback.rs"]
+pub mod feedback;
+#[cfg(target_os = "android")]
+#[path = "android/feedback_jni.rs"]
+pub mod feedback_jni;
+#[cfg(any(test, target_os = "android"))]
 #[path = "android/gamepad.rs"]
 mod gamepad;
 #[cfg(any(test, target_os = "android"))]

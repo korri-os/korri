@@ -6,8 +6,11 @@
 //! the session tests, the core runs its own empty decoder and audio
 //! callbacks. The input (`input.rs`, slice D4) runs on the app's own thread
 //! and sends through the core's calls; here it gives only the launch its
-//! controller mask. The core's log goes to logcat.
-use crate::{network as ffi, options::Options, picture, sound};
+//! controller mask. The controllers' feedback (`feedback.rs`, slice D4b)
+//! runs on its own thread; here the core gets its rumble and light
+//! callbacks, and the feedback stops before the core does. The core's log
+//! goes to logcat.
+use crate::{feedback, network as ffi, options::Options, picture, sound};
 use anyhow::Result;
 use std::{
     ffi::{c_char, c_void},
@@ -23,16 +26,19 @@ unsafe extern "C" {
 /// What the app gives one stream; none in the session tests.
 pub(crate) type Platform = Option<App>;
 
-/// The app's part of one stream: its picture, and the controllers attached
-/// when it starts (`input::attached`), the launch's controller mask.
+/// The app's part of one stream: its picture, the controllers attached
+/// when it starts (`input::attached`), the launch's controller mask, and the
+/// controllers' feedback thread.
 pub(crate) struct App {
     pub picture: picture::Picture,
     pub controllers: u16,
+    pub feedback: feedback::Worker,
 }
 
 pub(crate) struct PlayerIo {
     picture: bool,
     controllers: u16,
+    feedback: Option<feedback::Worker>,
 }
 impl PlayerIo {
     /// Makes the picture's frame record files, when asked: before the
@@ -40,13 +46,16 @@ impl PlayerIo {
     pub(crate) fn new(_: &Options, platform: Platform) -> Result<Self> {
         let picture = platform.is_some();
         let mut controllers = 0;
+        let mut feedback = None;
         if let Some(app) = platform {
             controllers = app.controllers;
+            feedback = Some(app.feedback);
             picture::open(app.picture)?;
         }
         Ok(Self {
             picture,
             controllers,
+            feedback,
         })
     }
     /// `remoteControllersBitmap` and `gcmap` of the launch, as Artemis sends
@@ -76,6 +85,23 @@ impl PlayerIo {
     }
     pub(crate) fn connection_callbacks(&self, callbacks: &mut ffi::CONNECTION_LISTENER_CALLBACKS) {
         callbacks.logMessage = Some(viewer_android_log);
+        // Without the app, as in the session tests, the core's own empty
+        // callbacks take rumble and light.
+        if let Some(worker) = &self.feedback {
+            callbacks.rumble = Some(feedback::rumble);
+            callbacks.rumbleTriggers = Some(feedback::rumble_triggers);
+            callbacks.setControllerLED = Some(feedback::set_controller_led);
+            worker.serve_core();
+        }
+    }
+    /// Before the core stops: its callbacks reach the feedback no more, and
+    /// every vibration and light that the stream started stops.
+    pub(crate) fn stop_feedback(&mut self) {
+        if let Some(mut worker) = self.feedback.take() {
+            if worker.stop(feedback::STOP_WAIT) {
+                crate::log::line("feedback: vibration and lights stopped");
+            }
+        }
     }
     pub(crate) fn start(&self) {}
     pub(crate) fn stop(&self) {}
@@ -93,6 +119,7 @@ impl PlayerIo {
     /// did not close, the frame record's last rows, and whether the whole
     /// record was written.
     pub(crate) fn close(&mut self) -> Result<()> {
+        self.stop_feedback();
         if std::mem::take(&mut self.picture) {
             sound::close();
             picture::close()

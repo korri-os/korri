@@ -22,6 +22,10 @@
 //! overlay cannot run in this app (`clients/viewer/README.md`), so the layer
 //! shows a stand-in.
 //!
+//! The controllers' rumble, light and battery reports (slice D4b) run on a
+//! feedback thread of the shared viewer; the input tells it which
+//! controller is which.
+//!
 //! Until korrid drives the viewer in this process, the launch comes from the
 //! starting intent's extras, with the names of their sources:
 //!
@@ -46,7 +50,8 @@ use android_activity::{
 use anyhow::{Context, Result, anyhow};
 use korri_viewer::{
     devices::{AndroidDevices, now_ms},
-    input::{self as stream_input, CoreSink, Devices, Input, Outcome, Settings, core_sink},
+    feedback_jni,
+    input::{self as stream_input, CoreSink, Input, Outcome, Settings, core_sink},
     launch,
     lifecycle::Lifecycle,
     options::Options,
@@ -289,12 +294,24 @@ fn stream(
     let settings = Settings {
         mouse_emulation: options.mouse_emulation,
     };
+    // The controllers' rumble, light and battery reports, on their own
+    // thread for the whole run: the input tells it which controller is
+    // which from the first press, and the run stops it before the core.
+    let feedback = feedback_jni::start()?;
+    let seats = feedback.seats();
     let runtime = {
         let lifecycle = lifecycle.clone();
         thread::Builder::new()
             .name("viewer".into())
             .spawn(move || {
-                launch::run_in_app(options, Some(&lifecycle), Some(pin), picture, attached)
+                launch::run_in_app(
+                    options,
+                    Some(&lifecycle),
+                    Some(pin),
+                    picture,
+                    attached,
+                    feedback,
+                )
             })?
     };
     let mut controller = Controller {
@@ -302,7 +319,7 @@ fn stream(
         launch: id,
         requests: Vec::new(),
     };
-    let input = Input::new(settings, attached, layer.placed);
+    let input = Input::new(settings, attached, layer.placed, Box::new(seats));
     let driven = drive(
         app,
         &mut controller,

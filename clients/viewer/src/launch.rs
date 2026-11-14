@@ -24,8 +24,10 @@ pub fn run(options: Options, lifecycle: Option<&Lifecycle>, pin: Option<PathBuf>
     run_on(options, lifecycle, pin, Platform::default())
 }
 
-/// The same run on Android, with the picture that the app gives and the
-/// controllers attached at the start (`input::attached`).
+/// The same run on Android, with the picture that the app gives, the
+/// controllers attached at the start (`input::attached`) and the
+/// controllers' feedback thread (`feedback_jni::start`), which ends with
+/// the run.
 #[cfg(target_os = "android")]
 pub fn run_in_app(
     options: Options,
@@ -33,10 +35,12 @@ pub fn run_in_app(
     pin: Option<PathBuf>,
     picture: crate::picture::Picture,
     controllers: u16,
+    feedback: crate::feedback::Worker,
 ) -> Result<()> {
     let app = crate::player_io::App {
         picture,
         controllers,
+        feedback,
     };
     run_on(options, lifecycle, pin, Some(app))
 }

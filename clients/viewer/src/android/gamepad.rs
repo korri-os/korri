@@ -13,14 +13,17 @@
 //! ships under the GNU GPL version 3 with no "or later" grant, so this file
 //! does too. The Rust adaptation is Korri work dated 2026-11-14.
 //!
-//! Left out, each named in `clients/viewer/README.md`: rumble, battery,
-//! the RGB light, motion sensors, a controller's own touchpad, Artemis's USB
-//! driver (ADR 0064), and the settings that Korri's launch does not set
-//! (flip face buttons, back as Guide, the Joy-Con fix). The gameplay
-//! overlay's Start menu is here (slice D5); its Guide is the app's
-//! (`overlay.rs`).
+//! Rumble, the RGB light and battery reports are `feedback.rs`'s; here each
+//! controller's arrival claims them, and its seat goes to the feedback.
+//!
+//! Left out, each named in `clients/viewer/README.md`: motion sensors, a
+//! controller's own touchpad, Artemis's USB driver (ADR 0064), and the
+//! settings that Korri's launch does not set (flip face buttons, back as
+//! Guide, the Joy-Con fix). The gameplay overlay's Start menu is here (slice
+//! D5); its Guide is the app's (`overlay.rs`).
 use super::{
     controller_list,
+    feedback::{Phone, Rumble, Seat, Seats},
     input::{
         ControllerState as State, Device, Devices, KeyAction, KeyEvent, MotionEvent, Packet, Sink,
         axis, everything, source,
@@ -57,6 +60,12 @@ pub(crate) mod button {
 
 /// The stream's controller capabilities (`Limelight.h`, `LI_CCAP_*`).
 pub(crate) const CAPABILITY_ANALOG_TRIGGERS: u16 = 0x01;
+pub(crate) const CAPABILITY_RUMBLE: u16 = 0x02;
+pub(crate) const CAPABILITY_TRIGGER_RUMBLE: u16 = 0x04;
+pub(crate) const CAPABILITY_BATTERY_STATE: u16 = 0x40;
+pub(crate) const CAPABILITY_RGB_LED: u16 = 0x80;
+/// Android 14: `Light.hasRgbControl()` works from here.
+const API_RGB_CONTROL_WORKS: i32 = 34;
 
 /// The mouse buttons (`Limelight.h`).
 pub(crate) const MOUSE_LEFT: u8 = 0x01;
@@ -215,6 +224,11 @@ struct Context {
     mouse: MouseEmulation,
     /// The arrival: the device's kind, buttons and capabilities.
     arrival: Option<(u8, u32, u16)>,
+    /// How it rumbles, and whether it has an RGB light: its seat.
+    rumble: Rumble,
+    rgb_light: bool,
+    /// Its seat went to the feedback.
+    seated: bool,
 }
 
 #[derive(Debug, Default)]
@@ -247,12 +261,14 @@ pub(crate) struct Controllers {
     initial: u16,
     mouse_emulation: bool,
     heartbeat: Heartbeat,
+    seats: Box<dyn Seats>,
 }
 
 impl Controllers {
     /// `initial`: the controllers attached when the stream started. Each
-    /// takes its number out of it when it first sends.
-    pub(crate) fn new(initial: u16, mouse_emulation: bool) -> Self {
+    /// takes its number out of it when it first sends. `seats`: where each
+    /// controller's seat goes, with its arrival.
+    pub(crate) fn new(initial: u16, mouse_emulation: bool, seats: Box<dyn Seats>) -> Self {
         let default = Context {
             left_stick: Some((axis::X, axis::Y)),
             right_stick: Some((axis::Z, axis::RZ)),
@@ -277,6 +293,7 @@ impl Controllers {
             initial,
             mouse_emulation,
             heartbeat: Heartbeat::default(),
+            seats,
         }
     }
 
@@ -297,7 +314,7 @@ impl Controllers {
         let device = device?;
         if let std::collections::btree_map::Entry::Vacant(entry) = self.contexts.entry(device_id) {
             // Every device, for the checks that look at the others.
-            entry.insert(new_context(device, &everything(devices)));
+            entry.insert(new_context(device, &everything(devices), &devices.phone()));
         }
         Some(device_id)
     }
@@ -408,6 +425,9 @@ impl Controllers {
             ));
             self.current &= !(1 << context.number);
         }
+        if context.seated {
+            self.seats.left(device_id);
+        }
         if context.assigned {
             let state = State {
                 number: context.number,
@@ -505,6 +525,18 @@ impl Controllers {
             };
             log::line(&format!("input: arrival {arrival:?}"));
             sink.send(arrival);
+            // `sendControllerArrival`: then its battery, and from now on the
+            // host's rumble and light.
+            let context = self.context(id);
+            context.seated = true;
+            let seat = Seat {
+                device: id,
+                name: context.name.clone(),
+                number,
+                rumble: context.rumble,
+                light: context.rgb_light,
+            };
+            self.seats.seated(seat);
         }
     }
 
@@ -527,9 +559,10 @@ impl Controllers {
             })
         })?;
         let other_id = other.id;
+        let phone = devices.phone();
         self.contexts
             .entry(other_id)
-            .or_insert_with(|| new_context(other, &all));
+            .or_insert_with(|| new_context(other, &all, &phone));
         self.assign_at(other_id, devices, sink, true);
         Some(self.contexts[&other_id].number)
     }
@@ -624,7 +657,7 @@ fn larger_byte(a: u8, b: u8) -> u8 {
 }
 
 /// `createInputDeviceContextForDevice`.
-fn new_context(device: &Device, all: &[Device]) -> Context {
+fn new_context(device: &Device, all: &[Device], phone: &Phone) -> Context {
     let name = device.name.clone();
     log::line(&format!(
         "input: controller {name} ({}) vendor {:04x} product {:04x} external {}",
@@ -643,6 +676,8 @@ fn new_context(device: &Device, all: &[Device]) -> Context {
             multiplier: 1,
             ..Default::default()
         },
+        rumble: Rumble::of(device, phone),
+        rgb_light: device.rgb_light,
         ..Default::default()
     };
     let range = |axis: u32| device.range(axis);
@@ -742,7 +777,7 @@ fn new_context(device: &Device, all: &[Device]) -> Context {
     if device.vendor == 0x044f && device.product == 0xb328 {
         c.has_mode = false;
     }
-    c.arrival = Some(arrival(device, &c));
+    c.arrival = Some(arrival(device, &c, phone));
     log::line(&format!(
         "input: {name} sticks {:?} {:?} triggers {:?} hat {} deadzones {} {} {}",
         c.left_stick,
@@ -757,9 +792,9 @@ fn new_context(device: &Device, all: &[Device]) -> Context {
 }
 
 /// `sendControllerArrival`: the device's kind, the buttons it has and its
-/// capabilities. Rumble, battery, light, sensors and touchpad are not
-/// claimed: the viewer does not carry them.
-fn arrival(device: &Device, context: &Context) -> (u8, u32, u16) {
+/// capabilities. Sensors and the touchpad are not claimed: the viewer does
+/// not carry them.
+fn arrival(device: &Device, context: &Context, phone: &Phone) -> (u8, u32, u16) {
     let kind = match device.vendor {
         0x045e => controller_list::XBOX,
         0x054c => controller_list::PS,
@@ -782,11 +817,26 @@ fn arrival(device: &Device, context: &Context) -> (u8, u32, u16) {
     if device.range(axis::HAT_Y).is_some() {
         buttons |= button::UP | button::DOWN;
     }
-    let capabilities = if context.triggers.is_some() {
-        CAPABILITY_ANALOG_TRIGGERS
-    } else {
-        0
+    let mut capabilities = match context.rumble {
+        Rumble::Quad(_) => CAPABILITY_RUMBLE | CAPABILITY_TRIGGER_RUMBLE,
+        Rumble::Dual(_) | Rumble::Single { .. } => CAPABILITY_RUMBLE,
+        Rumble::None => 0,
     };
+    // `getBatteryState()` is a Binder call that can stall: Artemis claims a
+    // battery for every external controller, and reports what it reads.
+    if context.external {
+        capabilities |= CAPABILITY_BATTERY_STATE;
+    }
+    // Before Android 14 every light says it has RGB control: trust it for a
+    // PlayStation pad only.
+    if context.rgb_light
+        && (phone.api_level >= API_RGB_CONTROL_WORKS || kind == controller_list::PS)
+    {
+        capabilities |= CAPABILITY_RGB_LED;
+    }
+    if context.triggers.is_some() {
+        capabilities |= CAPABILITY_ANALOG_TRIGGERS;
+    }
     (kind, buttons, capabilities)
 }
 

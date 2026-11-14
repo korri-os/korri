@@ -3,12 +3,17 @@
 //! the NDK gives an event's device ID and nothing about the device. The
 //! input (`input.rs`) asks for a device's name, vendor, product,
 //! descriptor, whether it is external, its sources, its keyboard type, its
-//! joystick axes' ranges and which controller keys it has, as Artemis's
-//! `ControllerHandler` asks the same class. Each device is asked once.
+//! joystick axes' ranges, which controller keys it has, its vibrators and
+//! whether a light has RGB control, as Artemis's `ControllerHandler` asks
+//! the same class. Each device is asked once. The phone's own vibrators and
+//! Android version are asked once too.
 //!
 //! Every call runs on the thread that asks, attached to the VM for good: the
 //! app's own thread, which handles the events.
-use crate::input::{Device, Devices, Range, axis, probed_keys, source};
+use crate::{
+    feedback::{Phone, Vibration, Vibrator, Vibrators},
+    input::{Device, Devices, Range, axis, probed_keys, source},
+};
 use anyhow::{Result, anyhow};
 use jni::{
     JNIEnv, JavaVM,
@@ -20,6 +25,7 @@ use std::{collections::HashMap, rc::Rc};
 pub struct AndroidDevices {
     vm: JavaVM,
     known: HashMap<i32, Option<Rc<Device>>>,
+    phone: Option<Phone>,
 }
 
 impl AndroidDevices {
@@ -30,6 +36,7 @@ impl AndroidDevices {
         Ok(Self {
             vm,
             known: HashMap::new(),
+            phone: None,
         })
     }
 
@@ -83,6 +90,140 @@ impl Devices for AndroidDevices {
             }
         }
     }
+
+    fn phone(&mut self) -> Phone {
+        if let Some(phone) = self.phone {
+            return phone;
+        }
+        let phone = self.with(phone).unwrap_or_else(|error| {
+            crate::log::line(&format!(
+                "input: cannot describe the phone's vibrators: {error:#}"
+            ));
+            Phone::default()
+        });
+        crate::log::line(&format!("input: the phone: {phone:?}"));
+        self.phone = Some(phone);
+        phone
+    }
+}
+
+/// `Build.VERSION.SDK_INT`, and the phone's own `VibratorManager` and
+/// `Vibrator` services, from the application's context.
+fn phone(env: &mut JNIEnv) -> jni::errors::Result<Phone> {
+    let api_level = env
+        .get_static_field("android/os/Build$VERSION", "SDK_INT", "I")?
+        .i()?;
+    // SAFETY: ndk-context's global reference to the application context,
+    // alive for the process; borrowed here, never deleted.
+    let context = unsafe { JObject::from_raw(ndk_context::android_context().context().cast()) };
+    let manager = system_service(env, &context, "vibrator_manager")?;
+    let vibrator = system_service(env, &context, "vibrator")?;
+    Ok(Phone {
+        api_level,
+        vibration: Vibration {
+            manager: vibrators(env, &manager)?,
+            vibrator: one_vibrator(env, &vibrator)?,
+        },
+    })
+}
+
+/// `Context.getSystemService(name)`.
+fn system_service<'local>(
+    env: &mut JNIEnv<'local>,
+    context: &JObject,
+    name: &str,
+) -> jni::errors::Result<JObject<'local>> {
+    let name = JObject::from(env.new_string(name)?);
+    env.call_method(
+        context,
+        "getSystemService",
+        "(Ljava/lang/String;)Ljava/lang/Object;",
+        &[JValue::Object(&name)],
+    )?
+    .l()
+}
+
+/// A `VibratorManager`'s vibrators, and whether each has amplitude control.
+fn vibrators(env: &mut JNIEnv, manager: &JObject) -> jni::errors::Result<Vibrators> {
+    if manager.is_null() {
+        return Ok(Vibrators::default());
+    }
+    let ids = JIntArray::from(
+        env.call_method(manager, "getVibratorIds", "()[I", &[])?
+            .l()?,
+    );
+    let mut values = vec![0; env.get_array_length(&ids)? as usize];
+    env.get_int_array_region(&ids, 0, &mut values)?;
+    let mut amplitude = true;
+    for id in &values {
+        let vibrator = env
+            .call_method(
+                manager,
+                "getVibrator",
+                "(I)Landroid/os/Vibrator;",
+                &[(*id).into()],
+            )?
+            .l()?;
+        amplitude &= env
+            .call_method(&vibrator, "hasAmplitudeControl", "()Z", &[])?
+            .z()?;
+    }
+    Ok(Vibrators {
+        count: values.len(),
+        amplitude,
+    })
+}
+
+/// A `Vibrator`: there (`hasVibrator`), and with amplitude control.
+fn one_vibrator(env: &mut JNIEnv, vibrator: &JObject) -> jni::errors::Result<Vibrator> {
+    if vibrator.is_null() {
+        return Ok(Vibrator::default());
+    }
+    Ok(Vibrator {
+        present: env.call_method(vibrator, "hasVibrator", "()Z", &[])?.z()?,
+        amplitude: env
+            .call_method(vibrator, "hasAmplitudeControl", "()Z", &[])?
+            .z()?,
+    })
+}
+
+/// The device's own vibrators (`getVibratorManager`, `getVibrator`), and
+/// whether a light of its `LightsManager` has RGB control.
+fn feedback(env: &mut JNIEnv, device: &JObject) -> jni::errors::Result<(Vibration, bool)> {
+    let manager = env
+        .call_method(
+            device,
+            "getVibratorManager",
+            "()Landroid/os/VibratorManager;",
+            &[],
+        )?
+        .l()?;
+    let vibrator = env
+        .call_method(device, "getVibrator", "()Landroid/os/Vibrator;", &[])?
+        .l()?;
+    let vibration = Vibration {
+        manager: vibrators(env, &manager)?,
+        vibrator: one_vibrator(env, &vibrator)?,
+    };
+    let lights = env
+        .call_method(
+            device,
+            "getLightsManager",
+            "()Landroid/hardware/lights/LightsManager;",
+            &[],
+        )?
+        .l()?;
+    let all = env
+        .call_method(&lights, "getLights", "()Ljava/util/List;", &[])?
+        .l()?;
+    let mut rgb = false;
+    for at in 0..env.call_method(&all, "size", "()I", &[])?.i()? {
+        let light = env
+            .call_method(&all, "get", "(I)Ljava/lang/Object;", &[JValue::Int(at)])?
+            .l()?;
+        rgb |= env.call_method(&light, "hasRgbControl", "()Z", &[])?.z()?;
+    }
+    Ok((vibration, rgb))
 }
 
 fn describe(env: &mut JNIEnv, id: i32) -> jni::errors::Result<Option<Device>> {
@@ -151,6 +292,15 @@ fn describe(env: &mut JNIEnv, id: i32) -> jni::errors::Result<Option<Device>> {
         .filter(|&(_, has)| has != 0)
         .map(|(key, _)| key)
         .collect();
+    // A device whose vibrators or lights cannot be read still plays: it
+    // only gets no rumble or light.
+    let (vibration, rgb_light) = feedback(env, &device).unwrap_or_else(|error| {
+        let _ = env.exception_clear();
+        crate::log::line(&format!(
+            "input: no rumble or light for device {id}: {error}"
+        ));
+        (Vibration::default(), false)
+    });
     Ok(Some(Device {
         id,
         name,
@@ -163,6 +313,8 @@ fn describe(env: &mut JNIEnv, id: i32) -> jni::errors::Result<Option<Device>> {
         ranges,
         pointer_ranges,
         keys,
+        vibration,
+        rgb_light,
     }))
 }
 

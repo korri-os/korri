@@ -26,6 +26,7 @@
 //! Artemis ships under the GNU GPL version 3 with no "or later" grant, so
 //! this file does too. The Rust adaptation is Korri work dated 2026-11-14.
 use super::{
+    feedback::{Phone, Seats, Vibration},
     gamepad::{self, Controllers, Key},
     keyboard::{self, Keyboard, Special, code},
     touch::{Mouse, Touch},
@@ -134,6 +135,10 @@ pub struct Device {
     pub pointer_ranges: Vec<Range>,
     /// The probed keys (`gamepad::probed_keys`) that the device has.
     pub keys: Vec<u32>,
+    /// Its own vibrators (`getVibratorManager`, `getVibrator`).
+    pub vibration: Vibration,
+    /// Some light of its `LightsManager` reports RGB control.
+    pub rgb_light: bool,
 }
 
 impl Device {
@@ -157,6 +162,8 @@ pub trait Devices {
     fn describe(&mut self, id: i32) -> Option<Rc<Device>>;
     /// Every device's ID; none when Android could not be asked.
     fn ids(&mut self) -> Option<Vec<i32>>;
+    /// The phone itself: its Android version and its own vibrators.
+    fn phone(&mut self) -> Phone;
 }
 
 /// The key codes of every device that a controller is asked about.
@@ -304,6 +311,13 @@ pub enum Packet {
         contact_major: f32,
         contact_minor: f32,
         rotation: u16,
+    },
+    /// `LiSendControllerBatteryEvent`, from the feedback thread
+    /// (`feedback.rs`).
+    Battery {
+        number: u8,
+        state: u8,
+        percentage: u8,
     },
 }
 
@@ -559,6 +573,8 @@ impl Sink for Counting<'_> {
                 Packet::Controller(_) => counts.controllers += 1,
                 Packet::Arrival { .. } => counts.arrivals += 1,
                 Packet::Touch { .. } => counts.touches += 1,
+                // The feedback thread sends these, with its own counts.
+                Packet::Battery { .. } => {}
                 _ => counts.mouse += 1,
             }
         }
@@ -567,11 +583,13 @@ impl Sink for Counting<'_> {
 }
 
 impl Input {
-    /// `attached`: the controller mask that the launch sent.
-    pub fn new(settings: Settings, attached: u16, video: Rect) -> Self {
+    /// `attached`: the controller mask that the launch sent. `seats`: where
+    /// each controller's seat goes for its rumble, light and battery
+    /// (`feedback::Worker::seats`).
+    pub fn new(settings: Settings, attached: u16, video: Rect, seats: Box<dyn Seats>) -> Self {
         Self {
             keyboard: Keyboard::default(),
-            controllers: Controllers::new(attached, settings.mouse_emulation),
+            controllers: Controllers::new(attached, settings.mouse_emulation, seats),
             touch: Touch::default(),
             mouse: Mouse::default(),
             video,
@@ -808,8 +826,9 @@ pub(crate) fn everything(devices: &mut dyn Devices) -> Vec<Device> {
         .collect()
 }
 
-/// The core's input, behind its gate (`CORE_GATE`): what the app sends to.
-/// The only way to the core from outside this crate.
+/// The core's input, behind its gate (`CORE_GATE`): what the app and the
+/// feedback thread send to. The only way to the core from outside this
+/// crate.
 #[cfg(target_os = "android")]
 pub struct CoreSink(Gated<'static, Core>);
 
@@ -915,6 +934,11 @@ impl Sink for Core {
                     contact_minor,
                     rotation,
                 ),
+                Packet::Battery {
+                    number,
+                    state,
+                    percentage,
+                } => ffi::LiSendControllerBatteryEvent(number, state, percentage),
             }
         }
     }
@@ -924,10 +948,16 @@ impl Sink for Core {
 pub(crate) mod tests {
     use super::*;
     use crate::{
-        gamepad::{CAPABILITY_ANALOG_TRIGGERS, HEARTBEAT_MS, MOUSE_LEFT, MOUSE_RIGHT, button},
+        feedback::{Owner, Phone, Rumble, Seat, Seats, Vibration, Vibrators},
+        gamepad::{
+            CAPABILITY_ANALOG_TRIGGERS, CAPABILITY_BATTERY_STATE, CAPABILITY_RGB_LED,
+            CAPABILITY_RUMBLE, CAPABILITY_TRIGGER_RUMBLE, HEARTBEAT_MS, MOUSE_LEFT, MOUSE_RIGHT,
+            button,
+        },
         touch::{UNSUPPORTED, kind},
     };
     use std::{
+        cell::RefCell,
         collections::BTreeMap,
         sync::{
             Arc,
@@ -973,6 +1003,7 @@ pub(crate) mod tests {
     pub(crate) struct Known {
         pub devices: BTreeMap<i32, Rc<Device>>,
         pub unreadable: bool,
+        pub phone: Phone,
     }
 
     impl Devices for Known {
@@ -982,6 +1013,33 @@ pub(crate) mod tests {
         fn ids(&mut self) -> Option<Vec<i32>> {
             (!self.unreadable).then(|| self.devices.keys().copied().collect())
         }
+        fn phone(&mut self) -> Phone {
+            self.phone
+        }
+    }
+
+    /// What the input told the feedback: each seat, and each device that left.
+    #[derive(Debug, Default)]
+    pub(crate) struct SeatLog {
+        pub seated: Vec<Seat>,
+        pub left: Vec<i32>,
+    }
+
+    /// Seats that keep a log the test reads.
+    pub(crate) struct RecordedSeats(Rc<RefCell<SeatLog>>);
+
+    impl Seats for RecordedSeats {
+        fn seated(&mut self, seat: Seat) {
+            self.0.borrow_mut().seated.push(seat);
+        }
+        fn left(&mut self, device: i32) {
+            self.0.borrow_mut().left.push(device);
+        }
+    }
+
+    pub(crate) fn seats() -> (Box<dyn Seats>, Rc<RefCell<SeatLog>>) {
+        let log = Rc::new(RefCell::new(SeatLog::default()));
+        (Box::new(RecordedSeats(log.clone())), log)
     }
 
     impl Known {
@@ -992,6 +1050,10 @@ pub(crate) mod tests {
                     .map(|device| (device.id, Rc::new(device)))
                     .collect(),
                 unreadable: false,
+                phone: Phone {
+                    api_level: 31,
+                    vibration: Vibration::default(),
+                },
             }
         }
     }
@@ -1041,6 +1103,7 @@ pub(crate) mod tests {
                 code::BUTTON_SELECT,
                 code::BUTTON_MODE,
             ],
+            ..Default::default()
         }
     }
 
@@ -1078,6 +1141,7 @@ pub(crate) mod tests {
             },
             0,
             VIDEO,
+            seats().0,
         )
     }
 
@@ -1297,7 +1361,8 @@ pub(crate) mod tests {
                     active_mask: 1,
                     kind: 1,
                     buttons,
-                    capabilities: CAPABILITY_ANALOG_TRIGGERS,
+                    // External: its battery is reported. No vibrator, no light.
+                    capabilities: CAPABILITY_ANALOG_TRIGGERS | CAPABILITY_BATTERY_STATE,
                 },
                 Packet::Controller(controller(0, 1, button::A)),
                 Packet::Controller(controller(0, 1, 0)),
@@ -1314,6 +1379,7 @@ pub(crate) mod tests {
                 },
                 0b11,
                 VIDEO,
+                seats().0,
             ),
             Recorded::default(),
         );
@@ -1565,6 +1631,7 @@ pub(crate) mod tests {
             },
             0,
             VIDEO,
+            seats().0,
         );
         let mut sink = Recorded::default();
         let other = pad(16, 0x045e);
@@ -1860,6 +1927,7 @@ pub(crate) mod tests {
             },
             0,
             VIDEO,
+            seats().0,
         );
         let mut sink = Recorded::default();
         let mut devices = Known::with([pad(16, 0x045e)]);
@@ -2506,6 +2574,196 @@ pub(crate) mod tests {
                 .iter()
                 .any(|p| matches!(p, Packet::MouseMove { .. }))
         );
+    }
+
+    /// The arrival of a controller that a test presses A on, and what the
+    /// input told the feedback.
+    fn arrival_of(device: Device, phone: Phone) -> (Packet, Rc<RefCell<SeatLog>>) {
+        let (seats, log) = seats();
+        let id = device.id;
+        let mut input = Input::new(
+            Settings {
+                mouse_emulation: true,
+            },
+            0,
+            VIDEO,
+            seats,
+        );
+        let mut sink = Recorded::default();
+        let mut devices = Known::with([device]);
+        devices.phone = phone;
+        press(
+            &mut input,
+            &mut devices,
+            &mut sink,
+            id,
+            code::BUTTON_A,
+            304,
+            1000,
+        );
+        let arrival = sink
+            .take()
+            .into_iter()
+            .find(|p| matches!(p, Packet::Arrival { .. }))
+            .expect("an arrival");
+        (arrival, log)
+    }
+
+    fn capabilities(packet: &Packet) -> u16 {
+        match packet {
+            Packet::Arrival { capabilities, .. } => *capabilities,
+            _ => panic!("{packet:?}"),
+        }
+    }
+
+    const ANDROID_12: Phone = Phone {
+        api_level: 31,
+        vibration: Vibration {
+            manager: Vibrators {
+                count: 0,
+                amplitude: false,
+            },
+            vibrator: crate::feedback::Vibrator {
+                present: false,
+                amplitude: false,
+            },
+        },
+    };
+
+    fn two_vibrators() -> Vibration {
+        Vibration {
+            manager: Vibrators {
+                count: 2,
+                amplitude: true,
+            },
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_dualshock_4_arrives_with_rumble_battery_and_light_and_takes_its_seat() {
+        let mut ds4 = dualshock(20);
+        ds4.vibration = two_vibrators();
+        ds4.rgb_light = true;
+        let (arrival, log) = arrival_of(ds4, ANDROID_12);
+        assert_eq!(
+            capabilities(&arrival),
+            CAPABILITY_ANALOG_TRIGGERS
+                | CAPABILITY_RUMBLE
+                | CAPABILITY_BATTERY_STATE
+                | CAPABILITY_RGB_LED
+        );
+        assert_eq!(
+            log.borrow().seated,
+            [Seat {
+                device: 20,
+                name: "Sony Interactive Entertainment Wireless Controller".into(),
+                number: 0,
+                rumble: Rumble::Dual(Owner::Device),
+                light: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn an_rgb_light_is_claimed_for_others_than_playstation_pads_from_android_14() {
+        // Before Android 14 every light said it had RGB control.
+        let mut xbox = pad(16, 0x045e);
+        xbox.rgb_light = true;
+        let (arrival, log) = arrival_of(xbox.clone(), ANDROID_12);
+        assert_eq!(capabilities(&arrival) & CAPABILITY_RGB_LED, 0);
+        // The light still takes the host's colour, as in Artemis.
+        assert!(log.borrow().seated[0].light);
+        let android_14 = Phone {
+            api_level: 34,
+            ..ANDROID_12
+        };
+        let (arrival, _) = arrival_of(xbox, android_14);
+        assert_ne!(capabilities(&arrival) & CAPABILITY_RGB_LED, 0);
+    }
+
+    #[test]
+    fn four_vibrators_claim_trigger_rumble() {
+        let mut pad = pad(16, 0x045e);
+        pad.vibration.manager = Vibrators {
+            count: 4,
+            amplitude: true,
+        };
+        let (arrival, log) = arrival_of(pad, ANDROID_12);
+        assert_eq!(
+            capabilities(&arrival) & (CAPABILITY_RUMBLE | CAPABILITY_TRIGGER_RUMBLE),
+            CAPABILITY_RUMBLE | CAPABILITY_TRIGGER_RUMBLE
+        );
+        assert_eq!(log.borrow().seated[0].rumble, Rumble::Quad(Owner::Device));
+    }
+
+    #[test]
+    fn built_in_buttons_rumble_with_the_phone_and_claim_no_battery() {
+        let mut buttons = pad(2, 0);
+        buttons.external = false;
+        let phone = Phone {
+            api_level: 31,
+            vibration: Vibration {
+                vibrator: crate::feedback::Vibrator {
+                    present: true,
+                    amplitude: true,
+                },
+                ..Default::default()
+            },
+        };
+        let (arrival, log) = arrival_of(buttons, phone);
+        assert_eq!(
+            capabilities(&arrival),
+            CAPABILITY_ANALOG_TRIGGERS | CAPABILITY_RUMBLE
+        );
+        assert_eq!(
+            log.borrow().seated[0].rumble,
+            Rumble::Single {
+                owner: Owner::Phone,
+                amplitude: true
+            }
+        );
+    }
+
+    #[test]
+    fn the_feedback_hears_of_a_seated_pad_that_goes() {
+        let (seats, log) = seats();
+        let mut input = Input::new(
+            Settings {
+                mouse_emulation: true,
+            },
+            0,
+            VIDEO,
+            seats,
+        );
+        let mut sink = Recorded::default();
+        let mut devices = Known::with([pad(16, 0x045e), pad(17, 0x045e)]);
+        press(
+            &mut input,
+            &mut devices,
+            &mut sink,
+            16,
+            code::BUTTON_A,
+            304,
+            1000,
+        );
+        devices.devices.clear();
+        input.check_devices(&mut devices, &mut sink);
+        // Only the pad that had a seat: the other never sent.
+        assert_eq!(log.borrow().left, [16]);
+        assert_eq!(log.borrow().seated.len(), 1);
+    }
+
+    #[test]
+    fn a_battery_report_goes_to_the_core_as_its_own_packet() {
+        let mut sink = Recorded::default();
+        let packet = Packet::Battery {
+            number: 1,
+            state: 2,
+            percentage: 55,
+        };
+        assert_eq!(sink.send(packet), 0);
+        assert_eq!(sink.packets, [packet]);
     }
 
     #[test]
