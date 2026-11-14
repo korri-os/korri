@@ -73,6 +73,11 @@ GAME_CHECK_SECONDS = 2.0
 # The press program's whole time: it waits up to 5 s for the viewer's window,
 # then about 1 s and one gap of up to GAP_MS + JITTER_MS for each press.
 PRESS_SECONDS = 60
+# The viewer's frame record (#435), in home, by the environment names and the
+# file names of the stage-0 client shim and run (client-shim.c, cli.py:run_case).
+# A viewer that knows the names writes both files; any other ignores them.
+FRAME_TIMES = "times.csv"
+RECORDING = "recording.video"
 # The installed viewer's own words for its first decoded frame (the plugin's
 # Moonlight patches 0002 and 0021): a dma-buf frame comes from a hardware decoder.
 DECODE_STARTED = re.compile(r"first frame from decoder format=\S+ \(DRM_PRIME=(YES|NO)\)")
@@ -493,6 +498,9 @@ class Session:
         self.beside_game = False
         self.processes: dict[str, subprocess.Popen] = {}
         self.logs: dict[str, TextIO] = {}
+        # While the viewer writes its recording: the free space below which the
+        # run ends before the recording fills the run directory's filesystem.
+        self.recording_floor: int | None = None
 
     def restrict(self) -> None:
         if self.x_namespace:
@@ -606,6 +614,33 @@ class Session:
         # home. Sound goes to SDL's dummy driver: the unit's audio server exists
         # only inside a korrid launch, and without one the viewer ends the stream.
         return dict(self.environment(), **product, DISPLAY=":0", SDL_AUDIODRIVER="dummy")
+
+    def free_bytes(self) -> int:
+        """Free space for the programs of the run on the filesystem of home."""
+        stats = os.statvfs(self.home())
+        return stats.f_bavail * stats.f_frsize
+
+    def frame_record(self, expected: int) -> tuple[dict[str, str], str | None]:
+        """Ask the viewer for its frame record: its frame times and the stream as it arrived.
+
+        The recording needs room, and a private pair's run directory is a
+        tmpfs in memory. It is not asked for when the filesystem has less than
+        twice the expected size free; the reason says so.
+        """
+        for name in (FRAME_TIMES, RECORDING):
+            (self.home() / name).unlink(missing_ok=True)
+        free = self.free_bytes()
+        if free < 2 * expected:
+            return {}, (
+                f"The run directory's filesystem had {free >> 20} MiB free. The viewer's recording "
+                f"needs about {expected >> 20} MiB and the tool keeps as much again free, so no "
+                "frame record was asked for."
+            )
+        self.recording_floor = expected // 2
+        return {
+            "CADENCE_FRAME_TIMES": str(self.home() / FRAME_TIMES),
+            "CADENCE_DUMP": str(self.home() / RECORDING),
+        }, None
 
     def spawn(self, name: str, args: list[str], env: dict[str, str]) -> subprocess.Popen:
         assert self.root is not None
@@ -906,7 +941,7 @@ class Session:
                 raise RuntimeError(f"{name} still runs at the next turn")
         for name in ("viewer.log", "viewer.earlier.log", "capture.log", "pair.log"):
             (self.root / name).unlink(missing_ok=True)
-        for name in ("display.csv", "display.rows", "probe.pgm"):
+        for name in ("display.csv", "display.rows", "probe.pgm", FRAME_TIMES, RECORDING):
             (self.home() / name).unlink(missing_ok=True)
         self.units = product_units() if self.watch_games else None
         return {"live_games": live_games() if self.watch_games else []}
@@ -1114,12 +1149,18 @@ class Session:
                 with append_log(self.root / "viewer.earlier.log") as earlier:
                     earlier.write(read_plain(current).decode(errors="replace"))
                 current.unlink()
+            self.recording_floor = None
+            record, refused = (
+                self.frame_record(int(request["recording_bytes"]))
+                if request.get("frame_times")
+                else ({}, None)
+            )
             start = time.monotonic_ns()
-            process = self.spawn("viewer", list(request["command"]), self.viewer_environment())
+            process = self.spawn("viewer", list(request["command"]), dict(self.viewer_environment(), **record))
             threading.Thread(target=self.guard, args=(process,), daemon=True).start()
             if not self.fixture:
                 threading.Thread(target=self.focus, args=(process.pid,), daemon=True).start()
-            return {"pid": process.pid, "start_ns": start}
+            return {"pid": process.pid, "start_ns": start, "frame_times_refused": refused}
         if operation == "input":
             return self.press(request)
         if operation == "sample":
@@ -1142,6 +1183,14 @@ class Session:
                 unsafe = must_end(zones, self.limits)
                 if unsafe:
                     self.end(unsafe, viewer)
+            free = self.free_bytes()
+            if self.ended is None and self.recording_floor is not None and free < self.recording_floor:
+                self.end(
+                    f"The run directory's filesystem has {free >> 20} MiB free, below the "
+                    f"{self.recording_floor >> 20} MiB that the viewer's recording leaves. The run "
+                    "ends before the recording fills it.",
+                    viewer,
+                )
             if self.ended:
                 raise RuntimeError(self.ended)
             # A dead viewer has no /proc/PID/fd to inspect. Name the exit,
@@ -1174,6 +1223,9 @@ class Session:
                 "machine": machine_sample([process.pid for process in self.processes.values()]),
                 # Whether the viewer's own OpenGL is on the graphics card.
                 "viewer_render_nodes": render_nodes_open(viewer.pid) if viewer else None,
+                # Room left for the programs of the run, and the recording's share.
+                "run_directory_free": free,
+                "recording_bytes": self.recording_size(),
             }
         if operation == "stop":
             code = self.stop("viewer")
@@ -1182,11 +1234,23 @@ class Session:
                 # say so, or a run could be valid with no reason recorded.
                 raise RuntimeError(self.ended)
             return {"exit": code, "log": plain_text(self.root / "viewer.log")}
+        if operation == "recording":
+            # The viewer wrote it, after it stopped: a plain file, read in parts.
+            data = read_plain(self.home() / RECORDING, int(request["length"]), int(request["offset"]))
+            return {"data": base64.b64encode(data).decode()}
+        if operation == "discard_recording":
+            (self.home() / RECORDING).unlink(missing_ok=True)
+            self.recording_floor = None
+            return {}
         if operation == "evidence":
             self.stop("capture")
             # The capture, a program of the run, wrote these: read them as plain files.
             times, rows = self.home() / "display.csv", self.home() / "display.rows"
+            frame_times = self.home() / FRAME_TIMES
             return {
+                # The viewer's own record; None from a viewer that wrote none.
+                "frame_times": read_plain(frame_times).decode() if os.path.lexists(frame_times) else None,
+                "recording_bytes": self.recording_size(),
                 "times": plain_text(times),
                 "rows": base64.b64encode(
                     read_plain(rows) if os.path.lexists(rows) else b""
@@ -1197,6 +1261,12 @@ class Session:
                 "fixture_log": self.tail("fixture"),
             }
         raise ValueError("unknown viewer operation")
+
+    def recording_size(self) -> int | None:
+        try:
+            return os.stat(self.home() / RECORDING, follow_symlinks=False).st_size
+        except FileNotFoundError:
+            return None
 
     @deferred_termination()
     def close(self) -> dict:

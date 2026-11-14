@@ -271,6 +271,70 @@ feels. While the capture runs, the compositor composes every frame, so direct
 scanout is off. A baseline and its candidate are measured the same way, so
 they stay comparable.
 
+### The viewer's frame record: number 1
+
+ADR 0062's number 1 is the time from packet arrival to the frame on the
+display. The capture cannot see a packet arrive, and Moonlight reports no
+arrival time. Korri's viewer can report it (#435): `clients/viewer/README.md`,
+"Frame record", names its fields and their grounding.
+
+**The ask.** At the measured start only, the viewer's agent names two new
+files in `home` with the environment names of the stage-0 client shim:
+`CADENCE_FRAME_TIMES` for `times.csv` and `CADENCE_DUMP` for
+`recording.video`, the file names of `run`. A viewer that knows the names
+writes both; any other, Moonlight included, ignores them. No option turns the
+ask on or off, and a korrid launch never makes it.
+
+**Room for the recording.** The recording is the stream as it arrived: about
+the requested bitrate times the measured start's time, 109 MB at the
+defaults. A private pair's run directory is a tmpfs in memory. The agent
+first removes an earlier start's two names, then asks only when the
+filesystem has twice that size free; otherwise number 1 has no value and
+says so. While the viewer runs, the agent ends the run as invalid when free
+space falls below half that size. Each sample records `run_directory_free`
+and `recording_bytes`.
+
+**Collection.** After the viewer stops, the agent returns `times.csv` with
+the evidence. The tool copies the recording to the host run directory in
+parts of 4 MiB, then the agent removes it from the device, also after a
+failed copy. The tool decodes it on the host with `decode.py`, as `run`
+decodes its own recording, so each decode unit has the ID that the sender
+drew into it. While it copies and decodes, the tool sends a `clock` request
+to both agents at least every 10 s: an agent ends a session that it has not
+heard from for 75 s.
+
+**The match is by frame ID.** Each ID that the display record shows first in
+the scored time belongs to the first decode unit that carries that ID and
+that the viewer handed to the display. Then:
+
+| Field | Meaning |
+| --- | --- |
+| `viewer.packet_to_display_ms` | The median over those IDs of the unit's `display_ns` less its `enqueue_ns`, both from the viewer: last packet to the viewer's hand-off |
+| `viewer.frame_times.packet_to_display_ms` | The same values: `count`, `p50`, `p95`, `max` |
+| `viewer.frame_times.handoff_to_display_ms` | The check: the display record's `display_ns` less the viewer's hand-off, for the same IDs. `count`, `p50`, `p95`, `max`, `min` |
+| `viewer.frame_times.handoff_after_display` | IDs that the display record shows before the viewer's hand-off. Counted, not hidden; such a time is wrong |
+| `viewer.frame_times.frames`, `unreported`, `unreported_ids` | IDs matched; IDs shown in the scored time that no handed-off unit carries, and the first 20 of them |
+| `viewer.frame_times.recording_bytes` | The size of the copied recording |
+
+**Number 1 ends at the viewer's hand-off, not at the display.** The display
+time that the capture records comes later: Xwayland and the compositor carry
+the frame to the next output frame. `handoff_to_display_ms` is that
+difference, as measured in each run; the measured values on aka are in
+`clients/viewer/proof/`. The two are not summed: the capture's time exists
+only where the capture runs.
+
+**No value, and why.** `viewer.not_measured.packet_to_display_ms` keeps the
+reason when number 1 has no value. A viewer that wrote no record keeps
+today's reason. A record that leaves a shown ID unreported, that is out of
+order, or whose recording does not decode to one frame for each unit gives
+no value either, with its own reason. In each of these cases every other
+number of the run stands, and the run stays valid. The recording stays in
+the host run directory only when number 1 has no value; else the tool
+removes it there too. `times.csv` stays.
+
+`verdict` compares `packet_to_display_ms` as any other number. Against
+Moonlight, which writes no record, that row is `not measured`.
+
 ### The fixture
 
 The viewer and the capture client run inside a fixture: a second, headless
@@ -1222,7 +1286,7 @@ display. A long tail in the first is the sender's own.
 
 | Number | Fields | Method |
 | --- | --- | --- |
-| 1 Packet arrival to display | `viewer.packet_to_display_ms` | Not measured: today's viewer reports no arrival time. The gate is `latency_ms`, sender presentation to viewer display, on the same sender and link. |
+| 1 Packet arrival to display | `viewer.packet_to_display_ms`, `viewer.frame_times` | From the viewer's own frame record, matched to the display record by frame ID: last packet to the viewer's hand-off to the display (see "The viewer's frame record: number 1"). Not measured for a viewer that writes no record, such as Moonlight: it reports no arrival time. The gate for any viewer is `latency_ms`, sender presentation to viewer display, on the same sender and link. |
 | 2 Late, repeated, dropped | `capture_misses`, `repeated_frames`, `late_frames`, `torn_frames`, `undecodable_frames` in each window; `viewer.output_repeats` | A dropped ID was presented and never displayed. A repeated frame shows no new ID. A late frame is a new ID more than 1.5 refresh periods after the previous new ID. An output repeat is a gap in the display record that loses no ID: the panel showed one picture across it. |
 | 3 CPU and battery | `viewer.cpu_seconds_per_second`, `viewer.battery_mw` | Viewer process CPU time from procfs over the scored time. Battery power only while a battery discharges in every sample; else not measured. |
 | 4 Startup | `viewer.startup_ms` | Viewer process start to the first displayed frame of that start: the first ID that the sender presented at or after it. korrid's launch path is not included. On a handheld the time contains the agent's fullscreen and focus step. |

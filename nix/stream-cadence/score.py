@@ -254,6 +254,103 @@ def latency(values: list[float]) -> dict:
     }
 
 
+# The viewer's own record of each frame: clients/viewer/picture/frame_times.c
+# names each field. Times are the viewer device's CLOCK_MONOTONIC, the clock
+# of the display record.
+FRAME_TIMES_FIELDS = ["index", "frame_number", "enqueue_ns", "decoded_ns", "display_ns"]
+
+
+def frame_times(text: str) -> list[dict[str, int]]:
+    """The viewer's record: one row for each decode unit, in the order of its recording.
+
+    `decoded_ns` and `display_ns` are absent from a row whose unit the decoder
+    returned no frame for, or that no presenter handed to the display.
+    """
+    reader = csv.DictReader(text.splitlines())
+    if reader.fieldnames != FRAME_TIMES_FIELDS:
+        raise ValueError(
+            f"the viewer's frame times have the fields {reader.fieldnames}, not {FRAME_TIMES_FIELDS}"
+        )
+    rows = [{name: int(value) for name, value in row.items() if value} for row in reader]
+    if not rows or any(row.get("index") != i for i, row in enumerate(rows)):
+        raise ValueError("missing or nonconsecutive frame times")
+    handed = None
+    for row in rows:
+        if "frame_number" not in row or "enqueue_ns" not in row:
+            raise ValueError(f"frame times without a frame number or arrival at index {row['index']}")
+        decoded, display = row.get("decoded_ns"), row.get("display_ns")
+        if (decoded is not None and decoded < row["enqueue_ns"]) or (
+            display is not None and (decoded is None or display < decoded)
+        ):
+            raise ValueError(f"frame times out of order at index {row['index']}")
+        # Frames reach the display in stream order.
+        if display is not None:
+            if handed is not None and display <= handed:
+                raise ValueError(f"hand-off clock did not advance at index {row['index']}")
+            handed = display
+    return rows
+
+
+def packet_to_display(
+    units: list[dict[str, int]],
+    carried: list[Frame],
+    rows: list[dict[str, int]],
+    shown: list[Frame],
+    start_ns: float,
+    end_ns: float,
+) -> dict:
+    """Number 1 from the viewer's own record, checked against the display record by frame ID.
+
+    `units` is the viewer's record and `carried` the frame that its recording
+    decodes to for each unit, in the same order. `rows` and `shown` are the
+    display record of the measured start, on the same clock. Each ID that the
+    display record shows first inside [start_ns, end_ns) belongs to the first
+    unit that carries it and that the viewer handed to the display. Its
+    packet-to-display time is that hand-off less the unit's arrival, both from
+    the viewer. The check is the capture's display time less the same hand-off:
+    a frame cannot be on the display before the viewer handed it over. An ID
+    that no handed-off unit carries is unreported.
+    """
+    if len(units) != len(carried):
+        raise ValueError(
+            f"the viewer's recording decodes to {len(carried)} frames and its record has {len(units)} units"
+        )
+    if len(rows) != len(shown):
+        raise ValueError("the display record and its decoded frames differ in length")
+    handed: dict[int, dict[str, int]] = {}
+    for unit, frame in zip(units, carried):
+        if "display_ns" in unit:
+            for ident in frame_ids(frame):
+                handed.setdefault(ident, unit)
+    seen: set[int] = set()
+    arrival: list[float] = []
+    difference: list[float] = []
+    unreported: list[int] = []
+    for row, frame in zip(rows, shown):
+        for ident in frame_ids(frame):
+            if ident in seen:
+                continue
+            seen.add(ident)
+            if not start_ns <= row["display_ns"] < end_ns:
+                continue
+            if ident not in handed:
+                unreported.append(ident)
+                continue
+            unit = handed[ident]
+            arrival.append((unit["display_ns"] - unit["enqueue_ns"]) / 1e6)
+            difference.append((row["display_ns"] - unit["display_ns"]) / 1e6)
+    return {
+        "frames": len(arrival),
+        "unreported": len(unreported),
+        "unreported_ids": unreported[:20],
+        "packet_to_display_ms": latency(arrival),
+        "handoff_to_display_ms": dict(
+            latency(difference), min=min(difference) if difference else None
+        ),
+        "handoff_after_display": sum(1 for value in difference if value < 0),
+    }
+
+
 def score(
     ids: list[Frame],
     rows: list[dict[str, int]],

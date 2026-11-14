@@ -19,6 +19,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -26,7 +27,7 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 
-from bar import BITS, Location, decode_rows, search
+from bar import BITS, Frame, Location, decode_rows, search
 from decode import decode
 from discovery import session_log
 from input_measure import PressFailed, summarize as summarize_input
@@ -39,11 +40,13 @@ from score import (
     display_records,
     feedback,
     first_measured_frame,
+    frame_times,
     machine_use,
+    packet_to_display,
     score,
     stamps,
 )
-from viewer import decode_path
+from viewer import FRAME_TIMES, RECORDING, decode_path
 from sender import steady_refresh_mhz
 from verdict import (
     BASE,
@@ -747,6 +750,93 @@ def input_numbers(pressed: dict | None) -> tuple[dict, dict[str, str]]:
             "packet: the viewer sent no input for them (input_missed)."
         )
     return dict(pressed), notes
+
+
+# The part of the viewer's recording that one reply of its agent carries.
+RECORDING_PART = 4 << 20
+
+
+def recording_bytes(args: argparse.Namespace, duration: float) -> int:
+    """About how large the measured start's recording grows: the requested bitrate over its time."""
+    return math.ceil(args.bitrate * 1000 / 8 * (args.startup + args.warmup + duration + 2))
+
+
+def fetch_recording(viewer: Remote, video: Path, keepalive: Callable[[], None]) -> int:
+    """Copy the viewer's recording to this host in parts, then remove it from the device."""
+    copied = 0
+    try:
+        with video.open("xb") as out:
+            while True:
+                part = base64.b64decode(
+                    viewer.request("recording", offset=copied, length=RECORDING_PART)["data"]
+                )
+                out.write(part)
+                copied += len(part)
+                keepalive()
+                if len(part) < RECORDING_PART:
+                    return copied
+    finally:
+        viewer.request("discard_recording")
+
+
+def decode_alive(video: Path, diagnostic: Path, keepalive: Callable[[], None]) -> list[Frame]:
+    """`decode`, with a request to the agents every 10 s: they end a silent session at 75 s."""
+    result: dict = {}
+
+    def work() -> None:
+        try:
+            result["frames"] = decode(video, diagnostic)
+        except Exception as error:
+            result["error"] = error
+
+    worker = threading.Thread(target=work, daemon=True)
+    worker.start()
+    while worker.is_alive():
+        worker.join(10)
+        if worker.is_alive():
+            keepalive()
+    if "error" in result:
+        raise result["error"]
+    return result["frames"]
+
+
+def viewer_frame_record(
+    viewer: Remote,
+    keepalive: Callable[[], None],
+    directory: Path,
+    record: str | None,
+    rows: list[dict[str, int]],
+    shown: list[Frame],
+    scored: tuple[float, float],
+) -> tuple[dict | None, str | None]:
+    """Number 1 from the viewer's own frame record (#435), and why it has none.
+
+    `record` is the viewer's frame times, or None when it wrote none. Its
+    recording comes to this host and is decoded here, as `run` decodes its
+    own, so that each unit has the ID that the sender drew into it. `rows`
+    and `shown` are the display record of the measured start; `scored` is the
+    scored time on the same clock. The run stays valid either way: number 1
+    then has no value, and the reason says why.
+    """
+    if record is None:
+        return None, None
+    (directory / FRAME_TIMES).write_text(record)
+    video = directory / RECORDING
+    copied = fetch_recording(viewer, video, keepalive)
+    units = frame_times(record)
+    carried = decode_alive(video, directory / "recording-decode.log", keepalive)
+    evidence = packet_to_display(units, carried, rows, shown, *scored)
+    evidence["recording_bytes"] = copied
+    if not evidence["frames"]:
+        return evidence, "The display record shows no new ID in the scored time that the viewer handed over."
+    if evidence["unreported"]:
+        return evidence, (
+            f"{evidence['unreported']} IDs that the display record shows in the scored time "
+            "are in no unit that the viewer reports as handed to the display; the record is incomplete."
+        )
+    # About 110 MB a run at the defaults. Kept only when number 1 has no value.
+    video.unlink()
+    return evidence, None
 
 
 def plugin_enabled(code: int, status: str) -> bool:
@@ -1534,8 +1624,12 @@ def view_case(
             x=location.x,
             cell=location.cell,
         )
-        started = viewer.request("start", command=command)
         duration = math.floor(args.seconds / args.window) * args.window
+        # A viewer that keeps a frame record writes it now; any other ignores the ask.
+        started = viewer.request(
+            "start", command=command, frame_times=True,
+            recording_bytes=recording_bytes(args, duration),
+        )
         deadline = time.monotonic() + args.startup + args.warmup + duration + 2
         while time.monotonic() < deadline:
             sent = sender.request("sample")
@@ -1673,6 +1767,29 @@ def view_case(
             record["viewer"]["not_measured"]["battery_mw"] = (
                 "No battery discharged through the whole scored time."
             )
+        # Number 1 from the viewer's own record. It ends at the viewer's hand-off
+        # to the display; the check against the capture's display time stays beside it.
+        def keepalive() -> None:
+            sender.request("clock")
+            viewer.request("clock")
+
+        try:
+            frame_record, missing = viewer_frame_record(
+                viewer, keepalive, directory, shown["frame_times"], times[first:], frames[first:], scored
+            )
+        except Exception as error:
+            # Number 1 alone has no value; every other number of the run stands.
+            frame_record, missing = None, f"The viewer's frame record could not be read: {error}"
+        if frame_record is not None:
+            record["viewer"]["frame_times"] = frame_record
+        if shown["frame_times"] is None and started.get("frame_times_refused"):
+            missing = started["frame_times_refused"]
+        if shown["frame_times"] is not None and missing is None:
+            assert frame_record is not None
+            record["viewer"]["packet_to_display_ms"] = frame_record["packet_to_display_ms"]["p50"]
+            del record["viewer"]["not_measured"]["packet_to_display_ms"]
+        elif missing is not None:
+            record["viewer"]["not_measured"]["packet_to_display_ms"] = missing
         record.update(decoded_frames=len(frames), decode_errors=0, decode_warnings=0)
         source = score(
             frames[first:],
@@ -1786,7 +1903,13 @@ def view_case(
                 f"cpu={measured['cpu_seconds_per_second']} stalls={measured['stream_stalls']} "
                 f"capture_gaps={measured['capture_gaps']}/{measured['capture_frames']} "
                 f"output_repeats={measured['output_repeats']} "
-                f"input_ms={measured.get('input_ms')} input_missed={measured.get('input_missed')}",
+                f"input_ms={measured.get('input_ms')} input_missed={measured.get('input_missed')} "
+                f"packet_to_display_ms={measured['packet_to_display_ms']}"
+                + (
+                    f" handoff_to_display_ms={measured['frame_times']['handoff_to_display_ms']}"
+                    if "frame_times" in measured
+                    else ""
+                ),
                 flush=True,
             )
         if not restored and session is None:
