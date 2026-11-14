@@ -149,8 +149,8 @@ impl Device {
 pub trait Devices {
     /// The device with this ID; none when it is gone.
     fn describe(&mut self, id: i32) -> Option<Rc<Device>>;
-    /// Every device's ID.
-    fn ids(&mut self) -> Vec<i32>;
+    /// Every device's ID; none when Android could not be asked.
+    fn ids(&mut self) -> Option<Vec<i32>>;
 }
 
 /// The key codes of every device that a controller is asked about.
@@ -162,6 +162,7 @@ pub fn probed_keys() -> Vec<u32> {
 pub fn attached(devices: &mut dyn Devices) -> u16 {
     let all: Vec<Rc<Device>> = devices
         .ids()
+        .unwrap_or_default()
         .into_iter()
         .filter_map(|id| devices.describe(id))
         .collect();
@@ -567,8 +568,17 @@ impl Input {
         true
     }
 
+    /// Ask Android which devices it has: the controllers of those that went
+    /// go too. A list that cannot be had says nothing about any device, so
+    /// every controller stays.
+    pub fn check_devices(&mut self, devices: &mut dyn Devices, sink: &mut dyn Sink) {
+        if let Some(present) = devices.ids() {
+            self.present(&present, sink);
+        }
+    }
+
     /// The devices that Android no longer has: their controllers go.
-    pub fn present(&mut self, ids: &[i32], sink: &mut dyn Sink) {
+    fn present(&mut self, ids: &[i32], sink: &mut dyn Sink) {
         let sink = &mut Counting {
             sink,
             counts: &mut self.counts,
@@ -624,6 +634,7 @@ const VIRTUAL_HARD_KEY: u32 = 0x40;
 pub(crate) fn everything(devices: &mut dyn Devices) -> Vec<Device> {
     devices
         .ids()
+        .unwrap_or_default()
         .into_iter()
         .filter_map(|id| devices.describe(id))
         .map(|device| (*device).clone())
@@ -781,27 +792,32 @@ pub(crate) mod tests {
         }
     }
 
-    /// The devices of a test, as Android would describe them.
+    /// The devices of a test, as Android would describe them. With
+    /// `unreadable`, the list of IDs cannot be had, as when a JNI call fails.
     #[derive(Default)]
-    pub(crate) struct Known(pub BTreeMap<i32, Rc<Device>>);
+    pub(crate) struct Known {
+        pub devices: BTreeMap<i32, Rc<Device>>,
+        pub unreadable: bool,
+    }
 
     impl Devices for Known {
         fn describe(&mut self, id: i32) -> Option<Rc<Device>> {
-            self.0.get(&id).cloned()
+            self.devices.get(&id).cloned()
         }
-        fn ids(&mut self) -> Vec<i32> {
-            self.0.keys().copied().collect()
+        fn ids(&mut self) -> Option<Vec<i32>> {
+            (!self.unreadable).then(|| self.devices.keys().copied().collect())
         }
     }
 
     impl Known {
         fn with(devices: impl IntoIterator<Item = Device>) -> Self {
-            Self(
-                devices
+            Self {
+                devices: devices
                     .into_iter()
                     .map(|device| (device.id, Rc::new(device)))
                     .collect(),
-            )
+                unreadable: false,
+            }
         }
     }
 
@@ -1036,7 +1052,7 @@ pub(crate) mod tests {
         // them first, and give them back.
         let mut buttons = keyboard_device(2);
         buttons.keyboard_type = 1;
-        devices.0.insert(2, Rc::new(buttons));
+        devices.devices.insert(2, Rc::new(buttons));
         let (down, _) = press(&mut input, &mut devices, &mut sink, 2, 24, 115, 2000);
         assert_eq!(down, Outcome::Unhandled);
         assert!(sink.take().is_empty());
@@ -1500,8 +1516,8 @@ pub(crate) mod tests {
         );
         // The pad goes: its number is free, and the host sees it let go,
         // then four more times.
-        devices.0.clear();
-        input.present(&[], &mut sink);
+        devices.devices.clear();
+        input.check_devices(&mut devices, &mut sink);
         assert_eq!(sink.take(), [Packet::Controller(controller(0, 0, 0))]);
         for _ in 0..6 {
             now += HEARTBEAT_MS;
@@ -1533,6 +1549,29 @@ pub(crate) mod tests {
         );
         input.tick(1000, &mut sink);
         assert_eq!(input.next_deadline(), Some(1000 + HEARTBEAT_MS));
+    }
+
+    #[test]
+    fn a_device_list_that_cannot_be_read_releases_no_controller() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        let mut devices = Known::with([pad(16, 0x045e)]);
+        input.key(
+            &key(16, code::BUTTON_A, 304, KeyAction::Down, 1000, 1000),
+            1000,
+            &mut devices,
+            &mut sink,
+        );
+        sink.take();
+        devices.unreadable = true;
+        input.check_devices(&mut devices, &mut sink);
+        assert_eq!(sink.take(), [], "the pad was let go");
+        // It still holds its number and its button.
+        input.tick(1000, &mut sink);
+        input.tick(1000 + HEARTBEAT_MS, &mut sink);
+        assert_eq!(
+            sink.take(),
+            [Packet::Controller(controller(0, 1, button::A))]
+        );
     }
 
     #[test]

@@ -33,12 +33,6 @@ impl AndroidDevices {
         })
     }
 
-    /// Keep the answers about these devices only: a device that went is
-    /// asked about again if it ever sends.
-    pub fn keep(&mut self, present: &[i32]) {
-        self.known.retain(|id, _| present.contains(id));
-    }
-
     fn with<T>(&self, work: impl FnOnce(&mut JNIEnv) -> jni::errors::Result<T>) -> Result<T> {
         let mut env = self.vm.attach_current_thread_permanently()?;
         let result = env.with_local_frame(64, work);
@@ -66,8 +60,8 @@ impl Devices for AndroidDevices {
         described
     }
 
-    fn ids(&mut self) -> Vec<i32> {
-        self.with(|env| {
+    fn ids(&mut self) -> Option<Vec<i32>> {
+        let ids = self.with(|env| {
             let ids = env
                 .call_static_method("android/view/InputDevice", "getDeviceIds", "()[I", &[])?
                 .l()?;
@@ -76,8 +70,18 @@ impl Devices for AndroidDevices {
             let mut values = vec![0; length];
             env.get_int_array_region(&ids, 0, &mut values)?;
             Ok(values)
-        })
-        .unwrap_or_default()
+        });
+        match ids {
+            Ok(ids) => {
+                // A device that went is asked about again if it ever sends.
+                self.known.retain(|id, _| ids.contains(id));
+                Some(ids)
+            }
+            Err(error) => {
+                crate::log::line(&format!("input: cannot list the devices: {error:#}"));
+                None
+            }
+        }
     }
 }
 

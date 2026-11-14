@@ -314,9 +314,7 @@ fn drive(
         // second, as Artemis's listener would have told it.
         if now_ms() - checked >= 500 {
             checked = now_ms();
-            let present = devices.ids();
-            devices.keep(&present);
-            input.run("devices", |input| input.present(&present, &mut sink));
+            input.run("devices", |input| input.check_devices(devices, &mut sink));
         }
         if stop && !stopping {
             stopping = true;
