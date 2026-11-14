@@ -4,6 +4,9 @@ Sound/input slice 2a has its own record at `aka/slice2a/README.md`. It includes
 passing sound/input checks and two valid aka turns per side; the full verdict
 is blocked by a tool checkpoint fault. The record below is slice 1 only.
 
+The handheld `v4l2request` build proof (aarch64, no device) is at
+`v4l2request/README.md`.
+
 Implementation commit: `095a66d00efad764d0ce60846a6501ffbdc30760`.
 Built on zao with `nix build .#korri-viewer`:
 `/nix/store/mac720f6dl57mx7bb7xjyyvb11dgvdkp-korri-viewer-0.1.0`.

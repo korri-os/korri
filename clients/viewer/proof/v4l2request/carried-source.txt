@@ -1,0 +1,1389 @@
+Source: Moonlight Embedded 775444287305849ebdf4736c75298ad0713e2d5d
+Plugin patch stack: 2094c1e774716f67e6716a21d1fe5acee966bd2e, in package.nix order
+Candidate code: b3cd99638a5b3869eb42ffe3a8232a2243004f21
+
+IDENTICAL sha256=97da7663a5f36720c2c16b05b43e7737adc2dd170e1ea100026f133ad97a25a9 audio/alsa.c
+IDENTICAL sha256=f1b5c4d2a1a6ec13628fa1e458f5184825c298d7bddc01549f07d1f58f4ace2f audio/audio.h
+IDENTICAL sha256=e611df22319bfa1e640fbfe073267da231e36f372694d77e7b37209234e884e2 audio/pulse.c
+IDENTICAL sha256=55e86bf350d271b468b533040bc146e92c15088932b6f4ef3ec0b73c0fa4a4ec audio/sdl.c
+ADAPTED sha256=323a4d9f6a322bcf735c6b7e33cb9e657e47c1abcc858a80ef855eea95a5c27c input/evdev.c removed=1 added=19
+--- patched-moonlight/input/evdev.c
++++ viewer/input/evdev.c
+@@ -21,7 +21,7 @@
+ 
+ #include "keyboard.h"
+ 
+-#include "../loop.h"
++#include "../../picture/loop.h"
+ 
+ #include "libevdev/libevdev.h"
+ #include <Limelight.h>
+@@ -1087,9 +1087,27 @@
+ }
+ 
+ void evdev_stop() {
++  // Korri adaptation: stop producers before Rust stops the network core.
++  for (int i = 0; i < numDevices; ++i) {
++    if (devices[i].mouseEmulation) {
++      devices[i].mouseEmulation = false;
++      pthread_join(devices[i].meThread, NULL);
++      devices[i].meThread = 0;
++    }
++  }
+   evdev_drain();
+ }
+ 
++// Korri adaptation: a Rust-owned session releases every opened node after
++// the network callbacks have stopped. Moonlight relied on process exit.
++void evdev_destroy(void) {
++  while (numDevices > 0) evdev_remove(numDevices - 1);
++  free(devices);
++  devices = NULL;
++  evdev_gamepads = 0;
++  grabbingDevices = false;
++}
++
+ void evdev_init(bool mouse_emulation_enabled) {
+   handler = evdev_handle_event;
+   mouseEmulationEnabled = mouse_emulation_enabled;
+ADAPTED sha256=279c3c39bdea023920443fe76debf0d71854e070f522ca87d8e66263fb718f40 input/evdev.h removed=0 added=1
+--- patched-moonlight/input/evdev.h
++++ viewer/input/evdev.h
+@@ -27,5 +27,6 @@
+ void evdev_init(bool mouse_emulation_enabled);
+ void evdev_start();
+ void evdev_stop();
++void evdev_destroy(void);
+ void evdev_map(char* device);
+ void evdev_rumble(unsigned short controller_id, unsigned short low_freq_motor, unsigned short high_freq_motor);
+IDENTICAL sha256=7863e83c3e1190bc578cafed005d06cefe6b3e6929c4de2f7b9492d2a7d931f1 input/keyboard.h
+IDENTICAL sha256=16658aadbe1fd5111810a2311bbae8db4a7a275f237d6cfeab6a94cd168b9cd1 input/mapping.c
+IDENTICAL sha256=f5cd1bca7f2a55b45fa773ed8ee9c1156d4de0c6caced71d69b2a6f4ee97e07d input/mapping.h
+ADAPTED sha256=1149b8589e37bd948b9e0baf2bf5e5652e46e4f68c62cecf315364208c1f75d0 input/sdl.c removed=1 added=9
+--- patched-moonlight/input/sdl.c
++++ viewer/input/sdl.c
+@@ -18,7 +18,7 @@
+  */
+ 
+ #include "sdl.h"
+-#include "../sdl.h"
++#include "../../picture/sdl.h"
+ 
+ #include <Limelight.h>
+ 
+@@ -446,6 +446,14 @@
+   }
+ }
+ 
++// Korri adaptation: release controllers after the network callbacks stop.
++void sdlinput_destroy(void) {
++  for (int i = 0; i < MAX_GAMEPADS; ++i)
++    if (gamepads[i].initialized) remove_gamepad(gamepads[i].sdl_id);
++  activeGamepadMask = 0;
++  SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
++}
++
+ int sdlinput_handle_event(SDL_Window* window, SDL_Event* event) {
+   int button = 0;
+   unsigned char touchEventType;
+ADAPTED sha256=71bbb98971ef494b7944fbb9bf9c6522977fdb0da8a1e2c442ccbee9e3b1fea5 input/sdl.h removed=0 added=1
+--- patched-moonlight/input/sdl.h
++++ viewer/input/sdl.h
+@@ -23,6 +23,7 @@
+ extern int sdl_gamepads;
+ 
+ void sdlinput_init(char* mappings);
++void sdlinput_destroy(void);
+ int sdlinput_handle_event(SDL_Window* window, SDL_Event* event);
+ void sdlinput_rumble(unsigned short controller_id, unsigned short low_freq_motor, unsigned short high_freq_motor);
+ void sdlinput_rumble_triggers(unsigned short controller_id, unsigned short left_trigger, unsigned short right_trigger);
+ADAPTED sha256=b8dd020547063ce888538426c9219915eca7e0aa995d4f85f8bbf4415aab1650 input/udev.c removed=1 added=1
+--- patched-moonlight/input/udev.c
++++ viewer/input/udev.c
+@@ -17,7 +17,7 @@
+  * along with Moonlight; if not, see <http://www.gnu.org/licenses/>.
+  */
+ 
+-#include "../loop.h"
++#include "../../picture/loop.h"
+ 
+ #include "udev.h"
+ #include "evdev.h"
+IDENTICAL sha256=b6548ccc32465d5c5431803c056c8881392056f8ab0ce6e16dc6b8a46355037b input/udev.h
+ADAPTED sha256=e7fc1eb2c88c9a4d3c03845691906d6fee54042637034cc30c7c3d57cc6aa97d input/x11.c removed=1 added=1
+--- patched-moonlight/input/x11.c
++++ viewer/input/x11.c
+@@ -20,7 +20,7 @@
+ #include "x11.h"
+ #include "keyboard.h"
+ 
+-#include "../loop.h"
++#include "../../picture/loop.h"
+ 
+ #include <Limelight.h>
+ 
+IDENTICAL sha256=451780387230fd8dbf7e69d779fe2c6e3a5862769304a936e718a71f7ebf7267 input/x11.h
+IDENTICAL sha256=3eea7c6d4cbe42d5a8d4f045c323769eb893c6a33640c4b949956aad42e819e0 loop.h
+ADAPTED sha256=4cd159202af670af5ece74d297fa7ec6fb0413d2528e74714b319f714702e2e8 sdl.c removed=6 added=12
+--- patched-moonlight/sdl.c
++++ viewer/sdl.c
+@@ -20,7 +20,7 @@
+ #ifdef HAVE_SDL
+ 
+ #include "sdl.h"
+-#include "input/sdl.h"
++#include "../io/bridge.h"
+ 
+ #include <Limelight.h>
+ 
+@@ -37,6 +37,7 @@
+ 
+ void sdl_init(int width, int height, bool fullscreen) {
+   sdlCurrentFrame = sdlNextFrame = 0;
++  done = false;
+ 
+   if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+     fprintf(stderr, "Could not initialize SDL - %s\n", SDL_GetError());
+@@ -69,13 +70,11 @@
+   }
+ }
+ 
+-void sdl_loop() {
++int sdl_poll(int timeout) {
+   SDL_Event event;
+ 
+-  SDL_SetRelativeMouseMode(SDL_TRUE);
+-
+-  while(!done && SDL_WaitEvent(&event)) {
+-    switch (sdlinput_handle_event(window, &event)) {
++  if (!done && SDL_WaitEventTimeout(&event, timeout)) {
++    switch (viewer_input_sdl(window, &event)) {
+     case SDL_QUIT_APPLICATION:
+       done = true;
+       break;
+@@ -113,6 +112,13 @@
+     }
+   }
+ 
++  return done;
++}
++
++void sdl_destroy(void) {
++  SDL_DestroyTexture(bmp);
++  SDL_DestroyRenderer(renderer);
++  SDL_DestroyMutex(mutex);
+   SDL_DestroyWindow(window);
+   SDL_Quit();
+ }
+ADAPTED sha256=48dcb81c119becaa6940fc9815ad22e809da322de70cfda17846eb81a30657ad sdl.h removed=1 added=2
+--- patched-moonlight/sdl.h
++++ viewer/sdl.h
+@@ -34,7 +34,8 @@
+ #define SDL_BUFFER_FRAMES 2
+ 
+ void sdl_init(int width, int height, bool fullscreen);
+-void sdl_loop();
++int sdl_poll(int timeout);
++void sdl_destroy(void);
+ 
+ extern SDL_mutex *mutex;
+ extern int sdlCurrentFrame, sdlNextFrame;
+IDENTICAL sha256=6a7eac4294a76804c18341d5c49b5470f0fad953b4dbf0cfc6e9acf96f92a3fb util.c
+IDENTICAL sha256=700550e7d4fd19d16c481bd238d78eab50297a365a70ad4bd761a8be979fa798 util.h
+IDENTICAL sha256=cf4b244429e4ced2f5944654924c2f5361b988096f9acc3f6e6d9b7d0319ec3d video/egl.c
+IDENTICAL sha256=9c8692f1eb865a52859dd5118e7113552763958eb568da8b641651834894b5ae video/egl.h
+IDENTICAL sha256=a95b20dc0135a310368aa94a9c792354d1a51cceef7c843ea88ba7db722d641b video/ffmpeg.c
+IDENTICAL sha256=ae39ed5b11127db2d4aafaafd0415b4d2a8251a16562ddbeb60b650130efcf32 video/ffmpeg.h
+IDENTICAL sha256=d4a655c4c90de13f539041e0dcc65db41ce325c884747547ca1eb2de854dc6dd video/ffmpeg_vaapi.c
+IDENTICAL sha256=0f511b6c9cef352869ecf071d47c34e046b4e4e0726946578671f04a5fd0b2a8 video/ffmpeg_vaapi.h
+IDENTICAL sha256=48622fd8bdf76f1197172021c95d7199ef9e241e86df3cb7b38c85f8af0d4b51 video/sdl.c
+ADAPTED sha256=b835d552a7a26e2ce9cb58df4d367113e3847efdaa9219cc75c88c7b08f09fd8 video/v4l2m2m.c removed=1016 added=1
+--- patched-moonlight/video/v4l2m2m.c
++++ viewer/video/v4l2m2m.c
+@@ -72,11 +72,6 @@
+ static void          *nal_buf   = NULL;
+ static size_t        nal_size   = 0;
+ 
+-/* Experimental Plan C path: bypass FFmpeg's v4l2_m2m wrapper and own
+- * the stateful V4L2 decoder directly. Enabled only when
+- * MOONLIGHT_V4L2M2M_DIRECT=1 so the accepted shipping path remains the
+- * FFmpeg hevc_v4l2m2m -> SDL NV12 renderer pipeline. */
+-static bool direct_v4l2 = false;
+ static bool direct_dmabuf_present = false;
+ 
+ /* v4l2request platform: FFmpeg's software h264/hevc decoder drives a
+@@ -104,40 +99,6 @@
+ static int prime_cache_count = 0;
+ static const void *prime_cache_frames = NULL;
+ 
+-#define DIRECT_OUT_BUFS 32
+-#define DIRECT_CAP_BUFS 12
+-
+-typedef struct DirectBuf {
+-  void *addr;
+-  size_t length;
+-  bool queued;
+-  int dma_fd;
+-  EGLImageKHR img_y;
+-  EGLImageKHR img_uv;
+-  GLuint tex_y;
+-  GLuint tex_uv;
+-  bool dmabuf_cached;
+-  int cache_w;
+-  int cache_h;
+-  int cache_stride;
+-  int cache_uv_offset;
+-} DirectBuf;
+-
+-static int direct_fd = -1;
+-static DirectBuf direct_out[DIRECT_OUT_BUFS];
+-static DirectBuf direct_cap[DIRECT_CAP_BUFS];
+-static int direct_out_count = 0;
+-static int direct_cap_count = 0;
+-static int direct_desired_out_bufs = DIRECT_OUT_BUFS;
+-static int direct_desired_cap_bufs = DIRECT_CAP_BUFS;
+-static bool direct_capture_configured = false;
+-static int direct_stream_w = 0;
+-static int direct_stream_h = 0;
+-static int direct_cap_w = 0;
+-static int direct_cap_h = 0;
+-static int direct_stride = 0;
+-static pthread_mutex_t direct_mtx = PTHREAD_MUTEX_INITIALIZER;
+-static bool direct_dmabuf_import_logged = false;
+ static int direct_quad_view_w = 0;
+ static int direct_quad_view_h = 0;
+ static int direct_quad_dst_x = 0;
+@@ -150,9 +111,6 @@
+ static SDL_Window    *window    = NULL;
+ static SDL_GLContext  gl_ctx    = NULL;   /* DRM_PRIME path only (inactive on iris/FFmpeg v4l2m2m) */
+ static SDL_Renderer  *sdl_renderer = NULL;
+-static SDL_Texture   *sdl_nv12_texture = NULL;
+-static int            sdl_tex_w = 0;
+-static int            sdl_tex_h = 0;
+ static SDL_Rect       sdl_dst_rect = {0, 0, 0, 0};
+ static EGLDisplay     egl_dpy   = EGL_NO_DISPLAY;
+ 
+@@ -242,544 +200,10 @@
+  * during an A/B (see guest/launchers/remote-moonlight-runtime-ab.sh). */
+ #define LOG(fmt, ...) fprintf(stderr, "v4l2m2m: " fmt "\n", ##__VA_ARGS__)
+ 
+-
+-/* ------------------------------------------------------------------ */
+-/* Direct V4L2 Plan C experiment                                      */
+-/* ------------------------------------------------------------------ */
+-
+-static const char *fourcc_str(uint32_t f) {
+-  static char s[5];
+-  s[0] = f & 0xff;
+-  s[1] = (f >> 8) & 0xff;
+-  s[2] = (f >> 16) & 0xff;
+-  s[3] = (f >> 24) & 0xff;
+-  s[4] = 0;
+-  return s;
+-}
+-
+-static int v4l2_ioctl(int fd, unsigned long req, void *arg, const char *name) {
+-  int rc;
+-  do {
+-    rc = ioctl(fd, req, arg);
+-  } while (rc < 0 && errno == EINTR);
+-  if (rc < 0)
+-    LOG("direct: %s failed errno=%d (%s)", name, errno, strerror(errno));
+-  return rc;
+-}
+-
+-static void direct_requeue_capture_index(int index);
+-static int direct_query_mmap_bufs(enum v4l2_buf_type type, DirectBuf *bufs, int count, const char *label);
+-
+-typedef struct DirectFrameRef {
+-  int index;
+-} DirectFrameRef;
+-
+-static void direct_frame_unref(void *opaque, uint8_t *data) {
+-  (void) data;
+-  DirectFrameRef *ref = (DirectFrameRef *) opaque;
+-  if (ref) {
+-    direct_requeue_capture_index(ref->index);
+-    free(ref);
+-  }
+-}
+-
+-static int direct_queue_display_frame(int index, size_t bytesused) {
+-  if (index < 0 || index >= direct_cap_count)
+-    return -1;
+-
+-  AVFrame *f = av_frame_alloc();
+-  if (!f)
+-    return -1;
+-
+-  uint8_t *base = (uint8_t *) direct_cap[index].addr;
+-  int visible_h = direct_stream_h > 0 ? direct_stream_h : direct_cap_h;
+-  int visible_w = direct_stream_w > 0 ? direct_stream_w : direct_cap_w;
+-  int uv_offset = direct_stride * direct_cap_h;
+-
+-  DirectFrameRef *ref = calloc(1, sizeof(*ref));
+-  if (!ref) {
+-    av_frame_free(&f);
+-    return -1;
+-  }
+-  ref->index = index;
+-
+-  f->opaque = ref;
+-  f->format = AV_PIX_FMT_NV12;
+-  f->width = visible_w;
+-  f->height = visible_h;
+-  f->data[0] = base;
+-  f->data[1] = base + uv_offset;
+-  f->linesize[0] = direct_stride;
+-  f->linesize[1] = direct_stride;
+-  f->buf[0] = av_buffer_create(base, direct_cap[index].length,
+-                               direct_frame_unref, ref, 0);
+-  if (!f->buf[0]) {
+-    free(ref);
+-    av_frame_free(&f);
+-    return -1;
+-  }
+-
+-  static bool logged = false;
+-  if (!logged) {
+-    LOG("direct: first capture frame index=%d visible=%dx%d cap=%dx%d stride=%d bytesused=%zu uv_offset=%d dma_fd=%d",
+-        index, visible_w, visible_h, direct_cap_w, direct_cap_h,
+-        direct_stride, bytesused, uv_offset, direct_cap[index].dma_fd);
+-    logged = true;
+-  }
+-
+-  pthread_mutex_lock(&disp_mtx);
+-  if (disp_pending) {
+-    /* Direct V4L2 capture buffers are requeued by the AVFrame free
+-     * callback. Never drop/overwrite a pending frame while the direct
+-     * mutex is held; the callback would need the same mutex and can
+-     * deadlock the decoder. direct_drain_capture_locked() also limits
+-     * itself to one pending display frame at a time. */
+-    pthread_mutex_unlock(&disp_mtx);
+-    av_frame_free(&f);
+-    return 1;
+-  }
+-  /* Direct frames are already uniquely owned here. Unlike FFmpeg frames,
+-   * they do not need av_frame_clone(); the AVBufferRef attached above is
+-   * enough to requeue the CAPTURE buffer when display frees the frame. */
+-  disp_pending = f;
+-  pthread_cond_signal(&disp_cond);
+-  pthread_mutex_unlock(&disp_mtx);
+-  return 0;
+-}
+-
+-static void direct_requeue_capture_index(int index) {
+-  if (direct_fd < 0 || index < 0 || index >= direct_cap_count)
+-    return;
+-
+-  pthread_mutex_lock(&direct_mtx);
+-  if (!direct_cap[index].queued) {
+-    struct v4l2_buffer buf;
+-    struct v4l2_plane planes[VIDEO_MAX_PLANES];
+-    memset(&buf, 0, sizeof(buf));
+-    memset(planes, 0, sizeof(planes));
+-    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+-    buf.memory = V4L2_MEMORY_MMAP;
+-    buf.index = index;
+-    buf.length = 1;
+-    buf.m.planes = planes;
+-    if (v4l2_ioctl(direct_fd, VIDIOC_QBUF, &buf, "QBUF CAPTURE(requeue)") == 0)
+-      direct_cap[index].queued = true;
+-  }
+-  pthread_mutex_unlock(&direct_mtx);
+-}
+-
+-static void direct_drain_output_locked(void) {
+-  for (;;) {
+-    struct v4l2_buffer buf;
+-    struct v4l2_plane planes[VIDEO_MAX_PLANES];
+-    memset(&buf, 0, sizeof(buf));
+-    memset(planes, 0, sizeof(planes));
+-    buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+-    buf.memory = V4L2_MEMORY_MMAP;
+-    buf.length = 1;
+-    buf.m.planes = planes;
+-    if (ioctl(direct_fd, VIDIOC_DQBUF, &buf) < 0) {
+-      if (errno != EAGAIN)
+-        LOG("direct: DQBUF OUTPUT errno=%d (%s)", errno, strerror(errno));
+-      break;
+-    }
+-    if ((int)buf.index < direct_out_count)
+-      direct_out[buf.index].queued = false;
+-  }
+-}
+-
+-
+-static int direct_configure_capture_locked(void) {
+-  if (direct_capture_configured)
+-    return 0;
+-
+-  struct v4l2_format capfmt;
+-  memset(&capfmt, 0, sizeof(capfmt));
+-  capfmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+-  if (v4l2_ioctl(direct_fd, VIDIOC_G_FMT, &capfmt, "G_FMT CAPTURE(after headers)") < 0)
+-    return -1;
+-
+-  /* Prefer linear NV12 for the first direct-V4L2 milestone. The driver
+-   * may report a coded/aligned height (Sobo: 736 for 720p). */
+-  if (capfmt.fmt.pix_mp.pixelformat != V4L2_PIX_FMT_NV12) {
+-    capfmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_NV12;
+-    capfmt.fmt.pix_mp.width = direct_stream_w;
+-    capfmt.fmt.pix_mp.height = direct_stream_h;
+-    capfmt.fmt.pix_mp.field = V4L2_FIELD_NONE;
+-    if (v4l2_ioctl(direct_fd, VIDIOC_S_FMT, &capfmt, "S_FMT CAPTURE(after headers)") < 0)
+-      return -1;
+-  }
+-
+-  direct_cap_w = capfmt.fmt.pix_mp.width;
+-  direct_cap_h = capfmt.fmt.pix_mp.height;
+-  direct_stride = capfmt.fmt.pix_mp.plane_fmt[0].bytesperline;
+-  LOG("direct: configure capture=%s %dx%d stride=%d size=%u",
+-      fourcc_str(capfmt.fmt.pix_mp.pixelformat), direct_cap_w, direct_cap_h,
+-      direct_stride, capfmt.fmt.pix_mp.plane_fmt[0].sizeimage);
+-
+-  struct v4l2_requestbuffers req;
+-  memset(&req, 0, sizeof(req));
+-  req.count = direct_desired_cap_bufs;
+-  req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+-  req.memory = V4L2_MEMORY_MMAP;
+-  if (v4l2_ioctl(direct_fd, VIDIOC_REQBUFS, &req, "REQBUFS CAPTURE") < 0)
+-    return -1;
+-  direct_cap_count = req.count < DIRECT_CAP_BUFS ? req.count : DIRECT_CAP_BUFS;
+-  if (direct_query_mmap_bufs(V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, direct_cap,
+-                             direct_cap_count, "QUERYBUF CAPTURE") < 0)
+-    return -1;
+-
+-  for (int i = 0; i < direct_cap_count; i++) {
+-    struct v4l2_exportbuffer exp;
+-    memset(&exp, 0, sizeof(exp));
+-    exp.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+-    exp.index = i;
+-    exp.plane = 0;
+-    exp.flags = O_CLOEXEC;
+-    if (ioctl(direct_fd, VIDIOC_EXPBUF, &exp) == 0)
+-      direct_cap[i].dma_fd = exp.fd;
+-
+-    struct v4l2_buffer buf;
+-    struct v4l2_plane planes[VIDEO_MAX_PLANES];
+-    memset(&buf, 0, sizeof(buf));
+-    memset(planes, 0, sizeof(planes));
+-    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+-    buf.memory = V4L2_MEMORY_MMAP;
+-    buf.index = i;
+-    buf.length = 1;
+-    buf.m.planes = planes;
+-    if (v4l2_ioctl(direct_fd, VIDIOC_QBUF, &buf, "QBUF CAPTURE") < 0)
+-      return -1;
+-    direct_cap[i].queued = true;
+-  }
+-
+-  enum v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+-  if (v4l2_ioctl(direct_fd, VIDIOC_STREAMON, &type, "STREAMON CAPTURE") < 0)
+-    return -1;
+-
+-  direct_capture_configured = true;
+-  LOG("direct: capture configured cap_bufs=%d/%d exported_dma_bufs=%s",
+-      direct_cap_count, direct_desired_cap_bufs, direct_cap[0].dma_fd >= 0 ? "yes" : "no");
+-  return 0;
+-}
+-
+-static void direct_drain_events_locked(void) {
+-  for (;;) {
+-    struct v4l2_event ev;
+-    memset(&ev, 0, sizeof(ev));
+-    if (ioctl(direct_fd, VIDIOC_DQEVENT, &ev) < 0) {
+-      if (errno != EAGAIN && errno != ENOENT)
+-        LOG("direct: DQEVENT errno=%d (%s)", errno, strerror(errno));
+-      break;
+-    }
+-    LOG("direct: event type=0x%x changes=0x%x", ev.type, ev.u.src_change.changes);
+-    if (ev.type == V4L2_EVENT_SOURCE_CHANGE)
+-      direct_configure_capture_locked();
+-  }
+-}
+-
+-static void direct_drain_capture_locked(void) {
+-  if (!direct_capture_configured)
+-    return;
+-  pthread_mutex_lock(&disp_mtx);
+-  bool display_busy = disp_pending != NULL;
+-  pthread_mutex_unlock(&disp_mtx);
+-  if (display_busy)
+-    return;
+-  for (;;) {
+-    struct v4l2_buffer buf;
+-    struct v4l2_plane planes[VIDEO_MAX_PLANES];
+-    memset(&buf, 0, sizeof(buf));
+-    memset(planes, 0, sizeof(planes));
+-    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+-    buf.memory = V4L2_MEMORY_MMAP;
+-    buf.length = 1;
+-    buf.m.planes = planes;
+-    if (ioctl(direct_fd, VIDIOC_DQBUF, &buf) < 0) {
+-      if (errno != EAGAIN)
+-        LOG("direct: DQBUF CAPTURE errno=%d (%s)", errno, strerror(errno));
+-      break;
+-    }
+-    if ((int)buf.index < direct_cap_count) {
+-      direct_cap[buf.index].queued = false;
+-      size_t bytesused = planes[0].bytesused;
+-      /* Do not requeue here. The AVFrame buffer free callback requeues
+-       * when SDL presentation has released the frame. */
+-      direct_queue_display_frame(buf.index, bytesused);
+-      break;
+-    }
+-  }
+-}
+-
+-static int direct_query_mmap_bufs(enum v4l2_buf_type type, DirectBuf *bufs,
+-                                  int count, const char *label) {
+-  for (int i = 0; i < count; i++) {
+-    struct v4l2_buffer buf;
+-    struct v4l2_plane planes[VIDEO_MAX_PLANES];
+-    memset(&buf, 0, sizeof(buf));
+-    memset(planes, 0, sizeof(planes));
+-    buf.type = type;
+-    buf.memory = V4L2_MEMORY_MMAP;
+-    buf.index = i;
+-    buf.length = 1;
+-    buf.m.planes = planes;
+-    if (v4l2_ioctl(direct_fd, VIDIOC_QUERYBUF, &buf, label) < 0)
+-      return -1;
+-    bufs[i].length = planes[0].length;
+-    bufs[i].addr = mmap(NULL, bufs[i].length, PROT_READ | PROT_WRITE,
+-                        MAP_SHARED, direct_fd, planes[0].m.mem_offset);
+-    if (bufs[i].addr == MAP_FAILED) {
+-      LOG("direct: mmap %s[%d] failed errno=%d (%s)", label, i, errno, strerror(errno));
+-      bufs[i].addr = NULL;
+-      return -1;
+-    }
+-    bufs[i].queued = false;
+-    bufs[i].dma_fd = -1;
+-    bufs[i].img_y = EGL_NO_IMAGE_KHR;
+-    bufs[i].img_uv = EGL_NO_IMAGE_KHR;
+-    bufs[i].tex_y = 0;
+-    bufs[i].tex_uv = 0;
+-    bufs[i].dmabuf_cached = false;
+-    bufs[i].cache_w = bufs[i].cache_h = bufs[i].cache_stride = bufs[i].cache_uv_offset = 0;
+-  }
+-  return 0;
+-}
+-
+-
+-static int parse_direct_buf_count(const char *name, int fallback, int max_count) {
+-  const char *value = getenv(name);
+-  if (!value || !*value)
+-    return fallback;
+-  char *endptr = NULL;
+-  long parsed = strtol(value, &endptr, 10);
+-  if (!endptr || *endptr != '\0' || parsed < 2 || parsed > max_count) {
+-    LOG("direct: ignoring invalid %s=%s (valid range 2..%d)", name, value, max_count);
+-    return fallback;
+-  }
+-  return (int) parsed;
+-}
+-
+-static int direct_v4l2_setup(int videoFormat, int width, int height) {
+-  uint32_t coded_fmt = (videoFormat & VIDEO_FORMAT_MASK_H265) ?
+-    V4L2_PIX_FMT_HEVC : V4L2_PIX_FMT_H264;
+-
+-  direct_desired_out_bufs = parse_direct_buf_count("MOONLIGHT_V4L2M2M_OUT_BUFS", DIRECT_OUT_BUFS, DIRECT_OUT_BUFS);
+-  direct_desired_cap_bufs = parse_direct_buf_count("MOONLIGHT_V4L2M2M_CAP_BUFS", DIRECT_CAP_BUFS, DIRECT_CAP_BUFS);
+-
+-  direct_stream_w = width;
+-  direct_stream_h = height;
+-  direct_fd = open("/dev/video0", O_RDWR | O_NONBLOCK | O_CLOEXEC);
+-  if (direct_fd < 0) {
+-    LOG("direct: open /dev/video0 failed errno=%d (%s)", errno, strerror(errno));
+-    return -1;
+-  }
+-
+-  struct v4l2_capability cap;
+-  memset(&cap, 0, sizeof(cap));
+-  if (v4l2_ioctl(direct_fd, VIDIOC_QUERYCAP, &cap, "QUERYCAP") == 0)
+-    LOG("direct: driver=%s card=%s caps=0x%08x dev_caps=0x%08x",
+-        cap.driver, cap.card, cap.capabilities, cap.device_caps);
+-
+-  struct v4l2_format out;
+-  memset(&out, 0, sizeof(out));
+-  out.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+-  out.fmt.pix_mp.width = width;
+-  out.fmt.pix_mp.height = height;
+-  out.fmt.pix_mp.pixelformat = coded_fmt;
+-  out.fmt.pix_mp.field = V4L2_FIELD_NONE;
+-  if (v4l2_ioctl(direct_fd, VIDIOC_S_FMT, &out, "S_FMT OUTPUT") < 0)
+-    return -1;
+-
+-  LOG("direct: output=%s %ux%u (capture deferred until source-change)",
+-      fourcc_str(out.fmt.pix_mp.pixelformat), out.fmt.pix_mp.width,
+-      out.fmt.pix_mp.height);
+-
+-  struct v4l2_requestbuffers req;
+-  memset(&req, 0, sizeof(req));
+-  req.count = direct_desired_out_bufs;
+-  req.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+-  req.memory = V4L2_MEMORY_MMAP;
+-  if (v4l2_ioctl(direct_fd, VIDIOC_REQBUFS, &req, "REQBUFS OUTPUT") < 0)
+-    return -1;
+-  direct_out_count = req.count < DIRECT_OUT_BUFS ? req.count : DIRECT_OUT_BUFS;
+-  if (direct_query_mmap_bufs(V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, direct_out,
+-                             direct_out_count, "QUERYBUF OUTPUT") < 0)
+-    return -1;
+-
+-  struct v4l2_event_subscription sub;
+-  memset(&sub, 0, sizeof(sub));
+-  sub.type = V4L2_EVENT_SOURCE_CHANGE;
+-  if (v4l2_ioctl(direct_fd, VIDIOC_SUBSCRIBE_EVENT, &sub,
+-                 "SUBSCRIBE SOURCE_CHANGE") < 0)
+-    LOG("direct: SOURCE_CHANGE subscription unavailable; will poll G_FMT");
+-  memset(&sub, 0, sizeof(sub));
+-  sub.type = V4L2_EVENT_EOS;
+-  ioctl(direct_fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
+-
+-  enum v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+-  if (v4l2_ioctl(direct_fd, VIDIOC_STREAMON, &type, "STREAMON OUTPUT") < 0)
+-    return -1;
+-
+-  LOG("direct: setup complete out_bufs=%d/%d capture=deferred cap_requested=%d", direct_out_count, direct_desired_out_bufs, direct_desired_cap_bufs);
+-  return 0;
+-}
+-
+-static void direct_v4l2_cleanup(void) {
+-  if (direct_fd >= 0) {
+-    enum v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+-    ioctl(direct_fd, VIDIOC_STREAMOFF, &type);
+-    type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+-    ioctl(direct_fd, VIDIOC_STREAMOFF, &type);
+-  }
+-  for (int i = 0; i < direct_out_count; i++) {
+-    if (direct_out[i].addr) munmap(direct_out[i].addr, direct_out[i].length);
+-    direct_out[i].addr = NULL;
+-  }
+-  for (int i = 0; i < direct_cap_count; i++) {
+-    if (direct_cap[i].dma_fd >= 0) close(direct_cap[i].dma_fd);
+-    if (direct_cap[i].addr) munmap(direct_cap[i].addr, direct_cap[i].length);
+-    direct_cap[i].addr = NULL;
+-    direct_cap[i].dma_fd = -1;
+-    direct_cap[i].img_y = EGL_NO_IMAGE_KHR;
+-    direct_cap[i].img_uv = EGL_NO_IMAGE_KHR;
+-    direct_cap[i].tex_y = direct_cap[i].tex_uv = 0;
+-    direct_cap[i].dmabuf_cached = false;
+-  }
+-  if (direct_fd >= 0) close(direct_fd);
+-  direct_fd = -1;
+-  direct_out_count = direct_cap_count = 0;
+-  direct_capture_configured = false;
+-  direct_desired_out_bufs = DIRECT_OUT_BUFS;
+-  direct_desired_cap_bufs = DIRECT_CAP_BUFS;
+-}
+-
+-static int direct_v4l2_submit(PDECODE_UNIT du) {
+-  size_t len = du->fullLength;
+-
+-  pthread_mutex_lock(&direct_mtx);
+-  direct_drain_output_locked();
+-  direct_drain_events_locked();
+-  direct_drain_capture_locked();
+-
+-  int out_index = -1;
+-  for (int i = 0; i < direct_out_count; i++) {
+-    if (!direct_out[i].queued) { out_index = i; break; }
+-  }
+-  if (out_index < 0) {
+-    /* Give the stateful decoder a tiny chance to return compressed-input
+-     * buffers. This is still a submit-thread-driven prototype; a shipping
+-     * direct-V4L2 implementation should use a dedicated poll/dequeue thread
+-     * for OUTPUT/CAPTURE rather than relying on decode-unit submissions to
+-     * service both queues. */
+-    struct pollfd pfd = { .fd = direct_fd, .events = POLLIN | POLLOUT | POLLPRI };
+-    poll(&pfd, 1, 2);
+-    direct_drain_output_locked();
+-    direct_drain_events_locked();
+-    direct_drain_capture_locked();
+-    for (int i = 0; i < direct_out_count; i++) {
+-      if (!direct_out[i].queued) { out_index = i; break; }
+-    }
+-  }
+-  if (out_index < 0) {
+-    static int no_free_count = 0;
+-    if (++no_free_count <= 5 || no_free_count % 120 == 0)
+-      LOG("direct: no free OUTPUT buffer (count=%d)", no_free_count);
+-    pthread_mutex_unlock(&direct_mtx);
+-    return DR_OK;
+-  }
+-  if (len > direct_out[out_index].length) {
+-    pthread_mutex_unlock(&direct_mtx);
+-    LOG("direct: decode unit too large len=%zu out_len=%zu", len, direct_out[out_index].length);
+-    return DR_NEED_IDR;
+-  }
+-
+-  size_t copied = 0;
+-  uint8_t *dst = (uint8_t *) direct_out[out_index].addr;
+-  for (PLENTRY e = du->bufferList; e; e = e->next) {
+-    if (copied + e->length > direct_out[out_index].length) {
+-      pthread_mutex_unlock(&direct_mtx);
+-      LOG("direct: decode unit fragments exceed output buffer copied=%zu next=%d out_len=%zu",
+-          copied, e->length, direct_out[out_index].length);
+-      return DR_NEED_IDR;
+-    }
+-    memcpy(dst + copied, e->data, e->length);
+-    copied += e->length;
+-  }
+-  if (copied != len) {
+-    LOG("direct: decode unit length mismatch fullLength=%zu copied=%zu", len, copied);
+-    len = copied;
+-  }
+-  struct v4l2_buffer buf;
+-  struct v4l2_plane planes[VIDEO_MAX_PLANES];
+-  memset(&buf, 0, sizeof(buf));
+-  memset(planes, 0, sizeof(planes));
+-  buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+-  buf.memory = V4L2_MEMORY_MMAP;
+-  buf.index = out_index;
+-  buf.length = 1;
+-  buf.m.planes = planes;
+-  planes[0].bytesused = (uint32_t) len;
+-  planes[0].length = direct_out[out_index].length;
+-  if (v4l2_ioctl(direct_fd, VIDIOC_QBUF, &buf, "QBUF OUTPUT") < 0) {
+-    pthread_mutex_unlock(&direct_mtx);
+-    return DR_NEED_IDR;
+-  }
+-  direct_out[out_index].queued = true;
+-
+-  struct pollfd pfd = { .fd = direct_fd, .events = POLLIN | POLLOUT | POLLPRI };
+-  poll(&pfd, 1, 0);
+-  direct_drain_output_locked();
+-  direct_drain_events_locked();
+-  direct_drain_capture_locked();
+-  pthread_mutex_unlock(&direct_mtx);
+-  return DR_OK;
+-}
+-
+ /* ------------------------------------------------------------------ */
+ /* FFmpeg integration                                                 */
+ /* ------------------------------------------------------------------ */
+ 
+-static enum AVPixelFormat get_drm_prime_fmt(AVCodecContext *ctx,
+-                                            const enum AVPixelFormat *fmts) {
+-  (void)ctx;
+-  /* Diagnostic: log every format the decoder offers. The hevc_v4l2m2m
+-   * wrapper without an attached hw_device_ctx of type DRM falls back
+-   * to NV12 / YUV420P (software-readable). Seeing only NV12 in this
+-   * list is the canonical signature of "need hw_device_ctx". */
+-  char dbg[256] = {0};
+-  size_t off = 0;
+-  for (const enum AVPixelFormat *p = fmts; *p != AV_PIX_FMT_NONE; p++)
+-    off += snprintf(dbg + off, sizeof(dbg) - off,
+-                    "%s%s", off ? "," : "", av_get_pix_fmt_name(*p));
+-  LOG("get_format: offered=[%s]", dbg);
+-  for (const enum AVPixelFormat *p = fmts; *p != AV_PIX_FMT_NONE; p++) {
+-    if (*p == AV_PIX_FMT_DRM_PRIME)
+-      return *p;
+-  }
+-  /* Decoder did not offer DRM_PRIME -- the wrapper is built without
+-   * dma-buf export, or the kernel V4L2 path doesn't expose
+-   * V4L2_MEMORY_DMABUF. Returning NONE aborts decode-open rather than
+-   * silently engaging a software path that the rest of this platform
+-   * cannot consume. */
+-  LOG("get_format: decoder did not offer AV_PIX_FMT_DRM_PRIME");
+-  return AV_PIX_FMT_NONE;
+-}
+-
+-static const AVCodec *find_v4l2m2m_decoder(int videoFormat) {
+-  const char *name = NULL;
+-  if (videoFormat & VIDEO_FORMAT_MASK_H264)
+-    name = "h264_v4l2m2m";
+-  else if (videoFormat & VIDEO_FORMAT_MASK_H265)
+-    name = "hevc_v4l2m2m";
+-  else
+-    return NULL;
+-  const AVCodec *c = avcodec_find_decoder_by_name(name);
+-  if (!c)
+-    LOG("avcodec_find_decoder_by_name(%s) returned NULL "
+-        "-- FFmpeg built without --enable-v4l2-m2m?", name);
+-  return c;
+-}
+-
+ static enum AVPixelFormat get_request_fmt(AVCodecContext *ctx,
+                                           const enum AVPixelFormat *fmts) {
+   (void) ctx;
+@@ -1185,216 +609,6 @@
+ /* Per-frame import + draw                                            */
+ /* ------------------------------------------------------------------ */
+ 
+-/* Build the EGL_LINUX_DMA_BUF_EXT attrib list for the descriptor's
+- * single layer (NV12 single-layer is what hevc_v4l2m2m produces on the
+- * SM8550 iris driver per the substrate validation captured this
+- * session). Returns EGL_NO_IMAGE_KHR on failure; caller logs
+- * eglGetError(). */
+-static EGLImageKHR import_dmabuf(const AVDRMFrameDescriptor *desc,
+-                                 int width, int height) {
+-  if (desc->nb_layers != 1) {
+-    LOG("import_dmabuf: nb_layers=%d (only single-layer supported)",
+-        desc->nb_layers);
+-    return EGL_NO_IMAGE_KHR;
+-  }
+-  const AVDRMLayerDescriptor *layer = &desc->layers[0];
+-
+-  /* Attribute list cap: base attrs (5) + per-plane (10) * 4 planes +
+-   * modifier-lo/hi (2) * 4 planes + terminator. 5 + 40 + 8 + 1 = 54.
+-   * Round up to 64 for headroom. */
+-  EGLint attribs[64];
+-  int n = 0;
+-
+-  attribs[n++] = EGL_WIDTH;                attribs[n++] = width;
+-  attribs[n++] = EGL_HEIGHT;               attribs[n++] = height;
+-  attribs[n++] = EGL_LINUX_DRM_FOURCC_EXT; attribs[n++] = (EGLint) layer->format;
+-
+-  /* EGL_DMA_BUF_PLANE<i>_FD_EXT / OFFSET / PITCH / MODIFIER_LO / MODIFIER_HI
+-   * encode as contiguous integer ids. Compute them per-plane rather
+-   * than open-coding each branch. */
+-  static const EGLint plane_fd_attrs[4]  = {
+-    EGL_DMA_BUF_PLANE0_FD_EXT, EGL_DMA_BUF_PLANE1_FD_EXT,
+-    EGL_DMA_BUF_PLANE2_FD_EXT, EGL_DMA_BUF_PLANE3_FD_EXT,
+-  };
+-  static const EGLint plane_off_attrs[4] = {
+-    EGL_DMA_BUF_PLANE0_OFFSET_EXT, EGL_DMA_BUF_PLANE1_OFFSET_EXT,
+-    EGL_DMA_BUF_PLANE2_OFFSET_EXT, EGL_DMA_BUF_PLANE3_OFFSET_EXT,
+-  };
+-  static const EGLint plane_pitch_attrs[4] = {
+-    EGL_DMA_BUF_PLANE0_PITCH_EXT, EGL_DMA_BUF_PLANE1_PITCH_EXT,
+-    EGL_DMA_BUF_PLANE2_PITCH_EXT, EGL_DMA_BUF_PLANE3_PITCH_EXT,
+-  };
+-  static const EGLint plane_mod_lo_attrs[4] = {
+-    EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE1_MODIFIER_LO_EXT,
+-    EGL_DMA_BUF_PLANE2_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE3_MODIFIER_LO_EXT,
+-  };
+-  static const EGLint plane_mod_hi_attrs[4] = {
+-    EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, EGL_DMA_BUF_PLANE1_MODIFIER_HI_EXT,
+-    EGL_DMA_BUF_PLANE2_MODIFIER_HI_EXT, EGL_DMA_BUF_PLANE3_MODIFIER_HI_EXT,
+-  };
+-
+-  for (int i = 0; i < layer->nb_planes && i < 4; i++) {
+-    const AVDRMPlaneDescriptor *plane = &layer->planes[i];
+-    const AVDRMObjectDescriptor *obj  = &desc->objects[plane->object_index];
+-    attribs[n++] = plane_fd_attrs[i];     attribs[n++] = obj->fd;
+-    attribs[n++] = plane_off_attrs[i];    attribs[n++] = (EGLint) plane->offset;
+-    attribs[n++] = plane_pitch_attrs[i];  attribs[n++] = (EGLint) plane->pitch;
+-    /* Modifier attrs are only legal with
+-     * EGL_EXT_image_dma_buf_import_modifiers. Pass them regardless: on
+-     * SM8550 the freedreno driver advertises this extension. If a
+-     * future port targets a driver without it, gate this on a runtime
+-     * extension check and omit when missing. */
+-    attribs[n++] = plane_mod_lo_attrs[i]; attribs[n++] = (EGLint)(obj->format_modifier & 0xffffffff);
+-    attribs[n++] = plane_mod_hi_attrs[i]; attribs[n++] = (EGLint)(obj->format_modifier >> 32);
+-  }
+-
+-  /* YUV hints. HEVC streams from Sunshine default to BT.709 limited
+-   * range; explicitly hinting matches what the sampler-external path
+-   * will do internally and avoids the green-cast failure mode when the
+-   * driver defaults to BT.601. */
+-  attribs[n++] = EGL_YUV_COLOR_SPACE_HINT_EXT; attribs[n++] = EGL_ITU_REC709_EXT;
+-  attribs[n++] = EGL_SAMPLE_RANGE_HINT_EXT;    attribs[n++] = EGL_YUV_NARROW_RANGE_EXT;
+-  attribs[n++] = EGL_NONE;
+-
+-  EGLImageKHR img = egl_create_image(egl_dpy, EGL_NO_CONTEXT,
+-                                     EGL_LINUX_DMA_BUF_EXT,
+-                                     (EGLClientBuffer) NULL, attribs);
+-  if (img == EGL_NO_IMAGE_KHR) {
+-    EGLint err = eglGetError();
+-    LOG("eglCreateImageKHR failed: err=0x%04x fourcc=0x%08x modifier=0x%" PRIx64
+-        " nb_objects=%d nb_planes=%d",
+-        err, layer->format,
+-        (uint64_t) desc->objects[0].format_modifier,
+-        desc->nb_objects, layer->nb_planes);
+-  }
+-  return img;
+-}
+-
+-
+-static EGLImageKHR import_direct_plane_dmabuf(AVFrame *frame, DirectFrameRef *ref,
+-                                             uint32_t fourcc, int width, int height,
+-                                             int offset, int pitch,
+-                                             const char *label) {
+-  (void) frame;
+-  if (!ref || ref->index < 0 || ref->index >= direct_cap_count)
+-    return EGL_NO_IMAGE_KHR;
+-  if (direct_cap[ref->index].dma_fd < 0)
+-    return EGL_NO_IMAGE_KHR;
+-
+-  EGLint attribs[] = {
+-    EGL_WIDTH, width,
+-    EGL_HEIGHT, height,
+-    EGL_LINUX_DRM_FOURCC_EXT, (EGLint) fourcc,
+-    EGL_DMA_BUF_PLANE0_FD_EXT, direct_cap[ref->index].dma_fd,
+-    EGL_DMA_BUF_PLANE0_OFFSET_EXT, offset,
+-    EGL_DMA_BUF_PLANE0_PITCH_EXT, pitch,
+-    EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, (EGLint)(DRM_FORMAT_MOD_LINEAR & 0xffffffff),
+-    EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, (EGLint)(DRM_FORMAT_MOD_LINEAR >> 32),
+-    EGL_NONE
+-  };
+-
+-  EGLImageKHR img = egl_create_image(egl_dpy, EGL_NO_CONTEXT,
+-                                     EGL_LINUX_DMA_BUF_EXT,
+-                                     (EGLClientBuffer) NULL, attribs);
+-  if (img == EGL_NO_IMAGE_KHR && !direct_dmabuf_import_logged) {
+-    EGLint err = eglGetError();
+-    LOG("direct-dmabuf: plane import[%s] failed err=0x%04x fourcc=0x%08x index=%d fd=%d size=%dx%d offset=%d pitch=%d",
+-        label, err, fourcc, ref->index, direct_cap[ref->index].dma_fd,
+-        width, height, offset, pitch);
+-  }
+-  return img;
+-}
+-
+-
+-static void direct_destroy_dmabuf_cache_index(int index) {
+-  if (index < 0 || index >= direct_cap_count)
+-    return;
+-  DirectBuf *b = &direct_cap[index];
+-  if (b->tex_y) { glDeleteTextures(1, &b->tex_y); b->tex_y = 0; }
+-  if (b->tex_uv) { glDeleteTextures(1, &b->tex_uv); b->tex_uv = 0; }
+-  if (b->img_y != EGL_NO_IMAGE_KHR) { egl_destroy_image(egl_dpy, b->img_y); b->img_y = EGL_NO_IMAGE_KHR; }
+-  if (b->img_uv != EGL_NO_IMAGE_KHR) { egl_destroy_image(egl_dpy, b->img_uv); b->img_uv = EGL_NO_IMAGE_KHR; }
+-  b->dmabuf_cached = false;
+-  b->cache_w = b->cache_h = b->cache_stride = b->cache_uv_offset = 0;
+-}
+-
+-static void direct_destroy_all_dmabuf_caches(void) {
+-  if (!direct_dmabuf_present || !egl_destroy_image)
+-    return;
+-  for (int i = 0; i < direct_cap_count; i++)
+-    direct_destroy_dmabuf_cache_index(i);
+-}
+-
+-static int direct_ensure_dmabuf_cache(AVFrame *frame, DirectFrameRef *ref,
+-                                      int import_w, int import_h, int uv_offset) {
+-  if (!ref || ref->index < 0 || ref->index >= direct_cap_count)
+-    return -1;
+-  DirectBuf *b = &direct_cap[ref->index];
+-  if (b->dmabuf_cached && b->cache_w == import_w && b->cache_h == import_h &&
+-      b->cache_stride == direct_stride && b->cache_uv_offset == uv_offset &&
+-      b->tex_y && b->tex_uv)
+-    return 0;
+-
+-  direct_destroy_dmabuf_cache_index(ref->index);
+-
+-  EGLImageKHR img_y = import_direct_plane_dmabuf(frame, ref, DRM_FORMAT_R8,
+-                                                 import_w, import_h,
+-                                                 0, direct_stride, "Y/R8");
+-  EGLImageKHR img_uv = import_direct_plane_dmabuf(frame, ref, DRM_FORMAT_GR88,
+-                                                  import_w / 2, import_h / 2,
+-                                                  uv_offset, direct_stride,
+-                                                  "UV/GR88");
+-  if (img_y == EGL_NO_IMAGE_KHR || img_uv == EGL_NO_IMAGE_KHR) {
+-    if (img_y != EGL_NO_IMAGE_KHR) egl_destroy_image(egl_dpy, img_y);
+-    if (img_uv != EGL_NO_IMAGE_KHR) egl_destroy_image(egl_dpy, img_uv);
+-    return -1;
+-  }
+-
+-  GLuint tex_y = 0, tex_uv = 0;
+-  glGenTextures(1, &tex_y);
+-  glBindTexture(GL_TEXTURE_2D, tex_y);
+-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+-  gl_image_target_texture(GL_TEXTURE_2D, img_y);
+-
+-  glGenTextures(1, &tex_uv);
+-  glBindTexture(GL_TEXTURE_2D, tex_uv);
+-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+-  gl_image_target_texture(GL_TEXTURE_2D, img_uv);
+-
+-  GLenum glerr = glGetError();
+-  if (glerr != GL_NO_ERROR) {
+-    LOG("direct-dmabuf: cache glEGLImageTargetTexture2DOES error=0x%04x index=%d", glerr, ref->index);
+-    if (tex_y) glDeleteTextures(1, &tex_y);
+-    if (tex_uv) glDeleteTextures(1, &tex_uv);
+-    egl_destroy_image(egl_dpy, img_y);
+-    egl_destroy_image(egl_dpy, img_uv);
+-    return -1;
+-  }
+-
+-  b->img_y = img_y;
+-  b->img_uv = img_uv;
+-  b->tex_y = tex_y;
+-  b->tex_uv = tex_uv;
+-  b->dmabuf_cached = true;
+-  b->cache_w = import_w;
+-  b->cache_h = import_h;
+-  b->cache_stride = direct_stride;
+-  b->cache_uv_offset = uv_offset;
+-
+-  static int cache_count = 0;
+-  if (++cache_count <= 3 || cache_count == direct_cap_count)
+-    LOG("direct-dmabuf: cached plane EGLImages index=%d count=%d import=%dx%d stride=%d uv_offset=%d",
+-        ref->index, cache_count, import_w, import_h, direct_stride, uv_offset);
+-  return 0;
+-}
+-
+-
+ static void direct_update_dmabuf_quad_if_needed(AVFrame *frame, int import_h) {
+   if (direct_quad_view_w == gl_viewport_w &&
+       direct_quad_view_h == gl_viewport_h &&
+@@ -1432,71 +646,8 @@
+   direct_quad_visible_h = frame->height;
+ }
+ 
+-static void draw_frame_direct_dmabuf(AVFrame *frame) {
+-  if (!gl_ctx || !egl_create_image || !egl_destroy_image || !gl_image_target_texture)
+-    return;
+-
+-  DirectFrameRef *ref = (DirectFrameRef *) frame->opaque;
+-  int import_w = direct_cap_w > 0 ? direct_cap_w : frame->width;
+-  int import_h = direct_cap_h > 0 ? direct_cap_h : frame->height;
+-  int uv_offset = direct_stride * import_h;
+-
+-  /* Import/bind each CAPTURE buffer once. The per-frame hot path then
+-   * binds cached GL textures and draws, avoiding eglCreateImageKHR /
+-   * eglDestroyImageKHR churn. */
+-  if (gl_init_nv12(import_w, import_h) != 0)
+-    return;
+-  if (direct_ensure_dmabuf_cache(frame, ref, import_w, import_h, uv_offset) != 0) {
+-    direct_dmabuf_import_logged = true;
+-    return;
+-  }
+-
+-  if (!direct_dmabuf_import_logged) {
+-    LOG("direct-dmabuf: first cached plane EGL import succeeded index=%d fd=%d visible=%dx%d import=%dx%d cap=%dx%d stride=%d uv_offset=%d",
+-        ref ? ref->index : -1,
+-        (ref && ref->index >= 0 && ref->index < direct_cap_count) ? direct_cap[ref->index].dma_fd : -1,
+-        frame->width, frame->height, import_w, import_h, direct_cap_w, direct_cap_h,
+-        direct_stride, uv_offset);
+-    direct_dmabuf_import_logged = true;
+-  }
+-
+-  DirectBuf *cache = &direct_cap[ref->index];
+-
+-  direct_update_dmabuf_quad_if_needed(frame, import_h);
+-
+-  glViewport(0, 0, gl_viewport_w, gl_viewport_h);
+-  glClear(GL_COLOR_BUFFER_BIT);
+-  glUseProgram(gl_program_nv12);
+-  glActiveTexture(GL_TEXTURE0);
+-  glBindTexture(GL_TEXTURE_2D, cache->tex_y);
+-  glUniform1i(gl_uloc_y_nv12, 0);
+-  glActiveTexture(GL_TEXTURE1);
+-  glBindTexture(GL_TEXTURE_2D, cache->tex_uv);
+-  glUniform1i(gl_uloc_uv_nv12, 1);
+-
+-  glBindBuffer(GL_ARRAY_BUFFER, gl_vbo);
+-  glEnableVertexAttribArray(0);
+-  glEnableVertexAttribArray(1);
+-  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (void *)0);
+-  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (void *)(2 * sizeof(GLfloat)));
+-  glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+-  GLenum glerr = glGetError();
+-  if (glerr != GL_NO_ERROR) {
+-    static bool logged_draw_error = false;
+-    if (!logged_draw_error) {
+-      LOG("direct-dmabuf: plane glDrawArrays error=0x%04x", glerr);
+-      logged_draw_error = true;
+-    }
+-  }
+-  glDisableVertexAttribArray(0);
+-  glDisableVertexAttribArray(1);
+-
+-  SDL_GL_SwapWindow(window);
+-}
+ /* Forward decls for the dispatching draw_frame(). */
+ static void draw_frame_drm_prime(AVFrame *frame);
+-static void draw_frame_nv12(AVFrame *frame);
+-static void draw_frame_direct_dmabuf(AVFrame *frame);
+ 
+ static int stream_width, stream_height;
+ static int create_window(int width, int height);
+@@ -1538,12 +689,8 @@
+     SDL_SetWindowSize(window, previous_width, previous_height);
+   }
+   update_render_geometry(visible_w, visible_h);
+-  if (direct_dmabuf_present && direct_v4l2 && frame->format == AV_PIX_FMT_NV12) {
+-    draw_frame_direct_dmabuf(frame);
+-  } else if (frame->format == AV_PIX_FMT_DRM_PRIME) {
++  if (frame->format == AV_PIX_FMT_DRM_PRIME) {
+     draw_frame_drm_prime(frame);
+-  } else if (frame->format == AV_PIX_FMT_NV12) {
+-    draw_frame_nv12(frame);
+   } else {
+     static bool warned = false;
+     if (!warned) {
+@@ -1554,41 +701,6 @@
+   }
+ }
+ 
+-static void draw_frame_nv12(AVFrame *frame) {
+-  if (!sdl_renderer)
+-    return;
+-
+-  if (!sdl_nv12_texture || sdl_tex_w != frame->width || sdl_tex_h != frame->height) {
+-    if (sdl_nv12_texture) {
+-      SDL_DestroyTexture(sdl_nv12_texture);
+-      sdl_nv12_texture = NULL;
+-    }
+-    sdl_nv12_texture = SDL_CreateTexture(sdl_renderer,
+-                                         SDL_PIXELFORMAT_NV12,
+-                                         SDL_TEXTUREACCESS_STREAMING,
+-                                         frame->width, frame->height);
+-    if (!sdl_nv12_texture) {
+-      LOG("SDL_CreateTexture(NV12 %dx%d) failed: %s",
+-          frame->width, frame->height, SDL_GetError());
+-      return;
+-    }
+-    sdl_tex_w = frame->width;
+-    sdl_tex_h = frame->height;
+-    LOG("SDL renderer: created NV12 texture %dx%d", sdl_tex_w, sdl_tex_h);
+-  }
+-
+-  if (SDL_UpdateNVTexture(sdl_nv12_texture, NULL,
+-                          frame->data[0], frame->linesize[0],
+-                          frame->data[1], frame->linesize[1]) != 0) {
+-    LOG("SDL_UpdateNVTexture failed: %s", SDL_GetError());
+-    return;
+-  }
+-
+-  SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 255);
+-  SDL_RenderClear(sdl_renderer);
+-  SDL_RenderCopy(sdl_renderer, sdl_nv12_texture, &(SDL_Rect){(int)frame->crop_left, (int)frame->crop_top, frame_visible_width(frame), frame_visible_height(frame)}, &sdl_dst_rect);
+-  SDL_RenderPresent(sdl_renderer);
+-}
+ static void prime_cache_clear(void) {
+   for (int i = 0; i < prime_cache_count; i++) {
+     PrimeCacheEntry *e = &prime_cache[i];
+@@ -1834,27 +946,6 @@
+         out_w, out_h, SDL_GetWindowDisplayIndex(window),
+         SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "unknown",
+         (void *) egl_dpy);
+-  } else {
+-    sdl_renderer = SDL_CreateRenderer(window, -1,
+-                                      SDL_RENDERER_ACCELERATED |
+-                                      SDL_RENDERER_PRESENTVSYNC);
+-    if (!sdl_renderer) {
+-      LOG("SDL_CreateRenderer failed: %s", SDL_GetError());
+-      pthread_mutex_lock(&disp_mtx);
+-      disp_setup_rc = -1;
+-      disp_ready = true;
+-      pthread_cond_signal(&disp_cond);
+-      pthread_mutex_unlock(&disp_mtx);
+-      return NULL;
+-    }
+-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
+-
+-    SDL_GetRendererOutputSize(sdl_renderer, &out_w, &out_h);
+-    if (out_w <= 0 || out_h <= 0)
+-      SDL_GetWindowSize(window, &out_w, &out_h);
+-    LOG("display thread: SDL renderer output=%dx%d display=%d driver=%s",
+-        out_w, out_h, SDL_GetWindowDisplayIndex(window),
+-        SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "unknown");
+   }
+ 
+   pthread_mutex_lock(&disp_mtx);
+@@ -1896,7 +987,6 @@
+   av_frame_free(&shown);
+   if (request_mode && egl_destroy_image)
+     prime_cache_clear();
+-  direct_destroy_all_dmabuf_caches();
+   return NULL;
+ }
+ 
+@@ -1973,14 +1063,9 @@
+   stream_height = height;
+   (void) redrawRate; (void) context; (void) drFlags;
+ 
+-  direct_v4l2 = getenv("MOONLIGHT_V4L2M2M_DIRECT") &&
+-                strcmp(getenv("MOONLIGHT_V4L2M2M_DIRECT"), "0") != 0;
+-  direct_dmabuf_present = direct_v4l2 && getenv("MOONLIGHT_V4L2M2M_DMABUF") &&
+-                          strcmp(getenv("MOONLIGHT_V4L2M2M_DMABUF"), "0") != 0;
+   if (request_mode) {
+     /* Request-mode frames are dma-bufs: present them through the GLES
+      * context, never through the SDL renderer. */
+-    direct_v4l2 = false;
+     direct_dmabuf_present = true;
+     /* dma-buf import needs an EGL display. Under X11 (Xwayland) SDL
+      * would otherwise create the GLES context through GLX. */
+@@ -1996,66 +1081,6 @@
+   if (request_mode) {
+     if (request_decoder_setup(videoFormat, width, height) != 0)
+       return -1;
+-  } else if (direct_v4l2) {
+-    LOG("setup: using experimental direct V4L2 decoder path");
+-    if (direct_v4l2_setup(videoFormat, width, height) != 0)
+-      return -1;
+-  } else {
+-  codec = (AVCodec *) find_v4l2m2m_decoder(videoFormat);
+-  if (!codec)
+-    return -1;
+-
+-  codec_ctx = avcodec_alloc_context3(codec);
+-  if (!codec_ctx)
+-    return -1;
+-  codec_ctx->flags       |= AV_CODEC_FLAG_LOW_DELAY | AV_CODEC_FLAG_OUTPUT_CORRUPT;
+-  codec_ctx->flags2      |= AV_CODEC_FLAG2_SHOW_ALL;
+-  codec_ctx->thread_count = 1;
+-  codec_ctx->width        = width;
+-  codec_ctx->height       = height;
+-  /* Critical: set pix_fmt to DRM_PRIME *before* avcodec_open2.
+-   * The v4l2m2m wrapper reads avctx->pix_fmt at init time and copies
+-   * it into capture->av_pix_fmt; only then does it offer DRM_PRIME
+-   * via ff_get_format() during the eventual format negotiation. With
+-   * AV_PIX_FMT_NONE here (the default), the wrapper bypasses
+-   * get_format() entirely and emits the V4L2 native format (NV12 for
+-   * iris), and our display thread starves waiting for frames it will
+-   * never receive. */
+-  codec_ctx->pix_fmt      = AV_PIX_FMT_DRM_PRIME;
+-  codec_ctx->get_format   = get_drm_prime_fmt;
+-  /* Attach an AV_HWDEVICE_TYPE_DRM device ctx so the v4l2m2m wrapper
+-   * negotiates the V4L2 capture queue with V4L2_MEMORY_DMABUF + DRM
+-   * PRIME export, and offers AV_PIX_FMT_DRM_PRIME via get_format().
+-   * Without this, the wrapper falls back to NV12 software output and
+-   * our zero-copy import path never sees a frame -- the display thread
+-   * sleeps forever on disp_cond and the SDL window is never committed.
+-   *
+-   * Open the DRM render node (renderD128) rather than the primary node
+-   * (card0) so we don't need DRM master; gamescope still owns
+-   * master via the kiosk path. Render nodes are sufficient for the
+-   * dma-buf import we need here. */
+-  AVBufferRef *hw_dev = NULL;
+-  if (av_hwdevice_ctx_create(&hw_dev, AV_HWDEVICE_TYPE_DRM,
+-                             "/dev/dri/renderD128", NULL, 0) >= 0) {
+-    codec_ctx->hw_device_ctx = av_buffer_ref(hw_dev);
+-    av_buffer_unref(&hw_dev);
+-    LOG("setup: attached AV_HWDEVICE_TYPE_DRM render node");
+-  } else {
+-    LOG("setup: av_hwdevice_ctx_create(DRM) failed -- v4l2m2m will"
+-        " fall back to NV12 software output and our import path will not run");
+-  }
+-
+-  if (avcodec_open2(codec_ctx, codec, NULL) < 0) {
+-    LOG("avcodec_open2 failed for %s", codec->name);
+-    avcodec_free_context(&codec_ctx);
+-    return -1;
+-  }
+-
+-  pkt = av_packet_alloc();
+-  if (!pkt) {
+-    avcodec_free_context(&codec_ctx);
+-    return -1;
+-  }
+   }
+ 
+   disp_eos    = false;
+@@ -2072,28 +1097,6 @@
+         width, height);
+     return 0;
+   }
+-  if (create_window(width, height) != 0)
+-    return -1;
+-  pthread_create(&disp_thread, NULL, display_loop, NULL);
+-
+-  /* Block setup() until the display thread has either finished GL
+-   * bring-up or failed. This keeps the contract simple: a non-zero
+-   * return from setup means the platform genuinely cannot run. */
+-  pthread_mutex_lock(&disp_mtx);
+-  while (!disp_ready)
+-    pthread_cond_wait(&disp_cond, &disp_mtx);
+-  int rc = disp_setup_rc;
+-  pthread_mutex_unlock(&disp_mtx);
+-
+-  if (rc != 0) {
+-    LOG("display thread failed to initialise GL");
+-    return -1;
+-  }
+-
+-  LOG("setup: decoder=%s presenter=%s %dx%d",
+-      direct_v4l2 ? "direct_v4l2" : request_mode ? "v4l2request" : codec->name,
+-      request_mode ? "prime-gl" : direct_dmabuf_present ? "direct-dmabuf" : "sdl-nv12",
+-      width, height);
+   return 0;
+ }
+ 
+@@ -2109,7 +1112,6 @@
+    * GL failure) and left a submitted frame behind. */
+   if (disp_pending) av_frame_free(&disp_pending);
+ 
+-  if (sdl_nv12_texture) { SDL_DestroyTexture(sdl_nv12_texture); sdl_nv12_texture = NULL; sdl_tex_w = sdl_tex_h = 0; }
+   if (sdl_renderer)     { SDL_DestroyRenderer(sdl_renderer); sdl_renderer = NULL; }
+   if (gl_program)      { glDeleteProgram(gl_program); gl_program = 0; }
+   if (gl_texture)      { glDeleteTextures(1, &gl_texture); gl_texture = 0; }
+@@ -2126,9 +1128,7 @@
+   if (window)  { SDL_DestroyWindow(window); window = NULL; }
+   SDL_QuitSubSystem(SDL_INIT_VIDEO);
+ 
+-  direct_dmabuf_import_logged = false;
+   direct_dmabuf_present = false;
+-  if (direct_v4l2) direct_v4l2_cleanup();
+   if (pkt)        av_packet_free(&pkt);
+   if (codec_ctx)  avcodec_free_context(&codec_ctx);
+   if (nal_buf)    { free(nal_buf); nal_buf = NULL; nal_size = 0; }
+@@ -2136,8 +1136,6 @@
+ 
+ static int v4l2m2m_submit(PDECODE_UNIT du) {
+   stream_colorspace = du->colorspace;
+-  if (direct_v4l2)
+-    return direct_v4l2_submit(du);
+ 
+   /* Coalesce the linked-list of bufferList entries into a single
+    * contiguous packet, plus the AV_INPUT_BUFFER_PADDING_SIZE FFmpeg
+@@ -2196,25 +1194,12 @@
+   return (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) ? DR_OK : DR_NEED_IDR;
+ }
+ 
+-static int v4l2m2m_setup_stateful(int videoFormat, int width, int height,
+-                                  int redrawRate, void *context, int drFlags) {
+-  request_mode = false;
+-  return v4l2m2m_setup(videoFormat, width, height, redrawRate, context, drFlags);
+-}
+-
+ static int v4l2request_setup(int videoFormat, int width, int height,
+                              int redrawRate, void *context, int drFlags) {
+   request_mode = true;
+   return v4l2m2m_setup(videoFormat, width, height, redrawRate, context, drFlags);
+ }
+ 
+-DECODER_RENDERER_CALLBACKS decoder_callbacks_v4l2m2m = {
+-  .setup            = v4l2m2m_setup_stateful,
+-  .cleanup          = v4l2m2m_cleanup,
+-  .submitDecodeUnit = v4l2m2m_submit,
+-  .capabilities     = CAPABILITY_DIRECT_SUBMIT,
+-};
+-
+ DECODER_RENDERER_CALLBACKS decoder_callbacks_v4l2request = {
+   .setup            = v4l2request_setup,
+   .cleanup          = v4l2m2m_cleanup,
+IDENTICAL sha256=e7762193c2c3a3a78ea10e6357d26e8c1759caf24940cebd9d8c6e3d9887e04b video/video.h
+ADAPTED sha256=a418841ea463374637242a157a02a59b9408b4c75c55415736acc6a40ca59fd9 video/x11.c removed=2 added=2
+--- patched-moonlight/video/x11.c
++++ viewer/video/x11.c
+@@ -1,3 +1,4 @@
++#include "../../io/bridge.h"
+ /*
+  * This file is part of Moonlight Embedded.
+  *
+@@ -24,7 +25,6 @@
+ #include "ffmpeg_vaapi.h"
+ #endif
+ 
+-#include "../input/x11.h"
+ #include "../loop.h"
+ #include "../util.h"
+ 
+@@ -165,6 +165,7 @@
+     XSendEvent(display, DefaultRootWindow(display), False, SubstructureRedirectMask | SubstructureNotifyMask, &xev);
+   }
+   XFlush(display);
++  viewer_input_x11(display, window);
+ 
+   int avc_flags;
+   if (drFlags & X11_VDPAU_ACCELERATION)
+@@ -190,7 +191,6 @@
+   fcntl(pipefd[0], F_SETFL, O_NONBLOCK);
+   fcntl(pipefd[1], F_SETFL, O_NONBLOCK);
+ 
+-  x11_input_init(display, window);
+ 
+   return 0;
+ }
+IDENTICAL sha256=afd04c202c27081c355d8d34b58a52c4141de26433007e27ed6e0d2093d10d3c ffmpeg/0001-v4l2-request.patch

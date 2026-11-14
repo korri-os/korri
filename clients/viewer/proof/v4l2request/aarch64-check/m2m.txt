@@ -1,0 +1,1 @@
+korri-viewer: unsupported platform v4l2m2m

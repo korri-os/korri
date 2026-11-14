@@ -33,7 +33,7 @@ git -C "$plugins" show "$rev:services/moonlight/patches/ffmpeg/0001-v4l2-request
 
 echo "Source: Moonlight Embedded 775444287305849ebdf4736c75298ad0713e2d5d"
 echo "Plugin patch stack: $(git -C "$plugins" rev-parse "$rev"), in package.nix order"
-echo "Candidate code: $(git rev-parse HEAD)$(git diff --quiet HEAD -- "$viewer" || echo ' (with uncommitted changes)')"
+echo "Candidate code: $(git rev-parse HEAD)$(git diff --quiet HEAD -- "$viewer"/{picture,io,ffmpeg} || echo ' (with uncommitted changes)')"
 echo
 # The hash precedes the name: the secret scan reads "vaapi.c sha256=..." as a key.
 compare() {
