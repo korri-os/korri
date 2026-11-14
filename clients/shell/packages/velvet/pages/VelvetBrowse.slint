@@ -47,147 +47,191 @@ export component VelvetBrowse inherits Rectangle {
     // The load reveal (main.slint turns `Tokens.revealed` once): the pick rises in and the
     // strip follows tile by tile.
     clip: true;
-    Rectangle {
-        x: 0;
-        y: root.depth == 0 ? 0px : -root.height;
+    // A finger's vertical swipe (owner, 2026-11-13): the page follows it, and past an eighth
+    // of the window, or on a quick flick, it moves one level (the logic's Down or Up). The
+    // library's own shelves take the swipe there (VelvetLobby).
+    property <length> swipe-y: page.current-position.y - page.pressed-position.y;
+    property <length> last-y;
+    property <duration> last-t;
+    // The finger's speed, px a millisecond, down positive.
+    property <float> speed;
+    page := SwipeGestureHandler {
         width: root.width;
         height: root.height;
-        animate y { duration: Tokens.t-layer; easing: cubic-bezier(0.22, 1, 0.36, 1); }
-        VelvetPick {
-            y: Tokens.revealed ? 0px : Tokens.screen.pad-y * Tokens.unit * 0.35;
-            width: parent.width;
-            height: parent.height;
-            opacity: Tokens.revealed ? 1 : 0;
-            animate y, opacity { duration: Tokens.still ? 0ms : Tokens.t-reveal + 80ms; delay: Tokens.still ? 0ms : 120ms; easing: cubic-bezier(0.16, 1, 0.3, 1); }
-            hero: root.home.hero;
-            cards: root.cards;
-            mark: root.home.mark;
-            buttons: [root.home.play];
-            inert: root.inert;
-            activated(target, at, released) => { root.activated(target, at, released); }
-        }
-        VelvetPill {
-            x: parent.width - root.pad-x - self.width;
-            y: root.pad-y * 0.7;
-            pill: root.home.menu;
-            size: Tokens.screen.small * root.u;
-            inert: root.inert;
-            activated(target, at, released) => { root.activated(target, at, released); }
-        }
-        if root.home.clock != "": VelvetWords {
-            x: parent.width - root.pad-x - Tokens.screen.small * root.u * 12;
-            y: root.pad-y * 0.7;
-            width: Tokens.screen.small * root.u * 6;
-            height: Tokens.screen.small * root.u * 2.3;
-            text: root.home.clock;
-            size: Tokens.screen.small * root.u;
-            horizontal-alignment: right;
-        }
-    }
-    // The focused game's name over the shelf.
-    VelvetMarquee {
-        x: root.pad-x;
-        y: Tokens.screen.row-mark-y * root.u;
-        width: Tokens.screen.row-mark-w * root.u;
-        height: Tokens.screen.row-mark-h * root.u;
-        mq: root.home.row-mark;
-        on: root.depth == 1;
-    }
-    // The row: the pick's own tile joins at its head once the row is the shelf.
-    for tile[n] in root.row-tiles: VelvetTile {
-        // An animated binding names its inputs itself (the component's `in` properties, the tokens,
-        // its own geometry), never a property worked out from them: the shell's Slint can lose
-        // the value of an animated binding that reads a derived property.
-        // At rest the pick's own place (n 0) stands wholly off the stage's left edge.
-        x: root.depth == 0
-            ? Tokens.screen.pad-x * Tokens.unit + (n - 1) * (Tokens.screen.strip-h * Tokens.tile-ratio + Tokens.screen.strip-gap) * Tokens.unit - (n == 0 ? Tokens.screen.pad-x * Tokens.unit : 0px)
-            : Tokens.screen.pad-x * Tokens.unit + n * (Tokens.screen.row-h * Tokens.tile-ratio + Tokens.screen.row-gap) * Tokens.unit
-                - Math.clamp(
-                    root.home.row-at * (Tokens.screen.row-h * Tokens.tile-ratio + Tokens.screen.row-gap) * Tokens.unit - (root.width - 2 * Tokens.screen.pad-x * Tokens.unit - Tokens.screen.row-h * Tokens.tile-ratio * Tokens.unit * 1.75),
-                    0px,
-                    Math.max(0px, root.row-tiles.length * (Tokens.screen.row-h * Tokens.tile-ratio + Tokens.screen.row-gap) * Tokens.unit - Tokens.screen.row-gap * Tokens.unit - (root.width - 2 * Tokens.screen.pad-x * Tokens.unit)));
-        y: root.depth == 0 ? Tokens.screen.strip-y * Tokens.unit : root.depth == 1 ? Tokens.screen.row-y * Tokens.unit : -Tokens.screen.row-h * Tokens.unit * 1.4;
-        width: (root.depth == 0 ? Tokens.screen.strip-h : Tokens.screen.row-h) * Tokens.tile-ratio * Tokens.unit;
-        height: (root.depth == 0 ? Tokens.screen.strip-h : Tokens.screen.row-h) * Tokens.unit;
-        tile: tile;
-        inert: root.inert;
-        slides: root.depth == 1;
-        // The load reveal: the strip's tiles come in one after another.
-        opacity: Tokens.revealed ? 1 : 0;
-        animate opacity { duration: Tokens.still ? 0ms : Tokens.t-reveal; delay: Tokens.still ? 0ms : 160ms + n * Tokens.t-stagger; easing: cubic-bezier(0.16, 1, 0.3, 1); }
-        animate x, y, width, height { duration: Tokens.t-layer; easing: cubic-bezier(0.22, 1, 0.36, 1); }
-        activated(target, at, released) => { root.activated(target, at, released); }
-        slide(by) => {
-            root.carried += by;
-            if (root.carried <= -(root.tile-w + root.tile-gap) * 0.5) {
-                root.dragged("row", 1);
-                root.carried += root.tile-w + root.tile-gap;
-            } else if (root.carried >= (root.tile-w + root.tile-gap) * 0.5) {
-                root.dragged("row", -1);
-                root.carried -= root.tile-w + root.tile-gap;
+        enabled: !root.inert && root.depth < 2;
+        handle-swipe-up: true;
+        handle-swipe-down: root.depth == 1;
+        moved => {
+            let now = animation-tick();
+            if (root.last-t > 0ms && now > root.last-t) {
+                root.speed = root.speed * 0.4 + ((self.current-position.y - root.last-y) / 1px / ((now - root.last-t) / 1ms)) * 0.6;
             }
+            root.last-y = self.current-position.y;
+            root.last-t = now;
         }
-        slid => { root.carried = 0px; }
-    }
-    Rectangle {
-        x: 0;
-        y: root.depth == 2 ? 0px : root.depth == 1 && Tokens.screen.peek-y > 0 ? (Tokens.screen.peek-y - Tokens.screen.lib-top) * Tokens.unit : root.height;
-        width: root.width;
-        height: root.height;
-        animate y { duration: Tokens.t-layer; easing: cubic-bezier(0.22, 1, 0.36, 1); }
-        // The library's head.
-        HorizontalLayout {
-            x: root.pad-x;
-            y: Tokens.screen.head-y * root.u;
-            width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
-            height: Tokens.screen.head-h * root.u;
-            spacing: Tokens.screen.fact * root.u * 0.8;
-            opacity: root.depth == 2 ? 1 : 0;
-            animate opacity { duration: Tokens.t-level; easing: cubic-bezier(0.4, 0, 0.2, 1); }
-            lib := VelvetHead {
-                horizontal-stretch: 0;
-                text: root.home.lib-title;
+        swiped => {
+            if (root.swipe-y < -root.height / 8 || root.speed < -0.5) {
+                root.dragged("home", 1);
+            } else if (root.swipe-y > root.height / 8 || root.speed > 0.5) {
+                root.dragged("home", -1);
             }
-            VerticalLayout {
-                alignment: end;
-                padding-bottom: lib.drop - Tokens.screen.fact * root.u * 0.24;
-                VelvetWords {
-                    text: root.home.lib-count;
+            root.speed = 0;
+            root.last-t = 0ms;
+        }
+        cancelled => {
+            root.speed = 0;
+            root.last-t = 0ms;
+        }
+        Rectangle {
+            x: 0;
+            width: root.width;
+            height: root.height;
+            // With the finger while it swipes; back with the level's own move when it lifts.
+            y: page.swiping ? Math.clamp(page.current-position.y - page.pressed-position.y, -root.height, root.height) : 0px;
+            animate y { duration: page.swiping ? 0ms : Tokens.t-layer; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+            Rectangle {
+                x: 0;
+                y: root.depth == 0 ? 0px : -root.height;
+                width: root.width;
+                height: root.height;
+                animate y { duration: Tokens.t-layer; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+                VelvetPick {
+                    y: Tokens.revealed ? 0px : Tokens.screen.pad-y * Tokens.unit * 0.35;
+                    width: parent.width;
+                    height: parent.height;
+                    opacity: Tokens.revealed ? 1 : 0;
+                    animate y, opacity { duration: Tokens.still ? 0ms : Tokens.t-reveal + 80ms; delay: Tokens.still ? 0ms : 120ms; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+                    hero: root.home.hero;
+                    cards: root.cards;
+                    mark: root.home.mark;
+                    buttons: [root.home.play];
+                    inert: root.inert;
+                    activated(target, at, released) => { root.activated(target, at, released); }
+                }
+                VelvetPill {
+                    x: parent.width - root.pad-x - self.width;
+                    y: root.pad-y * 0.7;
+                    pill: root.home.menu;
+                    size: Tokens.screen.small * root.u;
+                    inert: root.inert;
+                    activated(target, at, released) => { root.activated(target, at, released); }
+                }
+                if root.home.clock != "": VelvetWords {
+                    x: parent.width - root.pad-x - Tokens.screen.small * root.u * 12;
+                    y: root.pad-y * 0.7;
+                    width: Tokens.screen.small * root.u * 6;
+                    height: Tokens.screen.small * root.u * 2.3;
+                    text: root.home.clock;
+                    size: Tokens.screen.small * root.u;
+                    horizontal-alignment: right;
                 }
             }
-        }
-        // What focus is on, and one fact about it. A readout: it gives way first.
-        HorizontalLayout {
-            x: Tokens.screen.narrow ? root.pad-x : parent.width * 0.5;
-            y: Tokens.screen.narrow ? (Tokens.screen.head-y + Tokens.screen.head-h) * root.u + Tokens.thin : (Tokens.screen.head-y + Tokens.screen.head-h) * root.u - self.height - lib.drop + Tokens.screen.fact * root.u * 0.3;
-            width: Tokens.screen.narrow ? parent.width - 2 * root.pad-x : parent.width * 0.5 - root.pad-x;
-            height: Tokens.screen.fact * root.u * 1.5;
-            alignment: Tokens.screen.narrow ? start : end;
-            spacing: Tokens.screen.fact * root.u * 0.6;
-            opacity: root.depth == 2 ? 1 : 0;
-            animate opacity { duration: Tokens.t-level; easing: cubic-bezier(0.4, 0, 0.2, 1); }
-            VelvetWords {
-                text: root.home.now-title;
-                ink: Tokens.house-light;
-                strong: true;
+            // The focused game's name over the shelf.
+            VelvetMarquee {
+                x: root.pad-x;
+                y: Tokens.screen.row-mark-y * root.u;
+                width: Tokens.screen.row-mark-w * root.u;
+                height: Tokens.screen.row-mark-h * root.u;
+                mq: root.home.row-mark;
+                on: root.depth == 1;
             }
-            VelvetWords {
-                horizontal-stretch: 0;
-                text: root.home.now-fact;
+            // The row: the pick's own tile joins at its head once the row is the shelf.
+            for tile[n] in root.row-tiles: VelvetTile {
+                // An animated binding names its inputs itself (the component's `in` properties, the tokens,
+                // its own geometry), never a property worked out from them: the shell's Slint can lose
+                // the value of an animated binding that reads a derived property.
+                // At rest the pick's own place (n 0) stands wholly off the stage's left edge.
+                x: root.depth == 0
+                    ? Tokens.screen.pad-x * Tokens.unit + (n - 1) * (Tokens.screen.strip-h * Tokens.tile-ratio + Tokens.screen.strip-gap) * Tokens.unit - (n == 0 ? Tokens.screen.pad-x * Tokens.unit : 0px)
+                    : Tokens.screen.pad-x * Tokens.unit + n * (Tokens.screen.row-h * Tokens.tile-ratio + Tokens.screen.row-gap) * Tokens.unit
+                        - Math.clamp(
+                            root.home.row-at * (Tokens.screen.row-h * Tokens.tile-ratio + Tokens.screen.row-gap) * Tokens.unit - (root.width - 2 * Tokens.screen.pad-x * Tokens.unit - Tokens.screen.row-h * Tokens.tile-ratio * Tokens.unit * 1.75),
+                            0px,
+                            Math.max(0px, root.row-tiles.length * (Tokens.screen.row-h * Tokens.tile-ratio + Tokens.screen.row-gap) * Tokens.unit - Tokens.screen.row-gap * Tokens.unit - (root.width - 2 * Tokens.screen.pad-x * Tokens.unit)));
+                y: root.depth == 0 ? Tokens.screen.strip-y * Tokens.unit : root.depth == 1 ? Tokens.screen.row-y * Tokens.unit : -Tokens.screen.row-h * Tokens.unit * 1.4;
+                width: (root.depth == 0 ? Tokens.screen.strip-h : Tokens.screen.row-h) * Tokens.tile-ratio * Tokens.unit;
+                height: (root.depth == 0 ? Tokens.screen.strip-h : Tokens.screen.row-h) * Tokens.unit;
+                tile: tile;
+                inert: root.inert;
+                slides: root.depth == 1;
+                // The load reveal: the strip's tiles come in one after another.
+                opacity: Tokens.revealed ? 1 : 0;
+                animate opacity { duration: Tokens.still ? 0ms : Tokens.t-reveal; delay: Tokens.still ? 0ms : 160ms + n * Tokens.t-stagger; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+                animate x, y, width, height { duration: Tokens.t-layer; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+                activated(target, at, released) => { root.activated(target, at, released); }
+                slide(by) => {
+                    root.carried += by;
+                    if (root.carried <= -(root.tile-w + root.tile-gap) * 0.5) {
+                        root.dragged("row", 1);
+                        root.carried += root.tile-w + root.tile-gap;
+                    } else if (root.carried >= (root.tile-w + root.tile-gap) * 0.5) {
+                        root.dragged("row", -1);
+                        root.carried -= root.tile-w + root.tile-gap;
+                    }
+                }
+                slid => { root.carried = 0px; }
             }
-        }
-        VelvetLobby {
-            x: 0;
-            y: Tokens.screen.lib-top * root.u;
-            width: parent.width;
-            height: parent.height - self.y;
-            shelves: root.shelves;
-            tiles: root.shelf-tiles;
-            shelf-at: root.shelf-at;
-            entered: root.depth == 2;
-            inert: root.inert;
-            activated(target, at, released) => { root.activated(target, at, released); }
-            dragged(region, by) => { root.dragged(region, by); }
+            Rectangle {
+                x: 0;
+                y: root.depth == 2 ? 0px : root.depth == 1 && Tokens.screen.peek-y > 0 ? (Tokens.screen.peek-y - Tokens.screen.lib-top) * Tokens.unit : root.height;
+                width: root.width;
+                height: root.height;
+                animate y { duration: Tokens.t-layer; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+                // The library's head.
+                HorizontalLayout {
+                    x: root.pad-x;
+                    y: Tokens.screen.head-y * root.u;
+                    width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
+                    height: Tokens.screen.head-h * root.u;
+                    spacing: Tokens.screen.fact * root.u * 0.8;
+                    opacity: root.depth == 2 ? 1 : 0;
+                    animate opacity { duration: Tokens.t-level; easing: cubic-bezier(0.4, 0, 0.2, 1); }
+                    lib := VelvetHead {
+                        horizontal-stretch: 0;
+                        text: root.home.lib-title;
+                    }
+                    VerticalLayout {
+                        alignment: end;
+                        padding-bottom: lib.drop - Tokens.screen.fact * root.u * 0.24;
+                        VelvetWords {
+                            text: root.home.lib-count;
+                        }
+                    }
+                }
+                // What focus is on, and one fact about it. A readout: it gives way first.
+                HorizontalLayout {
+                    x: Tokens.screen.narrow ? root.pad-x : parent.width * 0.5;
+                    y: Tokens.screen.narrow ? (Tokens.screen.head-y + Tokens.screen.head-h) * root.u + Tokens.thin : (Tokens.screen.head-y + Tokens.screen.head-h) * root.u - self.height - lib.drop + Tokens.screen.fact * root.u * 0.3;
+                    width: Tokens.screen.narrow ? parent.width - 2 * root.pad-x : parent.width * 0.5 - root.pad-x;
+                    height: Tokens.screen.fact * root.u * 1.5;
+                    alignment: Tokens.screen.narrow ? start : end;
+                    spacing: Tokens.screen.fact * root.u * 0.6;
+                    opacity: root.depth == 2 ? 1 : 0;
+                    animate opacity { duration: Tokens.t-level; easing: cubic-bezier(0.4, 0, 0.2, 1); }
+                    VelvetWords {
+                        text: root.home.now-title;
+                        ink: Tokens.house-light;
+                        strong: true;
+                    }
+                    VelvetWords {
+                        horizontal-stretch: 0;
+                        text: root.home.now-fact;
+                    }
+                }
+                VelvetLobby {
+                    x: 0;
+                    y: Tokens.screen.lib-top * root.u;
+                    width: parent.width;
+                    height: parent.height - self.y;
+                    shelves: root.shelves;
+                    tiles: root.shelf-tiles;
+                    shelf-at: root.shelf-at;
+                    entered: root.depth == 2;
+                    inert: root.inert;
+                    activated(target, at, released) => { root.activated(target, at, released); }
+                    dragged(region, by) => { root.dragged(region, by); }
+                }
+            }
         }
     }
 }

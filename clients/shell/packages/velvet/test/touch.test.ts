@@ -105,6 +105,42 @@ describe("a drag", () => {
   })
 })
 
+describe("a swipe on the home (owner, 2026-11-13)", () => {
+  test("up moves a level deeper, down a level back: the pick, the row, the library", () => {
+    const run = home()
+    run.deliver({ _tag: "Dragged", region: "home", by: 1 })
+    expect(run.view.home.depth).toBe(1)
+    expect(run.view.touching).toBe(true)
+    run.deliver({ _tag: "Dragged", region: "home", by: 1 })
+    expect(run.view.home.depth).toBe(2)
+    run.deliver({ _tag: "Dragged", region: "home", by: -1 })
+    expect(run.view.home.depth).toBe(1)
+    run.deliver({ _tag: "Dragged", region: "home", by: -1 })
+    expect(run.view.home.depth).toBe(0)
+    // Down from the pick goes nowhere (the menu is a tap or a button away).
+    run.deliver({ _tag: "Dragged", region: "home", by: -1 })
+    expect(run.view.home.depth).toBe(0)
+    expect(run.view.layer).toBe("screen")
+  })
+  test("in the library it moves the shelves' focus by whole shelves, never off the first or past the last", () => {
+    const run = home()
+    run.deliver({ _tag: "Dragged", region: "home", by: 2 })
+    expect(run.view.home.depth).toBe(2)
+    const count = (run.view.shelves as any[]).length
+    expect(run.view.shelfAt).toBe(0)
+    run.deliver({ _tag: "Dragged", region: "shelves", by: 2 })
+    expect(run.view.shelfAt).toBe(Math.min(2, count - 1))
+    run.deliver({ _tag: "Dragged", region: "shelves", by: 50 })
+    expect(run.view.shelfAt).toBe(count - 1)
+    run.deliver({ _tag: "Dragged", region: "shelves", by: -50 })
+    expect(run.view.shelfAt).toBe(0)
+    expect(run.view.home.depth).toBe(2)
+    // Down from the first shelf goes back to the row ("home", -1).
+    run.deliver({ _tag: "Dragged", region: "home", by: -1 })
+    expect(run.view.home.depth).toBe(1)
+  })
+})
+
 describe("the way back", () => {
   test("a tap on back (Android's gesture arrives as Back) leaves the detail, the row and a list page", () => {
     const run = home()

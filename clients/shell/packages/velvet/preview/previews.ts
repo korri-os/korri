@@ -98,6 +98,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
   ])
   add("atoms", "VelvetShape", [{ name: "Play", body: one("VelvetShape", `${centre("parent.height * 0.3", "parent.height * 0.3")} commands: "M4.3 2.4V13.6L13.4 8Z";`) }])
   add("atoms", "VelvetSignal", [0, 1, 2, 3, 4].map(bars => ({ name: `Bars${bars}`, body: one("VelvetSignal", `x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; bars: ${bars}; size: Math.min(parent.width, parent.height) * 0.2;`) })))
+  add("atoms", "VelvetGlide", [{ name: "Resting", body: `Rectangle { ${centre("parent.width * 0.3", "parent.height * 0.3")} background: Tokens.light-10; VelvetGlide { pitch: Tokens.screen.tile-h * Tokens.unit; last: 4; at: 1; } }` }])
   add("atoms", "VelvetTap", [{ name: "Target", body: `Rectangle { ${centre("parent.width * 0.3", "parent.height * 0.3")} background: Tokens.light-10; VelvetTap { width: parent.width; height: parent.height; target: "play"; } }` }])
   add("atoms", "VelvetWords", [
     { name: "Fact", body: one("VelvetWords", `x: Tokens.screen.pad-x * ${U}; y: parent.height / 2; text: "Played 2 hours ago";`) },

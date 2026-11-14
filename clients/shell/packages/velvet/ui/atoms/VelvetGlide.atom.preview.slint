@@ -1,0 +1,10 @@
+// VelvetGlide's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetGlide } from "VelvetGlide.slint";
+
+export component Resting inherits VelvetPreview {
+    Rectangle { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: parent.width * 0.3; height: parent.height * 0.3; background: Tokens.light-10; VelvetGlide { pitch: Tokens.screen.tile-h * Tokens.unit; last: 4; at: 1; } }
+}

@@ -1,0 +1,109 @@
+// VelvetGlide: a finger on a list that moves by whole steps (ADR 0055; owner, 2026-11-13:
+// scrolling should feel natural). While the finger is down the list follows it; after the
+// lift it runs on with the finger's speed, slows, and comes to rest on a whole step. It owns
+// the list's place while it moves (`moving`, `place`, measured from step 0); at rest the list
+// stands where the logic says (`at`). `stepped` reports each whole step the place passes, as
+// a count from the last one, so the logic can send what stands there; the glide lets go only
+// once the logic stands on the step it came to rest on.
+//
+// It draws nothing.
+
+export component VelvetGlide {
+    // One step's length, and the furthest step (the first is 0).
+    in property <length> pitch;
+    in property <int> last;
+    // The step the logic stands on.
+    in property <int> at;
+    out property <bool> moving;
+    out property <length> place;
+    callback stepped(by: int);
+    property <int> reported;
+    // Along the list, in px a millisecond: positive toward its end.
+    property <float> speed;
+    property <duration> stamp;
+    property <bool> coasting;
+    property <bool> settling;
+    property <length> target;
+    // A finger is down: a glide in flight stops under it.
+    public function grab() {
+        if (!root.moving) {
+            root.place = root.at * root.pitch;
+            root.reported = root.at;
+        }
+        root.moving = true;
+        root.coasting = false;
+        root.settling = false;
+        root.speed = 0;
+        root.stamp = animation-tick();
+    }
+    // The finger moved `by` along the list's axis (toward the list's start is positive).
+    public function move(by: length) {
+        if (!root.moving) {
+            root.grab();
+        }
+        let now = animation-tick();
+        let ms = (now - root.stamp) / 1ms;
+        root.stamp = now;
+        // A little give past either end, as a finger expects.
+        root.place = Math.clamp(root.place - by, -root.pitch * 0.3, root.last * root.pitch + root.pitch * 0.3);
+        if (ms > 0) {
+            root.speed = root.speed * 0.4 + (-by / 1px / ms) * 0.6;
+        }
+        root.report();
+    }
+    // The finger lifted (or left without a drag).
+    public function release() {
+        if (!root.moving) {
+            return;
+        }
+        // A finger that stopped before it lifted throws nothing.
+        if ((animation-tick() - root.stamp) / 1ms > 90) {
+            root.speed = 0;
+        }
+        if (Math.abs(root.speed) > 0.25) {
+            root.coasting = true;
+        } else {
+            root.settle();
+        }
+    }
+    function report() {
+        let step = Math.clamp(Math.round(root.place / root.pitch), 0, root.last);
+        if (step != root.reported) {
+            let by = step - root.reported;
+            root.reported = step;
+            root.stepped(by);
+        }
+    }
+    function settle() {
+        root.coasting = false;
+        root.settling = true;
+        root.target = Math.clamp(Math.round(root.place / root.pitch), 0, root.last) * root.pitch;
+    }
+    Timer {
+        interval: 16ms;
+        running: root.coasting || root.settling;
+        triggered => {
+            if (root.coasting) {
+                root.place += root.speed * 1px * 16;
+                // About a third of a second to lose half its speed.
+                root.speed *= 0.95;
+                if (root.place < 0px || root.place > root.last * root.pitch) {
+                    root.place = Math.clamp(root.place, 0px, root.last * root.pitch);
+                    root.speed = 0;
+                }
+                root.report();
+                if (Math.abs(root.speed) < 0.04) {
+                    root.settle();
+                }
+            } else {
+                root.place += (root.target - root.place) * 0.28;
+                root.report();
+                if (Math.abs((root.target - root.place) / 1px) < 0.5 && root.at == root.reported) {
+                    root.place = root.target;
+                    root.settling = false;
+                    root.moving = false;
+                }
+            }
+        }
+    }
+}

@@ -94,6 +94,7 @@ export component VelvetSet inherits Rectangle {
         tiles: root.tiles;
         marks: root.marks;
         first-row: root.first-row;
+        rows: root.set.rows;
         inert: root.inert;
         activated(target, at, released) => { root.activated(target, at, released); }
         dragged(region, by) => { root.dragged(region, by); }

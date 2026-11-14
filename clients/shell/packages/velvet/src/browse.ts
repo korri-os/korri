@@ -534,6 +534,25 @@ export function dragHome(state: State, region: string, by: number, model: Model)
   return to === from ? state : { ...state, scrolled: { ...state.scrolled, [region]: to } }
 }
 
+/**
+ * A finger swiped the home (owner, 2026-11-13): "home" moves `by` levels (the pick, the row,
+ * the library), "shelves" moves the lobby's focus `by` whole shelves, and never off its first.
+ * Each step is what a press of Down or Up does there.
+ */
+export function swipeHome(state: State, region: string, by: number, model: Model): State {
+  const button = by > 0 ? "down" : "up"
+  let next = state
+  for (let i = 0; i < Math.abs(by); i++) {
+    if (region === "shelves") {
+      const shelves = shelvesOf(next.lists, model)
+      if (next.depth !== 2 || (button === "up" && shelfAt(next, shelves) === 0) || (button === "down" && shelfAt(next, shelves) >= shelves.length - 1)) break
+    }
+    if (region === "home" && button === "up" && next.depth === 0) break
+    next = pressHome({ ...next, onMenu: false }, button, model).state
+  }
+  return next
+}
+
 /** A finger dragged the set's rows `by` whole rows (ADR 0055): the rows scroll, focus stays. */
 export function dragSet(set: SetState, by: number, model: Model, plan: Plan): SetState {
   const rows = Math.ceil(setCount(set, model.catalog) / plan.columns)

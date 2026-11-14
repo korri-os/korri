@@ -6,7 +6,10 @@
 // A shelf is a row of 2:3 tiles under its label. Its tiles never move for
 // focus; the row scrolls so the focused tile stays in view and the next one
 // peeks (`at`, the column the shelf keeps in view). A finger that drags a
-// shelf sideways scrolls it by whole tiles (ADR 0055) and moves no focus.
+// shelf sideways scrolls it by whole tiles (ADR 0055) and moves no focus. A
+// vertical swipe moves the shelves with the finger and rests on a whole shelf,
+// which takes the focus (owner, 2026-11-13); down from the first goes back to
+// the home's row.
 
 import { Tokens } from "../tokens.slint";
 import { Shelf, Tile } from "../types.slint";
@@ -34,56 +37,92 @@ export component VelvetLobby inherits Rectangle {
     property <length> keep: view - tile-w * 1.75;
     // The finger's travel since the last whole tile.
     property <length> carried;
+    // A vertical swipe: how far the finger went, and its speed (px a millisecond, down positive).
+    property <length> last-y;
+    property <duration> last-t;
+    property <float> speed;
     clip: true;
-    // The shelves stand on one track; the track moves a shelf's pitch. `shelf-at` reaches
-    // it as a number of its own, never through a struct (README, "What the interpreter
-    // taught us"): the track's place is animated.
-    Rectangle {
-        x: 0;
-        y: -root.shelf-at * Tokens.screen.shelf-pitch * Tokens.unit;
+    lift := SwipeGestureHandler {
         width: root.width;
         height: root.height;
-        animate y { duration: Tokens.t-focus; easing: cubic-bezier(0.16, 1, 0.3, 1); }
-        for shelf[n] in root.shelves: Text {
-            x: root.pad;
-            y: n * root.pitch-y;
-            width: root.view;
-            height: Tokens.screen.shelf-label * root.u;
-            text: shelf.label;
-            color: Tokens.house-light;
-            font-family: Tokens.text;
-            font-weight: Tokens.strong-weight;
-            font-size: Tokens.screen.label * root.u;
-            vertical-alignment: center;
-            overflow: elide;
-            opacity: root.entered && n == root.shelf-at ? 1 : 0.5;
-        }
-        for tile in root.tiles: VelvetTile {
-            property <Shelf> on: root.shelves[tile.shelf];
-            x: Tokens.screen.pad-x * Tokens.unit + tile.at * (Tokens.screen.shelf-h * Tokens.tile-ratio + Tokens.screen.shelf-gap) * Tokens.unit
-                - Math.clamp(
-                    root.shelves[tile.shelf].at * (Tokens.screen.shelf-h * Tokens.tile-ratio + Tokens.screen.shelf-gap) * Tokens.unit - (root.width - 2 * Tokens.screen.pad-x * Tokens.unit - Tokens.screen.shelf-h * Tokens.tile-ratio * Tokens.unit * 1.75),
-                    0px,
-                    Math.max(0px, root.shelves[tile.shelf].count * (Tokens.screen.shelf-h * Tokens.tile-ratio + Tokens.screen.shelf-gap) * Tokens.unit - Tokens.screen.shelf-gap * Tokens.unit - (root.width - 2 * Tokens.screen.pad-x * Tokens.unit)));
-            y: tile.shelf * root.pitch-y + root.row-y;
-            width: root.tile-w;
-            height: root.tile-h;
-            tile: tile;
-            inert: root.inert;
-            slides: true;
-            animate x { duration: Tokens.t-scroll; easing: cubic-bezier(0.16, 1, 0.3, 1); }
-            activated(target, at, released) => { root.activated(target, at, released); }
-            slide(by) => {
-                root.carried += by;
-                if (root.carried <= -root.pitch-x * 0.5) {
-                    root.dragged("shelf:" + self.on.key, 1);
-                    root.carried += root.pitch-x;
-                } else if (root.carried >= root.pitch-x * 0.5) {
-                    root.dragged("shelf:" + self.on.key, -1);
-                    root.carried -= root.pitch-x;
-                }
+        enabled: root.entered && !root.inert;
+        handle-swipe-up: root.shelf-at < root.shelves.length - 1;
+        handle-swipe-down: true;
+        moved => {
+            let now = animation-tick();
+            if (root.last-t > 0ms && now > root.last-t) {
+                root.speed = root.speed * 0.4 + ((self.current-position.y - root.last-y) / 1px / ((now - root.last-t) / 1ms)) * 0.6;
             }
-            slid => { root.carried = 0px; }
+            root.last-y = self.current-position.y;
+            root.last-t = now;
+        }
+        swiped => {
+            let dy = self.current-position.y - self.pressed-position.y;
+            // Whole shelves the finger carried, and one more on a quick flick.
+            let carried = Math.round(-dy / root.pitch-y) + (root.speed < -0.6 ? 1 : root.speed > 0.6 ? -1 : 0);
+            let to = Math.clamp(root.shelf-at + carried, 0, root.shelves.length - 1);
+            if (to != root.shelf-at) {
+                root.dragged("shelves", to - root.shelf-at);
+            } else if (root.shelf-at == 0 && (dy > root.pitch-y * 0.35 || root.speed > 0.6)) {
+                root.dragged("home", -1);
+            }
+            root.speed = 0;
+            root.last-t = 0ms;
+        }
+        cancelled => {
+            root.speed = 0;
+            root.last-t = 0ms;
+        }
+        // The shelves stand on one track; the track moves a shelf's pitch. `shelf-at` reaches
+        // it as a number of its own, never through a struct (README, "What the interpreter
+        // taught us"): the track's place is animated. A swipe carries it with the finger.
+        Rectangle {
+            x: 0;
+            y: -root.shelf-at * Tokens.screen.shelf-pitch * Tokens.unit + (lift.swiping ? lift.current-position.y - lift.pressed-position.y : 0px);
+            width: root.width;
+            height: root.height;
+            animate y { duration: lift.swiping ? 0ms : Tokens.t-focus; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+            for shelf[n] in root.shelves: Text {
+                x: root.pad;
+                y: n * root.pitch-y;
+                width: root.view;
+                height: Tokens.screen.shelf-label * root.u;
+                text: shelf.label;
+                color: Tokens.house-light;
+                font-family: Tokens.text;
+                font-weight: Tokens.strong-weight;
+                font-size: Tokens.screen.label * root.u;
+                vertical-alignment: center;
+                overflow: elide;
+                opacity: root.entered && n == root.shelf-at ? 1 : 0.5;
+            }
+            for tile in root.tiles: VelvetTile {
+                property <Shelf> on: root.shelves[tile.shelf];
+                x: Tokens.screen.pad-x * Tokens.unit + tile.at * (Tokens.screen.shelf-h * Tokens.tile-ratio + Tokens.screen.shelf-gap) * Tokens.unit
+                    - Math.clamp(
+                        root.shelves[tile.shelf].at * (Tokens.screen.shelf-h * Tokens.tile-ratio + Tokens.screen.shelf-gap) * Tokens.unit - (root.width - 2 * Tokens.screen.pad-x * Tokens.unit - Tokens.screen.shelf-h * Tokens.tile-ratio * Tokens.unit * 1.75),
+                        0px,
+                        Math.max(0px, root.shelves[tile.shelf].count * (Tokens.screen.shelf-h * Tokens.tile-ratio + Tokens.screen.shelf-gap) * Tokens.unit - Tokens.screen.shelf-gap * Tokens.unit - (root.width - 2 * Tokens.screen.pad-x * Tokens.unit)));
+                y: tile.shelf * root.pitch-y + root.row-y;
+                width: root.tile-w;
+                height: root.tile-h;
+                tile: tile;
+                inert: root.inert;
+                slides: true;
+                animate x { duration: Tokens.t-scroll; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+                activated(target, at, released) => { root.activated(target, at, released); }
+                slide(by) => {
+                    root.carried += by;
+                    if (root.carried <= -root.pitch-x * 0.5) {
+                        root.dragged("shelf:" + self.on.key, 1);
+                        root.carried += root.pitch-x;
+                    } else if (root.carried >= root.pitch-x * 0.5) {
+                        root.dragged("shelf:" + self.on.key, -1);
+                        root.carried -= root.pitch-x;
+                    }
+                }
+                slid => { root.carried = 0px; }
+            }
         }
     }
 }

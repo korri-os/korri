@@ -13,10 +13,12 @@
 // lift.
 //
 // On a set's grid (`rows`), which draws only the rows near its window, a
-// drag that goes up or down first reports each move to `slide` (in window
-// coordinates, so the rows moving under the finger do not count) and its end
-// to `slid`; the grid turns that into whole rows. A shelf (`columns`) does
-// the same with a drag that goes sideways first, in whole tiles.
+// finger going down says `grabbed`, a drag that goes up or down first
+// reports each move to `slide` (in window coordinates, so the rows moving
+// under the finger do not count), and the lift says `slid`, drag or not; the
+// grid follows the finger and turns that into whole rows. A shelf
+// (`columns`) does the same with a drag that goes sideways first, in whole
+// tiles.
 
 import { Tokens } from "../tokens.slint";
 
@@ -29,6 +31,7 @@ export component VelvetTap inherits TouchArea {
     in property <bool> rows;
     in property <bool> columns;
     callback activated(target: string, at: float, released: bool);
+    callback grabbed();
     callback slide(by: length);
     callback slid();
     property <bool> rowing;
@@ -55,7 +58,7 @@ export component VelvetTap inherits TouchArea {
                 }
             }
         }
-        if (armed && rowing) {
+        if (armed && (rows || columns)) {
             root.slid();
         }
         armed = false;
@@ -73,6 +76,9 @@ export component VelvetTap inherits TouchArea {
             dragged = false;
             sliding = false;
             on-track = range && self.mouse-x >= track-start - Tokens.drag-start && self.mouse-x <= track-end + Tokens.drag-start;
+            if (rows || columns) {
+                root.grabbed();
+            }
         } else if (event.kind == PointerEventKind.up) {
             finish(true);
         } else if (event.kind == PointerEventKind.cancel) {

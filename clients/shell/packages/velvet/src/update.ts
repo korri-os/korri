@@ -12,7 +12,8 @@
  *                detail; menu opens the house menu; system opens Settings
  *     Activated  a tap on a drawn target (ADR 0055): focus goes there and
  *                Confirm follows; a game in a list opens on the second tap
- *     Dragged    a finger dragged a set's rows: they scroll, focus stays
+ *     Dragged    a finger dragged a set's rows: they scroll, focus stays; a
+ *                swipe on the home moves a level or the lobby's shelves
  *     Touched    touch is in use: the focus edge hides until the next press
  *     Tick       the stage drifts after two seconds of rest; a question
  *                Korri did not answer is asked again; a notice runs out
@@ -23,7 +24,7 @@
  * the focused game changed.
  */
 import type { SurfaceButton, SurfaceMessage as Message, SurfaceModel as Model } from "../../../../../contracts/generated/surface"
-import { detailButtons, detailGame, dragHome, dragSet, focusedGame, openSet, pressDetail, pressHome, pressSet, setSorts, setWindow, settleSet, tapHome, tapSet, type Step } from "./browse"
+import { detailButtons, detailGame, dragHome, dragSet, swipeHome, focusedGame, openSet, pressDetail, pressHome, pressSet, setSorts, setWindow, settleSet, tapHome, tapSet, type Step } from "./browse"
 import { curtainLayout, curtainOf, type CurtainSpec } from "./curtain"
 import { keyAt, keyGrid, keyInPlace, keyMove } from "./keys"
 import { hearLists, homeOf, LISTS_START, refresh, settleLists, shelvesOf, staleLists, tickLists } from "./lists"
@@ -573,6 +574,8 @@ export function update(state: State, message: Message, model: Model): { state: S
         if (set !== next.set) next = { ...next, set }
       } else if ((message.region === "row" || message.region.startsWith("shelf:")) && topLayer(next, model) === "screen" && shown(next, model) === "home") {
         next = dragHome(next, message.region, message.by, model)
+      } else if ((message.region === "home" || message.region === "shelves") && topLayer(next, model) === "screen" && shown(next, model) === "home") {
+        next = swipeHome(next, message.region, message.by, model)
       }
       break
     case "Touched":
