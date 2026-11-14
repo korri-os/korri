@@ -101,5 +101,6 @@ own process isolation proof.
 
 Not proven here: audible hardware output, a live Pulse server, physical evdev
 hotplug/grabs/rumble, or button-to-network-packet latency. Those policies are
-carried, not rewritten. The fixture sender has sound disabled and cannot prove
-end-to-end sound without a separate, sound-enabled fixture.
+carried, not rewritten. By default the sender fixture sends no sound. Its
+tone (`nix/stream-cadence`, since slice D3) can; the Android viewer's proof
+uses it, and the Linux viewer has not run against it.

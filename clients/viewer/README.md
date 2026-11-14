@@ -18,7 +18,7 @@ nix build .#checks.x86_64-linux.korri-viewer-aarch64
 clients/viewer/proof/v4l2request/compare.sh ../korri-plugins
 # The session part for Android, both ABIs (below). No device or emulator.
 nix build .#checks.x86_64-linux.korri-viewer-android
-# The Android app (slices D1 and D2, below), and its proof on one headless
+# The Android app (slices D1 to D3, below), and its proof on one headless
 # emulator against a private Sunshine on aka.
 nix build .#korri-viewer-android-apk
 nix run .#viewer-android-proof
@@ -433,9 +433,9 @@ of `clients/android/sdk.nix`: `aarch64-linux-android` for phones and
   and the binding are the same files on both platforms.
 - Platform parts: `player_io.rs` is Linux's picture, sound and input.
   `src/android/player_io.rs` has the same interface; since slice D2 it has
-  the picture (below), and no sound or input yet, so the core runs its own
-  empty audio callbacks. Without a picture, as in the session tests, the
-  core also runs its own empty decoder. The core's log goes to logcat, tag
+  the picture and since slice D3 the sound (below), and no input yet.
+  Without the app's picture, as in the session tests, the core runs its own
+  empty decoder and audio callbacks. The core's log goes to logcat, tag
   `korri-viewer`, through `src/android/log.c`: the callback is C-variadic,
   which Rust cannot define. The signal handlers in `stream.rs` are Linux
   only: on Android the app owns its process's signals. The `v4l2request`
@@ -678,10 +678,128 @@ buffer queue, and the compositor reads the same buffer.
   (`c2.goldfish.h264.decoder`) is backed by the host, and its numbers mean
   nothing (ADR 0063).
 
+## Android sound (#391 step D, slice D3)
+
+Slice D3 of the research brief: the stream's sound plays through AAudio, in
+its low-latency mode, with Opus decoded by libopus as the Linux viewer
+decodes it.
+
+- The core's audio callbacks are Rust (`src/android/sound.rs`). The core
+  decodes on its own audio thread, as it does for Artemis (no
+  `CAPABILITY_DIRECT_SUBMIT`). Each packet goes to the player
+  (`src/android/audio.rs`): libopus decodes it, a lost packet is concealed
+  by Opus, and the PCM goes into a ring with one writer and one reader.
+  AAudio's data callback, on AAudio's high-priority thread, empties the
+  ring: it takes no lock and never waits, and plays silence for the frames
+  that are not there. The tests run the player over a scripted output
+  (`ScriptedOutput`), as D2's tests run the decoder over a scripted codec.
+- The stream: PCM 16-bit, the core's rate (48 kHz) and channel count,
+  shared, usage game, a data callback and an error callback. It asks for
+  `AAUDIO_PERFORMANCE_MODE_LOW_LATENCY` first, then the standard mode if
+  that open fails. AAudio grants low latency or falls back by itself; the
+  log says what it asked and what it granted
+  (`sound: output try 0 asked low-latency granted … burst … buffer …`).
+  The buffer is two packets (Artemis's small buffer) or two bursts
+  (AAudio's double buffering), the larger; AAudio rounds it to whole
+  bursts.
+- At most 40 ms of sound waits beyond AAudio's own buffer, as in Artemis:
+  a decoded packet is dropped while the core's queue and the ring hold
+  40 ms or more. Every packet is still decoded, because Opus carries state
+  from one packet to the next.
+- A lost stream recovers. AAudio calls the error callback, for example when
+  the device goes; the callback only marks the stream lost. On its next
+  packet the core's audio thread stops and closes that stream and opens a
+  new one: AAudio says to do that from another thread than the error
+  callback. If no new stream opens, the next try waits, from 10 ms doubling
+  to 160 ms, and after 3 s of failures (the decoder's window, `Health` in
+  `decoder.rs`) the sound ends and the stream goes on without it. No try
+  ever spins: a test plays a packet every millisecond for 5 s against a
+  device that stays lost and counts at most 60 opens. When Android's audio
+  server dies, AAudio's standard path (the emulator's) reports no error:
+  its AudioTrack makes a new track itself when the server is back, and the
+  callbacks go on. The proof stops that server during the stream. A
+  getter such as `AAudioStream_getXRunCount` can wait while that happens,
+  so a teardown in that moment waits for the server too.
+- No panic reaches C. Each of the core's five audio callbacks and AAudio's
+  two runs its body under `catch_unwind` (`callback::guarded`). A panic in
+  the data callback fills that buffer with silence, stops the stream and
+  ends the sound; the picture goes on.
+- Teardown: the core's audio cleanup, inside `LiStopConnection`, stops and
+  closes the stream; `AAudioStream_close` returns after the callbacks.
+  `PlayerIo::close` closes a stream that a cleanup left. The proof checks
+  that `sound: stream closed` comes before the viewer reports Stopped.
+- The log reports what the sound did when it ends: callbacks, frames
+  played and silent, short callbacks after the first sound, packets,
+  concealed and dropped packets, Opus errors, AAudio's xrun count and
+  reopened streams (`sound: ended: …`).
+- Licence: `audio.rs` and `sound.rs` port Artemis code
+  (`AndroidAudioRenderer.java`, `callbacks.c`) and are GPL-3.0-only, as the
+  D2 files are.
+
+**AAudio, not Oboe.** The brief names both (findings 9 and 27). The choice
+is AAudio, called through ndk-sys:
+
+| Evidence | Source |
+| --- | --- |
+| Oboe's reason to be is the fallback: it "calls AAudio when it is available, and falls back to OpenSL ES if AAudio is not available". AAudio exists from API 26; the viewer needs API 31 (ADR 0064). | Android's AAudio guide; ADR 0064 |
+| At API 31 no Oboe workaround applies to this stream (output, PCM 16-bit, data callback, no fixed callback size). Its callback-size workaround stops at API 30; its `ErrorTimeout` to `ErrorDisconnected` workaround is for API 30 only; its float, mono, input and Exynos or SM8150 MMAP rules are for other streams or older releases. Its one clamp that applies, a legacy buffer of at least one burst, is below the two bursts asked here. | Oboe `main`: `src/common/QuirksManager.cpp`, `src/aaudio/AudioStreamAAudio.cpp`, read 2026-11-14 |
+| The lowest latency needs `AAUDIO_PERFORMANCE_MODE_LOW_LATENCY` with a high-priority data callback. AAudio gives both. | Android's AAudio guide |
+| Oboe is C++ that Korri would build into the app, with a Rust wrapper (`oboe-rs`, last release 0.6.1 on 2024-03-03). ADR 0062 wants no C or C++ that Korri builds where a system library does. | ADR 0062; crates.io |
+
+The cost: Oboe can resample inside the app to keep the low-latency path on
+a device whose own rate is not 48 kHz; AAudio then takes its standard path
+and resamples there, as Artemis does when it skips low latency. The ndk
+crate's `audio` module is not used: its callback trampolines abort the
+process on a panic (`abort_on_panic`), so the callbacks here are Korri's
+own `extern "C"` functions over ndk-sys.
+
+**What differs from Artemis** (`AndroidAudioRenderer.java`, `callbacks.c`):
+
+| | Artemis | Korri D3 |
+| --- | --- | --- |
+| Output | `AudioTrack`, blocking `write` from the core's audio thread | AAudio, a data callback that pulls from the ring |
+| Tries | Four: low latency or standard, each with a buffer of two packets, then the larger minimum buffer | Two: low latency, then standard. AAudio clamps a buffer size instead of refusing it, so the second dimension has nothing to try |
+| Low latency skipped | When the device's own rate is not the stream's, or audio effects are on | Never asked away: AAudio grants or refuses it, and the log says which |
+| Buffer | Two packets (10 ms at 5 ms packets) | Two packets or two bursts, the larger |
+| 40 ms limit | Measured on the core's queue, because the blocking write fills it | The core's queue plus the ring, because the callback pulls |
+| Underrun | `AudioTrack` plays silence | The callback plays silence for the missing frames and counts it |
+| Device xruns | Not read | Read once at the end (`AAudioStream_getXRunCount`) and logged. The buffer is not tuned on xruns; AAudio's guide offers that, and step H can measure it |
+| A lost device | `AudioTrack` follows the route; nothing to do | Close and open again; 3 s of failures end the sound |
+| Channel layouts | 2, 4, 6 and 8 channels as stereo, quad, 5.1 and 7.1 masks | The channel count only: `setChannelMask` is API 32. Android's stereo, 5.1 and 7.1 masks have the core's order (front left, front right, centre, LFE, back left, back right, side left, side right), so neither reorders the PCM. That AAudio picks those masks for a count of 6 and 8 is read from AOSP (`audio_channel_out_mask_from_count`), not heard: the proof plays stereo. The core offers no 4-channel stream |
+| Usage, content type | `USAGE_GAME`; content type unknown | `AAUDIO_USAGE_GAME`; AAudio's default content type, music |
+| Sharing | `AudioTrack` is shared | Shared. Exclusive (MMAP) mode may lower latency on a phone; not asked until step H measures it |
+| Audio effects session | Optional broadcast for equalizers | Not carried |
+| Opus | libopus as prebuilt archives (`moonlight-mobile-deps`) | nixpkgs' libopus 1.6.1, the Linux viewer's release, built for Android with the NDK (`android.nix`) |
+| No output at the start | The core's start fails (-2) | The same |
+
+**Proof** (`nix run .#viewer-android-proof`, record `proof/android-d3/`):
+D2's run, with sound. stream-cadence's sender fixture plays a 1000 Hz tone
+(its `tone`, `nix/stream-cadence/README.md`). The emulator has its sound
+card, and QEMU's `wav` driver writes everything that Android plays to a
+file on the build host, so nothing reaches its speakers. The proof finds
+the tone in that file, and the 440 Hz tone of the Android test that plays
+real Opus packets through real AAudio (`sound::tests`). It reads the
+sound's report from logcat, checks that the sound ended before the viewer
+reported Stopped, and records Android's mixer while the app plays. While
+the stream runs it stops Android's audio server; init starts it again, and
+the app must play more sound than the stream had run before. The
+screenshots show the picture still moving.
+
+- Cost: libopus's notice is not yet in the APK, as those of OpenSSL, curl
+  and ENet are not (slice D1).
+- Not proven: the low-latency path. The emulator's mixer runs at 44.1 kHz
+  with no fast mixer, so AAudio refused low latency for a 48 kHz stream
+  and took its standard path, with 20 ms bursts. A phone's latency,
+  underruns, MMAP and Bluetooth: step H, on the Galaxy Z Fold3. Surround:
+  the proof plays stereo; the tests decode 5.1 and 7.1 over the scripted
+  output only. A lost device on a phone (an unplugged headset): the tests
+  prove the reopen and the end over the scripted output; the emulator
+  raised no AAudio error.
+
 ## Next slices
 
-The bench proof of the handheld `v4l2request` path. On Android, slice D3:
-sound (AAudio). No device installs `@korri:viewer` yet.
+The bench proof of the handheld `v4l2request` path. On Android, slice D4:
+input. No device installs `@korri:viewer` yet.
 
 The cross-UID socket proof is an explicit root-only test: build
 `cargo test --manifest-path clients/viewer/Cargo.toml --test lifecycle_security --no-run`
