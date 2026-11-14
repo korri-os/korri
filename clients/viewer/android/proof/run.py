@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Slices D1 to D3 of #391 step D, proven with no person (ADR 0063).
+"""Slices D1 to D4 of #391 step D, proven with no person (ADR 0063).
 
 One headless Android 12 emulator on this host runs the viewer app. A private
 Sunshine on the sender (stream-cadence's sender fixture, aka by default) is
@@ -22,14 +22,19 @@ steps:
 4. Start the app with a launch and the frame record's ask. Take screenshots
    until one shows a readable frame-ID bar (the startup), wait for the
    Running event and the Start reply, take screenshots while it streams and
-   read the bar in each. Stop Android's audio server, a real device error,
-   and let init start it again; stream on, press Back, wait for Stopped.
+   read the bar in each. Inject input (slice D4): keys and touches with
+   Android's `input` command, a mouse, and a game pad that the emulator's
+   own `hid` command makes through /dev/uhid; the picture must move on.
+   Stop Android's audio server, a real device error, and let init start it
+   again; stream on, press Back, wait for Stopped.
 5. Read the frame record from the app, decode its recording, and read the
    picture path (`decode`) and the sound's report from logcat.
 6. The refusal probe, an ordinary app, asks Android to start the viewer: it
    is refused. Granted DUMP through adb, it is allowed.
 7. Read the fixture's Sunshine log, close the fixture, stop the emulator,
-   and find the tones in the WAV file.
+   and find the tones in the WAV file. The fixture's Sunshine logs each
+   input packet it receives (`log_input`) and passes none on: the input
+   checks read what arrived at the sender.
 
 stream-cadence's capture (capture.c) reads a wlr-screencopy compositor, and
 the emulator's screen is not one. The bar is read from screenshots instead,
@@ -68,12 +73,14 @@ PROBE_ACTIVITY = f"{PROBE}/android.app.NativeActivity"
 # The frame record's header, as picture/frame_times.c writes it on Linux.
 RECORD_HEADER = "index,frame_number,enqueue_ns,decoded_ns,display_ns"
 # The Android tests of the session part, and the picture's pure parts.
-LIB_TESTS = ["sps::", "codec::", "decoder::", "callback::", "frame_record::", "placement::", "audio::", "sound::"]
+LIB_TESTS = ["sps::", "codec::", "decoder::", "callback::", "frame_record::", "placement::", "audio::", "sound::",
+             "input::", "gamepad::", "keyboard::", "touch::", "controller_list::"]
 
 # stream-cadence's frame-ID bar decoder: one decoder for the bar.
 sys.path.insert(0, str(Path(os.environ["KORRI_ROOT"]) / "nix/stream-cadence"))
 import bar  # noqa: E402
 import decode  # noqa: E402
+import sender  # noqa: E402
 
 
 def log(text: str) -> None:
@@ -458,6 +465,184 @@ def sound_report(lines: list[str]) -> dict:
     return report
 
 
+# The game pad of the input proof: a USB HID game pad that the emulator's
+# own `hid` command (frameworks/base/cmds/hid) makes through /dev/uhid.
+# Microsoft's vendor ID, so the stream's kind is Xbox, with a product ID that
+# no kernel driver or key layout knows: Linux's hid-generic and Android's
+# Generic.kl map it. 16 buttons, a hat, X, Y, Z and Rz sticks, brake and gas.
+PAD_NAME = "Korri test gamepad"
+PAD_VENDOR, PAD_PRODUCT = 0x045E, 0x7E57
+PAD_DESCRIPTOR = [
+    0x05, 0x01, 0x09, 0x05, 0xA1, 0x01, 0x85, 0x01,
+    0x05, 0x09, 0x19, 0x01, 0x29, 0x10, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0x10, 0x81, 0x02,
+    0x05, 0x01, 0x09, 0x39, 0x15, 0x00, 0x25, 0x07, 0x35, 0x00, 0x46, 0x3B, 0x01, 0x65, 0x14,
+    0x75, 0x04, 0x95, 0x01, 0x81, 0x42,
+    0x65, 0x00, 0x75, 0x04, 0x95, 0x01, 0x81, 0x03,
+    0x09, 0x30, 0x09, 0x31, 0x09, 0x32, 0x09, 0x35, 0x15, 0x00, 0x26, 0xFF, 0x00,
+    0x75, 0x08, 0x95, 0x04, 0x81, 0x02,
+    0x05, 0x02, 0x09, 0xC5, 0x09, 0xC4, 0x15, 0x00, 0x26, 0xFF, 0x00, 0x75, 0x08, 0x95, 0x02, 0x81, 0x02,
+    0xC0,
+]
+# Buttons 1, 2 and 4 are BTN_SOUTH, BTN_EAST and BTN_NORTH: A, B and X in
+# Generic.kl. A hat of 6 is left; 8 is none.
+PAD_A, PAD_B, PAD_X = 0x0001, 0x0002, 0x0008
+# The stream's button bits (Limelight.h).
+LI_A, LI_X, LI_LEFT = 0x1000, 0x4000, 0x0004
+
+
+def pad_report(buttons: int = 0, hat: int = 8, x: int = 0x80, y: int = 0x80,
+               z: int = 0x80, rz: int = 0x80, brake: int = 0, gas: int = 0) -> list[int]:
+    return [0x01, buttons & 0xFF, buttons >> 8, hat, x, y, z, rz, brake, gas]
+
+
+def pad_script() -> str:
+    """The hid command's input: the pad, then what it does, then its end (the pad goes)."""
+    steps: list[dict] = [
+        {"id": 1, "command": "register", "name": PAD_NAME, "vid": PAD_VENDOR, "pid": PAD_PRODUCT,
+         "bus": "usb", "descriptor": PAD_DESCRIPTOR},
+        # hid's README: wait for Android to add the device before reports.
+        {"id": 1, "command": "delay", "duration": 2000},
+    ]
+    for report, hold_ms in (
+        (pad_report(), 200),
+        (pad_report(buttons=PAD_A), 150), (pad_report(), 200),
+        (pad_report(x=0xFF), 300), (pad_report(), 200),
+        (pad_report(gas=0xFF), 200), (pad_report(), 200),
+        (pad_report(hat=6), 150), (pad_report(), 200),
+        (pad_report(buttons=PAD_B), 150), (pad_report(), 200),
+        # X held for a second: the heartbeat repeats it every 250 ms.
+        (pad_report(buttons=PAD_X), 1000), (pad_report(), 500),
+    ):
+        steps.append({"id": 1, "command": "report", "report": report})
+        steps.append({"id": 1, "command": "delay", "duration": hold_ms})
+    return "\n".join(json.dumps(step) for step in steps) + "\n"
+
+
+def placement(lines: list[str]) -> dict | None:
+    """The picture's place in the window, from the app's log."""
+    for line in reversed(lines):
+        found = re.search(r"placed at \((\d+), (\d+)\)-\((\d+), (\d+)\) in the window (\d+)x(\d+)", line)
+        if found:
+            left, top, right, bottom, width, height = map(int, found.groups())
+            return {"left": left, "top": top, "right": right, "bottom": bottom, "window": [width, height]}
+    return None
+
+
+def inject_input(emulator: "Emulator", logcat: "Logcat", fixture: "Remote", out: Path) -> dict:
+    """Keys, touches, a mouse and a game pad, as Android's own tools make them."""
+    placed = placement(logcat.lines())
+    if placed is None:
+        raise RuntimeError("the app logged no placement of the picture")
+    cx, cy = (placed["left"] + placed["right"]) // 2, (placed["top"] + placed["bottom"]) // 2
+    quarter = (placed["right"] - placed["left"]) // 4
+    mark = len(logcat.lines())
+    done: dict = {"placed": placed, "steps": []}
+
+    def step(name: str, command: str, **kwargs) -> None:
+        ran = emulator.shell(command, check=False, **kwargs)
+        done["steps"].append({"name": name, "command": command, "exit_code": ran.returncode,
+                              "output": (ran.stdout + ran.stderr).strip()[-500:]})
+        time.sleep(0.5)
+
+    log("input: keys, touches and a mouse")
+    step("keys", "input keyevent KEYCODE_K KEYCODE_O KEYCODE_R KEYCODE_R KEYCODE_I")
+    step("tap", f"input tap {cx} {cy}")
+    step("swipe", f"input swipe {cx - quarter} {cy} {cx + quarter} {cy} 300")
+    step("mouse", f"input mouse tap {cx} {cy}")
+    fixture.request("clock")
+    log("input: a game pad through /dev/uhid")
+    script = out / "gamepad.json"
+    script.write_text(pad_script())
+    emulator.adb("push", str(script), "/data/local/tmp/korri-gamepad.json")
+    step("gamepad", "hid /data/local/tmp/korri-gamepad.json", timeout=60)
+    emulator.shell("rm -f /data/local/tmp/korri-gamepad.json", check=False)
+    # The app asks twice a second which devices are still there; the
+    # heartbeat then repeats the pad's last state four times.
+    until = time.monotonic() + 10
+    while time.monotonic() < until and not any(" removed" in l and PAD_NAME in l for l in logcat.lines()[mark:]):
+        time.sleep(0.5)
+    time.sleep(2)
+    fixture.request("clock")
+    done["app_lines"] = [l.split("korri-viewer: ", 1)[1] for l in logcat.lines()[mark:]
+                         if "korri-viewer: input: " in l]
+    return done
+
+
+# The fields that Sunshine logs in hexadecimal (src/input.cpp, `print`); the
+# others are decimal.
+HEX_FIELDS = {"keyAction", "keyCode", "modifiers", "flags", "eventType", "pointerId", "action", "button",
+              "type", "capabilities", "supportedButtonFlags", "activeGamepadMask", "buttonFlags",
+              "leftTrigger", "rightTrigger"}
+HEARTBEAT_MS = 250
+
+
+def input_arrived(packets: list[dict], placed: dict) -> dict:
+    """What the sender's Sunshine received, against what the proof sent."""
+    def value(packet: dict, name: str) -> int:
+        return int(packet["fields"].get(name, "0"), 16 if name in HEX_FIELDS else 10)
+
+    def moment(packet: dict) -> float:
+        stamp = datetime.datetime.strptime(packet["time"], "%Y-%m-%d %H:%M:%S.%f")
+        return stamp.timestamp() * 1000
+
+    keys = [p for p in packets if p["kind"] == "keyboard"]
+    # KEY_DOWN_EVENT_MAGIC 3 and KEY_UP_EVENT_MAGIC 4; codes are GFE's 0x80 and a virtual key.
+    sent = [(value(p, "keyAction"), value(p, "keyCode") & 0xFF) for p in keys]
+    expected = [(action, ord(letter)) for letter in "KORRI" for action in (3, 4)]
+    touches = [p for p in packets if p["kind"] == "touch"]
+    middle = [p for p in touches if abs(float(p["fields"]["x"]) - 0.5) < 0.02 and abs(float(p["fields"]["y"]) - 0.5) < 0.02]
+    mice = [p for p in packets if p["kind"] == "absolute mouse move"]
+    width, height = placed["right"] - placed["left"], placed["bottom"] - placed["top"]
+    arrivals = [p for p in packets if p["kind"] == "controller arrival"]
+    pads = [p for p in packets if p["kind"] == "controller"]
+    buttons = [value(p, "buttonFlags") for p in pads]
+    held_x = sum(1 for flags in buttons if flags == LI_X)
+    last = pads[-1]["fields"] if pads else {}
+    # The pad went: its last state with no controller in the mask, then the
+    # heartbeat's four repeats of it, 250 ms apart.
+    gone = []
+    for packet in reversed(pads):
+        if value(packet, "activeGamepadMask") != 0 or value(packet, "buttonFlags") != 0:
+            break
+        gone.insert(0, packet)
+    gaps = [round(moment(b) - moment(a)) for a, b in zip(gone, gone[1:])]
+    return {
+        "counts": {kind: sum(1 for p in packets if p["kind"] == kind) for kind in sorted({p["kind"] for p in packets})},
+        "keyboard": {"sent": sent, "every_key_down_and_up_in_order": sent == expected,
+                     "flags": sorted({value(p, "flags") for p in keys})},
+        "touch": {"types": sorted({value(p, "eventType") for p in touches}), "at_the_middle": len(middle)},
+        # The core sends the reference size less one (InputStream.c).
+        "mouse": {"positions": len(mice), "reference": sorted({(value(p, "width") + 1, value(p, "height") + 1) for p in mice})},
+        "arrival": [p["fields"] for p in arrivals],
+        "controller": {
+            "packets": len(pads),
+            "a_pressed": LI_A in buttons,
+            "left_stick_full_right": any(value(p, "leftStickX") == 32766 for p in pads),
+            "right_trigger_full": any(value(p, "rightTrigger") == 0xFF for p in pads),
+            "hat_left": LI_LEFT in buttons,
+            "x_held_packets": held_x,
+            "last": last,
+            "after_it_went": {"packets": len(gone), "gaps_ms": gaps},
+        },
+        "checks": {
+            "keys_arrived": sent == expected,
+            "touches_arrived": {1, 2, 3} <= {value(p, "eventType") for p in touches} and bool(middle),
+            "mouse_arrived": bool(mice) and all((value(p, "width") + 1, value(p, "height") + 1) == (width, height) for p in mice),
+            "pad_arrived_as_xbox_number_0": any(value(p, "controllerNumber") == 0 and value(p, "type") == 1 for p in arrivals),
+            "pad_buttons_sticks_triggers_and_hat_arrived": LI_A in buttons and LI_LEFT in buttons
+                and any(value(p, "leftStickX") == 32766 for p in pads)
+                and any(value(p, "rightTrigger") == 0xFF for p in pads),
+            # Held for a second: the press, Android's key repeats and the heartbeat.
+            "pad_held_button_kept_arriving": held_x >= 4,
+            # The pad went: its number is free, it let go of everything, and
+            # the heartbeat said so four more times.
+            "pad_let_go_when_it_went": len(gone) == 5,
+            "pad_heartbeat_repeats_every_250_ms": len(gaps) == 4
+                and all(abs(gap - HEARTBEAT_MS) <= 50 for gap in gaps),
+        },
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--sender", default="root@aka", help="SSH target of the sender fixture")
@@ -503,10 +688,11 @@ def main() -> int:
         prepared = fixture.request("prepare", sway=f"{parts['sway']}/bin/sway",
                                    sunshine=f"{parts['sunshine']}/bin/sunshine",
                                    pulseaudio=f"{parts['pulseaudio']}/bin/pulseaudio",
-                                   tone_hz=TONE_HZ, width=1280, height=720, fps=60)
+                                   tone_hz=TONE_HZ, log_input=True, width=1280, height=720, fps=60)
         facts = prepared["facts"]
         (out / "sender-facts.json").write_text(json.dumps(facts, indent=2))
         checks["sender_plays_the_tone"] = facts.get("tone") == {"hz": TONE_HZ, "sink": "korri-tone"}
+        checks["sender_logs_input"] = facts.get("log_input") is True
         port = facts["sunshine_port"]
         result["sunshine_port"] = port
         pin = out / "server.pem"
@@ -613,6 +799,27 @@ def main() -> int:
         checks["screenshots_read_the_bar"] = len(ids) == len(moving)
         checks["screenshots_show_it_moving"] = len(ids) >= 2 and all(b > a for a, b in zip(ids, ids[1:]))
         fixture.request("clock")
+        # Slice D4: input, then the picture must still move.
+        injected = inject_input(emulator, logcat, fixture, out)
+        result["input"] = injected
+        app_input = injected["app_lines"]
+        checks["input_unbuffered_dispatch_requested"] = any("input: unbuffered dispatch requested" in l for l in logcat.lines())
+        checks["input_pad_identity_from_android"] = any(
+            f"input: controller {PAD_NAME} (" in l and f"vendor {PAD_VENDOR:04x} product {PAD_PRODUCT:04x} external true" in l
+            for l in app_input)
+        checks["input_pad_is_controller_0"] = any(f"input: {PAD_NAME} (" in l and "is controller 0" in l for l in app_input)
+        checks["input_pad_removed"] = any(f"input: controller {PAD_NAME} (" in l and l.endswith("removed") for l in app_input)
+        after = []
+        for shot in range(3):
+            path = out / f"after-input-{shot + 1}.png"
+            screenshot(emulator, path)
+            after.append({"file": path.name, **describe(read_bar(path))})
+            time.sleep(1)
+        result["screenshots_after_input"] = after
+        after_ids = [shot["id"] for shot in after if "id" in shot]
+        checks["picture_moves_after_input"] = (len(after_ids) == len(after) and all(b > a for a, b in zip(after_ids, after_ids[1:]))
+                                               and bool(ids) and after_ids[0] > ids[-1])
+        fixture.request("clock")
         # A real device error: Android's audio server dies, and init starts it
         # again. The app's sound must come back, or end; the picture goes on.
         restart_mark = len(logcat.lines())
@@ -680,6 +887,11 @@ def main() -> int:
         else:
             checks["sound_went_on_after_the_audio_server_restarted"] = False
 
+        # The input, as the app reports it at the end.
+        ended_input = next((l.split("input: ended: ", 1)[1] for l in app if "input: ended: " in l), "")
+        result["input_report"] = ended_input
+        checks["input_report_has_no_failure"] = bool(ended_input) and ended_input.endswith(" 0 failed")
+
         # The picture path, as the app reports it.
         chosen = next((re.search(r"picture: decode (\S+) decoder (\S+)", l) for l in app if "picture: decode " in l), None)
         result["viewer_ran"] = {"decode": chosen.group(1), "decoder": chosen.group(2)} if chosen else {}
@@ -734,7 +946,14 @@ def main() -> int:
         logcat.close()
         (out / "logcat-refusal.txt").write_text("\n".join(l for l in logcat.lines()[first_mark:] if "korri-" in l or "Permission Denial" in l or "START u0" in l) + "\n")
         journal = fixture.request("sample")["journal"]
-        (out / "sunshine.log").write_text(journal)
+        packets, kept = sender.input_packets(journal)
+        # Only info and above: the debug lines can hold the launch's keys.
+        (out / "sunshine.log").write_text(kept)
+        (out / "sunshine-input.json").write_text(json.dumps(packets, indent=1) + "\n")
+        arrived = input_arrived(packets, result["input"]["placed"])
+        result["input_at_the_sender"] = {key: value for key, value in arrived.items() if key != "checks"}
+        for name, passed in arrived["checks"].items():
+            checks[f"sender_{name}"] = passed
         checks["sunshine_saw_the_end"] = "CLIENT DISCONNECTED" in journal
         # Sunshine says so when it captures no sound for a session.
         checks["sunshine_captured_sound"] = "Unable to initialize audio capture" not in journal
