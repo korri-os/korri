@@ -47,8 +47,9 @@ clients/viewer/proof/v4l2request/compare.sh ../korri-plugins
   `-input` fails explicitly: korrid passes no explicit input node there.
   X11 VA-API uses evdev/udev discovery plus X11 keyboard and mouse. SDL
   fallback uses SDL controllers, keyboard and mouse. The aarch64 build also
-  accepts the handheld arguments (below). `-viewonly` skips ALL input
-  discovery, initialization and forwarding.
+  accepts the handheld arguments (below). `-viewonly` skips input device
+  discovery and initialization: no udev, evdev, SDL controller or CEC. As in
+  Moonlight, the window's own keyboard and mouse still forward.
 
 `KORRI_MOONLIGHT_SERVER_CERTIFICATE` is mandatory, including for fixture
 pairing. HTTPS checks both that trust anchor and its SPKI, with hostname
@@ -83,8 +84,8 @@ handheld file and its FFmpeg are in the next section.
 
 The adaptations do not change decode, queue or presentation policy:
 
-- `video/x11.c` routes input setup through the view-only guard in `io/`.
-- `sdl.c` routes event forwarding through the same guard. Its existing event
+- `video/x11.c` routes input setup through the boundary in `io/`.
+- `sdl.c` routes event forwarding through the same boundary. Its existing event
   loop becomes a single timed poll, so Rust owns the lifetime. Texture
   updates, two-frame skip rule, renderer, vsync and rendering calls stay the
   same. Teardown also releases its SDL texture, renderer and mutex.
@@ -334,8 +335,9 @@ encodes real Opus packets, decodes stereo/5.1/7.1 and verifies the PCM written
 through ALSA's file plugin over null. It exercises the SDL event loop with a
 virtual controller, X11 events on a real Xvfb window, and evdev's event and
 mapping code with real libevdev capabilities. It checks forwarding at the
-network-core boundary; it does not measure button-to-packet delay. A strace
-of both view-only platform branches proves no `/dev/input` open is attempted.
+network-core boundary; it does not measure button-to-packet delay. In
+view-only mode both PC platform branches forward a window key, and a strace
+of them proves no `/dev/input` open is attempted.
 The aka comparison and isolation records are in `proof/`.
 
 ## Next slices

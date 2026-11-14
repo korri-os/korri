@@ -12,6 +12,10 @@
 #include <string.h>
 
 static int enabled, using_evdev, started;
+// Moonlight's SDL platform. -viewonly does not stop its window events: they
+// come from the window, not from a device, and sdl_loop forwards them and
+// captures the mouse whatever -viewonly says.
+static int sdl_window;
 static struct mapping* mappings;
 
 PAUDIO_RENDERER_CALLBACKS viewer_audio_callbacks(int vaapi, char* device) {
@@ -21,6 +25,8 @@ PAUDIO_RENDERER_CALLBACKS viewer_audio_callbacks(int vaapi, char* device) {
 }
 
 static int input_init(int evdev, int viewonly, char* mapping, char** inputs, int inputs_count, int mouse_emulation, int verbose, int rotate) {
+  sdl_window = !evdev;
+  // main.c: -viewonly skips device discovery, controllers and CEC only.
   if (viewonly) return 0;
   using_evdev = evdev;
   if (using_evdev) {
@@ -92,8 +98,9 @@ void viewer_input_start(void) {
   if (enabled && using_evdev) {
     evdev_start();
     started = 1;
-  } else if (enabled) {
-    // Moonlight's sdl_loop captures once on entry, not on every timed poll.
+  } else if (sdl_window) {
+    // Moonlight's sdl_loop captures once on entry, not on every timed poll,
+    // with or without -viewonly.
     SDL_SetRelativeMouseMode(SDL_TRUE);
   }
 }
@@ -117,10 +124,14 @@ void viewer_input_destroy(void) {
     mappings = next;
   }
   enabled = 0;
+  sdl_window = 0;
 }
+// The window's own keyboard and mouse, as Moonlight forwards them with or
+// without -viewonly: x11_setup calls x11_input_init, and sdl_loop calls
+// sdlinput_handle_event. No device is discovered or opened here.
 void viewer_input_x11(void* display, unsigned long window) {
-  if (enabled) x11_input_init(display, window);
+  x11_input_init(display, window);
 }
 int viewer_input_sdl(void* window, void* event) {
-  return enabled ? sdlinput_handle_event(window, event) : 0;
+  return sdlinput_handle_event(window, event);
 }

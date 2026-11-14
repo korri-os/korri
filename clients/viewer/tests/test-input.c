@@ -5,6 +5,7 @@
 // The real descriptor loop, compiled here so this check can select its X11 branch.
 #include "picture/bridge.c"
 #include "io/bridge.h"
+#include <X11/Xlib.h>
 #include <assert.h>
 #include <string.h>
 #include <unistd.h>
@@ -85,24 +86,70 @@ static void send_events(void) {
   assert(SDL_PushEvent(&motion) == 1);
   pump();
 }
+// -viewonly in Moonlight's main.c skips device discovery and controllers.
+// It does not stop the window's own events: sdl_loop forwards them and
+// captures the mouse, and x11_setup calls x11_input_init, on both sides of
+// that check. Korri's viewer does the same.
+static void no_discovery_or_controller(void) {
+  assert(viewer_input_gamepad_mask() == 0);
+  CONNECTION_LISTENER_CALLBACKS cb = {0};
+  viewer_input_callbacks(&cb);
+  assert(!cb.rumble && !cb.rumbleTriggers && !cb.setControllerLED && !cb.setMotionEventState);
+  assert(!SDL_WasInit(SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK));
+}
+static void viewonly_sdl_forwards_window_events(void) {
+  assert(viewer_input_init(0, 1, NULL, 1, 0, 0) == 0);
+  no_discovery_or_controller();
+  viewer_input_start();
+  pump();
+  assert(SDL_GetRelativeMouseMode() == SDL_TRUE);
+  send_events();
+  assert(keys == 1 && last_key == 0x8041);
+  assert(buttons == 1 && moves == 1 && positions == 0 && !controllers);
+  no_discovery_or_controller();
+  viewer_input_stop(); viewer_input_destroy();
+  SDL_SetRelativeMouseMode(SDL_FALSE);
+}
+static void viewonly_x11_forwards_window_keys(void) {
+  keys = buttons = moves = 0;
+  assert(viewer_input_init(1, 1, NULL, 1, 0, 0) == 0);
+  no_discovery_or_controller();
+  // The presenter's window, as picture/video/x11.c makes it.
+  Display* viewer = XOpenDisplay(NULL);
+  assert(viewer);
+  XSetWindowAttributes attrs = {.event_mask = KeyPressMask | KeyReleaseMask | ButtonPressMask | PointerMotionMask};
+  Window presenter = XCreateWindow(viewer, DefaultRootWindow(viewer), 0, 0, 128, 72, 0,
+    CopyFromParent, InputOutput, CopyFromParent, CWEventMask, &attrs);
+  XMapWindow(viewer, presenter);
+  XSync(viewer, False);
+  viewer_input_x11(viewer, presenter);
+  viewer_input_start();
+  // The X11 platform does not capture the mouse through SDL.
+  assert(SDL_GetRelativeMouseMode() == SDL_FALSE);
+  // Another client sends the key, so it waits unread on the viewer's socket
+  // for the descriptor loop, as a key from the X server does.
+  Display* sender = XOpenDisplay(NULL);
+  assert(sender);
+  XEvent key = {.xkey = {.type = KeyPress, .window = presenter, .keycode = 38}};
+  assert(XSendEvent(sender, presenter, False, KeyPressMask, &key));
+  XSync(sender, False);
+  using_vaapi = 1;
+  for (int i = 0; i < 50 && !keys; ++i) assert(picture_poll(100) == 0);
+  using_vaapi = 0;
+  assert(keys == 1 && last_key == 0x8041);
+  no_discovery_or_controller();
+  loop_remove_fd(ConnectionNumber(viewer));
+  XCloseDisplay(sender);
+  XDestroyWindow(viewer, presenter);
+  XCloseDisplay(viewer);
+  viewer_input_stop(); viewer_input_destroy();
+}
 int main(int argc, char** argv) {
   sdl_init(128, 72, false);
   if (argc == 2 && strcmp(argv[1], "viewonly") == 0) {
-    // Both platform branches must return before even controller discovery.
-    for (int vaapi = 0; vaapi <= 1; ++vaapi) {
-      assert(viewer_input_init(vaapi, 1, NULL, 1, 0, 0) == 0);
-      assert(viewer_input_gamepad_mask() == 0);
-      CONNECTION_LISTENER_CALLBACKS cb = {0};
-      viewer_input_callbacks(&cb);
-      assert(!cb.rumble && !cb.rumbleTriggers && !cb.setControllerLED);
-      viewer_input_start();
-      pump();
-      assert(SDL_GetRelativeMouseMode() == SDL_FALSE);
-      send_events();
-      assert(!keys && !buttons && !positions && !moves && !controllers);
-      viewer_input_stop(); viewer_input_destroy();
-    }
-    puts("viewonly: no input forwarding or discovery on either PC platform");
+    viewonly_sdl_forwards_window_events();
+    viewonly_x11_forwards_window_keys();
+    puts("viewonly: window events forwarded as Moonlight does; no discovery or controller on either PC platform");
   } else {
     evdev_setup_failures_return_errors();
     handler_failure_ends_the_loop_with_an_error();
