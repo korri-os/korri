@@ -213,21 +213,10 @@ impl LinuxStreamViewer for Adapter {
                 .map_err(|_| LinuxViewerError::new("Invalid viewer observation"))?;
             // SystemClock.uptimeMillis and Rust's Android Instant both use CLOCK_MONOTONIC.
             // Carry the producer's age across JNI; receiving an old sample is not a new sample.
-            let mut time = libc::timespec {
-                tv_sec: 0,
-                tv_nsec: 0,
-            };
-            // SAFETY: clock_gettime writes only into this owned, initialized timespec.
-            let clock_ok = unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut time) } == 0;
-            let now_ms = time.tv_sec as f64 * 1000.0 + time.tv_nsec as f64 / 1e6;
-            let age = snapshot
-                .sampled_at_ms
-                .filter(|at| clock_ok && at.is_finite() && *at >= 0.0 && *at <= now_ms)
-                .and_then(|at| std::time::Duration::try_from_secs_f64((now_ms - at) / 1000.0).ok());
-            snapshot.sampled_at = age.and_then(|age| std::time::Instant::now().checked_sub(age));
-            if snapshot.sampled_at.is_none() {
-                snapshot.stream_health = None;
-            }
+            snapshot.date_sample(
+                crate::linux_viewer::monotonic_ms(),
+                std::time::Instant::now(),
+            );
             Ok(Some(snapshot))
         })
     }

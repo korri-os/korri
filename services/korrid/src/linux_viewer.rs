@@ -62,6 +62,39 @@ pub struct ViewerSnapshot {
     pub controls: Vec<korri_surface_treaty::SurfaceGameplayControl>,
 }
 
+impl ViewerSnapshot {
+    /// The producer's sample time (`sampled_at_ms`, CLOCK_MONOTONIC
+    /// milliseconds: Android's `SystemClock.uptimeMillis`, and the viewer's
+    /// own clock in korrid's process) as an `Instant` of korrid's, `now` and
+    /// `now_ms` being the same moment in both clocks. The sample keeps its
+    /// age: receiving an old sample is not a new sample. A health reading
+    /// with no usable sample time is dropped.
+    pub fn date_sample(&mut self, now_ms: Option<f64>, now: std::time::Instant) {
+        let age = self
+            .sampled_at_ms
+            .zip(now_ms)
+            .filter(|(at, now_ms)| at.is_finite() && *at >= 0.0 && at <= now_ms)
+            .and_then(|(at, now_ms)| {
+                std::time::Duration::try_from_secs_f64((now_ms - at) / 1000.0).ok()
+            });
+        self.sampled_at = age.and_then(|age| now.checked_sub(age));
+        if self.sampled_at.is_none() {
+            self.stream_health = None;
+        }
+    }
+}
+
+/// CLOCK_MONOTONIC now, in milliseconds; none when it cannot be read.
+pub fn monotonic_ms() -> Option<f64> {
+    let mut time = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    // SAFETY: clock_gettime writes only into this owned, initialized timespec.
+    let read = unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut time) } == 0;
+    read.then(|| time.tv_sec as f64 * 1000.0 + time.tv_nsec as f64 / 1e6)
+}
+
 /// A treaty viewer's status (`contracts/viewer`), through its socket or in
 /// korrid's own process.
 impl From<korri_viewer_treaty::ViewerStatus> for LinuxViewerStatus {
@@ -235,6 +268,60 @@ impl LinuxStreamViewer for UnavailableLinuxStreamViewer {
                 "Linux stream viewer adapter is not configured",
             ))
         })
+    }
+}
+
+#[cfg(test)]
+mod sample_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    fn sampled(at_ms: Option<f64>) -> ViewerSnapshot {
+        ViewerSnapshot {
+            sampled_at_ms: at_ms,
+            stream_health: Some(korri_surface_treaty::SurfaceStreamHealth {
+                rtt_ms: Some(8.0),
+                delivered_bitrate_kbps: Some(789.0),
+                frames_dropped: Some(0.0),
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_sample_keeps_its_age_in_korrids_clock() {
+        let now = Instant::now();
+        let mut snapshot = sampled(Some(9_000.0));
+        snapshot.date_sample(Some(10_500.0), now);
+        assert_eq!(
+            snapshot.sampled_at,
+            now.checked_sub(Duration::from_millis(1500))
+        );
+        assert!(snapshot.stream_health.is_some());
+    }
+
+    #[test]
+    fn health_without_a_usable_sample_time_is_dropped() {
+        let now = Instant::now();
+        for (at, now_ms) in [
+            (None, Some(10_000.0)),
+            (Some(10_001.0), Some(10_000.0)),
+            (Some(-1.0), Some(10_000.0)),
+            (Some(f64::NAN), Some(10_000.0)),
+            (Some(9_000.0), None),
+        ] {
+            let mut snapshot = sampled(at);
+            snapshot.date_sample(now_ms, now);
+            assert!(snapshot.sampled_at.is_none(), "{at:?} {now_ms:?}");
+            assert!(snapshot.stream_health.is_none(), "{at:?} {now_ms:?}");
+        }
+    }
+
+    #[test]
+    fn the_monotonic_clock_reads_and_rises() {
+        let first = monotonic_ms().unwrap();
+        std::thread::sleep(Duration::from_millis(2));
+        assert!(monotonic_ms().unwrap() > first);
     }
 }
 
