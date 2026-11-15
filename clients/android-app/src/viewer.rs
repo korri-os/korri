@@ -440,8 +440,27 @@ struct Playing {
     runtime: JoinHandle<anyhow::Result<()>>,
     /// A stop was asked for: nothing more goes to the stream.
     stopping: bool,
+    /// The decoded picture's newest size, from the decoder's output thread.
+    decoded: Decoded,
     /// The runtime reads it when it connects; it goes with the launch.
     _pin: Pin,
+}
+
+/// The decoded picture's newest size: the decoder's output thread stores
+/// it (`Picture.resized`) and the next tick of the shell's 16 ms timer
+/// takes it, so the decoder never waits for the loop thread.
+#[derive(Clone, Default)]
+struct Decoded(Arc<Mutex<Option<(i32, i32)>>>);
+
+impl Decoded {
+    fn hearer(&self) -> Arc<dyn Fn((i32, i32)) + Send + Sync> {
+        let size = self.0.clone();
+        Arc::new(move |new| *lock(&size) = Some(new))
+    }
+
+    fn take(&self) -> Option<(i32, i32)> {
+        lock(&self.0).take()
+    }
 }
 
 /// The stream of one activity, on the shell's loop thread. The activity's
@@ -647,9 +666,11 @@ impl Stream {
             mouse_emulation: options.mouse_emulation,
         };
         let landscape = options.width >= options.height;
+        let decoded = Decoded::default();
         let picture = Picture {
             surface: layers.surface(),
             record: FrameRecord::default(),
+            resized: decoded.hearer(),
         };
         let pin_path = pin.path();
         let runtime = {
@@ -702,6 +723,7 @@ impl Stream {
             layers,
             runtime,
             stopping: false,
+            decoded,
             _pin: pin,
         }))
     }
@@ -720,15 +742,35 @@ impl Stream {
             return Phase::Playing(playing);
         }
         playing.play.tick();
-        if let Some(window) = self.app.native_window() {
-            if playing.layers.follow(&self.app, &window) {
-                let (placed, size) = (playing.layers.placed, playing.layers.window);
-                logcat::info(&format!(
-                    "korri-app: viewer video layer placed at ({}, {})-({}, {}) in the window {}x{}",
-                    placed.left, placed.top, placed.right, placed.bottom, size.0, size.1
-                ));
-                playing.play.place(placed);
-            }
+        let window = self
+            .app
+            .native_window()
+            .is_some_and(|window| playing.layers.follow(&self.app, &window));
+        // The sender changed the stream's size (#476): the decoder gives the
+        // new one with its first frame. The video's place and the input's
+        // map into it follow; the overlay and a held input stay as they are.
+        let stream = playing
+            .decoded
+            .take()
+            .is_some_and(|size| playing.layers.restream(&self.app, size));
+        if window || stream {
+            let (placed, stream, size) = (
+                playing.layers.placed,
+                playing.layers.stream,
+                playing.layers.window,
+            );
+            logcat::info(&format!(
+                "korri-app: viewer video layer {}x{} placed at ({}, {})-({}, {}) in the window {}x{}",
+                stream.0,
+                stream.1,
+                placed.left,
+                placed.top,
+                placed.right,
+                placed.bottom,
+                size.0,
+                size.1
+            ));
+            playing.play.place(placed);
         }
         Phase::Playing(playing)
     }
@@ -833,6 +875,7 @@ impl Drop for Stream {
                     mut play,
                     runtime,
                     stopping,
+                    decoded: _,
                     _pin,
                 } = *playing;
                 play.end();

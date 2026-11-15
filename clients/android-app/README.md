@@ -305,6 +305,7 @@ through three host hooks of `korri_shell::backend::android::Host`:
 | `poll_events` with a timeout from the input's next deadline | Slint's loop. `Host::main_event` hands `InitWindow`, `TerminateWindow` and `Destroy` to the stream; it never blocks |
 | `input_events_iter`: keys and motions to the stream's `Input` | `Host::input`, first in the shell's input filter: while a stream is in front it gives each event to `korri_viewer::play::Play` (D4's mapping, D5's overlay) and reports it taken, or Android's; otherwise the shell's mapper, as before |
 | The input's timers and the 500 ms device check | `Host::tick` on the shell's 16 ms timer: `Play::tick` |
+| The decoder's new picture size (#476) wakes the loop (`create_waker`), which places the video again (`Layers::restream`) | The decoder's output thread stores the size; the next `Host::tick` takes it and places the video again. Nothing wakes Slint's loop: its timer runs every 16 ms |
 | `Layers::make` waits with `poll_events` for Android's main thread | `Layers::request` posts to the main thread; `Pending::poll` reads the answer at each tick. The loop thread never waits for the main thread, which waits for it in `onDestroy` |
 | The runtime and its requests on their own threads | Unchanged: `Lifecycle::in_process`, Start and Stop on threads of their own |
 | The intent's extras start a launch | korrid's `viewer.start` (the adapter) sends the launch to the loop thread over a channel; the layers and the input belong to that thread |
