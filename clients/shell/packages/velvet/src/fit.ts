@@ -229,10 +229,15 @@ export function fitCapsOnce(text: string, width: number, height: number, max: nu
   return best
 }
 
-/** A word in pieces no wider than `width` at `size`: whole when it fits, else in pieces of about one length (no last letter alone). */
+/**
+ * A word in pieces no wider than `width` at `size`: whole when it fits, else in pieces of
+ * about one length (no last letter alone). A box with no room (a window the shell has not
+ * sized yet: ibuki, 2026-11-14) keeps the word whole: below, a negative width made the
+ * pieces' step negative and the loop never ended, until the heap limit.
+ */
 function split(word: string, size: number, width: number): string[] {
   const whole = capsWidth(word) * size
-  if (whole <= width) return [word]
+  if (whole <= width || width <= 0) return [word]
   const letters = [...word]
   // As few pieces as the widths allow, each about as long as the next.
   for (let count = Math.ceil(whole / width); count <= letters.length; count++) {

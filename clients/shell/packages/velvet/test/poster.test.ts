@@ -235,6 +235,19 @@ describe("the hash that picks a card", () => {
   })
 })
 
+describe("a box with no room (ibuki, 2026-11-14)", () => {
+  test("a title fitted to a box of no width or height, or less, ends at the smallest size, cut", () => {
+    // The shell's first Resized can carry a window it has not sized yet. A negative width
+    // once looped in `split` until the QuickJS heap limit, and Velvet would not load.
+    for (const [width, height] of [[0, 0], [-1, 0], [-24, -24], [1, 1]] as const) {
+      const fit = fitCaps("Couldn't start Mario Kart Wii: Retro Rewind", width, height, 48, 12)
+      expect(fit.size, `${width}x${height}`).toBe(12)
+      expect(fit.lines.length, `${width}x${height}`).toBe(1)
+      expect(fit.lines[0]!.endsWith("…"), `${width}x${height}`).toBe(true)
+    }
+  })
+})
+
 describe("display lines (the prototype sets them with text-wrap: balance)", () => {
   test("the lines are balanced: the same count, none left short under a long one", () => {
     const title = "Mario Kart Wii: Retro Rewind"

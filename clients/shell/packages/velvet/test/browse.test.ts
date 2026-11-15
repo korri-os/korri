@@ -460,3 +460,20 @@ describe("launch settings are one list (ADR 0066)", () => {
     expect(run.press("back")).toEqual([{ _tag: "RunAction", actionId: close.id }] as any)
   })
 })
+
+describe("a window the shell has not sized yet (ibuki, 2026-11-14)", () => {
+  test("Velvet draws a problem at no size and at one pixel, and then at the window's size", () => {
+    // ibuki: after a failed stream Korri kept a Problem; the shell's first Resized carried
+    // the window before it was sized, and the problem's title looped until the heap limit.
+    const model = {
+      ...scenario("home").models[0],
+      status: { _tag: "Problem", kicker: "Couldn't start Mario Kart Wii: Retro Rewind", reason: "ViewerStartFailed: upstream returned ViewerStartFailed: viewer stop was not confirmed", canRetry: false, gameId: "ember-road", gameTitle: "Mario Kart Wii: Retro Rewind" },
+    }
+    for (const [width, height] of [[0, 0], [1, 1]] as const) {
+      const run = new Play(model, width, height)
+      expect(run.view.screen, `${width}x${height}`).toBeDefined()
+      run.deliver({ _tag: "Resized", width: 3840, height: 2160 })
+      expect(run.view.screen).toBeDefined()
+    }
+  })
+})
