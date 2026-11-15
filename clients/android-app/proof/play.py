@@ -408,6 +408,8 @@ def main() -> int:
         checks["start_replied_ok"] = logcat.wait_for(START_OK, launch_mark, 30) is not None
         korrid_read = waiting(logcat, sender, re.compile(rf"korri-app: viewer status for korrid: {launch} Running"), launch_mark, 20)
         checks["korrids_status_reads_running"] = korrid_read is not None
+        if running is None:
+            raise RuntimeError("the viewer did not report Running")
 
         log("the picture: the frame-ID bar")
         steps["first_bar"] = first_bar(emulator, out, "stream-first", 30)
@@ -440,6 +442,8 @@ def main() -> int:
         time.sleep(3)
         journal = sender.request("sample")["journal"]
         packets, kept = viewer_proof.sender.input_packets(journal)
+        # Only info and above: the debug lines can hold the launch's keys.
+        (out / "sunshine.log").write_text(kept)
         (out / "sunshine-input.json").write_text(json.dumps(packets, indent=1) + "\n")
         codes = [int(p["fields"].get("keyCode", "0"), 16) & 0xFF for p in packets if p["kind"] == "keyboard"]
         after = codes[codes.index(MARKER[1]) + 1:] if MARKER[1] in codes else []
@@ -477,6 +481,12 @@ def main() -> int:
     except Exception as error:
         result["error"] = f"{type(error).__name__}: {error}"
         log(f"failed: {result['error']}")
+        # The sender's side of a failure, before the fixture goes.
+        try:
+            _, kept = viewer_proof.sender.input_packets(sender.request("sample")["journal"])
+            (out / "sunshine.log").write_text(kept)
+        except Exception as sampled:
+            result["sender_sample_error"] = str(sampled)
     finally:
         if logcat is not None:
             logcat.close()
