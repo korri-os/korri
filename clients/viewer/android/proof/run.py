@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Slices D1 to D5 of #391 step D, proven with no person (ADR 0063).
+"""Slices D1 to D5 of #391 step D, and #476's slice 4, proven with no person (ADR 0063).
 
 One headless Android 12 emulator on this host runs the viewer app. A private
 Sunshine on the sender (stream-cadence's sender fixture, aka by default) is
@@ -22,7 +22,13 @@ steps:
 4. Start the app with a launch and the frame record's ask. Take screenshots
    until one shows a readable frame-ID bar (the startup), wait for the
    Running event and the Start reply, take screenshots while it streams and
-   read the bar in each. Inject input (slice D4): keys and touches with
+   read the bar in each. The sender changes the stream's size in the
+   middle of the stream (#476 slice 4): its hidden output takes a portrait
+   mode and its picture source starts again at that size; its Sunshine
+   (stream-cadence's `sunshineFollowingOutput`) encodes at the output's
+   size, so a new SPS comes after an IDR frame. The app's decoder must
+   follow it and its video layer take the new shape; screenshots read the
+   bar at the new size. Inject input (slice D4): keys and touches with
    Android's `input` command, a mouse, and a game pad that the emulator's
    own `hid` command makes through /dev/uhid; the picture must move on.
    Stop Android's audio server, a real device error, and let init start it
@@ -77,6 +83,10 @@ PROBE = "com.simonwjackson.korri.viewer.refusal"
 PROBE_ACTIVITY = f"{PROBE}/android.app.NativeActivity"
 # The frame record's header, as picture/frame_times.c writes it on Linux.
 RECORD_HEADER = "index,frame_number,enqueue_ns,decoded_ns,display_ns"
+# The stream's size at the start, and the size that the sender changes it to
+# in the middle of the stream (#476 slice 4): Korri's Portrait shape.
+STREAM_SIZE = (1280, 720)
+RESIZED = (720, 1280)
 # The Android tests of the session part, and the picture's pure parts.
 LIB_TESTS = ["sps::", "codec::", "decoder::", "callback::", "frame_record::", "placement::", "audio::", "sound::",
              "input::", "gamepad::", "keyboard::", "touch::", "controller_list::", "overlay::"]
@@ -84,7 +94,6 @@ LIB_TESTS = ["sps::", "codec::", "decoder::", "callback::", "frame_record::", "p
 # stream-cadence's frame-ID bar decoder: one decoder for the bar.
 sys.path.insert(0, str(Path(os.environ["KORRI_ROOT"]) / "nix/stream-cadence"))
 import bar  # noqa: E402
-import decode  # noqa: E402
 import sender  # noqa: E402
 
 
@@ -157,7 +166,9 @@ def sender_tools(root: Path, target: str) -> tuple[list[str], dict]:
     nixpkgs = os.environ["CADENCE_NIXPKGS"]
     tools = f"import {json.dumps(str(root / 'nix/stream-cadence/default.nix'))} {{ inherit pkgs; }}"
     head = f"let pkgs = import {json.dumps(nixpkgs)} {{ system = \"x86_64-linux\"; }}; tools = {tools}; in "
-    names = ["python", "motion", "sway", "sunshine", "pulseaudio"]
+    # The Sunshine that encodes at its output's size: the sender can change the
+    # stream's size in the middle of the stream (stream-cadence's `resize`).
+    names = ["python", "motion", "sway", "sunshineFollowingOutput", "pulseaudio"]
     log("building the sender fixture's parts")
     outputs = json.loads(
         run(
@@ -169,7 +180,7 @@ def sender_tools(root: Path, target: str) -> tuple[list[str], dict]:
     # nix build --json does not keep the order of the list.
     built = [row["outputs"]["out"] for row in outputs]
     marks = {"python": r"-python3-[\d.]", "motion": r"-stream-cadence-motion$",
-             "sway": r"-sway-unwrapped-", "sunshine": r"-sunshine-", "pulseaudio": r"-pulseaudio-\d"}
+             "sway": r"-sway-unwrapped-", "sunshine": r"-sunshine-follows-output-", "pulseaudio": r"-pulseaudio-\d"}
     paths = {name: next(p for p in built if re.search(mark, p)) for name, mark in marks.items()}
     paths["source"] = run(
         ["nix", "eval", "--raw", "--impure", "--expr", head + "toString tools.runtime.source"],
@@ -380,8 +391,67 @@ def read_app_file(emulator: "Emulator", name: str, out: Path) -> bool:
     return done.returncode == 0 and out.stat().st_size > 0
 
 
+def decode_sized(video: Path, diagnostic: Path) -> list[tuple[tuple[int, int], "bar.Frame"]]:
+    """Each decoded frame of a recording, with its size and the ID in it.
+
+    stream-cadence's decode.py reads one size. This stream changes its size
+    in the middle (#476), and FFmpeg then gives frames of the new size, so
+    each frame's size comes from ffprobe first. The bar is found once for
+    each size. Any FFmpeg error invalidates the recording, as in decode.py.
+    """
+    import numpy as np
+
+    probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                            "frame=width,height", "-of", "csv=p=0", str(video)],
+                           capture_output=True, text=True, timeout=600)
+    if probe.returncode or probe.stderr:
+        raise ValueError("decoder probe error: " + probe.stderr)
+    sizes = [(int(w), int(h)) for w, h, *_ in (line.split(",") for line in probe.stdout.split())]
+    frames: list[tuple[tuple[int, int], bar.Frame]] = []
+    locations: dict[tuple[int, int], bar.Location] = {}
+    with diagnostic.open("wb") as errors:
+        process = subprocess.Popen(["ffmpeg", "-nostdin", "-v", "error", "-threads", "2", "-i", str(video),
+                                    "-vf", "format=gray", "-fps_mode", "passthrough",
+                                    # Each frame at its own size: FFmpeg would scale every
+                                    # frame to the first one's.
+                                    "-noautoscale", "-f", "rawvideo", "-"],
+                                   stdout=subprocess.PIPE, stderr=errors)
+        assert process.stdout is not None
+        try:
+            for width, height in sizes:
+                data = process.stdout.read(width * height)
+                if len(data) != width * height:
+                    raise ValueError("truncated decoded frame")
+                image = np.frombuffer(data, dtype=np.uint8).reshape(height, width)
+                if (width, height) not in locations:
+                    try:
+                        locations[(width, height)] = bar.search(image)
+                    except ValueError:
+                        frames.append(((width, height), bar.Unreadable("sync pattern not found")))
+                        continue
+                frames.append(((width, height), bar.read(image, locations[(width, height)])))
+            if process.stdout.read(1):
+                raise ValueError("FFmpeg decoded more frames than ffprobe listed")
+            process.wait(timeout=60)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+            process.stdout.close()
+    warnings = diagnostic.read_text()
+    if process.returncode or warnings:
+        raise ValueError("decoder error invalidates the recording: " + warnings)
+    return frames
+
+
 def frame_record(times: Path, recording: Path, out: Path) -> dict:
-    """The rows of times.csv, joined with the ID that each decode unit carries."""
+    """The rows of times.csv, joined with the ID that each decode unit carries.
+
+    The handed-off IDs must never go back within each picture size: the
+    sender's picture source starts again at 1 when the stream's size
+    changes. Two units with one ID are a picture that the sender encoded
+    twice; the viewer cannot make a unit, so a repeat is listed, not failed.
+    """
     lines = times.read_text().splitlines()
     rows = [line.split(",") for line in lines[1:]]
     summary: dict = {
@@ -392,26 +462,42 @@ def frame_record(times: Path, recording: Path, out: Path) -> dict:
         "handed_off": sum(1 for row in rows if row[4]),
     }
     try:
-        frames = decode.decode(recording, out / "recording-decode.txt")
+        frames = decode_sized(recording, out / "recording-decode.txt")
     except ValueError as error:
         summary["recording_error"] = str(error)
         frames = []
     summary["recording_units"] = len(frames)
-    handed = [(int(row[4]), frames[int(row[0])]) for row in rows if row[4] and int(row[0]) < len(frames)]
-    ids = [frame.ident for _, frame in handed if isinstance(frame, bar.Clean)]
+    handed = [(int(row[4]), int(row[0]), *frames[int(row[0])]) for row in rows
+              if row[4] and int(row[0]) < len(frames)]
+    ids = [frame.ident for _, _, _, frame in handed if isinstance(frame, bar.Clean)]
     summary["handed_off_readable_ids"] = len(ids)
     summary["handed_off_distinct_ids"] = len(set(ids))
-    summary["handed_off_ids_increase"] = all(b > a for a, b in zip(ids, ids[1:]))
-    summary["handed_off_ids_never_go_back"] = all(b >= a for a, b in zip(ids, ids[1:]))
-    # Where they do not, with the hand-off's time (CLOCK_MONOTONIC, as
-    # logcat's), for the record.
-    clean = [(at, frame.ident) for at, frame in handed if isinstance(frame, bar.Clean)]
-    summary["handed_off_ids_not_increasing"] = [
-        {"handoff_s": round(b[0] / 1e9, 3), "ids": [a[1], b[1]]}
-        for a, b in zip(clean, clean[1:]) if b[1] <= a[1]][:20]
     summary["first_handed_off_id"] = ids[0] if ids else None
     summary["last_handed_off_id"] = ids[-1] if ids else None
     summary["first_handoff_ns"] = handed[0][0] if handed else None
+    # One entry for each run of handed-off frames of one size, in order.
+    sizes: list[dict] = []
+    for handoff_ns, index, size, frame in handed:
+        if not sizes or sizes[-1]["size"] != list(size):
+            sizes.append({"size": list(size), "first_handoff_ns": handoff_ns, "handed_off": 0, "ids": []})
+        sizes[-1]["handed_off"] += 1
+        if isinstance(frame, bar.Clean):
+            sizes[-1]["ids"].append((handoff_ns, index, frame.ident))
+    for run in sizes:
+        found = run.pop("ids")
+        pairs = list(zip(found, found[1:]))
+
+        def where(a: tuple, b: tuple) -> dict:
+            # The hand-off's time (CLOCK_MONOTONIC, as logcat's) and the units.
+            return {"handoff_s": round(b[0] / 1e9, 3), "units": [a[1], b[1]], "ids": [a[2], b[2]]}
+
+        run.update(readable_ids=len(found), distinct_ids=len({ident for _, _, ident in found}),
+                   ids_never_go_back=all(b[2] >= a[2] for a, b in pairs),
+                   repeated=[where(a, b) for a, b in pairs if b[2] == a[2]][:20],
+                   went_back=[where(a, b) for a, b in pairs if b[2] < a[2]][:20],
+                   first_id=found[0][2] if found else None, last_id=found[-1][2] if found else None)
+    summary["sizes"] = sizes
+    summary["handed_off_ids_never_go_back"] = all(run["ids_never_go_back"] for run in sizes)
     return summary
 
 
@@ -538,6 +624,86 @@ def placement(lines: list[str]) -> dict | None:
             left, top, right, bottom, width, height = map(int, found.groups())
             return {"left": left, "top": top, "right": right, "bottom": bottom, "window": [width, height]}
     return None
+
+
+def letterbox(stream: tuple[int, int], window: tuple[int, int]) -> dict:
+    """The app's placement rule (src/android/placement.rs): the largest
+    rectangle of the stream's shape in the window, centred."""
+    (width, height), (window_width, window_height) = stream, window
+    if window_width * height <= window_height * width:
+        shown = (window_width, (window_width * height + width // 2) // width)
+    else:
+        shown = ((window_height * width + height // 2) // height, window_height)
+    left, top = (window_width - shown[0]) // 2, (window_height - shown[1]) // 2
+    return {"left": left, "top": top, "right": left + shown[0], "bottom": top + shown[1], "window": list(window)}
+
+
+def bar_in_place(png: Path, placed: dict, stream: tuple[int, int]) -> dict:
+    """The bar in a screenshot, and whether it has the geometry of a picture
+    of `stream` pixels shown in `placed`: the motion source draws its cells
+    `width // 40` pixels wide, a quarter of the way down (frame-bar.h)."""
+    import numpy as np
+
+    header = png.read_bytes()[:24]
+    width, height = int.from_bytes(header[16:20], "big"), int.from_bytes(header[20:24], "big")
+    gray = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", str(png), "-vf", "format=gray",
+                           "-f", "rawvideo", "-"], check=True, capture_output=True, timeout=60).stdout
+    image = np.frombuffer(gray, dtype=np.uint8).reshape(height, width)
+    found: dict = {}
+    try:
+        at = bar.search(image)
+    except ValueError as error:
+        return {"unreadable": str(error)}
+    found.update(describe(bar.read(image, at)), x=at.x, y=at.y, cell=round(float(at.cell), 2))
+    scale = (placed["right"] - placed["left"]) / stream[0]
+    expected = {"cell": round(stream[0] // 40 * scale, 2), "y": placed["top"] + stream[1] // 4 * scale}
+    found["expected"] = expected
+    found["in_place"] = (abs(at.cell - expected["cell"]) <= 0.1 * expected["cell"]
+                         and abs(at.y - expected["y"]) <= 2 * expected["cell"]
+                         and placed["left"] <= at.x < placed["right"])
+    return found
+
+
+def resize_stream(emulator: "Emulator", logcat: "Logcat", fixture: "Remote", out: Path) -> dict:
+    """#476 slice 4: the sender changes the stream's size; the picture goes on at it."""
+    width, height = RESIZED
+    mark = len(logcat.lines())
+    before = placement(logcat.lines())
+    log(f"the sender changes the stream's size to {width}x{height}")
+    done: dict = {"before": before, "size": [width, height]}
+    resized = fixture.request("resize", width=width, height=height)
+    done["sender_display"] = resized["display"]
+    try:
+        logcat.wait_for(rf"korri-viewer: picture: decoded size {width}x{height}$", 30)
+        logcat.wait_for(rf"korri-viewer: picture: video layer {width}x{height} placed at", 10)
+    except RuntimeError as error:
+        done["error"] = str(error)
+    # The frames of the new size reach the screen.
+    time.sleep(1)
+    after = placement(logcat.lines())
+    done["after"] = after
+    shots = []
+    for shot in range(4):
+        path = out / f"resized-{shot + 1}.png"
+        screenshot(emulator, path)
+        shots.append({"file": path.name, **bar_in_place(path, after, RESIZED)})
+        time.sleep(1)
+    done["screenshots"] = shots
+    lines = [l.split("korri-viewer: ", 1)[1] for l in logcat.lines()[mark:] if "korri-viewer: picture: " in l]
+    done["app_lines"] = lines
+    ids = [shot["id"] for shot in shots if "id" in shot]
+    window = tuple(after["window"]) if after else (0, 0)
+    done["checks"] = {
+        "resize_sender_output_took_the_new_size": [resized["display"]["rect"]["width"], resized["display"]["rect"]["height"]] == [width, height],
+        "resize_decoder_saw_the_new_size": any(f"the stream's size changes from {STREAM_SIZE[0]}x{STREAM_SIZE[1]} to {width}x{height}" in l for l in lines),
+        "resize_decoder_gave_the_new_size": any(l == f"picture: decoded size {width}x{height}" for l in lines),
+        "resize_decoder_did_not_fail": not any("the decoder failed" in l for l in lines),
+        "resize_layer_placed_for_the_new_shape": after is not None and after == letterbox(RESIZED, window),
+        "resize_screenshots_read_the_bar": len(ids) == len(shots),
+        "resize_screenshots_show_the_new_shape": all(shot.get("in_place") for shot in shots),
+        "resize_picture_moves_at_the_new_size": len(ids) >= 2 and all(b > a for a, b in zip(ids, ids[1:])),
+    }
+    return done
 
 
 def inject_input(emulator: "Emulator", logcat: "Logcat", fixture: "Remote", out: Path) -> dict:
@@ -1000,7 +1166,7 @@ def main() -> int:
         prepared = fixture.request("prepare", sway=f"{parts['sway']}/bin/sway",
                                    sunshine=f"{parts['sunshine']}/bin/sunshine",
                                    pulseaudio=f"{parts['pulseaudio']}/bin/pulseaudio",
-                                   tone_hz=TONE_HZ, log_input=True, width=1280, height=720, fps=60)
+                                   tone_hz=TONE_HZ, log_input=True, width=STREAM_SIZE[0], height=STREAM_SIZE[1], fps=60)
         facts = prepared["facts"]
         (out / "sender-facts.json").write_text(json.dumps(facts, indent=2))
         checks["sender_plays_the_tone"] = facts.get("tone") == {"hz": TONE_HZ, "sink": "korri-tone"}
@@ -1052,7 +1218,7 @@ def main() -> int:
         # (stream-cadence's device.py): tell it the host is alive.
         fixture.request("clock")
         logcat = Logcat(emulator, out / "logcat-all.txt")
-        moonlight = ["stream", "-app", APPLICATION, "-width", "1280", "-height", "720",
+        moonlight = ["stream", "-app", APPLICATION, "-width", str(STREAM_SIZE[0]), "-height", str(STREAM_SIZE[1]),
                      "-fps", "60", "-keydir", f"{FILES}/keys", host]
         start = ["am", "start", "-W", "-n", ACTIVITY,
                  "--es", "launch_id", "d2-proof",
@@ -1101,15 +1267,24 @@ def main() -> int:
         result["app_pid"] = pid
         # The picture moves: a later screenshot shows a later frame ID.
         moving = []
+        first_place = placement(logcat.lines())
         for shot in range(4):
             path = out / f"streaming-{shot + 1}.png"
             screenshot(emulator, path)
-            moving.append({"file": path.name, **describe(read_bar(path))})
+            moving.append({"file": path.name, **bar_in_place(path, first_place, STREAM_SIZE)} if first_place
+                          else {"file": path.name, **describe(read_bar(path))})
             time.sleep(1)
         result["streaming_screenshots"] = moving
         ids = [shot["id"] for shot in moving if "id" in shot]
         checks["screenshots_read_the_bar"] = len(ids) == len(moving)
         checks["screenshots_show_it_moving"] = len(ids) >= 2 and all(b > a for a, b in zip(ids, ids[1:]))
+        checks["screenshots_show_the_streams_shape"] = all(shot.get("in_place") for shot in moving)
+        fixture.request("clock")
+        # #476 slice 4: the sender changes the stream's size in the middle of it.
+        resize = resize_stream(emulator, logcat, fixture, out)
+        result["resize"] = {key: value for key, value in resize.items() if key != "checks"}
+        checks.update(resize["checks"])
+        ids = [shot["id"] for shot in resize["screenshots"] if "id" in shot]
         fixture.request("clock")
         # Slice D4: input, then the picture must still move.
         injected = inject_input(emulator, logcat, fixture, out)
@@ -1276,9 +1451,14 @@ def main() -> int:
                                               and record["handed_off"] > 0 and record["recording_units"] == record["rows"])
             # Two decode units can carry one ID: the sender encoded one
             # picture twice (in the D5 runs, each time within 0.7 s after
-            # the decoder asked for an IDR frame). An ID that goes back is
-            # the viewer's fault.
+            # the decoder asked for an IDR frame; in #476's at the size
+            # change). An ID that goes back within a size is the viewer's
+            # fault.
             checks["frame_record_ids_move"] = record["handed_off_distinct_ids"] >= 2 and record["handed_off_ids_never_go_back"]
+            # The record goes on across the new size: frames of both sizes,
+            # in that order, each moving.
+            shown = [run["size"] for run in record["sizes"] if run["distinct_ids"] >= 2]
+            checks["frame_record_goes_on_at_the_new_size"] = shown[:1] == [list(STREAM_SIZE)] and shown[-1:] == [list(RESIZED)]
         else:
             checks["frame_record_written"] = False
         recording.unlink(missing_ok=True)
@@ -1324,6 +1504,10 @@ def main() -> int:
         for name, passed in held["checks"].items():
             checks[f"sender_{name}"] = passed
         checks["sunshine_saw_the_end"] = "CLIENT DISCONNECTED" in journal
+        # The fixture's Sunshine encoded at the new size (stream-cadence's
+        # sunshine-follows-output.patch).
+        checks["sunshine_stream_followed_the_output"] = (
+            f"the stream follows the output: {STREAM_SIZE[0]}x{STREAM_SIZE[1]} to {RESIZED[0]}x{RESIZED[1]}" in journal)
         # Sunshine says so when it captures no sound for a session.
         checks["sunshine_captured_sound"] = "Unable to initialize audio capture" not in journal
     except Exception as error:
