@@ -33,10 +33,16 @@ The steps:
 5. The stream: screenshots whose frame-ID bar reads and rises; keys and a tap
    that the sender's Sunshine receives; the tone in the emulator's sound.
 6. Back opens the gameplay overlay's stand-in and Back closes it (slice D5's
-   rules), before the keys of step 5. Home leaves the app: the runtime stops
-   and korrid reads Stopped.
+   rules), before the keys of step 5.
+7. The stream's controls and status (slice D11), through the fixture APK's
+   proof trigger (src/proof.rs), which calls korrid's own viewer adapter:
+   korrid's snapshot lists Crop to fill and Flip A/B and X/Y, the battery
+   and the stream's health; korrid's apply turns Crop to fill on, which
+   moves the video layer (the app's log, SurfaceFlinger's crop, a
+   screenshot), and off again; a control of another runtime is refused.
+8. Home leaves the app: the runtime stops and korrid reads Stopped.
    Starting the app again lets korrid's recovery start the stream again.
-7. Stop the emulator, its adb server, the holder and the sender.
+9. Stop the emulator, its adb server, the holder and the sender.
 
 The record goes to --out; no private key enters it. The exit status is 0
 only when every check passed.
@@ -49,6 +55,7 @@ from pathlib import Path
 import pwd
 import grp
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -79,6 +86,17 @@ ENDED = re.compile(r"korri-app: viewer ([0-9a-f]{32}) ended")
 # The viewer library's own lines (tag korri-viewer).
 OVERLAY_OPEN = "overlay: open on Back"
 OVERLAY_CLOSED = "overlay: closed on Back"
+# Slice D11: the proof trigger's lines (src/proof.rs) and the app's own.
+PROOF_WATCHING = "korri-app: proof: watching"
+PROOF_SNAPSHOT = re.compile(r"korri-app: proof: snapshot ([0-9a-f]{32}) (\{.*\}|null)\s*$")
+PROOF_APPLY = re.compile(r"korri-app: proof: apply ([0-9a-f]{32}) (\S+) (\S+) (ok|failed: .*)$")
+FILL = "set-fill-mode"
+FLIP = "set-face-button-flip"
+# The emulator's window in landscape; a 1280x720 stream (placement.rs's tests).
+FITTED = "placed at (240, 0)-(2160, 1080) in the window 2400x1080"
+FILLED = "placed at (0, -135)-(2400, 1215) in the window 2400x1080, cropped to fill"
+FIT_CROP = [0, 0, 1280, 720]
+FILL_CROP = [0, 72, 1280, 648]
 # Windows virtual keys of K, O, R, I, and the marker M (input packets' keyCode).
 KEYS = {"KEYCODE_K": 0x4B, "KEYCODE_O": 0x4F, "KEYCODE_R": 0x52, "KEYCODE_I": 0x49}
 MARKER = ("KEYCODE_M", 0x4D)
@@ -232,6 +250,134 @@ def waiting(logcat: "d8.Logcat", sender: "viewer_proof.Remote", pattern, since: 
         if found or time.monotonic() >= until:
             return found
         sender.request("clock")
+
+
+def trigger(emulator: "d8.Emulator", text: str) -> None:
+    """One command for the app's proof trigger, written whole as the app's own user."""
+    d9.run_as(emulator, "sh", "-c", f"echo {shlex.quote(text)} > cache/proof-command.part"
+              " && mv cache/proof-command.part cache/proof-command")
+
+
+def proof_snapshot(emulator: "d8.Emulator", logcat: "d8.Logcat", launch: str) -> "dict | None":
+    """korrid's snapshot of the launch, as its viewer adapter answered the trigger."""
+    mark = logcat.mark()
+    trigger(emulator, f"snapshot {launch}")
+    found = logcat.wait_for(PROOF_SNAPSHOT, mark, 15)
+    return None if found is None else json.loads(found.group(2))
+
+
+def proof_apply(emulator: "d8.Emulator", logcat: "d8.Logcat", launch: str, control: str, value: str) -> str:
+    """korrid's apply through its viewer adapter: `ok`, `failed: …`, or none."""
+    mark = logcat.mark()
+    trigger(emulator, f"apply {launch} {control} {value}")
+    found = logcat.wait_for(PROOF_APPLY, mark, 15)
+    return "no answer" if found is None else found.group(4)
+
+
+def toggles(snapshot: "dict | None") -> dict:
+    """Each listed control's effect (the id's last part), with its id and toggle value."""
+    listed = {}
+    for control in (snapshot or {}).get("controls", []):
+        interaction = control.get("interaction", {})
+        listed[control["id"].rsplit(":", 1)[-1]] = {
+            "id": control["id"], "label": control.get("label"), "kind": interaction.get("kind"),
+            "value": interaction.get("value")}
+    return listed
+
+
+def video_layer(emulator: "d8.Emulator", out: Path, name: str) -> dict:
+    """The video layer's entry in SurfaceFlinger's dump, and its crop."""
+    dump = emulator.shell("dumpsys SurfaceFlinger", timeout=60).stdout
+    (out / f"surfaceflinger-{name}.txt").write_text(dump)
+    blocks = re.split(r"\n(?=\+ )", dump)
+    block = next((b for b in blocks if b.startswith("+ ") and "korri-viewer-video" in b.splitlines()[0]), "")
+    crop = re.search(r"crop=\[\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\]", block)
+    return {"file": f"surfaceflinger-{name}.txt", "found": bool(block),
+            "crop": [int(v) for v in crop.groups()] if crop else None,
+            "entry": block.splitlines()[:12]}
+
+
+def strip_change(before: Path, after: Path) -> float:
+    """The mean change of the window's left 200 columns, where the fitted picture has its bar."""
+    from PIL import Image, ImageChops
+    with Image.open(before) as a, Image.open(after) as b:
+        a, b = a.convert("L"), b.convert("L")
+        box = (0, 0, 200, min(a.size[1], b.size[1]))
+        diff = ImageChops.difference(a.crop(box), b.crop(box)).resize((20, 54))
+        values = list(diff.get_flattened_data()) if hasattr(diff, "get_flattened_data") else list(diff.getdata())
+        return round(sum(values) / len(values), 1)
+
+
+def controls(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.Remote", out: Path,
+             launch: str) -> tuple[dict, dict]:
+    """Slice D11: korrid's snapshot and apply of the stream's controls, and their effect."""
+    steps: dict = {}
+    checks: dict = {}
+    sender.request("clock")
+    checks["the_fixture_apk_carries_the_proof_trigger"] = logcat.wait_for(PROOF_WATCHING, 0, 5) is not None
+    mark = logcat.mark()
+    first = proof_snapshot(emulator, logcat, launch)
+    steps["snapshot"] = first
+    listed = toggles(first)
+    steps["listed"] = listed
+    prefix = f"viewer:{launch}:"
+    checks["korrids_snapshot_lists_the_controls"] = (
+        set(listed) == {FILL, FLIP}
+        and all(c["id"].startswith(prefix) and c["kind"] == "toggle" and c["value"] is False
+                for c in listed.values())
+        and listed[FILL]["label"] == "Crop to fill" and listed[FLIP]["label"] == "Flip A/B and X/Y")
+    health = (first or {}).get("streamHealth") or {}
+    checks["korrids_snapshot_shows_the_streams_health"] = (
+        isinstance(health.get("deliveredBitrateKbps"), (int, float)) and health["deliveredBitrateKbps"] > 0
+        and isinstance(health.get("framesDropped"), (int, float)) and health["framesDropped"] >= 0
+        and isinstance(health.get("rttMs"), (int, float)))
+    battery = (first or {}).get("batteryPercent")
+    checks["korrids_snapshot_shows_the_battery"] = isinstance(battery, (int, float)) and 0 <= battery <= 100
+    checks["the_snapshot_went_through_the_treaty"] = logcat.wait_for(
+        f"korri-app: viewer snapshot for korrid: {launch} ", mark, 5) is not None
+    if FILL not in listed:
+        return steps, checks
+
+    before = video_layer(emulator, out, "fit")
+    viewer_proof.screenshot(emulator, out / "controls-fit.png")
+    steps["layer_fit"] = before
+    mark = logcat.mark()
+    steps["apply_fill_on"] = proof_apply(emulator, logcat, launch, listed[FILL]["id"], "toggle true")
+    checks["korrids_apply_turns_crop_to_fill_on"] = steps["apply_fill_on"] == "ok"
+    request = logcat.wait_for(re.compile(
+        r'korri-app: viewer request \{"launchId":"' + launch + r'","command":\{"kind":"Apply","value":\{"control":"'
+        + re.escape(listed[FILL]["id"]) + r'","value":\{"kind":"toggle","value":true\}\}\}\}'), mark, 5)
+    reply = logcat.wait_for('korri-app: viewer reply Apply {"kind":"Ok"}', mark, 5)
+    checks["the_apply_went_through_the_treaty"] = request is not None and reply is not None
+    checks["the_app_moved_the_video_layer_to_fill"] = logcat.wait_for(FILLED, mark, 5) is not None \
+        and logcat.wait_for("korri-app: viewer control set-fill-mode is true", mark, 5) is not None
+    time.sleep(1)
+    after = video_layer(emulator, out, "fill")
+    steps["layer_fill"] = after
+    checks["surfaceflinger_crops_the_stream_to_fill"] = before["crop"] == FIT_CROP and after["crop"] == FILL_CROP
+    viewer_proof.screenshot(emulator, out / "controls-fill.png")
+    steps["fill_bar"] = viewer_proof.describe(viewer_proof.read_bar(out / "controls-fill.png"))
+    steps["left_strip_change"] = strip_change(out / "controls-fit.png", out / "controls-fill.png")
+    # The fitted picture leaves the shell's window in the left 240 columns.
+    checks["the_picture_reaches_the_windows_edge"] = steps["left_strip_change"] > 10
+    on = proof_snapshot(emulator, logcat, launch)
+    steps["snapshot_fill_on"] = toggles(on)
+    checks["korrids_snapshot_shows_crop_to_fill_on"] = toggles(on).get(FILL, {}).get("value") is True
+
+    stale = listed[FILL]["id"].replace(prefix, f"{prefix}0", 1)
+    steps["apply_stale"] = proof_apply(emulator, logcat, launch, stale, "toggle false")
+    checks["a_control_of_another_runtime_is_refused"] = steps["apply_stale"].startswith("failed")
+
+    mark = logcat.mark()
+    steps["apply_fill_off"] = proof_apply(emulator, logcat, launch, listed[FILL]["id"], "toggle false")
+    time.sleep(1)
+    steps["layer_fit_again"] = video_layer(emulator, out, "fit-again")
+    checks["crop_to_fill_off_fits_the_picture_again"] = steps["apply_fill_off"] == "ok" \
+        and logcat.wait_for(FITTED, mark, 5) is not None and steps["layer_fit_again"]["crop"] == FIT_CROP
+    off = proof_snapshot(emulator, logcat, launch)
+    steps["snapshot_fill_off"] = toggles(off)
+    checks["korrids_snapshot_shows_crop_to_fill_off"] = toggles(off).get(FILL, {}).get("value") is False
+    return steps, checks
 
 
 def main() -> int:
@@ -451,6 +597,10 @@ def main() -> int:
                           "kinds": sorted({p["kind"] for p in packets})}
         checks["keys_reach_the_sender"] = all(code in after for code in KEYS.values())
         checks["a_touch_reaches_the_sender"] = any(p["kind"] in ("touch", "absolute mouse move") for p in packets)
+
+        log("the stream's controls and status (D11): korrid's snapshot and apply")
+        steps["controls"], controls_checks = controls(emulator, logcat, sender, out, launch)
+        checks.update(controls_checks)
 
         log("Home: leaving the app ends the stream")
         home_mark = logcat.mark()

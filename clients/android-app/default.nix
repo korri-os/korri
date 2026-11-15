@@ -5,10 +5,14 @@
 # the emulator, at API 31 (ADR 0064). The APK is debuggable and not signed;
 # the proofs sign it with the user's debug key. Not for distribution.
 #
-# The relay list is an asset, so one library serves two packings: `apk`
-# with the product's relays, and `fixtureApk` with one loopback relay that
-# the holder proofs (proof/holder.py, #434 D9; proof/play.py, D10) reach
-# through adb.
+# The relay list is an asset: `apk` packs the product's relays, and
+# `fixtureApk` one loopback relay that the holder proofs (proof/holder.py,
+# #434 D9; proof/play.py, D10) reach through adb.
+#
+# Since D11 the fixture's library is its own build: the same source with
+# the cargo feature `proof`, the emulator proof's trigger for the stream's
+# controls (src/proof.rs), for x86_64 only, the emulator's ABI. The product
+# library's build checks that it carries none of the trigger.
 #
 # Since D10 the library links the Rust viewer too (clients/viewer), with the
 # network core, OpenSSL and libopus that clients/viewer/android.nix builds
@@ -153,7 +157,6 @@ let
       export CARGO_TARGET_${cargoTarget}_RUSTFLAGS="-C link-arg=-Wl,-z,max-page-size=16384"
       export BINDGEN_EXTRA_CLANG_ARGS_${target}="--target=${abi.target}${api} --sysroot=${toolchain}/sysroot"
     '';
-  forEachAbi = script: lib.concatMapStrings script (lib.attrValues abis);
 
   # Android ships every library the app needs.
   systemLibraries = [
@@ -174,6 +177,8 @@ let
     "libaaudio.so"
   ];
   library = "libkorri_android_app.so";
+  # A string that only the proof's trigger has (src/proof.rs, its log lines).
+  proofMarker = "korri-app: proof:";
 
   src = proseqlSource.composeCargoSource (
     lib.fileset.toSource {
@@ -206,10 +211,14 @@ let
 
   # The library for one ABI. Its own derivation, so that a change to the
   # packages or the manifest packs the APK again without compiling.
+  # `proof`: the fixture's library, with the proof's trigger.
   libraryFor =
-    abi:
+    {
+      abi,
+      proof ? false,
+    }:
     pkgs.stdenv.mkDerivation {
-      pname = "korri-android-app-${abi.name}";
+      pname = "korri-android-app-${lib.optionalString proof "fixture-"}${abi.name}";
       version = "0.1.0";
       inherit src cargoDeps;
       sourceRoot = "korrid-source-with-proseql/clients/android-app";
@@ -240,7 +249,7 @@ let
         runHook preBuild
         export HOME=$TMPDIR
         ${environmentFor abi}
-        cargo build --locked --release --offline --lib --target ${abi.target}
+        cargo build --locked --release --offline --lib --target ${abi.target}${lib.optionalString proof " --features proof"}
         built=target/${abi.target}/release/${library}
         "${toolchain}/bin/llvm-readelf" --file-header --dynamic $built > elf.txt
         grep -q 'Machine: *${abi.machine}' elf.txt
@@ -251,6 +260,36 @@ let
           exit 1
         fi
         "${toolchain}/bin/llvm-nm" --defined-only --extern-only $built | grep -q ' T ANativeActivity_onCreate$'
+        ${
+          if proof then
+            ''
+              # The fixture's library has the proof's trigger.
+              grep -q -F '${proofMarker}' $built
+            ''
+          else
+            ''
+              # The product library never carries the proof's trigger (feature
+              # `proof`, #434 D11): the features cargo built it with, and its bytes.
+              # Each match is tested, so the glob options of the later phases stay
+              # as stdenv set them.
+              fingerprints=()
+              for fingerprint in target/${abi.target}/release/.fingerprint/korri-android-app-*/lib-korri_android_app.json; do
+                if [ -e "$fingerprint" ]; then fingerprints+=("$fingerprint"); fi
+              done
+              if (( ''${#fingerprints[@]} == 0 )); then
+                echo 'no build fingerprint of the library to check its features' >&2
+                exit 1
+              fi
+              if grep -l '"features":"\[[^]]*proof' "''${fingerprints[@]}"; then
+                echo '${library} was built with the proof feature' >&2
+                exit 1
+              fi
+              if grep -q -F '${proofMarker}' $built; then
+                echo '${library} carries the proof trigger' >&2
+                exit 1
+              fi
+            ''
+        }
         runHook postBuild
       '';
       installPhase = ''
@@ -261,11 +300,21 @@ let
         runHook postInstall
       '';
     };
-  libraries = lib.mapAttrs (_: libraryFor) abis;
+  libraries = lib.mapAttrs (_: abi: libraryFor { inherit abi; }) abis;
+  fixtureLibraries = {
+    x86_64 = libraryFor {
+      abi = abis.x86_64;
+      proof = true;
+    };
+  };
 
-  # One packing of the libraries, with `relays` as the relay list.
+  # One packing of `libs` (by ABI), with `relays` as the relay list.
   packApk =
-    { pname, relays }:
+    {
+      pname,
+      relays,
+      libs,
+    }:
     pkgs.stdenv.mkDerivation {
       inherit pname;
       version = "0.1.0";
@@ -278,11 +327,13 @@ let
       dontFixup = true;
       buildPhase = ''
         runHook preBuild
-        ${forEachAbi (abi: ''
-          mkdir -p stage/lib/${abi.name}
-          cp ${libraries.${abi.name}}/${library} stage/lib/${abi.name}/
-          cp ${libraries.${abi.name}}/elf-${abi.name}.txt .
-        '')}
+        ${lib.concatStrings (
+          lib.mapAttrsToList (name: built: ''
+            mkdir -p stage/lib/${name}
+            cp ${built}/${library} stage/lib/${name}/
+            cp ${built}/elf-${name}.txt .
+          '') libs
+        )}
         # The packages exactly as the Artemis app carries them
         # (clients/android/app/build.gradle, surfaceAssets).
         mkdir -p assets/surfaces
@@ -317,10 +368,12 @@ let
   apk = packApk {
     pname = "korri-android-app-apk";
     relays = productRelays;
+    libs = libraries;
   };
   fixtureApk = packApk {
     pname = "korri-android-app-fixture-apk";
     relays = fixtureRelays;
+    libs = fixtureLibraries;
   };
 in
 {

@@ -11,7 +11,7 @@ until slice D7′.
 
 ```sh
 nix build .#korri-android-app-apk          # both ABIs, unsigned
-nix build .#korri-android-app-fixture-apk  # the same library, the holder proof's relay
+nix build .#korri-android-app-fixture-apk  # x86_64, the holder proof's relay and the D11 proof trigger
 nix run .#android-app-proof                # D8: one headless API 31 emulator, no person
 nix run .#android-app-holder-proof         # D9, on aka as root: binding and a holder's game
 nix run .#android-app-play-proof -- --sunshine PACKAGE  # D10, on aka as root: a tap plays the game
@@ -24,7 +24,7 @@ nix run .#android-app-play-proof -- --sunshine PACKAGE  # D10, on aka as root: a
 | O1 | The new app installs side by side with the Artemis app, under its own package name. | Package `com.simonwjackson.korri.app`, label "Korri (native)". It is a separate federation device with its own korrid state. It does not answer the HOME intent; the Artemis app keeps that. |
 | O2 | korrid runs only while the app is open, with no foreground service yet. | korrid starts once per process and lives as long as the process. No service keeps the process alive in the background: Android can freeze or end it there, and nothing restarts korrid until a person opens the app (the Artemis app's `START_REDELIVER_INTENT` has no equivalent). |
 | O3 | Local Android games stay, with androidx `FileProvider` bundled unchanged. | Not in D8. Slice D13 (below) brings them; `FileProvider` then needs a third-party dex and `hasCode="true"`. |
-| O4 | The stream controls come in D11. | Not in D8. |
+| O4 | The stream controls come in D11: carry every control and status item that the Artemis app reports to korrid. | D11 (below): the two controls that the Rust viewer can perform, the battery and the health. |
 
 ## What runs
 
@@ -136,9 +136,11 @@ distribution.
 - The relay list is an APK asset, `relays.json`, not a build input of the
   library: `apk` carries `clients/android/product.nix`, the Artemis app's
   list; `fixtureApk` carries one loopback relay, `ws://127.0.0.1:47800`,
-  which the holder proof maps to its own relay with `adb reverse`. So both
-  APKs share one library, and the proof's APK runs the product's code. korrid
-  takes the list as the product's relays, as before
+  which the holder proof maps to its own relay with `adb reverse`. Until D10
+  both APKs shared one library. Since D11 the fixture's library is the same
+  source built with the cargo feature `proof` (the controls' proof trigger,
+  below), for x86_64 only: the proof's APK runs the product's code plus the
+  trigger. korrid takes the list as the product's relays, as before
   (`korrid::android_app::start`); a device setting does not replace it, as
   `KORRID_RELAYS` is not replaced on Linux.
 - The TLS verifier's dex (above) is a fixed input of the library
@@ -282,7 +284,8 @@ directory (the storage table above), never in the key directory.
 
 Background and Resume answer that the viewer cannot leave the front yet:
 the shell's gameplay overlay (slice D5) is what will take the stream out of
-the front. Resize, Apply and Notice stay the treaty's typed "unavailable".
+the front. Resize and Notice stay the treaty's typed "unavailable"; Apply
+came with D11 (below).
 
 What the person does, by slice D5's rules (`korri_viewer::play`):
 
@@ -339,6 +342,36 @@ see-through `.slint` panel into the overlay layer's Surface through
 | The overlay's input queues (`shellTakeOverlayKeys`, `Axes`, `Pointers`) | They exist because Artemis's overlay lived in `Game`'s window. Here the layer is in the shell's window, so input comes through the shell's input filter; `take_keys`, `take_axes` and `take_pointers` return nothing, and D5 holds the stream's input while the overlay shows |
 | Leave and Resume with korrid (the viewer treaty has no Leave) | D5: Leave is korrid's `session.leave`; Background and Resume stop the runtime and start a new one, as `KorriStreamViewer.background` and `resume` do. D10's adapter answers both as unavailable until then |
 
+## Stream controls and status (D11)
+
+O4: korrid's snapshot of the stream carries the controls, the battery and
+the health, and korrid's `apply` sets a control, as with the Artemis app.
+The Rust viewer produces them (`clients/viewer/README.md`, slice D11: which
+controls, their source in Artemis, and the ones it cannot carry). Here:
+
+| Part | What |
+| --- | --- |
+| Attach | When a stream starts, the loop thread attaches its controls to the runtime's lifecycle (`Lifecycle::controls`), with the viewer's readings (`korri_viewer::status::readings`: the battery through JNI, the decoder's health, the core's round trip). The activity's number is the controls' lease |
+| `snapshot` | The treaty's Snapshot; its health sample is dated in korrid's clock without losing its age (`ViewerSnapshot::date_sample`, the rule of korrid's Java adapter, now shared). The log names each snapshot whose controls changed: `korri-app: viewer snapshot for korrid: LAUNCH {…}` |
+| `apply` | The treaty's Apply (`korri-app: viewer request {…Apply…}` and its reply). The loop thread performs the change at its next tick: Crop to fill moves the video layer and answers once Android's main thread has applied the transaction, then moves the input's map; Flip A/B and X/Y changes the controllers' mapping. Each logs `korri-app: viewer control EFFECT is VALUE` |
+
+korrid's own callers are its gameplay overlay: the snapshot poll every second
+and the shell's `InvokeGameplayControl` (`services/korrid/src/surface/overlay.rs`),
+covered by korrid's unit tests (`surface/viewer.rs`, `surface/tests.rs`). In
+this app neither runs yet: korrid's overlay starts only after its
+`session.leave`, and the overlay's input reaches it only through the shell's
+overlay in this app, slice D5b. Until then the emulator proof uses a trigger.
+
+**The proof trigger** (`src/proof.rs`, cargo feature `proof`): only the
+fixture APK's library is built with it, for x86_64. The proof writes one
+command into `cache/proof-command` with `run-as` (`snapshot LAUNCH`, or
+`apply LAUNCH CONTROL toggle true`), and the trigger calls korrid's own viewer
+adapter, the object that korrid holds (`viewer::adapter` returns the same
+`Arc` each time), and logs the answer: `korri-app: proof: snapshot LAUNCH {…}`
+(korrid's `ViewerSnapshot` as JSON), `korri-app: proof: apply … ok`. The
+product library's build fails if cargo built it with the feature (its
+fingerprint) or if its bytes hold the trigger's log prefix (`default.nix`).
+
 ## Next slices
 
 | Slice | What |
@@ -346,6 +379,6 @@ see-through `.slint` panel into the overlay layer's Surface through
 | D9 | Done: the holder proof above, and the TLS verifier's classes |
 | D10 | Done: the Rust viewer, driven by korrid, on the shell's loop (above) |
 | D5 (moved) | The gameplay overlay through `Overlay` |
-| D11 | Stream controls (O4) |
+| D11 | Done: stream controls and status through the treaty (above). The product path to them is D5b's |
 | D13 (new) | Local Android games (O3): korrid's launcher through JNI, usage polling on a Rust thread, androidx `FileProvider` bundled unchanged (`hasCode="true"`), and the Guide service, which Android allows only as a Java `AccessibilityService` subclass: one Korri Java file on #434's list, or no Guide over other apps. Gates D7′ |
 | D12 | On the Galaxy Z Fold 8 |

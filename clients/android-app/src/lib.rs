@@ -24,6 +24,10 @@
 mod assets;
 mod host;
 mod logcat;
+// The emulator proof's trigger for the stream's controls: the fixture APK
+// only (slice D11).
+#[cfg(feature = "proof")]
+mod proof;
 mod viewer;
 
 use anyhow::{anyhow, Context, Result};
@@ -73,7 +77,7 @@ fn run(app: AndroidApp) -> Result<()> {
         &activity,
         &relays,
         VERIFIER_CLASSES,
-        viewer::adapter(keydir, pins),
+        viewer::adapter(keydir, pins.clone()),
     )
     .map_err(|error| anyhow!("korrid did not start: {error}"))?;
     let capability = korrid::local_server_capability().context("korrid has no capability")?;
@@ -85,6 +89,8 @@ fn run(app: AndroidApp) -> Result<()> {
     } else {
         logcat::error("korri-app: korrid did not answer system.health");
     }
+    #[cfg(feature = "proof")]
+    proof::watch(pins.clone());
     let packages = assets::unpack(&app, &mut env, &activity, &SURFACES)?;
     let stream = viewer::Stream::new(&app, &mut env, &activity)?;
     let host = host::AppHost::new(&app, &mut env, &activity, stream)?;

@@ -8,8 +8,16 @@
 //!
 //! | Half | Thread | Does |
 //! | --- | --- | --- |
-//! | [`Adapter`] | korrid's workers | korrid's `LinuxStreamViewer`: the client certificate, the server certificate through korrid's broker, the runtime's lifecycle, and every treaty request (`Start`, `Status`, `Snapshot`, `Stop`) |
-//! | [`Stream`] | the shell's loop (Slint's) | the video and overlay layers, the runtime's thread, and the stream's input from the shell's input filter, on the shell's 16 ms timer |
+//! | [`Adapter`] | korrid's workers | korrid's `LinuxStreamViewer`: the client certificate, the server certificate through korrid's broker, the runtime's lifecycle, and every treaty request (`Start`, `Status`, `Snapshot`, `Apply`, `Stop`) |
+//! | [`Stream`] | the shell's loop (Slint's) | the video and overlay layers, the runtime's thread, the stream's input from the shell's input filter, and the stream's controls (slice D11), on the shell's 16 ms timer |
+//!
+//! The stream's controls and status (slice D11): the loop thread attaches
+//! them to the runtime's lifecycle when the stream starts
+//! (`Lifecycle::controls`, with the viewer's battery and health readings).
+//! korrid's `snapshot` then lists them, and its `apply` is the treaty's
+//! Apply, which the loop thread performs at its next tick: "Crop to fill"
+//! moves the video layer (confirmed once Android's main thread has applied
+//! the transaction), "Flip A/B and X/Y" changes the controllers' mapping.
 //!
 //! The adapter hands a launch to the loop thread over a channel, because the
 //! layers and the input belong to that thread. The loop thread never waits:
@@ -43,17 +51,19 @@ use crate::logcat;
 use futures::{channel::oneshot, future::BoxFuture};
 use jni::{objects::GlobalRef, objects::JObject, JNIEnv, JavaVM};
 use korri_viewer::{
+    controls::Control,
     devices::AndroidDevices,
     events, feedback_jni,
     input::{self as stream_input, Settings},
     launch,
     layer::{Layers, Pending},
-    lifecycle::Lifecycle,
+    lifecycle::{ControlChange, ControlChanges, Lifecycle},
     options::Options,
     overlay::is_system_key,
     picture::{FrameRecord, Picture},
     play::{Play, Routed},
     session::Identity,
+    status,
 };
 use korri_viewer_treaty::{ViewerCommand, ViewerReply, ViewerRequest};
 use korrid::{
@@ -110,6 +120,9 @@ struct Shared {
     changed: Arc<tokio::sync::Notify>,
     /// The status that korrid last read, so that the log names each change.
     reported: Mutex<Option<(String, LinuxViewerStatus)>>,
+    /// The controls of the snapshot that korrid last read, as the treaty's
+    /// JSON, so that the log names each change but not each reading.
+    reported_controls: Mutex<Option<(String, String)>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -134,36 +147,65 @@ impl Shared {
             *reported = Some((launch.to_owned(), status));
         }
     }
+
+    /// The treaty's snapshot that korrid read, in the log when its controls
+    /// change. korrid's gameplay overlay asks every second; the readings
+    /// change each time.
+    fn report_snapshot(&self, launch: &str, snapshot: &korri_viewer_treaty::ViewerSnapshot) {
+        let controls = json(&snapshot.controls);
+        let mut reported = lock(&self.reported_controls);
+        if reported.as_ref() != Some(&(launch.to_owned(), controls.clone())) {
+            logcat::info(&format!(
+                "korri-app: viewer snapshot for korrid: {launch} {}",
+                json(snapshot)
+            ));
+            *reported = Some((launch.to_owned(), controls));
+        }
+    }
 }
 
 static SHARED: OnceLock<Arc<Shared>> = OnceLock::new();
+static ADAPTER: OnceLock<Arc<Adapter>> = OnceLock::new();
 
 /// korrid's viewer in this process. The first call fixes the key directory
 /// and the pins' directory, and removes the pinned certificates that an
-/// earlier process left there; every call returns the same adapter.
+/// earlier process left there; every call returns the same adapter, the one
+/// that korrid holds (korrid starts once per process).
 pub fn adapter(keydir: PathBuf, pins: PathBuf) -> Arc<Adapter> {
-    let shared = SHARED.get_or_init(|| {
-        match rules::remove_stale_pins(&pins) {
-            Ok(0) => {}
-            Ok(removed) => logcat::info(&format!(
-                "korri-app: viewer removed {removed} pinned certificates of an earlier process"
-            )),
-            Err(cause) => logcat::error(&format!(
-                "korri-app: viewer could not remove the pinned certificates of an earlier process: {cause}"
-            )),
-        }
-        Arc::new(Shared {
-            keydir,
-            pins,
-            shows: Mutex::new(None),
-            window: AtomicBool::new(false),
-            current: Mutex::new(None),
-            operation: tokio::sync::Mutex::new(()),
-            changed: Arc::new(tokio::sync::Notify::new()),
-            reported: Mutex::new(None),
+    ADAPTER
+        .get_or_init(|| {
+            let shared = SHARED.get_or_init(|| {
+                match rules::remove_stale_pins(&pins) {
+                    Ok(0) => {}
+                    Ok(removed) => logcat::info(&format!(
+                        "korri-app: viewer removed {removed} pinned certificates of an earlier process"
+                    )),
+                    Err(cause) => logcat::error(&format!(
+                        "korri-app: viewer could not remove the pinned certificates of an earlier process: {cause}"
+                    )),
+                }
+                Arc::new(Shared {
+                    keydir,
+                    pins,
+                    shows: Mutex::new(None),
+                    window: AtomicBool::new(false),
+                    current: Mutex::new(None),
+                    operation: tokio::sync::Mutex::new(()),
+                    changed: Arc::new(tokio::sync::Notify::new()),
+                    reported: Mutex::new(None),
+                    reported_controls: Mutex::new(None),
+                })
+            });
+            Arc::new(Adapter(shared.clone()))
         })
-    });
-    Arc::new(Adapter(shared.clone()))
+        .clone()
+}
+
+/// The adapter that korrid holds, once `adapter` has made it: the emulator
+/// proof's trigger calls it (`proof.rs`, fixture APK only).
+#[cfg(feature = "proof")]
+pub fn korrids_adapter() -> Option<Arc<Adapter>> {
+    ADAPTER.get().cloned()
 }
 
 pub struct Adapter(Arc<Shared>);
@@ -344,9 +386,51 @@ impl LinuxStreamViewer for Adapter {
                 launch_id: launch.to_owned(),
                 command: ViewerCommand::Snapshot,
             }) {
-                ViewerReply::Snapshot { snapshot } => Ok(snapshot.map(ViewerSnapshot::from)),
+                ViewerReply::Snapshot { snapshot } => Ok(snapshot.map(|snapshot| {
+                    self.0.report_snapshot(launch, &snapshot);
+                    let mut snapshot = ViewerSnapshot::from(snapshot);
+                    // The viewer samples its health on this process's
+                    // CLOCK_MONOTONIC, as Artemis on SystemClock.uptimeMillis.
+                    snapshot.date_sample(
+                        korrid::linux_viewer::monotonic_ms(),
+                        std::time::Instant::now(),
+                    );
+                    snapshot
+                })),
                 ViewerReply::Error { message } => Err(error(message)),
                 _ => Err(error("unexpected viewer snapshot reply")),
+            }
+        })
+    }
+
+    /// The treaty's Apply: it returns once the stream's loop thread has
+    /// performed the change, or with why it did not (`KorriViewerControls.apply`).
+    fn apply<'a>(
+        &'a self,
+        launch: &'a str,
+        control: &'a str,
+        value: Option<korri_viewer_treaty::SurfaceGameplayControlValue>,
+    ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
+        Box::pin(async move {
+            exact(launch)?;
+            let Some(lifecycle) = self.0.lifecycle(launch) else {
+                return Err(error("viewer is not running"));
+            };
+            match request(
+                lifecycle,
+                ViewerRequest {
+                    launch_id: launch.to_owned(),
+                    command: ViewerCommand::Apply {
+                        control: control.to_owned(),
+                        value,
+                    },
+                },
+            )
+            .await?
+            {
+                ViewerReply::Ok => Ok(()),
+                ViewerReply::Error { message } => Err(error(message)),
+                _ => Err(error("unexpected viewer apply reply")),
             }
         })
     }
@@ -455,6 +539,10 @@ struct Playing {
     stopping: bool,
     /// The decoded picture's newest size, from the decoder's output thread.
     decoded: Decoded,
+    /// The changes that korrid's Apply asks for (slice D11).
+    changes: ControlChanges,
+    /// "Crop to fill" waits for Android's main thread to move the layer.
+    placing: Option<(ControlChange, mpsc::Receiver<anyhow::Result<()>>)>,
     /// The runtime reads it when it connects; it goes with the launch.
     _pin: Pin,
 }
@@ -642,18 +730,8 @@ impl Stream {
 
     /// The layers exist: the runtime starts, and Start goes to it.
     fn start(&mut self, show: Show, layers: Layers) -> Phase {
-        let (placed, stream, size) = (layers.placed, layers.stream, layers.window);
-        logcat::info(&format!(
-            "korri-app: viewer video layer {}x{} placed at ({}, {})-({}, {}) in the window {}x{}",
-            stream.0,
-            stream.1,
-            placed.left,
-            placed.top,
-            placed.right,
-            placed.bottom,
-            size.0,
-            size.1
-        ));
+        let placed = layers.placed;
+        log_placement(&layers);
         let mut devices = match AndroidDevices::new() {
             Ok(devices) => devices,
             Err(cause) => {
@@ -756,6 +834,9 @@ impl Stream {
         }
         events::unbuffered(&self.app);
         self.orient(Some(landscape));
+        // The stream's controls and status, for korrid's snapshot and
+        // Apply; this activity is their lease.
+        let changes = lifecycle.controls(self.id, status::readings);
         Phase::Playing(Box::new(Playing {
             launch,
             lifecycle,
@@ -764,6 +845,8 @@ impl Stream {
             runtime,
             stopping: false,
             decoded,
+            changes,
+            placing: None,
             _pin: pin,
         }))
     }
@@ -794,25 +877,56 @@ impl Stream {
             .take()
             .is_some_and(|size| playing.layers.restream(&self.app, size));
         if window || stream {
-            let (placed, stream, size) = (
-                playing.layers.placed,
-                playing.layers.stream,
-                playing.layers.window,
-            );
-            logcat::info(&format!(
-                "korri-app: viewer video layer {}x{} placed at ({}, {})-({}, {}) in the window {}x{}",
-                stream.0,
-                stream.1,
-                placed.left,
-                placed.top,
-                placed.right,
-                placed.bottom,
-                size.0,
-                size.1
-            ));
-            playing.play.place(placed);
+            log_placement(&playing.layers);
+            playing.play.place(playing.layers.placed);
         }
+        self.controls(&mut playing);
         Phase::Playing(playing)
+    }
+
+    /// korrid's changes to the stream's controls, in order: each is
+    /// confirmed once it has taken effect. A fill waits for its layer.
+    fn controls(&self, playing: &mut Playing) {
+        if let Some((change, answer)) = playing.placing.take() {
+            let result = match answer.try_recv() {
+                Err(mpsc::TryRecvError::Empty) => {
+                    playing.placing = Some((change, answer));
+                    return;
+                }
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(cause)) => Err(format!("the video layer did not move: {cause:#}")),
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    Err("the video layer did not move".to_owned())
+                }
+            };
+            if result.is_ok() {
+                // Touches map into the picture's new place once it is there.
+                playing.play.place(playing.layers.placed);
+                log_placement(&playing.layers);
+            }
+            done(change, result);
+        }
+        while let Some(change) = playing.changes.next() {
+            let value = change.change.value;
+            match change.change.control {
+                Control::Fill => match playing.layers.set_fill(&self.app, value) {
+                    Some(answer) => {
+                        playing.placing = Some((change, answer));
+                        return;
+                    }
+                    // The window has the stream's shape: nothing moves.
+                    None => done(change, Ok(())),
+                },
+                Control::FlipFaceButtons => {
+                    let result = if playing.play.set_flip_face_buttons(value) {
+                        Ok(())
+                    } else {
+                        Err("the stream's input has ended".to_owned())
+                    };
+                    done(change, result);
+                }
+            }
+        }
     }
 
     /// The runtime has ended: its layers go, after the decoder.
@@ -920,6 +1034,8 @@ impl Drop for Stream {
                     runtime,
                     stopping,
                     decoded: _,
+                    changes: _,
+                    placing: _,
                     _pin,
                 } = *playing;
                 play.end();
@@ -941,6 +1057,40 @@ impl Drop for Stream {
             }
         }
     }
+}
+
+/// Where the video layer is, in the log: at the start, after a turn or a
+/// new stream size, and after "Crop to fill".
+fn log_placement(layers: &Layers) {
+    let (placed, stream, size) = (layers.placed, layers.stream, layers.window);
+    logcat::info(&format!(
+        "korri-app: viewer video layer {}x{} placed at ({}, {})-({}, {}) in the window {}x{}{}",
+        stream.0,
+        stream.1,
+        placed.left,
+        placed.top,
+        placed.right,
+        placed.bottom,
+        size.0,
+        size.1,
+        if layers.fill { ", cropped to fill" } else { "" }
+    ));
+}
+
+/// A control change has taken effect, or could not: korrid's Apply answers.
+fn done(change: ControlChange, result: Result<(), String>) {
+    let (control, value) = (change.change.control, change.change.value);
+    match &result {
+        Ok(()) => logcat::info(&format!(
+            "korri-app: viewer control {} is {value}",
+            control.wire()
+        )),
+        Err(why) => logcat::error(&format!(
+            "korri-app: viewer control {} not set to {value}: {why}",
+            control.wire()
+        )),
+    }
+    change.done(result);
 }
 
 /// A launch that the loop thread will not show: its Start fails and its

@@ -254,7 +254,8 @@
           korri-viewer-android-refusal-probe = viewer.android.refusalProbe;
           korri-viewer-android-feedback-probe = viewer.android.feedbackProbe;
           korri-android-app-apk = androidApp.apk;
-          # The same library with the holder proof's loopback relay, never shipped.
+          # The same source with the proof trigger (x86_64) and the holder
+          # proof's loopback relay, never shipped.
           korri-android-app-fixture-apk = androidApp.fixtureApk;
         };
         checks = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (

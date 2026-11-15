@@ -16,6 +16,12 @@ description = "The Korri Android app with no Korri Java: korrid, the native shel
 crate-type = ["cdylib"]
 path = "src/lib.rs"
 
+[features]
+# The emulator proof's trigger for the stream's controls (src/proof.rs,
+# #434 D11). Only the fixture APK's library sets it; default.nix checks that
+# the product library carries none of it.
+proof = []
+
 [target.'cfg(target_os = "android")'.dependencies]
 # korrid in this process (services/korrid/src/android/app.rs).
 korrid = { path = "../../services/korrid" }
