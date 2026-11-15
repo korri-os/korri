@@ -20,7 +20,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import cli  # noqa: E402
-from cli import Refusal, net_refusal, parser  # noqa: E402
+from cli import Refusal, encryption_record, net_refusal, parser  # noqa: E402
 from fixture_namespace import PairNamespace  # noqa: E402
 import net_condition  # noqa: E402
 from net_condition import condition, recovery  # noqa: E402
@@ -218,6 +218,25 @@ class Encryption(unittest.TestCase):
         self.assertNotIn("lan_encryption_mode", default)
         self.assertNotIn("wan_encryption_mode", default)
         self.assertEqual({**required}, {**default, "lan_encryption_mode": "2", "wan_encryption_mode": "2"})
+
+    def test_a_run_proves_its_encryption_from_sunshines_own_log(self):
+        # Lines from aka, 2026-11-15 UTC: the locating start and the measured start.
+        journal = (
+            "[2026-11-15 00:11:25.797]: Info: Video encryption enabled\n"
+            "[2026-11-15 00:11:30.001]: Info: CLIENT CONNECTED\n"
+            "[2026-11-15 00:11:35.227]: Info: Video encryption enabled\n"
+        )
+        required = {"required": True, "sunshine": {"lan_encryption_mode": 2, "wan_encryption_mode": 2}}
+        record = encryption_record(required, "Starting RTSP handshake...\n", journal)
+        self.assertEqual(len(record["sunshine_log"]), 2)
+        self.assertEqual(record["viewer_log"], [])
+        self.assertTrue(record["required"])
+        opted_out = encryption_record(
+            required, "Enabling video encryption by host request despite client opt-out. Performance may suffer!\n", journal
+        )
+        self.assertEqual(len(opted_out["viewer_log"]), 1)
+        with self.assertRaisesRegex(Refusal, "Video encryption enabled.*journal.log"):
+            encryption_record(required, "", "[2026-11-15 00:11:30.001]: Info: CLIENT CONNECTED\n")
 
 
 def run(net: dict | None = None, encryption: dict | None = None) -> dict:

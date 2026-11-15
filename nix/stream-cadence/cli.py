@@ -577,6 +577,32 @@ def net_refusal(net: dict | None, private_x: bool) -> str | None:
     )
 
 
+# What the fixture's Sunshine logs when a session's video is encrypted (stream.cpp).
+VIDEO_ENCRYPTED = "Video encryption enabled"
+
+
+def encryption_record(required: dict, viewer_log: str, journal: str) -> dict:
+    """The run's proof that its video was encrypted, with the lines that name encryption.
+
+    Sunshine in mandatory mode refuses a client that does not encrypt video
+    and audio, and logs VIDEO_ENCRYPTED for each session whose video it
+    encrypts. The core logs a line only when the viewer did not ask for it
+    itself. A run whose Sunshine logged no such line is refused.
+    """
+    said = [line for line in journal.splitlines() if "ncrypt" in line][:20]
+    record = {
+        **required,
+        "sunshine_log": said,
+        "viewer_log": [line for line in viewer_log.splitlines() if "ncrypt" in line][:20],
+    }
+    if not any(VIDEO_ENCRYPTED in line for line in said):
+        raise Refusal(
+            f"{ENCRYPTION_OPTION}: the fixture's Sunshine did not log {VIDEO_ENCRYPTED!r} in this run, "
+            "so nothing proves that the video was encrypted. Read journal.log."
+        )
+    return record
+
+
 def viewer_place(plugin: bool, sender_fixture: bool, same_device: bool) -> str:
     """Where the viewer shows the stream: in the fixture, or on the device's own display.
 
@@ -1725,12 +1751,7 @@ def view_case(
                     + ". Stop device work and read discovered.net."
                 )
         if args.require_encryption:
-            # Sunshine refuses a client that does not encrypt video and audio; the
-            # core says so only when it was not the client's own choice.
-            facts["encryption"] = {
-                **facts["encryption"],
-                "viewer_log": [line for line in finished["log"].splitlines() if "ncrypt" in line][:20],
-            }
+            facts["encryption"] = encryption_record(facts["encryption"], finished["log"], latest)
         # Whether the viewer's own OpenGL was on the graphics card: the render nodes
         # that it held open in any sample. None when no sample could read them.
         facts["viewer_ran"]["render_nodes"] = viewer_render_nodes(
