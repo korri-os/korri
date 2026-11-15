@@ -20,7 +20,10 @@
 //! pacing is upstream Moonlight's. Artemis ships under the GNU
 //! GPL version 3 with no "or later" grant, so this file does too. The Rust
 //! adaptation is Korri work dated 2026-11-14 and 2026-11-15.
-use crate::{frame_record, log, sps};
+use crate::{
+    frame_record, log, sps,
+    video_stats::{Sample, VideoStats},
+};
 use std::{
     collections::VecDeque,
     ffi::c_int,
@@ -435,6 +438,9 @@ pub(crate) struct Decoder<C> {
     /// thread to recover: only that thread changes the codec.
     asked: Mutex<Option<Failure>>,
     failed: OnceLock<String>,
+    /// The stream's health for its snapshot (slice D11): each decode unit's
+    /// bytes and each frame that the display drops, as Artemis counts them.
+    stats: Mutex<VideoStats>,
 }
 
 struct Input {
@@ -486,7 +492,20 @@ impl<C: Codec + 'static> Decoder<C> {
             recovery: Mutex::new(Recovery::new(health)),
             asked: Mutex::new(None),
             failed: OnceLock::new(),
+            stats: Mutex::new(VideoStats::default()),
         })
+    }
+
+    /// The stream's health now (`MediaCodecDecoderRenderer.viewerHealth`):
+    /// none while the stream stops, or when no sample is fresh.
+    pub(crate) fn sample(&self, now_ms: u64) -> Option<Sample> {
+        if self.stopping.load(Ordering::Relaxed) {
+            return None;
+        }
+        self.stats
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .sample(now_ms)
     }
 
     /// Start the output thread. A panic there ends the stream, as a failed
@@ -561,6 +580,13 @@ impl<C: Codec + 'static> Decoder<C> {
         if self.stopping.load(Ordering::Relaxed) || self.failed.get().is_some() {
             return Queued::Taken;
         }
+        // Every unit that arrives, as Artemis counts `decodeUnitLength`
+        // before it decodes.
+        let bytes = frame.parts.iter().map(|(_, data)| data.len()).sum();
+        self.stats
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .encoded(bytes, monotonic_ns() / 1_000_000);
         // The output thread found the codec failed: recover it first.
         if self.asked.lock().unwrap().is_some() {
             return self.recover(None);
@@ -772,6 +798,11 @@ impl<C: Codec + 'static> Decoder<C> {
                         let record = self.decoded(pts);
                         if let Some((older, _)) = newest.replace((index, record)) {
                             let _ = codec.release_output(older, None);
+                            // Artemis's `discardOutputBuffer`.
+                            self.stats
+                                .lock()
+                                .unwrap_or_else(PoisonError::into_inner)
+                                .dropped();
                         }
                         wait = Duration::ZERO;
                     }
@@ -2131,6 +2162,44 @@ mod tests {
         .into();
         assert!(!run_output(&decoder, Duration::from_millis(200)));
         assert_eq!(script(&decoder).released, [(5, false), (6, true)]);
+    }
+
+    // Slice D11: the health counts each unit's bytes and the frame that the
+    // display dropped.
+    #[test]
+    fn the_health_counts_each_units_bytes_and_each_dropped_frame() {
+        let decoder = decoder(Script {
+            inputs: [Ok(Some(0)), Ok(Some(1))].into(),
+            buffer: Some(64),
+            ..Script::default()
+        });
+        let began = monotonic_ns() / 1_000_000;
+        decoder.queue(frame(false, vec![(0, PICTURE)]));
+        decoder.queue(frame(false, vec![(0, PICTURE), (0, PICTURE)]));
+        let pts: Vec<u64> = script(&decoder).queued.iter().map(|q| q.2).collect();
+        script(&decoder).outputs = [
+            Ok(Output::Frame {
+                index: 5,
+                pts: pts[0],
+            }),
+            Ok(Output::Frame {
+                index: 6,
+                pts: pts[1],
+            }),
+        ]
+        .into();
+        assert!(!run_output(&decoder, Duration::from_millis(200)));
+        // The interval ends with the next unit, more than a second after
+        // the first.
+        let ended = began + 1500;
+        decoder.stats.lock().unwrap().encoded(PICTURE.len(), ended);
+        let sample = decoder.stats.lock().unwrap().sample(ended).unwrap();
+        assert_eq!(sample.frames_dropped, 1);
+        let bits = (4 * PICTURE.len() * 8) as f64;
+        assert!(sample.delivered_bitrate_kbps >= bits / 1500.0, "{sample:?}");
+        assert!(sample.delivered_bitrate_kbps < bits / 1000.0, "{sample:?}");
+        // A stream that stops has no health.
+        assert_eq!(decoder.sample(ended), None);
     }
 
     #[test]

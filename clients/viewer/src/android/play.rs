@@ -171,6 +171,16 @@ impl Play {
         self.input.run("place", |input| input.place(placed));
     }
 
+    /// The stream's control "Flip A/B and X/Y" (slice D11). False when the
+    /// input has ended.
+    pub fn set_flip_face_buttons(&mut self, flip: bool) -> bool {
+        self.input
+            .run("flip face buttons", |input| {
+                input.set_flip_face_buttons(flip)
+            })
+            .is_some()
+    }
+
     /// The stream stops: nothing more goes to it. The first call logs what
     /// the input did; a later one does nothing.
     pub fn end(&mut self) {

@@ -3,8 +3,11 @@
 //! One newline-delimited JSON request at a time. Events may precede a reply.
 //! EOF is not a successful mutation. The plugin supplies a private socket path;
 //! this treaty assigns no installed path, plugin metadata or version policy.
-use korri_surface_treaty::{
-    SurfaceGameplayControl, SurfaceGameplayControlValue, SurfaceStreamHealth,
+// The surface treaty's types that a snapshot and Apply carry, named here so
+// that a viewer needs no second contract crate to make them.
+pub use korri_surface_treaty::{
+    SurfaceGameplayControl, SurfaceGameplayControlInteraction, SurfaceGameplayControlValue,
+    SurfaceStreamHealth,
 };
 use serde::{Deserialize, Serialize};
 use std::io::{self, BufRead, Read, Write};

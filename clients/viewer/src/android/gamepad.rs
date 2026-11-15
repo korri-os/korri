@@ -18,9 +18,10 @@
 //!
 //! Left out, each named in `clients/viewer/README.md`: motion sensors, a
 //! controller's own touchpad, Artemis's USB driver (ADR 0064), and the
-//! settings that Korri's launch does not set (flip face buttons, back as
-//! Guide, the Joy-Con fix). The gameplay overlay's Start menu is here (slice
-//! D5); its Guide is the app's (`overlay.rs`).
+//! settings that Korri's launch does not set (back as Guide, the Joy-Con
+//! fix). Flip face buttons is the stream's control "Flip A/B and X/Y"
+//! (slice D11), off at the start as in Artemis. The gameplay overlay's Start
+//! menu is here (slice D5); its Guide is the app's (`overlay.rs`).
 use super::{
     controller_list,
     feedback::{Phone, Rumble, Seat, Seats},
@@ -260,6 +261,8 @@ pub(crate) struct Controllers {
     current: u16,
     initial: u16,
     mouse_emulation: bool,
+    /// `prefConfig.flipFaceButtons`: A is B and X is Y (slice D11).
+    flip_face_buttons: bool,
     heartbeat: Heartbeat,
     seats: Box<dyn Seats>,
 }
@@ -292,9 +295,16 @@ impl Controllers {
             current: 0,
             initial,
             mouse_emulation,
+            flip_face_buttons: false,
             heartbeat: Heartbeat::default(),
             seats,
         }
+    }
+
+    /// The stream's control "Flip A/B and X/Y": each press from now on, as
+    /// Artemis's `setFaceButtonFlip` changes it for the next event.
+    pub(crate) fn set_flip_face_buttons(&mut self, flip: bool) {
+        self.flip_face_buttons = flip;
     }
 
     fn active_mask(&self) -> u16 {
@@ -344,10 +354,12 @@ impl Controllers {
             return Key::Handled;
         };
         let mouse_emulation = self.mouse_emulation;
+        let flip = self.flip_face_buttons;
         let context = self.context(id);
         let key_code = match remap(context, event) {
             Remap::Ignore => return Key::Unhandled,
             Remap::Consume => return Key::Handled,
+            Remap::Key(key_code) if flip => flip_face_buttons(key_code),
             Remap::Key(key_code) => key_code,
         };
         let press = match event.action {
@@ -641,6 +653,18 @@ impl Controllers {
             .into_iter()
             .flatten()
             .min()
+    }
+}
+
+/// `handleFlipFaceButtons`, after the remapping: A is B, B is A, X is Y and
+/// Y is X.
+fn flip_face_buttons(key: u32) -> u32 {
+    match key {
+        code::BUTTON_A => code::BUTTON_B,
+        code::BUTTON_B => code::BUTTON_A,
+        code::BUTTON_X => code::BUTTON_Y,
+        code::BUTTON_Y => code::BUTTON_X,
+        other => other,
     }
 }
 

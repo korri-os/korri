@@ -1,0 +1,73 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//! The stream's status for its controller (#434, slice D11): the device's
+//! battery and the stream's health, read as Artemis's snapshot reads them
+//! (`KorriViewerControls.snapshot`, `MediaCodecDecoderRenderer.viewerHealth`).
+//! A controller passes [`readings`] to `Lifecycle::controls`; it runs on the
+//! thread that asks for a snapshot.
+use crate::{controls::Readings, log, picture};
+use jni::{
+    JavaVM,
+    objects::{JObject, JValue},
+};
+use korri_viewer_treaty::SurfaceStreamHealth;
+
+/// `Context.BATTERY_SERVICE` and `BatteryManager.BATTERY_PROPERTY_CAPACITY`.
+const BATTERY_SERVICE: &str = "batterymanager";
+const BATTERY_PROPERTY_CAPACITY: i32 = 4;
+
+/// The battery and the health now; each is absent when it cannot be read.
+pub fn readings() -> Readings {
+    let health = picture::health();
+    Readings {
+        battery_percent: battery(),
+        sampled_at_ms: health.map(|(sample, _)| sample.at_ms as f64),
+        stream_health: health.map(|(sample, rtt)| SurfaceStreamHealth {
+            rtt_ms: rtt.map(f64::from),
+            delivered_bitrate_kbps: Some(sample.delivered_bitrate_kbps),
+            frames_dropped: Some(sample.frames_dropped as f64),
+        }),
+    }
+}
+
+/// `BatteryManager.getIntProperty(BATTERY_PROPERTY_CAPACITY)`, through JNI
+/// on this thread.
+fn battery() -> Option<f64> {
+    let context = ndk_context::android_context();
+    // SAFETY: the process's VM, which android-activity gave ndk-context.
+    let vm = unsafe { JavaVM::from_raw(context.vm().cast()) }.ok()?;
+    let mut env = vm.attach_current_thread().ok()?;
+    // SAFETY: ndk-context's global reference to the activity, which it
+    // keeps; this wrapper does not delete it.
+    let activity = unsafe { JObject::from_raw(context.context().cast()) };
+    let capacity = env.with_local_frame(8, |env| -> jni::errors::Result<i32> {
+        let name = env.new_string(BATTERY_SERVICE)?;
+        let manager = env
+            .call_method(
+                &activity,
+                "getSystemService",
+                "(Ljava/lang/String;)Ljava/lang/Object;",
+                &[JValue::Object(&name)],
+            )?
+            .l()?;
+        if manager.is_null() {
+            return Ok(i32::MIN);
+        }
+        env.call_method(
+            &manager,
+            "getIntProperty",
+            "(I)I",
+            &[BATTERY_PROPERTY_CAPACITY.into()],
+        )?
+        .i()
+    });
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_clear();
+    }
+    match capacity {
+        Ok(capacity) => Readings::battery(capacity),
+        Err(error) => {
+            log::line(&format!("status: the battery is unreadable: {error}"));
+            None
+        }
+    }
+}

@@ -637,9 +637,14 @@ impl Input {
         self.touch.cancel(sink);
     }
 
-    /// The picture moved in the window (a turn or a fold).
+    /// The picture moved in the window (a turn, a fold, or "Crop to fill").
     pub fn place(&mut self, video: Rect) {
         self.video = video;
+    }
+
+    /// The stream's control "Flip A/B and X/Y" (slice D11).
+    pub fn set_flip_face_buttons(&mut self, flip: bool) {
+        self.controllers.set_flip_face_buttons(flip);
     }
 
     /// `handleKeyDown`, `handleKeyUp` and `handleKeyMultiple`.
@@ -1367,6 +1372,51 @@ pub(crate) mod tests {
                 Packet::Controller(controller(0, 1, button::A)),
                 Packet::Controller(controller(0, 1, 0)),
             ]
+        );
+    }
+
+    // Slice D11: "Flip A/B and X/Y", ControllerHandler.handleFlipFaceButtons.
+    #[test]
+    fn flipped_face_buttons_send_a_as_b_and_x_as_y_until_turned_off() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        let mut devices = Known::with([pad(16, 0x045e)]);
+        let pressed =
+            |input: &mut Input, devices: &mut Known, sink: &mut Recorded, key, scan, at| {
+                press(input, devices, sink, 16, key, scan, at);
+                sink.take()
+                    .into_iter()
+                    .filter_map(|p| match p {
+                        Packet::Controller(state) if state.buttons != 0 => Some(state.buttons),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+            };
+        input.set_flip_face_buttons(true);
+        for (key, scan, sent) in [
+            (code::BUTTON_A, 304, button::B),
+            (code::BUTTON_B, 305, button::A),
+            (code::BUTTON_X, 307, button::Y),
+            (code::BUTTON_Y, 308, button::X),
+            // Not a face button: as it was.
+            (code::BUTTON_L1, 310, button::LB),
+        ] {
+            assert_eq!(
+                pressed(&mut input, &mut devices, &mut sink, key, scan, 1000),
+                [sent],
+                "{key}"
+            );
+        }
+        input.set_flip_face_buttons(false);
+        assert_eq!(
+            pressed(
+                &mut input,
+                &mut devices,
+                &mut sink,
+                code::BUTTON_A,
+                304,
+                2000
+            ),
+            [button::A]
         );
     }
 

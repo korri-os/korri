@@ -160,6 +160,24 @@ pub(crate) fn failure() -> Option<String> {
     stream().as_ref()?.decoder.as_ref()?.failure()
 }
 
+/// The stream's health now (slice D11): the decoder's fresh sample, and the
+/// network core's estimated round trip in milliseconds when it has one
+/// (`MediaCodecDecoderRenderer.viewerHealth`). None without a decoder, while
+/// the stream stops, or with no fresh sample.
+pub(crate) fn health() -> Option<(crate::video_stats::Sample, Option<u32>)> {
+    // Under the picture's lock: the core destroys its control stream only
+    // after the decoder's cleanup, which takes this lock, and the decoder
+    // gives no sample once the core has asked it to stop.
+    let stream = stream();
+    let decoder = stream.as_ref()?.decoder.as_ref()?;
+    let sample = decoder.sample(decoder::monotonic_ns() / 1_000_000)?;
+    let mut rtt = 0;
+    // SAFETY: the core reads its peer under its own lock and writes only
+    // the one estimate asked for.
+    let known = unsafe { ffi::LiGetEstimatedRttInfo(&mut rtt, null_mut()) };
+    Some((sample, known.then_some(rtt)))
+}
+
 /// The core's decoder callbacks for this picture.
 pub(crate) fn callbacks() -> *mut DECODER_RENDERER_CALLBACKS {
     // The core reads the table during LiStartConnection and keeps the pointer.

@@ -29,7 +29,8 @@ fn main() {
             builder.header(header)
         })
         .clang_arg(format!("-I{include}"))
-        .allowlist_function("Li(Initialize(ServerInformation|StreamConfiguration|ConnectionCallbacks)|StartConnection|StopConnection|InterruptConnection|GetLaunchUrlQueryParameters|GetMicroseconds|GetPendingAudioDuration)")
+        // GetEstimatedRttInfo: Android's stream health (src/android/status.rs).
+        .allowlist_function("Li(Initialize(ServerInformation|StreamConfiguration|ConnectionCallbacks)|StartConnection|StopConnection|InterruptConnection|GetLaunchUrlQueryParameters|GetMicroseconds|GetPendingAudioDuration|GetEstimatedRttInfo)")
         // Android's input (src/android/input.rs) sends with the core's own
         // calls.
         .allowlist_function("LiSend(KeyboardEvent2|MultiControllerEvent|ControllerArrivalEvent|MouseMoveEvent|MousePositionEvent|MouseButtonEvent|HighResScrollEvent|HighResHScrollEvent|TouchEvent)")

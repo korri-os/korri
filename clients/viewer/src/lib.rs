@@ -2,6 +2,7 @@
 // The frame record and the player's picture, sound and input are platform
 // parts. Linux carries Moonlight's C code for them; Android's are Rust.
 mod callback;
+pub mod controls;
 mod frame_record;
 #[cfg(not(target_os = "android"))]
 mod frame_times;
@@ -76,9 +77,16 @@ pub mod play;
 #[cfg(target_os = "android")]
 #[path = "android/sound.rs"]
 mod sound;
+// The stream's battery and health for its controller (slice D11).
 #[cfg(any(test, target_os = "android"))]
 #[path = "android/sps.rs"]
 mod sps;
+#[cfg(target_os = "android")]
+#[path = "android/status.rs"]
+pub mod status;
 #[cfg(any(test, target_os = "android"))]
 #[path = "android/touch.rs"]
 mod touch;
+#[cfg(any(test, target_os = "android"))]
+#[path = "android/video_stats.rs"]
+mod video_stats;

@@ -302,8 +302,9 @@ After `Stop`, korrid also stops the unit and waits until systemd confirms it,
 also when the socket was lost; that wait outlasts the unit's own stop timeout
 and SIGKILL. Live resize,
 apply and notice return typed unavailable errors, as the existing Linux trait
-defaults do. Snapshots have no battery, health or controls until a real
-producer supplies them.
+defaults do. On Linux, snapshots have no battery, health or controls until a
+real producer supplies them; on Android the app supplies them (slice D11,
+below).
 
 ## The `@korri:viewer` plugin and korrid (slice 3)
 
@@ -1412,6 +1413,62 @@ viewer's process: korrid's display as the size, or Moonlight's default; the
 Start request names the host and port. The library depends on
 android-activity 0.6.1 on Android, the release of both apps and of the
 shell's Slint backend.
+
+## Stream controls and status (#434, slice D11)
+
+Owner decision O4: the viewer carries the stream controls and status that
+the Artemis app reports to korrid, through the treaty: Snapshot lists them,
+Apply sets a control. Every field is what Artemis and korrid exchange today
+(`KorriViewerControls.java`, `KorriMoonlightActionExecutor.java`,
+`ViewerVideoStats.java` in `clients/android`); the treaty needed no new type
+(`contracts/viewer` now names the surface treaty's control and health types
+that it already carried).
+
+Artemis can list thirteen controls (`KorriViewerControls.included`; its
+`label` names a fourteenth, Rotate screen, that `included` never lets
+through). A control is listed only when its viewer can perform it. This
+viewer lists two, and the status:
+
+| Item | Source in Artemis | Here |
+| --- | --- | --- |
+| Crop to fill (`set-fill-mode`, toggle) | `Game.toggleFillMode`, `StreamContainer.setFillDisplay` | The video layer covers the window and its edges are cut (`placement::fill`): the layer's source crop is the stream's part that shows (`placement::geometry`), one `setGeometry`. The input maps into the whole picture, as Artemis's oversized view does |
+| Flip A/B and X/Y (`set-face-button-flip`, toggle) | `ControllerHandler.handleFlipFaceButtons` | The same swap after the remapping, for each press from then on (`gamepad.rs`) |
+| Battery | `BatteryManager.BATTERY_PROPERTY_CAPACITY`, 0 to 100 | The same, through JNI (`status.rs`) |
+| Health: delivered bitrate, frames dropped, sample time | `ViewerVideoStats`: each decode unit's bytes, each output buffer the display drops, over 1 s or more; stale after 3 s | `video_stats.rs` (its port, with its tests), counted in `decoder.rs`: the units that arrive and the overtaken frames that the output thread drops |
+| Health: round trip | `MoonBridge.getEstimatedRttInfo` | `LiGetEstimatedRttInfo`, under the picture's lock (`picture::health`) |
+
+Ids are Artemis's: `viewer:<launch>:<generation>:<lease>:<effect>`. The
+generation is the runtime's number in the process (each Start of a launch
+has its own lifecycle), the lease the activity that shows it, so a control
+of an earlier runtime or activity is refused. Labels, `On`/`Off`, enabled,
+not destructive and `dismissOnSuccess` false are Artemis's. The values
+belong to one stream and start at Artemis's defaults (fit, not flipped);
+nothing stores them (`KorriStreamControlState`).
+
+The treaty side (`src/lifecycle.rs`, host-tested): the thread that owns the
+stream attaches the controls with its readings (`Lifecycle::controls`).
+While the stream is connected, Snapshot lists them, the battery, the health
+and its sample time; the readings run outside the lifecycle's lock. Apply
+checks the id and the value as `KorriViewerControls.apply` does, hands the
+change to that thread and answers once it has taken effect, within 5 s
+(Artemis's wait for its UI thread). A refused change, a stream that ended
+and a late answer are errors and change nothing. The values change only
+when the stream's thread confirms. With no controls attached, as on Linux
+and in the viewer's own app, Snapshot and Apply answer as before.
+
+Not carried, each because this viewer lacks the feature, not the control:
+
+| Artemis control | What it needs |
+| --- | --- |
+| Toggle keyboard, Full keyboard | Android's soft keyboard with text input, Artemis's own keyboard view; the NDK gives no characters (D4) |
+| Pan & zoom | Artemis's `PanZoomHandler` gestures |
+| Mouse mode, Touch sensitivity | Artemis's trackpad modes; D4 carries multi-touch only |
+| Keyboard as controller | Artemis's on-screen controller |
+| Toggle local cursor, SGSR sharpness, SGSR edge threshold | Artemis's GL renderer; MediaCodec renders straight into the layer here |
+| Picture-in-picture | An activity in picture-in-picture mode; leaving the app ends the stream here (D10) |
+| Rumble | Rumble itself: slice D4b. Artemis lists it only with a rumble device |
+
+Notice (Artemis shows a toast) and Resize (#476) stay unavailable.
 
 ## Next slices
 

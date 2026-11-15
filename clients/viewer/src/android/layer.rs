@@ -16,9 +16,11 @@
 //!
 //! The decoder renders into the video layer's Surface; the app runs no code
 //! for a frame. One `setGeometry` places the video, letterboxed in the
-//! window. When the decoded picture's size changes in the middle of the
-//! stream (#476), one transaction gives the video layer's buffer queue that
-//! size (`setBufferSize`) and places the new shape (`setGeometry`).
+//! window, or filling it with its edges cut ("Crop to fill", slice D11:
+//! the source crop is the stream's part that shows). When the decoded
+//! picture's size changes in the middle of the stream (#476), one
+//! transaction gives the video layer's buffer queue that size
+//! (`setBufferSize`) and places the new shape (`setGeometry`).
 //!
 //! The overlay layer (slice D5) is translucent, covers the window and starts
 //! hidden. Its buffers follow the window's size (`Transaction.setBufferSize`),
@@ -35,7 +37,7 @@
 //! (`clients/android-app`), whose loop is Slint's: it asks for them
 //! ([`Layers::request`]) and reads the answer at each tick
 //! ([`Pending::poll`]), so its thread never waits for Android's main thread.
-use crate::placement::{Rect, letterbox};
+use crate::placement::{Rect, geometry, letterbox, place};
 use android_activity::{AndroidApp, MainEvent, PollEvent};
 use anyhow::{Context, Result, anyhow};
 use jni::{
@@ -72,7 +74,11 @@ pub struct Layers {
     pub stream: (i32, i32),
     /// The window's size that the placement follows.
     pub window: (i32, i32),
+    /// Where the whole picture goes; when it fills the window, it reaches
+    /// past it on two sides.
     pub placed: Rect,
+    /// The picture fills the window ("Crop to fill"); else it fits.
+    pub fill: bool,
 }
 
 /// What Android's main thread sends back: the video layer, and the overlay
@@ -126,6 +132,7 @@ impl Pending {
                 stream: self.stream,
                 window: self.window,
                 placed: self.placed,
+                fill: false,
             }
         }))
     }
@@ -149,19 +156,20 @@ impl Layers {
         })?;
         let (sender, receiver) = mpsc::channel();
         app.run_on_java_main_thread(Box::new(move || {
-            let made = attached(vm, |env| make_video(env, activity.as_obj(), stream, placed)).map(
-                |video| {
-                    let overlay = attached(vm, |env| make_overlay(env, activity.as_obj(), window))
-                        .and_then(|overlay| match draw_stand_in(&overlay.surface) {
-                            Ok(()) => Ok(overlay),
-                            Err(error) => {
-                                remove(vm, overlay);
-                                Err(error)
-                            }
-                        });
-                    (video, overlay)
-                },
-            );
+            let made = attached(vm, |env| {
+                make_video(env, activity.as_obj(), stream, placed, window)
+            })
+            .map(|video| {
+                let overlay = attached(vm, |env| make_overlay(env, activity.as_obj(), window))
+                    .and_then(|overlay| match draw_stand_in(&overlay.surface) {
+                        Ok(()) => Ok(overlay),
+                        Err(error) => {
+                            remove(vm, overlay);
+                            Err(error)
+                        }
+                    });
+                (video, overlay)
+            });
             // The asking thread stopped waiting: remove what it will never use.
             if let Err(mpsc::SendError(Ok((video, overlay)))) = sender.send(made) {
                 remove(vm, video);
@@ -222,7 +230,7 @@ impl Layers {
             return false;
         }
         self.window = size;
-        self.placed = letterbox(self.stream, size);
+        self.placed = place(self.stream, size, self.fill);
         let vm = app.vm_as_ptr() as usize;
         let (video, stream, placed) = (self.video.control.clone(), self.stream, self.placed);
         let overlay = self
@@ -233,7 +241,7 @@ impl Layers {
             let resized = attached(vm, |env| {
                 let transaction =
                     env.new_object("android/view/SurfaceControl$Transaction", "()V", &[])?;
-                set_geometry(env, &transaction, video.as_obj(), stream, placed)?;
+                set_geometry(env, &transaction, video.as_obj(), stream, placed, size)?;
                 if let Some((overlay, _)) = &overlay {
                     env.call_method(
                         &transaction,
@@ -269,9 +277,9 @@ impl Layers {
             return false;
         }
         self.stream = stream;
-        self.placed = letterbox(stream, self.window);
+        self.placed = place(stream, self.window, self.fill);
         let vm = app.vm_as_ptr() as usize;
-        let (video, placed) = (self.video.control.clone(), self.placed);
+        let (video, placed, window) = (self.video.control.clone(), self.placed, self.window);
         app.run_on_java_main_thread(Box::new(move || {
             let _ =
                 attached(vm, |env| {
@@ -283,12 +291,40 @@ impl Layers {
                     "(Landroid/view/SurfaceControl;II)Landroid/view/SurfaceControl$Transaction;",
                     &[JValue::Object(video.as_obj()), stream.0.into(), stream.1.into()],
                 )?;
-                    set_geometry(env, &transaction, video.as_obj(), stream, placed)?;
+                    set_geometry(env, &transaction, video.as_obj(), stream, placed, window)?;
                     env.call_method(&transaction, "apply", "()V", &[])?;
                     Ok(())
                 });
         }));
         true
+    }
+
+    /// Fill the window with the picture, its edges cut, or fit it with bars
+    /// again ("Crop to fill", Artemis's `Game.toggleFillMode`): one
+    /// `setGeometry`, posted to the main thread without waiting. The answer
+    /// comes once the main thread has applied it, or could not; none when
+    /// the placement does not change.
+    pub fn set_fill(&mut self, app: &AndroidApp, fill: bool) -> Option<mpsc::Receiver<Result<()>>> {
+        self.fill = fill;
+        let placed = place(self.stream, self.window, fill);
+        if placed == self.placed {
+            return None;
+        }
+        self.placed = placed;
+        let vm = app.vm_as_ptr() as usize;
+        let (video, stream, window) = (self.video.control.clone(), self.stream, self.window);
+        let (sender, answer) = mpsc::channel();
+        app.run_on_java_main_thread(Box::new(move || {
+            let applied = attached(vm, |env| {
+                let transaction =
+                    env.new_object("android/view/SurfaceControl$Transaction", "()V", &[])?;
+                set_geometry(env, &transaction, video.as_obj(), stream, placed, window)?;
+                env.call_method(&transaction, "apply", "()V", &[])?;
+                Ok(())
+            });
+            let _ = sender.send(applied);
+        }));
+        Some(answer)
     }
 
     /// The Surface that the decoder renders into.
@@ -390,25 +426,21 @@ fn remove(vm: usize, layer: Layer) {
     });
 }
 
-/// The placement: the stream's whole picture into its letterbox, with no
-/// rotation. API 29; deprecated at 33 for setPosition, setScale and setCrop.
+/// The placement, with no rotation: the stream's part that shows in the
+/// window, into its place there (`placement::geometry`): all of it into its
+/// letterbox, or its middle across the window when it fills it. API 29;
+/// deprecated at 33 for setPosition, setScale and setCrop.
 fn set_geometry(
     env: &mut JNIEnv,
     transaction: &JObject,
     layer: &JObject,
     stream: (i32, i32),
     placed: Rect,
+    window: (i32, i32),
 ) -> jni::errors::Result<()> {
-    let source = rect(
-        env,
-        Rect {
-            left: 0,
-            top: 0,
-            right: stream.0,
-            bottom: stream.1,
-        },
-    )?;
-    let destination = rect(env, placed)?;
+    let (source, shown) = geometry(stream, placed, window);
+    let source = rect(env, source)?;
+    let destination = rect(env, shown)?;
     env.call_method(
         transaction,
         "setGeometry",
@@ -556,10 +588,11 @@ fn make_video(
     activity: &JObject,
     stream: (i32, i32),
     placed: Rect,
+    window: (i32, i32),
 ) -> jni::errors::Result<Layer> {
     let (layer, transaction) = make_layer(env, activity, "korri-viewer-video", stream, false)?;
     stack(env, &transaction, &layer, 0, true)?;
-    set_geometry(env, &transaction, &layer, stream, placed)?;
+    set_geometry(env, &transaction, &layer, stream, placed, window)?;
     env.call_method(&transaction, "apply", "()V", &[])?;
     finish(env, &layer)
 }
