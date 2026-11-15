@@ -5,7 +5,9 @@
 //! The app is that lifecycle's controller: it sends Start once its window
 //! exists, and Stop on Back or when the window goes, and writes every event
 //! and reply to logcat. The picture is Android's hardware decoder rendering
-//! into a video layer that the app makes (slice D2, `layer.rs`). The sound is
+//! into a video layer that the app makes (slice D2, `layer.rs`); the layer
+//! follows the window's size and the decoded picture's size, which the
+//! sender can change in the middle of the stream (#476). The sound is
 //! Opus into AAudio inside the shared viewer (slice D3); the app adds
 //! nothing for it. The input (slice D4) is the shared viewer's mapping of
 //! Artemis's: this thread hands it each key and motion event (`input.rs`),
@@ -56,6 +58,7 @@ use ndk::native_window::NativeWindow;
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     path::PathBuf,
+    sync::{Arc, Mutex, PoisonError},
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
@@ -196,22 +199,64 @@ fn run(app: &AndroidApp) -> Result<()> {
     placed(&layer, &window);
     // The app's window is Android's; after it goes, it must not be used.
     drop(window);
+    let decoded = Decoded::new(app);
     let picture = Picture {
         surface: layer.surface(),
         record,
+        resized: decoded.hearer(),
     };
-    let ended = stream(app, id, address, options, pin, picture, &mut layer);
+    let ended = stream(
+        app, id, address, options, pin, picture, &mut layer, &decoded,
+    );
     layer.release(app);
     ended
 }
 
-/// The placement in the log, and the window's one black fill for the bars.
-fn placed(layer: &layer::Layers, window: &NativeWindow) {
+/// The decoded picture's newest size, from the decoder's output thread to
+/// this one, which it wakes.
+struct Decoded {
+    size: Arc<Mutex<Option<(i32, i32)>>>,
+    waker: android_activity::AndroidAppWaker,
+}
+
+impl Decoded {
+    fn new(app: &AndroidApp) -> Self {
+        Self {
+            size: Arc::default(),
+            waker: app.create_waker(),
+        }
+    }
+
+    /// What the decoder calls with each new size: it stores and wakes, and
+    /// never blocks for long.
+    fn hearer(&self) -> Arc<dyn Fn((i32, i32)) + Send + Sync> {
+        let (size, waker) = (self.size.clone(), self.waker.clone());
+        Arc::new(move |new| {
+            *size.lock().unwrap_or_else(PoisonError::into_inner) = Some(new);
+            waker.wake();
+        })
+    }
+
+    fn take(&self) -> Option<(i32, i32)> {
+        self.size
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+    }
+}
+
+/// The placement in the log.
+fn log_placement(layer: &layer::Layers) {
     let (placed, stream, size) = (layer.placed, layer.stream, layer.window);
     logcat::info(&format!(
         "picture: video layer {}x{} placed at ({}, {})-({}, {}) in the window {}x{}",
         stream.0, stream.1, placed.left, placed.top, placed.right, placed.bottom, size.0, size.1
     ));
+}
+
+/// The placement in the log, and the window's one black fill for the bars.
+fn placed(layer: &layer::Layers, window: &NativeWindow) {
+    log_placement(layer);
     if let Err(error) = layer::fill_black(window) {
         logcat::error(&format!(
             "picture: the bars keep the window's content: {error:#}"
@@ -219,6 +264,7 @@ fn placed(layer: &layer::Layers, window: &NativeWindow) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn stream(
     app: &AndroidApp,
     id: String,
@@ -227,6 +273,7 @@ fn stream(
     pin: PathBuf,
     picture: Picture,
     layer: &mut layer::Layers,
+    decoded: &Decoded,
 ) -> Result<()> {
     let lifecycle = Lifecycle::in_process(&id, |event| {
         let event = serde_json::to_string(event).unwrap_or_default();
@@ -262,6 +309,7 @@ fn stream(
         address,
         &runtime,
         layer,
+        decoded,
         input,
         &mut devices,
     );
@@ -282,13 +330,16 @@ fn stream(
 
 /// Start, then Stop when the user leaves, until the runtime ends. Each key
 /// and motion event goes to the stream's input or to the gameplay overlay
-/// meanwhile, and the layers follow the window's size.
+/// meanwhile, and the layers follow the window's size; the video layer
+/// follows the decoded picture's size too.
+#[allow(clippy::too_many_arguments)]
 fn drive(
     app: &AndroidApp,
     controller: &mut Controller,
     address: String,
     runtime: &JoinHandle<Result<()>>,
     layer: &mut layer::Layers,
+    decoded: &Decoded,
     input: Input,
     devices: &mut AndroidDevices,
 ) -> Result<()> {
@@ -342,6 +393,17 @@ fn drive(
             && layer.follow(app, &window)
         {
             placed(layer, &window);
+            input.run("place", |input| input.place(layer.placed));
+        }
+        // The sender changed the stream's size: the decoder gives the new
+        // one when its first frame comes out. Only the video's place and the
+        // input's map into it change; the overlay, open or not, and a held
+        // input stay as they are.
+        if let Some(size) = decoded.take()
+            && !stop
+            && layer.restream(app, size)
+        {
+            log_placement(layer);
             input.run("place", |input| input.place(layer.placed));
         }
     }

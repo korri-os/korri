@@ -16,7 +16,9 @@
 //!
 //! The decoder renders into the video layer's Surface; the app runs no code
 //! for a frame. One `setGeometry` places the video, letterboxed in the
-//! window.
+//! window. When the decoded picture's size changes in the middle of the
+//! stream (#476), one transaction gives the video layer's buffer queue that
+//! size (`setBufferSize`) and places the new shape (`setGeometry`).
 //!
 //! The overlay layer (slice D5) is translucent, covers the window and starts
 //! hidden. Its buffers follow the window's size (`Transaction.setBufferSize`),
@@ -26,7 +28,7 @@
 //! (`clients/shell/vendor/i-slint-backend-android-activity/surface_window.rs`).
 //! It cannot run in this app (`clients/viewer/README.md`), so the app draws
 //! a stand-in into it once with the CPU, and again when the window's size
-//! changes.
+//! changes. The stream's size does not change it.
 use android_activity::{AndroidApp, MainEvent, PollEvent};
 use anyhow::{Context, Result, anyhow};
 use jni::{
@@ -197,6 +199,40 @@ impl Layers {
                     "overlay: the stand-in was not drawn again: {error:#}"
                 ));
             }
+        }));
+        true
+    }
+
+    /// Place the video for a new size of the decoded picture: the sender
+    /// changed the stream's size. One transaction, posted to the main thread
+    /// without waiting: `setBufferSize`, so that the video layer's buffer
+    /// queue scales the decoder's buffers to the new size and not to the old
+    /// one, and `setGeometry` with the new shape's letterbox. The overlay
+    /// covers the window and keeps its place and buffers. False when the
+    /// size is the same.
+    pub fn restream(&mut self, app: &AndroidApp, stream: (i32, i32)) -> bool {
+        if stream == self.stream || stream.0 <= 0 || stream.1 <= 0 {
+            return false;
+        }
+        self.stream = stream;
+        self.placed = letterbox(stream, self.window);
+        let vm = app.vm_as_ptr() as usize;
+        let (video, placed) = (self.video.control.clone(), self.placed);
+        app.run_on_java_main_thread(Box::new(move || {
+            let _ =
+                attached(vm, |env| {
+                    let transaction =
+                        env.new_object("android/view/SurfaceControl$Transaction", "()V", &[])?;
+                    env.call_method(
+                    &transaction,
+                    "setBufferSize",
+                    "(Landroid/view/SurfaceControl;II)Landroid/view/SurfaceControl$Transaction;",
+                    &[JValue::Object(video.as_obj()), stream.0.into(), stream.1.into()],
+                )?;
+                    set_geometry(env, &transaction, video.as_obj(), stream, placed)?;
+                    env.call_method(&transaction, "apply", "()V", &[])?;
+                    Ok(())
+                });
         }));
         true
     }
