@@ -3,7 +3,7 @@ use super::{
     config::{HostConfig, HostGame},
     input_seat::InputSeatManager,
     session_state::HostSessionControl,
-    systemd_unit::{LaunchUnitBackend, ShellUnit, SystemdLaunchUnitBackend, SystemdShellUnit},
+    systemd_unit::{LaunchUnitBackend, ShellUnit, SystemdShellUnit},
 };
 use crate::RpcFailure;
 #[cfg(test)]
@@ -74,15 +74,11 @@ impl HostLauncher {
     pub(crate) fn new(
         config: &HostConfig,
         private_state_root: &Path,
+        units: Arc<dyn LaunchUnitBackend>,
         input_seats: Arc<dyn InputSeatManager>,
         native: Option<Arc<crate::surface_host_input::SurfaceHostInputSource>>,
     ) -> Self {
-        let mut launcher = Self::with_backends(
-            config,
-            private_state_root,
-            Arc::new(SystemdLaunchUnitBackend::default()),
-            input_seats,
-        );
+        let mut launcher = Self::with_backends(config, private_state_root, units, input_seats);
         if let Some(native) = native {
             launcher.control = launcher.control.with_native_input(native);
         }

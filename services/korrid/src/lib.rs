@@ -5791,6 +5791,35 @@ pub fn host_routers_with_federation(
     (lan, local, cli, runtime)
 }
 
+/// The routers of korrid's federation fixture (feature `fixture`, #434 D10):
+/// `host_routers_with_federation` with no surface host, over a host whose
+/// game units live in memory. It launches its game as a real host does, with
+/// no systemd unit, and runs nothing. Never in a shipped korrid.
+#[cfg(feature = "fixture")]
+pub fn fixture_host_routers_with_federation(
+    config_path: impl AsRef<Path>,
+    storage_root: impl Into<PathBuf>,
+    private_state_root: impl Into<PathBuf>,
+    resources: FederationResources,
+) -> (Router, Router, Router, host::HostRuntime) {
+    let private_state_root = private_state_root.into();
+    let runtime = host::HostRuntime::from_paths_with_fixture_units(
+        config_path.as_ref(),
+        Some(storage_root.into()),
+        private_state_root.clone(),
+    );
+    let (lan, local, cli) = secure_host_routers_with_federation(
+        runtime.clone(),
+        &private_state_root,
+        resources,
+        None,
+        None,
+        Some(Arc::default()),
+    );
+    runtime.spawn_shell_watch();
+    (lan, local, cli, runtime)
+}
+
 #[cfg(test)]
 fn host_routers_with_in_memory_units(config_path: impl AsRef<Path>) -> (Router, Router) {
     let private = tempfile::tempdir().expect("private host state").keep();

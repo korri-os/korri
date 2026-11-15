@@ -7,7 +7,11 @@
 //! - `ROOT PORT RELAYS [MOONLIGHT]`: the holder. Its one game streams from the
 //!   Sunshine at `MOONLIGHT`, the address of a private sender (stream-cadence's
 //!   sender fixture, #434 D9). Without it the address is `127.0.0.1:9`, which
-//!   serves no video: the session-preparation flow needs none.
+//!   serves no video: the session-preparation flow needs none. Its device
+//!   settings live in `ROOT/storage`, as a host's do, so that it can reconcile
+//!   its input seats and launch (#434 D10); the seat receiver is the caller's
+//!   (`KORRID_INPUT_SEAT_CONTROL_SOCKET`). Its game units live in memory
+//!   (korrid's feature `fixture`): a launch runs nothing and needs no systemd.
 //! - `member DIRECTORY`: a new private state root for another device, bound to
 //!   the same owner by the same producer as the holder's own. The Android
 //!   app's proof seeds its korrid with it. Prints the device's public key.
@@ -138,8 +142,10 @@ async fn holder(
 ) -> Result<(), Failure> {
     let private = root.join("private");
     let config = root.join("host.toml");
+    let storage = root.join("storage");
     if port == 0 {
         fs::create_dir(&root)?;
+        fs::DirBuilder::new().mode(0o700).create(&storage)?;
         bind_to_fixture_owner(&private)?;
         // Existing HostConfig TOML schema; helper records but never runs the command.
         fs::write(&config, HOST_CONFIG)?;
@@ -170,8 +176,10 @@ async fn holder(
     )
     .spawn();
     let control = discovery.control();
+    // In-memory game units (feature `fixture`): the holder launches its game
+    // as a host does, and nothing runs.
     let (router, _, _, _) =
-        korrid::host_routers_with_federation(&config, None::<PathBuf>, &private, resources, None);
+        korrid::fixture_host_routers_with_federation(&config, storage, &private, resources);
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     fs::write(root.join("ready.tmp"), format!("{port} {device_key}\n"))?;
     fs::rename(root.join("ready.tmp"), root.join("ready"))?;

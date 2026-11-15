@@ -32,6 +32,10 @@ KORRI_SCRIPT_FIXTURES_IN_SHELL=1 bash "$CRATE/script-fixtures-setup.sh"
 cargo test --manifest-path "$ROOT/contracts/settings/Cargo.toml"
 cargo test --manifest-path "$ROOT/contracts/viewer/Cargo.toml"
 cargo test
+# The federation fixture and its in-memory launch units need the `fixture`
+# feature, which no shipped korrid enables (package.nix checks that).
+cargo test --features fixture --example federation_fixture
+cargo test --features fixture --lib fixture_units
 KORRI_CONFIG_REVIEW_IN_SHELL=1 "$CRATE/config-snapshot-review.sh"
 if [[ "$mode" == --full ]]; then
   # The independent treaty lane owns this in CI, not the Rust compilation lane.

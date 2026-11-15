@@ -15,6 +15,13 @@ path = "src/main.rs"
 [[example]]
 name = "federation_fixture"
 test = true
+# Its holder keeps its game units in memory (src/host/fixture_units.rs).
+required-features = ["fixture"]
+
+[features]
+# The federation fixture's in-memory launch units (#434 D10). Off in every
+# shipped korrid; only the fixture example asks for it.
+fixture = []
 
 [dependencies]
 korri-viewer-treaty = { path = "../../contracts/viewer" }

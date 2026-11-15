@@ -106,14 +106,16 @@ let
   # The Android app's holder (examples/federation_fixture.rs): a real host
   # with the fixture's person signer, for the emulator proofs of
   # clients/android-app. It never ships to a device.
+  # Its holder keeps its game units in memory: korrid's feature `fixture`,
+  # which no shipped korrid enables (the check in the package below).
   federationFixture = craneLib.buildPackage (
     commonArgs
     // {
       inherit cargoArtifacts;
       pname = "korrid-federation-fixture";
-      cargoBuildExtraArgs = "--example federation_fixture";
+      cargoBuildExtraArgs = "--example federation_fixture --features fixture";
       # The example's own tests: its parsing, its inputs and a member's binding.
-      cargoTestExtraArgs = "--example federation_fixture";
+      cargoTestExtraArgs = "--example federation_fixture --features fixture";
       meta = commonArgs.meta // {
         mainProgram = "federation_fixture";
       };
@@ -151,6 +153,23 @@ craneLib.buildPackage (
     postInstall = ''
       if ${pkgs.gnugrep}/bin/grep -R -F 'KORRI_PRIVATE_STATE_ROOT' src; then
         echo 'korrid source contains the retired private-state environment name' >&2
+        exit 1
+      fi
+      # The shipped korrid never carries the federation fixture's in-memory
+      # launch units (feature `fixture`, #434 D10): read the features that
+      # cargo built the library and the binary with.
+      # Each match is tested, so the glob options of the later phases stay as
+      # stdenv set them (its fixup needs nullglob).
+      fingerprints=()
+      for fingerprint in target/release/.fingerprint/korrid-*/{lib,bin}-korrid.json; do
+        if [ -e "$fingerprint" ]; then fingerprints+=("$fingerprint"); fi
+      done
+      if (( ''${#fingerprints[@]} == 0 )); then
+        echo 'no build fingerprint of korrid to check its features' >&2
+        exit 1
+      fi
+      if ${pkgs.gnugrep}/bin/grep -l '"features":"\[[^]]*fixture' "''${fingerprints[@]}"; then
+        echo 'the shipped korrid was built with the fixture feature' >&2
         exit 1
       fi
       ${pkgs.bash}/bin/bash ${./package-runtime-check.sh} \

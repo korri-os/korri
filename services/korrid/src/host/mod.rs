@@ -12,6 +12,8 @@ pub(crate) use compositor_focus::CompositorControl;
 mod client_shape_tests;
 mod config;
 pub(crate) mod control;
+#[cfg(feature = "fixture")]
+mod fixture_units;
 #[cfg(test)]
 mod hook_tests;
 mod hooks;
@@ -333,6 +335,39 @@ impl HostRuntime {
         private_state_root: PathBuf,
         native: Option<Arc<crate::surface_host_input::SurfaceHostInputSource>>,
     ) -> Self {
+        Self::from_paths_with_units(
+            path,
+            storage_root,
+            private_state_root,
+            native,
+            Arc::new(SystemdLaunchUnitBackend::default()),
+        )
+    }
+
+    /// The federation fixture's host (feature `fixture`): its game units live
+    /// in memory, and nothing runs (`fixture_units.rs`).
+    #[cfg(feature = "fixture")]
+    pub(crate) fn from_paths_with_fixture_units(
+        path: &Path,
+        storage_root: Option<PathBuf>,
+        private_state_root: PathBuf,
+    ) -> Self {
+        Self::from_paths_with_units(
+            path,
+            storage_root,
+            private_state_root,
+            None,
+            Arc::new(fixture_units::FixtureLaunchUnits::default()),
+        )
+    }
+
+    fn from_paths_with_units(
+        path: &Path,
+        storage_root: Option<PathBuf>,
+        private_state_root: PathBuf,
+        native: Option<Arc<crate::surface_host_input::SurfaceHostInputSource>>,
+        units: Arc<dyn LaunchUnitBackend>,
+    ) -> Self {
         let config = HostConfig::read(path);
         let socket = std::env::var_os("KORRID_INPUT_SEAT_CONTROL_SOCKET")
             .map(PathBuf::from)
@@ -341,7 +376,7 @@ impl HostRuntime {
         let input_coordinator = coordinator.as_ref().ok().cloned();
         let manager = Arc::new(input_seat::UnixInputSeatManager::new(socket, coordinator));
         let launcher = config.as_ref().ok().map(|config| {
-            let launcher = HostLauncher::new(config, &private_state_root, manager, native);
+            let launcher = HostLauncher::new(config, &private_state_root, units, manager, native);
             let count = storage_root
                 .as_ref()
                 .ok_or_else(|| "device settings root is not configured".to_string())
