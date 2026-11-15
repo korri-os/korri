@@ -1,0 +1,15 @@
+bench zone 640x480 frames=5 games=12 presses=0 prefs={} buffer=reused threads=default
+phase (us; px)                        p50        p95        max
+logic calls (logic thread)              0          0          0
+view to properties: convert             0          0          0
+view to properties: set                 0          0          0
+timers and animations                  31         32         32
+before the walk (instantiate)          59        131        131
+dirty walk and layout                   0        153        153
+rasterisation                           5        226        226
+  of which banded replay                5        143        143
+  of which layer images                 0          0          0
+frame total                           101        545        545
+dirty region (px)                      -0       1088       1088
+frames over 16.7 ms: 0 of 5
+press to view applied (ms): p50 0 max 0 over 0 presses (logic off the UI thread; frames paced at 60 Hz)

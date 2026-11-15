@@ -1,0 +1,7 @@
+SHELL_STATS fps=35.400 frames=177 seconds=5.000 heap_bytes=1119223 interval_ms_p50=33.2 p95=34.2 max=34.9
+SHELL_STATS fps=35.583 frames=178 seconds=5.002 heap_bytes=1119223 interval_ms_p50=33.0 p95=34.6 max=36.8
+SHELL_STATS fps=35.400 frames=177 seconds=5.000 heap_bytes=1119223 interval_ms_p50=33.2 p95=34.2 max=38.7
+SHELL_STATS fps=35.399 frames=177 seconds=5.000 heap_bytes=1119223 interval_ms_p50=33.2 p95=34.2 max=35.3
+SHELL_STATS fps=35.552 frames=178 seconds=5.007 heap_bytes=1118413 interval_ms_p50=33.2 p95=34.2 max=35.1
+SHELL_STATS fps=35.485 frames=178 seconds=5.016 heap_bytes=1118413 interval_ms_p50=33.3 p95=34.1 max=35.6
+SHELL_STATS fps=35.480 frames=178 seconds=5.017 heap_bytes=1119223 interval_ms_p50=33.2 p95=34.3 max=35.2
