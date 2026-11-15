@@ -1,0 +1,174 @@
+    29.533  2686  2752 I korri-viewer: picture: video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+    29.730  2686  2752 I korri-viewer: input: controllers attached at the start: mask 0x0
+    29.731  2686  2752 I korri-viewer: request {"launchId":"recovery-proof","command":{"kind":"Start","value":{"address":"100.117.97.45:40459"}}}
+    29.731  2686  2686 I korri-viewer: input: unbuffered dispatch requested
+    30.366  2686  2767 I korri-viewer: RTSP port: 40480
+    30.366  2686  2767 I korri-viewer: Initializing platform...
+    30.366  2686  2767 I korri-viewer: done
+    30.366  2686  2767 I korri-viewer: Resolving host name...
+    30.366  2686  2767 I korri-viewer: done
+    30.366  2686  2767 I korri-viewer: Packet size capped at 1024 bytes for remote IPv4 streaming
+    30.366  2686  2767 I korri-viewer: Initializing audio stream...
+    30.366  2686  2767 I korri-viewer: done
+    30.366  2686  2767 I korri-viewer: Starting RTSP handshake...
+    30.367  2686  2767 I korri-viewer: Reference frame invalidation is not supported by this host
+    30.367  2686  2767 I korri-viewer: Audio port: 40470
+    30.368  2686  2767 I korri-viewer: Video port: 40468
+    30.368  2686  2767 I korri-viewer: Control port: 40469
+    30.369  2686  2767 I korri-viewer: done
+    30.369  2686  2767 I korri-viewer: Initializing control stream...
+    30.369  2686  2767 I korri-viewer: done
+    30.369  2686  2767 I korri-viewer: Initializing video stream...
+    30.369  2686  2767 I korri-viewer: done
+    30.369  2686  2767 I korri-viewer: Initializing input stream...
+    30.369  2686  2767 I korri-viewer: done
+    30.369  2686  2767 I korri-viewer: Starting control stream...
+    30.370  2686  2767 I korri-viewer: done
+    30.370  2686  2767 I korri-viewer: Starting video stream...
+    30.382  2686  2767 I korri-viewer: picture: decoders for video/avc: c2.goldfish.h264.decoder (hardware true, software-only false, alias false, low-latency false, high true, adaptive true); c2.android.avc.decoder (hardware false, software-only true, alias false, low-latency false, high true, adaptive true); OMX.google.h264.decoder (hardware false, software-only true, alias true, low-latency false, high true, adaptive true)
+    30.516  2686  2767 I korri-viewer: picture: decode mediacodec decoder c2.goldfish.h264.decoder hardware true software-only false low-latency-feature false try 0 keys low-latency=1,vdec-lowlatency=1,priority=0 size 1280x720@60 adaptive 2960x2960
+    30.516  2686  2767 I korri-viewer: done
+    30.516  2686  2767 I korri-viewer: Starting audio stream...
+    30.541  2686  2812 I korri-viewer: Received first video packet after 0 ms
+    30.648  2686  2811 I korri-viewer: picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 1279, 719), width: int32(1280), height: int32(720), max-height: int32(2960), max-width: int32(2960), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}
+    30.648  2686  2811 I korri-viewer: picture: decoded size 1280x720
+    30.879  2686  2767 I korri-viewer: sound: output try 0 asked low-latency granted none sharing shared rate 48000 channels 2 burst 960 capacity 2132 buffer 1920 (asked 1920) packet 240 frames
+    30.901  2686  2767 I korri-viewer: sound: playing
+    30.901  2686  2767 I korri-viewer: done
+    30.901  2686  2767 I korri-viewer: Starting input stream...
+    30.901  2686  2767 I korri-viewer: done
+    30.930  2686  2767 I korri-viewer: event {"kind":"Status","value":"Running"}
+    30.930  2686  2767 I korri-viewer: event {"kind":"Snapshot","value":{"connected":true,"controls":[]}}
+    30.930  2686  2768 I korri-viewer: reply Start {"kind":"Ok"}
+    32.697  2686  2824 I korri-viewer: Received first audio packet after 1700 ms
+    32.697  2686  2824 I korri-viewer: Initial audio resync period: 500 milliseconds
+    34.205  2686  2825 I korri-viewer: sound: 43 ms pending; 1 packets dropped since the last line
+    36.717  2686  2825 I korri-viewer: sound: 40 ms pending; 12 packets dropped since the last line
+    37.929  2686  2825 I korri-viewer: sound: 40 ms pending; 1 packets dropped since the last line
+    37.930  2686  2813 I korri-viewer: picture: frame 425 not decoded: cannot queue the frame: AMEDIA_ERROR_UNKNOWN (-10000)
+    38.038     0     0 I init    : Service 'android-hardware-media-c2-goldfish-hal-1-0' (pid 352) received signal 9
+    38.039     0     0 I init    : Sending signal 9 to service 'android-hardware-media-c2-goldfish-hal-1-0' (pid 352) process group...
+    38.042     0     0 I init    : starting service 'android-hardware-media-c2-goldfish-hal-1-0'...
+    37.941  2686  2807 E CCodec  : Codec2 component "c2.goldfish.h264.decoder" died.
+    37.941  2686  2811 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    37.941  2686  2813 I korri-viewer: picture: frame 425 not decoded: cannot queue the frame: AMEDIA_ERROR_UNKNOWN (-10000); recovery from a flush
+    37.951  2686  2813 I korri-viewer: picture: flush failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    37.951  2686  2813 I korri-viewer: picture: restart failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    38.195  2686  2812 I korri-viewer: Video decode unit queue overflow
+    38.195  2686  2798 I korri-viewer: IDR frame request sent
+    38.205  2686  2812 I korri-viewer: Waiting for IDR frame
+    38.225  2686  2813 I korri-viewer: picture: reset done; the core asks for an IDR frame
+    38.235  2686  2813 I korri-viewer: Requesting IDR frame on behalf of DR
+    38.235  2686  2798 I korri-viewer: IDR frame request sent
+    38.243  2686  2812 I korri-viewer: Waiting for IDR frame
+    38.320  2686  2811 I korri-viewer: picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 1279, 719), width: int32(1280), height: int32(720), max-height: int32(2960), max-width: int32(2960), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}
+    38.321  2686  2811 I korri-viewer: picture: the decoder returns frames again after a reset
+    38.724  2686  2812 I korri-viewer: Video decode unit queue overflow
+    38.724  2686  2812 I korri-viewer: Waiting for IDR frame
+    38.724  2686  2812 I korri-viewer: Waiting for IDR frame
+    38.725  2686  2798 I korri-viewer: IDR frame request sent
+    38.788  2686  2812 I korri-viewer: Waiting for IDR frame
+    38.945  2686  2825 I korri-viewer: sound: 60 ms pending; 93 packets dropped since the last line
+    39.906  2686  2812 I korri-viewer: Video decode unit queue overflow
+    39.921  2686  2798 I korri-viewer: IDR frame request sent
+    39.931  2686  2812 I korri-viewer: Waiting for IDR frame
+    39.941  2686  2812 I korri-viewer: Waiting for IDR frame
+    40.032  2686  2825 I korri-viewer: sound: 43 ms pending; 57 packets dropped since the last line
+    41.042  2686  2825 I korri-viewer: sound: 58 ms pending; 44 packets dropped since the last line
+    42.156  2686  2825 I korri-viewer: sound: 45 ms pending; 53 packets dropped since the last line
+    43.189  2686  2825 I korri-viewer: sound: 41 ms pending; 78 packets dropped since the last line
+    44.189  2686  2825 I korri-viewer: sound: 45 ms pending; 55 packets dropped since the last line
+    45.295  2686  2825 I korri-viewer: sound: 60 ms pending; 42 packets dropped since the last line
+    46.301  2686  2825 I korri-viewer: sound: 50 ms pending; 54 packets dropped since the last line
+    47.314  2686  2825 I korri-viewer: sound: 40 ms pending; 59 packets dropped since the last line
+    48.364  2686  2825 I korri-viewer: sound: 70 ms pending; 39 packets dropped since the last line
+    48.543  2686  2824 I korri-viewer: Audio packet queue overflow
+    48.545  2686  2825 I korri-viewer: Network dropped audio data (expected 3152, but received 3165)
+    49.629  2686  2825 I korri-viewer: sound: 41 ms pending; 49 packets dropped since the last line
+    50.023  2686  2812 I korri-viewer: Video decode unit queue overflow
+    50.048  2686  2798 I korri-viewer: IDR frame request sent
+    50.049  2686  2812 I korri-viewer: Waiting for IDR frame
+    50.062  2686  2812 I korri-viewer: Waiting for IDR frame
+    50.718  2686  2825 I korri-viewer: sound: 41 ms pending; 26 packets dropped since the last line
+    51.251  2686  2813 I korri-viewer: picture: frame 1168 not decoded: cannot queue the frame: AMEDIA_ERROR_UNKNOWN (-10000)
+    51.252  2686  2807 E CCodec  : Codec2 component "c2.goldfish.h264.decoder" died.
+    51.254  2686  2811 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    51.254  2686  2813 I korri-viewer: picture: frame 1168 not decoded: cannot queue the frame: AMEDIA_ERROR_UNKNOWN (-10000); recovery from a flush
+    51.344     0     0 I init    : Service 'android-hardware-media-c2-goldfish-hal-1-0' (pid 3357) received signal 9
+    51.351     0     0 I init    : Sending signal 9 to service 'android-hardware-media-c2-goldfish-hal-1-0' (pid 3357) process group...
+    51.356     0     0 I init    : starting service 'android-hardware-media-c2-goldfish-hal-1-0'...
+    51.267  2686  2813 I korri-viewer: picture: flush failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    51.267  2686  2813 I korri-viewer: picture: restart failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    51.374  2686  2812 I korri-viewer: Video decode unit queue overflow
+    51.374  2686  2798 I korri-viewer: IDR frame request sent
+    51.407  2686  2812 I korri-viewer: Waiting for IDR frame
+    51.447  2686  2813 I korri-viewer: picture: reset done; the core asks for an IDR frame
+    51.458  2686  2813 I korri-viewer: Requesting IDR frame on behalf of DR
+    51.458  2686  2798 I korri-viewer: IDR frame request sent
+    51.464  2686  2812 I korri-viewer: Waiting for IDR frame
+    51.578  2686  2811 I korri-viewer: picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 1279, 719), width: int32(1280), height: int32(720), max-height: int32(2960), max-width: int32(2960), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}
+    51.578  2686  2811 I korri-viewer: picture: the decoder returns frames again after a reset
+    51.802  2686  2825 I korri-viewer: sound: 75 ms pending; 73 packets dropped since the last line
+    51.992  2686  2812 I korri-viewer: Video decode unit queue overflow
+    51.992  2686  2798 I korri-viewer: IDR frame request sent
+    51.994  2686  2812 I korri-viewer: Waiting for IDR frame
+    52.030  2686  2812 I korri-viewer: Waiting for IDR frame
+    52.858  2686  2825 I korri-viewer: sound: 100 ms pending; 73 packets dropped since the last line
+    53.910  2686  2825 I korri-viewer: sound: 84 ms pending; 48 packets dropped since the last line
+    54.068  2686  2812 I korri-viewer: Video decode unit queue overflow
+    54.069  2686  2798 I korri-viewer: IDR frame request sent
+    54.082  2686  2812 I korri-viewer: Waiting for IDR frame
+    54.916  2686  2825 I korri-viewer: sound: 53 ms pending; 56 packets dropped since the last line
+    55.922  2686  2825 I korri-viewer: sound: 43 ms pending; 34 packets dropped since the last line
+    56.923  2686  2825 I korri-viewer: sound: 47 ms pending; 70 packets dropped since the last line
+    57.991  2686  2825 I korri-viewer: sound: 50 ms pending; 73 packets dropped since the last line
+    58.695  2686  2812 I korri-viewer: Video decode unit queue overflow
+    58.695  2686  2798 I korri-viewer: IDR frame request sent
+    58.720  2686  2812 I korri-viewer: Waiting for IDR frame
+    58.996  2686  2825 I korri-viewer: sound: 44 ms pending; 61 packets dropped since the last line
+    60.101  2686  2825 I korri-viewer: sound: 52 ms pending; 46 packets dropped since the last line
+    61.189  2686  2825 I korri-viewer: sound: 55 ms pending; 51 packets dropped since the last line
+    62.197  2686  2825 I korri-viewer: sound: 44 ms pending; 90 packets dropped since the last line
+    63.066  2686  2812 I korri-viewer: Video decode unit queue overflow
+    63.068  2686  2798 I korri-viewer: IDR frame request sent
+    63.094  2686  2812 I korri-viewer: Waiting for IDR frame
+    63.203  2686  2825 I korri-viewer: sound: 54 ms pending; 63 packets dropped since the last line
+    63.698  2686  2812 I korri-viewer: Video decode unit queue overflow
+    63.713  2686  2812 I korri-viewer: Waiting for IDR frame
+    63.713  2686  2798 I korri-viewer: IDR frame request sent
+    64.213  2686  2825 I korri-viewer: sound: 40 ms pending; 29 packets dropped since the last line
+    64.464  2686  2812 I korri-viewer: Video decode unit queue overflow
+    64.464  2686  2812 I korri-viewer: Waiting for IDR frame
+    64.464  2686  2798 I korri-viewer: IDR frame request sent
+    64.474  2686  2812 I korri-viewer: Waiting for IDR frame
+    64.934  2686  2752 I korri-viewer: input: ended: 0 keys, 0 controller states, 0 arrivals, 0 mouse, 0 touches sent; 0 held; 0 unsupported, 0 outside the stream, 0 failed
+    64.935  2686  2752 I korri-viewer: request {"launchId":"recovery-proof","command":{"kind":"Stop"}}
+    65.043  2686  2767 I korri-viewer: input: the core takes no more input
+    65.046  2686  2767 I korri-viewer: Stopping input stream...
+    65.046  2686  2767 I korri-viewer: done
+    65.046  2686  2767 I korri-viewer: Stopping audio stream...
+    65.058  2686  2767 I korri-viewer: sound: stream closed
+    65.058  2686  2767 I korri-viewer: sound: ended: 2739 callbacks, 1169280 frames played, 226302 frames silent, 349 short callbacks after the first sound, 6355 packets, 0 concealed, 1480 dropped over 40 ms pending, 0 not decoded, 21 device xruns, 0 reopened
+    65.058  2686  2767 I korri-viewer: done
+    65.059  2686  2767 I korri-viewer: Stopping video stream...
+    65.102  2686  2796 I korri-viewer: ENet wait interrupted
+    65.102  2686  2796 I korri-viewer: Control stream connection failed: 4
+    65.207  2686  2767 I korri-viewer: picture: decoder stopped
+    65.240  2686  2767 I korri-viewer: done
+    65.240  2686  2767 I korri-viewer: Stopping control stream...
+    65.294  2686  2767 I korri-viewer: ENet peer acknowledged disconnection
+    65.294  2686  2767 I korri-viewer: done
+    65.294  2686  2767 I korri-viewer: Cleaning up input stream...
+    65.294  2686  2767 I korri-viewer: done
+    65.294  2686  2767 I korri-viewer: Cleaning up video stream...
+    65.294  2686  2767 I korri-viewer: done
+    65.294  2686  2767 I korri-viewer: Cleaning up control stream...
+    65.294  2686  2767 I korri-viewer: done
+    65.295  2686  2767 I korri-viewer: Cleaning up audio stream...
+    65.377  2686  2767 I korri-viewer: done
+    65.377  2686  2767 I korri-viewer: Cleaning up platform...
+    65.377  2686  2767 I korri-viewer: done
+    65.380  2686  2767 I korri-viewer: event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+    65.380  2686  2767 I korri-viewer: event {"kind":"Status","value":"Stopped"}
+    65.381  2686  3925 I korri-viewer: reply Stop {"kind":"Ok"}
+    65.502  2686  2752 I korri-viewer: viewer ended

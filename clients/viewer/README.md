@@ -24,6 +24,8 @@ nix build .#checks.x86_64-linux.korri-viewer-android
 # aka's own fixture, which the emulator reaches at aka's Tailscale address.
 nix build .#korri-viewer-android-apk
 nix run .#viewer-android-proof -- --sender local --stream-host AKA_TAILSCALE_ADDRESS
+# The decoder's recovery (#490): emulator and sender fixture on this host.
+nix run .#viewer-android-recovery-proof -- --stream-host AKA_TAILSCALE_ADDRESS
 ```
 
 ## Boundaries
@@ -657,7 +659,14 @@ buffer queue, and the compositor reads the same buffer.
   event loop failed`. The frames that the codec held when it failed get
   rows with no times in the frame record. Each step and its result go to
   the log (`picture: … recovery from a flush`, `picture: reset done; …`,
-  `picture: the decoder returns frames again after a reset`).
+  `picture: the decoder returns frames again after a reset`). Proof
+  (`nix run .#viewer-android-recovery-proof -- --stream-host ADDRESS`,
+  `android/proof/recovery.py`, record `proof/android-recovery/`): the
+  emulator and the sender fixture both on one host; the tool kills the
+  emulator's Codec2 service twice while the app streams, and the frame IDs
+  that screenshots read go on rising after each kill. Two of three runs
+  passed; in the other, the fixture's Sunshine dropped the client after the
+  decoder had recovered, for a reason that its log does not give.
 - Pacing: upstream Moonlight's lowest-latency mode. An output thread hands
   each frame to the display at once
   (`AMediaCodec_releaseOutputBufferAtTime` with the time now); when the

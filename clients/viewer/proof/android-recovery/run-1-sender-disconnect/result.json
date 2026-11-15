@@ -1,0 +1,323 @@
+{
+  "stream_host": "100.117.97.45",
+  "checks": {
+    "running_event": true,
+    "start_reply_ok": true,
+    "picture_moves_before_the_kill": true,
+    "kill_1_service_restarted": true,
+    "kill_1_decoder_recovered": true,
+    "kill_1_picture_moves_after_it": false,
+    "kill_2_service_restarted": true,
+    "kill_2_decoder_recovered": false,
+    "kill_2_picture_moves_after_it": false,
+    "stopped_event": true,
+    "viewer_ended_without_failure": false,
+    "no_app_crash": true,
+    "stream_never_ended_on_a_decoder_failure": true,
+    "frame_record_written": true,
+    "frame_record_ids_never_go_back": true,
+    "frame_record_frames_shown_after_each_kill": false
+  },
+  "store": {
+    "apk": "/nix/store/z0423f6lp3nma8jxaw2lk3kvk24ywzyg-korri-viewer-android-apk-0.1.0/korri-viewer-unsigned.apk",
+    "viewer": "/nix/store/j0i5dw15gj01rba9lwddy2r7syla8823-korri-viewer-0.1.0"
+  },
+  "sunshine_port": 57585,
+  "emulator": {
+    "release": "12",
+    "sdk": "31",
+    "abi": "x86_64"
+  },
+  "default_network": "101",
+  "before_kill": [
+    {
+      "file": "before-1.png",
+      "host_monotonic_s": 492464.006,
+      "id": 1913
+    },
+    {
+      "file": "before-2.png",
+      "host_monotonic_s": 492465.513,
+      "id": 2001
+    },
+    {
+      "file": "before-3.png",
+      "host_monotonic_s": 492467.177,
+      "id": 2096
+    }
+  ],
+  "kills": [
+    {
+      "kill_monotonic_s": 35.96,
+      "service_pid_before": "347",
+      "service_pid_after": "3305",
+      "codec_died": "    35.990  2654  2769 E CCodec  : Codec2 component \"c2.goldfish.h264.decoder\" died.",
+      "recovered": "    36.312  2654  2783 I korri-viewer: picture: the decoder returns frames again after a reset",
+      "seconds_to_recovered_line": 1.2,
+      "app_lines": [
+        "picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)",
+        "picture: frame 432 not decoded: cannot queue the frame: AMEDIA_ERROR_UNKNOWN (-10000)",
+        "picture: frame 432 not decoded: cannot queue the frame: AMEDIA_ERROR_UNKNOWN (-10000); recovery from a flush",
+        "picture: flush failed: AMEDIA_ERROR_UNKNOWN (-10000)",
+        "picture: restart failed: AMEDIA_ERROR_UNKNOWN (-10000)",
+        "picture: reset done; the core asks for an IDR frame",
+        "picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 1279, 719), width: int32(1280), height: int32(720), max-height: int32(2960), max-width: int32(2960), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}",
+        "picture: the decoder returns frames again after a reset"
+      ],
+      "stream_ended": false,
+      "screenshots": [
+        {
+          "file": "after-kill-1-1.png",
+          "host_monotonic_s": 492470.026,
+          "id": 2236
+        },
+        {
+          "file": "after-kill-1-2.png",
+          "host_monotonic_s": 492471.519,
+          "id": 2236
+        },
+        {
+          "file": "after-kill-1-3.png",
+          "host_monotonic_s": 492473.063,
+          "id": 2236
+        },
+        {
+          "file": "after-kill-1-4.png",
+          "host_monotonic_s": 492474.405,
+          "id": 2236
+        }
+      ]
+    },
+    {
+      "kill_monotonic_s": 42.93,
+      "service_pid_before": "3305",
+      "service_pid_after": "3894",
+      "codec_died": "",
+      "recovered": "",
+      "seconds_to_recovered_line": null,
+      "app_lines": [],
+      "stream_ended": false,
+      "screenshots": [
+        {
+          "file": "after-kill-2-1.png",
+          "host_monotonic_s": 492506.367,
+          "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+        },
+        {
+          "file": "after-kill-2-2.png",
+          "host_monotonic_s": 492507.902,
+          "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+        },
+        {
+          "file": "after-kill-2-3.png",
+          "host_monotonic_s": 492509.334,
+          "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+        },
+        {
+          "file": "after-kill-2-4.png",
+          "host_monotonic_s": 492510.765,
+          "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+        }
+      ]
+    }
+  ],
+  "viewer_ran": {
+    "decode": "mediacodec",
+    "decoder": "c2.goldfish.h264.decoder"
+  },
+  "frame_record": {
+    "header": "index,frame_number,enqueue_ns,decoded_ns,display_ns",
+    "rows": 472,
+    "in_order": true,
+    "decoded": 471,
+    "handed_off": 450,
+    "recording_units": 472,
+    "handed_off_readable_ids": 449,
+    "handed_off_distinct_ids": 449,
+    "first_handed_off_id": 1755,
+    "last_handed_off_id": 2236,
+    "first_handoff_ns": 28531053965,
+    "sizes": [
+      {
+        "size": [
+          1280,
+          720
+        ],
+        "first_handoff_ns": 28531053965,
+        "handed_off": 450,
+        "readable_ids": 449,
+        "distinct_ids": 449,
+        "ids_never_go_back": true,
+        "repeated": [],
+        "went_back": [],
+        "first_id": 1755,
+        "last_id": 2236
+      }
+    ],
+    "handed_off_ids_never_go_back": true,
+    "after_each_kill": [
+      {
+        "kill_monotonic_s": 35.96,
+        "last_id_before": 2184,
+        "handed_off_after": 33,
+        "first_id_after": 2197,
+        "last_id_after": 2236
+      },
+      {
+        "kill_monotonic_s": 42.93,
+        "last_id_before": 2236,
+        "handed_off_after": 0,
+        "first_id_after": null,
+        "last_id_after": null
+      }
+    ]
+  },
+  "sender_restore": {
+    "live_games": [],
+    "product_units": {
+      "at_start": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 8317014
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 219956135598
+        },
+        "korri-clock-governor.service": {
+          "pid": 3896,
+          "started": 164324721
+        },
+        "korri-compositor.service": {
+          "pid": 748122,
+          "started": 87957282465
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 2569242,
+          "started": 219957620000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 164531729
+        },
+        "korri-limits.service": {
+          "pid": 4035,
+          "started": 164533214
+        },
+        "korri-local-signer.service": {
+          "pid": 2569201,
+          "started": 219956806525
+        },
+        "korri-plugin-admin.service": {
+          "pid": 748266,
+          "started": 87969764633
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 87893718128
+        },
+        "korri-portal-credentials.service": {
+          "pid": 0,
+          "started": 162355048
+        },
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 1489945,
+          "started": 168435600000
+        },
+        "korri-sunshine.service": {
+          "pid": 2083614,
+          "started": 426660463253
+        },
+        "korrid.service": {
+          "pid": 2083501,
+          "started": 426653099424
+        }
+      },
+      "at_end": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 8317014
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 219956135598
+        },
+        "korri-clock-governor.service": {
+          "pid": 3896,
+          "started": 164324721
+        },
+        "korri-compositor.service": {
+          "pid": 748122,
+          "started": 87957282465
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 2569242,
+          "started": 219957620000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 164531729
+        },
+        "korri-limits.service": {
+          "pid": 4035,
+          "started": 164533214
+        },
+        "korri-local-signer.service": {
+          "pid": 2569201,
+          "started": 219956806525
+        },
+        "korri-plugin-admin.service": {
+          "pid": 748266,
+          "started": 87969764633
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 87893718128
+        },
+        "korri-portal-credentials.service": {
+          "pid": 0,
+          "started": 162355048
+        },
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 1489945,
+          "started": 168435600000
+        },
+        "korri-sunshine.service": {
+          "pid": 2083614,
+          "started": 426660463253
+        },
+        "korrid.service": {
+          "pid": 2083501,
+          "started": 426653099424
+        }
+      },
+      "changed": []
+    },
+    "pass": true,
+    "pids_unchanged": {},
+    "run_folder": "/tmp/korri-stream-cadence-sender-crf70mgu",
+    "run_folder_bytes": 3349696,
+    "run_folder_removed": true,
+    "stray_processes_killed": [],
+    "remaining_processes": [],
+    "other_processes": [],
+    "new_input_devices": [],
+    "gone_input_devices": [],
+    "input_rule": "record",
+    "errors": []
+  },
+  "emulator_stop": {
+    "started": true,
+    "exit_code": 0,
+    "processes_left": []
+  },
+  "pass": false
+}
