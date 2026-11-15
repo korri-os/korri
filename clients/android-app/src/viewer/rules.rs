@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! The stream's rules that need no Android: the launches queued for an
 //! activity when it ends, the end of the runtime's thread, the keys that go
-//! on to Android, and the files of the pinned server certificates. The
+//! on to Android, the files of the pinned server certificates, and the
+//! blocking calls from korrid's async code. The
 //! library builds for Android only, so the build machine runs these tests
 //! through `tests/host.rs` (`cargo test --test host`).
 use std::{
@@ -93,6 +94,15 @@ pub(crate) fn remove_stale_pins(directory: &Path) -> io::Result<usize> {
     Ok(removed)
 }
 
+/// A treaty request, or any call that waits or goes into Android, from
+/// korrid's async code: on a thread of the runtime's blocking pool, so that
+/// korrid's async worker stays free. `None` when it panicked.
+pub(crate) async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Option<T> {
+    tokio::task::spawn_blocking(work).await.ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,8 +110,26 @@ mod tests {
         fs,
         os::unix::fs::symlink,
         path::PathBuf,
-        time::{SystemTime, UNIX_EPOCH},
+        time::{Duration, SystemTime, UNIX_EPOCH},
     };
+
+    // D11 review: Snapshot ran the lifecycle's request, with the viewer's
+    // battery read through JNI, on korrid's async worker. On a runtime with
+    // one worker, work that waits must leave that worker free.
+    #[test]
+    fn blocking_work_leaves_korrids_async_worker_free() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let freed = runtime.block_on(async {
+            let (ran, heard) = mpsc::channel();
+            let other = tokio::spawn(async move { ran.send(()).unwrap() });
+            let freed = blocking(move || heard.recv_timeout(Duration::from_secs(2)).is_ok()).await;
+            other.await.unwrap();
+            freed
+        });
+        assert_eq!(freed, Some(true));
+    }
 
     #[test]
     fn an_activity_that_ends_refuses_every_launch_still_queued() {

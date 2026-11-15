@@ -253,9 +253,9 @@ async fn request(
 ) -> Result<ViewerReply, LinuxViewerError> {
     let name = kind(&request.command);
     logcat::info(&format!("korri-app: viewer request {}", json(&request)));
-    let reply = tokio::task::spawn_blocking(move || lifecycle.request(request))
+    let reply = rules::blocking(move || lifecycle.request(request))
         .await
-        .map_err(|_| error("viewer worker failed"))?;
+        .ok_or_else(|| error("viewer worker failed"))?;
     logcat::info(&format!("korri-app: viewer reply {name} {}", json(&reply)));
     Ok(reply)
 }
@@ -387,10 +387,16 @@ impl LinuxStreamViewer for Adapter {
                     ..Default::default()
                 }));
             };
-            match lifecycle.request(ViewerRequest {
+            // The readings go into Android (the battery through JNI) and take
+            // the picture's lock: not on korrid's async worker.
+            let request = ViewerRequest {
                 launch_id: launch.to_owned(),
                 command: ViewerCommand::Snapshot,
-            }) {
+            };
+            let reply = rules::blocking(move || lifecycle.request(request))
+                .await
+                .ok_or_else(|| error("viewer worker failed"))?;
+            match reply {
                 ViewerReply::Snapshot { snapshot } => Ok(snapshot.map(|snapshot| {
                     self.0.report_snapshot(launch, &snapshot);
                     let mut snapshot = ViewerSnapshot::from(snapshot);

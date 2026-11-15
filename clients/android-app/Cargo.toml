@@ -43,6 +43,11 @@ tokio = { version = "1", features = ["rt", "sync"] }
 serde = "1"
 serde_json = "1"
 
+[dev-dependencies]
+# The host tests of src/viewer/rules.rs (tests/host.rs): its blocking calls
+# from korrid's async code. The release that the app locks.
+tokio = { version = "1", features = ["rt", "sync"] }
+
 # The shell's vendored Slint 1.18.1 (clients/shell/vendor/README.md). Cargo
 # reads [patch] only from the root crate, so this repeats the shell's list.
 [patch.crates-io]
