@@ -29,6 +29,36 @@ fn id(record: &SnapshotRecord) -> String {
     snapshot_id(record).unwrap()
 }
 
+#[tokio::test]
+async fn held_record_payload_does_not_read_unrelated_history() {
+    let node = Node::new(1, 11, TransferBehaviour::default()).await;
+    let record = node.seed(b"already held", vec![]);
+    let mut unrelated = record.clone();
+    unrelated.game_id = "unrelated".into();
+    let unrelated_id = node
+        .repository
+        .put_record(&node.owner(), &unrelated)
+        .unwrap();
+    let path = node
+        ._root
+        .path()
+        .join("saves")
+        .join(node.owner())
+        .join("unrelated")
+        .join(format!("{}.json", hash_hex(&unrelated_id).unwrap()));
+    std::fs::write(path, b"not a record").unwrap();
+    // Any whole-store object authorization would fail on this history.
+    assert!(node
+        .repository
+        .object(&node.owner(), &record.locations[0].files[0].sha256)
+        .is_err());
+
+    node.service
+        .fetch_record_payload(&node.owner(), &node.device(), &record)
+        .await
+        .unwrap();
+}
+
 #[derive(Clone, Default)]
 struct TransferBehaviour {
     ranges: Arc<Mutex<Vec<Option<String>>>>,

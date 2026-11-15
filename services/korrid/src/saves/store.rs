@@ -1535,6 +1535,22 @@ mod observation_tests {
             store.payload_sizes(&person, "game", &id).unwrap(),
             BTreeMap::from([(held, 4)])
         );
+        // The shared object tree also holds bytes named only by another
+        // person's history. They must not appear in this person's answer.
+        let other_person = "33".repeat(32);
+        let other_record = record_of("game", &[b"foreign"]);
+        store.put_record(&other_person, &other_record).unwrap();
+        store
+            .put_object(
+                &other_person,
+                &super::super::record::hash(b"foreign"),
+                &mut b"foreign".as_slice(),
+            )
+            .unwrap();
+        assert_eq!(
+            store.payload_sizes(&person, "game", &id).unwrap(),
+            BTreeMap::from([(super::super::record::hash(b"held"), 4)])
+        );
         // Another person's history does not answer for this record.
         assert!(matches!(
             store.payload_sizes(&"33".repeat(32), "game", &id),
