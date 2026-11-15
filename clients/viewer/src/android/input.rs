@@ -362,7 +362,7 @@ impl Gate {
         self.closing.store(true, Ordering::SeqCst);
         *self.open.write().unwrap_or_else(PoisonError::into_inner) = false;
     }
-    fn pass(&self, send: impl FnOnce() -> i32) -> i32 {
+    pub(crate) fn pass(&self, send: impl FnOnce() -> i32) -> i32 {
         if self.closing.load(Ordering::SeqCst) {
             return CLOSED;
         }

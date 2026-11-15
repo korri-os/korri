@@ -4,9 +4,10 @@
 //! the host, as Artemis's `ControllerHandler` does them at API 31.
 //!
 //! The core calls `rumble`, `rumble_triggers` and `set_controller_led` on
-//! its own thread (`CtrlAsyncCb`). These callbacks only hand a `Command` to
-//! the feedback thread (`Worker`): no JNI and no wait on the core's thread,
-//! and no panic into C. The feedback thread is attached to the VM for its
+//! its own thread (`CtrlAsyncCb`). These callbacks only leave the
+//! controller's latest value for the feedback thread (`Worker`), which keeps
+//! no more than that: no JNI and no wait on the core's thread, no backlog
+//! behind a call into Android that stalls, and no panic into C. The feedback thread is attached to the VM for its
 //! whole life; it alone calls Android (`Outputs`, `feedback_jni.rs` in the
 //! app, a scripted one in the tests), and it alone polls the batteries,
 //! which Artemis also keeps off its main thread: `getBatteryState` is a
@@ -16,8 +17,9 @@
 //! The app's thread tells the feedback thread which device holds which
 //! controller number (`Seats`), when the controller's arrival goes to the
 //! host. `stop` ends the feedback before the core stops: the core's
-//! callbacks reach nothing more, and every vibration and light that the
-//! stream started is stopped.
+//! callbacks reach nothing more, no battery report of the stream goes out
+//! any more, and every vibration and light that the stream started is
+//! stopped, before any work that waited.
 //!
 //! Ported from Korri's copy of Artemis (`clients/android`, from
 //! `simonwjackson/artemis` at `cf12c432`, a fork of
@@ -29,16 +31,16 @@
 //! `InputDeviceContext.destroy`, `stop`) and `Game.java`'s callbacks.
 //! Artemis ships under the GNU GPL version 3 with no "or later" grant, so
 //! this file does too. The Rust adaptation is Korri work dated 2026-11-14.
-use super::input::{Device, Packet, Sink};
+use super::input::{Device, Gate, Packet, Sink};
 use crate::log;
 use anyhow::Result;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     panic::{AssertUnwindSafe, catch_unwind},
     sync::{
-        Mutex, PoisonError,
-        atomic::{AtomicU64, Ordering},
-        mpsc::{self, Receiver, RecvTimeoutError, Sender},
+        Arc, Condvar, Mutex, PoisonError,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        mpsc::{self, RecvTimeoutError, Sender},
     },
     thread::JoinHandle,
     time::Duration,
@@ -236,6 +238,14 @@ pub trait Outputs {
     fn forget(&mut self, device: i32);
 }
 
+/// What a value from the host sets.
+#[derive(Clone, Copy)]
+enum Kind {
+    Rumble,
+    Triggers,
+    Light,
+}
+
 /// One seated controller, as Artemis's `InputDeviceContext` keeps it.
 #[derive(Debug)]
 struct Held {
@@ -299,22 +309,24 @@ impl Feedback {
         outputs.forget(device);
     }
 
-    /// `handleRumble`: every controller with this number.
-    pub fn rumble(&mut self, number: u16, low: u16, high: u16, outputs: &mut dyn Outputs) {
+    /// `handleRumble`: every controller with this number. The log line.
+    pub fn rumble(
+        &mut self,
+        number: u16,
+        low: u16,
+        high: u16,
+        outputs: &mut dyn Outputs,
+    ) -> String {
         self.counts.rumbles += 1;
-        let mut calls = Vec::new();
+        let (mut calls, mut matched) = (Vec::new(), 0);
         for held in self.held.values_mut().filter(|h| h.seat.number == number) {
+            matched += 1;
             held.low = low;
             held.high = high;
             calls.extend(motors(held));
         }
-        self.run(
-            "rumble",
-            number,
-            &format!("low {low:04x} high {high:04x}"),
-            calls,
-            outputs,
-        );
+        let values = format!("low {low:04x} high {high:04x}");
+        self.run(Kind::Rumble, number, &values, matched, calls, outputs)
     }
 
     /// `handleRumbleTriggers`: only four vibrators rumble the triggers.
@@ -324,29 +336,31 @@ impl Feedback {
         left: u16,
         right: u16,
         outputs: &mut dyn Outputs,
-    ) {
+    ) -> String {
         self.counts.trigger_rumbles += 1;
-        let mut calls = Vec::new();
+        let (mut calls, mut matched) = (Vec::new(), 0);
         for held in self.held.values_mut().filter(|h| h.seat.number == number) {
+            matched += 1;
             held.left_trigger = left;
             held.right_trigger = right;
             if matches!(held.seat.rumble, Rumble::Quad(_)) {
                 calls.extend(motors(held));
             }
         }
-        let what = format!("left {left:04x} right {right:04x}");
-        self.run("trigger rumble", number, &what, calls, outputs);
+        let values = format!("left {left:04x} right {right:04x}");
+        self.run(Kind::Triggers, number, &values, matched, calls, outputs)
     }
 
     /// `handleSetControllerLED`: every controller with this number and an
     /// RGB light.
-    pub fn light(&mut self, number: u16, rgb: (u8, u8, u8), outputs: &mut dyn Outputs) {
+    pub fn light(&mut self, number: u16, rgb: (u8, u8, u8), outputs: &mut dyn Outputs) -> String {
         self.counts.lights += 1;
         let (r, g, b) = rgb;
         let argb = 0xff00_0000 | u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b);
-        let mut calls = Vec::new();
-        for held in self.held.values_mut() {
-            if held.seat.number == number && held.seat.light {
+        let (mut calls, mut matched) = (Vec::new(), 0);
+        for held in self.held.values_mut().filter(|h| h.seat.number == number) {
+            matched += 1;
+            if held.seat.light {
                 held.light_open = true;
                 calls.push(Call::Light {
                     device: held.seat.device,
@@ -354,7 +368,8 @@ impl Feedback {
                 });
             }
         }
-        self.run("light", number, &format!("{argb:08x}"), calls, outputs);
+        let values = format!("{argb:08x}");
+        self.run(Kind::Light, number, &values, matched, calls, outputs)
     }
 
     /// Read the batteries that are due, and report each change.
@@ -398,12 +413,12 @@ impl Feedback {
         self.held.values().map(|held| held.next_battery_ms).min()
     }
 
-    /// `stop`: every controller's vibration and light stop, then the
-    /// phone's own vibrator.
+    /// `stop`: every controller's vibration stops, then the phone's own
+    /// vibrator, then the lights are given back.
     pub fn stop(&mut self, outputs: &mut dyn Outputs) {
-        for (device, held) in std::mem::take(&mut self.held) {
-            self.destroy(&held, outputs);
-            outputs.forget(device);
+        let held = std::mem::take(&mut self.held);
+        for held in held.values() {
+            self.cancel(held, outputs);
         }
         self.call(
             &Call::CancelVibrator {
@@ -411,6 +426,10 @@ impl Feedback {
             },
             outputs,
         );
+        for (device, held) in held {
+            self.close_light(&held, outputs);
+            outputs.forget(device);
+        }
     }
 
     /// What the feedback did, for the log.
@@ -431,6 +450,11 @@ impl Feedback {
 
     /// `InputDeviceContext.destroy`.
     fn destroy(&mut self, held: &Held, outputs: &mut dyn Outputs) {
+        self.cancel(held, outputs);
+        self.close_light(held, outputs);
+    }
+
+    fn cancel(&mut self, held: &Held, outputs: &mut dyn Outputs) {
         let device = held.seat.device;
         match held.seat.rumble {
             Rumble::Quad(owner) | Rumble::Dual(owner) => self.call(
@@ -447,31 +471,51 @@ impl Feedback {
             ),
             Rumble::None => {}
         }
+    }
+
+    fn close_light(&mut self, held: &Held, outputs: &mut dyn Outputs) {
+        let device = held.seat.device;
         if held.light_open {
             self.call(&Call::CloseLight { device }, outputs);
         }
         log::line(&format!("feedback: {} ({device}) stopped", held.seat.name));
     }
 
+    /// Log what a value does, make its calls, and give the log line.
     fn run(
         &mut self,
-        what: &str,
+        kind: Kind,
         number: u16,
         values: &str,
+        matched: usize,
         calls: Vec<Call>,
         outputs: &mut dyn Outputs,
-    ) {
-        log::line(&format!(
-            "feedback: {what} controller {number} {values}: {}",
-            if calls.is_empty() {
-                "no call: no controller of that number takes it".to_owned()
-            } else {
-                format!("{calls:?}")
+    ) -> String {
+        let what = match kind {
+            Kind::Rumble => "rumble",
+            Kind::Triggers => "trigger rumble",
+            Kind::Light => "light",
+        };
+        let done = if matched == 0 {
+            format!("no call: no controller {number}")
+        } else if calls.is_empty() {
+            match kind {
+                Kind::Rumble => "no call: it has no vibrator",
+                Kind::Triggers => {
+                    "no call: it has no trigger vibrators (four vibrators rumble the triggers)"
+                }
+                Kind::Light => "no call: it has no RGB light",
             }
-        ));
+            .to_owned()
+        } else {
+            format!("{calls:?}")
+        };
+        let line = format!("feedback: {what} controller {number} {values}: {done}");
+        log::line(&line);
         for call in &calls {
             self.call(call, outputs);
         }
+        line
     }
 
     fn call(&mut self, call: &Call, outputs: &mut dyn Outputs) {
@@ -586,53 +630,175 @@ fn report_battery(held: &mut Held, battery: Battery, sink: &mut dyn Sink) -> Opt
     Some(sent)
 }
 
-/// What the feedback thread is asked to do.
+/// One change of the seats, in the order the input made them.
 #[derive(Debug)]
-pub enum Command {
+enum SeatChange {
     Seated(Seat),
     Left(i32),
-    Rumble {
-        number: u16,
-        low: u16,
-        high: u16,
-    },
-    Triggers {
-        number: u16,
-        left: u16,
-        right: u16,
-    },
-    Light {
-        number: u16,
-        rgb: (u8, u8, u8),
-    },
-    /// Stop every vibration and light, answer, and end.
+}
+
+/// What waits for the feedback thread. The seats change in order; of
+/// rumble, trigger rumble and light, only each controller's latest value
+/// waits, as the core merges back-to-back rumble packets for a controller
+/// while Artemis's callback holds the core's thread. A value that is
+/// replaced is never sent, and the last one always is: a rumble of 0 is
+/// never lost. So however long a call into Android stalls, the work that
+/// waits stays three values per controller.
+#[derive(Debug, Default)]
+struct Inbox {
+    seats: VecDeque<SeatChange>,
+    rumble: BTreeMap<u16, (u16, u16)>,
+    triggers: BTreeMap<u16, (u16, u16)>,
+    lights: BTreeMap<u16, (u8, u8, u8)>,
+    /// The stop, with its answer. It goes before all the rest.
+    stop: Option<Sender<()>>,
+    /// Stopped: nothing more is taken.
+    closed: bool,
+}
+
+impl Inbox {
+    fn has_work(&self) -> bool {
+        !(self.seats.is_empty()
+            && self.rumble.is_empty()
+            && self.triggers.is_empty()
+            && self.lights.is_empty())
+    }
+
+    fn take_work(&mut self) -> Work {
+        Work {
+            seats: std::mem::take(&mut self.seats).into(),
+            rumble: std::mem::take(&mut self.rumble),
+            triggers: std::mem::take(&mut self.triggers),
+            lights: std::mem::take(&mut self.lights),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct Work {
+    seats: Vec<SeatChange>,
+    rumble: BTreeMap<u16, (u16, u16)>,
+    triggers: BTreeMap<u16, (u16, u16)>,
+    lights: BTreeMap<u16, (u8, u8, u8)>,
+}
+
+/// The inbox and the signal that wakes the feedback thread.
+#[derive(Debug, Default)]
+struct Mailbox {
+    inbox: Mutex<Inbox>,
+    wake: Condvar,
+    /// The stop was asked for: work in hand is left undone.
+    stopping: AtomicBool,
+}
+
+impl Mailbox {
+    fn post(&self, put: impl FnOnce(&mut Inbox)) {
+        let mut inbox = self.inbox.lock().unwrap_or_else(PoisonError::into_inner);
+        if inbox.closed {
+            return;
+        }
+        put(&mut inbox);
+        drop(inbox);
+        self.wake.notify_one();
+    }
+
+    fn stopping(&self) -> bool {
+        self.stopping.load(Ordering::SeqCst)
+    }
+
+    /// The next thing to do: the stop's answer before anything else, else
+    /// the work that waits, else nothing when a battery read is due.
+    /// Broken, it waits for the stop alone, with no deadline: no spin.
+    fn next(&self, feedback: &Feedback, broken: bool, clock: fn() -> i64) -> Next {
+        let mut inbox = self.inbox.lock().unwrap_or_else(PoisonError::into_inner);
+        loop {
+            if let Some(answer) = inbox.stop.take() {
+                return Next::Stop(answer);
+            }
+            if broken {
+                inbox.take_work();
+                inbox = self
+                    .wake
+                    .wait(inbox)
+                    .unwrap_or_else(PoisonError::into_inner);
+                continue;
+            }
+            if inbox.has_work() {
+                return Next::Work(inbox.take_work());
+            }
+            match feedback.next_deadline() {
+                None => {
+                    inbox = self
+                        .wake
+                        .wait(inbox)
+                        .unwrap_or_else(PoisonError::into_inner)
+                }
+                Some(at) => {
+                    let left = at.saturating_sub(clock());
+                    if left <= 0 {
+                        return Next::Work(Work::default());
+                    }
+                    let wait = Duration::from_millis(left.min(60_000) as u64);
+                    inbox = self
+                        .wake
+                        .wait_timeout(inbox, wait)
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .0;
+                }
+            }
+        }
+    }
+}
+
+enum Next {
+    Work(Work),
     Stop(Sender<()>),
 }
 
-/// The feedback thread.
+/// The battery sink of one stream: behind the core's gate, and behind the
+/// feedback's own, which the stream's stop closes. A battery read that ends
+/// after a stop that did not wait for it sends into no later stream.
+struct Tied<S> {
+    gate: Arc<Gate>,
+    sink: S,
+}
+
+impl<S: Sink> Sink for Tied<S> {
+    fn send(&mut self, packet: Packet) -> i32 {
+        let sink = &mut self.sink;
+        self.gate.pass(|| sink.send(packet))
+    }
+}
+
+/// The feedback thread of one stream.
 pub struct Worker {
     /// Which worker serves the core, if any.
     id: u64,
-    sender: Sender<Command>,
+    mailbox: Arc<Mailbox>,
+    /// The stream's own gate for its battery reports.
+    gate: Arc<Gate>,
     thread: Option<JoinHandle<()>>,
 }
 
 /// The app's thread's way to the feedback thread.
-pub struct SeatSender(Sender<Command>);
+pub struct SeatSender(Arc<Mailbox>);
 
 impl Seats for SeatSender {
     fn seated(&mut self, seat: Seat) {
-        let _ = self.0.send(Command::Seated(seat));
+        self.0
+            .post(|inbox| inbox.seats.push_back(SeatChange::Seated(seat)));
     }
     fn left(&mut self, device: i32) {
-        let _ = self.0.send(Command::Left(device));
+        self.0
+            .post(|inbox| inbox.seats.push_back(SeatChange::Left(device)));
     }
 }
 
 impl Worker {
     /// Start the feedback thread. `outputs` makes Android's side on that
     /// thread, which it attaches to the VM; `sink` takes the battery
-    /// reports; `clock` gives milliseconds of `CLOCK_MONOTONIC`.
+    /// reports, until the stop; `clock` gives milliseconds of
+    /// `CLOCK_MONOTONIC`.
     pub fn start<O, S>(
         outputs: impl FnOnce() -> Result<O> + Send + 'static,
         sink: S,
@@ -643,29 +809,41 @@ impl Worker {
         S: Sink + Send + 'static,
     {
         static NEXT: AtomicU64 = AtomicU64::new(1);
-        let (sender, receiver) = mpsc::channel();
+        let mailbox = Arc::new(Mailbox::default());
+        let gate = Arc::new(Gate::closed());
+        gate.open();
+        let sink = Tied {
+            gate: gate.clone(),
+            sink,
+        };
+        let served = mailbox.clone();
         let thread = std::thread::Builder::new()
             .name("controller-feedback".into())
-            .spawn(move || serve(receiver, outputs, sink, clock))?;
+            .spawn(move || serve(&served, outputs, sink, clock))?;
         Ok(Self {
             id: NEXT.fetch_add(1, Ordering::Relaxed),
-            sender,
+            mailbox,
+            gate,
             thread: Some(thread),
         })
     }
 
     /// For the input: where it says which controllers are seated.
     pub fn seats(&self) -> SeatSender {
-        SeatSender(self.sender.clone())
+        SeatSender(self.mailbox.clone())
     }
 
     /// From now on the core's callbacks reach this thread.
     pub fn serve_core(&self) {
-        *CORE.lock().unwrap_or_else(PoisonError::into_inner) = Some((self.id, self.sender.clone()));
+        *CORE.lock().unwrap_or_else(PoisonError::into_inner) =
+            Some((self.id, self.mailbox.clone()));
     }
 
-    /// The core's callbacks reach nothing more; every vibration and light
-    /// stops. True when the feedback thread confirmed it within `within`.
+    /// The core's callbacks reach nothing more, no battery report of this
+    /// stream goes out any more, and every vibration and light stops before
+    /// any work that waited. True when the feedback thread confirmed it
+    /// within `within`; a call into Android that is under way cannot be cut
+    /// short, and the stop then runs when it returns.
     pub fn stop(&mut self, within: Duration) -> bool {
         {
             let mut core = CORE.lock().unwrap_or_else(PoisonError::into_inner);
@@ -673,27 +851,36 @@ impl Worker {
                 core.take();
             }
         }
+        // Waits only for a send under way, which queues and returns.
+        self.gate.close();
         let Some(thread) = self.thread.take() else {
             return true;
         };
         let (answer, answered) = mpsc::channel();
-        if self.sender.send(Command::Stop(answer)).is_err() {
-            let _ = thread.join();
-            return true;
+        self.mailbox.stopping.store(true, Ordering::SeqCst);
+        {
+            let mut inbox = self
+                .mailbox
+                .inbox
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            inbox.closed = true;
+            inbox.stop = Some(answer);
         }
+        self.mailbox.wake.notify_one();
         match answered.recv_timeout(within) {
             Ok(()) => {
                 let _ = thread.join();
                 true
             }
             Err(RecvTimeoutError::Disconnected) => {
-                // It ended without an answer: it panicked, and said so.
+                // It ended without an answer, and said why.
                 let _ = thread.join();
                 false
             }
             Err(RecvTimeoutError::Timeout) => {
                 log::line(&format!(
-                    "feedback: no answer from the feedback thread in {} ms; the stream stops without it",
+                    "feedback: no answer from the feedback thread in {} ms; the stream stops without it, and it stops the vibration when its call returns",
                     within.as_millis()
                 ));
                 false
@@ -709,22 +896,30 @@ impl Drop for Worker {
 }
 
 /// The feedback thread that the core's callbacks reach, while it serves.
-static CORE: Mutex<Option<(u64, Sender<Command>)>> = Mutex::new(None);
+static CORE: Mutex<Option<(u64, Arc<Mailbox>)>> = Mutex::new(None);
 
-fn to_core_worker(command: Command) {
-    if let Some((_, sender)) = &*CORE.lock().unwrap_or_else(PoisonError::into_inner) {
-        let _ = sender.send(command);
+fn to_core_worker(put: impl FnOnce(&mut Inbox)) {
+    let mailbox = CORE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_ref()
+        .map(|(_, mailbox)| mailbox.clone());
+    if let Some(mailbox) = mailbox {
+        mailbox.post(put);
     }
 }
 
-/// `ConnListenerRumble`, on the core's thread.
+/// `ConnListenerRumble`, on the core's thread: the controller's latest
+/// value waits for the feedback thread; this never waits for it.
 ///
 /// # Safety
 /// None needed: the arguments are plain values. It is `unsafe` only as the
 /// core's callback type is.
 pub unsafe extern "C" fn rumble(number: u16, low: u16, high: u16) {
     crate::callback::guarded("rumble", (), || {
-        to_core_worker(Command::Rumble { number, low, high })
+        to_core_worker(|inbox| {
+            inbox.rumble.insert(number, (low, high));
+        })
     });
 }
 
@@ -734,10 +929,8 @@ pub unsafe extern "C" fn rumble(number: u16, low: u16, high: u16) {
 /// As `rumble`.
 pub unsafe extern "C" fn rumble_triggers(number: u16, left: u16, right: u16) {
     crate::callback::guarded("rumble triggers", (), || {
-        to_core_worker(Command::Triggers {
-            number,
-            left,
-            right,
+        to_core_worker(|inbox| {
+            inbox.triggers.insert(number, (left, right));
         })
     });
 }
@@ -748,96 +941,99 @@ pub unsafe extern "C" fn rumble_triggers(number: u16, left: u16, right: u16) {
 /// As `rumble`.
 pub unsafe extern "C" fn set_controller_led(number: u16, r: u8, g: u8, b: u8) {
     crate::callback::guarded("set controller LED", (), || {
-        to_core_worker(Command::Light {
-            number,
-            rgb: (r, g, b),
+        to_core_worker(|inbox| {
+            inbox.lights.insert(number, (r, g, b));
         })
     });
 }
 
-/// The feedback thread: each command, and each battery when it is due.
+/// The feedback thread: the stop first, then the work that waits, and each
+/// battery when it is due.
 fn serve<O: Outputs, S: Sink>(
-    commands: Receiver<Command>,
+    mailbox: &Mailbox,
     outputs: impl FnOnce() -> Result<O>,
     mut sink: S,
     clock: fn() -> i64,
 ) {
     let mut outputs = match outputs() {
-        Ok(outputs) => outputs,
+        Ok(outputs) => Some(outputs),
         Err(error) => {
             log::line(&format!(
                 "feedback: no rumble, light or battery report: {error:#}"
             ));
-            // Still answer the stop.
-            for command in commands {
-                if let Command::Stop(answer) = command {
-                    let _ = answer.send(());
-                    return;
-                }
-            }
-            return;
+            None
         }
     };
     let mut feedback = Feedback::default();
     // A panic ends the feedback, not the stream; the stop still runs.
-    let mut broken = false;
-    let mut guarded = |what: &str, feedback: &mut Feedback, work: &mut dyn FnMut(&mut Feedback)| {
-        if broken {
-            return;
-        }
-        if catch_unwind(AssertUnwindSafe(|| work(feedback))).is_err() {
-            log::line(&format!(
-                "feedback: {what} panicked; the controllers get no more feedback"
-            ));
-            broken = true;
-        }
-    };
+    let mut broken = outputs.is_none();
     loop {
-        let wait = feedback
-            .next_deadline()
-            .map(|at| Duration::from_millis(at.saturating_sub(clock()).clamp(0, 60_000) as u64));
-        let command = match wait {
-            Some(wait) => commands.recv_timeout(wait),
-            None => commands.recv().map_err(|_| RecvTimeoutError::Disconnected),
-        };
-        match command {
-            Ok(Command::Stop(answer)) => {
-                // Also after a panic: the vibrations must stop.
-                let stopped = catch_unwind(AssertUnwindSafe(|| feedback.stop(&mut outputs)));
-                if stopped.is_err() {
-                    log::line("feedback: the stop panicked");
+        let work = match mailbox.next(&feedback, broken, clock) {
+            Next::Stop(answer) => {
+                if let Some(outputs) = outputs.as_mut() {
+                    // Also after a panic: the vibration must stop.
+                    if catch_unwind(AssertUnwindSafe(|| feedback.stop(outputs))).is_err() {
+                        log::line("feedback: the stop panicked");
+                    }
+                    log::line(&format!("feedback: ended: {}", feedback.report()));
                 }
-                log::line(&format!("feedback: ended: {}", feedback.report()));
                 let _ = answer.send(());
                 return;
             }
-            Ok(command) => {
-                let now = clock();
-                guarded("a command", &mut feedback, &mut |feedback| match &command {
-                    Command::Seated(seat) => feedback.seat(seat.clone(), now),
-                    Command::Left(device) => feedback.leave(*device, &mut outputs),
-                    Command::Rumble { number, low, high } => {
-                        feedback.rumble(*number, *low, *high, &mut outputs)
-                    }
-                    Command::Triggers {
-                        number,
-                        left,
-                        right,
-                    } => feedback.rumble_triggers(*number, *left, *right, &mut outputs),
-                    Command::Light { number, rgb } => feedback.light(*number, *rgb, &mut outputs),
-                    Command::Stop(_) => unreachable!("handled above"),
-                });
-            }
-            Err(RecvTimeoutError::Timeout) => {}
-            Err(RecvTimeoutError::Disconnected) => {
-                let _ = catch_unwind(AssertUnwindSafe(|| feedback.stop(&mut outputs)));
-                log::line(&format!("feedback: ended: {}", feedback.report()));
-                return;
-            }
+            Next::Work(work) => work,
+        };
+        let Some(outputs) = outputs.as_mut() else {
+            continue;
+        };
+        let done = catch_unwind(AssertUnwindSafe(|| {
+            run_work(mailbox, &mut feedback, work, outputs, &mut sink, clock)
+        }));
+        if done.is_err() {
+            log::line("feedback: a call panicked; the controllers get no more feedback");
+            broken = true;
         }
-        guarded("a battery read", &mut feedback, &mut |feedback| {
-            feedback.tick(clock(), &mut outputs, &mut sink)
-        });
+    }
+}
+
+/// The seats' changes in order, then each controller's latest values, then
+/// the batteries that are due. A stop asked for meanwhile leaves the rest.
+fn run_work(
+    mailbox: &Mailbox,
+    feedback: &mut Feedback,
+    work: Work,
+    outputs: &mut dyn Outputs,
+    sink: &mut dyn Sink,
+    clock: fn() -> i64,
+) {
+    for change in work.seats {
+        if mailbox.stopping() {
+            return;
+        }
+        match change {
+            SeatChange::Seated(seat) => feedback.seat(seat, clock()),
+            SeatChange::Left(device) => feedback.leave(device, outputs),
+        }
+    }
+    for (number, (low, high)) in work.rumble {
+        if mailbox.stopping() {
+            return;
+        }
+        feedback.rumble(number, low, high, outputs);
+    }
+    for (number, (left, right)) in work.triggers {
+        if mailbox.stopping() {
+            return;
+        }
+        feedback.rumble_triggers(number, left, right, outputs);
+    }
+    for (number, rgb) in work.lights {
+        if mailbox.stopping() {
+            return;
+        }
+        feedback.light(number, rgb, outputs);
+    }
+    if !mailbox.stopping() {
+        feedback.tick(clock(), outputs, sink);
     }
 }
 
@@ -850,7 +1046,10 @@ pub(crate) mod tests {
     };
     use std::{
         collections::HashMap,
-        sync::{Arc, Mutex as StdMutex},
+        sync::{
+            Arc, Mutex as StdMutex,
+            atomic::{AtomicUsize, Ordering as AtomicOrdering},
+        },
         time::Instant,
     };
 
@@ -864,6 +1063,9 @@ pub(crate) mod tests {
         pub failing: Vec<Target>,
         pub delay: Duration,
         pub panics: bool,
+        /// A battery read takes this long, or panics.
+        pub battery_delay: Duration,
+        pub battery_panics: bool,
     }
 
     impl Scripted {
@@ -894,6 +1096,10 @@ pub(crate) mod tests {
             Ok(())
         }
         fn battery(&mut self, device: i32) -> Result<Option<Battery>> {
+            std::thread::sleep(self.battery_delay);
+            if self.battery_panics {
+                panic!("a Binder fault");
+            }
             Ok(self
                 .batteries
                 .lock()
@@ -1102,6 +1308,31 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_value_that_makes_no_call_says_why() {
+        let mut outputs = Scripted::default();
+        let mut feedback = Feedback::default();
+        feedback.seat(seat(18, 0, Rumble::Dual(Owner::Device), false), 0);
+        feedback.seat(seat(20, 1, Rumble::None, false), 0);
+        assert_eq!(
+            feedback.rumble_triggers(0, 0xffff, 0xffff, &mut outputs),
+            "feedback: trigger rumble controller 0 left ffff right ffff: no call: it has no trigger vibrators (four vibrators rumble the triggers)"
+        );
+        assert_eq!(
+            feedback.rumble(1, 0x0100, 0x0100, &mut outputs),
+            "feedback: rumble controller 1 low 0100 high 0100: no call: it has no vibrator"
+        );
+        assert_eq!(
+            feedback.light(0, (1, 2, 3), &mut outputs),
+            "feedback: light controller 0 ff010203: no call: it has no RGB light"
+        );
+        assert_eq!(
+            feedback.rumble(5, 0xffff, 0xffff, &mut outputs),
+            "feedback: rumble controller 5 low ffff high ffff: no call: no controller 5"
+        );
+        assert_eq!(outputs.take(), []);
+    }
+
+    #[test]
     fn the_light_goes_to_the_rgb_lights_of_that_number() {
         let mut outputs = Scripted::default();
         let mut feedback = Feedback::default();
@@ -1158,7 +1389,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn the_stop_stops_every_controller_and_the_phones_vibrator() {
+    fn the_stop_cancels_every_vibration_before_it_gives_the_lights_back() {
         let mut outputs = Scripted::default();
         let mut feedback = Feedback::default();
         feedback.seat(seat(18, 0, Rumble::Dual(Owner::Device), true), 0);
@@ -1173,10 +1404,10 @@ pub(crate) mod tests {
                 Call::CancelManager {
                     target: Target::Device(18)
                 },
-                Call::CloseLight { device: 18 },
                 Call::CancelVibrator {
                     target: Target::Phone
                 },
+                Call::CloseLight { device: 18 },
             ]
         );
     }
@@ -1376,10 +1607,10 @@ pub(crate) mod tests {
                 Call::CancelManager {
                     target: Target::Device(18)
                 },
-                Call::CloseLight { device: 18 },
                 Call::CancelVibrator {
                     target: Target::Phone
                 },
+                Call::CloseLight { device: 18 },
             ]
         );
         // After the stop the core's callbacks reach nothing.
@@ -1438,6 +1669,194 @@ pub(crate) mod tests {
         .unwrap();
         worker.seats().seated(seat(18, 0, Rumble::None, false));
         assert!(worker.stop(STOP_WAIT));
+    }
+
+    /// The core's thread: rumble after rumble for controller 0, as a host
+    /// may send them, and at the end both motors at 0.
+    fn rumbles_then_zero(count: u32) {
+        std::thread::spawn(move || unsafe {
+            for at in 0..count {
+                let value = (((at % 254) + 1) << 8) as u16;
+                rumble(0, value, value);
+            }
+            rumble(0, 0, 0);
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[test]
+    fn rumble_behind_a_slow_call_collapses_and_the_stop_is_not_kept_waiting() {
+        let _turn = CORE_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
+        // Each call into Android takes 100 ms: a Binder call that stalls.
+        let outputs = Scripted {
+            delay: Duration::from_millis(100),
+            ..Default::default()
+        };
+        let made = outputs.clone();
+        let mut worker = Worker::start(move || Ok(made), Recorded::default(), clock).unwrap();
+        worker
+            .seats()
+            .seated(seat(18, 0, Rumble::Dual(Owner::Device), false));
+        worker.serve_core();
+        rumbles_then_zero(2000);
+        let began = Instant::now();
+        assert!(worker.stop(STOP_WAIT), "the stop waited behind the rumble");
+        assert!(
+            began.elapsed() < Duration::from_secs(1),
+            "{:?}",
+            began.elapsed()
+        );
+        let calls = outputs.calls.lock().unwrap().clone();
+        // A few rumbles at most, then the stop's cancels.
+        assert!(calls.len() <= 5, "{} calls: {calls:?}", calls.len());
+        assert_eq!(
+            calls[calls.len() - 2..],
+            [
+                Call::CancelManager {
+                    target: Target::Device(18)
+                },
+                Call::CancelVibrator {
+                    target: Target::Phone
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn the_latest_rumble_wins_so_a_rumble_of_zero_is_never_lost() {
+        let _turn = CORE_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
+        let outputs = Scripted {
+            delay: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let made = outputs.clone();
+        let mut worker = Worker::start(move || Ok(made), Recorded::default(), clock).unwrap();
+        worker
+            .seats()
+            .seated(seat(18, 0, Rumble::Dual(Owner::Device), false));
+        worker.serve_core();
+        rumbles_then_zero(500);
+        // The motors stop without a stop: the last value was 0.
+        let until = Instant::now() + Duration::from_secs(5);
+        let last = || outputs.calls.lock().unwrap().last().cloned();
+        while Instant::now() < until
+            && last()
+                != Some(Call::CancelManager {
+                    target: Target::Device(18),
+                })
+        {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let calls = outputs.calls.lock().unwrap().clone();
+        assert_eq!(
+            calls.last(),
+            Some(&Call::CancelManager {
+                target: Target::Device(18)
+            }),
+            "{} calls",
+            calls.len()
+        );
+        assert!(calls.len() <= 4, "{} calls: {calls:?}", calls.len());
+        assert!(worker.stop(STOP_WAIT));
+    }
+
+    #[test]
+    fn the_stop_goes_before_pending_work_and_cancels_the_vibration_first() {
+        let _turn = CORE_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
+        let outputs = Scripted {
+            delay: Duration::from_millis(300),
+            ..Default::default()
+        };
+        let made = outputs.clone();
+        let mut worker = Worker::start(move || Ok(made), Recorded::default(), clock).unwrap();
+        let mut seats = worker.seats();
+        seats.seated(seat(18, 0, Rumble::Dual(Owner::Device), true));
+        seats.seated(seat(20, 1, Rumble::Dual(Owner::Device), true));
+        worker.serve_core();
+        unsafe { rumble(0, 0xff00, 0xff00) };
+        // The first rumble's call is under way; more waits behind it.
+        std::thread::sleep(Duration::from_millis(100));
+        unsafe {
+            rumble(1, 0xff00, 0xff00);
+            set_controller_led(0, 1, 2, 3);
+            set_controller_led(1, 4, 5, 6);
+        }
+        assert!(worker.stop(STOP_WAIT));
+        assert_eq!(
+            *outputs.calls.lock().unwrap(),
+            [
+                Call::Combined {
+                    target: Target::Device(18),
+                    amplitudes: vec![0xff, 0xff]
+                },
+                // Nothing that waited: the stop, its cancels first.
+                Call::CancelManager {
+                    target: Target::Device(18)
+                },
+                Call::CancelManager {
+                    target: Target::Device(20)
+                },
+                Call::CancelVibrator {
+                    target: Target::Phone
+                },
+            ]
+        );
+    }
+
+    /// The feedback thread's clock, which counts how often it is read.
+    static CLOCK_READS: AtomicUsize = AtomicUsize::new(0);
+
+    fn counted_clock() -> i64 {
+        CLOCK_READS.fetch_add(1, AtomicOrdering::SeqCst);
+        clock()
+    }
+
+    #[test]
+    fn a_feedback_thread_that_panicked_waits_without_spinning() {
+        // The first battery read panics, before it sets the next one.
+        let outputs = Scripted {
+            battery_panics: true,
+            ..Default::default()
+        };
+        let mut worker =
+            Worker::start(move || Ok(outputs), Recorded::default(), counted_clock).unwrap();
+        worker.seats().seated(seat(18, 0, Rumble::None, false));
+        std::thread::sleep(Duration::from_millis(300));
+        let before = CLOCK_READS.load(AtomicOrdering::SeqCst);
+        std::thread::sleep(Duration::from_millis(300));
+        let reads = CLOCK_READS.load(AtomicOrdering::SeqCst) - before;
+        assert!(reads < 10, "the clock was read {reads} times in 300 ms");
+        assert!(worker.stop(STOP_WAIT));
+    }
+
+    #[test]
+    fn a_battery_read_that_ends_after_a_stop_that_timed_out_reaches_no_stream() {
+        let outputs = Scripted {
+            battery_delay: Duration::from_millis(600),
+            ..Default::default()
+        };
+        outputs.set_battery(18, battery(status::FULL, 1.0));
+        let sent = Arc::new(StdMutex::new(Vec::new()));
+        struct Shared(Arc<StdMutex<Vec<Packet>>>);
+        impl Sink for Shared {
+            fn send(&mut self, packet: Packet) -> i32 {
+                self.0.lock().unwrap().push(packet);
+                0
+            }
+        }
+        let mut worker = Worker::start(move || Ok(outputs), Shared(sent.clone()), clock).unwrap();
+        worker.seats().seated(seat(18, 0, Rumble::None, false));
+        // The battery read is under way when the stream stops.
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(!worker.stop(Duration::from_millis(100)));
+        // It ends after the stop: a new stream may be running by then.
+        std::thread::sleep(Duration::from_millis(1000));
+        assert_eq!(
+            *sent.lock().unwrap(),
+            [],
+            "a stopped stream's battery went on"
+        );
     }
 
     #[test]
