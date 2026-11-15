@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Slice D8 of #434: the app with no Korri Java, proven with no person (ADR 0063).
 
-One headless Android 12 emulator (API 31, x86_64, 2 cores) on this host runs
-the app. The steps:
+One headless Android 12 emulator (API 31, x86_64, 2 cores) on the machine
+that runs this tool runs the app. The steps:
 
-1. Build the APK on this host and read it: no dex, `hasCode="false"`,
+1. Build the APK (Nix decides where) and read it: no dex, `hasCode="false"`,
    Android's own NativeActivity, both ABIs, its own package (O1).
 2. Start the emulator with its data wiped (a new device), install the APK
    signed with the user's debug key, and start the app.

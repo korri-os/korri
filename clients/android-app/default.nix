@@ -2,8 +2,8 @@
 # native shell in one library that Android's own NativeActivity loads. It is
 # built as the viewer's APK is (clients/viewer/android.nix): Nix, cargo,
 # aapt2 and zipalign, no Gradle. Two ABIs: arm64-v8a for phones, x86_64 for
-# the emulator, at API 31 (ADR 0064). The APK is not signed; the proofs sign
-# it with the user's debug key.
+# the emulator, at API 31 (ADR 0064). The APK is debuggable and not signed;
+# the proofs sign it with the user's debug key. Not for distribution.
 #
 # The relay list is an asset, so one library serves two packings: `apk`
 # with the product's relays, and `fixtureApk` with one loopback relay that
@@ -264,6 +264,8 @@ let
         test -f assets/surfaces/velvet/main.slint
         test -f assets/surfaces/velvet/logic.js
         install -m 0644 ${relays} assets/relays.json
+        # --debug-mode makes the APK debuggable, as the viewer's is: a build for
+        # development and the proofs. A distribution build leaves it out (README).
         ${buildTools}/aapt2 link -o unsigned.apk -I ${framework} \
           --manifest AndroidManifest.xml -A assets --debug-mode
         # Fixed times and no extra attributes, as aapt2 writes its entries.

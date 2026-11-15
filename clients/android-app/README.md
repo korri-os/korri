@@ -95,10 +95,21 @@ of `clients/android/sdk.nix`, one derivation for each ABI's library; then
 packs, so a change to the packages or the manifest compiles nothing. No
 Gradle. The output is unsigned; the proof signs it with the user's debug key.
 
+The APK is debuggable: `aapt2 link --debug-mode` sets
+`android:debuggable="true"`, which lets `run-as` and a debugger into the
+app's process and its files, korrid's private state included. It must be
+built without `--debug-mode`, and signed with a release key, before any
+distribution.
+
 - One `Cargo.lock` for korrid, the shell and Slint. It was made from korrid's
   and the shell's locks: every crate is at a version that one of them locks.
-  Where they differed, the newer patch release won (77 of korrid's crates, all
-  semver-compatible). Both pin `rquickjs` 0.14.0, so QuickJS links once.
+  Where they differed, the newer release won. Against korrid's own lock that
+  is 57 patch and 16 minor bumps, all semver-compatible, and 4 versions that
+  only korrid's dev-dependencies use are absent (`aes` 0.9.3,
+  `block-padding` 0.4.2, `cbc` 0.2.1, `cpubits` 0.1.1). Also absent:
+  `itertools` 0.12.1 (bindgen takes 0.13.0, inside its own range) and two
+  optional crates whose features nothing here enables (`tinyvec_macros`,
+  `tracing-serde`). Both pin `rquickjs` 0.14.0, so QuickJS links once.
 - `Cargo.toml` repeats the shell's `[patch.crates-io]`: Cargo reads it only
   from the root crate.
 - Skia's prebuilt archives for both targets (skia-bindings 0.153.3) are fixed
@@ -124,9 +135,12 @@ hash, not built here.
 
 ## Proof
 
-`nix run .#android-app-proof -- --out DIR` (`proof/run.py`), on this host,
-with no person: one headless Android 12 emulator (google_apis x86_64, 2
-cores, `nice` 10, console port 5612), the APK signed with the debug key.
+`nix run .#android-app-proof -- --out DIR` (`proof/run.py`), with no person:
+one headless Android 12 emulator (google_apis x86_64, 2 cores, `nice` 10,
+console port 5612, its data wiped), the APK signed with the debug key. It
+runs where it is started, so run it on aka, not zao (the owner's rule), with
+an adb server of its own (`ANDROID_ADB_SERVER_PORT`) and a free console port
+(`--port`); the record shows the command.
 
 | Check | How |
 | --- | --- |
@@ -154,11 +168,12 @@ Known gaps:
 - On a new device Velvet shows "Connect your identity": this app has no
   signer route yet (route brief, the NIP-55 row). The emulator proof does not
   need an owner.
-- Found on the way, fixed in Velvet (`e21143bbb`): the Android shell gives a
-  surface its first `Resized` before Android gives it the window, so 0 x 0.
-  With that question up, Velvet's first view never ended, and the shell opened
-  Pico instead. The shell still sends 0 x 0 first; a host that waited for the
-  window would not.
+- Found on the way: the Android shell gives a surface its first `Resized`
+  before Android gives it the window, so 0 x 0. With that question up,
+  Velvet's first view never ended, and the shell opened Pico instead.
+  `784e44831` (#482) fixed the same loop in Velvet's `split`, found on ibuki;
+  `test/motion.test.ts` holds this case. The shell still sends 0 x 0 first; a
+  host that waited for the window would not.
 
 ## The holder proof (D9)
 

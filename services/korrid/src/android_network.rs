@@ -188,7 +188,8 @@ mod tests {
         };
         let snapshot = snapshot(&[vpn, unnamed, no_capabilities, no_link], true, true);
         assert!(snapshot.interfaces.is_empty());
-        // The VPN was the active network, so it still decides metering.
+        // The VPN was the active network, but a left-out network decides
+        // nothing: its metering is never read, so nothing is unmetered.
         assert!(!snapshot.facts.unmetered);
     }
 
