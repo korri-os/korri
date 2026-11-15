@@ -49,7 +49,7 @@ use jni::{
 };
 use ndk::{media::media_format::MediaFormat, native_window::NativeWindow};
 use std::{
-    ffi::{CString, c_char, c_int, c_void},
+    ffi::{CString, c_int, c_void},
     path::PathBuf,
     ptr::{NonNull, null_mut},
     sync::{
@@ -910,11 +910,9 @@ fn adaptive_max(name: &str, stream: (i32, i32), fps: i32) -> Result<(i32, i32)> 
 
 fn system_property(name: &str) -> Option<String> {
     let name = CString::new(name).ok()?;
-    let mut value = [0 as c_char; 92]; // PROP_VALUE_MAX
+    // Bytes, not `c_char`: that is `i8` on x86_64 and `u8` on arm64.
+    let mut value = [0u8; 92]; // PROP_VALUE_MAX
     // SAFETY: the value buffer has PROP_VALUE_MAX bytes, as the call needs.
-    let length = unsafe { libc::__system_property_get(name.as_ptr(), value.as_mut_ptr()) };
-    (length > 0).then(|| {
-        let bytes: Vec<u8> = value[..length as usize].iter().map(|&c| c as u8).collect();
-        String::from_utf8_lossy(&bytes).into_owned()
-    })
+    let length = unsafe { libc::__system_property_get(name.as_ptr(), value.as_mut_ptr().cast()) };
+    (length > 0).then(|| String::from_utf8_lossy(&value[..length as usize]).into_owned())
 }
