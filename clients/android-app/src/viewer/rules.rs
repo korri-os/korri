@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! The stream's rules that need no Android: the launches queued for an
-//! activity when it ends, and the end of the runtime's thread. The
-//! library builds for Android only, so the build machine runs these tests
-//! through `tests/host.rs` (`cargo test --test host`).
+//! activity when it ends, the end of the runtime's thread, and the keys
+//! that go on to Android. The library builds for Android only, so the
+//! build machine runs these tests through `tests/host.rs`
+//! (`cargo test --test host`).
 use std::{
     sync::{mpsc, Mutex, PoisonError},
     thread,
@@ -44,6 +45,21 @@ pub(crate) fn unreported<T>(joined: &thread::Result<T>) -> Option<&'static str> 
         .as_ref()
         .err()
         .map(|_| "the viewer's thread panicked")
+}
+
+/// Whether the stream keeps a key from the shell under it. `android`: one of
+/// Android's own keys (volume, power, `overlay::is_system_key`). `taken`:
+/// the stream or its overlay took it.
+///
+/// While the stream stops nothing takes a key, and Android's own keys go on
+/// to Android. Any other key stays the stream's, taken or not: one that
+/// reached Slint under the video once raised the soft keyboard over it.
+pub(crate) fn keeps_key(android: bool, stopping: bool, taken: bool) -> bool {
+    if stopping {
+        !android
+    } else {
+        taken || !android
+    }
 }
 
 #[cfg(test)]
@@ -88,4 +104,24 @@ mod tests {
         assert_eq!(unreported(&failed), None);
     }
 
+    #[test]
+    fn android_keys_go_on_to_android_also_while_the_stream_stops() {
+        assert!(
+            !keeps_key(true, true, false),
+            "volume while the stream stops"
+        );
+        assert!(
+            keeps_key(false, true, false),
+            "a letter while the stream stops"
+        );
+        assert!(
+            !keeps_key(true, false, false),
+            "volume that the stream leaves"
+        );
+        assert!(
+            keeps_key(false, false, false),
+            "a letter that the stream leaves"
+        );
+        assert!(keeps_key(false, false, true), "a key that the stream takes");
+    }
 }

@@ -523,7 +523,14 @@ impl Stream {
             return None;
         };
         if playing.stopping {
-            return Some(true);
+            // Nothing more goes to a stream that stops; Android's own keys
+            // go on to Android.
+            return Some(match event {
+                InputEvent::KeyEvent(key) => {
+                    rules::keeps_key(is_system_key(key.key_code().into()), true, false)
+                }
+                _ => true,
+            });
         }
         let mut android = false;
         let routed = match event {
@@ -540,13 +547,10 @@ impl Stream {
             _ => Routed::Unhandled,
         };
         match routed {
-            Routed::Handled => Some(true),
+            Routed::Handled => Some(rules::keeps_key(android, false, true)),
             // Android's own keys (volume, power) go on: Slint leaves them to
-            // Android. Any other key that the stream does not take ends
-            // here, so the shell under the video never reacts to it (a key
-            // that reached Slint once raised the soft keyboard over the
-            // stream).
-            Routed::Unhandled => Some(!android),
+            // Android. Any other key ends here (`rules::keeps_key`).
+            Routed::Unhandled => Some(rules::keeps_key(android, false, false)),
             Routed::Leave => {
                 self.leave("Ctrl+Alt+Shift+Q");
                 Some(true)
