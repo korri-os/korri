@@ -53,7 +53,9 @@ EOF
  for n in $(seq 0 30); do
   [ "$(systemctl show korri-shell -p MainPID --value)" = "$pid" ] || exit 1
   { cat /proc/uptime; cat /proc/$pid/stat; cat /proc/$pid/smaps_rollup; cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq; } >> "$out/$scenario.samples"
-  { cat /proc/uptime; cat /proc/$pid/fdinfo/*; } >> "$out/$scenario.fdinfo"
+  # Non-render fds can close between globbing and reading fdinfo.
+  { cat /proc/uptime; cat /proc/$pid/fdinfo/* 2>/dev/null || :; } >> "$out/$scenario.fdinfo"
+  if [ "$n" = 30 ]; then end=$(date --iso-8601=seconds); fi
   if [ "$scenario" = velvet-navigation ]; then
    key 106; sleep 0.4; key 105; sleep 0.4
   else
@@ -62,5 +64,5 @@ EOF
   fi
  done
  /nix/store/8svfyws68lbybhhf1466wsakqnk74bxz-grim-1.5.0/bin/grim "$out/$scenario.png"
- journalctl -u korri-shell --since "$start" --no-pager -o cat > "$out/$scenario.log"
+ journalctl -u korri-shell _PID="$pid" --since "$start" --until "$end" --no-pager -o short-iso-precise > "$out/$scenario.pacing.log"
 done

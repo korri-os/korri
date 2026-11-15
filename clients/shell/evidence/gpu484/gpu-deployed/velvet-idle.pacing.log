@@ -1,0 +1,7 @@
+2026-11-15T05:14:11.014655+00:00 rg35xxpro korri-shell[13916]: SHELL_STATS fps=35.400 frames=177 seconds=5.000 heap_bytes=1139167 interval_ms_p50=33.2 p95=34.1 max=35.2
+2026-11-15T05:14:16.036170+00:00 rg35xxpro korri-shell[13916]: SHELL_STATS fps=35.449 frames=178 seconds=5.021 heap_bytes=1139167 interval_ms_p50=33.1 p95=34.2 max=36.2
+2026-11-15T05:14:21.036285+00:00 rg35xxpro korri-shell[13916]: SHELL_STATS fps=35.398 frames=177 seconds=5.000 heap_bytes=1139167 interval_ms_p50=33.0 p95=34.5 max=36.6
+2026-11-15T05:14:26.036292+00:00 rg35xxpro korri-shell[13916]: SHELL_STATS fps=35.200 frames=176 seconds=5.000 heap_bytes=1139167 interval_ms_p50=33.0 p95=34.3 max=38.1
+2026-11-15T05:14:31.051634+00:00 rg35xxpro korri-shell[13916]: SHELL_STATS fps=35.294 frames=177 seconds=5.015 heap_bytes=1139167 interval_ms_p50=33.2 p95=34.7 max=41.1
+2026-11-15T05:14:36.055730+00:00 rg35xxpro korri-shell[13916]: SHELL_STATS fps=35.380 frames=177 seconds=5.003 heap_bytes=1139167 interval_ms_p50=32.9 p95=34.2 max=38.1
+2026-11-15T05:14:41.060804+00:00 rg35xxpro korri-shell[13916]: SHELL_STATS fps=35.355 frames=177 seconds=5.006 heap_bytes=1139167 interval_ms_p50=33.1 p95=34.1 max=35.8

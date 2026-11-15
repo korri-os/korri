@@ -1,0 +1,139 @@
+
+running 1 test
+test view_calls_stay_well_inside_the_budget_on_a_slow_clock ... view: 3610580 instructions (diagnostic only)
+view: 3611785 instructions (diagnostic only)
+view: 3921907 instructions (diagnostic only)
+view: 3624314 instructions (diagnostic only)
+view: 3598630 instructions (diagnostic only)
+view: 3547077 instructions (diagnostic only)
+view: 3655072 instructions (diagnostic only)
+view: 3578395 instructions (diagnostic only)
+view: 3603734 instructions (diagnostic only)
+view: 3754953 instructions (diagnostic only)
+view: 3508556 instructions (diagnostic only)
+view: 3509058 instructions (diagnostic only)
+view: 3461320 instructions (diagnostic only)
+view: 3459707 instructions (diagnostic only)
+view: 3507902 instructions (diagnostic only)
+view: 3529142 instructions (diagnostic only)
+view: 3641732 instructions (diagnostic only)
+view: 3514707 instructions (diagnostic only)
+view: 3431627 instructions (diagnostic only)
+view: 3281511 instructions (diagnostic only)
+view: 3561300 instructions (diagnostic only)
+view: 1704968 instructions (diagnostic only)
+view: 1835957 instructions (diagnostic only)
+view: 1702127 instructions (diagnostic only)
+view: 1838019 instructions (diagnostic only)
+view: 1705033 instructions (diagnostic only)
+view: 1970789 instructions (diagnostic only)
+view: 1779065 instructions (diagnostic only)
+view: 1919401 instructions (diagnostic only)
+view: 1768381 instructions (diagnostic only)
+view: 1948984 instructions (diagnostic only)
+view: 1773479 instructions (diagnostic only)
+view: 1930309 instructions (diagnostic only)
+view: 1776742 instructions (diagnostic only)
+view: 1935208 instructions (diagnostic only)
+view: 1778628 instructions (diagnostic only)
+view: 1940505 instructions (diagnostic only)
+view: 1783172 instructions (diagnostic only)
+view: 1948276 instructions (diagnostic only)
+view: 1790237 instructions (diagnostic only)
+view: 2010244 instructions (diagnostic only)
+view: 1807378 instructions (diagnostic only)
+view: 1954832 instructions (diagnostic only)
+view: 1793902 instructions (diagnostic only)
+view JSON: 5488 bytes
+attract next: median 625471 CPU ns, worst 678336 (limit 714285; about 17.5 ms on the device)
+attract opens: median 1185563 CPU ns, worst 1185563 (limit 1071428; about 33.2 ms on the device)
+band left: median 1371214 CPU ns, worst 1639426 (limit 1071428; about 38.4 ms on the device)
+band right: median 1355797 CPU ns, worst 1541075 (limit 1071428; about 38.0 ms on the device)
+view again (JSON only): median 553109 CPU ns, worst 606823 (limit 1071428; about 15.5 ms on the device)
+
+thread 'view_calls_stay_well_inside_the_budget_on_a_slow_clock' (676447) panicked at tests/zone_package.rs:1086:5:
+[
+    "attract opens: median 1185563 CPU ns over 1071428",
+    "band left: median 1371214 CPU ns over 1071428",
+    "band right: median 1355797 CPU ns over 1071428",
+]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    view_calls_stay_well_inside_the_budget_on_a_slow_clock
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.98s
+
+
+running 1 test
+test view_calls_stay_well_inside_the_budget_on_a_slow_clock ... view: 3610424 instructions (diagnostic only)
+view: 3605304 instructions (diagnostic only)
+view: 3926550 instructions (diagnostic only)
+view: 3623163 instructions (diagnostic only)
+view: 3599455 instructions (diagnostic only)
+view: 3546072 instructions (diagnostic only)
+view: 3655608 instructions (diagnostic only)
+view: 3579132 instructions (diagnostic only)
+view: 3602799 instructions (diagnostic only)
+view: 3754754 instructions (diagnostic only)
+view: 3507348 instructions (diagnostic only)
+view: 3509538 instructions (diagnostic only)
+view: 3459689 instructions (diagnostic only)
+view: 3459510 instructions (diagnostic only)
+view: 3509099 instructions (diagnostic only)
+view: 3521423 instructions (diagnostic only)
+view: 3640886 instructions (diagnostic only)
+view: 3514362 instructions (diagnostic only)
+view: 3431070 instructions (diagnostic only)
+view: 3280509 instructions (diagnostic only)
+view: 3564568 instructions (diagnostic only)
+view: 1703372 instructions (diagnostic only)
+view: 1834631 instructions (diagnostic only)
+view: 1701461 instructions (diagnostic only)
+view: 1835905 instructions (diagnostic only)
+view: 1704667 instructions (diagnostic only)
+view: 1969203 instructions (diagnostic only)
+view: 1778977 instructions (diagnostic only)
+view: 1919835 instructions (diagnostic only)
+view: 1768464 instructions (diagnostic only)
+view: 1949378 instructions (diagnostic only)
+view: 1773097 instructions (diagnostic only)
+view: 1930234 instructions (diagnostic only)
+view: 1776564 instructions (diagnostic only)
+view: 1934770 instructions (diagnostic only)
+view: 1779611 instructions (diagnostic only)
+view: 1939994 instructions (diagnostic only)
+view: 1783981 instructions (diagnostic only)
+view: 1948916 instructions (diagnostic only)
+view: 1790538 instructions (diagnostic only)
+view: 2008970 instructions (diagnostic only)
+view: 1808462 instructions (diagnostic only)
+view: 1954698 instructions (diagnostic only)
+view: 1794958 instructions (diagnostic only)
+view JSON: 5488 bytes
+attract next: median 612114 CPU ns, worst 642517 (limit 714285; about 17.1 ms on the device)
+attract opens: median 1182371 CPU ns, worst 1182371 (limit 1071428; about 33.1 ms on the device)
+band left: median 1322197 CPU ns, worst 1409401 (limit 1071428; about 37.0 ms on the device)
+band right: median 1458483 CPU ns, worst 1544146 (limit 1071428; about 40.8 ms on the device)
+view again (JSON only): median 539658 CPU ns, worst 563345 (limit 1071428; about 15.1 ms on the device)
+
+thread 'view_calls_stay_well_inside_the_budget_on_a_slow_clock' (676615) panicked at tests/zone_package.rs:1086:5:
+[
+    "attract opens: median 1182371 CPU ns over 1071428",
+    "band left: median 1322197 CPU ns over 1071428",
+    "band right: median 1458483 CPU ns over 1071428",
+]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    view_calls_stay_well_inside_the_budget_on_a_slow_clock
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.96s
+
+baseline_exit=101 current_exit=101

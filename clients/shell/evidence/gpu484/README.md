@@ -23,7 +23,10 @@ PSS/RSS are means over 31 samples. Frame statistics below count **redraw
 requests**, not completed or displayed frames; the old Zone renderer can
 request more than the display's 60 Hz. Interval percentiles are separate
 five-second windows, not a combined percentile. The first logged window
-overlaps warmup and is excluded from the pacing table.
+overlaps warmup and is excluded from the pacing table. Timestamped
+`*.pacing.log` files also exclude screenshot capture time after the last
+CPU sample. The earlier unbounded `*.log` files include capture stalls
+and must not be used as the sampling interval.
 
 | Surface / state | CPU mean / p95, software → GPU | PSS / RSS MiB, software → GPU |
 |---|---|---|
@@ -53,6 +56,14 @@ The software binary was
 The pre-landing GPU binary was
 `/nix/store/f5aqmkwx4wmlqs88f0sd3g590115j40b-korri-shell-0.0.0/bin/korri-shell`.
 The latter has the clean-cut code before rustfmt and documentation changes.
+The tables above use that controlled pre-landing GPU run. The deployed
+binary was also measured:
+`/nix/store/0r69cby8d99mz5qa5pi7q521r3llzyci-korri-shell-0.0.0/bin/korri-shell`.
+Its samples and PNGs are in `gpu-deployed/`; `gpu/` preserves the controlled
+prototype run. The comparison package closure was unchanged. However, by
+the deployed run the live catalog had grown to 184 games and haku had
+become a route in Zone. Do not treat that run as identical model input.
+The normal deployed service opens the newly verified package closure.
 Both are Nix `dist` builds. The new binary was delivered with a signature
 from the existing trusted `korri-cache-zao-1` key; no signature checks were
 disabled. Build commands ran through `simon@fuji`, with rooted outputs and
@@ -78,7 +89,7 @@ Duplicate descriptors of the same DRM client were counted once.
 Velvet remains GPU-bound below 60 Hz. This cut improves its throughput and
 CPU use; it does not establish that FemtoVG is the fastest renderer on Mali.
 Zone's software renderer was already cheap because of its partial redraw
-patches. Its CPU cost increases on the GPU. Memory increases by 45–54 MiB
+patches. Its CPU cost increases on the GPU. Memory increases by 45–55 MiB
 PSS. No software fallback or per-device renderer switch was kept to mask
 these costs.
 
@@ -132,3 +143,35 @@ SDL window. A later GLES path needs a usable webOS EGL/GLES context, Slint
 renderer integration with that SDL window, packaged dispatch dependencies,
 and measured pixel/performance acceptance on the TV. This cut keeps its
 existing software build compiling.
+
+## Deployed generation
+
+`main` was fast-forwarded to `aa5cef17c` before deployment. A clean archive
+of that commit on fuji evaluates to the same system path as the built output:
+
+`/nix/store/f55dsm93rhs1a1kwfcw9jzqid2zgxzps-nixos-system-rg35xxpro-sd-card-26.11.20260923.4975466`
+
+The Pro now selects generation **55** (was 54), and `/run/current-system`
+resolves to that path. The switch completed successfully. There are zero
+failed units. The running `korri-shell` is the `0r69…` binary above, opens
+Panfrost, and uses only the bound render node. No shell drop-ins remain.
+Panfrost profiling is back to `0`, and the temporary input helper is gone.
+The installed surface package closure is
+`/nix/store/y7daamd592rjcf03k4ix908bxy2rh166-korri-shell-surfaces`.
+
+All builds and transfers were outside the Pro. Its effective settings remain
+`max-jobs=0`, empty builders, `fallback=false` and `require-sigs=true`.
+The old `--renderer gpu` argument exits 2 from the shipped binary too.
+
+### Post-deployment measurement (184 games, changed live model)
+
+| Surface / state | CPU mean / p95 | PSS / RSS MiB | Redraws/s range | Interval p95 range, ms |
+|---|---|---|---|---|
+| Velvet idle | 28.5 / 46.6% | 107.9 / 113.8 | 35.2–35.4 | 34.1–34.7 |
+| Velvet navigation | 66.8 / 78.3% | 112.5 / 118.4 | 28.4–29.4 | 47.9–50.3 |
+| Zone GAMES | 23.9 / 27.1% | 122.8 / 128.6 | 60.0 | 17.5–18.4 |
+
+The first post-deployment measurement stopped on an fdinfo read race, then
+restored the normal unit. It is excluded. The script now tolerates an fd
+closing between the fdinfo glob and read, while still checking the shell
+PID on every sample. The successful repeat has all 31 samples per state.
