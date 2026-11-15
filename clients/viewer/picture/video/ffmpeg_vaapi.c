@@ -21,6 +21,7 @@
 #include <va/va_x11.h>
 #include <va/va_drmcommon.h>
 #include <unistd.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <libavcodec/avcodec.h>
 #include <libavutil/hwcontext.h>
@@ -28,6 +29,7 @@
 #include <X11/Xlib.h>
 
 #include "../frame_times.h"
+#include "vaapi_egl.h"
 
 #define MAX_SURFACES 16
 
@@ -39,6 +41,10 @@ static struct imported_surface {
   VASurfaceID decoded, surface;
   struct imported_surface* next;
 } *imported_surfaces;
+// vaPutSurface has shown a frame of this session.
+static bool put_surface_shown;
+// vaPutSurface refused the first frame of this session, so EGL presents.
+static bool present_through_egl;
 
 static VADisplay device_display(AVBufferRef* ref) {
   AVHWDeviceContext* device = (AVHWDeviceContext*)ref->data;
@@ -93,6 +99,9 @@ static void vaapi_device_free(AVHWDeviceContext* device) {
 
 void vaapi_cleanup_lib(void) {
   clear_imports();
+  vaapi_egl_cleanup();
+  put_surface_shown = false;
+  present_through_egl = false;
   av_buffer_unref(&presentation_ref);
   if (presentation_x11) {
     XCloseDisplay(presentation_x11);
@@ -195,7 +204,35 @@ static VAStatus import_surface(VASurfaceID decoded, VASurfaceID* surface) {
   return VA_STATUS_SUCCESS;
 }
 
+// The decoder's own surface goes to EGL: no second VA display takes part.
+static VAStatus present_egl(AVFrame* dec_frame, Window win, int width, int height) {
+  VASurfaceID decoded = (VASurfaceID)(uintptr_t)dec_frame->data[3];
+  VADRMPRIMESurfaceDescriptor descriptor;
+  VAStatus status = vaSyncSurface(device_display(device_ref), decoded);
+  if (status != VA_STATUS_SUCCESS)
+    return status;
+  status = vaExportSurfaceHandle(device_display(device_ref), decoded,
+      VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2,
+      VA_EXPORT_SURFACE_READ_ONLY | VA_EXPORT_SURFACE_COMPOSED_LAYERS, &descriptor);
+  if (status != VA_STATUS_SUCCESS)
+    return status;
+  bool shown = vaapi_egl_present(presentation_x11, win, width, height, &descriptor, dec_frame);
+  for (uint32_t i = 0; i < descriptor.num_objects; ++i)
+    close(descriptor.objects[i].fd);
+  if (!shown)
+    return VA_STATUS_ERROR_OPERATION_FAILED;
+  frame_times_displayed(dec_frame->pts);
+  return VA_STATUS_SUCCESS;
+}
+
 void vaapi_queue(AVFrame* dec_frame, Window win, int width, int height) {
+  VAStatus status;
+  if (present_through_egl) {
+    status = present_egl(dec_frame, win, width, height);
+    if (status == VA_STATUS_SUCCESS)
+      return;
+    goto error;
+  }
   // The frame pool owns surface IDs. Retain that pool while imports exist,
   // and discard its imports when the decoder changes pools (e.g. a resize).
   if (!presentation_frames || presentation_frames->data != dec_frame->hw_frames_ctx->data) {
@@ -208,7 +245,7 @@ void vaapi_queue(AVFrame* dec_frame, Window win, int width, int height) {
   }
   VASurfaceID decoded = (VASurfaceID)(uintptr_t)dec_frame->data[3];
   VADisplay target = device_display(presentation_ref);
-  VAStatus status = vaSyncSurface(device_display(device_ref), decoded);
+  status = vaSyncSurface(device_display(device_ref), decoded);
   if (status != VA_STATUS_SUCCESS)
     goto error;
   VASurfaceID surface;
@@ -219,8 +256,17 @@ void vaapi_queue(AVFrame* dec_frame, Window win, int width, int height) {
       dec_frame->height, 0, 0, width, height, NULL, 0, 0);
   // Keep the decoded buffer alive until the GPU has finished reading it.
   if (status == VA_STATUS_SUCCESS) {
+    put_surface_shown = true;
     frame_times_displayed(dec_frame->pts);
     status = vaSyncSurface(target, surface);
+  } else if (!put_surface_shown) {
+    // Intel's drivers present through DRI2, and Xwayland has none (#477).
+    // The refusal does not change within a session, so EGL takes every frame.
+    fprintf(stderr, "vaPutSurface cannot present here (%s); presenting through EGL\n",
+        vaErrorStr(status));
+    clear_imports();
+    present_through_egl = true;
+    status = present_egl(dec_frame, win, width, height);
   }
   if (status == VA_STATUS_SUCCESS)
     return;

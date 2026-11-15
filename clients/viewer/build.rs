@@ -108,6 +108,7 @@ fn main() {
         "video/sdl.c",
         "video/ffmpeg.c",
         "video/ffmpeg_vaapi.c",
+        "video/vaapi_egl.c",
         "video/egl.c",
     ] {
         c.file(format!("picture/{file}"));

@@ -112,6 +112,18 @@ The adaptations do not change decode, queue or presentation policy:
   `SDL_RenderPresent`. With no record, each call returns at once and every
   pts stays `AV_NOPTS_VALUE`, as before.
 
+One presentation path is new (#477). Intel's VA-API drivers present
+`vaPutSurface` through DRI2, and Xwayland has only DRI3, so on an Intel PC
+every `vaPutSurface` returns "invalid parameter". When the first
+`vaPutSurface` of a session fails, `video/ffmpeg_vaapi.c` gives that frame and
+every later one to `video/vaapi_egl.c`. It exports the decoder's surface as a
+dmabuf, imports it as an EGL image, and draws it over the window; the driver
+converts the colour by the frame's matrix and range. Decode stays on the GPU,
+and the retained newest frame policy is the same. A device whose
+`vaPutSurface` works (Mesa on AMD) never takes this path. No check in the
+build sandbox reaches it, because the sandbox has no GPU: the proof is a run
+on the device (`proof/ibuki-egl/`).
+
 The two copied C regression tests use a real Xvfb. They exercise VA failure
 cleanup, resize destinations, newest-frame replacement during presentation,
 and frame references after drops and presentation. A third C test decodes
@@ -377,7 +389,7 @@ measure's display record.
 | `frame_number` | The stream's frame index | `DECODE_UNIT.frameNumber`; the stage-0 receive record's `frame_number` |
 | `enqueue_ns` | The network core had the whole frame: about when its last packet arrived | `DECODE_UNIT.enqueueTimeUs` (`Limelight.h`), carried to `CLOCK_MONOTONIC` through the short delay since then, as the stage-0 shim carries `receiveTimeUs` |
 | `decoded_ns` | The decoder returned the frame; empty when it returned none | The viewer's own moment, after `avcodec_receive_frame`. With VA-API the GPU can still be decoding; presentation waits for it with `vaSyncSurface` |
-| `display_ns` | The call that hands the frame to the display returned (`vaPutSurface`, `SDL_RenderPresent`); empty for a frame that a newer one replaced | The viewer's own moment. The stage-0 display record's `display_ns` is the compositor's commit, later |
+| `display_ns` | The call that hands the frame to the display returned (`vaPutSurface`, `eglSwapBuffers` on Intel, `SDL_RenderPresent`); empty for a frame that a newer one replaced | The viewer's own moment. The stage-0 display record's `display_ns` is the compositor's commit, later |
 
 The viewer does not read the frame ID that the sender drew into the picture:
 with VA-API the picture stays in GPU memory, and a readback for each frame
