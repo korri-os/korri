@@ -18,7 +18,7 @@ nix build .#checks.x86_64-linux.korri-viewer-aarch64
 clients/viewer/proof/v4l2request/compare.sh ../korri-plugins
 # The session part for Android, both ABIs (below). No device or emulator.
 nix build .#checks.x86_64-linux.korri-viewer-android
-# The Android app (slices D1 to D5 and #476's size change, below), and
+# The Android app (slices D1 to D5, D4b and #476's size change, below), and
 # its proof on one headless emulator against a private Sunshine on aka.
 # Nothing heavy runs on zao: run both on aka itself, the proof against
 # aka's own fixture, which the emulator reaches at aka's Tailscale address.
@@ -437,8 +437,9 @@ of `clients/android/sdk.nix`: `aarch64-linux-android` for phones and
   and the binding are the same files on both platforms.
 - Platform parts: `player_io.rs` is Linux's picture, sound and input.
   `src/android/player_io.rs` has the same interface; since slice D2 it has
-  the picture, since slice D3 the sound and since slice D4 the launch's
-  controller mask (below); the input itself runs on the app's thread.
+  the picture, since slice D3 the sound, since slice D4 the launch's
+  controller mask and since slice D4b the controllers' feedback (below);
+  the input itself runs on the app's thread.
   Without the app's picture, as in the session tests, the core runs its own
   empty decoder and audio callbacks. The core's log goes to logcat, tag
   `korri-viewer`, through `src/android/log.c`: the callback is C-variadic,
@@ -861,7 +862,8 @@ are; `controller_list.rs` keeps the zlib notice of Valve and SDL, and
   motion event (`android/src/input.rs` turns them into plain values). That
   thread hands them to `Input`, which sends each packet with the core's own
   `LiSend*` call (`CoreSink`); the core queues it for its input thread. The
-  core calls no new Rust function: D4 adds no `extern "C"` callback. A panic
+  core calls no new Rust function: D4 adds no `extern "C"` callback (D4b
+  adds the first three, below). A panic
   in the input is caught on that thread (`Guarded` in `android/src/lib.rs`):
   the input ends, the stream goes on, and no panic reaches android-activity.
 - The core's gate (`CORE_GATE` in `src/android/input.rs`): the stream can
@@ -941,7 +943,7 @@ are; `controller_list.rs` keeps the zlib notice of Valve and SDL, and
 
 | | Artemis | Korri D4 |
 | --- | --- | --- |
-| Rumble, trigger rumble, RGB light, battery reports | `VibratorManager`, `LightsManager`, `BatteryState`, SHIELD's API | Not carried; the arrival claims none of them. Slice D4b carries them (below) |
+| Rumble, trigger rumble, RGB light, battery reports | `VibratorManager`, `LightsManager`, `BatteryState`, SHIELD's API | Slice D4b (below) |
 | Motion sensors | Controller or phone sensors through `SensorEventListener` | Not carried (above) |
 | A controller's own touchpad | `LiSendControllerTouchEvent` | Not carried; the arrival claims no touchpad |
 | USB driver for Xbox and Switch Pro pads | Its own, in Java | Dropped (ADR 0064) |
@@ -977,17 +979,127 @@ picture still moving.
   (`controller_list.rs`) is not yet in the APK, as those of OpenSSL, curl
   and ENet (slice D1) and libopus (slice D3) are not.
 
-**Rumble and battery: slice D4b.** The brief put rumble and battery in D4;
-they are a slice of their own, D4b, before D7. D4b carries rumble and
-trigger rumble (the core's rumble callbacks into `VibratorManager`), the
-RGB light (`LightsManager`) and battery reports (`BatteryState`), all
-calls into Android's own classes through JNI (brief, finding 10), and
-the arrival's capabilities that go with them. Those callbacks are the
-first that D4's input gets from the core, so each runs under
-`catch_unwind`. **Gate:** D7, which removes `Game.java`, does not ship
-until D4b works: Artemis has all four today, and dropping a live feature
-is not "equal or better" (ADR 0062). Motion sensors are not in D4b: they
-need a Java listener (above).
+## Android rumble, light and battery (#391 step D, slice D4b)
+
+The brief put rumble and battery in D4; they are a slice of their own.
+D4b carries what Artemis's `ControllerHandler` does at API 31: the host's
+rumble and trigger rumble on the controller's vibrators, the host's colour
+on its RGB light, and each controller's battery to the host. All of it is
+calls into Android's own classes through JNI (brief, finding 10). Motion
+sensors stay out: they need a Java listener (D4, above).
+
+| File | Port of (Korri's copy of Artemis) |
+| --- | --- |
+| `src/android/feedback.rs` | `ControllerHandler.java`'s vibrator choice, `handleRumble`, `handleRumbleTriggers`, the three `rumble*Vibrators`, `handleSetControllerLED`, `sendControllerBatteryPacket`, `InputDeviceContext.destroy` and `stop`; `Game.java`'s callbacks. Pure, with the feedback thread and the core's callbacks; tested over a scripted Android (`Scripted`) |
+| `src/android/feedback_jni.rs` | The same calls into `VibratorManager`, `Vibrator`, `CombinedVibration`, `VibrationEffect`, `LightsManager` and `BatteryState`, from Rust |
+| `src/android/gamepad.rs`, `devices.rs` | `sendControllerArrival`'s capabilities; `InputDevice`'s vibrators and lights |
+
+Both new files port Artemis code and are GPL-3.0-only, as the D2 to D4
+files are.
+
+- The core's callbacks: `rumble`, `rumbleTriggers` and `setControllerLED`
+  are the first callbacks from the core into the input. The core calls
+  them on its own thread (`CtrlAsyncCb`). Each runs its body under
+  `catch_unwind` (`callback::guarded`) and only hands a command to the
+  feedback thread: no JNI and no wait on the core's thread. Without the
+  app, as in the session tests, the core keeps its own empty callbacks.
+- The feedback thread (`feedback::Worker`, thread `controller-feedback`):
+  the app starts it with the stream. It attaches to the VM once, for its
+  whole life; Rust's thread-local guard detaches it when it ends. It alone
+  calls Android for the feedback, and it reads the batteries, which
+  Artemis keeps off its main thread too: `getBatteryState` is a Binder
+  call. A panic on it ends the feedback, not the stream, and the stop
+  still runs.
+- Seats: when a controller's arrival goes to the host, the app's thread
+  tells the feedback thread its device, number, vibrators and light
+  (`Seats`). A device that goes leaves its seat: its vibration and light
+  stop. Rumble for a number goes to every device with that number, as in
+  Artemis; a number that no device holds rumbles nothing.
+- Vibrators, as Artemis chooses them: the controller's own
+  `VibratorManager` with four vibrators with amplitude control (motors
+  and triggers), else two (motors), else its single `Vibrator`. A built-in
+  controller without any takes the phone's own, the same way. Two
+  vibrators get the high-frequency motor first, then the low one, in
+  `getVibratorIds()` order: one parallel vibration of 60 s one-shots at
+  each motor's high byte, and a cancel when all are 0. One vibrator gets
+  80 % of the big motor and 33 % of the small one, or a 20 ms pulse without
+  amplitude control. Trigger rumble needs four vibrators.
+- Light: the controller's `LightsManager` session, opened at the first
+  colour, asks every light with RGB control for the host's colour.
+- Battery: read when the controller arrives and every 120 s, and sent with
+  `LiSendControllerBatteryEvent` when status or capacity changed. It goes
+  through D4's input gate (`CORE_GATE`): outside the stream the gate
+  refuses it, and the feedback counts it.
+- The gameplay overlay's hold (slice D5) holds no battery report, rumble or
+  light, as Artemis's `setInputHeld` holds none of them.
+- Arrival: Artemis's capabilities at API 31. Rumble for any vibrator,
+  trigger rumble for four; battery for every external controller, without
+  reading it first (a Binder call that can stall); the RGB light for a
+  PlayStation pad, or for any pad from Android 14, because before it every
+  light says it has RGB control; analog triggers as in D4.
+- Teardown: before `LiStopConnection`, after the input's gate closes,
+  `stream.rs` stops the feedback (`PlayerIo::stop_feedback`). The core's
+  callbacks reach nothing more; every controller's vibrators are
+  cancelled, its light session is closed and its battery polling ends;
+  then the phone's own vibrator is cancelled, as Artemis's `stop` does. The
+  stop waits for the feedback thread at most 2 s (`STOP_WAIT`). The log
+  says what it did (`feedback: ended: … rumbles, … trigger rumbles, …
+  lights, … calls to Android; … battery reads, … battery reports sent, …
+  outside the stream; … failed`).
+- Permission: the manifest asks for `VIBRATE`, as the Artemis app does.
+
+**What differs from Artemis:**
+
+| | Artemis | Korri D4b |
+| --- | --- | --- |
+| Where rumble and light run | Java, on the core's callback thread through JNI | The core's thread only queues; the feedback thread calls Android |
+| Where the battery is read | A `HandlerThread` of its own | The feedback thread |
+| A stop that hangs in a Binder call | The UI thread waits | The stream's stop waits at most 2 s, then goes on without the feedback thread |
+| Settings | Rumble on or off, rumble the phone instead of the pad, rumble the phone when the pad has no vibrator (and its strength), battery reports on or off | Artemis's defaults: rumble on, the pad's own vibrators, no fallback to the phone, battery reports on |
+| The overlay's rumble switch (`stopRumble`) | Korri's Artemis copy | Slice D5 |
+| SHIELD controllers | `SceManager` rumble and battery | Not carried: NVIDIA's own API |
+| USB driver's rumble and trigger rumble | Its own, in Java | Dropped (ADR 0064) |
+| A device that changes | Its new context takes the light session and polls the battery again | Not followed, as in D4 |
+| More vibrator IDs than motor values | The Java array overflows | The extra vibrators are left out |
+| Device objects | The `InputDevice` of the context | `InputDevice.getDevice(id)` once per device, its vibrators and session kept |
+| A battery read that throws | Not caught | Logged and counted; the next read is 120 s later |
+| A pulse below Android 13 (one vibrator, no amplitude control) | The deprecated `vibrate(long[], int, AudioAttributes)` | `VibrationEffect.createWaveform` with the same pattern and `AudioAttributes` |
+| Motion sensors | `setMotionEventState` | Not carried (D4) |
+
+**Proof** (`nix run .#viewer-android-proof`, record `proof/android-d4b/`):
+D4's run, with two more parts.
+
+- In the stream, after the audio server's restart: a Bluetooth DualShock 4
+  that the emulator's `hid` command makes through `/dev/uhid` from
+  Android's own CTS data (`android/proof/dualshock4-bluetooth.json`,
+  Apache-2.0). The kernel's `hid-sony` drives it, so Android gives it two
+  vibrators, an RGB light and a battery. It reports 60 %, discharging, and
+  presses circle: the app seats it, reads its battery and sends it. The
+  sender's Sunshine logs the arrival (PlayStation, analog triggers,
+  rumble, battery, RGB light) and the battery packet. Then the pad goes,
+  and its seat with it, before D5's overlay, whose checks read every
+  controller packet after their marker. When Home ends the stream, the
+  log shows the feedback's end after the input's gate closed and before
+  the core began to stop.
+- The feedback probe (`android/proof/feedback`, a test app, never
+  shipped): the fixture's Sunshine runs with its controllers off and its
+  user cannot make input devices, so the host sends no rumble and no
+  light. The probe plays the core's part with the viewer's own code from
+  the input on: it presses A on a new DualShock 4 through `Input`, then calls
+  the stream's `rumble`, `rumble_triggers` and `set_controller_led`
+  callbacks from a thread that is not attached to the VM, and stops the
+  feedback as the stream does. The pad's own output reports (which `hid`
+  prints) and `dumpsys input` show what reached it.
+
+- Not proven: rumble or a colour that a host sends (the fixture's Sunshine
+  sends none); trigger rumble on a device (Linux gives no input device four
+  vibrators, as Artemis's own comment says); a phone's own vibrator for a
+  built-in controller (the emulator has no built-in controller); a real pad
+  over Bluetooth or USB, its motors and its battery (step H); Android 14's
+  RGB rule (the emulator runs Android 12).
+
+**Gate:** D7, which removes `Game.java`, does not ship until D4b's proof
+on a real pad (step H) agrees with this one.
 
 ## Android gameplay overlay (#391 step D, slice D5)
 
@@ -1253,9 +1365,9 @@ with no size change; the frame record must then keep one size.
 
 ## Next slices
 
-The bench proof of the handheld `v4l2request` path. On Android, slice D4b
-(rumble and battery), and the rest of D5 (the shell's overlay in this
-process, above). No device installs `@korri:viewer` yet.
+The bench proof of the handheld `v4l2request` path. On Android, the rest
+of D5 (the shell's overlay in this process, above). No device installs
+`@korri:viewer` yet.
 
 The cross-UID socket proof is an explicit root-only test: build
 `cargo test --manifest-path clients/viewer/Cargo.toml --test lifecycle_security --no-run`
