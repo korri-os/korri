@@ -103,12 +103,28 @@ let
       };
     }
   );
+  # The Android app's holder (examples/federation_fixture.rs): a real host
+  # with the fixture's person signer, for the emulator proofs of
+  # clients/android-app. It never ships to a device.
+  federationFixture = craneLib.buildPackage (
+    commonArgs
+    // {
+      inherit cargoArtifacts;
+      pname = "korrid-federation-fixture";
+      cargoBuildExtraArgs = "--example federation_fixture";
+      # The example's own tests: its parsing, its inputs and a member's binding.
+      cargoTestExtraArgs = "--example federation_fixture";
+      meta = commonArgs.meta // {
+        mainProgram = "federation_fixture";
+      };
+    }
+  );
 in
 craneLib.buildPackage (
   commonArgs
   // {
     inherit cargoArtifacts;
-    passthru = { inherit viewerProbe; };
+    passthru = { inherit viewerProbe federationFixture; };
     # Keep reusable compilation outputs separate from the shipped runtime.
     outputs = [
       "out"

@@ -11,6 +11,11 @@ crate-type = ["rlib", "cdylib"]
 name = "korrid"
 path = "src/main.rs"
 
+# The Android app's holder fixture; `cargo test` runs its own tests too.
+[[example]]
+name = "federation_fixture"
+test = true
+
 [dependencies]
 korri-viewer-treaty = { path = "../../contracts/viewer" }
 korri-input-trace = { path = "../../packages/input-trace" }
