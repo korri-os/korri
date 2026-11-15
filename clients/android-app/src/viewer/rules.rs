@@ -103,6 +103,24 @@ pub(crate) async fn blocking<T: Send + 'static>(
     tokio::task::spawn_blocking(work).await.ok()
 }
 
+/// Start `work` with `spawn`; its value goes to `answer`. When no thread
+/// starts, `refused` goes to `answer` here instead, so that whoever waits for
+/// the answer is not left waiting. The error says why no thread started.
+pub(crate) fn spawn_answering<T: Send + 'static>(
+    spawn: impl FnOnce(Box<dyn FnOnce() + Send>) -> io::Result<()>,
+    answer: mpsc::Sender<T>,
+    work: impl FnOnce() -> T + Send + 'static,
+    refused: T,
+) -> io::Result<()> {
+    let sender = answer.clone();
+    spawn(Box::new(move || {
+        let _ = sender.send(work());
+    }))
+    .inspect_err(|_| {
+        let _ = answer.send(refused);
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,6 +147,34 @@ mod tests {
             freed
         });
         assert_eq!(freed, Some(true));
+    }
+
+    // Review of D5b: when the leave's thread does not start, the opening
+    // must still hear an answer, or it stays lent with the input held.
+    #[test]
+    fn a_thread_that_does_not_start_still_answers_with_the_refusal() {
+        let (answer, answers) = mpsc::channel();
+        let failed = spawn_answering(
+            |_| Err(io::Error::other("no thread")),
+            answer,
+            || (7, true),
+            (7, false),
+        );
+        assert!(failed.is_err());
+        assert_eq!(answers.recv_timeout(Duration::from_secs(1)), Ok((7, false)));
+    }
+
+    #[test]
+    fn a_thread_that_starts_answers_with_its_work() {
+        let (answer, answers) = mpsc::channel();
+        let started = spawn_answering(
+            |work| thread::Builder::new().spawn(work).map(drop),
+            answer,
+            || (8, true),
+            (8, false),
+        );
+        assert!(started.is_ok());
+        assert_eq!(answers.recv_timeout(Duration::from_secs(5)), Ok((8, true)));
     }
 
     #[test]

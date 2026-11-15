@@ -1376,15 +1376,20 @@ fn perform(app: &AndroidApp, playing: &mut Playing, steps: impl IntoIterator<Ite
 
 /// korrid's `session.leave` for an opening of the overlay, on a thread of
 /// its own: it is an RPC to korrid, which the loop thread must not wait for.
+/// When no thread starts, the opening hears a refusal, and closes.
 fn leave_on_a_thread(launch: &str, opening: u64, answer: mpsc::Sender<(u64, bool)>) {
     let launch = launch.to_owned();
-    if let Err(cause) = thread::Builder::new()
-        .name("viewer-leave".into())
-        .spawn(move || {
-            let left = korrid::android_app::leave_viewer(&launch);
-            let _ = answer.send((opening, left));
-        })
-    {
+    if let Err(cause) = rules::spawn_answering(
+        |work| {
+            thread::Builder::new()
+                .name("viewer-leave".into())
+                .spawn(work)
+                .map(drop)
+        },
+        answer,
+        move || (opening, korrid::android_app::leave_viewer(&launch)),
+        (opening, false),
+    ) {
         logcat::error(&format!(
             "korri-app: overlay: korrid's session.leave was not sent: {cause}"
         ));
