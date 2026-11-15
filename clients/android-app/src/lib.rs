@@ -33,9 +33,10 @@ use korri_shell::{
 };
 use slint::android::AndroidApp;
 
-/// The product's relay list (`clients/android/product.nix`), as the Artemis
-/// app's `BuildConfig.PRODUCT_RELAYS`. The build sets the path.
-const PRODUCT_RELAYS: &str = include_str!(env!("KORRI_ANDROID_RELAYS_FILE"));
+/// The dex of rustls-platform-verifier's Kotlin component and the Kotlin
+/// standard library, unchanged (README, third-party Java). The build sets
+/// the path.
+const VERIFIER_CLASSES: &[u8] = include_bytes!(env!("KORRI_ANDROID_VERIFIER_DEX"));
 
 /// The packages the app carries; the first is the one it opens (#424).
 const SURFACES: [&str; 3] = ["velvet", "pico", "zone"];
@@ -56,7 +57,8 @@ fn run(app: AndroidApp) -> Result<()> {
     // this thread until it handles Destroy.
     let activity = unsafe { JObject::from_raw(app.activity_as_ptr().cast()) };
     // korrid's errors carry no secret; JNI's are never formatted.
-    let port = korrid::android_app::start(&mut env, &activity, PRODUCT_RELAYS)
+    let relays = assets::relays(&app)?;
+    let port = korrid::android_app::start(&mut env, &activity, &relays, VERIFIER_CLASSES)
         .map_err(|error| anyhow!("korrid did not start: {error}"))?;
     let capability = korrid::local_server_capability().context("korrid has no capability")?;
     let connection = Connection::new(port, format!("http://127.0.0.1:{port}"), capability);

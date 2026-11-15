@@ -4,6 +4,10 @@
 //! them to it: under the cache directory, `surfaces/<id>`. The NDK lists only
 //! a directory's files, not its subdirectories, so `AssetManager.list` comes
 //! through JNI and the bytes through the NDK.
+//!
+//! The relay list travels there too (`relays.json`): the APK's packing
+//! chooses it, not the library's build, so one library serves the product's
+//! APK and the emulator proof's, whose one relay is the proof's own.
 use anyhow::{bail, Context, Result};
 use jni::{
     objects::{JObject, JObjectArray, JString, JValue},
@@ -55,6 +59,17 @@ pub fn unpack(
     }
     unpacked?;
     Ok(root)
+}
+
+/// The relay list that the APK carries, as JSON: korrid's product relays
+/// (`korrid::android_app::start`), which it validates itself.
+pub fn relays(app: &AndroidApp) -> Result<String> {
+    let mut list = String::new();
+    app.asset_manager()
+        .open(c"relays.json")
+        .context("the APK carries no relay list")?
+        .read_to_string(&mut list)?;
+    Ok(list)
 }
 
 fn copy(

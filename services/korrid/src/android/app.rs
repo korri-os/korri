@@ -11,15 +11,22 @@
 //! | `KorriAppLauncher` (local Android games, ADR 0054) | none until slice D13 |
 //! | the foreground service | none (owner decision O2): korrid lives as long as the process |
 //!
-//! iroh's TLS verifier is initialised with the application's class loader,
-//! as `KorridServer.start` does. This APK carries no verifier classes yet, so
-//! a relay's TLS certificate is refused, and the refusal is an error, never a
-//! panic. Slice D9 bundles them (`clients/android-app/README.md`).
+//! rustls-platform-verifier checks a TLS certificate through its Kotlin
+//! component. The app has no dex, so it hands [`start`] that component's
+//! classes and the Kotlin standard library as one dex file
+//! (`clients/android-app/README.md`); korrid loads them in memory, as Slint
+//! loads its Java helper, and gives the verifier that class loader. When they
+//! cannot load, the verifier gets the application's class loader, which has
+//! no such class: a certificate check is then refused with an error, never a
+//! panic.
 use super::framework_network;
 use crate::{
     local_server_port, relay::RelayList, start_local_shell_server, EmbeddedPlatform, ServerError,
 };
-use jni::{objects::JObject, JNIEnv};
+use jni::{
+    objects::{JObject, JValue},
+    JNIEnv,
+};
 use std::path::Path;
 
 /// The official catalog the Android app offers (ADR 0043), as `android.rs`.
@@ -28,12 +35,14 @@ const ANDROID_OFFICIAL_CATALOG: Option<&str> = option_env!("KORRI_OFFICIAL_CATAL
 /// Start korrid in this process for `activity`'s application, or return the
 /// port of the korrid that an earlier activity of this process started.
 /// `product_relays` is the product's relay list as JSON
-/// (`clients/android/product.nix`). The capability stays in this process
-/// (`local_server_capability`).
+/// (`clients/android/product.nix`). `verifier_classes` is the dex of
+/// rustls-platform-verifier's Kotlin component with the Kotlin standard
+/// library. The capability stays in this process (`local_server_capability`).
 pub fn start(
     env: &mut JNIEnv,
     activity: &JObject,
     product_relays: &str,
+    verifier_classes: &'static [u8],
 ) -> Result<u16, ServerError> {
     if let Some(port) = local_server_port() {
         return Ok(port);
@@ -52,7 +61,7 @@ pub fn start(
         )
         .and_then(|value| value.l())
         .map_err(jni)?;
-    init_verifier(env, &context)?;
+    init_verifier(env, &context, verifier_classes)?;
     let local_storage_root = directory(env, &context, "getFilesDir")?;
     let no_backup = directory(env, &context, "getNoBackupFilesDir")?;
     let private_state_root = crate::android_storage::private_state_root(Path::new(&no_backup))
@@ -90,16 +99,49 @@ pub fn start(
     }
 }
 
-/// iroh's rustls verifier needs the application's class loader before
-/// federation networking starts. Both JNI wrappers borrow the same live call.
-fn init_verifier(env: &mut JNIEnv, context: &JObject) -> Result<(), ServerError> {
+/// The class that rustls-platform-verifier loads first.
+const VERIFIER_CLASS: &str = "org.rustls.platformverifier.CertificateVerifier";
+
+/// iroh's rustls verifier needs its classes' loader and the application
+/// context before federation networking starts. Both JNI wrappers borrow the
+/// same live call.
+fn init_verifier(
+    env: &mut JNIEnv,
+    context: &JObject,
+    classes: &'static [u8],
+) -> Result<(), ServerError> {
+    let loader = match verifier_loader(env, context, classes) {
+        Ok(loader) => {
+            eprintln!("korrid: Android TLS verifier classes loaded");
+            Some(loader)
+        }
+        Err(_) => {
+            // Never format a JNI error: it can carry platform details.
+            let _ = env.exception_clear();
+            eprintln!(
+                "korrid: Android TLS verifier classes did not load; a certificate check through Android is refused"
+            );
+            None
+        }
+    };
     let context = context.as_raw();
+    let loader = loader.as_ref().map(|loader| loader.as_raw());
     let mut verifier_env = unsafe { jni_runtime::EnvUnowned::from_raw(env.get_raw().cast()) };
     verifier_env
-        .with_env(|runtime| {
+        .with_env(|runtime| -> jni_runtime::errors::Result<()> {
             let context =
                 unsafe { jni_runtime::objects::JObject::from_raw(runtime, context.cast()) };
-            rustls_platform_verifier::android::init_with_env(runtime, context)
+            let Some(loader) = loader else {
+                return rustls_platform_verifier::android::init_with_env(runtime, context);
+            };
+            let loader = unsafe { jni_runtime::objects::JObject::from_raw(runtime, loader.cast()) };
+            let loader = runtime.cast_local::<jni_runtime::objects::JClassLoader>(loader)?;
+            rustls_platform_verifier::android::init_with_refs(
+                runtime.get_java_vm()?,
+                runtime.new_global_ref(context)?,
+                runtime.new_global_ref(loader)?,
+            );
+            Ok(())
         })
         .resolve::<jni_runtime::errors::ThrowRuntimeExAndDefault>();
     if env.exception_check().unwrap_or(true) {
@@ -109,6 +151,36 @@ fn init_verifier(env: &mut JNIEnv, context: &JObject) -> Result<(), ServerError>
         });
     }
     Ok(())
+}
+
+/// An in-memory class loader for `classes`, below the application's own, in
+/// which the verifier's first class resolves.
+fn verifier_loader<'local>(
+    env: &mut JNIEnv<'local>,
+    context: &JObject,
+    classes: &'static [u8],
+) -> jni::errors::Result<JObject<'local>> {
+    env.with_local_frame_returning_local(8, |env| {
+        let parent = env
+            .call_method(context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
+            .l()?;
+        // SAFETY: `classes` lives as long as the process; the loader only reads it.
+        let buffer =
+            unsafe { env.new_direct_byte_buffer(classes.as_ptr().cast_mut(), classes.len()) }?;
+        let loader = env.new_object(
+            "dalvik/system/InMemoryDexClassLoader",
+            "(Ljava/nio/ByteBuffer;Ljava/lang/ClassLoader;)V",
+            &[JValue::Object(&buffer), JValue::Object(&parent)],
+        )?;
+        let name = env.new_string(VERIFIER_CLASS)?;
+        env.call_method(
+            &loader,
+            "loadClass",
+            "(Ljava/lang/String;)Ljava/lang/Class;",
+            &[JValue::Object(&name)],
+        )?;
+        Ok(loader)
+    })
 }
 
 /// The absolute path of a `java.io.File` that `method` of the context returns.

@@ -2,8 +2,12 @@
 # native shell in one library that Android's own NativeActivity loads. It is
 # built as the viewer's APK is (clients/viewer/android.nix): Nix, cargo,
 # aapt2 and zipalign, no Gradle. Two ABIs: arm64-v8a for phones, x86_64 for
-# the emulator, at API 31 (ADR 0064). The APK is not signed; proof/run.py
-# signs it with the user's debug key.
+# the emulator, at API 31 (ADR 0064). The APK is not signed; the proofs sign
+# it with the user's debug key.
+#
+# The relay list is an asset, so one library serves two packings: `apk`
+# with the product's relays, and `fixtureApk` with one loopback relay that
+# the holder proof (proof/holder.py, #434 D9) reaches through adb.
 { pkgs, proseql }:
 let
   inherit (pkgs) lib;
@@ -19,10 +23,57 @@ let
   proseqlSource = import ../../services/korrid/proseql-source.nix { inherit pkgs proseql; };
   # The product's relays, as the Artemis app's BuildConfig.PRODUCT_RELAYS.
   # constants.relays does not force the product's korri argument (#315).
-  relays = import ../android/product.nix {
+  productRelays = import ../android/product.nix {
     inherit pkgs;
     korri = null;
   };
+  # The holder proof's one relay, inside the emulator; the proof maps this
+  # port to its own relay on the host with `adb reverse`.
+  fixtureRelays = pkgs.writeText "korri-android-app-fixture-relays.json" (
+    builtins.toJSON [ "ws://127.0.0.1:47800" ]
+  );
+
+  # rustls-platform-verifier's Kotlin component and the Kotlin standard
+  # library that it needs, unchanged, dexed into one file that korrid loads
+  # in memory (services/korrid/src/android/app.rs). The component's version
+  # is the one that Cargo.lock pins: its JVM part and its Rust part must
+  # match, as clients/android/app/build.gradle requires.
+  verifierVersion = "0.2.0";
+  lockedVerifier =
+    (lib.findFirst (crate: crate.name == "rustls-platform-verifier-android") null
+      (builtins.fromTOML (builtins.readFile ./Cargo.lock)).package
+    ).version;
+  verifierAar =
+    assert lib.assertMsg (
+      lockedVerifier == verifierVersion
+    ) "Cargo.lock pins rustls-platform-verifier-android ${lockedVerifier}; fetch that AAR here";
+    pkgs.fetchurl {
+      # The repository that clients/android/build.gradle names for org.rustls.
+      url = "https://raw.githubusercontent.com/rustls/rustls-platform-verifier/maven-archive/android-release-support/maven/org/rustls/rustls-platform-verifier/${verifierVersion}/rustls-platform-verifier-${verifierVersion}.aar";
+      hash = "sha256-qgIXlCMPvC8L41WZniz2c5jdVj3gZqLhcAH/vQtpEBs=";
+    };
+  # The component's classes call kotlin.enums.EnumEntries (Kotlin 1.9 and
+  # later); its POM names no version.
+  kotlinStdlib = pkgs.fetchurl {
+    url = "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.0.21/kotlin-stdlib-2.0.21.jar";
+    hash = "sha256-8xzFPxBafkjAk2g7vVQ3Vh0SM5IFE3dLRwgFZBvtvAk=";
+  };
+  verifierDex =
+    pkgs.runCommand "korri-android-app-verifier-dex"
+      {
+        nativeBuildInputs = [
+          pkgs.unzip
+          sdk.jdk
+        ];
+      }
+      ''
+        unzip -q ${verifierAar} classes.jar
+        mkdir -p $out
+        ${buildTools}/d8 --release --min-api ${api} --lib ${framework} \
+          --output $out classes.jar ${kotlinStdlib}
+        # One dex file: korrid gives the loader one buffer.
+        test "$(ls $out)" = classes.dex
+      '';
 
   # Slint's Android renderer is Skia. skia-bindings downloads its prebuilt
   # archive at build time; here each is a fixed input, read through a file
@@ -144,7 +195,7 @@ let
       ];
       LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
       SKIA_BINARIES_URL = "file://${skia}/skia-binaries-{key}.tar.gz";
-      KORRI_ANDROID_RELAYS_FILE = relays;
+      KORRI_ANDROID_VERIFIER_DEX = "${verifierDex}/classes.dex";
       # Slint's build.rs compiles its Java helper and dexes it (android-build).
       ANDROID_HOME = sdk.sdkRoot;
       ANDROID_SDK_ROOT = sdk.sdkRoot;
@@ -180,52 +231,70 @@ let
     };
   libraries = lib.mapAttrs (_: libraryFor) abis;
 
-  apk = pkgs.stdenv.mkDerivation {
-    pname = "korri-android-app-apk";
-    version = "0.1.0";
-    src = lib.fileset.toSource {
-      root = ./.;
-      fileset = ./AndroidManifest.xml;
+  # One packing of the libraries, with `relays` as the relay list.
+  packApk =
+    { pname, relays }:
+    pkgs.stdenv.mkDerivation {
+      inherit pname;
+      version = "0.1.0";
+      src = lib.fileset.toSource {
+        root = ./.;
+        fileset = ./AndroidManifest.xml;
+      };
+      nativeBuildInputs = [ pkgs.zip ];
+      dontStrip = true;
+      dontFixup = true;
+      buildPhase = ''
+        runHook preBuild
+        ${forEachAbi (abi: ''
+          mkdir -p stage/lib/${abi.name}
+          cp ${libraries.${abi.name}}/${library} stage/lib/${abi.name}/
+          cp ${libraries.${abi.name}}/elf-${abi.name}.txt .
+        '')}
+        # The packages exactly as the Artemis app carries them
+        # (clients/android/app/build.gradle, surfaceAssets).
+        mkdir -p assets/surfaces
+        (
+          cd ${surfaces}/packages
+          find pico zone velvet -type f \( -name '*.slint' -o -name '*.js' -o -path '*/fonts/*' \) -print
+          find pico zone -type f -path '*/art/*' -print
+        ) | sort -u | while read -r file; do
+          install -D -m 0644 "${surfaces}/packages/$file" "assets/surfaces/$file"
+        done
+        test -f assets/surfaces/velvet/main.slint
+        test -f assets/surfaces/velvet/logic.js
+        install -m 0644 ${relays} assets/relays.json
+        ${buildTools}/aapt2 link -o unsigned.apk -I ${framework} \
+          --manifest AndroidManifest.xml -A assets --debug-mode
+        # Fixed times and no extra attributes, as aapt2 writes its entries.
+        find stage -exec touch -h -d @315532800 {} +
+        (cd stage && zip -q -r -X ../unsigned.apk lib)
+        ${buildTools}/zipalign -p -f 4 unsigned.apk aligned.apk
+        runHook postBuild
+      '';
+      installPhase = ''
+        runHook preInstall
+        mkdir -p $out
+        cp aligned.apk $out/korri-android-app-unsigned.apk
+        cp elf-*.txt $out/
+        runHook postInstall
+      '';
     };
-    nativeBuildInputs = [ pkgs.zip ];
-    dontStrip = true;
-    dontFixup = true;
-    buildPhase = ''
-      runHook preBuild
-      ${forEachAbi (abi: ''
-        mkdir -p stage/lib/${abi.name}
-        cp ${libraries.${abi.name}}/${library} stage/lib/${abi.name}/
-        cp ${libraries.${abi.name}}/elf-${abi.name}.txt .
-      '')}
-      # The packages exactly as the Artemis app carries them
-      # (clients/android/app/build.gradle, surfaceAssets).
-      mkdir -p assets/surfaces
-      (
-        cd ${surfaces}/packages
-        find pico zone velvet -type f \( -name '*.slint' -o -name '*.js' -o -path '*/fonts/*' \) -print
-        find pico zone -type f -path '*/art/*' -print
-      ) | sort -u | while read -r file; do
-        install -D -m 0644 "${surfaces}/packages/$file" "assets/surfaces/$file"
-      done
-      test -f assets/surfaces/velvet/main.slint
-      test -f assets/surfaces/velvet/logic.js
-      ${buildTools}/aapt2 link -o unsigned.apk -I ${framework} \
-        --manifest AndroidManifest.xml -A assets --debug-mode
-      # Fixed times and no extra attributes, as aapt2 writes its entries.
-      find stage -exec touch -h -d @315532800 {} +
-      (cd stage && zip -q -r -X ../unsigned.apk lib)
-      ${buildTools}/zipalign -p -f 4 unsigned.apk aligned.apk
-      runHook postBuild
-    '';
-    installPhase = ''
-      runHook preInstall
-      mkdir -p $out
-      cp aligned.apk $out/korri-android-app-unsigned.apk
-      cp elf-*.txt $out/
-      runHook postInstall
-    '';
+  apk = packApk {
+    pname = "korri-android-app-apk";
+    relays = productRelays;
+  };
+  fixtureApk = packApk {
+    pname = "korri-android-app-fixture-apk";
+    relays = fixtureRelays;
   };
 in
 {
-  inherit apk libraries surfaces;
+  inherit
+    apk
+    fixtureApk
+    libraries
+    surfaces
+    verifierDex
+    ;
 }
