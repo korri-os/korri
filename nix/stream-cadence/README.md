@@ -1769,14 +1769,16 @@ product viewer against itself
 five runs of each side), private pair on aka at the defaults (1920x1080,
 base measure, 60 scored seconds). Each session started only with no game
 and no other test unit live on aka, a 1-minute load below 1.5 and k10temp
-Tctl below 78 °C. These sets are evidence, not baselines.
+Tctl below 78 °C. These sets are evidence, not baselines. They were
+recorded before a rebase onto `main`, which added only the sender
+fixture's input log (`f66757f30`) under the commits named here.
 
 | Condition | Tool | What else ran, viewer device | Valid | `verdict` |
 | --- | --- | --- | --- | --- |
-| `--net 'loss random 1%'` | `670a7386f`: loss on TCP too | 0.8% to 1.7% | 10 of 10 | `equal` for every number |
-| `--net 'delay 30ms'` | `670a7386f` | 0.9% to 1.2% | 10 of 10 | `equal` for every number |
-| `--require-encryption` | `5023cb9d4` | 0.8% to 36.7%: other tests started in 2 runs | 10 of 10 | `equal` for every number |
-| `--net 'loss gemodel 1.3158% 25%'` | `6a5be5906` | | | not finished: see below |
+| `--net 'loss random 1%'` | `f1fbcf907`: loss on TCP too | 0.8% to 1.7% | 10 of 10 | `equal` for every number |
+| `--net 'delay 30ms'` | `f1fbcf907` | 0.9% to 1.2% | 10 of 10 | `equal` for every number |
+| `--require-encryption` | `ebd05a73c` | 0.8% to 36.7%: other tests started in 2 runs | 10 of 10 | `equal` for every number |
+| `--net 'loss gemodel 1.3158% 25%'` | `27b1de065` | | | not finished: see below |
 
 What the runs show, by number:
 
@@ -1810,7 +1812,7 @@ What the runs show, by number:
   (`product_changes` empty). The product's units kept their PIDs, the
   viewer's X and input isolation passed, and both restore checks passed.
 
-**5% burst loss.** With loss on every packet (`670a7386f`) the condition
+**5% burst loss.** With loss on every packet (`f1fbcf907`) the condition
 did not give a session of ten turns: in 3 of 7 turns a start never showed
 the stream (see "The whole condition falls on UDP" above). In the runs that
 did stream, and in those of the final tool, netem dropped 4.8% to 5.4% of
@@ -1823,7 +1825,7 @@ logs no repair. A frame that loses more packets than its parity is lost
 and costs an IDR request; the frames whose loss stayed within their parity
 were repaired by FEC (inferred: about 5900 packets were dropped and about
 500 frames lost). With the
-final tool (`6a5be5906`, UDP only) the setup took 0.66 to 1.27 s and the
+final tool (`27b1de065`, UDP only) the setup took 0.66 to 1.27 s and the
 first two turns streamed; the session was ended when another agent's game
 started on aka (other load 38% to 41%, and one capture gap that lost an
 ID). A quiet session of ten turns is still to be recorded.
