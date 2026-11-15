@@ -1,6 +1,6 @@
 {
-  "sender": "root@ibuki",
-  "stream_host": "100.96.31.114",
+  "sender": "local",
+  "stream_host": "100.117.97.45",
   "checks": {
     "apk_has_no_code": true,
     "apk_allows_no_backup": true,
@@ -33,11 +33,20 @@
     "input_pad_removed": true,
     "picture_moves_after_input": true,
     "audio_server_restarted": true,
+    "overlay_layer_listed": true,
+    "overlay_video_moves_under_it": true,
+    "overlay_stand_in_shows_while_open": true,
+    "overlay_gone_after_it_closed": true,
+    "overlay_video_moves_after_it_closed": true,
+    "overlay_back_opens_it_over_the_moving_video": true,
+    "overlay_sound_plays_while_open": true,
+    "overlay_input_held_in_the_app": true,
+    "overlay_took_the_input_while_open": true,
     "sunshine_saw_the_session": true,
     "stopped_event": true,
     "stop_reply_ok": true,
     "viewer_ended_without_failure": true,
-    "app_finished_after_back": true,
+    "app_finished_after_home": true,
     "no_crash": true,
     "sound_output_reported": true,
     "sound_played": true,
@@ -53,12 +62,21 @@
     "a_start_with_dump_granted_is_allowed": true,
     "sender_keys_arrived": true,
     "sender_touches_arrived": true,
+    "sender_touch_off_the_centre_arrived_where_the_picture_puts_it": true,
     "sender_mouse_arrived": true,
     "sender_pad_arrived_as_xbox_number_0": true,
     "sender_pad_buttons_sticks_triggers_and_hat_arrived": true,
     "sender_pad_held_button_kept_arriving": true,
     "sender_pad_let_go_when_it_went": true,
     "sender_pad_heartbeat_repeats_every_250_ms": true,
+    "sender_overlay_marker_arrived": true,
+    "sender_overlay_held_the_keys": true,
+    "sender_overlay_held_the_pad": true,
+    "sender_overlay_let_go_of_the_held_button": true,
+    "sender_overlay_pad_silent_while_open": true,
+    "sender_overlay_held_the_touch": true,
+    "sender_overlay_touch_after_it_closed": true,
+    "sender_overlay_held_the_mouse": true,
     "sunshine_saw_the_end": true,
     "sunshine_stream_followed_the_output": true,
     "sunshine_captured_sound": true,
@@ -66,12 +84,13 @@
     "emulator_played_the_tests_tone": true
   },
   "store": {
-    "apk": "/nix/store/9f97g8hf8fjq07qclwp4rm3di4wgfz1i-korri-viewer-android-apk-0.1.0/korri-viewer-unsigned.apk",
+    "apk": "/nix/store/4dpybywsh2iwcbpn0zmk2kwxcc4kbw2z-korri-viewer-android-apk-0.1.0/korri-viewer-unsigned.apk",
     "refusal_probe": "/nix/store/00fgx992pnszmr7i0vkmvw9ldjssngkk-korri-viewer-refusal-probe-apk-0.1.0/korri-viewer-refusal-probe-unsigned.apk",
-    "viewer": "/nix/store/rsim06gambvx8d3jr8nlfqp5ma2gjisa-korri-viewer-0.1.0",
-    "tests": "/nix/store/4nx035pshyl6qmvshvn0clza3g6175v3-korri-viewer-android-check/x86_64/tests"
+    "viewer": "/nix/store/x04xv34j06lqjj2yn5sb6d5d54sbcqia-korri-viewer-0.1.0",
+    "tests": "/nix/store/a5gxmna7yk0b90cm3pczpfjlfbswhmn6-korri-viewer-android-check/x86_64/tests"
   },
-  "sunshine_port": 47493,
+  "sunshine": "follows its output",
+  "sunshine_port": 57093,
   "emulator": {
     "release": "12",
     "sdk": "31",
@@ -82,186 +101,34 @@
       {
         "file": "00.png",
         "from_start_ms": [
-          848,
-          1764
+          927,
+          1997
         ],
         "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
       },
       {
         "file": "01.png",
         "from_start_ms": [
-          1967,
-          2786
+          2079,
+          3247
         ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "02.png",
-        "from_start_ms": [
-          2927,
-          3191
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "03.png",
-        "from_start_ms": [
-          3256,
-          3570
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "04.png",
-        "from_start_ms": [
-          3654,
-          3969
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "05.png",
-        "from_start_ms": [
-          4044,
-          4359
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "06.png",
-        "from_start_ms": [
-          4429,
-          4693
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "07.png",
-        "from_start_ms": [
-          4745,
-          5010
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "08.png",
-        "from_start_ms": [
-          5065,
-          5379
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "09.png",
-        "from_start_ms": [
-          5447,
-          5711
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "10.png",
-        "from_start_ms": [
-          5774,
-          6038
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "11.png",
-        "from_start_ms": [
-          6096,
-          6361
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "12.png",
-        "from_start_ms": [
-          6425,
-          6690
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "13.png",
-        "from_start_ms": [
-          6744,
-          7008
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "14.png",
-        "from_start_ms": [
-          7076,
-          7340
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "15.png",
-        "from_start_ms": [
-          7396,
-          7660
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "16.png",
-        "from_start_ms": [
-          7716,
-          7930
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "17.png",
-        "from_start_ms": [
-          7983,
-          8247
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "18.png",
-        "from_start_ms": [
-          8299,
-          8613
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "19.png",
-        "from_start_ms": [
-          8665,
-          9030
-        ],
-        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
-      },
-      {
-        "file": "20.png",
-        "from_start_ms": [
-          9105,
-          10273
-        ],
-        "id": 5303
+        "id": 2758
       }
     ],
     "first_readable": {
-      "file": "20.png",
+      "file": "01.png",
       "from_start_ms": [
-        9105,
-        10273
+        2079,
+        3247
       ],
-      "id": 5303
+      "id": 2758
     }
   },
-  "app_pid": "4126",
+  "app_pid": "3741",
   "streaming_screenshots": [
     {
       "file": "streaming-1.png",
-      "id": 5515,
+      "id": 2975,
       "x": 336.0,
       "y": 270.0,
       "cell": 48.0,
@@ -273,7 +140,7 @@
     },
     {
       "file": "streaming-2.png",
-      "id": 5605,
+      "id": 3074,
       "x": 336.0,
       "y": 270.0,
       "cell": 48.0,
@@ -285,7 +152,7 @@
     },
     {
       "file": "streaming-3.png",
-      "id": 5710,
+      "id": 3167,
       "x": 336.0,
       "y": 270.0,
       "cell": 48.0,
@@ -297,7 +164,7 @@
     },
     {
       "file": "streaming-4.png",
-      "id": 5811,
+      "id": 3261,
       "x": 336.0,
       "y": 270.0,
       "cell": 48.0,
@@ -354,7 +221,7 @@
     "screenshots": [
       {
         "file": "resized-1.png",
-        "id": 95,
+        "id": 99,
         "x": 927.0,
         "y": 275.0,
         "cell": 15.0,
@@ -366,7 +233,7 @@
       },
       {
         "file": "resized-2.png",
-        "id": 183,
+        "id": 187,
         "x": 927.0,
         "y": 275.0,
         "cell": 15.0,
@@ -378,7 +245,7 @@
       },
       {
         "file": "resized-3.png",
-        "id": 275,
+        "id": 274,
         "x": 927.0,
         "y": 275.0,
         "cell": 15.0,
@@ -390,7 +257,7 @@
       },
       {
         "file": "resized-4.png",
-        "id": 367,
+        "id": 376,
         "x": 927.0,
         "y": 275.0,
         "cell": 15.0,
@@ -402,7 +269,7 @@
       }
     ],
     "app_lines": [
-      "picture: the stream's size changes from 1280x720 to 720x1280 at frame 606; the decoder follows it (adaptive playback up to 2960x2960)",
+      "picture: the stream's size changes from 1280x720 to 720x1280 at frame 599; the decoder follows it (adaptive playback up to 2960x2960)",
       "picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 719, 1279), width: int32(720), height: int32(1280), max-height: int32(2960), max-width: int32(2960), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}",
       "picture: decoded size 720x1280",
       "picture: video layer 720x1280 placed at (896, 0)-(1504, 1080) in the window 2400x1080"
@@ -429,6 +296,12 @@
       {
         "name": "tap",
         "command": "input tap 1200 540",
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "tap off the centre",
+        "command": "input tap 1048 810",
         "exit_code": 0,
         "output": ""
       },
@@ -463,41 +336,545 @@
   "screenshots_after_input": [
     {
       "file": "after-input-1.png",
-      "id": 1157
+      "id": 1238
     },
     {
       "file": "after-input-2.png",
-      "id": 1245
+      "id": 1335
     },
     {
       "file": "after-input-3.png",
-      "id": 1334
+      "id": 1453
     }
   ],
   "audio_server_restart": {
-    "before": "362",
-    "after": "4684"
+    "before": "412",
+    "after": "5444"
   },
   "sound_after_the_restart": [],
+  "overlay": {
+    "placed": {
+      "left": 896,
+      "top": 0,
+      "right": 1504,
+      "bottom": 1080,
+      "window": [
+        2400,
+        1080
+      ]
+    },
+    "steps": [
+      {
+        "name": "marker",
+        "command": "input keyevent KEYCODE_M",
+        "at": 484419.248,
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "keys while open",
+        "command": "input keyevent KEYCODE_H KEYCODE_E KEYCODE_L KEYCODE_D",
+        "at": 484428.993,
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "tap while open",
+        "command": "input tap 1352 270",
+        "at": 484429.538,
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "mouse while open",
+        "command": "input mouse tap 1352 810",
+        "at": 484430.054,
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "key after close",
+        "command": "input keyevent KEYCODE_Z",
+        "at": 484435.722,
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "tap after close",
+        "command": "input tap 1048 270",
+        "at": 484436.194,
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "back opens",
+        "command": "input keyevent KEYCODE_BACK",
+        "at": 484436.643,
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "back closes",
+        "command": "input keyevent KEYCODE_BACK",
+        "at": 484438.397,
+        "exit_code": 0,
+        "output": ""
+      }
+    ],
+    "open_shots": [
+      {
+        "file": "overlay-open-1.png",
+        "id": 2762,
+        "lower_half_p99": 63
+      },
+      {
+        "file": "overlay-open-2.png",
+        "id": 2879,
+        "lower_half_p99": 63
+      }
+    ],
+    "closed_shots": [
+      {
+        "file": "overlay-closed-1.png",
+        "id": 3185,
+        "lower_half_p99": 254
+      },
+      {
+        "file": "overlay-closed-2.png",
+        "id": 3290,
+        "lower_half_p99": 254
+      }
+    ],
+    "missed_before_open": {
+      "at": 484423.397,
+      "hwc_missed": 54
+    },
+    "opened": "overlay: open on Guide; the stream's input is held",
+    "shown": "overlay: layer shown: posted 3.8 ms before, applied in 6.45 ms",
+    "overlay_layer_listed": true,
+    "hwc_layers_while_open": [
+      {
+        "layer": "com.simonwjackson.korri.viewer/android.app.NativeActivity#0",
+        "composition": "DEVICE"
+      },
+      {
+        "layer": "bbq-wrapper#0",
+        "composition": "DEVICE"
+      },
+      {
+        "layer": "bbq-wrapper#0",
+        "composition": "DEVICE"
+      }
+    ],
+    "sound_open_1": {
+      "emulator_time": "11-15 09:34:22.803",
+      "server_frames": 887031,
+      "last_power_row": "11-15 09:34:22.509",
+      "last_powers_db": [
+        -41.7,
+        -41.6,
+        -41.6,
+        -41.7,
+        -41.7,
+        -41.6,
+        -41.6
+      ]
+    },
+    "sound_open_2": {
+      "emulator_time": "11-15 09:34:29.407",
+      "server_frames": 1201475,
+      "last_power_row": "11-15 09:34:28.952",
+      "last_powers_db": [
+        -41.6,
+        -42.3,
+        -41.7,
+        -41.7,
+        -43.1,
+        -41.6,
+        -41.6,
+        -41.6,
+        -41.6,
+        -41.6
+      ]
+    },
+    "missed_before_close": {
+      "at": 484430.722,
+      "hwc_missed": 70
+    },
+    "closed": "overlay: closed on Guide after 7.3 s; it took 12 keys and 6 motion events; the stream's input goes on",
+    "hidden": "overlay: layer hidden: posted 1.2 ms before, applied in 0.32 ms",
+    "missed_after_closed_shots": {
+      "at": 484435.332,
+      "hwc_missed": 73
+    },
+    "opened_on_back": "overlay: open on Back; the stream's input is held",
+    "back_shot": {
+      "file": "overlay-back.png",
+      "id": 3498,
+      "lower_half_p99": 63
+    },
+    "closed_on_back": "overlay: closed on Back after 1.7 s; it took 1 keys and 0 motion events; the stream's input goes on",
+    "pad_exit_code": 0,
+    "pad_steps": [
+      {
+        "at": 484419.652,
+        "id": 1,
+        "command": "register",
+        "name": "Korri test gamepad",
+        "vid": 1118,
+        "pid": 32343,
+        "bus": "usb",
+        "descriptor": [
+          5,
+          1,
+          9,
+          5,
+          161,
+          1,
+          133,
+          1,
+          5,
+          9,
+          25,
+          1,
+          41,
+          16,
+          21,
+          0,
+          37,
+          1,
+          117,
+          1,
+          149,
+          16,
+          129,
+          2,
+          5,
+          1,
+          9,
+          57,
+          21,
+          0,
+          37,
+          7,
+          53,
+          0,
+          70,
+          59,
+          1,
+          101,
+          20,
+          117,
+          4,
+          149,
+          1,
+          129,
+          66,
+          101,
+          0,
+          117,
+          4,
+          149,
+          1,
+          129,
+          3,
+          9,
+          48,
+          9,
+          49,
+          9,
+          50,
+          9,
+          53,
+          21,
+          0,
+          38,
+          255,
+          0,
+          117,
+          8,
+          149,
+          4,
+          129,
+          2,
+          5,
+          2,
+          9,
+          197,
+          9,
+          196,
+          21,
+          0,
+          38,
+          255,
+          0,
+          117,
+          8,
+          149,
+          2,
+          129,
+          2,
+          192
+        ]
+      },
+      {
+        "at": 484422.152,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          0,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 484422.452,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          1,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 484423.405,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          1,
+          16,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 484423.555,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          1,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 484428.013,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          0,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 484428.213,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          2,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 484428.363,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          0,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 484428.564,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          0,
+          0,
+          8,
+          255,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 484428.864,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          0,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 484430.731,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          0,
+          16,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 484430.884,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          0,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 484435.333,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          8,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 484435.633,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          0,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      }
+    ],
+    "app_lines": [
+      "input: controller Korri test gamepad (17) vendor 045e product 7e57 external true",
+      "input: Korri test gamepad sticks Some((0, 1)) Some((11, 14)) triggers Some((23, 22)) hat true deadzones 0.05 0.05 0.13",
+      "input: Korri test gamepad (17) is controller 0",
+      "input: arrival Arrival { number: 0, active_mask: 1, kind: 1, buttons: 63487, capabilities: 1 }",
+      "overlay: open on Guide; the stream's input is held",
+      "overlay: layer shown: posted 3.8 ms before, applied in 6.45 ms",
+      "overlay: closed on Guide after 7.3 s; it took 12 keys and 6 motion events; the stream's input goes on",
+      "overlay: layer hidden: posted 1.2 ms before, applied in 0.32 ms",
+      "overlay: open on Back; the stream's input is held",
+      "overlay: layer shown: posted 0.2 ms before, applied in 0.54 ms",
+      "overlay: closed on Back after 1.7 s; it took 1 keys and 0 motion events; the stream's input goes on",
+      "overlay: layer hidden: posted 0.4 ms before, applied in 0.63 ms",
+      "input: controller Korri test gamepad (17) removed",
+      "input: controller number 0 is free"
+    ]
+  },
   "sound": {
     "output": "sound: output try 0 asked low-latency granted none sharing shared rate 48000 channels 2 burst 960 capacity 2132 buffer 1920 (asked 1920) packet 240 frames",
-    "ended": "5310 callbacks, 2398151 frames played, 51600 frames silent, 131 short callbacks after the first sound, 10375 packets, 0 concealed, 380 dropped over 40 ms pending, 0 not decoded, 3 device xruns, 0 reopened",
-    "callbacks": 5310,
-    "played": 2398151,
-    "silent": 51600,
-    "short": 131,
-    "packets": 10375,
+    "ended": "7731 callbacks, 3378550 frames played, 191690 frames silent, 290 short callbacks after the first sound, 14986 packets, 0 concealed, 900 dropped over 40 ms pending, 0 not decoded, 5 device xruns, 0 reopened",
+    "callbacks": 7731,
+    "played": 3378550,
+    "silent": 191690,
+    "short": 290,
+    "packets": 14986,
     "concealed": 0,
-    "dropped": 380,
+    "dropped": 900,
     "decode_errors": 0,
-    "xruns": 3,
+    "xruns": 5,
     "reopened": 0
   },
   "sound_restart": {
-    "seconds_before_the_server_died": 35.9,
-    "seconds_played": 50.0
+    "seconds_before_the_server_died": 37.9,
+    "seconds_played": 70.4
   },
-  "input_report": "10 keys, 45 controller states, 1 arrivals, 2 mouse, 613 touches sent; 0 unsupported, 0 outside the stream, 0 failed",
+  "input_report": "14 keys, 95 controller states, 2 arrivals, 2 mouse, 412 touches sent; 36 held; 0 unsupported, 0 outside the stream, 0 failed",
   "viewer_ran": {
     "decode": "mediacodec",
     "decoder": "c2.goldfish.h264.decoder"
@@ -505,78 +882,83 @@
   "picture_losses": {
     "idr_requested_by_the_decoder": 0,
     "frames_not_decoded": 0,
-    "decode_unit_queue_overflows": 1,
+    "decode_unit_queue_overflows": 0,
     "frames_the_network_dropped": 0
   },
   "frame_record": {
     "header": "index,frame_number,enqueue_ns,decoded_ns,display_ns",
-    "rows": 2930,
+    "rows": 4377,
     "in_order": true,
-    "decoded": 2929,
-    "handed_off": 2883,
-    "recording_units": 2930,
-    "handed_off_readable_ids": 2883,
-    "handed_off_distinct_ids": 2882,
-    "first_handed_off_id": 5302,
-    "last_handed_off_id": 2352,
-    "first_handoff_ns": 86923174851,
+    "decoded": 4375,
+    "handed_off": 4294,
+    "recording_units": 4377,
+    "handed_off_readable_ids": 4294,
+    "handed_off_distinct_ids": 3730,
+    "first_handed_off_id": 2758,
+    "last_handed_off_id": 3780,
+    "first_handoff_ns": 42188680023,
     "sizes": [
       {
         "size": [
           1280,
           720
         ],
-        "first_handoff_ns": 86923174851,
-        "handed_off": 564,
-        "readable_ids": 564,
-        "distinct_ids": 563,
+        "first_handoff_ns": 42188680023,
+        "handed_off": 586,
+        "readable_ids": 586,
+        "distinct_ids": 585,
         "ids_never_go_back": true,
         "repeated": [
-          [
-            584,
-            5905,
-            585,
-            5905
-          ]
+          {
+            "handoff_s": 52.659,
+            "units": [
+              596,
+              597
+            ],
+            "ids": [
+              3354,
+              3354
+            ]
+          }
         ],
         "went_back": [],
-        "first_id": 5302,
-        "last_id": 5905
+        "first_id": 2758,
+        "last_id": 3354
       },
       {
         "size": [
           720,
           1280
         ],
-        "first_handoff_ns": 97664085261,
-        "handed_off": 2319,
-        "readable_ids": 2319,
-        "distinct_ids": 2319,
+        "first_handoff_ns": 52805586665,
+        "handed_off": 3708,
+        "readable_ids": 3708,
+        "distinct_ids": 3708,
         "ids_never_go_back": true,
         "repeated": [],
         "went_back": [],
-        "first_id": 5,
-        "last_id": 2352
+        "first_id": 4,
+        "last_id": 3780
       }
     ],
     "handed_off_ids_never_go_back": true,
-    "startup_ms": 9132.2
+    "startup_ms": 2223.7
   },
   "refusal": {
-    "without_dump": "refused: java.lang.SecurityException: Permission Denial: starting Intent { cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity } from ProcessRecord{21dec77 4795:com.simonwjackson.korri.viewer.refusal/u0a182} (pid=4795, uid=10182) requires android.permission.DUMP",
+    "without_dump": "refused: java.lang.SecurityException: Permission Denial: starting Intent { cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity } from ProcessRecord{3bacf76 6899:com.simonwjackson.korri.viewer.refusal/u0a146} (pid=6899, uid=10146) requires android.permission.DUMP",
     "with_dump_granted": "started",
     "viewer_lines_after_the_grant": [
-      "   152.295  4126  4865 E korri-viewer: viewer failed: no intent extra args"
+      "   137.384  3741  6944 E korri-viewer: viewer failed: no intent extra args"
     ]
   },
   "input_at_the_sender": {
     "counts": {
-      "absolute mouse move": 1,
-      "controller": 45,
+      "absolute mouse move": 2,
+      "controller": 44,
       "controller arrival": 1,
       "keyboard": 10,
       "relative mouse move": 2,
-      "touch": 287
+      "touch": 274
     },
     "keyboard": {
       "sent": [
@@ -632,10 +1014,11 @@
         2,
         3
       ],
-      "at_the_middle": 24
+      "at_the_middle": 38,
+      "downs_off_the_centre": 1
     },
     "mouse": {
-      "positions": 1,
+      "positions": 2,
       "reference": [
         [
           608,
@@ -652,12 +1035,12 @@
       }
     ],
     "controller": {
-      "packets": 45,
+      "packets": 44,
       "a_pressed": true,
       "left_stick_full_right": true,
       "right_trigger_full": true,
       "hat_left": true,
-      "x_held_packets": 16,
+      "x_held_packets": 17,
       "last": {
         "controllerNumber": "0",
         "activeGamepadMask": "0000",
@@ -672,179 +1055,287 @@
       "after_it_went": {
         "packets": 5,
         "gaps_ms": [
-          247,
           251,
-          247,
+          251,
+          248,
           250
         ]
       }
     }
   },
+  "overlay_at_the_sender": {
+    "keys": [
+      "Z",
+      "Z"
+    ],
+    "controller_buttons": [
+      "00000000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00004000",
+      "00004000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000"
+    ],
+    "controller_gaps_ms": [
+      0,
+      228,
+      159,
+      68,
+      26,
+      16,
+      47,
+      54,
+      56,
+      85,
+      15,
+      27,
+      60,
+      42,
+      46,
+      54,
+      109,
+      7448,
+      255,
+      257,
+      244,
+      249,
+      255,
+      249,
+      264,
+      237,
+      252,
+      250,
+      249,
+      248,
+      252,
+      255,
+      256,
+      244,
+      249,
+      62,
+      186,
+      111,
+      149,
+      252,
+      247,
+      251,
+      96,
+      1918,
+      248,
+      41,
+      205,
+      7,
+      244,
+      247,
+      255,
+      246
+    ],
+    "touches": [
+      {
+        "eventType": "07",
+        "x": "0",
+        "y": "0"
+      },
+      {
+        "eventType": "01",
+        "x": "0.25",
+        "y": "0.25"
+      },
+      {
+        "eventType": "02",
+        "x": "0.25",
+        "y": "0.25"
+      },
+      {
+        "eventType": "07",
+        "x": "0",
+        "y": "0"
+      }
+    ],
+    "mouse": []
+  },
   "sender_restore": {
-    "live_games": [],
+    "live_games": [
+      "korri-game-8eec78df0399926561746c22e23e0c10.service"
+    ],
     "product_units": {
       "at_start": {
         "korri-boot-splash-handoff.service": {
           "pid": 0,
-          "started": 9382359
+          "started": 8317014
         },
         "korri-bundle-selector.service": {
           "pid": 0,
-          "started": 2306976522669
+          "started": 219956135598
         },
         "korri-clock-governor.service": {
-          "pid": 391802,
-          "started": 1996941424564
+          "pid": 3896,
+          "started": 164324721
         },
         "korri-compositor.service": {
-          "pid": 391963,
-          "started": 1996941782522
-        },
-        "korri-display-idle.service": {
-          "pid": 638368,
-          "started": 2044216670291
+          "pid": 748122,
+          "started": 87957282465
         },
         "korri-input-seat-receiver.service": {
-          "pid": 1199921,
-          "started": 2306976560000
+          "pid": 2569242,
+          "started": 219957620000
         },
         "korri-input-source-guard.service": {
           "pid": 0,
-          "started": 9392616
-        },
-        "korri-inputd.service": {
-          "pid": 1200059,
-          "started": 2306976835172
+          "started": 164531729
         },
         "korri-limits.service": {
-          "pid": 391859,
-          "started": 1996941515074
+          "pid": 4035,
+          "started": 164533214
         },
         "korri-local-signer.service": {
-          "pid": 1200104,
-          "started": 2306976944036
-        },
-        "korri-moonlight-setup.service": {
-          "pid": 1197047,
-          "started": 2305314914830
+          "pid": 2569201,
+          "started": 219956806525
         },
         "korri-plugin-admin.service": {
-          "pid": 1149079,
-          "started": 2135996837458
+          "pid": 748266,
+          "started": 87969764633
         },
         "korri-plugin-host.service": {
           "pid": 0,
-          "started": 2135991806194
+          "started": 87893718128
         },
-        "korri-shell-credentials.service": {
+        "korri-portal-credentials.service": {
           "pid": 0,
-          "started": 1996941434053
+          "started": 162355048
         },
-        "korri-shell.service": {
-          "pid": 1226839,
-          "started": 2336866213226
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
         },
         "korri-sunshine-input-setup.service": {
-          "pid": 665317,
-          "started": 2061079110000
+          "pid": 1489945,
+          "started": 168435600000
         },
         "korri-sunshine.service": {
-          "pid": 1200115,
-          "started": 2306976992534
-        },
-        "korri-viewer-setup.service": {
-          "pid": 1223213,
-          "started": 2311029257810
+          "pid": 2083614,
+          "started": 426660463253
         },
         "korrid.service": {
-          "pid": 1213123,
-          "started": 2308257569159
+          "pid": 2083501,
+          "started": 426653099424
         }
       },
       "at_end": {
         "korri-boot-splash-handoff.service": {
           "pid": 0,
-          "started": 9382359
+          "started": 8317014
         },
         "korri-bundle-selector.service": {
           "pid": 0,
-          "started": 2306976522669
+          "started": 219956135598
         },
         "korri-clock-governor.service": {
-          "pid": 391802,
-          "started": 1996941424564
+          "pid": 3896,
+          "started": 164324721
         },
         "korri-compositor.service": {
-          "pid": 391963,
-          "started": 1996941782522
-        },
-        "korri-display-idle.service": {
-          "pid": 638368,
-          "started": 2044216670291
+          "pid": 748122,
+          "started": 87957282465
         },
         "korri-input-seat-receiver.service": {
-          "pid": 1199921,
-          "started": 2306976560000
+          "pid": 2569242,
+          "started": 219957620000
         },
         "korri-input-source-guard.service": {
           "pid": 0,
-          "started": 9392616
-        },
-        "korri-inputd.service": {
-          "pid": 1200059,
-          "started": 2306976835172
+          "started": 164531729
         },
         "korri-limits.service": {
-          "pid": 391859,
-          "started": 1996941515074
+          "pid": 4035,
+          "started": 164533214
         },
         "korri-local-signer.service": {
-          "pid": 1200104,
-          "started": 2306976944036
-        },
-        "korri-moonlight-setup.service": {
-          "pid": 1197047,
-          "started": 2305314914830
+          "pid": 2569201,
+          "started": 219956806525
         },
         "korri-plugin-admin.service": {
-          "pid": 1149079,
-          "started": 2135996837458
+          "pid": 748266,
+          "started": 87969764633
         },
         "korri-plugin-host.service": {
           "pid": 0,
-          "started": 2135991806194
+          "started": 87893718128
         },
-        "korri-shell-credentials.service": {
+        "korri-portal-credentials.service": {
           "pid": 0,
-          "started": 1996941434053
+          "started": 162355048
         },
-        "korri-shell.service": {
-          "pid": 1226839,
-          "started": 2336866213226
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
         },
         "korri-sunshine-input-setup.service": {
-          "pid": 665317,
-          "started": 2061079110000
+          "pid": 1489945,
+          "started": 168435600000
         },
         "korri-sunshine.service": {
-          "pid": 1200115,
-          "started": 2306976992534
-        },
-        "korri-viewer-setup.service": {
-          "pid": 1223213,
-          "started": 2311029257810
+          "pid": 2083614,
+          "started": 426660463253
         },
         "korrid.service": {
-          "pid": 1213123,
-          "started": 2308257569159
+          "pid": 2083501,
+          "started": 426653099424
         }
       },
       "changed": []
     },
     "pass": true,
     "pids_unchanged": {},
-    "run_folder": "/tmp/korri-stream-cadence-sender-8x3nyh5o",
-    "run_folder_bytes": 18984428,
+    "run_folder": "/tmp/korri-stream-cadence-sender-n5vrusa1",
+    "run_folder_bytes": 25658891,
     "run_folder_removed": true,
     "stray_processes_killed": [],
     "remaining_processes": [],
@@ -862,11 +1353,11 @@
   "emulator_sound": {
     "rate": 48000,
     "channels": 2,
-    "seconds": 61.5,
-    "seconds_of_sound": 52.1,
-    "seconds_at_1000_hz": 48.6,
-    "median_rms_at_1000_hz": 268.7,
-    "seconds_at_440_hz": 2.0,
+    "seconds": 81.4,
+    "seconds_of_sound": 73.0,
+    "seconds_at_1000_hz": 70.9,
+    "median_rms_at_1000_hz": 270.8,
+    "seconds_at_440_hz": 2.1,
     "median_rms_at_440_hz": 200.4
   },
   "pass": true

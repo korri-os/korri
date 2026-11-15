@@ -5,53 +5,55 @@ OneHandedBackgroundPanel:0:1#0
 OneHanded:0:1#0
 FullscreenMagnification:0:1#0
 Leaf:0:1#0
-WallpaperWindowToken{ce9dd8c token=android.os.Binder@54792bf}#0
-53300ad com.android.systemui.ImageWallpaper#0
+WallpaperWindowToken{8a11022 token=android.os.Binder@4d9a417}#0
+f531abd com.android.systemui.ImageWallpaper#0
 com.android.systemui.ImageWallpaper#0
 Wallpaper BBQ wrapper#0
 OneHanded:2:16#0
 FullscreenMagnification:2:14#0
 DefaultTaskDisplayArea#0
 Task=1#0
-Task=20#0
-fbd9891 ActivityRecordInputSink com.google.android.apps.nexuslauncher/.NexusLauncherActivity#0
-ActivityRecord{95c53f6 u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity#0
-fe915f1 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity#0
-d4522bd com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity#0
+Task=11#0
+f691d6 ActivityRecordInputSink com.google.android.apps.nexuslauncher/.NexusLauncherActivity#0
+ActivityRecord{aef7c57 u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity#0
+a935979 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity#0
+3f363f com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity#0
 homeAnimationLayer#0
 animationLayer#0
-Task=7#0
-Dim layer#0
 Task=6#0
 Dim layer#0
 Task=5#0
+Dim layer#0
+Task=4#0
 Task=3#0
 Secondary Divider Dim#0
 Task=2#0
 Primary Divider Dim#0
 splitScreenDividerAnchor#0
-Task=22#0
-326052a ActivityRecordInputSink com.simonwjackson.korri.viewer/android.app.NativeActivity#0
-ActivityRecord{39a6693 u0 com.simonwjackson.korri.viewer/android.app.NativeActivity#0
-ade0aad com.simonwjackson.korri.viewer/android.app.NativeActivity#0
+Task=13#0
+e00725d ActivityRecordInputSink com.simonwjackson.korri.viewer/android.app.NativeActivity#0
+ActivityRecord{9f737d2 u0 com.simonwjackson.korri.viewer/android.app.NativeActivity#0
+fc8516f com.simonwjackson.korri.viewer/android.app.NativeActivity#0
 com.simonwjackson.korri.viewer/android.app.NativeActivity#0
 korri-viewer-video#0
 bbq-wrapper#0
+korri-viewer-overlay#0
+bbq-wrapper#0
 ImeContainer#0
-WindowToken{fb713d android.os.Binder@bb35294}#0
-Surface(name=593ec2c InputMethod)/@0x5726c8a - animation-leash of insets_animation#0
-593ec2c InputMethod#0
+WindowToken{8ebbdba android.os.Binder@1a6dcf1}#0
+Surface(name=5ebcb5e InputMethod)/@0x8cfe836 - animation-leash of insets_animation#1
+5ebcb5e InputMethod#0
 boostedAnimationLayer#0
 Leaf:3:14#0
-WindowToken{fac0560 android.os.BinderProxy@6a9840b}#0
-8a30792 ShellDropTarget#0
+WindowToken{7889563 android.os.BinderProxy@4a90f5c}#0
+1b5edf4 ShellDropTarget#0
 ImePlaceholder:15:16#0
 OneHanded:17:17#0
 FullscreenMagnification:17:17#0
 Leaf:17:17#0
-WindowToken{38aa54a android.os.BinderProxy@223c6ec}#0
-Surface(name=1a11cbb StatusBar)/@0xe8f5d31 - animation-leash of insets_animation#0
-1a11cbb StatusBar#0
+WindowToken{db49553 android.os.BinderProxy@8317b8d}#0
+Surface(name=c950e90 StatusBar)/@0x754669f - animation-leash of insets_animation#0
+c950e90 StatusBar#0
 StatusBar#0
 HideDisplayCutout:18:18#0
 OneHanded:18:18#0
@@ -60,15 +62,15 @@ Leaf:18:18#0
 OneHanded:19:19#0
 FullscreenMagnification:19:19#0
 Leaf:19:19#0
-WindowToken{6c578fd android.os.BinderProxy@fbc68a7}#0
-fbce843 NotificationShade#0
+WindowToken{9a17b51 android.os.BinderProxy@50545db}#0
+efa5fb6 NotificationShade#0
 HideDisplayCutout:20:23#0
 OneHanded:20:23#0
 FullscreenMagnification:20:23#0
 Leaf:20:23#0
 Leaf:24:25#0
-WindowToken{9887ad0 android.os.BinderProxy@85d0a93}#0
-167dac9 pip-dismiss-overlay#0
+WindowToken{413f268 android.os.BinderProxy@503c18b}#0
+4ca1681 pip-dismiss-overlay#0
 HideDisplayCutout:26:31#0
 OneHanded:26:31#0
 FullscreenMagnification:26:27#0
@@ -83,4 +85,4 @@ FullscreenMagnification:33:35#0
 Leaf:33:35#0
 Leaf:36:36#0
 Display Overlays#0
-Input Consumer recents_animation_input_consumer#1
+Input Consumer recents_animation_input_consumer#0

@@ -1,7 +1,7 @@
 {
-  "model": "NUC8i3BEK",
+  "model": "System Product Name",
   "architecture": "x86_64",
-  "boot_id": "9d34e8c2-b496-43d0-b5a0-017e32dcef9c",
+  "boot_id": "6c04d35a-b6d0-48de-a773-e6d881fb90fd",
   "os_release": {
     "ANSI_COLOR": "\"0;38;2;126;186;228\"",
     "BUG_REPORT_URL": "\"https://github.com/NixOS/nixpkgs/issues\"",
@@ -42,173 +42,51 @@
   "sunshine_version": "2026.516.143833",
   "working_encoders": [
     "h264_vaapi",
-    "hevc_vaapi"
+    "hevc_vaapi",
+    "av1_vaapi"
   ],
   "fixture_user": "korri",
   "thermal": [
     {
-      "zone": "thermal_zone0",
-      "type": "pch_cannonlake",
-      "temp": 39000,
-      "trips": [
-        {
-          "type": "critical",
-          "temp": 120000
-        }
-      ],
-      "unreadable": null,
-      "limits": {
-        "critical": 120000,
-        "start_below": 100000,
-        "end_at": 110000
-      }
-    },
-    {
-      "zone": "thermal_zone1",
-      "type": "acpitz",
-      "temp": -263200,
+      "zone": "hwmon4/temp1",
+      "type": "k10temp Tctl",
+      "driver": "k10temp",
+      "temp": 85000,
       "trips": [],
       "unreadable": null,
-      "limits": null
-    },
-    {
-      "zone": "thermal_zone2",
-      "type": "acpitz",
-      "temp": 27800,
-      "trips": [
-        {
-          "type": "critical",
-          "temp": 119000
-        },
-        {
-          "type": "active",
-          "temp": 71000
-        },
-        {
-          "type": "active",
-          "temp": 55000
-        },
-        {
-          "type": "active",
-          "temp": 50000
-        },
-        {
-          "type": "active",
-          "temp": 45000
-        },
-        {
-          "type": "active",
-          "temp": 40000
-        }
-      ],
-      "unreadable": null,
       "limits": {
-        "critical": 119000,
-        "start_below": 99000,
-        "end_at": 109000
-      }
-    },
-    {
-      "zone": "thermal_zone3",
-      "type": "iwlwifi_1",
-      "temp": 37000,
-      "trips": [
-        {
-          "type": "passive",
-          "temp": -274000
-        },
-        {
-          "type": "passive",
-          "temp": -274000
-        },
-        {
-          "type": "passive",
-          "temp": -274000
-        },
-        {
-          "type": "passive",
-          "temp": -274000
-        },
-        {
-          "type": "passive",
-          "temp": -274000
-        },
-        {
-          "type": "passive",
-          "temp": -274000
-        },
-        {
-          "type": "passive",
-          "temp": -274000
-        },
-        {
-          "type": "passive",
-          "temp": -274000
-        }
-      ],
-      "unreadable": null,
-      "limits": null
-    },
-    {
-      "zone": "thermal_zone4",
-      "type": "x86_pkg_temp",
-      "temp": 43000,
-      "trips": [
-        {
-          "type": "passive",
-          "temp": -274000
-        },
-        {
-          "type": "passive",
-          "temp": -274000
-        }
-      ],
-      "unreadable": null,
-      "limits": null
-    },
-    {
-      "zone": "hwmon3/temp1",
-      "type": "coretemp Package id 0",
-      "driver": "coretemp",
-      "temp": 43000,
-      "trips": [
-        {
-          "type": "critical",
-          "temp": 100000
-        }
-      ],
-      "unreadable": null,
-      "limits": {
-        "critical": 100000,
-        "start_below": 80000,
-        "end_at": 90000
+        "critical": null,
+        "start_below": 85000,
+        "end_at": 100000
       }
     }
   ],
   "heat_guarded": true,
   "hardware_picture_path": false,
   "board": [],
-  "live_games_at_start": [],
+  "live_games_at_start": [
+    "korri-game-8eec78df0399926561746c22e23e0c10.service"
+  ],
   "input_rule": "record",
   "tone": {
     "hz": 1000,
     "sink": "korri-tone"
   },
   "log_input": true,
-  "sunshine_port": 47493,
-  "sunshine_control_port": 47503,
+  "sunshine_port": 57093,
+  "sunshine_control_port": 57103,
   "listening_tcp_ports": [
-    47493
+    57093
   ],
   "processes": {
     "compositor": {
-      "pid": 1229207
+      "pid": 3126706
     },
     "sunshine": {
-      "pid": 1229221
+      "pid": 3126727
     },
     "sound": {
-      "pid": 1229205
+      "pid": 3126704
     }
   },
   "sender_fixture": {
@@ -221,13 +99,14 @@
         "render_node": "/dev/dri/renderD128",
         "working_encoders": [
           "h264_vaapi",
-          "hevc_vaapi"
+          "hevc_vaapi",
+          "av1_vaapi"
         ],
         "hardware_encoder": true,
-        "port": 47493,
+        "port": 57093,
         "sunshine_version": "2026.516.143833"
       }
     ],
-    "run_folder": "/tmp/korri-stream-cadence-sender-8x3nyh5o"
+    "run_folder": "/tmp/korri-stream-cadence-sender-n5vrusa1"
   }
 }
