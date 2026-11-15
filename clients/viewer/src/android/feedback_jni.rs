@@ -20,7 +20,7 @@ use jni::{
     JNIEnv, JavaVM,
     objects::{GlobalRef, JIntArray, JObject, JValue},
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map::Entry};
 
 /// A one-shot's length: the host sends a new value or a stop well before.
 const ONE_SHOT_MS: i64 = 60_000;
@@ -59,7 +59,6 @@ impl AndroidOutputs {
         // alive for the process; borrowed here, never deleted.
         let context = unsafe { JObject::from_raw(android.context().cast()) };
         let context = env.new_global_ref(&context)?;
-        drop(env);
         Ok(Self {
             vm,
             api_level,
@@ -223,7 +222,7 @@ fn service<'c>(
     target: Target,
     kind: Kind,
 ) -> Result<Option<&'c GlobalRef>> {
-    if !cache.contains_key(&target) {
+    if let Entry::Vacant(entry) = cache.entry(target) {
         let found = match target {
             Target::Device(id) => {
                 let Some(device) = input_device(env, id)? else {
@@ -252,7 +251,7 @@ fn service<'c>(
         if found.is_null() {
             bail!("Android gave no vibrator for {target:?}");
         }
-        cache.insert(target, env.new_global_ref(found)?);
+        entry.insert(env.new_global_ref(found)?);
     }
     Ok(cache.get(&target))
 }
@@ -386,7 +385,7 @@ fn light(
             &[],
         )?
         .l()?;
-    if !sessions.contains_key(&device) {
+    if let Entry::Vacant(entry) = sessions.entry(device) {
         let session = env
             .call_method(
                 &lights,
@@ -395,7 +394,7 @@ fn light(
                 &[],
             )?
             .l()?;
-        sessions.insert(device, env.new_global_ref(session)?);
+        entry.insert(env.new_global_ref(session)?);
     }
     let state = env.new_object("android/hardware/lights/LightState$Builder", "()V", &[])?;
     env.call_method(

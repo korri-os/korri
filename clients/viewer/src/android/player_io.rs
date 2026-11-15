@@ -97,10 +97,10 @@ impl PlayerIo {
     /// Before the core stops: its callbacks reach the feedback no more, and
     /// every vibration and light that the stream started stops.
     pub(crate) fn stop_feedback(&mut self) {
-        if let Some(mut worker) = self.feedback.take() {
-            if worker.stop(feedback::STOP_WAIT) {
-                crate::log::line("feedback: vibration and lights stopped");
-            }
+        if let Some(mut worker) = self.feedback.take()
+            && worker.stop(feedback::STOP_WAIT)
+        {
+            crate::log::line("feedback: vibration and lights stopped");
         }
     }
     pub(crate) fn start(&self) {}
