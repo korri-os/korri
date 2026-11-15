@@ -44,6 +44,7 @@ mod activity;
 
 type Sink = Rc<dyn Fn(HostEvent)>;
 type Front = Rc<RefCell<Option<(Sink, FrameCounter, bool)>>>;
+type SharedHost = Rc<RefCell<Box<dyn Host>>>;
 
 struct Android {
     front: Front,
@@ -60,7 +61,7 @@ impl Android {
     fn install(
         app: AndroidApp,
         post: mpsc::Sender<Event>,
-        shown: Rc<dyn Fn()>,
+        host: SharedHost,
     ) -> anyhow::Result<Self> {
         let front: Front = Default::default();
         let events = front.clone();
@@ -73,9 +74,15 @@ impl Android {
         let overlay_focus = Rc::new(std::cell::Cell::new(false));
         let activity_focus = native_focus.clone();
         let surface_focus = overlay_focus.clone();
+        let event_host = host.clone();
         let platform = AndroidPlatform::new_with_event_listener(app, move |event| {
-            if let PollEvent::Main(MainEvent::Resume { .. } | MainEvent::GainedFocus) = event {
-                shown();
+            // The listener and the filter run between timer ticks, never while
+            // the timer holds the host.
+            if let (PollEvent::Main(main), Ok(mut host)) = (event, event_host.try_borrow_mut()) {
+                host.main_event(main);
+                if let MainEvent::Resume { .. } | MainEvent::GainedFocus = main {
+                    host.shown();
+                }
             }
             let host = match event {
                 PollEvent::Main(MainEvent::GainedFocus) => {
@@ -101,6 +108,14 @@ impl Android {
             }
         })
         .with_input_event_filter(Box::new(move |event| {
+            // A stream in front takes the event first (Host::input).
+            if let Some(taken) = host
+                .try_borrow_mut()
+                .ok()
+                .and_then(|mut host| host.input(event))
+            {
+                return taken;
+            }
             let input = &event_input;
             let send = |events: Vec<NativeEvent>| {
                 let _ = post.send(Event::Native(events));
@@ -287,6 +302,18 @@ pub trait Host {
     fn overlay(&mut self) -> Option<&mut dyn Overlay> {
         None
     }
+    /// An input event before the shell's mapper sees it: `Some(true)` when
+    /// the host took it, `Some(false)` when it stays Android's (the shell
+    /// does not map it either), `None` when it is the shell's. A stream in
+    /// front of the shell takes its events here (#434 D10). It must not wait.
+    fn input(&mut self, _event: &InputEvent<'_>) -> Option<bool> {
+        None
+    }
+    /// Each main event of android-activity, after Slint has handled it. It
+    /// must not wait: Android's main thread may be waiting for this thread.
+    fn main_event(&mut self, _event: &MainEvent<'_>) {}
+    /// Each tick of the shell's 16 ms timer, before the shell's own work.
+    fn tick(&mut self) {}
 }
 
 /// A Surface that the host draws over the stream, and its input. The shell
@@ -320,20 +347,10 @@ pub trait Overlay {
 /// first package is the one the app opens: Velvet (#424).
 pub fn run(app: AndroidApp, bootstrap: Bootstrap, host: Box<dyn Host>) -> anyhow::Result<()> {
     let vm = Arc::new(unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }?);
-    let host = Rc::new(RefCell::new(host));
+    let host: SharedHost = Rc::new(RefCell::new(host));
     let brain = Korrid::new(bootstrap.connection);
     let (tx, rx) = mpsc::channel();
-    let shown_host = host.clone();
-    let backend = Rc::new(Android::install(
-        app,
-        tx.clone(),
-        Rc::new(move || {
-            // The listener runs between timer ticks; never while the loop holds it.
-            if let Ok(mut host) = shown_host.try_borrow_mut() {
-                host.shown();
-            }
-        }),
-    )?);
+    let backend = Rc::new(Android::install(app, tx.clone(), host.clone())?);
     let input = backend.input.clone();
     let package = bootstrap.packages;
     let mut shell = Shell::new(
@@ -366,6 +383,7 @@ pub fn run(app: AndroidApp, bootstrap: Bootstrap, host: Box<dyn Host>) -> anyhow
         Duration::from_millis(16),
         move || {
             let mut host = host.borrow_mut();
+            host.tick();
             if let Some(overlay) = host.overlay() {
                 if let Ok(mut env) = vm.attach_current_thread() {
                     let result: jni::errors::Result<()> = env.with_local_frame(8, |env| {
