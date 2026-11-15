@@ -86,6 +86,19 @@ describe("Resized", () => {
     expect(run.view.screen.width).toBe(480)
     expect(run.view.screen.narrow).toBe(true)
   })
+  test("a window with no size yet draws, with Korri's question up", () => {
+    // The Android shell loads its first surface before Android gives it the
+    // window, so the first Resized is 0 x 0; a new device asks for its identity.
+    const question = {
+      ...model(),
+      status: { _tag: "Confirm", kicker: "Connect your identity", detail: "Open Korri to choose a signer.", actions: [{ id: "owner-binding", label: "Check for signer", enabled: true }] },
+    }
+    const run = new Play(question, 0, 0)
+    expect(run.view.curtain.shown).toBe(true)
+    run.deliver({ _tag: "Resized", width: 411, height: 914 })
+    expect(run.view.curtain.shown).toBe(true)
+    expect(run.view.screen.width).toBe(411)
+  })
   test("a resize keeps where the person is", () => {
     const scene = scenario("set-sorted")
     const run = new Play(scene.models[0], 1920, 1080)
