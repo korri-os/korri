@@ -9,7 +9,7 @@
 //! stream is connected, and Apply hands each change to that thread and
 //! answers once it has performed it. With none attached, as on Linux,
 //! Snapshot has no controls, battery or health and Apply is unavailable.
-use crate::controls::{self, Change, Readings, Values};
+use crate::controls::{self, Change, Offer, Readings, Values};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use korri_viewer_treaty::{
     SurfaceGameplayControlValue, ViewerCommand as C, ViewerDisplay, ViewerEvent as E,
@@ -106,6 +106,8 @@ struct Attached {
     /// What the stream's thread has performed: it writes them when it
     /// confirms a change, also after Apply stopped waiting.
     values: Arc<Mutex<Values>>,
+    /// What the stream can perform now; the stream's thread writes it.
+    offer: Arc<Mutex<Offer>>,
     readings: Arc<dyn Fn() -> Readings + Send + Sync>,
     changes: mpsc::Sender<ControlChange>,
 }
@@ -131,12 +133,21 @@ impl ControlChange {
 
 /// The changes that Apply accepted, in order, for the thread that owns the
 /// stream. Dropping it makes every later Apply fail at once.
-pub struct ControlChanges(mpsc::Receiver<ControlChange>);
+pub struct ControlChanges {
+    queue: mpsc::Receiver<ControlChange>,
+    offer: Arc<Mutex<Offer>>,
+}
 
 impl ControlChanges {
     /// The next change, without waiting.
     pub fn next(&self) -> Option<ControlChange> {
-        self.0.try_recv().ok()
+        self.queue.try_recv().ok()
+    }
+
+    /// What the stream can perform now: Snapshot lists, and Apply takes,
+    /// only that.
+    pub fn offer(&self, offer: Offer) {
+        *self.offer.lock().unwrap_or_else(PoisonError::into_inner) = offer;
     }
 }
 
@@ -244,13 +255,15 @@ impl Lifecycle {
         readings: impl Fn() -> Readings + Send + Sync + 'static,
     ) -> ControlChanges {
         let (changes, queue) = mpsc::channel();
+        let offer = Arc::new(Mutex::new(Offer::default()));
         self.0.state.lock().unwrap().controls = Some(Attached {
             prefix: controls::prefix(&self.0.launch, self.0.generation, lease),
             values: Arc::new(Mutex::new(Values::default())),
+            offer: offer.clone(),
             readings: Arc::new(readings),
             changes,
         });
-        ControlChanges(queue)
+        ControlChanges { queue, offer }
     }
 
     /// The CLI supplies native settings and credentials; Start supplies only
@@ -526,7 +539,11 @@ fn snapshot(state: MutexGuard<'_, State>) -> Option<ViewerSnapshot> {
         .values
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
-    snapshot.controls = controls::list(&attached.prefix, values);
+    let offer = *attached
+        .offer
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    snapshot.controls = controls::list(&attached.prefix, values, offer);
     let readings = attached.readings.clone();
     // The readings call into Android: never under the lifecycle's lock.
     drop(state);
@@ -552,7 +569,11 @@ fn apply(
         matches!(state.status, Some(S::Running | S::Backgrounded)),
         "viewer is not running"
     );
-    let change = controls::parse(&attached.prefix, id, value.as_ref())?;
+    let offer = *attached
+        .offer
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let change = controls::parse(&attached.prefix, id, value.as_ref(), offer)?;
     let (answer, answered) = mpsc::channel();
     attached
         .changes
@@ -812,6 +833,39 @@ mod tests {
             ask(&lifecycle, turn_on(&id)),
             R::Error { message } if message == "Local viewer control unavailable"
         ));
+    }
+
+    #[test]
+    fn rumble_is_offered_only_while_the_stream_says_it_can_rumble() {
+        let lifecycle = in_app();
+        let changes = lifecycle.controls(1, Readings::default);
+        connect(&lifecycle);
+        assert_eq!(toggles(&observed(&lifecycle)).len(), 2);
+        changes.offer(Offer { rumble: true });
+        let listed = toggles(&observed(&lifecycle));
+        let (rumble, on) = listed.last().unwrap().clone();
+        assert!(rumble.ends_with(":set-rumble") && on, "{listed:?}");
+        let off = C::Apply {
+            control: rumble.clone(),
+            value: Some(SurfaceGameplayControlValue::Toggle { value: false }),
+        };
+        let stream = std::thread::spawn(move || {
+            loop {
+                if let Some(change) = changes.next() {
+                    change.done(Ok(()));
+                    return changes;
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        });
+        assert!(matches!(ask(&lifecycle, off.clone()), R::Ok));
+        let changes = stream.join().unwrap();
+        assert_eq!(toggles(&observed(&lifecycle))[2], (rumble, false));
+        // The controller that could rumble went.
+        changes.offer(Offer::default());
+        assert_eq!(toggles(&observed(&lifecycle)).len(), 2);
+        assert!(matches!(ask(&lifecycle, off), R::Error { .. }));
+        assert!(changes.next().is_none());
     }
 
     #[test]

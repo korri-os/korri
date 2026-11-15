@@ -455,6 +455,13 @@ impl Controllers {
         self.contexts.keys().copied()
     }
 
+    /// `ControllerHandler.hasRumble`: some controller of the stream can
+    /// rumble, with its own vibrators or the phone's (`Rumble::of`). The
+    /// stream's control "Rumble" is offered only then (slice D11).
+    pub(crate) fn has_rumble(&self) -> bool {
+        self.contexts.values().any(|c| c.rumble != Rumble::None)
+    }
+
     /// `resetInputState`: every controller lets go of its buttons, sticks
     /// and triggers, and the heartbeat repeats each one with nothing
     /// pressed. Nothing is sent.

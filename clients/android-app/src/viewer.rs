@@ -17,7 +17,10 @@
 //! korrid's `snapshot` then lists them, and its `apply` is the treaty's
 //! Apply, which the loop thread performs at its next tick: "Crop to fill"
 //! moves the video layer (confirmed once Android's main thread has applied
-//! the transaction), "Flip A/B and X/Y" changes the controllers' mapping.
+//! the transaction), "Flip A/B and X/Y" changes the controllers' mapping,
+//! and "Rumble" goes to the controllers' feedback thread (slice D4b's). The
+//! loop thread offers Rumble while a controller that can rumble is in the
+//! stream.
 //!
 //! The adapter hands a launch to the loop thread over a channel, because the
 //! layers and the input belong to that thread. The loop thread never waits:
@@ -51,9 +54,11 @@ use crate::logcat;
 use futures::{channel::oneshot, future::BoxFuture};
 use jni::{objects::GlobalRef, objects::JObject, JNIEnv, JavaVM};
 use korri_viewer::{
-    controls::Control,
+    controls::{Control, Offer},
     devices::AndroidDevices,
-    events, feedback_jni,
+    events,
+    feedback::RumbleSwitch,
+    feedback_jni,
     input::{self as stream_input, Settings},
     launch,
     layer::{Layers, Pending},
@@ -541,6 +546,8 @@ struct Playing {
     decoded: Decoded,
     /// The changes that korrid's Apply asks for (slice D11).
     changes: ControlChanges,
+    /// The control "Rumble": the controllers' feedback thread takes it.
+    rumble: RumbleSwitch,
     /// "Crop to fill" waits for Android's main thread to move the layer.
     placing: Option<(ControlChange, mpsc::Receiver<anyhow::Result<()>>)>,
     /// The runtime reads it when it connects; it goes with the launch.
@@ -765,6 +772,8 @@ impl Stream {
             }
         };
         let seats = feedback.seats();
+        // The stream's control "Rumble" (slice D11) reaches the same thread.
+        let rumble = feedback.rumble_switch();
         let Show {
             launch,
             address,
@@ -846,6 +855,7 @@ impl Stream {
             stopping: false,
             decoded,
             changes,
+            rumble,
             placing: None,
             _pin: pin,
         }))
@@ -887,6 +897,11 @@ impl Stream {
     /// korrid's changes to the stream's controls, in order: each is
     /// confirmed once it has taken effect. A fill waits for its layer.
     fn controls(&self, playing: &mut Playing) {
+        // Rumble is offered while a controller that can rumble is in the
+        // stream, as Artemis offers it.
+        playing.changes.offer(Offer {
+            rumble: playing.play.has_rumble(),
+        });
         if let Some((change, answer)) = playing.placing.take() {
             let result = match answer.try_recv() {
                 Err(mpsc::TryRecvError::Empty) => {
@@ -924,6 +939,12 @@ impl Stream {
                         Err("the stream's input has ended".to_owned())
                     };
                     done(change, result);
+                }
+                // In effect at once for the host's next rumble; the
+                // feedback thread stops the vibrations that run.
+                Control::Rumble => {
+                    playing.rumble.set(value);
+                    done(change, Ok(()));
                 }
             }
         }
@@ -1035,6 +1056,7 @@ impl Drop for Stream {
                     stopping,
                     decoded: _,
                     changes: _,
+                    rumble: _,
                     placing: _,
                     _pin,
                 } = *playing;

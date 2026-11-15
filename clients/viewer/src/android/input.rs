@@ -647,6 +647,12 @@ impl Input {
         self.controllers.set_flip_face_buttons(flip);
     }
 
+    /// Some controller of the stream can rumble: the stream's control
+    /// "Rumble" is offered (slice D11).
+    pub fn has_rumble(&self) -> bool {
+        self.controllers.has_rumble()
+    }
+
     /// `handleKeyDown`, `handleKeyUp` and `handleKeyMultiple`.
     pub fn key(
         &mut self,
@@ -2688,6 +2694,41 @@ pub(crate) mod tests {
             },
             ..Default::default()
         }
+    }
+
+    // Slice D11: the control "Rumble" is offered as Artemis offers it
+    // (ControllerHandler.hasRumble): once a controller that can rumble is in
+    // the stream.
+    #[test]
+    fn rumble_is_offered_once_a_controller_that_can_rumble_is_in_the_stream() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        let mut quiet = pad(20, 0x045e);
+        quiet.vibration = Vibration::default();
+        let mut ds4 = dualshock(21);
+        ds4.vibration = two_vibrators();
+        let mut devices = Known::with([quiet, ds4]);
+        devices.phone = ANDROID_12;
+        assert!(!input.has_rumble());
+        press(
+            &mut input,
+            &mut devices,
+            &mut sink,
+            20,
+            code::BUTTON_A,
+            304,
+            1000,
+        );
+        assert!(!input.has_rumble(), "an external pad with no vibrator");
+        press(
+            &mut input,
+            &mut devices,
+            &mut sink,
+            21,
+            code::BUTTON_A,
+            304,
+            2000,
+        );
+        assert!(input.has_rumble());
     }
 
     #[test]

@@ -171,6 +171,12 @@ impl Play {
         self.input.run("place", |input| input.place(placed));
     }
 
+    /// Some controller of the stream can rumble (slice D11): false once the
+    /// input has ended.
+    pub fn has_rumble(&self) -> bool {
+        self.input.0.as_ref().is_some_and(Input::has_rumble)
+    }
+
     /// The stream's control "Flip A/B and X/Y" (slice D11). False when the
     /// input has ended.
     pub fn set_flip_face_buttons(&mut self, flip: bool) -> bool {

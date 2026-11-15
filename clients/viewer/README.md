@@ -1084,7 +1084,7 @@ files are.
 | Where the battery is read | A `HandlerThread` of its own | The feedback thread |
 | A stop that hangs in a Binder call | The UI thread waits | The stream's stop waits at most 2 s, then goes on without the feedback thread, which stops the vibration when its call returns; that thread sends no battery report into a later stream |
 | Settings | Rumble on or off, rumble the phone instead of the pad, rumble the phone when the pad has no vibrator (and its strength), battery reports on or off | Artemis's defaults: rumble on, the pad's own vibrators, no fallback to the phone, battery reports on |
-| The overlay's rumble switch (`stopRumble`) | Korri's Artemis copy | Slice D5 |
+| The overlay's rumble switch (`stopRumble`) | Korri's Artemis copy | The stream's control "Rumble" (slice D11, below); the overlay that shows it is D5's |
 | SHIELD controllers | `SceManager` rumble and battery | Not carried: NVIDIA's own API |
 | USB driver's rumble and trigger rumble | Its own, in Java | Dropped (ADR 0064) |
 | A device that changes | Its new context takes the light session and polls the battery again | Not followed, as in D4 |
@@ -1427,12 +1427,13 @@ that it already carried).
 Artemis can list thirteen controls (`KorriViewerControls.included`; its
 `label` names a fourteenth, Rotate screen, that `included` never lets
 through). A control is listed only when its viewer can perform it. This
-viewer lists two, and the status:
+viewer lists three, and the status:
 
 | Item | Source in Artemis | Here |
 | --- | --- | --- |
 | Crop to fill (`set-fill-mode`, toggle) | `Game.toggleFillMode`, `StreamContainer.setFillDisplay` | The video layer covers the window and its edges are cut (`placement::fill`): the layer's source crop is the stream's part that shows (`placement::geometry`), one `setGeometry`. The input maps into the whole picture, as Artemis's oversized view does |
 | Flip A/B and X/Y (`set-face-button-flip`, toggle) | `ControllerHandler.handleFlipFaceButtons` | The same swap after the remapping, for each press from then on (`gamepad.rs`) |
+| Rumble (`set-rumble`, toggle, on at the start) | `Game.setRumble`, `ControllerHandler.stopRumble`; listed only with a controller that can rumble (`hasRumble`) | Listed only while a controller of the stream can rumble with its own vibrators or the phone's (`Controllers::has_rumble`). Off: the core's rumble and trigger rumble are dropped as they come (`feedback.rs`'s inbox), and the feedback thread sets every controller's motors and triggers to 0 (`Feedback::stop_rumble`). On: the host's next rumble goes through. Apply answers once the switch is in the inbox; the vibrations stop at the feedback thread's next turn |
 | Battery | `BatteryManager.BATTERY_PROPERTY_CAPACITY`, 0 to 100 | The same, through JNI (`status.rs`) |
 | Health: delivered bitrate, frames dropped, sample time | `ViewerVideoStats`: each decode unit's bytes, each output buffer the display drops, over 1 s or more; stale after 3 s | `video_stats.rs` (its port, with its tests), counted in `decoder.rs`: the units that arrive and the overtaken frames that the output thread drops |
 | Health: round trip | `MoonBridge.getEstimatedRttInfo` | `LiGetEstimatedRttInfo`, under the picture's lock (`picture::health`) |
@@ -1466,7 +1467,6 @@ Not carried, each because this viewer lacks the feature, not the control:
 | Keyboard as controller | Artemis's on-screen controller |
 | Toggle local cursor, SGSR sharpness, SGSR edge threshold | Artemis's GL renderer; MediaCodec renders straight into the layer here |
 | Picture-in-picture | An activity in picture-in-picture mode; leaving the app ends the stream here (D10) |
-| Rumble | Rumble itself: slice D4b. Artemis lists it only with a rumble device |
 
 Notice (Artemis shows a toast) and Resize (#476) stay unavailable.
 

@@ -36,8 +36,9 @@ The steps:
    rules), before the keys of step 5.
 7. The stream's controls and status (slice D11), through the fixture APK's
    proof trigger (src/proof.rs), which calls korrid's own viewer adapter:
-   korrid's snapshot lists Crop to fill and Flip A/B and X/Y, the battery
-   and the stream's health; korrid's apply turns Crop to fill on, which
+   korrid's snapshot lists Crop to fill and Flip A/B and X/Y (and Rumble
+   only with a controller that can rumble: none here), the battery and the
+   stream's health; korrid's apply turns Crop to fill on, which
    moves the video layer (the app's log, SurfaceFlinger's crop, a
    screenshot), and off again; a control of another runtime is refused.
 8. Home leaves the app: the runtime stops and korrid reads Stopped.
@@ -92,6 +93,7 @@ PROOF_SNAPSHOT = re.compile(r"korri-app: proof: snapshot ([0-9a-f]{32}) (\{.*\}|
 PROOF_APPLY = re.compile(r"korri-app: proof: apply ([0-9a-f]{32}) (\S+) (\S+) (ok|failed: .*)$")
 FILL = "set-fill-mode"
 FLIP = "set-face-button-flip"
+RUMBLE = "set-rumble"
 # The emulator's window in landscape; a 1280x720 stream (placement.rs's tests).
 FITTED = "placed at (240, 0)-(2160, 1080) in the window 2400x1080"
 FILLED = "placed at (0, -135)-(2400, 1215) in the window 2400x1080, cropped to fill"
@@ -321,11 +323,13 @@ def controls(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
     listed = toggles(first)
     steps["listed"] = listed
     prefix = f"viewer:{launch}:"
+    # No controller that can rumble takes part, so Rumble is not offered.
     checks["korrids_snapshot_lists_the_controls"] = (
         set(listed) == {FILL, FLIP}
         and all(c["id"].startswith(prefix) and c["kind"] == "toggle" and c["value"] is False
                 for c in listed.values())
         and listed[FILL]["label"] == "Crop to fill" and listed[FLIP]["label"] == "Flip A/B and X/Y")
+    steps["rumble_offered"] = RUMBLE in listed
     health = (first or {}).get("streamHealth") or {}
     checks["korrids_snapshot_shows_the_streams_health"] = (
         isinstance(health.get("deliveredBitrateKbps"), (int, float)) and health["deliveredBitrateKbps"] > 0

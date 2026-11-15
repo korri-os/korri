@@ -351,6 +351,27 @@ impl Feedback {
         self.run(Kind::Triggers, number, &values, matched, calls, outputs)
     }
 
+    /// `ControllerHandler.stopRumble`, when the stream's control turns
+    /// rumble off (`Game.setRumble`, slice D11): every controller's motors
+    /// and triggers go to 0, as `handleRumble` and `handleRumbleTriggers`
+    /// with 0 would set them.
+    pub fn stop_rumble(&mut self, outputs: &mut dyn Outputs) {
+        let mut calls = Vec::new();
+        for held in self.held.values_mut() {
+            held.low = 0;
+            held.high = 0;
+            held.left_trigger = 0;
+            held.right_trigger = 0;
+            calls.extend(motors(held));
+        }
+        log::line(&format!(
+            "feedback: rumble off: every controller's vibration stops: {calls:?}"
+        ));
+        for call in &calls {
+            self.call(call, outputs);
+        }
+    }
+
     /// `handleSetControllerLED`: every controller with this number and an
     /// RGB light.
     pub fn light(&mut self, number: u16, rgb: (u8, u8, u8), outputs: &mut dyn Outputs) -> String {
@@ -650,6 +671,13 @@ struct Inbox {
     rumble: BTreeMap<u16, (u16, u16)>,
     triggers: BTreeMap<u16, (u16, u16)>,
     lights: BTreeMap<u16, (u8, u8, u8)>,
+    /// The stream's control turned rumble off (`prefConfig.enableRumble`
+    /// false): the core's rumble and trigger rumble are dropped as they
+    /// come, as `Game.rumble` drops them.
+    rumble_off: bool,
+    /// Every vibration is to stop (`ControllerHandler.stopRumble`), after
+    /// the values that came before.
+    stop_rumble: bool,
     /// The stop, with its answer. It goes before all the rest.
     stop: Option<Sender<()>>,
     /// Stopped: nothing more is taken.
@@ -661,7 +689,8 @@ impl Inbox {
         !(self.seats.is_empty()
             && self.rumble.is_empty()
             && self.triggers.is_empty()
-            && self.lights.is_empty())
+            && self.lights.is_empty()
+            && !self.stop_rumble)
     }
 
     fn take_work(&mut self) -> Work {
@@ -670,6 +699,7 @@ impl Inbox {
             rumble: std::mem::take(&mut self.rumble),
             triggers: std::mem::take(&mut self.triggers),
             lights: std::mem::take(&mut self.lights),
+            stop_rumble: std::mem::take(&mut self.stop_rumble),
         }
     }
 }
@@ -680,6 +710,7 @@ struct Work {
     rumble: BTreeMap<u16, (u16, u16)>,
     triggers: BTreeMap<u16, (u16, u16)>,
     lights: BTreeMap<u16, (u8, u8, u8)>,
+    stop_rumble: bool,
 }
 
 /// The inbox and the signal that wakes the feedback thread.
@@ -783,6 +814,22 @@ pub struct Worker {
 /// The app's thread's way to the feedback thread.
 pub struct SeatSender(Arc<Mailbox>);
 
+/// The stream's control "Rumble" (`Game.setRumble`, slice D11): the app's
+/// thread turns the host's rumble on or off for this stream.
+pub struct RumbleSwitch(Arc<Mailbox>);
+
+impl RumbleSwitch {
+    /// Off: from now on the core's rumble and trigger rumble are dropped as
+    /// they come, and the feedback thread stops every vibration next. On:
+    /// the host's next rumble goes to the controllers again.
+    pub fn set(&self, on: bool) {
+        self.0.post(|inbox| {
+            inbox.rumble_off = !on;
+            inbox.stop_rumble |= !on;
+        });
+    }
+}
+
 impl Seats for SeatSender {
     fn seated(&mut self, seat: Seat) {
         self.0
@@ -831,6 +878,11 @@ impl Worker {
     /// For the input: where it says which controllers are seated.
     pub fn seats(&self) -> SeatSender {
         SeatSender(self.mailbox.clone())
+    }
+
+    /// For the stream's controls: where they turn rumble on and off.
+    pub fn rumble_switch(&self) -> RumbleSwitch {
+        RumbleSwitch(self.mailbox.clone())
     }
 
     /// From now on the core's callbacks reach this thread.
@@ -918,7 +970,9 @@ fn to_core_worker(put: impl FnOnce(&mut Inbox)) {
 pub unsafe extern "C" fn rumble(number: u16, low: u16, high: u16) {
     crate::callback::guarded("rumble", (), || {
         to_core_worker(|inbox| {
-            inbox.rumble.insert(number, (low, high));
+            if !inbox.rumble_off {
+                inbox.rumble.insert(number, (low, high));
+            }
         })
     });
 }
@@ -930,7 +984,9 @@ pub unsafe extern "C" fn rumble(number: u16, low: u16, high: u16) {
 pub unsafe extern "C" fn rumble_triggers(number: u16, left: u16, right: u16) {
     crate::callback::guarded("rumble triggers", (), || {
         to_core_worker(|inbox| {
-            inbox.triggers.insert(number, (left, right));
+            if !inbox.rumble_off {
+                inbox.triggers.insert(number, (left, right));
+            }
         })
     });
 }
@@ -1025,6 +1081,10 @@ fn run_work(
             return;
         }
         feedback.rumble_triggers(number, left, right, outputs);
+    }
+    // After the values that came before it was turned off.
+    if work.stop_rumble && !mailbox.stopping() {
+        feedback.stop_rumble(outputs);
     }
     for (number, rgb) in work.lights {
         if mailbox.stopping() {
@@ -1215,6 +1275,52 @@ pub(crate) mod tests {
                 // Below 0x100 is 0: the amplitude is the high byte.
                 Call::CancelManager { target },
             ]
+        );
+    }
+
+    // Slice D11: the stream's control "Rumble" off, ControllerHandler.stopRumble.
+    #[test]
+    fn rumble_off_stops_every_controllers_motors_and_triggers() {
+        let mut outputs = Scripted::default();
+        let mut feedback = Feedback::default();
+        feedback.seat(seat(18, 0, Rumble::Quad(Owner::Device), false), 0);
+        feedback.seat(
+            seat(
+                19,
+                1,
+                Rumble::Single {
+                    owner: Owner::Phone,
+                    amplitude: true,
+                },
+                false,
+            ),
+            0,
+        );
+        feedback.seat(seat(20, 2, Rumble::None, false), 0);
+        feedback.rumble(0, 0x8000, 0x8000, &mut outputs);
+        feedback.rumble_triggers(0, 0xff00, 0xff00, &mut outputs);
+        feedback.rumble(1, 0xff00, 0, &mut outputs);
+        outputs.take();
+        feedback.stop_rumble(&mut outputs);
+        assert_eq!(
+            outputs.take(),
+            [
+                Call::CancelManager {
+                    target: Target::Device(18)
+                },
+                Call::CancelVibrator {
+                    target: Target::Phone
+                },
+            ]
+        );
+        // The triggers went to 0 too: a later rumble moves the motors only.
+        feedback.rumble(0, 0x8000, 0, &mut outputs);
+        assert_eq!(
+            outputs.take(),
+            [Call::Combined {
+                target: Target::Device(18),
+                amplitudes: vec![0, 0x80, 0, 0]
+            }]
         );
     }
 
@@ -1617,6 +1723,39 @@ pub(crate) mod tests {
         unsafe { rumble(0, 0xffff, 0xffff) };
         std::thread::sleep(Duration::from_millis(50));
         assert_eq!(outputs.calls.lock().unwrap().len(), 5);
+    }
+
+    // Slice D11: Game.setRumble, while the feedback thread serves the core.
+    #[test]
+    fn rumble_off_drops_the_hosts_rumble_until_it_is_on_again() {
+        let _turn = CORE_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
+        let outputs = Scripted::default();
+        let made = outputs.clone();
+        let mut worker = Worker::start(move || Ok(made), Recorded::default(), clock).unwrap();
+        let mut seats = worker.seats();
+        let switch = worker.rumble_switch();
+        seats.seated(seat(18, 0, Rumble::Dual(Owner::Device), false));
+        worker.serve_core();
+        let target = Target::Device(18);
+        unsafe { rumble(0, 0x8000, 0x4000) };
+        wait_for(&outputs, 1);
+        switch.set(false);
+        assert_eq!(wait_for(&outputs, 2)[1], Call::CancelManager { target });
+        // Off: the host's rumble and trigger rumble reach no vibrator.
+        unsafe { rumble(0, 0xffff, 0xffff) };
+        unsafe { rumble_triggers(0, 0xffff, 0xffff) };
+        std::thread::sleep(Duration::from_millis(50));
+        assert_eq!(outputs.calls.lock().unwrap().len(), 2);
+        switch.set(true);
+        unsafe { rumble(0, 0x8000, 0x4000) };
+        assert_eq!(
+            wait_for(&outputs, 3)[2],
+            Call::Combined {
+                target,
+                amplitudes: vec![0x40, 0x80]
+            }
+        );
+        assert!(worker.stop(STOP_WAIT));
     }
 
     #[test]
