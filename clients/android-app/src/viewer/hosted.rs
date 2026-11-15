@@ -27,8 +27,53 @@ pub(crate) enum Step {
     /// answer comes back to [`Hosted::left`] with this opening's number.
     Leave(u64),
     /// The overlay is closed and the shell has no Surface: the stream's
-    /// input goes on, and each resume that waits hears so. Why, for the log.
-    Closed(&'static str),
+    /// input goes on, and each resume that waits hears why
+    /// ([`Closing::answer`]).
+    Closed(Closing),
+}
+
+/// Why the overlay closes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Closing {
+    /// korrid resumed the stream.
+    Resumed,
+    /// korrid refused the leave of this opening.
+    LeaveRefused,
+    /// The shell could not draw into the Surface, or ended.
+    ShellFailed,
+    /// The shell let the Surface go without being asked.
+    ShellLetGo,
+    /// The shell ended before it took the Surface.
+    ShellDidNotTake,
+    /// The stream stops: korrid's Stop, or the app leaves the front.
+    StreamStops,
+    /// The stream's runtime ended.
+    StreamEnded,
+}
+
+impl Closing {
+    /// Why, for the log.
+    pub(crate) fn why(self) -> &'static str {
+        match self {
+            Self::Resumed => "korrid resumed the stream",
+            Self::LeaveRefused => "korrid refused the leave",
+            Self::ShellFailed => "the shell could not draw the overlay, or ended",
+            Self::ShellLetGo => "the shell let the overlay's Surface go unasked",
+            Self::ShellDidNotTake => "the shell did not take the overlay's Surface",
+            Self::StreamStops => "the stream stops",
+            Self::StreamEnded => "the stream ended",
+        }
+    }
+
+    /// What a resume that waits for the overlay to close hears: Ok only
+    /// when korrid's resume closed it, else why it closed. A stream that
+    /// stops or ends is not in front, whatever closed its overlay.
+    pub(crate) fn answer(self) -> Result<(), String> {
+        match self {
+            Self::Resumed => Ok(()),
+            failed => Err(failed.why().to_owned()),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,7 +97,7 @@ pub(crate) struct Hosted {
     /// The number of the latest opening.
     opening: u64,
     /// Why the overlay closes, once it does.
-    why: &'static str,
+    why: Closing,
 }
 
 impl Default for Hosted {
@@ -60,7 +105,7 @@ impl Default for Hosted {
         Self {
             state: State::Closed,
             opening: 0,
-            why: "",
+            why: Closing::Resumed,
         }
     }
 }
@@ -114,15 +159,20 @@ impl Hosted {
         if ok || opening != self.opening {
             return Vec::new();
         }
-        self.close("korrid refused the leave")
+        self.close(Closing::LeaveRefused)
     }
 
     /// Close the overlay, for `why`. A Surface that the shell holds comes
     /// back first ([`Hosted::closing`]); one that it never took ends the
-    /// overlay at once.
-    pub(crate) fn close(&mut self, why: &'static str) -> Vec<Step> {
+    /// overlay at once. While it comes back, a failure (a stop, an end)
+    /// takes the place of korrid's resume as the reason, never the other way.
+    pub(crate) fn close(&mut self, why: Closing) -> Vec<Step> {
         match self.state {
-            State::Closed | State::Returning => Vec::new(),
+            State::Closed => Vec::new(),
+            State::Returning => {
+                self.fail(why);
+                Vec::new()
+            }
             State::Offered => {
                 self.state = State::Closed;
                 vec![Step::Closed(why)]
@@ -139,6 +189,13 @@ impl Hosted {
         }
     }
 
+    /// A failure becomes the reason, unless an earlier one is.
+    fn fail(&mut self, why: Closing) {
+        if self.why == Closing::Resumed {
+            self.why = why;
+        }
+    }
+
     /// The shell must let the Surface go now (`Overlay::closing`).
     pub(crate) fn closing(&self) -> bool {
         self.state == State::Returning
@@ -150,13 +207,19 @@ impl Hosted {
         let state = std::mem::replace(&mut self.state, State::Closed);
         match state {
             State::Closed => Vec::new(),
-            State::Returning => vec![Step::Closed(self.why)],
-            State::Offered => vec![Step::Closed("the shell did not take the overlay's Surface")],
+            State::Returning => {
+                // The shell's teardown lets the Surface go itself, as failed.
+                if failed {
+                    self.fail(Closing::ShellFailed);
+                }
+                vec![Step::Closed(self.why)]
+            }
+            State::Offered => vec![Step::Closed(Closing::ShellDidNotTake)],
             State::Lent { shown } => {
                 let why = if failed {
-                    "the shell could not draw the overlay"
+                    Closing::ShellFailed
                 } else {
-                    "the shell let the overlay's Surface go"
+                    Closing::ShellLetGo
                 };
                 let mut steps = if shown { vec![Step::Hide] } else { Vec::new() };
                 steps.push(Step::Closed(why));
@@ -170,7 +233,7 @@ impl Hosted {
 mod tests {
     use super::*;
 
-    const RESUMED: &str = "korrid resumed the stream";
+    const RESUMED: Closing = Closing::Resumed;
     const NONE: [Step; 0] = [];
 
     /// An overlay that the shell has taken and drawn: the layer shows.
@@ -218,7 +281,7 @@ mod tests {
             "the input stays held until the Surface is back"
         );
         assert!(hosted.closing() && hosted.lends());
-        assert_eq!(hosted.close("again"), NONE, "one close at a time");
+        assert_eq!(hosted.close(RESUMED), NONE, "one close at a time");
         assert_eq!(hosted.released(false), [Step::Closed(RESUMED)]);
         assert!(!hosted.is_open() && !hosted.lends() && !hosted.closing());
         assert_eq!(hosted.released(true), NONE, "nothing more to let go");
@@ -250,7 +313,7 @@ mod tests {
         assert!(hosted.closing());
         assert_eq!(
             hosted.released(false),
-            [Step::Closed("korrid refused the leave")]
+            [Step::Closed(Closing::LeaveRefused)]
         );
 
         hosted.open();
@@ -268,19 +331,13 @@ mod tests {
         let mut hosted = shown();
         assert_eq!(
             hosted.released(true),
-            [
-                Step::Hide,
-                Step::Closed("the shell could not draw the overlay")
-            ]
+            [Step::Hide, Step::Closed(Closing::ShellFailed)]
         );
         assert!(!hosted.is_open());
         let mut hosted = Hosted::default();
         hosted.open();
         hosted.take();
-        assert_eq!(
-            hosted.released(true),
-            [Step::Closed("the shell could not draw the overlay")]
-        );
+        assert_eq!(hosted.released(true), [Step::Closed(Closing::ShellFailed)]);
     }
 
     #[test]
@@ -290,8 +347,57 @@ mod tests {
         hosted.open();
         assert_eq!(
             hosted.released(true),
-            [Step::Closed("the shell did not take the overlay's Surface")]
+            [Step::Closed(Closing::ShellDidNotTake)]
         );
         assert!(!hosted.is_open());
+    }
+
+    // Review of D5b: a resume that waits must hear Ok only when korrid's
+    // resume closed the overlay, and the failure when a stop, a stream end
+    // or the shell's teardown did.
+
+    #[test]
+    fn a_resume_hears_ok_only_when_korrids_resume_closed_the_overlay() {
+        assert_eq!(Closing::Resumed.answer(), Ok(()));
+        for closing in [
+            Closing::LeaveRefused,
+            Closing::ShellFailed,
+            Closing::ShellLetGo,
+            Closing::ShellDidNotTake,
+            Closing::StreamStops,
+            Closing::StreamEnded,
+        ] {
+            assert_eq!(closing.answer(), Err(closing.why().to_owned()));
+        }
+    }
+
+    #[test]
+    fn a_stop_while_a_resume_waits_makes_the_resume_hear_the_stop() {
+        for ended in [Closing::StreamStops, Closing::StreamEnded] {
+            let mut hosted = shown();
+            assert_eq!(hosted.close(RESUMED), [Step::Hide]);
+            assert_eq!(hosted.close(ended), NONE, "the Surface is on its way back");
+            assert_eq!(hosted.close(RESUMED), NONE, "a failure is not undone");
+            assert_eq!(hosted.released(false), [Step::Closed(ended)]);
+        }
+    }
+
+    #[test]
+    fn the_shells_teardown_while_a_resume_waits_makes_the_resume_hear_it() {
+        let mut hosted = shown();
+        assert_eq!(hosted.close(RESUMED), [Step::Hide]);
+        // The shell's teardown lets the Surface go itself, as failed.
+        assert_eq!(hosted.released(true), [Step::Closed(Closing::ShellFailed)]);
+    }
+
+    #[test]
+    fn an_earlier_failure_stays_the_reason() {
+        let mut hosted = shown();
+        assert_eq!(hosted.left(1, false), [Step::Hide]);
+        assert_eq!(hosted.close(Closing::StreamStops), NONE);
+        assert_eq!(
+            hosted.released(false),
+            [Step::Closed(Closing::LeaveRefused)]
+        );
     }
 }

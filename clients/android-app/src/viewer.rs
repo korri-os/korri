@@ -60,7 +60,7 @@ mod rules;
 
 use crate::logcat;
 use futures::{channel::oneshot, future::BoxFuture};
-use hosted::{Hosted, Step};
+use hosted::{Closing, Hosted, Step};
 use jni::{objects::GlobalRef, objects::JObject, JNIEnv, JavaVM};
 use korri_shell::backend::android::Overlay;
 use korri_viewer::{
@@ -809,7 +809,7 @@ impl Stream {
             return;
         }
         playing.resumes.push(closed);
-        let steps = playing.hosted.close("korrid resumed the stream");
+        let steps = playing.hosted.close(Closing::Resumed);
         perform(&self.app, playing, steps);
     }
 
@@ -992,7 +992,7 @@ impl Stream {
             // The shell lets the overlay layer's Surface go before the
             // layers go: at its next tick.
             if playing.hosted.lends() {
-                let steps = playing.hosted.close("the stream ended");
+                let steps = playing.hosted.close(Closing::StreamEnded);
                 perform(&self.app, &mut playing, steps);
                 return Phase::Playing(playing);
             }
@@ -1003,7 +1003,7 @@ impl Stream {
             // korrid asked for Stop: nothing more goes to the stream.
             playing.stopping = true;
             playing.play.end();
-            let steps = playing.hosted.close("the stream stops");
+            let steps = playing.hosted.close(Closing::StreamStops);
             perform(&self.app, &mut playing, steps);
         }
         if playing.stopping {
@@ -1128,7 +1128,7 @@ impl Stream {
                     logcat::info(&format!("korri-app: viewer stops: {why}"));
                     playing.stopping = true;
                     playing.play.end();
-                    let steps = playing.hosted.close("the stream stops");
+                    let steps = playing.hosted.close(Closing::StreamStops);
                     perform(&self.app, &mut playing, steps);
                     stop_on_a_thread(&playing.launch, playing.lifecycle.clone());
                 }
@@ -1361,11 +1361,13 @@ fn perform(app: &AndroidApp, playing: &mut Playing, steps: impl IntoIterator<Ite
             Step::Leave(opening) => {
                 leave_on_a_thread(&playing.launch, opening, playing.answers.clone())
             }
-            Step::Closed(why) => {
-                // The shell has no Surface any more: the input goes on.
-                playing.play.close(why);
+            Step::Closed(closing) => {
+                // The shell has no Surface any more: the input goes on. A
+                // resume hears Ok only when it closed the overlay.
+                playing.play.close(closing.why());
+                let answer = closing.answer();
                 for closed in playing.resumes.drain(..) {
-                    let _ = closed.send(Ok(()));
+                    let _ = closed.send(answer.clone());
                 }
             }
         }
