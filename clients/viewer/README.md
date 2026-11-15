@@ -1000,16 +1000,24 @@ files are.
 - The core's callbacks: `rumble`, `rumbleTriggers` and `setControllerLED`
   are the first callbacks from the core into the input. The core calls
   them on its own thread (`CtrlAsyncCb`). Each runs its body under
-  `catch_unwind` (`callback::guarded`) and only hands a command to the
-  feedback thread: no JNI and no wait on the core's thread. Without the
-  app, as in the session tests, the core keeps its own empty callbacks.
+  `catch_unwind` (`callback::guarded`) and only leaves the controller's
+  latest value for the feedback thread: no JNI and no wait on the core's
+  thread. Without the app, as in the session tests, the core keeps its own
+  empty callbacks.
+- Latest values, no backlog: of rumble, trigger rumble and light only each
+  controller's latest value waits for the feedback thread, which wakes on
+  a signal and takes them all. While a call into Android stalls, a value
+  that is replaced is never sent, and the last one always is, so a rumble
+  of 0 is never lost. Artemis gets the same from the core: its callback
+  holds the core's thread, and the core merges back-to-back rumble packets
+  of a controller. The seats' changes wait in order.
 - The feedback thread (`feedback::Worker`, thread `controller-feedback`):
   the app starts it with the stream. It attaches to the VM once, for its
   whole life; Rust's thread-local guard detaches it when it ends. It alone
   calls Android for the feedback, and it reads the batteries, which
   Artemis keeps off its main thread too: `getBatteryState` is a Binder
-  call. A panic on it ends the feedback, not the stream, and the stop
-  still runs.
+  call. A panic on it ends the feedback, not the stream: the thread then
+  waits for the stop alone, with no deadline, and the stop still runs.
 - Seats: when a controller's arrival goes to the host, the app's thread
   tells the feedback thread its device, number, vibrators and light
   (`Seats`). A device that goes leaves its seat: its vibration and light
@@ -1028,8 +1036,10 @@ files are.
   colour, asks every light with RGB control for the host's colour.
 - Battery: read when the controller arrives and every 120 s, and sent with
   `LiSendControllerBatteryEvent` when status or capacity changed. It goes
-  through D4's input gate (`CORE_GATE`): outside the stream the gate
-  refuses it, and the feedback counts it.
+  through D4's input gate (`CORE_GATE`), and through the stream's own gate
+  for its feedback, which the stream's stop closes: outside the stream, or
+  from a read that ends after the stop, it goes nowhere, and the feedback
+  counts it.
 - The gameplay overlay's hold (slice D5) holds no battery report, rumble or
   light, as Artemis's `setInputHeld` holds none of them.
 - Arrival: Artemis's capabilities at API 31. Rumble for any vibrator,
@@ -1039,10 +1049,13 @@ files are.
   light says it has RGB control; analog triggers as in D4.
 - Teardown: before `LiStopConnection`, after the input's gate closes,
   `stream.rs` stops the feedback (`PlayerIo::stop_feedback`). The core's
-  callbacks reach nothing more; every controller's vibrators are
-  cancelled, its light session is closed and its battery polling ends;
-  then the phone's own vibrator is cancelled, as Artemis's `stop` does. The
-  stop waits for the feedback thread at most 2 s (`STOP_WAIT`). The log
+  callbacks reach nothing more, and the stream's battery reports stop. The
+  stop goes before every value that waits, which it drops: every
+  controller's vibrators are cancelled, then the phone's own, as Artemis's
+  `stop` cancels it; then the light sessions are closed and the battery
+  polling ends. The stop waits for the feedback thread at most 2 s
+  (`STOP_WAIT`); a call into Android that is under way cannot be cut
+  short, and the stop runs when it returns. The log
   says what it did (`feedback: ended: … rumbles, … trigger rumbles, …
   lights, … calls to Android; … battery reads, … battery reports sent, …
   outside the stream; … failed`).
@@ -1052,16 +1065,18 @@ files are.
 
 | | Artemis | Korri D4b |
 | --- | --- | --- |
-| Where rumble and light run | Java, on the core's callback thread through JNI | The core's thread only queues; the feedback thread calls Android |
+| Where rumble and light run | Java, on the core's callback thread through JNI | The core's thread only leaves the latest value; the feedback thread calls Android |
+| Back-to-back rumble | The callback holds the core's thread, so the core's queue of 30 bounds the work, and the core merges back-to-back rumble packets of a controller | The callback returns at once, so the core seldom has two packets to merge: the feedback keeps each controller's latest rumble, trigger rumble and light value instead |
+| A vibrator or light call that throws | The exception goes back through JNI into the core's thread, and the app ends | Logged and counted; the next call goes on |
 | Where the battery is read | A `HandlerThread` of its own | The feedback thread |
-| A stop that hangs in a Binder call | The UI thread waits | The stream's stop waits at most 2 s, then goes on without the feedback thread |
+| A stop that hangs in a Binder call | The UI thread waits | The stream's stop waits at most 2 s, then goes on without the feedback thread, which stops the vibration when its call returns; that thread sends no battery report into a later stream |
 | Settings | Rumble on or off, rumble the phone instead of the pad, rumble the phone when the pad has no vibrator (and its strength), battery reports on or off | Artemis's defaults: rumble on, the pad's own vibrators, no fallback to the phone, battery reports on |
 | The overlay's rumble switch (`stopRumble`) | Korri's Artemis copy | Slice D5 |
 | SHIELD controllers | `SceManager` rumble and battery | Not carried: NVIDIA's own API |
 | USB driver's rumble and trigger rumble | Its own, in Java | Dropped (ADR 0064) |
 | A device that changes | Its new context takes the light session and polls the battery again | Not followed, as in D4 |
 | More vibrator IDs than motor values | The Java array overflows | The extra vibrators are left out |
-| Device objects | The `InputDevice` of the context | `InputDevice.getDevice(id)` once per device, its vibrators and session kept |
+| Device objects | The `InputDevice` of the context | `InputDevice.getDevice(id)` for each battery read and each colour, and when a device's vibrators are first used; the vibrators and the light session are kept |
 | A battery read that throws | Not caught | Logged and counted; the next read is 120 s later |
 | A pulse below Android 13 (one vibrator, no amplitude control) | The deprecated `vibrate(long[], int, AudioAttributes)` | `VibrationEffect.createWaveform` with the same pattern and `AudioAttributes` |
 | Motion sensors | `setMotionEventState` | Not carried (D4) |
