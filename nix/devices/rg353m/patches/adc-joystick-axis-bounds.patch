@@ -1,0 +1,36 @@
+Use the ABS code, not the channel index, when looking up inversion bounds.
+
+Clamp to the DT calibration bounds so hardware overtravel cannot escape the advertised evdev range.
+
+--- a/drivers/input/joystick/adc-joystick.c
++++ b/drivers/input/joystick/adc-joystick.c
+@@ -7,6 +7,7 @@
+ #include <linux/input.h>
+ #include <linux/iio/iio.h>
+ #include <linux/iio/consumer.h>
++#include <linux/minmax.h>
+ #include <linux/module.h>
+ #include <linux/platform_device.h>
+ #include <linux/property.h>
+@@ -45,7 +46,9 @@
+ 		if (ret < 0)
+ 			return;
+ 		if (joy->axes[i].inverted)
+-			val = adc_joystick_invert(input, i, val);
++			val = adc_joystick_invert(input, joy->axes[i].code, val);
++		val = clamp(val, input_abs_get_min(input, joy->axes[i].code),
++			    input_abs_get_max(input, joy->axes[i].code));
+ 		input_report_abs(input, joy->axes[i].code, val);
+ 	}
+ 	input_sync(input);
+@@ -95,7 +98,9 @@
+ 		else
+ 			val &= GENMASK(msb, 0);
+ 		if (joy->axes[i].inverted)
+-			val = adc_joystick_invert(joy->input, i, val);
++			val = adc_joystick_invert(joy->input, joy->axes[i].code, val);
++		val = clamp(val, input_abs_get_min(joy->input, joy->axes[i].code),
++			    input_abs_get_max(joy->input, joy->axes[i].code));
+ 		input_report_abs(joy->input, joy->axes[i].code, val);
+ 	}
+ 

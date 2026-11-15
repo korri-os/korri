@@ -69,6 +69,7 @@ in
     # whole kernel.
     extraModulePackages = [
       (config.boot.kernelPackages.callPackage ./st7703-panel-module.nix { })
+      (config.boot.kernelPackages.callPackage ./adc-joystick-module.nix { })
     ];
     kernelParams = [
       "console=ttyS2,1500000n8"
@@ -102,6 +103,42 @@ in
       # core switches it off 30 s after boot and the panel goes dark. Keep it
       # on until a driver owns it.
       overlays = [
+        {
+          name = "rg353m-stick-calibration";
+          # Measured on haku: IIO centers ~566/509/493/507 in X/RX/Y/RY
+          # order. Labelled holds and full circles establish the end stops.
+          # Keep Linux's right/down-positive convention; do not invert again
+          # in InputPlumber. The replacement ADC module uses each ABS code's
+          # bounds and clamps mechanical overtravel before reporting it.
+          dtsText = ''
+            /dts-v1/;
+            /plugin/;
+            / { compatible = "anbernic,rg353p"; };
+            &{/adc-joystick} {
+              poll-interval = <10>;
+            };
+            &{/adc-joystick/axis@0} {
+              abs-range = <960 170>;
+              abs-flat = <32>;
+              abs-fuzz = <4>;
+            };
+            &{/adc-joystick/axis@1} {
+              abs-range = <90 930>;
+              abs-flat = <32>;
+              abs-fuzz = <4>;
+            };
+            &{/adc-joystick/axis@2} {
+              abs-range = <915 75>;
+              abs-flat = <32>;
+              abs-fuzz = <4>;
+            };
+            &{/adc-joystick/axis@3} {
+              abs-range = <105 905>;
+              abs-flat = <32>;
+              abs-fuzz = <4>;
+            };
+          '';
+        }
         {
           name = "rg353m-lcd-regulator-always-on";
           dtsText = ''
