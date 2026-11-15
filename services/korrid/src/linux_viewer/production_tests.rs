@@ -915,3 +915,60 @@ esac
         assert_eq!(count("reset-failed"), resets, "{end:?}\n{calls}");
     }
 }
+
+/// One HTTP server on the loopback that answers `/serverinfo` with `body`.
+async fn serverinfo(body: String) -> (String, tokio::task::JoinHandle<()>) {
+    let server = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = server.local_addr().unwrap().to_string();
+    let task = tokio::spawn(async move {
+        axum::serve(
+            server,
+            axum::Router::new().route(
+                "/serverinfo",
+                axum::routing::get(move || {
+                    let body = body.clone();
+                    async move { body }
+                }),
+            ),
+        )
+        .await
+        .unwrap();
+    });
+    (address, task)
+}
+
+// #434 D10: the Android viewer asks the holder's broker for this Sunshine's
+// certificate by the host UUID that the Linux viewer reads.
+#[tokio::test]
+async fn sunshine_host_uuid_is_read_from_serverinfo_and_checked() {
+    let (address, task) = serverinfo(
+        "<root status_code=\"200\"><hostname>a</hostname><uniqueid>AB12CD34-0000-4000-8000-0123456789AB</uniqueid></root>".into(),
+    )
+    .await;
+    assert_eq!(
+        sunshine_host_uuid(&address).await.unwrap(),
+        "AB12CD34-0000-4000-8000-0123456789AB"
+    );
+    task.abort();
+    for (body, refusal) in [
+        ("<root></root>".to_owned(), "no host UUID"),
+        (
+            format!("<root><uniqueid>{}</uniqueid></root>", "a".repeat(257)),
+            "host UUID is invalid",
+        ),
+        (
+            format!("<root>{}</root>", "x".repeat(70 * 1024)),
+            "exceeds budget",
+        ),
+    ] {
+        let (address, task) = serverinfo(body).await;
+        let error = sunshine_host_uuid(&address).await.unwrap_err().to_string();
+        assert!(error.contains(refusal), "{error}");
+        task.abort();
+    }
+    assert!(sunshine_host_uuid("name@127.0.0.1")
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("invalid Moonlight address"));
+}

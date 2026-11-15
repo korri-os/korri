@@ -7,7 +7,7 @@
 //! | --- | --- |
 //! | `KorriBrainService.ensureRunning`, `privateStateRoot` | [`start`], once per process; `android_storage` |
 //! | `KorridNetwork.snapshot` | `framework_network.rs`, JNI into Android's classes |
-//! | `KorriStreamViewer` (`viewer*` callbacks) | none: korrid's unconfigured viewer refuses a start until slice D10 |
+//! | `KorriStreamViewer` (`viewer*` callbacks) | the app's own Rust viewer, which [`start`] takes (slice D10); it provisions its client certificate with [`provision_moonlight_certificate`] |
 //! | `KorriAppLauncher` (local Android games, ADR 0054) | none until slice D13 |
 //! | the foreground service | none (owner decision O2): korrid lives as long as the process |
 //!
@@ -21,7 +21,10 @@
 //! panic.
 use super::framework_network;
 use crate::{
-    local_server_port, relay::RelayList, start_local_shell_server, EmbeddedPlatform, ServerError,
+    linux_viewer::{LinuxStreamViewer, LinuxViewerError},
+    local_server_port,
+    relay::RelayList,
+    start_local_shell_server, EmbeddedPlatform, ServerError,
 };
 use jni::{
     objects::{JObject, JValue},
@@ -37,12 +40,15 @@ const ANDROID_OFFICIAL_CATALOG: Option<&str> = option_env!("KORRI_OFFICIAL_CATAL
 /// `product_relays` is the product's relay list as JSON
 /// (`clients/android/product.nix`). `verifier_classes` is the dex of
 /// rustls-platform-verifier's Kotlin component with the Kotlin standard
-/// library. The capability stays in this process (`local_server_capability`).
+/// library. `viewer` is the app's stream viewer, which runs in this process
+/// (ADR 0060); korrid drives it as it drives a Linux viewer. The capability
+/// stays in this process (`local_server_capability`).
 pub fn start(
     env: &mut JNIEnv,
     activity: &JObject,
     product_relays: &str,
     verifier_classes: &'static [u8],
+    viewer: std::sync::Arc<dyn LinuxStreamViewer>,
 ) -> Result<u16, ServerError> {
     if let Some(port) = local_server_port() {
         return Ok(port);
@@ -84,7 +90,7 @@ pub fn start(
         relays: Some(relays),
         owner_binding: Some(crate::owner_binding::OwnerBindingCoordinator::default()),
         reach: Some(reach),
-        viewer: None,
+        viewer: Some(viewer),
     };
     // ADR 0054: plugins live in app storage; korrid installs them itself.
     crate::nixfree_install::use_android_store(Path::new(&private_state_root));
@@ -97,6 +103,26 @@ pub fn start(
         Err(ServerError::AlreadyRunning) => local_server_port().ok_or(ServerError::AlreadyRunning),
         started => started,
     }
+}
+
+/// The server certificate of the Sunshine at a Moonlight `address`, after
+/// this device's broker has provisioned `client_certificate` (one PEM) there:
+/// the host UUID from Sunshine's `serverinfo`, as the Linux viewers read it,
+/// then the broker's provision through korrid's own RPC, as the Artemis
+/// viewer asks it. The holder that attests that UUID performs it through its
+/// Sunshine's certificate control.
+pub async fn provision_moonlight_certificate(
+    address: &str,
+    client_certificate: &str,
+) -> Result<String, LinuxViewerError> {
+    let host_uuid = crate::linux_viewer::sunshine_host_uuid(address).await?;
+    super::provision_locally(host_uuid, client_certificate.to_owned())
+        .await
+        .map_err(|code| {
+            LinuxViewerError::new(format!(
+                "the Moonlight certificate was not provisioned: {code}"
+            ))
+        })
 }
 
 /// The class that rustls-platform-verifier loads first.

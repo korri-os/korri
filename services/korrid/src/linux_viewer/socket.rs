@@ -165,13 +165,6 @@ fn display(d: PluginDisplay) -> ViewerDisplay {
         height: d.height,
     }
 }
-fn status(s: S) -> LinuxViewerStatus {
-    match s {
-        S::Running => LinuxViewerStatus::Running,
-        S::Backgrounded => LinuxViewerStatus::Backgrounded,
-        S::Stopped => LinuxViewerStatus::Stopped,
-    }
-}
 
 impl Connection {
     async fn connect(
@@ -396,7 +389,7 @@ impl LinuxStreamViewer for SocketLinuxStreamViewer {
                 return Ok(LinuxViewerStatus::Stopped);
             }
             match connection.request(C::Status).await? {
-                R::Status(s) => Ok(status(s)),
+                R::Status(s) => Ok(s.into()),
                 _ => Err(error("unexpected viewer status reply")),
             }
         })
@@ -458,26 +451,7 @@ impl LinuxStreamViewer for SocketLinuxStreamViewer {
                 .request(C::Snapshot)
                 .await?
             {
-                R::Snapshot { snapshot } => Ok(snapshot.map(|s| ViewerSnapshot {
-                    connected: s.connected,
-                    shape: s.shape.map(|shape| super::ViewerShapeSnapshot {
-                        connection: shape.connection,
-                        screen: PluginDisplay {
-                            width: shape.screen.width,
-                            height: shape.screen.height,
-                        },
-                        encoded: PluginDisplay {
-                            width: shape.encoded.width,
-                            height: shape.encoded.height,
-                        },
-                        ready: shape.ready,
-                    }),
-                    sampled_at_ms: s.sampled_at_ms,
-                    sampled_at: None,
-                    battery_percent: s.battery_percent,
-                    stream_health: s.stream_health,
-                    controls: s.controls,
-                })),
+                R::Snapshot { snapshot } => Ok(snapshot.map(ViewerSnapshot::from)),
                 _ => Err(error("unexpected viewer snapshot reply")),
             }
         })

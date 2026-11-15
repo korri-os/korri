@@ -17,7 +17,8 @@ pub use socket::{
 #[path = "linux_viewer/socket_tests.rs"]
 mod socket_tests;
 pub use production::{
-    render_settings, CertificateProvision, LocalSeats, ViewerPlugin, ViewerSettings,
+    render_settings, sunshine_host_uuid, CertificateProvision, LocalSeats, ViewerPlugin,
+    ViewerSettings,
 };
 
 use futures::future::BoxFuture;
@@ -59,6 +60,46 @@ pub struct ViewerSnapshot {
     pub battery_percent: Option<f64>,
     pub stream_health: Option<korri_surface_treaty::SurfaceStreamHealth>,
     pub controls: Vec<korri_surface_treaty::SurfaceGameplayControl>,
+}
+
+/// A treaty viewer's status (`contracts/viewer`), through its socket or in
+/// korrid's own process.
+impl From<korri_viewer_treaty::ViewerStatus> for LinuxViewerStatus {
+    fn from(status: korri_viewer_treaty::ViewerStatus) -> Self {
+        use korri_viewer_treaty::ViewerStatus as S;
+        match status {
+            S::Running => Self::Running,
+            S::Backgrounded => Self::Backgrounded,
+            S::Stopped => Self::Stopped,
+        }
+    }
+}
+
+/// A treaty viewer's snapshot. It carries no clock of korrid's: `sampled_at`
+/// stays unset.
+impl From<korri_viewer_treaty::ViewerSnapshot> for ViewerSnapshot {
+    fn from(s: korri_viewer_treaty::ViewerSnapshot) -> Self {
+        Self {
+            connected: s.connected,
+            shape: s.shape.map(|shape| ViewerShapeSnapshot {
+                connection: shape.connection,
+                screen: crate::launcher::plugin_launch::PluginDisplay {
+                    width: shape.screen.width,
+                    height: shape.screen.height,
+                },
+                encoded: crate::launcher::plugin_launch::PluginDisplay {
+                    width: shape.encoded.width,
+                    height: shape.encoded.height,
+                },
+                ready: shape.ready,
+            }),
+            sampled_at_ms: s.sampled_at_ms,
+            sampled_at: None,
+            battery_percent: s.battery_percent,
+            stream_health: s.stream_health,
+            controls: s.controls,
+        }
+    }
 }
 
 /// Connection identity and dimensions observed from the live viewer, not from

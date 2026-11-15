@@ -407,23 +407,6 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_provisio
         Ok(value) => value.into(),
         Err(_) => return provision_result(&mut env, "InvalidRequest", None),
     };
-    if crate::host::moonlight_certificate::validate_host_uuid(&host_uuid).is_err()
-        || crate::host::moonlight_certificate::validate_single_pem(&public_client_certificate)
-            .is_err()
-    {
-        return provision_result(&mut env, "InvalidRequest", None);
-    }
-
-    let Some(port) = crate::local_server_port() else {
-        return provision_result(&mut env, "ServerUnavailable", None);
-    };
-    let Some(capability) = crate::local_server_capability() else {
-        return provision_result(&mut env, "ServerUnavailable", None);
-    };
-    let request = RpcRequest::MoonlightCertificateProvision(MoonlightCertificateProvisionRequest {
-        host_uuid,
-        client_certificate: public_client_certificate,
-    });
     let outcome = std::thread::Builder::new()
         .name("korrid-moonlight-provision".into())
         .spawn(move || {
@@ -431,44 +414,7 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_provisio
                 .enable_all()
                 .build()
                 .map_err(|_| "ServerUnavailable")?;
-            runtime.block_on(async move {
-                // The broker owns one deadline across peer selection and provision.
-                // Keep the localhost caller alive longer than that complete operation.
-                let client = reqwest::Client::builder()
-                    .timeout(crate::upstreams::MOONLIGHT_CERTIFICATE_CALLER_TIMEOUT)
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()
-                    .map_err(|_| "ServerUnavailable")?;
-                let response = client
-                    .post(format!("http://127.0.0.1:{port}/rpc"))
-                    .bearer_auth(capability)
-                    .json(&request)
-                    .send()
-                    .await
-                    .map_err(|_| "PeerUnavailable")?;
-                if !response.status().is_success() {
-                    return Err("PeerUnavailable");
-                }
-                let response = response
-                    .json::<RpcResponse>()
-                    .await
-                    .map_err(|_| "InvalidResponse")?;
-                match response {
-                    RpcResponse::MoonlightCertificateProvision(
-                        MoonlightCertificateProvisionOutcome::Ok(provisioned),
-                    ) => Ok(provisioned.server_certificate),
-                    RpcResponse::MoonlightCertificateProvision(
-                        MoonlightCertificateProvisionOutcome::Err(failure),
-                    ) => Err(match failure.code.as_str() {
-                        "MoonlightHostNotFound" => "HostNotFound",
-                        "MoonlightHostAmbiguous" => "HostAmbiguous",
-                        "MoonlightCertificatePeerUnavailable" => "PeerUnavailable",
-                        "MoonlightCertificateInvalid" => "InvalidCertificate",
-                        _ => "ProvisioningFailed",
-                    }),
-                    _ => Err("InvalidResponse"),
-                }
-            })
+            runtime.block_on(provision_locally(host_uuid, public_client_certificate))
         })
         .map_err(|_| "ServerUnavailable")
         .and_then(|thread| thread.join().unwrap_or(Err("ServerUnavailable")));
@@ -478,6 +424,64 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_provisio
             provision_result(&mut env, "Provisioned", Some(server_certificate.as_str()))
         }
         Err(code) => provision_result(&mut env, code, None),
+    }
+}
+
+/// This device's broker provisions a client certificate at the Sunshine with
+/// this host UUID, through korrid's own authenticated localhost RPC, as the
+/// Artemis viewer has asked it (`KorriStreamViewer.prepare`). Returns
+/// Sunshine's server certificate, or a code that names the failure. The
+/// Android app's in-process viewer asks the same way (`app.rs`).
+pub(crate) async fn provision_locally(
+    host_uuid: String,
+    client_certificate: String,
+) -> Result<String, &'static str> {
+    if crate::host::moonlight_certificate::validate_host_uuid(&host_uuid).is_err()
+        || crate::host::moonlight_certificate::validate_single_pem(&client_certificate).is_err()
+    {
+        return Err("InvalidRequest");
+    }
+    let port = crate::local_server_port().ok_or("ServerUnavailable")?;
+    let capability = crate::local_server_capability().ok_or("ServerUnavailable")?;
+    let request = RpcRequest::MoonlightCertificateProvision(MoonlightCertificateProvisionRequest {
+        host_uuid,
+        client_certificate,
+    });
+    // The broker owns one deadline across peer selection and provision.
+    // Keep the localhost caller alive longer than that complete operation.
+    let client = reqwest::Client::builder()
+        .timeout(crate::upstreams::MOONLIGHT_CERTIFICATE_CALLER_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| "ServerUnavailable")?;
+    let response = client
+        .post(format!("http://127.0.0.1:{port}/rpc"))
+        .bearer_auth(capability)
+        .json(&request)
+        .send()
+        .await
+        .map_err(|_| "PeerUnavailable")?;
+    if !response.status().is_success() {
+        return Err("PeerUnavailable");
+    }
+    let response = response
+        .json::<RpcResponse>()
+        .await
+        .map_err(|_| "InvalidResponse")?;
+    match response {
+        RpcResponse::MoonlightCertificateProvision(MoonlightCertificateProvisionOutcome::Ok(
+            provisioned,
+        )) => Ok(provisioned.server_certificate),
+        RpcResponse::MoonlightCertificateProvision(MoonlightCertificateProvisionOutcome::Err(
+            failure,
+        )) => Err(match failure.code.as_str() {
+            "MoonlightHostNotFound" => "HostNotFound",
+            "MoonlightHostAmbiguous" => "HostAmbiguous",
+            "MoonlightCertificatePeerUnavailable" => "PeerUnavailable",
+            "MoonlightCertificateInvalid" => "InvalidCertificate",
+            _ => "ProvisioningFailed",
+        }),
+        _ => Err("InvalidResponse"),
     }
 }
 

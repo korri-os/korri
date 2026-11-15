@@ -201,6 +201,46 @@ pub(super) fn server_url(address: &str) -> Result<url::Url, LinuxViewerError> {
     Ok(url)
 }
 
+/// The host UUID of the Sunshine at a Moonlight `address`, from its
+/// unauthenticated `serverinfo`: what the certificate broker asks for. Both
+/// the Linux viewers and the Android app's viewer (#434 D10) read it here.
+pub async fn sunshine_host_uuid(address: &str) -> Result<String, LinuxViewerError> {
+    let url = server_url(address)?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(error)?;
+    let mut response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|_| error("Sunshine serverinfo unavailable"))?
+        .error_for_status()
+        .map_err(|_| error("Sunshine serverinfo rejected"))?;
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| error("Sunshine serverinfo unreadable"))?
+    {
+        if bytes.len() + chunk.len() > 64 * 1024 {
+            return Err(error("Sunshine serverinfo exceeds budget"));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let body = String::from_utf8(bytes).map_err(error)?;
+    let uuid = regex::Regex::new(r"<uniqueid>([^<]+)</uniqueid>")
+        .expect("literal regex")
+        .captures(&body)
+        .and_then(|c| c.get(1))
+        .map(|v| v.as_str().to_owned())
+        .ok_or_else(|| error("Sunshine serverinfo has no host UUID"))?;
+    crate::host::moonlight_certificate::validate_host_uuid(&uuid)
+        .map_err(|_| error("Sunshine host UUID is invalid"))?;
+    Ok(uuid)
+}
+
 fn platform() -> &'static str {
     platform_from_path(
         Path::new("/sys/firmware/devicetree/base/compatible"),
@@ -737,7 +777,7 @@ impl ProductionLinuxStreamViewer {
         address: &str,
     ) -> Result<(), LinuxViewerError> {
         validate_launch(launch)?;
-        let url = server_url(address)?;
+        server_url(address)?;
         let guard = self.operation.clone().lock_owned().await;
         let this = self.clone();
         let launch_owned = launch.to_owned();
@@ -748,38 +788,7 @@ impl ProductionLinuxStreamViewer {
         })
         .await
         .map_err(error)??;
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(5))
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(error)?;
-        let mut response = client
-            .get(url)
-            .send()
-            .await
-            .map_err(|_| error("Sunshine serverinfo unavailable"))?
-            .error_for_status()
-            .map_err(|_| error("Sunshine serverinfo rejected"))?;
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|_| error("Sunshine serverinfo unreadable"))?
-        {
-            if bytes.len() + chunk.len() > 64 * 1024 {
-                return Err(error("Sunshine serverinfo exceeds budget"));
-            }
-            bytes.extend_from_slice(&chunk);
-        }
-        let body = String::from_utf8(bytes).map_err(error)?;
-        let uuid = regex::Regex::new(r"<uniqueid>([^<]+)</uniqueid>")
-            .expect("literal regex")
-            .captures(&body)
-            .and_then(|c| c.get(1))
-            .map(|v| v.as_str().to_owned())
-            .ok_or_else(|| error("Sunshine serverinfo has no host UUID"))?;
-        crate::host::moonlight_certificate::validate_host_uuid(&uuid)
-            .map_err(|_| error("Sunshine host UUID is invalid"))?;
+        let uuid = sunshine_host_uuid(address).await?;
         let server_certificate = (self.provision)(uuid, certificate)
             .await?
             .server_certificate;

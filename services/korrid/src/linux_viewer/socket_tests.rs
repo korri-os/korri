@@ -428,3 +428,43 @@ async fn stop_waits_for_a_unit_end_longer_than_the_request_deadline() {
     viewer.stop(LAUNCH).await.unwrap();
     assert!(ended.load(std::sync::atomic::Ordering::SeqCst));
 }
+
+// #434 D10: the in-process viewer of the Android app reports through the same
+// treaty, so korrid reads its replies with the socket adapter's mapping.
+#[test]
+fn treaty_status_and_snapshot_map_to_korrids_observations() {
+    use korri_viewer_treaty::{ViewerDisplay, ViewerShape, ViewerSnapshot as T};
+    assert_eq!(
+        LinuxViewerStatus::from(S::Running),
+        LinuxViewerStatus::Running
+    );
+    assert_eq!(
+        LinuxViewerStatus::from(S::Backgrounded),
+        LinuxViewerStatus::Backgrounded
+    );
+    assert_eq!(
+        LinuxViewerStatus::from(S::Stopped),
+        LinuxViewerStatus::Stopped
+    );
+    let snapshot = ViewerSnapshot::from(T {
+        connected: Some(true),
+        shape: Some(ViewerShape {
+            connection: "7:1:2".into(),
+            screen: ViewerDisplay {
+                width: 2400,
+                height: 1080,
+            },
+            encoded: ViewerDisplay {
+                width: 1280,
+                height: 720,
+            },
+            ready: false,
+        }),
+        ..Default::default()
+    });
+    assert_eq!(snapshot.connected, Some(true));
+    let shape = snapshot.shape.unwrap();
+    assert_eq!(shape.connection, "7:1:2");
+    assert_eq!((shape.screen.width, shape.encoded.height), (2400, 720));
+    assert!(snapshot.sampled_at.is_none());
+}
