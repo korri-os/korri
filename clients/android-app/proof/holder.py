@@ -115,9 +115,12 @@ class Holder:
                  user: "tuple[int, int] | None" = None, environment: "dict[str, str] | None" = None):
         self.run = run
         drop = None
+        environment = dict(environment or {})
         if user is not None:
             uid, gid = user
             os.chown(run, uid, gid)
+            # bun's own caches go to the user's run directory, not the caller's home.
+            environment.update(HOME=str(run), XDG_CACHE_HOME=str(run / "cache"))
 
             def drop() -> None:
                 os.setgroups([gid])
@@ -126,7 +129,7 @@ class Holder:
         self.process = subprocess.Popen(
             ["bun", str(HERE / "holder.ts"), str(run), str(ROOT), executable, moonlight],
             stdout=(run / "holder-ts.log").open("w"), stderr=subprocess.STDOUT, start_new_session=True,
-            preexec_fn=drop, env=dict(os.environ, **(environment or {})),
+            preexec_fn=drop, env=dict(os.environ, **environment),
         )
         until = time.monotonic() + 60
         while not (run / "ready").exists():

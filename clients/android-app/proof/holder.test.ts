@@ -36,16 +36,18 @@ test.skipIf(!executable)("a Moonlight address that cannot be published stops the
 // #434 D10: the holder provisions the app's viewer certificate through the
 // sender's certificate control, and runs as an unprivileged user that has no
 // passwd entry, so nix-shell (the systemd fixture's shebang) needs a home.
-test("the holder takes its caller's certificate control and a home of its own, nothing else", () => {
+test("the holder takes its caller's certificate control, input seats and a home of its own, nothing else", () => {
   const run = "/tmp/android-app-holder-run";
   const environment = holderEnvironment(run, project, "/bin", "nixpkgs=/n", {
     KORRID_STREAM_CERTIFICATE_CONTROL_SOCKET: "/run/korri-cadence-certificate-x/control.sock",
     KORRID_STREAM_CERTIFICATE_CONTROL_GID: "59034",
     KORRID_STREAM_CERTIFICATE_CONTROL_PEER_UID: "0",
     KORRID_STREAM_CERTIFICATE_CONTROL_PEER_GID: "0",
+    KORRID_INPUT_SEAT_CONTROL_SOCKET: "/run/korri-d10-seats-x/control.sock",
     KORRID_RUNTIME_UID: "0",
     HOME: "/root",
   });
+  expect(environment.KORRID_INPUT_SEAT_CONTROL_SOCKET).toBe("/run/korri-d10-seats-x/control.sock");
   expect(environment.KORRID_STREAM_CERTIFICATE_CONTROL_SOCKET).toBe("/run/korri-cadence-certificate-x/control.sock");
   expect(environment.KORRID_STREAM_CERTIFICATE_CONTROL_GID).toBe("59034");
   expect(environment.KORRID_STREAM_CERTIFICATE_CONTROL_PEER_UID).toBe("0");

@@ -6,7 +6,8 @@ It runs on aka, as root, with no person, on D9's pieces (holder.py):
 
 - the holder: korrid's federation fixture with its relay (holder.ts), run as
   an unprivileged user that has no account, so that korrid's launch helpers
-  accept its runtime user (D9's known gap);
+  accept its runtime user (D9's known gap), with its device settings and an
+  input-seat receiver of the proof's own (seats.py), so that it can launch;
 - the private sender: stream-cadence's sender fixture with Korri's patched
   Sunshine (`--sunshine`, sunshine-korri with patch 0020), offering `Korri
   Stream`, playing its 1000 Hz tone, logging each input packet, and with a
@@ -19,19 +20,21 @@ The steps:
 
 1. Build the fixture APK, the federation fixture and the sender's parts.
    Read the APK: no dex, `hasCode="false"`, the viewer's network core inside.
-2. Start the sender fixture with certificate control for the holder's user,
-   and the frame-ID source. Start the holder as that user, with the
-   socket's variables.
-3. Start one headless Android 12 emulator (2 cores, its own adb server, its
-   data wiped, its sound into a WAV file), install the APK, seed the member's
-   identity (D9), and start the app. Wait until Velvet lists the game.
+2. Start one headless Android 12 emulator (2 cores, its own adb server, its
+   data wiped, its sound into a WAV file), install the APK and seed the
+   member's identity (D9).
+3. Start the sender fixture with certificate control for the holder's user,
+   and the frame-ID source; the seat receiver; the holder as that user, with
+   both sockets' variables. Start the app and wait until Velvet lists the
+   game.
 4. Tap the game's tile, then its Play. korrid prepares the launch at the
    holder and starts the viewer: the app logs its treaty requests, replies
    and events, and the status that korrid reads.
 5. The stream: screenshots whose frame-ID bar reads and rises; keys and a tap
    that the sender's Sunshine receives; the tone in the emulator's sound.
 6. Back opens the gameplay overlay's stand-in and Back closes it (slice D5's
-   rules). Home leaves the app: the runtime stops and korrid reads Stopped.
+   rules), before the keys of step 5. Home leaves the app: the runtime stops
+   and korrid reads Stopped.
    Starting the app again lets korrid's recovery start the stream again.
 7. Stop the emulator, its adb server, the holder and the sender.
 
@@ -55,6 +58,7 @@ import time
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import holder as d9  # noqa: E402  (slice D9's proof: the holder, the binding)
+import seats  # noqa: E402  (the holder's input-seat receiver)
 
 d8 = d9.d8
 viewer_proof = d9.viewer_proof
@@ -64,13 +68,12 @@ TONE_HZ = 1000
 # Korri's Sunshine must carry certificate control (sender.py).
 CONTROL_PATCH = "0020-add-korrid-certificate-control.patch"
 # The app's lines (src/viewer.rs), in the treaty's JSON.
-START_ASKED = "korri-app: viewer request {\"launch_id\":"
 PROVISIONED = "korri-app: viewer certificate provisioned through korrid's broker for "
 RUNNING = 'korri-app: viewer event {"kind":"Status","value":"Running"}'
 STOPPED = 'korri-app: viewer event {"kind":"Status","value":"Stopped"}'
 START_OK = 'korri-app: viewer reply Start {"kind":"Ok"}'
 KORRID_READ = re.compile(r"korri-app: viewer status for korrid: ([0-9a-f]{32}) (Running|Stopped|Backgrounded)")
-LAUNCH = re.compile(r'korri-app: viewer request \{"launch_id":"([0-9a-f]{32})","command":\{"kind":"Start"')
+LAUNCH = re.compile(r'korri-app: viewer request \{"launchId":"([0-9a-f]{32})","command":\{"kind":"Start"')
 WINDOW_WENT = "korri-app: viewer stops: the app's window went"
 ENDED = re.compile(r"korri-app: viewer ([0-9a-f]{32}) ended")
 # The viewer library's own lines (tag korri-viewer).
@@ -199,20 +202,36 @@ def first_bar(emulator: "d8.Emulator", out: Path, name: str, seconds: float) -> 
     return None
 
 
-def lower_half_darker(png: Path) -> dict:
-    """The overlay's stand-in darkens the window's lower half (layer.rs)."""
+def halves(png: Path) -> dict:
+    """The mean brightness of a screenshot's upper and lower halves."""
     from PIL import Image
     with Image.open(png) as image:
         gray = image.convert("L")
         width, height = gray.size
-        upper = gray.crop((0, 0, width, height // 2)).resize((64, 32))
-        lower = gray.crop((0, height // 2, width, height)).resize((64, 32))
-        mean = lambda part: sum(part.getdata()) / (64 * 32)  # noqa: E731
-        return {"upper_mean": round(mean(upper), 1), "lower_mean": round(mean(lower), 1)}
+        upper = list(gray.crop((0, 0, width, height // 2)).resize((64, 32)).get_flattened_data())
+        lower = list(gray.crop((0, height // 2, width, height)).resize((64, 32)).get_flattened_data())
+        return {"upper_mean": round(sum(upper) / len(upper), 1), "lower_mean": round(sum(lower) / len(lower), 1)}
+
+
+def shaded(before: Path, during: Path) -> dict:
+    """The overlay's stand-in darkens the window's lower half (layer.rs): to a quarter, at 75 % black."""
+    a, b = halves(before), halves(during)
+    return {"before": a, "during": b,
+            "lower_half_darkened": b["lower_mean"] < 0.6 * a["lower_mean"]}
 
 
 def tap(emulator: "d8.Emulator", target: dict) -> None:
     emulator.shell(f"input tap {target['x']} {target['y']}")
+
+
+def waiting(logcat: "d8.Logcat", sender: "viewer_proof.Remote", pattern, since: int, timeout: float):
+    """logcat.wait_for, while the sender's agent hears from the proof: it ends a session it has not heard from for 75 s."""
+    until = time.monotonic() + timeout
+    while True:
+        found = logcat.wait_for(pattern, since, min(15, max(0, until - time.monotonic())))
+        if found or time.monotonic() >= until:
+            return found
+        sender.request("clock")
 
 
 def main() -> int:
@@ -226,6 +245,7 @@ def main() -> int:
     parser.add_argument("--stream-host", help="the sender's address as the emulator reaches it; default: this host's")
     parser.add_argument("--library-seconds", type=int, default=300, help="how long Velvet may take to list the game")
     parser.add_argument("--out", type=Path, help="the record's directory; default: a new one under /tmp")
+    parser.add_argument("--apk", help="a fixture APK already built from this tree (its unsigned file); default: build it")
     args = parser.parse_args()
     if os.geteuid() != 0:
         raise SystemExit("run it as root: the sender's certificate control socket is root's, and the holder drops to its own user")
@@ -248,7 +268,7 @@ def main() -> int:
     sunshine = Path(args.sunshine) / "bin" / "sunshine"
     provenance = (Path(args.sunshine) / "share/korri/sunshine-korri/provenance").read_text()
     checks["sender_sunshine_has_certificate_control"] = CONTROL_PATCH in provenance
-    apk = d8.nix_build(d9.ROOT, "korri-android-app-fixture-apk") + "/korri-android-app-unsigned.apk"
+    apk = args.apk or d8.nix_build(d9.ROOT, "korri-android-app-fixture-apk") + "/korri-android-app-unsigned.apk"
     fixture = d8.nix_build(d9.ROOT, "korrid.federationFixture") + "/bin/federation_fixture"
     result["store"] = {"apk": apk, "federation_fixture": fixture, "sunshine": args.sunshine}
     signed = d8.sign(build_tools, apk, out / "korri-android-app-fixture-debug.apk")
@@ -267,10 +287,30 @@ def main() -> int:
     sender = viewer_proof.Remote(command, out / "sender-agent.log")
     emulator = d8.Emulator(sdk, state, args.port, out, sound=out / "emulator-sound.wav")
     holder: "d9.Holder | None" = None
+    receiver: "seats.SeatReceiver | None" = None
     logcat = None
     member = scratch / "member"
     launch = None
     try:
+        device = d8.run([fixture, "member", str(member)]).stdout.strip()
+        result["member_device"] = device
+        emulator.create(image)
+        emulator.start()
+        result["emulator"] = {
+            "release": emulator.shell("getprop ro.build.version.release").stdout.strip(),
+            "sdk": emulator.shell("getprop ro.build.version.sdk").stdout.strip(),
+            "abi": emulator.shell("getprop ro.product.cpu.abi").stdout.strip(),
+        }
+        emulator.adb("uninstall", PACKAGE, check=False, timeout=120)
+        installed = emulator.adb("install", "--no-incremental", str(signed), check=False, timeout=600)
+        (out / "adb-install.txt").write_text(installed.stdout + installed.stderr)
+        if installed.returncode != 0:
+            raise RuntimeError("adb install failed; read adb-install.txt")
+        d9.seed(emulator, member)
+        shutil.rmtree(member)
+        listed = d9.run_as(emulator, "ls", "-l", d9.IDENTITY).stdout
+        checks["identity_seeded_as_the_apps_own_files"] = listed.count("-rw-------") == 2
+
         log("starting the sender fixture: Korri's Sunshine, Korri Stream, its tone, input log, certificate control")
         prepared = sender.request(
             "prepare", sway=f"{parts['sway']}/bin/sway", sunshine=str(sunshine),
@@ -291,30 +331,14 @@ def main() -> int:
         (out / "sender-serverinfo.xml").write_text(info)
         checks["sender_answers_at_the_holders_moonlight_address"] = 'status_code="200"' in info
 
-        log(f"starting the holder as uid {holder_user[0]}, with the sender's certificate control")
-        holder = d9.Holder(scratch, fixture, moonlight, user=holder_user, environment=control)
+        receiver = seats.SeatReceiver(Path("/run"), holder_user[1], out / "seat-receiver.jsonl")
+        log(f"starting the holder as uid {holder_user[0]}, with the sender's certificate control and its seats")
+        holder = d9.Holder(scratch, fixture, moonlight, user=holder_user,
+                           environment={**control, **receiver.environment()})
         result["holder"] = {"port": holder.port, "device": holder.key, "relay_port": holder.relay}
         steps["holder_process_uid"] = process_user(str(scratch / "host"))
         checks["holder_runs_unprivileged"] = steps["holder_process_uid"] == holder_user[0]
-        device = d8.run([fixture, "member", str(member)]).stdout.strip()
-        result["member_device"] = device
 
-        emulator.create(image)
-        emulator.start()
-        result["emulator"] = {
-            "release": emulator.shell("getprop ro.build.version.release").stdout.strip(),
-            "sdk": emulator.shell("getprop ro.build.version.sdk").stdout.strip(),
-            "abi": emulator.shell("getprop ro.product.cpu.abi").stdout.strip(),
-        }
-        emulator.adb("uninstall", PACKAGE, check=False, timeout=120)
-        installed = emulator.adb("install", "--no-incremental", str(signed), check=False, timeout=600)
-        (out / "adb-install.txt").write_text(installed.stdout + installed.stderr)
-        if installed.returncode != 0:
-            raise RuntimeError("adb install failed; read adb-install.txt")
-        d9.seed(emulator, member)
-        shutil.rmtree(member)
-        listed = d9.run_as(emulator, "ls", "-l", d9.IDENTITY).stdout
-        checks["identity_seeded_as_the_apps_own_files"] = listed.count("-rw-------") == 2
         emulator.adb("reverse", f"tcp:{device_relay}", f"tcp:{holder.relay}")
         emulator.adb("reverse", f"tcp:{holder.port}", f"tcp:{holder.port}")
 
@@ -370,7 +394,7 @@ def main() -> int:
         while steps["play_taps"] < 3 and asked is None:
             tap(emulator, play)
             steps["play_taps"] += 1
-            asked = logcat.wait_for(LAUNCH, launch_mark, 60)
+            asked = waiting(logcat, sender, LAUNCH, launch_mark, 60)
         checks["the_tap_makes_korrid_start_the_viewer"] = asked is not None
         if asked is None:
             raise RuntimeError("korrid did not start the viewer after the tap")
@@ -378,17 +402,33 @@ def main() -> int:
         result["launch"] = launch
         steps["seconds_from_tap_to_start"] = round(time.monotonic() - tapped, 1)
         checks["korrid_provisioned_the_certificate"] = logcat.wait_for(PROVISIONED, launch_mark, 5) is not None
-        running = logcat.wait_for(RUNNING, launch_mark, 60)
+        running = waiting(logcat, sender, RUNNING, launch_mark, 60)
         steps["seconds_from_tap_to_running"] = round(time.monotonic() - tapped, 1)
         checks["viewer_reports_running"] = running is not None
         checks["start_replied_ok"] = logcat.wait_for(START_OK, launch_mark, 30) is not None
-        korrid_read = logcat.wait_for(re.compile(rf"korri-app: viewer status for korrid: {launch} Running"), launch_mark, 20)
+        korrid_read = waiting(logcat, sender, re.compile(rf"korri-app: viewer status for korrid: {launch} Running"), launch_mark, 20)
         checks["korrids_status_reads_running"] = korrid_read is not None
 
         log("the picture: the frame-ID bar")
         steps["first_bar"] = first_bar(emulator, out, "stream-first", 30)
         steps["picture"] = bars(emulator, out, "stream", 4, 1.0)
         checks["frame_ids_rise_in_screenshots"] = rising(steps["picture"])
+
+        # Before any letter key: on the emulator a hardware letter key starts an
+        # input method session over the app, which then takes the next Back
+        # (README, "The viewer in the app").
+        log("Back: the gameplay overlay's stand-in")
+        overlay_mark = logcat.mark()
+        emulator.shell("input keyevent KEYCODE_BACK")
+        checks["back_opens_the_overlay"] = waiting(logcat, sender, OVERLAY_OPEN, overlay_mark, 20) is not None
+        time.sleep(1)
+        steps["overlay"] = bars(emulator, out, "overlay", 3, 1.0)
+        steps["overlay_shade"] = shaded(out / "stream-4.png", out / "overlay-1.png")
+        checks["the_overlay_shades_the_lower_half"] = steps["overlay_shade"]["lower_half_darkened"]
+        checks["the_picture_goes_on_under_the_overlay"] = rising(steps["overlay"])
+        emulator.shell("input keyevent KEYCODE_BACK")
+        checks["back_closes_the_overlay"] = waiting(logcat, sender, OVERLAY_CLOSED, overlay_mark, 20) is not None
+        steps["after_overlay"] = bars(emulator, out, "after-overlay", 1, 0)
 
         log("the input: keys and a tap at the sender")
         emulator.shell(f"input keyevent {MARKER[0]}")
@@ -408,17 +448,6 @@ def main() -> int:
         checks["keys_reach_the_sender"] = all(code in after for code in KEYS.values())
         checks["a_touch_reaches_the_sender"] = any(p["kind"] in ("touch", "absolute mouse move") for p in packets)
 
-        log("Back: the gameplay overlay's stand-in")
-        overlay_mark = logcat.mark()
-        emulator.shell("input keyevent KEYCODE_BACK")
-        checks["back_opens_the_overlay"] = logcat.wait_for(OVERLAY_OPEN, overlay_mark, 10) is not None
-        time.sleep(1)
-        steps["overlay"] = bars(emulator, out, "overlay", 3, 1.0)
-        steps["overlay_shade"] = lower_half_darker(out / "overlay-1.png")
-        checks["the_picture_goes_on_under_the_overlay"] = rising(steps["overlay"])
-        emulator.shell("input keyevent KEYCODE_BACK")
-        checks["back_closes_the_overlay"] = logcat.wait_for(OVERLAY_CLOSED, overlay_mark, 10) is not None
-
         log("Home: leaving the app ends the stream")
         home_mark = logcat.mark()
         emulator.shell("input keyevent KEYCODE_HOME")
@@ -435,7 +464,7 @@ def main() -> int:
         log("back to the app: korrid's recovery starts the stream again")
         again_mark = logcat.mark()
         d8.start_app(emulator, out, "again")
-        steps["again_running"] = logcat.wait_for(RUNNING, again_mark, 90) is not None
+        steps["again_running"] = waiting(logcat, sender, RUNNING, again_mark, 90) is not None
         if steps["again_running"]:
             steps["again_first_bar"] = first_bar(emulator, out, "again-first", 30)
             steps["again_picture"] = bars(emulator, out, "again", 3, 1.0)
@@ -478,6 +507,14 @@ def main() -> int:
             if (out / "holder.log").is_file():
                 checks["the_holder_refused_no_launch_helper"] = \
                     "runtime UID and GID must both be unprivileged" not in (out / "holder.log").read_text()
+        if receiver is not None:
+            # After the holder: its korrid fences its seats when the receiver goes.
+            asked_seats = receiver.close()
+            steps["seat_requests"] = asked_seats[:40]
+            checks["the_holder_took_its_seats_for_the_launch"] = launch is not None and any(
+                (r.get("coordinator", {}).get("operation") == "beginSession"
+                 and r["coordinator"].get("launchId") == launch)
+                or (r.get("lease") == "start" and r.get("launchId") == launch) for r in asked_seats)
         try:
             run_folder = Path(prepared["facts"]["sender_fixture"]["run_folder"])  # noqa: F821
             sunshine_state = json.loads((run_folder / "home" / "state.json").read_text())

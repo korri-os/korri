@@ -10,26 +10,29 @@
 // SIGTERM or SIGINT the relay's events go to RUN/events.json, the holder
 // stops and joins its discovery, and the relay stops. Test-process only.
 //
-// For the D10 proof the holder provisions the app's viewer certificate: its
-// caller names the sender's certificate control in the variables that korrid
-// reads (KORRID_STREAM_CERTIFICATE_CONTROL_*, services/korrid/src/host/
-// moonlight_certificate.rs), and runs this as an unprivileged user.
+// For the D10 proof the holder launches the game and provisions the app's
+// viewer certificate: its caller names the sender's certificate control
+// (KORRID_STREAM_CERTIFICATE_CONTROL_*, services/korrid/src/host/
+// moonlight_certificate.rs) and the proof's input-seat receiver
+// (KORRID_INPUT_SEAT_CONTROL_SOCKET, host/mod.rs; proof/seats.py), and runs
+// this as an unprivileged user.
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import type { Subprocess } from "bun";
 import { hostEnvironment, startRelay } from "../../android/test/nostr-relay-fixture";
 
-// The certificate control that korrid reads, when the caller names one.
-const CERTIFICATE_CONTROL = "KORRID_STREAM_CERTIFICATE_CONTROL_";
+// What korrid reads of its caller's sockets, when the caller names them: the
+// sender's certificate control, and the input-seat receiver.
+const PASSED = (name: string) => name.startsWith("KORRID_STREAM_CERTIFICATE_CONTROL_") || name === "KORRID_INPUT_SEAT_CONTROL_SOCKET";
 
-/** The acceptance's isolated environment, the caller's certificate control,
- * and a home inside the run directory: nix-shell, the systemd fixture's
- * shebang, needs one for a user without a passwd entry. No other caller value
- * reaches the holder. */
+/** The acceptance's isolated environment, the caller's certificate control
+ * and input-seat receiver, and a home inside the run directory: nix-shell,
+ * the systemd fixture's shebang, needs one for a user without a passwd entry.
+ * No other caller value reaches the holder. */
 export function holderEnvironment(run: string, project: string, path: string, nixPath: string, caller: Record<string, string | undefined>) {
-  const control = Object.fromEntries(Object.entries(caller).filter((entry): entry is [string, string] =>
-    entry[0].startsWith(CERTIFICATE_CONTROL) && entry[1] !== undefined));
-  return { ...hostEnvironment(run, project, path, nixPath), ...control, HOME: join(run, "home") };
+  const passed = Object.fromEntries(Object.entries(caller).filter((entry): entry is [string, string] =>
+    PASSED(entry[0]) && entry[1] !== undefined));
+  return { ...hostEnvironment(run, project, path, nixPath), ...passed, HOME: join(run, "home") };
 }
 
 export async function startHolder(run: string, project: string, executable: string, moonlight: string) {
