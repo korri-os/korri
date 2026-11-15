@@ -37,9 +37,9 @@ anyhow = "1"
 korri-viewer = { path = "../viewer" }
 korri-viewer-treaty = { path = "../../contracts/viewer" }
 # korrid's LinuxStreamViewer is futures' BoxFuture over tokio; the releases
-# that korrid locks.
+# that korrid locks. Its timer bounds korrid's wait for the overlay to close.
 futures = "0.3"
-tokio = { version = "1", features = ["rt", "sync"] }
+tokio = { version = "1", features = ["rt", "sync", "time"] }
 serde = "1"
 serde_json = "1"
 

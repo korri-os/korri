@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! The activity around the shell, in Rust: what `KorriShellActivity` did for
-//! it besides starting korrid and unpacking the packages, and the stream that
-//! korrid starts in front of the shell (`viewer.rs`, slice D10).
+//! it besides starting korrid and unpacking the packages, the stream that
+//! korrid starts in front of the shell (`viewer.rs`, slice D10), and the
+//! gameplay overlay's Surface over that stream (slice D5b).
 use crate::{logcat, viewer::Stream};
 use anyhow::Result;
 use jni::{
@@ -9,7 +10,7 @@ use jni::{
     JNIEnv, JavaVM,
 };
 use korri_shell::{
-    backend::android::{Host, Rendered},
+    backend::android::{Host, Overlay, Rendered},
     input::android::DevicePresence,
 };
 use slint::android::{
@@ -63,6 +64,13 @@ impl Host for AppHost {
 
     fn tick(&mut self) {
         self.stream.tick();
+    }
+
+    /// The overlay layer of the stream in front, which the shell draws
+    /// korrid's gameplay overlay into (slice D5b), in the place of Artemis's
+    /// `KorriSurfaceHost`.
+    fn overlay(&mut self) -> Option<&mut dyn Overlay> {
+        Some(&mut self.stream)
     }
 
     /// Android tells no native code that a device went (that needs

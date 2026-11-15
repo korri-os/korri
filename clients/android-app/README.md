@@ -1,6 +1,6 @@
 # Korri Android app with no Korri Java (#434)
 
-Slices D8 to D10 of the route brief (`docs/research/2026-11-14-android-app-route.md`).
+Slices D8 to D11 and D5b of the route brief (`docs/research/2026-11-14-android-app-route.md`).
 Android's own `android.app.NativeActivity` loads one Rust library,
 `libkorri_android_app.so`. Its `android_main` starts korrid in the app's
 process, then runs the native shell on the activity's window. Since D10 the
@@ -14,7 +14,7 @@ nix build .#korri-android-app-apk          # both ABIs, unsigned
 nix build .#korri-android-app-fixture-apk  # x86_64, the holder proof's relay and the D11 proof trigger
 nix run .#android-app-proof                # D8: one headless API 31 emulator, no person
 nix run .#android-app-holder-proof         # D9, on aka as root: binding and a holder's game
-nix run .#android-app-play-proof -- --sunshine PACKAGE  # D10, on aka as root: a tap plays the game
+nix run .#android-app-play-proof -- --sunshine PACKAGE  # D10, D11, D5b, on aka as root: a tap plays the game
 ```
 
 ## Owner decisions (2026-11-14)
@@ -57,7 +57,7 @@ What the app keeps in its private storage:
 | Fullscreen, cutout, keep the screen on | `host.rs`, on Android's main thread, at each resume and focus |
 | Swallow Back | The shell's input filter consumes Back. At API 31 a Back that reaches the framework moves a root launcher activity to the back instead of finishing it |
 | `shellRendered` | A logcat line: `korri-app: shell rendered surface=… page=… count=… selected=…`, for the first frame after each resume and each change |
-| `KorriSurfaceHost` (the overlay Surface) | The shell's `Overlay` trait; the app supplies none until slice D5 |
+| `KorriSurfaceHost` (the overlay Surface and its input queues) | The shell's `Overlay` trait, over the overlay layer of the stream in front (`src/viewer.rs`, slice D5b, below) |
 
 korrid's three Java callbacks:
 
@@ -282,17 +282,16 @@ this process. korrid's prepare at the holder returns the launch; korrid's
 The pinned server certificate is a file of its launch in the app's cache
 directory (the storage table above), never in the key directory.
 
-Background and Resume answer that the viewer cannot leave the front yet:
-the shell's gameplay overlay (slice D5) is what will take the stream out of
-the front. Resize and Notice stay the treaty's typed "unavailable"; Apply
-came with D11 (below).
+Resume closes the gameplay overlay (slice D5b, below). Background, korrid's
+"Open Korri", answers that the viewer cannot leave the front yet. Resize and
+Notice stay the treaty's typed "unavailable"; Apply came with D11 (below).
 
-What the person does, by slice D5's rules (`korri_viewer::play`):
+What the person does, by slice D5's rules (`korri_viewer::play`) and D5b's:
 
 | Input | What happens |
 | --- | --- |
 | Keys, touches, controllers | To the stream (D4's mapping). A touch never reaches the shell under the video, and nor does a key that the stream does not map: on the emulator such a key raised the soft keyboard over the stream. Android's own keys (volume, power) stay Android's |
-| Back or Guide | Opens the overlay's stand-in and holds the stream's input; again closes it |
+| Back or Guide | Opens Korri's gameplay overlay (D5b, below) and holds the stream's input until it closes. In the overlay, Back and Guide (as Menu) go to the shell's surface package, which dismisses the overlay through korrid |
 | Volume and power under the overlay | Android's |
 | Home, another app | The runtime stops (`Stopped`). korrid's recovery starts the stream again while its launch is selected and the app is in front: it fails at once while the app has no window, and plays again when the app returns |
 | Ctrl+Alt+Shift+Q | The runtime stops, as on Home; korrid's recovery restarts it while the app is in front |
@@ -328,19 +327,69 @@ through three host hooks of `korri_shell::backend::android::Host`:
 korrid starts once per process and keeps the adapter it was given; each
 activity's `android_main` attaches a new `Stream` to it.
 
-## What the gameplay overlay needs here (D5)
+## Korri's gameplay overlay (D5b)
 
-From the D5 worker (branch `b0299bd21`): its throwaway check drew a
-see-through `.slint` panel into the overlay layer's Surface through
-`SurfaceWindow::from_surface`.
+The shell draws its surface package's gameplay overlay into the overlay
+layer over the stream, and korrid's overlay controller drives it, as in the
+Artemis app. The D5 spike proved that the shell's renderer draws into such a
+layer (`SurfaceWindow::from_surface`); D5's stand-in is gone from this app
+(the viewer's own app keeps it). The steps and their Artemis sources:
 
-| Need | Status |
-| --- | --- |
-| korrid in the process | Done (D8) |
-| The shell under the one loop, taking the overlay Surface without `KorriSurfaceHost` | D8 gives the seam: `backend::android::Overlay`, the Artemis host's methods in a trait. D5 implements it in Rust over its `SurfaceControl` layer |
-| The surface packages | Done (D8) |
-| The overlay's input queues (`shellTakeOverlayKeys`, `Axes`, `Pointers`) | They exist because Artemis's overlay lived in `Game`'s window. Here the layer is in the shell's window, so input comes through the shell's input filter; `take_keys`, `take_axes` and `take_pointers` return nothing, and D5 holds the stream's input while the overlay shows |
-| Leave and Resume with korrid (the viewer treaty has no Leave) | D5: Leave is korrid's `session.leave`; Background and Resume stop the runtime and start a new one, as `KorriStreamViewer.background` and `resume` do. D10's adapter answers both as unavailable until then |
+| Step | Here | Artemis |
+| --- | --- | --- |
+| Guide or Back opens it | `korri_viewer::play` holds the stream's input through D4's gate (`Input::hold`) and answers `Routed::Opened` | `Game.showSurfaceOverlay`: `NvConnection.setInputHeld(true)` |
+| The shell takes the Surface | The `Overlay` host is the stream (`viewer.rs`): `take_surface` gives the shell the overlay layer's `android.view.Surface`, once an opening, with the window's density | A new `SurfaceView`; `KorriSurfaceHost.attach`, `shellTakeOverlaySurface` |
+| korrid hears that the person left | After the shell took the Surface, a thread of its own calls korrid's `session.leave` (`korrid::android_app::leave_viewer`, the body of Artemis's JNI `leaveViewer`, now shared). korrid publishes Home, and its overlay controller (`surface/overlay.rs`) presents the overlay; it polls the viewer's Snapshot every second | `KorriStreamViewer.leave` |
+| It shows | The layer stays hidden until the shell has drawn into it (`Overlay::drawn`, a hook the shell gained here): until then the layer keeps the last frame of an earlier opening | The new view starts empty |
+| Its input | Keys, sticks and touches go to the shell through the `Overlay` queues (`take_keys`, `take_axes`, `take_pointers`), by `KorriSurfaceHost.forward`'s rules (`korri_viewer::overlay::Forwarded`). Guide reaches the package as Menu. A Guide or Back press that began with the overlay open goes whole, down and up, at its release. Volume and power stay Android's | `KorriSurfaceHost.forward`, `forwardTouch`; `Game.handleKorriHomeKey` |
+| Its controls | The package's `InvokeGameplayControl` of a stream control reaches korrid's overlay controller, then the adapter's `apply` (D11): Crop to fill moves the video layer under the overlay | `KorriViewerControls.apply` |
+| It closes | The package's Dismiss (Back, Menu) makes korrid resume the stream: korrid's `resume_and_focus` reaches the loop thread, which hides the layer and asks the shell for the Surface (`closing`); the shell lets it go at its next tick (`released`); then the stream's input goes on, and korrid's Resume is answered, within 15 s | `KorriStreamViewer.resume` → `Game.hideSurfaceOverlay`: `KorriSurfaceHost.detach` waits for the release, then `setInputHeld(false)` |
+
+The rules of the hand-off are pure and host-tested (`src/viewer/hosted.rs`,
+through `tests/host.rs`); the input's are the viewer's
+(`korri_viewer::overlay`, its tests).
+
+- No thread waits for Android's main thread: the layer's visibility is a
+  posted transaction, and korrid's Resume waits on a channel that the loop
+  thread answers. korrid's `session.leave` is an RPC on a thread of its own.
+- Teardown order: the shell lets the Surface go before the layers go. A
+  stream that ends or stops while the overlay is open closes it first; the
+  layers go at the tick after the shell's release. When the activity ends,
+  the shell's own teardown releases its renderer before the stream drops.
+- A refused `session.leave`, or a shell that cannot draw into the Surface,
+  closes the overlay and logs why. Artemis also shows a toast; this app
+  shows none.
+- The plan of D8 above said that the overlay's input would come through the
+  shell's input filter and its queues would stay empty. A touch must reach
+  the overlay's own Slint window, which the filter does not know, so the
+  queues carry the input, as in Artemis.
+- Not carried: "Open Korri" (the treaty's Background). Artemis ends its
+  activity and keeps the launch; this app cannot take the stream out of the
+  front yet, so korrid's overlay shows "Could not leave the stream". If
+  korrid never presents its overlay after the leave, the stream's input
+  stays held until Home, as in Artemis.
+
+The logcat lines: the viewer library's `overlay: open on Guide; the
+stream's input is held`, `overlay: layer shown`, `overlay: layer hidden` and
+`overlay: closed on korrid resumed the stream after … s; it took … keys and
+… motion events`; the app's `korri-app: overlay: the shell took the layer's
+Surface; korrid hears that the person left`, `korri-app: overlay: korrid's
+session.leave for LAUNCH: ok`, `korri-app: overlay: the shell drew it; the
+layer shows`, `korri-app: overlay: the shell let the layer's Surface go`
+and `korri-app: viewer resume for korrid: LAUNCH: the stream is in front,
+its input goes on`.
+
+The play proof (`proof/play.py`) runs D5b's steps where D10's stand-in step
+was, before any letter key: Guide opens the overlay over the moving stream;
+the shell takes the layer, korrid hears the leave and the shell draws; the
+frame-ID bar still rises; tesseract reads the overlay's words (Resume,
+Disconnect, Crop to fill, Flip A/B and X/Y); Crop to fill, chosen in the
+overlay, moves the video layer (the app's log, korrid's Apply through the
+treaty, SurfaceFlinger's crop, the window's left edge), and chosen again fits
+it again; the sender's Sunshine receives no input while the overlay is open;
+Back closes it through korrid's Resume, after the shell let the Surface go,
+and the picture goes on. D10's keys and tap then reach the sender. Records:
+`proof/android-app-d5b/`.
 
 ## Stream controls and status (D11)
 
@@ -360,11 +409,10 @@ korrid's own callers:
 | Caller | In this app |
 | --- | --- |
 | The live-shape poll (`upstreams/live_shape.rs`, `synchronize_shape`, #476) reads the viewer's snapshot while a stream runs | Runs: the D11 proof's log shows korrid's own reads with the controls, and with Crop to fill on after the apply |
-| The gameplay overlay's snapshot poll, every second, and its `InvokeGameplayControl`, which reaches `apply` (`surface/overlay.rs`; korrid's unit tests `surface/viewer.rs`, `surface/overlay.rs`) | Not yet: korrid's overlay starts only after its `session.leave`, and its input reaches it only through the shell's overlay in this app, slice D5b |
+| The gameplay overlay's snapshot poll, every second, and its `InvokeGameplayControl`, which reaches `apply` (`surface/overlay.rs`; korrid's unit tests `surface/viewer.rs`, `surface/overlay.rs`) | Runs since D5b (above): the overlay lists the controls, and Crop to fill chosen in it moves the video layer |
 
-So nothing in the product calls `apply` here until D5b, and the overlay does
-not show the controls yet. Until then the emulator proof calls korrid's
-adapter through a trigger.
+Before D5b nothing in the product called `apply` here, so the D11 proof
+called korrid's adapter through a trigger, which it still does.
 
 **The proof trigger** (`src/proof.rs`, cargo feature `proof`): only the
 fixture APK's library is built with it, for x86_64. The proof writes one
@@ -388,7 +436,7 @@ fits the picture again. Records: `proof/android-app-d11/`.
 | --- | --- |
 | D9 | Done: the holder proof above, and the TLS verifier's classes |
 | D10 | Done: the Rust viewer, driven by korrid, on the shell's loop (above) |
-| D5 (moved) | The gameplay overlay through `Overlay` |
-| D11 | Done in part: 3 of Artemis's 13 stream controls (Crop to fill, Flip A/B and X/Y, Rumble), the battery and the health, through the treaty (above). The product path to Apply and the overlay that shows them is D5b's. Missing, and gating D7′: Toggle keyboard, Full keyboard, Pan & zoom, Mouse mode, Touch sensitivity, Keyboard as controller, Toggle local cursor, SGSR sharpness, SGSR edge threshold, Picture-in-picture |
+| D5b | Done: Korri's gameplay overlay through `Overlay` (above). "Open Korri" (Background) is not carried yet |
+| D11 | Done in part: 3 of Artemis's 13 stream controls (Crop to fill, Flip A/B and X/Y, Rumble), the battery and the health, through the treaty (above), shown and applied in the gameplay overlay since D5b. Missing, and gating D7′: Toggle keyboard, Full keyboard, Pan & zoom, Mouse mode, Touch sensitivity, Keyboard as controller, Toggle local cursor, SGSR sharpness, SGSR edge threshold, Picture-in-picture |
 | D13 (new) | Local Android games (O3): korrid's launcher through JNI, usage polling on a Rust thread, androidx `FileProvider` bundled unchanged (`hasCode="true"`), and the Guide service, which Android allows only as a Java `AccessibilityService` subclass: one Korri Java file on #434's list, or no Guide over other apps. Gates D7′ |
 | D12 | On the Galaxy Z Fold 8 |

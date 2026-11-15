@@ -8,8 +8,8 @@
 //!
 //! | Half | Thread | Does |
 //! | --- | --- | --- |
-//! | [`Adapter`] | korrid's workers | korrid's `LinuxStreamViewer`: the client certificate, the server certificate through korrid's broker, the runtime's lifecycle, and every treaty request (`Start`, `Status`, `Snapshot`, `Apply`, `Stop`) |
-//! | [`Stream`] | the shell's loop (Slint's) | the video and overlay layers, the runtime's thread, the stream's input from the shell's input filter, and the stream's controls (slice D11), on the shell's 16 ms timer |
+//! | [`Adapter`] | korrid's workers | korrid's `LinuxStreamViewer`: the client certificate, the server certificate through korrid's broker, the runtime's lifecycle, every treaty request (`Start`, `Status`, `Snapshot`, `Apply`, `Stop`), and korrid's Resume, which closes the gameplay overlay (slice D5b) |
+//! | [`Stream`] | the shell's loop (Slint's) | the video and overlay layers, the runtime's thread, the stream's input from the shell's input filter, the stream's controls (slice D11), and the shell's gameplay overlay (slice D5b, the shell's `Overlay` host), on the shell's 16 ms timer |
 //!
 //! The stream's controls and status (slice D11): the loop thread attaches
 //! them to the runtime's lifecycle when the stream starts
@@ -43,16 +43,26 @@
 //!   (`rules::remove_stale_pins`).
 //!
 //! What the person does, by the gameplay overlay's rules of slice D5
-//! (`korri_viewer::play`): Back or Guide opens and closes the overlay's
-//! stand-in, and holds the stream's input meanwhile. Leaving the app (Home,
+//! (`korri_viewer::play`): Back or Guide opens the gameplay overlay and
+//! holds the stream's input until it closes. Since slice D5b the overlay is
+//! the shell's (`hosted.rs`): the loop thread lends the overlay layer's
+//! Surface to the shell, which draws korrid's gameplay overlay into it, and
+//! korrid hears that the person left (`session.leave`). The overlay's keys,
+//! sticks and touches go to the shell; Back and Guide too, and the shell's
+//! surface package dismisses the overlay through korrid. korrid's Resume
+//! then reaches `resume_and_focus`: the layer hides, the shell lets the
+//! Surface go, and the stream's input goes on. Leaving the app (Home,
 //! another app) and Ctrl+Alt+Shift+Q end the runtime; korrid then sees
 //! `Stopped`, and its own recovery starts the stream again while the launch
 //! is selected and the app is in front.
+mod hosted;
 mod rules;
 
 use crate::logcat;
 use futures::{channel::oneshot, future::BoxFuture};
+use hosted::{Hosted, Step};
 use jni::{objects::GlobalRef, objects::JObject, JNIEnv, JavaVM};
+use korri_shell::backend::android::Overlay;
 use korri_viewer::{
     controls::{Control, Offer},
     devices::AndroidDevices,
@@ -64,7 +74,7 @@ use korri_viewer::{
     layer::{Layers, Pending},
     lifecycle::{ControlChange, ControlChanges, Lifecycle},
     options::Options,
-    overlay::is_system_key,
+    overlay::{is_system_key, Presenter},
     picture::{FrameRecord, Picture},
     play::{Play, Routed},
     session::Identity,
@@ -88,7 +98,25 @@ use std::{
         mpsc, Arc, Mutex, OnceLock, PoisonError,
     },
     thread::{self, JoinHandle},
+    time::Duration,
 };
+
+/// How long korrid's Resume waits for the overlay to close: Artemis's wait
+/// for its activity (`KorriStreamViewer.CONTROL_TIMEOUT_MS`).
+const RESUME_DEADLINE: Duration = Duration::from_secs(15);
+
+/// What the adapter asks of the loop thread of the activity in front.
+enum Order {
+    Show(Box<Show>),
+    Resume(Resume),
+}
+
+/// korrid's Resume of a launch: the gameplay overlay closes, then it hears
+/// so; a stream that is not in front answers why not.
+struct Resume {
+    launch: String,
+    closed: oneshot::Sender<Result<(), String>>,
+}
 
 /// One launch for the loop thread to show.
 struct Show {
@@ -116,7 +144,7 @@ struct Shared {
     /// Where each launch's pinned server certificate lives while it plays.
     pins: PathBuf,
     /// The loop thread of the activity in front, by its number.
-    shows: rules::Slot<Show>,
+    orders: rules::Slot<Order>,
     /// The activity has a window, so a launch can be shown.
     window: AtomicBool,
     current: Mutex<Option<Current>>,
@@ -192,7 +220,7 @@ pub fn adapter(keydir: PathBuf, pins: PathBuf) -> Arc<Adapter> {
                 Arc::new(Shared {
                     keydir,
                     pins,
-                    shows: Mutex::new(None),
+                    orders: Mutex::new(None),
                     window: AtomicBool::new(false),
                     current: Mutex::new(None),
                     operation: tokio::sync::Mutex::new(()),
@@ -337,9 +365,9 @@ impl LinuxStreamViewer for Adapter {
                 lifecycle: lifecycle.clone(),
                 started,
             };
-            let sent = lock(&self.0.shows)
+            let sent = lock(&self.0.orders)
                 .as_ref()
-                .map(|(_, shows)| shows.send(show).is_ok())
+                .map(|(_, orders)| orders.send(Order::Show(Box::new(show))).is_ok())
                 .unwrap_or(false);
             if !sent {
                 lifecycle.failed("the app has no activity to show the stream in".into());
@@ -446,27 +474,56 @@ impl LinuxStreamViewer for Adapter {
         })
     }
 
-    /// The treaty's Background is a confirmed loss of focus. Here the shell's
-    /// gameplay overlay (slice D5) is what would take the stream out of
-    /// front; until it does, korrid's "Open Korri" has no effect to confirm.
+    /// The treaty's Background is a confirmed loss of focus: korrid's "Open
+    /// Korri", for which Artemis ends its activity and keeps the launch to
+    /// resume. This app does not take the stream out of the front yet, so
+    /// there is no effect to confirm.
     fn background<'a>(&'a self, launch: &'a str) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
         Box::pin(async move {
             exact(launch)?;
-            Err(error(
-                "the Android viewer cannot leave the front yet (slice D5)",
-            ))
+            Err(error("the Android viewer cannot leave the front yet"))
         })
     }
 
+    /// korrid's Resume of a stream that runs (`KorriStreamViewer.resume`):
+    /// the gameplay overlay closes, and the answer comes once the shell has
+    /// let the overlay layer's Surface go and the stream's input goes on. A
+    /// stream with no overlay open answers at once.
     fn resume_and_focus<'a>(
         &'a self,
         launch: &'a str,
     ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
         Box::pin(async move {
             exact(launch)?;
-            Err(error(
-                "the Android viewer cannot leave the front yet (slice D5)",
-            ))
+            if self.0.lifecycle(launch).is_none() {
+                return Err(error("viewer is not running"));
+            }
+            let (closed, answer) = oneshot::channel();
+            let resume = Resume {
+                launch: launch.to_owned(),
+                closed,
+            };
+            let sent = lock(&self.0.orders)
+                .as_ref()
+                .map(|(_, orders)| orders.send(Order::Resume(resume)).is_ok())
+                .unwrap_or(false);
+            if !sent {
+                return Err(error("the app has no activity that shows the stream"));
+            }
+            let answered = match tokio::time::timeout(RESUME_DEADLINE, answer).await {
+                Ok(Ok(answered)) => answered,
+                Ok(Err(_)) => Err("the activity ended before the overlay closed".to_owned()),
+                Err(_) => Err("the gameplay overlay did not close within 15 s".to_owned()),
+            };
+            match &answered {
+                Ok(()) => logcat::info(&format!(
+                    "korri-app: viewer resume for korrid: {launch}: the stream is in front, its input goes on"
+                )),
+                Err(why) => logcat::error(&format!(
+                    "korri-app: viewer resume for korrid: {launch} failed: {why}"
+                )),
+            }
+            answered.map_err(error)
         })
     }
 
@@ -556,6 +613,15 @@ struct Playing {
     rumble: RumbleSwitch,
     /// "Crop to fill" waits for Android's main thread to move the layer.
     placing: Option<(ControlChange, mpsc::Receiver<anyhow::Result<()>>)>,
+    /// The shell's gameplay overlay over this stream (slice D5b).
+    hosted: Hosted,
+    /// Where each opening's leave thread answers, with the opening's
+    /// number.
+    answers: mpsc::Sender<(u64, bool)>,
+    /// korrid's answers to the openings' leaves.
+    left: mpsc::Receiver<(u64, bool)>,
+    /// korrid's resumes that wait for the overlay to close.
+    resumes: Vec<oneshot::Sender<Result<(), String>>>,
     /// The runtime reads it when it connects; it goes with the launch.
     _pin: Pin,
 }
@@ -586,7 +652,7 @@ pub struct Stream {
     activity: GlobalRef,
     shared: Arc<Shared>,
     id: u64,
-    shows: mpsc::Receiver<Show>,
+    orders: mpsc::Receiver<Order>,
     phase: Phase,
 }
 
@@ -600,8 +666,8 @@ impl Stream {
             .ok_or_else(|| anyhow::anyhow!("korrid's viewer is not made yet"))?
             .clone();
         let id = IDS.fetch_add(1, Ordering::Relaxed);
-        let (sender, shows) = mpsc::channel();
-        *lock(&shared.shows) = Some((id, sender));
+        let (sender, orders) = mpsc::channel();
+        *lock(&shared.orders) = Some((id, sender));
         // The window comes with this activity's InitWindow.
         shared.window.store(false, Ordering::Release);
         Ok(Self {
@@ -609,16 +675,19 @@ impl Stream {
             activity: env.new_global_ref(activity)?,
             shared,
             id,
-            shows,
+            orders,
             phase: Phase::Idle,
         })
     }
 
-    /// Once per tick of the shell's timer: a new launch, the layers being
-    /// made, and the stream's timers, window size and end.
+    /// Once per tick of the shell's timer: a new launch, korrid's resumes,
+    /// the layers being made, and the stream's timers, window size and end.
     pub fn tick(&mut self) {
-        while let Ok(show) = self.shows.try_recv() {
-            self.begin(show);
+        while let Ok(order) = self.orders.try_recv() {
+            match order {
+                Order::Show(show) => self.begin(*show),
+                Order::Resume(resume) => self.resume(resume),
+            }
         }
         self.phase = match std::mem::replace(&mut self.phase, Phase::Idle) {
             Phase::Idle => Phase::Idle,
@@ -660,6 +729,12 @@ impl Stream {
         };
         match routed {
             Routed::Handled => Some(rules::keeps_key(android, false, true)),
+            // The stream's input is held: the shell takes the overlay
+            // layer's Surface at its next tick.
+            Routed::Opened => {
+                playing.hosted.open();
+                Some(true)
+            }
             // Android's own keys (volume, power) go on: Slint leaves them to
             // Android. Any other key ends here (`rules::keeps_key`).
             Routed::Unhandled => Some(rules::keeps_key(android, false, false)),
@@ -705,13 +780,37 @@ impl Stream {
         else {
             return refuse(show, "the app has no window to show the stream in");
         };
-        match Layers::request(&self.app, window, (show.options.width, show.options.height)) {
+        match Layers::request(
+            &self.app,
+            window,
+            (show.options.width, show.options.height),
+            Presenter::Shell,
+        ) {
             Ok(pending) => self.phase = Phase::Making(Box::new(Making { show, pending })),
             Err(cause) => refuse(
                 show,
                 &format!("the video layer was not asked for: {cause:#}"),
             ),
         }
+    }
+
+    /// korrid's Resume (`resume_and_focus`): the gameplay overlay closes,
+    /// and korrid hears so once the stream's input goes on.
+    fn resume(&mut self, resume: Resume) {
+        let Resume { launch, closed } = resume;
+        let Phase::Playing(playing) = &mut self.phase else {
+            return refuse_resumes(vec![closed], "the stream is not in front");
+        };
+        if playing.launch != launch || playing.stopping {
+            return refuse_resumes(vec![closed], "the stream is not in front");
+        }
+        if !playing.hosted.is_open() {
+            let _ = closed.send(Ok(()));
+            return;
+        }
+        playing.resumes.push(closed);
+        let steps = playing.hosted.close("korrid resumed the stream");
+        perform(&self.app, playing, steps);
     }
 
     fn make(&mut self, mut making: Making) -> Phase {
@@ -852,10 +951,18 @@ impl Stream {
         // The stream's controls and status, for korrid's snapshot and
         // Apply; this activity is their lease.
         let changes = lifecycle.controls(self.id, status::readings);
+        let (answers, left) = mpsc::channel();
         Phase::Playing(Box::new(Playing {
             launch,
             lifecycle,
-            play: Play::new(settings, attached, placed, devices, Box::new(seats)),
+            play: Play::new(
+                settings,
+                attached,
+                placed,
+                devices,
+                Box::new(seats),
+                Presenter::Shell,
+            ),
             layers,
             runtime,
             stopping: false,
@@ -863,12 +970,32 @@ impl Stream {
             changes,
             rumble,
             placing: None,
+            hosted: Hosted::default(),
+            answers,
+            left,
+            resumes: Vec::new(),
             _pin: pin,
         }))
     }
 
     fn play(&mut self, mut playing: Box<Playing>) -> Phase {
+        while let Ok((opening, ok)) = playing.left.try_recv() {
+            logcat::info(&format!(
+                "korri-app: overlay: korrid's session.leave for {}: {}",
+                playing.launch,
+                if ok { "ok" } else { "refused" }
+            ));
+            let steps = playing.hosted.left(opening, ok);
+            perform(&self.app, &mut playing, steps);
+        }
         if playing.runtime.is_finished() {
+            // The shell lets the overlay layer's Surface go before the
+            // layers go: at its next tick.
+            if playing.hosted.lends() {
+                let steps = playing.hosted.close("the stream ended");
+                perform(&self.app, &mut playing, steps);
+                return Phase::Playing(playing);
+            }
             self.ended(playing);
             return Phase::Idle;
         }
@@ -876,6 +1003,8 @@ impl Stream {
             // korrid asked for Stop: nothing more goes to the stream.
             playing.stopping = true;
             playing.play.end();
+            let steps = playing.hosted.close("the stream stops");
+            perform(&self.app, &mut playing, steps);
         }
         if playing.stopping {
             return Phase::Playing(playing);
@@ -957,7 +1086,8 @@ impl Stream {
         }
     }
 
-    /// The runtime has ended: its layers go, after the decoder.
+    /// The runtime has ended: its layers go, after the decoder, and after
+    /// the shell has let the overlay layer's Surface go.
     fn ended(&mut self, playing: Box<Playing>) {
         let Playing {
             launch,
@@ -965,8 +1095,10 @@ impl Stream {
             layers,
             mut play,
             runtime,
+            resumes,
             ..
         } = *playing;
+        refuse_resumes(resumes, "the stream ended");
         play.end();
         let joined = runtime.join();
         match &joined {
@@ -996,6 +1128,8 @@ impl Stream {
                     logcat::info(&format!("korri-app: viewer stops: {why}"));
                     playing.stopping = true;
                     playing.play.end();
+                    let steps = playing.hosted.close("the stream stops");
+                    perform(&self.app, &mut playing, steps);
                     stop_on_a_thread(&playing.launch, playing.lifecycle.clone());
                 }
                 self.phase = Phase::Playing(playing);
@@ -1047,9 +1181,15 @@ impl Drop for Stream {
     /// layers go once it has ended, on a thread that waits for it, so the
     /// layers outlive the decoder.
     fn drop(&mut self) {
-        rules::close(&self.shared.shows, self.id, &self.shows, |show| {
-            refuse(show, "the activity ended")
-        });
+        rules::close(
+            &self.shared.orders,
+            self.id,
+            &self.orders,
+            |order| match order {
+                Order::Show(show) => refuse(*show, "the activity ended"),
+                Order::Resume(resume) => refuse_resumes(vec![resume.closed], "the activity ended"),
+            },
+        );
         match std::mem::replace(&mut self.phase, Phase::Idle) {
             Phase::Idle => {}
             Phase::Making(making) => refuse(making.show, "the activity ended"),
@@ -1065,8 +1205,13 @@ impl Drop for Stream {
                     changes: _,
                     rumble: _,
                     placing: _,
+                    hosted: _,
+                    answers: _,
+                    left: _,
+                    resumes,
                     _pin,
                 } = *playing;
+                refuse_resumes(resumes, "the activity ended");
                 play.end();
                 if !stopping {
                     stop_on_a_thread(&launch, lifecycle.clone());
@@ -1085,6 +1230,169 @@ impl Drop for Stream {
                     });
             }
         }
+    }
+}
+
+/// The shell's `Overlay` host (slice D5b): the shell lends the overlay
+/// layer's Surface while korrid's gameplay overlay shows, and takes its
+/// input. Each call runs on the loop thread, inside the shell's 16 ms timer,
+/// after `Host::tick`; none waits for Android's main thread.
+impl Overlay for Stream {
+    fn closing(&mut self, _env: &mut JNIEnv) -> jni::errors::Result<bool> {
+        Ok(matches!(&self.phase, Phase::Playing(playing) if playing.hosted.closing()))
+    }
+
+    fn released(&mut self, _env: &mut JNIEnv, failed: bool) -> jni::errors::Result<()> {
+        if let Phase::Playing(playing) = &mut self.phase {
+            if playing.hosted.lends() {
+                logcat::info(&format!(
+                    "korri-app: overlay: the shell let the layer's Surface go{}",
+                    if failed {
+                        ": it could not draw into it"
+                    } else {
+                        ""
+                    }
+                ));
+            }
+            let steps = playing.hosted.released(failed);
+            perform(&self.app, playing, steps);
+        }
+        Ok(())
+    }
+
+    /// The overlay layer's Surface, once an opening; korrid then hears that
+    /// the person left, so that its overlay has a Surface to show in.
+    fn take_surface<'local>(
+        &mut self,
+        env: &mut JNIEnv<'local>,
+    ) -> jni::errors::Result<JObject<'local>> {
+        let Phase::Playing(playing) = &mut self.phase else {
+            return Ok(JObject::null());
+        };
+        let Some(surface) = playing
+            .layers
+            .overlay_surface()
+            .filter(|_| playing.hosted.offered())
+        else {
+            return Ok(JObject::null());
+        };
+        let surface = env.new_local_ref(surface.as_obj())?;
+        let Some(leave) = playing.hosted.take() else {
+            return Ok(JObject::null());
+        };
+        logcat::info(
+            "korri-app: overlay: the shell took the layer's Surface; korrid hears that the person left",
+        );
+        perform(&self.app, playing, [leave]);
+        Ok(surface)
+    }
+
+    /// The window's density, as Slint's own window reads it.
+    fn density(&mut self, _env: &mut JNIEnv) -> jni::errors::Result<f32> {
+        Ok(self
+            .app
+            .config()
+            .density()
+            .map(|dpi| dpi as f32 / 160.0)
+            .unwrap_or(1.0))
+    }
+
+    fn resized(&mut self, _env: &mut JNIEnv) -> jni::errors::Result<bool> {
+        Ok(matches!(&self.phase, Phase::Playing(playing)
+            if playing.hosted.lends() && playing.layers.overlay_resized()))
+    }
+
+    fn take_keys(&mut self, _env: &mut JNIEnv) -> jni::errors::Result<Vec<i32>> {
+        Ok(self
+            .lent()
+            .map(|play| play.forwarded().take_keys())
+            .unwrap_or_default())
+    }
+
+    fn take_axes(&mut self, _env: &mut JNIEnv) -> jni::errors::Result<Vec<i32>> {
+        Ok(self
+            .lent()
+            .map(|play| play.forwarded().take_axes())
+            .unwrap_or_default())
+    }
+
+    fn take_pointers(&mut self, _env: &mut JNIEnv) -> jni::errors::Result<Vec<f32>> {
+        Ok(self
+            .lent()
+            .map(|play| play.forwarded().take_pointers())
+            .unwrap_or_default())
+    }
+
+    fn drawn(&mut self) {
+        if let Phase::Playing(playing) = &mut self.phase {
+            if let Some(show) = playing.hosted.drawn() {
+                perform(&self.app, playing, [show]);
+            }
+        }
+    }
+}
+
+impl Stream {
+    /// The stream's input while the shell holds the overlay's Surface and
+    /// is not giving it back: what the overlay took goes to the shell.
+    /// Before, and while it closes, nothing does: what waits is dropped.
+    fn lent(&mut self) -> Option<&mut Play> {
+        let Phase::Playing(playing) = &mut self.phase else {
+            return None;
+        };
+        if playing.hosted.lends() && !playing.hosted.closing() {
+            Some(&mut playing.play)
+        } else {
+            playing.play.forwarded().clear();
+            None
+        }
+    }
+}
+
+/// The steps of the shell's overlay (`hosted.rs`), in their order.
+fn perform(app: &AndroidApp, playing: &mut Playing, steps: impl IntoIterator<Item = Step>) {
+    for step in steps {
+        match step {
+            Step::Show => {
+                logcat::info("korri-app: overlay: the shell drew it; the layer shows");
+                playing.layers.show_overlay(app, true);
+            }
+            Step::Hide => playing.layers.show_overlay(app, false),
+            Step::Leave(opening) => {
+                leave_on_a_thread(&playing.launch, opening, playing.answers.clone())
+            }
+            Step::Closed(why) => {
+                // The shell has no Surface any more: the input goes on.
+                playing.play.close(why);
+                for closed in playing.resumes.drain(..) {
+                    let _ = closed.send(Ok(()));
+                }
+            }
+        }
+    }
+}
+
+/// korrid's `session.leave` for an opening of the overlay, on a thread of
+/// its own: it is an RPC to korrid, which the loop thread must not wait for.
+fn leave_on_a_thread(launch: &str, opening: u64, answer: mpsc::Sender<(u64, bool)>) {
+    let launch = launch.to_owned();
+    if let Err(cause) = thread::Builder::new()
+        .name("viewer-leave".into())
+        .spawn(move || {
+            let left = korrid::android_app::leave_viewer(&launch);
+            let _ = answer.send((opening, left));
+        })
+    {
+        logcat::error(&format!(
+            "korri-app: overlay: korrid's session.leave was not sent: {cause}"
+        ));
+    }
+}
+
+/// korrid's resumes that the stream can no longer answer.
+fn refuse_resumes(resumes: Vec<oneshot::Sender<Result<(), String>>>, why: &str) {
+    for closed in resumes {
+        let _ = closed.send(Err(why.to_owned()));
     }
 }
 

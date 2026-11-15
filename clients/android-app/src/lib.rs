@@ -17,7 +17,7 @@
 //! | `applyFullscreen` on create, resume and focus | `host.rs`, on Android's main thread |
 //! | `onBackPressed` swallowed | the shell's input filter consumes Back (`input/android.rs`) |
 //! | `shellRendered` (the device test's readiness) | a logcat line (`host.rs`) |
-//! | `KorriSurfaceHost` (the overlay Surface) | none until slice D5 |
+//! | `KorriSurfaceHost` (the overlay Surface and its input) | `viewer.rs`: the overlay layer over the stream and the overlay's input, the shell's `Overlay` host (slice D5b) |
 //! | `KorriStreamViewer` and `Game` (korrid's viewer) | `viewer.rs`: the Rust viewer in this process, on the shell's loop (slice D10) |
 #![cfg(target_os = "android")]
 
