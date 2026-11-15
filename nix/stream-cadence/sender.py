@@ -291,7 +291,8 @@ def configuration(
     packets at its verbose level, the other kinds at debug. It still sends
     none of them on: input stays off.
     With `encryption_required`, Sunshine requires encryption from a client at
-    any address: a loopback client counts as LAN (network.cpp). Without it
+    any address: it puts a loopback address in its PC class, which takes
+    `lan_encryption_mode` (network.cpp). Without it
     the file names no encryption, and Sunshine's defaults decide: no video
     encryption on a LAN.
     """

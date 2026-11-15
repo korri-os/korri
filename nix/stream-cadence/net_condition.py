@@ -60,6 +60,11 @@ WORDS_KEPT = 2000
 
 NUMBER = r"(\d+(?:\.\d+)?)"
 LIMIT_MS = 1000.0
+# netem's queue in packets. It holds every packet of the delay, and its
+# default of 1000 is about 0.8 s of a 10 Mbit/s stream of 1024-byte packets:
+# a long delay would drop by overflow what no condition asked for. This many
+# packets hold LIMIT_MS of a stream up to about 800 Mbit/s.
+NETEM_LIMIT = 100000
 
 
 def number(value: float) -> str:
@@ -185,11 +190,13 @@ def commands(netem: str, iproute2: str) -> list[list[str]]:
          "u32", "match", "ip6", "protocol", UDP, "0xff", "flowid", UDP_BAND],
         [tc, "qdisc", "add", "dev", DEVICE, "parent", UDP_BAND, "handle", BUCKET, "tbf",
          "rate", RATE, "burst", str(FRAME), "limit", str(BUCKET_LIMIT)],
-        [tc, "qdisc", "add", "dev", DEVICE, "parent", BUCKET + "1", "handle", UDP_NETEM, "netem", *words],
+        [tc, "qdisc", "add", "dev", DEVICE, "parent", BUCKET + "1", "handle", UDP_NETEM,
+         "netem", "limit", str(NETEM_LIMIT), *words],
     ]
     if "delay" in words:
         delay = words[words.index("delay") : words.index("delay") + 2]
-        run.append([tc, "qdisc", "add", "dev", DEVICE, "parent", OTHER_BAND, "handle", OTHER_NETEM, "netem", *delay])
+        run.append([tc, "qdisc", "add", "dev", DEVICE, "parent", OTHER_BAND, "handle", OTHER_NETEM,
+                    "netem", "limit", str(NETEM_LIMIT), *delay])
     return run
 
 

@@ -1403,7 +1403,7 @@ display. A long tail in the first is the sender's own.
 | 2 Late, repeated, dropped | `capture_misses`, `repeated_frames`, `late_frames`, `torn_frames`, `undecodable_frames` in each window; `viewer.output_repeats` | A dropped ID was presented and never displayed. A repeated frame shows no new ID. A late frame is a new ID more than 1.5 refresh periods after the previous new ID. An output repeat is a gap in the display record that loses no ID: the panel showed one picture across it. |
 | 3 CPU and battery | `viewer.cpu_seconds_per_second`, `viewer.battery_mw` | Viewer process CPU time from procfs over the scored time. Battery power only while a battery discharges in every sample; else not measured. |
 | 4 Startup | `viewer.startup_ms` | Viewer process start to the first displayed frame of that start: the first ID that the sender presented at or after it. korrid's launch path is not included. On a handheld the time contains the agent's fullscreen and focus step. |
-| 5 Input | `viewer.input_ms`, `viewer.input_missed`, `viewer.input` | In a same-device PC pair only: a key that the X server presses on the viewer's window, to the first send of the viewer's keyboard packet on loopback. The median of 20 presses after the scored time, and the count of presses that the viewer answered with no packet. See "Number 5: the press". Elsewhere not measured. |
+| 5 Input | `viewer.input_ms`, `viewer.input_missed`, `viewer.input` | In a same-device PC pair only: a key that the X server presses on the viewer's window, to the first send of the viewer's keyboard packet on loopback. The median of 20 presses after the scored time, and the count of presses that the viewer answered with no packet. See "Number 5: the press", and under `--net` "Number 5 under `--net`": the time then holds the condition's delay. Elsewhere not measured. |
 | 6 Stability | `viewer.stream_stalls`, `viewer.viewer_exits` | A stall is one second without a new ID in the scored time. A viewer exit ends the run as invalid. |
 
 `viewer.not_measured` gives the reason for each number that has no value. No
@@ -1751,8 +1751,8 @@ tc qdisc add dev lo root handle 1: prio bands 2 priomap 1 1 1 1 1 1 1 1 1 1 1 1 
 tc filter add dev lo parent 1: protocol ip prio 1 u32 match ip protocol 17 0xff flowid 1:1
 tc filter add dev lo parent 1: protocol ipv6 prio 2 u32 match ip6 protocol 17 0xff flowid 1:1
 tc qdisc add dev lo parent 1:1 handle 10: tbf rate 100gbit burst 1514 limit 100000
-tc qdisc add dev lo parent 10:1 handle 11: netem NETEM
-tc qdisc add dev lo parent 1:2 handle 20: netem delay D     # only with a delay
+tc qdisc add dev lo parent 10:1 handle 11: netem limit 100000 NETEM
+tc qdisc add dev lo parent 1:2 handle 20: netem limit 100000 delay D     # only with a delay
 ```
 
 The `prio` root has two bands: the filters send UDP to the first, and every
@@ -1767,6 +1767,15 @@ datagrams sent as Sunshine sends them, 50% loss, and no batch arrives whole
 or not at all; with netem alone every batch does. It also proves that ten
 TCP exchanges under `delay 20ms loss random 50%` each take two round trips
 of 40 ms and none stalls.
+
+Each netem holds every packet of its delay. Its own queue of 1000 packets
+is about 0.8 s of a 10 Mbit/s stream of 1024-byte packets, so a long delay
+would drop by overflow what no condition asked for. Both netems take
+`limit 100000`, which holds the longest delay, 1000 ms, of a stream up to
+about 800 Mbit/s. The test sends 3000 datagrams into `delay 1000ms` at once:
+netem holds all of them and drops none. No set below used a delay longer
+than 30 ms, at which a 10 Mbit/s stream fills about 40 packets of the queue
+(inferred), far below the old limit.
 
 Moonlight takes a loopback address for a remote one (its
 `isPrivateNetworkAddress` knows no 127.0.0.0/8) and caps its video packets
@@ -1800,8 +1809,9 @@ resend, or missed. Two results of one condition still compare.
 
 **`--require-encryption`** gives the sender fixture's Sunshine
 `lan_encryption_mode = 2` and `wan_encryption_mode = 2`: encryption is
-mandatory for a client at any address (a loopback client counts as LAN in
-Sunshine's `network.cpp`). Sunshine then refuses a client whose RTSP
+mandatory for a client at any address. Sunshine's `network.cpp` puts
+127.0.0.0/8 in its PC class, not LAN, and takes `lan_encryption_mode` for
+both. Sunshine then refuses a client whose RTSP
 ANNOUNCE does not enable both video and audio encryption, with a 403
 (`rtsp.cpp`, `cmd_announce`), and a launch with no encrypted RTSP
 (`nvhttp.cpp`). So a stream that runs is encrypted. Without the option the

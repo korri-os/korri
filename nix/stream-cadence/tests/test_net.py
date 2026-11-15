@@ -175,15 +175,17 @@ class Condition(unittest.TestCase):
             [
                 *base,
                 [tc, "qdisc", "add", "dev", "lo", "parent", "10:1", "handle", "11:",
-                 "netem", "delay", "30ms", "loss", "random", "1%"],
+                 "netem", "limit", "100000", "delay", "30ms", "loss", "random", "1%"],
                 # TCP takes the delay and nothing else.
-                [tc, "qdisc", "add", "dev", "lo", "parent", "1:2", "handle", "20:", "netem", "delay", "30ms"],
+                [tc, "qdisc", "add", "dev", "lo", "parent", "1:2", "handle", "20:",
+                 "netem", "limit", "100000", "delay", "30ms"],
             ],
         )
         # With no delay, TCP keeps the band's own queue: no netem at all.
         self.assertEqual(
             net_condition.commands("loss random 1%", "/iproute2"),
-            [*base, [tc, "qdisc", "add", "dev", "lo", "parent", "10:1", "handle", "11:", "netem", "loss", "random", "1%"]],
+            [*base, [tc, "qdisc", "add", "dev", "lo", "parent", "10:1", "handle", "11:",
+                     "netem", "limit", "100000", "loss", "random", "1%"]],
         )
         for command in net_condition.commands("delay 10ms reorder 25%", "/iproute2"):
             self.assertEqual(command[command.index("dev") + 1], "lo")
@@ -415,6 +417,31 @@ class PairLoopback(unittest.TestCase):
         round_trip = in_child(work)
         self.assertGreaterEqual(round_trip, 40.0)
         self.assertLess(round_trip, 200.0)
+
+    def test_the_longest_delay_overflows_no_queue(self):
+        # netem holds every packet of the delay. Its own limit is 1000
+        # packets: about 0.8 s of a 10 Mbit/s stream of 1024-byte packets, so
+        # a long delay would drop by overflow what no condition asked for.
+        def work() -> dict:
+            pair_with(f"delay {int(net_condition.LIMIT_MS)}ms")
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as receiver, socket.socket(
+                socket.AF_INET, socket.SOCK_DGRAM
+            ) as sender_socket:
+                receiver.bind((LOOPBACK, 0))
+                began = time.monotonic()
+                for n in range(3000):
+                    sender_socket.sendto(struct.pack(">I", n), receiver.getsockname())
+                sent_in = time.monotonic() - began
+                held = net_condition.counters(iproute2())
+                time.sleep(net_condition.LIMIT_MS / 1000 + 0.5)
+                counted = net_condition.counters(iproute2())
+            return {"sent_in": sent_in, "held": held, "counted": counted}
+
+        seen = in_child(work)
+        # All 3000 were in netem's queue at once, and none was dropped.
+        self.assertLess(seen["sent_in"], net_condition.LIMIT_MS / 1000)
+        self.assertEqual(seen["held"], {"passed": 0, "dropped": 0})
+        self.assertEqual(seen["counted"], {"passed": 3000, "dropped": 0})
 
     def test_tcp_takes_the_delay_and_no_loss(self):
         # netem's loss models count packets, not time. On the few packets of a
