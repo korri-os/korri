@@ -15,9 +15,10 @@
 //!
 //! Left out, each named in `clients/viewer/README.md`: rumble, battery,
 //! the RGB light, motion sensors, a controller's own touchpad, Artemis's USB
-//! driver (ADR 0064), the overlay's Guide and Start menus (slice D5), and
-//! the settings that Korri's launch does not set (flip face buttons, back
-//! as Guide, the Joy-Con fix).
+//! driver (ADR 0064), and the settings that Korri's launch does not set
+//! (flip face buttons, back as Guide, the Joy-Con fix). The gameplay
+//! overlay's Start menu is here (slice D5); its Guide is the app's
+//! (`overlay.rs`).
 use super::{
     controller_list,
     input::{
@@ -67,6 +68,9 @@ const MAX_GAMEPADS: u16 = 16;
 pub(crate) const STICK_DEADZONE: f32 = 0.05;
 const MAXIMUM_BUMPER_UP_DELAY_MS: i64 = 100;
 const START_DOWN_TIME_MOUSE_MODE_MS: i64 = 750;
+/// A second Start down this soon after the first's up, held as long as
+/// for the mouse, opens the gameplay overlay instead.
+const QUICK_MENU_FIRST_STAGE_MS: i64 = 200;
 pub(crate) const MINIMUM_BUTTON_DOWN_TIME_MS: i64 = 25;
 const MOUSE_EMULATION_PERIOD_MS: i64 = 50;
 /// `ControllerHeartbeat`: the last state again every 250 ms, and a gone
@@ -205,6 +209,8 @@ struct Context {
     last_rb_up_ms: i64,
     start_down_ms: i64,
     start_up_ms: i64,
+    /// This Start press came soon after the last one (`backMenuPending`).
+    back_menu_pending: bool,
 
     mouse: MouseEmulation,
     /// The arrival: the device's kind, buttons and capabilities.
@@ -227,6 +233,9 @@ pub(crate) enum Key {
     Handled,
     /// Not a controller key: the keyboard may take it.
     Unhandled,
+    /// Start was pressed twice quickly and held the second time: open the
+    /// gameplay overlay. Nothing was sent for this press's up.
+    Overlay,
 }
 
 /// Every controller of the stream: Artemis's `ControllerHandler`.
@@ -345,6 +354,9 @@ impl Controllers {
         match press {
             Press::NotMine => return Key::Unhandled,
             Press::Eaten => return Key::Handled,
+            // Artemis opens the overlay, which holds the input, before it
+            // sends this state; the hold drops it.
+            Press::Overlay => return Key::Overlay,
             Press::ToggleMouse => toggle_mouse(self.context(id), now_ms),
             Press::Send => {}
         }
@@ -409,6 +421,28 @@ impl Controllers {
     /// The device IDs that have a context.
     pub(crate) fn devices(&self) -> impl Iterator<Item = i32> + '_ {
         self.contexts.keys().copied()
+    }
+
+    /// `resetInputState`: every controller lets go of its buttons, sticks
+    /// and triggers, and the heartbeat repeats each one with nothing
+    /// pressed. Nothing is sent.
+    pub(crate) fn reset(&mut self) {
+        for c in self
+            .contexts
+            .values_mut()
+            .chain(std::iter::once(&mut self.default))
+        {
+            c.input_map = 0;
+            c.mouse.last_input_map = 0;
+            c.left_trigger = 0;
+            c.right_trigger = 0;
+            c.left_stick_x = 0;
+            c.left_stick_y = 0;
+            c.right_stick_x = 0;
+            c.right_stick_y = 0;
+            c.mouse.x_down = false;
+        }
+        self.heartbeat.neutralize();
     }
 
     /// `assignControllerNumberIfNeeded`.
@@ -1003,6 +1037,8 @@ enum Press {
     NotMine,
     /// Start was held: the mouse emulation goes on or off, then send.
     ToggleMouse,
+    /// Start was pressed twice quickly and held: the gameplay overlay.
+    Overlay,
 }
 
 /// `handleButtonDown`, after the remapping.
@@ -1014,6 +1050,7 @@ fn button_down(c: &mut Context, key: u32, event: &KeyEvent) -> Press {
         code::BUTTON_MODE => c.has_mode = true,
         code::BUTTON_START | code::MENU if event.repeat_count == 0 => {
             c.start_down_ms = event.event_time_ms;
+            c.back_menu_pending = c.start_down_ms - c.start_up_ms <= QUICK_MENU_FIRST_STAGE_MS;
         }
         code::BACK | code::BUTTON_SELECT => c.has_select = true,
         _ => {}
@@ -1064,15 +1101,20 @@ fn button_up(c: &mut Context, key: u32, event: &KeyEvent, mouse_emulation: bool)
         return Press::NotMine;
     };
     let mut toggle = false;
+    let mut overlay = false;
     match key {
         code::BUTTON_START | code::MENU => {
             c.start_up_ms = event.event_time_ms;
             // A spurious up comes on disconnect: Start must be down.
             if c.input_map & button::PLAY != 0
                 && c.start_up_ms - c.start_down_ms > START_DOWN_TIME_MOUSE_MODE_MS
-                && (mouse_emulation || c.mouse.active)
             {
-                toggle = true;
+                if c.back_menu_pending {
+                    c.back_menu_pending = false;
+                    overlay = true;
+                } else if mouse_emulation || c.mouse.active {
+                    toggle = true;
+                }
             }
         }
         code::BUTTON_L1 => c.last_lb_up_ms = event.event_time_ms,
@@ -1096,7 +1138,9 @@ fn button_up(c: &mut Context, key: u32, event: &KeyEvent, mouse_emulation: bool)
         c.input_map &= !SPECIAL;
         c.emulating &= !EMULATING_SPECIAL;
     }
-    if toggle {
+    if overlay {
+        Press::Overlay
+    } else if toggle {
         Press::ToggleMouse
     } else {
         Press::Send
@@ -1287,6 +1331,17 @@ impl Heartbeat {
             DISCONNECT_REPEATS
         };
         *slot = Some((state, repeats));
+    }
+
+    /// `neutralize`: each controller's last state with nothing pressed.
+    fn neutralize(&mut self) {
+        for (state, _) in self.states.iter_mut().flatten() {
+            *state = State {
+                number: state.number,
+                active_mask: state.active_mask,
+                ..Default::default()
+            };
+        }
     }
 
     fn tick(&mut self, now_ms: i64, sink: &mut dyn Sink) {

@@ -18,7 +18,7 @@ nix build .#checks.x86_64-linux.korri-viewer-aarch64
 clients/viewer/proof/v4l2request/compare.sh ../korri-plugins
 # The session part for Android, both ABIs (below). No device or emulator.
 nix build .#checks.x86_64-linux.korri-viewer-android
-# The Android app (slices D1 to D4, below), and its proof on one headless
+# The Android app (slices D1 to D5, below), and its proof on one headless
 # emulator against a private Sunshine on aka.
 nix build .#korri-viewer-android-apk
 nix run .#viewer-android-proof
@@ -515,8 +515,10 @@ until D7, so D1 removes none of its Java.
   and each `ViewerEvent` goes to a function. `launch::run` holds the steps
   that the Linux command ran in `main.rs`; both platforms now call it.
 - The app is that controller. It reads the launch from its starting intent,
-  sends Start once its window exists (slice D2), and sends Stop on Back,
-  when the window goes, or when the activity is destroyed.
+  sends Start once its window exists (slice D2), and sends Stop when the
+  window goes, when the activity is destroyed, or on Ctrl+Alt+Shift+Q
+  (slice D4). Until slice D5, Back sent Stop too; since D5 it opens the
+  gameplay overlay, as in Artemis's Korri mode.
   When the runtime ends, the activity finishes. Every request, reply and
   event goes to logcat as the treaty's JSON, with the core's own lines. The
   intent's extras are D1's entry until korrid drives the viewer in this
@@ -539,8 +541,9 @@ until D7, so D1 removes none of its Java.
   fresh key pair with the Linux viewer's `pair`, runs the x86_64 HTTPS and
   trust-anchor tests in the emulator, installs the APK and gives the app the
   key pair and pin through `run-as`. It starts the app, waits for the
-  Running event and the Start reply, streams, presses Back and waits for the
-  Stopped event, the Stop reply and the activity's end. It reads Sunshine's
+  Running event and the Start reply, streams, presses Home (Back until
+  slice D5) and waits for the Stopped event, the Stop reply and the
+  activity's end. It reads Sunshine's
   log for the session, closes the fixture and stops the emulator. The
   emulator reaches aka's Tailscale address through its own NAT; aka admits
   any port on `tailscale0`. Record: `proof/android-d1/`.
@@ -645,10 +648,10 @@ buffer queue, and the compositor reads the same buffer.
   The proof keeps it as `viewer_ran.decode` in its result. The lifecycle
   treaty does not carry it; the Linux viewer's does not either.
 - The frame record: see "Frame record" above, and its API 31–32 limit.
-- Lifecycle: the app sends Start once the layer exists. Back sends Stop,
-  and so does the loss of the window, which Android takes when the app
-  leaves the screen, as Artemis's Game activity ends the stream in
-  `onStop`. The proof presses Back; it does not press Home. The layer
+- Lifecycle: the app sends Start once the layer exists. The loss of the
+  window sends Stop, which Android takes when the app leaves the screen,
+  as Artemis's Game activity ends the stream in `onStop`. Back sent Stop
+  until slice D5; since D5 the proof presses Home. The layer
   follows a window resize (above); resize of the stream stays unavailable
   (#476).
 - Not carried from Artemis: reference frame invalidation (Artemis turns it
@@ -675,7 +678,7 @@ buffer queue, and the compositor reads the same buffer.
   allowed after `pm grant`. It also runs the picture's pure parts' tests
   on the emulator. Record: `proof/android-d2/`.
 - Not proven: the arm64 library and a real phone's decoder, HWC composition
-  and speed (step H, the Galaxy Z Fold3). The emulator's decoder
+  and speed (step H, the Galaxy Z Fold 8). The emulator's decoder
   (`c2.goldfish.h264.decoder`) is backed by the host, and its numbers mean
   nothing (ADR 0063).
 
@@ -791,7 +794,7 @@ screenshots show the picture still moving.
 - Not proven: the low-latency path. The emulator's mixer runs at 44.1 kHz
   with no fast mixer, so AAudio refused low latency for a 48 kHz stream
   and took its standard path, with 20 ms bursts. A phone's latency,
-  underruns, MMAP and Bluetooth: step H, on the Galaxy Z Fold3. Surround:
+  underruns, MMAP and Bluetooth: step H, on the Galaxy Z Fold 8. Surround:
   the proof plays stereo; the tests decode 5.1 and 7.1 over the scripted
   output only. A lost device on a phone (an unplugged headset): the tests
   prove the reopen and the end over the scripted output; the emulator
@@ -836,8 +839,9 @@ are; `controller_list.rs` keeps the zlib notice of Valve and SDL, and
   handler before it stops the connection. When the app itself sends Stop,
   it also drops the input first. Its counts go to the log (`input: ended:
   … keys, … controller states, … arrivals, … mouse, … touches sent; …
-  unsupported, … outside the stream, … failed`); a send that the closed
-  gate refused counts as outside the stream.
+  held; … unsupported, … outside the stream, … failed`); a send that the
+  closed gate refused counts as outside the stream, and one that the
+  overlay's hold kept counts as held (slice D5).
 - Identity: the NDK gives an event's device ID and nothing more. Name,
   vendor, product, descriptor, `isExternal`, sources, keyboard type, the
   joystick axes' motion ranges (`SOURCE_JOYSTICK`, then `SOURCE_GAMEPAD`)
@@ -864,8 +868,9 @@ are; `controller_list.rs` keeps the zlib notice of Valve and SDL, and
   Z and RZ beside RX and RY, idling at -1), a hat as the d-pad, analog
   triggers over digital ones, Start+LB as Select and Start+Select (or
   Start+RB) as Guide on a pad that has none, and a press shorter than
-  25 ms held to 25 ms. Back from a controller is its Select; Back from
-  anything else leaves the stream, as before.
+  25 ms held to 25 ms. A controller's Back is its Select here; since slice
+  D5 the app gives Back from any device to the gameplay overlay first, as
+  Artemis's Korri mode does, so it no longer reaches this mapping.
 - Deadzones: Artemis's default, 5 % for each stick, a circle with no
   rescale (the host has its own). A trigger's deadzone is the larger flat
   of its two axes, 13 % when that is not between 13 % and 30 %.
@@ -903,7 +908,7 @@ are; `controller_list.rs` keeps the zlib notice of Valve and SDL, and
 | Motion sensors | Controller or phone sensors through `SensorEventListener` | Not carried (above) |
 | A controller's own touchpad | `LiSendControllerTouchEvent` | Not carried; the arrival claims no touchpad |
 | USB driver for Xbox and Switch Pro pads | Its own, in Java | Dropped (ADR 0064) |
-| Guide and the Start double press | Open Korri's overlay | Guide goes to the host: the overlay is slice D5 |
+| Guide and the Start double press | Open Korri's overlay | Slice D5 (below) |
 | Pointer capture (relative mouse), Ctrl+Alt+Shift+Z and C | Captures a mouse when one is attached | Not carried: a mouse is absolute, as Artemis's is without capture |
 | Mouse modes 1 to 5 and their menu | Absolute, trackpad (two kinds), off, swapped buttons | Multi-touch only, Artemis's default; korrid passes no mode |
 | Pen and eraser | `LiSendPenEvent` when the host takes it | A mouse, as Artemis falls back to |
@@ -914,7 +919,7 @@ are; `controller_list.rs` keeps the zlib notice of Valve and SDL, and
 | A device that changes | Its context is made again | Not followed |
 | A device that goes | `InputDeviceListener` | Asked twice a second |
 | Settings | Deadzone, flip face buttons, Back as Guide or Meta, Joy-Con fix, one controller only, mouse buttons, touch sensitivity, gestures, vibration fallback | Artemis's defaults; mouse emulation follows `-nomouseemulation` |
-| Input held under the overlay | `NvConnection.setInputHeld` | Slice D5 |
+| Input held under the overlay | `NvConnection.setInputHeld` | Slice D5 (below) |
 
 **Proof** (`nix run .#viewer-android-proof`, record `proof/android-d4/`):
 D3's run, with input. While the stream runs, the proof uses Android's own
@@ -929,7 +934,7 @@ the proof reads what arrived there. Screenshots after the input show the
 picture still moving.
 
 - Not proven: a real phone's controllers, touch screen and keyboard, and
-  any time from a press to its packet (step H, the Galaxy Z Fold3). That
+  any time from a press to its packet (step H, the Galaxy Z Fold 8). That
   unbuffered dispatch changes anything on NativeActivity.
 - Cost: the zlib notice of Valve's and SDL's controller lists
   (`controller_list.rs`) is not yet in the APK, as those of OpenSSL, curl
@@ -947,10 +952,171 @@ until D4b works: Artemis has all four today, and dropping a live feature
 is not "equal or better" (ADR 0062). Motion sensors are not in D4b: they
 need a Java listener (above).
 
+## Android gameplay overlay (#391 step D, slice D5)
+
+Slice D5 of the research brief, by the D5 spike's route
+(`docs/research/2026-11-14-android-overlay-spike.md`, design C with a
+JNI-made overlay layer): a second layer above the video, opened and
+closed as Artemis's Korri mode opens and closes its overlay, with the
+stream's input held while it is open. The shell's own overlay cannot run
+in this app (below), so the layer shows a stand-in.
+
+- The layer (`android/src/layer.rs`): `korri-viewer-overlay`, made with
+  the video layer on Android's main thread through the same JNI calls,
+  translucent (`setFormat(TRANSLUCENT)`, `setOpaque(false)`), at z 1 above
+  the video's 0, hidden. Its buffers have the window's size: when the
+  window's size changes, `Transaction.setBufferSize` gives its Surface the
+  new size, in the transaction that places the video again. That size is
+  what the shell's renderer reads (`SurfaceWindow::from_surface` and
+  `resize`). Opening and closing are one `setVisibility` transaction each,
+  posted to the main thread without waiting; the main thread logs when it
+  has applied it (`overlay: layer shown: posted … ms before, applied in …
+  ms`). A hidden layer is not composed. When Android does not make the
+  layer, the stream plays without an overlay, and the log says so.
+- The stand-in: the window's lower half in black at 75 % opacity, the
+  upper half clear, drawn once with the CPU (`ANativeWindow_lock`), and
+  again after a resize. It is not a design. The proof reads the frame-ID
+  bar through the clear half.
+- Open and close (`src/android/overlay.rs`, host-tested):
+  `KorriOverlayHomeKey`. Guide or Back, from any device, toggles the
+  overlay on its release; a whole press belongs to the state it began in,
+  so the release that opened it does not close it. Artemis's quick menu
+  too (`gamepad.rs`): Start pressed again within 200 ms of its release and
+  held 750 ms opens the overlay instead of turning the pad into a mouse.
+  While the overlay is open, the volume and power keys stay Android's, and
+  every other key and every motion event is the overlay's.
+- The hold (`Input::hold` and `release` in `src/android/input.rs`,
+  host-tested): `NvConnection.setInputHeld`, one gate below every
+  producer, so the heartbeat and the touch's and the emulated mouse's
+  timers are held too. When the overlay opens, the host sees every
+  controller let go (its last mask, nothing pressed), every key that is
+  down go up, every mouse button go up and, after a touch, a cancel of
+  every touch. Then the mapping starts clean (`resetStreamInputState`:
+  controllers, heartbeat, modifiers, mouse buttons, the absolute touch),
+  and nothing more goes but a controller's arrival. When it closes, the
+  mapping starts clean again, and input goes again. The hold sends only
+  into the sink it is given, which in the app is the core behind its gate
+  (`CORE_GATE`): no let-go reaches a core that stops. The report counts
+  what the hold kept (`… held`).
+- Leaving: Back no longer ends the stream. Ctrl+Alt+Shift+Q and leaving
+  the app (Home, another app) end it; before the stream starts, Back
+  still leaves.
+- `catch_unwind`: D5 adds no `extern "C"` callback. The hold and release
+  run inside the input's `Guarded`; the main-thread posts run under
+  android-activity's own `catch_unwind`.
+
+**What differs from Artemis** (Korri mode: `Game.showSurfaceOverlay`,
+`hideSurfaceOverlay`, `KorriSurfaceHost`, `NvConnection`):
+
+| | Artemis | Korri D5 |
+| --- | --- | --- |
+| What the overlay shows | The active surface package draws korrid's `GameplayOverlay` model, through the shell's Slint renderer | A stand-in, drawn once with the CPU |
+| The layer | A `SurfaceView` (`setZOrderMediaOverlay`), added and removed for each opening | A `SurfaceControl` made once with the video's, shown and hidden |
+| Close | Guide (as Menu) and Back go to the package; its Resume goes through korrid, which hides the overlay | Guide or Back closes it |
+| Leave and Resume with korrid | `KorriStreamViewer.leave` tells korrid; korrid's Resume, Disconnect, End and Open Korri come back | None: no korrid in this process |
+| The overlay's input | Keys, axes and touches to the package (`KorriSurfaceHost.forward`) | Taken and dropped: the stand-in takes none |
+| A released key's flags | None | The flags it went down with, so that the host releases the key it pressed |
+| A controller's touchpad and gyroscope on hold | Cancelled | Nothing to cancel: D4 sends neither |
+| A pen on hold | Cancelled | Nothing to cancel: a pen is a mouse in D4 |
+| Five-finger tap, floating menu button | Open the menu | Not carried: the tap is on the trackpad path, which D4 does not carry |
+| A failed overlay | A toast, and the overlay closes | No layer: the stream plays without an overlay |
+| Back | Opens the overlay; Home leaves | The same |
+
+**Why the shell's overlay cannot run in this app.** The overlay that the
+shell draws today needs, in Artemis's process:
+
+1. korrid, for the overlay's content (ADR 0053, `GameplayOverlay`) and its
+   actions. This app runs no korrid. Artemis runs it in `KorriBrainService`,
+   a Java foreground service (brief, finding 13), and gives the shell its
+   port and capability through `KorriShellActivity.shellPort` and
+   `shellCapability`.
+2. The shell itself, under this app's event loop. `clients/shell` has its
+   own `android_main` and runs Slint's `AndroidPlatform` loop for the
+   activity (`slint::run_event_loop_until_quit`); this app has its own
+   `android_main` and loop, and android-activity gives a process one. The
+   shell takes the overlay's Surface, size changes and close from the Java
+   bridge `KorriSurfaceHost` through `KorriShellActivity`
+   (`shellTakeOverlaySurface`, `shellOverlayDensity`, `shellOverlayResized`,
+   `shellOverlayClosing`, `shellOverlayReleased`), on its 16 ms Slint timer.
+3. The surface packages: `KorriShellActivity.copyPackage` unpacks velvet,
+   pico and zone from the Artemis APK's assets; this APK has none.
+4. The overlay's input: `Game` forwards keys, axes and touches into
+   `KorriSurfaceHost`'s queues, which the shell drains
+   (`shellTakeOverlayKeys`, `shellTakeOverlayAxes`, `shellTakeOverlayPointers`).
+5. Leave and Resume: `Game` tells korrid that the person left
+   (`KorriStreamViewer.leave`, `KorridServer.leaveViewer`), and korrid's
+   Resume comes back through `KorriStreamViewer.resume`, which calls
+   `Game.hideSurfaceOverlay`. The viewer treaty (`contracts/viewer`) has no
+   Leave; its `Background` and `ResumeAndFocus` are Linux's focus effects.
+
+The renderer itself needs none of these. `SurfaceWindow::from_surface`
+takes a JNI environment and an `android.view.Surface`, and this app has
+the overlay layer's (`new Surface(SurfaceControl)`). It needs Slint and
+Skia in the APK; the vendored backend's build also compiles Slint's own
+Java helper into its library, for `AndroidPlatform`, which
+`SurfaceWindow` does not use. A throwaway check, not committed (as the
+spike's code was not), ran this on the API 31 emulator on 2026-11-14: a
+NativeActivity made the overlay layer as `layer.rs` makes it, over its
+own window filled blue, gave the layer's Surface to the vendored
+`SurfaceWindow::from_surface`, and showed a small `.slint` component
+(a dim, a rounded panel and a line of text) through `slint-interpreter`'s
+`create_with_existing_window`, under a `slint::platform::Platform` that
+makes no window of its own. The first frame came 698 ms after `show`, the
+layer showed it see-through, and `release()` returned
+(`proof/android-d5/slint-surfacewindow.png`). So the spike's last
+inference holds on the emulator: the shell's renderer draws into this
+layer. Its library was 33 MB for x86_64 alone, and its Skia came prebuilt
+from rust-skia (0.153.3, `ganesh-gl-jpegd-jpege-pdf-vulkan`) at build
+time; the viewer's Nix build cannot download, so it would need those
+archives as fixed inputs.
+
+What remains for D5: korrid and the shell in the viewer's process (the
+brief's one-activity design, finding 27), or the viewer in the shell's;
+the layer's Surface to `SurfaceWindow::from_surface` in the place of
+`shellTakeOverlaySurface`, and the overlay's input to the shell's mapper
+in the place of `KorriSurfaceHost.forward`; Leave and Resume between the
+viewer and korrid; and the overlay's actions (Resume, End, Disconnect,
+Open Korri, plugin controls, the status strip and stream controls, ADR
+0053). Resize stays unavailable (#476).
+
+**Proof** (`nix run .#viewer-android-proof`, record `proof/android-d5/`):
+D4's run, then the overlay, after Android's audio server has restarted,
+so that the sound under it has come back first. A second game pad, fed
+through the `hid` command's stdin so that each report goes when the proof
+says, holds A and presses Guide. While the overlay is open the proof takes
+screenshots (the frame-ID bar must read and rise through the clear half,
+and the stand-in must darken the lower half), looks at Android's mixer
+twice (the app's track must advance and the last power must be the tone),
+and sends the pad's B and left stick, the keys H, E, L, D, a tap and a
+mouse click. Then Guide closes it, and X, Z and a tap go; Back opens and
+closes it too. The sender's Sunshine logs every input packet
+(`log_input`): after a marker key, the held input must not be there, A
+must be let go, the pad must send nothing while the overlay is open (the
+heartbeat included), and the input after it closes must be. The proof
+then presses Home, which ends the stream (Back no longer does).
+
+- On the emulator the open overlay costs frames. In the kept run the
+  decoder asked for an IDR frame 0.43 times a second while the overlay was
+  open and 0.03 times a second while it was not; in an earlier run, 1.55
+  and 0.26. The emulator's composer took all three layers as DEVICE
+  (`surfaceflinger-overlay-open.txt`); this emulator's composer runs on
+  the host, in software with `-gpu swiftshader_indirect` (inferred). Its
+  missed frames rose by 142 in the 8.6 s that the overlay was open, and
+  by 55 in the 5.5 s after. The spike saw the same kind of loss with a
+  static overlay shown. Whether a phone's
+  composer puts the video and the overlay on hardware planes is the
+  spike's open risk, for the bench phone (step H).
+- Not proven: a real phone, the arm64 library, a press's time to its
+  packet with the overlay closing, a fold or turn while the overlay is
+  open (the overlay buffer's resize is written but not exercised: in
+  every run the window had its size when the layers were made), and the
+  Start quick menu (host tests only).
+
 ## Next slices
 
-The bench proof of the handheld `v4l2request` path. On Android, slice D5:
-the overlay over the video, and slice D4b: rumble and battery. No device installs `@korri:viewer` yet.
+The bench proof of the handheld `v4l2request` path. On Android, slice D4b
+(rumble and battery), and the rest of D5 (the shell's overlay in this
+process, above). No device installs `@korri:viewer` yet.
 
 The cross-UID socket proof is an explicit root-only test: build
 `cargo test --manifest-path clients/viewer/Cargo.toml --test lifecycle_security --no-run`

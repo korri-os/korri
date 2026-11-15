@@ -23,8 +23,10 @@ output at 8, decoder callbacks at 9, the low-latency decoder flag and the
 frame-rate hint at 11, and one API for controller rumble, sensors and battery
 at 12. At Android 12 the viewer has one code path for all of them.
 
-The bench phone is a Galaxy Z Fold3. The owner named a Pixel 3 first and could
-not find it. The bench proves the Android version that the Fold3 runs. That
+The bench phone is the owner's Galaxy Z Fold 8 (model SM-F971U1, Tailscale
+name `usu`), by the owner's word on 2026-11-14. It replaces the Galaxy Z Fold3
+(`futago`) named here first, which replaced a Pixel 3 that the owner could
+not find. The bench proves the Android version that the Fold 8 runs. That
 version is not checked on this date, and it must be 12 or newer.
 
 The USB driver is 8 Java files. No Rust version exists, and a proof needs

@@ -568,9 +568,11 @@ impl ProductionLinuxStreamViewer {
             std::thread::sleep(Duration::from_millis(50));
         }
     }
-    /// Stops the unit and waits until systemd reports it gone. A unit that
-    /// failed is reset by the stop. The bound covers the unit's own 30 s
-    /// stop timeout (systemd_unit.rs); the socket adapter waits longer.
+    /// Stops the unit and waits until systemd reports it gone. The stop is
+    /// --no-block, so the unit is often still deactivating at first (#472).
+    /// A unit that failed is reset by a further stop. The bound covers the
+    /// unit's own 30 s stop timeout (systemd_unit.rs); the socket adapter
+    /// waits longer. Both viewers' stops are confirmed here.
     fn ended(&self, launch: &str) -> Result<(), LinuxViewerError> {
         let deadline = Instant::now() + super::socket::UNIT_END;
         let mut stop = self.units.stop(launch);
@@ -611,15 +613,6 @@ impl ProductionLinuxStreamViewer {
                 ViewerPlugin::Moonlight
             },
         ))
-    }
-    fn confirmed_stop(&self, launch: &str) -> Result<(), LinuxViewerError> {
-        let stop = self.units.stop(launch);
-        if self.units.state(launch).map_err(unit_error)? == LaunchUnitState::Completed {
-            Ok(())
-        } else {
-            stop.map_err(unit_error)?;
-            Err(error("viewer stop was not confirmed"))
-        }
     }
 }
 
@@ -859,7 +852,7 @@ impl ProductionLinuxStreamViewer {
                 .map_err(unit_error)?;
             if plugin == ViewerPlugin::Moonlight {
                 if let Err(focus_error) = this.focus(&launch, false) {
-                    this.confirmed_stop(&launch)?;
+                    this.ended(&launch)?;
                     return Err(focus_error);
                 }
             }
@@ -898,7 +891,7 @@ impl ProductionLinuxStreamViewer {
                 let _guard = guard;
                 match shell {
                     Some(shell) => this.focus(&launch, shell),
-                    None => this.confirmed_stop(&launch),
+                    None => this.ended(&launch),
                 }
             })
             .await

@@ -147,7 +147,6 @@ struct RecordedLaunch {
 struct ViewerUnits {
     launches: std::sync::Mutex<Vec<RecordedLaunch>>,
     running: std::sync::atomic::AtomicBool,
-    refuse_stop: std::sync::atomic::AtomicBool,
     certificates: std::sync::Mutex<Vec<String>>,
     controllers: std::sync::Mutex<Vec<Option<u32>>>,
     bootstraps: std::sync::Mutex<Vec<String>>,
@@ -220,10 +219,8 @@ impl LaunchUnitBackend for ViewerUnits {
     }
     fn stop(&self, _: &str) -> Result<(), crate::host::LaunchUnitError> {
         self.stops.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        if !self.refuse_stop.load(std::sync::atomic::Ordering::SeqCst) {
-            self.running
-                .store(false, std::sync::atomic::Ordering::SeqCst);
-        }
+        self.running
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         Ok(())
     }
     fn freeze(&self, _: &str) -> Result<(), crate::host::LaunchUnitError> {
@@ -443,17 +440,17 @@ esac
     assert!(!units.launches.lock().unwrap()[0]
         .environment
         .contains_key(crate::host::RUNNER_ID_ENV));
+    // A --no-block stop leaves the unit deactivating for a moment (#472).
     units
-        .refuse_stop
-        .store(true, std::sync::atomic::Ordering::SeqCst);
-    assert!(
-        viewer.stop(launch).await.is_err(),
+        .deactivating
+        .store(3, std::sync::atomic::Ordering::SeqCst);
+    viewer.stop(launch).await.unwrap();
+    assert_eq!(
+        units.deactivating.load(std::sync::atomic::Ordering::SeqCst),
+        0,
         "never claim stop until systemd confirms it"
     );
-    units
-        .refuse_stop
-        .store(false, std::sync::atomic::Ordering::SeqCst);
-    viewer.stop(launch).await.unwrap();
+    assert_eq!(units.stops.load(std::sync::atomic::Ordering::SeqCst), 1);
     assert_eq!(
         viewer.status(launch).await.unwrap(),
         LinuxViewerStatus::Stopped
@@ -822,4 +819,99 @@ fn korri_viewer_cleanup_waits_for_its_unit_to_end_and_resets_a_failed_one() {
     units.failed.store(true, SeqCst);
     viewer.ended(launch).unwrap();
     assert_eq!(units.stops.load(SeqCst), before + 2);
+}
+
+/// #472, against the real systemd backend and a scripted `systemctl`: after
+/// the --no-block stop the unit stays deactivating for five reads. Moonlight's
+/// first stop request waits until systemd reports the unit gone, inactive or
+/// failed, and claims no stop that systemd cannot confirm.
+#[tokio::test]
+async fn moonlight_stop_waits_for_a_deactivating_unit_to_end() {
+    use std::os::unix::fs::PermissionsExt;
+    let launch = "0123456789abcdef0123456789abcdef";
+    let unit = format!("korri-game-{launch}.service");
+    let failed = "LoadState=loaded\nActiveState=failed\nExecMainCode=1\nExecMainStatus=1\n";
+    // (what systemd reports after deactivating, its exit status, stop
+    // requests, reset-failed requests, the error if the stop is not confirmed)
+    for (end, status, stops, resets, refusal) in [
+        ("LoadState=not-found\n", 0, 1, 0, None),
+        ("LoadState=loaded\nActiveState=inactive\n", 0, 1, 0, None),
+        // Moonlight can exit unsuccessfully on SIGTERM. Its unit then holds
+        // the name until a second stop resets it.
+        (failed, 0, 2, 1, None),
+        ("", 1, 1, 0, Some("systemctl show failed")),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let state = root.path();
+        std::fs::write(state.join("deactivating"), "5").unwrap();
+        std::fs::write(state.join("end"), end).unwrap();
+        std::fs::write(state.join("status"), status.to_string()).unwrap();
+        let systemctl = state.join("systemctl");
+        std::fs::write(
+            &systemctl,
+            format!(
+                r#"#!/bin/sh
+state='{state}'
+echo "$*" >> "$state/calls"
+test "$4" = '{unit}' || exit 2
+case "$3" in
+ show)
+   if ! test -e "$state/stopped"; then
+     printf 'LoadState=loaded\nActiveState=active\n'
+   elif left=$(cat "$state/deactivating"); test "$left" -gt 0; then
+     echo $((left - 1)) > "$state/deactivating"
+     printf 'LoadState=loaded\nActiveState=deactivating\n'
+   else
+     cat "$state/end"
+     exit "$(cat "$state/status")"
+   fi ;;
+ stop) case "$*" in *--no-block*) touch "$state/stopped" ;; *) exit 42 ;; esac ;;
+ reset-failed) printf 'LoadState=not-found\n' > "$state/end" ;;
+ *) exit 1 ;;
+esac
+"#,
+                state = state.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&systemctl, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let units = SystemdLaunchUnitBackend::new(systemctl.clone(), systemctl, 1000, 1000)
+            .unwrap()
+            .for_stream_viewer();
+        let viewer = ProductionLinuxStreamViewer {
+            settings: Arc::new(|_, _| Ok(vec![])),
+            provision: Arc::new(|_, _| Box::pin(async { Err(LinuxViewerError::new("unused")) })),
+            local_seats: Arc::new(|| Box::pin(async { Ok(vec![]) })),
+            resolve_files: Arc::new(|_| Err(LinuxViewerError::new("unused"))),
+            units: Arc::new(units),
+            compositor: None,
+            shell: None,
+            keydir: "/unused".into(),
+            operation: Arc::new(tokio::sync::Mutex::new(())),
+        };
+        let result = viewer.stop(launch).await;
+        let calls = std::fs::read_to_string(state.join("calls")).unwrap();
+        let count = |verb: &str| {
+            calls
+                .lines()
+                .filter(|call| call.starts_with(&format!("--system --no-ask-password {verb} ")))
+                .count()
+        };
+        match refusal {
+            None => result.unwrap_or_else(|error| panic!("{end:?}: {error}\n{calls}")),
+            Some(refusal) => {
+                let error = result.expect_err("an unreadable unit is not a confirmed stop");
+                assert!(error.to_string().contains(refusal), "{error}");
+            }
+        }
+        assert_eq!(
+            std::fs::read_to_string(state.join("deactivating"))
+                .unwrap()
+                .trim(),
+            "0",
+            "{end:?}: the stop read the unit through every deactivating read"
+        );
+        assert_eq!(count("stop"), stops, "{end:?}\n{calls}");
+        assert_eq!(count("reset-failed"), resets, "{end:?}\n{calls}");
+    }
 }

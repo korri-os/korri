@@ -195,6 +195,14 @@ impl Touch {
     pub(crate) fn next_deadline(&self) -> Option<i64> {
         self.fingers.iter().flat_map(Finger::deadline).min()
     }
+
+    /// `cancelTouch` on each context: its timers stop and its mouse button
+    /// goes up.
+    pub(crate) fn cancel(&mut self, sink: &mut dyn Sink) {
+        for finger in &mut self.fingers {
+            finger.cancel(sink);
+        }
+    }
 }
 
 /// `trySendTouchEvent`. False: the event is not a touch, or the host takes

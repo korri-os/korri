@@ -328,18 +328,15 @@ pkgs.testers.runNixOSTest {
         assert reply["ok"], reply
         return reply.get("result")
 
-    moonlight_retries = []
-
     def stop_moonlight(launch):
-        # Moonlight's adapter is unchanged: it reads the unit right after a
-        # --no-block stop and can find it still deactivating. A second stop
-        # then finds it gone. The test records how often that happened.
-        reply = ask("stop", launch)
-        if not reply["ok"]:
-            assert reply["error"] == "viewer stop was not confirmed", reply
-            moonlight_retries.append(launch)
-            machine.wait_until_fails(f"systemctl is-active korri-game-{launch}.service")
-            ok("stop", launch)
+        # korrid confirms a Moonlight stop only after its unit has left
+        # deactivating (#472), so the first request must succeed and the unit
+        # must be inactive or failed at once. `systemctl is-active` alone
+        # already fails while the unit is still deactivating (#480).
+        ok("stop", launch)
+        state = machine.succeed(f"systemctl show korri-game-{launch}.service -p ActiveState --value").strip()
+        print(f"Moonlight unit {launch} after its first stop: {state}")
+        assert state in ("inactive", "failed"), state
 
     def tree():
         return json.loads(machine.succeed("swaymsg -s /run/korri-compositor/sway-ipc.sock -t get_tree -r"))
@@ -493,6 +490,5 @@ pkgs.testers.runNixOSTest {
         reply = ask("start", "33333333333333333333333333333333")
         assert not reply["ok"] and refusal in reply["error"], reply
         machine.fail("systemctl is-active korri-game-33333333333333333333333333333333.service")
-    print(f"Moonlight stops that needed a second request: {moonlight_retries}")
   '';
 }

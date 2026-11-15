@@ -30,8 +30,9 @@ use tokio::{
 };
 
 const DEADLINE: Duration = Duration::from_secs(30);
-/// The longest production cleanup waits for a viewer unit to end: its own
-/// 30 s stop timeout, then SIGKILL, plus margin (production.rs `ended`).
+/// The longest korrid waits for a viewer unit to end after its stop, for
+/// either viewer: the unit's own 30 s stop timeout, then SIGKILL, plus margin
+/// (production.rs `ended`).
 pub(super) const UNIT_END: Duration = Duration::from_secs(40);
 /// Cleanup must outlast that wait, or a SIGKILL'd viewer would report a
 /// deadline while its unit is still being confirmed gone.

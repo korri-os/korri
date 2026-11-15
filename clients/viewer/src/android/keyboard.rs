@@ -315,6 +315,11 @@ pub(crate) struct Keyboard {
 }
 
 impl Keyboard {
+    /// No modifier is down and no combination waits (`resetStreamInputState`).
+    pub(crate) fn reset(&mut self) {
+        *self = Self::default();
+    }
+
     /// `handleSpecialKeys`. Of Artemis's three combinations only Q (quit)
     /// acts; Z (input grab) and C (cursor) need the pointer capture that
     /// the viewer does not take, and are eaten as in Artemis.
