@@ -216,6 +216,30 @@ let
           exec python3 "$KORRI_ROOT/clients/viewer/android/proof/recovery.py" "$@"
         '';
       };
+    android-app-proof =
+      let
+        emulator = import ../clients/viewer/android/emulator.nix { inherit pkgs; };
+      in
+      {
+        description = "Prove the Android app with no Korri Java (#434 D8) on one headless Android 12 emulator.";
+        usageSuffix = " -- [--port N] [--out DIRECTORY]";
+        runtimeInputs = [
+          # Pillow reads the screenshots.
+          (pkgs.python3.withPackages (p: [ p.pillow ]))
+          pkgs.nix
+          pkgs.jdk17
+          pkgs.unzip
+          pkgs.procps
+        ];
+        env = {
+          KORRI_APP_EMULATOR_SDK = emulator.sdkRoot;
+          KORRI_APP_EMULATOR_IMAGE = emulator.systemImage;
+          KORRI_APP_BUILD_TOOLS = emulator.buildToolsVersion;
+        };
+        script = ''
+          exec python3 "$KORRI_ROOT/clients/android-app/proof/run.py" "$@"
+        '';
+      };
     hooks-install = {
       description = "Install the Git hook that refuses a commit which stages a secret.";
       runtimeInputs = [

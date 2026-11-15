@@ -1,0 +1,231 @@
+# The Korri Android app with no Korri Java (#434, slice D8): korrid and the
+# native shell in one library that Android's own NativeActivity loads. It is
+# built as the viewer's APK is (clients/viewer/android.nix): Nix, cargo,
+# aapt2 and zipalign, no Gradle. Two ABIs: arm64-v8a for phones, x86_64 for
+# the emulator, at API 31 (ADR 0064). The APK is not signed; proof/run.py
+# signs it with the user's debug key.
+{ pkgs, proseql }:
+let
+  inherit (pkgs) lib;
+  sdk = import ../android/sdk.nix { inherit pkgs; };
+  api = "31";
+  ndk = sdk.ndkRoot;
+  toolchain = "${ndk}/toolchains/llvm/prebuilt/linux-x86_64";
+  buildTools = "${sdk.sdkRoot}/build-tools/${sdk.buildToolsVersion}";
+  # The newest platform in sdk.nix: aapt2's view of the framework, and the
+  # android.jar that Slint's Java helper compiles against (its build.rs).
+  platform = "android-36";
+  framework = "${sdk.sdkRoot}/platforms/${platform}/android.jar";
+  proseqlSource = import ../../services/korrid/proseql-source.nix { inherit pkgs proseql; };
+  # The product's relays, as the Artemis app's BuildConfig.PRODUCT_RELAYS.
+  # constants.relays does not force the product's korri argument (#315).
+  relays = import ../android/product.nix {
+    inherit pkgs;
+    korri = null;
+  };
+
+  # Slint's Android renderer is Skia. skia-bindings downloads its prebuilt
+  # archive at build time; here each is a fixed input, read through a file
+  # URL. The key is skia-bindings 0.153.3's repository hash, the target and
+  # the features that Slint 1.18.1 asks for.
+  skiaVersion = "0.153.3";
+  skiaKey = target: "b7f043e0b1e2a850e702-${target}-ganesh-gl-jpegd-jpege-pdf-vulkan";
+  abis = lib.mapAttrs (name: abi: abi // { inherit name; }) {
+    arm64-v8a = {
+      target = "aarch64-linux-android";
+      machine = "AArch64";
+      skia = "06gmdhzfmzv509g3m28qjvw66mmybdqzy04f8al2yqq3imh7p48d";
+    };
+    x86_64 = {
+      target = "x86_64-linux-android";
+      machine = "Advanced Micro Devices X86-64";
+      skia = "1cclyw6yihmgbdm05k8lr0kmzac64s4nx0xcf29fjizz84w14954";
+    };
+  };
+  skia = pkgs.linkFarm "skia-binaries-${skiaVersion}" (
+    lib.mapAttrsToList (_: abi: {
+      name = "skia-binaries-${skiaKey abi.target}.tar.gz";
+      path = pkgs.fetchurl {
+        url = "https://github.com/rust-skia/skia-binaries/releases/download/${skiaVersion}/skia-binaries-${skiaKey abi.target}.tar.gz";
+        sha256 = abi.skia;
+      };
+    }) abis
+  );
+
+  rust = pkgs.rust-bin.stable.latest.default.override {
+    targets = map (abi: abi.target) (lib.attrValues abis);
+  };
+
+  # The surface packages, verified on the build machine as the Linux image
+  # verifies them (clients/shell/nix/installed.nix). The verifier is the
+  # shell's own release build; its test suite runs in `nix run .#shell-check`.
+  verifier = (import ../shell/package.nix { pkgs = pkgs.buildPackages; }).overrideAttrs (_: {
+    doCheck = false;
+    cargoBuildType = "release";
+  });
+  surfaces = import ../shell/nix/installed.nix {
+    inherit pkgs;
+    shell = verifier;
+  };
+
+  # One cargo invocation's environment for one ABI.
+  environmentFor =
+    abi:
+    let
+      # Shell names cannot hold "-"; cc-rs and bindgen also read the "_" form.
+      target = lib.replaceStrings [ "-" ] [ "_" ] abi.target;
+      cargoTarget = lib.toUpper target;
+      cc = "${toolchain}/bin/${abi.target}${api}-clang";
+    in
+    ''
+      export CC_${target}=${cc}
+      export CXX_${target}=${cc}++
+      export AR_${target}=${toolchain}/bin/llvm-ar
+      export CARGO_TARGET_${cargoTarget}_LINKER=${cc}
+      # 16 KiB load segments, as clients/android/build.sh links its libraries.
+      export CARGO_TARGET_${cargoTarget}_RUSTFLAGS="-C link-arg=-Wl,-z,max-page-size=16384"
+      export BINDGEN_EXTRA_CLANG_ARGS_${target}="--target=${abi.target}${api} --sysroot=${toolchain}/sysroot"
+    '';
+  forEachAbi = script: lib.concatMapStrings script (lib.attrValues abis);
+
+  # Android ships every library the app needs.
+  systemLibraries = [
+    "libc.so"
+    "libm.so"
+    "libdl.so"
+    "liblog.so"
+    "libandroid.so"
+    # Slint's Skia renderer.
+    "libEGL.so"
+    "libGLESv2.so"
+    "libvulkan.so"
+    "libjnigraphics.so"
+  ];
+  library = "libkorri_android_app.so";
+
+  src = proseqlSource.composeCargoSource (
+    lib.fileset.toSource {
+      root = ../..;
+      fileset = lib.fileset.unions [
+        ./Cargo.toml
+        ./Cargo.lock
+        ./src
+        ../shell/Cargo.toml
+        ../shell/src
+        ../shell/examples
+        ../shell/fixtures
+        ../shell/vendor
+        ../../services/korrid/Cargo.toml
+        ../../services/korrid/src
+        ../../services/korrid/examples
+        # Producer declaration snapshots that the library includes.
+        ../../services/korrid/tests/fixtures/first-party
+        ../../contracts
+        ../../packages/input-trace
+      ];
+    }
+  );
+
+  cargoDeps = pkgs.rustPlatform.importCargoLock { lockFile = ./Cargo.lock; };
+
+  # The library for one ABI. Its own derivation, so that a change to the
+  # packages or the manifest packs the APK again without compiling.
+  libraryFor =
+    abi:
+    pkgs.stdenv.mkDerivation {
+      pname = "korri-android-app-${abi.name}";
+      version = "0.1.0";
+      inherit src cargoDeps;
+      sourceRoot = "korrid-source-with-proseql/clients/android-app";
+      nativeBuildInputs = [
+        rust
+        pkgs.rustPlatform.cargoSetupHook
+        sdk.jdk
+      ];
+      LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+      SKIA_BINARIES_URL = "file://${skia}/skia-binaries-{key}.tar.gz";
+      KORRI_ANDROID_RELAYS_FILE = relays;
+      # Slint's build.rs compiles its Java helper and dexes it (android-build).
+      ANDROID_HOME = sdk.sdkRoot;
+      ANDROID_SDK_ROOT = sdk.sdkRoot;
+      ANDROID_PLATFORM = platform;
+      ANDROID_BUILD_TOOLS_VERSION = sdk.buildToolsVersion;
+      JAVA_HOME = sdk.jdk;
+      dontStrip = true;
+      dontFixup = true;
+      buildPhase = ''
+        runHook preBuild
+        export HOME=$TMPDIR
+        ${environmentFor abi}
+        cargo build --locked --release --offline --lib --target ${abi.target}
+        built=target/${abi.target}/release/${library}
+        "${toolchain}/bin/llvm-readelf" --file-header --dynamic $built > elf.txt
+        grep -q 'Machine: *${abi.machine}' elf.txt
+        grep -q 'Type: *DYN' elf.txt
+        grep NEEDED elf.txt | sed 's/.*\[\(.*\)\]/\1/' | sort > elf.txt.needed
+        if grep -v -x ${lib.concatMapStringsSep " " (name: "-e ${name}") systemLibraries} elf.txt.needed; then
+          echo '${library} needs a library that Android does not ship' >&2
+          exit 1
+        fi
+        "${toolchain}/bin/llvm-nm" --defined-only --extern-only $built | grep -q ' T ANativeActivity_onCreate$'
+        runHook postBuild
+      '';
+      installPhase = ''
+        runHook preInstall
+        mkdir -p $out
+        cp target/${abi.target}/release/${library} $out/
+        cp elf.txt $out/elf-${abi.name}.txt
+        runHook postInstall
+      '';
+    };
+  libraries = lib.mapAttrs (_: libraryFor) abis;
+
+  apk = pkgs.stdenv.mkDerivation {
+    pname = "korri-android-app-apk";
+    version = "0.1.0";
+    src = lib.fileset.toSource {
+      root = ./.;
+      fileset = ./AndroidManifest.xml;
+    };
+    nativeBuildInputs = [ pkgs.zip ];
+    dontStrip = true;
+    dontFixup = true;
+    buildPhase = ''
+      runHook preBuild
+      ${forEachAbi (abi: ''
+        mkdir -p stage/lib/${abi.name}
+        cp ${libraries.${abi.name}}/${library} stage/lib/${abi.name}/
+        cp ${libraries.${abi.name}}/elf-${abi.name}.txt .
+      '')}
+      # The packages exactly as the Artemis app carries them
+      # (clients/android/app/build.gradle, surfaceAssets).
+      mkdir -p assets/surfaces
+      (
+        cd ${surfaces}/packages
+        find pico zone velvet -type f \( -name '*.slint' -o -name '*.js' -o -path '*/fonts/*' \) -print
+        find pico zone -type f -path '*/art/*' -print
+      ) | sort -u | while read -r file; do
+        install -D -m 0644 "${surfaces}/packages/$file" "assets/surfaces/$file"
+      done
+      test -f assets/surfaces/velvet/main.slint
+      test -f assets/surfaces/velvet/logic.js
+      ${buildTools}/aapt2 link -o unsigned.apk -I ${framework} \
+        --manifest AndroidManifest.xml -A assets --debug-mode
+      # Fixed times and no extra attributes, as aapt2 writes its entries.
+      find stage -exec touch -h -d @315532800 {} +
+      (cd stage && zip -q -r -X ../unsigned.apk lib)
+      ${buildTools}/zipalign -p -f 4 unsigned.apk aligned.apk
+      runHook postBuild
+    '';
+    installPhase = ''
+      runHook preInstall
+      mkdir -p $out
+      cp aligned.apk $out/korri-android-app-unsigned.apk
+      cp elf-*.txt $out/
+      runHook postInstall
+    '';
+  };
+in
+{
+  inherit apk libraries surfaces;
+}

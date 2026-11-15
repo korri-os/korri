@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Korri app with no Korri Java (#434, slice D8). Android's own
+     NativeActivity loads libkorri_android_app.so, which runs korrid and the
+     native shell; the APK has no dex (hasCode="false"). It installs beside
+     the Artemis app under its own package (owner decision O1) and does not
+     answer the HOME intent, which the Artemis app keeps. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.simonwjackson.korri.app"
+    android:versionCode="1"
+    android:versionName="0.1.0">
+    <!-- ADR 0064: Android 12. The target matches the Artemis app's; 36 or
+         lower keeps ACCESS_LOCAL_NETWORK out (research brief, finding 12). -->
+    <uses-sdk android:minSdkVersion="31" android:targetSdkVersion="34" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- korrid's network observations (ConnectivityManager). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Slint's Skia renderer, as the Artemis app declares it. -->
+    <uses-feature android:glEsVersion="0x00030000" android:required="true" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <!-- No backup: korrid's files hold the device's identity and its peers. -->
+    <application
+        android:label="Korri (native)"
+        android:hasCode="false"
+        android:allowBackup="false"
+        android:isGame="true"
+        android:appCategory="game"
+        android:enableOnBackInvokedCallback="false"
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
+        <!-- As KorriShellActivity: stateAlwaysHidden keeps the system keyboard
+             from taking D-pad keys from Slint's text view; the configuration
+             changes reach the shell as window resizes, not a new activity. -->
+        <activity
+            android:name="android.app.NativeActivity"
+            android:exported="true"
+            android:label="Korri (native)"
+            android:resizeableActivity="true"
+            android:enableOnBackInvokedCallback="false"
+            android:windowSoftInputMode="stateAlwaysHidden"
+            android:configChanges="mcc|mnc|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|layoutDirection">
+            <meta-data android:name="android.app.lib_name" android:value="korri_android_app" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

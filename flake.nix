@@ -115,6 +115,8 @@
           hostModule = nixosModules.korri-plugin-host;
         };
         viewer = import ./clients/viewer { inherit pkgs; };
+        # The Android app with no Korri Java: korrid and the shell (#434).
+        androidApp = import ./clients/android-app { inherit pkgs proseql; };
         cli = import ./clients/cli {
           inherit pkgs crane proseql;
           buildIdentity = self.rev or self.dirtyRev or null;
@@ -248,6 +250,7 @@
           # Test apps for the viewer's emulator proof, never shipped.
           korri-viewer-android-refusal-probe = viewer.android.refusalProbe;
           korri-viewer-android-feedback-probe = viewer.android.feedbackProbe;
+          korri-android-app-apk = androidApp.apk;
         };
         checks = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
           inputplumber.checks

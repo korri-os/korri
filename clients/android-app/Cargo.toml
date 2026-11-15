@@ -1,0 +1,44 @@
+[package]
+name = "korri-android-app"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+publish = false
+description = "The Korri Android app with no Korri Java: korrid and the native shell in one NativeActivity library"
+
+# Standalone, like clients/shell: not a member of any workspace.
+[workspace]
+
+# The library that Android's own NativeActivity loads (AndroidManifest.xml).
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[target.'cfg(target_os = "android")'.dependencies]
+# korrid in this process (services/korrid/src/android/app.rs).
+korrid = { path = "../../services/korrid" }
+# The shell's NativeActivity loop without Artemis's android_main.
+korri-shell = { path = "../shell", default-features = false, features = ["android-host"] }
+# Slint's android-activity platform; its AndroidApp is the shell's.
+slint = { version = "=1.18.1", default-features = false, features = ["backend-android-activity-06"] }
+# korrid's and the shell's JNI release.
+jni = "0.21"
+anyhow = "1"
+
+# The shell's vendored Slint 1.18.1 (clients/shell/vendor/README.md). Cargo
+# reads [patch] only from the root crate, so this repeats the shell's list.
+[patch.crates-io]
+i-slint-core = { path = "../shell/vendor/i-slint-core" }
+i-slint-renderer-software = { path = "../shell/vendor/i-slint-renderer-software" }
+slint-interpreter = { path = "../shell/vendor/slint-interpreter" }
+i-slint-backend-testing = { path = "../shell/vendor/i-slint-backend-testing" }
+i-slint-backend-winit = { path = "../shell/vendor/i-slint-backend-winit" }
+i-slint-backend-android-activity = { path = "../shell/vendor/i-slint-backend-android-activity" }
+
+# As the shell's release build; the interpreter as korrid's.
+[profile.release]
+opt-level = 3
+codegen-units = 4
+
+[profile.dev.package.rquickjs-sys]
+opt-level = 3
