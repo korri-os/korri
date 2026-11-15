@@ -10,8 +10,9 @@
 //! Artemis's; it is always enabled and never destructive. A control is
 //! listed only when the viewer can perform it, as Artemis lists only the
 //! effects that its `Game` supports. The values belong to one stream: they
-//! start at Artemis's defaults and nothing stores them
-//! (`KorriStreamControlState`).
+//! start at Artemis's defaults, live in that runtime's lifecycle while it
+//! runs, and are never saved, as Artemis keeps them in its session's
+//! `KorriStreamControlState` and not in its preferences.
 //!
 //! The controls that this viewer can perform, of the thirteen that Artemis
 //! can list (`KorriViewerControls.included`):

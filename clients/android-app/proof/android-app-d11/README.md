@@ -4,8 +4,14 @@ Run on 2026-11-15 at 18:09 to 18:13 (aka local time), on aka as root, from a
 copy of this branch as it was on `5f3d2294d` (D8 to D10), at the commit "the
 D11 proof reads korrid's own snapshot reads". The fixture APK was built from
 the commit before it, which differs only in `proof/play.py`, the README and
-a comment in `src/proof.rs`. The branch was then rebased onto `673872282`,
-which changes only how `picture.rs` copies a system property (arm64 clippy).
+a comment in `src/proof.rs`. The branch was then rebased onto `origin/main`,
+which since `5f3d2294d` brings `0f3a144d7` (D4b's feedback code passes
+Android clippy: `player_io.rs`, `feedback_jni.rs`), `673872282` (how
+`picture.rs` copies a system property, for arm64 clippy) and `abeeb3203`
+(a proof record of #477). The APK of this run has neither code change; each
+says it changes nothing in what the code does, and this run was not
+repeated on them. The D11 review's fixes, after this record, were built and
+host-tested on aka but not run on the emulator either.
 
 ```sh
 # in that copy, with HOME and XDG_STATE_HOME under /var/tmp/android-d11:

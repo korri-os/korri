@@ -77,10 +77,10 @@ pub mod play;
 #[cfg(target_os = "android")]
 #[path = "android/sound.rs"]
 mod sound;
-// The stream's battery and health for its controller (slice D11).
 #[cfg(any(test, target_os = "android"))]
 #[path = "android/sps.rs"]
 mod sps;
+// The stream's battery and health for its controller (slice D11).
 #[cfg(target_os = "android")]
 #[path = "android/status.rs"]
 pub mod status;
