@@ -1125,16 +1125,21 @@ Until then `Resize` stays "Live resolution is unavailable".
   the coded size less the frame cropping, ITU-T H.264 7.4.2.1.1) and
   compares it with the size that the codec was configured for. A new size
   takes effect with the IDR frame that carries it.
-- **Following it, as Artemis does.** A decoder with
-  `FEATURE_AdaptivePlayback` (Artemis's `decoderSupportsAdaptivePlayback`:
-  not `omx.intel` or `omx.mtk`) is configured with `max-width` and
-  `max-height` at Artemis's live-resolution maximum: the largest square,
-  from 4096 down to the stream's longer side in steps of 8, that
-  `VideoCapabilities.areSizeAndRateSupported` allows at the stream's rate,
-  so that either orientation fits (`codec::adaptive_max`). Within it the
+- **Following it.** A decoder with `FEATURE_AdaptivePlayback` (Artemis's
+  `decoderSupportsAdaptivePlayback`: not `omx.intel` or `omx.mtk`) is
+  configured with `max-width` and `max-height` at Korri's live-resolution
+  maximum, which Korri wrote into its copy of Artemis (`cbfeff25b`): the
+  largest square, from 4096 down to the stream's longer side in steps of
+  8, that `VideoCapabilities.areSizeAndRateSupported` allows at the
+  stream's rate, so that either orientation fits (`codec::adaptive_max`).
+  A decoder that refuses those two keys gets a last configure without them
+  (`codec::tries`) and has no adaptive playback. Within the maximum the
   codec takes the new SPS by itself. Any other decoder, and a size beyond
   that maximum, restarts as Artemis's recovery restarts it: stop, configure
-  at the new size with the try that worked, start. A restart holds the
+  at the new size with the try that worked, start. A restart with adaptive
+  playback asks the decoder's capabilities again for the new size; with no
+  larger square, the new size itself is the maximum, and a decoder that
+  refuses it restarts without adaptive playback. A restart holds the
   decoder's gate, so it never runs beside the output thread's codec calls;
   a frame that is in the codec at that moment is lost, and the IDR frame
   of the new size follows. A failed restart ends the stream, as a failed
@@ -1152,7 +1157,10 @@ Until then `Resize` stays "Live resolution is unavailable".
   (scale to fit), and the picture would keep the old shape. The input's
   placement follows, so touches and the mouse map into the new picture.
   Until the transaction applies, a frame or two of the new size can show
-  in the old shape.
+  in the old shape. The gameplay overlay (slice D5) covers the window, so
+  a new stream size leaves its place and buffers as they are; an open
+  overlay stays open and the input stays held (`input::tests`, a new
+  placement while held).
 - **In the log:** `picture: the stream's size changes from 1280x720 to
   720x1280 at frame N; the decoder follows it (adaptive playback up to
   WxH)`, or `the decoder restarts (…)` and `picture: the decoder restarted
@@ -1160,7 +1168,7 @@ Until then `Resize` stays "Live resolution is unavailable".
   layer 720x1280 placed at (…) in the window …`. The decoder list and the
   `picture: decode …` line name each decoder's adaptive playback and the
   maximum.
-- **D2 to D4's safety rules are kept.** No new `extern "C"` callback: the
+- **D2 to D5's safety rules are kept.** No new `extern "C"` callback: the
   size reaches the app as a Rust call on the decoder's output thread,
   whose panic still ends the stream. The layer still outlives the decoder,
   and the input gate does not change.
@@ -1172,6 +1180,7 @@ Until then `Resize` stays "Live resolution is unavailable".
 | --- | --- | --- |
 | A decoder without adaptive playback | Refuses a live resolution (`acceptsLiveResolution`) | Restarts at the new size: the sender made the change, so there is no request to refuse |
 | `level_idc` after a change | For the size at the start (`initialWidth`, `initialHeight`) | For the new size: level 3.2 cannot hold 1920x1080 |
+| A decoder that refuses `max-width` and `max-height` | Every try has them, so it gets no decoder (Korri's copy, `cbfeff25b`) | A last try without them, and a restart on a new size |
 | The picture's shape | The SurfaceView's aspect ratio (`setDesiredAspectRatio`), scale to fit | The layer's buffer size and geometry |
 | Waiting for the decoded size | `awaitLiveResolution`, up to 1.5 s, before it reports the resize applied | Nothing reports a resize yet (Route C, slice 5) |
 
@@ -1186,10 +1195,13 @@ the app's new decoded size and placement, then reads the bar in four
 screenshots: readable, rising, and with the geometry of a 720x1280 picture
 in the new letterbox (the cell width and height of the bar in the
 screenshot). The input, sound, overlay and Home steps of D3 to D5 then run
-at the new size: the overlay opens over the portrait picture. The frame record is decoded frame by frame at each frame's own
-size, and its IDs must never go back within a size; a picture that the
-sender encoded twice is counted, not failed, since the viewer cannot make
-a unit.
+at the new size: the overlay opens over the portrait picture, and one tap
+a quarter across and three quarters down the new picture must reach the
+sender at (0.25, 0.75). The frame record is decoded frame by frame at each
+frame's own size, and its IDs must never go back within a size; a picture
+that the sender encoded twice is listed, not failed, since the viewer
+cannot make a unit. `--stock-sunshine` runs the stock Sunshine instead,
+with no size change; the frame record must then keep one size.
 
 - Not proven: the restart on a device. The emulator's decoder,
   `c2.goldfish.h264.decoder`, has adaptive playback (up to 2960x2960 at
