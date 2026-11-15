@@ -6,15 +6,23 @@ raw-cache fallback, receipt migration, or outside repository is in this lane.
 
 ## Published input
 
-- Plugins source: `9363f21d62b528b115355ccc0e372a361edfc412`.
-- Immutable tag: `build-9363f21d62b5-haku-settings`.
-- Publication dry run: `43099162672`; live publication: `43115818061`.
-- Catalog: <https://github.com/korri-os/plugins/releases/download/build-9363f21d62b5-haku-settings/catalog.json>.
-- Actual catalog SHA-256: `774574dc273a0b2e2c138bb3dfb4d2d2f164e65ca6477bd35cba988aee003186`.
-- SRI: `sha256-d0V03Cc6Cy4sE4uz37TS0vFk5lymR3vTXLqYiu4AMYY=`.
+- Plugins source: `7e9c19c99b6fc85ee65f23dbedbc6607e963f149`.
+- Immutable tag: `build-7e9c19c99b6f-sunshine-resize`.
+- Publication dry run: `43700835459`; live publication: `43710325117`.
+- Catalog: <https://github.com/korri-os/plugins/releases/download/build-7e9c19c99b6f-sunshine-resize/catalog.json>.
+- Actual catalog SHA-256: `eb3a68d39baae899deb45e0d874233c2885299a0740ba418e33448ad9aadf5d8`.
+- SRI: `sha256-6zpo05uq6JnetF4Nh0IzwohSmaB0C6QY4zRIrZqt9dg=`.
 - 33 plugin IDs, 63 records. Homebrew Hub, PICO-8 and RetroBrews use `any`.
 - Bound key remains
   `korri-plugins-1:qlK5Mgb3dYhF76WC4jGhrvL+CHsU93De7GpBFtrXb98=`.
+
+The selection is the same as the previous pin,
+`build-9363f21d62b5-haku-settings`. Against it, 23 plugins changed: Sunshine
+(live-resize freeze fix, #486), Moonlight (the same bytes as
+`build-2094c1e77471-moonlight-latest-frame`), and RetroArch with every
+libretro core, melonDS, FAKE-08 and the Starter pack (plugins `0ca320b`,
+RetroArch starts without its Qt desktop menu). The other 10 plugins keep
+their store paths and archive bytes.
 
 These identify the actual live bytes. Publication verifies the dry-run artifact
 digests and requires its catalog byte for byte before uploading those artifacts.
