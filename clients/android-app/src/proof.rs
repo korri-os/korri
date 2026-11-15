@@ -4,9 +4,9 @@
 //! cargo feature `proof`, and the product library's build checks that none
 //! of this is in it (`default.nix`).
 //!
-//! korrid's own callers of the viewer's snapshot and Apply are its gameplay
-//! overlay: its snapshot poll and the shell's `InvokeGameplayControl`. In
-//! this app they reach the viewer only through the shell's overlay, slice
+//! korrid reads the viewer's snapshot itself while a stream runs (its
+//! live-shape poll), but only its gameplay overlay calls Apply (the shell's
+//! `InvokeGameplayControl`), and in this app that overlay comes with slice
 //! D5b. Until then the proof writes one command at a time into
 //! `<cache>/proof-command` with `run-as`, and this thread runs it against
 //! korrid's own viewer adapter, the object that korrid holds

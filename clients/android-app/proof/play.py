@@ -38,7 +38,8 @@ The steps:
    proof trigger (src/proof.rs), which calls korrid's own viewer adapter:
    korrid's snapshot lists Crop to fill and Flip A/B and X/Y (and Rumble
    only with a controller that can rumble: none here), the battery and the
-   stream's health; korrid's apply turns Crop to fill on, which
+   stream's health; korrid's own live-shape poll reads the same controls
+   (the adapter's log); korrid's apply turns Crop to fill on, which
    moves the video layer (the app's log, SurfaceFlinger's crop, a
    screenshot), and off again; a control of another runtime is refused.
 8. Home leaves the app: the runtime stops and korrid reads Stopped.
@@ -276,6 +277,27 @@ def proof_apply(emulator: "d8.Emulator", logcat: "d8.Logcat", launch: str, contr
     return "no answer" if found is None else found.group(4)
 
 
+def korrids_read(logcat: "d8.Logcat", launch: str, since: int, fill: bool, timeout: float) -> "dict | None":
+    """A snapshot that korrid itself read (its live-shape poll, `upstreams/live_shape.rs`), as the app's
+    adapter logs it when its controls change, with Crop to fill at `fill`."""
+    pattern = re.compile(rf"korri-app: viewer snapshot for korrid: {launch} (\{{.*\}})\s*$")
+    until = time.monotonic() + timeout
+    while True:
+        for line in logcat.lines()[since:]:
+            found = pattern.search(line)
+            if not found:
+                continue
+            try:
+                snapshot = json.loads(found.group(1))
+            except ValueError:
+                continue
+            if toggles(snapshot).get(FILL, {}).get("value") is fill:
+                return snapshot
+        if time.monotonic() >= until:
+            return None
+        time.sleep(0.5)
+
+
 def toggles(snapshot: "dict | None") -> dict:
     """Each listed control's effect (the id's last part), with its id and toggle value."""
     listed = {}
@@ -337,8 +359,11 @@ def controls(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
         and isinstance(health.get("rttMs"), (int, float)))
     battery = (first or {}).get("batteryPercent")
     checks["korrids_snapshot_shows_the_battery"] = isinstance(battery, (int, float)) and 0 <= battery <= 100
-    checks["the_snapshot_went_through_the_treaty"] = logcat.wait_for(
-        f"korri-app: viewer snapshot for korrid: {launch} ", mark, 5) is not None
+    # korrid's own caller: its live-shape poll reads the viewer's snapshot
+    # while the stream runs. The adapter logs a read whose controls changed.
+    own = korrids_read(logcat, launch, 0, False, 10)
+    steps["korrids_own_read"] = toggles(own)
+    checks["korrid_itself_reads_the_controls_through_the_treaty"] = set(toggles(own)) == {FILL, FLIP}
     if FILL not in listed:
         return steps, checks
 
@@ -367,6 +392,7 @@ def controls(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
     on = proof_snapshot(emulator, logcat, launch)
     steps["snapshot_fill_on"] = toggles(on)
     checks["korrids_snapshot_shows_crop_to_fill_on"] = toggles(on).get(FILL, {}).get("value") is True
+    checks["korrid_itself_reads_crop_to_fill_on"] = korrids_read(logcat, launch, mark, True, 10) is not None
 
     stale = listed[FILL]["id"].replace(prefix, f"{prefix}0", 1)
     steps["apply_stale"] = proof_apply(emulator, logcat, launch, stale, "toggle false")

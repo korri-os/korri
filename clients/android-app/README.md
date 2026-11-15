@@ -355,12 +355,16 @@ controls, their source in Artemis, and the ones it cannot carry). Here:
 | `snapshot` | The treaty's Snapshot; its health sample is dated in korrid's clock without losing its age (`ViewerSnapshot::date_sample`, the rule of korrid's Java adapter, now shared). The log names each snapshot whose controls changed: `korri-app: viewer snapshot for korrid: LAUNCH {…}` |
 | `apply` | The treaty's Apply (`korri-app: viewer request {…Apply…}` and its reply). The loop thread performs the change at its next tick: Crop to fill moves the video layer and answers once Android's main thread has applied the transaction, then moves the input's map; Flip A/B and X/Y changes the controllers' mapping; Rumble goes to the controllers' feedback thread (D4b's), and is offered only while a controller that can rumble is in the stream. Each logs `korri-app: viewer control EFFECT is VALUE` |
 
-korrid's own callers are its gameplay overlay: the snapshot poll every second
-and the shell's `InvokeGameplayControl` (`services/korrid/src/surface/overlay.rs`),
-covered by korrid's unit tests (`surface/viewer.rs`, `surface/tests.rs`). In
-this app neither runs yet: korrid's overlay starts only after its
-`session.leave`, and the overlay's input reaches it only through the shell's
-overlay in this app, slice D5b. Until then the emulator proof uses a trigger.
+korrid's own callers:
+
+| Caller | In this app |
+| --- | --- |
+| The live-shape poll (`upstreams/live_shape.rs`, `synchronize_shape`, #476) reads the viewer's snapshot while a stream runs | Runs: the D11 proof's log shows korrid's own reads with the controls, and with Crop to fill on after the apply |
+| The gameplay overlay's snapshot poll, every second, and its `InvokeGameplayControl`, which reaches `apply` (`surface/overlay.rs`; korrid's unit tests `surface/viewer.rs`, `surface/overlay.rs`) | Not yet: korrid's overlay starts only after its `session.leave`, and its input reaches it only through the shell's overlay in this app, slice D5b |
+
+So nothing in the product calls `apply` here until D5b, and the overlay does
+not show the controls yet. Until then the emulator proof calls korrid's
+adapter through a trigger.
 
 **The proof trigger** (`src/proof.rs`, cargo feature `proof`): only the
 fixture APK's library is built with it, for x86_64. The proof writes one
