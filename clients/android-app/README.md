@@ -376,6 +376,12 @@ adapter, the object that korrid holds (`viewer::adapter` returns the same
 product library's build fails if cargo built it with the feature (its
 fingerprint) or if its bytes hold the trigger's log prefix (`default.nix`).
 
+The play proof (`proof/play.py`) runs D11's steps after D10's input: korrid's
+own reads and the trigger's snapshot list the controls, the battery and the
+health; Crop to fill on moves the video layer (the app's log, SurfaceFlinger's
+crop, a screenshot) and korrid reads it On; a stale control is refused; Off
+fits the picture again. Records: `proof/android-app-d11/`.
+
 ## Next slices
 
 | Slice | What |

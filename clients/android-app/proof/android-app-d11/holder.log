@@ -1,0 +1,4 @@
+korrid: startup device limits unavailable: Permission denied (os error 13)
+korrid discovery: @korri:android-app discovery is not enabled
+<6>korrid: LaunchTimeline { game_id: acceptance-game, launch_id: 28bdd8149a0d3fd4c0a91f3525e15601, outcome: started, total_ms: 4, stages_ms: {"catalog": 0, "unit_start": 4}, between_stages_ms: 0 }
+fixture HTTP and discovery joined
