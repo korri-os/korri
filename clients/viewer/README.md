@@ -1250,14 +1250,31 @@ from rust-skia (0.153.3, `ganesh-gl-jpegd-jpege-pdf-vulkan`) at build
 time; the viewer's Nix build cannot download, so it would need those
 archives as fixed inputs.
 
-What remains for D5: korrid and the shell in the viewer's process (the
-brief's one-activity design, finding 27), or the viewer in the shell's;
-the layer's Surface to `SurfaceWindow::from_surface` in the place of
-`shellTakeOverlaySurface`, and the overlay's input to the shell's mapper
-in the place of `KorriSurfaceHost.forward`; Leave and Resume between the
-viewer and korrid; and the overlay's actions (Resume, End, Disconnect,
-Open Korri, plugin controls, the status strip and stream controls, ADR
-0053). Resize stays unavailable (#476).
+What remained for D5 came with the Korri app (#434), which runs korrid,
+the shell and this viewer in one process: its slice D5b lends this layer's
+Surface to the shell, which draws korrid's gameplay overlay into it
+(`clients/android-app/README.md`). The library's parts for it:
+
+- `overlay::Presenter`: what shows the overlay. `StandIn` is this app's
+  (the stand-in above); `Shell` is the Korri app's. With `Shell` the layer
+  gets no stand-in (a Surface that the CPU has drawn into stays the CPU's,
+  and EGL cannot draw into it), `Layers::overlay_surface` gives its
+  `android.view.Surface`, and `Layers::overlay_resized` says when its
+  buffers took the window's new size.
+- `play::Play` with `Shell`: Guide or Back opens the overlay and holds the
+  input as before, and answers `Routed::Opened`; the app brings the shell's
+  overlay. What the open overlay takes waits for the shell
+  (`Play::forwarded`, `overlay::Forwarded`: `KorriSurfaceHost.forward` and
+  `forwardTouch`, ported and host-tested): keys as their first down and
+  their up, Guide as Menu, a controller's stick and hat in thousandths, and
+  touches in the window's pixels. A Guide or Back press that began with
+  the overlay open goes to the shell whole at its release
+  (`Game.handleKorriHomeKey`), and the shell's package decides; the app
+  closes the overlay (`Play::close`) when korrid resumes the stream.
+- `overlay::Route::Overlay`: a key that the open overlay takes, apart from
+  `Route::Taken`, an edge of Guide or Back that nobody sees.
+
+With `StandIn` this app does what it did. Resize stays unavailable (#476).
 
 **Proof** (`nix run .#viewer-android-proof`, record `proof/android-d5/`):
 D4's run, then the overlay, after Android's audio server has restarted,
@@ -1404,9 +1421,9 @@ unchanged in what they do, and the viewer's own app uses them from here:
 
 | Module | What |
 | --- | --- |
-| `src/android/layer.rs` | The video and overlay layers, and the video's new place for a new picture size (`Layers::restream`). `Layers::request` asks Android's main thread for them and `Pending::poll` reads the answer, for a loop that Slint owns; `Layers::make` waits while it polls android-activity, for the viewer's own loop |
+| `src/android/layer.rs` | The video and overlay layers, and the video's new place for a new picture size (`Layers::restream`). `Layers::request` asks Android's main thread for them and `Pending::poll` reads the answer, for a loop that Slint owns; `Layers::make` waits while it polls android-activity, for the viewer's own loop. The overlay layer is the stand-in's or the shell's (`overlay::Presenter`, D5 above) |
 | `src/android/events.rs` | android-activity's key and motion events as the input's values; the unbuffered dispatch request |
-| `src/android/play.rs` | The stream's input with the gameplay overlay (D4, D5): each event's route, the hold, the timers, the device check, the panic guard |
+| `src/android/play.rs` | The stream's input with the gameplay overlay (D4, D5): each event's route, the hold, the timers, the device check, the panic guard; with the shell's overlay, what the overlay takes for the shell (D5b) |
 
 `Options::for_lifecycle` makes a stream's options for a controller in the
 viewer's process: korrid's display as the size, or Moonlight's default; the
@@ -1476,8 +1493,7 @@ Notice (Artemis shows a toast) and Resize (#476) stay unavailable.
 
 ## Next slices
 
-The bench proof of the handheld `v4l2request` path. On Android, the rest
-of D5 (the shell's overlay in this process, above). No device installs
+The bench proof of the handheld `v4l2request` path. No device installs
 `@korri:viewer` yet.
 
 The cross-UID socket proof is an explicit root-only test: build

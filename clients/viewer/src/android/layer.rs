@@ -26,18 +26,23 @@
 //! hidden. Its buffers follow the window's size (`Transaction.setBufferSize`),
 //! so whatever draws into its Surface draws at the window's size. Showing
 //! and hiding it is one `setVisibility`; a hidden layer is not composed.
-//! The shell's overlay renderer takes such a Surface
-//! (`clients/shell/vendor/i-slint-backend-android-activity/surface_window.rs`).
-//! Until slice D5 brings it in, a stand-in is drawn into it once with the
-//! CPU, and again when the window's size changes. The stream's size does not
-//! change it.
+//! What draws into it is the app's [`Presenter`]: the viewer's own app draws
+//! D5's stand-in once with the CPU, and again when the window's size
+//! changes; the Korri app lends its Surface to the shell's overlay renderer
+//! (`clients/shell/vendor/i-slint-backend-android-activity/surface_window.rs`,
+//! #434 slice D5b), and nothing here draws into it: a Surface that the CPU
+//! has drawn into stays the CPU's, and EGL cannot draw into it. The stream's
+//! size does not change it.
 //!
 //! Two apps make these layers: the viewer's own (`clients/viewer/android`),
 //! which waits for them in its loop ([`Layers::make`]), and the Korri app
 //! (`clients/android-app`), whose loop is Slint's: it asks for them
 //! ([`Layers::request`]) and reads the answer at each tick
 //! ([`Pending::poll`]), so its thread never waits for Android's main thread.
-use crate::placement::{Fill, Rect, geometry, letterbox, place};
+use crate::{
+    overlay::Presenter,
+    placement::{Fill, Rect, geometry, letterbox, place},
+};
 use android_activity::{AndroidApp, MainEvent, PollEvent};
 use anyhow::{Context, Result, anyhow};
 use jni::{
@@ -47,7 +52,11 @@ use jni::{
 use ndk::{hardware_buffer_format::HardwareBufferFormat, native_window::NativeWindow};
 use std::{
     ptr::NonNull,
-    sync::mpsc::{self, RecvTimeoutError},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, RecvTimeoutError},
+    },
     time::{Duration, Instant},
 };
 
@@ -71,6 +80,11 @@ pub struct Layers {
     /// The gameplay overlay's layer; none when Android did not make it.
     /// The stream plays without an overlay then.
     overlay: Option<Layer>,
+    presenter: Presenter,
+    /// The overlay's buffers took a new size since it was last asked
+    /// ([`Layers::overlay_resized`]): Android's main thread sets it once it
+    /// has applied the size.
+    overlay_resized: Arc<AtomicBool>,
     pub stream: (i32, i32),
     /// The window's size that the placement follows.
     pub window: (i32, i32),
@@ -93,6 +107,7 @@ pub struct Pending {
     stream: (i32, i32),
     window: (i32, i32),
     placed: Rect,
+    presenter: Presenter,
 }
 
 impl Pending {
@@ -129,6 +144,8 @@ impl Pending {
             Layers {
                 video,
                 overlay,
+                presenter: self.presenter,
+                overlay_resized: Arc::new(AtomicBool::new(false)),
                 stream: self.stream,
                 window: self.window,
                 placed: self.placed,
@@ -140,10 +157,16 @@ impl Pending {
 
 impl Layers {
     /// Ask Android's main thread for the layers of a stream of `stream`
-    /// pixels, placed in a window of `window` pixels. It returns at once;
-    /// [`Pending::poll`] gives the layers. The window must exist: call it
-    /// outside android-activity's event callback, after `InitWindow`.
-    pub fn request(app: &AndroidApp, window: (i32, i32), stream: (i32, i32)) -> Result<Pending> {
+    /// pixels, placed in a window of `window` pixels, with an overlay layer
+    /// for `presenter`. It returns at once; [`Pending::poll`] gives the
+    /// layers. The window must exist: call it outside android-activity's
+    /// event callback, after `InitWindow`.
+    pub fn request(
+        app: &AndroidApp,
+        window: (i32, i32),
+        stream: (i32, i32),
+        presenter: Presenter,
+    ) -> Result<Pending> {
         let placed = letterbox(stream, window);
         let vm = app.vm_as_ptr() as usize;
         // Our own reference to the activity, taken here: android-activity's
@@ -161,12 +184,15 @@ impl Layers {
             })
             .map(|video| {
                 let overlay = attached(vm, |env| make_overlay(env, activity.as_obj(), window))
-                    .and_then(|overlay| match draw_stand_in(&overlay.surface) {
-                        Ok(()) => Ok(overlay),
-                        Err(error) => {
-                            remove(vm, overlay);
-                            Err(error)
-                        }
+                    .and_then(|overlay| match presenter {
+                        Presenter::Shell => Ok(overlay),
+                        Presenter::StandIn => match draw_stand_in(&overlay.surface) {
+                            Ok(()) => Ok(overlay),
+                            Err(error) => {
+                                remove(vm, overlay);
+                                Err(error)
+                            }
+                        },
                     });
                 (video, overlay)
             });
@@ -184,11 +210,13 @@ impl Layers {
             stream,
             window,
             placed,
+            presenter,
         })
     }
 
-    /// The layers for a stream of `stream` pixels, placed in `window`; none
-    /// when the app leaves (its window or the activity goes) first. They are
+    /// The layers for a stream of `stream` pixels, placed in `window`, with
+    /// D5's stand-in in the overlay layer; none when the app leaves (its
+    /// window or the activity goes) first. They are
     /// made on Android's main thread. While this thread waits for them, it
     /// handles android-activity's events, so that the main thread, which
     /// waits for this one in `onDestroy`, is not held. Never call it inside
@@ -199,7 +227,12 @@ impl Layers {
         window: &NativeWindow,
         stream: (i32, i32),
     ) -> Result<Option<Self>> {
-        let mut pending = Self::request(app, (window.width(), window.height()), stream)?;
+        let mut pending = Self::request(
+            app,
+            (window.width(), window.height()),
+            stream,
+            Presenter::StandIn,
+        )?;
         loop {
             if let Some(made) = pending.wait(Duration::from_millis(10)) {
                 return made.map(Some);
@@ -222,8 +255,9 @@ impl Layers {
     /// to landscape can come after Android gives the window (it was 1x1 in
     /// one emulator run), and a fold changes it too. One `setGeometry`, and
     /// the overlay's buffers take the window's size; then the stand-in is
-    /// drawn again at that size. Posted to the main thread without waiting.
-    /// False when the size is the same.
+    /// drawn again at that size, or the shell's renderer hears of the new
+    /// size ([`Layers::overlay_resized`]). Posted to the main thread without
+    /// waiting. False when the size is the same.
     pub fn follow(&mut self, app: &AndroidApp, window: &NativeWindow) -> bool {
         let size = (window.width(), window.height());
         if size == self.window {
@@ -237,6 +271,7 @@ impl Layers {
             .overlay
             .as_ref()
             .map(|overlay| (overlay.control.clone(), overlay.surface.clone()));
+        let (presenter, overlay_resized) = (self.presenter, self.overlay_resized.clone());
         app.run_on_java_main_thread(Box::new(move || {
             let resized = attached(vm, |env| {
                 let transaction =
@@ -254,12 +289,18 @@ impl Layers {
                 Ok(())
             });
             // `apply` gave the overlay's Surface its new default size.
-            if let (Ok(()), Some((_, surface))) = (resized, overlay)
-                && let Err(error) = draw_stand_in(&surface)
-            {
-                crate::log::line(&format!(
-                    "overlay: the stand-in was not drawn again: {error:#}"
-                ));
+            let (Ok(()), Some((_, surface))) = (resized, overlay) else {
+                return;
+            };
+            match presenter {
+                Presenter::Shell => overlay_resized.store(true, Ordering::Release),
+                Presenter::StandIn => {
+                    if let Err(error) = draw_stand_in(&surface) {
+                        crate::log::line(&format!(
+                            "overlay: the stand-in was not drawn again: {error:#}"
+                        ));
+                    }
+                }
             }
         }));
         true
@@ -359,6 +400,19 @@ impl Layers {
     /// Whether there is an overlay to show.
     pub fn has_overlay(&self) -> bool {
         self.overlay.is_some()
+    }
+
+    /// The overlay layer's `android.view.Surface`, for the shell's renderer
+    /// (`Presenter::Shell`). It stays valid until [`Layers::release`]; the
+    /// renderer must let it go before that.
+    pub fn overlay_surface(&self) -> Option<&GlobalRef> {
+        self.overlay.as_ref().map(|overlay| &overlay.java_surface)
+    }
+
+    /// Whether the overlay's buffers took a new size since the last call:
+    /// its renderer reads the new size from the Surface.
+    pub fn overlay_resized(&self) -> bool {
+        self.overlay_resized.swap(false, Ordering::AcqRel)
     }
 
     /// Show or hide the overlay: one `setVisibility`, posted to the main

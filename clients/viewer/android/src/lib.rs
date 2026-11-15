@@ -53,6 +53,7 @@ use korri_viewer::{
     launch, layer,
     lifecycle::Lifecycle,
     options::Options,
+    overlay::Presenter,
     picture::{FrameRecord, Picture},
     play::{Play, Routed},
 };
@@ -316,7 +317,14 @@ fn stream(
         launch: id,
         requests: Vec::new(),
     };
-    let play = Play::new(settings, attached, layer.placed, devices, Box::new(seats));
+    let play = Play::new(
+        settings,
+        attached,
+        layer.placed,
+        devices,
+        Box::new(seats),
+        Presenter::StandIn,
+    );
     let driven = drive(
         app,
         &mut controller,
@@ -419,7 +427,8 @@ fn events(app: &AndroidApp, play: &mut Play, layer: &layer::Layers) -> bool {
             _ => Routed::Unhandled,
         };
         match routed {
-            Routed::Handled => InputStatus::Handled,
+            // The stand-in shows itself when the overlay opens.
+            Routed::Handled | Routed::Opened => InputStatus::Handled,
             Routed::Leave => {
                 leave = true;
                 InputStatus::Handled
