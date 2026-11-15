@@ -1,0 +1,5 @@
+Serving...
+Performing Incremental Install
+Success
+Install command complete in 14364 ms
+All files should be loaded. Notifying the device.

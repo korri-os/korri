@@ -1,0 +1,136 @@
+11-14 21:25:42.117   524  1882 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.simonwjackson.korri.app/android.app.NativeActivity} from uid 2000
+11-14 21:25:42.351   757   819 D StartingSurfaceDrawer: addSplashScreen com.simonwjackson.korri.app theme=103012a task=12 suggestType=3
+11-14 21:25:43.143   524   570 I ActivityManager: Start proc 2514:com.simonwjackson.korri.app/u0a145 for pre-top-activity {com.simonwjackson.korri.app/android.app.NativeActivity}
+11-14 21:25:43.382  2514  2514 V GraphicsEnvironment: ANGLE Developer option for 'com.simonwjackson.korri.app' set to: 'default'
+11-14 21:25:43.504  1479  1479 I GsaVoiceInteractionSrv: O received Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.simonwjackson.korri.app flg=0x4000010 (has extras) }
+11-14 21:25:43.536   756   756 D MediaPlayerList: Name of package changed: com.simonwjackson.korri.app
+11-14 21:25:43.548  1439  1439 I MediaProvider: Invalidating LocalCallingIdentity cache for package com.simonwjackson.korri.app. Reason: package android.intent.action.PACKAGE_ADDED
+11-14 21:25:43.551   524   591 E AppHibernationService: Package com.simonwjackson.korri.app is not installed for user 0
+11-14 21:25:43.551   524   591 E AppHibernationService: Package com.simonwjackson.korri.app is not installed for any user
+11-14 21:25:43.740   524   524 W GameManagerService: Invalid package config for com.simonwjackson.korri.app:[Name:com.simonwjackson.korri.app Modes: {}]
+11-14 21:25:43.741   524   524 I GameManagerService: Disabling downscale for com.simonwjackson.korri.app
+11-14 21:25:43.785  2514  2568 I korri   : korrid: Android network observed: 3 addresses on [wlan0]
+11-14 21:25:43.846  2514  2566 I korri   : korri-app: korrid serves on 127.0.0.1:38205
+11-14 21:25:43.858  2514  2568 I korri   : korrid discovery: @korri:android-app discovery is not enabled
+11-14 21:25:43.866  2514  2566 I korri   : korri-app: korrid answered system.health
+11-14 21:25:45.016  2514  2568 I korri   : korrid: reach: reset=1 elapsed_ms=0 stage=network_reset
+11-14 21:25:46.062  2514  2514 I korri   : korri-app: window flags applied; system bars hidden: true
+11-14 21:25:46.448  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-14 21:25:46.448  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-14 21:25:46.579   524   558 I ActivityTaskManager: Displayed com.simonwjackson.korri.app/android.app.NativeActivity: +4s300ms
+11-14 21:25:46.581  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-14 21:25:46.581  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-14 21:25:46.581  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-14 21:25:46.752  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-14 21:25:46.753  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-14 21:25:46.753  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-14 21:25:46.963  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-14 21:25:46.963  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-14 21:25:46.963  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-14 21:25:47.196  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-14 21:25:47.196  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-14 21:25:47.196  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-14 21:25:47.196   524  1209 W InputManager-JNI: Input channel object '2d169d8 Splash Screen com.simonwjackson.korri.app (client)' was disposed without first being removed with the input manager!
+11-14 21:25:47.358  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-14 21:25:47.358  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-14 21:25:47.358  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 2 name inTextureCoords
+11-14 21:25:47.529  2514  2566 I korri   : korri-app: shell rendered surface=velvet page=empty count=0 selected=0
+11-14 21:25:47.583  2514  2514 I korri   : korri-app: window flags applied; system bars hidden: true
+11-14 21:25:47.633  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-14 21:25:47.633  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-14 21:25:47.633  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-14 21:25:47.744  2514  2566 I korri   : korri-app: shell rendered surface=velvet page=empty count=0 selected=0
+11-14 21:25:48.143   949   949 D ImsResolver: maybeAddedImsService, packageName: com.simonwjackson.korri.app
+11-14 21:25:54.959  1027  1253 I FontLog : Package com.simonwjackson.korri.app has no metadata [CONTEXT service_id=132 ]
+11-14 21:25:54.961  1027  2394 W GCM     : Unexpected forwarded intent: Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.simonwjackson.korri.app flg=0x4000010 pkg=com.google.android.gms cmp=com.google.android.gms/.chimera.PersistentIntentOperationService (has extras) }
+11-14 21:25:54.973  1027  2790 W GCM     : Unexpected forwarded intent: Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.simonwjackson.korri.app flg=0x4000010 pkg=com.google.android.gms cmp=com.google.android.gms/.chimera.PersistentIntentOperationService (has extras) }
+11-14 21:25:56.387  2514  2514 I korri   : korri-app: window flags applied; system bars hidden: true
+11-14 21:25:58.676  2514  2514 E BLASTBufferQueue: [ViewRootImpl[NativeActivity]#0](f:0,a:1) Applying pending transactions on dtor 10
+11-14 21:25:58.762   524   862 W BroadcastQueue: Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.simonwjackson.korri.app flg=0x4000010 (has extras) } to com.google.android.packageinstaller/com.android.packageinstaller.PackageInstalledReceiver
+11-14 21:25:58.763   524   569 W BroadcastQueue: Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.simonwjackson.korri.app flg=0x4000010 (has extras) } to com.google.android.gms/.games.chimera.GamesSystemBroadcastReceiverProxy
+11-14 21:25:58.763   524   569 W BroadcastQueue: Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.simonwjackson.korri.app flg=0x4000010 (has extras) } to com.google.android.gms/.gass.chimera.PackageChangeBroadcastReceiver
+11-14 21:25:58.763   524   569 W BroadcastQueue: Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.simonwjackson.korri.app flg=0x4000010 (has extras) } to com.google.android.gms/.chimera.GmsIntentOperationService$PersistentTrustedReceiver
+11-14 21:25:58.763   524   569 W BroadcastQueue: Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.simonwjackson.korri.app flg=0x4000010 (has extras) } to com.google.android.googlequicksearchbox/com.google.android.apps.gsa.googlequicksearchbox.GelStubAppWatcher
+11-14 21:26:00.299   524  2691 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.simonwjackson.korri.app/android.app.NativeActivity} from uid 2000
+11-14 21:26:00.369  2514  2514 I korri   : korri-app: window flags applied; system bars hidden: true
+11-14 21:26:00.944  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-14 21:26:00.945  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-14 21:26:01.186  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-14 21:26:01.186  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-14 21:26:01.186  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-14 21:26:01.470  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-14 21:26:01.470  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-14 21:26:01.470  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-14 21:26:01.686  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-14 21:26:01.686  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-14 21:26:01.686  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-14 21:26:01.852  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-14 21:26:01.852  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-14 21:26:01.852  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-14 21:26:02.005  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-14 21:26:02.005  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-14 21:26:02.005  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-14 21:26:02.102  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-14 21:26:02.102  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-14 21:26:02.102  2514  2568 I korri   : s_glBindAttribLocation: bind attrib 2 name inTextureCoords
+11-14 21:26:02.347  2514  2566 I korri   : korri-app: shell rendered surface=velvet page=empty count=0 selected=0
+11-14 21:26:02.351  2514  2514 I korri   : korri-app: window flags applied; system bars hidden: true
+11-14 21:26:06.310  2514  2514 E BLASTBufferQueue: [ViewRootImpl[NativeActivity]#1](f:0,a:1) Applying pending transactions on dtor 4
+11-14 21:26:06.345  2514  2566 I korri   : korri-app: the activity ended
+11-14 21:26:06.391   524  2547 W InputManager-JNI: Input channel object '179d246 com.simonwjackson.korri.app/android.app.NativeActivity (client)' was disposed without first being removed with the input manager!
+11-14 21:26:06.591  2514  3365 I korri   : korri-app: korrid serves on 127.0.0.1:38205
+11-14 21:26:06.594  2514  3365 I korri   : korri-app: korrid answered system.health
+11-14 21:26:08.294   524   561 W WindowManager: Force clearing freeze: ActivityRecord{e275eb6 u0 com.simonwjackson.korri.app/android.app.NativeActivity t12}
+11-14 21:26:08.295   524   561 I WindowManager: Screen frozen for +2s360ms due to ActivityRecord{e275eb6 u0 com.simonwjackson.korri.app/android.app.NativeActivity t12}
+11-14 21:26:08.896  2514  2514 I korri   : korri-app: window flags applied; system bars hidden: true
+11-14 21:26:08.923   524   896 I WindowManager: finishDrawing of relaunch: Window{1d8a38a u0 com.simonwjackson.korri.app/android.app.NativeActivity} 2622ms
+11-14 21:26:10.170  2514  3365 I korri   : korri-app: shell rendered surface=velvet page=empty count=0 selected=0
+11-14 21:26:10.171  2514  2514 I korri   : korri-app: window flags applied; system bars hidden: true
+11-14 21:26:14.319  2514  3365 I korri   : korri-app: the activity ended
+11-14 21:26:14.347   524   851 W InputManager-JNI: Input channel object '1d8a38a com.simonwjackson.korri.app/android.app.NativeActivity (client)' was disposed without first being removed with the input manager!
+11-14 21:26:14.395  2514  3579 I korri   : korri-app: korrid serves on 127.0.0.1:38205
+11-14 21:26:14.460  2514  3579 I korri   : korri-app: korrid answered system.health
+11-14 21:26:16.202   524   561 W WindowManager: Force clearing freeze: ActivityRecord{e275eb6 u0 com.simonwjackson.korri.app/android.app.NativeActivity t12}
+11-14 21:26:16.202   524   561 I WindowManager: Screen frozen for +2s333ms due to ActivityRecord{e275eb6 u0 com.simonwjackson.korri.app/android.app.NativeActivity t12}
+11-14 21:26:16.938  2514  2514 I korri   : korri-app: window flags applied; system bars hidden: true
+11-14 21:26:16.961   524  1984 I WindowManager: finishDrawing of relaunch: Window{663bd14 u0 com.simonwjackson.korri.app/android.app.NativeActivity} 2760ms
+11-14 21:26:18.372  2514  3579 I korri   : korri-app: shell rendered surface=velvet page=empty count=0 selected=0
+11-14 21:26:18.376  2514  2514 I korri   : korri-app: window flags applied; system bars hidden: true
+11-14 21:26:19.086   524   693 I ActivityManager: Force stopping com.simonwjackson.korri.app appid=10145 user=0: from pid 3711
+11-14 21:26:19.088   524   693 I ActivityManager: Killing 2514:com.simonwjackson.korri.app/u0a145 (adj 0): stop com.simonwjackson.korri.app due to from pid 3711
+11-14 21:26:19.090   524   693 W ActivityTaskManager: Force removing ActivityRecord{e275eb6 u0 com.simonwjackson.korri.app/android.app.NativeActivity t12 f}}: app died, no saved state
+11-14 21:26:19.096   524   693 W InputManager-JNI: Input channel object '663bd14 com.simonwjackson.korri.app/android.app.NativeActivity (client)' was disposed without first being removed with the input manager!
+11-14 21:26:19.164   524  1975 V ActivityManager: Got obituary of 2514:com.simonwjackson.korri.app
+11-14 21:26:21.248   524  1984 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.simonwjackson.korri.app/android.app.NativeActivity} from uid 2000
+11-14 21:26:21.433   757   819 D StartingSurfaceDrawer: addSplashScreen com.simonwjackson.korri.app theme=103012a task=14 suggestType=3
+11-14 21:26:21.555   524   570 I ActivityManager: Start proc 3792:com.simonwjackson.korri.app/u0a145 for pre-top-activity {com.simonwjackson.korri.app/android.app.NativeActivity}
+11-14 21:26:22.533  3792  3792 V GraphicsEnvironment: ANGLE Developer option for 'com.simonwjackson.korri.app' set to: 'default'
+11-14 21:26:22.963  3792  3838 I korri   : korrid: Android network observed: 4 addresses on [wlan0, eth0]
+11-14 21:26:23.151  3792  3836 I korri   : korri-app: korrid serves on 127.0.0.1:43537
+11-14 21:26:23.163  3792  3836 I korri   : korri-app: korrid answered system.health
+11-14 21:26:23.169  3792  3838 I korri   : korrid discovery: @korri:android-app discovery is not enabled
+11-14 21:26:24.495  3792  3792 I korri   : korri-app: window flags applied; system bars hidden: true
+11-14 21:26:24.643   524   558 I ActivityTaskManager: Displayed com.simonwjackson.korri.app/android.app.NativeActivity: +3s387ms
+11-14 21:26:24.983  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-14 21:26:24.984  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-14 21:26:25.037   524  2513 W InputManager-JNI: Input channel object '5a7cd66 Splash Screen com.simonwjackson.korri.app (client)' was disposed without first being removed with the input manager!
+11-14 21:26:25.142  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-14 21:26:25.142  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-14 21:26:25.150  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-14 21:26:25.343  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-14 21:26:25.343  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-14 21:26:25.343  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-14 21:26:25.512  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-14 21:26:25.512  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-14 21:26:25.512  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-14 21:26:25.617  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-14 21:26:25.617  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-14 21:26:25.617  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-14 21:26:25.737  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-14 21:26:25.737  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-14 21:26:25.737  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-14 21:26:25.808  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-14 21:26:25.808  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-14 21:26:25.808  3792  3838 I korri   : s_glBindAttribLocation: bind attrib 2 name inTextureCoords
+11-14 21:26:25.959  3792  3836 I korri   : korri-app: shell rendered surface=velvet page=empty count=0 selected=0
+11-14 21:26:25.960  3792  3792 I korri   : korri-app: window flags applied; system bars hidden: true

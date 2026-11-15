@@ -1,0 +1,128 @@
+{
+  "checks": {
+    "apk_has_no_dex": true,
+    "apk_has_code_false": true,
+    "apk_activity_is_androids_native_activity": true,
+    "apk_has_its_own_package": true,
+    "apk_has_both_abis": true,
+    "apk_carries_the_packages": true,
+    "korrid_serves_on_loopback": true,
+    "korrid_answers_the_shells_health_call": true,
+    "shell_shows_velvet_home": true,
+    "korrid_observes_the_network_in_rust": true,
+    "window_flags_applied_on_androids_main_thread": true,
+    "korrid_refuses_a_call_without_its_capability": true,
+    "korrid_refuses_a_wrong_capability": true,
+    "back_stays_in_the_app": true,
+    "home_leaves_the_app": true,
+    "relaunch_shows_the_shell_again_in_the_same_process": true,
+    "korrid_still_serves_after_home": true,
+    "a_new_activity_uses_the_running_korrid": true,
+    "a_new_process_starts_korrid_again_on_its_state": true,
+    "no_crash_panic_or_anr": true
+  },
+  "steps": {
+    "first_start": {
+      "korrid_port": 38205,
+      "korrid_answered_health": true,
+      "rendered": [
+        "velvet",
+        "empty",
+        "0",
+        "0"
+      ],
+      "screenshot": {
+        "file": "home.png",
+        "colours": 738
+      },
+      "resumed": "com.simonwjackson.korri.app/android.app.NativeActivity",
+      "pid": "2514",
+      "seconds_to_rendered": 9.4
+    },
+    "back": {
+      "screenshot": {
+        "file": "after-back.png",
+        "colours": 738
+      },
+      "resumed": "com.simonwjackson.korri.app/android.app.NativeActivity",
+      "pid": "2514"
+    },
+    "home": {
+      "resumed": "com.google.android.apps.nexuslauncher/.NexusLauncherActivity",
+      "pid": "2514"
+    },
+    "relaunch": {
+      "rendered": [
+        "velvet",
+        "empty",
+        "0",
+        "0"
+      ],
+      "screenshot": {
+        "file": "relaunch.png",
+        "colours": 728
+      },
+      "resumed": "com.simonwjackson.korri.app/android.app.NativeActivity",
+      "pid": "2514"
+    },
+    "recreated": {
+      "korrid_port": 38205,
+      "korrid_answered_health": true,
+      "rendered": [
+        "velvet",
+        "empty",
+        "0",
+        "0"
+      ],
+      "screenshot": {
+        "file": "recreated.png",
+        "colours": 726
+      },
+      "resumed": "com.simonwjackson.korri.app/android.app.NativeActivity",
+      "pid": "2514",
+      "previous_activity_ended": true
+    },
+    "cold_start": {
+      "korrid_port": 43537,
+      "korrid_answered_health": true,
+      "rendered": [
+        "velvet",
+        "empty",
+        "0",
+        "0"
+      ],
+      "screenshot": {
+        "file": "cold.png",
+        "colours": 729
+      },
+      "resumed": "com.simonwjackson.korri.app/android.app.NativeActivity",
+      "pid": "3792"
+    }
+  },
+  "store": {
+    "apk": "/nix/store/0aps2pvb9byj8nw55crhmab6jbqir8zi-korri-android-app-apk-0.1.0/korri-android-app-unsigned.apk"
+  },
+  "apk_bytes": 71426180,
+  "library_bytes": {
+    "lib/arm64-v8a/libkorri_android_app.so": 103123768,
+    "lib/x86_64/libkorri_android_app.so": 103763800
+  },
+  "emulator": {
+    "release": "12",
+    "sdk": "31",
+    "abi": "x86_64"
+  },
+  "network": "3 addresses on [wlan0]",
+  "window_flags": "korri-app: window flags applied; system bars hidden: true",
+  "rpc_from_outside": {
+    "without_capability": 401,
+    "with_a_wrong_capability": 401
+  },
+  "crashes": [],
+  "emulator_stop": {
+    "started": true,
+    "exit_code": 0,
+    "processes_left": []
+  },
+  "pass": true
+}
