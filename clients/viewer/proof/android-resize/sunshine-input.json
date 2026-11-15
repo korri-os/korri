@@ -1,0 +1,4831 @@
+[
+ {
+  "kind": "relative mouse move",
+  "time": "2026-11-15 04:31:09.080",
+  "fields": {
+   "deltaX": "1",
+   "deltaY": "1"
+  }
+ },
+ {
+  "kind": "relative mouse move",
+  "time": "2026-11-15 04:31:09.090",
+  "fields": {
+   "deltaX": "-1",
+   "deltaY": "-1"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-15 04:31:28.084",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "804B",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-15 04:31:28.086",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "804B",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-15 04:31:28.089",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "804F",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-15 04:31:28.092",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "804F",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-15 04:31:28.092",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "8052",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-15 04:31:28.092",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "8052",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-15 04:31:28.097",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "8052",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-15 04:31:28.097",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "8052",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-15 04:31:28.097",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "8049",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-15 04:31:28.097",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "8049",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:28.635",
+  "fields": {
+   "eventType": "01",
+   "pointerId": "00000000",
+   "x": "0.5",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:28.635",
+  "fields": {
+   "eventType": "02",
+   "pointerId": "00000000",
+   "x": "0.5",
+   "y": "0.5",
+   "pressureOrDistance": "0",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.172",
+  "fields": {
+   "eventType": "01",
+   "pointerId": "00000000",
+   "x": "0.25",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.173",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.251667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.173",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.251667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.173",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.253333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.190",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.27",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.191",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.276667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.194",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.283333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.194",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.285",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.203",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.298333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.207",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.3",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.208",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.3",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.208",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.306667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.209",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.311667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.209",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.311667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.214",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.313333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.214",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.315",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.215",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.316667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.215",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.318333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.215",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.32",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.215",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.321667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.216",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.321667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.217",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.323333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.217",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.323333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.218",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.326667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.219",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.328333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.223",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.331667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.223",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.331667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.224",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.335",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.225",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.335",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.225",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.336667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.225",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.336667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.227",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.338333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.229",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.338333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.229",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.341667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.234",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.343333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.240",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.345",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.241",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.351667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.248",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.358333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.249",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.36",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.249",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.36",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.249",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.36",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.249",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.361667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.250",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.366667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.250",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.366667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.250",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.366667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.253",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.368333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.253",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.37",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.253",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.371667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.254",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.373333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.255",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.373333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.255",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.375",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.255",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.375",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.255",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.376667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.255",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.378333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.257",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.386667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.260",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.39",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.260",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.39",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.260",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.391667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.260",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.393333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.260",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.393333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.260",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.395",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.260",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.395",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.260",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.395",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.262",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.396667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.262",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.4",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.267",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.41",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.268",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.41",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.271",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.411667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.274",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.413333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.281",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.421667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.283",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.43",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.283",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.431667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.283",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.431667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.283",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.433333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.283",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.433333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.283",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.435",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.283",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.436667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.283",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.436667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.283",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.436667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.283",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.438333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.284",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.44",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.284",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.44",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.285",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.44",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.285",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.44",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.285",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.44",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.296",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.441667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.296",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.441667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.296",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.443333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.296",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.445",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.296",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.445",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.296",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.445",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.296",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.446667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.296",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.446667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.296",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.446667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.296",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.448333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.296",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.455",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.296",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.456667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.296",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.458333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.296",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.458333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.296",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.458333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.304",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.461667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.306",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.475",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.307",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.475",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.307",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.476667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.308",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.476667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.309",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.48",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.309",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.481667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.314",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.481667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.314",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.485",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.314",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.485",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.314",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.485",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.314",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.488333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.317",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.488333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.325",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.505",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.325",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.506667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.325",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.506667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.326",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.508333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.326",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.508333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.327",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.51",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.327",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.51",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.327",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.511667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.327",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.511667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.328",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.511667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.328",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.513333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.329",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.513333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.329",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.513333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.330",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.515",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.341",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.516667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.342",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.521667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.342",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.523333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.342",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.523333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.342",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.525",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.342",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.525",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.342",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.526667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.342",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.526667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.342",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.526667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.342",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.528333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.342",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.528333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.342",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.528333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.342",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.53",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.348",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.543333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.348",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.545",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.348",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.545",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.348",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.545",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.349",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.546667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.358",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.555",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.358",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.556667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.358",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.556667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.358",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.556667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.358",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.558333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.358",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.558333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.359",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.56",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.360",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.563333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.360",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.565",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.360",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.566667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.360",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.566667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.361",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.566667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.361",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.568333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.362",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.568333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.362",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.568333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.362",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.57",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.369",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.57",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.369",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.571667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.369",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.571667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.369",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.573333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.369",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.575",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.370",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.576667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.370",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.576667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.370",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.576667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.370",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.578333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.370",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.578333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.371",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.578333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.371",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.58",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.371",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.581667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.375",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.586667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.382",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.588333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.383",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.591667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.383",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.593333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.383",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.595",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.383",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.595",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.383",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.596667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.383",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.598333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.383",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.6",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.383",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.601667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.383",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.601667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.383",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.603333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.384",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.605",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.384",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.605",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.385",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.606667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.392",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.61",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.393",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.61",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.393",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.611667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.393",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.613333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.394",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.613333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.394",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.615",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.394",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.616667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.394",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.616667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.394",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.62",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.394",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.621667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.394",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.621667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.394",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.621667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.394",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.623333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.395",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.623333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.396",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.623333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.396",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.625",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.396",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.626667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.396",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.626667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.397",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.626667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.397",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.628333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.397",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.628333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.398",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.628333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.398",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.63",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.398",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.63",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.404",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.631667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.406",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.631667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.417",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.643333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.417",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.656667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.417",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.658333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.417",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.66",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.426",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.675",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.426",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.675",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.426",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.676667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.427",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.676667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.427",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.676667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.427",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.678333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.428",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.678333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.429",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.68",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.429",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.68",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.429",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.681667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.430",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.681667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.430",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.681667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.430",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.683333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.430",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.683333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.431",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.683333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.431",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.685",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.436",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.685",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.436",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.693333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.438",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.693333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.438",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.693333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.438",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.695",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.438",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.696667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.438",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.696667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.439",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.696667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.439",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.696667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.439",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.698333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.440",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.698333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.447",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.7",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.447",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.71",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.448",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.711667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.448",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.711667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.451",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.711667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.451",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.713333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.451",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.715",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.452",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.716667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.452",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.716667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.452",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.716667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.452",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.718333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.452",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.718333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.452",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.718333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.463",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.733333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.464",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.736667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.464",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.736667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.464",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.738333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.464",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.738333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.464",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.738333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.464",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.738333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.467",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.738333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.467",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.74",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.467",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.74",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.467",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.74",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.467",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.74",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.467",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.741667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.467",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.741667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.467",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.741667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.467",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.741667",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.467",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.743333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.467",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.743333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.467",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.743333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.468",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.743333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.468",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.743333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.468",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.745",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.468",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.745",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.468",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.745",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.481",
+  "fields": {
+   "eventType": "03",
+   "pointerId": "00000000",
+   "x": "0.748333",
+   "y": "0.5",
+   "pressureOrDistance": "1",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "touch",
+  "time": "2026-11-15 04:31:29.481",
+  "fields": {
+   "eventType": "02",
+   "pointerId": "00000000",
+   "x": "0.75",
+   "y": "0.5",
+   "pressureOrDistance": "0",
+   "contactAreaMajor": "0",
+   "contactAreaMinor": "0",
+   "rotation": "65535"
+  }
+ },
+ {
+  "kind": "absolute mouse move",
+  "time": "2026-11-15 04:31:30.013",
+  "fields": {
+   "x": "304",
+   "y": "540",
+   "width": "607",
+   "height": "1079"
+  }
+ },
+ {
+  "kind": "controller arrival",
+  "time": "2026-11-15 04:31:33.306",
+  "fields": {
+   "controllerNumber": "0",
+   "type": "01",
+   "capabilities": "0001",
+   "supportedButtonFlags": "0000F7FF"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:33.306",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:33.306",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00001000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:33.409",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00001000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:33.445",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:33.644",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "32766",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:33.657",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "32766",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:33.907",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "32766",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:33.949",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:34.152",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "FF",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:34.157",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "FF",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:34.346",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:34.409",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:34.543",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000004",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:34.656",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000004",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:34.694",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:34.895",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00002000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:34.910",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00002000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:35.050",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:35.156",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:35.243",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00004000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:35.407",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00004000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:35.645",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00004000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:35.660",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00004000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:35.702",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00004000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:35.753",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00004000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:35.804",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00004000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:35.855",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00004000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:35.910",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00004000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:35.962",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00004000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:36.011",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00004000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:36.067",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00004000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:36.119",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00004000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:36.159",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00004000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:36.170",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00004000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:36.225",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00004000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:36.245",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:36.408",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:36.658",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:36.789",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:36.914",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0001",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:36.914",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0000",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:37.161",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0000",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:37.412",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0000",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:37.659",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0000",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ },
+ {
+  "kind": "controller",
+  "time": "2026-11-15 04:31:37.909",
+  "fields": {
+   "controllerNumber": "0",
+   "activeGamepadMask": "0000",
+   "buttonFlags": "00000000",
+   "leftTrigger": "00",
+   "rightTrigger": "00",
+   "leftStickX": "0",
+   "leftStickY": "0",
+   "rightStickX": "0",
+   "rightStickY": "0"
+  }
+ }
+]

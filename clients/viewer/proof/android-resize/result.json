@@ -1,0 +1,873 @@
+{
+  "sender": "root@ibuki",
+  "stream_host": "100.96.31.114",
+  "checks": {
+    "apk_has_no_code": true,
+    "apk_allows_no_backup": true,
+    "apk_leaves_no_recents_entry": true,
+    "apk_has_both_abis": true,
+    "sender_plays_the_tone": true,
+    "sender_logs_input": true,
+    "android_test_trust_anchor": true,
+    "android_test_https": true,
+    "android_test_lib": true,
+    "startup_shows_the_bar": true,
+    "running_event": true,
+    "start_reply_ok": true,
+    "app_in_front_while_streaming": true,
+    "video_layer_exists": true,
+    "screenshots_read_the_bar": true,
+    "screenshots_show_it_moving": true,
+    "screenshots_show_the_streams_shape": true,
+    "resize_sender_output_took_the_new_size": true,
+    "resize_decoder_saw_the_new_size": true,
+    "resize_decoder_gave_the_new_size": true,
+    "resize_decoder_did_not_fail": true,
+    "resize_layer_placed_for_the_new_shape": true,
+    "resize_screenshots_read_the_bar": true,
+    "resize_screenshots_show_the_new_shape": true,
+    "resize_picture_moves_at_the_new_size": true,
+    "input_unbuffered_dispatch_requested": true,
+    "input_pad_identity_from_android": true,
+    "input_pad_is_controller_0": true,
+    "input_pad_removed": true,
+    "picture_moves_after_input": true,
+    "audio_server_restarted": true,
+    "sunshine_saw_the_session": true,
+    "stopped_event": true,
+    "stop_reply_ok": true,
+    "viewer_ended_without_failure": true,
+    "app_finished_after_back": true,
+    "no_crash": true,
+    "sound_output_reported": true,
+    "sound_played": true,
+    "sound_closed_before_stopped": true,
+    "sound_went_on_after_the_audio_server_restarted": true,
+    "input_report_has_no_failure": true,
+    "input_gate_closed_before_the_core_stopped": true,
+    "picture_path_reported": true,
+    "frame_record_written": true,
+    "frame_record_ids_move": true,
+    "frame_record_goes_on_at_the_new_size": true,
+    "a_start_without_dump_is_refused": true,
+    "a_start_with_dump_granted_is_allowed": true,
+    "sender_keys_arrived": true,
+    "sender_touches_arrived": true,
+    "sender_mouse_arrived": true,
+    "sender_pad_arrived_as_xbox_number_0": true,
+    "sender_pad_buttons_sticks_triggers_and_hat_arrived": true,
+    "sender_pad_held_button_kept_arriving": true,
+    "sender_pad_let_go_when_it_went": true,
+    "sender_pad_heartbeat_repeats_every_250_ms": true,
+    "sunshine_saw_the_end": true,
+    "sunshine_stream_followed_the_output": true,
+    "sunshine_captured_sound": true,
+    "emulator_played_the_streams_tone": true,
+    "emulator_played_the_tests_tone": true
+  },
+  "store": {
+    "apk": "/nix/store/9f97g8hf8fjq07qclwp4rm3di4wgfz1i-korri-viewer-android-apk-0.1.0/korri-viewer-unsigned.apk",
+    "refusal_probe": "/nix/store/00fgx992pnszmr7i0vkmvw9ldjssngkk-korri-viewer-refusal-probe-apk-0.1.0/korri-viewer-refusal-probe-unsigned.apk",
+    "viewer": "/nix/store/rsim06gambvx8d3jr8nlfqp5ma2gjisa-korri-viewer-0.1.0",
+    "tests": "/nix/store/4nx035pshyl6qmvshvn0clza3g6175v3-korri-viewer-android-check/x86_64/tests"
+  },
+  "sunshine_port": 47493,
+  "emulator": {
+    "release": "12",
+    "sdk": "31",
+    "abi": "x86_64"
+  },
+  "startup_screenshots": {
+    "shots": [
+      {
+        "file": "00.png",
+        "from_start_ms": [
+          848,
+          1764
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "01.png",
+        "from_start_ms": [
+          1967,
+          2786
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "02.png",
+        "from_start_ms": [
+          2927,
+          3191
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "03.png",
+        "from_start_ms": [
+          3256,
+          3570
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "04.png",
+        "from_start_ms": [
+          3654,
+          3969
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "05.png",
+        "from_start_ms": [
+          4044,
+          4359
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "06.png",
+        "from_start_ms": [
+          4429,
+          4693
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "07.png",
+        "from_start_ms": [
+          4745,
+          5010
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "08.png",
+        "from_start_ms": [
+          5065,
+          5379
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "09.png",
+        "from_start_ms": [
+          5447,
+          5711
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "10.png",
+        "from_start_ms": [
+          5774,
+          6038
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "11.png",
+        "from_start_ms": [
+          6096,
+          6361
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "12.png",
+        "from_start_ms": [
+          6425,
+          6690
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "13.png",
+        "from_start_ms": [
+          6744,
+          7008
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "14.png",
+        "from_start_ms": [
+          7076,
+          7340
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "15.png",
+        "from_start_ms": [
+          7396,
+          7660
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "16.png",
+        "from_start_ms": [
+          7716,
+          7930
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "17.png",
+        "from_start_ms": [
+          7983,
+          8247
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "18.png",
+        "from_start_ms": [
+          8299,
+          8613
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "19.png",
+        "from_start_ms": [
+          8665,
+          9030
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "20.png",
+        "from_start_ms": [
+          9105,
+          10273
+        ],
+        "id": 5303
+      }
+    ],
+    "first_readable": {
+      "file": "20.png",
+      "from_start_ms": [
+        9105,
+        10273
+      ],
+      "id": 5303
+    }
+  },
+  "app_pid": "4126",
+  "streaming_screenshots": [
+    {
+      "file": "streaming-1.png",
+      "id": 5515,
+      "x": 336.0,
+      "y": 270.0,
+      "cell": 48.0,
+      "expected": {
+        "cell": 48.0,
+        "y": 270.0
+      },
+      "in_place": true
+    },
+    {
+      "file": "streaming-2.png",
+      "id": 5605,
+      "x": 336.0,
+      "y": 270.0,
+      "cell": 48.0,
+      "expected": {
+        "cell": 48.0,
+        "y": 270.0
+      },
+      "in_place": true
+    },
+    {
+      "file": "streaming-3.png",
+      "id": 5710,
+      "x": 336.0,
+      "y": 270.0,
+      "cell": 48.0,
+      "expected": {
+        "cell": 48.0,
+        "y": 270.0
+      },
+      "in_place": true
+    },
+    {
+      "file": "streaming-4.png",
+      "id": 5811,
+      "x": 336.0,
+      "y": 270.0,
+      "cell": 48.0,
+      "expected": {
+        "cell": 48.0,
+        "y": 270.0
+      },
+      "in_place": true
+    }
+  ],
+  "resize": {
+    "before": {
+      "left": 240,
+      "top": 0,
+      "right": 2160,
+      "bottom": 1080,
+      "window": [
+        2400,
+        1080
+      ]
+    },
+    "size": [
+      720,
+      1280
+    ],
+    "sender_display": {
+      "name": "HEADLESS-1",
+      "mode": {
+        "width": 720,
+        "height": 1280,
+        "refresh": 58823
+      },
+      "refresh_hz": 58.823,
+      "transform": "normal",
+      "power": true,
+      "scale": 1.0,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 720,
+        "height": 1280
+      }
+    },
+    "after": {
+      "left": 896,
+      "top": 0,
+      "right": 1504,
+      "bottom": 1080,
+      "window": [
+        2400,
+        1080
+      ]
+    },
+    "screenshots": [
+      {
+        "file": "resized-1.png",
+        "id": 95,
+        "x": 927.0,
+        "y": 275.0,
+        "cell": 15.0,
+        "expected": {
+          "cell": 15.2,
+          "y": 270.22222222222223
+        },
+        "in_place": true
+      },
+      {
+        "file": "resized-2.png",
+        "id": 183,
+        "x": 927.0,
+        "y": 275.0,
+        "cell": 15.0,
+        "expected": {
+          "cell": 15.2,
+          "y": 270.22222222222223
+        },
+        "in_place": true
+      },
+      {
+        "file": "resized-3.png",
+        "id": 275,
+        "x": 927.0,
+        "y": 275.0,
+        "cell": 15.0,
+        "expected": {
+          "cell": 15.2,
+          "y": 270.22222222222223
+        },
+        "in_place": true
+      },
+      {
+        "file": "resized-4.png",
+        "id": 367,
+        "x": 927.0,
+        "y": 275.0,
+        "cell": 15.0,
+        "expected": {
+          "cell": 15.2,
+          "y": 270.22222222222223
+        },
+        "in_place": true
+      }
+    ],
+    "app_lines": [
+      "picture: the stream's size changes from 1280x720 to 720x1280 at frame 606; the decoder follows it (adaptive playback up to 2960x2960)",
+      "picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 719, 1279), width: int32(720), height: int32(1280), max-height: int32(2960), max-width: int32(2960), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}",
+      "picture: decoded size 720x1280",
+      "picture: video layer 720x1280 placed at (896, 0)-(1504, 1080) in the window 2400x1080"
+    ]
+  },
+  "input": {
+    "placed": {
+      "left": 896,
+      "top": 0,
+      "right": 1504,
+      "bottom": 1080,
+      "window": [
+        2400,
+        1080
+      ]
+    },
+    "steps": [
+      {
+        "name": "keys",
+        "command": "input keyevent KEYCODE_K KEYCODE_O KEYCODE_R KEYCODE_R KEYCODE_I",
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "tap",
+        "command": "input tap 1200 540",
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "swipe",
+        "command": "input swipe 1048 540 1352 540 300",
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "mouse",
+        "command": "input mouse tap 1200 540",
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "gamepad",
+        "command": "hid /data/local/tmp/korri-gamepad.json",
+        "exit_code": 0,
+        "output": ""
+      }
+    ],
+    "app_lines": [
+      "input: controller Korri test gamepad (16) vendor 045e product 7e57 external true",
+      "input: Korri test gamepad sticks Some((0, 1)) Some((11, 14)) triggers Some((23, 22)) hat true deadzones 0.05 0.05 0.13",
+      "input: Korri test gamepad (16) is controller 0",
+      "input: arrival Arrival { number: 0, active_mask: 1, kind: 1, buttons: 63487, capabilities: 1 }",
+      "input: controller Korri test gamepad (16) removed",
+      "input: controller number 0 is free"
+    ]
+  },
+  "screenshots_after_input": [
+    {
+      "file": "after-input-1.png",
+      "id": 1157
+    },
+    {
+      "file": "after-input-2.png",
+      "id": 1245
+    },
+    {
+      "file": "after-input-3.png",
+      "id": 1334
+    }
+  ],
+  "audio_server_restart": {
+    "before": "362",
+    "after": "4684"
+  },
+  "sound_after_the_restart": [],
+  "sound": {
+    "output": "sound: output try 0 asked low-latency granted none sharing shared rate 48000 channels 2 burst 960 capacity 2132 buffer 1920 (asked 1920) packet 240 frames",
+    "ended": "5310 callbacks, 2398151 frames played, 51600 frames silent, 131 short callbacks after the first sound, 10375 packets, 0 concealed, 380 dropped over 40 ms pending, 0 not decoded, 3 device xruns, 0 reopened",
+    "callbacks": 5310,
+    "played": 2398151,
+    "silent": 51600,
+    "short": 131,
+    "packets": 10375,
+    "concealed": 0,
+    "dropped": 380,
+    "decode_errors": 0,
+    "xruns": 3,
+    "reopened": 0
+  },
+  "sound_restart": {
+    "seconds_before_the_server_died": 35.9,
+    "seconds_played": 50.0
+  },
+  "input_report": "10 keys, 45 controller states, 1 arrivals, 2 mouse, 613 touches sent; 0 unsupported, 0 outside the stream, 0 failed",
+  "viewer_ran": {
+    "decode": "mediacodec",
+    "decoder": "c2.goldfish.h264.decoder"
+  },
+  "picture_losses": {
+    "idr_requested_by_the_decoder": 0,
+    "frames_not_decoded": 0,
+    "decode_unit_queue_overflows": 1,
+    "frames_the_network_dropped": 0
+  },
+  "frame_record": {
+    "header": "index,frame_number,enqueue_ns,decoded_ns,display_ns",
+    "rows": 2930,
+    "in_order": true,
+    "decoded": 2929,
+    "handed_off": 2883,
+    "recording_units": 2930,
+    "handed_off_readable_ids": 2883,
+    "handed_off_distinct_ids": 2882,
+    "first_handed_off_id": 5302,
+    "last_handed_off_id": 2352,
+    "first_handoff_ns": 86923174851,
+    "sizes": [
+      {
+        "size": [
+          1280,
+          720
+        ],
+        "first_handoff_ns": 86923174851,
+        "handed_off": 564,
+        "readable_ids": 564,
+        "distinct_ids": 563,
+        "ids_never_go_back": true,
+        "repeated": [
+          [
+            584,
+            5905,
+            585,
+            5905
+          ]
+        ],
+        "went_back": [],
+        "first_id": 5302,
+        "last_id": 5905
+      },
+      {
+        "size": [
+          720,
+          1280
+        ],
+        "first_handoff_ns": 97664085261,
+        "handed_off": 2319,
+        "readable_ids": 2319,
+        "distinct_ids": 2319,
+        "ids_never_go_back": true,
+        "repeated": [],
+        "went_back": [],
+        "first_id": 5,
+        "last_id": 2352
+      }
+    ],
+    "handed_off_ids_never_go_back": true,
+    "startup_ms": 9132.2
+  },
+  "refusal": {
+    "without_dump": "refused: java.lang.SecurityException: Permission Denial: starting Intent { cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity } from ProcessRecord{21dec77 4795:com.simonwjackson.korri.viewer.refusal/u0a182} (pid=4795, uid=10182) requires android.permission.DUMP",
+    "with_dump_granted": "started",
+    "viewer_lines_after_the_grant": [
+      "   152.295  4126  4865 E korri-viewer: viewer failed: no intent extra args"
+    ]
+  },
+  "input_at_the_sender": {
+    "counts": {
+      "absolute mouse move": 1,
+      "controller": 45,
+      "controller arrival": 1,
+      "keyboard": 10,
+      "relative mouse move": 2,
+      "touch": 287
+    },
+    "keyboard": {
+      "sent": [
+        [
+          3,
+          75
+        ],
+        [
+          4,
+          75
+        ],
+        [
+          3,
+          79
+        ],
+        [
+          4,
+          79
+        ],
+        [
+          3,
+          82
+        ],
+        [
+          4,
+          82
+        ],
+        [
+          3,
+          82
+        ],
+        [
+          4,
+          82
+        ],
+        [
+          3,
+          73
+        ],
+        [
+          4,
+          73
+        ]
+      ],
+      "every_key_down_and_up_in_order": true,
+      "flags": [
+        1
+      ]
+    },
+    "touch": {
+      "types": [
+        1,
+        2,
+        3
+      ],
+      "at_the_middle": 24
+    },
+    "mouse": {
+      "positions": 1,
+      "reference": [
+        [
+          608,
+          1080
+        ]
+      ]
+    },
+    "arrival": [
+      {
+        "controllerNumber": "0",
+        "type": "01",
+        "capabilities": "0001",
+        "supportedButtonFlags": "0000F7FF"
+      }
+    ],
+    "controller": {
+      "packets": 45,
+      "a_pressed": true,
+      "left_stick_full_right": true,
+      "right_trigger_full": true,
+      "hat_left": true,
+      "x_held_packets": 16,
+      "last": {
+        "controllerNumber": "0",
+        "activeGamepadMask": "0000",
+        "buttonFlags": "00000000",
+        "leftTrigger": "00",
+        "rightTrigger": "00",
+        "leftStickX": "0",
+        "leftStickY": "0",
+        "rightStickX": "0",
+        "rightStickY": "0"
+      },
+      "after_it_went": {
+        "packets": 5,
+        "gaps_ms": [
+          247,
+          251,
+          247,
+          250
+        ]
+      }
+    }
+  },
+  "sender_restore": {
+    "live_games": [],
+    "product_units": {
+      "at_start": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 9382359
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 2306976522669
+        },
+        "korri-clock-governor.service": {
+          "pid": 391802,
+          "started": 1996941424564
+        },
+        "korri-compositor.service": {
+          "pid": 391963,
+          "started": 1996941782522
+        },
+        "korri-display-idle.service": {
+          "pid": 638368,
+          "started": 2044216670291
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 1199921,
+          "started": 2306976560000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 9392616
+        },
+        "korri-inputd.service": {
+          "pid": 1200059,
+          "started": 2306976835172
+        },
+        "korri-limits.service": {
+          "pid": 391859,
+          "started": 1996941515074
+        },
+        "korri-local-signer.service": {
+          "pid": 1200104,
+          "started": 2306976944036
+        },
+        "korri-moonlight-setup.service": {
+          "pid": 1197047,
+          "started": 2305314914830
+        },
+        "korri-plugin-admin.service": {
+          "pid": 1149079,
+          "started": 2135996837458
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 2135991806194
+        },
+        "korri-shell-credentials.service": {
+          "pid": 0,
+          "started": 1996941434053
+        },
+        "korri-shell.service": {
+          "pid": 1226839,
+          "started": 2336866213226
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 665317,
+          "started": 2061079110000
+        },
+        "korri-sunshine.service": {
+          "pid": 1200115,
+          "started": 2306976992534
+        },
+        "korri-viewer-setup.service": {
+          "pid": 1223213,
+          "started": 2311029257810
+        },
+        "korrid.service": {
+          "pid": 1213123,
+          "started": 2308257569159
+        }
+      },
+      "at_end": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 9382359
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 2306976522669
+        },
+        "korri-clock-governor.service": {
+          "pid": 391802,
+          "started": 1996941424564
+        },
+        "korri-compositor.service": {
+          "pid": 391963,
+          "started": 1996941782522
+        },
+        "korri-display-idle.service": {
+          "pid": 638368,
+          "started": 2044216670291
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 1199921,
+          "started": 2306976560000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 9392616
+        },
+        "korri-inputd.service": {
+          "pid": 1200059,
+          "started": 2306976835172
+        },
+        "korri-limits.service": {
+          "pid": 391859,
+          "started": 1996941515074
+        },
+        "korri-local-signer.service": {
+          "pid": 1200104,
+          "started": 2306976944036
+        },
+        "korri-moonlight-setup.service": {
+          "pid": 1197047,
+          "started": 2305314914830
+        },
+        "korri-plugin-admin.service": {
+          "pid": 1149079,
+          "started": 2135996837458
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 2135991806194
+        },
+        "korri-shell-credentials.service": {
+          "pid": 0,
+          "started": 1996941434053
+        },
+        "korri-shell.service": {
+          "pid": 1226839,
+          "started": 2336866213226
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 665317,
+          "started": 2061079110000
+        },
+        "korri-sunshine.service": {
+          "pid": 1200115,
+          "started": 2306976992534
+        },
+        "korri-viewer-setup.service": {
+          "pid": 1223213,
+          "started": 2311029257810
+        },
+        "korrid.service": {
+          "pid": 1213123,
+          "started": 2308257569159
+        }
+      },
+      "changed": []
+    },
+    "pass": true,
+    "pids_unchanged": {},
+    "run_folder": "/tmp/korri-stream-cadence-sender-8x3nyh5o",
+    "run_folder_bytes": 18984428,
+    "run_folder_removed": true,
+    "stray_processes_killed": [],
+    "remaining_processes": [],
+    "other_processes": [],
+    "new_input_devices": [],
+    "gone_input_devices": [],
+    "input_rule": "record",
+    "errors": []
+  },
+  "emulator_stop": {
+    "started": true,
+    "exit_code": 0,
+    "processes_left": []
+  },
+  "emulator_sound": {
+    "rate": 48000,
+    "channels": 2,
+    "seconds": 61.5,
+    "seconds_of_sound": 52.1,
+    "seconds_at_1000_hz": 48.6,
+    "median_rms_at_1000_hz": 268.7,
+    "seconds_at_440_hz": 2.0,
+    "median_rms_at_440_hz": 200.4
+  },
+  "pass": true
+}

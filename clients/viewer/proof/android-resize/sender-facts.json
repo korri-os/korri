@@ -1,0 +1,233 @@
+{
+  "model": "NUC8i3BEK",
+  "architecture": "x86_64",
+  "boot_id": "9d34e8c2-b496-43d0-b5a0-017e32dcef9c",
+  "os_release": {
+    "ANSI_COLOR": "\"0;38;2;126;186;228\"",
+    "BUG_REPORT_URL": "\"https://github.com/NixOS/nixpkgs/issues\"",
+    "BUILD_ID": "\"26.11.20260923.4975466\"",
+    "CPE_NAME": "\"cpe:/o:nixos:nixos:26.11\"",
+    "DEFAULT_HOSTNAME": "nixos",
+    "DOCUMENTATION_URL": "\"https://nixos.org/learn.html\"",
+    "HOME_URL": "\"https://nixos.org/\"",
+    "ID": "nixos",
+    "LOGO": "\"nix-snowflake\"",
+    "NAME": "NixOS",
+    "PRETTY_NAME": "\"NixOS 26.11 (Zokor)\"",
+    "SUPPORT_URL": "\"https://nixos.org/community.html\"",
+    "VENDOR_NAME": "NixOS",
+    "VENDOR_URL": "\"https://nixos.org/\"",
+    "VERSION": "\"26.11 (Zokor)\"",
+    "VERSION_CODENAME": "zokor",
+    "VERSION_ID": "\"26.11\""
+  },
+  "display": {
+    "name": "HEADLESS-1",
+    "mode": {
+      "width": 1280,
+      "height": 720,
+      "refresh": 58823
+    },
+    "refresh_hz": 58.823,
+    "transform": "normal",
+    "power": true,
+    "scale": 1.0,
+    "rect": {
+      "x": 0,
+      "y": 0,
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "sunshine_version": "2026.516.143833",
+  "working_encoders": [
+    "h264_vaapi",
+    "hevc_vaapi"
+  ],
+  "fixture_user": "korri",
+  "thermal": [
+    {
+      "zone": "thermal_zone0",
+      "type": "pch_cannonlake",
+      "temp": 39000,
+      "trips": [
+        {
+          "type": "critical",
+          "temp": 120000
+        }
+      ],
+      "unreadable": null,
+      "limits": {
+        "critical": 120000,
+        "start_below": 100000,
+        "end_at": 110000
+      }
+    },
+    {
+      "zone": "thermal_zone1",
+      "type": "acpitz",
+      "temp": -263200,
+      "trips": [],
+      "unreadable": null,
+      "limits": null
+    },
+    {
+      "zone": "thermal_zone2",
+      "type": "acpitz",
+      "temp": 27800,
+      "trips": [
+        {
+          "type": "critical",
+          "temp": 119000
+        },
+        {
+          "type": "active",
+          "temp": 71000
+        },
+        {
+          "type": "active",
+          "temp": 55000
+        },
+        {
+          "type": "active",
+          "temp": 50000
+        },
+        {
+          "type": "active",
+          "temp": 45000
+        },
+        {
+          "type": "active",
+          "temp": 40000
+        }
+      ],
+      "unreadable": null,
+      "limits": {
+        "critical": 119000,
+        "start_below": 99000,
+        "end_at": 109000
+      }
+    },
+    {
+      "zone": "thermal_zone3",
+      "type": "iwlwifi_1",
+      "temp": 37000,
+      "trips": [
+        {
+          "type": "passive",
+          "temp": -274000
+        },
+        {
+          "type": "passive",
+          "temp": -274000
+        },
+        {
+          "type": "passive",
+          "temp": -274000
+        },
+        {
+          "type": "passive",
+          "temp": -274000
+        },
+        {
+          "type": "passive",
+          "temp": -274000
+        },
+        {
+          "type": "passive",
+          "temp": -274000
+        },
+        {
+          "type": "passive",
+          "temp": -274000
+        },
+        {
+          "type": "passive",
+          "temp": -274000
+        }
+      ],
+      "unreadable": null,
+      "limits": null
+    },
+    {
+      "zone": "thermal_zone4",
+      "type": "x86_pkg_temp",
+      "temp": 43000,
+      "trips": [
+        {
+          "type": "passive",
+          "temp": -274000
+        },
+        {
+          "type": "passive",
+          "temp": -274000
+        }
+      ],
+      "unreadable": null,
+      "limits": null
+    },
+    {
+      "zone": "hwmon3/temp1",
+      "type": "coretemp Package id 0",
+      "driver": "coretemp",
+      "temp": 43000,
+      "trips": [
+        {
+          "type": "critical",
+          "temp": 100000
+        }
+      ],
+      "unreadable": null,
+      "limits": {
+        "critical": 100000,
+        "start_below": 80000,
+        "end_at": 90000
+      }
+    }
+  ],
+  "heat_guarded": true,
+  "hardware_picture_path": false,
+  "board": [],
+  "live_games_at_start": [],
+  "input_rule": "record",
+  "tone": {
+    "hz": 1000,
+    "sink": "korri-tone"
+  },
+  "log_input": true,
+  "sunshine_port": 47493,
+  "sunshine_control_port": 47503,
+  "listening_tcp_ports": [
+    47493
+  ],
+  "processes": {
+    "compositor": {
+      "pid": 1229207
+    },
+    "sunshine": {
+      "pid": 1229221
+    },
+    "sound": {
+      "pid": 1229205
+    }
+  },
+  "sender_fixture": {
+    "application": "Desktop",
+    "renderer": "gles2",
+    "render_node": "/dev/dri/renderD128",
+    "hardware_encoder": true,
+    "attempts": [
+      {
+        "render_node": "/dev/dri/renderD128",
+        "working_encoders": [
+          "h264_vaapi",
+          "hevc_vaapi"
+        ],
+        "hardware_encoder": true,
+        "port": 47493,
+        "sunshine_version": "2026.516.143833"
+      }
+    ],
+    "run_folder": "/tmp/korri-stream-cadence-sender-8x3nyh5o"
+  }
+}

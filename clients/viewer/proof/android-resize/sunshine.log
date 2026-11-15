@@ -1,0 +1,199 @@
+[2026-11-15 04:31:03.928]: Info: // Testing for available encoders, this may generate errors. You can safely ignore those errors. //
+[2026-11-15 04:31:03.928]: Info: Trying encoder [nvenc]
+[2026-11-15 04:31:03.928]: Info: Screencasting with Wayland's protocol
+[2026-11-15 04:31:03.928]: Info: [wlgrab] Requested frame rate [60/1, approx. 60 fps]
+[2026-11-15 04:31:03.928]: Info: [wayland] Found display [wayland-1]
+[2026-11-15 04:31:03.928]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-15 04:31:03.928]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-15 04:31:03.928]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-15 04:31:03.929]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-15 04:31:03.929]: Info: [wayland] Resolution: 1280x720
+[2026-11-15 04:31:03.929]: Info: [wayland] Name: HEADLESS-1
+[2026-11-15 04:31:03.929]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-15 04:31:03.929]: Info: [wayland] Offset: 0x0
+[2026-11-15 04:31:03.929]: Info: [wayland] Logical size: 1280x720
+[2026-11-15 04:31:03.929]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-15 04:31:03.929]: Info: Creating encoder [h264_nvenc]
+[2026-11-15 04:31:03.929]: Info: Color coding: SDR (Rec. 601)
+[2026-11-15 04:31:03.929]: Info: Color depth: 8-bit
+[2026-11-15 04:31:03.929]: Info: Color range: JPEG
+[2026-11-15 04:31:03.929]: Error: [CUDA @ 0x70a3bc0499c0] Cannot load libcuda.so.1
+[2026-11-15 04:31:03.929]: Error: [CUDA @ 0x70a3bc0499c0] Could not dynamically load CUDA
+[2026-11-15 04:31:03.929]: Error: Failed to create a CUDA device: Operation not permitted
+[2026-11-15 04:31:03.929]: Info: Encoder [nvenc] failed
+[2026-11-15 04:31:03.929]: Info: Trying encoder [vulkan]
+[2026-11-15 04:31:03.929]: Info: Screencasting with Wayland's protocol
+[2026-11-15 04:31:03.929]: Error: [wlgrab] Could not initialize display with the given hw device type.
+[2026-11-15 04:31:04.129]: Info: Screencasting with Wayland's protocol
+[2026-11-15 04:31:04.129]: Error: [wlgrab] Could not initialize display with the given hw device type.
+[2026-11-15 04:31:04.329]: Info: Encoder [vulkan] failed
+[2026-11-15 04:31:04.329]: Info: Trying encoder [vaapi]
+[2026-11-15 04:31:04.329]: Info: Screencasting with Wayland's protocol
+[2026-11-15 04:31:04.330]: Info: [wlgrab] Requested frame rate [60/1, approx. 60 fps]
+[2026-11-15 04:31:04.330]: Info: [wayland] Found display [wayland-1]
+[2026-11-15 04:31:04.331]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-15 04:31:04.331]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-15 04:31:04.332]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-15 04:31:04.334]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-15 04:31:04.334]: Info: [wayland] Resolution: 1280x720
+[2026-11-15 04:31:04.334]: Info: [wayland] Name: HEADLESS-1
+[2026-11-15 04:31:04.334]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-15 04:31:04.334]: Info: [wayland] Offset: 0x0
+[2026-11-15 04:31:04.334]: Info: [wayland] Logical size: 1280x720
+[2026-11-15 04:31:04.334]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-15 04:31:04.334]: Info: Creating encoder [h264_vaapi]
+[2026-11-15 04:31:04.334]: Info: Color coding: SDR (Rec. 601)
+[2026-11-15 04:31:04.334]: Info: Color depth: 8-bit
+[2026-11-15 04:31:04.334]: Info: Color range: JPEG
+[2026-11-15 04:31:04.373]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-15 04:31:04.379]: Info: vaapi vendor: Intel iHD driver for Intel(R) Gen Graphics - 26.2.4 ()
+[2026-11-15 04:31:04.380]: Info: Streaming bitrate is 1000000
+[2026-11-15 04:31:04.380]: Info: Using LP encoding mode
+[2026-11-15 04:31:04.380]: Warning: Using CQP with single frame VBV size
+[2026-11-15 04:31:04.380]: Warning: [h264_vaapi @ 0x70a3bc034b00] Buffering settings are ignored in CQP RC mode.
+[2026-11-15 04:31:04.409]: Info: Creating encoder [hevc_vaapi]
+[2026-11-15 04:31:04.409]: Info: Color coding: SDR (Rec. 601)
+[2026-11-15 04:31:04.409]: Info: Color depth: 8-bit
+[2026-11-15 04:31:04.409]: Info: Color range: JPEG
+[2026-11-15 04:31:04.421]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-15 04:31:04.428]: Info: vaapi vendor: Intel iHD driver for Intel(R) Gen Graphics - 26.2.4 ()
+[2026-11-15 04:31:04.429]: Info: Streaming bitrate is 1000000
+[2026-11-15 04:31:04.429]: Info: Using normal encoding mode
+[2026-11-15 04:31:04.429]: Info: Using VBR with single frame VBV size
+[2026-11-15 04:31:04.429]: Warning: [hevc_vaapi @ 0x70a3bcf7a000] Driver does not advertise encoder features, using guessed defaults.
+[2026-11-15 04:31:04.429]: Warning: [hevc_vaapi @ 0x70a3bcf7a000] Driver does not advertise encoder block size, using guessed defaults.
+[2026-11-15 04:31:04.490]: Info: Creating encoder [av1_vaapi]
+[2026-11-15 04:31:04.490]: Info: Color coding: SDR (Rec. 601)
+[2026-11-15 04:31:04.490]: Info: Color depth: 8-bit
+[2026-11-15 04:31:04.490]: Info: Color range: JPEG
+[2026-11-15 04:31:04.501]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-15 04:31:04.504]: Info: vaapi vendor: Intel iHD driver for Intel(R) Gen Graphics - 26.2.4 ()
+[2026-11-15 04:31:04.504]: Info: Streaming bitrate is 1000000
+[2026-11-15 04:31:04.504]: Error: [av1_vaapi @ 0x70a3bc034b00] No usable encoding profile found.
+[2026-11-15 04:31:04.504]: Error: Could not open codec [av1_vaapi]: Function not implemented
+[2026-11-15 04:31:04.506]: Info: Screencasting with Wayland's protocol
+[2026-11-15 04:31:04.506]: Info: [wlgrab] Requested frame rate [60/1, approx. 60 fps]
+[2026-11-15 04:31:04.506]: Info: [wayland] Found display [wayland-1]
+[2026-11-15 04:31:04.506]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-15 04:31:04.506]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-15 04:31:04.506]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-15 04:31:04.507]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-15 04:31:04.507]: Info: [wayland] Resolution: 1280x720
+[2026-11-15 04:31:04.507]: Info: [wayland] Name: HEADLESS-1
+[2026-11-15 04:31:04.507]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-15 04:31:04.507]: Info: [wayland] Offset: 0x0
+[2026-11-15 04:31:04.507]: Info: [wayland] Logical size: 1280x720
+[2026-11-15 04:31:04.507]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-15 04:31:04.507]: Info: Creating encoder [hevc_vaapi]
+[2026-11-15 04:31:04.507]: Info: Color coding: SDR (Rec. 709)
+[2026-11-15 04:31:04.507]: Info: Color depth: 10-bit
+[2026-11-15 04:31:04.507]: Info: Color range: JPEG
+[2026-11-15 04:31:04.517]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-15 04:31:04.521]: Info: vaapi vendor: Intel iHD driver for Intel(R) Gen Graphics - 26.2.4 ()
+[2026-11-15 04:31:04.521]: Info: Streaming bitrate is 1000000
+[2026-11-15 04:31:04.521]: Info: Using normal encoding mode
+[2026-11-15 04:31:04.521]: Info: Using VBR with single frame VBV size
+[2026-11-15 04:31:04.521]: Warning: [hevc_vaapi @ 0x70a3bc034b00] Driver does not advertise encoder features, using guessed defaults.
+[2026-11-15 04:31:04.521]: Warning: [hevc_vaapi @ 0x70a3bc034b00] Driver does not advertise encoder block size, using guessed defaults.
+[2026-11-15 04:31:04.564]: Info: 
+[2026-11-15 04:31:04.564]: Info: // Ignore any errors mentioned above, they are not relevant. //
+[2026-11-15 04:31:04.565]: Info: 
+[2026-11-15 04:31:04.565]: Info: Found H.264 encoder: h264_vaapi [vaapi]
+[2026-11-15 04:31:04.565]: Info: Found HEVC encoder: hevc_vaapi [vaapi]
+[2026-11-15 04:31:04.565]: Info: Executing [Desktop]
+[2026-11-15 04:31:07.977]: Info: New streaming session started [active sessions: 1]
+[2026-11-15 04:31:07.977]: Warning: Unable to create virtual touch screen: Permission denied
+[2026-11-15 04:31:07.978]: Warning: Unable to create virtual pen tablet: Permission denied
+[2026-11-15 04:31:07.988]: Warning: setpriority failed for nice -10: Permission denied
+[2026-11-15 04:31:07.988]: Warning: setpriority failed for nice -10: Permission denied
+[2026-11-15 04:31:07.988]: Warning: setpriority failed for nice -15: Permission denied
+[2026-11-15 04:31:08.485]: Warning: Couldn't create virtual sink for stereo: Module initialization failed
+[2026-11-15 04:31:08.485]: Warning: Couldn't create virtual sink for surround-51: Module initialization failed
+[2026-11-15 04:31:08.486]: Warning: Couldn't create virtual sink for surround-71: Module initialization failed
+[2026-11-15 04:31:08.487]: Info: Found default monitor by name: korri-tone.monitor
+[2026-11-15 04:31:08.493]: Warning: setpriority failed for nice -15: Permission denied
+[2026-11-15 04:31:08.494]: Warning: setpriority failed for nice -10: Permission denied
+[2026-11-15 04:31:08.494]: Info: Opus initialized: 48 kHz, 2 channels, 96 kbps (total), LOWDELAY
+[2026-11-15 04:31:08.901]: Info: CLIENT CONNECTED
+[2026-11-15 04:31:09.038]: Info: [wayland] Found display [wayland-1]
+[2026-11-15 04:31:09.039]: Warning: setpriority failed for nice -10: Permission denied
+[2026-11-15 04:31:09.039]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-15 04:31:09.039]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-15 04:31:09.040]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-15 04:31:09.041]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-15 04:31:09.041]: Info: [wayland] Resolution: 1280x720
+[2026-11-15 04:31:09.041]: Info: [wayland] Name: HEADLESS-1
+[2026-11-15 04:31:09.041]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-15 04:31:09.041]: Info: [wayland] Offset: 0x0
+[2026-11-15 04:31:09.042]: Info: [wayland] Logical size: 1280x720
+[2026-11-15 04:31:09.042]: Info: [wlgrab] -------- Start of Wayland monitor list --------
+[2026-11-15 04:31:09.042]: Info: [wlgrab] Monitor 0 is HEADLESS-1: Headless output 1
+[2026-11-15 04:31:09.042]: Info: [wlgrab] --------- End of Wayland monitor list ---------
+[2026-11-15 04:31:09.042]: Info: Screencasting with Wayland's protocol
+[2026-11-15 04:31:09.042]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-15 04:31:09.042]: Info: [wayland] Found display [wayland-1]
+[2026-11-15 04:31:09.042]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-15 04:31:09.043]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-15 04:31:09.044]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-15 04:31:09.045]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-15 04:31:09.045]: Info: [wayland] Resolution: 1280x720
+[2026-11-15 04:31:09.045]: Info: [wayland] Name: HEADLESS-1
+[2026-11-15 04:31:09.045]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-15 04:31:09.045]: Info: [wayland] Offset: 0x0
+[2026-11-15 04:31:09.045]: Info: [wayland] Logical size: 1280x720
+[2026-11-15 04:31:09.046]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-15 04:31:09.046]: Warning: setpriority failed for nice -15: Permission denied
+[2026-11-15 04:31:09.046]: Info: Creating encoder [h264_vaapi]
+[2026-11-15 04:31:09.046]: Info: Color coding: SDR (Rec. 601)
+[2026-11-15 04:31:09.046]: Info: Color depth: 8-bit
+[2026-11-15 04:31:09.046]: Info: Color range: MPEG
+[2026-11-15 04:31:09.092]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-15 04:31:09.107]: Info: vaapi vendor: Intel iHD driver for Intel(R) Gen Graphics - 26.2.4 ()
+[2026-11-15 04:31:09.108]: Info: Streaming bitrate is 7308000
+[2026-11-15 04:31:09.108]: Info: Using LP encoding mode
+[2026-11-15 04:31:09.108]: Warning: Using CQP with single frame VBV size
+[2026-11-15 04:31:09.108]: Warning: [h264_vaapi @ 0x70a38825c680] Buffering settings are ignored in CQP RC mode.
+[2026-11-15 04:31:09.137]: Info: Minimum FPS target set to ~30fps (33.3333ms)
+[2026-11-15 04:31:19.772]: Info: [wayland] Resolution: 720x1280
+[2026-11-15 04:31:19.772]: Info: [wayland] Offset: 0x0
+[2026-11-15 04:31:19.772]: Info: [wayland] Logical size: 720x1280
+[2026-11-15 04:31:19.772]: Error: [wayland] Frame capture failed
+[2026-11-15 04:31:19.814]: Info: [wayland] Found display [wayland-1]
+[2026-11-15 04:31:19.816]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-15 04:31:19.816]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-15 04:31:19.817]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-15 04:31:19.821]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-15 04:31:19.821]: Info: [wayland] Resolution: 720x1280
+[2026-11-15 04:31:19.821]: Info: [wayland] Name: HEADLESS-1
+[2026-11-15 04:31:19.821]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-15 04:31:19.821]: Info: [wayland] Offset: 0x0
+[2026-11-15 04:31:19.821]: Info: [wayland] Logical size: 720x1280
+[2026-11-15 04:31:19.821]: Info: [wlgrab] -------- Start of Wayland monitor list --------
+[2026-11-15 04:31:19.822]: Info: [wlgrab] Monitor 0 is HEADLESS-1: Headless output 1
+[2026-11-15 04:31:19.822]: Info: [wlgrab] --------- End of Wayland monitor list ---------
+[2026-11-15 04:31:19.822]: Info: Screencasting with Wayland's protocol
+[2026-11-15 04:31:19.822]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-15 04:31:19.822]: Info: [wayland] Found display [wayland-1]
+[2026-11-15 04:31:19.822]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-15 04:31:19.822]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-15 04:31:19.823]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-15 04:31:19.824]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-15 04:31:19.824]: Info: [wayland] Resolution: 720x1280
+[2026-11-15 04:31:19.825]: Info: [wayland] Name: HEADLESS-1
+[2026-11-15 04:31:19.825]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-15 04:31:19.825]: Info: [wayland] Offset: 0x0
+[2026-11-15 04:31:19.825]: Info: [wayland] Logical size: 720x1280
+[2026-11-15 04:31:19.825]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-15 04:31:19.828]: Info: Fixture: the stream follows the output: 1280x720 to 720x1280
+[2026-11-15 04:31:19.828]: Info: Creating encoder [h264_vaapi]
+[2026-11-15 04:31:19.828]: Info: Color coding: SDR (Rec. 601)
+[2026-11-15 04:31:19.828]: Info: Color depth: 8-bit
+[2026-11-15 04:31:19.828]: Info: Color range: MPEG
+[2026-11-15 04:31:19.871]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-15 04:31:19.880]: Info: vaapi vendor: Intel iHD driver for Intel(R) Gen Graphics - 26.2.4 ()
+[2026-11-15 04:31:19.881]: Info: Streaming bitrate is 7308000
+[2026-11-15 04:31:19.881]: Info: Using LP encoding mode
+[2026-11-15 04:31:19.881]: Warning: Using CQP with single frame VBV size
+[2026-11-15 04:31:19.881]: Warning: [h264_vaapi @ 0x70a38825c680] Buffering settings are ignored in CQP RC mode.
+[2026-11-15 04:31:19.891]: Info: Minimum FPS target set to ~30fps (33.3333ms)
+[2026-11-15 04:32:01.497]: Info: CLIENT DISCONNECTED
