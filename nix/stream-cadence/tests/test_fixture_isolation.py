@@ -41,12 +41,21 @@ class SocketEvidence(unittest.TestCase):
                     scope = Path(temporary) / "proc"
                     scope.mkdir()
                     (scope / str(child.pid)).symlink_to(f"/proc/{child.pid}")
+                    # A process whose namespace cannot be read, as one that is
+                    # exiting: on aka on 2026-11-15, among the short-lived
+                    # processes of other builds, this ended a run.
+                    hidden = scope / "999999999" / "ns"
+                    hidden.mkdir(parents=True)
+                    hidden.chmod(0)
                     _, servers = fixture_xwayland(os.getpid(), unix_peers(), scope)
                     self.assertIn(child.pid, servers)
                     # An arbitrary process with no end of this socket is not its compositor.
                     _, unrelated = fixture_xwayland(child.pid, unix_peers(), scope)
                     self.assertNotIn(child.pid, unrelated)
                 finally:
+                    hidden = Path(temporary) / "proc" / "999999999" / "ns"
+                    if hidden.exists():
+                        hidden.chmod(0o755)
                     child.terminate()
                     child.wait(timeout=5)
 

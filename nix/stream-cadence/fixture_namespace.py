@@ -233,7 +233,11 @@ def fixture_xwayland(compositor: int, peers: dict[int, dict], proc: Path = Path(
                 continue
             servers.append(child)
             xwayland |= sockets
-        except (FileNotFoundError, ProcessLookupError):
+        except (FileNotFoundError, ProcessLookupError, PermissionError):
+            # Gone, or unreadable even for root: on aka on 2026-11-15 a
+            # short-lived process of another agent's build refused its
+            # namespace and ended a run. Skipping one fails closed: the
+            # viewer's X peer must still be an Xwayland that this scan found.
             continue
     return xwayland, servers
 
