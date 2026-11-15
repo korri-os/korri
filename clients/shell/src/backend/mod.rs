@@ -5,13 +5,13 @@
 //! | Backend | Feature | Windows |
 //! | --- | --- | --- |
 //! | [`winit`] | `desktop` (default) | one per component: Wayland (sway) or X11 |
-//! | Android | `android` | one NativeActivity window |
+//! | [`android`] | `android-host` (`android` adds Artemis's `android_main`) | one NativeActivity window |
 //! | [`headless`] | tests | one software buffer per component, no display |
 
 #[cfg(feature = "desktop")]
 pub mod winit;
 
-#[cfg(all(feature = "android", target_os = "android"))]
+#[cfg(all(feature = "android-host", target_os = "android"))]
 pub mod android;
 
 pub mod headless;
@@ -19,7 +19,7 @@ pub mod headless;
 use crate::input::Key;
 use std::rc::Rc;
 
-#[cfg(all(feature = "android", feature = "desktop"))]
+#[cfg(all(feature = "android-host", feature = "desktop"))]
 compile_error!("choose one window system: desktop, or --no-default-features --features android");
 
 /// What a window reports to the shell.

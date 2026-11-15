@@ -123,6 +123,30 @@ impl AndroidInput {
     }
 }
 
+/// Android tells no native code that an input device went: that needs
+/// `InputManager.InputDeviceListener`, a Java interface. A host without Java
+/// asks for `InputDevice.getDeviceIds()` instead and gives each answer here;
+/// the devices that left since the last answer are the listener's removals.
+#[derive(Default)]
+pub struct DevicePresence {
+    present: Option<HashSet<i32>>,
+}
+
+impl DevicePresence {
+    /// The devices in the last answer that are not in this one, in ascending
+    /// order. The first answer only records what is there.
+    pub fn removed(&mut self, now: &[i32]) -> Vec<i32> {
+        let now: HashSet<i32> = now.iter().copied().collect();
+        let mut gone: Vec<i32> = match &self.present {
+            Some(before) => before.difference(&now).copied().collect(),
+            None => Vec::new(),
+        };
+        gone.sort_unstable();
+        self.present = Some(now);
+        gone
+    }
+}
+
 fn input(device: i32, kind: u32, code: u16, value: i64) -> NativeEvent {
     NativeEvent::Input {
         device: device.to_string(),
@@ -291,6 +315,31 @@ mod tests {
             route(&mut router, source.key(7, 96, true).unwrap(), 1001.0),
             vec![Press::Button(Button::Confirm)]
         );
+    }
+
+    #[test]
+    fn polled_presence_reports_each_device_that_left_once() {
+        let mut presence = DevicePresence::default();
+        assert!(presence.removed(&[3, 7, 9]).is_empty(), "the first answer");
+        assert!(presence.removed(&[9, 7, 3]).is_empty(), "no change");
+        assert_eq!(presence.removed(&[3, 12]), vec![7, 9]);
+        assert!(presence.removed(&[3, 12]).is_empty(), "reported once");
+        assert!(presence.removed(&[3, 12, 7]).is_empty(), "a return");
+        assert_eq!(presence.removed(&[]), vec![3, 7, 12]);
+    }
+
+    #[test]
+    fn polled_removal_releases_a_held_direction_as_the_listener_did() {
+        let mut source = AndroidInput::default();
+        let mut presence = DevicePresence::default();
+        let mut router = Router::new(true);
+        presence.removed(&[7]);
+        route(&mut router, source.key(7, 22, true).unwrap(), 0.0);
+        assert!(router.holding());
+        for id in presence.removed(&[]) {
+            assert!(router.native(source.removed(id), 1.0).is_empty());
+        }
+        assert!(!router.holding());
     }
 
     #[test]
