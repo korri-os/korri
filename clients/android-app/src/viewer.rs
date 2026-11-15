@@ -28,7 +28,8 @@
 //!   reads it from a file of its launch in the app's cache directory, mode
 //!   0600, which goes when the launch ends: Linux korrid hands its viewer
 //!   the same certificate as a credential file, never in the key directory.
-//!   (A memfd's `/proc/self/fd` name cannot be opened from an app.)
+//!   The adapter removes the files that an earlier process left
+//!   (`rules::remove_stale_pins`).
 //!
 //! What the person does, by the gameplay overlay's rules of slice D5
 //! (`korri_viewer::play`): Back or Guide opens and closes the overlay's
@@ -138,9 +139,19 @@ impl Shared {
 static SHARED: OnceLock<Arc<Shared>> = OnceLock::new();
 
 /// korrid's viewer in this process. The first call fixes the key directory
-/// and the pins' directory; every call returns the same adapter.
+/// and the pins' directory, and removes the pinned certificates that an
+/// earlier process left there; every call returns the same adapter.
 pub fn adapter(keydir: PathBuf, pins: PathBuf) -> Arc<Adapter> {
     let shared = SHARED.get_or_init(|| {
+        match rules::remove_stale_pins(&pins) {
+            Ok(0) => {}
+            Ok(removed) => logcat::info(&format!(
+                "korri-app: viewer removed {removed} pinned certificates of an earlier process"
+            )),
+            Err(cause) => logcat::error(&format!(
+                "korri-app: viewer could not remove the pinned certificates of an earlier process: {cause}"
+            )),
+        }
         Arc::new(Shared {
             keydir,
             pins,
@@ -398,7 +409,7 @@ impl Pin {
         // A restart of the same launch (korrid's recovery) gets a new name.
         static STARTS: AtomicU64 = AtomicU64::new(1);
         let start = STARTS.fetch_add(1, Ordering::Relaxed);
-        let path = directory.join(format!("viewer-pin-{launch}-{start}.pem"));
+        let path = directory.join(rules::pin_name(launch, start));
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)

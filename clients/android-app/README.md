@@ -44,6 +44,7 @@ What the app keeps in its private storage:
 | `<no_backup>/korrid-state` | korrid's private state | `KorriBrainService.privateStateRoot` (`services/korrid/src/android_storage.rs`) |
 | `<no_backup>/moonlight` | The viewer's Moonlight client key directory: `client.pem` and `key.pem`, mode 0600, in a directory of mode 0700, made at the first launch by the viewer's own `Identity::load_or_generate` | Linux korrid's key directory `/home/korri/.config/moonlight` (`linux_viewer/production.rs`), Moonlight's own leaf name; the names are Moonlight's key-directory producer's (`clients/viewer/README.md`). In storage that no backup takes, so the key never leaves the phone that way (D10) |
 | `<cache>/surfaces` | The unpacked surface packages, made again at each start | `KorriShellActivity.copyPackage` |
+| `<cache>/viewer-pin-LAUNCH-N.pem` | The server certificate that korrid's broker pinned for one start of a launch, which the runtime reads (`KORRI_MOONLIGHT_SERVER_CERTIFICATE`). Mode 0600, made new for each start, removed when the start ends; the adapter removes any that an earlier process left | Linux korrid hands the same certificate to its viewer as the launch's credential `moonlight-server.pem` (`services/korrid/src/host/viewer_units.rs`). The file name is this app's own: no producer names one in the cache directory (D10) |
 
 `KorriShellActivity`'s jobs, each:
 
@@ -277,10 +278,7 @@ this process. korrid's prepare at the holder returns the launch; korrid's
 | The controllers' feedback (`korri_viewer::feedback_jni`, the viewer's slice D4b) | its own thread, one per launch | The stream's rumble, light and battery reports. The input tells it which controller is which; the runtime stops it after the input's gate and before `LiStopConnection`. The manifest asks for `VIBRATE` for it |
 
 The pinned server certificate is a file of its launch in the app's cache
-directory, mode 0600, removed when the launch ends; Linux korrid hands the
-same certificate to its viewer as a credential file, never in the key
-directory. (A first try with a sealed memfd failed: an app may not open its
-`/proc/self/fd` name, `Permission denied`.)
+directory (the storage table above), never in the key directory.
 
 Background and Resume answer that the viewer cannot leave the front yet:
 the shell's gameplay overlay (slice D5) is what will take the stream out of

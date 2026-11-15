@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! The stream's rules that need no Android: the launches queued for an
-//! activity when it ends, the end of the runtime's thread, and the keys
-//! that go on to Android. The library builds for Android only, so the
-//! build machine runs these tests through `tests/host.rs`
-//! (`cargo test --test host`).
+//! activity when it ends, the end of the runtime's thread, the keys that go
+//! on to Android, and the files of the pinned server certificates. The
+//! library builds for Android only, so the build machine runs these tests
+//! through `tests/host.rs` (`cargo test --test host`).
 use std::{
+    io,
+    path::Path,
     sync::{mpsc, Mutex, PoisonError},
     thread,
 };
@@ -62,9 +64,44 @@ pub(crate) fn keeps_key(android: bool, stopping: bool, taken: bool) -> bool {
     }
 }
 
+/// The file name of a pinned server certificate: one launch's, at one of
+/// its starts (korrid's recovery starts a launch again).
+pub(crate) fn pin_name(launch: &str, start: u64) -> String {
+    format!("viewer-pin-{launch}-{start}.pem")
+}
+
+/// Whether `name` is a pinned server certificate's (`pin_name`).
+fn is_pin(name: &str) -> bool {
+    name.starts_with("viewer-pin-") && name.ends_with(".pem")
+}
+
+/// Remove the pinned server certificates that an earlier process left in
+/// `directory`: a process that Android ends drops no `Pin`. When the adapter
+/// is made no launch plays yet, so every one is stale. Only regular files
+/// go; a link or a folder of that name stays. Returns how many it removed.
+pub(crate) fn remove_stale_pins(directory: &Path) -> io::Result<usize> {
+    let mut removed = 0;
+    for entry in std::fs::read_dir(directory)? {
+        let entry = entry?;
+        let pin = entry.file_name().to_str().is_some_and(is_pin);
+        // The entry's own type: a link is not followed.
+        if pin && entry.file_type()?.is_file() {
+            std::fs::remove_file(entry.path())?;
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        fs,
+        os::unix::fs::symlink,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     #[test]
     fn an_activity_that_ends_refuses_every_launch_still_queued() {
@@ -123,5 +160,48 @@ mod tests {
             "a letter that the stream leaves"
         );
         assert!(keeps_key(false, false, true), "a key that the stream takes");
+    }
+
+    fn scratch() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "korri-android-app-pins-{}-{nanos}",
+            std::process::id()
+        ));
+        fs::create_dir(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn stale_pins_go_and_nothing_else_does() {
+        let directory = scratch();
+        let stale = [pin_name("0123", 1), pin_name("4567", 2)];
+        for name in &stale {
+            fs::write(directory.join(name), "certificate").unwrap();
+        }
+        fs::write(directory.join("other.pem"), "kept").unwrap();
+        fs::write(directory.join("viewer-pin-note.txt"), "kept").unwrap();
+        symlink("other.pem", directory.join(pin_name("link", 3))).unwrap();
+        fs::create_dir(directory.join(pin_name("folder", 4))).unwrap();
+
+        assert_eq!(remove_stale_pins(&directory).unwrap(), 2);
+        let mut left: Vec<String> = fs::read_dir(&directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        left.sort();
+        assert_eq!(
+            left,
+            [
+                "other.pem",
+                "viewer-pin-folder-4.pem",
+                "viewer-pin-link-3.pem",
+                "viewer-pin-note.txt",
+            ]
+        );
+        fs::remove_dir_all(&directory).unwrap();
     }
 }
