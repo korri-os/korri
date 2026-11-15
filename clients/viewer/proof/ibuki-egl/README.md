@@ -34,10 +34,28 @@ With this change the log has one line, `vaPutSurface cannot present here
 (invalid parameter); presenting through EGL`. Over four seconds the viewer
 used 21 to 24% of one core and sway 8 to 10%.
 
+## A join through korrid
+
+With `@korri:viewer` `build-9be8b2f164ca-viewer-egl` installed on ibuki
+(korri-plugins `9be8b2f`, Korri `6f6fa81fb`), `app.invites.streamPlay` on
+ibuki's korrid returned Ok for a live session on haku (Diablo; aka's Mario
+Kart had ended by then).
+
+| Check | Result |
+| --- | --- |
+| korrid's choice | `launch 9fdfe267… uses @korri:viewer` |
+| `VAAPI presentation failed` lines | 0 |
+| Window in sway's tree | 3840x2160 at 0,0 on DP-1, `fullscreen_mode` 1, focused |
+| Picture | fills the screen (`join-through-korrid.png`) |
+
+The stream ran for 61 s and ended when haku stopped answering (`holder
+status read failed: Unreachable`); the viewer stopped cleanly. Sway logged 5
+`Page-flip failed` lines during the first 10 s; the cause was not looked for.
+
 ## Not shown here
 
-- A join through korrid, with its window and focus handling. That needs the
-  published plugin.
+- A join from ibuki to aka through korrid. The manual run above covers aka's
+  stream; the korrid join covers haku's.
 - The frame record's numbers for this path. No measure ran.
 - An AMD device. Its `vaPutSurface` path gains one flag and is otherwise as
   before; no run checked it.
