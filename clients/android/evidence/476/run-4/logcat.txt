@@ -1,0 +1,370 @@
+11-15 09:01:08.221  2449  2449 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-15 09:01:08.231  2449  2449 I AndroidRuntime: Using default boot image
+11-15 09:01:08.231  2449  2449 I AndroidRuntime: Leaving lock profiling enabled
+11-15 09:01:08.375  2449  2449 D AndroidRuntime: Calling main entry com.android.commands.am.Am
+11-15 09:01:09.305  2529  2655 I TestRunner: run started: 1 tests
+11-15 09:01:09.306  2529  2655 I TestRunner: started: portrait_and_back_resize_the_live_stream(com.limelight.KorriLiveResizeFixtureTest)
+11-15 09:01:09.311  2529  2655 I com.limelight.LimeLog: Reading UID from disk
+11-15 09:01:09.315  2529  2655 I com.limelight.LimeLog: UID is now: 1f64e2336323303f
+11-15 09:01:10.836  2529  2655 I com.limelight.LimeLog: https://10.0.2.2:50364/applist?devicename=sdk_gphone64_x86_64&uniqueid=1f64e2336323303f&uuid=ec928724-aaf3-4a4c-9209-dd0816b6399e -> <?xml version="1.0" encoding="utf-8"?>
+11-15 09:01:10.836  2529  2655 I com.limelight.LimeLog: <root status_code="200"><App><IsHdrSupported>1</IsHdrSupported><AppTitle>Desktop</AppTitle><ID>958645192</ID></App></root>
+11-15 09:01:10.854  2529  2655 I KorriResizeProof: open: launch 7fa5ea0090b444b6bc36b335d67c9a9c generation 1
+11-15 09:01:11.510  2529  2529 I com.limelight.LimeLog: Using Android O+ native mouse capture
+11-15 09:01:11.633  2529  2529 I com.limelight.LimeLog: OpenGL ES version: 196608
+11-15 09:01:11.633  2529  2529 I com.limelight.LimeLog: Added omx.nvidia/c2.nvidia to reference frame invalidation support list
+11-15 09:01:11.633  2529  2529 I com.limelight.LimeLog: Added omx.qcom/c2.qti to reference frame invalidation support list
+11-15 09:01:11.656  2529  2529 I com.limelight.LimeLog: Examining decoder capabilities of c2.goldfish.h264.decoder (round 1)
+11-15 09:01:11.656  2529  2529 I com.limelight.LimeLog: Skipping decoder that lacks FEATURE_LowLatency for round 1
+11-15 09:01:11.656  2529  2529 I com.limelight.LimeLog: Examining decoder capabilities of c2.android.avc.decoder (round 1)
+11-15 09:01:11.656  2529  2529 I com.limelight.LimeLog: Skipping decoder that lacks FEATURE_LowLatency for round 1
+11-15 09:01:11.656  2529  2529 I com.limelight.LimeLog: Examining decoder capabilities of c2.goldfish.h264.decoder (round 2)
+11-15 09:01:11.656  2529  2529 I com.limelight.LimeLog: Decoder c2.goldfish.h264.decoder supports required profile
+11-15 09:01:11.656  2529  2529 I com.limelight.LimeLog: Selected AVC decoder: c2.goldfish.h264.decoder
+11-15 09:01:11.656  2529  2529 I com.limelight.LimeLog: Examining decoder capabilities of c2.android.hevc.decoder (round 1)
+11-15 09:01:11.656  2529  2529 I com.limelight.LimeLog: Skipping decoder that lacks FEATURE_LowLatency for round 1
+11-15 09:01:11.656  2529  2529 I com.limelight.LimeLog: Examining decoder capabilities of c2.android.hevc.decoder (round 2)
+11-15 09:01:11.656  2529  2529 I com.limelight.LimeLog: Disallowing HEVC on software decoder: c2.android.hevc.decoder
+11-15 09:01:11.656  2529  2529 I com.limelight.LimeLog: Found HEVC decoder, but it's not whitelisted - c2.android.hevc.decoder
+11-15 09:01:11.656  2529  2529 I com.limelight.LimeLog: No HEVC decoder found
+11-15 09:01:11.656  2529  2529 I com.limelight.LimeLog: No AV1 decoder found
+11-15 09:01:11.671  2529  2529 I com.limelight.LimeLog: Decoder c2.goldfish.h264.decoder will use direct submit
+11-15 09:01:11.671  2529  2529 I com.limelight.LimeLog: Decoder c2.goldfish.h264.decoder wants 1 slices per frame
+11-15 09:01:11.671  2529  2529 I com.limelight.LimeLog: Requesting 1 slices per frame
+11-15 09:01:11.672  2529  2529 I com.limelight.LimeLog: Balanced: preferLowerDelays=false, timeout=2000us, pacing=BALANCED
+11-15 09:01:11.767  2529  2529 I com.limelight.LimeLog: Enumerated 0 gamepads
+11-15 09:01:11.767  2529  2529 I com.limelight.LimeLog: Current display mode: 720x1280x60.000004
+11-15 09:01:11.767  2529  2529 I com.limelight.LimeLog: Examining display mode: 720x1280x60.000004
+11-15 09:01:11.767  2529  2529 I com.limelight.LimeLog: Best display mode: 720x1280x60.000004
+11-15 09:01:11.767  2529  2529 I com.limelight.LimeLog: Current display mode is already the best display mode
+11-15 09:01:11.767  2529  2529 I com.limelight.LimeLog: surfaceChanged-->1.7777777777777777
+11-15 09:01:11.767  2529  2529 I com.limelight.LimeLog: scaleMode-->FIT
+11-15 09:01:11.767  2529  2529 I com.limelight.LimeLog: Display refresh rate: 60.000004
+11-15 09:01:11.872  2529  2529 I com.limelight.LimeLog: Enumerated 0 gamepads
+11-15 09:01:12.228  2529  2529 I com.limelight.LimeLog: Surface is available, starting connection...
+11-15 09:01:12.229  2529  2529 I com.limelight.LimeLog: surfaceChanged-->1280 x 720----1280 x 720
+11-15 09:01:12.930  2864  2908 I AndroidRuntime: VM exiting with result code 0, cleanup skipped.
+11-15 09:01:13.730   464  2984 D CCodecConfig: read media type: audio/vorbis
+11-15 09:01:13.733   464  2984 I CCodecConfig: query failed after returning 7 values (BAD_INDEX)
+11-15 09:01:13.733   464  2984 D CCodecConfig: c2 config diff is Dict {
+11-15 09:01:13.733   464  2984 D CCodecConfig:   c2::u32 coded.bitrate.value = 64000
+11-15 09:01:13.733   464  2984 D CCodecConfig:   c2::u32 input.buffers.max-size.value = 32768
+11-15 09:01:13.733   464  2984 D CCodecConfig:   c2::u32 input.delay.value = 0
+11-15 09:01:13.733   464  2984 D CCodecConfig:   string input.media-type.value = "audio/vorbis"
+11-15 09:01:13.733   464  2984 D CCodecConfig:   string output.media-type.value = "audio/raw"
+11-15 09:01:13.733   464  2984 D CCodecConfig:   c2::u32 raw.channel-count.value = 1
+11-15 09:01:13.733   464  2984 D CCodecConfig:   c2::u32 raw.sample-rate.value = 48000
+11-15 09:01:13.733   464  2984 D CCodecConfig: }
+11-15 09:01:13.733   464  2984 D CCodecConfig: no c2 equivalents for durationUs
+11-15 09:01:13.733   464  2984 D CCodecConfig: no c2 equivalents for csd-1
+11-15 09:01:13.733   464  2984 D CCodecConfig: no c2 equivalents for channel-mask
+11-15 09:01:13.733   464  2984 D CCodecConfig: no c2 equivalents for flags
+11-15 09:01:13.733   464  2984 D CCodecConfig: c2 config diff is   c2::u32 coded.bitrate.value = 70000
+11-15 09:01:13.734   464  2984 I CCodecConfig: query failed after returning 7 values (BAD_INDEX)
+11-15 09:01:13.734   464  2984 I MediaCodec: MediaCodec will operate in async mode
+11-15 09:01:13.734   464  2981 D MediaCodec: keep callback message for reclaim
+11-15 09:01:13.748   522   650 D BufferPoolAccessor2.0: bufferpool2 0x7a868003def8 : 0(0 size) total buffers - 0(0 size) used buffers - 1/7 (recycle/alloc) - 6/24 (fetch/transfer)
+11-15 09:01:13.749   522   650 D BufferPoolAccessor2.0: Destruction - bufferpool2 0x7a868003def8 cached: 0/0M, 0/0% in use; allocs: 7, 14% recycled; transfers: 24, 75% unfetched
+11-15 09:01:13.749   522   762 D BufferPoolAccessor2.0: bufferpool2 0x7a8680043488 : 0(0 size) total buffers - 0(0 size) used buffers - 1/7 (recycle/alloc) - 6/18 (fetch/transfer)
+11-15 09:01:13.749   685  1098 D BufferPoolAccessor2.0: bufferpool2 0x7a8680018118 : 0(0 size) total buffers - 0(0 size) used buffers - 2/7 (recycle/alloc) - 5/36 (fetch/transfer)
+11-15 09:01:13.749   685  1098 D BufferPoolAccessor2.0: Destruction - bufferpool2 0x7a8680018118 cached: 0/0M, 0/0% in use; allocs: 7, 29% recycled; transfers: 36, 86% unfetched
+11-15 09:01:13.749   522   762 D BufferPoolAccessor2.0: Destruction - bufferpool2 0x7a8680043488 cached: 0/0M, 0/0% in use; allocs: 7, 14% recycled; transfers: 18, 67% unfetched
+11-15 09:01:13.749   685  1098 D BufferPoolAccessor2.0: bufferpool2 0x7a86800195e8 : 0(0 size) total buffers - 0(0 size) used buffers - 1/7 (recycle/alloc) - 6/38 (fetch/transfer)
+11-15 09:01:13.749   685  1098 D BufferPoolAccessor2.0: Destruction - bufferpool2 0x7a86800195e8 cached: 0/0M, 0/0% in use; allocs: 7, 14% recycled; transfers: 38, 84% unfetched
+11-15 09:01:13.749   522   611 D BufferPoolAccessor2.0: bufferpool2 0x7a8680046518 : 0(0 size) total buffers - 0(0 size) used buffers - 2/7 (recycle/alloc) - 5/34 (fetch/transfer)
+11-15 09:01:13.749   522   611 D BufferPoolAccessor2.0: Destruction - bufferpool2 0x7a8680046518 cached: 0/0M, 0/0% in use; allocs: 7, 29% recycled; transfers: 34, 85% unfetched
+11-15 09:01:13.749   685  1098 D BufferPoolAccessor2.0: bufferpool2 0x7a868001bae8 : 0(0 size) total buffers - 0(0 size) used buffers - 1/7 (recycle/alloc) - 6/18 (fetch/transfer)
+11-15 09:01:13.749   685  1098 D BufferPoolAccessor2.0: Destruction - bufferpool2 0x7a868001bae8 cached: 0/0M, 0/0% in use; allocs: 7, 14% recycled; transfers: 18, 67% unfetched
+11-15 09:01:13.749   522   611 D BufferPoolAccessor2.0: bufferpool2 0x7a86800436d8 : 0(0 size) total buffers - 0(0 size) used buffers - 2/7 (recycle/alloc) - 5/34 (fetch/transfer)
+11-15 09:01:13.750   522   611 D BufferPoolAccessor2.0: Destruction - bufferpool2 0x7a86800436d8 cached: 0/0M, 0/0% in use; allocs: 7, 29% recycled; transfers: 34, 85% unfetched
+11-15 09:01:13.750   522   547 D BufferPoolAccessor2.0: bufferpool2 0x7a8680043928 : 0(0 size) total buffers - 0(0 size) used buffers - 1/7 (recycle/alloc) - 6/24 (fetch/transfer)
+11-15 09:01:13.750   522   547 D BufferPoolAccessor2.0: Destruction - bufferpool2 0x7a8680043928 cached: 0/0M, 0/0% in use; allocs: 7, 14% recycled; transfers: 24, 75% unfetched
+11-15 09:01:13.750   522   547 D BufferPoolAccessor2.0: bufferpool2 0x7a8680044018 : 0(0 size) total buffers - 0(0 size) used buffers - 2/7 (recycle/alloc) - 5/26 (fetch/transfer)
+11-15 09:01:13.750   522   547 D BufferPoolAccessor2.0: Destruction - bufferpool2 0x7a8680044018 cached: 0/0M, 0/0% in use; allocs: 7, 29% recycled; transfers: 26, 81% unfetched
+11-15 09:01:14.969  2529  2880 I com.limelight.LimeLog: <root status_code="200"><sessionUrl0>rtspenc://127.0.0.1:50390</sessionUrl0><gamesession>1</gamesession></root>
+11-15 09:01:14.969  2529  2880 I com.limelight.LimeLog: Launched new game session
+11-15 09:01:14.971  2529  2880 I moonlight-common-c: RTSP port: 50390
+11-15 09:01:14.975  2529  2880 I moonlight-common-c: Initializing platform...
+11-15 09:01:14.975  2529  2880 I moonlight-common-c: done
+11-15 09:01:14.975  2529  2880 I moonlight-common-c: Resolving host name...
+11-15 09:01:14.976  2529  2880 I moonlight-common-c: done
+11-15 09:01:14.976  2529  2880 I moonlight-common-c: Initializing audio stream...
+11-15 09:01:14.977  2529  2880 I moonlight-common-c: done
+11-15 09:01:14.977  2529  2880 I moonlight-common-c: Starting RTSP handshake...
+11-15 09:01:15.731  2529  2880 I moonlight-common-c: Reference frame invalidation is not supported by this host
+11-15 09:01:15.788  2529  2880 I moonlight-common-c: Audio port: 50380
+11-15 09:01:16.136  2529  2880 I moonlight-common-c: Video port: 50378
+11-15 09:01:16.299  2529  2880 I moonlight-common-c: Control port: 50379
+11-15 09:01:16.580  2529  2880 I moonlight-common-c: done
+11-15 09:01:16.580  2529  2880 I moonlight-common-c: Initializing control stream...
+11-15 09:01:16.581  2529  2880 I moonlight-common-c: done
+11-15 09:01:16.581  2529  2880 I moonlight-common-c: Initializing video stream...
+11-15 09:01:16.581  2529  2880 I moonlight-common-c: done
+11-15 09:01:16.581  2529  2880 I moonlight-common-c: Initializing input stream...
+11-15 09:01:16.581  2529  2880 I moonlight-common-c: done
+11-15 09:01:16.581  2529  2880 I moonlight-common-c: Starting control stream...
+11-15 09:01:16.589  2529  2880 I moonlight-common-c: done
+11-15 09:01:16.589  2529  2880 I moonlight-common-c: Starting video stream...
+11-15 09:01:16.590  2529  2880 I com.limelight.LimeLog: Adaptive playback supported (FEATURE_AdaptivePlayback)
+11-15 09:01:16.591  2529  2880 I com.limelight.LimeLog: Decoder supports fused IDR frames (FEATURE_AdaptivePlayback)
+11-15 09:01:16.591  2529  2880 I com.limelight.LimeLog: Decoder configuration try: 0
+11-15 09:01:16.602  2529  3111 D CCodecConfig: read media type: video/avc
+11-15 09:01:16.605  2529  3111 D CCodecConfig: ignoring local param raw.size (0xd2001800) as it is already supported
+11-15 09:01:16.605  2529  3111 D CCodecConfig: ignoring local param default.color (0x5200180b) as it is already supported
+11-15 09:01:16.606  2529  3111 I CCodecConfig: query failed after returning 12 values (BAD_INDEX)
+11-15 09:01:16.606  2529  3111 D CCodecConfig: c2 config diff is Dict {
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 coded.pl.level = 20496
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 coded.pl.profile = 20481
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 coded.vui.color.matrix = 0
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 coded.vui.color.primaries = 0
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 coded.vui.color.range = 2
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 coded.vui.color.transfer = 0
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 default.color.matrix = 0
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 default.color.primaries = 0
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 default.color.range = 0
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 default.color.transfer = 0
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 input.buffers.max-size.value = 2097152
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 input.delay.value = 0
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   string input.media-type.value = "video/avc"
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 output.delay.value = 8
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   string output.media-type.value = "video/raw"
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 raw.color.matrix = 0
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 raw.color.primaries = 0
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 raw.color.range = 2
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 raw.color.transfer = 0
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 raw.max-size.height = 240
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 raw.max-size.width = 320
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 raw.pixel-format.value = 35
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::i32 raw.rotation.flip = 0
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::i32 raw.rotation.value = 0
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 raw.sar.height = 1
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 raw.sar.width = 1
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 raw.size.height = 240
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2::u32 raw.size.width = 320
+11-15 09:01:16.606  2529  3111 D CCodecConfig:   c2:
+11-15 09:01:16.608  2529  2880 I com.limelight.LimeLog: Configuring with format: {max-height=2960, color-transfer=3, vdec-lowlatency=1, max-width=2960, low-latency=1, mime=video/avc, width=1280, color-range=2, priority=0, frame-rate=60, color-standard=1, height=720}
+11-15 09:01:16.608  2529  3110 I MediaCodec: [c2.goldfish.h264.decoder] setting surface generation to 2589697
+11-15 09:01:16.608  2529  3111 D CCodecConfig: no c2 equivalents for vdec-lowlatency
+11-15 09:01:16.608  2529  3111 D CCodecConfig: no c2 equivalents for color-standard
+11-15 09:01:16.608  2529  3111 D CCodecConfig: no c2 equivalents for native-window
+11-15 09:01:16.608  2529  3111 D CCodecConfig: no c2 equivalents for flags
+11-15 09:01:16.608  2529  3111 D CCodecConfig: config failed => CORRUPTED
+11-15 09:01:16.609  2529  3111 D CCodecConfig: c2 config diff is   c2::u32 default.color.matrix = 1
+11-15 09:01:16.609  2529  3111 D CCodecConfig:   c2::u32 default.color.primaries = 1
+11-15 09:01:16.609  2529  3111 D CCodecConfig:   c2::u32 default.color.range = 2
+11-15 09:01:16.609  2529  3111 D CCodecConfig:   c2::u32 default.color.transfer = 3
+11-15 09:01:16.609  2529  3111 D CCodecConfig:   c2::u32 raw.max-size.height = 2960
+11-15 09:01:16.609  2529  3111 D CCodecConfig:   c2::u32 raw.max-size.width = 2960
+11-15 09:01:16.609  2529  3111 D CCodecConfig:   c2::u32 raw.size.height = 720
+11-15 09:01:16.609  2529  3111 D CCodecConfig:   c2::u32 raw.size.width = 1280
+11-15 09:01:16.609  2529  3111 I CCodecConfig: query failed after returning 12 values (BAD_INDEX)
+11-15 09:01:16.609  2529  3111 D CCodecConfig: c2 config diff is   c2::u32 input.buffers.max-size.value = 6571200
+11-15 09:01:16.609  2529  3111 D CCodecConfig:   c2::u32 raw.color.matrix = 1
+11-15 09:01:16.609  2529  3111 D CCodecConfig:   c2::u32 raw.color.primaries = 1
+11-15 09:01:16.609  2529  3111 D CCodecConfig:   c2::u32 raw.color.transfer = 3
+11-15 09:01:16.610  2529  2880 I com.limelight.LimeLog: Applied Surface frame rate: 60 Hz
+11-15 09:01:16.611  2529  2880 I com.limelight.LimeLog: Decoder name: c2.goldfish.h264.decoder
+11-15 09:01:16.611  2529  2880 I com.limelight.LimeLog: Input format: {crop-right=1279, crop-bottom=719, level=65536, mime=video/avc, profile=65536, width=1280, crop-left=0, crop-top=0, max-input-size=6571200, height=720}
+11-15 09:01:16.611  2529  3110 W MediaCodec: mapFormat: no mediaType information
+11-15 09:01:16.680  2529  2880 I com.limelight.LimeLog: Decoder input format: {crop-right=1279, crop-bottom=719, level=65536, mime=video/avc, profile=65536, width=1280, crop-left=0, crop-top=0, max-input-size=6571200, height=720}
+11-15 09:01:16.681  2529  2880 I com.limelight.LimeLog: Decoder output format: {crop-right=1279, max-height=2960, sar-width=1, color-format=2130708361, mime=video/raw, color-standard=1, color-transfer=3, sar-height=1, crop-bottom=719, max-width=2960, crop-left=0, width=1280, color-range=2, crop-top=0, rotation-degrees=0, height=720}
+11-15 09:01:16.681  2529  2880 I com.limelight.LimeLog: Using codec c2.goldfish.h264.decoder for hardware decoding video/avc
+11-15 09:01:16.682  2529  2880 I moonlight-common-c: Selected receive buffer size: 2883584
+11-15 09:01:16.682  2529  2880 I moonlight-common-c: Actual receive buffer size: 524288
+11-15 09:01:16.684  2529  2880 I moonlight-common-c: done
+11-15 09:01:16.684  2529  2880 I moonlight-common-c: Starting audio stream...
+11-15 09:01:16.684  2529  2880 I com.limelight.LimeLog: Audio channel config: 0xC
+11-15 09:01:16.703  2529  3109 I com.limelight.LimeLog: Display HDR mode: disabled
+11-15 09:01:16.707  2529  2880 I com.limelight.LimeLog: Audio track configuration: 1920 false
+11-15 09:01:16.711  2529  2880 I moonlight-common-c: done
+11-15 09:01:16.711  2529  2880 I moonlight-common-c: Starting input stream...
+11-15 09:01:16.714  2529  2880 I moonlight-common-c: done
+11-15 09:01:16.715  2529  3122 I moonlight-common-c: Received first video packet after 0 ms
+11-15 09:01:16.730  2529  3122 I com.limelight.LimeLog: Patching level_idc to 32
+11-15 09:01:16.730  2529  3122 I com.limelight.LimeLog: Patching num_ref_frames in SPS
+11-15 09:01:16.731  2529  3122 I com.limelight.LimeLog: Patching bitstream restrictions
+11-15 09:01:16.819  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 71 ms
+11-15 09:01:16.822  2529  3111 D CCodecConfig: c2 config diff is   c2::u32 raw.crop.height = 720
+11-15 09:01:16.822  2529  3111 D CCodecConfig:   c2::u32 raw.crop.left = 0
+11-15 09:01:16.822  2529  3111 D CCodecConfig:   c2::u32 raw.crop.top = 0
+11-15 09:01:16.822  2529  3111 D CCodecConfig:   c2::u32 raw.crop.width = 1280
+11-15 09:01:16.866  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 40 ms
+11-15 09:01:16.996  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 59 ms
+11-15 09:01:17.049  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 44 ms
+11-15 09:01:17.120  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 20 ms
+11-15 09:01:17.155  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 28 ms
+11-15 09:01:17.285  2529  2655 I KorriResizeProof: phase=streaming shape={"connection":"71d2a5cf-4a2b-4144-b2a3-14ea8906b99a:viewer:7fa5ea0090b444b6bc36b335d67c9a9c:1:1:","screen":{"width":1280,"height":720},"encoded":{"width":1280,"height":720},"ready":true}
+11-15 09:01:17.334  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 35 ms
+11-15 09:01:17.519  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 74 ms
+11-15 09:01:18.858  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 50 ms
+11-15 09:01:19.846   472   712 D BufferPoolAccessor2.0: bufferpool2 0x7c6dc29d5728 : 0(0 size) total buffers - 0(0 size) used buffers - 93/97 (recycle/alloc) - 4/96 (fetch/transfer)
+11-15 09:01:20.750   464  2989 D BufferPoolAccessor2.0: bufferpool2 0x756780051158 : 0(0 size) total buffers - 0(0 size) used buffers - 93/101 (recycle/alloc) - 8/198 (fetch/transfer)
+11-15 09:01:21.617  2529  3115 D BufferPoolAccessor2.0: bufferpool2 0x7a868001db48 : 4(26284800 size) total buffers - 4(26284800 size) used buffers - 0/4 (recycle/alloc) - 4/252 (fetch/transfer)
+11-15 09:01:26.388  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 58 ms
+11-15 09:01:26.692  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 23 ms
+11-15 09:01:26.693  2529  3110 D BufferPoolAccessor2.0: bufferpool2 0x7a868001db48 : 4(26284800 size) total buffers - 4(26284800 size) used buffers - 0/4 (recycle/alloc) - 4/538 (fetch/transfer)
+11-15 09:01:29.597  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 20 ms
+11-15 09:01:29.710  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 32 ms
+11-15 09:01:30.369  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 38 ms
+11-15 09:01:31.061  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 20 ms
+11-15 09:01:31.181  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 22 ms
+11-15 09:01:31.855  2529  3110 D BufferPoolAccessor2.0: bufferpool2 0x7a868001db48 : 4(26284800 size) total buffers - 4(26284800 size) used buffers - 0/4 (recycle/alloc) - 4/831 (fetch/transfer)
+11-15 09:01:32.783  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 27 ms
+11-15 09:01:33.435  2529  3122 I com.limelight.LimeLog: Patching level_idc to 32
+11-15 09:01:33.435  2529  3122 I com.limelight.LimeLog: Patching num_ref_frames in SPS
+11-15 09:01:33.435  2529  3122 I com.limelight.LimeLog: Patching bitstream restrictions
+11-15 09:01:33.513  2529  3111 D CCodecConfig: c2 config diff is   c2::u32 raw.crop.height = 1280
+11-15 09:01:33.513  2529  3111 D CCodecConfig:   c2::u32 raw.crop.width = 720
+11-15 09:01:33.513  2529  3111 D CCodecConfig:   c2::u32 raw.size.height = 1280
+11-15 09:01:33.513  2529  3111 D CCodecConfig:   c2::u32 raw.size.width = 720
+11-15 09:01:33.513  2529  3120 I com.limelight.LimeLog: Output format changed
+11-15 09:01:33.514  2529  3120 I com.limelight.LimeLog: New output format: {crop-right=719, max-height=2960, sar-width=1, color-format=2130708361, mime=video/raw, color-standard=1, color-transfer=3, sar-height=1, crop-bottom=1279, max-width=2960, crop-left=0, width=720, color-range=2, crop-top=0, rotation-degrees=0, height=1280}
+11-15 09:01:34.335  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 63 ms
+11-15 09:01:34.431  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 95 ms
+11-15 09:01:34.599  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 94 ms
+11-15 09:01:34.629  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 29 ms
+11-15 09:01:34.655  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 25 ms
+11-15 09:01:34.736  2529  3122 I moonlight-common-c: Unrecoverable frame 946: 2+0=2 received < 12 needed
+11-15 09:01:34.736  2529  3122 I moonlight-common-c: Network dropped 21 frames (frames 946 to 966)
+11-15 09:01:34.751  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:34.751  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:34.751  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:34.752  2529  3108 I moonlight-common-c: IDR frame request sent
+11-15 09:01:34.752  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:34.752  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:34.753  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:34.753  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:34.754  2529  3122 I moonlight-common-c: Unrecoverable frame 974: 9+0=9 received < 12 needed
+11-15 09:01:34.754  2529  3122 I moonlight-common-c: Recovered 1 video data shards from frame 977
+11-15 09:01:34.754  2529  3122 I moonlight-common-c: Network dropped 3 frames (frames 974 to 976)
+11-15 09:01:34.754  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:34.754  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:34.754  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:34.754  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:34.755  2529  3108 I moonlight-common-c: IDR frame request sent
+11-15 09:01:34.755  2529  3122 I moonlight-common-c: Network dropped 1 frame (frame 981)
+11-15 09:01:34.755  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:34.755  2529  3108 I moonlight-common-c: IDR frame request sent
+11-15 09:01:34.755  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:34.774  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:34.782  2529  2529 I com.limelight.LimeLog: surfaceChanged-->1280 x 720----720 x 1280
+11-15 09:01:34.784  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:34.787  2529  3122 I com.limelight.LimeLog: Patching level_idc to 32
+11-15 09:01:34.788  2529  3122 I com.limelight.LimeLog: Patching num_ref_frames in SPS
+11-15 09:01:34.788  2529  3122 I com.limelight.LimeLog: Patching bitstream restrictions
+11-15 09:01:34.881  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 22 ms
+11-15 09:01:34.897  2529  2655 I KorriResizeProof: phase=portrait shape={"connection":"71d2a5cf-4a2b-4144-b2a3-14ea8906b99a:viewer:7fa5ea0090b444b6bc36b335d67c9a9c:1:1:","screen":{"width":1280,"height":720},"encoded":{"width":720,"height":1280},"ready":true}
+11-15 09:01:35.888  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 24 ms
+11-15 09:01:37.013  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 20 ms
+11-15 09:01:37.149  2529  3110 D BufferPoolAccessor2.0: bufferpool2 0x7a868001db48 : 4(26284800 size) total buffers - 4(26284800 size) used buffers - 0/4 (recycle/alloc) - 4/1078 (fetch/transfer)
+11-15 09:01:41.484  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 21 ms
+11-15 09:01:42.285  2529  3110 D BufferPoolAccessor2.0: bufferpool2 0x7a868001db48 : 4(26284800 size) total buffers - 4(26284800 size) used buffers - 0/4 (recycle/alloc) - 4/1364 (fetch/transfer)
+11-15 09:01:42.344  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 23 ms
+11-15 09:01:42.610  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 51 ms
+11-15 09:01:43.943  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 20 ms
+11-15 09:01:45.441  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 21 ms
+11-15 09:01:46.073  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 25 ms
+11-15 09:01:46.911  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 30 ms
+11-15 09:01:47.413  2529  3110 D BufferPoolAccessor2.0: bufferpool2 0x7a868001db48 : 4(26284800 size) total buffers - 4(26284800 size) used buffers - 0/4 (recycle/alloc) - 4/1653 (fetch/transfer)
+11-15 09:01:51.016  2529  3122 I com.limelight.LimeLog: Patching level_idc to 32
+11-15 09:01:51.016  2529  3122 I com.limelight.LimeLog: Patching num_ref_frames in SPS
+11-15 09:01:51.016  2529  3122 I com.limelight.LimeLog: Patching bitstream restrictions
+11-15 09:01:51.123  2529  3111 D CCodecConfig: c2 config diff is   c2::u32 raw.crop.height = 720
+11-15 09:01:51.123  2529  3111 D CCodecConfig:   c2::u32 raw.crop.width = 1280
+11-15 09:01:51.123  2529  3111 D CCodecConfig:   c2::u32 raw.size.height = 720
+11-15 09:01:51.123  2529  3111 D CCodecConfig:   c2::u32 raw.size.width = 1280
+11-15 09:01:51.127  2529  3120 I com.limelight.LimeLog: Output format changed
+11-15 09:01:51.187  2529  3120 I com.limelight.LimeLog: New output format: {crop-right=1279, max-height=2960, sar-width=1, color-format=2130708361, mime=video/raw, color-standard=1, color-transfer=3, sar-height=1, crop-bottom=719, max-width=2960, crop-left=0, width=1280, color-range=2, crop-top=0, rotation-degrees=0, height=720}
+11-15 09:01:51.278  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 81 ms
+11-15 09:01:51.414  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 58 ms
+11-15 09:01:51.489  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 74 ms
+11-15 09:01:51.570  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 78 ms
+11-15 09:01:51.631  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 60 ms
+11-15 09:01:52.009  2529  2655 I KorriResizeProof: phase=landscape shape={"connection":"71d2a5cf-4a2b-4144-b2a3-14ea8906b99a:viewer:7fa5ea0090b444b6bc36b335d67c9a9c:1:1:","screen":{"width":1280,"height":720},"encoded":{"width":1280,"height":720},"ready":true}
+11-15 09:01:52.125  2529  2529 I com.limelight.LimeLog: surfaceChanged-->1280 x 720----1280 x 720
+11-15 09:01:52.202  2529  3122 I moonlight-common-c: Network dropped 7 frames (frames 1917 to 1923)
+11-15 09:01:52.203  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:52.203  2529  3108 I moonlight-common-c: IDR frame request sent
+11-15 09:01:52.203  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:52.203  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:52.203  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:52.203  2529  3122 I moonlight-common-c: Unrecoverable frame 1928: 5+0=5 received < 7 needed
+11-15 09:01:52.203  2529  3122 I moonlight-common-c: Network dropped 23 frames (frames 1928 to 1950)
+11-15 09:01:52.203  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:52.203  2529  3108 I moonlight-common-c: IDR frame request sent
+11-15 09:01:52.203  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:52.204  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:52.204  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:52.204  2529  3122 I moonlight-common-c: Unrecoverable frame 1955: 5+0=5 received < 7 needed
+11-15 09:01:52.204  2529  3122 I moonlight-common-c: Network dropped 1 frame (frame 1955)
+11-15 09:01:52.204  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:52.204  2529  3108 I moonlight-common-c: IDR frame request sent
+11-15 09:01:52.204  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:52.205  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:52.205  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:52.239  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:01:52.240  2529  3122 I com.limelight.LimeLog: Patching level_idc to 32
+11-15 09:01:52.240  2529  3122 I com.limelight.LimeLog: Patching num_ref_frames in SPS
+11-15 09:01:52.240  2529  3122 I com.limelight.LimeLog: Patching bitstream restrictions
+11-15 09:01:52.577  2529  3110 D BufferPoolAccessor2.0: bufferpool2 0x7a868001db48 : 4(26284800 size) total buffers - 4(26284800 size) used buffers - 0/4 (recycle/alloc) - 4/1897 (fetch/transfer)
+11-15 09:01:54.489  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 20 ms
+11-15 09:01:54.597  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 102 ms
+11-15 09:01:54.694  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 79 ms
+11-15 09:01:54.727  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 30 ms
+11-15 09:01:54.771  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 40 ms
+11-15 09:01:54.805  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 25 ms
+11-15 09:01:57.773  2529  3110 D BufferPoolAccessor2.0: bufferpool2 0x7a868001db48 : 4(26284800 size) total buffers - 4(26284800 size) used buffers - 0/4 (recycle/alloc) - 4/2162 (fetch/transfer)
+11-15 09:01:58.726  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 20 ms
+11-15 09:02:02.078  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 21 ms
+11-15 09:02:02.855  2529  3110 D BufferPoolAccessor2.0: bufferpool2 0x7a868001db48 : 4(26284800 size) total buffers - 4(26284800 size) used buffers - 0/4 (recycle/alloc) - 4/2447 (fetch/transfer)
+11-15 09:02:07.849  2529  3122 W com.limelight.LimeLog: Dequeue input buffer ran long: 20 ms
+11-15 09:02:07.991  2529  3110 D BufferPoolAccessor2.0: bufferpool2 0x7a868001db48 : 4(26284800 size) total buffers - 4(26284800 size) used buffers - 0/4 (recycle/alloc) - 4/2736 (fetch/transfer)
+11-15 09:02:09.196  2529  3120 W com.limelight.LimeLog: Decoder watchdog: no output >1.2s, flushing codec to recover...
+11-15 09:02:09.204  2529  3122 I moonlight-common-c: Requesting IDR frame on behalf of DR
+11-15 09:02:09.206  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:02:09.206  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:02:09.207  2529  3108 I moonlight-common-c: IDR frame request sent
+11-15 09:02:09.232  2529  3110 I CCodecConfig: query failed after returning 12 values (BAD_INDEX)
+11-15 09:02:09.232  2529  3110 D CCodecConfig: c2 config diff is   c2::u32 coded.vui.color.matrix = 1
+11-15 09:02:09.232  2529  3110 D CCodecConfig:   c2::u32 coded.vui.color.primaries = 1
+11-15 09:02:09.232  2529  3110 D CCodecConfig:   c2::u32 coded.vui.color.transfer = 3
+11-15 09:02:09.245  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:02:09.245  2529  3122 I moonlight-common-c: Waiting for IDR frame
+11-15 09:02:09.310  2529  4478 I moonlight-common-c: Stopping input stream...
+11-15 09:02:09.310  2529  3110 W MediaCodec: mapFormat: no mediaType information
+11-15 09:02:09.311  2529  3110 D CCodecConfig: no recognized params in: Dict {
+11-15 09:02:09.311  2529  3110 D CCodecConfig:   c2::i32 algo.priority.value = 0
+11-15 09:02:09.311  2529  3110 D CCodecConfig:   c2::i32 ctrl.priority.value = 0
+11-15 09:02:09.311  2529  3110 D CCodecConfig: }
+11-15 09:02:09.318  2529  3106 I moonlight-common-c: ENet wait interrupted
+11-15 09:02:09.318  2529  3106 I moonlight-common-c: Control stream connection failed: 4
+11-15 09:02:09.333  2529  4478 I moonlight-common-c: done
+11-15 09:02:09.339  2529  4478 I moonlight-common-c: Stopping audio stream...
+11-15 09:02:09.339  2529  4478 I moonlight-common-c: No audio traffic was ever received from the host!
+11-15 09:02:09.427  2529  4478 I moonlight-common-c: done
+11-15 09:02:09.427  2529  4478 I moonlight-common-c: Stopping video stream...
+11-15 09:02:09.430  2529  4478 W MessageQueue: 	at com.limelight.binding.video.MediaCodecDecoderRenderer.prepareForStop(MediaCodecDecoderRenderer.java:1649)
+11-15 09:02:09.430  2529  4478 W MessageQueue: 	at com.limelight.binding.video.MediaCodecDecoderRenderer.stop(MediaCodecDecoderRenderer.java:1665)
+11-15 09:02:09.454  2529  3110 I MediaCodec: [c2.goldfish.h264.decoder] setting surface generation to 2589698
+11-15 09:02:09.469  2529  3110 D CCodecBufferChannel: [c2.goldfish.h264.decoder#949] MediaCodec discarded an unknown buffer
+11-15 09:02:09.469  2529  3110 D CCodecBufferChannel: [c2.goldfish.h264.decoder#949] MediaCodec discarded an unknown buffer
+11-15 09:02:09.469  2529  3110 D CCodecBufferChannel: [c2.goldfish.h264.decoder#949] MediaCodec discarded an unknown buffer
+11-15 09:02:09.469  2529  3110 D CCodecBufferChannel: [c2.goldfish.h264.decoder#949] MediaCodec discarded an unknown buffer
+11-15 09:02:09.480  2529  4478 I moonlight-common-c: done
+11-15 09:02:09.480  2529  4478 I moonlight-common-c: Stopping control stream...
+11-15 09:02:09.493  2529  3116 E BufferQueueProducer: [MediaCodec.release](id:9e100000002,api:0,p:-1,c:2529) detachBuffer: BufferQueue has no connected producer
+11-15 09:02:09.540  2529  4478 I moonlight-common-c: ENet peer acknowledged disconnection
+11-15 09:02:09.540  2529  4478 I moonlight-common-c: done
+11-15 09:02:09.540  2529  4478 I moonlight-common-c: Cleaning up input stream...
+11-15 09:02:09.542  2529  4478 I moonlight-common-c: done
+11-15 09:02:09.542  2529  4478 I moonlight-common-c: Cleaning up video stream...
+11-15 09:02:09.542  2529  4478 I moonlight-common-c: done
+11-15 09:02:09.542  2529  4478 I moonlight-common-c: Cleaning up control stream...
+11-15 09:02:09.543  2529  4478 I moonlight-common-c: done
+11-15 09:02:09.543  2529  4478 I moonlight-common-c: Cleaning up audio stream...
+11-15 09:02:09.554  2529  4478 I moonlight-common-c: done
+11-15 09:02:09.555  2529  4478 I moonlight-common-c: Cleaning up platform...
+11-15 09:02:09.555  2529  4478 I moonlight-common-c: done
+11-15 09:02:09.555  2529  2655 I KorriResizeProof: stop: Stopped
+11-15 09:02:09.556  2529  2655 I TestRunner: finished: portrait_and_back_resize_the_live_stream(com.limelight.KorriLiveResizeFixtureTest)
+11-15 09:02:09.562  2529  2655 I TestRunner: run finished: 1 tests, 0 failed, 0 ignored
+11-15 09:02:09.614  2449  2449 I AndroidRuntime: VM exiting with result code 0.

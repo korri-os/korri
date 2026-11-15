@@ -1,0 +1,222 @@
+[New LWP 3000242]
+[New LWP 3000241]
+[New LWP 3000240]
+[New LWP 3000239]
+[New LWP 3000238]
+[New LWP 3000237]
+[New LWP 3000236]
+[New LWP 3000235]
+[New LWP 3000234]
+[New LWP 3000233]
+[New LWP 3000232]
+[New LWP 3000231]
+[New LWP 3000230]
+[New LWP 3000229]
+[New LWP 3000228]
+[New LWP 3000213]
+[New LWP 3000212]
+[New LWP 3000211]
+[New LWP 3000210]
+[New LWP 3000209]
+[New LWP 3000208]
+[New LWP 3000207]
+[New LWP 3000206]
+[New LWP 2999476]
+[New LWP 2999475]
+[New LWP 2999474]
+[New LWP 2999473]
+[New LWP 2999472]
+[New LWP 2999471]
+[New LWP 2999470]
+[New LWP 2999385]
+[New LWP 2999384]
+[New LWP 2999383]
+[New LWP 2999382]
+
+warning: File "/nix/store/pqyiidz5mi73wv5f91d48s9plcqyj5bz-glibc-2.44-57/lib/libthread_db.so.1" auto-loading has been declined by your `auto-load safe-path' set to "$debugdir:$datadir/auto-load:/nix/store/604gsr59rj7dzd0nrhp143rpvf7gyiaz-gcc-15.3.0-lib".
+To enable execution of this file add
+	add-auto-load-safe-path /nix/store/pqyiidz5mi73wv5f91d48s9plcqyj5bz-glibc-2.44-57/lib/libthread_db.so.1
+line to your configuration file "/root/.config/gdb/gdbinit".
+To completely disable this security protection add
+	set auto-load safe-path /
+line to your configuration file "/root/.config/gdb/gdbinit".
+For more information about this security protection see the
+"Auto-loading safe path" section in the GDB manual.  E.g., run from the shell:
+	info "(gdb)Auto-loading safe path"
+
+warning: Unable to find libthread_db matching inferior's thread library, thread debugging will not be available.
+0x0000707dedea8472 in __syscall_cancel_arch () from /nix/store/pqyiidz5mi73wv5f91d48s9plcqyj5bz-glibc-2.44-57/lib/libc.so.6
+warning: File "/nix/store/7i0bhnc6ka10z96sy4fpi3b47gvwmg0x-glib-2.88.3/lib/libgobject-2.0.so.0.8800.3-gdb.py" auto-loading has been declined by your `auto-load safe-path' set to "$debugdir:$datadir/auto-load:/nix/store/604gsr59rj7dzd0nrhp143rpvf7gyiaz-gcc-15.3.0-lib".
+warning: File "/nix/store/7i0bhnc6ka10z96sy4fpi3b47gvwmg0x-glib-2.88.3/lib/libglib-2.0.so.0.8800.3-gdb.py" auto-loading has been declined by your `auto-load safe-path' set to "$debugdir:$datadir/auto-load:/nix/store/604gsr59rj7dzd0nrhp143rpvf7gyiaz-gcc-15.3.0-lib".
+warning: File "/nix/store/7a2cjhcgzyym5zaz6m4fksw47qvm150w-gcc-16.2.0-lib/lib/libstdc++.so.6.0.36-gdb.py" auto-loading has been declined by your `auto-load safe-path' set to "$debugdir:$datadir/auto-load:/nix/store/604gsr59rj7dzd0nrhp143rpvf7gyiaz-gcc-15.3.0-lib".
+Breakpoint 1 at 0x707de84c715a (2 locations)
+Breakpoint 2 at 0x707de84c6fa6 (2 locations)
+Breakpoint 3 at 0x707de84c9776 (2 locations)
+[Switching to LWP 3000211]
+== [gdb thread 19] eglCreateImage before the swap; current context:
+$1 = (void *) 0x707db80c0ee0
+== [gdb thread 19] eglCreateImage before the swap; current context:
+$2 = (void *) 0x707db80c0ee0
+== [gdb thread 19] eglMakeCurrent(display=0x707dd0991c70, context=0x707db8261390)
+   current context before the call:
+$3 = (void *) 0x707db80c0ee0
+[Current thread is 19 (LWP 3000211)]
+#0  0x0000707debbee8b8 in eglMakeCurrent () from /nix/store/ww5pckflswny9whz04k06xh233jbg5kl-libglvnd-1.7.0/lib/libEGL.so.1
+#1  0x00005d9a173c0bb5 in egl::make_ctx(void*) ()
+#2  0x00005d9a1736f168 in va::va_t::init(int, int, file_t&&) ()
+#3  0x00005d9a1736c95c in va::make_avcodec_encode_device(int, int, file_t&&, int, int, bool) ()
+#4  0x00005d9a1736cb1a in va::make_avcodec_encode_device(int, int, int, int, bool) ()
+#5  0x00005d9a1737dc41 in wl::wlr_vram_t::make_avcodec_encode_device(platf::pix_fmt_e) ()
+#6  0x00005d9a172de4f5 in video::make_encode_device(platf::display_t&, video::encoder_t const&, video::config_t const&) ()
+== [gdb thread 19] eglMakeCurrent(display=0x707dd0991c70, context=0x707db8261390)
+   current context before the call:
+$4 = (void *) 0x707db80c0ee0
+[Current thread is 19 (LWP 3000211)]
+#0  0x0000707de84c715a in eglMakeCurrent () from /nix/store/1vkzwrp4ny20iljfnv9valq0bfn8czlv-mesa-26.2.3/lib/libEGL_mesa.so.0
+#1  0x0000707debbeeace in eglMakeCurrent () from /nix/store/ww5pckflswny9whz04k06xh233jbg5kl-libglvnd-1.7.0/lib/libEGL.so.1
+#2  0x00005d9a173c0bb5 in egl::make_ctx(void*) ()
+#3  0x00005d9a1736f168 in va::va_t::init(int, int, file_t&&) ()
+#4  0x00005d9a1736c95c in va::make_avcodec_encode_device(int, int, file_t&&, int, int, bool) ()
+#5  0x00005d9a1736cb1a in va::make_avcodec_encode_device(int, int, int, int, bool) ()
+#6  0x00005d9a1737dc41 in wl::wlr_vram_t::make_avcodec_encode_device(platf::pix_fmt_e) ()
+== [gdb thread 19] eglMakeCurrent(display=0x707dd002c0a0, context=(nil))
+   current context before the call:
+$5 = (void *) 0x707db8261390
+[Current thread is 19 (LWP 3000211)]
+#0  0x0000707debbee8b8 in eglMakeCurrent () from /nix/store/ww5pckflswny9whz04k06xh233jbg5kl-libglvnd-1.7.0/lib/libEGL.so.1
+#1  0x00005d9a1736e2c8 in va::va_t::~va_t() ()
+#2  0x00005d9a1736e3ca in va::va_vram_t::~va_vram_t() ()
+#3  0x00005d9a172eef73 in video::avcodec_encode_session_t::~avcodec_encode_session_t() ()
+#4  0x00005d9a172e849e in video::encode_run(int&, std::shared_ptr<safe::mail_raw_t>, std::shared_ptr<safe::event_t<std::shared_ptr<platf::img_t> > >, video::config_t&, std::shared_ptr<platf::display_t>, std::unique_ptr<platf::encode_device_t, std::default_delete<platf::encode_device_t> >, safe::event_t<bool>&, video::encoder_t const&, void*) ()
+#5  0x00005d9a172e96c7 in video::capture_async(std::shared_ptr<safe::mail_raw_t>, video::config_t&, void*) ()
+#6  0x00005d9a172e9d68 in video::capture(std::shared_ptr<safe::mail_raw_t>, video::config_t, void*) ()
+== [gdb thread 19] eglMakeCurrent(display=0x707dd0991c70, context=(nil))
+   current context before the call:
+$6 = (void *) 0x707db8261390
+[Current thread is 19 (LWP 3000211)]
+#0  0x0000707de84c715a in eglMakeCurrent () from /nix/store/1vkzwrp4ny20iljfnv9valq0bfn8czlv-mesa-26.2.3/lib/libEGL_mesa.so.0
+#1  0x0000707debbec796 in InternalLoseCurrent () from /nix/store/ww5pckflswny9whz04k06xh233jbg5kl-libglvnd-1.7.0/lib/libEGL.so.1
+#2  0x00005d9a1736e2c8 in va::va_t::~va_t() ()
+#3  0x00005d9a1736e3ca in va::va_vram_t::~va_vram_t() ()
+#4  0x00005d9a172eef73 in video::avcodec_encode_session_t::~avcodec_encode_session_t() ()
+#5  0x00005d9a172e849e in video::encode_run(int&, std::shared_ptr<safe::mail_raw_t>, std::shared_ptr<safe::event_t<std::shared_ptr<platf::img_t> > >, video::config_t&, std::shared_ptr<platf::display_t>, std::unique_ptr<platf::encode_device_t, std::default_delete<platf::encode_device_t> >, safe::event_t<bool>&, video::encoder_t const&, void*) ()
+#6  0x00005d9a172e96c7 in video::capture_async(std::shared_ptr<safe::mail_raw_t>, video::config_t&, void*) ()
+== [gdb thread 19] eglDestroyContext(display=0x707dd002c0a0, context=0x707db80c0ee0)
+[Current thread is 19 (LWP 3000211)]
+#0  0x0000707debbf82d5 in eglDestroyContext () from /nix/store/ww5pckflswny9whz04k06xh233jbg5kl-libglvnd-1.7.0/lib/libEGL.so.1
+#1  0x00005d9a1736e2d9 in va::va_t::~va_t() ()
+#2  0x00005d9a1736e3ca in va::va_vram_t::~va_vram_t() ()
+#3  0x00005d9a172eef73 in video::avcodec_encode_session_t::~avcodec_encode_session_t() ()
+#4  0x00005d9a172e849e in video::encode_run(int&, std::shared_ptr<safe::mail_raw_t>, std::shared_ptr<safe::event_t<std::shared_ptr<platf::img_t> > >, video::config_t&, std::shared_ptr<platf::display_t>, std::unique_ptr<platf::encode_device_t, std::default_delete<platf::encode_device_t> >, safe::event_t<bool>&, video::encoder_t const&, void*) ()
+#5  0x00005d9a172e96c7 in video::capture_async(std::shared_ptr<safe::mail_raw_t>, video::config_t&, void*) ()
+#6  0x00005d9a172e9d68 in video::capture(std::shared_ptr<safe::mail_raw_t>, video::config_t, void*) ()
+== [gdb thread 19] eglDestroyContext(display=0x707dd002c0a0, context=0x707db80c0ee0)
+[Current thread is 19 (LWP 3000211)]
+#0  0x0000707de84c6fa6 in eglDestroyContext () from /nix/store/1vkzwrp4ny20iljfnv9valq0bfn8czlv-mesa-26.2.3/lib/libEGL_mesa.so.0
+#1  0x00005d9a1736e2d9 in va::va_t::~va_t() ()
+#2  0x00005d9a1736e3ca in va::va_vram_t::~va_vram_t() ()
+#3  0x00005d9a172eef73 in video::avcodec_encode_session_t::~avcodec_encode_session_t() ()
+#4  0x00005d9a172e849e in video::encode_run(int&, std::shared_ptr<safe::mail_raw_t>, std::shared_ptr<safe::event_t<std::shared_ptr<platf::img_t> > >, video::config_t&, std::shared_ptr<platf::display_t>, std::unique_ptr<platf::encode_device_t, std::default_delete<platf::encode_device_t> >, safe::event_t<bool>&, video::encoder_t const&, void*) ()
+#5  0x00005d9a172e96c7 in video::capture_async(std::shared_ptr<safe::mail_raw_t>, video::config_t&, void*) ()
+#6  0x00005d9a172e9d68 in video::capture(std::shared_ptr<safe::mail_raw_t>, video::config_t, void*) ()
+== [gdb thread 19] eglCreateImage after the destroy; current context:
+$7 = (void *) 0x0
+== [gdb thread 19] eglCreateImage after the destroy; current context:
+$8 = (void *) 0x0
+== [gdb thread 19] eglCreateImage after the destroy; current context:
+$9 = (void *) 0x0
+== [gdb thread 19] eglMakeCurrent(display=0x707dd000c1f0, context=0x707db8057860)
+   current context before the call:
+$10 = (void *) 0x0
+[Current thread is 19 (LWP 3000211)]
+#0  0x0000707debbee8b8 in eglMakeCurrent () from /nix/store/ww5pckflswny9whz04k06xh233jbg5kl-libglvnd-1.7.0/lib/libEGL.so.1
+#1  0x00005d9a173c0bb5 in egl::make_ctx(void*) ()
+#2  0x00005d9a1736f168 in va::va_t::init(int, int, file_t&&) ()
+#3  0x00005d9a1736c95c in va::make_avcodec_encode_device(int, int, file_t&&, int, int, bool) ()
+#4  0x00005d9a1736cb1a in va::make_avcodec_encode_device(int, int, int, int, bool) ()
+#5  0x00005d9a1737dc41 in wl::wlr_vram_t::make_avcodec_encode_device(platf::pix_fmt_e) ()
+#6  0x00005d9a172de4f5 in video::make_encode_device(platf::display_t&, video::encoder_t const&, video::config_t const&) ()
+== [gdb thread 19] eglMakeCurrent(display=0x707dd000c1f0, context=0x707db8057860)
+   current context before the call:
+$11 = (void *) 0x0
+[Current thread is 19 (LWP 3000211)]
+#0  0x0000707de84c715a in eglMakeCurrent () from /nix/store/1vkzwrp4ny20iljfnv9valq0bfn8czlv-mesa-26.2.3/lib/libEGL_mesa.so.0
+#1  0x0000707debbeca2b in InternalMakeCurrentDispatch () from /nix/store/ww5pckflswny9whz04k06xh233jbg5kl-libglvnd-1.7.0/lib/libEGL.so.1
+#2  0x00005d9a173c0bb5 in egl::make_ctx(void*) ()
+#3  0x00005d9a1736f168 in va::va_t::init(int, int, file_t&&) ()
+#4  0x00005d9a1736c95c in va::make_avcodec_encode_device(int, int, file_t&&, int, int, bool) ()
+#5  0x00005d9a1736cb1a in va::make_avcodec_encode_device(int, int, int, int, bool) ()
+#6  0x00005d9a1737dc41 in wl::wlr_vram_t::make_avcodec_encode_device(platf::pix_fmt_e) ()
+== [gdb thread 19] eglMakeCurrent(display=0x707dd0991c70, context=(nil))
+   current context before the call:
+$12 = (void *) 0x707db8057860
+[Current thread is 19 (LWP 3000211)]
+#0  0x0000707debbee8b8 in eglMakeCurrent () from /nix/store/ww5pckflswny9whz04k06xh233jbg5kl-libglvnd-1.7.0/lib/libEGL.so.1
+#1  0x00005d9a1736e2c8 in va::va_t::~va_t() ()
+#2  0x00005d9a1736e3ca in va::va_vram_t::~va_vram_t() ()
+#3  0x00005d9a172eef73 in video::avcodec_encode_session_t::~avcodec_encode_session_t() ()
+#4  0x00005d9a172e849e in video::encode_run(int&, std::shared_ptr<safe::mail_raw_t>, std::shared_ptr<safe::event_t<std::shared_ptr<platf::img_t> > >, video::config_t&, std::shared_ptr<platf::display_t>, std::unique_ptr<platf::encode_device_t, std::default_delete<platf::encode_device_t> >, safe::event_t<bool>&, video::encoder_t const&, void*) ()
+#5  0x00005d9a172e96c7 in video::capture_async(std::shared_ptr<safe::mail_raw_t>, video::config_t&, void*) ()
+#6  0x00005d9a172e9d68 in video::capture(std::shared_ptr<safe::mail_raw_t>, video::config_t, void*) ()
+== [gdb thread 19] eglMakeCurrent(display=0x707dd000c1f0, context=(nil))
+   current context before the call:
+$13 = (void *) 0x707db8057860
+[Current thread is 19 (LWP 3000211)]
+#0  0x0000707de84c715a in eglMakeCurrent () from /nix/store/1vkzwrp4ny20iljfnv9valq0bfn8czlv-mesa-26.2.3/lib/libEGL_mesa.so.0
+#1  0x0000707debbec796 in InternalLoseCurrent () from /nix/store/ww5pckflswny9whz04k06xh233jbg5kl-libglvnd-1.7.0/lib/libEGL.so.1
+#2  0x00005d9a1736e2c8 in va::va_t::~va_t() ()
+#3  0x00005d9a1736e3ca in va::va_vram_t::~va_vram_t() ()
+#4  0x00005d9a172eef73 in video::avcodec_encode_session_t::~avcodec_encode_session_t() ()
+#5  0x00005d9a172e849e in video::encode_run(int&, std::shared_ptr<safe::mail_raw_t>, std::shared_ptr<safe::event_t<std::shared_ptr<platf::img_t> > >, video::config_t&, std::shared_ptr<platf::display_t>, std::unique_ptr<platf::encode_device_t, std::default_delete<platf::encode_device_t> >, safe::event_t<bool>&, video::encoder_t const&, void*) ()
+#6  0x00005d9a172e96c7 in video::capture_async(std::shared_ptr<safe::mail_raw_t>, video::config_t&, void*) ()
+== [gdb thread 19] eglDestroyContext(display=0x707dd0991c70, context=0x707db8261390)
+[Current thread is 19 (LWP 3000211)]
+#0  0x0000707debbf82d5 in eglDestroyContext () from /nix/store/ww5pckflswny9whz04k06xh233jbg5kl-libglvnd-1.7.0/lib/libEGL.so.1
+#1  0x00005d9a1736e2d9 in va::va_t::~va_t() ()
+#2  0x00005d9a1736e3ca in va::va_vram_t::~va_vram_t() ()
+#3  0x00005d9a172eef73 in video::avcodec_encode_session_t::~avcodec_encode_session_t() ()
+#4  0x00005d9a172e849e in video::encode_run(int&, std::shared_ptr<safe::mail_raw_t>, std::shared_ptr<safe::event_t<std::shared_ptr<platf::img_t> > >, video::config_t&, std::shared_ptr<platf::display_t>, std::unique_ptr<platf::encode_device_t, std::default_delete<platf::encode_device_t> >, safe::event_t<bool>&, video::encoder_t const&, void*) ()
+#5  0x00005d9a172e96c7 in video::capture_async(std::shared_ptr<safe::mail_raw_t>, video::config_t&, void*) ()
+#6  0x00005d9a172e9d68 in video::capture(std::shared_ptr<safe::mail_raw_t>, video::config_t, void*) ()
+== [gdb thread 19] eglDestroyContext(display=0x707dd0991c70, context=0x707db8261390)
+[Current thread is 19 (LWP 3000211)]
+#0  0x0000707de84c6fa6 in eglDestroyContext () from /nix/store/1vkzwrp4ny20iljfnv9valq0bfn8czlv-mesa-26.2.3/lib/libEGL_mesa.so.0
+#1  0x00005d9a1736e2d9 in va::va_t::~va_t() ()
+#2  0x00005d9a1736e3ca in va::va_vram_t::~va_vram_t() ()
+#3  0x00005d9a172eef73 in video::avcodec_encode_session_t::~avcodec_encode_session_t() ()
+#4  0x00005d9a172e849e in video::encode_run(int&, std::shared_ptr<safe::mail_raw_t>, std::shared_ptr<safe::event_t<std::shared_ptr<platf::img_t> > >, video::config_t&, std::shared_ptr<platf::display_t>, std::unique_ptr<platf::encode_device_t, std::default_delete<platf::encode_device_t> >, safe::event_t<bool>&, video::encoder_t const&, void*) ()
+#5  0x00005d9a172e96c7 in video::capture_async(std::shared_ptr<safe::mail_raw_t>, video::config_t&, void*) ()
+#6  0x00005d9a172e9d68 in video::capture(std::shared_ptr<safe::mail_raw_t>, video::config_t, void*) ()
+== [gdb thread 19] eglMakeCurrent(display=0x707dd000c1f0, context=(nil))
+   current context before the call:
+$14 = (void *) 0x0
+[Current thread is 19 (LWP 3000211)]
+#0  0x0000707debbee8b8 in eglMakeCurrent () from /nix/store/ww5pckflswny9whz04k06xh233jbg5kl-libglvnd-1.7.0/lib/libEGL.so.1
+#1  0x00005d9a1736e2c8 in va::va_t::~va_t() ()
+#2  0x00005d9a1736e3ca in va::va_vram_t::~va_vram_t() ()
+#3  0x00005d9a172eef73 in video::avcodec_encode_session_t::~avcodec_encode_session_t() ()
+#4  0x00005d9a172e8b1a in video::encode_run(int&, std::shared_ptr<safe::mail_raw_t>, std::shared_ptr<safe::event_t<std::shared_ptr<platf::img_t> > >, video::config_t&, std::shared_ptr<platf::display_t>, std::unique_ptr<platf::encode_device_t, std::default_delete<platf::encode_device_t> >, safe::event_t<bool>&, video::encoder_t const&, void*) ()
+#5  0x00005d9a172e96c7 in video::capture_async(std::shared_ptr<safe::mail_raw_t>, video::config_t&, void*) ()
+#6  0x00005d9a172e9d68 in video::capture(std::shared_ptr<safe::mail_raw_t>, video::config_t, void*) ()
+== [gdb thread 19] eglDestroyContext(display=0x707dd000c1f0, context=0x707db8057860)
+[Current thread is 19 (LWP 3000211)]
+#0  0x0000707debbf82d5 in eglDestroyContext () from /nix/store/ww5pckflswny9whz04k06xh233jbg5kl-libglvnd-1.7.0/lib/libEGL.so.1
+#1  0x00005d9a1736e2d9 in va::va_t::~va_t() ()
+#2  0x00005d9a1736e3ca in va::va_vram_t::~va_vram_t() ()
+#3  0x00005d9a172eef73 in video::avcodec_encode_session_t::~avcodec_encode_session_t() ()
+#4  0x00005d9a172e8b1a in video::encode_run(int&, std::shared_ptr<safe::mail_raw_t>, std::shared_ptr<safe::event_t<std::shared_ptr<platf::img_t> > >, video::config_t&, std::shared_ptr<platf::display_t>, std::unique_ptr<platf::encode_device_t, std::default_delete<platf::encode_device_t> >, safe::event_t<bool>&, video::encoder_t const&, void*) ()
+#5  0x00005d9a172e96c7 in video::capture_async(std::shared_ptr<safe::mail_raw_t>, video::config_t&, void*) ()
+#6  0x00005d9a172e9d68 in video::capture(std::shared_ptr<safe::mail_raw_t>, video::config_t, void*) ()
+== [gdb thread 19] eglDestroyContext(display=0x707dd000c1f0, context=0x707db8057860)
+[Current thread is 19 (LWP 3000211)]
+#0  0x0000707de84c6fa6 in eglDestroyContext () from /nix/store/1vkzwrp4ny20iljfnv9valq0bfn8czlv-mesa-26.2.3/lib/libEGL_mesa.so.0
+#1  0x00005d9a1736e2d9 in va::va_t::~va_t() ()
+#2  0x00005d9a1736e3ca in va::va_vram_t::~va_vram_t() ()
+#3  0x00005d9a172eef73 in video::avcodec_encode_session_t::~avcodec_encode_session_t() ()
+#4  0x00005d9a172e8b1a in video::encode_run(int&, std::shared_ptr<safe::mail_raw_t>, std::shared_ptr<safe::event_t<std::shared_ptr<platf::img_t> > >, video::config_t&, std::shared_ptr<platf::display_t>, std::unique_ptr<platf::encode_device_t, std::default_delete<platf::encode_device_t> >, safe::event_t<bool>&, video::encoder_t const&, void*) ()
+#5  0x00005d9a172e96c7 in video::capture_async(std::shared_ptr<safe::mail_raw_t>, video::config_t&, void*) ()
+#6  0x00005d9a172e9d68 in video::capture(std::shared_ptr<safe::mail_raw_t>, video::config_t, void*) ()
+[Inferior 1 (process 2999381) exited normally]
+No threads.
+/var/tmp/resize-c1/egl.cmds:44: Error in sourced command file:
+The program is not being run.
