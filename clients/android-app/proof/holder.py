@@ -103,13 +103,30 @@ def serverinfo(address: str) -> str:
 
 
 class Holder:
-    """holder.ts: the federation fixture's host and its relay."""
+    """holder.ts: the federation fixture's host and its relay.
 
-    def __init__(self, run: Path, executable: str, moonlight: str):
+    `user` is the uid and gid that the holder runs as (D10: an unprivileged
+    user, so that korrid's launch helpers accept its runtime user); the run
+    directory becomes theirs. `environment` adds to the caller's environment
+    what holder.ts passes on (the certificate control of the sender).
+    """
+
+    def __init__(self, run: Path, executable: str, moonlight: str,
+                 user: "tuple[int, int] | None" = None, environment: "dict[str, str] | None" = None):
         self.run = run
+        drop = None
+        if user is not None:
+            uid, gid = user
+            os.chown(run, uid, gid)
+
+            def drop() -> None:
+                os.setgroups([gid])
+                os.setgid(gid)
+                os.setuid(uid)
         self.process = subprocess.Popen(
             ["bun", str(HERE / "holder.ts"), str(run), str(ROOT), executable, moonlight],
             stdout=(run / "holder-ts.log").open("w"), stderr=subprocess.STDOUT, start_new_session=True,
+            preexec_fn=drop, env=dict(os.environ, **(environment or {})),
         )
         until = time.monotonic() + 60
         while not (run / "ready").exists():

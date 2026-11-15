@@ -274,6 +274,41 @@ let
           exec python3 "$KORRI_ROOT/clients/android-app/proof/holder.py" "$@"
         '';
       };
+    android-app-play-proof =
+      let
+        emulator = import ../clients/viewer/android/emulator.nix { inherit pkgs; };
+      in
+      {
+        description = "Prove on aka, as root, that a tap on the holder's game starts the Rust viewer in the Android app (#434 D10).";
+        usageSuffix = " -- --sunshine /nix/store/...-sunshine-korri-... [--holder-uid N] [--port N] [--adb-port N] [--out DIRECTORY]";
+        runtimeInputs = [
+          # Pillow reads the screenshots; numpy and FFmpeg are stream-cadence's
+          # frame-ID bar decoder (bar.py) and the tone's spectrum.
+          (pkgs.python3.withPackages (p: [
+            p.pillow
+            p.numpy
+          ]))
+          pkgs.ffmpeg
+          # holder.ts and the Artemis acceptance's relay that it runs.
+          pkgs.bun
+          pkgs.nix
+          pkgs.jdk17
+          pkgs.unzip
+          pkgs.procps
+        ];
+        env = {
+          KORRI_APP_EMULATOR_SDK = emulator.sdkRoot;
+          KORRI_APP_EMULATOR_IMAGE = emulator.systemImage;
+          KORRI_APP_BUILD_TOOLS = emulator.buildToolsVersion;
+          # stream-cadence builds its sender fixture from this nixpkgs.
+          CADENCE_NIXPKGS = "${pkgs.path}";
+          # The holder's systemd helper has a nix-shell shebang.
+          NIX_PATH = "nixpkgs=${pkgs.path}";
+        };
+        script = ''
+          exec python3 "$KORRI_ROOT/clients/android-app/proof/play.py" "$@"
+        '';
+      };
     hooks-install = {
       description = "Install the Git hook that refuses a commit which stages a secret.";
       runtimeInputs = [

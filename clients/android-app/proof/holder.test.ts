@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { startHolder } from "./holder";
+import { holderEnvironment, startHolder } from "./holder";
 
 const executable = process.env.FEDERATION_FIXTURE_EXECUTABLE;
 const project = resolve(import.meta.dir, "../../..");
@@ -32,3 +32,26 @@ test.skipIf(!executable)("a Moonlight address that cannot be published stops the
     expect(readFileSync(join(run, "holder.log"), "utf8")).toContain("the Moonlight address cannot be published");
   } finally { rmSync(run, { recursive: true, force: true }); }
 }, 30_000);
+
+// #434 D10: the holder provisions the app's viewer certificate through the
+// sender's certificate control, and runs as an unprivileged user that has no
+// passwd entry, so nix-shell (the systemd fixture's shebang) needs a home.
+test("the holder takes its caller's certificate control and a home of its own, nothing else", () => {
+  const run = "/tmp/android-app-holder-run";
+  const environment = holderEnvironment(run, project, "/bin", "nixpkgs=/n", {
+    KORRID_STREAM_CERTIFICATE_CONTROL_SOCKET: "/run/korri-cadence-certificate-x/control.sock",
+    KORRID_STREAM_CERTIFICATE_CONTROL_GID: "59034",
+    KORRID_STREAM_CERTIFICATE_CONTROL_PEER_UID: "0",
+    KORRID_STREAM_CERTIFICATE_CONTROL_PEER_GID: "0",
+    KORRID_RUNTIME_UID: "0",
+    HOME: "/root",
+  });
+  expect(environment.KORRID_STREAM_CERTIFICATE_CONTROL_SOCKET).toBe("/run/korri-cadence-certificate-x/control.sock");
+  expect(environment.KORRID_STREAM_CERTIFICATE_CONTROL_GID).toBe("59034");
+  expect(environment.KORRID_STREAM_CERTIFICATE_CONTROL_PEER_UID).toBe("0");
+  expect(environment.KORRID_STREAM_CERTIFICATE_CONTROL_PEER_GID).toBe("0");
+  expect(environment.HOME).toBe(join(run, "home"));
+  // The caller's other values stay out: the runtime user is the holder's own.
+  expect(environment.KORRID_RUNTIME_UID).toBe(String(process.getuid!()));
+  expect(holderEnvironment(run, project, "/bin", "", {}).KORRID_STREAM_CERTIFICATE_CONTROL_SOCKET).toBeUndefined();
+});

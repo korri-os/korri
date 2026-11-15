@@ -85,12 +85,15 @@ def sign(build_tools: Path, apk: str, out: Path) -> Path:
 
 
 class Emulator:
-    def __init__(self, sdk: str, home: Path, port: int, out: Path):
+    def __init__(self, sdk: str, home: Path, port: int, out: Path, sound: "Path | None" = None):
         self.sdk = sdk
         self.home = home
         self.serial = f"emulator-{port}"
         self.port = port
         self.out = out
+        # With `sound`, everything that Android plays goes to that WAV file
+        # (QEMU's wav driver), never to this host's speakers (slice D10).
+        self.sound = sound
         self.process: subprocess.Popen | None = None
         self.env = dict(
             os.environ,
@@ -125,7 +128,7 @@ class Emulator:
             "hw.lcd.width": "1080", "hw.lcd.height": "2400", "hw.lcd.density": "420",
             "hw.ramSize": "2048", "hw.cpu.ncore": "2", "hw.gpu.enabled": "yes",
             "hw.gpu.mode": "swiftshader_indirect", "hw.keyboard": "yes",
-            "hw.audioInput": "no", "hw.audioOutput": "no", "hw.camera.back": "none",
+            "hw.audioInput": "no", "hw.audioOutput": "yes" if self.sound else "no", "hw.camera.back": "none",
             "hw.camera.front": "none", "fastboot.forceColdBoot": "yes",
         }
         config = avd / "config.ini"
@@ -134,13 +137,16 @@ class Emulator:
 
     def start(self) -> None:
         log(f"starting the emulator on {self.serial} (2 cores)")
+        sound = {} if self.sound is None else dict(
+            QEMU_AUDIO_DRV="wav", QEMU_WAV_PATH=str(self.sound), QEMU_WAV_FREQUENCY="48000")
         self.process = subprocess.Popen(
             ["nice", "-n", "10", f"{self.sdk}/emulator/emulator", "-avd", AVD,
-             "-port", str(self.port), "-no-window", "-no-boot-anim", "-no-audio", "-wipe-data",
+             "-port", str(self.port), "-no-window", "-no-boot-anim",
+             *([] if self.sound else ["-no-audio"]), "-wipe-data",
              "-no-snapshot", "-no-metrics", "-gpu", "swiftshader_indirect",
              "-cores", "2", "-memory", "2048", "-accel", "on"],
             stdout=(self.out / "emulator.log").open("w"), stderr=subprocess.STDOUT,
-            env=self.env, start_new_session=True,
+            env=dict(self.env, **sound), start_new_session=True,
         )
         until = time.monotonic() + 600
         while time.monotonic() < until:

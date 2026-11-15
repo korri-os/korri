@@ -9,14 +9,33 @@
 // RUN/ready gets "hostPort hostKey relayPort" when the holder serves. On
 // SIGTERM or SIGINT the relay's events go to RUN/events.json, the holder
 // stops and joins its discovery, and the relay stops. Test-process only.
+//
+// For the D10 proof the holder provisions the app's viewer certificate: its
+// caller names the sender's certificate control in the variables that korrid
+// reads (KORRID_STREAM_CERTIFICATE_CONTROL_*, services/korrid/src/host/
+// moonlight_certificate.rs), and runs this as an unprivileged user.
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import type { Subprocess } from "bun";
 import { hostEnvironment, startRelay } from "../../android/test/nostr-relay-fixture";
 
+// The certificate control that korrid reads, when the caller names one.
+const CERTIFICATE_CONTROL = "KORRID_STREAM_CERTIFICATE_CONTROL_";
+
+/** The acceptance's isolated environment, the caller's certificate control,
+ * and a home inside the run directory: nix-shell, the systemd fixture's
+ * shebang, needs one for a user without a passwd entry. No other caller value
+ * reaches the holder. */
+export function holderEnvironment(run: string, project: string, path: string, nixPath: string, caller: Record<string, string | undefined>) {
+  const control = Object.fromEntries(Object.entries(caller).filter((entry): entry is [string, string] =>
+    entry[0].startsWith(CERTIFICATE_CONTROL) && entry[1] !== undefined));
+  return { ...hostEnvironment(run, project, path, nixPath), ...control, HOME: join(run, "home") };
+}
+
 export async function startHolder(run: string, project: string, executable: string, moonlight: string) {
   if (![run, project, executable].every(isAbsolute) || existsSync(join(run, "host"))) throw new Error("fresh absolute run directory required");
   mkdirSync(join(run, "units"), { recursive: true });
+  mkdirSync(join(run, "home"), { recursive: true, mode: 0o700 });
   const relay = startRelay();
   const log = openSync(join(run, "holder.log"), "a", 0o600);
   let holder: Subprocess;
@@ -24,7 +43,7 @@ export async function startHolder(run: string, project: string, executable: stri
     // The same isolated environment as the acceptance flow's host: no caller
     // KORRID_* value, HOME or XDG state reaches it.
     holder = Bun.spawn([executable, join(run, "host"), "0", JSON.stringify([relay.url]), moonlight], {
-      env: hostEnvironment(run, project, process.env.PATH ?? "", process.env.NIX_PATH ?? ""), stdout: log, stderr: log,
+      env: holderEnvironment(run, project, process.env.PATH ?? "", process.env.NIX_PATH ?? "", process.env), stdout: log, stderr: log,
     });
   } catch (error) { closeSync(log); await relay.stop(); throw error; }
   closeSync(log);
