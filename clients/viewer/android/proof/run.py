@@ -55,6 +55,7 @@ The record goes to --out. The exit status is 0 only when every check passed.
 """
 
 import argparse
+import contextlib
 import datetime
 import json
 import os
@@ -67,6 +68,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 PACKAGE = "com.simonwjackson.korri.viewer"
@@ -127,8 +129,36 @@ class Remote:
             bufsize=1,
         )
         self.request_id = 0
+        # One request at a time: `kept_alive` asks from its own thread.
+        self.lock = threading.Lock()
 
     def request(self, operation: str, **values) -> dict:
+        with self.lock:
+            return self.exchange(operation, **values)
+
+    @contextlib.contextmanager
+    def kept_alive(self, period: float = 20):
+        """The agent ends a session it has not heard from for 75 s
+        (stream-cadence's device.py): tell it the host is alive while a long
+        step runs here."""
+        done = threading.Event()
+
+        def beat() -> None:
+            while not done.wait(period):
+                try:
+                    self.request("clock")
+                except Exception:
+                    return
+
+        thread = threading.Thread(target=beat, daemon=True)
+        thread.start()
+        try:
+            yield
+        finally:
+            done.set()
+            thread.join()
+
+    def exchange(self, operation: str, **values) -> dict:
         assert self.process.stdin and self.process.stdout
         self.request_id += 1
         self.process.stdin.write(
@@ -1162,7 +1192,11 @@ def main() -> int:
     command, parts = sender_tools(root, args.sender)
     fixture = Remote(command, out / "sender-agent.log")
     emulator = Emulator(sdk, state, args.port, out)
+    # The agent hears from this host while the long steps run (the emulator's
+    # start, the tests, the record's decode), not only at the clock calls.
+    alive = contextlib.ExitStack()
     try:
+        alive.enter_context(fixture.kept_alive())
         prepared = fixture.request("prepare", sway=f"{parts['sway']}/bin/sway",
                                    sunshine=f"{parts['sunshine']}/bin/sunshine",
                                    pulseaudio=f"{parts['pulseaudio']}/bin/pulseaudio",
@@ -1521,6 +1555,7 @@ def main() -> int:
         except Exception as sampled:
             result["sender_sample_error"] = str(sampled)
     finally:
+        alive.close()
         try:
             result["sender_restore"] = fixture.close()
         except Exception as error:
