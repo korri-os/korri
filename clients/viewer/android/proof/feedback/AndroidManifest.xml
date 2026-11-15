@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A test app for the viewer's proof (../run.py), never shipped. It drives
+     the viewer's controller feedback (slice D4b) against a virtual pad, as
+     the stream would if its host sent rumble and a light colour. No Java
+     (hasCode="false"). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.simonwjackson.korri.viewer.feedback"
+    android:versionCode="1"
+    android:versionName="0.1.0">
+    <uses-sdk android:minSdkVersion="31" android:targetSdkVersion="34" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <application
+        android:label="Korri viewer feedback probe"
+        android:hasCode="false"
+        android:allowBackup="false">
+        <activity
+            android:name="android.app.NativeActivity"
+            android:exported="true"
+            android:autoRemoveFromRecents="true">
+            <meta-data android:name="android.app.lib_name" android:value="korri_viewer_feedback_probe" />
+        </activity>
+    </application>
+</manifest>

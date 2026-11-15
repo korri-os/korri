@@ -1,0 +1,21 @@
+[package]
+name = "korri-viewer-feedback-probe"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+# A test app for the viewer's proof (../run.py), never shipped: it drives
+# the viewer's controller feedback (slice D4b) without a host, because the
+# proof's host sends no rumble and no light.
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+korri-viewer = { path = "../../.." }
+anyhow = "1"
+
+[target.'cfg(target_os = "android")'.dependencies]
+# The app's release (../../Cargo.toml).
+android-activity = { version = "=0.6.1", features = ["native-activity"] }

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Slices D1 to D5 of #391 step D, and #476's slice 4, proven with no person (ADR 0063).
+"""Slices D1 to D5 of #391 step D, D4b among them, and #476's slice 4,
+proven with no person (ADR 0063).
 
 One headless Android 12 emulator on this host runs the viewer app. A private
 Sunshine on the sender (stream-cadence's sender fixture, aka by default) is
@@ -33,16 +34,25 @@ steps:
    Android's `input` command, a mouse, and a game pad that the emulator's
    own `hid` command makes through /dev/uhid; the picture must move on.
    Stop Android's audio server, a real device error, and let init start it
-   again; stream on. Open the gameplay overlay with the pad's Guide (slice
-   D5): the video moves under it, the sound plays, and the pad, keys, a
+   again. Then (slice D4b) a virtual Bluetooth DualShock 4, also through
+   `hid`, whose kernel driver gives Android two vibrators, an RGB light and
+   a battery: it reports 60 % and presses a button, so the app seats it and
+   reports its battery to the host; then it goes. Stream on. Open the
+   gameplay overlay with the pad's Guide (slice D5): the video moves under it, the sound plays, and the pad, keys, a
    touch and a mouse sent while it is open never reach the sender. Guide
    closes it, and input goes again; Back opens and closes it too. Press
    Home (the app leaves the screen, which ends the stream), wait for
-   Stopped.
+   Stopped: the feedback (slice D4b) must stop between the input's gate and
+   the core's stop.
 5. Read the frame record from the app, decode its recording, and read the
    picture path (`decode`) and the sound's report from logcat.
 6. The refusal probe, an ordinary app, asks Android to start the viewer: it
-   is refused. Granted DUMP through adb, it is allowed.
+   is refused. Granted DUMP through adb, it is allowed. The feedback probe
+   (slice D4b) plays the core's part, which the fixture's Sunshine does not
+   (its controllers are off): with a new DualShock 4, it calls the stream's
+   rumble, trigger rumble and light callbacks from a thread that is not
+   attached to the VM. The pad's own output reports and `dumpsys input`
+   show what reached it.
 7. Read the fixture's Sunshine log, close the fixture, stop the emulator,
    and find the tones in the WAV file. The fixture's Sunshine logs each
    input packet it receives (`log_input`) and passes none on: the input
@@ -84,6 +94,8 @@ TEST_TONE_HZ = 440
 TESTS = "/data/local/tmp/korri-viewer-tests"
 PROBE = "com.simonwjackson.korri.viewer.refusal"
 PROBE_ACTIVITY = f"{PROBE}/android.app.NativeActivity"
+FEEDBACK_PROBE = "com.simonwjackson.korri.viewer.feedback"
+FEEDBACK_PROBE_ACTIVITY = f"{FEEDBACK_PROBE}/android.app.NativeActivity"
 # The frame record's header, as picture/frame_times.c writes it on Linux.
 RECORD_HEADER = "index,frame_number,enqueue_ns,decoded_ns,display_ns"
 # The stream's size at the start, and the size that the sender changes it to
@@ -92,7 +104,7 @@ STREAM_SIZE = (1280, 720)
 RESIZED = (720, 1280)
 # The Android tests of the session part, and the picture's pure parts.
 LIB_TESTS = ["sps::", "codec::", "decoder::", "callback::", "frame_record::", "placement::", "audio::", "sound::",
-             "input::", "gamepad::", "keyboard::", "touch::", "controller_list::", "overlay::"]
+             "input::", "gamepad::", "keyboard::", "touch::", "controller_list::", "overlay::", "feedback::"]
 
 # stream-cadence's frame-ID bar decoder: one decoder for the bar.
 sys.path.insert(0, str(Path(os.environ["KORRI_ROOT"]) / "nix/stream-cadence"))
@@ -1182,6 +1194,211 @@ def overlay_held(packets: list[dict]) -> dict:
     return found
 
 
+# Slice D4b: a Bluetooth DualShock 4 from Android's own CTS data
+# (dualshock4-bluetooth.json). Linux's hid-sony drives it, so Android gives
+# it two vibrators (FF_RUMBLE), an RGB light and a battery. Android 12 joins
+# its pad, touchpad and motion sensors in one input device, whose name can
+# be the touchpad's: the checks match the name's start. Its output
+# report 0x11 carries the weak motor at byte 6, the strong one at 7 and the
+# light's red, green and blue at 8 to 10 (hid-sony, dualshock4_send_output_report).
+DS4 = json.loads((Path(__file__).parent / "dualshock4-bluetooth.json").read_text())
+DS4_NAME = DS4["register"]["name"]
+WEAK, STRONG, RED = 6, 7, 8
+# What the feedback probe asks for (android/proof/feedback): rumble low
+# 0xc000 and high 0x4000, the light 0x446688, rumble off, then rumble low
+# 0x4000 and high 0xc000 until its stop.
+PROBE_STEPS = ["seat", "rumble low c000 high 4000", "light 446688", "trigger rumble ffff ffff",
+               "rumble off", "rumble low 4000 high c000", "stop"]
+# Sony's battery report from the CTS data: 60 %, discharging.
+BATTERY_STATE_DISCHARGING = 0x02
+
+
+class VirtualDualShock4:
+    """The pad, from the hid command's standard input, so that the device
+    stays until the proof closes it. hid-sony asks the device for feature
+    reports while it probes it; hid answers them only when no later command
+    has pushed its clock ahead, as a file's delays would. hid writes each
+    output report that the kernel sends the pad to its standard output."""
+
+    def __init__(self, emulator: "Emulator"):
+        self.process = subprocess.Popen(
+            [f"{emulator.sdk}/platform-tools/adb", "-s", emulator.serial, "shell", "hid", "-"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, env=emulator.env,
+        )
+        self.outputs: list[tuple[float, list[int]]] = []
+        self.other: list[str] = []
+        threading.Thread(target=self._read, daemon=True).start()
+
+    def _read(self) -> None:
+        assert self.process.stdout
+        text = ""
+        while True:
+            char = self.process.stdout.read(1)
+            if not char:
+                return
+            text += char
+            if char != "}":
+                continue
+            start = text.find("{")
+            try:
+                found = json.loads(text[start:])
+                self.outputs.append((time.monotonic(), found["reportData"]))
+            except (ValueError, KeyError):
+                self.other.append(text.strip())
+            text = ""
+
+    def send(self, command: dict) -> None:
+        assert self.process.stdin
+        self.process.stdin.write(json.dumps(command) + "\n")
+        self.process.stdin.flush()
+
+    def register(self) -> None:
+        self.send(DS4["register"])
+        # The kernel's probe asks for its calibration and firmware reports.
+        time.sleep(4)
+
+    def report_battery(self) -> None:
+        """60 %, discharging; the first report also presses circle."""
+        for report in DS4["battery_60_discharging"]:
+            self.send({"id": 1, "command": "report", "report": report})
+            time.sleep(0.2)
+
+    def close(self) -> None:
+        if self.process.poll() is None and self.process.stdin:
+            self.process.stdin.close()
+            try:
+                self.process.wait(timeout=20)
+            except subprocess.TimeoutExpired:
+                self.process.terminate()
+
+
+def ds4_in_stream(ds4: VirtualDualShock4, logcat: "Logcat", fixture: "Remote") -> dict:
+    """The pad arrives in the stream with its battery at 60 %, then goes,
+    and the heartbeat's repeats of its release end."""
+    log("feedback: a DualShock 4 through /dev/uhid")
+    mark = len(logcat.lines())
+    ds4.register()
+    fixture.request("clock")
+    ds4.report_battery()
+    try:
+        logcat.wait_for(r"korri-viewer: feedback: battery of " + re.escape(DS4_NAME), 15)
+    except RuntimeError as error:
+        log(f"feedback: {error}")
+    time.sleep(1)
+    ds4.close()
+    until = time.monotonic() + 10
+    while time.monotonic() < until and not any(
+            "korri-viewer: feedback: " + DS4_NAME in l and l.endswith(" stopped") for l in logcat.lines()[mark:]):
+        time.sleep(0.5)
+    time.sleep(2)
+    fixture.request("clock")
+    lines = [l.split("korri-viewer: ", 1)[1] for l in logcat.lines()[mark:] if "korri-viewer: " in l]
+    return {"app_lines": [l for l in lines if l.startswith("feedback: ") or DS4_NAME in l]}
+
+
+def input_device_state(emulator: "Emulator") -> dict:
+    """The pad's vibrator and RGB light as Android's input service has them."""
+    # The pad is the emulator's only input device with a vibrator or an RGB
+    # light. Android 12 joins its pad, touchpad and motion sensors in one
+    # input device, which may take the touchpad's name.
+    dump = emulator.shell("dumpsys input", check=False).stdout
+    vibrating = re.findall(r"Vibrating: (\w+)", dump)
+    colours = re.findall(r"Name: RGB\s+Type: RGB\s+Color: (0x[0-9a-f]+)", dump)
+    return {"vibrating": vibrating, "rgb_colours": colours}
+
+
+def run_feedback_probe(emulator: "Emulator", logcat: "Logcat", ds4: VirtualDualShock4, out: Path) -> dict:
+    """The probe's steps, Android's view of the pad at each, and the pad's
+    output reports."""
+    mark = len(logcat.lines())
+    reports_before = len(ds4.outputs)
+    emulator.shell(f"am start -n {FEEDBACK_PROBE_ACTIVITY}")
+    steps: dict = {}
+    until = time.monotonic() + 90
+    ended = ""
+    while time.monotonic() < until and not ended:
+        lines = logcat.lines()[mark:]
+        for line in lines:
+            found = re.search(r"korri-feedback-probe: step (.+)$", line)
+            if found and found.group(1) not in steps:
+                # Each step holds for 3 s; read Android's view inside it.
+                time.sleep(1)
+                steps[found.group(1)] = {"at_report": len(ds4.outputs), **input_device_state(emulator)}
+        ended = next((l for l in lines if re.search(r"korri-feedback-probe: (ended|failed)", l)), "")
+        time.sleep(0.2)
+    time.sleep(1)
+    lines = logcat.lines()[mark:]
+    reports = [data for _, data in ds4.outputs[reports_before:]]
+    (out / "feedback-probe-reports.json").write_text(json.dumps(reports) + "\n")
+    return {
+        "ended": ended.split("korri-feedback-probe: ", 1)[-1],
+        "steps": steps,
+        "output_reports": [{"weak": r[WEAK], "strong": r[STRONG], "rgb": r[RED:RED + 3]} for r in reports
+                           if len(r) > RED + 2 and r[0] == 0x11],
+        "app_lines": [l.split("korri-viewer: ", 1)[1] for l in lines if "korri-viewer: " in l],
+        "probe_lines": [l.split("korri-feedback-probe: ", 1)[1] for l in lines if "korri-feedback-probe: " in l],
+    }
+
+
+def feedback_probe_checks(probe: dict) -> dict:
+    reports = probe["output_reports"]
+    steps = probe["steps"]
+    motors = [(r["weak"], r["strong"]) for r in reports]
+    state = lambda step, key: steps.get(step, {}).get(key, [])  # noqa: E731
+    return {
+        "probe_ran_every_step": probe["ended"] == "ended" and all(step in steps for step in PROBE_STEPS),
+        "probe_pad_seated_with_rumble_and_light": any(
+            f"feedback: {DS4_NAME}" in l and "rumble Dual(Device), RGB light true" in l for l in probe["app_lines"]),
+        # High 0x4000 to the weak motor, low 0xc000 to the strong one; then
+        # both at 0; then the other way round.
+        "probe_rumble_reached_the_pad": (64, 192) in motors and (192, 64) in motors,
+        "probe_rumble_off_reached_the_pad": any(
+            a == (64, 192) and b == (0, 0) for a, b in zip(motors, motors[1:])),
+        "probe_light_reached_the_pad": any(r["rgb"] == [0x44, 0x66, 0x88] for r in reports),
+        "probe_android_vibrated_the_pad": "true" in state("rumble low c000 high 4000", "vibrating")
+            and "false" in state("rumble off", "vibrating"),
+        "probe_android_set_the_light": "0xff446688" in state("light 446688", "rgb_colours"),
+        # Two vibrators take no trigger rumble, as in Artemis.
+        "probe_trigger_rumble_made_no_call": any(
+            "feedback: trigger rumble controller 0" in l and "no call" in l for l in probe["app_lines"]),
+        # The stop stopped the rumble that ran, and gave the light back.
+        "probe_stop_stopped_the_pad": bool(motors) and motors[-1] == (0, 0)
+            and "false" in state("stop", "vibrating") and "stopped true" in probe["probe_lines"],
+        "probe_read_the_battery": any(
+            f"feedback: battery of {DS4_NAME}" in l and "status 3" in l for l in probe["app_lines"]),
+        "probe_feedback_had_no_failure": any(
+            l.startswith("feedback: ended: ") and l.endswith(" 0 failed") for l in probe["app_lines"]),
+    }
+
+
+def feedback_at_the_sender(packets: list[dict], app: list[str]) -> dict:
+    """The DualShock 4's arrival and battery at the sender's Sunshine."""
+    # Sunshine logs these fields in hexadecimal, without a prefix.
+    def number(value: str) -> int:
+        return int(value, 16)
+
+    arrivals = [p["fields"] for p in packets if p["kind"] == "controller arrival" and number(p["fields"].get("type", "0")) == 2]
+    batteries = [p["fields"] for p in packets if p["kind"] == "controller battery"]
+    sent = next((re.search(r"percentage (\d+): 0$", l) for l in app
+                 if f"feedback: battery of {DS4_NAME}" in l and l.endswith(": 0")), None)
+    percentage = int(sent.group(1)) if sent else None
+    # LI_CCAP_ANALOG_TRIGGERS | RUMBLE | BATTERY_STATE | RGB_LED.
+    expected = 0x01 | 0x02 | 0x40 | 0x80
+    return {
+        "arrival": arrivals,
+        "battery": batteries,
+        "app_sent_percentage": percentage,
+        "checks": {
+            "ds4_arrived_as_playstation_with_rumble_battery_and_light": any(
+                number(a.get("capabilities", "0")) == expected for a in arrivals),
+            "ds4_battery_arrived": percentage is not None and any(
+                number(b["batteryState"]) == BATTERY_STATE_DISCHARGING
+                and number(b["batteryPercentage"]) == percentage for b in batteries),
+        },
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--sender", default="root@aka",
@@ -1211,12 +1428,14 @@ def main() -> int:
 
     apk = nix_build(root, "korri-viewer-android-apk") + "/korri-viewer-unsigned.apk"
     probe_apk = nix_build(root, "korri-viewer-android-refusal-probe") + "/korri-viewer-refusal-probe-unsigned.apk"
+    feedback_apk = nix_build(root, "korri-viewer-android-feedback-probe") + "/korri-viewer-feedback-probe-unsigned.apk"
     viewer = nix_build(root, "korri-viewer")
     tests = nix_build(root, "checks.x86_64-linux.korri-viewer-android") + "/x86_64/tests"
-    result["store"] = {"apk": apk, "refusal_probe": probe_apk, "viewer": viewer, "tests": tests}
+    result["store"] = {"apk": apk, "refusal_probe": probe_apk, "feedback_probe": feedback_apk, "viewer": viewer, "tests": tests}
 
     signed = sign(build_tools, apk, out / "korri-viewer-debug.apk")
     probe = sign(build_tools, probe_apk, out / "korri-viewer-refusal-probe-debug.apk")
+    feedback_probe = sign(build_tools, feedback_apk, out / "korri-viewer-feedback-probe-debug.apk")
     (out / "apk-badging.txt").write_text(run([str(build_tools / "aapt2"), "dump", "badging", str(signed)]).stdout)
     entries = run(["unzip", "-l", str(signed)]).stdout
     (out / "apk-contents.txt").write_text(entries)
@@ -1235,6 +1454,7 @@ def main() -> int:
     # The agent hears from this host while the long steps run (the emulator's
     # start, the tests, the record's decode), not only at the clock calls.
     alive = contextlib.ExitStack()
+    ds4: VirtualDualShock4 | None = None
     try:
         alive.enter_context(fixture.kept_alive())
         prepared = fixture.request("prepare", sway=f"{parts['sway']}/bin/sway",
@@ -1396,6 +1616,22 @@ def main() -> int:
             time.sleep(0.5)
         result["audio_server_restart"] = {"before": server_before, "after": server_after}
         checks["audio_server_restarted"] = bool(server_after)
+        # Slice D4b: a pad with vibrators, a light and a battery, after the
+        # audio server's restart, so that D3's check of the sound before it
+        # keeps its time. It goes again before slice D5's marker: D5 reads
+        # every controller packet after it.
+        ds4 = VirtualDualShock4(emulator)
+        in_stream = ds4_in_stream(ds4, logcat, fixture)
+        ds4 = None
+        result["feedback_in_stream"] = in_stream
+        checks["feedback_ds4_seated_with_rumble_and_light"] = any(
+            f"feedback: {DS4_NAME}" in l and "rumble Dual(Device), RGB light true" in l for l in in_stream["app_lines"])
+        checks["feedback_ds4_battery_read_and_sent"] = any(
+            f"feedback: battery of {DS4_NAME}" in l and "status 3" in l and l.endswith(": 0") for l in in_stream["app_lines"])
+        # It went: its vibrators were cancelled and its seat left.
+        checks["feedback_ds4_left_its_seat"] = any(
+            f"feedback: {DS4_NAME}" in l and l.endswith(" stopped") for l in in_stream["app_lines"])
+        fixture.request("clock")
         log(f"streaming for {args.seconds} s")
         time.sleep(args.seconds)
         result["sound_after_the_restart"] = [
@@ -1499,6 +1735,15 @@ def main() -> int:
         stopping_at = next((at for at, l in enumerate(app) if "korri-viewer: Stopping input stream" in l), None)
         checks["input_gate_closed_before_the_core_stopped"] = (closed_at is not None and stopping_at is not None
                                                                and closed_at < stopping_at)
+        # Slice D4b: the feedback stopped after the gate closed and before
+        # the core began to stop, so before the stream ended.
+        feedback_at = next((at for at, l in enumerate(app) if "korri-viewer: feedback: ended: " in l), None)
+        stopped_feedback_at = next((at for at, l in enumerate(app) if "korri-viewer: feedback: vibration and lights stopped" in l), None)
+        result["feedback_report"] = app[feedback_at].split("feedback: ended: ", 1)[1] if feedback_at is not None else ""
+        checks["feedback_stopped_after_the_gate_and_before_the_core"] = (
+            None not in (closed_at, feedback_at, stopped_feedback_at, stopping_at, stopped_at)
+            and closed_at < feedback_at < stopped_feedback_at < stopping_at < stopped_at)
+        checks["feedback_report_has_no_failure"] = result["feedback_report"].endswith(" 0 failed")
 
         # The picture path, as the app reports it.
         chosen = next((re.search(r"picture: decode (\S+) decoder (\S+)", l) for l in app if "picture: decode " in l), None)
@@ -1562,6 +1807,17 @@ def main() -> int:
         refusal["viewer_lines_after_the_grant"] = [l for l in logcat.lines()[mark:] if " korri-viewer" in l]
         emulator.adb("uninstall", PROBE, check=False, timeout=120)
         result["refusal"] = refusal
+        # Slice D4b: the feedback probe plays the core's part for the pad.
+        log("feedback: the probe calls the stream's rumble and light callbacks")
+        emulator.adb("install", "-g", str(feedback_probe), timeout=300)
+        ds4 = VirtualDualShock4(emulator)
+        ds4.register()
+        ds4.report_battery()
+        feedback = run_feedback_probe(emulator, logcat, ds4, out)
+        emulator.adb("uninstall", FEEDBACK_PROBE, check=False, timeout=120)
+        ds4.close()
+        result["feedback_probe"] = feedback
+        checks.update(feedback_probe_checks(feedback))
         checks["a_start_without_dump_is_refused"] = "requires android.permission.DUMP" in refusal["without_dump"]
         checks["a_start_with_dump_granted_is_allowed"] = refusal["with_dump_granted"] == "started"
         logcat.close()
@@ -1571,12 +1827,19 @@ def main() -> int:
         # Only info and above: the debug lines can hold the launch's keys.
         (out / "sunshine.log").write_text(kept)
         (out / "sunshine-input.json").write_text(json.dumps(packets, indent=1) + "\n")
-        # Slice D4's packets come before slice D5's marker key.
+        # Slice D4's packets come before slice D4b's DualShock 4 arrived,
+        # and D4b's before slice D5's marker key.
         marker = next((at for at, p in enumerate(packets) if p["kind"] == "keyboard"
                        and int(p["fields"].get("keyCode", "0"), 16) & 0xFF == ord("M")), len(packets))
-        arrived = input_arrived(packets[:marker], result["input"]["placed"])
+        ds4_at = next((at for at, p in enumerate(packets[:marker])
+                       if p["kind"] == "controller arrival" and int(p["fields"].get("type", "0"), 16) == 2), marker)
+        arrived = input_arrived(packets[:ds4_at], result["input"]["placed"])
         result["input_at_the_sender"] = {key: value for key, value in arrived.items() if key != "checks"}
         for name, passed in arrived["checks"].items():
+            checks[f"sender_{name}"] = passed
+        fed = feedback_at_the_sender(packets[ds4_at:marker], app)
+        result["feedback_at_the_sender"] = {key: value for key, value in fed.items() if key != "checks"}
+        for name, passed in fed["checks"].items():
             checks[f"sender_{name}"] = passed
         held = overlay_held(packets)
         result["overlay_at_the_sender"] = {key: value for key, value in held.items() if key != "checks"}
@@ -1602,6 +1865,8 @@ def main() -> int:
         except Exception as sampled:
             result["sender_sample_error"] = str(sampled)
     finally:
+        if ds4 is not None:
+            ds4.close()
         alive.close()
         try:
             result["sender_restore"] = fixture.close()

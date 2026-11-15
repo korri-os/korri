@@ -1,5 +1,5 @@
 # The shared session part on Android (#391 step D) and the viewer app around
-# it (slices D1 to D3), at API 31 (ADR 0064) with the NDK that clients/android uses.
+# it (slices D1 to D4b), at API 31 (ADR 0064) with the NDK that clients/android uses.
 # Two ABIs: arm64-v8a for phones, x86_64 for the emulator.
 #
 # - check: builds the library and links its own tests and the HTTPS and
@@ -367,6 +367,58 @@ let
         '';
       }
     );
+  # The proof's feedback probe (android/proof/feedback): it drives the
+  # viewer's controller feedback (slice D4b) against a virtual pad, because
+  # the proof's host sends no rumble and no light. It links the shared viewer
+  # as the app does. x86_64 only, for the emulator; never shipped. Unsigned,
+  # as the APK above.
+  feedbackProbe =
+    let
+      part = parts.x86_64;
+      probeLibrary = "libkorri_viewer_feedback_probe.so";
+    in
+    pkgs.stdenv.mkDerivation (
+      common
+      // {
+        pname = "korri-viewer-feedback-probe-apk";
+        version = "0.1.0";
+        src = lib.fileset.toSource {
+          root = ../..;
+          fileset = lib.fileset.unions [
+            sourceFiles
+            ./android/proof/feedback
+          ];
+        };
+        sourceRoot = "source/clients/viewer/android/proof/feedback";
+        cargoDeps = pkgs.rustPlatform.importCargoLock {
+          lockFile = ./android/proof/feedback/Cargo.lock;
+        };
+        nativeBuildInputs = common.nativeBuildInputs ++ [ pkgs.zip ];
+        buildPhase = ''
+          runHook preBuild
+          export HOME=$TMPDIR
+          (
+            ${environmentFor part}
+            cargo build --locked --release --offline --lib --target ${part.target}
+          )
+          mkdir -p stage/lib/${part.name}
+          cp target/${part.target}/release/${probeLibrary} stage/lib/${part.name}/
+          ${readElf part sessionLibraries "stage/lib/${part.name}/${probeLibrary}" "elf-${part.name}.txt"}
+          ${buildTools}/aapt2 link -o unsigned.apk -I ${framework} \
+            --manifest AndroidManifest.xml --debug-mode
+          find stage -exec touch -h -d @315532800 {} +
+          (cd stage && zip -q -r -X ../unsigned.apk lib)
+          ${buildTools}/zipalign -p -f 4 unsigned.apk aligned.apk
+          runHook postBuild
+        '';
+        installPhase = ''
+          runHook preInstall
+          mkdir -p $out
+          cp aligned.apk $out/korri-viewer-feedback-probe-unsigned.apk
+          runHook postInstall
+        '';
+      }
+    );
 in
 {
   inherit
@@ -374,5 +426,6 @@ in
     check
     apk
     refusalProbe
+    feedbackProbe
     ;
 }
