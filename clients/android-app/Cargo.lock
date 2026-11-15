@@ -3569,7 +3569,6 @@ dependencies = [
  "korri-viewer",
  "korri-viewer-treaty",
  "korrid",
- "libc",
  "serde",
  "serde_json",
  "slint",

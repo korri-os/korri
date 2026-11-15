@@ -124,7 +124,8 @@ fn copy(
     Ok(())
 }
 
-fn cache_dir(env: &mut JNIEnv, activity: &JObject) -> Result<PathBuf> {
+/// `Context.getCacheDir()`: the packages' directory, and the viewer's pins.
+pub(crate) fn cache_dir(env: &mut JNIEnv, activity: &JObject) -> Result<PathBuf> {
     let path = env.with_local_frame(4, |env| -> jni::errors::Result<String> {
         let file = env
             .call_method(activity, "getCacheDir", "()Ljava/io/File;", &[])?

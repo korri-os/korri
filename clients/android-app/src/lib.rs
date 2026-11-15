@@ -67,12 +67,13 @@ fn run(app: AndroidApp) -> Result<()> {
     // The viewer's Moonlight key directory: Moonlight's own name, as Linux
     // korrid's /home/korri/.config/moonlight, in storage that no backup takes.
     let keydir = no_backup(&mut env, &activity)?.join("moonlight");
+    let pins = assets::cache_dir(&mut env, &activity)?;
     let port = korrid::android_app::start(
         &mut env,
         &activity,
         &relays,
         VERIFIER_CLASSES,
-        viewer::adapter(keydir),
+        viewer::adapter(keydir, pins),
     )
     .map_err(|error| anyhow!("korrid did not start: {error}"))?;
     let capability = korrid::local_server_capability().context("korrid has no capability")?;

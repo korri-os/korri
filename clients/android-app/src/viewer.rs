@@ -25,7 +25,10 @@
 //!   Moonlight's names (`client.pem`, `key.pem`).
 //! - The pinned server certificate is what korrid's broker returns
 //!   (`korrid::android_app::provision_moonlight_certificate`). The runtime
-//!   reads it from a sealed memfd (`/proc/self/fd/N`): no file holds it.
+//!   reads it from a file of its launch in the app's cache directory, mode
+//!   0600, which goes when the launch ends: Linux korrid hands its viewer
+//!   the same certificate as a credential file, never in the key directory.
+//!   (A memfd's `/proc/self/fd` name cannot be opened from an app.)
 //!
 //! What the person does, by the gameplay overlay's rules of slice D5
 //! (`korri_viewer::play`): Back or Guide opens and closes the overlay's
@@ -44,6 +47,7 @@ use korri_viewer::{
     layer::{Layers, Pending},
     lifecycle::Lifecycle,
     options::Options,
+    overlay::is_system_key,
     picture::{FrameRecord, Picture},
     play::{Play, Routed},
     session::Identity,
@@ -58,9 +62,8 @@ use slint::android::{
     AndroidApp,
 };
 use std::{
-    fs::File,
     io::{self, Write},
-    os::fd::{AsRawFd, FromRawFd},
+    os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -92,6 +95,8 @@ struct Current {
 /// each activity of the process runs its own loop (`Stream`).
 struct Shared {
     keydir: PathBuf,
+    /// Where each launch's pinned server certificate lives while it plays.
+    pins: PathBuf,
     /// The loop thread of the activity in front, by its number.
     shows: Mutex<Option<(u64, mpsc::Sender<Show>)>>,
     /// The activity has a window, so a launch can be shown.
@@ -130,12 +135,13 @@ impl Shared {
 
 static SHARED: OnceLock<Arc<Shared>> = OnceLock::new();
 
-/// korrid's viewer in this process. The first call fixes the key directory;
-/// every call returns the same adapter.
-pub fn adapter(keydir: PathBuf) -> Arc<Adapter> {
+/// korrid's viewer in this process. The first call fixes the key directory
+/// and the pins' directory; every call returns the same adapter.
+pub fn adapter(keydir: PathBuf, pins: PathBuf) -> Arc<Adapter> {
     let shared = SHARED.get_or_init(|| {
         Arc::new(Shared {
             keydir,
+            pins,
             shows: Mutex::new(None),
             window: AtomicBool::new(false),
             current: Mutex::new(None),
@@ -245,7 +251,7 @@ impl LinuxStreamViewer for Adapter {
             logcat::info(&format!(
                 "korri-app: viewer certificate provisioned through korrid's broker for {address}"
             ));
-            let pin = Pin::new(&server)
+            let pin = Pin::new(&self.0.pins, launch, &server)
                 .map_err(|cause| error(format!("the server certificate has no place: {cause}")))?;
             let options = Options::for_lifecycle(
                 keydir,
@@ -381,37 +387,35 @@ impl LinuxStreamViewer for Adapter {
 }
 
 /// The authorized server certificate as the runtime reads it
-/// (`KORRI_MOONLIGHT_SERVER_CERTIFICATE`): a sealed memfd, named by
-/// `/proc/self/fd/N`. Nothing of it reaches the file system, and it goes
-/// when the launch ends.
-struct Pin(File);
+/// (`KORRI_MOONLIGHT_SERVER_CERTIFICATE`): a new file of this launch, mode
+/// 0600, in the app's cache directory. It goes when the launch ends.
+struct Pin(PathBuf);
 
 impl Pin {
-    fn new(pem: &str) -> io::Result<Self> {
-        // SAFETY: a static C string; the kernel returns a new descriptor.
-        let fd = unsafe {
-            libc::memfd_create(
-                c"korri-moonlight-server-certificate".as_ptr(),
-                libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING,
-            )
-        };
-        if fd < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        // SAFETY: the descriptor is new and only this value owns it.
-        let mut file = unsafe { File::from_raw_fd(fd) };
+    fn new(directory: &Path, launch: &str, pem: &str) -> io::Result<Self> {
+        // A restart of the same launch (korrid's recovery) gets a new name.
+        static STARTS: AtomicU64 = AtomicU64::new(1);
+        let start = STARTS.fetch_add(1, Ordering::Relaxed);
+        let path = directory.join(format!("viewer-pin-{launch}-{start}.pem"));
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)?;
+        let pin = Self(path);
         file.write_all(pem.as_bytes())?;
-        let seals =
-            libc::F_SEAL_SEAL | libc::F_SEAL_SHRINK | libc::F_SEAL_GROW | libc::F_SEAL_WRITE;
-        // SAFETY: fcntl on a descriptor this value owns.
-        if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_ADD_SEALS, seals) } < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(Self(file))
+        file.sync_all()?;
+        Ok(pin)
     }
 
     fn path(&self) -> PathBuf {
-        PathBuf::from(format!("/proc/self/fd/{}", self.0.as_raw_fd()))
+        self.0.clone()
+    }
+}
+
+impl Drop for Pin {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
     }
 }
 
@@ -500,8 +504,12 @@ impl Stream {
         if playing.stopping {
             return Some(true);
         }
+        let mut android = false;
         let routed = match event {
-            InputEvent::KeyEvent(key) => playing.play.key(&self.app, &playing.layers, key),
+            InputEvent::KeyEvent(key) => {
+                android = is_system_key(key.key_code().into());
+                playing.play.key(&self.app, &playing.layers, key)
+            }
             // Every motion stays the stream's: a touch in the bars must not
             // reach the shell drawn under the video.
             InputEvent::MotionEvent(motion) => {
@@ -512,9 +520,12 @@ impl Stream {
         };
         match routed {
             Routed::Handled => Some(true),
-            // Android's keys (volume, power) go to Slint, which leaves them
-            // to Android; the shell's mapper never sees them.
-            Routed::Unhandled => Some(false),
+            // Android's own keys (volume, power) go on: Slint leaves them to
+            // Android. Any other key that the stream does not take ends
+            // here, so the shell under the video never reacts to it (a key
+            // that reached Slint once raised the soft keyboard over the
+            // stream).
+            Routed::Unhandled => Some(!android),
             Routed::Leave => {
                 self.leave("Ctrl+Alt+Shift+Q");
                 Some(true)
