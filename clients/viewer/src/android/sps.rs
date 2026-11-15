@@ -36,7 +36,6 @@ pub struct Patch {
 
 impl Patch {
     /// A patch that changes nothing.
-    #[cfg(test)]
     pub const NONE: Patch = Patch {
         level_idc: None,
         num_ref_frames: None,
@@ -78,10 +77,12 @@ pub struct Fields {
     /// `max_num_reorder_frames` and `max_dec_frame_buffering`, when the VUI
     /// has a bitstream restriction.
     pub restriction: Option<(u32, u32)>,
+    /// The picture's size: the coded size less the frame cropping (7.4.2.1.1).
+    pub width: u32,
+    pub height: u32,
 }
 
 /// Read an SPS NAL unit (its header byte and escaped payload, no start code).
-#[cfg(test)]
 pub fn read(nal: &[u8]) -> Result<Fields> {
     Ok(rewrite_with(nal, Patch::NONE)?.1)
 }
@@ -132,10 +133,14 @@ fn sps(s: &mut Copy, patch: Patch) -> Result<Fields> {
     f.level_idc = patch.level_idc.unwrap_or(level);
     s.writer.u(8, f.level_idc.into());
     s.ue()?; // seq_parameter_set_id
+    // ChromaArrayType (7.4.2.1.1): 4:2:0 unless a high profile says otherwise.
+    let mut chroma_array_type = 1;
     if HIGH_PROFILES.contains(&f.profile_idc) {
         let chroma_format_idc = s.ue()?;
-        if chroma_format_idc == 3 {
-            s.u(1)?; // separate_colour_plane_flag
+        chroma_array_type = chroma_format_idc;
+        if chroma_format_idc == 3 && s.u(1)? == 1 {
+            // separate_colour_plane_flag
+            chroma_array_type = 0;
         }
         s.ue()?; // bit_depth_luma_minus8
         s.ue()?; // bit_depth_chroma_minus8
@@ -170,18 +175,35 @@ fn sps(s: &mut Copy, patch: Patch) -> Result<Fields> {
     f.num_ref_frames = patch.num_ref_frames.unwrap_or(refs);
     s.writer.ue(f.num_ref_frames);
     s.u(1)?; // gaps_in_frame_num_value_allowed_flag
-    s.ue()?; // pic_width_in_mbs_minus1
-    s.ue()?; // pic_height_in_map_units_minus1
-    if s.u(1)? == 0 {
-        // frame_mbs_only_flag
+    let width_in_mbs = u64::from(s.ue()?) + 1; // pic_width_in_mbs_minus1
+    let height_in_map_units = u64::from(s.ue()?) + 1; // pic_height_in_map_units_minus1
+    let frame_mbs_only = s.u(1)?;
+    if frame_mbs_only == 0 {
         s.u(1)?; // mb_adaptive_frame_field_flag
     }
     s.u(1)?; // direct_8x8_inference_flag
+    let mut crop = [0u64; 4];
     if s.u(1)? == 1 {
         // frame_cropping_flag: left, right, top, bottom offsets
-        for _ in 0..4 {
-            s.ue()?;
+        for offset in &mut crop {
+            *offset = s.ue()?.into();
         }
+    }
+    // 7.4.2.1.1: CropUnitX and CropUnitY, from SubWidthC and SubHeightC.
+    let fields = 2 - u64::from(frame_mbs_only);
+    let (unit_x, unit_y) = match chroma_array_type {
+        0 => (1, fields),
+        1 => (2, 2 * fields),
+        2 => (2, fields),
+        _ => (1, fields),
+    };
+    let width = (width_in_mbs * 16).checked_sub(unit_x * (crop[0] + crop[1]));
+    let height = (fields * height_in_map_units * 16).checked_sub(unit_y * (crop[2] + crop[3]));
+    match (width, height) {
+        (Some(width @ 1..=0xffff), Some(height @ 1..=0xffff)) => {
+            (f.width, f.height) = (width as u32, height as u32);
+        }
+        _ => bail!("the frame cropping leaves no picture"),
     }
     let vui = s.reader.u(1)? == 1;
     f.vui = vui || patch.restrict_buffering;
@@ -433,7 +455,7 @@ fn escape(rbsp: &[u8]) -> Vec<u8> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// Real SPS NAL units from libx264 (`ffmpeg -f lavfi -i testsrc
@@ -442,10 +464,7 @@ mod tests {
     fn samples() -> Vec<(&'static str, Vec<u8>)> {
         let mut samples: Vec<_> = [
             // High, 1280x720@60, -tune zerolatency.
-            (
-                "high-720p",
-                "67640020acb200a00b760220000003002000000f11e30649",
-            ),
+            ("high-720p", LANDSCAPE),
             // High, 1920x1080@60: frame cropping (1088 coded lines).
             (
                 "high-1080p-cropped",
@@ -525,7 +544,13 @@ mod tests {
         nal
     }
 
-    fn decode_hex(hex: &str) -> Vec<u8> {
+    /// libx264 (`ffmpeg -f lavfi -i testsrc=size=720x1280:rate=60 -pix_fmt
+    /// yuv420p -c:v libx264 -tune zerolatency`): High, 720x1280@60.
+    pub(crate) const PORTRAIT: &str = "67640020acb2016814360220000003002000000f11e30649";
+    /// The first sample: High, 1280x720@60.
+    pub(crate) const LANDSCAPE: &str = "67640020acb200a00b760220000003002000000f11e30649";
+
+    pub(crate) fn decode_hex(hex: &str) -> Vec<u8> {
         (0..hex.len())
             .step_by(2)
             .map(|at| u8::from_str_radix(&hex[at..at + 2], 16).unwrap())
@@ -626,6 +651,73 @@ mod tests {
         let escaped = escape(&rbsp);
         assert_eq!(escaped, [0, 0, 3, 1, 0, 0, 3, 0, 0, 3, 0, 3, 0, 0, 3, 2, 7]);
         assert_eq!(unescape(&escaped), rbsp);
+    }
+
+    #[test]
+    fn each_sample_gives_its_picture_size() {
+        let sizes: Vec<_> = samples()
+            .into_iter()
+            .map(|(name, nal)| {
+                let fields = read(&nal).unwrap();
+                (name, fields.width, fields.height)
+            })
+            .collect();
+        assert_eq!(
+            sizes,
+            [
+                ("high-720p", 1280, 720),
+                // 1088 coded lines, 8 cropped away.
+                ("high-1080p-cropped", 1920, 1080),
+                ("baseline", 1280, 720),
+                ("high-nal-hrd", 1280, 720),
+                // Map units are field pairs: 15 of them make 480 lines.
+                ("high-interlaced", 640, 480),
+                ("scaling-lists-poc-1", 1280, 720),
+            ]
+        );
+        // libx264, High, 720x1280@60, -tune zerolatency: a portrait stream.
+        let portrait = read(&decode_hex(PORTRAIT)).unwrap();
+        assert_eq!((portrait.width, portrait.height), (720, 1280));
+    }
+
+    #[test]
+    fn the_rewrite_keeps_the_picture_size() {
+        for (name, nal) in samples() {
+            let before = read(&nal).unwrap();
+            let patched = rewrite(&nal, Patch::for_stream(1920, 1080, 60, "c2.x")).unwrap();
+            let after = read(&patched).unwrap();
+            assert_eq!(
+                (after.width, after.height),
+                (before.width, before.height),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn cropping_that_leaves_no_picture_is_refused() {
+        let mut w = Writer::default();
+        w.u(8, 66); // profile_idc: baseline
+        w.u(8, 0);
+        w.u(8, 31);
+        w.ue(0); // seq_parameter_set_id
+        w.ue(0); // log2_max_frame_num_minus4
+        w.ue(2); // pic_order_cnt_type
+        w.ue(1); // max_num_ref_frames
+        w.u(1, 0);
+        w.ue(0); // 16 pixels wide
+        w.ue(0); // 16 lines
+        w.u(1, 1); // frame_mbs_only_flag
+        w.u(1, 1);
+        w.u(1, 1); // frame_cropping_flag
+        for offset in [4, 4, 0, 0] {
+            w.ue(offset); // 2 × 8 pixels off a width of 16
+        }
+        w.u(1, 0);
+        w.trailing_bits();
+        let mut nal = vec![0x67];
+        nal.extend(escape(&w.bytes));
+        assert!(read(&nal).is_err());
     }
 
     #[test]

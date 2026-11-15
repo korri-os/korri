@@ -10,8 +10,10 @@
 //! `ClassicOldSong/moonlight-android`, itself a fork of
 //! `moonlight-stream/moonlight-android`), `MediaCodecHelper.java`: the decoder rounds
 //! (`findProbableSafeDecoder`, `findKnownSafeDecoder`, `findFirstDecoder`,
-//! `isCodecBlacklisted`), the decoder name lists, and
-//! `setDecoderLowLatencyOptions`. Artemis ships under the GNU GPL version 3 with no "or later" grant, so
+//! `isCodecBlacklisted`), the decoder name lists,
+//! `setDecoderLowLatencyOptions` and `decoderSupportsAdaptivePlayback`, and
+//! from `MediaCodecDecoderRenderer.java` the live-resolution maximum of
+//! `initializeDecoder`. Artemis ships under the GNU GPL version 3 with no "or later" grant, so
 //! this file does too. The Rust adaptation is Korri work dated 2026-11-14.
 
 /// One entry of Android's `MediaCodecList` (REGULAR_CODECS) that decodes H.264.
@@ -28,6 +30,8 @@ pub struct Decoder {
     pub low_latency: bool,
     /// The decoder lists `AVCProfileHigh` among its profile levels.
     pub high_profile: bool,
+    /// `CodecCapabilities.FEATURE_AdaptivePlayback` for `video/avc`.
+    pub adaptive_playback: bool,
 }
 
 impl Decoder {
@@ -64,6 +68,29 @@ fn blocked(decoder: &Decoder, emulator: bool) -> bool {
         return false;
     }
     decoder.software_only || prefixed(&decoder.name, &["omx.google", "AVCDecoder"])
+}
+
+/// `decoderSupportsAdaptivePlayback`: the feature, except on the decoders
+/// that Artemis keeps from it (Intel's added latency on the Nexus Player,
+/// MediaTek's crash at 1080p).
+pub fn adaptive_playback(decoder: &Decoder) -> bool {
+    decoder.adaptive_playback && !prefixed(&decoder.name, &["omx.intel", "omx.mtk"])
+}
+
+/// The largest picture that adaptive playback is configured for
+/// (`max-width`, `max-height`), as Artemis reserves it for live resolution:
+/// the largest square, from 4096 down to the stream's longer side in steps
+/// of 8, that the decoder supports at the stream's rate, so that either
+/// orientation fits. `supported` asks
+/// `VideoCapabilities.areSizeAndRateSupported(side, side, rate)`. With no
+/// such square, the stream's own size.
+pub fn adaptive_max(stream: (i32, i32), mut supported: impl FnMut(i32) -> bool) -> (i32, i32) {
+    let longer = stream.0.max(stream.1);
+    (longer..=4096)
+        .rev()
+        .step_by(8)
+        .find(|&side| supported(side))
+        .map_or(stream, |side| (side, side))
 }
 
 /// One configure attempt's format keys, most risky first.
@@ -159,6 +186,7 @@ mod tests {
             alias: false,
             low_latency: false,
             high_profile: true,
+            adaptive_playback: true,
         }
     }
 
@@ -222,6 +250,52 @@ mod tests {
             choose(&list[..1], false).unwrap().name,
             "c2.vendor.baseline"
         );
+    }
+
+    #[test]
+    fn adaptive_playback_needs_the_feature_and_a_decoder_artemis_allows() {
+        assert!(adaptive_playback(&decoder("c2.goldfish.h264.decoder")));
+        let without = Decoder {
+            adaptive_playback: false,
+            ..decoder("c2.exynos.h264.decoder")
+        };
+        assert!(!adaptive_playback(&without));
+        assert!(!adaptive_playback(&decoder("OMX.Intel.hw_vd.h264")));
+        assert!(!adaptive_playback(&decoder("OMX.MTK.VIDEO.DECODER.AVC")));
+        assert!(adaptive_playback(&decoder("c2.mtk.avc.decoder")));
+    }
+
+    #[test]
+    fn the_adaptive_maximum_is_the_largest_supported_square() {
+        // A decoder that supports up to 4096x2304 holds a square of 2304.
+        let asked = std::cell::RefCell::new(Vec::new());
+        let max = adaptive_max((1280, 720), |side| {
+            asked.borrow_mut().push(side);
+            side <= 2304
+        });
+        assert_eq!(max, (2304, 2304));
+        let asked = asked.into_inner();
+        assert_eq!(
+            asked[..3],
+            [4096, 4088, 4080],
+            "from 4096 down in steps of 8"
+        );
+        // Either orientation fits: a portrait stream too.
+        assert_eq!(adaptive_max((720, 1280), |side| side <= 1920), (1920, 1920));
+        assert_eq!(adaptive_max((1280, 720), |_| true), (4096, 4096));
+    }
+
+    #[test]
+    fn with_no_square_the_maximum_is_the_streams_own_size() {
+        assert_eq!(adaptive_max((1920, 1080), |_| false), (1920, 1080));
+        // The stream's longer side is the smallest square asked.
+        let mut asked = Vec::new();
+        adaptive_max((4000, 720), |side| {
+            asked.push(side);
+            false
+        });
+        assert_eq!(asked.last(), Some(&4000));
+        assert_eq!(adaptive_max((5000, 720), |_| true), (5000, 720));
     }
 
     #[test]
