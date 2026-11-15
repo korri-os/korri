@@ -92,6 +92,10 @@ in
   config = lib.mkIf cfg.enable {
     assertions = [
       {
+        assertion = builtins.match "/dev/dri/(renderD[0-9]+|by-path/[^/]+-render)" renderDevice != null;
+        message = "The shell requires the compositor's DRM render node, never a primary or input node.";
+      }
+      {
         assertion = addressPort != null;
         message = "The shell requires korrid's configured socket address.";
       }

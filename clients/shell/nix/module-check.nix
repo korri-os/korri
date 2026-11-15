@@ -52,6 +52,12 @@ let
         startSurface = "zone";
       };
     }).config;
+  invalidNode =
+    node:
+    (evaluate {
+      services.korri.shell.enable = true;
+      systemd.services.korri-compositor.environment.KORRI_RENDER_DEVICE = lib.mkForce node;
+    }).config;
   service = enabled.systemd.services.korri-shell;
   daemon = enabled.systemd.services.korrid;
   credentialService = "korri-shell-credentials.service";
@@ -61,6 +67,16 @@ let
   installed = korri.packages.${pkgs.stdenv.hostPlatform.system}.korri-shell-surfaces;
   argv = lib.splitString " " service.serviceConfig.ExecStart;
 in
+assert builtins.all
+  (
+    node:
+    builtins.any (a: !a.assertion && lib.hasInfix "DRM render node" a.message)
+      (invalidNode node).assertions
+  )
+  [
+    "/dev/input/event0"
+    "/dev/dri/card0"
+  ];
 assert !(disabled.systemd.services ? korri-shell);
 assert !(disabled.systemd.services ? korri-shell-credentials);
 # korrid freezes the shell during a focused live game. Without a shell the
