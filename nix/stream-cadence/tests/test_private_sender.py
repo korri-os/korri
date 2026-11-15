@@ -149,6 +149,40 @@ class NoInputDevice(Machine):
             self.assertEqual(values[key], "disabled")
 
 
+class PatchedSunshine(Machine):
+    """The stand-in Sunshine is <root>/bin/sunshine, so its package is <root>."""
+
+    def provenance(self, text: str) -> None:
+        path = self.peers.parent / sender.PROVENANCE
+        path.parent.mkdir(parents=True)
+        path.write_text(text)
+
+    def test_a_stock_sunshine_has_no_patch_stack(self):
+        session = self.session()
+        facts = self.prepare(session)["facts"]
+        self.assertIsNone(facts["sender_fixture"]["patch_stack"])
+        self.assertTrue(session.close()["pass"])
+
+    def test_the_facts_name_the_patch_stack_of_korris_sunshine(self):
+        self.provenance((TESTS / "fixtures" / "sender" / "sunshine-korri-provenance").read_text())
+        session = self.session()
+        stack = self.prepare(session)["facts"]["sender_fixture"]["patch_stack"]
+        self.assertEqual(stack["package"], "sunshine-korri")
+        self.assertEqual(
+            stack["patch_set_sha256"], "edf475f2360c47a6aaff05947aa28abf137071c761f7c4f5bb58fa64f06f8d73"
+        )
+        self.assertIn("0044-live-resolution-control.patch", stack["patches"])
+        self.assertTrue(session.close()["pass"])
+
+    def test_a_provenance_of_another_package_refuses_before_anything_starts(self):
+        self.provenance("format=1\npackage=sunshine\n")
+        session = self.session()
+        with self.assertRaisesRegex(RuntimeError, "no provenance of sunshine-korri"):
+            self.prepare(session)
+        self.assertIsNone(session.root)
+        self.assertFalse((self.peers / "arguments.log").exists())
+
+
 class SenderHeatGuard(Machine):
     def test_fixture_does_not_start_on_a_hot_host(self):
         self.zone(72222)

@@ -1,7 +1,9 @@
 """Prebuilt, bounded sender fixture: a private sender for the viewer measure.
 
 One run directory under /tmp holds a hidden compositor with a GPU renderer,
-the frame-ID source, a stock Sunshine on its own ports, and its pairing state.
+the frame-ID source, a Sunshine on its own ports, and its pairing state. The
+Sunshine is stock from nixpkgs, or Korri's patched package when the request
+names it; its provenance then names the patch stack (`patch_stack`).
 The fixture reads and changes nothing of a product stream, and needs no
 Korri service and no certificate socket: the viewer pairs through Sunshine's
 own PIN.
@@ -110,6 +112,12 @@ TONE_SINK = "korri-tone"
 # encryption (rtsp.cpp, cmd_announce), and its launch refuses one with no
 # encrypted RTSP (nvhttp.cpp). A stream that runs is then encrypted.
 ENCRYPTION_MANDATORY = 2
+# The record that Korri's Sunshine package keeps about itself, relative to the
+# package (korri-plugins: services/sunshine/package.nix, provenanceRelativePath).
+# Stock Sunshine from nixpkgs has none.
+PROVENANCE = Path("share/korri/sunshine-korri/provenance")
+PROVENANCE_FORMAT = "1"
+PATCHED_PACKAGE = "sunshine-korri"
 
 
 def steady_refresh_mhz(rate: float) -> int:
@@ -213,6 +221,44 @@ def startup(log: str) -> dict:
         "working_encoders": working,
         # Sunshine names its own CPU encoder kind "software".
         "hardware_encoder": bool(working) and all(kind != "software" for kind in kinds),
+    }
+
+
+def patch_stack(sunshine: Path) -> dict | None:
+    """Korri's patch stack in the fixture's Sunshine, or None for stock Sunshine.
+
+    `sunshine` is the package's `bin/sunshine`. The package's own provenance
+    names its build profile, its base version, each ordered patch and one
+    digest of the whole ordered set. A package with no provenance is stock
+    Sunshine. A provenance that this tool cannot read, or that names another
+    package, is refused: the result would name the wrong sender.
+    """
+    path = sunshine.parent.parent / PROVENANCE
+    try:
+        text = read_plain(path, 1 << 16).decode()
+    except FileNotFoundError:
+        return None
+    fields: dict[str, str] = {}
+    patches: list[str] = []
+    for line in text.splitlines():
+        key, _, value = line.partition("=")
+        if key == "patch":
+            patches.append(value.split(" ", 1)[0])
+        elif key:
+            fields[key] = value
+    if fields.get("format") != PROVENANCE_FORMAT or fields.get("package") != PATCHED_PACKAGE:
+        raise RuntimeError(
+            f"{path} is no provenance of {PATCHED_PACKAGE} format {PROVENANCE_FORMAT}. The sender "
+            "fixture runs stock Sunshine, or Korri's package with a provenance that names its patches."
+        )
+    if not fields.get("patch_set_sha256") or not patches:
+        raise RuntimeError(f"{path} names no patch set; the sender fixture does not start.")
+    return {
+        "package": fields["package"],
+        "build_profile": fields.get("build_profile"),
+        "base_sunshine_version": fields.get("base_sunshine_version"),
+        "patch_set_sha256": fields["patch_set_sha256"],
+        "patches": patches,
     }
 
 
@@ -727,6 +773,8 @@ class Session:
                 "--net is applied only on the private pair's own network namespace, and this "
                 "pair has none. No real interface is ever changed; the sender fixture does not start."
             )
+        # Before anything starts: stock Sunshine, or Korri's patch stack.
+        patches = patch_stack(Path(str(request["sunshine"])))
         # A game on the device does not stop the fixture: it uses neither the
         # device's display nor the product Sunshine. A game changes the pair's
         # numbers, so the result names the units that are live.
@@ -878,6 +926,8 @@ class Session:
                 "renderer": RENDERER,
                 "render_node": chosen["render_node"],
                 "hardware_encoder": chosen["hardware_encoder"],
+                # None: stock Sunshine from nixpkgs.
+                "patch_stack": patches,
                 "attempts": attempts,
                 "run_folder": str(self.root),
             },

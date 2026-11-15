@@ -117,6 +117,13 @@ def conditions(record: dict) -> dict:
     # A result from before a fact existed has no value for it.
     values["sender_model"] = facts.get("model")
     values["sender_render_node"] = (facts.get("sender_fixture") or {}).get("render_node")
+    # Which Sunshine the sender fixture ran: None for stock Sunshine from
+    # nixpkgs, else the digest of Korri's ordered patch stack from the
+    # package's provenance. A result from before the fact ran stock Sunshine:
+    # the fixture had no other. A product sender has no fixture and no value.
+    values["sunshine_patch_set"] = (
+        (facts.get("sender_fixture") or {}).get("patch_stack") or {}
+    ).get("patch_set_sha256")
     values["viewer_model"] = (facts.get("viewer") or {}).get("model")
     values["decode"] = (facts.get("viewer_ran") or {}).get("decode")
     # A game on the device changes the numbers of a private pair. A result from
@@ -397,7 +404,7 @@ def conditions_that_differ(old: list[dict], new: list[dict]) -> str | None:
         and len({json.dumps(row[name], sort_keys=True) for row in every if row[name] is not None}) == 1
     ]
     # These have their own words. The measure also sets the rate and the mode.
-    named = {"beside_a_game", "viewer_place", "viewer_renderer", "frame_record", "net", "encryption"}
+    named = {"beside_a_game", "viewer_place", "viewer_renderer", "frame_record", "net", "encryption", "sunshine_patch_set"}
     if "measure" in changed:
         named |= {"measure", "requested_fps", "display"}
     differ = [name for name in changed if name not in absent and name not in named]
@@ -428,6 +435,12 @@ def conditions_that_differ(old: list[dict], new: list[dict]) -> str | None:
             "Some runs had a sender fixture that required encryption of video and audio "
             "(--require-encryption) and others had Sunshine's default, which encrypts no video "
             "on a LAN. Decryption costs the viewer CPU; record both results with the same setting."
+        )
+    if "sunshine_patch_set" in changed:
+        advice.append(
+            "Some runs had a sender fixture with stock Sunshine and others Korri's patched "
+            "Sunshine (--sender-sunshine), or two different patch stacks. Another encoder "
+            "path judges the sender, not the viewer; record both results with the same Sunshine."
         )
     if "viewer_place" in changed:
         advice.append(

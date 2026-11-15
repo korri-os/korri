@@ -49,7 +49,7 @@ from score import (
     stamps,
 )
 from viewer import FRAME_TIMES, RECORDING, decode_path
-from sender import steady_refresh_mhz
+from sender import PROVENANCE, patch_stack, steady_refresh_mhz
 from verdict import (
     BASE,
     COPIED_PRODUCT,
@@ -649,6 +649,35 @@ def product_package(path: str, option: str = PACKAGE_OPTION) -> dict:
         "moonlight": str(package / "bin" / "moonlight"),
         "mapping": str(package / PRODUCT_MAPPING),
     }
+
+
+SUNSHINE_OPTION = "--sender-sunshine"
+
+
+def sunshine_package(path: str) -> dict:
+    """Korri's Sunshine package that the build host names for the sender fixture.
+
+    The tool copies it to the sender like its other pieces. Its provenance
+    must name its patch stack: the result records that stack, and a verdict
+    compares only results with the same one.
+    """
+    package = Path(path.rstrip("/"))
+    if package.parent != NIX_STORE or not package.is_dir():
+        raise Refusal(
+            f"{SUNSHINE_OPTION} {path} is not a store path on this host: give the package itself, a directory directly under {NIX_STORE}. Bring it here with nix copy from a device or a cache that holds it."
+        )
+    sunshine = package / "bin" / "sunshine"
+    if not sunshine.is_file():
+        raise Refusal(f"{SUNSHINE_OPTION} {path} is no Sunshine package: it has no bin/sunshine.")
+    try:
+        patches = patch_stack(sunshine)
+    except RuntimeError as error:
+        raise Refusal(f"{SUNSHINE_OPTION} {path}: {error}") from error
+    if patches is None:
+        raise Refusal(
+            f"{SUNSHINE_OPTION} {path} has no {PROVENANCE}: it is not Korri's patched Sunshine. The sender fixture runs stock Sunshine without the option."
+        )
+    return {"package": str(package), "sunshine": str(sunshine), "patch_stack": patches}
 
 
 def copied_viewer_refusal(plugin: bool) -> str | None:
@@ -2079,6 +2108,13 @@ def view(args: argparse.Namespace) -> int:
                 "never a product sender or a real link."
             )
     args.net_condition = net_condition(args.net) if args.net else None
+    if args.sender_sunshine and not args.sender_fixture:
+        raise Refusal(
+            f"{SUNSHINE_OPTION} requires --sender-fixture: it chooses the fixture's Sunshine, and the tool never changes a product sender."
+        )
+    # Korri's Sunshine package for the fixture: named on this host, checked
+    # before any device is asked, and copied like the other pieces.
+    patched = sunshine_package(args.sender_sunshine) if args.sender_sunshine else None
     sender_target, sender_options = endpoint(args.sender, args.ssh_option)
     viewer_target, viewer_options = endpoint(args.viewer, args.ssh_option)
     if sender_target is None and not args.sender_fixture:
@@ -2120,13 +2156,16 @@ def view(args: argparse.Namespace) -> int:
     copied = product_package(args.viewer_package) if args.viewer_package else None
     candidate = product_package(args.candidate_package, "--candidate-package") if args.candidate_package else None
     args.out = view_output(args.out, args.runs, bool(candidate))
-    sender_agent, sender_paths = built(
-        sender_target,
-        sender_options,
-        ("motion", "sway", "sunshine", *(("iproute2",) if args.net_condition else ()))
-        if args.sender_fixture
-        else ("motion",),
-    )
+    sender_parts: tuple[str, ...] = ("motion",)
+    if args.sender_fixture:
+        sender_parts += ("sway",) if patched else ("sway", "sunshine")
+        if args.net_condition:
+            sender_parts += ("iproute2",)
+    sender_agent, sender_paths = built(sender_target, sender_options, sender_parts)
+    if patched:
+        if sender_target is not None:
+            deliver(sender_target, sender_options, [patched["package"]])
+        sender_paths = [*sender_paths, patched["package"]]
     if args.sender_fixture:
         sender_agent = sender_agent.replace("/device.py", "/sender.py")
     # A device with the enabled viewer plugin uses that binary. Any other device
@@ -2157,7 +2196,7 @@ def view(args: argparse.Namespace) -> int:
     paths = {
         "motion": part(sender_paths, "-stream-cadence-motion", "/bin/stream-cadence-motion"),
         "sway": part(sender_paths, "-sway-unwrapped-", "/bin/sway"),
-        "sunshine": part(sender_paths, "-sunshine-", "/bin/sunshine"),
+        "sunshine": patched["sunshine"] if patched else part(sender_paths, "-sunshine-", "/bin/sunshine"),
         "capture": part(seat_paths, "-stream-cadence-capture-", "/bin/stream-cadence-capture"),
         "press": part(seat_paths, "-stream-cadence-press-", "/bin/stream-cadence-press"),
         "viewer": part(seat_paths, "-moonlight-embedded-"),
@@ -2520,6 +2559,11 @@ def parser() -> argparse.ArgumentParser:
         "--sender-fixture",
         action="store_true",
         help="give the measure a private sender on the sender target: a hidden compositor and a stock Sunshine on its own ports",
+    )
+    watch.add_argument(
+        SUNSHINE_OPTION,
+        metavar="PACKAGE",
+        help="Korri's patched Sunshine package (sunshine-korri) in this host's Nix store, for the sender fixture instead of stock Sunshine. Its provenance names the patch stack; the result records it (sender_fixture.patch_stack) and verdict compares only results with the same stack. Requires --sender-fixture",
     )
     watch.add_argument(
         "--viewer-package",

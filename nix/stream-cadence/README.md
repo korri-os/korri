@@ -951,8 +951,9 @@ The agent `sender.py` owns one run directory under `/tmp`. In it run:
 - a hidden compositor: a headless sway from nixpkgs with the `gles2` renderer
   on a render node. With a software renderer Sunshine captures one frame only;
 - the frame-ID source, shown on that compositor alone;
-- a stock Sunshine from nixpkgs with its own ports, state, key and log. It
-  captures the hidden compositor through the Wayland protocol.
+- a stock Sunshine from nixpkgs with its own ports, state, key and log, or
+  Korri's patched Sunshine on request (below). It captures the hidden
+  compositor through the Wayland protocol.
 
 The fixture discovers what it uses:
 
@@ -972,6 +973,39 @@ key directory is not used.
 Sunshine announces each host through Avahi and has no setting against it.
 The fixture gives its Sunshine a system bus address that does not exist, so
 the private sender does not appear in the host lists of the network.
+
+**Korri's patched Sunshine, on request.** `--sender-sunshine PACKAGE` runs
+the fixture with Korri's approved Sunshine package (`sunshine-korri` of
+korri-plugins) instead of stock Sunshine. `PACKAGE` is the package's store
+path on the host that runs the tool; the tool copies it to the sender like
+its other pieces. The package's own provenance
+(`share/korri/sunshine-korri/provenance`) must name its patch stack, or the
+tool refuses before it asks any device. Only with `--sender-fixture`: the
+tool never changes a product sender.
+
+The sender's agent reads that provenance on the sender, before anything
+starts, and the result keeps it in `sender_fixture.patch_stack`: the build
+profile, the base version, each ordered patch and the digest of the whole
+set. Stock Sunshine has `null` there. `verdict` compares only results whose
+fixture ran the same Sunshine (condition `sunshine_patch_set`); a result
+from before this fact ran stock Sunshine. The fixture's other rules stay:
+the same configuration file, input off, no input device, no Avahi.
+
+The x86_64 package is built with CUDA and is not built on a device or on
+the loaded build host. It comes from a cache: the published `@korri:sunshine`
+release that `nix/product/published-plugins.nix` pins is a Nix binary cache
+signed by `korri-plugins-1`. For `build-9363f21d62b5-haku-settings` the
+package is
+`/nix/store/bvz43ydfridi8smy1gyqvzxk5v5xd3rg-sunshine-korri-2026.914.233613-korri`,
+the same output that korri-plugins `3a7bcbc` evaluates to:
+
+```sh
+mkdir cache && tar -xf ARCHIVE.tar -C cache   # the release's x86_64 archive
+nix build --no-link --option extra-substituters "file://$PWD/cache" \
+  /nix/store/bvz43ydfridi8smy1gyqvzxk5v5xd3rg-sunshine-korri-2026.914.233613-korri
+```
+
+Its other references come from cache.nixos.org.
 
 **A known tone, on request.** By default the fixture's Sunshine finds no
 sound server and sends no sound ("Unable to initialize audio capture" in
@@ -1843,7 +1877,7 @@ for each metric.
 
 `verdict` refuses two results that were not measured under the same
 conditions: the sender's display mode, Sunshine version, encoder and capture
-backend, the sender's model and render node, the viewer device's model, and
+backend, the sender fixture's Sunshine patch stack, the sender's model and render node, the viewer device's model, and
 the requested resolution, frame rate, codec, bitrate and viewer refresh,
 the limit `max_capture_gaps` of the run, whether a game ran on a device
 during a run, the measure of a private pair (base or queue), where the
