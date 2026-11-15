@@ -213,6 +213,14 @@ in
     # no Korri also takes this sway for the viewer fixture.
     sway = pkgs.sway-unwrapped;
     sunshine = pkgs.sunshine;
+    # The same Sunshine with one change, for a fixture that changes the
+    # stream's size in the middle of a stream (`resize`): it encodes at the
+    # captured output's size. No measure uses it; the Android viewer's proof
+    # asks for it (clients/viewer/android/proof/run.py).
+    sunshineFollowingOutput = pkgs.sunshine.overrideAttrs (old: {
+      pname = "sunshine-follows-output";
+      patches = (old.patches or [ ]) ++ [ ./sunshine-follows-output.patch ];
+    });
     # The private sound server of the sender fixture's tone, when asked for.
     pulseaudio = pkgs.pulseaudio;
     # ip and tc for a network condition on the private pair's own loopback (--net).

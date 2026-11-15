@@ -14,6 +14,10 @@ caller supplies it. Behaviour comes from files in the wrapper's directory:
   named `session::audio` for the number of seconds in the file, as a real
   Sunshine's audio thread waits for a viewer's first audio ping. The
   stand-in writes `stream-session-started` once the thread has its name.
+- `output-mode` holds the mode that "swaymsg output * mode …" set last;
+  the output reports it from then on.
+- "motion", the frame-ID source, writes its size (`CADENCE_WIDTH`,
+  `CADENCE_HEIGHT`) to `motion.log` and presents one frame.
 """
 
 import json
@@ -47,10 +51,20 @@ if role == "sway":
         display.listen(1)
         while True:
             time.sleep(1)
+elif role == "swaymsg" and "output" in arguments:
+    found = re.fullmatch(r"(\d+)x(\d+)@([\d.]+)Hz", arguments[arguments.index("mode") + 1])
+    assert found and arguments[arguments.index("output") + 1] == "*"
+    (knobs / "output-mode").write_text("mode " + found.group(0))
+    print(json.dumps([{"success": True}]))
 elif role == "swaymsg":
-    # The mode that the fixture wrote into its compositor's configuration.
+    # The mode that the fixture set last, else the one that it wrote into its
+    # compositor's configuration.
     root = Path(arguments[arguments.index("-s") + 1]).parents[1]
-    found = re.search(r"mode (\d+)x(\d+)@([\d.]+)Hz", (root / "sway.conf").read_text())
+    mode = knobs / "output-mode"
+    found = re.search(
+        r"mode (\d+)x(\d+)@([\d.]+)Hz",
+        mode.read_text() if mode.exists() else (root / "sway.conf").read_text(),
+    )
     assert found
     width, height = int(found.group(1)), int(found.group(2))
     print(
@@ -96,6 +110,12 @@ elif role == "sunshine":
             request.unlink()
             threading.Thread(target=session, args=(seconds,), daemon=True).start()
         time.sleep(0.01)
+elif role == "motion":
+    with (knobs / "motion.log").open("a") as record:
+        record.write(f"{os.environ['CADENCE_WIDTH']}x{os.environ['CADENCE_HEIGHT']}\n")
+    print("PRESENT id=1", flush=True)
+    while True:
+        time.sleep(1)
 elif role == "pulseaudio":
     if (knobs / "pulseaudio-fails").exists():
         print("E: [pulseaudio] main.c: the stand-in was told to fail")

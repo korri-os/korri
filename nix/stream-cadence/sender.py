@@ -484,6 +484,8 @@ class Session:
         self.root: Path | None = None
         self.sway = ""
         self.sunshine = ""
+        # The frame-ID source's program, once it started (`start`).
+        self.motion = ""
         # The private sound server of the tone, when one was asked for.
         self.tone: dict | None = None
         # Sunshine logs each input packet, when asked (`configuration`).
@@ -1068,10 +1070,19 @@ class Session:
     def start(self, request: dict) -> dict:
         assert self.root is not None
         self.check()
+        self.motion = str(request["motion"])
+        source = self.start_source()
+        self.cursor = len(read_plain(self.home() / "sunshine.log"))
+        return {"run_folder": str(self.root), "source_pid": source.pid}
+
+    def start_source(self) -> subprocess.Popen:
+        """The frame-ID source at the output's size, once it presents a frame."""
         rect = self.facts["display"]["rect"]
+        # The log keeps what an earlier source wrote: read only what follows.
+        before = len(self.text("source.out"))
         source = self.spawn(
             "source",
-            [request["motion"], "-f"],
+            [self.motion, "-f"],
             self.environment(
                 WAYLAND_DISPLAY=DISPLAY,
                 CADENCE_WIDTH=str(rect["width"]),
@@ -1081,15 +1092,36 @@ class Session:
         for _ in range(100):
             if source.poll() is not None:
                 raise RuntimeError("motion source exited: " + self.text("source.out")[-2000:])
-            if "PRESENT " in self.text("source.out"):
-                break
+            if "PRESENT " in self.text("source.out")[before:]:
+                return source
             time.sleep(0.1)
-        else:
-            raise RuntimeError(
-                "motion source produced no presentation feedback; check the hidden compositor"
-            )
-        self.cursor = len(read_plain(self.home() / "sunshine.log"))
-        return {"run_folder": str(self.root), "source_pid": source.pid}
+        raise RuntimeError(
+            "motion source produced no presentation feedback; check the hidden compositor"
+        )
+
+    def resize(self, request: dict) -> dict:
+        """A new picture size in the middle of a stream: the hidden output takes
+        a mode of that size at the same refresh, and the source starts again at
+        it, so its frame IDs start again at 1. Stock Sunshine scales its capture
+        to the size that the viewer asked for at its launch, so its stream keeps
+        that size; `runtime.sunshineFollowingOutput` encodes at the output's
+        size, so its stream takes the new size after an IDR frame."""
+        assert self.root is not None
+        self.check()
+        if not self.motion:
+            raise RuntimeError("the source has not started; a resize follows start")
+        width, height = int(request["width"]), int(request["height"])
+        if not (0 < width <= 16384 and 0 < height <= 16384):
+            raise ValueError("each side of a size is 1 to 16384 pixels")
+        hertz = self.facts["display"]["refresh_hz"]
+        self.sway_message("output", "*", "mode", f"{width}x{height}@{hertz:.3f}Hz")
+        display = output(self.sway_message("-t", "get_outputs"))
+        if (display["rect"]["width"], display["rect"]["height"]) != (width, height):
+            raise RuntimeError(f"the hidden output did not take {width}x{height}: " + json.dumps(display))
+        self.facts["display"] = display
+        self.stop("source")
+        source = self.start_source()
+        return {"display": display, "source_pid": source.pid}
 
     def begin(self) -> dict:
         """Start a turn without restarting the private sender or its namespace."""
@@ -1164,6 +1196,8 @@ class Session:
             return self.net_now()
         if operation == "start":
             return self.start(request)
+        if operation == "resize":
+            return self.resize(request)
         if operation == "sample":
             self.check()
             if not self.alive("source") or self.cursor is None:

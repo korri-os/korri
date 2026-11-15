@@ -1,0 +1,20 @@
+--- a/src/video.cpp
++++ b/src/video.cpp
+@@ -2493,6 +2493,17 @@
+ 
+       auto &encoder = *chosen_encoder;
+ 
++      // stream-cadence's sender fixture: encode at the captured output's own
++      // size, so that a new output mode is a new stream size, after an IDR
++      // frame with its new SPS. Stock Sunshine scales every capture to the
++      // size that the client asked for at its launch.
++      if (config.width != display->width || config.height != display->height) {
++        BOOST_LOG(info) << "Fixture: the stream follows the output: "sv << config.width << 'x' << config.height
++                        << " to "sv << display->width << 'x' << display->height;
++        config.width = display->width;
++        config.height = display->height;
++      }
++
+       auto encode_device = make_encode_device(*display, encoder, config);
+       if (!encode_device) {
+         return;
