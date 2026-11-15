@@ -1763,7 +1763,70 @@ loopback, its MTU stays, and Sunshine's file is the same. A result with no
 the conditions `net` `null` and `encryption` `false`, so the baselines in
 `baselines/aka` keep comparing with today's default runs.
 
-**The proof on aka.** See "The network conditions on aka" below.
+**The network conditions on aka, 2026-11-15 UTC.** Turns of the #466
+product viewer against itself
+(`/nix/store/38crl2m37akjqqscrmnq1gbwrp8l3rcx-moonlight-embedded-korri-2.7.1-korri`,
+five runs of each side), private pair on aka at the defaults (1920x1080,
+base measure, 60 scored seconds). Each session started only with no game
+and no other test unit live on aka, a 1-minute load below 1.5 and k10temp
+Tctl below 78 °C. These sets are evidence, not baselines.
+
+| Condition | Tool | What else ran, viewer device | Valid | `verdict` |
+| --- | --- | --- | --- | --- |
+| `--net 'loss random 1%'` | `670a7386f`: loss on TCP too | 0.8% to 1.7% | 10 of 10 | `equal` for every number |
+| `--net 'delay 30ms'` | `670a7386f` | 0.9% to 1.2% | 10 of 10 | `equal` for every number |
+| `--require-encryption` | `5023cb9d4` | 0.8% to 36.7%: other tests started in 2 runs | 10 of 10 | `equal` for every number |
+| `--net 'loss gemodel 1.3158% 25%'` | `6a5be5906` | | | not finished: see below |
+
+What the runs show, by number:
+
+| Number | 1% random loss | 30 ms delay | Encryption required |
+| --- | --- | --- | --- |
+| Sender presentation to display, p50 of the windows | 11.96 to 12.08 ms | 41.91 to 42.10 ms | 11.85 to 12.55 ms |
+| Dropped frames | 0 | 0 | 0 to 5 (the run with 36.7% other load) |
+| Viewer CPU, CPU seconds each second | 0.011 to 0.012 | 0.011 | 0.011 to 0.022 |
+| Startup | 746 to 1902 ms | 2270 to 2286 ms | 689 to 786 ms |
+| `input_ms` | 0.050 to 0.058 ms | 30.05 to 30.10 ms | 0.051 to 0.086 ms |
+
+- **FEC repairs 1% random loss.** netem dropped 1060 to 1148 of about
+  107 000 packets in each measured start, and the core logged no
+  unrecoverable frame, no dropped frame and no IDR request; the display
+  record lost no ID. Startup varies more: a lost TCP packet of the setup
+  costs 0.2 to 1 s (746 to 1902 ms). The final tool loses no TCP packet.
+- **30 ms delay** adds 30 ms to the delay (one way), 1.5 s to the startup
+  (each setup step waits a round trip of 60 ms) and 30 ms to `input_ms`
+  (the capture sees the packet after netem).
+- **Encryption.** Sunshine logged `Video encryption enabled` for both
+  starts of every run, and the core logged nothing about encryption: on
+  aka's CPU Moonlight asks for video encryption itself. In the same
+  sessions the numbers match the base baseline of `baselines/aka`
+  (delay p50 11.69 to 12.49 ms, CPU 0.011 to 0.012).
+- **The product's network was untouched.** In every run with `--net` the
+  commands ran in the pair's namespace (`net:[4026532856]`), whose only
+  interface was `lo`; the product's namespace (`net:[4026531833]`) is PID
+  1's. Its qdiscs (`noqueue` on `lo`, `mq` and four `fq` on `eno1`,
+  `noqueue` on `wlp11s0`, `fq` on `tailscale0`) and MTUs (65536, 1500, 1500,
+  1280) were the same after each measured start as before the commands
+  (`product_changes` empty). The product's units kept their PIDs, the
+  viewer's X and input isolation passed, and both restore checks passed.
+
+**5% burst loss.** With loss on every packet (`670a7386f`) the condition
+did not give a session of ten turns: in 3 of 7 turns a start never showed
+the stream (see "The whole condition falls on UDP" above). In the runs that
+did stream, and in those of the final tool, netem dropped 4.8% to 5.4% of
+the UDP packets of a measured start (5537 to 6097), the core logged 487 to
+550 unrecoverable frames and 396 to 430 IDR requests and no RFI (aka's VA-API H.264 encoder has no reference
+frame invalidation: "Reference frame invalidation is not supported by this
+host"), and the display lost 540 to 644 IDs: the viewer showed 47.6 to
+49.3 of the sender's 58.4 frames each second, with no stall. The core
+logs no repair. A frame that loses more packets than its parity is lost
+and costs an IDR request; the frames whose loss stayed within their parity
+were repaired by FEC (inferred: about 5900 packets were dropped and about
+500 frames lost). With the
+final tool (`6a5be5906`, UDP only) the setup took 0.66 to 1.27 s and the
+first two turns streamed; the session was ended when another agent's game
+started on aka (other load 38% to 41%, and one capture gap that lost an
+ID). A quiet session of ten turns is still to be recorded.
 
 ### Verdict
 
