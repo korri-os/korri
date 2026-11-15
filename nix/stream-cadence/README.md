@@ -1067,6 +1067,15 @@ asynchronous path, which every Linux encoder of this Sunshine takes
 (`PARALLEL_ENCODING`), the software encoder included. No tool command and
 no measure uses it; the Android viewer's proof (#476, slice 4) does.
 
+**korrid's application, on request.** The fixture's Sunshine offers one
+application, `Desktop`. `prepare` with `application` set to `Korri Stream`
+offers that one instead: the name that korrid's viewer asks for
+(`services/korrid/src/linux_viewer/production.rs`). Any other name is refused
+before anything starts. The result's `sender_fixture.application` names it.
+No tool command asks for it; the Android app's holder proof
+(`clients/android-app/proof/holder.py`, #434 D9) does, so that the holder's
+game streams from this sender through korrid's launch path.
+
 **The steady refresh.** A headless output has no clock. After each frame it
 waits a whole number of milliseconds: an output that says 60 Hz waits 16 ms
 and shows about 62 frames each second. Sunshine takes one frame for each

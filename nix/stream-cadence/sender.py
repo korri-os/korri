@@ -94,6 +94,9 @@ INPUT_RECORD, INPUT_STRICT = "record", "strict"
 DISPLAY = "wayland-1"
 RENDERER = "gles2"
 APPLICATION = "Desktop"
+# The application that korrid's viewer asks for (services/korrid/src/
+# linux_viewer/production.rs). A `prepare` request can name it instead.
+APPLICATIONS = (APPLICATION, "Korri Stream")
 # Sunshine maps its ports at fixed offsets from the configured one: HTTPS
 # below it (nvhttp.h), the web UI next to it (confighttp.h), RTSP at the top
 # (rtsp.h), and the UDP streams between them (stream.h).
@@ -844,6 +847,9 @@ class Session:
         tone_hz = int(request.get("tone_hz", 1000))
         if pulseaudio and not 20 <= tone_hz <= 20000:
             raise ValueError("a tone lies between 20 and 20000 Hz")
+        application = request.get("application", APPLICATION)
+        if application not in APPLICATIONS:
+            raise ValueError("the fixture's application is Desktop or Korri Stream")
         nodes = self.render_nodes()
         if not nodes:
             raise RuntimeError(
@@ -866,7 +872,7 @@ class Session:
         # directory is still the agent's own.
         write_new(
             home / "apps.json",
-            json.dumps({"env": {}, "apps": [{"name": APPLICATION, "cmd": "", "image-path": ""}]}),
+            json.dumps({"env": {}, "apps": [{"name": application, "cmd": "", "image-path": ""}]}),
         )
         # The web UI login exists only to post the pairing PIN from this agent.
         # It lives in this process and, hashed, in Sunshine's private home.
@@ -929,7 +935,7 @@ class Session:
                 if name in self.processes
             },
             sender_fixture={
-                "application": APPLICATION,
+                "application": application,
                 "renderer": RENDERER,
                 "render_node": chosen["render_node"],
                 "hardware_encoder": chosen["hardware_encoder"],
