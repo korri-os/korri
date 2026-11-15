@@ -1,0 +1,7 @@
+    43.315  2103  2177 I korri-d5-slint: window 2400x1080
+    43.338  2103  2177 I korri-d5-slint: overlay layer made
+    43.666  2103  2177 I korri-d5-slint: SurfaceWindow::from_surface: ok, size PhysicalSize { width: 2400, height: 1080 }
+    44.531  2103  2177 I korri-d5-slint: first frame rendered after 698 ms
+    68.845  2103  2177 I korri-d5-slint: frames rendered: 1
+    68.856  2103  2177 I korri-d5-slint: SurfaceWindow released
+    68.883  2103  2177 I korri-d5-slint: done
