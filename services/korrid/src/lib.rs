@@ -2,6 +2,9 @@
 
 #[cfg(target_os = "android")]
 mod android;
+/// The Android app with no Korri Java starts korrid here (`clients/android-app`).
+#[cfg(target_os = "android")]
+pub use android::app as android_app;
 
 pub mod acquisition;
 pub mod invites;
@@ -6508,7 +6511,11 @@ pub fn issue_folder_selection_receipt(
 }
 
 pub mod android_local;
+#[cfg(any(test, target_os = "android"))]
+mod android_network;
 pub mod android_plugin_admin;
+#[cfg(any(test, target_os = "android"))]
+mod android_storage;
 #[cfg(test)]
 mod controller_count_tests;
 mod file_changes;

@@ -1,9 +1,9 @@
 //! Android's network APIs supply live evidence; Linux route dumps do not run here.
+//! This reader asks Artemis's `KorridNetwork.java`; the app with no Korri Java
+//! reads Android's classes itself (`framework_network.rs`).
 use crate::{
-    federation::{
-        interfaces::InterfaceAddress,
-        reach::{Environment, RelayEnvironment, RelayFacts},
-    },
+    android_network::Snapshot,
+    federation::reach::{Environment, RelayEnvironment, RelayFacts},
     relay::RelayList,
 };
 use futures::future::BoxFuture;
@@ -11,15 +11,8 @@ use jni::{
     objects::{GlobalRef, JClass, JObject, JString, JValue},
     JNIEnv, JavaVM,
 };
-use serde::Deserialize;
 use std::{io, sync::Arc};
 
-#[derive(Deserialize)]
-struct Snapshot {
-    interfaces: Vec<InterfaceAddress>,
-    #[serde(flatten)]
-    facts: RelayFacts,
-}
 struct Reader {
     vm: JavaVM,
     class: GlobalRef,

@@ -1,5 +1,6 @@
 //! Android edge: JNI functions mirroring
-//! clients/android/.../korrid/KorridServer.java.
+//! clients/android/.../korrid/KorridServer.java, and the app with no Korri
+//! Java (`app`).
 
 use crate::{
     apply_local_owner_binding, issue_folder_selection_receipt, korrid_version,
@@ -14,7 +15,9 @@ use jni::{
     JNIEnv,
 };
 use std::ptr;
+pub mod app;
 mod app_launcher;
+mod framework_network;
 mod network;
 mod viewer;
 

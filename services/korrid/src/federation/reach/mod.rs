@@ -18,7 +18,7 @@ mod viewer;
 
 // The registry uses this boundary to prepare a viewer and retain its lease.
 pub(crate) use policy::RelayEnvironment;
-#[cfg(target_os = "android")]
+#[cfg(any(test, target_os = "android"))]
 pub(crate) use policy::RelayFacts;
 pub(crate) use viewer::{prepare_peer_viewer, SelectedViewer};
 
