@@ -162,6 +162,35 @@ let
           exec python3 "$KORRI_ROOT/clients/viewer/android/proof/run.py" "$@"
         '';
       };
+    android-live-resize-proof =
+      let
+        emulator = import ../clients/viewer/android/emulator.nix { inherit pkgs; };
+      in
+      {
+        description = "Prove today's Artemis live resize (#476) on one headless Android 12 emulator against a private patched Sunshine on aka.";
+        usageSuffix = " -- --sunshine /nix/store/...-sunshine-korri-... [--sender ssh-target] [--out DIRECTORY]";
+        runtimeInputs = [
+          # numpy and FFmpeg: stream-cadence's frame-ID bar decoder (bar.py).
+          (pkgs.python3.withPackages (p: [ p.numpy ]))
+          pkgs.ffmpeg
+          pkgs.nix
+          pkgs.openssh
+          pkgs.openssl
+          pkgs.git
+          pkgs.procps
+          # Pairs the app's key pair with the fixture's PIN, as stream-cadence does.
+          pkgs.moonlight-embedded
+        ];
+        env = {
+          KORRI_VIEWER_EMULATOR_SDK = emulator.sdkRoot;
+          KORRI_VIEWER_EMULATOR_IMAGE = emulator.systemImage;
+          # stream-cadence builds its sender fixture from this nixpkgs.
+          CADENCE_NIXPKGS = "${pkgs.path}";
+        };
+        script = ''
+          exec python3 "$KORRI_ROOT/clients/android/proof/live_resize.py" "$@"
+        '';
+      };
     hooks-install = {
       description = "Install the Git hook that refuses a commit which stages a secret.";
       runtimeInputs = [
