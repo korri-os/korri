@@ -968,7 +968,12 @@ Pairing replaces the certificate grant. The viewer side runs `moonlight pair`
 with the viewer binary of that run, and makes its own key pair in its run
 directory. Moonlight prints a PIN. The sender's agent posts the PIN to its
 Sunshine on loopback, with a web UI login that it made for the run. The host
-key directory is not used.
+key directory is not used. A Sunshine from v2026.914 on (GHSA-36ff; the base
+of Korri's patched Sunshine) binds a PIN to one waiting pairing request: the
+agent reads the waiting requests (`GET /api/pin`) and posts the PIN with the
+one request's `pairing_id`. It refuses when none waits within 10 s or when
+more than one waits. nixpkgs' stock Sunshine has no such list and takes the
+PIN alone.
 
 Sunshine announces each host through Avahi and has no setting against it.
 The fixture gives its Sunshine a system bus address that does not exist, so
