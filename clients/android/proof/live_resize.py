@@ -186,12 +186,21 @@ class Emulator:
 
 
 class Logcat:
-    def __init__(self, emulator: Emulator, path: Path):
-        self.path = path
+    """The emulator's whole log, kept outside the record while it runs.
+
+    The app logs its launch request, and that line holds the session's input
+    key (`rikey`). The raw log lives in a private temporary folder and goes
+    when the log closes. The record gets a copy without those lines.
+    """
+
+    def __init__(self, emulator: Emulator, record: Path):
+        self.record = record
+        self.folder = Path(tempfile.mkdtemp(prefix="korri-476-logcat-"))
+        self.path = self.folder / "logcat.txt"
         emulator.adb("logcat", "-c")
         self.process = subprocess.Popen(
             [f"{emulator.sdk}/platform-tools/adb", "-s", emulator.serial, "logcat", "-v", "threadtime"],
-            stdout=path.open("w"), stderr=subprocess.STDOUT, env=emulator.env)
+            stdout=self.path.open("w"), stderr=subprocess.STDOUT, env=emulator.env)
 
     def lines(self) -> list[str]:
         return self.path.read_text(errors="replace").splitlines()
@@ -199,6 +208,8 @@ class Logcat:
     def close(self) -> None:
         self.process.terminate()
         self.process.wait(timeout=10)
+        self.record.write_text("".join(f"{line}\n" for line in self.lines() if "rikey" not in line))
+        shutil.rmtree(self.folder, ignore_errors=True)
 
 
 def screenshot(emulator: Emulator, path: Path, previous=None) -> tuple[dict, object]:
