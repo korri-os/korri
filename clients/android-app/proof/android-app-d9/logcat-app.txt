@@ -1,0 +1,109 @@
+11-15 09:38:20.545   522   808 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.simonwjackson.korri.app/android.app.NativeActivity} from uid 2000
+11-15 09:38:20.645   761   816 D StartingSurfaceDrawer: addSplashScreen com.simonwjackson.korri.app theme=103012a task=12 suggestType=3
+11-15 09:38:20.662   522   568 I ActivityManager: Start proc 2702:com.simonwjackson.korri.app/u0a145 for pre-top-activity {com.simonwjackson.korri.app/android.app.NativeActivity}
+11-15 09:38:20.853  2702  2702 V GraphicsEnvironment: ANGLE Developer option for 'com.simonwjackson.korri.app' set to: 'default'
+11-15 09:38:20.975  2702  2748 I korri   : korrid: Android TLS verifier classes loaded
+11-15 09:38:20.985  2702  2748 I korri   : korrid: Android network observed: 1 addresses on [eth0]
+11-15 09:38:21.046  2702  2746 I korri   : korri-app: korrid serves on 127.0.0.1:38131
+11-15 09:38:21.048  2702  2748 I korri   : korrid discovery: @korri:android-app discovery is not enabled
+11-15 09:38:21.095  2702  2746 I korri   : korri-app: korrid answered system.health
+11-15 09:38:21.609   944   944 D ImsResolver: maybeAddedImsService, packageName: com.simonwjackson.korri.app
+11-15 09:38:22.110  2702  2748 I korri   : korrid: reach: reset=1 elapsed_ms=0 stage=network_reset
+11-15 09:38:22.124  2702  2702 W tokio-rt-worker: type=1400 audit(0.0:13): avc: denied { nlmsg_readpriv } for scontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tcontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tclass=netlink_route_socket permissive=0 bug=b/155595000 app=com.simonwjackson.korri.app
+11-15 09:38:22.128  2702  2702 W Thread-5: type=1400 audit(0.0:14): avc: denied { nlmsg_readpriv } for scontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tcontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tclass=netlink_route_socket permissive=0 bug=b/155595000 app=com.simonwjackson.korri.app
+11-15 09:38:22.180  2702  2702 W Thread-18: type=1400 audit(0.0:15): avc: denied { search } for name="net" dev="sysfs" ino=6475 scontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tcontext=u:object_r:sysfs_net:s0 tclass=dir permissive=0 app=com.simonwjackson.korri.app
+11-15 09:38:22.184  2702  2702 W Thread-18: type=1400 audit(0.0:16): avc: denied { search } for name="net" dev="sysfs" ino=6475 scontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tcontext=u:object_r:sysfs_net:s0 tclass=dir permissive=0 app=com.simonwjackson.korri.app
+11-15 09:38:22.184  2702  2702 W Thread-18: type=1400 audit(0.0:17): avc: denied { search } for name="net" dev="sysfs" ino=6475 scontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tcontext=u:object_r:sysfs_net:s0 tclass=dir permissive=0 app=com.simonwjackson.korri.app
+11-15 09:38:22.184  2702  2702 W Thread-18: type=1400 audit(0.0:18): avc: denied { search } for name="net" dev="sysfs" ino=6475 scontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tcontext=u:object_r:sysfs_net:s0 tclass=dir permissive=0 app=com.simonwjackson.korri.app
+11-15 09:38:22.334  2702  2748 I korri   : korrid: reach: reset=1 elapsed_ms=223 stage=endpoint_bound port=54182
+11-15 09:38:22.412  2702  2702 I korri   : korri-app: window flags applied; system bars hidden: true
+11-15 09:38:22.559   522   556 I ActivityTaskManager: Displayed com.simonwjackson.korri.app/android.app.NativeActivity: +1s951ms
+11-15 09:38:22.561  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-15 09:38:22.561  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-15 09:38:22.623  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-15 09:38:22.623  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-15 09:38:22.623  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-15 09:38:22.760  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-15 09:38:22.762  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-15 09:38:22.763  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-15 09:38:22.901  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-15 09:38:22.901  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-15 09:38:22.901  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-15 09:38:22.959   522  2547 W InputManager-JNI: Input channel object 'e5f90dd Splash Screen com.simonwjackson.korri.app (client)' was disposed without first being removed with the input manager!
+11-15 09:38:23.011  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-15 09:38:23.012  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-15 09:38:23.012  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-15 09:38:23.097  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-15 09:38:23.097  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-15 09:38:23.097  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 2 name inTextureCoords
+11-15 09:38:23.137  2702  2748 I korri   : korrid: reach: reset=2 elapsed_ms=0 stage=network_reset
+11-15 09:38:23.184  2702  2702 W Thread-27: type=1400 audit(0.0:59): avc: denied { nlmsg_readpriv } for scontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tcontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tclass=netlink_route_socket permissive=0 bug=b/155595000 app=com.simonwjackson.korri.app
+11-15 09:38:23.188  2702  2702 W Thread-23: type=1400 audit(0.0:60): avc: denied { nlmsg_readpriv } for scontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tcontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tclass=netlink_route_socket permissive=0 bug=b/155595000 app=com.simonwjackson.korri.app
+11-15 09:38:23.212  2702  2702 W Thread-49: type=1400 audit(0.0:61): avc: denied { search } for name="net" dev="sysfs" ino=6475 scontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tcontext=u:object_r:sysfs_net:s0 tclass=dir permissive=0 app=com.simonwjackson.korri.app
+11-15 09:38:23.212  2702  2702 W Thread-49: type=1400 audit(0.0:62): avc: denied { search } for name="net" dev="sysfs" ino=6475 scontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tcontext=u:object_r:sysfs_net:s0 tclass=dir permissive=0 app=com.simonwjackson.korri.app
+11-15 09:38:23.212  2702  2702 W Thread-49: type=1400 audit(0.0:63): avc: denied { search } for name="net" dev="sysfs" ino=6475 scontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tcontext=u:object_r:sysfs_net:s0 tclass=dir permissive=0 app=com.simonwjackson.korri.app
+11-15 09:38:23.275  2702  2746 I korri   : korri-app: shell rendered surface=velvet page=empty count=0 selected=0
+11-15 09:38:23.279  2702  2702 I korri   : korri-app: window flags applied; system bars hidden: true
+11-15 09:38:23.323  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-15 09:38:23.323  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-15 09:38:23.323  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-15 09:38:23.362  2702  2748 I korri   : korrid: reach: reset=2 elapsed_ms=227 stage=endpoint_bound port=37738
+11-15 09:38:23.394  2702  2746 I korri   : korri-app: shell rendered surface=velvet page=empty count=0 selected=0
+11-15 09:38:24.609  1042  2878 I FontLog : Package com.simonwjackson.korri.app has no metadata [CONTEXT service_id=132 ]
+11-15 09:38:24.610  1042  1561 W GCM     : Unexpected forwarded intent: Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.simonwjackson.korri.app flg=0x4000010 pkg=com.google.android.gms cmp=com.google.android.gms/.chimera.PersistentIntentOperationService (has extras) }
+11-15 09:38:24.610  1042  2119 W GCM     : Unexpected forwarded intent: Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.simonwjackson.korri.app flg=0x4000010 pkg=com.google.android.gms cmp=com.google.android.gms/.chimera.PersistentIntentOperationService (has extras) }
+11-15 09:38:25.330  2702  2702 I korri   : korri-app: window flags applied; system bars hidden: true
+11-15 09:38:25.387  2702  2748 I korri   : korrid: reach: reset=2 elapsed_ms=2252 stage=offer_published peer=da65118a relay_count=1 completed_relays=1 outcomes=ws://127.x.x.x:47800=failed:unprefixed operation_ms=3 first_ack_ms=none final=true
+11-15 09:38:25.387  2702  2748 I korri   : korrid: reach: stage=relay_read relay=ws://127.x.x.x:47800 outcome=failed reason=unprefixed failures=1
+11-15 09:38:25.489   522  2563 W BroadcastQueue: Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.simonwjackson.korri.app flg=0x4000010 (has extras) } to com.google.android.packageinstaller/com.android.packageinstaller.PackageInstalledReceiver
+11-15 09:38:25.490   522   567 W BroadcastQueue: Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.simonwjackson.korri.app flg=0x4000010 (has extras) } to com.google.android.gms/.games.chimera.GamesSystemBroadcastReceiverProxy
+11-15 09:38:25.490   522   567 W BroadcastQueue: Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.simonwjackson.korri.app flg=0x4000010 (has extras) } to com.google.android.gms/.gass.chimera.PackageChangeBroadcastReceiver
+11-15 09:38:25.490   522   567 W BroadcastQueue: Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.simonwjackson.korri.app flg=0x4000010 (has extras) } to com.google.android.gms/.chimera.GmsIntentOperationService$PersistentTrustedReceiver
+11-15 09:38:25.490   522   567 W BroadcastQueue: Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.simonwjackson.korri.app flg=0x4000010 (has extras) } to com.google.android.googlequicksearchbox/com.google.android.apps.gsa.googlequicksearchbox.GelStubAppWatcher
+11-15 09:38:28.393  2702  2748 I korri   : korrid: reach: reset=2 elapsed_ms=5258 stage=offer_published peer=da65118a relay_count=1 completed_relays=1 outcomes=ws://127.x.x.x:47800=failed:unprefixed operation_ms=1 first_ack_ms=none final=true
+11-15 09:38:38.409  2702  2748 I korri   : korrid: reach: reset=2 elapsed_ms=15273 stage=offer_published peer=da65118a relay_count=1 completed_relays=1 outcomes=ws://127.x.x.x:47800=failed:unprefixed operation_ms=1 first_ack_ms=none final=true
+11-15 09:38:58.446  2702  2748 I korri   : korrid: reach: reset=2 elapsed_ms=35310 stage=offer_published peer=da65118a relay_count=1 completed_relays=1 outcomes=ws://127.x.x.x:47800=failed:unprefixed operation_ms=2 first_ack_ms=none final=true
+11-15 09:39:22.708  2702  2746 I korri   : korri-app: shell rendered surface=velvet page=home count=2 selected=1
+11-15 09:39:22.734  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-15 09:39:22.734  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-15 09:39:22.734  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-15 09:39:22.791  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-15 09:39:22.793  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-15 09:39:22.904  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-15 09:39:22.904  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-15 09:39:22.904  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-15 09:39:23.233  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-15 09:39:23.233  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name localCoord
+11-15 09:39:23.290  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-15 09:39:23.290  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name localCoord
+11-15 09:39:25.492  2702  2748 I korri   : korrid: reach: stage=relay_read relay=ws://127.x.x.x:47800 outcome=failed reason=unprefixed failures=61
+11-15 09:39:30.916  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name resolveLevel_and_idx
+11-15 09:39:30.917  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name p01
+11-15 09:39:30.917  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 2 name p23
+11-15 09:39:30.917  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 3 name fanPointAttrib
+11-15 09:39:30.917  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 4 name curveType
+11-15 09:39:31.030  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-15 09:39:31.030  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-15 09:39:31.096  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name unitCoord
+11-15 09:39:31.097  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name fillBounds
+11-15 09:39:31.097  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 2 name color
+11-15 09:39:31.097  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 3 name locations
+11-15 09:39:31.152  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-15 09:39:31.152  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-15 09:39:31.217  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-15 09:39:31.218  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-15 09:39:31.218  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-15 09:39:31.257  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-15 09:39:31.258  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-15 09:39:31.286  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-15 09:39:31.286  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-15 09:39:31.286  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-15 09:39:31.338  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-15 09:39:31.338  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-15 09:39:31.338  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 2 name inQuadEdge
+11-15 09:39:31.397  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-15 09:39:31.437  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-15 09:39:31.437  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-15 09:39:31.437  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-15 09:39:31.487  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-15 09:39:31.487  2702  2748 I korri   : s_glBindAttribLocation: bind attrib 1 name color

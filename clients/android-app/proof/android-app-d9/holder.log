@@ -1,0 +1,3 @@
+korrid: input pool startup reconciliation failed: device settings root is not configured
+korrid: host session recovery helper failed: runtime UID and GID must both be unprivileged
+fixture HTTP and discovery joined

@@ -1,0 +1,204 @@
+{
+  "stream_host": "192.168.1.117",
+  "checks": {
+    "apk_has_no_dex": true,
+    "apk_has_code_false": true,
+    "apk_has_one_loopback_relay": true,
+    "library_carries_the_tls_verifiers_classes": true,
+    "sender_offers_korri_stream": true,
+    "sender_answers_at_the_holders_moonlight_address": true,
+    "member_is_a_new_device": true,
+    "identity_seeded_as_the_apps_own_files": true,
+    "korrid_loads_the_tls_verifiers_classes": true,
+    "velvet_lists_the_holders_game": true,
+    "the_apps_korrid_remembers_the_holder": true,
+    "no_crash_panic_or_anr": true,
+    "the_app_published_its_owner_statement_signed_by_the_test_owner": true,
+    "the_holder_sent_the_app_its_endpoint": true,
+    "holder_joined_its_discovery": true
+  },
+  "steps": {
+    "korrid_port": 38131,
+    "seconds_to_the_game": 62.4,
+    "library": "korri-app: shell rendered surface=velvet page=home count=2 selected=1",
+    "identity_connected": {
+      "file": "identity-connected.png",
+      "colours": 656
+    },
+    "confirm_presses": 2,
+    "changed_after_confirm": 0.37,
+    "screenshot": {
+      "file": "library.png",
+      "colours": 1887
+    },
+    "resumed": "com.simonwjackson.korri.app/android.app.NativeActivity"
+  },
+  "store": {
+    "apk": "/nix/store/fq5dwzv9nl2adiw29cnrrbl1304kfy57-korri-android-app-fixture-apk-0.1.0/korri-android-app-unsigned.apk",
+    "federation_fixture": "/nix/store/xbaq3mrj6y7a4vl8cqksygr0a5g2nin6-korrid-federation-fixture-0.0.0/bin/federation_fixture"
+  },
+  "apk_relays": [
+    "ws://127.0.0.1:47800"
+  ],
+  "moonlight_address": "192.168.1.117:36431",
+  "holder": {
+    "port": 38233,
+    "device": "da65118acb4f966962a1ccd136a40dd45e023c54fff7c7323e9ef699a4b3b9cf",
+    "relay_port": 41287
+  },
+  "member_device": "25b4c9be3e0388c717863cc7d97acb8a716e7030eef6b579275390cc89ce8ee6",
+  "emulator": {
+    "release": "12",
+    "sdk": "31",
+    "abi": "x86_64"
+  },
+  "crashes": [],
+  "emulator_stop": {
+    "started": true,
+    "exit_code": 0,
+    "processes_left": []
+  },
+  "sender_restore": {
+    "live_games": [],
+    "product_units": {
+      "at_start": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 8317014
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 219956135598
+        },
+        "korri-clock-governor.service": {
+          "pid": 3896,
+          "started": 164324721
+        },
+        "korri-compositor.service": {
+          "pid": 748122,
+          "started": 87957282465
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 2569242,
+          "started": 219957620000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 164531729
+        },
+        "korri-limits.service": {
+          "pid": 4035,
+          "started": 164533214
+        },
+        "korri-local-signer.service": {
+          "pid": 2569201,
+          "started": 219956806525
+        },
+        "korri-plugin-admin.service": {
+          "pid": 748266,
+          "started": 87969764633
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 87893718128
+        },
+        "korri-portal-credentials.service": {
+          "pid": 0,
+          "started": 162355048
+        },
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 1489945,
+          "started": 168435600000
+        },
+        "korri-sunshine.service": {
+          "pid": 2083614,
+          "started": 426660463253
+        },
+        "korrid.service": {
+          "pid": 2083501,
+          "started": 426653099424
+        }
+      },
+      "at_end": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 8317014
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 219956135598
+        },
+        "korri-clock-governor.service": {
+          "pid": 3896,
+          "started": 164324721
+        },
+        "korri-compositor.service": {
+          "pid": 748122,
+          "started": 87957282465
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 2569242,
+          "started": 219957620000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 164531729
+        },
+        "korri-limits.service": {
+          "pid": 4035,
+          "started": 164533214
+        },
+        "korri-local-signer.service": {
+          "pid": 2569201,
+          "started": 219956806525
+        },
+        "korri-plugin-admin.service": {
+          "pid": 748266,
+          "started": 87969764633
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 87893718128
+        },
+        "korri-portal-credentials.service": {
+          "pid": 0,
+          "started": 162355048
+        },
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 1489945,
+          "started": 168435600000
+        },
+        "korri-sunshine.service": {
+          "pid": 2083614,
+          "started": 426660463253
+        },
+        "korrid.service": {
+          "pid": 2083501,
+          "started": 426653099424
+        }
+      },
+      "changed": []
+    },
+    "pass": true,
+    "pids_unchanged": {},
+    "run_folder": "/tmp/korri-stream-cadence-sender-m3e73zq9",
+    "run_folder_bytes": 3755751,
+    "run_folder_removed": true,
+    "stray_processes_killed": [],
+    "remaining_processes": [],
+    "other_processes": [],
+    "new_input_devices": [],
+    "gone_input_devices": [],
+    "input_rule": "record",
+    "errors": []
+  },
+  "pass": true
+}
