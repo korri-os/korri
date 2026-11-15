@@ -32,8 +32,16 @@ The steps:
    and events, and the status that korrid reads.
 5. The stream: screenshots whose frame-ID bar reads and rises; keys and a tap
    that the sender's Sunshine receives; the tone in the emulator's sound.
-6. Back opens the gameplay overlay's stand-in and Back closes it (slice D5's
-   rules), before the keys of step 5.
+6. Korri's gameplay overlay (slice D5b), before the keys of step 5: Guide
+   opens it over the moving stream. The app lends the overlay layer's
+   Surface to the shell, korrid hears that the person left
+   (`session.leave`), and the shell draws korrid's overlay into the layer.
+   It shows the stream's controls of D11 (read from the screenshot with
+   tesseract). Crop to fill, chosen in the overlay (a tap on its row, or the
+   D-pad when the words are not found), moves the video layer under it, and
+   chosen again fits the picture again. The sender receives no input while
+   the overlay is open. Back closes it through korrid's Resume, and the
+   picture goes on.
 7. The stream's controls and status (slice D11), through the fixture APK's
    proof trigger (src/proof.rs), which calls korrid's own viewer adapter:
    korrid's snapshot lists Crop to fill and Flip A/B and X/Y (and Rumble
@@ -85,9 +93,15 @@ KORRID_READ = re.compile(r"korri-app: viewer status for korrid: ([0-9a-f]{32}) (
 LAUNCH = re.compile(r'korri-app: viewer request \{"launchId":"([0-9a-f]{32})","command":\{"kind":"Start"')
 WINDOW_WENT = "korri-app: viewer stops: the app's window went"
 ENDED = re.compile(r"korri-app: viewer ([0-9a-f]{32}) ended")
-# The viewer library's own lines (tag korri-viewer).
-OVERLAY_OPEN = "overlay: open on Back"
-OVERLAY_CLOSED = "overlay: closed on Back"
+# The viewer library's own lines (tag korri-viewer) and the app's, for the
+# gameplay overlay (slice D5b).
+OVERLAY_OPEN = "overlay: open on Guide; the stream's input is held"
+OVERLAY_CLOSED = re.compile(r"overlay: closed on korrid resumed the stream after ([\d.]+) s; it took (\d+) keys and (\d+) motion events")
+LAYER_SHOWN = "overlay: layer shown"
+LAYER_HIDDEN = "overlay: layer hidden"
+SHELL_TOOK = "korri-app: overlay: the shell took the layer's Surface; korrid hears that the person left"
+SHELL_DREW = "korri-app: overlay: the shell drew it; the layer shows"
+SHELL_LET_GO = "korri-app: overlay: the shell let the layer's Surface go"
 # Slice D11: the proof trigger's lines (src/proof.rs) and the app's own.
 PROOF_WATCHING = "korri-app: proof: watching"
 PROOF_SNAPSHOT = re.compile(r"korri-app: proof: snapshot ([0-9a-f]{32}) (\{.*\}|null)\s*$")
@@ -221,24 +235,6 @@ def first_bar(emulator: "d8.Emulator", out: Path, name: str, seconds: float) -> 
             return {"file": path.name, "tries": at, **frame}
         time.sleep(0.5)
     return None
-
-
-def halves(png: Path) -> dict:
-    """The mean brightness of a screenshot's upper and lower halves."""
-    from PIL import Image
-    with Image.open(png) as image:
-        gray = image.convert("L")
-        width, height = gray.size
-        upper = list(gray.crop((0, 0, width, height // 2)).resize((64, 32)).get_flattened_data())
-        lower = list(gray.crop((0, height // 2, width, height)).resize((64, 32)).get_flattened_data())
-        return {"upper_mean": round(sum(upper) / len(upper), 1), "lower_mean": round(sum(lower) / len(lower), 1)}
-
-
-def shaded(before: Path, during: Path) -> dict:
-    """The overlay's stand-in darkens the window's lower half (layer.rs): to a quarter, at 75 % black."""
-    a, b = halves(before), halves(during)
-    return {"before": a, "during": b,
-            "lower_half_darkened": b["lower_mean"] < 0.6 * a["lower_mean"]}
 
 
 def tap(emulator: "d8.Emulator", target: dict) -> None:
@@ -407,6 +403,168 @@ def controls(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
     off = proof_snapshot(emulator, logcat, launch)
     steps["snapshot_fill_off"] = toggles(off)
     checks["korrids_snapshot_shows_crop_to_fill_off"] = toggles(off).get(FILL, {}).get("value") is False
+    return steps, checks
+
+
+def tesseract(png: Path) -> list[dict]:
+    """The words that tesseract reads in one image, with their boxes."""
+    done = subprocess.run(["tesseract", str(png), "stdout", "tsv"], capture_output=True, text=True, timeout=120)
+    found = []
+    for line in done.stdout.splitlines()[1:]:
+        cells = line.split("\t")
+        if len(cells) == 12 and cells[11].strip():
+            found.append({"text": cells[11].strip(), "line": tuple(int(c) for c in cells[2:5]),
+                          "left": int(cells[6]), "top": int(cells[7]), "width": int(cells[8]),
+                          "height": int(cells[9]), "conf": float(cells[10])})
+    return found
+
+
+def words(png: Path) -> list[dict]:
+    """The words in a screenshot, read as it is and, when that finds no Resume, in its negative
+    (light words over the moving picture); none without tesseract."""
+    if shutil.which("tesseract") is None:
+        return []
+    found = tesseract(png)
+    if phrase(found, "Resume") is None:
+        from PIL import Image, ImageOps
+        negative = png.with_name(png.stem + "-negative.png")
+        with Image.open(png) as image:
+            ImageOps.invert(image.convert("L")).save(negative)
+        found = tesseract(negative)
+        negative.unlink()
+    return found
+
+
+def lines(found: list[dict]) -> list[str]:
+    """The words, line by line, as text."""
+    by_line: dict = {}
+    for word in found:
+        by_line.setdefault(word["line"], []).append(word["text"])
+    return [" ".join(texts) for texts in by_line.values()]
+
+
+def phrase(found: list[dict], text: str) -> "dict | None":
+    """Where a phrase starts on a line of words, as its first word's box and centre."""
+    wanted = text.lower()
+    for at, word in enumerate(found):
+        run: list[str] = []
+        for following in found[at:]:
+            if following["line"] != word["line"]:
+                break
+            run.append(following["text"].lower().strip(".,:;|"))
+            joined = " ".join(run)
+            if joined.startswith(wanted):
+                return {"x": word["left"] + word["width"] // 2, "y": word["top"] + word["height"] // 2,
+                        "box": [word["left"], word["top"], word["left"] + word["width"],
+                                word["top"] + word["height"]]}
+            if not wanted.startswith(joined):
+                break
+    return None
+
+
+def sender_packets(sender: "viewer_proof.Remote") -> list[dict]:
+    """Every input packet that the sender's Sunshine has logged so far."""
+    packets, _ = viewer_proof.sender.input_packets(sender.request("sample")["journal"])
+    return packets
+
+
+def choose_fill(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.Remote", target: "dict | None",
+                presses: int, value: bool) -> "re.Match | None":
+    """Crop to fill chosen in the overlay: a tap on its row, or the D-pad. The app's line once it took effect."""
+    mark = logcat.mark()
+    if target is not None:
+        tap(emulator, target)
+    else:
+        for _ in range(presses):
+            emulator.shell("input keyevent KEYCODE_DPAD_DOWN")
+            time.sleep(0.5)
+        emulator.shell("input keyevent KEYCODE_DPAD_CENTER")
+    return waiting(logcat, sender, f"korri-app: viewer control set-fill-mode is {str(value).lower()}", mark, 20)
+
+
+def overlay(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.Remote", out: Path,
+            launch: str) -> tuple[dict, dict]:
+    """Slice D5b: Korri's gameplay overlay over the stream, its controls, its hold, and its close."""
+    steps: dict = {}
+    checks: dict = {}
+    sender.request("clock")
+    mark = logcat.mark()
+    emulator.shell("input keyevent KEYCODE_BUTTON_MODE")
+    opened = waiting(logcat, sender, OVERLAY_OPEN, mark, 20)
+    checks["guide_opens_the_overlay_and_holds_the_input"] = opened is not None
+    if opened is None:
+        return steps, checks
+    # From here no input may reach the sender until the overlay closes.
+    held_from = len(sender_packets(sender))
+    checks["the_shell_takes_the_overlay_layers_surface"] = logcat.wait_for(SHELL_TOOK, mark, 10) is not None
+    checks["korrid_hears_that_the_person_left"] = logcat.wait_for(
+        f"korri-app: overlay: korrid's session.leave for {launch}: ok", mark, 30) is not None
+    drew = waiting(logcat, sender, SHELL_DREW, mark, 30)
+    checks["the_shell_draws_korris_overlay_into_the_layer"] = drew is not None \
+        and logcat.wait_for(LAYER_SHOWN, mark, 10) is not None
+    # korrid's overlay reads the viewer's snapshot every second and lists its controls.
+    time.sleep(3)
+    steps["overlay"] = bars(emulator, out, "overlay", 3, 1.0)
+    checks["the_picture_goes_on_under_the_overlay"] = rising(steps["overlay"])
+    found = words(out / "overlay-1.png")
+    steps["tesseract"] = shutil.which("tesseract") is not None
+    steps["overlay_lines"] = lines(found)
+    checks["the_overlay_is_korris_gameplay_overlay"] = all(
+        phrase(found, text) is not None for text in ("Resume", "Disconnect"))
+    crop = phrase(found, "Crop to fill")
+    checks["the_overlay_shows_the_streams_controls"] = crop is not None and phrase(found, "Flip") is not None
+    steps["crop_to_fill_row"] = crop
+    steps["chosen_by"] = "touch" if crop is not None else "keys"
+
+    before = video_layer(emulator, out, "overlay-fit")
+    viewer_proof.screenshot(emulator, out / "overlay-fit.png")
+    mark = logcat.mark()
+    # Resume, Disconnect, Open Korri and End stand above it.
+    on = choose_fill(emulator, logcat, sender, crop, 4, True)
+    korrids_apply = logcat.wait_for(re.compile(
+        r'korri-app: viewer request \{"launchId":"' + launch + r'","command":\{"kind":"Apply","value":\{"control":"viewer:'
+        + launch + r':[0-9]+:[0-9]+:set-fill-mode","value":\{"kind":"toggle","value":true\}\}\}\}'), mark, 5)
+    checks["crop_to_fill_chosen_in_the_overlay_reaches_the_viewer_through_korrid"] = \
+        on is not None and korrids_apply is not None
+    checks["the_video_layer_fills_the_window"] = logcat.wait_for(FILLED, mark, 5) is not None
+    time.sleep(1.5)
+    after = video_layer(emulator, out, "overlay-fill")
+    steps["layer_fit"], steps["layer_fill"] = before, after
+    checks["surfaceflinger_crops_the_stream_under_the_overlay"] = \
+        before["crop"] == FIT_CROP and after["crop"] == FILL_CROP
+    viewer_proof.screenshot(emulator, out / "overlay-fill.png")
+    steps["left_strip_change"] = strip_change(out / "overlay-fit.png", out / "overlay-fill.png")
+    checks["the_picture_changes_under_the_overlay"] = steps["left_strip_change"] > 10
+    checks["the_overlay_stays_open_after_the_control"] = logcat.wait_for(OVERLAY_CLOSED, mark, 1) is None
+
+    mark = logcat.mark()
+    again = phrase(words(out / "overlay-fill.png"), "Crop to fill") or crop
+    off = choose_fill(emulator, logcat, sender, again, 0, False)
+    time.sleep(1.5)
+    steps["layer_fit_again"] = video_layer(emulator, out, "overlay-fit-again")
+    checks["chosen_again_it_fits_the_picture_again"] = off is not None \
+        and logcat.wait_for(FITTED, mark, 5) is not None and steps["layer_fit_again"]["crop"] == FIT_CROP
+
+    time.sleep(2)
+    while_open = sender_packets(sender)[held_from:]
+    steps["sender_packets_while_open"] = [{"kind": p["kind"], "time": p["time"]} for p in while_open][:20]
+    checks["the_sender_receives_no_input_while_the_overlay_is_open"] = not while_open
+
+    log("Back: korrid's Resume closes the overlay")
+    mark = logcat.mark()
+    emulator.shell("input keyevent KEYCODE_BACK")
+    closed = waiting(logcat, sender, OVERLAY_CLOSED, mark, 30)
+    steps["closed"] = None if closed is None else {
+        "seconds_open": float(closed.group(1)), "keys": int(closed.group(2)), "motions": int(closed.group(3))}
+    checks["back_closes_the_overlay_through_korrids_resume"] = closed is not None \
+        and logcat.wait_for(f"korri-app: viewer resume for korrid: {launch}: the stream is in front", mark, 10) is not None
+    checks["the_layer_hides_and_the_shell_lets_its_surface_go_before_the_input_goes_on"] = (
+        closed is not None and logcat.wait_for(LAYER_HIDDEN, mark, 10) is not None
+        and logcat.wait_for(SHELL_LET_GO, mark, 10) is not None
+        and logcat.lines().index(logcat.wait_for(SHELL_LET_GO, mark, 1).string) < logcat.lines().index(closed.string))
+    time.sleep(1)
+    steps["after_overlay"] = bars(emulator, out, "after-overlay", 3, 1.0)
+    checks["the_picture_goes_on_after_the_overlay"] = rising(steps["after_overlay"])
     return steps, checks
 
 
@@ -595,18 +753,9 @@ def main() -> int:
         # Before any letter key: on the emulator a hardware letter key starts an
         # input method session over the app, which then takes the next Back
         # (README, "The viewer in the app").
-        log("Back: the gameplay overlay's stand-in")
-        overlay_mark = logcat.mark()
-        emulator.shell("input keyevent KEYCODE_BACK")
-        checks["back_opens_the_overlay"] = waiting(logcat, sender, OVERLAY_OPEN, overlay_mark, 20) is not None
-        time.sleep(1)
-        steps["overlay"] = bars(emulator, out, "overlay", 3, 1.0)
-        steps["overlay_shade"] = shaded(out / "stream-4.png", out / "overlay-1.png")
-        checks["the_overlay_shades_the_lower_half"] = steps["overlay_shade"]["lower_half_darkened"]
-        checks["the_picture_goes_on_under_the_overlay"] = rising(steps["overlay"])
-        emulator.shell("input keyevent KEYCODE_BACK")
-        checks["back_closes_the_overlay"] = waiting(logcat, sender, OVERLAY_CLOSED, overlay_mark, 20) is not None
-        steps["after_overlay"] = bars(emulator, out, "after-overlay", 1, 0)
+        log("Guide: Korri's gameplay overlay over the stream (D5b)")
+        steps["gameplay_overlay"], overlay_checks = overlay(emulator, logcat, sender, out, launch)
+        checks.update(overlay_checks)
 
         log("the input: keys and a tap at the sender")
         emulator.shell(f"input keyevent {MARKER[0]}")

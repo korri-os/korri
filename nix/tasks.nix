@@ -279,7 +279,7 @@ let
         emulator = import ../clients/viewer/android/emulator.nix { inherit pkgs; };
       in
       {
-        description = "Prove on aka, as root, that a tap on the holder's game starts the Rust viewer in the Android app (#434 D10).";
+        description = "Prove on aka, as root, that a tap on the holder's game starts the Rust viewer in the Android app, with its controls and Korri's gameplay overlay (#434 D10, D11, D5b).";
         usageSuffix = " -- --sunshine /nix/store/...-sunshine-korri-... [--holder-uid N] [--port N] [--adb-port N] [--out DIRECTORY]";
         runtimeInputs = [
           # Pillow reads the screenshots; numpy and FFmpeg are stream-cadence's
@@ -289,6 +289,8 @@ let
             p.numpy
           ]))
           pkgs.ffmpeg
+          # Reads the gameplay overlay's words in its screenshots (#434 D5b).
+          pkgs.tesseract
           # holder.ts and the Artemis acceptance's relay that it runs.
           pkgs.bun
           pkgs.nix
