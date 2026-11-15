@@ -30,6 +30,9 @@ ndk = { version = "0.9", default-features = false, features = ["media", "nativew
 # and AAudio with Korri's own callbacks (src/android/sound.rs).
 ndk-sys = { version = "0.6", features = ["media", "audio"] }
 ndk-context = "0.1"
+# An app's events, layers and main thread (src/android/events.rs, layer.rs,
+# play.rs): the release that both apps and the shell's Slint backend use.
+android-activity = { version = "=0.6.1", features = ["native-activity"] }
 
 [build-dependencies]
 bindgen = "0.72"

@@ -38,9 +38,7 @@
 //! | `CADENCE_FRAME_TIMES`, `CADENCE_DUMP` | string | optional: the frame record's new files, the measure's ask (`clients/viewer/README.md`) |
 #![cfg(target_os = "android")]
 
-mod input;
 mod intent;
-mod layer;
 mod logcat;
 
 use android_activity::{
@@ -50,22 +48,21 @@ use android_activity::{
 use anyhow::{Context, Result, anyhow};
 use korri_viewer::{
     devices::{AndroidDevices, now_ms},
-    feedback_jni,
-    input::{self as stream_input, CoreSink, Input, Outcome, Settings, core_sink},
-    launch,
+    events, feedback_jni,
+    input::{self as stream_input, Settings},
+    launch, layer,
     lifecycle::Lifecycle,
     options::Options,
-    overlay::{Keys, Overlay, Route},
     picture::{FrameRecord, Picture},
+    play::{Play, Routed},
 };
 use korri_viewer_treaty::{ViewerCommand, ViewerRequest};
 use ndk::native_window::NativeWindow;
 use std::{
-    panic::{AssertUnwindSafe, catch_unwind},
     path::PathBuf,
     sync::{Arc, Mutex, PoisonError},
     thread::{self, JoinHandle},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 struct Launch {
@@ -319,7 +316,7 @@ fn stream(
         launch: id,
         requests: Vec::new(),
     };
-    let input = Input::new(settings, attached, layer.placed, Box::new(seats));
+    let play = Play::new(settings, attached, layer.placed, devices, Box::new(seats));
     let driven = drive(
         app,
         &mut controller,
@@ -327,8 +324,7 @@ fn stream(
         &runtime,
         layer,
         decoded,
-        input,
-        &mut devices,
+        play,
     );
     if driven.is_err() {
         // A request that could not go leaves the runtime streaming, or
@@ -347,9 +343,8 @@ fn stream(
 
 /// Start, then Stop when the user leaves, until the runtime ends. Each key
 /// and motion event goes to the stream's input or to the gameplay overlay
-/// meanwhile, and the layers follow the window's size; the video layer
-/// follows the decoded picture's size too.
-#[allow(clippy::too_many_arguments)]
+/// meanwhile (`Play`), and the layers follow the window's size; the video
+/// layer follows the decoded picture's size too.
 fn drive(
     app: &AndroidApp,
     controller: &mut Controller,
@@ -357,25 +352,18 @@ fn drive(
     runtime: &JoinHandle<Result<()>>,
     layer: &mut layer::Layers,
     decoded: &Decoded,
-    input: Input,
-    devices: &mut AndroidDevices,
+    mut play: Play,
 ) -> Result<()> {
     controller.send(ViewerCommand::Start {
         address,
         display: None,
     })?;
-    input::unbuffered(app);
-    let mut input = Guarded(Some(input));
-    // The core's input behind its gate: closed before the core stops, also
-    // when the host or the network ends the stream while this thread sends.
-    let mut sink = core_sink();
-    let mut gameplay = Gameplay::default();
+    events::unbuffered(app);
     let mut stopping = false;
-    let mut checked = now_ms();
     while !runtime.is_finished() {
         // The input's timers (a touch's click, the emulated mouse, the
         // controllers' heartbeat) wake the loop, or it waits for 100 ms.
-        let wait = input
+        let wait = play
             .next_deadline()
             .map_or(100, |at| at.saturating_sub(now_ms()).clamp(0, 100));
         let mut stop = false;
@@ -386,23 +374,12 @@ fn drive(
                 stop = true;
             }
         });
-        stop |= events(app, &mut input, devices, &mut sink, &mut gameplay, layer);
-        input.run("tick", |input| input.tick(now_ms(), &mut sink));
-        // Android tells no native code that a device went: ask twice a
-        // second, as Artemis's listener would have told it.
-        if now_ms() - checked >= 500 {
-            checked = now_ms();
-            input.run("devices", |input| input.check_devices(devices, &mut sink));
-        }
+        stop |= events(app, &mut play, layer);
+        play.tick();
         if stop && !stopping {
             stopping = true;
-            if gameplay.overlay == Overlay::Open {
-                logcat::info("overlay: open when the stream stopped");
-            }
             // Nothing more goes to a stream that stops.
-            if let Some(input) = input.0.take() {
-                logcat::info(&format!("input: ended: {}", input.report()));
-            }
+            play.end();
             controller.send(ViewerCommand::Stop)?;
         }
         if !stop
@@ -410,7 +387,7 @@ fn drive(
             && layer.follow(app, &window)
         {
             placed(layer, &window);
-            input.run("place", |input| input.place(layer.placed));
+            play.place(layer.placed);
         }
         // The sender changed the stream's size: the decoder gives the new
         // one when its first frame comes out. Only the video's place and the
@@ -421,184 +398,34 @@ fn drive(
             && layer.restream(app, size)
         {
             log_placement(layer);
-            input.run("place", |input| input.place(layer.placed));
+            play.place(layer.placed);
         }
     }
-    if let Some(input) = input.0.take() {
-        logcat::info(&format!("input: ended: {}", input.report()));
-    }
+    play.end();
     Ok(())
-}
-
-/// The stream's input, which a panic in it ends: the stream goes on
-/// without it. No panic reaches android-activity's input queue.
-struct Guarded(Option<Input>);
-
-impl Guarded {
-    fn run<T>(&mut self, what: &str, work: impl FnOnce(&mut Input) -> T) -> Option<T> {
-        let input = self.0.as_mut()?;
-        match catch_unwind(AssertUnwindSafe(|| work(input))) {
-            Ok(value) => Some(value),
-            Err(_) => {
-                logcat::error(&format!(
-                    "input: {what} panicked; the stream goes on without input"
-                ));
-                self.0 = None;
-                None
-            }
-        }
-    }
-
-    fn next_deadline(&self) -> Option<i64> {
-        self.0.as_ref().and_then(Input::next_deadline)
-    }
-}
-
-/// The gameplay overlay while the stream runs: Artemis's
-/// `showSurfaceOverlay` and `hideSurfaceOverlay`. Opening holds the
-/// stream's input, then shows the layer; closing hides the layer, then the
-/// input goes to the stream again.
-#[derive(Default)]
-struct Gameplay {
-    overlay: Overlay,
-    keys: Keys,
-    /// What the overlay took while it was open, for the log.
-    taken_keys: u32,
-    taken_motions: u32,
-    opened: Option<Instant>,
-}
-
-impl Gameplay {
-    fn open(
-        &mut self,
-        why: &str,
-        app: &AndroidApp,
-        layer: &layer::Layers,
-        input: &mut Guarded,
-        sink: &mut CoreSink,
-    ) {
-        if self.overlay == Overlay::Open {
-            return;
-        }
-        if !layer.has_overlay() {
-            logcat::info(&format!("overlay: {why}, but there is no overlay layer"));
-            return;
-        }
-        self.overlay = Overlay::Open;
-        self.opened = Some(Instant::now());
-        input.run("hold", |input| input.hold(sink));
-        layer.show_overlay(app, true);
-        logcat::info(&format!(
-            "overlay: open on {why}; the stream's input is held"
-        ));
-    }
-
-    fn close(
-        &mut self,
-        why: &str,
-        app: &AndroidApp,
-        layer: &layer::Layers,
-        input: &mut Guarded,
-        sink: &mut CoreSink,
-    ) {
-        if self.overlay == Overlay::Closed {
-            return;
-        }
-        layer.show_overlay(app, false);
-        input.run("release", |input| input.release(sink));
-        self.overlay = Overlay::Closed;
-        let open = self
-            .opened
-            .take()
-            .map_or(0.0, |at| at.elapsed().as_secs_f64());
-        logcat::info(&format!(
-            "overlay: closed on {why} after {open:.1} s; it took {} keys and {} motion events; the stream's input goes on",
-            std::mem::take(&mut self.taken_keys),
-            std::mem::take(&mut self.taken_motions)
-        ));
-    }
-}
-
-/// The key that opened or closed the overlay, for the log.
-fn toggle_name(key_code: Keycode) -> &'static str {
-    match key_code {
-        Keycode::ButtonMode => "Guide",
-        Keycode::Back => "Back",
-        _ => "a key",
-    }
 }
 
 /// Every pending key and motion event, to the stream's input or to the
 /// gameplay overlay. True: the user leaves (Ctrl+Alt+Shift+Q).
-fn events(
-    app: &AndroidApp,
-    input: &mut Guarded,
-    devices: &mut AndroidDevices,
-    sink: &mut CoreSink,
-    gameplay: &mut Gameplay,
-    layer: &layer::Layers,
-) -> bool {
+fn events(app: &AndroidApp, play: &mut Play, layer: &layer::Layers) -> bool {
     let mut leave = false;
     let Ok(mut events) = app.input_events_iter() else {
         return false;
     };
-    while events.next(|event| match event {
-        InputEvent::KeyEvent(key) => {
-            let event = input::key(key);
-            match gameplay.keys.route(&event, gameplay.overlay) {
-                Route::Android => InputStatus::Unhandled,
-                Route::Taken => {
-                    if gameplay.overlay == Overlay::Open {
-                        gameplay.taken_keys += 1;
-                    }
-                    InputStatus::Handled
-                }
-                Route::Open => {
-                    gameplay.open(toggle_name(key.key_code()), app, layer, input, sink);
-                    InputStatus::Handled
-                }
-                Route::Close => {
-                    gameplay.close(toggle_name(key.key_code()), app, layer, input, sink);
-                    InputStatus::Handled
-                }
-                Route::Stream => {
-                    let outcome = input
-                        .run("key", |input| input.key(&event, now_ms(), devices, sink))
-                        .unwrap_or(Outcome::Unhandled);
-                    match outcome {
-                        Outcome::Handled => InputStatus::Handled,
-                        Outcome::Leave => {
-                            leave = true;
-                            InputStatus::Handled
-                        }
-                        Outcome::Overlay => {
-                            gameplay.open("Start pressed twice and held", app, layer, input, sink);
-                            InputStatus::Handled
-                        }
-                        Outcome::Unhandled => InputStatus::Unhandled,
-                    }
-                }
-            }
-        }
-        // The overlay takes every motion event while it is open.
-        InputEvent::MotionEvent(_) if gameplay.overlay == Overlay::Open => {
-            gameplay.taken_motions += 1;
-            InputStatus::Handled
-        }
-        InputEvent::MotionEvent(motion) => {
-            let event = input::motion(motion);
-            let handled = input
-                .run("motion", |input| {
-                    input.motion(&event, now_ms(), devices, sink)
-                })
-                .unwrap_or(false);
-            if handled {
+    while events.next(|event| {
+        let routed = match event {
+            InputEvent::KeyEvent(key) => play.key(app, layer, key),
+            InputEvent::MotionEvent(motion) => play.motion(motion),
+            _ => Routed::Unhandled,
+        };
+        match routed {
+            Routed::Handled => InputStatus::Handled,
+            Routed::Leave => {
+                leave = true;
                 InputStatus::Handled
-            } else {
-                InputStatus::Unhandled
             }
+            Routed::Unhandled => InputStatus::Unhandled,
         }
-        _ => InputStatus::Unhandled,
     }) {}
     leave
 }

@@ -48,6 +48,32 @@ const UNSUPPORTED: &str = " (explicit input devices and handheld paths are not i
 
 impl Options {
     pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Self> {
+        Self::parse_for(args, true)
+    }
+
+    /// A stream under a lifecycle in its controller's process (Android,
+    /// #434 D10): the controller's Start names the host and port
+    /// (`lifecycle::Start::configure`), so none is given here. `size` is the
+    /// display that the controller gives the launch; without one the stream
+    /// keeps Moonlight's default size.
+    pub fn for_lifecycle(keydir: PathBuf, size: Option<(u32, u32)>) -> Result<Self> {
+        let keydir = keydir
+            .into_os_string()
+            .into_string()
+            .map_err(|_| anyhow::anyhow!("the key directory is not UTF-8"))?;
+        let mut args = vec!["stream".to_owned(), "-keydir".to_owned(), keydir];
+        if let Some((width, height)) = size {
+            args.extend([
+                "-width".to_owned(),
+                width.to_string(),
+                "-height".to_owned(),
+                height.to_string(),
+            ]);
+        }
+        Self::parse_for(args, false)
+    }
+
+    fn parse_for(args: impl IntoIterator<Item = String>, with_host: bool) -> Result<Self> {
         let mut args = args.into_iter();
         let action = args.next().unwrap_or_default();
         ensure!(
@@ -173,11 +199,16 @@ impl Options {
             "explicit input devices need -platform v4l2request"
         );
         ensure!(
-            !o.host.is_empty() && !o.keydir.as_os_str().is_empty(),
+            (!with_host || !o.host.is_empty()) && !o.keydir.as_os_str().is_empty(),
             "host and -keydir are required"
         );
         ensure!(
-            o.host.parse::<std::net::IpAddr>().is_ok()
+            with_host || o.host.is_empty(),
+            "the lifecycle's Start names the host"
+        );
+        ensure!(
+            !with_host
+                || o.host.parse::<std::net::IpAddr>().is_ok()
                 || o.host
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-'),
@@ -236,6 +267,36 @@ mod tests {
         assert!(!o.viewonly);
         assert!(o.mouse_emulation);
         assert!(o.audio_device.is_none());
+    }
+
+    // #434 D10: korrid starts the viewer in its own process. Its Start names
+    // the host and port; the stream's size is korrid's display, or the
+    // viewer's own default.
+    #[test]
+    fn a_lifecycle_launch_takes_its_size_from_korrid_and_its_host_from_start() {
+        let keys = PathBuf::from("/data/keys");
+        let o = Options::for_lifecycle(keys.clone(), Some((1920, 1080))).unwrap();
+        assert_eq!(o.action, "stream");
+        assert_eq!(o.keydir, keys);
+        assert_eq!((o.width, o.height), (1920, 1080));
+        assert_eq!(o.app, "Korri Stream");
+        assert!(o.host.is_empty(), "Start::configure names the host");
+        let mut o = Options::for_lifecycle(keys.clone(), None).unwrap();
+        assert_eq!(
+            (o.width, o.height, o.fps, o.bitrate),
+            (1280, 720, 60, 10000)
+        );
+        crate::lifecycle::Start {
+            address: "192.0.2.7:47984".into(),
+            display: None,
+        }
+        .configure(&mut o)
+        .unwrap();
+        assert_eq!((&*o.host, o.port), ("192.0.2.7", 47984));
+        for refused in [(0, 720), (1280, 0), (16385, 720)] {
+            assert!(Options::for_lifecycle(keys.clone(), Some(refused)).is_err());
+        }
+        assert!(Options::for_lifecycle(PathBuf::new(), None).is_err());
     }
 
     #[test]

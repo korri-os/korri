@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! The app's input events, as the shared viewer's input takes them
-//! (`korri_viewer::input`, slice D4): android-activity's key and motion
-//! events become plain values, and the app's thread hands them over. The
-//! mapping itself, Artemis's, is in the shared viewer.
+//! An app's input events, as the stream's input takes them (`input.rs`,
+//! slice D4): android-activity's key and motion events become plain values,
+//! and the app's thread hands them over. The mapping itself, Artemis's, is
+//! in `input.rs`. Both the viewer's own app and the Korri app (whose events
+//! come through the shell's input filter) use these.
+use crate::input::{self as stream, HistorySample, Pointer, axis};
 use android_activity::{
     AndroidApp,
     input::{Axis, KeyAction, KeyEvent, MotionEvent},
 };
 use jni::{JavaVM, objects::JObject};
-use korri_viewer::input::{self as stream, HistorySample, Pointer, axis};
 
 /// android-activity's times are `System.nanoTime()`'s; the input's are
 /// milliseconds of the same clock.
@@ -114,7 +115,7 @@ pub fn unbuffered(app: &AndroidApp) {
     let activity = match activity {
         Ok(activity) => activity,
         Err(error) => {
-            crate::logcat::error(&format!("input: unbuffered dispatch: {error:#}"));
+            crate::log::line(&format!("input: unbuffered dispatch: {error:#}"));
             return;
         }
     };
@@ -150,8 +151,8 @@ pub fn unbuffered(app: &AndroidApp) {
             Ok(result?)
         })();
         match done {
-            Ok(()) => crate::logcat::info("input: unbuffered dispatch requested"),
-            Err(error) => crate::logcat::error(&format!("input: unbuffered dispatch: {error:#}")),
+            Ok(()) => crate::log::line("input: unbuffered dispatch requested"),
+            Err(error) => crate::log::line(&format!("input: unbuffered dispatch: {error:#}")),
         }
     }));
 }

@@ -558,6 +558,7 @@ dependencies = [
 name = "korri-viewer"
 version = "0.1.0"
 dependencies = [
+ "android-activity",
  "anyhow",
  "bindgen",
  "cc",

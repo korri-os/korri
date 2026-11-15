@@ -37,6 +37,12 @@ mod decoder;
 #[cfg(target_os = "android")]
 #[path = "android/devices.rs"]
 pub mod devices;
+// An app's own parts around the stream: android-activity's events to the
+// input, the video and overlay layers, and the input with the overlay on the
+// app's thread. The viewer's own app and the Korri app share them.
+#[cfg(target_os = "android")]
+#[path = "android/events.rs"]
+pub mod events;
 #[cfg(any(test, target_os = "android"))]
 #[path = "android/feedback.rs"]
 pub mod feedback;
@@ -52,6 +58,9 @@ pub mod input;
 #[cfg(any(test, target_os = "android"))]
 #[path = "android/keyboard.rs"]
 mod keyboard;
+#[cfg(target_os = "android")]
+#[path = "android/layer.rs"]
+pub mod layer;
 #[cfg(any(test, target_os = "android"))]
 #[path = "android/overlay.rs"]
 pub mod overlay;
@@ -61,6 +70,9 @@ pub mod picture;
 #[cfg(any(test, target_os = "android"))]
 #[path = "android/placement.rs"]
 pub mod placement;
+#[cfg(target_os = "android")]
+#[path = "android/play.rs"]
+pub mod play;
 #[cfg(target_os = "android")]
 #[path = "android/sound.rs"]
 mod sound;

@@ -26,22 +26,31 @@
 //! and hiding it is one `setVisibility`; a hidden layer is not composed.
 //! The shell's overlay renderer takes such a Surface
 //! (`clients/shell/vendor/i-slint-backend-android-activity/surface_window.rs`).
-//! It cannot run in this app (`clients/viewer/README.md`), so the app draws
-//! a stand-in into it once with the CPU, and again when the window's size
-//! changes. The stream's size does not change it.
+//! Until slice D5 brings it in, a stand-in is drawn into it once with the
+//! CPU, and again when the window's size changes. The stream's size does not
+//! change it.
+//!
+//! Two apps make these layers: the viewer's own (`clients/viewer/android`),
+//! which waits for them in its loop ([`Layers::make`]), and the Korri app
+//! (`clients/android-app`), whose loop is Slint's: it asks for them
+//! ([`Layers::request`]) and reads the answer at each tick
+//! ([`Pending::poll`]), so its thread never waits for Android's main thread.
+use crate::placement::{Rect, letterbox};
 use android_activity::{AndroidApp, MainEvent, PollEvent};
 use anyhow::{Context, Result, anyhow};
 use jni::{
     JNIEnv, JavaVM,
     objects::{GlobalRef, JObject, JValue},
 };
-use korri_viewer::placement::{Rect, letterbox};
 use ndk::{hardware_buffer_format::HardwareBufferFormat, native_window::NativeWindow};
 use std::{
     ptr::NonNull,
     sync::mpsc::{self, RecvTimeoutError},
     time::{Duration, Instant},
 };
+
+/// How long Android's main thread may take to make the layers.
+const MAKE_DEADLINE: Duration = Duration::from_secs(5);
 
 /// `android.graphics.PixelFormat.TRANSLUCENT`.
 const TRANSLUCENT: i32 = -3;
@@ -66,20 +75,69 @@ pub struct Layers {
     pub placed: Rect,
 }
 
+/// What Android's main thread sends back: the video layer, and the overlay
+/// layer or why there is none.
+type Made = Result<(Layer, Result<Layer>)>;
+
+/// Layers that Android's main thread is making. Dropping it before they are
+/// made is safe: the main thread then removes what it made.
+pub struct Pending {
+    receiver: mpsc::Receiver<Made>,
+    until: Instant,
+    stream: (i32, i32),
+    window: (i32, i32),
+    placed: Rect,
+}
+
+impl Pending {
+    /// The layers once the main thread has made them; `None` while it works.
+    /// An error when it failed, dropped them or took longer than 5 s.
+    pub fn poll(&mut self) -> Option<Result<Layers>> {
+        self.wait(Duration::ZERO)
+    }
+
+    /// As [`Pending::poll`], waiting at most `timeout` for the answer.
+    fn wait(&mut self, timeout: Duration) -> Option<Result<Layers>> {
+        let made = match self.receiver.recv_timeout(timeout) {
+            Ok(made) => made,
+            Err(RecvTimeoutError::Disconnected) => {
+                return Some(Err(anyhow!("Android's main thread dropped the layers")));
+            }
+            Err(RecvTimeoutError::Timeout) if Instant::now() >= self.until => {
+                return Some(Err(anyhow!(
+                    "Android's main thread did not make the layers in 5 s"
+                )));
+            }
+            Err(RecvTimeoutError::Timeout) => return None,
+        };
+        Some(made.map(|(video, overlay)| {
+            let overlay = match overlay {
+                Ok(overlay) => Some(overlay),
+                Err(error) => {
+                    crate::log::line(&format!(
+                        "overlay: no layer; the stream plays without an overlay: {error:#}"
+                    ));
+                    None
+                }
+            };
+            Layers {
+                video,
+                overlay,
+                stream: self.stream,
+                window: self.window,
+                placed: self.placed,
+            }
+        }))
+    }
+}
+
 impl Layers {
-    /// The layers for a stream of `stream` pixels, placed in `window`; none
-    /// when the app leaves (its window or the activity goes) first. They are
-    /// made on Android's main thread. While this thread waits for them, it
-    /// handles android-activity's events, so that the main thread, which
-    /// waits for this one in `onDestroy`, is not held. Never call it inside
-    /// an event callback of android-activity.
-    pub fn make(
-        app: &AndroidApp,
-        window: &NativeWindow,
-        stream: (i32, i32),
-    ) -> Result<Option<Self>> {
-        let size = (window.width(), window.height());
-        let placed = letterbox(stream, size);
+    /// Ask Android's main thread for the layers of a stream of `stream`
+    /// pixels, placed in a window of `window` pixels. It returns at once;
+    /// [`Pending::poll`] gives the layers. The window must exist: call it
+    /// outside android-activity's event callback, after `InitWindow`.
+    pub fn request(app: &AndroidApp, window: (i32, i32), stream: (i32, i32)) -> Result<Pending> {
+        let placed = letterbox(stream, window);
         let vm = app.vm_as_ptr() as usize;
         // Our own reference to the activity, taken here: android-activity's
         // may be gone by the time the main thread runs the closure.
@@ -93,7 +151,7 @@ impl Layers {
         app.run_on_java_main_thread(Box::new(move || {
             let made = attached(vm, |env| make_video(env, activity.as_obj(), stream, placed)).map(
                 |video| {
-                    let overlay = attached(vm, |env| make_overlay(env, activity.as_obj(), size))
+                    let overlay = attached(vm, |env| make_overlay(env, activity.as_obj(), window))
                         .and_then(|overlay| match draw_stand_in(&overlay.surface) {
                             Ok(()) => Ok(overlay),
                             Err(error) => {
@@ -104,7 +162,7 @@ impl Layers {
                     (video, overlay)
                 },
             );
-            // This thread stopped waiting: remove what it will never use.
+            // The asking thread stopped waiting: remove what it will never use.
             if let Err(mpsc::SendError(Ok((video, overlay)))) = sender.send(made) {
                 remove(vm, video);
                 if let Ok(overlay) = overlay {
@@ -112,19 +170,31 @@ impl Layers {
                 }
             }
         }));
-        let until = Instant::now() + Duration::from_secs(5);
-        let (video, overlay) = loop {
-            match receiver.recv_timeout(Duration::from_millis(10)) {
-                Ok(made) => break made?,
-                Err(RecvTimeoutError::Disconnected) => {
-                    return Err(anyhow!("Android's main thread dropped the layers"));
-                }
-                Err(RecvTimeoutError::Timeout) if Instant::now() >= until => {
-                    return Err(anyhow!(
-                        "Android's main thread did not make the layers in 5 s"
-                    ));
-                }
-                Err(RecvTimeoutError::Timeout) => {}
+        Ok(Pending {
+            receiver,
+            until: Instant::now() + MAKE_DEADLINE,
+            stream,
+            window,
+            placed,
+        })
+    }
+
+    /// The layers for a stream of `stream` pixels, placed in `window`; none
+    /// when the app leaves (its window or the activity goes) first. They are
+    /// made on Android's main thread. While this thread waits for them, it
+    /// handles android-activity's events, so that the main thread, which
+    /// waits for this one in `onDestroy`, is not held. Never call it inside
+    /// an event callback of android-activity, and only from a thread that
+    /// polls `AndroidApp` itself.
+    pub fn make(
+        app: &AndroidApp,
+        window: &NativeWindow,
+        stream: (i32, i32),
+    ) -> Result<Option<Self>> {
+        let mut pending = Self::request(app, (window.width(), window.height()), stream)?;
+        loop {
+            if let Some(made) = pending.wait(Duration::from_millis(10)) {
+                return made.map(Some);
             }
             let mut left = false;
             app.poll_events(Some(Duration::ZERO), |event| {
@@ -137,23 +207,7 @@ impl Layers {
             if left {
                 return Ok(None);
             }
-        };
-        let overlay = match overlay {
-            Ok(overlay) => Some(overlay),
-            Err(error) => {
-                crate::logcat::error(&format!(
-                    "overlay: no layer; the stream plays without an overlay: {error:#}"
-                ));
-                None
-            }
-        };
-        Ok(Some(Self {
-            video,
-            overlay,
-            stream,
-            window: size,
-            placed,
-        }))
+        }
     }
 
     /// Place the video again when the window's size has changed: the turn
@@ -195,7 +249,7 @@ impl Layers {
             if let (Ok(()), Some((_, surface))) = (resized, overlay)
                 && let Err(error) = draw_stand_in(&surface)
             {
-                crate::logcat::error(&format!(
+                crate::log::line(&format!(
                     "overlay: the stand-in was not drawn again: {error:#}"
                 ));
             }
@@ -272,13 +326,13 @@ impl Layers {
             });
             let what = if visible { "shown" } else { "hidden" };
             match applied {
-                Ok(()) => crate::logcat::info(&format!(
+                Ok(()) => crate::log::line(&format!(
                     "overlay: layer {what}: posted {:.1} ms before, applied in {:.2} ms",
                     began.duration_since(posted).as_secs_f64() * 1000.0,
                     began.elapsed().as_secs_f64() * 1000.0
                 )),
                 Err(error) => {
-                    crate::logcat::error(&format!("overlay: the layer was not {what}: {error:#}"))
+                    crate::log::line(&format!("overlay: the layer was not {what}: {error:#}"))
                 }
             }
         }));
