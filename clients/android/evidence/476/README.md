@@ -70,13 +70,13 @@ passed (`run-5/result.json`), and the fixture's restore check passed.
 
 | Step | Result | Evidence |
 | --- | --- | --- |
-| The viewer streams before the resize | yes | frame IDs 2238, 2346, 2458, 2559, 2661 |
+| The viewer streams before the resize | yes | `streaming-1..5.png`: frame IDs 2238, 2346, 2458, 2559, 2661 |
 | `viewerResize(720, 1280)` returns `Applied` | yes | `instrument.txt`: OK (1 test) |
 | Sunshine swaps its encoder | yes | `sunshine.log`: `Creating encoder [h264_vaapi]` at 09:10:32.026, `Runtime resolution applied: 720x1280` at 09:10:32.047 |
 | The decoder follows | yes | `New output format: … crop-right=719 …`; the snapshot's `encoded` is 720x1280; 57.9 frames/s |
-| **The picture goes on at 720x1280** | **yes** | screenshots of 720x1280 read frame IDs 3202, 3300, 3401, 3500, 3609. Each one differs from the one before by 255 of 255 in some pixel |
+| **The picture goes on at 720x1280** | **yes** | `portrait-1..5.png`, 720x1280, read frame IDs 3202, 3300, 3401, 3500, 3609. Each one differs from the one before by 255 of 255 in some pixel |
 | `viewerResize(1280, 720)` returns `Applied` | yes | `Runtime resolution applied: 1280x720` at 09:10:48.775 |
-| **The picture goes on at 1280x720** | **yes** | frame IDs 4147, 4247, 4346, 4447, 4546; 56.6 frames/s |
+| **The picture goes on at 1280x720** | **yes** | `landscape-1..5.png`: frame IDs 4147, 4247, 4346, 4447, 4546; 56.6 frames/s |
 
 At the second swap the client logged `Network dropped 7 frames` and asked
 for an IDR frame. The picture went on after it.
