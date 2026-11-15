@@ -1067,7 +1067,10 @@ files are.
 | Motion sensors | `setMotionEventState` | Not carried (D4) |
 
 **Proof** (`nix run .#viewer-android-proof`, record `proof/android-d4b/`):
-D4's run, with two more parts.
+D4's run, with two more parts. By the owner's rule of 2026-11-14 no build
+and no emulator runs on zao: the record's run ran on aka, which is also
+the sender, with `--sender local --stream-host <aka's address>`
+(`android/proof/run.py`).
 
 - In the stream, after the audio server's restart: a Bluetooth DualShock 4
   that the emulator's `hid` command makes through `/dev/uhid` from
