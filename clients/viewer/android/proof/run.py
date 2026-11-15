@@ -888,8 +888,11 @@ def input_arrived(packets: list[dict], placed: dict) -> dict:
             # The pad went: its number is free, it let go of everything, and
             # the heartbeat said so four more times.
             "pad_let_go_when_it_went": len(gone) == 5,
+            # The release goes at once; the heartbeat repeats it on its own
+            # 250 ms clock, so the first repeat comes 0 to 250 ms later.
             "pad_heartbeat_repeats_every_250_ms": len(gaps) == 4
-                and all(abs(gap - HEARTBEAT_MS) <= 50 for gap in gaps),
+                and gaps[0] <= HEARTBEAT_MS + 50
+                and all(abs(gap - HEARTBEAT_MS) <= 50 for gap in gaps[1:]),
         },
     }
 
