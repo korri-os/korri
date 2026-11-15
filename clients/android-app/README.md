@@ -1,17 +1,20 @@
 # Korri Android app with no Korri Java (#434)
 
-Slice D8 of the route brief (`docs/research/2026-11-14-android-app-route.md`).
+Slices D8 to D10 of the route brief (`docs/research/2026-11-14-android-app-route.md`).
 Android's own `android.app.NativeActivity` loads one Rust library,
 `libkorri_android_app.so`. Its `android_main` starts korrid in the app's
-process, then runs the native shell on the activity's window. The APK has no
-dex (`hasCode="false"`). The Artemis app in `clients/android` does not change;
-it stays the shipping Android app until slice D7′.
+process, then runs the native shell on the activity's window. Since D10 the
+Rust viewer runs in the same process, on the shell's loop, and korrid drives
+it as its stream viewer. The APK has no dex (`hasCode="false"`). The Artemis
+app in `clients/android` does not change; it stays the shipping Android app
+until slice D7′.
 
 ```sh
 nix build .#korri-android-app-apk          # both ABIs, unsigned
 nix build .#korri-android-app-fixture-apk  # the same library, the holder proof's relay
 nix run .#android-app-proof                # D8: one headless API 31 emulator, no person
 nix run .#android-app-holder-proof         # D9, on aka as root: binding and a holder's game
+nix run .#android-app-play-proof -- --sunshine PACKAGE  # D10, on aka as root: a tap plays the game
 ```
 
 ## Owner decisions (2026-11-14)
@@ -32,6 +35,15 @@ nix run .#android-app-holder-proof         # D9, on aka as root: binding and a h
 | The shell | `korri_shell::backend::android::run`: the same loop as the Artemis app's, with a Rust host (`src/host.rs`). Rust gives it the port and the capability; neither crosses JNI, a URL, a file or the log. | Slint's `SlintAndroidJavaHelper` (below) |
 | Surface packages | Velvet, Pico and Zone in the APK's assets, as the Artemis app carries them, verified on the build machine (`clients/shell/nix/installed.nix`). `src/assets.rs` unpacks them under the cache directory at each start. | none |
 | Logs | `src/logcat.rs` sends the process's standard output and error to logcat (tag `korri`): korrid's and the shell's lines, as the journal holds them on Linux. | none |
+| The stream viewer | `src/viewer.rs` (D10): korrid's `LinuxStreamViewer` over the Rust viewer's `Lifecycle::in_process`, and the stream on the shell's loop. The viewer library (`clients/viewer`) logs with the tag `korri-viewer`. | none |
+
+What the app keeps in its private storage:
+
+| Path | What | Grounding |
+| --- | --- | --- |
+| `<no_backup>/korrid-state` | korrid's private state | `KorriBrainService.privateStateRoot` (`services/korrid/src/android_storage.rs`) |
+| `<no_backup>/moonlight` | The viewer's Moonlight client key directory: `client.pem` and `key.pem`, mode 0600, in a directory of mode 0700, made at the first launch by the viewer's own `Identity::load_or_generate` | Linux korrid's key directory `/home/korri/.config/moonlight` (`linux_viewer/production.rs`), Moonlight's own leaf name; the names are Moonlight's key-directory producer's (`clients/viewer/README.md`). In storage that no backup takes, so the key never leaves the phone that way (D10) |
+| `<cache>/surfaces` | The unpacked surface packages, made again at each start | `KorriShellActivity.copyPackage` |
 
 `KorriShellActivity`'s jobs, each:
 
@@ -52,7 +64,7 @@ korrid's three Java callbacks:
 | --- | --- |
 | Network snapshot (`KorridNetwork`) | Rust through JNI |
 | Local Android games (`KorriAppLauncher`) | Not installed: korrid has no Android launcher, so a local Android game does not start. Slice D13 |
-| Viewer (`KorriStreamViewer`) | korrid's unconfigured viewer: a streamed launch fails with "Linux stream viewer adapter is not configured". Slice D10 |
+| Viewer (`KorriStreamViewer`) | Since D10, the Rust viewer in this process (`src/viewer.rs`, below) |
 
 ## Third-party Java
 
@@ -126,6 +138,17 @@ distribution.
   `KORRID_RELAYS` is not replaced on Linux.
 - The TLS verifier's dex (above) is a fixed input of the library
   (`KORRI_ANDROID_VERIFIER_DEX`).
+- Since D10 the library links the Rust viewer (`clients/viewer`) with its C
+  parts: the unmodified network core and ENet, OpenSSL and libopus, as static
+  archives that `clients/viewer/android.nix` builds for each ABI
+  (`viewerParts`), and curl from the `curl-sys` crate, exactly as the viewer's
+  own APK links them. The lock adds only the viewer's crates, at the versions
+  of the viewer's own lock (`curl` 0.4.51, `curl-sys` 0.4.91, `openssl`
+  0.10.82, `openssl-sys` 0.9.118, `libz-sys` 1.1.33 and their helpers); no
+  crate already locked changed. The viewer's Android parts port Artemis code
+  under GPL-3.0-only (`clients/viewer/README.md`), so the library is
+  GPL-3.0-only. The library also needs `libz.so`, `libmediandk.so` and
+  `libaaudio.so`, which Android ships.
 
 Cost: the library is large, about 103 MB for each ABI (54 MB of code, 26 MB
 of symbols, kept for crash reports): korrid, Slint, Skia and QuickJS in one
@@ -232,28 +255,62 @@ Known gaps:
   … failed`). The catalog does not need them: it is read over the holder's
   loopback endpoint.
 
-What D10 still needs from this fixture: the viewer needs a client
-certificate that the sender accepts. The sender pairs by PIN, not through
-korrid's certificate broker (the holder's broker socket is a missing path),
-so D10 must bridge the two, or pair the app's key by PIN before the launch.
+What D10 still needed from this fixture, and how D10 met it (below): a
+client certificate that the sender accepts (korrid's broker, through the
+patched Sunshine's certificate control: no PIN, no bridge), an unprivileged
+holder, and a holder that can launch at all.
 
-## The event loop: one poller (plan for D10)
+## The viewer in the app (D10)
+
+A tap on a game that a holder streams makes korrid start the Rust viewer in
+this process. korrid's prepare at the holder returns the launch; korrid's
+`viewer.start` reaches `src/viewer.rs`:
+
+| Half | Thread | What it does |
+| --- | --- | --- |
+| `Adapter`, korrid's `LinuxStreamViewer` | korrid's workers | The client key (`<no_backup>/moonlight`, made at the first launch), the server certificate from korrid's broker (`korrid::android_app::provision_moonlight_certificate`: the host UUID from Sunshine's `serverinfo`, then the holder's certificate control, as Linux korrid provisions Moonlight), the runtime's `Lifecycle::in_process`, and every request as the treaty's: `Start`, `Status`, `Snapshot`, `Stop`. Events and replies go to logcat as the treaty's JSON, and each status that korrid reads as `korri-app: viewer status for korrid: LAUNCH STATUS` |
+| `Stream` | the shell's loop | The video and overlay layers, the runtime's thread, the stream's input, the window's size, and the activity's orientation while the stream plays (Artemis's Korri mode: the stream's shape) |
+
+The pinned server certificate is a file of its launch in the app's cache
+directory, mode 0600, removed when the launch ends; Linux korrid hands the
+same certificate to its viewer as a credential file, never in the key
+directory. (A first try with a sealed memfd failed: an app may not open its
+`/proc/self/fd` name, `Permission denied`.)
+
+Background and Resume answer that the viewer cannot leave the front yet:
+the shell's gameplay overlay (slice D5) is what will take the stream out of
+the front. Resize, Apply and Notice stay the treaty's typed "unavailable".
+
+What the person does, by slice D5's rules (`korri_viewer::play`):
+
+| Input | What happens |
+| --- | --- |
+| Keys, touches, controllers | To the stream (D4's mapping); a touch never reaches the shell under the video |
+| Back or Guide | Opens the overlay's stand-in and holds the stream's input; again closes it |
+| Volume and power under the overlay | Android's |
+| Home, another app | The runtime stops (`Stopped`). korrid's recovery starts the stream again while its launch is selected and the app is in front: it fails at once while the app has no window, and plays again when the app returns |
+| Ctrl+Alt+Shift+Q | The runtime stops, as on Home; korrid's recovery restarts it while the app is in front |
+
+## The event loop: one poller (D10)
 
 Slint's android-activity platform owns `AndroidApp::poll_events` and the input
 queue (`clients/shell/vendor/i-slint-backend-android-activity/lib.rs`, its
 `run_event_loop`); only one poller can hold `AndroidApp`. The viewer app of
-D1–D4 (`clients/viewer/android/src/lib.rs`, `drive`) polls it itself. That APK
-keeps its loop unchanged until D7′. In this app the viewer moves onto the
-shell's loop in D10:
+D1–D5 (`clients/viewer/android/src/lib.rs`, `drive`) polls it itself and
+keeps its loop until D7′. In this app the viewer runs on the shell's loop,
+through three host hooks of `korri_shell::backend::android::Host`:
 
-| D1–D4 `drive` | In this app (D10) |
+| D1–D5 `drive` | In this app |
 | --- | --- |
-| `poll_events` with a timeout from the input's next deadline | Slint's loop. The shell's event listener hands `TerminateWindow`, `Destroy` and window resizes to the stream; it never blocks |
-| `input_events_iter`: keys and motions to the stream's `Input` | The shell's input filter: while a stream is in front it gives each key and motion to `Input` (D4's `input::key`, `input::motion`) and reports it handled; Guide opens the overlay (D5); otherwise the shell's mapper, as now |
-| The input's timers (click, emulated mouse, 250 ms heartbeat) and the 500 ms device check | A Slint timer: `Input::tick` and `next_deadline` from the shell's 16 ms timer |
-| `VideoLayer::make` waits with `poll_events` for Android's main thread | A state on the loop thread: post with `run_on_java_main_thread`, then read its channel at each tick. The loop thread never waits for the main thread, which waits for it in `onDestroy` |
-| The runtime and its requests on their own threads | Unchanged: `Lifecycle::in_process`, Start and Stop on worker threads |
-| The intent's extras start a launch | korrid's Rust `LinuxStreamViewer` adapter over `Lifecycle::in_process`. Its calls arrive on korrid's workers; it posts "show this launch" to the loop thread through the shell's event queue, because the layer and the input belong to that thread |
+| `poll_events` with a timeout from the input's next deadline | Slint's loop. `Host::main_event` hands `InitWindow`, `TerminateWindow` and `Destroy` to the stream; it never blocks |
+| `input_events_iter`: keys and motions to the stream's `Input` | `Host::input`, first in the shell's input filter: while a stream is in front it gives each event to `korri_viewer::play::Play` (D4's mapping, D5's overlay) and reports it taken, or Android's; otherwise the shell's mapper, as before |
+| The input's timers and the 500 ms device check | `Host::tick` on the shell's 16 ms timer: `Play::tick` |
+| `Layers::make` waits with `poll_events` for Android's main thread | `Layers::request` posts to the main thread; `Pending::poll` reads the answer at each tick. The loop thread never waits for the main thread, which waits for it in `onDestroy` |
+| The runtime and its requests on their own threads | Unchanged: `Lifecycle::in_process`, Start and Stop on threads of their own |
+| The intent's extras start a launch | korrid's `viewer.start` (the adapter) sends the launch to the loop thread over a channel; the layers and the input belong to that thread |
+
+korrid starts once per process and keeps the adapter it was given; each
+activity's `android_main` attaches a new `Stream` to it.
 
 ## What the gameplay overlay needs here (D5)
 
@@ -267,14 +324,14 @@ see-through `.slint` panel into the overlay layer's Surface through
 | The shell under the one loop, taking the overlay Surface without `KorriSurfaceHost` | D8 gives the seam: `backend::android::Overlay`, the Artemis host's methods in a trait. D5 implements it in Rust over its `SurfaceControl` layer |
 | The surface packages | Done (D8) |
 | The overlay's input queues (`shellTakeOverlayKeys`, `Axes`, `Pointers`) | They exist because Artemis's overlay lived in `Game`'s window. Here the layer is in the shell's window, so input comes through the shell's input filter; `take_keys`, `take_axes` and `take_pointers` return nothing, and D5 holds the stream's input while the overlay shows |
-| Leave and Resume with korrid (the viewer treaty has no Leave) | D5 and D10: Leave is korrid's `session.leave`; Background and Resume stop the runtime and start a new one, as `KorriStreamViewer.background` and `resume` do |
+| Leave and Resume with korrid (the viewer treaty has no Leave) | D5: Leave is korrid's `session.leave`; Background and Resume stop the runtime and start a new one, as `KorriStreamViewer.background` and `resume` do. D10's adapter answers both as unavailable until then |
 
 ## Next slices
 
 | Slice | What |
 | --- | --- |
 | D9 | Done: the holder proof above, and the TLS verifier's classes |
-| D10 | The Rust viewer adapter in korrid, on the shell's loop (above) |
+| D10 | Done: the Rust viewer, driven by korrid, on the shell's loop (above) |
 | D5 (moved) | The gameplay overlay through `Overlay` |
 | D11 | Stream controls (O4) |
 | D13 (new) | Local Android games (O3): korrid's launcher through JNI, usage polling on a Rust thread, androidx `FileProvider` bundled unchanged (`hasCode="true"`), and the Guide service, which Android allows only as a Java `AccessibilityService` subclass: one Korri Java file on #434's list, or no Guide over other apps. Gates D7′ |

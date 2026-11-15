@@ -1012,6 +1012,23 @@ nix build --no-link --option extra-substituters "file://$PWD/cache" \
 
 Its other references come from cache.nixos.org.
 
+**Certificate control for a test korrid, on request.** An agent request can
+give Korri's Sunshine its certificate control socket (patch 0020), so that a
+test korrid provisions a viewer's client certificate as a product korrid
+does, with no PIN: `prepare` with `certificate_control` `{"uid": U, "gid":
+G}`, the user of that korrid. The agent makes the socket as the product's
+unit `korri-sunshine-certificate-control.socket` makes its own: a
+`SOCK_SEQPACKET` socket that root made, mode 0660 with group `G`, in a new
+folder of mode 0751 under `/run`. Sunshine gets it as systemd hands one
+over: descriptor 3, `LISTEN_FDS=1`, `LISTEN_FDNAMES=korri-certificate-control`
+and its own PID in `LISTEN_PID`, with the `KORRI_CERTIFICATE_CONTROL_*`
+values of the product's unit. `sender_fixture.certificate_control` names
+what that korrid reads (`KORRID_STREAM_CERTIFICATE_CONTROL_*`; the socket's
+peer is the agent, root, as systemd is for the product). Only with Korri's
+Sunshine that carries patch 0020, and only from a root agent; the socket and
+its folder go at `close`. No tool command asks for it today; the Android
+app's play proof (`clients/android-app/proof/play.py`, #434 D10) does.
+
 **A known tone, on request.** By default the fixture's Sunshine finds no
 sound server and sends no sound ("Unable to initialize audio capture" in
 its log). An agent request can ask for a tone instead: `prepare` with

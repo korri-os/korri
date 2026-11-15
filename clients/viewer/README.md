@@ -1393,6 +1393,26 @@ with no size change; the frame record must then keep one size.
   H, the Galaxy Z Fold 8). The size change that a fold or a rotation asks
   for needs the request (Route C).
 
+## In the Korri app (#434, slice D10)
+
+The Korri app with no Korri Java (`clients/android-app`) runs this viewer in
+its own process, and korrid drives it through `Lifecycle::in_process`, the
+treaty's requests and events with no socket: the app's README says how. For
+that the parts that the viewer's own app kept to itself are library parts,
+unchanged in what they do, and the viewer's own app uses them from here:
+
+| Module | What |
+| --- | --- |
+| `src/android/layer.rs` | The video and overlay layers, and the video's new place for a new picture size (`Layers::restream`). `Layers::request` asks Android's main thread for them and `Pending::poll` reads the answer, for a loop that Slint owns; `Layers::make` waits while it polls android-activity, for the viewer's own loop |
+| `src/android/events.rs` | android-activity's key and motion events as the input's values; the unbuffered dispatch request |
+| `src/android/play.rs` | The stream's input with the gameplay overlay (D4, D5): each event's route, the hold, the timers, the device check, the panic guard |
+
+`Options::for_lifecycle` makes a stream's options for a controller in the
+viewer's process: korrid's display as the size, or Moonlight's default; the
+Start request names the host and port. The library depends on
+android-activity 0.6.1 on Android, the release of both apps and of the
+shell's Slint backend.
+
 ## Next slices
 
 The bench proof of the handheld `v4l2request` path. On Android, the rest
