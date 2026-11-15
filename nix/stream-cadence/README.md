@@ -1835,16 +1835,18 @@ product viewer against itself
 five runs of each side), private pair on aka at the defaults (1920x1080,
 base measure, 60 scored seconds). Each session started only with no game
 and no other test unit live on aka, a 1-minute load below 1.5 and k10temp
-Tctl below 78 °C. These sets are evidence, not baselines. They were
-recorded before a rebase onto `main`, which added only the sender
-fixture's input log (`f66757f30`) under the commits named here.
+Tctl below 78 °C. The first three sets are evidence, not baselines. They
+were recorded before a rebase onto `main`, which added only the sender
+fixture's input log (`f66757f30`) under the commits named here. One side of
+the burst-loss set is a baseline (see "Verdict").
 
 | Condition | Tool | What else ran, viewer device | Valid | `verdict` |
 | --- | --- | --- | --- | --- |
 | `--net 'loss random 1%'` | `f1fbcf907`: loss on TCP too | 0.8% to 1.7% | 10 of 10 | `equal` for every number |
 | `--net 'delay 30ms'` | `f1fbcf907` | 0.9% to 1.2% | 10 of 10 | `equal` for every number |
 | `--require-encryption` | `ebd05a73c` | 0.8% to 36.7%: other tests started in 2 runs | 10 of 10 | `equal` for every number |
-| `--net 'loss gemodel 1.3158% 25%'` | `27b1de065` | | | not finished: see below |
+| `--net 'loss random 1%'` | `758ead8e6`, built on aka: UDP only | 0.9% to 1.5%; 14.6% and 18.4% in two runs | 10 of 10 | `equal` for every number |
+| `--net 'loss gemodel 1.3158% 25%'` | `758ead8e6`, built on aka | 0.8% to 3.1%; 12.8% in one run | 10 of 10 | `equal` for every number |
 
 What the runs show, by number:
 
@@ -1860,7 +1862,10 @@ What the runs show, by number:
   107 000 packets in each measured start, and the core logged no
   unrecoverable frame, no dropped frame and no IDR request; the display
   record lost no ID. Startup varies more: a lost TCP packet of the setup
-  costs 0.2 to 1 s (746 to 1902 ms). The final tool loses no TCP packet.
+  costs 0.2 to 1 s (746 to 1902 ms). The final tool loses no TCP packet; in
+  its set netem dropped 1062 to 1121 UDP packets of each measured start,
+  the core logged at most one unrecoverable frame, and the display lost no
+  ID.
 - **30 ms delay** adds 30 ms to the delay (one way), 1.5 s to the startup
   (each setup step waits a round trip of 60 ms) and 30 ms to `input_ms`
   (the capture sees the packet after netem).
@@ -1880,21 +1885,32 @@ What the runs show, by number:
 
 **5% burst loss.** With loss on every packet (`f1fbcf907`) the condition
 did not give a session of ten turns: in 3 of 7 turns a start never showed
-the stream (see "The whole condition falls on UDP" above). In the runs that
-did stream, and in those of the final tool, netem dropped 4.8% to 5.4% of
-the UDP packets of a measured start (5537 to 6097), the core logged 487 to
-550 unrecoverable frames and 396 to 430 IDR requests and no RFI (aka's VA-API H.264 encoder has no reference
-frame invalidation: "Reference frame invalidation is not supported by this
-host"), and the display lost 540 to 644 IDs: the viewer showed 47.6 to
-49.3 of the sender's 58.4 frames each second, with no stall. The core
-logs no repair. A frame that loses more packets than its parity is lost
-and costs an IDR request; the frames whose loss stayed within their parity
-were repaired by FEC (inferred: about 5900 packets were dropped and about
-500 frames lost). With the
-final tool (`27b1de065`, UDP only) the setup took 0.66 to 1.27 s and the
-first two turns streamed; the session was ended when another agent's game
-started on aka (other load 38% to 41%, and one capture gap that lost an
-ID). A quiet session of ten turns is still to be recorded.
+the stream (see "The whole condition falls on UDP" above). With the final
+tool, built on aka at `758ead8e6` (UDP only, netem `limit 100000`), the
+session of 2026-11-15 11:00 to 11:20 UTC gave ten valid runs and `equal`
+for every number:
+
+| Number | Baseline side | Candidate side |
+| --- | --- | --- |
+| Sender presentation to display, p50 / p95 | 12.08 to 12.38 / 19.35 to 19.47 ms | 12.22 to 12.26 / 19.30 to 19.45 ms |
+| Dropped frames | 544 to 581 | 535 to 605 |
+| Repeated / late frames | 780 to 814 / 385 to 399 | 770 to 840 / 385 to 403 |
+| Viewer CPU, CPU seconds each second | 0.010 to 0.013 | 0.010 to 0.011 |
+| Startup | 729 to 1226 ms | 746 to 1243 ms |
+| `input_ms`, `input_missed` | 0.051 to 0.057 ms, 0 | 0.051 to 0.081 ms, 0 |
+| Stalls, capture gaps, viewer exits | 0 | 0 |
+
+In each measured start netem dropped 4.8% to 5.2% of the UDP packets (5549
+to 6109 of about 117 000). The core logged 476 to 522 unrecoverable frames,
+387 to 439 IDR requests and no RFI (aka's VA-API H.264 encoder has no
+reference frame invalidation: "Reference frame invalidation is not
+supported by this host"). The viewer showed 48.3 to 49.5 of the sender's
+58.4 frames each second, with no stall. The core logs no repair. A frame
+that loses more packets than its parity is lost and costs an IDR request;
+the frames whose loss stayed within their parity were repaired by FEC
+(inferred: about 5800 packets were dropped and about 500 frames lost). The
+isolation proof is as for the other conditions: `product_changes` empty and
+the product's qdiscs and MTUs the same before and after every run.
 
 ### Verdict
 
@@ -2013,6 +2029,7 @@ directory for each measure.
 | --- | --- | --- | --- |
 | `baselines/aka/private-pair/base/results.json` | 2026-11-14 14:39 UTC, tool at `00823ab8f` | Sender fixture and viewer fixture on aka, no game and no other test live, 1-minute load below 1.0 and k10temp Tctl below 78 °C at the start | 5 valid of 5 |
 | `baselines/aka/private-pair/queue/results.json` | 2026-11-14 14:47 UTC, the same tool | The same, with `--queue-measure` | 5 valid of 5 |
+| `baselines/aka/private-pair/base-net-burst-loss-5/results.json` | 2026-11-15 11:00 to 11:20 UTC, tool at `758ead8e6` | The base measure with `--net 'loss gemodel 1.3158% 25%'`; the candidate side of the session of turns above | 5 valid of 5 |
 
 The viewer in both is the product's: the copied package
 `/nix/store/38crl2m37akjqqscrmnq1gbwrp8l3rcx-moonlight-embedded-korri-2.7.1-korri`
@@ -2041,6 +2058,17 @@ The recording script kept a set only when all five runs were valid and what
 else ran stayed below 5% of all CPUs in each run. The base set was kept on its
 second try: the first had 5.9% and 8.0% in two runs. The queue set was kept on
 its first. No set was dropped for its measured numbers.
+
+**The network baselines.** A result under `--net` or `--require-encryption`
+compares only with a baseline of the same condition (`verdict` keeps them
+apart). The 5% burst-loss baseline is the candidate side of the session of
+ten turns in "Network conditions and encryption": both sides ran the same
+#466 viewer, and only that side kept what else ran below 5% in every run
+(0.8% to 3.1%; the baseline side had 12.8% in one run). Its runs carry
+`discovered.turn.side` `candidate`; that is no condition. The sets of 1%
+random loss, 30 ms delay and required encryption from `f1fbcf907` and
+`ebd05a73c` are not baselines: the first lost TCP packets too, and the
+encryption set had other tests in two runs.
 
 Earlier baselines are removed: #466 without number 5 (2026-11-13 21:08 UTC),
 VA-API before #466, software decode, the nixpkgs stand-in under pixman, and
