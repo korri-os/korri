@@ -318,9 +318,10 @@ pub trait Host {
 
 /// A Surface that the host draws over the stream, and its input. The shell
 /// renders the `Overlay` component into it (`SurfaceWindow::from_surface`).
-/// Each call runs inside one JNI local frame of the loop's thread. Artemis's
-/// `KorriSurfaceHost` is the producer today; the app with no Korri Java gets
-/// its own in slice D5 (the overlay over the Rust viewer's video layer).
+/// Each call runs inside one JNI local frame of the loop's thread. Two hosts
+/// produce it: Artemis's `KorriSurfaceHost`, and the app with no Korri Java,
+/// whose Surface is the overlay layer over the Rust viewer's video
+/// (`clients/android-app`, #434 slice D5b).
 pub trait Overlay {
     /// The host is taking the Surface back: release it, then [`Overlay::released`].
     fn closing(&mut self, env: &mut JNIEnv) -> jni::errors::Result<bool>;
@@ -341,6 +342,9 @@ pub trait Overlay {
     fn take_axes(&mut self, env: &mut JNIEnv) -> jni::errors::Result<Vec<i32>>;
     /// Touches as flat quadruples: Android action, pointer, X and Y in pixels.
     fn take_pointers(&mut self, env: &mut JNIEnv) -> jni::errors::Result<Vec<f32>>;
+    /// The shell drew a frame into the Surface. A host whose layer keeps
+    /// the last frame of an earlier opening shows it only now.
+    fn drawn(&mut self) {}
 }
 
 /// The shell in this NativeActivity until the activity is destroyed. The
@@ -406,6 +410,9 @@ pub fn run(app: AndroidApp, bootstrap: Bootstrap, host: Box<dyn Host>) -> anyhow
                 .map(|window| window.render_if_needed());
             match rendered {
                 Some(Ok(true)) => {
+                    if let Some(overlay) = host.overlay() {
+                        overlay.drawn();
+                    }
                     if let Some((sink, frames, first)) = backend.overlay_front.borrow_mut().as_mut()
                     {
                         frames.add();
