@@ -9,14 +9,17 @@
 //! `ClassicOldSong/moonlight-android`, itself a fork of
 //! `moonlight-stream/moonlight-android`), `MediaCodecDecoderRenderer.java`:
 //! the parameter sets in their own buffer, the wait for an input buffer, the
-//! end of the stream after decoder errors, and a new picture size in the
-//! middle of the stream: within adaptive playback's maximum the codec follows
-//! the new SPS by itself and the decoded size comes from the output format;
-//! otherwise the codec restarts as Artemis's recovery restarts it (stop,
-//! configure, start). The lowest-latency pacing is upstream Moonlight's.
-//! Artemis ships under the GNU GPL version 3 with no "or later" grant, so
-//! this file does too. The Rust adaptation is Korri work dated 2026-11-14
-//! and 2026-11-15.
+//! steps of a recovery after a decoder failure and its fall-through from one
+//! to the next (flush, restart, reset; `doCodecRecoveryIfRequired`), and a
+//! new picture size in the middle of the stream: within adaptive
+//! playback's maximum the codec follows the new SPS by itself and the decoded
+//! size comes from the output format; otherwise the codec restarts as
+//! Artemis's recovery restarts it (stop, configure, start). Which step a
+//! failure takes, the new start on a decoded frame, the cap on recoveries
+//! and when the stream ends are Korri's (`Recovery`). The lowest-latency
+//! pacing is upstream Moonlight's. Artemis ships under the GNU
+//! GPL version 3 with no "or later" grant, so this file does too. The Rust
+//! adaptation is Korri work dated 2026-11-14 and 2026-11-15.
 use crate::{frame_record, log, sps};
 use std::{
     collections::VecDeque,
@@ -26,7 +29,7 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     ptr::NonNull,
     sync::{
-        Arc, Mutex, OnceLock, PoisonError, RwLock,
+        Arc, Mutex, OnceLock, PoisonError, RwLock, RwLockWriteGuard,
         atomic::{AtomicBool, Ordering},
     },
     thread::JoinHandle,
@@ -53,7 +56,7 @@ impl fmt::Display for Status {
 
 impl Status {
     /// The codec is gone: the system took it back, or it no longer exists.
-    fn fatal(self) -> bool {
+    fn gone(self) -> bool {
         matches!(self.0, 1101 | -10003)
     }
 }
@@ -98,6 +101,10 @@ pub(crate) trait Codec: Send + Sync {
         max: Option<(i32, i32)>,
     ) -> Result<Option<(i32, i32)>, Status>;
     fn stop(&self);
+    /// One step of the recovery after a decoder failure (`Step`). No other
+    /// call to the codec runs meanwhile, and the buffer indexes that it gave
+    /// before are void after it.
+    fn recover(&self, step: Step) -> Result<(), Status>;
 }
 
 /// What the codec was configured for, and how it follows a new picture size.
@@ -168,10 +175,13 @@ pub(crate) struct Frame<'a> {
     pub(crate) record: Option<u64>,
 }
 
-/// Artemis ends the stream when decoder errors still come 3 s after the
-/// first (`EXCEPTION_REPORT_DELAY_MS`, after its recovery tries). Until then
-/// each side backs off, so that a failed decoder costs no CPU. The sound's
-/// output (`audio.rs`) uses the same rule when its device stays lost.
+/// A failure that lasts: each one backs off, so that a failed decoder costs
+/// no CPU, and failures that still come a window (3 s) after the first end
+/// it. A success opens a new window. The 3 s are Artemis's
+/// `EXCEPTION_REPORT_DELAY_MS`; the rest is Korri's (Artemis applies its 3 s
+/// only after its recovery tries, and a success does not reset it). The
+/// decoder's recovery (`Recovery`) and the sound's output (`audio.rs`, when
+/// its device stays lost) use this rule.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Health {
     window: Duration,
@@ -208,9 +218,9 @@ impl Health {
         self.back_off = FIRST_BACK_OFF;
     }
 
-    pub(crate) fn failure(&mut self, fatal: bool, now: Instant) -> Verdict {
+    pub(crate) fn failure(&mut self, now: Instant) -> Verdict {
         let since = *self.since.get_or_insert(now);
-        if fatal || now.duration_since(since) >= self.window {
+        if now.duration_since(since) >= self.window {
             return Verdict::End;
         }
         let back_off = self.back_off;
@@ -219,12 +229,162 @@ impl Health {
     }
 }
 
+/// The recovery's steps, lightest first, in the order that Artemis's
+/// `doCodecRecoveryIfRequired` falls through them when a step's own call
+/// fails.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Step {
+    /// Drop every frame that the codec holds; it keeps its configuration.
+    Flush,
+    /// Stop the codec, configure it with the format it had, and start it.
+    Restart,
+    /// Release the codec, then make, configure and start a new one of the
+    /// same name with that format.
+    Reset,
+}
+
+impl Step {
+    fn next(self) -> Self {
+        match self {
+            Step::Flush => Step::Restart,
+            Step::Restart | Step::Reset => Step::Reset,
+        }
+    }
+}
+
+impl fmt::Display for Step {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Step::Flush => "flush",
+            Step::Restart => "restart",
+            Step::Reset => "reset",
+        })
+    }
+}
+
+/// Which step a decoder failure takes, or whether the stream ends instead.
+/// This rule is Korri's; Artemis picks a restart or a reset from the
+/// exception (`isRecoverable`), which the NDK's calls do not give.
+///
+/// A failure takes the step after the one that worked last; a codec that is
+/// gone (reclaimed or deleted) goes straight to a reset. Failures back off
+/// as `Health` says. The stream ends when failures still come after the
+/// window and a reset has run since the first. A decoded frame ends the
+/// run of failures: the next failure starts with a flush again. A stream
+/// recovers from `MAX_RECOVERIES` runs at most.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Recovery {
+    health: Health,
+    /// The next failure's first step.
+    next: Step,
+    /// The step that worked last, since the last decoded frame.
+    worked: Option<Step>,
+    /// A reset ran since the last decoded frame.
+    reset_ran: bool,
+    /// A failure came since the last decoded frame.
+    failing: bool,
+    /// The runs of failures in this stream so far.
+    runs: u32,
+}
+
+/// The runs of failures that one stream recovers from; the next one ends
+/// it. Without a cap, a decoder that fails every few frames would flush and
+/// ask for IDR frames for ever. The number is Artemis's `CR_MAX_TRIES`,
+/// which counts each restart and reset; Korri counts each run of failures.
+pub(crate) const MAX_RECOVERIES: u32 = 10;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Plan {
+    /// Run the steps from this one up, then back off for that long.
+    Recover(Step, Duration),
+    End(Exhausted),
+}
+
+/// Why the recovery gives up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Exhausted {
+    /// Failures still came after the window, and a reset had run.
+    Window,
+    /// The stream had recovered from `MAX_RECOVERIES` runs of failures.
+    Tries,
+}
+
+impl fmt::Display for Exhausted {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Exhausted::Window => {
+                write!(f, "failures outlasted the window, a reset included")
+            }
+            Exhausted::Tries => write!(
+                f,
+                "the decoder already recovered {MAX_RECOVERIES} times in this stream"
+            ),
+        }
+    }
+}
+
+impl Recovery {
+    pub(crate) fn new(health: Health) -> Self {
+        Self {
+            health,
+            next: Step::Flush,
+            worked: None,
+            reset_ran: false,
+            failing: false,
+            runs: 0,
+        }
+    }
+
+    pub(crate) fn failure(&mut self, gone: bool, now: Instant) -> Plan {
+        if !self.failing {
+            if self.runs >= MAX_RECOVERIES {
+                return Plan::End(Exhausted::Tries);
+            }
+            self.runs += 1;
+            self.failing = true;
+        }
+        let back_off = match self.health.failure(now) {
+            Verdict::BackOff(back_off) => back_off,
+            Verdict::End if self.reset_ran => return Plan::End(Exhausted::Window),
+            // Past the window, but every step runs before the end.
+            Verdict::End => LAST_BACK_OFF,
+        };
+        Plan::Recover(if gone { Step::Reset } else { self.next }, back_off)
+    }
+
+    /// The steps ran: the one that worked, or none when the reset failed too.
+    pub(crate) fn ran(&mut self, worked: Option<Step>) {
+        self.reset_ran |= worked.is_none_or(|step| step == Step::Reset);
+        self.next = worked.map_or(Step::Reset, Step::next);
+        self.worked = worked;
+    }
+
+    /// The decoder returned a frame: the step that worked last, when one
+    /// ran since the frame before.
+    pub(crate) fn decoded(&mut self) -> Option<Step> {
+        self.health.success();
+        self.next = Step::Flush;
+        self.reset_ran = false;
+        self.failing = false;
+        self.worked.take()
+    }
+}
+
+/// A decoder failure: what failed, and whether the codec is gone.
+struct Failure {
+    why: String,
+    gone: bool,
+}
+
 /// Why a frame did not reach the decoder.
 enum Lost {
     Stopped,
     Codec(&'static str, Status),
     /// `AMediaCodec_getInputBuffer` gave NULL: the decoder is in error.
     NoMemory,
+    /// The output thread found the decoder failed while this thread waited
+    /// for an input buffer.
+    Asked,
     TooLarge {
         size: usize,
         room: usize,
@@ -237,6 +397,7 @@ impl fmt::Display for Lost {
             Lost::Stopped => write!(f, "the stream stopped before the decoder took the frame"),
             Lost::Codec(what, status) => write!(f, "{what}: {status}"),
             Lost::NoMemory => write!(f, "the decoder gave no memory for its input buffer"),
+            Lost::Asked => write!(f, "the output thread found the decoder failed"),
             Lost::TooLarge { size, room } => {
                 write!(
                     f,
@@ -259,15 +420,20 @@ pub(crate) enum Queued {
 pub(crate) struct Decoder<C> {
     codec: C,
     /// Held for reading around the output thread's calls, and for writing
-    /// around a restart and the codec's stop.
+    /// around a restart or a recovery, and the codec's stop.
     gate: RwLock<()>,
+    /// The core's decoder thread waits for the gate: the output thread
+    /// does not take it again before it has had it (`exclusive`).
+    wanted: AtomicBool,
     input: Mutex<Input>,
     resized: Resized,
     pub(crate) records: Arc<Records>,
     stopping: AtomicBool,
     output: Mutex<Option<JoinHandle<()>>>,
-    input_health: Mutex<Health>,
-    output_health: Mutex<Health>,
+    recovery: Mutex<Recovery>,
+    /// A failure that the output thread found, for the core's decoder
+    /// thread to recover: only that thread changes the codec.
+    asked: Mutex<Option<Failure>>,
     failed: OnceLock<String>,
 }
 
@@ -307,6 +473,7 @@ impl<C: Codec + 'static> Decoder<C> {
         Arc::new(Self {
             codec,
             gate: RwLock::new(()),
+            wanted: AtomicBool::new(false),
             input: Mutex::new(Input {
                 last_pts: 0,
                 queued: VecDeque::new(),
@@ -316,8 +483,8 @@ impl<C: Codec + 'static> Decoder<C> {
             records,
             stopping: AtomicBool::new(false),
             output: Mutex::new(None),
-            input_health: Mutex::new(health),
-            output_health: Mutex::new(health),
+            recovery: Mutex::new(Recovery::new(health)),
+            asked: Mutex::new(None),
             failed: OnceLock::new(),
         })
     }
@@ -350,6 +517,16 @@ impl<C: Codec + 'static> Decoder<C> {
         }
     }
 
+    /// The codec for this thread alone, once the output thread is out of its
+    /// calls. The lock does not keep the output thread from taking it again
+    /// at once, which kept a restart waiting for seconds; `wanted` does.
+    fn exclusive(&self) -> RwLockWriteGuard<'_, ()> {
+        self.wanted.store(true, Ordering::Release);
+        let codec = self.gate.write().unwrap_or_else(PoisonError::into_inner);
+        self.wanted.store(false, Ordering::Release);
+        codec
+    }
+
     /// Wait out a back-off, in short steps, so that a stop is not delayed.
     fn pause(&self, back_off: Duration) {
         let until = Instant::now() + back_off;
@@ -359,15 +536,6 @@ impl<C: Codec + 'static> Decoder<C> {
                     .saturating_duration_since(Instant::now())
                     .min(FIRST_BACK_OFF),
             );
-        }
-    }
-
-    /// One side's error: back off, or end the stream.
-    fn failed_once(&self, health: &Mutex<Health>, fatal: bool, why: String) {
-        let verdict = health.lock().unwrap().failure(fatal, Instant::now());
-        match verdict {
-            Verdict::BackOff(back_off) => self.pause(back_off),
-            Verdict::End => self.fail(why),
         }
     }
 
@@ -383,7 +551,7 @@ impl<C: Codec + 'static> Decoder<C> {
         if let Some(output) = self.output.lock().unwrap().take() {
             let _ = output.join();
         }
-        let _codec = self.gate.write().unwrap_or_else(PoisonError::into_inner);
+        let _codec = self.exclusive();
         self.codec.stop();
         log::line("picture: decoder stopped");
     }
@@ -392,6 +560,10 @@ impl<C: Codec + 'static> Decoder<C> {
         // A stream that stops or ends needs no frame and no IDR frame.
         if self.stopping.load(Ordering::Relaxed) || self.failed.get().is_some() {
             return Queued::Taken;
+        }
+        // The output thread found the codec failed: recover it first.
+        if self.asked.lock().unwrap().is_some() {
+            return self.recover(None);
         }
         let mut config = Vec::new();
         let mut picture = Vec::new();
@@ -407,11 +579,13 @@ impl<C: Codec + 'static> Decoder<C> {
                 _ => picture.extend_from_slice(data),
             }
         }
-        // A new size takes effect with the IDR frame that carries it.
+        // A new size takes effect with the IDR frame that carries it. A
+        // restart that fails is a decoder failure: the recovery takes it,
+        // and the next IDR frame brings the new size again.
         if let Some(new_size) = new_size.filter(|_| frame.idr)
-            && !self.follow(new_size, frame.number)
+            && let Err(failure) = self.follow(new_size, frame.number)
         {
-            return Queued::Taken;
+            return self.recover(Some(failure));
         }
         // The frame is known to the output thread before the decoder has it.
         // The lock is not held while this thread waits for an input buffer:
@@ -435,24 +609,19 @@ impl<C: Codec + 'static> Decoder<C> {
             })
             .and_then(|()| self.queue_buffer(&picture, pts, if frame.idr { KEY_FRAME } else { 0 }));
         let lost = match queued {
-            Ok(()) => {
-                self.input_health.lock().unwrap().success();
-                return Queued::Taken;
-            }
-            Err(Lost::Stopped) => return Queued::Taken,
+            Ok(()) | Err(Lost::Stopped) => return Queued::Taken,
             Err(lost) => lost,
         };
         let why = format!("frame {} not decoded: {lost}", frame.number);
         log::line(&format!("picture: {why}"));
         match lost {
-            Lost::Codec(_, status) => self.failed_once(&self.input_health, status.fatal(), why),
-            Lost::NoMemory => self.failed_once(&self.input_health, false, why),
-            Lost::Stopped | Lost::TooLarge { .. } => {}
-        }
-        if self.failed.get().is_some() {
-            Queued::Taken
-        } else {
-            Queued::NeedIdr
+            Lost::Codec(_, status) => self.recover(Some(Failure {
+                why,
+                gone: status.gone(),
+            })),
+            Lost::NoMemory => self.recover(Some(Failure { why, gone: false })),
+            Lost::Asked => self.recover(None),
+            Lost::Stopped | Lost::TooLarge { .. } => Queued::NeedIdr,
         }
     }
 
@@ -464,6 +633,8 @@ impl<C: Codec + 'static> Decoder<C> {
             match codec.dequeue_input(Duration::from_millis(10)) {
                 Ok(Some(index)) => break index,
                 Ok(None) if self.stopping.load(Ordering::Relaxed) => return Err(Lost::Stopped),
+                // No buffer frees up before the recovery that was asked for.
+                Ok(None) if self.asked.lock().unwrap().is_some() => return Err(Lost::Asked),
                 Ok(None) => {}
                 Err(status) => return Err(Lost::Codec("no input buffer", status)),
             }
@@ -527,9 +698,9 @@ impl<C: Codec + 'static> Decoder<C> {
     }
 
     /// The codec follows a new picture size: by itself within adaptive
-    /// playback, else by a restart. False: the restart failed, and the
-    /// stream ends.
-    fn follow(&self, new_size: NewSize, frame: i32) -> bool {
+    /// playback, else by a restart. A restart that fails leaves the size as
+    /// it was, and gives its failure.
+    fn follow(&self, new_size: NewSize, frame: i32) -> Result<(), Failure> {
         let (from, adaptive) = {
             let input = self.input.lock().unwrap();
             (input.configured.size, input.configured.adaptive)
@@ -552,17 +723,18 @@ impl<C: Codec + 'static> Decoder<C> {
             // The decoder's capabilities for the new size, asked again; never
             // a maximum that they did not give.
             let max = adaptive.then(|| self.codec.adaptive_max(new_size.size));
-            let restarted = {
-                let _codec = self.gate.write().unwrap_or_else(PoisonError::into_inner);
-                self.codec.restart(new_size.size, max)
+            let (restarted, asked) = {
+                let _codec = self.exclusive();
+                // The output thread may have found the codec before the
+                // restart failed: a restart that works needs no recovery for
+                // it; one that fails takes it into its own.
+                let asked = self.asked.lock().unwrap().take();
+                (self.codec.restart(new_size.size, max), asked)
             };
-            let max = match restarted {
-                Ok(max) => max,
-                Err(status) => {
-                    self.fail(format!("cannot restart the decoder at {w}x{h}: {status}"));
-                    return false;
-                }
-            };
+            let max = restarted.map_err(|status| Failure {
+                why: format!("cannot restart the decoder at {w}x{h}: {status}"),
+                gone: status.gone() || asked.as_ref().is_some_and(|asked| asked.gone),
+            })?;
             log::line(&format!(
                 "picture: the decoder restarted at {w}x{h} with adaptive playback {}",
                 max.map_or("none".into(), |(mw, mh)| format!("up to {mw}x{mh}"))
@@ -570,7 +742,7 @@ impl<C: Codec + 'static> Decoder<C> {
             self.input.lock().unwrap().configured.adaptive = max;
         }
         self.input.lock().unwrap().configured.size = new_size.size;
-        true
+        Ok(())
     }
 
     /// The output thread: hand each frame to the display at once. When more
@@ -581,55 +753,60 @@ impl<C: Codec + 'static> Decoder<C> {
         // The decoded size last told.
         let mut told = None;
         while !self.stopping.load(Ordering::Relaxed) && self.failed.get().is_none() {
+            // The core's decoder thread recovers the codec, or wants it for a
+            // restart; until it has it, this thread leaves the codec alone.
+            if self.asked.lock().unwrap().is_some() || self.wanted.load(Ordering::Acquire) {
+                self.pause(FIRST_BACK_OFF);
+                continue;
+            }
+            // A restart or a recovery waits while this thread uses the codec,
+            // and not while it waits for one.
+            let _codec = self.gate.read().unwrap_or_else(PoisonError::into_inner);
+            let mut newest: Option<(usize, Option<u64>)> = None;
+            let mut wait = Duration::from_millis(20);
             let mut error = None;
-            {
-                // A restart waits while this thread uses the codec, and not
-                // while it backs off.
-                let _codec = self.gate.read().unwrap_or_else(PoisonError::into_inner);
-                let mut newest: Option<(usize, Option<u64>)> = None;
-                let mut wait = Duration::from_millis(20);
-                loop {
-                    match codec.dequeue_output(wait) {
-                        Ok(Output::Frame { index, pts }) => {
-                            let record = self.decoded(pts);
-                            if let Some((older, _)) = newest.replace((index, record)) {
-                                let _ = codec.release_output(older, None);
-                            }
-                            wait = Duration::ZERO;
+            loop {
+                match codec.dequeue_output(wait) {
+                    Ok(Output::Frame { index, pts }) => {
+                        self.decodes_again();
+                        let record = self.decoded(pts);
+                        if let Some((older, _)) = newest.replace((index, record)) {
+                            let _ = codec.release_output(older, None);
                         }
-                        Ok(Output::FormatChanged) => {
-                            log::line(&format!("picture: output format {}", codec.output_format()));
-                            if let Some(size) =
-                                codec.output_size().filter(|&size| told != Some(size))
-                            {
-                                told = Some(size);
-                                log::line(&format!("picture: decoded size {}x{}", size.0, size.1));
-                                (self.resized)(size);
-                            }
-                        }
-                        Ok(Output::TryAgain) => break,
-                        Err(status) => {
-                            error = Some(("output failed", status));
-                            break;
+                        wait = Duration::ZERO;
+                    }
+                    Ok(Output::FormatChanged) => {
+                        log::line(&format!("picture: output format {}", codec.output_format()));
+                        if let Some(size) = codec.output_size().filter(|&size| told != Some(size)) {
+                            told = Some(size);
+                            log::line(&format!("picture: decoded size {}x{}", size.0, size.1));
+                            (self.resized)(size);
                         }
                     }
-                }
-                if let Some((index, record)) = newest {
-                    let released = codec.release_output(index, Some(monotonic_ns() as i64));
-                    let handed = monotonic_ns();
-                    match released {
-                        Ok(()) => self.displayed(record, handed),
-                        Err(status) => error = error.or(Some(("frame not released", status))),
+                    Ok(Output::TryAgain) => break,
+                    Err(status) => {
+                        error = Some(("output failed", status));
+                        break;
                     }
                 }
             }
-            match error {
-                Some((what, status)) => {
-                    let why = format!("{what}: {status}");
-                    log::line(&format!("picture: {why}"));
-                    self.failed_once(&self.output_health, status.fatal(), why);
+            if let Some((index, record)) = newest {
+                let released = codec.release_output(index, Some(monotonic_ns() as i64));
+                let handed = monotonic_ns();
+                match released {
+                    Ok(()) => self.displayed(record, handed),
+                    Err(status) => error = error.or(Some(("frame not released", status))),
                 }
-                None => self.output_health.lock().unwrap().success(),
+            }
+            if let Some((what, status)) = error {
+                let why = format!("{what}: {status}");
+                log::line(&format!("picture: {why}"));
+                // Asked with the gate held: the failure is this codec's, not
+                // that of a codec that a recovery has made since.
+                self.ask(Failure {
+                    why,
+                    gone: status.gone(),
+                });
             }
         }
     }
@@ -666,6 +843,98 @@ impl<C: Codec + 'static> Decoder<C> {
     }
 }
 
+/// The recovery after a decoder failure. Only the core's decoder thread
+/// changes the codec; the output thread asks it to, and leaves the codec
+/// alone until it has.
+impl<C: Codec + 'static> Decoder<C> {
+    /// The output thread found the codec failed. The core's decoder thread
+    /// recovers it, with its next frame or from its wait for an input buffer.
+    fn ask(&self, failure: Failure) {
+        self.asked.lock().unwrap().get_or_insert(failure);
+    }
+
+    /// Recover the codec from a failure: this thread's own, the one that the
+    /// output thread asked about, or both. The frame is lost, and the core
+    /// asks the host for an IDR frame: a recovered codec needs one.
+    fn recover(&self, own: Option<Failure>) -> Queued {
+        // A stream that stops needs no codec: Artemis ignores decoder errors
+        // then, and so does this.
+        if self.stopping.load(Ordering::Relaxed) {
+            return Queued::Taken;
+        }
+        let back_off = {
+            // The output thread stays out of the codec until the steps end.
+            let _codec = self.exclusive();
+            let asked = self.asked.lock().unwrap().take();
+            let failure = match (own, asked) {
+                (Some(own), Some(asked)) => Failure {
+                    gone: own.gone || asked.gone,
+                    ..own
+                },
+                (own, asked) => match own.or(asked) {
+                    Some(failure) => failure,
+                    None => return Queued::NeedIdr,
+                },
+            };
+            let plan = self
+                .recovery
+                .lock()
+                .unwrap()
+                .failure(failure.gone, Instant::now());
+            let (from, back_off) = match plan {
+                Plan::Recover(from, back_off) => (from, back_off),
+                Plan::End(exhausted) => {
+                    self.fail(format!("{}; {exhausted}", failure.why));
+                    return Queued::Taken;
+                }
+            };
+            log::line(&format!("picture: {}; recovery from a {from}", failure.why));
+            let worked = self.run_steps(from);
+            self.recovery.lock().unwrap().ran(worked);
+            // The frames that the codec held are lost. Their rows stay open,
+            // and the next frame handed to the display writes them as not
+            // shown.
+            self.input.lock().unwrap().queued.clear();
+            back_off
+        };
+        self.pause(back_off);
+        Queued::NeedIdr
+    }
+
+    /// Run the steps from `from` up until one works: a step whose own call
+    /// fails leads to the next at once, as Artemis falls through its steps.
+    /// The step that worked; none when the reset failed too.
+    fn run_steps(&self, from: Step) -> Option<Step> {
+        let mut step = from;
+        loop {
+            match self.codec.recover(step) {
+                Ok(()) => {
+                    log::line(&format!(
+                        "picture: {step} done; the core asks for an IDR frame"
+                    ));
+                    return Some(step);
+                }
+                Err(status) => {
+                    log::line(&format!("picture: {step} failed: {status}"));
+                    if step == Step::Reset {
+                        return None;
+                    }
+                    step = step.next();
+                }
+            }
+        }
+    }
+
+    /// The decoder returned a frame: a recovery that ran is over.
+    fn decodes_again(&self) {
+        if let Some(step) = self.recovery.lock().unwrap().decoded() {
+            log::line(&format!(
+                "picture: the decoder returns frames again after a {step}"
+            ));
+        }
+    }
+}
+
 impl Input {
     /// A presentation time from the core's enqueue time, never repeated:
     /// MediaCodec refuses two buffers at the same time.
@@ -698,7 +967,8 @@ mod tests {
         script: Mutex<Script>,
         /// The output thread is inside a codec call.
         in_output: AtomicBool,
-        /// A restart ran while the output thread was inside a codec call.
+        /// A restart or a recovery step ran while the output thread was
+        /// inside a codec call.
         overlapped: AtomicBool,
     }
 
@@ -711,11 +981,19 @@ mod tests {
         memory: Vec<Vec<u8>>,
         outputs: VecDeque<Result<Output, Status>>,
         outputs_then: Option<Result<Output, Status>>,
+        /// Each buffer call fails with this status until a recovery step of
+        /// at least `heals` runs; with `heals` none, no step heals it.
+        broken: Option<Status>,
+        heals: Option<Step>,
+        /// The steps whose own call fails.
+        refuses: Vec<Step>,
         // What the codec was asked.
         input_calls: usize,
         output_calls: usize,
         queued: Vec<(usize, Vec<u8>, u64, u32)>,
         released: Vec<(usize, bool)>,
+        /// Each recovery step, and whether its call worked.
+        recovered: Vec<(Step, bool)>,
         stopped: bool,
         /// The size that each output format gives, in turn.
         formats: VecDeque<(i32, i32)>,
@@ -729,6 +1007,8 @@ mod tests {
         largest_square: Option<i32>,
         /// The sizes that `adaptive_max` was asked for.
         capability_asks: Vec<(i32, i32)>,
+        /// How long `adaptive_max` takes, after it records the ask.
+        capabilities_take: Duration,
     }
 
     /// A restart: how many buffers were queued before it, its size and its
@@ -739,6 +1019,9 @@ mod tests {
         fn dequeue_input(&self, _: Duration) -> Result<Option<usize>, Status> {
             let mut s = self.script.lock().unwrap();
             s.input_calls += 1;
+            if let Some(status) = s.broken {
+                return Err(status);
+            }
             s.inputs.pop_front().or(s.inputs_then).unwrap_or(Ok(None))
         }
         fn input_buffer(&self, index: usize) -> Option<(NonNull<u8>, usize)> {
@@ -770,7 +1053,10 @@ mod tests {
             let next = {
                 let mut s = self.script.lock().unwrap();
                 s.output_calls += 1;
-                s.outputs.pop_front().or(s.outputs_then)
+                match s.broken {
+                    Some(status) => Some(Err(status)),
+                    None => s.outputs.pop_front().or(s.outputs_then),
+                }
             };
             let output = match next {
                 Some(next) => next,
@@ -798,9 +1084,12 @@ mod tests {
             self.script.lock().unwrap().formats.pop_front()
         }
         fn adaptive_max(&self, size: (i32, i32)) -> (i32, i32) {
-            let mut s = self.script.lock().unwrap();
-            s.capability_asks.push(size);
-            let largest = s.largest_square;
+            let (largest, takes) = {
+                let mut s = self.script.lock().unwrap();
+                s.capability_asks.push(size);
+                (s.largest_square, s.capabilities_take)
+            };
+            std::thread::sleep(takes);
             crate::codec::adaptive_max(size, |side| largest.is_some_and(|largest| side <= largest))
         }
         fn restart(
@@ -821,6 +1110,23 @@ mod tests {
         }
         fn stop(&self) {
             self.script.lock().unwrap().stopped = true;
+        }
+        fn recover(&self, step: Step) -> Result<(), Status> {
+            // Long enough for an output call to begin if nothing held it off.
+            std::thread::sleep(Duration::from_millis(5));
+            if self.in_output.load(Ordering::SeqCst) {
+                self.overlapped.store(true, Ordering::SeqCst);
+            }
+            let mut s = self.script.lock().unwrap();
+            let works = !s.refuses.contains(&step);
+            s.recovered.push((step, works));
+            if !works {
+                return Err(Status(-10005));
+            }
+            if s.heals.is_some_and(|heals| step >= heals) {
+                s.broken = None;
+            }
+            Ok(())
         }
     }
 
@@ -945,6 +1251,61 @@ mod tests {
         decoder.stop();
         thread.join().unwrap();
         finished
+    }
+
+    /// A decoder whose output thread runs; `finish` stops it.
+    fn running(script: Script) -> Arc<Decoder<ScriptedCodec>> {
+        let decoder = decoder(script);
+        decoder.start_output().unwrap();
+        decoder
+    }
+
+    /// A codec that takes every frame, broken until a step of at least
+    /// `heals` runs.
+    fn broken(heals: Option<Step>) -> Script {
+        Script {
+            broken: Some(Status(-10000)),
+            heals,
+            inputs_then: Some(Ok(Some(0))),
+            buffer: Some(4096),
+            ..Script::default()
+        }
+    }
+
+    fn key(number: i32) -> Frame<'static> {
+        Frame {
+            idr: true,
+            ..delta(number)
+        }
+    }
+
+    fn steps(decoder: &Decoder<ScriptedCodec>) -> Vec<(Step, bool)> {
+        script(decoder).recovered.clone()
+    }
+
+    /// Wait up to 2 s for the script to show `done`.
+    fn until(decoder: &Decoder<ScriptedCodec>, done: impl Fn(&Script) -> bool) -> bool {
+        let until = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < until {
+            if done(&script(decoder)) {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        false
+    }
+
+    /// The codec returns the last frame queued; true once the running
+    /// output thread has handed it to the display.
+    fn decodes(decoder: &Decoder<ScriptedCodec>) -> bool {
+        let index = {
+            let mut s = script(decoder);
+            let index = 100 + s.released.len();
+            let pts = s.queued.last().expect("a queued frame").2;
+            s.outputs.push_back(Ok(Output::Frame { index, pts }));
+            index
+        };
+        until(decoder, |s| s.released.contains(&(index, true)))
     }
 
     #[test]
@@ -1125,22 +1486,56 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_restart_ends_the_stream() {
+    fn a_failed_size_restart_goes_through_the_recovery_and_the_next_idr_frame_tries_again() {
         let decoder = decoder(Script {
             restart_fails: Some(Status(-10000)),
             ..many_inputs()
         });
         let portrait = sps_unit(PORTRAIT);
-        assert_eq!(decoder.queue(idr(1, &portrait)), Queued::Taken);
-        let why = decoder.failure().expect("the stream ends");
+        // The frame is lost, the recovery runs, and the core asks for an IDR
+        // frame; the stream goes on.
+        assert_eq!(decoder.queue(idr(1, &portrait)), Queued::NeedIdr);
+        assert!(decoder.failure().is_none());
+        assert_eq!(steps(&decoder), [(Step::Flush, true)]);
+        assert!(script(&decoder).queued.is_empty());
+        // The codec's size stayed as it was, so the next IDR frame restarts
+        // at the new size again.
+        script(&decoder).restart_fails = None;
+        assert_eq!(decoder.queue(idr(2, &portrait)), Queued::Taken);
+        let s = script(&decoder);
+        let sizes: Vec<_> = s.restarts.iter().map(|restart| restart.1).collect();
+        assert_eq!(sizes, [(720, 1280), (720, 1280)]);
+        let flags: Vec<u32> = s.queued.iter().map(|queued| queued.3).collect();
+        assert_eq!(flags, [CODEC_CONFIG, KEY_FRAME]);
+    }
+
+    #[test]
+    fn a_size_restart_that_always_fails_ends_the_stream_after_every_step() {
+        let decoder = running(Script {
+            restart_fails: Some(Status(-10000)),
+            ..many_inputs()
+        });
+        let portrait = sps_unit(PORTRAIT);
+        let started = Instant::now();
+        let mut number = 0;
+        while started.elapsed() < Duration::from_secs(5) && decoder.failure().is_none() {
+            number += 1;
+            decoder.queue(idr(number, &portrait));
+        }
+        let why = decoder
+            .failure()
+            .expect("restarts that keep failing end the stream");
         assert!(
             why.contains("cannot restart the decoder at 720x1280"),
             "{why}"
         );
-        // Nothing went to a codec that did not start again.
+        assert!(started.elapsed() >= Duration::from_secs(3), "the window");
+        let order: Vec<Step> = steps(&decoder).iter().map(|(step, _)| *step).collect();
+        assert_eq!(order[..3], [Step::Flush, Step::Restart, Step::Reset]);
+        assert!(order[3..].iter().all(|step| *step == Step::Reset));
+        // Nothing went to a codec that did not restart at the stream's size.
         assert!(script(&decoder).queued.is_empty());
-        assert_eq!(decoder.queue(delta(2)), Queued::Taken);
-        assert!(script(&decoder).queued.is_empty());
+        decoder.finish();
     }
 
     #[test]
@@ -1323,87 +1718,393 @@ mod tests {
     }
 
     #[test]
-    fn output_errors_back_off_and_then_end_the_stream() {
-        let decoder = decoder(Script {
-            outputs_then: Some(Err(Status(-10000))),
-            ..Script::default()
-        });
-        let ended = run_output(&decoder, Duration::from_secs(5));
-        let calls = script(&decoder).output_calls;
-        assert!(
-            ended,
-            "the output thread ends after errors that last ({calls} calls)"
+    fn a_flush_that_heals_ends_the_recovery_and_its_frame_asks_for_an_idr_frame() {
+        let decoder = running(broken(Some(Step::Flush)));
+        // The frame that met the failure is lost: the core asks for an IDR
+        // frame, which the flushed codec needs.
+        assert_eq!(decoder.queue(delta(1)), Queued::NeedIdr);
+        assert_eq!(steps(&decoder), [(Step::Flush, true)]);
+        assert_eq!(decoder.queue(key(2)), Queued::Taken);
+        assert!(decodes(&decoder), "the picture goes on");
+        assert!(decoder.failure().is_none());
+        // The decoded frame ended the recovery: a new failure flushes again.
+        script(&decoder).broken = Some(Status(-10000));
+        assert_eq!(decoder.queue(delta(3)), Queued::NeedIdr);
+        assert_eq!(steps(&decoder), [(Step::Flush, true), (Step::Flush, true)]);
+        decoder.finish();
+    }
+
+    #[test]
+    fn when_the_failure_outlasts_the_flush_a_restart_heals() {
+        let decoder = running(broken(Some(Step::Restart)));
+        assert_eq!(decoder.queue(delta(1)), Queued::NeedIdr);
+        assert_eq!(decoder.queue(key(2)), Queued::NeedIdr);
+        assert_eq!(
+            steps(&decoder),
+            [(Step::Flush, true), (Step::Restart, true)]
         );
-        assert!(decoder.failure().is_some());
-        // 3 s of errors with backing off: far fewer calls than a spin.
-        assert!(calls < 100, "{calls} calls in the error window");
+        assert_eq!(decoder.queue(key(3)), Queued::Taken);
+        assert!(decodes(&decoder), "the picture goes on");
+        assert!(decoder.failure().is_none());
+        decoder.finish();
     }
 
     #[test]
-    fn a_reclaimed_codec_ends_the_stream_at_once() {
+    fn when_the_failure_outlasts_the_restart_a_reset_heals() {
+        let decoder = running(broken(Some(Step::Reset)));
+        for number in 1..=3 {
+            assert_eq!(decoder.queue(key(number)), Queued::NeedIdr);
+        }
+        assert_eq!(
+            steps(&decoder),
+            [
+                (Step::Flush, true),
+                (Step::Restart, true),
+                (Step::Reset, true)
+            ]
+        );
+        assert_eq!(decoder.queue(key(4)), Queued::Taken);
+        assert!(decodes(&decoder), "the picture goes on");
+        assert!(decoder.failure().is_none());
+        decoder.finish();
+    }
+
+    #[test]
+    fn a_step_that_the_codec_refuses_leads_to_the_next_at_once() {
+        let decoder = running(Script {
+            refuses: vec![Step::Flush],
+            ..broken(Some(Step::Restart))
+        });
+        assert_eq!(decoder.queue(delta(1)), Queued::NeedIdr);
+        assert_eq!(
+            steps(&decoder),
+            [(Step::Flush, false), (Step::Restart, true)]
+        );
+        assert_eq!(decoder.queue(key(2)), Queued::Taken);
+        assert!(decodes(&decoder), "the picture goes on");
+        decoder.finish();
+    }
+
+    #[test]
+    fn a_reclaimed_codec_goes_straight_to_a_reset() {
+        let decoder = running(Script {
+            broken: Some(Status(1101)),
+            ..broken(Some(Step::Reset))
+        });
+        assert_eq!(decoder.queue(delta(1)), Queued::NeedIdr);
+        assert_eq!(steps(&decoder), [(Step::Reset, true)]);
+        assert_eq!(decoder.queue(key(2)), Queued::Taken);
+        assert!(decodes(&decoder), "the picture goes on");
+        assert!(decoder.failure().is_none());
+        decoder.finish();
+    }
+
+    /// The core keeps sending frames until the stream ends or `limit` passes.
+    fn feed_until_the_end(decoder: &Decoder<ScriptedCodec>, limit: Duration) -> Duration {
+        let started = Instant::now();
+        let mut number = 0;
+        while started.elapsed() < limit && decoder.failure().is_none() {
+            number += 1;
+            decoder.queue(key(number));
+        }
+        started.elapsed()
+    }
+
+    /// `steps_work`: each step's own call works, and the failure comes back
+    /// after it; else each call fails.
+    fn ends_after_every_step(codec: Script, steps_work: bool) {
+        let window = Duration::from_secs(3);
+        let decoder = running(codec);
+        let took = feed_until_the_end(&decoder, Duration::from_secs(5));
+        let why = decoder
+            .failure()
+            .expect("failures that last end the stream");
+        assert!(why.contains("AMEDIA_ERROR_UNKNOWN"), "{why}");
+        assert!(took >= window, "the stream ended within the window");
+        let steps = steps(&decoder);
+        let order: Vec<Step> = steps.iter().map(|(step, _)| *step).collect();
+        // A flush, a restart, then resets until the end.
+        assert_eq!(order[..3], [Step::Flush, Step::Restart, Step::Reset]);
+        assert!(order[3..].iter().all(|step| *step == Step::Reset));
+        assert!(steps.iter().all(|(_, worked)| *worked == steps_work));
+        let calls = {
+            let s = script(&decoder);
+            s.input_calls + s.output_calls + s.recovered.len()
+        };
+        // Backing off between failures, 160 ms at most: far fewer calls
+        // than a spin, which makes thousands.
+        assert!(calls < 200, "{calls} codec calls in the window");
+        // Once the stream ends, a frame asks for nothing and touches no codec.
+        let input_calls = script(&decoder).input_calls;
+        assert_eq!(decoder.queue(delta(1_000)), Queued::Taken);
+        assert_eq!(script(&decoder).input_calls, input_calls);
+        decoder.finish();
+    }
+
+    #[test]
+    fn when_no_step_heals_the_stream_ends_after_the_window() {
+        ends_after_every_step(broken(None), true);
+    }
+
+    #[test]
+    fn when_the_codec_refuses_every_step_the_stream_ends_after_the_window() {
+        ends_after_every_step(
+            Script {
+                refuses: vec![Step::Flush, Step::Restart, Step::Reset],
+                ..broken(None)
+            },
+            false,
+        );
+    }
+
+    #[test]
+    fn an_output_failure_brings_the_cores_thread_out_of_its_wait_for_a_buffer() {
         let decoder = decoder(Script {
-            outputs_then: Some(Err(Status(1101))),
+            inputs_then: Some(Ok(None)),
+            buffer: Some(4096),
             ..Script::default()
         });
-        let started = Instant::now();
-        assert!(run_output(&decoder, Duration::from_secs(1)));
-        assert!(started.elapsed() < Duration::from_millis(500));
-        assert_eq!(script(&decoder).output_calls, 1);
-        assert!(decoder.failure().unwrap().contains("RECLAIMED"));
+        let core = {
+            let decoder = decoder.clone();
+            std::thread::spawn(move || decoder.queue(delta(1)))
+        };
+        // The core's thread waits for an input buffer that never frees up.
+        assert!(until(&decoder, |s| s.input_calls >= 3));
+        script(&decoder).outputs = [Err(Status(-10000))].into();
+        decoder.start_output().unwrap();
+        // The output thread found the failure; the core's thread recovers.
+        assert_eq!(core.join().unwrap(), Queued::NeedIdr);
+        assert_eq!(steps(&decoder), [(Step::Flush, true)]);
+        assert!(decoder.failure().is_none());
+        decoder.finish();
     }
 
     #[test]
-    fn input_errors_back_off_and_then_frames_stop_asking_for_idr() {
-        let decoder = decoder(Script {
-            inputs_then: Some(Err(Status(-10000))),
+    fn a_recovery_gets_the_codec_soon_while_the_output_thread_keeps_calling_it() {
+        // Only the input side fails: the output thread goes on waiting in
+        // the codec for frames, and leaves it between calls only.
+        let decoder = running(Script {
+            inputs: (0..5).map(|_| Err(Status(-10000))).collect(),
+            inputs_then: Some(Ok(Some(0))),
             buffer: Some(4096),
             ..Script::default()
         });
         let started = Instant::now();
-        let mut answers = Vec::new();
-        while started.elapsed() < Duration::from_secs(4)
-            && answers.len() < 10_000
-            && decoder.failure().is_none()
-        {
-            answers.push(decoder.queue(frame(false, vec![(0, PICTURE)])));
+        for number in 1..=5 {
+            assert_eq!(decoder.queue(delta(number)), Queued::NeedIdr);
         }
+        let took = started.elapsed();
+        assert_eq!(steps(&decoder).len(), 5);
+        // Five back-offs (10 to 160 ms) and five steps; a recovery that
+        // waited for the gate behind the output thread took seconds.
         assert!(
-            decoder.failure().is_some(),
-            "errors that last end the stream"
+            took < Duration::from_secs(2),
+            "five recoveries took {took:?}"
         );
-        let calls = script(&decoder).input_calls;
-        assert!(calls < 100, "{calls} calls in the error window");
-        // Once the stream ends, a frame asks for nothing and touches no codec.
+        assert!(!decoder.codec.overlapped.load(Ordering::SeqCst));
+        decoder.finish();
+    }
+
+    #[test]
+    fn a_decoder_that_keeps_failing_now_and_then_ends_the_stream_after_its_recoveries() {
+        let decoder = running(Script {
+            heals: Some(Step::Flush),
+            ..many_inputs()
+        });
+        let mut number = 0;
+        for run in 1..=MAX_RECOVERIES {
+            // A failure, a flush that heals, and a decoded frame.
+            script(&decoder).broken = Some(Status(-10000));
+            number += 1;
+            assert_eq!(decoder.queue(delta(number)), Queued::NeedIdr, "run {run}");
+            number += 1;
+            assert_eq!(decoder.queue(key(number)), Queued::Taken);
+            assert!(decodes(&decoder), "run {run}");
+        }
+        assert!(decoder.failure().is_none());
+        script(&decoder).broken = Some(Status(-10000));
+        assert_eq!(decoder.queue(delta(number + 1)), Queued::Taken);
+        let why = decoder.failure().expect("the cap ends the stream");
+        assert!(why.contains("already recovered 10 times"), "{why}");
+        assert_eq!(steps(&decoder).len(), MAX_RECOVERIES as usize);
+        decoder.finish();
+    }
+
+    #[test]
+    fn a_failure_while_the_stream_stops_runs_no_recovery() {
+        let decoder = decoder(many_inputs());
+        decoder.ask(Failure {
+            why: "output failed: AMEDIA_ERROR_UNKNOWN (-10000)".into(),
+            gone: false,
+        });
+        decoder.stop();
+        assert_eq!(decoder.recover(None), Queued::Taken);
+        assert!(steps(&decoder).is_empty());
+        assert!(decoder.failure().is_none());
+    }
+
+    /// The core's thread brings a frame of a size beyond adaptive playback's
+    /// maximum; while it asks the decoder's capabilities for that size, the
+    /// output thread finds the old codec failed. The frame's answer.
+    fn failure_found_during_a_size_restart(
+        restart_fails: Option<Status>,
+    ) -> (Arc<Decoder<ScriptedCodec>>, Queued) {
+        let decoder = shaped_decoder(
+            Script {
+                largest_square: Some(2304),
+                capabilities_take: Duration::from_millis(200),
+                restart_fails,
+                ..many_inputs()
+            },
+            Records::default(),
+            configured(Some((1280, 1280))),
+            Arc::new(|_| {}),
+        );
+        let core = {
+            let decoder = decoder.clone();
+            std::thread::spawn(move || decoder.queue(idr(1, &sps_unit(FULL_HD))))
+        };
+        assert!(until(&decoder, |s| !s.capability_asks.is_empty()));
+        decoder.ask(Failure {
+            why: "output failed: AMEDIACODEC_ERROR_RECLAIMED (1101)".into(),
+            gone: true,
+        });
+        let answer = core.join().unwrap();
+        (decoder, answer)
+    }
+
+    #[test]
+    fn a_failure_found_during_a_size_restart_costs_nothing_once_the_restart_works() {
+        let (decoder, answer) = failure_found_during_a_size_restart(None);
+        assert_eq!(answer, Queued::Taken);
+        assert_eq!(script(&decoder).restarts.len(), 1);
+        assert!(
+            steps(&decoder).is_empty(),
+            "no flush on the restarted codec"
+        );
+        assert!(decoder.asked.lock().unwrap().is_none());
+        // The next frame needs no recovery either.
+        assert_eq!(decoder.queue(delta(2)), Queued::Taken);
+        assert!(steps(&decoder).is_empty());
+    }
+
+    #[test]
+    fn a_failure_found_during_a_size_restart_that_fails_joins_its_recovery() {
+        let (decoder, answer) = failure_found_during_a_size_restart(Some(Status(-10000)));
+        assert_eq!(answer, Queued::NeedIdr);
+        // The codec was found gone: straight to a reset, once.
+        assert_eq!(steps(&decoder), [(Step::Reset, true)]);
+        assert!(decoder.asked.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn a_recovery_never_runs_while_the_output_thread_is_in_a_codec_call() {
+        let decoder = running(Script {
+            heals: Some(Step::Flush),
+            inputs_then: Some(Ok(Some(0))),
+            buffer: Some(4096),
+            ..Script::default()
+        });
+        for number in 1..=20 {
+            // The output thread waits in the codec for a frame meanwhile.
+            std::thread::sleep(Duration::from_millis(3));
+            script(&decoder).broken = Some(Status(-10000));
+            assert_eq!(decoder.queue(delta(number)), Queued::NeedIdr);
+        }
+        assert_eq!(steps(&decoder).len(), 20);
+        assert!(!decoder.codec.overlapped.load(Ordering::SeqCst));
+        decoder.finish();
+    }
+
+    #[test]
+    fn the_recovery_climbs_from_a_flush_to_a_reset_and_ends_only_after_a_reset() {
+        let start = Instant::now();
+        let at = |ms| start + Duration::from_millis(ms);
+        let ms = Duration::from_millis;
+        let mut recovery = Recovery::new(Health::new(Duration::from_secs(3)));
         assert_eq!(
-            decoder.queue(frame(false, vec![(0, PICTURE)])),
-            Queued::Taken
+            recovery.failure(false, at(0)),
+            Plan::Recover(Step::Flush, ms(10))
         );
-        assert_eq!(script(&decoder).input_calls, calls);
+        recovery.ran(Some(Step::Flush));
+        assert_eq!(
+            recovery.failure(false, at(100)),
+            Plan::Recover(Step::Restart, ms(20))
+        );
+        recovery.ran(Some(Step::Restart));
+        // Past the window, but no reset has run yet: it runs first.
+        assert_eq!(
+            recovery.failure(false, at(3_000)),
+            Plan::Recover(Step::Reset, ms(160))
+        );
+        recovery.ran(None);
+        assert_eq!(
+            recovery.failure(false, at(3_100)),
+            Plan::End(Exhausted::Window)
+        );
+        // A decoded frame ends the recovery: the next failure flushes again.
+        recovery.decoded();
+        assert_eq!(
+            recovery.failure(false, at(4_000)),
+            Plan::Recover(Step::Flush, ms(10))
+        );
+        recovery.ran(Some(Step::Flush));
+        assert_eq!(recovery.decoded(), Some(Step::Flush));
+        assert_eq!(recovery.decoded(), None, "no recovery since that frame");
+        // A codec that is gone goes straight to a reset; failures that come
+        // through the window after it end the stream.
+        assert_eq!(
+            recovery.failure(true, at(5_000)),
+            Plan::Recover(Step::Reset, ms(10))
+        );
+        recovery.ran(Some(Step::Reset));
+        assert_eq!(
+            recovery.failure(false, at(5_100)),
+            Plan::Recover(Step::Reset, ms(20))
+        );
+        recovery.ran(Some(Step::Reset));
+        assert_eq!(
+            recovery.failure(false, at(8_000)),
+            Plan::End(Exhausted::Window)
+        );
+    }
+
+    #[test]
+    fn a_stream_recovers_from_ten_runs_of_failures_and_ends_on_the_eleventh() {
+        let start = Instant::now();
+        let mut recovery = Recovery::new(Health::new(Duration::from_secs(3)));
+        for run in 0..u64::from(MAX_RECOVERIES) {
+            let at = start + Duration::from_secs(run);
+            assert!(matches!(
+                recovery.failure(false, at),
+                Plan::Recover(Step::Flush, _)
+            ));
+            recovery.ran(Some(Step::Flush));
+            // More failures in the same run count once.
+            assert!(matches!(
+                recovery.failure(false, at),
+                Plan::Recover(Step::Restart, _)
+            ));
+            recovery.ran(Some(Step::Restart));
+            recovery.decoded();
+        }
+        let at = start + Duration::from_secs(60);
+        assert_eq!(recovery.failure(false, at), Plan::End(Exhausted::Tries));
     }
 
     #[test]
     fn backing_off_doubles_up_to_its_limit_and_a_success_resets_the_window() {
         let start = Instant::now();
         let mut health = Health::new(Duration::from_secs(3));
-        let waits: Vec<_> = (0..7).map(|_| health.failure(false, start)).collect();
+        let waits: Vec<_> = (0..7).map(|_| health.failure(start)).collect();
         let ms = |ms| Verdict::BackOff(Duration::from_millis(ms));
         assert_eq!(
             waits,
             [ms(10), ms(20), ms(40), ms(80), ms(160), ms(160), ms(160)]
         );
-        assert_eq!(
-            health.failure(false, start + Duration::from_secs(3)),
-            Verdict::End
-        );
+        assert_eq!(health.failure(start + Duration::from_secs(3)), Verdict::End);
         health.success();
-        assert_eq!(
-            health.failure(false, start + Duration::from_secs(4)),
-            ms(10)
-        );
-        assert_eq!(
-            health.failure(true, start + Duration::from_secs(4)),
-            Verdict::End
-        );
+        assert_eq!(health.failure(start + Duration::from_secs(4)), ms(10));
     }
 
     #[test]
@@ -1430,6 +2131,76 @@ mod tests {
         .into();
         assert!(!run_output(&decoder, Duration::from_millis(200)));
         assert_eq!(script(&decoder).released, [(5, false), (6, true)]);
+    }
+
+    #[test]
+    fn the_frame_record_stays_in_order_across_a_recovery() {
+        let directory = tempfile::tempdir().unwrap();
+        let times = directory.path().join("times.csv");
+        let records = Records {
+            times: Some(Mutex::new(
+                frame_record::Record::new(frame_record::create(&times).unwrap()).unwrap(),
+            )),
+            recording: None,
+        };
+        let decoder = recording_decoder(
+            Script {
+                heals: Some(Step::Flush),
+                inputs_then: Some(Ok(Some(0))),
+                buffer: Some(64),
+                ..Script::default()
+            },
+            records,
+        );
+        decoder.start_output().unwrap();
+        let queue = |number: i32, idr: bool| {
+            let parts = vec![(0, PICTURE)];
+            let record = decoder
+                .records
+                .unit(number, || (1000 * number as u64, true), &parts);
+            decoder.queue(Frame {
+                number,
+                idr,
+                enqueue_us: number as u64,
+                parts,
+                record,
+            })
+        };
+        // Frame 1 is shown; frame 2 is still in the codec when the codec
+        // fails on frame 3.
+        assert_eq!(queue(1, true), Queued::Taken);
+        assert!(decodes(&decoder));
+        assert_eq!(queue(2, false), Queued::Taken);
+        script(&decoder).broken = Some(Status(-10000));
+        assert_eq!(queue(3, false), Queued::NeedIdr);
+        // The flushed codec decodes the IDR frame after it.
+        assert_eq!(queue(4, true), Queued::Taken);
+        assert!(decodes(&decoder));
+        decoder.finish();
+        let records = Arc::try_unwrap(Arc::try_unwrap(decoder).ok().unwrap().records)
+            .ok()
+            .unwrap();
+        records
+            .times
+            .unwrap()
+            .into_inner()
+            .unwrap()
+            .close()
+            .unwrap();
+        let rows: Vec<Vec<String>> = std::fs::read_to_string(&times)
+            .unwrap()
+            .lines()
+            .skip(1)
+            .map(|row| row.split(',').map(str::to_owned).collect())
+            .collect();
+        let numbers: Vec<&str> = rows.iter().map(|row| row[1].as_str()).collect();
+        assert_eq!(numbers, ["1", "2", "3", "4"], "one row per unit, in order");
+        let timed = |row: &Vec<String>| (!row[3].is_empty(), !row[4].is_empty());
+        assert_eq!(timed(&rows[0]), (true, true), "{:?}", rows[0]);
+        // Lost in the recovery: neither decoded nor shown.
+        assert_eq!(timed(&rows[1]), (false, false), "{:?}", rows[1]);
+        assert_eq!(timed(&rows[2]), (false, false), "{:?}", rows[2]);
+        assert_eq!(timed(&rows[3]), (true, true), "{:?}", rows[3]);
     }
 
     #[test]

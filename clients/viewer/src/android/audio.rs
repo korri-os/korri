@@ -563,7 +563,7 @@ impl<O: Output> Player<O> {
                 log::line(&format!("sound: the stream opened again after: {why}"));
                 self.device = Device::Open(stream);
             }
-            Err(error) => match self.health.failure(false, now) {
+            Err(error) => match self.health.failure(now) {
                 Verdict::BackOff(wait) => {
                     self.device = Device::Lost {
                         next: now + wait,

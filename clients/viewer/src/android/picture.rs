@@ -6,9 +6,9 @@
 //! queue, and the compositor reads the same buffer.
 //!
 //! This file holds the core's decoder callbacks, the decoder's making, and
-//! `AMediaCodec` itself. The decoder's two loops are in `decoder.rs`, the
-//! choice of decoder and its keys in `codec.rs`, the SPS rewrite in
-//! `sps.rs`; those follow Artemis.
+//! `AMediaCodec` itself, with the recovery's steps. The decoder's two loops
+//! and when to recover are in `decoder.rs`, the choice of decoder and its
+//! keys in `codec.rs`, the SPS rewrite in `sps.rs`; those follow Artemis.
 //!
 //! The network core's decoder callbacks carry no context, so one stream's
 //! state is process-wide, as the core itself is. No panic leaves a callback
@@ -26,7 +26,8 @@
 //! `ClassicOldSong/moonlight-android`, itself a fork of
 //! `moonlight-stream/moonlight-android`), `MediaCodecHelper.java` and
 //! `MediaCodecDecoderRenderer.java` (`createBaseMediaFormat`, the tries in
-//! `initializeDecoder`, the decoded size on `INFO_OUTPUT_FORMAT_CHANGED`).
+//! `initializeDecoder`, the decoded size on `INFO_OUTPUT_FORMAT_CHANGED`, the
+//! recovery's steps in `doCodecRecoveryIfRequired`).
 //! The live-resolution maximum's capability query is Korri's own, from
 //! `cbfeff25b` in that copy. Artemis ships under the GNU GPL version 3 with
 //! no "or later" grant, so this file does too. The Rust adaptation is Korri
@@ -36,6 +37,7 @@ use crate::{
     codec,
     decoder::{
         self, Codec, Configured, Decoder, Frame, Health, Output, Queued, Records, Resized, Status,
+        Step,
     },
     frame_record, log,
     network::{self as ffi, DECODE_UNIT, DECODER_RENDERER_CALLBACKS},
@@ -50,7 +52,10 @@ use std::{
     ffi::{CString, c_char, c_int, c_void},
     path::PathBuf,
     ptr::{NonNull, null_mut},
-    sync::{Arc, Mutex, MutexGuard, PoisonError},
+    sync::{
+        Arc, Mutex, MutexGuard, PoisonError,
+        atomic::{AtomicPtr, Ordering},
+    },
     time::Duration,
 };
 
@@ -173,6 +178,8 @@ pub(crate) fn callbacks() -> *mut DECODER_RENDERER_CALLBACKS {
 const MIME: &str = "video/avc";
 /// `AMEDIA_ERROR_INVALID_OPERATION`.
 const INVALID_OPERATION: Status = Status(-10005);
+/// `AMEDIA_ERROR_INVALID_OBJECT`: there is no codec.
+const NO_CODEC: Status = Status(-10003);
 /// `MediaFormat`: `COLOR_RANGE_LIMITED`, `COLOR_STANDARD_BT601_NTSC` and
 /// `COLOR_TRANSFER_SDR_VIDEO`, the core's default colour space and range.
 const COLOR_KEYS: [(&str, i32); 3] = [
@@ -234,16 +241,13 @@ fn make_decoder(format: c_int, width: c_int, height: c_int, fps: c_int) -> Resul
     let mut tries = codec::tries(chosen, adaptive).into_iter().peekable();
     let (codec, configured) = loop {
         let attempt = tries.next().context("no configure to try")?;
-        let mut codec = NdkCodec::by_name(&chosen.name)
+        let mut codec = NdkCodec::by_name(&chosen.name, &stream.surface)
             .with_context(|| format!("cannot make the decoder {}", chosen.name))?;
-        let media = media_format(size, attempt.max, fps, &attempt.keys);
-        match codec.configure(&media, &stream.surface) {
+        match codec.configure(media_format(size, attempt.max, fps, &attempt.keys)) {
             Ok(()) => {
                 codec.setup = Some(Setup {
-                    name: chosen.name.clone(),
                     fps,
                     keys: attempt.keys.clone(),
-                    surface: stream.surface.clone(),
                 });
                 break (codec, attempt);
             }
@@ -403,26 +407,32 @@ fn media_format(
     media
 }
 
-/// What a restart configures again: the try that worked, and the Surface.
+/// What a size restart configures again: the try that worked.
 struct Setup {
-    name: String,
     fps: i32,
     keys: Vec<(&'static str, i32)>,
-    surface: NativeWindow,
 }
 
 /// `AMediaCodec`, through ndk-sys. The ndk crate's input buffer panics when
 /// `AMediaCodec_getInputBuffer` gives NULL, as it does after a decoder error;
-/// this gives none instead.
+/// this gives none instead. It keeps what the recovery makes it again with:
+/// its name, the Surface, and the format it was last configured with
+/// (Artemis's `configuredFormat`), which a size restart also sets.
 struct NdkCodec {
-    codec: NonNull<ndk_sys::AMediaCodec>,
+    /// Null after a reset that made no new codec.
+    codec: AtomicPtr<ndk_sys::AMediaCodec>,
+    name: String,
+    surface: NativeWindow,
+    configured: Mutex<Option<MediaFormat>>,
     /// Set once the codec is configured.
     setup: Option<Setup>,
 }
 
 // SAFETY: AMediaCodec is safe to use from two threads at once: one queues
 // input, the other releases output, as Android's own MediaCodec users do.
-// It is deleted only after both threads stop (the last reference).
+// A restart or a recovery step changes or replaces it only while no other
+// call runs (the decoder's gate), and it is deleted only after both threads
+// stop (the last reference). The format is used under its lock only.
 unsafe impl Send for NdkCodec {}
 unsafe impl Sync for NdkCodec {}
 
@@ -443,21 +453,53 @@ fn micros(timeout: Duration) -> i64 {
     timeout.as_micros().try_into().unwrap_or(i64::MAX)
 }
 
+/// A new codec of this name; none when Android makes none.
+fn make_codec(name: &str) -> Option<NonNull<ndk_sys::AMediaCodec>> {
+    let name = CString::new(name).ok()?;
+    // SAFETY: a live C string.
+    NonNull::new(unsafe { ndk_sys::AMediaCodec_createCodecByName(name.as_ptr()) })
+}
+
 impl NdkCodec {
-    fn by_name(name: &str) -> Option<Self> {
-        let name = CString::new(name).ok()?;
-        // SAFETY: a live C string.
-        NonNull::new(unsafe { ndk_sys::AMediaCodec_createCodecByName(name.as_ptr()) })
-            .map(|codec| Self { codec, setup: None })
+    /// A codec of this name, for the Surface.
+    fn by_name(name: &str, surface: &NativeWindow) -> Option<Self> {
+        make_codec(name).map(|codec| Self {
+            codec: AtomicPtr::new(codec.as_ptr()),
+            name: name.to_owned(),
+            surface: surface.clone(),
+            configured: Mutex::new(None),
+            setup: None,
+        })
     }
 
-    fn configure(&self, format: &MediaFormat, surface: &NativeWindow) -> Result<(), Status> {
+    /// The codec; none after a reset that made no new one.
+    fn live(&self) -> Result<*mut ndk_sys::AMediaCodec, Status> {
+        let codec = self.codec.load(Ordering::Acquire);
+        if codec.is_null() {
+            Err(NO_CODEC)
+        } else {
+            Ok(codec)
+        }
+    }
+
+    /// Configure for the Surface; the format is then the one that the
+    /// recovery configures again.
+    fn configure(&self, format: MediaFormat) -> Result<(), Status> {
+        self.configure_with(&format)?;
+        *self
+            .configured
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(format);
+        Ok(())
+    }
+
+    fn configure_with(&self, format: &MediaFormat) -> Result<(), Status> {
         // SAFETY: a live codec, format and window; no crypto; a decoder.
         checked(unsafe {
             ndk_sys::AMediaCodec_configure(
-                self.codec.as_ptr(),
+                self.live()?,
                 format.as_ptr(),
-                surface.ptr().as_ptr(),
+                self.surface.ptr().as_ptr(),
                 null_mut(),
                 0,
             )
@@ -466,23 +508,34 @@ impl NdkCodec {
 
     fn start(&self) -> Result<(), Status> {
         // SAFETY: a live, configured codec.
-        checked(unsafe { ndk_sys::AMediaCodec_start(self.codec.as_ptr()) })
+        checked(unsafe { ndk_sys::AMediaCodec_start(self.live()?) })
+    }
+
+    /// Configure with the last format again, and start.
+    fn configure_again(&self) -> Result<(), Status> {
+        let format = self
+            .configured
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        self.configure_with(format.as_ref().ok_or(INVALID_OPERATION)?)?;
+        self.start()
     }
 }
 
 impl Drop for NdkCodec {
     fn drop(&mut self) {
-        // SAFETY: the last reference; no thread uses the codec any more.
-        unsafe { ndk_sys::AMediaCodec_delete(self.codec.as_ptr()) };
+        if let Ok(codec) = self.live() {
+            // SAFETY: the last reference; no thread uses the codec any more.
+            unsafe { ndk_sys::AMediaCodec_delete(codec) };
+        }
     }
 }
 
 impl Codec for NdkCodec {
     fn dequeue_input(&self, timeout: Duration) -> Result<Option<usize>, Status> {
         // SAFETY: a live codec.
-        let index = unsafe {
-            ndk_sys::AMediaCodec_dequeueInputBuffer(self.codec.as_ptr(), micros(timeout))
-        };
+        let index =
+            unsafe { ndk_sys::AMediaCodec_dequeueInputBuffer(self.live()?, micros(timeout)) };
         match index {
             0.. => Ok(Some(index as usize)),
             TRY_AGAIN_LATER => Ok(None),
@@ -494,14 +547,14 @@ impl Codec for NdkCodec {
         let mut size = 0;
         // SAFETY: a live codec and an index it gave; it writes the size.
         let memory =
-            unsafe { ndk_sys::AMediaCodec_getInputBuffer(self.codec.as_ptr(), index, &mut size) };
+            unsafe { ndk_sys::AMediaCodec_getInputBuffer(self.live().ok()?, index, &mut size) };
         NonNull::new(memory).map(|memory| (memory, size))
     }
 
     fn queue_input(&self, index: usize, size: usize, pts: u64, flags: u32) -> Result<(), Status> {
         // SAFETY: a live codec and an index it gave.
         checked(unsafe {
-            ndk_sys::AMediaCodec_queueInputBuffer(self.codec.as_ptr(), index, 0, size, pts, flags)
+            ndk_sys::AMediaCodec_queueInputBuffer(self.live()?, index, 0, size, pts, flags)
         })
     }
 
@@ -514,11 +567,7 @@ impl Codec for NdkCodec {
         };
         // SAFETY: a live codec and a buffer info to fill.
         let index = unsafe {
-            ndk_sys::AMediaCodec_dequeueOutputBuffer(
-                self.codec.as_ptr(),
-                &mut info,
-                micros(timeout),
-            )
+            ndk_sys::AMediaCodec_dequeueOutputBuffer(self.live()?, &mut info, micros(timeout))
         };
         match index {
             0.. => Ok(Output::Frame {
@@ -532,13 +581,12 @@ impl Codec for NdkCodec {
     }
 
     fn release_output(&self, index: usize, render: Option<i64>) -> Result<(), Status> {
+        let codec = self.live()?;
         // SAFETY: a live codec and an index it gave.
         checked(unsafe {
             match render {
-                None => ndk_sys::AMediaCodec_releaseOutputBuffer(self.codec.as_ptr(), index, false),
-                Some(at) => {
-                    ndk_sys::AMediaCodec_releaseOutputBufferAtTime(self.codec.as_ptr(), index, at)
-                }
+                None => ndk_sys::AMediaCodec_releaseOutputBuffer(codec, index, false),
+                Some(at) => ndk_sys::AMediaCodec_releaseOutputBufferAtTime(codec, index, at),
             }
         })
     }
@@ -575,7 +623,7 @@ impl Codec for NdkCodec {
 
     fn adaptive_max(&self, size: (i32, i32)) -> (i32, i32) {
         match &self.setup {
-            Some(setup) => asked_adaptive_max(&setup.name, size, setup.fps),
+            Some(setup) => asked_adaptive_max(&self.name, size, setup.fps),
             None => size,
         }
     }
@@ -587,13 +635,9 @@ impl Codec for NdkCodec {
     ) -> Result<Option<(i32, i32)>, Status> {
         let setup = self.setup.as_ref().ok_or(INVALID_OPERATION)?;
         // SAFETY: a live codec; Executing to Uninitialized.
-        checked(unsafe { ndk_sys::AMediaCodec_stop(self.codec.as_ptr()) })?;
-        let configure = |max| {
-            self.configure(
-                &media_format(size, max, setup.fps, &setup.keys),
-                &setup.surface,
-            )
-        };
+        checked(unsafe { ndk_sys::AMediaCodec_stop(self.live()?) })?;
+        // The format that works is the one that the recovery configures again.
+        let configure = |max| self.configure(media_format(size, max, setup.fps, &setup.keys));
         // As the first configure: without max-width and max-height when the
         // decoder refuses them.
         let max = match (configure(max), max) {
@@ -601,7 +645,7 @@ impl Codec for NdkCodec {
             (Err(status), Some(_)) => {
                 log::line(&format!(
                     "picture: {} refused {} at {}x{}: {status}; configuring without it",
-                    setup.name,
+                    self.name,
                     adaptive_text(max),
                     size.0,
                     size.1
@@ -616,8 +660,37 @@ impl Codec for NdkCodec {
     }
 
     fn stop(&self) {
-        // SAFETY: a live codec.
-        unsafe { ndk_sys::AMediaCodec_stop(self.codec.as_ptr()) };
+        if let Ok(codec) = self.live() {
+            // SAFETY: a live codec.
+            unsafe { ndk_sys::AMediaCodec_stop(codec) };
+        }
+    }
+
+    fn recover(&self, step: Step) -> Result<(), Status> {
+        match step {
+            // SAFETY: a live codec.
+            Step::Flush => checked(unsafe { ndk_sys::AMediaCodec_flush(self.live()?) }),
+            Step::Restart => {
+                // The configure decides: a codec that an error has already
+                // stopped refuses the stop and takes the configure.
+                // SAFETY: a live codec.
+                let _ = unsafe { ndk_sys::AMediaCodec_stop(self.live()?) };
+                self.configure_again()
+            }
+            Step::Reset => {
+                // The old codec goes first, as in Artemis: a device can have
+                // one decoder instance only, and the Surface takes one codec
+                // at a time.
+                let old = self.codec.swap(null_mut(), Ordering::AcqRel);
+                if !old.is_null() {
+                    // SAFETY: the codec that this held; no call uses it now.
+                    unsafe { ndk_sys::AMediaCodec_delete(old) };
+                }
+                let new = make_codec(&self.name).ok_or(NO_CODEC)?;
+                self.codec.store(new.as_ptr(), Ordering::Release);
+                self.configure_again()
+            }
+        }
     }
 }
 
@@ -625,7 +698,7 @@ impl NdkCodec {
     /// The codec's output format, ours to delete.
     fn format(&self) -> Option<MediaFormat> {
         // SAFETY: a live codec; the format it gives is ours.
-        NonNull::new(unsafe { ndk_sys::AMediaCodec_getOutputFormat(self.codec.as_ptr()) })
+        NonNull::new(unsafe { ndk_sys::AMediaCodec_getOutputFormat(self.live().ok()?) })
             .map(|format| unsafe { MediaFormat::from_ptr(format) })
     }
 }

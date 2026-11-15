@@ -624,15 +624,40 @@ buffer queue, and the compositor reads the same buffer.
   takes no frame goes back to the codec empty: when
   `AMediaCodec_getInputBuffer` gives NULL, as it does after a decoder
   error, and when a frame is too large for it.
-- Decoder errors: each side (input, output) backs off, 10 ms doubling to
-  160 ms, so that a failed decoder costs no CPU. Errors that still come 3 s
-  after the first, with no success between, end the stream, as Artemis
-  ends it (`EXCEPTION_REPORT_DELAY_MS`); a reclaimed or deleted codec ends
-  it at once. Once the decoder has failed, frames ask for no IDR frame;
-  the player reports the failure (`picture: the decoder failed; the stream
-  ends: …`) and the stream stops with `picture or input event loop
-  failed`. Artemis first tries to flush, restart and reset the codec; this
-  does not yet.
+- Decoder errors (#490): a recovery in steps. Its three steps and their
+  fall-through are Artemis's (`doCodecRecoveryIfRequired`): a flush, a
+  restart (stop, configure with the format the codec had, start) and a
+  reset (release the codec, then make, configure and start a new one of
+  the same name for the same Surface); a step whose own call fails leads
+  to the next at once. Which step a failure takes, and when the stream
+  ends, are Korri's (`decoder::Recovery`): Artemis picks a restart or a
+  reset from the exception (`isRecoverable`), which the NDK's calls do not
+  give, and it never flushes after a failure. Here a failure takes the step
+  after the one that worked last, starting with a flush; a reclaimed or
+  deleted codec goes straight to a reset. The frame that met the failure
+  is lost, so the core asks the host for an IDR frame after each step. A
+  decoded frame ends the run of failures, and the next failure starts with
+  a flush again. Only the core's decoder thread changes the codec: the
+  output thread that finds a failure asks it to, and leaves the codec alone
+  until it has; a recovery waits while the output thread is inside a codec
+  call, and the output thread does not take the codec again while the
+  core's thread waits for it. A failure while the stream stops runs no
+  recovery, as Artemis ignores errors then. Each failure backs off, 10 ms
+  doubling to 160 ms, so that a failed decoder costs no CPU. The stream
+  ends when failures still come 3 s after the first of a run, with no
+  decoded frame between, and a reset has run; or at the first failure after
+  10 runs of failures in one stream, so that a decoder that fails every few
+  frames cannot flush and ask for IDR frames for ever. The 3 s and the 10
+  are Artemis's numbers (`EXCEPTION_REPORT_DELAY_MS`, `CR_MAX_TRIES`), not
+  its rule: Artemis stops at once when its new codec fails, and applies its
+  3 s only after its 10 tries, which count each restart and reset, with no
+  new start on a decoded frame. Once the decoder has failed, frames ask for
+  no IDR frame; the player reports the failure (`picture: the decoder
+  failed; the stream ends: …`) and the stream stops with `picture or input
+  event loop failed`. The frames that the codec held when it failed get
+  rows with no times in the frame record. Each step and its result go to
+  the log (`picture: … recovery from a flush`, `picture: reset done; …`,
+  `picture: the decoder returns frames again after a reset`).
 - Pacing: upstream Moonlight's lowest-latency mode. An output thread hands
   each frame to the display at once
   (`AMediaCodec_releaseOutputBufferAtTime` with the time now); when the
@@ -1144,8 +1169,12 @@ Until then `Resize` stays "Live resolution is unavailable".
   refuses it restarts without adaptive playback. A restart holds the
   decoder's gate, so it never runs beside the output thread's codec calls;
   a frame that is in the codec at that moment is lost, and the IDR frame
-  of the new size follows. A failed restart ends the stream, as a failed
-  decoder does.
+  of the new size follows. A failed restart is a decoder failure: the
+  recovery (#490, D2's "Decoder errors") takes it, the codec keeps the
+  size that it had, and the next IDR frame brings the new size again. A
+  restart that keeps failing ends the stream after the recovery's window.
+  A restart configures through the same call as the recovery, so a
+  recovery after a size change configures the codec at the new size.
 - **The SPS patch follows the new size.** `level_idc` is Artemis's level
   for the new size, not for the size at the start.
 - **The decoded size** comes from the output format (`crop`, else `width`
