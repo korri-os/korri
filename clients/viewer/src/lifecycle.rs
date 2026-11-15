@@ -26,7 +26,7 @@ use std::{
     path::Path,
     sync::{
         Arc, Condvar, Mutex, MutexGuard, PoisonError, Weak,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU8, AtomicU64, Ordering},
         mpsc::{self, RecvTimeoutError},
     },
     time::Duration,
@@ -34,8 +34,11 @@ use std::{
 
 const DEADLINE: Duration = Duration::from_secs(30);
 /// How long Apply waits for the stream's thread: Artemis waits 5 s for its
-/// UI thread (`KorriStreamViewer.withGame`).
+/// UI thread (`KorriStreamViewer.withGame`). The tests wait less.
+#[cfg(not(test))]
 const APPLY_DEADLINE: Duration = Duration::from_secs(5);
+#[cfg(test)]
+const APPLY_DEADLINE: Duration = Duration::from_millis(500);
 
 #[derive(Clone, Debug)]
 pub struct Start {
@@ -104,7 +107,7 @@ struct State {
 struct Attached {
     prefix: String,
     /// What the stream's thread has performed: it writes them when it
-    /// confirms a change, also after Apply stopped waiting.
+    /// confirms a change that it took, also after Apply stopped waiting.
     values: Arc<Mutex<Values>>,
     /// What the stream can perform now; the stream's thread writes it.
     offer: Arc<Mutex<Offer>>,
@@ -117,7 +120,17 @@ pub struct ControlChange {
     pub change: Change,
     values: Arc<Mutex<Values>>,
     answer: mpsc::Sender<Result<(), String>>,
+    /// `QUEUED` until the stream's thread takes it (`TAKEN`) or Apply gives
+    /// up first (`CANCELLED`): one of the two wins.
+    claim: Arc<AtomicU8>,
 }
+
+/// A change's claim: waiting in the queue, taken by the stream's thread, or
+/// cancelled by an Apply that timed out (Artemis's `task.cancel(false)`: a
+/// task that has not started never runs, one that runs is not stopped).
+const QUEUED: u8 = 0;
+const TAKEN: u8 = 1;
+const CANCELLED: u8 = 2;
 
 impl ControlChange {
     /// The stream's thread has performed the change, or could not: Apply
@@ -139,9 +152,19 @@ pub struct ControlChanges {
 }
 
 impl ControlChanges {
-    /// The next change, without waiting.
+    /// The next change, without waiting. A change whose Apply timed out
+    /// before this thread took it is dropped here: it never runs.
     pub fn next(&self) -> Option<ControlChange> {
-        self.queue.try_recv().ok()
+        loop {
+            let change = self.queue.try_recv().ok()?;
+            if change
+                .claim
+                .compare_exchange(QUEUED, TAKEN, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                return Some(change);
+            }
+        }
     }
 
     /// What the stream can perform now: Snapshot lists, and Apply takes,
@@ -556,7 +579,10 @@ fn snapshot(state: MutexGuard<'_, State>) -> Option<ViewerSnapshot> {
 
 /// One change for the stream's thread (`KorriViewerControls.apply`): it is
 /// checked here, performed there, and confirmed within `APPLY_DEADLINE`. The
-/// lifecycle's lock is not held while the stream's thread works.
+/// lifecycle's lock is not held while the stream's thread works. When the
+/// deadline passes first, a change that the stream's thread has not taken
+/// is cancelled and never runs; one that it took runs to its end, and its
+/// value is what the stream did. Either way Apply fails.
 fn apply(
     state: MutexGuard<'_, State>,
     id: &str,
@@ -575,20 +601,31 @@ fn apply(
         .unwrap_or_else(PoisonError::into_inner);
     let change = controls::parse(&attached.prefix, id, value.as_ref(), offer)?;
     let (answer, answered) = mpsc::channel();
+    let claim = Arc::new(AtomicU8::new(QUEUED));
     attached
         .changes
         .send(ControlChange {
             change,
             values: attached.values.clone(),
             answer,
+            claim: claim.clone(),
         })
         .map_err(|_| anyhow!("the stream's controls are gone"))?;
     drop(state);
     match answered.recv_timeout(APPLY_DEADLINE) {
         Ok(Ok(())) => Ok(R::Ok),
         Ok(Err(message)) => bail!("{message}"),
+        // Not taken yet: it never runs, and nothing changes.
+        Err(RecvTimeoutError::Timeout)
+            if claim
+                .compare_exchange(QUEUED, CANCELLED, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok() =>
+        {
+            bail!("the stream did not take the control in time; it is not performed")
+        }
+        // Under way: it runs to its end, and the snapshot shows what it did.
         Err(RecvTimeoutError::Timeout) => {
-            bail!("the stream did not confirm the control within 5 s")
+            bail!("the stream did not confirm the control in time")
         }
         Err(RecvTimeoutError::Disconnected) => {
             bail!("the stream ended before the control took effect")
@@ -784,7 +821,7 @@ mod tests {
     }
 
     #[test]
-    fn a_refused_stale_or_late_change_changes_nothing() {
+    fn a_refused_or_stale_change_changes_nothing() {
         let lifecycle = in_app();
         let changes = lifecycle.controls(1, Readings::default);
         // Before the stream runs.
@@ -866,6 +903,51 @@ mod tests {
         assert_eq!(toggles(&observed(&lifecycle)).len(), 2);
         assert!(matches!(ask(&lifecycle, off), R::Error { .. }));
         assert!(changes.next().is_none());
+    }
+
+    // D11 review: a change still queued when Apply gave up ran later and
+    // wrote its value, so the snapshot showed a change that korrid was told
+    // had failed. As Artemis's `task.cancel(false)`, it never runs.
+    #[test]
+    fn a_change_still_queued_when_apply_times_out_never_runs() {
+        let lifecycle = in_app();
+        let changes = lifecycle.controls(1, Readings::default);
+        connect(&lifecycle);
+        let id = fill(&observed(&lifecycle));
+        // The stream's thread does not take it before the deadline.
+        assert!(matches!(ask(&lifecycle, turn_on(&id)), R::Error { .. }));
+        // It comes to its next tick late.
+        assert!(
+            changes.next().is_none(),
+            "a change whose Apply timed out reached the stream"
+        );
+        assert_eq!(toggles(&observed(&lifecycle))[0], (id, false));
+    }
+
+    // A change that the stream's thread took before the deadline is under
+    // way, as a running task that `cancel(false)` does not stop: Apply still
+    // reports the timeout, and the value is what the stream then did.
+    #[test]
+    fn a_change_taken_before_apply_times_out_runs_to_its_end() {
+        let lifecycle = in_app();
+        let changes = lifecycle.controls(1, Readings::default);
+        connect(&lifecycle);
+        let id = fill(&observed(&lifecycle));
+        let (late, answer_now) = mpsc::channel::<()>();
+        let stream = std::thread::spawn(move || {
+            loop {
+                if let Some(change) = changes.next() {
+                    answer_now.recv().unwrap();
+                    change.done(Ok(()));
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        });
+        assert!(matches!(ask(&lifecycle, turn_on(&id)), R::Error { .. }));
+        late.send(()).unwrap();
+        stream.join().unwrap();
+        assert_eq!(toggles(&observed(&lifecycle))[0], (id, true));
     }
 
     #[test]

@@ -1452,9 +1452,13 @@ While the stream is connected, Snapshot lists them, the battery, the health
 and its sample time; the readings run outside the lifecycle's lock. Apply
 checks the id and the value as `KorriViewerControls.apply` does, hands the
 change to that thread and answers once it has taken effect, within 5 s
-(Artemis's wait for its UI thread). A refused change, a stream that ended
-and a late answer are errors and change nothing. The values change only
-when the stream's thread confirms. With no controls attached, as on Linux
+(Artemis's wait for its UI thread). A refused change and a stream that
+ended are errors and change nothing. When the 5 s pass first, Apply is an
+error too, and what follows depends on the change, as with Artemis's
+`task.cancel(false)`: one that the stream's thread has not taken yet is
+cancelled and never runs; one that it took runs to its end, and the
+snapshot then shows what it did. The values change only when the stream's
+thread confirms a change that it took. With no controls attached, as on Linux
 and in the viewer's own app, Snapshot and Apply answer as before.
 
 Not carried, each because this viewer lacks the feature, not the control:
