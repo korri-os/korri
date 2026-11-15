@@ -1,0 +1,133 @@
+{
+  "model": "System Product Name",
+  "architecture": "x86_64",
+  "boot_id": "6c04d35a-b6d0-48de-a773-e6d881fb90fd",
+  "os_release": {
+    "ANSI_COLOR": "\"0;38;2;126;186;228\"",
+    "BUG_REPORT_URL": "\"https://github.com/NixOS/nixpkgs/issues\"",
+    "BUILD_ID": "\"26.11.20260923.4975466\"",
+    "CPE_NAME": "\"cpe:/o:nixos:nixos:26.11\"",
+    "DEFAULT_HOSTNAME": "nixos",
+    "DOCUMENTATION_URL": "\"https://nixos.org/learn.html\"",
+    "HOME_URL": "\"https://nixos.org/\"",
+    "ID": "nixos",
+    "LOGO": "\"nix-snowflake\"",
+    "NAME": "NixOS",
+    "PRETTY_NAME": "\"NixOS 26.11 (Zokor)\"",
+    "SUPPORT_URL": "\"https://nixos.org/community.html\"",
+    "VENDOR_NAME": "NixOS",
+    "VENDOR_URL": "\"https://nixos.org/\"",
+    "VERSION": "\"26.11 (Zokor)\"",
+    "VERSION_CODENAME": "zokor",
+    "VERSION_ID": "\"26.11\""
+  },
+  "display": {
+    "name": "HEADLESS-1",
+    "mode": {
+      "width": 1280,
+      "height": 720,
+      "refresh": 58823
+    },
+    "refresh_hz": 58.823,
+    "transform": "normal",
+    "power": true,
+    "scale": 1.0,
+    "rect": {
+      "x": 0,
+      "y": 0,
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "sunshine_version": "2026.914.233613-korri",
+  "working_encoders": [
+    "h264_vaapi",
+    "hevc_vaapi",
+    "av1_vaapi"
+  ],
+  "fixture_user": "korri",
+  "thermal": [
+    {
+      "zone": "hwmon4/temp1",
+      "type": "k10temp Tctl",
+      "driver": "k10temp",
+      "temp": 78250,
+      "trips": [],
+      "unreadable": null,
+      "limits": {
+        "critical": null,
+        "start_below": 85000,
+        "end_at": 100000
+      }
+    }
+  ],
+  "heat_guarded": true,
+  "hardware_picture_path": false,
+  "board": [],
+  "live_games_at_start": [],
+  "input_rule": "record",
+  "tone": {
+    "hz": 1000,
+    "sink": "korri-tone"
+  },
+  "log_input": true,
+  "sunshine_port": 42751,
+  "sunshine_control_port": 42761,
+  "listening_tcp_ports": [
+    42751
+  ],
+  "processes": {
+    "compositor": {
+      "pid": 599403
+    },
+    "sunshine": {
+      "pid": 599425
+    },
+    "sound": {
+      "pid": 599395
+    }
+  },
+  "sender_fixture": {
+    "application": "Korri Stream",
+    "renderer": "gles2",
+    "render_node": "/dev/dri/renderD128",
+    "hardware_encoder": true,
+    "patch_stack": {
+      "package": "sunshine-korri",
+      "build_profile": "x86_64-linux-cuda",
+      "base_sunshine_version": "2026.914.233613",
+      "patch_set_sha256": "edf475f2360c47a6aaff05947aa28abf137071c761f7c4f5bb58fa64f06f8d73",
+      "patches": [
+        "0015-add-korri-input-seat-event-mirror.patch",
+        "0017-use-wayland-ram-capture-for-cuda.patch",
+        "0018-vectorize-wayland-bgr888-with-swscale.patch",
+        "0019-use-pinned-memory-for-cuda-capture.patch",
+        "0020-add-korrid-certificate-control.patch",
+        "0021-add-v4l2m2m-encoder.patch",
+        "0038-configure-linux-capture-fifo.patch",
+        "0039-bind-paired-client-input-identity.patch",
+        "0044-live-resolution-control.patch"
+      ]
+    },
+    "certificate_control": {
+      "KORRID_STREAM_CERTIFICATE_CONTROL_SOCKET": "/run/korri-cadence-certificate-tyzbxnxo/control.sock",
+      "KORRID_STREAM_CERTIFICATE_CONTROL_GID": "59034",
+      "KORRID_STREAM_CERTIFICATE_CONTROL_PEER_UID": "0",
+      "KORRID_STREAM_CERTIFICATE_CONTROL_PEER_GID": "0"
+    },
+    "attempts": [
+      {
+        "render_node": "/dev/dri/renderD128",
+        "working_encoders": [
+          "h264_vaapi",
+          "hevc_vaapi",
+          "av1_vaapi"
+        ],
+        "hardware_encoder": true,
+        "port": 42751,
+        "sunshine_version": "2026.914.233613-korri"
+      }
+    ],
+    "run_folder": "/tmp/korri-stream-cadence-sender-fxbyknz1"
+  }
+}

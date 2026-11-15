@@ -285,11 +285,20 @@ What the person does, by slice D5's rules (`korri_viewer::play`):
 
 | Input | What happens |
 | --- | --- |
-| Keys, touches, controllers | To the stream (D4's mapping); a touch never reaches the shell under the video |
+| Keys, touches, controllers | To the stream (D4's mapping). A touch never reaches the shell under the video, and nor does a key that the stream does not map: on the emulator such a key raised the soft keyboard over the stream. Android's own keys (volume, power) stay Android's |
 | Back or Guide | Opens the overlay's stand-in and holds the stream's input; again closes it |
 | Volume and power under the overlay | Android's |
 | Home, another app | The runtime stops (`Stopped`). korrid's recovery starts the stream again while its launch is selected and the app is in front: it fails at once while the app has no window, and plays again when the app returns |
 | Ctrl+Alt+Shift+Q | The runtime stops, as on Home; korrid's recovery restarts it while the app is in front |
+
+The play proof (`proof/play.py`, `nix run .#android-app-play-proof`, on aka
+as root) runs these steps on one emulator with no person: the tap, Running in
+the app and in korrid, the frame-ID bar, the overlay, the keys and a tap at
+the sender, the tone, Home, and the return. Its docstring lists them. On the
+emulator a letter key starts an input method session that takes the next
+Back, so the proof opens the overlay before it sends letters.
+
+Records: `proof/android-app-d10/`.
 
 ## The event loop: one poller (D10)
 
