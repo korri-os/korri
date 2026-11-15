@@ -3,8 +3,9 @@
 
 One headless Android 12 emulator on this host (2 cores, nice 10) runs the
 Artemis app of clients/android as `nix run .#android-apk` builds it, and its
-test APK. The sender is stream-cadence's sender fixture on aka with Korri's
-patched Sunshine (`--sunshine`, the sunshine-korri package). The app's test
+test APK. Since the owner's rule of 2026-11-15 this host is aka, with
+`--sender local`. The sender is stream-cadence's sender fixture on aka with
+Korri's patched Sunshine (`--sunshine`, the sunshine-korri package). The app's test
 hook, KorriLiveResizeFixtureTest, opens the exact viewer and makes korrid's
 call for the Portrait control and back (KorridServer.viewerResize). This
 script:
@@ -304,7 +305,8 @@ def give_key_pair(emulator: Emulator, keys: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--sender", default="root@aka", help="SSH target of the sender fixture")
+    parser.add_argument("--sender", default="root@aka",
+                        help=f"SSH target of the sender fixture, or {cli.LOCAL}: this host, when the proof runs on aka as root")
     parser.add_argument("--stream-host", help="the sender's address as the emulator reaches it; default: the SSH host's address")
     parser.add_argument("--sunshine", required=True, help="the sunshine-korri package in this host's store")
     parser.add_argument("--apk", type=Path, default=APK)
@@ -317,6 +319,8 @@ def main() -> int:
     args = parser.parse_args()
     sdk = os.environ["KORRI_VIEWER_EMULATOR_SDK"]
     image = os.environ["KORRI_VIEWER_EMULATOR_IMAGE"]
+    if args.sender == cli.LOCAL and not args.stream_host:
+        raise SystemExit(f"--sender {cli.LOCAL} needs --stream-host: the address at which the emulator reaches this host")
     host = args.stream_host or socket.gethostbyname(args.sender.split("@")[-1])
     out = args.out or Path(tempfile.mkdtemp(prefix="korri-476-resize-"))
     out.mkdir(parents=True, exist_ok=True)
@@ -335,10 +339,13 @@ def main() -> int:
     result["korri_tree_clean"] = run(["git", "-C", str(ROOT), "status", "--porcelain"]).stdout.strip() == ""
     result["sunshine"] = patched
 
+    # The owner's rule (2026-11-15): heavy work, emulators included, runs on
+    # aka. There the sender fixture is local, and its agent is root as over SSH.
     target, options = cli.endpoint(args.sender, [])
-    assert target is not None
     agent, _, paths = cli.tools("x86_64", target, options, ("motion", "sway"))
-    cli.deliver(target, options, [patched["package"]])
+    if target is not None:
+        cli.deliver(target, options, [patched["package"]])
+    sender_command = agent.replace("/device.py", "/sender.py")
     sway = next(p for p in paths if "-sway-unwrapped-" in p) + "/bin/sway"
     motion = next(p for p in paths if p.endswith("-stream-cadence-motion")) + "/bin/stream-cadence-motion"
     emulator = Emulator(sdk, state, args.port, args.adb_server_port, out)
@@ -346,8 +353,9 @@ def main() -> int:
     logcat: Logcat | None = None
     keys = out / "keys"
     try:
-        fixture = cli.Remote(["ssh", *options, target, agent.replace("/device.py", "/sender.py")],
-                             out / "sender-agent.log")
+        fixture = (cli.Remote(["ssh", *options, target, sender_command], out / "sender-agent.log")
+                   if target is not None else
+                   cli.Remote(shlex.split(sender_command), out / "sender-agent.log", detached=True))
         # The sender's heat guard refuses a start on a hot device; wait as
         # stream-cadence waits between runs, for up to an hour.
         for attempt in range(6):
