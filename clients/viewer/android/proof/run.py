@@ -243,6 +243,10 @@ class Emulator:
             ANDROID_USER_HOME=str(home),
             ANDROID_EMULATOR_HOME=str(home),
             ANDROID_AVD_HOME=str(home / "avd"),
+            # Its own adb server, which the emulator joins: another emulator
+            # user on this host, with the shared server, never sees this one.
+            # A run once got another tool's install in the middle of its Back.
+            ANDROID_ADB_SERVER_PORT=str(port + 10000),
         )
 
     def adb(self, *args: str, check: bool = True, timeout: float = 120, **kwargs):
@@ -279,6 +283,9 @@ class Emulator:
 
     def start(self) -> None:
         log(f"starting the emulator on {self.serial} (2 cores)")
+        # The emulator joins the run's own adb server when it boots.
+        subprocess.run([f"{self.sdk}/platform-tools/adb", "start-server"], check=True,
+                       capture_output=True, env=self.env, timeout=60)
         # Android's sound goes to a WAV file, never to this host's speakers.
         sound = dict(QEMU_AUDIO_DRV="wav", QEMU_WAV_PATH=str(self.sound), QEMU_WAV_FREQUENCY="48000")
         self.process = subprocess.Popen(
@@ -310,6 +317,8 @@ class Emulator:
         except subprocess.TimeoutExpired:
             os.killpg(self.process.pid, signal.SIGKILL)
             self.process.wait(timeout=30)
+        subprocess.run([f"{self.sdk}/platform-tools/adb", "kill-server"], check=False,
+                       capture_output=True, env=self.env, timeout=30)
         left = subprocess.run(
             ["pgrep", "-f", f"-avd {AVD}"], text=True, capture_output=True
         ).stdout.split()
