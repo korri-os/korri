@@ -28,7 +28,8 @@ steps:
    (stream-cadence's `sunshineFollowingOutput`) encodes at the output's
    size, so a new SPS comes after an IDR frame. The app's decoder must
    follow it and its video layer take the new shape; screenshots read the
-   bar at the new size. Inject input (slice D4): keys and touches with
+   bar at the new size. `--stock-sunshine` runs the stock Sunshine and
+   leaves this step out. Inject input (slice D4): keys and touches with
    Android's `input` command, a mouse, and a game pad that the emulator's
    own `hid` command makes through /dev/uhid; the picture must move on.
    Stop Android's audio server, a real device error, and let init start it
@@ -191,14 +192,16 @@ class Remote:
             self.log.close()
 
 
-def sender_tools(root: Path, target: str) -> tuple[list[str], dict]:
+def sender_tools(root: Path, target: str, stock_sunshine: bool) -> tuple[list[str], dict]:
     """The sender fixture's prebuilt parts, built here and copied to the sender."""
     nixpkgs = os.environ["CADENCE_NIXPKGS"]
     tools = f"import {json.dumps(str(root / 'nix/stream-cadence/default.nix'))} {{ inherit pkgs; }}"
     head = f"let pkgs = import {json.dumps(nixpkgs)} {{ system = \"x86_64-linux\"; }}; tools = {tools}; in "
-    # The Sunshine that encodes at its output's size: the sender can change the
-    # stream's size in the middle of the stream (stream-cadence's `resize`).
-    names = ["python", "motion", "sway", "sunshineFollowingOutput", "pulseaudio"]
+    # By default the Sunshine that encodes at its output's size: the sender
+    # can change the stream's size in the middle of the stream
+    # (stream-cadence's `resize`).
+    sunshine = "sunshine" if stock_sunshine else "sunshineFollowingOutput"
+    names = ["python", "motion", "sway", sunshine, "pulseaudio"]
     log("building the sender fixture's parts")
     outputs = json.loads(
         run(
@@ -210,7 +213,9 @@ def sender_tools(root: Path, target: str) -> tuple[list[str], dict]:
     # nix build --json does not keep the order of the list.
     built = [row["outputs"]["out"] for row in outputs]
     marks = {"python": r"-python3-[\d.]", "motion": r"-stream-cadence-motion$",
-             "sway": r"-sway-unwrapped-", "sunshine": r"-sunshine-follows-output-", "pulseaudio": r"-pulseaudio-\d"}
+             "sway": r"-sway-unwrapped-",
+             "sunshine": r"-sunshine-\d" if stock_sunshine else r"-sunshine-follows-output-",
+             "pulseaudio": r"-pulseaudio-\d"}
     paths = {name: next(p for p in built if re.search(mark, p)) for name, mark in marks.items()}
     paths["source"] = run(
         ["nix", "eval", "--raw", "--impure", "--expr", head + "toString tools.runtime.source"],
@@ -681,13 +686,7 @@ def bar_in_place(png: Path, placed: dict, stream: tuple[int, int]) -> dict:
     """The bar in a screenshot, and whether it has the geometry of a picture
     of `stream` pixels shown in `placed`: the motion source draws its cells
     `width // 40` pixels wide, a quarter of the way down (frame-bar.h)."""
-    import numpy as np
-
-    header = png.read_bytes()[:24]
-    width, height = int.from_bytes(header[16:20], "big"), int.from_bytes(header[20:24], "big")
-    gray = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", str(png), "-vf", "format=gray",
-                           "-f", "rawvideo", "-"], check=True, capture_output=True, timeout=60).stdout
-    image = np.frombuffer(gray, dtype=np.uint8).reshape(height, width)
+    image = gray(png)
     found: dict = {}
     try:
         at = bar.search(image)
@@ -752,6 +751,10 @@ def inject_input(emulator: "Emulator", logcat: "Logcat", fixture: "Remote", out:
         raise RuntimeError("the app logged no placement of the picture")
     cx, cy = (placed["left"] + placed["right"]) // 2, (placed["top"] + placed["bottom"]) // 2
     quarter = (placed["right"] - placed["left"]) // 4
+    # A quarter across and three quarters down the picture (OFF_CENTRE): only
+    # the picture's own rect maps it there.
+    ox = placed["left"] + (placed["right"] - placed["left"]) // 4
+    oy = placed["top"] + (placed["bottom"] - placed["top"]) * 3 // 4
     mark = len(logcat.lines())
     done: dict = {"placed": placed, "steps": []}
 
@@ -764,6 +767,7 @@ def inject_input(emulator: "Emulator", logcat: "Logcat", fixture: "Remote", out:
     log("input: keys, touches and a mouse")
     step("keys", "input keyevent KEYCODE_K KEYCODE_O KEYCODE_R KEYCODE_R KEYCODE_I")
     step("tap", f"input tap {cx} {cy}")
+    step("tap off the centre", f"input tap {ox} {oy}")
     step("swipe", f"input swipe {cx - quarter} {cy} {cx + quarter} {cy} 300")
     step("mouse", f"input mouse tap {cx} {cy}")
     fixture.request("clock")
@@ -784,6 +788,9 @@ def inject_input(emulator: "Emulator", logcat: "Logcat", fixture: "Remote", out:
                          if "korri-viewer: input: " in l]
     return done
 
+
+# The off-centre tap's place in the picture, as the stream carries it.
+OFF_CENTRE = (0.25, 0.75)
 
 # The fields that Sunshine logs in hexadecimal (src/input.cpp, `print`); the
 # others are decimal.
@@ -807,7 +814,12 @@ def input_arrived(packets: list[dict], placed: dict) -> dict:
     sent = [(value(p, "keyAction"), value(p, "keyCode") & 0xFF) for p in keys]
     expected = [(action, ord(letter)) for letter in "KORRI" for action in (3, 4)]
     touches = [p for p in packets if p["kind"] == "touch"]
-    middle = [p for p in touches if abs(float(p["fields"]["x"]) - 0.5) < 0.02 and abs(float(p["fields"]["y"]) - 0.5) < 0.02]
+    def at(packet: dict, point: tuple[float, float]) -> bool:
+        return abs(float(packet["fields"]["x"]) - point[0]) < 0.02 and abs(float(packet["fields"]["y"]) - point[1]) < 0.02
+
+    middle = [p for p in touches if at(p, (0.5, 0.5))]
+    # The off-centre tap's down, where the picture's rect puts it.
+    off_centre = [p for p in touches if value(p, "eventType") == 1 and at(p, OFF_CENTRE)]
     mice = [p for p in packets if p["kind"] == "absolute mouse move"]
     width, height = placed["right"] - placed["left"], placed["bottom"] - placed["top"]
     arrivals = [p for p in packets if p["kind"] == "controller arrival"]
@@ -827,7 +839,8 @@ def input_arrived(packets: list[dict], placed: dict) -> dict:
         "counts": {kind: sum(1 for p in packets if p["kind"] == kind) for kind in sorted({p["kind"] for p in packets})},
         "keyboard": {"sent": sent, "every_key_down_and_up_in_order": sent == expected,
                      "flags": sorted({value(p, "flags") for p in keys})},
-        "touch": {"types": sorted({value(p, "eventType") for p in touches}), "at_the_middle": len(middle)},
+        "touch": {"types": sorted({value(p, "eventType") for p in touches}), "at_the_middle": len(middle),
+                  "downs_off_the_centre": len(off_centre)},
         # The core sends the reference size less one (InputStream.c).
         "mouse": {"positions": len(mice), "reference": sorted({(value(p, "width") + 1, value(p, "height") + 1) for p in mice})},
         "arrival": [p["fields"] for p in arrivals],
@@ -844,6 +857,7 @@ def input_arrived(packets: list[dict], placed: dict) -> dict:
         "checks": {
             "keys_arrived": sent == expected,
             "touches_arrived": {1, 2, 3} <= {value(p, "eventType") for p in touches} and bool(middle),
+            "touch_off_the_centre_arrived_where_the_picture_puts_it": len(off_centre) == 1,
             "mouse_arrived": bool(mice) and all((value(p, "width") + 1, value(p, "height") + 1) == (width, height) for p in mice),
             "pad_arrived_as_xbox_number_0": any(value(p, "controllerNumber") == 0 and value(p, "type") == 1 for p in arrivals),
             "pad_buttons_sticks_triggers_and_hat_arrived": LI_A in buttons and LI_LEFT in buttons
@@ -1167,6 +1181,8 @@ def main() -> int:
     parser.add_argument("--seconds", type=int, default=15, help="how long the stream runs before Back")
     parser.add_argument("--port", type=int, default=5584, help="the emulator's console port")
     parser.add_argument("--out", type=Path, help="the record's directory; default: a new one under /tmp")
+    parser.add_argument("--stock-sunshine", action="store_true",
+                        help="the sender's stock Sunshine, and no size change in the middle of the stream (#476)")
     args = parser.parse_args()
     root = Path(os.environ["KORRI_ROOT"])
     sdk = os.environ["KORRI_VIEWER_EMULATOR_SDK"]
@@ -1198,7 +1214,9 @@ def main() -> int:
     checks["apk_leaves_no_recents_entry"] = re.search(r"autoRemoveFromRecents.*=true", manifest) is not None
     checks["apk_has_both_abis"] = all(f"lib/{abi}/libkorri_viewer_android.so" in entries for abi in ("arm64-v8a", "x86_64"))
 
-    command, parts = sender_tools(root, args.sender)
+    resizing = not args.stock_sunshine
+    result["sunshine"] = "stock" if args.stock_sunshine else "follows its output"
+    command, parts = sender_tools(root, args.sender, args.stock_sunshine)
     fixture = Remote(command, out / "sender-agent.log")
     emulator = Emulator(sdk, state, args.port, out)
     # The agent hears from this host while the long steps run (the emulator's
@@ -1324,11 +1342,12 @@ def main() -> int:
         checks["screenshots_show_the_streams_shape"] = all(shot.get("in_place") for shot in moving)
         fixture.request("clock")
         # #476 slice 4: the sender changes the stream's size in the middle of it.
-        resize = resize_stream(emulator, logcat, fixture, out)
-        result["resize"] = {key: value for key, value in resize.items() if key != "checks"}
-        checks.update(resize["checks"])
-        ids = [shot["id"] for shot in resize["screenshots"] if "id" in shot]
-        fixture.request("clock")
+        if resizing:
+            resize = resize_stream(emulator, logcat, fixture, out)
+            result["resize"] = {key: value for key, value in resize.items() if key != "checks"}
+            checks.update(resize["checks"])
+            ids = [shot["id"] for shot in resize["screenshots"] if "id" in shot]
+            fixture.request("clock")
         # Slice D4: input, then the picture must still move.
         injected = inject_input(emulator, logcat, fixture, out)
         result["input"] = injected
@@ -1499,9 +1518,13 @@ def main() -> int:
             # fault.
             checks["frame_record_ids_move"] = record["handed_off_distinct_ids"] >= 2 and record["handed_off_ids_never_go_back"]
             # The record goes on across the new size: frames of both sizes,
-            # in that order, each moving.
+            # in that order, each moving; without the change, one size.
             shown = [run["size"] for run in record["sizes"] if run["distinct_ids"] >= 2]
-            checks["frame_record_goes_on_at_the_new_size"] = shown[:1] == [list(STREAM_SIZE)] and shown[-1:] == [list(RESIZED)]
+            if resizing:
+                checks["frame_record_goes_on_at_the_new_size"] = (shown[:1] == [list(STREAM_SIZE)]
+                                                                  and shown[-1:] == [list(RESIZED)])
+            else:
+                checks["frame_record_keeps_the_streams_size"] = shown == [list(STREAM_SIZE)]
         else:
             checks["frame_record_written"] = False
         recording.unlink(missing_ok=True)
@@ -1549,8 +1572,10 @@ def main() -> int:
         checks["sunshine_saw_the_end"] = "CLIENT DISCONNECTED" in journal
         # The fixture's Sunshine encoded at the new size (stream-cadence's
         # sunshine-follows-output.patch).
-        checks["sunshine_stream_followed_the_output"] = (
-            f"the stream follows the output: {STREAM_SIZE[0]}x{STREAM_SIZE[1]} to {RESIZED[0]}x{RESIZED[1]}" in journal)
+        if resizing:
+            checks["sunshine_stream_followed_the_output"] = (
+                f"the stream follows the output: {STREAM_SIZE[0]}x{STREAM_SIZE[1]} to {RESIZED[0]}x{RESIZED[1]}"
+                in journal)
         # Sunshine says so when it captures no sound for a session.
         checks["sunshine_captured_sound"] = "Unable to initialize audio capture" not in journal
     except Exception as error:
