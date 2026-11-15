@@ -283,7 +283,7 @@ def main() -> int:
     del library
     device_relay = int(relays[0].rsplit(":", 1)[1])
 
-    command, parts = viewer_proof.sender_tools(d9.ROOT, "local")
+    command, parts = viewer_proof.sender_tools(d9.ROOT, "local", stock_sunshine=True)
     sender = viewer_proof.Remote(command, out / "sender-agent.log")
     emulator = d8.Emulator(sdk, state, args.port, out, sound=out / "emulator-sound.wav")
     holder: "d9.Holder | None" = None

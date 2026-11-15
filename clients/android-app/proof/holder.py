@@ -249,7 +249,7 @@ def main() -> int:
     if args.no_sender:
         result["sender"] = "not started (--no-sender): the holder's game has no live sender in this run"
     else:
-        command, parts = viewer_proof.sender_tools(ROOT, "local")
+        command, parts = viewer_proof.sender_tools(ROOT, "local", stock_sunshine=True)
         sender = viewer_proof.Remote(command, out / "sender-agent.log")
     emulator = d8.Emulator(sdk, state, args.port, out)
     holder: Holder | None = None
