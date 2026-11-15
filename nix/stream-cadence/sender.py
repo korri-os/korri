@@ -6,7 +6,9 @@ Sunshine is stock from nixpkgs, or Korri's patched package when the request
 names it; its provenance then names the patch stack (`patch_stack`).
 The fixture reads and changes nothing of a product stream, and needs no
 Korri service and no certificate socket: the viewer pairs through Sunshine's
-own PIN.
+own PIN. On request, Korri's patched Sunshine gets a certificate control
+socket of its own (`CertificateControl`), so that a test korrid can provision
+a viewer's certificate as a product korrid does.
 
 Nothing of the fixture runs as root. An agent that an ordinary user starts
 keeps that user. An agent that is root, as on a Korri device, gives the
@@ -122,6 +124,14 @@ ENCRYPTION_MANDATORY = 2
 PROVENANCE = Path("share/korri/sunshine-korri/provenance")
 PROVENANCE_FORMAT = "1"
 PATCHED_PACKAGE = "sunshine-korri"
+# Korri's Sunshine takes its certificate control socket as systemd hands one
+# over (korri-plugins: services/sunshine/patches/0020): descriptor 3, by this
+# name. The patch that adds it, as the package's provenance names it.
+CERTIFICATE_CONTROL_NAME = "korri-certificate-control"
+CERTIFICATE_CONTROL_PATCH = "0020-add-korrid-certificate-control.patch"
+# A root agent makes the socket's folder in root's /run, as the product's
+# socket unit makes /run/korri-certificate-control.
+CERTIFICATE_CONTROL_RUNS = Path("/run")
 # Seconds that `pin` waits for the viewer's pairing request to reach a
 # Sunshine that binds a PIN to one request. The viewer shows its PIN first.
 PAIRING_WAIT = 10.0
@@ -267,6 +277,99 @@ def patch_stack(sunshine: Path) -> dict | None:
         "patch_set_sha256": fields["patch_set_sha256"],
         "patches": patches,
     }
+
+
+def certificate_control_allowed(patches: dict | None) -> None:
+    """Refuse certificate control for a Sunshine that has none (stock, or without patch 0020)."""
+    if patches is None or CERTIFICATE_CONTROL_PATCH not in patches["patches"]:
+        raise RuntimeError(
+            "The fixture's Sunshine has no certificate control: that is Korri's patched "
+            f"Sunshine with patch {CERTIFICATE_CONTROL_PATCH}. The sender fixture does not start."
+        )
+
+
+class CertificateControl:
+    """The certificate control socket of the fixture's Sunshine.
+
+    It is made as the product's unit `korri-sunshine-certificate-control.socket`
+    makes its own: a listening SOCK_SEQPACKET socket, `SocketMode=0660` with the
+    group of the korrid that may use it, in a folder of `DirectoryMode=0751`.
+    The process that listens is this agent, so korrid sees it as the socket's
+    peer, as a product korrid sees systemd. Korri's Sunshine checks the socket
+    and the korrid that connects; korrid checks the socket, its folder and the
+    peer (services/korrid/src/host/moonlight_certificate.rs). Only a root agent
+    makes one for a run, so that both sides find root's socket.
+    """
+
+    def __init__(self, folder: Path, listener: socket.socket, owner_gid: int):
+        self.folder = folder
+        self.path = folder / "control.sock"
+        self.listener = listener
+        self.owner_gid = owner_gid
+        # SO_PEERCRED names the process that listened, at that moment.
+        self.peer = (os.geteuid(), os.getegid())
+
+    @classmethod
+    def make(cls, parent: Path, owner_gid: int) -> "CertificateControl":
+        # mkdtemp makes the folder 0700: nobody reaches the socket before its mode is set.
+        folder = Path(tempfile.mkdtemp(prefix="korri-cadence-certificate-", dir=parent))
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+        try:
+            path = folder / "control.sock"
+            # bind makes the socket with the mode that the umask leaves: 0660.
+            # A socket cannot be opened, so it gets no fchmod; and no chmod
+            # by path follows a link (test_links).
+            previous = os.umask(0o117)
+            try:
+                listener.bind(str(path))
+            finally:
+                os.umask(previous)
+            os.chown(path, -1, owner_gid, follow_symlinks=False)
+            listener.listen(16)
+            fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            try:
+                os.fchmod(fd, 0o751)
+            finally:
+                os.close(fd)
+        except BaseException:
+            listener.close()
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
+        return cls(folder, listener, owner_gid)
+
+    def sunshine(self, *, korrid_uid: int, korrid_gid: int) -> dict[str, str]:
+        """What Korri's Sunshine reads with the socket: the korrid it serves, and the socket itself."""
+        return {
+            "KORRI_CERTIFICATE_CONTROL_UID": str(korrid_uid),
+            "KORRI_CERTIFICATE_CONTROL_GID": str(korrid_gid),
+            "KORRI_CERTIFICATE_CONTROL_OWNER_GID": str(self.owner_gid),
+            "KORRI_CERTIFICATE_CONTROL_MODE": "0660",
+            "KORRI_CERTIFICATE_CONTROL_PATH": str(self.path),
+        }
+
+    def korrid(self) -> dict[str, str]:
+        """What a korrid that provisions through this socket reads (moonlight_certificate.rs)."""
+        return {
+            "KORRID_STREAM_CERTIFICATE_CONTROL_SOCKET": str(self.path),
+            "KORRID_STREAM_CERTIFICATE_CONTROL_GID": str(self.owner_gid),
+            "KORRID_STREAM_CERTIFICATE_CONTROL_PEER_UID": str(self.peer[0]),
+            "KORRID_STREAM_CERTIFICATE_CONTROL_PEER_GID": str(self.peer[1]),
+        }
+
+    def activate(self, command: list[str]) -> list[str]:
+        """`command` as a child that gets the socket as systemd hands one over (`listen` below).
+
+        The caller passes the listener's descriptor to that child (`pass_fds`).
+        """
+        return [sys.executable, "-B", __file__, "listen", str(self.listener.fileno()), *command]
+
+    def close(self) -> None:
+        self.listener.close()
+        self.path.unlink(missing_ok=True)
+        try:
+            self.folder.rmdir()
+        except FileNotFoundError:
+            pass
 
 
 def credentials(name: str, password: str) -> str:
@@ -492,6 +595,10 @@ class Session:
         self.motion = ""
         # The private sound server of the tone, when one was asked for.
         self.tone: dict | None = None
+        # The certificate control socket of Korri's Sunshine, when one was
+        # asked for, and the user of the korrid that may use it.
+        self.control: CertificateControl | None = None
+        self.control_user: tuple[int, int] | None = None
         # Sunshine logs each input packet, when asked (`configuration`).
         self.log_input = False
         # The network condition of the pair's loopback, when one was asked for,
@@ -574,7 +681,9 @@ class Session:
         self.gone |= (self.inputs | self.appeared) - now
         return sorted(self.appeared)
 
-    def spawn(self, name: str, args: list[str], env: dict[str, str]) -> subprocess.Popen:
+    def spawn(
+        self, name: str, args: list[str], env: dict[str, str], pass_fds: tuple[int, ...] = ()
+    ) -> subprocess.Popen:
         assert self.root is not None
         if name in self.processes:
             raise RuntimeError(f"{name} already runs in this session")
@@ -588,6 +697,7 @@ class Session:
             stdout=log,
             stderr=subprocess.STDOUT,
             preexec_fn=self.restrict,
+            pass_fds=pass_fds,
             # Its own session: what descends from it is known by that at cleanup.
             start_new_session=True,
         )
@@ -696,9 +806,15 @@ class Session:
             if self.tone
             else {}
         )
+        command = [self.sunshine, str(self.root / "sunshine.conf")]
+        control: dict[str, str] = {}
+        if self.control is not None and self.control_user is not None:
+            uid, gid = self.control_user
+            control = self.control.sunshine(korrid_uid=uid, korrid_gid=gid)
+            command = self.control.activate(command)
         self.spawn(
             "sunshine",
-            [self.sunshine, str(self.root / "sunshine.conf")],
+            command,
             self.environment(
                 WAYLAND_DISPLAY=DISPLAY,
                 # Sunshine announces itself through the host's Avahi daemon and has
@@ -706,7 +822,9 @@ class Session:
                 # keeps the private sender off the network's host lists.
                 DBUS_SYSTEM_BUS_ADDRESS="unix:path=" + str(runtime / "no-system-bus"),
                 **sound,
+                **control,
             ),
+            pass_fds=(self.control.listener.fileno(),) if control and self.control else (),
         )
         for _ in range(300):
             log = self.written("sunshine.log")
@@ -785,6 +903,20 @@ class Session:
             )
         # Before anything starts: stock Sunshine, or Korri's patch stack.
         patches = patch_stack(Path(str(request["sunshine"])))
+        # A test korrid provisions viewers here, as a product korrid does: only
+        # Korri's Sunshine has certificate control, and only root makes the
+        # root-owned socket that both sides check.
+        control_user = request.get("certificate_control")
+        if control_user is not None:
+            certificate_control_allowed(patches)
+            uid, gid = int(control_user["uid"]), int(control_user["gid"])
+            if uid <= 0 or gid <= 0:
+                raise ValueError("certificate control serves an unprivileged korrid")
+            if os.geteuid() != 0:
+                raise RuntimeError(
+                    "Only a root agent makes the certificate control socket that korrid "
+                    "and Sunshine accept. The sender fixture does not start."
+                )
         # A game on the device does not stop the fixture: it uses neither the
         # device's display nor the product Sunshine. A game changes the pair's
         # numbers, so the result names the units that are live.
@@ -893,6 +1025,9 @@ class Session:
                 runtime,
             )
         let_in(self.root)
+        if control_user is not None:
+            self.control = CertificateControl.make(CERTIFICATE_CONTROL_RUNS, gid)
+            self.control_user = (uid, gid)
         if pulseaudio:
             self.start_tone(str(pulseaudio), tone_hz)
         # Prefer a hardware encoder: take the first render node on which Sunshine
@@ -941,6 +1076,8 @@ class Session:
                 "hardware_encoder": chosen["hardware_encoder"],
                 # None: stock Sunshine from nixpkgs.
                 "patch_stack": patches,
+                # None: no certificate control. Else what its korrid reads.
+                "certificate_control": self.control.korrid() if self.control else None,
                 "attempts": attempts,
                 "run_folder": str(self.root),
             },
@@ -1237,6 +1374,12 @@ class Session:
             except Exception as error:
                 errors.append(f"{name}: {error}")
         self.tone = None
+        if self.control is not None:
+            try:
+                self.control.close()
+            except Exception as error:
+                errors.append(f"certificate control: {error}")
+            self.control, self.control_user = None, None
         root = self.root
         strays: list[int] = []
         others: list[dict] = []
@@ -1316,7 +1459,26 @@ def open_as_asked(node: str, how: str) -> int:
     return PROBE_OPENED
 
 
+def listen(descriptor: str, command: list[str]) -> None:
+    """The child of CertificateControl.activate: it becomes `command` with the socket as systemd hands one over.
+
+    Descriptor 3, `LISTEN_FDS=1`, its name in `LISTEN_FDNAMES` and this
+    process's own PID in `LISTEN_PID` (sd_listen_fds), which exec keeps.
+    """
+    fd = int(descriptor)
+    if fd != 3:
+        os.dup2(fd, 3)
+        os.close(fd)
+    os.set_inheritable(3, True)
+    os.environ.update(
+        LISTEN_PID=str(os.getpid()), LISTEN_FDS="1", LISTEN_FDNAMES=CERTIFICATE_CONTROL_NAME
+    )
+    os.execv(command[0], command)
+
+
 if __name__ == "__main__":
     if len(sys.argv) == 4 and sys.argv[1] == "open":
         sys.exit(open_as_asked(sys.argv[2], sys.argv[3]))
+    if len(sys.argv) >= 4 and sys.argv[1] == "listen":
+        listen(sys.argv[2], sys.argv[3:])
     serve(Session)
