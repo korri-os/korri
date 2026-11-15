@@ -1460,3 +1460,134 @@ async fn reach_incoming_connection_with_a_live_route_does_not_dial_back() {
         Some(route.stable_id())
     );
 }
+
+/// Exercise the controller's real publication fanout and incremental reads,
+/// not just the transport API. A busy minute must not become a socket minute.
+#[tokio::test]
+async fn reach_controller_minute_bounds_connections_per_relay() {
+    use futures::SinkExt;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio_tungstenite::{accept_async, tungstenite::Message};
+
+    let devices = Devices::new();
+    let recipient = devices.ca.public_key().unwrap();
+    let mut urls = Vec::new();
+    let mut counts = Vec::new();
+    let mut servers = JoinSet::new();
+    for refusing in [false, false, true] {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        urls.push(format!("ws://{}", listener.local_addr().unwrap()));
+        let connections = Arc::new(AtomicUsize::new(0));
+        let subscriptions = Arc::new(AtomicUsize::new(0));
+        let publications = Arc::new(AtomicUsize::new(0));
+        counts.push((
+            connections.clone(),
+            subscriptions.clone(),
+            publications.clone(),
+        ));
+        let recipient = recipient.clone();
+        servers.spawn(async move {
+            let mut sessions = JoinSet::new();
+            loop {
+                tokio::select! {
+                    accepted = listener.accept() => {
+                        let (stream, _) = accepted.unwrap();
+                        connections.fetch_add(1, Ordering::SeqCst);
+                        let (subscriptions, publications, recipient) =
+                            (subscriptions.clone(), publications.clone(), recipient.clone());
+                        sessions.spawn(async move {
+                            let mut socket = accept_async(stream).await.unwrap();
+                            while let Some(Ok(Message::Text(text))) = socket.next().await {
+                                let frame: serde_json::Value = serde_json::from_str(&text).unwrap();
+                                let response = match frame[0].as_str() {
+                                    Some("REQ") => {
+                                        assert_eq!(frame[2]["kinds"], serde_json::json!([30078, 1059]));
+                                        assert_eq!(frame[2]["#p"], serde_json::json!([recipient]));
+                                        assert!(frame[2]["since"].is_u64());
+                                        subscriptions.fetch_add(1, Ordering::SeqCst);
+                                        serde_json::json!(["EOSE", frame[1]])
+                                    }
+                                    Some("EVENT") => {
+                                        crate::identity::DeviceIdentity::verify_event(&frame[1].to_string()).unwrap();
+                                        publications.fetch_add(1, Ordering::SeqCst);
+                                        serde_json::json!(["OK", frame[1]["id"], !refusing,
+                                            if refusing { "blocked: policy" } else { "" }])
+                                    }
+                                    _ => continue,
+                                };
+                                socket.send(Message::Text(response.to_string().into())).await.unwrap();
+                            }
+                        });
+                    }
+                    _ = sessions.join_next(), if !sessions.is_empty() => {}
+                }
+            }
+        });
+    }
+    let transport = Arc::new(WebSocketRelayTransport::new());
+    let signal = CoordinatedRelays::new(
+        RelayList::configured(urls).unwrap(),
+        devices.ca.identity_snapshot().unwrap(),
+        transport,
+    )
+    .unwrap();
+    let mut controller = Controller {
+        directory: devices.da.clone(),
+        credentials: devices.ca.clone(),
+        config: None,
+        key: iroh::SecretKey::generate(),
+        peer_router: axum::Router::new(),
+        relay_port: 0,
+        environment: Environment::linux(),
+        endpoint: None,
+        tasks: JoinSet::new(),
+        relay_task: None,
+        bindings: Arc::new(RwLock::new(BTreeMap::new())),
+        dialing: Arc::new(Mutex::new(BTreeSet::new())),
+        relay_addresses: Arc::new(RwLock::new(Vec::new())),
+        pending: BTreeMap::new(),
+        processed: BTreeMap::new(),
+        retry: BTreeMap::new(),
+        relaying: Arc::new(RwLock::new(BTreeMap::new())),
+    };
+    let peer = devices.cb.public_key().unwrap();
+    for second in 0..60 {
+        if second % 5 == 0 {
+            let now = unix_time();
+            let command = CoordinationCommand::ReachOffer {
+                sender_device_public_key: recipient.clone(),
+                offer: Offer {
+                    endpoint_id: controller.key.public().to_string(),
+                    direct_addresses: Vec::new(),
+                    expires_at: now + SIGNAL_LIFETIME,
+                    request_id: hex::encode(rand::random::<[u8; 32]>()),
+                },
+            };
+            assert!(
+                controller
+                    .publish_reach(&signal, &peer, command, now, "offer_published")
+                    .await
+            );
+        }
+        controller
+            .receive_reach(&signal, &StunList(Vec::new()), unix_time())
+            .await;
+        // Finish fanout before advancing the clock; TCP uses real loopback I/O.
+        while let Some(result) = controller.tasks.join_next().await {
+            result.unwrap();
+        }
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(1)).await;
+        tokio::time::resume();
+    }
+    for (index, (connections, subscriptions, publications)) in counts.iter().enumerate() {
+        assert_eq!(connections.load(Ordering::SeqCst), 1, "relay {index}");
+        assert_eq!(subscriptions.load(Ordering::SeqCst), usize::from(index < 2));
+        assert_eq!(
+            publications.load(Ordering::SeqCst),
+            if index < 2 { 12 } else { 1 }
+        );
+    }
+    servers.abort_all();
+    while servers.join_next().await.is_some() {}
+}
