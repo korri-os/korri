@@ -138,7 +138,7 @@ let
         emulator = import ../clients/viewer/android/emulator.nix { inherit pkgs; };
       in
       {
-        description = "Prove the Rust viewer app (#391 D1 to D5) on one headless Android 12 emulator against a private Sunshine on aka.";
+        description = "Prove the Rust viewer app (#391 D1 to D5, and #476's size change in the middle of a stream) on one headless Android 12 emulator against a private Sunshine on aka.";
         usageSuffix = " -- [--sender ssh-target] [--seconds N] [--out DIRECTORY]";
         runtimeInputs = [
           # numpy and FFmpeg: stream-cadence's frame-ID bar decoder (bar.py,

@@ -18,8 +18,8 @@ nix build .#checks.x86_64-linux.korri-viewer-aarch64
 clients/viewer/proof/v4l2request/compare.sh ../korri-plugins
 # The session part for Android, both ABIs (below). No device or emulator.
 nix build .#checks.x86_64-linux.korri-viewer-android
-# The Android app (slices D1 to D5, below), and its proof on one headless
-# emulator against a private Sunshine on aka.
+# The Android app (slices D1 to D5 and #476's size change, below), and
+# its proof on one headless emulator against a private Sunshine on aka.
 nix build .#korri-viewer-android-apk
 nix run .#viewer-android-proof
 ```
@@ -481,10 +481,11 @@ fold and rotation) through `SunshineRuntimeSettings.c`. Korri wrote that file
 in its Artemis copy of the core (`1fd8f951a`); Sunshine patch 0044 in
 `korri-plugins` serves it. **Gate:** slice D7, which removes `Game.java`, does
 not ship until live resolution works in the Rust viewer. Dropping a live
-feature is not "equal or better" (ADR 0062). A slice before D7 chooses the
-route: a Korri patch on the core (first check its packet type 0x5504 against
-upstream Sunshine, which is reported to use it for player LEDs), the Rust
-network core of step E, or a control channel that korrid owns.
+feature is not "equal or better" (ADR 0062). #476 chose the route, a control
+channel that korrid owns (Route C), in five slices. Slice 4, the Android
+decoder and video layer following a size change that the sender makes in
+the middle of a stream, is below ("A new picture size in the middle of the
+stream"); the request itself is not there yet.
 
 ## Android app (#391 step D, slice D1)
 
@@ -652,8 +653,8 @@ buffer queue, and the compositor reads the same buffer.
   window sends Stop, which Android takes when the app leaves the screen,
   as Artemis's Game activity ends the stream in `onStop`. Back sent Stop
   until slice D5; since D5 the proof presses Home. The layer
-  follows a window resize (above); resize of the stream stays unavailable
-  (#476).
+  follows a window resize (above) and a new decoded size (#476, below); a
+  request to resize the stream stays unavailable.
 - Not carried from Artemis: reference frame invalidation (Artemis turns it
   on for Qualcomm, NVIDIA and MediaTek), the vendor keys of NVIDIA,
   MediaTek, Kirin, Exynos and Amlogic (not in the brief's list), the
@@ -1111,6 +1112,92 @@ then presses Home, which ends the stream (Back no longer does).
   open (the overlay buffer's resize is written but not exercised: in
   every run the window had its size when the layers were made), and the
   Start quick menu (host tests only).
+
+## Android: a new picture size in the middle of the stream (#476, slice 4)
+
+Slice 4 of #476's Route C, which every route needs: the sender changes the
+stream's size, with a new SPS after an IDR frame, and the viewer follows it.
+The request for a new size is not in this slice: Route C carries it later
+(korrid to korrid, then a local entry into Sunshine's resize channel).
+Until then `Resize` stays "Live resolution is unavailable".
+
+- **Noticing it.** `decoder.rs` reads each SPS's picture size (`sps.rs`:
+  the coded size less the frame cropping, ITU-T H.264 7.4.2.1.1) and
+  compares it with the size that the codec was configured for. A new size
+  takes effect with the IDR frame that carries it.
+- **Following it, as Artemis does.** A decoder with
+  `FEATURE_AdaptivePlayback` (Artemis's `decoderSupportsAdaptivePlayback`:
+  not `omx.intel` or `omx.mtk`) is configured with `max-width` and
+  `max-height` at Artemis's live-resolution maximum: the largest square,
+  from 4096 down to the stream's longer side in steps of 8, that
+  `VideoCapabilities.areSizeAndRateSupported` allows at the stream's rate,
+  so that either orientation fits (`codec::adaptive_max`). Within it the
+  codec takes the new SPS by itself. Any other decoder, and a size beyond
+  that maximum, restarts as Artemis's recovery restarts it: stop, configure
+  at the new size with the try that worked, start. A restart holds the
+  decoder's gate, so it never runs beside the output thread's codec calls;
+  a frame that is in the codec at that moment is lost, and the IDR frame
+  of the new size follows. A failed restart ends the stream, as a failed
+  decoder does.
+- **The SPS patch follows the new size.** `level_idc` is Artemis's level
+  for the new size, not for the size at the start.
+- **The decoded size** comes from the output format (`crop`, else `width`
+  and `height`), as Artemis reads it on `INFO_OUTPUT_FORMAT_CHANGED`. Each
+  new size goes to the app on the output thread (`Picture.resized`), which
+  wakes the app's loop.
+- **The video layer.** One transaction, posted to Android's main thread,
+  gives the layer's buffer queue the new size (`setBufferSize`) and places
+  the new shape's letterbox (`setGeometry`, `placement.rs`). Without the
+  buffer size, the queue would scale the decoder's buffers to the old size
+  (scale to fit), and the picture would keep the old shape. The input's
+  placement follows, so touches and the mouse map into the new picture.
+  Until the transaction applies, a frame or two of the new size can show
+  in the old shape.
+- **In the log:** `picture: the stream's size changes from 1280x720 to
+  720x1280 at frame N; the decoder follows it (adaptive playback up to
+  WxH)`, or `the decoder restarts (…)` and `picture: the decoder restarted
+  at 720x1280`; then `picture: decoded size 720x1280` and `picture: video
+  layer 720x1280 placed at (…) in the window …`. The decoder list and the
+  `picture: decode …` line name each decoder's adaptive playback and the
+  maximum.
+- **D2 to D4's safety rules are kept.** No new `extern "C"` callback: the
+  size reaches the app as a Rust call on the decoder's output thread,
+  whose panic still ends the stream. The layer still outlives the decoder,
+  and the input gate does not change.
+
+**What differs from Artemis** (`MediaCodecDecoderRenderer.java`,
+`Game.java`, `StreamContainer.java`):
+
+| | Artemis | Korri |
+| --- | --- | --- |
+| A decoder without adaptive playback | Refuses a live resolution (`acceptsLiveResolution`) | Restarts at the new size: the sender made the change, so there is no request to refuse |
+| `level_idc` after a change | For the size at the start (`initialWidth`, `initialHeight`) | For the new size: level 3.2 cannot hold 1920x1080 |
+| The picture's shape | The SurfaceView's aspect ratio (`setDesiredAspectRatio`), scale to fit | The layer's buffer size and geometry |
+| Waiting for the decoded size | `awaitLiveResolution`, up to 1.5 s, before it reports the resize applied | Nothing reports a resize yet (Route C, slice 5) |
+
+**Proof** (`nix run .#viewer-android-proof`, record
+`proof/android-resize/`): D5's run, with the size change. The sender is
+stream-cadence's fixture with `runtime.sunshineFollowingOutput`, the same
+Sunshine with one patch: it encodes at its hidden output's size. After the
+first screenshots the proof asks the fixture's agent for `resize` to
+720x1280: the hidden output takes that mode and the picture source starts
+again at that size, so its frame IDs start again at 1. The proof waits for
+the app's new decoded size and placement, then reads the bar in four
+screenshots: readable, rising, and with the geometry of a 720x1280 picture
+in the new letterbox (the cell width and height of the bar in the
+screenshot). The input, sound, overlay and Home steps of D3 to D5 then run
+at the new size: the overlay opens over the portrait picture. The frame record is decoded frame by frame at each frame's own
+size, and its IDs must never go back within a size; a picture that the
+sender encoded twice is counted, not failed, since the viewer cannot make
+a unit.
+
+- Not proven: the restart on a device. The emulator's decoder,
+  `c2.goldfish.h264.decoder`, has adaptive playback (up to 2960x2960 at
+  60 fps there), so the emulator takes the adaptive path; the restart is
+  proven over the scripted codec only. A real phone's decoders, which may
+  differ in their adaptive playback and their output format's crop (step
+  H, the Galaxy Z Fold 8). The size change that a fold or a rotation asks
+  for needs the request (Route C).
 
 ## Next slices
 

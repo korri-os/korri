@@ -1050,6 +1050,23 @@ the Android viewer's proof (slice D4) does, and reads the packets with
 `sender.input_packets`, which also gives the log without its debug and
 verbose lines: those can hold the launch request's input key (`rikey`).
 
+**A new stream size in the middle of a stream, on request.** The agent
+operation `resize` (`width`, `height`), after `start`, gives the hidden
+output a mode of that size at the same steady refresh (`swaymsg output *
+mode`), then starts the frame-ID source again at that size, so its IDs
+start again at 1. The answer is the output's new `display`. Stock Sunshine
+scales every capture to the size that the viewer asked for at its launch
+(`src/video.cpp`, `capture_async`), so with it the stream keeps its size.
+`runtime.sunshineFollowingOutput` is the same nixpkgs Sunshine with one
+patch, `sunshine-follows-output.patch`: before each encode session it takes
+the captured output's size as the stream's size. A new output mode makes
+Sunshine's capture start again (`capture_e::reinit`), so the new session
+begins with an IDR frame and an SPS of the new size, and Sunshine logs
+`Fixture: the stream follows the output: WxH to WxH`. The patch is in the
+asynchronous path, which every Linux encoder of this Sunshine takes
+(`PARALLEL_ENCODING`), the software encoder included. No tool command and
+no measure uses it; the Android viewer's proof (#476, slice 4) does.
+
 **The steady refresh.** A headless output has no clock. After each frame it
 waits a whole number of milliseconds: an output that says 60 Hz waits 16 ms
 and shows about 62 frames each second. Sunshine takes one frame for each
