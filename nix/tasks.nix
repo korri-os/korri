@@ -191,6 +191,31 @@ let
           exec python3 "$KORRI_ROOT/clients/android/proof/live_resize.py" "$@"
         '';
       };
+    viewer-android-recovery-proof =
+      let
+        emulator = import ../clients/viewer/android/emulator.nix { inherit pkgs; };
+      in
+      {
+        description = "Prove that the Rust viewer's picture goes on after Android's decoder service dies (#490), on one headless Android 12 emulator and a private Sunshine, both on this host.";
+        usageSuffix = " -- --stream-host ADDRESS [--kills N] [--port N] [--out DIRECTORY]";
+        # run.py's tools: the recovery proof uses its fixture, pairing and app start.
+        runtimeInputs = [
+          (pkgs.python3.withPackages (p: [ p.numpy ]))
+          pkgs.ffmpeg
+          pkgs.nix
+          pkgs.jdk17
+          pkgs.procps
+        ];
+        env = {
+          KORRI_VIEWER_EMULATOR_SDK = emulator.sdkRoot;
+          KORRI_VIEWER_EMULATOR_IMAGE = emulator.systemImage;
+          KORRI_VIEWER_BUILD_TOOLS = emulator.buildToolsVersion;
+          CADENCE_NIXPKGS = "${pkgs.path}";
+        };
+        script = ''
+          exec python3 "$KORRI_ROOT/clients/viewer/android/proof/recovery.py" "$@"
+        '';
+      };
     hooks-install = {
       description = "Install the Git hook that refuses a commit which stages a secret.";
       runtimeInputs = [
