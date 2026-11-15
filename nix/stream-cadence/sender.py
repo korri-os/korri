@@ -46,6 +46,7 @@ import tempfile
 import threading
 import time
 from typing import TextIO
+import urllib.error
 import urllib.request
 
 from device import (
@@ -118,6 +119,9 @@ ENCRYPTION_MANDATORY = 2
 PROVENANCE = Path("share/korri/sunshine-korri/provenance")
 PROVENANCE_FORMAT = "1"
 PATCHED_PACKAGE = "sunshine-korri"
+# Seconds that `pin` waits for the viewer's pairing request to reach a
+# Sunshine that binds a PIN to one request. The viewer shows its PIN first.
+PAIRING_WAIT = 10.0
 
 
 def steady_refresh_mhz(rate: float) -> int:
@@ -938,7 +942,14 @@ class Session:
         }
 
     def pin(self, pin: str) -> dict:
-        """Admit the viewer that shows this PIN, as a person does in Sunshine's web UI."""
+        """Admit the viewer that shows this PIN, as a person does in Sunshine's web UI.
+
+        Sunshine from v2026.914 (GHSA-36ff, the base of Korri's patched
+        Sunshine) binds a PIN to one waiting pairing request: its web UI lists
+        the requests (GET /api/pin) and posts the PIN with a request's
+        `pairing_id`. An older Sunshine, as nixpkgs' stock one, has no list
+        and takes the PIN alone.
+        """
         assert self.root is not None and self.login is not None
         if not re.fullmatch(r"\d{4}", pin):
             raise ValueError("a pairing PIN has four digits")
@@ -951,14 +962,16 @@ class Session:
         )
         loopback = str(ipaddress.IPv4Address(socket.INADDR_LOOPBACK))
         port = self.facts["sunshine_port"] + WEB_UI_OFFSET
+        url = f"https://{loopback}:{port}/api/pin"
+        login = {"Authorization": "Basic " + base64.b64encode(":".join(self.login).encode()).decode()}
+        body = {"pin": pin, "name": "stream-cadence"}
+        waiting = self.pairing_request(opener, url, login)
+        if waiting is not None:
+            body["pairing_id"] = waiting
         post = urllib.request.Request(
-            f"https://{loopback}:{port}/api/pin",
-            data=json.dumps({"pin": pin, "name": "stream-cadence"}).encode(),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": "Basic "
-                + base64.b64encode(":".join(self.login).encode()).decode(),
-            },
+            url,
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json", **login},
         )
         with opener.open(post, timeout=10) as response:
             answer = json.loads(response.read(1 << 16))
@@ -977,6 +990,40 @@ class Session:
             "product_after": now,
             "product_changes": net_condition.untouched(self.net["product_before"], now),
         }
+
+    @staticmethod
+    def pairing_request(
+        opener: urllib.request.OpenerDirector, url: str, login: dict[str, str]
+    ) -> str | None:
+        """The `pairing_id` of the one request that waits for a PIN; None for a Sunshine with no list.
+
+        The fixture pairs one viewer, so exactly one request must wait. It can
+        reach Sunshine a moment after the viewer shows its PIN. With two, the
+        tool does not choose: another client is pairing with this Sunshine.
+        """
+        until = time.monotonic() + PAIRING_WAIT
+        while True:
+            try:
+                with opener.open(urllib.request.Request(url, headers=login), timeout=10) as response:
+                    answer = json.loads(response.read(1 << 16))
+            except urllib.error.HTTPError as error:
+                error.close()
+                if error.code == 404:
+                    return None
+                raise
+            waiting = [str(row["id"]) for row in answer.get("pairings", [])]
+            if len(waiting) == 1:
+                return waiting[0]
+            if len(waiting) > 1:
+                raise RuntimeError(
+                    f"{len(waiting)} pairing requests wait for a PIN at the fixture's Sunshine; "
+                    "the fixture admits only its own viewer and does not choose."
+                )
+            if time.monotonic() >= until:
+                raise RuntimeError(
+                    f"No pairing request waits for a PIN at the fixture's Sunshine after {PAIRING_WAIT:g} s."
+                )
+            time.sleep(0.2)
 
     def end(self, reason: str) -> None:
         """The guard's one action: stop the fixture's programs at once and keep the reason."""

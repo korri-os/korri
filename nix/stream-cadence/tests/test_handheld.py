@@ -259,18 +259,35 @@ class PinPost(unittest.TestCase):
                 capture_output=True,
             )
         cls.requests: list[dict] = []
+        # The pairing requests that wait for a PIN, as Sunshine from v2026.914
+        # lists them (GET /api/pin, GHSA-36ff). None: an older Sunshine, which
+        # has no such list and answers 404 (`not_found_handler`).
+        cls.pending: list[dict] | None = None
 
         class WebUi(http.server.BaseHTTPRequestHandler):
+            def answer(self, code: int, value: dict) -> None:
+                body = json.dumps(value).encode()
+                self.send_response(code)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):
+                cls.requests.append({"path": self.path, "method": "GET"})
+                if cls.pending is None or self.path != "/api/pin":
+                    self.answer(404, {"status_code": 404, "error": "Not Found"})
+                else:
+                    self.answer(200, {"pairings": cls.pending})
+
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 cls.requests.append(
                     {"path": self.path, "authorization": self.headers["Authorization"], **body}
                 )
-                answer = json.dumps({"status": body["pin"] == "1234"}).encode()
-                self.send_response(200)
-                self.send_header("Content-Length", str(len(answer)))
-                self.end_headers()
-                self.wfile.write(answer)
+                if cls.pending is not None and body.get("pairing_id") not in [row["id"] for row in cls.pending]:
+                    self.answer(400, {"error": "pairing_id must contain exactly 32 hexadecimal characters"})
+                    return
+                self.answer(200, {"status": body["pin"] == "1234"})
 
             def log_message(self, *_values):
                 pass
@@ -298,16 +315,46 @@ class PinPost(unittest.TestCase):
         )
         return session
 
+    def setUp(self):
+        type(self).pending = None
+
     def test_pin_goes_to_the_web_ui_with_the_runs_login(self):
         session = self.session("server.crt")
         self.assertEqual(session.pin("1234"), {})
         sent = self.requests[-1]
         self.assertEqual((sent["path"], sent["pin"]), ("/api/pin", "1234"))
+        self.assertNotIn("pairing_id", sent)
         self.assertTrue(sent["authorization"].startswith("Basic "))
         with self.assertRaisesRegex(RuntimeError, "refused the pairing PIN"):
             session.pin("9999")
         with self.assertRaisesRegex(ValueError, "four digits"):
             session.pin("12345")
+
+    def test_pin_names_the_one_waiting_pairing_request_of_a_newer_sunshine(self):
+        identifier = "0123456789abcdef0123456789abcdef"
+        type(self).pending = [{"id": identifier, "name": "", "address": "127.0.0.1"}]
+        session = self.session("server.crt")
+        self.assertEqual(session.pin("1234"), {})
+        sent = self.requests[-1]
+        self.assertEqual((sent["path"], sent["pin"], sent["pairing_id"]), ("/api/pin", "1234", identifier))
+        self.assertEqual(self.requests[-2], {"path": "/api/pin", "method": "GET"})
+
+    def test_pin_waits_for_its_one_request_and_never_picks_between_two(self):
+        previous, sender.PAIRING_WAIT = sender.PAIRING_WAIT, 0.5
+        self.addCleanup(setattr, sender, "PAIRING_WAIT", previous)
+        session = self.session("server.crt")
+        type(self).pending = []
+        before = len(self.requests)
+        with self.assertRaisesRegex(RuntimeError, "No pairing request waits"):
+            session.pin("1234")
+        type(self).pending = [
+            {"id": "0" * 32, "name": "", "address": "127.0.0.1"},
+            {"id": "1" * 32, "name": "", "address": "127.0.0.1"},
+        ]
+        with self.assertRaisesRegex(RuntimeError, "2 pairing requests wait"):
+            session.pin("1234")
+        # No PIN went to either request.
+        self.assertFalse([row for row in self.requests[before:] if "pin" in row])
 
     def test_pin_is_not_posted_to_a_server_with_another_certificate(self):
         session = self.session("other.crt")
