@@ -36,6 +36,8 @@
 //! another app) and Ctrl+Alt+Shift+Q end the runtime; korrid then sees
 //! `Stopped`, and its own recovery starts the stream again while the launch
 //! is selected and the app is in front.
+mod rules;
+
 use crate::logcat;
 use futures::{channel::oneshot, future::BoxFuture};
 use jni::{objects::GlobalRef, objects::JObject, JNIEnv, JavaVM};
@@ -98,7 +100,7 @@ struct Shared {
     /// Where each launch's pinned server certificate lives while it plays.
     pins: PathBuf,
     /// The loop thread of the activity in front, by its number.
-    shows: Mutex<Option<(u64, mpsc::Sender<Show>)>>,
+    shows: rules::Slot<Show>,
     /// The activity has a window, so a launch can be shown.
     window: AtomicBool,
     current: Mutex<Option<Current>>,
@@ -802,18 +804,23 @@ impl Stream {
     fn ended(&mut self, playing: Box<Playing>) {
         let Playing {
             launch,
+            lifecycle,
             layers,
             mut play,
             runtime,
             ..
         } = *playing;
         play.end();
-        match runtime.join() {
+        let joined = runtime.join();
+        match &joined {
             Ok(Ok(())) => logcat::info(&format!("korri-app: viewer {launch} ended")),
             Ok(Err(cause)) => {
                 logcat::error(&format!("korri-app: viewer {launch} failed: {cause:#}"))
             }
             Err(_) => logcat::error(&format!("korri-app: viewer {launch}: its thread panicked")),
+        }
+        if let Some(why) = rules::unreported(&joined) {
+            lifecycle.failed(why.to_owned());
         }
         layers.release(&self.app);
         self.orient(None);
@@ -878,15 +885,14 @@ impl Stream {
 }
 
 impl Drop for Stream {
-    /// The activity ends. A runtime that still runs was asked to stop when
-    /// the window went; its layers go once it has ended, on a thread that
-    /// waits for it, so the layers outlive the decoder.
+    /// The activity ends. Each launch still queued for it is refused. A
+    /// runtime that still runs was asked to stop when the window went; its
+    /// layers go once it has ended, on a thread that waits for it, so the
+    /// layers outlive the decoder.
     fn drop(&mut self) {
-        let mut shows = lock(&self.shared.shows);
-        if shows.as_ref().is_some_and(|(id, _)| *id == self.id) {
-            *shows = None;
-        }
-        drop(shows);
+        rules::close(&self.shared.shows, self.id, &self.shows, |show| {
+            refuse(show, "the activity ended")
+        });
         match std::mem::replace(&mut self.phase, Phase::Idle) {
             Phase::Idle => {}
             Phase::Making(making) => refuse(making.show, "the activity ended"),
@@ -903,13 +909,17 @@ impl Drop for Stream {
                 } = *playing;
                 play.end();
                 if !stopping {
-                    stop_on_a_thread(&launch, lifecycle);
+                    stop_on_a_thread(&launch, lifecycle.clone());
                 }
                 let app = self.app.clone();
                 let _ = thread::Builder::new()
                     .name("viewer-release".into())
                     .spawn(move || {
-                        let _ = runtime.join();
+                        let joined = runtime.join();
+                        if let Some(why) = rules::unreported(&joined) {
+                            logcat::error(&format!("korri-app: viewer {launch}: {why}"));
+                            lifecycle.failed(why.to_owned());
+                        }
                         drop(_pin);
                         layers.release(&app);
                     });

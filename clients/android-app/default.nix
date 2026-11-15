@@ -182,6 +182,7 @@ let
         ./Cargo.toml
         ./Cargo.lock
         ./src
+        ./tests
         ../shell/Cargo.toml
         ../shell/src
         ../shell/examples
@@ -228,6 +229,13 @@ let
       JAVA_HOME = sdk.jdk;
       dontStrip = true;
       dontFixup = true;
+      # The rules that need no Android, on the build machine (tests/host.rs).
+      doCheck = true;
+      checkPhase = ''
+        runHook preCheck
+        cargo test --locked --offline --test host
+        runHook postCheck
+      '';
       buildPhase = ''
         runHook preBuild
         export HOME=$TMPDIR

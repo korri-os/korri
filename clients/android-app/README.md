@@ -124,6 +124,10 @@ distribution.
   `tracing-serde`). Both pin `rquickjs` 0.14.0, so QuickJS links once.
 - `Cargo.toml` repeats the shell's `[patch.crates-io]`: Cargo reads it only
   from the root crate.
+- The library builds for Android only. The viewer's rules that need no
+  Android (`src/viewer/rules.rs`) have their tests in `tests/host.rs`, which
+  each ABI's library derivation runs on the build machine after it compiles
+  (`cargo test --test host`).
 - Skia's prebuilt archives for both targets (skia-bindings 0.153.3) are fixed
   Nix inputs, read through `SKIA_BINARIES_URL`.
 - The surface packages are verified with the shell's own release build, with
