@@ -77,7 +77,7 @@ in
   help = ''
 
     nix run .#shell-check
-        Native shell: fmt, clippy (desktop and webos builds), all tests with the fixture korrid.
+        Native shell: fmt, clippy, all tests with the fixture korrid.
     nix run .#shell-run -- ARGS
         Run korri-shell from the checkout (needs korrid's credential and address; see clients/shell/README.md).
     nix run .#shell-proof -- SCENARIO OUT_DIR [GAMES]
@@ -90,7 +90,6 @@ in
       script = ''
         cd "$crate"
         cargo fmt --check
-        (cd window-sdl && cargo fmt --check)
         trace="$KORRI_ROOT/packages/input-trace/Cargo.toml"
         cargo fmt --manifest-path "$trace" --check
         cargo clippy --manifest-path "$trace" --locked --all-targets -- -D warnings
@@ -102,7 +101,6 @@ in
           exit 1
         fi
         cargo clippy --locked --release --all-targets --features fixture -- -D warnings
-        cargo clippy --locked --release --no-default-features --features webos -- -D warnings
         cargo test --locked --release --features fixture
       '';
     };

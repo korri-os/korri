@@ -17,6 +17,9 @@ the `legacy` branch apply here unless this file says so.
 - The platform target is Linux. Android was dropped on 2026-09-16; the tag
   `android-final` marks the last commit that carried it, and
   `docs/briefs/2026-09-16-android-removal-scope.md` records what went.
+- webOS was dropped on 2026-11-11 (issue #433); the tag `webos-final` marks
+  the last commit that carried it, and
+  `docs/briefs/2026-11-15-webos-removal-scope.md` records what went.
 - Android returns as an app for stock phones (owner decision, 2026-10-27,
   issue #290). It returns piecemeal, one epic at a time, and may support only a
   subset of Korri's features. Start from the trimmed Artemis stack at

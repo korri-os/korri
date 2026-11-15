@@ -19,8 +19,8 @@ Limits and performance).
 Keep the software-specific layer cache, parallel bands and worker pool,
 partial/identical-frame skipping, dirty-region, glyph and scaled-texture fast
 paths, rounded clips and software pacing patches. Headless verification,
-pixel regression tests, probes and `bench` still use them, as does the
-separate webOS SDL adapter. They are not Linux GPU performance evidence.
+pixel regression tests, probes and `bench` still use them. They are not
+Linux GPU performance evidence.
 
 Keep the renderer-independent core/interpreter patches (dependency cut-off,
 geometry and unit storage, text shaping, font collection/registration, focus

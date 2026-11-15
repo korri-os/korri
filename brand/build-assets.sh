@@ -34,7 +34,7 @@ field_png() {
 
 mkdir -p "$ICONS"
 
-# Launcher icons (the webOS package uses icon-192.png): the full dark field.
+# Launcher icons: the full dark field.
 for s in 192 512; do
   field_png "$s" "$DARK" "$ICONS/icon-$s.png"
 done

@@ -1,7 +1,7 @@
 //! A fixture korrid for tests and workstation proofs: a real loopback server
 //! that speaks contract section 6 and korrid's native input subscription,
-//! with configurable behaviour (feature `fixture`). Also shipped only in the
-//! webOS M1 sample-data IPK, never in the production Linux shell package.
+//! with configurable behaviour (feature `fixture`). It is never in the
+//! production Linux shell package.
 //!
 //! It checks what korrid checks on this wire: the bearer capability on every
 //! call and socket, the WebSocket `Origin`, declared preference keys and

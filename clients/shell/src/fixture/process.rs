@@ -1,4 +1,4 @@
-//! The fixture korrid as a process, for proofs and the webOS M1 sample-data IPK.
+//! The fixture korrid as a process, for proofs.
 //!
 //! ```text
 //! fixture-korrid --games N --credentials DIR [--model FILE] [--displays JSON]

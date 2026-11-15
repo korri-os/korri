@@ -5,7 +5,7 @@ It loads surface packages (`main.slint` + `logic.js`), runs their logic in
 QuickJS, draws Linux device windows on the GPU (Slint's FemtoVG on OpenGL),
 and talks to the korrid on its own device. There is no renderer switch or
 software fallback. Headless tests, verification, probes and `bench` use the
-software renderer directly. The separate webOS SDL target is unchanged.
+software renderer directly.
 
 ## Run
 
@@ -23,9 +23,6 @@ or log. F2 or L1+R1 switches to the next surface.
 
 Nix: `nix run .#shell-check` (fmt, clippy, tests), `nix run .#shell-run`,
 `nix run .#shell-proof`, `nix build .#korri-shell`.
-
-The LG B7 sample-data IPK and workstation SDL proof are described in
-[`webos/README.md`](webos/README.md).
 
 ## Device migration: the `korri-shell` user (2026-11)
 
@@ -286,8 +283,7 @@ still layers. Numbers and screenshots: `evidence/`.
 
 ## Backends
 
-`winit` (desktop, default), `headless` (tests), `sdl` (webOS, through
-`window-sdl/`, built with `--no-default-features --features webos`).
+`winit` (desktop, default), `headless` (tests).
 
 `winit` always uses FemtoVG on OpenGL (EGL on Wayland, GLX on X11), through
 libglvnd and the system's GLES driver (ADR 0068). There is no renderer option
@@ -298,4 +294,4 @@ Headless tests, verification, `surface-probe` and `bench` draw directly with
 the patched software renderer (`vendor/README.md`). They test deterministic
 pixels and do not measure the GPU path. The Xvfb window proof exercises
 winit, but its OpenGL driver may be software; do not treat it as device GPU
-performance evidence. The separate webOS `sdl` adapter still draws on the CPU.
+performance evidence.

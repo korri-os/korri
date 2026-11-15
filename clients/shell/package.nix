@@ -42,7 +42,6 @@ pkgs.rustPlatform.buildRustPackage {
       ./fixtures
       ./packages
       ./vendor
-      ./window-sdl
       ../../contracts/surface/Cargo.toml
       ../../packages/input-trace
       ../../contracts/surface/src

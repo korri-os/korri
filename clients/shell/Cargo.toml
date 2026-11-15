@@ -33,7 +33,7 @@ korri-input-trace = { path = "../../packages/input-trace" }
 # Software rendering is a direct dependency for headless tools only. Do not
 # forward renderer-software to Slint: that enables winit's runtime fallback.
 # `desktop` draws only with FemtoVG (ADR 0068). Choose one window system below
-# (`desktop`, the default, or `webos`). `unstable-fontique-011` gives the
+# (`desktop`, the default, or `android`). `unstable-fontique-011` gives the
 # shared font collection the shell trims when a surface is unloaded.
 slint = { version = "=1.18.1", default-features = false, features = [
   "std",
@@ -66,7 +66,6 @@ pollster = "0.4"
 resvg = { version = "=0.48.1", default-features = false }
 zeroize = "1"
 getrandom = { version = "0.3", optional = true }
-korri-window-sdl = { path = "window-sdl", optional = true }
 # Native touch phases, shared by Android and the headless tap probe.
 i-slint-core = { version = "=1.18.1", default-features = false }
 # Headless tools render directly, without enabling winit's software adapter.
@@ -101,11 +100,7 @@ desktop = [
   "slint-interpreter/backend-winit-x11",
   "slint-interpreter/renderer-femtovg",
 ]
-# webOS: the SDL adapter (window-sdl/), one window, no winit.
-# rquickjs 0.14 ships stale ARMv7 ArrayBuffer bindings. Generate them against
-# its actual QuickJS headers with the SDK target ABI (as korrid already does).
-webos = ["dep:korri-window-sdl", "rquickjs/bindgen"]
-# The fixture korrid used by tests, proofs and the webOS M1 sample-data IPK only.
+# The fixture korrid used by tests and proofs only.
 fixture = ["dep:getrandom"]
 
 [profile.release]

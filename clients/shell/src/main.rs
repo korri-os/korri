@@ -273,10 +273,6 @@ fn run(arguments: Arguments) -> anyhow::Result<()> {
 
     #[cfg(feature = "desktop")]
     let backend: Rc<dyn Backend> = Rc::new(korri_shell::backend::winit::Winit::install()?);
-    #[cfg(feature = "webos")]
-    let backend: Rc<dyn Backend> = Rc::new(
-        korri_shell::backend::sdl::Sdl::install(arguments.placement).map_err(anyhow::Error::msg)?,
-    );
 
     let korrid = Korrid::new(connection.clone());
     anyhow::ensure!(

@@ -174,7 +174,7 @@ pub const MAX_ENCODED_BYTES: usize = 8 * 1024 * 1024;
 /// Largest decoded side, in pixels.
 pub const MAX_SIDE: u32 = 4096;
 /// The longer side an image korrid stores is scaled down to. 1920 pixels is
-/// the widest Korri screen now that webOS is dropped (#433), so no surface
+/// the widest Korri screen, so no surface
 /// can show more of a stored image than this. At this bound a 16:9 image is
 /// about 8 MiB decoded, inside `CACHE_BYTES`; unscaled, one stored 3611x1877
 /// logo is 25.9 MiB, more than the whole budget.
