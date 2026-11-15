@@ -192,6 +192,11 @@ class Remote:
             self.log.close()
 
 
+# The sender target that names this host, as stream-cadence's `local` does:
+# its agent runs here, with no SSH and no copy.
+LOCAL = "local"
+
+
 def sender_tools(root: Path, target: str, stock_sunshine: bool) -> tuple[list[str], dict]:
     """The sender fixture's prebuilt parts, built here and copied to the sender."""
     nixpkgs = os.environ["CADENCE_NIXPKGS"]
@@ -222,12 +227,15 @@ def sender_tools(root: Path, target: str, stock_sunshine: bool) -> tuple[list[st
         timeout=120,
     ).stdout
     store_paths = list(paths.values())
+    agent = [f"{paths['python']}/bin/python3", "-B", "-u", f"{paths['source']}/sender.py"]
+    if target == LOCAL:
+        # The sender is this host: its store has the parts already.
+        return agent, paths
     key = Path.home() / ".config/korri/cache-key.secret"
     if key.is_file():
         run(["nix", "store", "sign", "--recursive", "--key-file", str(key), *store_paths], timeout=600)
     log(f"copying them to {target}")
     run(["nix", "copy", "--to", f"ssh://{target}", *store_paths], timeout=1200)
-    agent = [f"{paths['python']}/bin/python3", "-B", "-u", f"{paths['source']}/sender.py"]
     return ["ssh", "-o", "BatchMode=yes", target, shlex.join(agent)], paths
 
 
@@ -1176,7 +1184,8 @@ def overlay_held(packets: list[dict]) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--sender", default="root@aka", help="SSH target of the sender fixture")
+    parser.add_argument("--sender", default="root@aka",
+                        help=f"SSH target of the sender fixture, or {LOCAL!r} for this host (with --stream-host)")
     parser.add_argument("--stream-host", help="the sender's address as the emulator reaches it; default: the SSH host's address")
     parser.add_argument("--seconds", type=int, default=15, help="how long the stream runs before Back")
     parser.add_argument("--port", type=int, default=5584, help="the emulator's console port")
@@ -1188,6 +1197,10 @@ def main() -> int:
     sdk = os.environ["KORRI_VIEWER_EMULATOR_SDK"]
     image = os.environ["KORRI_VIEWER_EMULATOR_IMAGE"]
     build_tools = Path(sdk, "build-tools", os.environ["KORRI_VIEWER_BUILD_TOOLS"])
+    if args.sender == LOCAL and not args.stream_host:
+        # This host's own name can resolve to a loopback address, which in
+        # the emulator is the emulator itself.
+        parser.error(f"--sender {LOCAL} needs --stream-host, an address of this host that is not loopback")
     host = args.stream_host or socket.gethostbyname(args.sender.split("@")[-1])
     out = args.out or Path(tempfile.mkdtemp(prefix="korri-viewer-d1-"))
     out.mkdir(parents=True, exist_ok=True)

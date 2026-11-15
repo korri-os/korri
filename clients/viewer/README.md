@@ -20,8 +20,10 @@ clients/viewer/proof/v4l2request/compare.sh ../korri-plugins
 nix build .#checks.x86_64-linux.korri-viewer-android
 # The Android app (slices D1 to D5 and #476's size change, below), and
 # its proof on one headless emulator against a private Sunshine on aka.
+# Nothing heavy runs on zao: run both on aka itself, the proof against
+# aka's own fixture, which the emulator reaches at aka's Tailscale address.
 nix build .#korri-viewer-android-apk
-nix run .#viewer-android-proof
+nix run .#viewer-android-proof -- --sender local --stream-host AKA_TAILSCALE_ADDRESS
 ```
 
 ## Boundaries
