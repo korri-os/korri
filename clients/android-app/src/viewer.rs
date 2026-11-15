@@ -41,7 +41,7 @@ use futures::{channel::oneshot, future::BoxFuture};
 use jni::{objects::GlobalRef, objects::JObject, JNIEnv, JavaVM};
 use korri_viewer::{
     devices::AndroidDevices,
-    events,
+    events, feedback_jni,
     input::{self as stream_input, Settings},
     launch,
     layer::{Layers, Pending},
@@ -654,6 +654,22 @@ impl Stream {
         logcat::info(&format!(
             "korri-app: viewer input: controllers attached at the start: mask {attached:#x}"
         ));
+        // The controllers' rumble, light and battery reports (slice D4b), on
+        // their own thread for the launch: the input tells it which
+        // controller is which, and the runtime stops it after the input's
+        // gate and before the core (`stream.rs`).
+        let feedback = match feedback_jni::start() {
+            Ok(feedback) => feedback,
+            Err(cause) => {
+                layers.release(&self.app);
+                refuse(
+                    show,
+                    &format!("the controllers' feedback did not start: {cause:#}"),
+                );
+                return Phase::Idle;
+            }
+        };
+        let seats = feedback.seats();
         let Show {
             launch,
             address,
@@ -676,7 +692,14 @@ impl Stream {
         let runtime = {
             let lifecycle = lifecycle.clone();
             thread::Builder::new().name("viewer".into()).spawn(move || {
-                launch::run_in_app(options, Some(&lifecycle), Some(pin_path), picture, attached)
+                launch::run_in_app(
+                    options,
+                    Some(&lifecycle),
+                    Some(pin_path),
+                    picture,
+                    attached,
+                    feedback,
+                )
             })
         };
         let runtime = match runtime {
@@ -719,7 +742,7 @@ impl Stream {
         Phase::Playing(Box::new(Playing {
             launch,
             lifecycle,
-            play: Play::new(settings, attached, placed, devices),
+            play: Play::new(settings, attached, placed, devices, Box::new(seats)),
             layers,
             runtime,
             stopping: false,

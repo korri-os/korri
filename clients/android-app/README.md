@@ -266,10 +266,11 @@ A tap on a game that a holder streams makes korrid start the Rust viewer in
 this process. korrid's prepare at the holder returns the launch; korrid's
 `viewer.start` reaches `src/viewer.rs`:
 
-| Half | Thread | What it does |
+| Part | Thread | What it does |
 | --- | --- | --- |
 | `Adapter`, korrid's `LinuxStreamViewer` | korrid's workers | The client key (`<no_backup>/moonlight`, made at the first launch), the server certificate from korrid's broker (`korrid::android_app::provision_moonlight_certificate`: the host UUID from Sunshine's `serverinfo`, then the holder's certificate control, as Linux korrid provisions Moonlight), the runtime's `Lifecycle::in_process`, and every request as the treaty's: `Start`, `Status`, `Snapshot`, `Stop`. Events and replies go to logcat as the treaty's JSON, and each status that korrid reads as `korri-app: viewer status for korrid: LAUNCH STATUS` |
 | `Stream` | the shell's loop | The video and overlay layers, the runtime's thread, the stream's input, the window's size, and the activity's orientation while the stream plays (Artemis's Korri mode: the stream's shape) |
+| The controllers' feedback (`korri_viewer::feedback_jni`, the viewer's slice D4b) | its own thread, one per launch | The stream's rumble, light and battery reports. The input tells it which controller is which; the runtime stops it after the input's gate and before `LiStopConnection`. The manifest asks for `VIBRATE` for it |
 
 The pinned server certificate is a file of its launch in the app's cache
 directory, mode 0600, removed when the launch ends; Linux korrid hands the
