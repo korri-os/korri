@@ -308,6 +308,8 @@ def main() -> int:
     parser.add_argument("--sender", default="root@aka",
                         help=f"SSH target of the sender fixture, or {cli.LOCAL}: this host, when the proof runs on aka as root")
     parser.add_argument("--stream-host", help="the sender's address as the emulator reaches it; default: the SSH host's address")
+    parser.add_argument("--pair-host", help="the sender's address as this host reaches it, to pair; default: --stream-host. "
+                        "An emulator on the sender's own host reaches it at 10.0.2.2, and this host at 127.0.0.1")
     parser.add_argument("--sunshine", required=True, help="the sunshine-korri package in this host's store")
     parser.add_argument("--apk", type=Path, default=APK)
     parser.add_argument("--test-apk", type=Path, default=TEST_APK)
@@ -378,7 +380,7 @@ def main() -> int:
             name in ("h264_vaapi", "h264_vulkan") for name in facts.get("working_encoders") or [])
         port = facts["sunshine_port"]
         keys.mkdir(mode=0o700)
-        pair(keys, host, port, fixture, out)
+        pair(keys, args.pair_host or host, port, fixture, out)
         fixture.request("start", motion=motion)
 
         # The sender's agent ends a session it has not heard from for 75 s,
