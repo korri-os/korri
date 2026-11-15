@@ -8,8 +8,10 @@ dex (`hasCode="false"`). The Artemis app in `clients/android` does not change;
 it stays the shipping Android app until slice D7′.
 
 ```sh
-nix build .#korri-android-app-apk     # both ABIs, unsigned
-nix run .#android-app-proof           # one headless API 31 emulator, no person
+nix build .#korri-android-app-apk          # both ABIs, unsigned
+nix build .#korri-android-app-fixture-apk  # the same library, the holder proof's relay
+nix run .#android-app-proof                # D8: one headless API 31 emulator, no person
+nix run .#android-app-holder-proof         # D9, on aka as root: binding and a holder's game
 ```
 
 ## Owner decisions (2026-11-14)
@@ -54,19 +56,35 @@ korrid's three Java callbacks:
 
 ## Third-party Java
 
-The APK carries no `classes.dex`. Third-party Java that runs, unchanged:
+The APK carries no `classes.dex` and keeps `hasCode="false"`. Third-party
+Java that runs, unchanged:
 
 | Code | Version | How it loads |
 | --- | --- | --- |
 | Slint's `SlintAndroidJavaHelper.java` | Slint 1.18.1 (`clients/shell/vendor/i-slint-backend-android-activity/java`, identical to the crates.io copy) | Its build script compiles and dexes it; the backend loads it with `InMemoryDexClassLoader` |
+| rustls-platform-verifier's Kotlin component (`org.rustls:rustls-platform-verifier`) and the Kotlin standard library | 0.2.0, the version that `Cargo.lock` pins for `rustls-platform-verifier-android` (the build fails when they differ); `kotlin-stdlib` 2.0.21 | `default.nix` takes `classes.jar` from the AAR and dexes it with the standard library (`d8`, no shrinking) into one file in the library. korrid loads it with `InMemoryDexClassLoader` below the application's loader and gives the verifier that loader (`services/korrid/src/android/app.rs`); logcat says `korrid: Android TLS verifier classes loaded` |
 
-iroh's TLS verifier (`rustls-platform-verifier`) needs its Kotlin component,
-`org.rustls:rustls-platform-verifier` 0.2.0, and that needs the Kotlin
-standard library. D8 does not carry them: korrid initialises the verifier with
-the app's class loader, which has no such class, so a relay's certificate is
-refused with an error, not a panic. Federation over direct addresses does not
-use the verifier. Slice D9 carries both, dexed into an in-memory loader as
-Slint's helper is.
+The AAR's other part is not carried: its `res/xml/network_security_config.xml`
+and the manifest attribute that names it. That file permits cleartext HTTP
+only to certificate authorities' revocation-list hosts, so that Android's
+revocation check can fetch a list. Without it Android's default for this
+target refuses cleartext, and the verifier's revocation check, which is
+`SOFT_FAIL`, passes when it cannot fetch. The Artemis app does not carry it
+either: its own `network_security_config` has the same resource name and
+replaces the AAR's.
+
+What uses the verifier: nothing in this build that this slice found (a
+reading of the lock and of iroh's source, not a proof). iroh 1.4.1 is
+built without its `platform-verifier` feature (no crate in `Cargo.lock` but
+reqwest 0.13, iroh-metrics, noq-proto and korrid depends on
+rustls-platform-verifier), so its relay connections check certificates
+against the compiled-in Mozilla roots (`iroh_relay::tls::CaTlsConfig`
+defaults to `EmbeddedWebPki`), and iroh hands its own TLS configuration to
+every reqwest client it builds. korrid's federation relays are `http://`.
+The verifier's code is linked (reqwest 0.13 keeps it for a client with
+default TLS), so a later dependency that uses it now finds its classes. Not
+proven: a certificate check through the verifier on the emulator; the proof
+shows only that the classes load.
 
 ## Build
 
@@ -87,8 +105,16 @@ Gradle. The output is unsigned; the proof signs it with the user's debug key.
   Nix inputs, read through `SKIA_BINARIES_URL`.
 - The surface packages are verified with the shell's own release build, with
   its test suite off; `nix run .#shell-check` runs those tests.
-- `KORRI_ANDROID_RELAYS_FILE` is `clients/android/product.nix`, the Artemis
-  app's relay list.
+- The relay list is an APK asset, `relays.json`, not a build input of the
+  library: `apk` carries `clients/android/product.nix`, the Artemis app's
+  list; `fixtureApk` carries one loopback relay, `ws://127.0.0.1:47800`,
+  which the holder proof maps to its own relay with `adb reverse`. So both
+  APKs share one library, and the proof's APK runs the product's code. korrid
+  takes the list as the product's relays, as before
+  (`korrid::android_app::start`); a device setting does not replace it, as
+  `KORRID_RELAYS` is not replaced on Linux.
+- The TLS verifier's dex (above) is a fixed input of the library
+  (`KORRI_ANDROID_VERIFIER_DEX`).
 
 Cost: the library is large, about 103 MB for each ABI (54 MB of code, 26 MB
 of symbols, kept for crash reports): korrid, Slint, Skia and QuickJS in one
@@ -134,6 +160,68 @@ Known gaps:
   Pico instead. The shell still sends 0 x 0 first; a host that waited for the
   window would not.
 
+## The holder proof (D9)
+
+`nix run .#android-app-holder-proof -- --out DIR` (`proof/holder.py`). It
+runs on aka, as root: aka has `/dev/kvm`, and since 2026-11-15 no build or
+emulator runs on zao. Copy a checkout there (`/var/tmp/<name>/`) and run it
+from that copy. One headless Android 12 emulator (2 cores, console port
+5640, its own adb server on 5141), the fixture APK signed with the debug key.
+
+| Piece | What it is | Where it comes from |
+| --- | --- | --- |
+| The holder | korrid's federation fixture: a real host whose owner is the fixture's person signer (secret 3, public key `f9308a01…`). Its one game, "Acceptance Game", streams from the address in its endpoint record | `services/korrid/examples/federation_fixture.rs`, built as `korrid.federationFixture`; its fourth argument is the Moonlight address (#434 D9) |
+| Its relay | The NIP-01 relay of the Artemis app's federation acceptance, unchanged | `clients/android/test/nostr-relay-fixture.ts`; `proof/holder.ts` runs it with the holder, in the acceptance's isolated environment |
+| The private sender | stream-cadence's sender fixture on aka, offering `Korri Stream` (the application korrid's viewer asks for) and showing the frame-ID source | `nix/stream-cadence/sender.py` with `application` (#434 D9); the proof checks its `serverinfo` at the address the holder publishes |
+| The test device's owner | A private state made by the fixture's own producer, `federation_fixture member DIR`: `DeviceIdentity::load_or_create` and an owner statement signed by secret 3, as the holder binds itself. The proof writes `identity/device.key` and `identity/owner.event.json` into `no_backup/korrid-state` through `run-as` (the APK is debuggable: `aapt2 link --debug-mode`) before the first start, and deletes its own copy | No signer route: the app still has none (route brief, NIP-55 row) |
+
+The app's korrid then does what a bound device does: it publishes its owner
+statement to the relay, reads the owner's roster, finds the holder, receives
+the holder's endpoint record (encrypted to its device key) and reads the
+holder's catalog at `http://127.0.0.1:<port>` through `adb reverse`. The
+holder learns of the app at its next discovery poll (60 s), so the game can
+take two minutes to appear.
+
+| Check | How |
+| --- | --- |
+| The APK | No dex, `hasCode="false"`, one loopback relay in `assets/relays.json`, the verifier's classes in the library |
+| The sender | It offers `Korri Stream`; its `serverinfo` answers at the holder's Moonlight address |
+| The binding | The seeded files are the app's own (`-rw-------`); the relay holds an owner statement for the app's device key, signed by the test owner, which only the app's korrid publishes |
+| The holder | The relay holds the holder's endpoint record for the app's device; the app's korrid remembers the holder (`federation/peers.json`) |
+| The library | The readiness line says Velvet's `home` page with a count of 1 or more. A newly bound device first shows korrid's "Identity connected" over the library (`identity-connected.png`); Confirm ("Open library") takes it away, and the screen must change (`library.png`) |
+| The verifier | `korrid: Android TLS verifier classes loaded` |
+| Nothing crashed | No fatal signal, panic or ANR |
+| Cleanup | The emulator and its adb server stop; the holder joins its discovery; the sender fixture's restore check passes |
+
+`--no-sender` starts no sender fixture and lets the holder publish
+`127.0.0.1:9`: for a hot aka, where the sender fixture refuses to start at
+85 °C or more. The binding and the library are proven without it; the
+sender's checks are then missing from the record.
+
+Records: `proof/android-app-d9/`.
+
+Known gaps:
+
+- The first key that `adb shell input keyevent` injects after the app starts
+  is lost: in three runs the first Confirm, Enter or D-pad centre left the
+  screen unchanged and the second worked (`confirm_presses: 2`). Not known
+  whether a real controller's first press is lost too, or whether the cause
+  is the shell's input path or `input`'s virtual device. The proof presses
+  up to three times and records the count.
+- The holder runs as root when the proof does, and korrid refuses its launch
+  helpers for a runtime UID of 0 (`holder.log`: "runtime UID and GID must
+  both be unprivileged"). Listing needs no launch; D10's launch does, so D10
+  must start the holder as an unprivileged user.
+- iroh's signalling offers from the app go to the holder's relay, which takes
+  only the two discovery protocols and refuses them (logcat: `offer_published
+  … failed`). The catalog does not need them: it is read over the holder's
+  loopback endpoint.
+
+What D10 still needs from this fixture: the viewer needs a client
+certificate that the sender accepts. The sender pairs by PIN, not through
+korrid's certificate broker (the holder's broker socket is a missing path),
+so D10 must bridge the two, or pair the app's key by PIN before the launch.
+
 ## The event loop: one poller (plan for D10)
 
 Slint's android-activity platform owns `AndroidApp::poll_events` and the input
@@ -170,7 +258,7 @@ see-through `.slint` panel into the overlay layer's Surface through
 
 | Slice | What |
 | --- | --- |
-| D9 | The holder fixture (route brief), and the TLS verifier's Kotlin component with the Kotlin standard library in an in-memory dex |
+| D9 | Done: the holder proof above, and the TLS verifier's classes |
 | D10 | The Rust viewer adapter in korrid, on the shell's loop (above) |
 | D5 (moved) | The gameplay overlay through `Overlay` |
 | D11 | Stream controls (O4) |
