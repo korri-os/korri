@@ -3,12 +3,10 @@
 //! under opacity, clipped, and scrolled draw the same pixels with the fast path
 //! and with the general texture path, into RGB8 and RGB565 buffers.
 
-use slint::platform::{
-    software_renderer::{
-        MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel, SoftwareRenderer, TargetPixel,
-    },
-    Platform, WindowAdapter,
+use i_slint_renderer_software::{
+    MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel, SoftwareRenderer, TargetPixel,
 };
+use slint::platform::{Platform, WindowAdapter};
 use slint::{ComponentHandle, Rgb8Pixel};
 use slint_interpreter::Value;
 use std::{cell::RefCell, rc::Rc};

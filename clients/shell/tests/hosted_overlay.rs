@@ -4,11 +4,9 @@
 mod component_window;
 
 use component_window::ComponentWindow;
+use i_slint_renderer_software::{RepaintBufferType, Rgb565Pixel, SoftwareRenderer};
 use korri_shell::backend::headless::Headless;
-use slint::platform::{
-    software_renderer::{RepaintBufferType, Rgb565Pixel, SoftwareRenderer},
-    WindowAdapter,
-};
+use slint::platform::WindowAdapter;
 use slint::{ComponentHandle, PhysicalSize};
 
 #[test]

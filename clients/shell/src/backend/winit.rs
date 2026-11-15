@@ -1,9 +1,9 @@
 //! Slint's winit backend: Wayland on a device (sway), X11 for workstation
-//! proofs. FemtoVG on OpenGL draws on the GPU; the software renderer stays for
-//! a device whose GPU path is not proven yet (ADR 0068). Each component is its
-//! own window, so a switch shows the new window before the old one goes.
+//! proofs. FemtoVG on OpenGL draws every window; there is no software
+//! fallback (ADR 0068). Each component is its own window, so a switch shows
+//! the new window before the old one goes.
 
-use super::{Backend, FrameCounter, HostEvent, Placement, Renderer};
+use super::{Backend, FrameCounter, HostEvent, Placement};
 use crate::input::Key;
 use slint::winit_030::{winit, EventResult, WinitWindowAccessor};
 use std::{
@@ -15,16 +15,10 @@ pub struct Winit;
 
 impl Winit {
     /// Select the renderer before the first window exists.
-    pub fn install(renderer: Renderer) -> Result<Self, slint::PlatformError> {
+    pub fn install() -> Result<Self, slint::PlatformError> {
         slint::BackendSelector::new()
             .backend_name("winit".into())
-            .renderer_name(
-                match renderer {
-                    Renderer::Cpu => "software",
-                    Renderer::Gpu => "femtovg",
-                }
-                .into(),
-            )
+            .renderer_name("femtovg".into())
             .select()?;
         Ok(Self)
     }

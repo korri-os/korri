@@ -3,10 +3,8 @@
 //! ones. Zone's attract started about 240 threads a second on the RG353M. Pixels are
 //! `parallel_render.rs`'s concern; this checks the threads.
 
-use slint::platform::{
-    software_renderer::{MinimalSoftwareWindow, RepaintBufferType},
-    Platform, WindowAdapter,
-};
+use i_slint_renderer_software::{MinimalSoftwareWindow, RepaintBufferType};
+use slint::platform::{Platform, WindowAdapter};
 use slint::{ComponentHandle, Rgb8Pixel};
 use std::{cell::Cell, cell::RefCell, rc::Rc, time::Duration};
 

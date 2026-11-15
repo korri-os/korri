@@ -5,12 +5,10 @@
 //! pixels, draw the same pixels with runs and a pixel at a time, into RGB8 and RGB565
 //! buffers. Zone's covers and the attract's panning cover are such images.
 
-use slint::platform::{
-    software_renderer::{
-        MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel, SoftwareRenderer, TargetPixel,
-    },
-    Platform, WindowAdapter,
+use i_slint_renderer_software::{
+    MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel, SoftwareRenderer, TargetPixel,
 };
+use slint::platform::{Platform, WindowAdapter};
 use slint::{ComponentHandle, Rgb8Pixel};
 use slint_interpreter::Value;
 use std::{cell::RefCell, rc::Rc};

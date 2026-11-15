@@ -5,11 +5,11 @@
 //! property semantics, nothing reused), and a still subtree under an
 //! animation is neither re-evaluated nor drawn again.
 
-use korri_shell::bench::{self, Options};
-use slint::platform::{
-    software_renderer::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel, SoftwareRenderer},
-    Platform, WindowAdapter,
+use i_slint_renderer_software::{
+    MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel, SoftwareRenderer,
 };
+use korri_shell::bench::{self, Options};
+use slint::platform::{Platform, WindowAdapter};
 use slint::ComponentHandle;
 use std::{cell::Cell, cell::RefCell, collections::BTreeMap, path::Path, rc::Rc, time::Duration};
 

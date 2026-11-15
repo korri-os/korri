@@ -5,9 +5,9 @@
 //! Pico's own gates, previews and focus walk run with `bun test` in
 //! packages/pico/test (`nix run .#pico-check`).
 
+use i_slint_renderer_software::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel};
 use korri_shell::{budget_clock::BudgetClock, catalog, engine, images::ImageCache, view};
 use serde_json::{json, Value};
-use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel};
 use slint::platform::{Platform, WindowAdapter};
 use slint::ComponentHandle;
 use std::{cell::RefCell, collections::BTreeMap, path::PathBuf, rc::Rc};

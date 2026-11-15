@@ -6,10 +6,8 @@
 //! threads moving between bands as chunks are published (the default) and with
 //! each thread replaying a whole band (the former ordering).
 
-use slint::platform::{
-    software_renderer::{MinimalSoftwareWindow, RepaintBufferType},
-    Platform, WindowAdapter,
-};
+use i_slint_renderer_software::{MinimalSoftwareWindow, RepaintBufferType};
+use slint::platform::{Platform, WindowAdapter};
 use slint::{ComponentHandle, Rgb8Pixel};
 use slint_interpreter::{ComponentInstance, Value};
 use std::{cell::RefCell, rc::Rc};
@@ -190,7 +188,7 @@ fn one_band_thread_beside_the_walk_matches_one_thread() {
 /// global, and a test running beside this one draws the same pixels either way.
 #[test]
 fn whole_bands_on_three_threads_match_one_thread() {
-    slint::platform::software_renderer::SoftwareRenderer::set_interleaved_bands(false);
+    i_slint_renderer_software::SoftwareRenderer::set_interleaved_bands(false);
     scenario([1, 3]);
-    slint::platform::software_renderer::SoftwareRenderer::set_interleaved_bands(true);
+    i_slint_renderer_software::SoftwareRenderer::set_interleaved_bands(true);
 }

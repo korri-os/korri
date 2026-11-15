@@ -2,13 +2,15 @@
 
 The native shell for Korri surfaces (`docs/briefs/2026-10-31-native-surfaces-contract.md`).
 It loads surface packages (`main.slint` + `logic.js`), runs their logic in
-QuickJS, draws them on the GPU (Slint's FemtoVG on OpenGL) or with Slint's
-software renderer, and talks to the korrid on its own device.
+QuickJS, draws Linux device windows on the GPU (Slint's FemtoVG on OpenGL),
+and talks to the korrid on its own device. There is no renderer switch or
+software fallback. Headless tests, verification, probes and `bench` use the
+software renderer directly. The separate webOS SDL target is unchanged.
 
 ## Run
 
 ```
-korri-shell --packages DIR [--cache DIR] [--surfaces ID,ID…] [--placement fullscreen|WxH] [--renderer cpu|gpu] [--stats]
+korri-shell --packages DIR [--cache DIR] [--surfaces ID,ID…] [--placement fullscreen|WxH] [--stats]
 korri-shell install --packages DIR [--cache DIR]   # verify every package, write the index
 korri-shell verify PACKAGE_DIR                     # one summary as JSON
 ```
@@ -287,10 +289,13 @@ still layers. Numbers and screenshots: `evidence/`.
 `winit` (desktop, default), `headless` (tests), `sdl` (webOS, through
 `window-sdl/`, built with `--no-default-features --features webos`).
 
-`--renderer` chooses what draws a `winit` window (ADR 0068): `gpu` is FemtoVG
-on OpenGL (EGL on Wayland, GLX on X11), through libglvnd and the system's
-Mesa driver; `cpu` is the patched software renderer (`vendor/README.md`), the
-default. Every device moves to `gpu` once it is proven there; the NixOS
-option `services.korri.shell.renderer` sets it, and with `gpu` the unit may
-open DRM nodes. The headless backend, the tests and `bench` always draw on
-the CPU, so they do not measure the GPU path. `sdl` draws on the CPU only.
+`winit` always uses FemtoVG on OpenGL (EGL on Wayland, GLX on X11), through
+libglvnd and the system's GLES driver (ADR 0068). There is no renderer option
+or software fallback. The unit binds only the compositor's selected render
+node into a private `/dev`; input and DRM primary nodes stay hidden.
+
+Headless tests, verification, `surface-probe` and `bench` draw directly with
+the patched software renderer (`vendor/README.md`). They test deterministic
+pixels and do not measure the GPU path. The Xvfb window proof exercises
+winit, but its OpenGL driver may be software; do not treat it as device GPU
+performance evidence. The separate webOS `sdl` adapter still draws on the CPU.

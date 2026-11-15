@@ -5,10 +5,8 @@
 //! removed, sizes and fonts changing, wrapping text, and the component's texts
 //! in an RGB8 buffer.
 
-use slint::platform::{
-    software_renderer::{MinimalSoftwareWindow, RepaintBufferType},
-    Platform, WindowAdapter,
-};
+use i_slint_renderer_software::{MinimalSoftwareWindow, RepaintBufferType};
+use slint::platform::{Platform, WindowAdapter};
 use slint::{ComponentHandle, Model, Rgb8Pixel, VecModel};
 use slint_interpreter::{ComponentInstance, Struct, Value};
 use std::{cell::RefCell, rc::Rc};

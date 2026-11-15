@@ -18,11 +18,9 @@ use crate::{
     view::Binder,
 };
 use anyhow::{anyhow, bail, Context, Result};
+use i_slint_renderer_software::{MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType};
 use serde_json::{json, Value};
-use slint::platform::{
-    software_renderer::{MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType},
-    Platform, WindowAdapter,
-};
+use slint::platform::{Platform, WindowAdapter};
 use slint::ComponentHandle;
 use std::{
     cell::Cell,
@@ -207,7 +205,7 @@ pub fn run(options: Options) -> Result<String> {
 /// `run`, and with `capture` every reported frame's pixels (premultiplied RGBA, 4 bytes a
 /// pixel). Each call needs a thread of its own: Slint's platform and clock are per thread.
 pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<u8>>)> {
-    slint::platform::software_renderer::SoftwareRenderer::new().set_equality_cutoff(options.cutoff);
+    i_slint_renderer_software::SoftwareRenderer::new().set_equality_cutoff(options.cutoff);
     let mut captured = Vec::new();
     let kind = if options.full {
         RepaintBufferType::NewBuffer
@@ -288,11 +286,11 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
     let profile = std::env::var_os("KORRI_BENCH_PROFILE").is_some();
     // KORRI_BENCH_PARALLEL_MIN=PIXELS: dirty pixels from which a frame uses several threads.
     // KORRI_BENCH_WHOLE_BANDS=1: each band thread replays a whole band (the former ordering).
-    slint::platform::software_renderer::SoftwareRenderer::set_interleaved_bands(
+    i_slint_renderer_software::SoftwareRenderer::set_interleaved_bands(
         std::env::var_os("KORRI_BENCH_WHOLE_BANDS").is_none(),
     );
     // KORRI_BENCH_NO_RUNS=1: draw colour textures a pixel at a time, as before the runs.
-    slint::platform::software_renderer::SoftwareRenderer::set_scaled_runs(
+    i_slint_renderer_software::SoftwareRenderer::set_scaled_runs(
         std::env::var_os("KORRI_BENCH_NO_RUNS").is_none(),
     );
     // KORRI_BENCH_NO_SKIP=1: draw frames where nothing changed, as before the skip.

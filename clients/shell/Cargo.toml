@@ -30,15 +30,14 @@ name = "surface-probe"
 
 [dependencies]
 korri-input-trace = { path = "../../packages/input-trace" }
-# The software renderer draws headless (tests, bench, previews) and on a device
-# still set to `--renderer cpu`; `desktop` adds FemtoVG on OpenGL for the GPU
-# (ADR 0068). The window system comes from exactly one feature below
+# Software rendering is a direct dependency for headless tools only. Do not
+# forward renderer-software to Slint: that enables winit's runtime fallback.
+# `desktop` draws only with FemtoVG (ADR 0068). Choose one window system below
 # (`desktop`, the default, or `webos`). `unstable-fontique-011` gives the
 # shared font collection the shell trims when a surface is unloaded.
 slint = { version = "=1.18.1", default-features = false, features = [
   "std",
   "compat-1-2",
-  "renderer-software",
   "unstable-fontique-011",
 ] }
 # `internal` exposes the declared int/float and struct field types, and
@@ -46,7 +45,6 @@ slint = { version = "=1.18.1", default-features = false, features = [
 slint-interpreter = { version = "=1.18.1", default-features = false, features = [
   "std",
   "compat-1-2",
-  "renderer-software",
   "internal",
 ] }
 i-slint-compiler = "=1.18.1"
@@ -71,6 +69,8 @@ getrandom = { version = "0.3", optional = true }
 korri-window-sdl = { path = "window-sdl", optional = true }
 # Native touch phases, shared by Android and the headless tap probe.
 i-slint-core = { version = "=1.18.1", default-features = false }
+# Headless tools render directly, without enabling winit's software adapter.
+i-slint-renderer-software = { version = "=1.18.1", default-features = false, features = ["std"] }
 # Focus targets as drawn (src/targets.rs): each element's place and selected flag.
 i-slint-backend-testing = { version = "=1.18.1", default-features = false }
 

@@ -7,10 +7,8 @@
 //! whose child reaches outside it, every partial frame equals a window that
 //! redraws everything; and a change in one row walks a fraction of the items.
 
-use slint::platform::{
-    software_renderer::{MinimalSoftwareWindow, RepaintBufferType},
-    Platform, WindowAdapter,
-};
+use i_slint_renderer_software::{MinimalSoftwareWindow, RepaintBufferType};
+use slint::platform::{Platform, WindowAdapter};
 use slint::{ComponentHandle, Model, Rgb8Pixel, VecModel};
 use slint_interpreter::{ComponentInstance, Struct, Value};
 use std::{cell::Cell, cell::RefCell, rc::Rc, time::Duration};

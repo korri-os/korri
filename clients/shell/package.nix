@@ -3,8 +3,8 @@
 #   nix build .#korri-shell
 #   nix build --impure --expr '(import <nixpkgs> { system = "aarch64-linux"; }).callPackage ./clients/shell/package.nix {}'
 #
-# winit on Wayland and X11; FemtoVG on OpenGL for the GPU, or the software
-# renderer (`--renderer`, ADR 0068). The tests run with the fixture korrid
+# winit on Wayland and X11; FemtoVG on OpenGL, with no software fallback
+# (ADR 0068). The tests run with the fixture korrid
 # (feature `fixture`), which is never part of the installed output.
 { pkgs }:
 let

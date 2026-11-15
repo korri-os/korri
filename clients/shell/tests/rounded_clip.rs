@@ -3,10 +3,8 @@
 //! drawn path inside a rounded `clip: true` rectangle leave its corners empty,
 //! fill its inside, and blend its curved edge, at scale 1 and 2.
 
-use slint::platform::{
-    software_renderer::{MinimalSoftwareWindow, RepaintBufferType},
-    Platform, WindowAdapter,
-};
+use i_slint_renderer_software::{MinimalSoftwareWindow, RepaintBufferType};
+use slint::platform::{Platform, WindowAdapter};
 use slint::{ComponentHandle, Rgb8Pixel, SharedPixelBuffer};
 use slint_interpreter::Value;
 use std::{cell::RefCell, rc::Rc};

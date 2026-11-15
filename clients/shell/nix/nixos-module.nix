@@ -15,6 +15,8 @@ let
   cfg = config.services.korri.shell;
   compositor = config.systemd.services.korri-compositor;
   display = compositor.environment.KORRI_WAYLAND_DISPLAY;
+  # Use the compositor's selected GPU, including its stable by-path alias.
+  renderDevice = compositor.environment.KORRI_RENDER_DEVICE;
   system = pkgs.stdenv.hostPlatform.system;
   user = "korri-shell";
   group = user;
@@ -83,18 +85,6 @@ in
       description = ''
         Surface package the shell opens first. Null keeps package id order.
         A display preference, not a capability.
-      '';
-    };
-    renderer = lib.mkOption {
-      type = lib.types.enum [
-        "cpu"
-        "gpu"
-      ];
-      default = "cpu";
-      description = ''
-        What draws the shell's windows. Every device moves to "gpu" (ADR
-        0068) once the GPU path is proven on it; "gpu" lets the unit open
-        the GPU's DRM nodes and nothing else under /dev.
       '';
     };
   };
@@ -172,8 +162,6 @@ in
             "--installed"
             "--placement"
             "fullscreen"
-            "--renderer"
-            cfg.renderer
           ]
           ++ lib.optionals (surfaces != [ ]) [
             "--surfaces"
@@ -199,24 +187,14 @@ in
         PrivateTmp = true;
         LimitCORE = 0;
         ReadWritePaths = [ runtimeDir ];
-      }
-      // (
-        if cfg.renderer == "gpu" then
-          {
-            # The GPU: DRM nodes only (the render node's mode allows it; the
-            # card node's group does not). Never /dev/input: controller input
-            # arrives from korrid.
-            PrivateDevices = false;
-            DevicePolicy = "closed";
-            DeviceAllow = [ "char-drm rw" ];
-          }
-        else
-          {
-            # Software rendering over Wayland shared memory: no /dev/dri, and
-            # no /dev/input. Controller input arrives from korrid.
-            PrivateDevices = true;
-          }
-      );
+        # Keep the private /dev: expose just the compositor's render node,
+        # never DRM primary nodes or /dev/input. No video or input group.
+        PrivateDevices = true;
+        BindPaths = [ "${renderDevice}:/dev/dri/renderD128" ];
+        DevicePolicy = "closed";
+        DeviceAllow = [ "${renderDevice} rw" ];
+        SupplementaryGroups = [ "render" ];
+      };
     };
   };
 }

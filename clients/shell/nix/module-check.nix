@@ -36,6 +36,7 @@ let
               XDG_RUNTIME_DIR = "/run/user/1001";
               DBUS_SESSION_BUS_ADDRESS = "unix:path=/run/user/1001/bus";
               KORRI_WAYLAND_DISPLAY = "korri-wayland";
+              KORRI_RENDER_DEVICE = "/dev/dri/by-path/platform-gpu-render";
             };
           };
         }
@@ -51,13 +52,6 @@ let
         startSurface = "zone";
       };
     }).config;
-  drawn =
-    (evaluate {
-      services.korri.shell = {
-        enable = true;
-        renderer = "gpu";
-      };
-    }).config.systemd.services.korri-shell;
   service = enabled.systemd.services.korri-shell;
   daemon = enabled.systemd.services.korrid;
   credentialService = "korri-shell-credentials.service";
@@ -86,19 +80,15 @@ assert enabled.users.users.korri-shell.extraGroups == [ ];
 assert service.serviceConfig.User == "korri-shell";
 assert service.serviceConfig.Group == "korri-shell";
 assert service.serviceConfig.NoNewPrivileges;
-# Input only through korrid: no device nodes, no input-group membership.
+# Only the selected render node enters the private /dev. Input still comes
+# from korrid. A device with mode 0660 needs render, never video or input.
 assert service.serviceConfig.PrivateDevices;
-assert !(service.serviceConfig ? DeviceAllow);
-assert !(service.serviceConfig ? SupplementaryGroups);
-# Until a device is proven on the GPU (ADR 0068) it draws on the CPU.
-assert lib.hasInfix "--renderer cpu" service.serviceConfig.ExecStart;
-# On the GPU the unit may open DRM nodes and no other device: still no
-# /dev/input, still no group.
-assert lib.hasInfix "--renderer gpu" drawn.serviceConfig.ExecStart;
-assert !drawn.serviceConfig.PrivateDevices;
-assert drawn.serviceConfig.DevicePolicy == "closed";
-assert drawn.serviceConfig.DeviceAllow == [ "char-drm rw" ];
-assert !(drawn.serviceConfig ? SupplementaryGroups);
+assert service.serviceConfig.DevicePolicy == "closed";
+assert service.serviceConfig.DeviceAllow == [ "/dev/dri/by-path/platform-gpu-render rw" ];
+assert
+  service.serviceConfig.BindPaths == [ "/dev/dri/by-path/platform-gpu-render:/dev/dri/renderD128" ];
+assert service.serviceConfig.SupplementaryGroups == [ "render" ];
+assert !(lib.hasInfix "--renderer" service.serviceConfig.ExecStart);
 assert service.serviceConfig.KillMode == "control-group";
 assert service.serviceConfig.RuntimeDirectory == "korri-shell";
 assert service.serviceConfig.RuntimeDirectoryMode == "0700";

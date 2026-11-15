@@ -231,8 +231,8 @@ replacement for it. Its current first milestone is deliberately local:
 - Sway uses MSM DRM on `/dev/dri/card0`, Adreno rendering on
   `/dev/dri/renderD128`, native `1080x1240@60Hz`, and the hardware-proven
   270-degree panel transform.
-- The native shell draws with its software renderer. Sway itself still
-  requires accelerated GLES2 rendering.
+- The native shell uses FemtoVG on OpenGL. Sway also requires accelerated
+  GLES2 rendering (ADR 0068).
 - The shell and korrid communicate over loopback. The product starts
   NetworkManager and BlueZ and installs the wireless regulatory database.
   Select Wi-Fi after boot with `nmcli device wifi connect <SSID> --ask`; do not

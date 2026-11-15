@@ -4,10 +4,8 @@
 //! frames where its value changed walk the items. The pixels stay those of a
 //! window that redraws everything every frame.
 
-use slint::platform::{
-    software_renderer::{MinimalSoftwareWindow, RepaintBufferType},
-    Platform, WindowAdapter,
-};
+use i_slint_renderer_software::{MinimalSoftwareWindow, RepaintBufferType};
+use slint::platform::{Platform, WindowAdapter};
 use slint::{ComponentHandle, Rgb8Pixel};
 use slint_interpreter::{ComponentInstance, Value};
 use std::{cell::Cell, cell::RefCell, rc::Rc, time::Duration};

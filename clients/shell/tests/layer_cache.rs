@@ -4,10 +4,10 @@
 //! around it, sub-pixel placement, resizes and scale changes; and a clean
 //! cached layer is not walked.
 
-use slint::platform::{
-    software_renderer::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel, TargetPixel},
-    Platform, WindowAdapter,
+use i_slint_renderer_software::{
+    MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel, TargetPixel,
 };
+use slint::platform::{Platform, WindowAdapter};
 use slint::{ComponentHandle, Rgb8Pixel};
 use slint_interpreter::{ComponentDefinition, ComponentInstance, Value};
 use std::{cell::RefCell, rc::Rc};

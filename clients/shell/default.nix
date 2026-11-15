@@ -7,6 +7,7 @@ let
   # winit's Wayland/X11 backends and fontconfig load these at run time.
   runtimeLibraries = with pkgs; [
     wayland
+    libglvnd
     libxkbcommon
     libx11
     libxcursor
@@ -94,6 +95,12 @@ in
         cargo fmt --manifest-path "$trace" --check
         cargo clippy --manifest-path "$trace" --locked --all-targets -- -D warnings
         cargo test --manifest-path "$trace" --locked
+        # Headless software must never enable winit's software fallback.
+        renderer_features=$(cargo tree --locked -e features -i i-slint-backend-winit)
+        if [[ "$renderer_features" == *'i-slint-backend-winit feature "renderer-software"'* ]]; then
+          echo "desktop winit must not compile the software adapter" >&2
+          exit 1
+        fi
         cargo clippy --locked --release --all-targets --features fixture -- -D warnings
         cargo clippy --locked --release --no-default-features --features webos -- -D warnings
         cargo test --locked --release --features fixture

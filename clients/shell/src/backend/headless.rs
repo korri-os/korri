@@ -1,14 +1,12 @@
 //! A display-free backend for tests: every component gets its own
 //! `MinimalSoftwareWindow`, rendered on request into a pixel buffer. The
-//! software renderer is the same one the shell uses on screen.
+//! software renderer is for tools only; device windows use FemtoVG.
 
 use super::{Backend, FrameCounter, HostEvent, Placement};
-use slint::platform::{
-    software_renderer::{
-        MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType, Rgb565Pixel,
-    },
-    Platform, WindowAdapter,
+use i_slint_renderer_software::{
+    MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType, Rgb565Pixel,
 };
+use slint::platform::{Platform, WindowAdapter};
 use std::{
     cell::RefCell,
     rc::{Rc, Weak},
@@ -96,7 +94,7 @@ impl Headless {
     /// For comparing frames rendered at different times (the focus probe).
     pub fn freeze_motion() {
         let now = MANUAL.with(|m| m.get()).unwrap_or_default();
-        slint::platform::software_renderer::SoftwareRenderer::new()
+        i_slint_renderer_software::SoftwareRenderer::new()
             .freeze_animation_tick(Some(now.as_millis() as u64));
     }
 

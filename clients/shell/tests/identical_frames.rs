@@ -9,10 +9,8 @@
 //! reused buffer and with two swapped buffers, where a frame not presented leaves the
 //! back buffer for the next frame.
 
-use slint::platform::{
-    software_renderer::{MinimalSoftwareWindow, RepaintBufferType},
-    Platform, WindowAdapter,
-};
+use i_slint_renderer_software::{MinimalSoftwareWindow, RepaintBufferType};
+use slint::platform::{Platform, WindowAdapter};
 use slint::Rgb8Pixel;
 use slint_interpreter::{ComponentInstance, Value};
 use std::{cell::Cell, cell::RefCell, rc::Rc, time::Duration};

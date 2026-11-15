@@ -11,12 +11,30 @@ is specific to Korri.
 Drop this directory once upstream Slint has an equivalent. To move to a new
 Slint version, apply `slint.patch` to the new crates, run
 `cargo test --release --features fixture --test layer_cache --test parallel_render --test text_reshape --test memory_probe`,
-and run the Zone CPU proof (`../README.md`, Performance).
+and run the software pixel tests and headless bench (`../README.md`,
+Limits and performance).
+
+## Retention after the GPU cut (#484)
+
+Keep the software-specific layer cache, parallel bands and worker pool,
+partial/identical-frame skipping, dirty-region, glyph and scaled-texture fast
+paths, rounded clips and software pacing patches. Headless verification,
+pixel regression tests, probes and `bench` still use them, as does the
+separate webOS SDL adapter. They are not Linux GPU performance evidence.
+
+Keep the renderer-independent core/interpreter patches (dependency cut-off,
+geometry and unit storage, text shaping, font collection/registration, focus
+queries, compilation memory and input cancellation): FemtoVG also consumes
+those crates. Keep Android window/input patches for their existing Android
+consumers. No vendor patch is removed in this cut. The Linux desktop build
+no longer enables winit's software adapter; headless imports the renderer
+directly, so failed GPU setup cannot select that adapter.
 
 ## Why
 
-The native shell runs on an RG35XX SP: one Cortex-A53 core per surface and no
-GPU renderer. Zone's GAMES page animates three dots and two triangles at 60
+These patches originated on the RG35XX SP with software rendering. The
+Linux winit shell now uses FemtoVG on the GPU (ADR 0068); the H700 does have
+a Mali-G31, driven by Panfrost. Zone's GAMES page animates three dots and two triangles at 60
 frames a second, under several hundred still items (words drawn as 14 text
 copies each). Slint's software renderer re-drew every still word the dots
 passed under, and walked every item each frame to find what changed. Two

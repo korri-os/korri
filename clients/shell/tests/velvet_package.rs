@@ -31,9 +31,9 @@
 //! scenario's last frame as a PNG; `VELVET_PREVIEW_OUT=DIR` writes every
 //! preview state.
 
+use i_slint_renderer_software::{MinimalSoftwareWindow, RepaintBufferType};
 use korri_shell::{catalog, engine, images::ImageCache, targets, view};
 use serde_json::{json, Value};
-use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Platform, WindowAdapter};
 use slint::{ComponentHandle, Rgb8Pixel};
 use std::{

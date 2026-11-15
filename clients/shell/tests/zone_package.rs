@@ -29,9 +29,9 @@
 //!
 //! `ZONE_PREVIEW_OUT=DIR` writes every frame as a PNG there.
 
+use i_slint_renderer_software::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel};
 use korri_shell::{catalog, engine, images::ImageCache, view};
 use serde_json::{json, Value};
-use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel};
 use slint::platform::{Platform, WindowAdapter};
 use slint::ComponentHandle;
 use std::{

@@ -27,20 +27,22 @@ Focus on ibuki for now."
   tests, the bench and the screenshot tools.
 - On Linux the winit backend uses Slint's FemtoVG renderer on OpenGL (EGL on
   Wayland, GLX on X11). Android keeps Skia.
-- On the GPU the shell's unit may open DRM devices and no other device
-  (`DevicePolicy=closed`, `DeviceAllow=char-drm rw`). The render node's mode
-  lets it in; the card node's `video` group keeps it out. Controller input
-  still arrives only from korrid.
-- Devices move one at a time, ibuki first. `services.korri.shell.renderer`
-  (`cpu` or `gpu`, the shell's `--renderer`) holds a device on the CPU until
-  its GPU path is proven on the device: the shell starts, draws, and meets
-  amendment A3 (60 fps, idle and with presses). The default stays `cpu`
-  until the last device has moved; then the option goes.
+- The Linux unit keeps `PrivateDevices=true`. It binds only the compositor's
+  selected render node into its private `/dev/dri/renderD128`, grants read/write
+  device-cgroup access to that node, and adds only the `render` supplementary
+  group. DRM primary nodes and `/dev/input` stay hidden.
+- Issue #484 removes the staged migration from #482. There is no
+  `services.korri.shell.renderer` option and no `--renderer` argument. Winit's
+  software adapter is not compiled. Headless tools use the software renderer
+  as a direct dependency, without forwarding its feature to the backend
+  selector. A GPU setup error cannot select the software adapter.
+- The separate webOS SDL adapter is outside this Linux winit cut; it keeps
+  its software path until a measured webOS GLES integration exists.
 
 ## Consequences
 
 - The patched CPU renderer (`clients/shell/vendor/README.md`: layer caching,
-  drawing on several threads) no longer draws on a device that has moved.
+  drawing on several threads) no longer draws Linux device windows.
   It stays for the tests and the bench until they measure the GPU path too.
 - Text and edges come from FemtoVG, not the CPU rasteriser, so a device's
   pixels differ slightly from the headless screenshots.
