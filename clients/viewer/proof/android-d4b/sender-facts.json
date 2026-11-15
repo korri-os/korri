@@ -51,7 +51,7 @@
       "zone": "hwmon4/temp1",
       "type": "k10temp Tctl",
       "driver": "k10temp",
-      "temp": 83375,
+      "temp": 78750,
       "trips": [],
       "unreadable": null,
       "limits": {
@@ -71,20 +71,20 @@
     "sink": "korri-tone"
   },
   "log_input": true,
-  "sunshine_port": 37163,
-  "sunshine_control_port": 37173,
+  "sunshine_port": 37903,
+  "sunshine_control_port": 37913,
   "listening_tcp_ports": [
-    37163
+    37903
   ],
   "processes": {
     "compositor": {
-      "pid": 3005016
+      "pid": 585808
     },
     "sunshine": {
-      "pid": 3005037
+      "pid": 585834
     },
     "sound": {
-      "pid": 3005014
+      "pid": 585806
     }
   },
   "sender_fixture": {
@@ -101,10 +101,10 @@
           "av1_vaapi"
         ],
         "hardware_encoder": true,
-        "port": 37163,
+        "port": 37903,
         "sunshine_version": "2026.516.143833"
       }
     ],
-    "run_folder": "/tmp/korri-stream-cadence-sender-3v2lxlfr"
+    "run_folder": "/tmp/korri-stream-cadence-sender-lsg2oyn6"
   }
 }

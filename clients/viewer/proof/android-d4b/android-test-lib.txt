@@ -1,5 +1,5 @@
 
-running 124 tests
+running 130 tests
 test audio::tests::a_device_that_stays_lost_ends_the_sound_without_a_busy_loop ... ok
 test audio::tests::a_large_burst_sets_a_buffer_of_two_bursts ... ok
 test audio::tests::a_lost_packet_is_concealed_by_opus ... ok
@@ -35,22 +35,28 @@ test decoder::tests::input_errors_back_off_and_then_frames_stop_asking_for_idr .
 test decoder::tests::only_the_newest_ready_frame_goes_to_the_display ... ok
 test decoder::tests::output_errors_back_off_and_then_end_the_stream ... ok
 test decoder::tests::the_frame_record_gets_each_frame_through_both_loops ... ok
+test feedback::tests::a_battery_read_that_ends_after_a_stop_that_timed_out_reaches_no_stream ... ok
 test feedback::tests::a_battery_report_outside_the_stream_is_refused_by_the_gate ... ok
 test feedback::tests::a_device_that_goes_stops_its_vibration_and_gives_its_light_back ... ok
 test feedback::tests::a_failed_call_is_counted_and_the_others_still_go ... ok
+test feedback::tests::a_feedback_thread_that_panicked_waits_without_spinning ... ok
 test feedback::tests::a_pad_rumbles_with_its_own_vibrators_four_then_two_then_one ... ok
 test feedback::tests::a_panic_on_the_feedback_thread_ends_the_feedback_and_the_stop_still_runs ... ok
 test feedback::tests::a_stop_does_not_wait_for_a_call_that_hangs ... ok
+test feedback::tests::a_value_that_makes_no_call_says_why ... ok
 test feedback::tests::built_in_buttons_without_vibrators_rumble_with_the_phones ... ok
 test feedback::tests::four_vibrators_rumble_the_triggers_with_the_motors ... ok
 test feedback::tests::no_battery_or_a_status_android_does_not_name_sends_nothing ... ok
 test feedback::tests::one_vibrator_mixes_both_motors_into_one_amplitude ... ok
+test feedback::tests::rumble_behind_a_slow_call_collapses_and_the_stop_is_not_kept_waiting ... ok
 test feedback::tests::rumble_goes_to_every_device_of_that_number_and_to_no_other ... ok
 test feedback::tests::the_battery_goes_to_the_host_at_the_arrival_and_on_each_change ... ok
 test feedback::tests::the_cores_callbacks_reach_the_feedback_thread_only_while_it_serves ... ok
 test feedback::tests::the_feedback_thread_reads_a_battery_when_it_is_due ... ok
+test feedback::tests::the_latest_rumble_wins_so_a_rumble_of_zero_is_never_lost ... ok
 test feedback::tests::the_light_goes_to_the_rgb_lights_of_that_number ... ok
-test feedback::tests::the_stop_stops_every_controller_and_the_phones_vibrator ... ok
+test feedback::tests::the_stop_cancels_every_vibration_before_it_gives_the_lights_back ... ok
+test feedback::tests::the_stop_goes_before_pending_work_and_cancels_the_vibration_first ... ok
 test feedback::tests::two_vibrators_take_the_motors_high_first_and_both_at_zero_cancel ... ok
 test feedback::tests::without_androids_side_the_feedback_thread_still_answers_the_stop ... ok
 test frame_record::tests::a_failed_write_is_reported_at_close ... ok
@@ -125,5 +131,5 @@ test sps::tests::emulation_prevention_survives_the_round_trip ... ok
 test sps::tests::levels_follow_the_stream_size_and_rate ... ok
 test sps::tests::the_synthetic_sample_reads_past_its_scaling_lists ... ok
 
-test result: ok. 124 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 10.10s
+test result: ok. 130 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 12.80s
 

@@ -90,13 +90,13 @@
     "emulator_played_the_tests_tone": true
   },
   "store": {
-    "apk": "/nix/store/q68h7plack22r8akby5fjgyqnw0g8gqr-korri-viewer-android-apk-0.1.0/korri-viewer-unsigned.apk",
+    "apk": "/nix/store/7rzv7japwq9nbyjn5w7b7igdx91g3vd0-korri-viewer-android-apk-0.1.0/korri-viewer-unsigned.apk",
     "refusal_probe": "/nix/store/00fgx992pnszmr7i0vkmvw9ldjssngkk-korri-viewer-refusal-probe-apk-0.1.0/korri-viewer-refusal-probe-unsigned.apk",
-    "feedback_probe": "/nix/store/xnr2cyd3whiyapir15b546j2zj9p3ray-korri-viewer-feedback-probe-apk-0.1.0/korri-viewer-feedback-probe-unsigned.apk",
-    "viewer": "/nix/store/fpd7d5hya7bdpl844y6kfx91xkrniygs-korri-viewer-0.1.0",
-    "tests": "/nix/store/65q5gbmb7xyv0vd3jrw82np7j145iy1l-korri-viewer-android-check/x86_64/tests"
+    "feedback_probe": "/nix/store/pplsli6hp04qzic2gwjpqhayvm8j18hr-korri-viewer-feedback-probe-apk-0.1.0/korri-viewer-feedback-probe-unsigned.apk",
+    "viewer": "/nix/store/s9rcjb90wkj4g3brxlzllidcx6w5jfg6-korri-viewer-0.1.0",
+    "tests": "/nix/store/hx5a3r2h57cqlr42sqscx6kidfjblnyy-korri-viewer-android-check/x86_64/tests"
   },
-  "sunshine_port": 37163,
+  "sunshine_port": 37903,
   "emulator": {
     "release": "12",
     "sdk": "31",
@@ -107,54 +107,190 @@
       {
         "file": "00.png",
         "from_start_ms": [
-          800,
-          2017
+          665,
+          1380
         ],
         "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
       },
       {
         "file": "01.png",
         "from_start_ms": [
-          2131,
-          2849
+          1448,
+          1812
         ],
         "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
       },
       {
         "file": "02.png",
         "from_start_ms": [
-          2960,
-          3682
+          1884,
+          2252
         ],
-        "id": 2380
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "03.png",
+        "from_start_ms": [
+          2327,
+          2592
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "04.png",
+        "from_start_ms": [
+          2656,
+          2920
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "05.png",
+        "from_start_ms": [
+          2989,
+          3203
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "06.png",
+        "from_start_ms": [
+          3267,
+          3581
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "07.png",
+        "from_start_ms": [
+          3649,
+          4014
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "08.png",
+        "from_start_ms": [
+          4084,
+          4298
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "09.png",
+        "from_start_ms": [
+          4369,
+          4633
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "10.png",
+        "from_start_ms": [
+          4701,
+          5015
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "11.png",
+        "from_start_ms": [
+          5083,
+          5347
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "12.png",
+        "from_start_ms": [
+          5416,
+          5731
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "13.png",
+        "from_start_ms": [
+          5799,
+          6063
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "14.png",
+        "from_start_ms": [
+          6131,
+          6345
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "15.png",
+        "from_start_ms": [
+          6416,
+          6629
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "16.png",
+        "from_start_ms": [
+          6693,
+          7007
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "17.png",
+        "from_start_ms": [
+          7076,
+          7340
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "18.png",
+        "from_start_ms": [
+          7406,
+          7971
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "19.png",
+        "from_start_ms": [
+          8049,
+          8368
+        ],
+        "id": 3019
       }
     ],
     "first_readable": {
-      "file": "02.png",
+      "file": "19.png",
       "from_start_ms": [
-        2960,
-        3682
+        8049,
+        8368
       ],
-      "id": 2380
+      "id": 3019
     }
   },
-  "app_pid": "4709",
+  "app_pid": "4781",
   "streaming_screenshots": [
     {
       "file": "streaming-1.png",
-      "id": 2600
+      "id": 3168
     },
     {
       "file": "streaming-2.png",
-      "id": 2685
+      "id": 3248
     },
     {
       "file": "streaming-3.png",
-      "id": 2771
+      "id": 3333
     },
     {
       "file": "streaming-4.png",
-      "id": 2858
+      "id": 3430
     }
   ],
   "input": {
@@ -213,30 +349,30 @@
   "screenshots_after_input": [
     {
       "file": "after-input-1.png",
-      "id": 3660
+      "id": 4213
     },
     {
       "file": "after-input-2.png",
-      "id": 3754
+      "id": 4299
     },
     {
       "file": "after-input-3.png",
-      "id": 3846
+      "id": 4381
     }
   ],
   "audio_server_restart": {
-    "before": "397",
-    "after": "5820"
+    "before": "403",
+    "after": "6001"
   },
   "feedback_in_stream": {
     "app_lines": [
-      "input: controller Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (17) vendor 054c product 05c4 external true",
-      "input: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad sticks Some((0, 1)) Some((11, 14)) triggers Some((17, 18)) hat true deadzones 0.05 0.05 0.13",
-      "input: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (17) is controller 0",
-      "feedback: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (17) is controller 0: rumble Dual(Device), RGB light true",
-      "feedback: battery of Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (17): status 3 capacity 0.6 sent to controller 0 as state 2 percentage 60: 0",
-      "input: controller Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (17) removed",
-      "feedback: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (17) stopped"
+      "input: controller Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Motion Sensors (17) vendor 054c product 05c4 external true",
+      "input: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Motion Sensors sticks Some((0, 1)) Some((11, 14)) triggers Some((17, 18)) hat true deadzones 0.05 0.05 0.13",
+      "input: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Motion Sensors (17) is controller 0",
+      "feedback: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Motion Sensors (17) is controller 0: rumble Dual(Device), RGB light true",
+      "feedback: battery of Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Motion Sensors (17): status 3 capacity 0.6 sent to controller 0 as state 2 percentage 60: 0",
+      "input: controller Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Motion Sensors (17) removed",
+      "feedback: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Motion Sensors (17) stopped"
     ]
   },
   "sound_after_the_restart": [],
@@ -255,56 +391,56 @@
       {
         "name": "marker",
         "command": "input keyevent KEYCODE_M",
-        "at": 481837.864,
+        "at": 500546.146,
         "exit_code": 0,
         "output": ""
       },
       {
         "name": "keys while open",
         "command": "input keyevent KEYCODE_H KEYCODE_E KEYCODE_L KEYCODE_D",
-        "at": 481846.802,
+        "at": 500554.511,
         "exit_code": 0,
         "output": ""
       },
       {
         "name": "tap while open",
         "command": "input tap 1680 270",
-        "at": 481847.276,
+        "at": 500554.93,
         "exit_code": 0,
         "output": ""
       },
       {
         "name": "mouse while open",
         "command": "input mouse tap 1680 810",
-        "at": 481847.717,
+        "at": 500555.361,
         "exit_code": 0,
         "output": ""
       },
       {
         "name": "key after close",
         "command": "input keyevent KEYCODE_Z",
-        "at": 481852.665,
+        "at": 500559.977,
         "exit_code": 0,
         "output": ""
       },
       {
         "name": "tap after close",
         "command": "input tap 720 270",
-        "at": 481853.104,
+        "at": 500560.395,
         "exit_code": 0,
         "output": ""
       },
       {
         "name": "back opens",
         "command": "input keyevent KEYCODE_BACK",
-        "at": 481853.566,
+        "at": 500560.832,
         "exit_code": 0,
         "output": ""
       },
       {
         "name": "back closes",
         "command": "input keyevent KEYCODE_BACK",
-        "at": 481854.667,
+        "at": 500561.744,
         "exit_code": 0,
         "output": ""
       }
@@ -312,33 +448,33 @@
     "open_shots": [
       {
         "file": "overlay-open-1.png",
-        "id": 5597,
+        "id": 6136,
         "lower_half_p99": 63
       },
       {
         "file": "overlay-open-2.png",
-        "id": 5699,
+        "id": 6223,
         "lower_half_p99": 63
       }
     ],
     "closed_shots": [
       {
         "file": "overlay-closed-1.png",
-        "id": 5966,
+        "id": 6479,
         "lower_half_p99": 254
       },
       {
         "file": "overlay-closed-2.png",
-        "id": 6058,
+        "id": 6564,
         "lower_half_p99": 254
       }
     ],
     "missed_before_open": {
-      "at": 481841.985,
-      "hwc_missed": 90
+      "at": 500550.199,
+      "hwc_missed": 19
     },
     "opened": "overlay: open on Guide; the stream's input is held",
-    "shown": "overlay: layer shown: posted 1.7 ms before, applied in 18.23 ms",
+    "shown": "overlay: layer shown: posted 0.6 ms before, applied in 0.73 ms",
     "overlay_layer_listed": true,
     "hwc_layers_while_open": [
       {
@@ -350,65 +486,65 @@
         "composition": "DEVICE"
       },
       {
-        "layer": "bbq-wrapper#1",
+        "layer": "bbq-wrapper#0",
         "composition": "DEVICE"
       }
     ],
     "sound_open_1": {
-      "emulator_time": "11-15 08:51:21.217",
-      "server_frames": 1353386,
-      "last_power_row": "11-15 08:51:20.685",
+      "emulator_time": "11-15 14:03:10.135",
+      "server_frames": 1345950,
+      "last_power_row": "11-15 14:03:09.620",
       "last_powers_db": [
-        -41.5,
-        -41.5,
-        -41.5,
-        -41.5,
-        -41.5,
-        -41.5,
-        -41.5,
-        -41.5,
-        -41.5,
-        -41.5
+        -41.6,
+        -41.6,
+        -41.6,
+        -41.6,
+        -41.6,
+        -41.6,
+        -41.6,
+        -41.6,
+        -41.6,
+        -41.6
       ]
     },
     "sound_open_2": {
-      "emulator_time": "11-15 08:51:26.914",
-      "server_frames": 1627463,
-      "last_power_row": "11-15 08:51:26.439",
+      "emulator_time": "11-15 14:03:15.255",
+      "server_frames": 1591344,
+      "last_power_row": "11-15 14:03:14.773",
       "last_powers_db": [
-        -41.5,
-        -41.5,
-        -41.5,
-        -41.5,
-        -41.5,
-        -41.8,
-        -41.5,
-        -41.5,
-        -41.5,
-        -41.5
+        -41.6,
+        -41.6,
+        -41.6,
+        -41.6,
+        -41.6,
+        -41.6,
+        -41.6,
+        -41.7,
+        -41.6,
+        -41.6
       ]
     },
     "missed_before_close": {
-      "at": 481848.229,
-      "hwc_missed": 109
+      "at": 500555.813,
+      "hwc_missed": 19
     },
-    "closed": "overlay: closed on Guide after 6.2 s; it took 12 keys and 6 motion events; the stream's input goes on",
-    "hidden": "overlay: layer hidden: posted 0.2 ms before, applied in 0.35 ms",
+    "closed": "overlay: closed on Guide after 5.6 s; it took 12 keys and 6 motion events; the stream's input goes on",
+    "hidden": "overlay: layer hidden: posted 0.0 ms before, applied in 0.40 ms",
     "missed_after_closed_shots": {
-      "at": 481852.327,
-      "hwc_missed": 109
+      "at": 500559.659,
+      "hwc_missed": 19
     },
     "opened_on_back": "overlay: open on Back; the stream's input is held",
     "back_shot": {
       "file": "overlay-back.png",
-      "id": 6245,
+      "id": 6741,
       "lower_half_p99": 63
     },
-    "closed_on_back": "overlay: closed on Back after 1.1 s; it took 1 keys and 0 motion events; the stream's input goes on",
+    "closed_on_back": "overlay: closed on Back after 0.9 s; it took 1 keys and 0 motion events; the stream's input goes on",
     "pad_exit_code": 0,
     "pad_steps": [
       {
-        "at": 481838.265,
+        "at": 500546.547,
         "id": 1,
         "command": "register",
         "name": "Korri test gamepad",
@@ -509,7 +645,7 @@
         ]
       },
       {
-        "at": 481840.765,
+        "at": 500549.047,
         "id": 1,
         "command": "report",
         "report": [
@@ -526,7 +662,7 @@
         ]
       },
       {
-        "at": 481841.065,
+        "at": 500549.347,
         "id": 1,
         "command": "report",
         "report": [
@@ -543,7 +679,7 @@
         ]
       },
       {
-        "at": 481841.999,
+        "at": 500550.213,
         "id": 1,
         "command": "report",
         "report": [
@@ -560,7 +696,7 @@
         ]
       },
       {
-        "at": 481842.149,
+        "at": 500550.363,
         "id": 1,
         "command": "report",
         "report": [
@@ -577,7 +713,7 @@
         ]
       },
       {
-        "at": 481845.869,
+        "at": 500553.637,
         "id": 1,
         "command": "report",
         "report": [
@@ -594,7 +730,7 @@
         ]
       },
       {
-        "at": 481846.07,
+        "at": 500553.837,
         "id": 1,
         "command": "report",
         "report": [
@@ -611,7 +747,7 @@
         ]
       },
       {
-        "at": 481846.22,
+        "at": 500553.988,
         "id": 1,
         "command": "report",
         "report": [
@@ -628,7 +764,7 @@
         ]
       },
       {
-        "at": 481846.42,
+        "at": 500554.189,
         "id": 1,
         "command": "report",
         "report": [
@@ -645,7 +781,7 @@
         ]
       },
       {
-        "at": 481846.72,
+        "at": 500554.489,
         "id": 1,
         "command": "report",
         "report": [
@@ -662,7 +798,7 @@
         ]
       },
       {
-        "at": 481848.24,
+        "at": 500555.822,
         "id": 1,
         "command": "report",
         "report": [
@@ -679,7 +815,7 @@
         ]
       },
       {
-        "at": 481848.39,
+        "at": 500555.972,
         "id": 1,
         "command": "report",
         "report": [
@@ -696,7 +832,7 @@
         ]
       },
       {
-        "at": 481852.327,
+        "at": 500559.659,
         "id": 1,
         "command": "report",
         "report": [
@@ -713,7 +849,7 @@
         ]
       },
       {
-        "at": 481852.628,
+        "at": 500559.96,
         "id": 1,
         "command": "report",
         "report": [
@@ -736,36 +872,36 @@
       "input: Korri test gamepad (18) is controller 0",
       "input: arrival Arrival { number: 0, active_mask: 1, kind: 1, buttons: 63487, capabilities: 65 }",
       "overlay: open on Guide; the stream's input is held",
-      "overlay: layer shown: posted 1.7 ms before, applied in 18.23 ms",
-      "overlay: closed on Guide after 6.2 s; it took 12 keys and 6 motion events; the stream's input goes on",
-      "overlay: layer hidden: posted 0.2 ms before, applied in 0.35 ms",
+      "overlay: layer shown: posted 0.6 ms before, applied in 0.73 ms",
+      "overlay: closed on Guide after 5.6 s; it took 12 keys and 6 motion events; the stream's input goes on",
+      "overlay: layer hidden: posted 0.0 ms before, applied in 0.40 ms",
       "overlay: open on Back; the stream's input is held",
-      "overlay: layer shown: posted 0.1 ms before, applied in 0.54 ms",
-      "overlay: closed on Back after 1.1 s; it took 1 keys and 0 motion events; the stream's input goes on",
-      "overlay: layer hidden: posted 0.0 ms before, applied in 0.38 ms",
+      "overlay: layer shown: posted 0.1 ms before, applied in 0.35 ms",
+      "overlay: closed on Back after 0.9 s; it took 1 keys and 0 motion events; the stream's input goes on",
+      "overlay: layer hidden: posted 0.1 ms before, applied in 7.24 ms",
       "input: controller Korri test gamepad (18) removed",
       "input: controller number 0 is free"
     ]
   },
   "sound": {
     "output": "sound: output try 0 asked low-latency granted none sharing shared rate 48000 channels 2 burst 960 capacity 2132 buffer 1920 (asked 1920) packet 240 frames",
-    "ended": "7524 callbacks, 3362932 frames played, 104588 frames silent, 145 short callbacks after the first sound, 14525 packets, 0 concealed, 504 dropped over 40 ms pending, 0 not decoded, 8 device xruns, 0 reopened",
-    "callbacks": 7524,
-    "played": 3362932,
-    "silent": 104588,
-    "short": 145,
-    "packets": 14525,
+    "ended": "7250 callbacks, 3257040 frames played, 40560 frames silent, 59 short callbacks after the first sound, 13809 packets, 0 concealed, 230 dropped over 40 ms pending, 0 not decoded, 0 device xruns, 0 reopened",
+    "callbacks": 7250,
+    "played": 3257040,
+    "silent": 40560,
+    "short": 59,
+    "packets": 13809,
     "concealed": 0,
-    "dropped": 504,
+    "dropped": 230,
     "decode_errors": 0,
-    "xruns": 8,
+    "xruns": 0,
     "reopened": 0
   },
   "sound_restart": {
-    "seconds_before_the_server_died": 28.6,
-    "seconds_played": 70.1
+    "seconds_before_the_server_died": 25.9,
+    "seconds_played": 67.9
   },
-  "input_report": "14 keys, 108 controller states, 3 arrivals, 2 mouse, 372 touches sent; 29 held; 0 unsupported, 0 outside the stream, 0 failed",
+  "input_report": "14 keys, 108 controller states, 3 arrivals, 2 mouse, 1041 touches sent; 26 held; 0 unsupported, 0 outside the stream, 0 failed",
   "feedback_report": "0 rumbles, 0 trigger rumbles, 0 lights, 2 calls to Android; 3 battery reads, 1 battery reports sent, 0 outside the stream; 0 failed",
   "viewer_ran": {
     "decode": "mediacodec",
@@ -774,81 +910,31 @@
   "picture_losses": {
     "idr_requested_by_the_decoder": 0,
     "frames_not_decoded": 0,
-    "decode_unit_queue_overflows": 1,
+    "decode_unit_queue_overflows": 0,
     "frames_the_network_dropped": 0
   },
   "frame_record": {
     "header": "index,frame_number,enqueue_ns,decoded_ns,display_ns",
-    "rows": 4158,
+    "rows": 3996,
     "in_order": true,
-    "decoded": 4156,
-    "handed_off": 4075,
-    "recording_units": 4158,
-    "handed_off_readable_ids": 4075,
-    "handed_off_distinct_ids": 4068,
-    "handed_off_ids_increase": false,
+    "decoded": 3993,
+    "handed_off": 3985,
+    "recording_units": 3996,
+    "handed_off_readable_ids": 3985,
+    "handed_off_distinct_ids": 3985,
+    "handed_off_ids_increase": true,
     "handed_off_ids_never_go_back": true,
-    "handed_off_ids_not_increasing": [
-      {
-        "handoff_s": 71.829,
-        "ids": [
-          4387,
-          4387
-        ]
-      },
-      {
-        "handoff_s": 71.862,
-        "ids": [
-          4387,
-          4387
-        ]
-      },
-      {
-        "handoff_s": 71.897,
-        "ids": [
-          4387,
-          4387
-        ]
-      },
-      {
-        "handoff_s": 71.931,
-        "ids": [
-          4387,
-          4387
-        ]
-      },
-      {
-        "handoff_s": 71.967,
-        "ids": [
-          4387,
-          4387
-        ]
-      },
-      {
-        "handoff_s": 72.001,
-        "ids": [
-          4387,
-          4387
-        ]
-      },
-      {
-        "handoff_s": 72.039,
-        "ids": [
-          4387,
-          4387
-        ]
-      }
-    ],
-    "first_handed_off_id": 2341,
-    "last_handed_off_id": 6515,
-    "first_handoff_ns": 35652269639,
-    "startup_ms": 2334.3
+    "handed_off_ids_not_increasing": [],
+    "first_handed_off_id": 2986,
+    "last_handed_off_id": 6978,
+    "first_handoff_ns": 46613828951,
+    "startup_ms": 7696.8
   },
   "refusal": {
-    "without_dump": "refused: java.lang.SecurityException: Permission Denial: starting Intent { cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity } from ProcessRecord{b758af6 6537:com.simonwjackson.korri.viewer.refusal/u0a146} (pid=6537, uid=10146) requires android.permission.DUMP",
+    "without_dump": "refused: java.lang.SecurityException: Permission Denial: starting Intent { cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity } from ProcessRecord{8d953e2 6562:com.simonwjackson.korri.viewer.refusal/u0a146} (pid=6562, uid=10146) requires android.permission.DUMP",
     "with_dump_granted": "started",
     "viewer_lines_after_the_grant": [
-      "   119.142  4709  6608 E korri-viewer: viewer failed: no intent extra args"
+      "   124.553  4781  6609 E korri-viewer: viewer failed: no intent extra args"
     ]
   },
   "feedback_probe": {
@@ -909,7 +995,7 @@
         ]
       },
       "stop": {
-        "at_report": 10,
+        "at_report": 7,
         "vibrating": [
           "false"
         ],
@@ -969,33 +1055,6 @@
         "strong": 0,
         "rgb": [
           0,
-          102,
-          136
-        ]
-      },
-      {
-        "weak": 0,
-        "strong": 0,
-        "rgb": [
-          0,
-          0,
-          136
-        ]
-      },
-      {
-        "weak": 0,
-        "strong": 0,
-        "rgb": [
-          0,
-          0,
-          0
-        ]
-      },
-      {
-        "weak": 0,
-        "strong": 0,
-        "rgb": [
-          0,
           0,
           0
         ]
@@ -1003,18 +1062,18 @@
     ],
     "app_lines": [
       "input: the phone: Phone { api_level: 31, vibration: Vibration { manager: Vibrators { count: 1, amplitude: true }, vibrator: Vibrator { present: true, amplitude: true } } }",
-      "input: controller Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Motion Sensors (19) vendor 054c product 05c4 external true",
-      "input: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Motion Sensors sticks Some((0, 1)) Some((11, 14)) triggers Some((17, 18)) hat true deadzones 0.05 0.05 0.13",
-      "input: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Motion Sensors (19) is controller 0",
+      "input: controller Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (19) vendor 054c product 05c4 external true",
+      "input: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad sticks Some((0, 1)) Some((11, 14)) triggers Some((17, 18)) hat true deadzones 0.05 0.05 0.13",
+      "input: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (19) is controller 0",
       "input: arrival Arrival { number: 0, active_mask: 1, kind: 2, buttons: 63487, capabilities: 195 }",
-      "feedback: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Motion Sensors (19) is controller 0: rumble Dual(Device), RGB light true",
-      "feedback: battery of Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Motion Sensors (19): status 3 capacity 0.6 sent to controller 0 as state 2 percentage 60: -2",
+      "feedback: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (19) is controller 0: rumble Dual(Device), RGB light true",
+      "feedback: battery of Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (19): status 3 capacity 0.6 sent to controller 0 as state 2 percentage 60: -2",
       "feedback: rumble controller 0 low c000 high 4000: [Combined { target: Device(19), amplitudes: [64, 192] }]",
       "feedback: light controller 0 ff446688: [Light { device: 19, argb: 4282672776 }]",
-      "feedback: trigger rumble controller 0 left ffff right ffff: no call: no controller of that number takes it",
+      "feedback: trigger rumble controller 0 left ffff right ffff: no call: it has no trigger vibrators (four vibrators rumble the triggers)",
       "feedback: rumble controller 0 low 0000 high 0000: [CancelManager { target: Device(19) }]",
       "feedback: rumble controller 0 low 4000 high c000: [Combined { target: Device(19), amplitudes: [192, 64] }]",
-      "feedback: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Motion Sensors (19) stopped",
+      "feedback: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (19) stopped",
       "feedback: ended: 3 rumbles, 1 trigger rumbles, 1 lights, 7 calls to Android; 1 battery reads, 0 battery reports sent, 1 outside the stream; 0 failed"
     ],
     "probe_lines": [
@@ -1033,12 +1092,12 @@
   },
   "input_at_the_sender": {
     "counts": {
-      "absolute mouse move": 1,
-      "controller": 44,
+      "absolute mouse move": 2,
+      "controller": 45,
       "controller arrival": 1,
       "keyboard": 10,
       "relative mouse move": 2,
-      "touch": 235
+      "touch": 719
     },
     "keyboard": {
       "sent": [
@@ -1094,10 +1153,10 @@
         2,
         3
       ],
-      "at_the_middle": 8
+      "at_the_middle": 65
     },
     "mouse": {
-      "positions": 1,
+      "positions": 2,
       "reference": [
         [
           1920,
@@ -1114,7 +1173,7 @@
       }
     ],
     "controller": {
-      "packets": 44,
+      "packets": 45,
       "a_pressed": true,
       "left_stick_full_right": true,
       "right_trigger_full": true,
@@ -1134,10 +1193,10 @@
       "after_it_went": {
         "packets": 5,
         "gaps_ms": [
-          17,
-          248,
-          252,
-          260
+          249,
+          249,
+          251,
+          251
         ]
       }
     }
@@ -1182,8 +1241,6 @@
       "00001000",
       "00001000",
       "00001000",
-      "00001000",
-      "00000000",
       "00000000",
       "00000000",
       "00000000",
@@ -1220,55 +1277,53 @@
     ],
     "controller_gaps_ms": [
       0,
-      171,
-      218,
-      32,
-      18,
+      244,
+      152,
+      55,
+      43,
+      10,
+      48,
+      53,
+      47,
       51,
-      50,
-      52,
+      41,
+      9,
+      54,
       49,
-      30,
-      21,
-      56,
+      145,
+      13,
+      5745,
+      251,
+      250,
+      250,
+      250,
+      250,
+      255,
+      252,
+      250,
+      250,
+      249,
+      252,
+      249,
+      253,
+      249,
+      39,
+      215,
+      83,
+      165,
+      251,
+      251,
+      201,
+      1049,
+      250,
       52,
-      45,
-      52,
-      25,
-      149,
-      6369,
+      198,
+      250,
+      1,
+      249,
       250,
       253,
-      247,
-      252,
-      251,
-      249,
-      250,
-      249,
-      251,
-      250,
-      251,
-      261,
-      238,
-      251,
-      249,
-      57,
-      195,
-      104,
-      149,
-      253,
-      247,
-      252,
-      29,
-      1229,
-      249,
-      78,
-      172,
-      0,
-      249,
-      251,
-      251,
-      251
+      249
     ],
     "touches": [
       {
@@ -1425,8 +1480,8 @@
     },
     "pass": true,
     "pids_unchanged": {},
-    "run_folder": "/tmp/korri-stream-cadence-sender-3v2lxlfr",
-    "run_folder_bytes": 24825787,
+    "run_folder": "/tmp/korri-stream-cadence-sender-lsg2oyn6",
+    "run_folder_bytes": 24304285,
     "run_folder_removed": true,
     "stray_processes_killed": [],
     "remaining_processes": [],
@@ -1444,10 +1499,10 @@
   "emulator_sound": {
     "rate": 48000,
     "channels": 2,
-    "seconds": 79.6,
-    "seconds_of_sound": 72.1,
-    "seconds_at_1000_hz": 70.0,
-    "median_rms_at_1000_hz": 274.8,
+    "seconds": 76.3,
+    "seconds_of_sound": 69.8,
+    "seconds_at_1000_hz": 67.7,
+    "median_rms_at_1000_hz": 273.0,
     "seconds_at_440_hz": 2.0,
     "median_rms_at_440_hz": 200.4
   },
