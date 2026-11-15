@@ -438,9 +438,11 @@ def main() -> int:
         lines = logcat.lines()
         logcat.close()
         logcat = None
+        # The launch request's line holds the session's input key (rikey): it stays out.
         app = [line for line in lines if re.search(
-            r"KorriResizeProof|Limelight|MediaCodec|moonlight|Moonlight|NvConnection|Runtime|resolution|AndroidRuntime"
-            r"|TestRunner|FATAL|DEBUG|Exact Android", line)]
+            r"KorriResizeProof|LimeLog|MediaCodec|moonlight-common-c|CCodecConfig|bufferpool2|AndroidRuntime"
+            r"|TestRunner|FATAL|Exact Android", line) and "rikey" not in line
+            and "released a buffer owned by client" not in line]
         (out / "logcat.txt").write_text("\n".join(app) + "\n")
         checks["no_crash"] = not any("Fatal signal" in line or "FATAL EXCEPTION" in line for line in lines)
         # What the app's decoder reported as its output size, in order.
