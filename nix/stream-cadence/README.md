@@ -1647,10 +1647,10 @@ takes a part of them:
 
 | Words | Meaning |
 | --- | --- |
-| `loss random P%` | Each packet is lost with chance P. |
-| `loss gemodel P% R%` | Burst loss, Gilbert's model: P is the chance to enter the state of loss, R the chance to leave it, and every packet in that state is lost. The mean loss is P / (P + R), the mean burst 1 / R packets. |
-| `delay Nms` | Each packet waits N ms, at most 1000. |
-| `reorder P%` | With a delay only: netem sends P of the packets at once and delays the others. |
+| `loss random P%` | Each UDP packet is lost with chance P. |
+| `loss gemodel P% R%` | Burst loss, Gilbert's model: P is the chance to enter the state of loss, R the chance to leave it, and every UDP packet in that state is lost. The mean loss is P / (P + R), the mean burst 1 / R packets. |
+| `delay Nms` | Each packet, UDP or TCP, waits N ms, at most 1000. |
+| `reorder P%` | With a delay only: netem sends P of the UDP packets at once and delays the others. |
 
 The words can be combined (`delay 30ms loss random 1%`). Jitter,
 correlation and netem's other words are refused, and so is any word that
@@ -1660,39 +1660,61 @@ the sender's agent checks them again.
 **Where it applies, and nowhere else.** Only a same-device pair that has
 its own network namespace takes `--net`: a PC pair whose product viewer
 asks for `x11_vaapi` (see "PC VA-API fixture isolation"). That namespace has
-one interface, its own loopback. The stand-in, a viewer on another device
-and a product sender are refused before the sender starts, with
-`--sender-fixture` asked first. The sender's agent applies the condition
+one interface, its own loopback. Without `--sender-fixture` the option is
+refused before any device is asked. The stand-in, a viewer on another
+device and any other pair without that namespace are refused before the
+sender starts. The sender's agent applies the condition
 right after it makes the namespace, before anything uses the loopback, and
 only from a thread that `PairNamespace.inside` proves to be in the pair's
 namespace and not in the product's. Every command names `dev lo`.
 
-**The conditions apply to every packet on that loopback, in both
-directions.** A delay of 30 ms gives a round trip of 60 ms. Loss falls on
-video, audio, the control stream, RTSP and the pairing's HTTPS alike.
+**The whole condition falls on UDP; TCP takes only the delay.** UDP
+carries Moonlight's video, audio and control streams: FEC, recovery, pings
+and input. Every packet waits the delay once, so a delay of 30 ms gives a
+round trip of 60 ms. TCP carries the pairing's HTTPS,
+the launch and RTSP. It takes the delay and no loss or reordering, because
+netem's loss models count packets, not time. On the few packets of a TCP
+handshake one loss stalls a connection for a second or more: a SYN is sent
+again after 1, 2 and 4 s, where the stream's own packets lose a few
+milliseconds. On aka on 2026-11-15, with 5% burst loss on every packet, one
+RTSP handshake took 13 s; Sunshine ended the session 10 s later for want of
+a ping (`Initial Ping Timeout`), and Moonlight Embedded, which ignores a
+failed `LiStartConnection` (`src/main.c`), stayed alive with no stream until
+the tool ended the run. That happened in 3 of 7 turns at that condition.
 
-**Why a token bucket comes first.** Sunshine sends the packets of a frame's
-FEC block in one `sendmsg` with `UDP_SEGMENT` (`send_batch`,
+**Why a token bucket comes before netem.** Sunshine sends the packets of a
+frame's FEC block in one `sendmsg` with `UDP_SEGMENT` (`send_batch`,
 `src/platform/linux/misc.cpp`), up to 43 packets. A qdisc sees that batch as
 one buffer, because the kernel splits it only after the qdisc. netem alone
 would then lose whole frames and never a packet that FEC can repair. So the
-loopback gets three commands (`net_condition.commands`):
+loopback gets these commands (`net_condition.commands`):
 
 ```
 ip link set dev lo mtu 1500
-tc qdisc add dev lo root handle 1: tbf rate 100gbit burst 1514 limit 100000
-tc qdisc add dev lo parent 1:1 handle 10: netem NETEM
+tc qdisc add dev lo root handle 1: prio bands 2 priomap 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+tc filter add dev lo parent 1: protocol ip prio 1 u32 match ip protocol 17 0xff flowid 1:1
+tc filter add dev lo parent 1: protocol ipv6 prio 2 u32 match ip6 protocol 17 0xff flowid 1:1
+tc qdisc add dev lo parent 1:1 handle 10: tbf rate 100gbit burst 1514 limit 100000
+tc qdisc add dev lo parent 10:1 handle 11: netem NETEM
+tc qdisc add dev lo parent 1:2 handle 20: netem delay D     # only with a delay
 ```
 
-The token bucket (`tbf`) splits each buffer larger than its burst into its
-datagrams before netem, its one child, sees them (`tbf_segment` in the
-kernel's `sch_tbf.c`). Its burst is one Ethernet frame. The loopback takes
-Ethernet's MTU of 1500, because a TCP buffer at the loopback's own MTU of
-65536 has segments that no burst of one frame passes. Its rate is far above
-a stream's, so it shapes nothing. `tests/test_net.py` proves the split in a
-real namespace: 100 batches of 20 datagrams sent as Sunshine sends them,
-50% loss, and no batch arrives whole or not at all; with netem alone every
-batch does.
+The `prio` root has two bands: the filters send UDP to the first, and every
+other packet goes to the second. In the first, the token bucket (`tbf`)
+splits each buffer larger than its burst into its datagrams before netem,
+its one child, sees them (`tbf_segment` in the kernel's `sch_tbf.c`). Its
+burst is one Ethernet frame. The loopback takes Ethernet's MTU of 1500, so
+that no datagram is larger than that frame and TCP's segments are as on a
+real link. The bucket's rate is far above a stream's, so it shapes nothing.
+`tests/test_net.py` proves the split in a real namespace: 100 batches of 20
+datagrams sent as Sunshine sends them, 50% loss, and no batch arrives whole
+or not at all; with netem alone every batch does. It also proves that ten
+TCP exchanges under `delay 20ms loss random 50%` each take two round trips
+of 40 ms and none stalls.
+
+Moonlight takes a loopback address for a remote one (its
+`isPrivateNetworkAddress` knows no 127.0.0.0/8) and caps its video packets
+at 1024 bytes. That holds with and without `--net`, and in the baselines.
 
 **The record.** `discovered.net` holds:
 
@@ -1700,13 +1722,13 @@ batch does.
 | --- | --- |
 | `netem` | The condition, in netem's words and in one order. It is the condition `net` of `verdict`. |
 | `delay_ms`, `mean_loss_percent`, `mean_burst_packets`, `reorder_percent` | What the words mean. `mean_burst_packets` is `null` for random loss. |
-| `commands` | The three commands as the agent ran them. |
+| `commands` | The commands as the agent ran them. |
 | `namespace`, `product_namespace`, `init_namespace` | The network namespace in which they ran, the agent's own before it made the pair's, and PID 1's. |
 | `interfaces` | The interfaces of the pair's namespace: `lo` only, else nothing is applied. |
 | `mtu`, `qdiscs` | The loopback after the commands. |
 | `product_before`, `product_after` | The MTU of each interface and every qdisc of the product's namespace: read before the commands and after each run's measured start, in that namespace, with `ip -j link show` and `tc -j qdisc show`. They only read. |
 | `product_changes` | What changed there that the tool could have changed: a `netem` or `tbf` qdisc that was not there before, or the MTU of an interface that was. An interface that appears, as a container's, is not a change. A change ends the run as invalid. |
-| `measured_start` | netem's counters over the measured start: packets `passed` and `dropped`. |
+| `measured_start` | The counters of netem on the UDP band over the measured start: packets `passed` and `dropped`. |
 | `core_log` | The viewer core's own lines of loss and recovery in the measured start's `viewer.log` (`net_condition.recovery`): `unrecoverable_frames`, `network_dropped_frames`, `rfi_requests`, `idr_requests`, `audio_dropped`, `audio_unrecovered_blocks`. |
 
 **FEC shows by its effect.** moonlight-common-c's release build logs no

@@ -158,18 +158,34 @@ class Condition(unittest.TestCase):
                     condition(spec)
 
     def test_every_command_names_the_loopback_and_nothing_else(self):
-        commands = net_condition.commands("delay 30ms loss random 1%", "/iproute2")
+        ip, tc = "/iproute2/bin/ip", "/iproute2/bin/tc"
+        base = [
+            [ip, "link", "set", "dev", "lo", "mtu", "1500"],
+            [tc, "qdisc", "add", "dev", "lo", "root", "handle", "1:", "prio", "bands", "2",
+             "priomap", *["1"] * 16],
+            [tc, "filter", "add", "dev", "lo", "parent", "1:", "protocol", "ip", "prio", "1",
+             "u32", "match", "ip", "protocol", "17", "0xff", "flowid", "1:1"],
+            [tc, "filter", "add", "dev", "lo", "parent", "1:", "protocol", "ipv6", "prio", "2",
+             "u32", "match", "ip6", "protocol", "17", "0xff", "flowid", "1:1"],
+            [tc, "qdisc", "add", "dev", "lo", "parent", "1:1", "handle", "10:", "tbf",
+             "rate", "100gbit", "burst", "1514", "limit", "100000"],
+        ]
         self.assertEqual(
-            commands,
+            net_condition.commands("delay 30ms loss random 1%", "/iproute2"),
             [
-                ["/iproute2/bin/ip", "link", "set", "dev", "lo", "mtu", "1500"],
-                ["/iproute2/bin/tc", "qdisc", "add", "dev", "lo", "root", "handle", "1:", "tbf",
-                 "rate", "100gbit", "burst", "1514", "limit", "100000"],
-                ["/iproute2/bin/tc", "qdisc", "add", "dev", "lo", "parent", "1:1", "handle", "10:",
+                *base,
+                [tc, "qdisc", "add", "dev", "lo", "parent", "10:1", "handle", "11:",
                  "netem", "delay", "30ms", "loss", "random", "1%"],
+                # TCP takes the delay and nothing else.
+                [tc, "qdisc", "add", "dev", "lo", "parent", "1:2", "handle", "20:", "netem", "delay", "30ms"],
             ],
         )
-        for command in commands:
+        # With no delay, TCP keeps the band's own queue: no netem at all.
+        self.assertEqual(
+            net_condition.commands("loss random 1%", "/iproute2"),
+            [*base, [tc, "qdisc", "add", "dev", "lo", "parent", "10:1", "handle", "11:", "netem", "loss", "random", "1%"]],
+        )
+        for command in net_condition.commands("delay 10ms reorder 25%", "/iproute2"):
             self.assertEqual(command[command.index("dev") + 1], "lo")
 
 
@@ -380,7 +396,7 @@ class PairLoopback(unittest.TestCase):
         self.assertTrue(700 < total < 1300, total)
         self.assertEqual(seen["counted"]["passed"], total)
         self.assertEqual(seen["counted"]["passed"] + seen["counted"]["dropped"], 2000)
-        self.assertEqual([row["kind"] for row in seen["applied"]["qdiscs"]], ["tbf", "netem"])
+        self.assertEqual(sorted(row["kind"] for row in seen["applied"]["qdiscs"]), ["netem", "prio", "tbf"])
         self.assertEqual(seen["applied"]["mtu"], 1500)
 
     def test_delay_holds_each_direction(self):
@@ -399,6 +415,39 @@ class PairLoopback(unittest.TestCase):
         round_trip = in_child(work)
         self.assertGreaterEqual(round_trip, 40.0)
         self.assertLess(round_trip, 200.0)
+
+    def test_tcp_takes_the_delay_and_no_loss(self):
+        # netem's loss models count packets, not time. On the few packets of a
+        # TCP handshake a loss is a stall of a second or more: on aka, under a
+        # 5% burst loss on every packet, one RTSP handshake took 13 s, Sunshine
+        # ended the session for want of a ping, and the viewer hung.
+        def work() -> dict:
+            pair_with("delay 20ms loss random 50%")
+            with socket.socket() as server:
+                server.bind((LOOPBACK, 0))
+                server.listen(8)
+                # A lost packet must fail the test, not hang it.
+                server.settimeout(10)
+                times = []
+                for _ in range(10):
+                    began = time.monotonic()
+                    with socket.create_connection(server.getsockname(), timeout=10) as client:
+                        accepted, _ = server.accept()
+                        with accepted:
+                            client.sendall(b"OPTIONS rtsp://x RTSP/1.0\r\n\r\n")
+                            accepted.settimeout(10)
+                            accepted.recv(1024)
+                            accepted.sendall(b"RTSP/1.0 200 OK\r\n\r\n")
+                            client.recv(1024)
+                    times.append((time.monotonic() - began) * 1000)
+            counted = net_condition.counters(iproute2())
+            return {"times": times, "counted": counted}
+
+        seen = in_child(work)
+        # A connect and one request and answer: two round trips of 40 ms, no resend.
+        self.assertTrue(all(70.0 <= ms < 400.0 for ms in seen["times"]), seen["times"])
+        # netem on the UDP band saw none of it.
+        self.assertEqual(seen["counted"], {"passed": 0, "dropped": 0})
 
     def test_the_product_network_is_untouched_and_the_record_proves_it(self):
         def work() -> dict:

@@ -7,20 +7,32 @@ words. Nothing is applied anywhere else: every command names `dev lo`, runs
 in a thread that is in the pair's namespace and not in the product's, and
 the pair's namespace has no other interface.
 
+The whole condition falls on UDP: Moonlight's video, audio and control
+streams, which carry FEC, recovery, pings and input. TCP (the pairing's
+HTTPS, the launch and RTSP) takes the delay and no loss. netem's loss models
+count packets, not time: on the few packets of a TCP handshake one loss
+stalls a connection for a second or more (a SYN is resent after 1, 2 and
+4 s), where the stream's own packets lose a few milliseconds. On aka, with
+5% burst loss on every packet, one RTSP handshake took 13 s, Sunshine ended
+the session for want of a ping, and Moonlight Embedded, which ignores a
+failed start of its connection, hung with no stream.
+
+So the root is a `prio` qdisc with two bands. A u32 filter sends UDP to
+band 1; everything else goes to band 2, which gets netem with the delay
+alone, or no netem when there is no delay.
+
 netem alone would drop whole frames, not packets. Sunshine sends the packets
 of a frame's FEC block in one `sendmsg` with UDP_SEGMENT (`send_batch` in
 `src/platform/linux/misc.cpp`). A qdisc sees that batch as one buffer, and
-segmentation happens only after the qdisc. A token bucket (tbf) as the root
-splits every buffer larger than its burst into its datagrams before they
-reach netem, its one child (`tbf_segment` in the kernel's `sch_tbf.c`). Its
-burst is one Ethernet frame at an MTU of 1500, so the loopback takes that
-MTU too: a TCP buffer of the loopback's own MTU of 65536 has segments that
-no burst of one frame passes. The bucket's rate is far above what a stream
-sends, so it shapes nothing.
+segmentation happens only after the qdisc. So band 1 holds a token bucket
+(tbf), which splits every buffer larger than its burst into its datagrams
+before they reach netem, its one child (`tbf_segment` in the kernel's
+`sch_tbf.c`). Its burst is one Ethernet frame at an MTU of 1500, so the
+loopback takes that MTU too, which also keeps TCP's segments realistic. The
+bucket's rate is far above what a stream sends, so it shapes nothing.
 
-The conditions apply to every packet on the loopback, in both directions:
-a delay of D gives a round trip of 2 D, and loss falls on video, audio,
-control, RTSP and the pairing's HTTPS alike.
+The conditions apply to every packet in both directions: a delay of D gives
+a round trip of 2 D.
 """
 
 import json
@@ -38,7 +50,10 @@ FRAME = MTU + 14
 RATE = "100gbit"
 # The bucket's own queue in bytes. netem replaces that queue as its child.
 BUCKET_LIMIT = 100000
-ROOT, CHILD = "1:", "10:"
+ROOT, BUCKET, UDP_NETEM, OTHER_NETEM = "1:", "10:", "11:", "20:"
+# The band of UDP and the band of everything else, under the root.
+UDP_BAND, OTHER_BAND = ROOT + "1", ROOT + "2"
+UDP = "17"
 CLONE_NEWNET = 0x40000000
 # tc's own errors are kept, up to this many characters.
 WORDS_KEPT = 2000
@@ -152,14 +167,30 @@ def condition(spec: str) -> dict:
 
 
 def commands(netem: str, iproute2: str) -> list[list[str]]:
-    """The three commands that give the loopback its condition, in their order."""
+    """The commands that give the loopback its condition, in their order.
+
+    UDP takes the whole condition; everything else, TCP above all, takes
+    only its delay.
+    """
     ip, tc = iproute2 + "/bin/ip", iproute2 + "/bin/tc"
-    return [
+    words = netem.split()
+    run = [
         [ip, "link", "set", "dev", DEVICE, "mtu", str(MTU)],
-        [tc, "qdisc", "add", "dev", DEVICE, "root", "handle", ROOT, "tbf",
+        # Every priority maps to band 2; only the filters send a packet to band 1.
+        [tc, "qdisc", "add", "dev", DEVICE, "root", "handle", ROOT, "prio", "bands", "2",
+         "priomap", *["1"] * 16],
+        [tc, "filter", "add", "dev", DEVICE, "parent", ROOT, "protocol", "ip", "prio", "1",
+         "u32", "match", "ip", "protocol", UDP, "0xff", "flowid", UDP_BAND],
+        [tc, "filter", "add", "dev", DEVICE, "parent", ROOT, "protocol", "ipv6", "prio", "2",
+         "u32", "match", "ip6", "protocol", UDP, "0xff", "flowid", UDP_BAND],
+        [tc, "qdisc", "add", "dev", DEVICE, "parent", UDP_BAND, "handle", BUCKET, "tbf",
          "rate", RATE, "burst", str(FRAME), "limit", str(BUCKET_LIMIT)],
-        [tc, "qdisc", "add", "dev", DEVICE, "parent", ROOT + "1", "handle", CHILD, "netem", *netem.split()],
+        [tc, "qdisc", "add", "dev", DEVICE, "parent", BUCKET + "1", "handle", UDP_NETEM, "netem", *words],
     ]
+    if "delay" in words:
+        delay = words[words.index("delay") : words.index("delay") + 2]
+        run.append([tc, "qdisc", "add", "dev", DEVICE, "parent", OTHER_BAND, "handle", OTHER_NETEM, "netem", *delay])
+    return run
 
 
 def read(command: list[str], enter: int | None = None) -> str:
@@ -253,11 +284,11 @@ def product_network(pair, iproute2: str) -> dict:
 
 
 def counters(iproute2: str) -> dict:
-    """What netem on this namespace's loopback has passed and dropped since it was added."""
+    """What netem on the loopback's UDP band has passed and dropped since it was added."""
     rows = json.loads(read([iproute2 + "/bin/tc", "-s", "-j", "qdisc", "show", "dev", DEVICE]) or "[]")
-    netem = [row for row in rows if row["kind"] == "netem"]
+    netem = [row for row in rows if row["kind"] == "netem" and row.get("handle") == UDP_NETEM]
     if len(netem) != 1:
-        raise RuntimeError(f"The pair's loopback has {len(netem)} netem qdiscs, not one.")
+        raise RuntimeError(f"The pair's loopback has {len(netem)} netem qdiscs on its UDP band, not one.")
     return {"passed": netem[0]["packets"], "dropped": netem[0]["drops"]}
 
 
