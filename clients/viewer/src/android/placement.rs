@@ -68,6 +68,46 @@ pub fn place(stream: (i32, i32), window: (i32, i32), filled: bool) -> Rect {
     }
 }
 
+/// "Crop to fill" of one video layer: the fill that Android's main thread
+/// has applied, and one on its way to it. Each transaction places for the
+/// newest fill asked for, so that a turn or a new stream size posted
+/// meanwhile keeps it; the fill counts, and is reported, only once the main
+/// thread has applied it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Fill {
+    applied: bool,
+    asked: Option<bool>,
+}
+
+impl Fill {
+    /// The fill that Android's main thread has applied.
+    pub fn applied(self) -> bool {
+        self.applied
+    }
+
+    /// The fill that the next transaction places for.
+    pub fn placing(self) -> bool {
+        self.asked.unwrap_or(self.applied)
+    }
+
+    /// A transaction for `fill` goes to the main thread.
+    pub fn ask(&mut self, fill: bool) {
+        self.asked = Some(fill);
+    }
+
+    /// The main thread applied the newest fill asked for, or did not. The
+    /// fill to place for from now on: on a refusal the applied one, which a
+    /// new transaction then restores.
+    pub fn answered(&mut self, applied: bool) -> bool {
+        if let Some(asked) = self.asked.take()
+            && applied
+        {
+            self.applied = asked;
+        }
+        self.applied
+    }
+}
+
 /// What `setGeometry` takes for a picture placed at `placed` in the window:
 /// the part of the stream that shows (its source crop, in stream pixels) and
 /// where that part goes, inside the window. A fitted picture shows all of
@@ -201,6 +241,36 @@ mod tests {
                 "{window:?}"
             );
         }
+    }
+
+    // D11 review: the layer took the fill as soon as it was asked for, so a
+    // transaction that Android's main thread did not apply left the fill
+    // reported and later placements filling.
+    #[test]
+    fn a_fill_counts_only_once_the_main_thread_applied_it() {
+        let mut fill = Fill::default();
+        assert!(!fill.applied() && !fill.placing());
+        fill.ask(true);
+        // On its way: the next placements fill, the fill is not applied yet.
+        assert!(fill.placing());
+        assert!(!fill.applied());
+        assert!(fill.answered(true));
+        assert!(fill.applied() && fill.placing());
+    }
+
+    #[test]
+    fn a_fill_that_the_main_thread_did_not_apply_is_undone() {
+        let mut fill = Fill::default();
+        fill.ask(true);
+        // The answer gives the fill to place for again: the applied one.
+        assert!(!fill.answered(false));
+        assert!(!fill.applied() && !fill.placing());
+        // Off again from filling, refused: it stays filling.
+        fill.ask(true);
+        fill.answered(true);
+        fill.ask(false);
+        assert!(fill.answered(false));
+        assert!(fill.applied() && fill.placing());
     }
 
     #[test]

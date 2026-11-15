@@ -37,7 +37,7 @@
 //! (`clients/android-app`), whose loop is Slint's: it asks for them
 //! ([`Layers::request`]) and reads the answer at each tick
 //! ([`Pending::poll`]), so its thread never waits for Android's main thread.
-use crate::placement::{Rect, geometry, letterbox, place};
+use crate::placement::{Fill, Rect, geometry, letterbox, place};
 use android_activity::{AndroidApp, MainEvent, PollEvent};
 use anyhow::{Context, Result, anyhow};
 use jni::{
@@ -74,11 +74,11 @@ pub struct Layers {
     pub stream: (i32, i32),
     /// The window's size that the placement follows.
     pub window: (i32, i32),
-    /// Where the whole picture goes; when it fills the window, it reaches
-    /// past it on two sides.
+    /// Where the whole picture goes, as the newest transaction places it;
+    /// when it fills the window, it reaches past it on two sides.
     pub placed: Rect,
-    /// The picture fills the window ("Crop to fill"); else it fits.
-    pub fill: bool,
+    /// "Crop to fill": applied by Android's main thread, or on its way.
+    fill: Fill,
 }
 
 /// What Android's main thread sends back: the video layer, and the overlay
@@ -132,7 +132,7 @@ impl Pending {
                 stream: self.stream,
                 window: self.window,
                 placed: self.placed,
-                fill: false,
+                fill: Fill::default(),
             }
         }))
     }
@@ -230,7 +230,7 @@ impl Layers {
             return false;
         }
         self.window = size;
-        self.placed = place(self.stream, size, self.fill);
+        self.placed = place(self.stream, size, self.fill.placing());
         let vm = app.vm_as_ptr() as usize;
         let (video, stream, placed) = (self.video.control.clone(), self.stream, self.placed);
         let overlay = self
@@ -277,7 +277,7 @@ impl Layers {
             return false;
         }
         self.stream = stream;
-        self.placed = place(stream, self.window, self.fill);
+        self.placed = place(stream, self.window, self.fill.placing());
         let vm = app.vm_as_ptr() as usize;
         let (video, placed, window) = (self.video.control.clone(), self.placed, self.window);
         app.run_on_java_main_thread(Box::new(move || {
@@ -302,14 +302,38 @@ impl Layers {
     /// Fill the window with the picture, its edges cut, or fit it with bars
     /// again ("Crop to fill", Artemis's `Game.toggleFillMode`): one
     /// `setGeometry`, posted to the main thread without waiting. The answer
-    /// comes once the main thread has applied it, or could not; none when
-    /// the placement does not change.
+    /// comes once the main thread has applied it, or could not; give it to
+    /// `fill_answered`. Only then does the fill count (`fill`). None when the
+    /// placement does not change: the fill counts at once.
     pub fn set_fill(&mut self, app: &AndroidApp, fill: bool) -> Option<mpsc::Receiver<Result<()>>> {
-        self.fill = fill;
+        self.fill.ask(fill);
         let placed = place(self.stream, self.window, fill);
         if placed == self.placed {
+            self.fill.answered(true);
             return None;
         }
+        Some(self.place_video(app, placed))
+    }
+
+    /// The main thread's answer to `set_fill`. A fill that it did not apply
+    /// is undone: the video is placed again for the fill that counts, posted
+    /// without waiting.
+    pub fn fill_answered(&mut self, app: &AndroidApp, applied: bool) {
+        let fill = self.fill.answered(applied);
+        let placed = place(self.stream, self.window, fill);
+        if placed != self.placed {
+            let _ = self.place_video(app, placed);
+        }
+    }
+
+    /// The fill that Android's main thread has applied.
+    pub fn fill(&self) -> bool {
+        self.fill.applied()
+    }
+
+    /// One `setGeometry` of the video to `placed`, posted to the main
+    /// thread; the answer says whether it applied it.
+    fn place_video(&mut self, app: &AndroidApp, placed: Rect) -> mpsc::Receiver<Result<()>> {
         self.placed = placed;
         let vm = app.vm_as_ptr() as usize;
         let (video, stream, window) = (self.video.control.clone(), self.stream, self.window);
@@ -324,7 +348,7 @@ impl Layers {
             });
             let _ = sender.send(applied);
         }));
-        Some(answer)
+        answer
     }
 
     /// The Surface that the decoder renders into.

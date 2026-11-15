@@ -914,11 +914,12 @@ impl Stream {
                     Err("the video layer did not move".to_owned())
                 }
             };
-            if result.is_ok() {
-                // Touches map into the picture's new place once it is there.
-                playing.play.place(playing.layers.placed);
-                log_placement(&playing.layers);
-            }
+            // The fill counts only now; one that the main thread did not
+            // apply is undone.
+            playing.layers.fill_answered(&self.app, result.is_ok());
+            // Touches map into the picture's place once it is there.
+            playing.play.place(playing.layers.placed);
+            log_placement(&playing.layers);
             done(change, result);
         }
         while let Some(change) = playing.changes.next() {
@@ -1095,7 +1096,11 @@ fn log_placement(layers: &Layers) {
         placed.bottom,
         size.0,
         size.1,
-        if layers.fill { ", cropped to fill" } else { "" }
+        if layers.fill() {
+            ", cropped to fill"
+        } else {
+            ""
+        }
     ));
 }
 
