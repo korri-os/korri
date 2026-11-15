@@ -1,0 +1,455 @@
+    41.331  3761  3795 I korri-viewer: picture: video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+    41.439  3761  3795 I korri-viewer: input: controllers attached at the start: mask 0x0
+    41.439  3761  3795 I korri-viewer: request {"launchId":"d2-proof","command":{"kind":"Start","value":{"address":"100.117.97.45:45723"}}}
+    41.559  3761  3761 I korri-viewer: input: unbuffered dispatch requested
+    42.363  3761  3799 I korri-viewer: RTSP port: 45744
+    42.363  3761  3799 I korri-viewer: Initializing platform...
+    42.363  3761  3799 I korri-viewer: done
+    42.363  3761  3799 I korri-viewer: Resolving host name...
+    42.363  3761  3799 I korri-viewer: done
+    42.363  3761  3799 I korri-viewer: Packet size capped at 1024 bytes for remote IPv4 streaming
+    42.363  3761  3799 I korri-viewer: Initializing audio stream...
+    42.363  3761  3799 I korri-viewer: done
+    42.363  3761  3799 I korri-viewer: Starting RTSP handshake...
+    42.404  3761  3799 I korri-viewer: Reference frame invalidation is not supported by this host
+    42.427  3761  3799 I korri-viewer: Audio port: 45734
+    42.440  3761  3799 I korri-viewer: Video port: 45732
+    42.454  3761  3799 I korri-viewer: Control port: 45733
+    42.484  3761  3799 I korri-viewer: done
+    42.484  3761  3799 I korri-viewer: Initializing control stream...
+    42.484  3761  3799 I korri-viewer: done
+    42.484  3761  3799 I korri-viewer: Initializing video stream...
+    42.484  3761  3799 I korri-viewer: done
+    42.484  3761  3799 I korri-viewer: Initializing input stream...
+    42.484  3761  3799 I korri-viewer: done
+    42.484  3761  3799 I korri-viewer: Starting control stream...
+    42.489  3761  3799 I korri-viewer: done
+    42.489  3761  3799 I korri-viewer: Starting video stream...
+    42.639  3761  3799 I korri-viewer: picture: decoders for video/avc: c2.goldfish.h264.decoder (hardware true, software-only false, alias false, low-latency false, high true, adaptive true); c2.android.avc.decoder (hardware false, software-only true, alias false, low-latency false, high true, adaptive true); OMX.google.h264.decoder (hardware false, software-only true, alias true, low-latency false, high true, adaptive true)
+    42.686  3761  3813 D CCodec  : allocate(c2.goldfish.h264.decoder)
+    42.773  3761  3813 I CCodec  : setting up 'default' as default (vendor) store
+    42.831  3761  3813 I CCodec  : Created component [c2.goldfish.h264.decoder]
+    42.831  3761  3813 D CCodecConfig: read media type: video/avc
+    42.833  3761  3813 D CCodecConfig: ignoring local param raw.size (0xd2001800) as it is already supported
+    42.833  3761  3813 D CCodecConfig: ignoring local param default.color (0x5200180b) as it is already supported
+    42.833  3761  3813 I CCodecConfig: query failed after returning 12 values (BAD_INDEX)
+    42.834  3761  3813 D CCodecConfig: c2 config diff is Dict {
+    42.834  3761  3813 D CCodecConfig:   c2::u32 coded.pl.level = 20496
+    42.834  3761  3813 D CCodecConfig:   c2::u32 coded.pl.profile = 20481
+    42.834  3761  3813 D CCodecConfig:   c2::u32 coded.vui.color.matrix = 0
+    42.834  3761  3813 D CCodecConfig:   c2::u32 coded.vui.color.primaries = 0
+    42.834  3761  3813 D CCodecConfig:   c2::u32 coded.vui.color.range = 2
+    42.834  3761  3813 D CCodecConfig:   c2::u32 coded.vui.color.transfer = 0
+    42.834  3761  3813 D CCodecConfig:   c2::u32 default.color.matrix = 0
+    42.834  3761  3813 D CCodecConfig:   c2::u32 default.color.primaries = 0
+    42.834  3761  3813 D CCodecConfig:   c2::u32 default.color.range = 0
+    42.834  3761  3813 D CCodecConfig:   c2::u32 default.color.transfer = 0
+    42.834  3761  3813 D CCodecConfig:   c2::u32 input.buffers.max-size.value = 2097152
+    42.834  3761  3813 D CCodecConfig:   c2::u32 input.delay.value = 0
+    42.834  3761  3813 D CCodecConfig:   string input.media-type.value = "video/avc"
+    42.834  3761  3813 D CCodecConfig:   c2::u32 output.delay.value = 8
+    42.834  3761  3813 D CCodecConfig:   string output.media-type.value = "video/raw"
+    42.834  3761  3813 D CCodecConfig:   c2::u32 raw.color.matrix = 0
+    42.834  3761  3813 D CCodecConfig:   c2::u32 raw.color.primaries = 0
+    42.834  3761  3813 D CCodecConfig:   c2::u32 raw.color.range = 2
+    42.834  3761  3813 D CCodecConfig:   c2::u32 raw.color.transfer = 0
+    42.834  3761  3813 D CCodecConfig:   c2::u32 raw.max-size.height = 240
+    42.834  3761  3813 D CCodecConfig:   c2::u32 raw.max-size.width = 320
+    42.834  3761  3813 D CCodecConfig:   c2::u32 raw.pixel-format.value = 35
+    42.834  3761  3813 D CCodecConfig:   c2::i32 raw.rotation.flip = 0
+    42.834  3761  3813 D CCodecConfig:   c2::i32 raw.rotation.value = 0
+    42.834  3761  3813 D CCodecConfig:   c2::u32 raw.sar.height = 1
+    42.834  3761  3813 D CCodecConfig:   c2::u32 raw.sar.width = 1
+    42.834  3761  3813 D CCodecConfig:   c2::u32 raw.size.height = 240
+    42.834  3761  3813 D CCodecConfig:   c2::u32 raw.size.width = 320
+    42.834  3761  3813 D CCodecConfig:   c2:
+    42.843  3761  3812 I MediaCodec: [c2.goldfish.h264.decoder] setting surface generation to 3851265
+    42.862  3761  3813 D CCodec  : [c2.goldfish.h264.decoder] buffers are bound to CCodec for this session
+    42.869  3761  3813 D CCodecConfig: no c2 equivalents for color-standard
+    42.869  3761  3813 D CCodecConfig: no c2 equivalents for vdec-lowlatency
+    42.869  3761  3813 D CCodecConfig: no c2 equivalents for native-window
+    42.869  3761  3813 D CCodecConfig: no c2 equivalents for flags
+    42.872  3761  3813 D CCodecConfig: config failed => CORRUPTED
+    42.872  3761  3813 D CCodecConfig: c2 config diff is   c2::u32 default.color.matrix = 3
+    42.872  3761  3813 D CCodecConfig:   c2::u32 default.color.primaries = 4
+    42.872  3761  3813 D CCodecConfig:   c2::u32 default.color.range = 2
+    42.872  3761  3813 D CCodecConfig:   c2::u32 default.color.transfer = 3
+    42.872  3761  3813 D CCodecConfig:   c2::u32 raw.max-size.height = 2960
+    42.872  3761  3813 D CCodecConfig:   c2::u32 raw.max-size.width = 2960
+    42.872  3761  3813 D CCodecConfig:   c2::u32 raw.size.height = 720
+    42.872  3761  3813 D CCodecConfig:   c2::u32 raw.size.width = 1280
+    42.873  3761  3813 D CCodec  : setup formats input: AMessage(what = 0x00000000) = {
+    42.873  3761  3813 D CCodec  :   int32_t height = 720
+    42.873  3761  3813 D CCodec  :   int32_t level = 65536
+    42.873  3761  3813 D CCodec  :   int32_t max-input-size = 6571200
+    42.873  3761  3813 D CCodec  :   string mime = "video/avc"
+    42.873  3761  3813 D CCodec  :   int32_t profile = 65536
+    42.873  3761  3813 D CCodec  :   int32_t width = 1280
+    42.873  3761  3813 D CCodec  :   Rect crop(0, 0, 1279, 719)
+    42.873  3761  3813 D CCodec  : }
+    42.873  3761  3813 D CCodec  : setup formats output: AMessage(what = 0x00000000) = {
+    42.873  3761  3813 D CCodec  :   int32_t android._color-format = 2135033992
+    42.873  3761  3813 D CCodec  :   int32_t android._video-scaling = 1
+    42.873  3761  3813 D CCodec  :   int32_t rotation-degrees = 0
+    42.873  3761  3813 D CCodec  :   int32_t color-standard = 1
+    42.873  3761  3813 D CCodec  :   int32_t color-range = 2
+    42.873  3761  3813 D CCodec  :   int32_t color-transfer = 3
+    42.873  3761  3813 D CCodec  :   int32_t sar-height = 1
+    42.873  3761  3813 D CCodec  :   int32_t sar-width = 1
+    42.873  3761  3813 D CCodec  :   Rect crop(0, 0, 1279, 719)
+    42.873  3761  3813 D CCodec  :   int32_t width = 1280
+    42.873  3761  3813 D CCodec  :   int32_t height = 720
+    42.873  3761  3813 D CCodec  :   int32_t max-height = 2960
+    42.873  3761  3813 D CCodec  :   int32_t max-width = 2960
+    42.873  3761  3813 D CCodec  :   string mime = "video/raw"
+    42.873  3761  3813 D CCodec  :   int32_t android._dataspace = 260
+    42.873  3761  3813 D CCodec  :   int32_t color-format = 2130708361
+    42.873  3761  3813 D CCodec  : }
+    42.873  3761  3813 I CCodecConfig: query failed after returning 12 values (BAD_INDEX)
+    42.873  3761  3813 D CCodecConfig: c2 config diff is   c2::u32 input.buffers.max-size.value = 6571200
+    42.873  3761  3813 D CCodecConfig:   c2::u32 raw.color.matrix = 3
+    42.873  3761  3813 D CCodecConfig:   c2::u32 raw.color.primaries = 4
+    42.873  3761  3813 D CCodecConfig:   c2::u32 raw.color.transfer = 3
+    42.875  3761  3813 D CCodecBufferChannel: [c2.goldfish.h264.decoder#497] Created input block pool with allocatorID 16 => poolID 17 - OK (0)
+    42.875  3761  3813 D CCodecBufferChannel: [c2.goldfish.h264.decoder#497] Query output surface allocator returned 0 params => BAD_INDEX (6)
+    42.875  3761  3813 I CCodecBufferChannel: [c2.goldfish.h264.decoder#497] Created output block pool with allocatorID 18 => poolID 17 - OK
+    42.875  3761  3813 D CCodecBufferChannel: [c2.goldfish.h264.decoder#497] Configured output block pool ids 17 => OK
+    42.977  3761  3799 I korri-viewer: picture: decode mediacodec decoder c2.goldfish.h264.decoder hardware true software-only false low-latency-feature false try 0 keys low-latency=1,vdec-lowlatency=1,priority=0 size 1280x720@60 adaptive 2960x2960
+    43.036  3761  3799 I korri-viewer: done
+    43.036  3761  3799 I korri-viewer: Starting audio stream...
+    43.069  3761  3799 I korri-viewer: sound: output try 0 asked low-latency granted none sharing shared rate 48000 channels 2 burst 960 capacity 2132 buffer 1920 (asked 1920) packet 240 frames
+    43.070  3761  3799 I korri-viewer: sound: playing
+    43.070  3761  3799 I korri-viewer: done
+    43.070  3761  3799 I korri-viewer: Starting input stream...
+    43.070  3761  3799 I korri-viewer: done
+    43.092  3761  3799 I korri-viewer: event {"kind":"Status","value":"Running"}
+    43.092  3761  3799 I korri-viewer: event {"kind":"Snapshot","value":{"connected":true,"controls":[]}}
+    43.092  3761  3800 I korri-viewer: reply Start {"kind":"Ok"}
+    43.124  3761  3826 I korri-viewer: Received first video packet after 0 ms
+    43.478  3761  3813 D CCodecConfig: c2 config diff is   c2::u32 raw.crop.height = 720
+    43.478  3761  3813 D CCodecConfig:   c2::u32 raw.crop.left = 0
+    43.478  3761  3813 D CCodecConfig:   c2::u32 raw.crop.top = 0
+    43.478  3761  3813 D CCodecConfig:   c2::u32 raw.crop.width = 1280
+    43.479  3761  3824 I korri-viewer: picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 1279, 719), width: int32(1280), height: int32(720), max-height: int32(2960), max-width: int32(2960), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}
+    43.479  3761  3824 I korri-viewer: picture: decoded size 1280x720
+    43.480  3761  3826 I korri-viewer: Video decode unit queue overflow
+    43.480  3761  3826 I korri-viewer: Waiting for IDR frame
+    43.480  3761  3809 I korri-viewer: IDR frame request sent
+    43.487  3761  3826 I korri-viewer: Waiting for IDR frame
+    43.571  3761  3826 I korri-viewer: Waiting for IDR frame
+    43.826  3761  3831 I korri-viewer: Received first audio packet after 700 ms
+    43.826  3761  3831 I korri-viewer: Initial audio resync period: 500 milliseconds
+    44.003  3761  3826 I korri-viewer: Video decode unit queue overflow
+    44.003  3761  3809 I korri-viewer: IDR frame request sent
+    44.081  3761  3826 I korri-viewer: Waiting for IDR frame
+    44.344  3761  3832 I korri-viewer: sound: 77 ms pending; 1 packets dropped since the last line
+    45.389  3761  3832 I korri-viewer: sound: 41 ms pending; 85 packets dropped since the last line
+    46.427  3761  3832 I korri-viewer: sound: 75 ms pending; 113 packets dropped since the last line
+    46.850  3761  3826 I korri-viewer: Video decode unit queue overflow
+    46.850  3761  3809 I korri-viewer: IDR frame request sent
+    46.872  3761  3826 I korri-viewer: Waiting for IDR frame
+    47.448  3761  3832 I korri-viewer: sound: 40 ms pending; 50 packets dropped since the last line
+    48.500  3761  3832 I korri-viewer: sound: 44 ms pending; 43 packets dropped since the last line
+    49.637  3761  3832 I korri-viewer: sound: 100 ms pending; 77 packets dropped since the last line
+    50.658  3761  3832 I korri-viewer: sound: 47 ms pending; 128 packets dropped since the last line
+    51.734  3761  3832 I korri-viewer: sound: 55 ms pending; 40 packets dropped since the last line
+    52.743  3761  3832 I korri-viewer: sound: 57 ms pending; 79 packets dropped since the last line
+    53.816  3761  3832 I korri-viewer: sound: 90 ms pending; 58 packets dropped since the last line
+    54.819  3761  3832 I korri-viewer: sound: 42 ms pending; 95 packets dropped since the last line
+    55.901  3761  3832 I korri-viewer: sound: 100 ms pending; 66 packets dropped since the last line
+    56.976  3761  3832 I korri-viewer: sound: 115 ms pending; 79 packets dropped since the last line
+    58.035  3761  3832 I korri-viewer: sound: 42 ms pending; 53 packets dropped since the last line
+    59.122  3761  3832 I korri-viewer: sound: 45 ms pending; 37 packets dropped since the last line
+    60.205  3761  3832 I korri-viewer: sound: 50 ms pending; 66 packets dropped since the last line
+    60.670  3761  3826 I korri-viewer: Unrecoverable frame 980: 8+0=8 received < 15 needed
+    60.699  3761  3826 I korri-viewer: Network dropped 1 frame (frame 980)
+    60.699  3761  3826 I korri-viewer: Waiting for IDR frame
+    60.700  3761  3809 I korri-viewer: IDR frame request sent
+    60.705  3761  3826 I korri-viewer: Waiting for IDR frame
+    60.707  3761  3826 I korri-viewer: Waiting for IDR frame
+    60.757  3761  3826 I korri-viewer: Waiting for IDR frame
+    61.310  3761  3832 I korri-viewer: sound: 40 ms pending; 80 packets dropped since the last line
+    61.789  3761  3827 I korri-viewer: picture: the stream's size changes from 1280x720 to 720x1280 at frame 1040; the decoder follows it (adaptive playback up to 2960x2960)
+    61.850  3761  3813 D CCodecConfig: c2 config diff is   c2::u32 raw.crop.height = 1280
+    61.850  3761  3813 D CCodecConfig:   c2::u32 raw.crop.width = 720
+    61.850  3761  3813 D CCodecConfig:   c2::u32 raw.size.height = 1280
+    61.850  3761  3813 D CCodecConfig:   c2::u32 raw.size.width = 720
+    61.850  3761  3813 D CCodecBuffers: [c2.goldfish.h264.decoder#497:2D-Output] popFromStashAndRegister: at 19426047us, output format changed to AMessage(what = 0x00000000) = {
+    61.850  3761  3813 D CCodecBuffers:   int32_t android._color-format = 2135033992
+    61.850  3761  3813 D CCodecBuffers:   int32_t android._video-scaling = 1
+    61.850  3761  3813 D CCodecBuffers:   int32_t rotation-degrees = 0
+    61.850  3761  3813 D CCodecBuffers:   int32_t color-standard = 4
+    61.850  3761  3813 D CCodecBuffers:   int32_t color-range = 2
+    61.850  3761  3813 D CCodecBuffers:   int32_t color-transfer = 3
+    61.850  3761  3813 D CCodecBuffers:   int32_t sar-height = 1
+    61.850  3761  3813 D CCodecBuffers:   int32_t sar-width = 1
+    61.850  3761  3813 D CCodecBuffers:   Rect crop(0, 0, 719, 1279)
+    61.850  3761  3813 D CCodecBuffers:   int32_t width = 720
+    61.850  3761  3813 D CCodecBuffers:   int32_t height = 1280
+    61.850  3761  3813 D CCodecBuffers:   int32_t max-height = 2960
+    61.850  3761  3813 D CCodecBuffers:   int32_t max-width = 2960
+    61.850  3761  3813 D CCodecBuffers:   string mime = "video/raw"
+    61.850  3761  3813 D CCodecBuffers:   int32_t android._dataspace = 259
+    61.850  3761  3813 D CCodecBuffers:   int32_t color-format = 2130708361
+    61.850  3761  3813 D CCodecBuffers: }
+    61.852  3761  3824 I korri-viewer: picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 719, 1279), width: int32(720), height: int32(1280), max-height: int32(2960), max-width: int32(2960), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}
+    61.852  3761  3824 I korri-viewer: picture: decoded size 720x1280
+    61.852  3761  3795 I korri-viewer: picture: video layer 720x1280 placed at (896, 0)-(1504, 1080) in the window 2400x1080
+    62.298  3761  3826 I korri-viewer: Video decode unit queue overflow
+    62.298  3761  3826 I korri-viewer: Waiting for IDR frame
+    62.298  3761  3809 I korri-viewer: IDR frame request sent
+    62.349  3761  3826 I korri-viewer: Waiting for IDR frame
+    62.350  3761  3832 I korri-viewer: sound: 62 ms pending; 73 packets dropped since the last line
+    62.645  3761  3826 I korri-viewer: Video decode unit queue overflow
+    62.646  3761  3809 I korri-viewer: IDR frame request sent
+    62.704  3761  3826 I korri-viewer: Waiting for IDR frame
+    62.704  3761  3826 I korri-viewer: Waiting for IDR frame
+    62.704  3761  3826 I korri-viewer: Waiting for IDR frame
+    62.767  3761  3826 I korri-viewer: Waiting for IDR frame
+    63.607  3761  3832 I korri-viewer: sound: 40 ms pending; 82 packets dropped since the last line
+    65.106  3761  3832 I korri-viewer: sound: 47 ms pending; 13 packets dropped since the last line
+    66.167  3761  3832 I korri-viewer: sound: 40 ms pending; 4 packets dropped since the last line
+    67.177  3761  3832 I korri-viewer: sound: 40 ms pending; 18 packets dropped since the last line
+    68.351  3761  3832 I korri-viewer: sound: 40 ms pending; 3 packets dropped since the last line
+    69.491  3761  3832 I korri-viewer: sound: 44 ms pending; 44 packets dropped since the last line
+    70.493  3761  3832 I korri-viewer: sound: 40 ms pending; 43 packets dropped since the last line
+    71.505  3761  3832 I korri-viewer: sound: 41 ms pending; 14 packets dropped since the last line
+    72.648  3761  3832 I korri-viewer: sound: 43 ms pending; 12 packets dropped since the last line
+    73.861  3761  3832 I korri-viewer: sound: 40 ms pending; 13 packets dropped since the last line
+    74.655  4608  4608 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+    74.744  4608  4608 I AndroidRuntime: Using default boot image
+    74.744  4608  4608 I AndroidRuntime: Leaving lock profiling enabled
+    74.915  3761  3832 I korri-viewer: sound: 40 ms pending; 6 packets dropped since the last line
+    75.888  4608  4608 D AndroidRuntime: Calling main entry com.android.commands.hid.Hid
+    76.384  3761  3832 I korri-viewer: sound: 45 ms pending; 23 packets dropped since the last line
+    77.389  3761  3832 I korri-viewer: sound: 45 ms pending; 9 packets dropped since the last line
+    78.117  3761  3795 I korri-viewer: input: controller Korri test gamepad (16) vendor 045e product 7e57 external true
+    78.117  3761  3795 I korri-viewer: input: Korri test gamepad sticks Some((0, 1)) Some((11, 14)) triggers Some((23, 22)) hat true deadzones 0.05 0.05 0.13
+    78.117  3761  3795 I korri-viewer: input: Korri test gamepad (16) is controller 0
+    78.117  3761  3795 I korri-viewer: input: arrival Arrival { number: 0, active_mask: 1, kind: 1, buttons: 63487, capabilities: 1 }
+    78.883  3761  3832 I korri-viewer: sound: 46 ms pending; 7 packets dropped since the last line
+    79.984  3761  3832 I korri-viewer: sound: 43 ms pending; 8 packets dropped since the last line
+    80.361  3761  3818 D CCodecBuffers: [c2.goldfish.h264.decoder#497:1D-Input.Impl[N]] codec released a buffer owned by client (index 3)
+    81.221  3761  3832 I korri-viewer: sound: 43 ms pending; 7 packets dropped since the last line
+    81.562  4608  4608 D AndroidRuntime: Shutting down VM
+    82.088  3761  3795 I korri-viewer: input: controller Korri test gamepad (16) removed
+    82.089  3761  3795 I korri-viewer: input: controller number 0 is free
+    82.251   234   234 I tombstoned: received crash request for pid 349
+    82.253   349  3820 E DEBUG   : failed to read /proc/uptime: Permission denied
+    82.356   349  3820 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+    82.356   349  3820 F DEBUG   : Build fingerprint: 'google/sdk_gphone64_x86_64/emulator64_x86_64_arm64:12/SE1A.220826.008/10564458:userdebug/dev-keys'
+    82.356   349  3820 F DEBUG   : Revision: '0'
+    82.356   349  3820 F DEBUG   : ABI: 'x86_64'
+    82.356   349  3820 F DEBUG   : Timestamp: 2026-11-15 09:02:07.126807332+0000
+    82.356   349  3820 F DEBUG   : Process uptime: 0s
+    82.356   349  3820 F DEBUG   : Cmdline: /vendor/bin/hw/android.hardware.media.c2@1.0-service-goldfish
+    82.356   349  3820 F DEBUG   : pid: 349, tid: 3820, name: sh.h264.decoder  >>> /vendor/bin/hw/android.hardware.media.c2@1.0-service-goldfish <<<
+    82.356   349  3820 F DEBUG   : uid: 1013
+    82.356   349  3820 F DEBUG   : signal 0 (SIGSEGV), code 2 (SEGV_ACCERR), fault addr --------
+    82.356   349  3820 F DEBUG   :     rax 0000000000000000  rbx 000077e720fb8fd0  rcx 0000000000000001  rdx 0000000000000002
+    82.356   349  3820 F DEBUG   :     r8  000077e71f09642d  r9  0000000000000000  r10 0000000000001000  r11 0000000000000206
+    82.356   349  3820 F DEBUG   :     r12 000077e533c37cd0  r13 0000000000000000  r14 000077e5f3c2c210  r15 000077e5f3c2c210
+    82.356   349  3820 F DEBUG   :     rdi 000077e533c38650  rsi 0000000000000000
+    82.356   349  3820 F DEBUG   :     rbp 000077e720ef8000  rsp 000077e4812457e0  rip 000077e720c0c841
+    82.356   349  3820 F DEBUG   : backtrace:
+    82.356   349  3820 F DEBUG   :       #00 pc 000000000000a841  /vendor/lib64/libcodec2_goldfish_avcdec.so (android::C2GoldfishAvcDec::removePts(unsigned long)+401) (BuildId: c47ef866ac86bbb0e3427d54d64d9fa5)
+    82.356   349  3820 F DEBUG   :       #01 pc 000000000000b3b5  /vendor/lib64/libcodec2_goldfish_avcdec.so (android::C2GoldfishAvcDec::process(std::__1::unique_ptr<C2Work, std::__1::default_delete<C2Work> > const&, std::__1::shared_ptr<C2BlockPool> const&)+2741) (BuildId: c47ef866ac86bbb0e3427d54d64d9fa5)
+    82.356   349  3820 F DEBUG   :       #02 pc 000000000000f8d9  /vendor/lib64/libcodec2_goldfish_common.so (android::SimpleC2Component::processQueue()+2985) (BuildId: 537758d8d7bb54a9cec727299dba9b76)
+    82.356   349  3820 F DEBUG   :       #03 pc 000000000000e889  /vendor/lib64/libcodec2_goldfish_common.so (android::SimpleC2Component::WorkHandler::onMessageReceived(android::sp<android::AMessage> const&)+185) (BuildId: 537758d8d7bb54a9cec727299dba9b76)
+    82.356   349  3820 F DEBUG   :       #04 pc 0000000000016e51  /apex/com.android.vndk.v31/lib64/libstagefright_foundation.so (android::AHandler::deliverMessage(android::sp<android::AMessage> const&)+33) (BuildId: 797d45998ae60830a9c3bceabfc54e7b)
+    82.356   349  3820 F DEBUG   :       #05 pc 000000000001ab0a  /apex/com.android.vndk.v31/lib64/libstagefright_foundation.so (android::AMessage::deliver()+122) (BuildId: 797d45998ae60830a9c3bceabfc54e7b)
+    82.356   349  3820 F DEBUG   :       #06 pc 00000000000178ec  /apex/com.android.vndk.v31/lib64/libstagefright_foundation.so (android::ALooper::loop()+556) (BuildId: 797d45998ae60830a9c3bceabfc54e7b)
+    82.356   349  3820 F DEBUG   :       #07 pc 0000000000013bf0  /apex/com.android.vndk.v31/lib64/libutils.so (android::Thread::_threadLoop(void*)+224) (BuildId: b4735f0100f3ac2bac77bead59cf45e8)
+    82.356   349  3820 F DEBUG   :       #08 pc 0000000000013489  /apex/com.android.vndk.v31/lib64/libutils.so (thread_data_t::trampoline(thread_data_t const*)+425) (BuildId: b4735f0100f3ac2bac77bead59cf45e8)
+    82.356   349  3820 F DEBUG   :       #09 pc 00000000000c758a  /apex/com.android.runtime/lib64/bionic/libc.so (__pthread_start(void*)+58) (BuildId: 5db8d317d3741b337ef046540bbdd0f7)
+    82.356   349  3820 F DEBUG   :       #10 pc 000000000005fd87  /apex/com.android.runtime/lib64/bionic/libc.so (__start_thread+55) (BuildId: 5db8d317d3741b337ef046540bbdd0f7)
+    82.358   234   234 E tombstoned: Tombstone written to: tombstone_00
+    82.498     0     0 I init    : Service 'android-hardware-media-c2-goldfish-hal-1-0' (pid 349) received signal 11
+    82.499     0     0 I init    : Sending signal 9 to service 'android-hardware-media-c2-goldfish-hal-1-0' (pid 349) process group...
+    82.507     0     0 I init    : starting service 'android-hardware-media-c2-goldfish-hal-1-0'...
+    82.413  3761  3818 E CCodec  : Codec2 component "c2.goldfish.h264.decoder" died.
+    82.414  3761  3812 E MediaCodec: Codec reported err 0xffffffe0, actionCode 0, while in state 6/STARTED
+    82.415  3761  3827 E NdkMediaCodec: sf error code: -38
+    82.415  3761  3824 E NdkMediaCodec: sf error code: -38
+    82.421  3761  3827 I korri-viewer: picture: frame 2175 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    82.421  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    82.431  3761  3824 E NdkMediaCodec: sf error code: -38
+    82.432  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    82.433  3761  3827 I korri-viewer: Requesting IDR frame on behalf of DR
+    82.433  3761  3809 I korri-viewer: IDR frame request sent
+    82.448  3761  3826 I korri-viewer: Waiting for IDR frame
+    82.450  3761  3827 E NdkMediaCodec: sf error code: -38
+    82.451  3761  3827 I korri-viewer: picture: frame 2184 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    82.452  3761  3824 E NdkMediaCodec: sf error code: -38
+    82.452  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    82.471  3761  3827 I korri-viewer: Requesting IDR frame on behalf of DR
+    82.472  3761  3809 I korri-viewer: IDR frame request sent
+    82.480  3761  3826 I korri-viewer: Waiting for IDR frame
+    82.492  3761  3824 E NdkMediaCodec: sf error code: -38
+    82.492  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    82.500  3761  3826 I korri-viewer: Waiting for IDR frame
+    82.502  3761  3827 E NdkMediaCodec: sf error code: -38
+    82.502  3761  3827 I korri-viewer: picture: frame 2188 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    82.544  3761  3827 I korri-viewer: Requesting IDR frame on behalf of DR
+    82.545  3761  3809 I korri-viewer: IDR frame request sent
+    82.552  3761  3826 I korri-viewer: Waiting for IDR frame
+    82.566  3761  3826 I korri-viewer: Waiting for IDR frame
+    82.569  3761  3827 E NdkMediaCodec: sf error code: -38
+    82.569  3761  3827 I korri-viewer: picture: frame 2193 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    82.573  3761  3824 E NdkMediaCodec: sf error code: -38
+    82.573  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    82.649  3761  3827 I korri-viewer: Requesting IDR frame on behalf of DR
+    82.649  3761  3809 I korri-viewer: IDR frame request sent
+    82.654  3761  3826 I korri-viewer: Waiting for IDR frame
+    82.656  3761  3827 E NdkMediaCodec: sf error code: -38
+    82.656  3761  3827 I korri-viewer: picture: frame 2199 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    82.733  3761  3824 E NdkMediaCodec: sf error code: -38
+    82.733  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    82.818  3761  3827 I korri-viewer: Requesting IDR frame on behalf of DR
+    82.818  3761  3809 I korri-viewer: IDR frame request sent
+    82.822  3761  3826 I korri-viewer: Waiting for IDR frame
+    82.836  3761  3826 I korri-viewer: Waiting for IDR frame
+    82.836  3761  3827 E NdkMediaCodec: sf error code: -38
+    82.836  3761  3827 I korri-viewer: picture: frame 2210 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    82.893  3761  3824 E NdkMediaCodec: sf error code: -38
+    82.893  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    82.997  3761  3827 I korri-viewer: Requesting IDR frame on behalf of DR
+    82.997  3761  3809 I korri-viewer: IDR frame request sent
+    83.008  3761  3826 I korri-viewer: Waiting for IDR frame
+    83.009  3761  3827 E NdkMediaCodec: sf error code: -38
+    83.009  3761  3827 I korri-viewer: picture: frame 2221 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    83.053  3761  3824 E NdkMediaCodec: sf error code: -38
+    83.053  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    83.169  3761  3827 I korri-viewer: Requesting IDR frame on behalf of DR
+    83.170  3761  3809 I korri-viewer: IDR frame request sent
+    83.176  3761  3826 I korri-viewer: Waiting for IDR frame
+    83.180  3761  3827 E NdkMediaCodec: sf error code: -38
+    83.180  3761  3827 I korri-viewer: picture: frame 2232 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    83.213  3761  3824 E NdkMediaCodec: sf error code: -38
+    83.213  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    83.340  3761  3827 I korri-viewer: Requesting IDR frame on behalf of DR
+    83.341  3761  3809 I korri-viewer: IDR frame request sent
+    83.358  3761  3826 I korri-viewer: Waiting for IDR frame
+    83.371  3761  3827 E NdkMediaCodec: sf error code: -38
+    83.371  3761  3827 I korri-viewer: picture: frame 2243 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    83.374  3761  3824 E NdkMediaCodec: sf error code: -38
+    83.374  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    83.531  3761  3827 I korri-viewer: Requesting IDR frame on behalf of DR
+    83.531  3761  3809 I korri-viewer: IDR frame request sent
+    83.534  3761  3824 E NdkMediaCodec: sf error code: -38
+    83.534  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    83.535  3761  3826 I korri-viewer: Waiting for IDR frame
+    83.550  3761  3826 I korri-viewer: Waiting for IDR frame
+    83.554  3761  3827 E NdkMediaCodec: sf error code: -38
+    83.554  3761  3827 I korri-viewer: picture: frame 2255 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    83.694  3761  3824 E NdkMediaCodec: sf error code: -38
+    83.694  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    83.714  3761  3827 I korri-viewer: Requesting IDR frame on behalf of DR
+    83.714  3761  3809 I korri-viewer: IDR frame request sent
+    83.720  3761  3826 I korri-viewer: Waiting for IDR frame
+    83.723  3761  3827 E NdkMediaCodec: sf error code: -38
+    83.723  3761  3827 I korri-viewer: picture: frame 2266 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    83.854  3761  3824 E NdkMediaCodec: sf error code: -38
+    83.854  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    83.883  3761  3827 I korri-viewer: Requesting IDR frame on behalf of DR
+    83.883  3761  3809 I korri-viewer: IDR frame request sent
+    83.904  3761  3826 I korri-viewer: Waiting for IDR frame
+    83.905  3761  3827 E NdkMediaCodec: sf error code: -38
+    83.905  3761  3827 I korri-viewer: picture: frame 2277 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    84.015  3761  3824 E NdkMediaCodec: sf error code: -38
+    84.015  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    84.065  3761  3827 I korri-viewer: Requesting IDR frame on behalf of DR
+    84.065  3761  3809 I korri-viewer: IDR frame request sent
+    84.074  3761  3826 I korri-viewer: Waiting for IDR frame
+    84.078  3761  3827 E NdkMediaCodec: sf error code: -38
+    84.078  3761  3827 I korri-viewer: picture: frame 2288 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    84.175  3761  3824 E NdkMediaCodec: sf error code: -38
+    84.175  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    84.238  3761  3827 I korri-viewer: Requesting IDR frame on behalf of DR
+    84.238  3761  3809 I korri-viewer: IDR frame request sent
+    84.254  3761  3826 I korri-viewer: Waiting for IDR frame
+    84.257  3761  3827 E NdkMediaCodec: sf error code: -38
+    84.257  3761  3827 I korri-viewer: picture: frame 2299 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    84.334  5055  5073 I AndroidRuntime: VM exiting with result code 0, cleanup skipped.
+    84.335  3761  3824 E NdkMediaCodec: sf error code: -38
+    84.335  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    84.417  3761  3827 I korri-viewer: Requesting IDR frame on behalf of DR
+    84.417  3761  3809 I korri-viewer: IDR frame request sent
+    84.425  3761  3826 I korri-viewer: Waiting for IDR frame
+    84.426  3761  3827 E NdkMediaCodec: sf error code: -38
+    84.426  3761  3827 I korri-viewer: picture: frame 2310 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    84.495  3761  3824 E NdkMediaCodec: sf error code: -38
+    84.495  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    84.587  3761  3827 I korri-viewer: Requesting IDR frame on behalf of DR
+    84.587  3761  3809 I korri-viewer: IDR frame request sent
+    84.604  3761  3826 I korri-viewer: Waiting for IDR frame
+    84.606  3761  3827 E NdkMediaCodec: sf error code: -38
+    84.606  3761  3827 I korri-viewer: picture: frame 2321 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    84.655  3761  3824 E NdkMediaCodec: sf error code: -38
+    84.656  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    84.766  3761  3827 I korri-viewer: Requesting IDR frame on behalf of DR
+    84.766  3761  3809 I korri-viewer: IDR frame request sent
+    84.773  3761  3826 I korri-viewer: Waiting for IDR frame
+    84.775  3761  3827 E NdkMediaCodec: sf error code: -38
+    84.775  3761  3827 I korri-viewer: picture: frame 2332 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    84.816  3761  3824 E NdkMediaCodec: sf error code: -38
+    84.816  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    84.935  3761  3827 I korri-viewer: Requesting IDR frame on behalf of DR
+    84.935  3761  3809 I korri-viewer: IDR frame request sent
+    84.947  3761  3826 I korri-viewer: Waiting for IDR frame
+    84.948  3761  3827 E NdkMediaCodec: sf error code: -38
+    84.948  3761  3827 I korri-viewer: picture: frame 2343 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    84.976  3761  3824 E NdkMediaCodec: sf error code: -38
+    84.976  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    85.108  3761  3827 I korri-viewer: Requesting IDR frame on behalf of DR
+    85.108  3761  3809 I korri-viewer: IDR frame request sent
+    85.125  3761  3826 I korri-viewer: Waiting for IDR frame
+    85.126  3761  3827 E NdkMediaCodec: sf error code: -38
+    85.126  3761  3827 I korri-viewer: picture: frame 2354 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    85.136  3761  3824 E NdkMediaCodec: sf error code: -38
+    85.136  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    85.286  3761  3827 I korri-viewer: Requesting IDR frame on behalf of DR
+    85.286  3761  3809 I korri-viewer: IDR frame request sent
+    85.296  3761  3824 E NdkMediaCodec: sf error code: -38
+    85.296  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    85.299  3761  3826 I korri-viewer: Waiting for IDR frame
+    85.299  3761  3827 E NdkMediaCodec: sf error code: -38
+    85.299  3761  3827 I korri-viewer: picture: frame 2365 not decoded: no input buffer: AMEDIA_ERROR_UNKNOWN (-10000)
+    85.456  3761  3824 E NdkMediaCodec: sf error code: -38
+    85.456  3761  3824 I korri-viewer: picture: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    85.456  3761  3824 I korri-viewer: picture: the decoder failed; the stream ends: output failed: AMEDIA_ERROR_UNKNOWN (-10000)
+    85.552  3761  3799 I korri-viewer: input: the core takes no more input
+    85.552  3761  3799 I korri-viewer: Stopping input stream...
+    85.553  3761  3799 I korri-viewer: done
+    85.553  3761  3799 I korri-viewer: Stopping audio stream...
+    85.558  3761  3799 I korri-viewer: sound: stream closed
+    85.558  3761  3799 I korri-viewer: sound: ended: 3759 callbacks, 1614480 frames played, 242160 frames silent, 530 short callbacks after the first sound, 8269 packets, 0 concealed, 1537 dropped over 40 ms pending, 0 not decoded, 15 device xruns, 0 reopened
+    85.558  3761  3799 I korri-viewer: done
+    85.558  3761  3799 I korri-viewer: Stopping video stream...
+    85.559  3761  3807 I korri-viewer: ENet wait interrupted
+    85.560  3761  3807 I korri-viewer: Control stream connection failed: 4
+    85.571  3761  3799 E NdkMediaCodec: sf error code: -38
+    85.572  3761  3799 I korri-viewer: picture: decoder stopped
+    85.574  3761  3799 I korri-viewer: done
+    85.574  3761  3799 I korri-viewer: Stopping control stream...
+    85.614  3761  3799 I korri-viewer: ENet peer acknowledged disconnection
+    85.614  3761  3799 I korri-viewer: done
+    85.614  3761  3799 I korri-viewer: Cleaning up input stream...
+    85.614  3761  3799 I korri-viewer: done
+    85.614  3761  3799 I korri-viewer: Cleaning up video stream...
+    85.614  3761  3799 I korri-viewer: done
+    85.614  3761  3799 I korri-viewer: Cleaning up control stream...
+    85.614  3761  3799 I korri-viewer: done
+    85.614  3761  3799 I korri-viewer: Cleaning up audio stream...
+    85.659  3761  3799 I korri-viewer: done
+    85.659  3761  3799 I korri-viewer: Cleaning up platform...
+    85.659  3761  3799 I korri-viewer: done
+    85.661  3761  3799 I korri-viewer: event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+    85.661  3761  3799 I korri-viewer: event {"kind":"Status","value":"Stopped"}
+    85.685  3761  3795 I korri-viewer: input: ended: 10 keys, 46 controller states, 1 arrivals, 2 mouse, 92 touches sent; 0 held; 0 unsupported, 0 outside the stream, 0 failed
+    85.685  3761  3795 E korri-viewer: viewer failed: picture or input event loop failed
+    92.678  5613  5719 I AndroidRuntime: VM exiting with result code 0, cleanup skipped.
+   107.274  6398  6398 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+   107.297  6398  6398 I AndroidRuntime: Using default boot image
+   107.297  6398  6398 I AndroidRuntime: Leaving lock profiling enabled
+   107.583  6398  6398 D AndroidRuntime: Calling main entry com.android.commands.hid.Hid

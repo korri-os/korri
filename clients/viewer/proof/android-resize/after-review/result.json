@@ -1,0 +1,475 @@
+{
+  "sender": "local",
+  "stream_host": "100.117.97.45",
+  "checks": {
+    "apk_has_no_code": true,
+    "apk_allows_no_backup": true,
+    "apk_leaves_no_recents_entry": true,
+    "apk_has_both_abis": true,
+    "sender_plays_the_tone": true,
+    "sender_logs_input": true,
+    "android_test_trust_anchor": true,
+    "android_test_https": true,
+    "android_test_lib": true,
+    "startup_shows_the_bar": true,
+    "running_event": true,
+    "start_reply_ok": true,
+    "app_in_front_while_streaming": true,
+    "video_layer_exists": true,
+    "screenshots_read_the_bar": true,
+    "screenshots_show_it_moving": true,
+    "screenshots_show_the_streams_shape": true,
+    "resize_sender_output_took_the_new_size": true,
+    "resize_decoder_saw_the_new_size": true,
+    "resize_decoder_gave_the_new_size": true,
+    "resize_decoder_did_not_fail": true,
+    "resize_layer_placed_for_the_new_shape": true,
+    "resize_screenshots_read_the_bar": true,
+    "resize_screenshots_show_the_new_shape": true,
+    "resize_picture_moves_at_the_new_size": true,
+    "input_unbuffered_dispatch_requested": true,
+    "input_pad_identity_from_android": true,
+    "input_pad_is_controller_0": true,
+    "input_pad_removed": true,
+    "picture_moves_after_input": false,
+    "audio_server_restarted": true,
+    "emulator_played_the_streams_tone": true,
+    "emulator_played_the_tests_tone": true
+  },
+  "store": {
+    "apk": "/nix/store/4dpybywsh2iwcbpn0zmk2kwxcc4kbw2z-korri-viewer-android-apk-0.1.0/korri-viewer-unsigned.apk",
+    "refusal_probe": "/nix/store/00fgx992pnszmr7i0vkmvw9ldjssngkk-korri-viewer-refusal-probe-apk-0.1.0/korri-viewer-refusal-probe-unsigned.apk",
+    "viewer": "/nix/store/x04xv34j06lqjj2yn5sb6d5d54sbcqia-korri-viewer-0.1.0",
+    "tests": "/nix/store/a5gxmna7yk0b90cm3pczpfjlfbswhmn6-korri-viewer-android-check/x86_64/tests"
+  },
+  "sunshine": "follows its output",
+  "sunshine_port": 45723,
+  "emulator": {
+    "release": "12",
+    "sdk": "31",
+    "abi": "x86_64"
+  },
+  "startup_screenshots": {
+    "shots": [
+      {
+        "file": "00.png",
+        "from_start_ms": [
+          1143,
+          2619
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "01.png",
+        "from_start_ms": [
+          2751,
+          4175
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "02.png",
+        "from_start_ms": [
+          4289,
+          6335
+        ],
+        "id": 2684
+      }
+    ],
+    "first_readable": {
+      "file": "02.png",
+      "from_start_ms": [
+        4289,
+        6335
+      ],
+      "id": 2684
+    }
+  },
+  "app_pid": "3761",
+  "streaming_screenshots": [
+    {
+      "file": "streaming-1.png",
+      "id": 3025,
+      "x": 336.0,
+      "y": 270.0,
+      "cell": 48.0,
+      "expected": {
+        "cell": 48.0,
+        "y": 270.0
+      },
+      "in_place": true
+    },
+    {
+      "file": "streaming-2.png",
+      "id": 3211,
+      "x": 336.0,
+      "y": 270.0,
+      "cell": 48.0,
+      "expected": {
+        "cell": 48.0,
+        "y": 270.0
+      },
+      "in_place": true
+    },
+    {
+      "file": "streaming-3.png",
+      "id": 3367,
+      "x": 336.0,
+      "y": 270.0,
+      "cell": 48.0,
+      "expected": {
+        "cell": 48.0,
+        "y": 270.0
+      },
+      "in_place": true
+    },
+    {
+      "file": "streaming-4.png",
+      "id": 3492,
+      "x": 336.0,
+      "y": 270.0,
+      "cell": 48.0,
+      "expected": {
+        "cell": 48.0,
+        "y": 270.0
+      },
+      "in_place": true
+    }
+  ],
+  "resize": {
+    "before": {
+      "left": 240,
+      "top": 0,
+      "right": 2160,
+      "bottom": 1080,
+      "window": [
+        2400,
+        1080
+      ]
+    },
+    "size": [
+      720,
+      1280
+    ],
+    "sender_display": {
+      "name": "HEADLESS-1",
+      "mode": {
+        "width": 720,
+        "height": 1280,
+        "refresh": 58823
+      },
+      "refresh_hz": 58.823,
+      "transform": "normal",
+      "power": true,
+      "scale": 1.0,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 720,
+        "height": 1280
+      }
+    },
+    "after": {
+      "left": 896,
+      "top": 0,
+      "right": 1504,
+      "bottom": 1080,
+      "window": [
+        2400,
+        1080
+      ]
+    },
+    "screenshots": [
+      {
+        "file": "resized-1.png",
+        "id": 103,
+        "x": 927.0,
+        "y": 275.0,
+        "cell": 15.0,
+        "expected": {
+          "cell": 15.2,
+          "y": 270.22222222222223
+        },
+        "in_place": true
+      },
+      {
+        "file": "resized-2.png",
+        "id": 190,
+        "x": 927.0,
+        "y": 275.0,
+        "cell": 15.0,
+        "expected": {
+          "cell": 15.2,
+          "y": 270.22222222222223
+        },
+        "in_place": true
+      },
+      {
+        "file": "resized-3.png",
+        "id": 283,
+        "x": 927.0,
+        "y": 275.0,
+        "cell": 15.0,
+        "expected": {
+          "cell": 15.2,
+          "y": 270.22222222222223
+        },
+        "in_place": true
+      },
+      {
+        "file": "resized-4.png",
+        "id": 399,
+        "x": 927.0,
+        "y": 275.0,
+        "cell": 15.0,
+        "expected": {
+          "cell": 15.2,
+          "y": 270.22222222222223
+        },
+        "in_place": true
+      }
+    ],
+    "app_lines": [
+      "picture: the stream's size changes from 1280x720 to 720x1280 at frame 1040; the decoder follows it (adaptive playback up to 2960x2960)",
+      "picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 719, 1279), width: int32(720), height: int32(1280), max-height: int32(2960), max-width: int32(2960), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}",
+      "picture: decoded size 720x1280",
+      "picture: video layer 720x1280 placed at (896, 0)-(1504, 1080) in the window 2400x1080"
+    ]
+  },
+  "input": {
+    "placed": {
+      "left": 896,
+      "top": 0,
+      "right": 1504,
+      "bottom": 1080,
+      "window": [
+        2400,
+        1080
+      ]
+    },
+    "steps": [
+      {
+        "name": "keys",
+        "command": "input keyevent KEYCODE_K KEYCODE_O KEYCODE_R KEYCODE_R KEYCODE_I",
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "tap",
+        "command": "input tap 1200 540",
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "tap off the centre",
+        "command": "input tap 1048 810",
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "swipe",
+        "command": "input swipe 1048 540 1352 540 300",
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "mouse",
+        "command": "input mouse tap 1200 540",
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "gamepad",
+        "command": "hid /data/local/tmp/korri-gamepad.json",
+        "exit_code": 0,
+        "output": ""
+      }
+    ],
+    "app_lines": [
+      "input: controller Korri test gamepad (16) vendor 045e product 7e57 external true",
+      "input: Korri test gamepad sticks Some((0, 1)) Some((11, 14)) triggers Some((23, 22)) hat true deadzones 0.05 0.05 0.13",
+      "input: Korri test gamepad (16) is controller 0",
+      "input: arrival Arrival { number: 0, active_mask: 1, kind: 1, buttons: 63487, capabilities: 1 }",
+      "input: controller Korri test gamepad (16) removed",
+      "input: controller number 0 is free"
+    ]
+  },
+  "screenshots_after_input": [
+    {
+      "file": "after-input-1.png",
+      "id": 1139
+    },
+    {
+      "file": "after-input-2.png",
+      "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+    },
+    {
+      "file": "after-input-3.png",
+      "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+    }
+  ],
+  "audio_server_restart": {
+    "before": "403",
+    "after": "5521"
+  },
+  "sound_after_the_restart": [],
+  "error": "RuntimeError: no logcat line matched 'korri-viewer: overlay: open on Guide' in 15 s",
+  "sender_restore": {
+    "live_games": [],
+    "product_units": {
+      "at_start": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 8317014
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 219956135598
+        },
+        "korri-clock-governor.service": {
+          "pid": 3896,
+          "started": 164324721
+        },
+        "korri-compositor.service": {
+          "pid": 748122,
+          "started": 87957282465
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 2569242,
+          "started": 219957620000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 164531729
+        },
+        "korri-limits.service": {
+          "pid": 4035,
+          "started": 164533214
+        },
+        "korri-local-signer.service": {
+          "pid": 2569201,
+          "started": 219956806525
+        },
+        "korri-plugin-admin.service": {
+          "pid": 748266,
+          "started": 87969764633
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 87893718128
+        },
+        "korri-portal-credentials.service": {
+          "pid": 0,
+          "started": 162355048
+        },
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 1489945,
+          "started": 168435600000
+        },
+        "korri-sunshine.service": {
+          "pid": 2083614,
+          "started": 426660463253
+        },
+        "korrid.service": {
+          "pid": 2083501,
+          "started": 426653099424
+        }
+      },
+      "at_end": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 8317014
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 219956135598
+        },
+        "korri-clock-governor.service": {
+          "pid": 3896,
+          "started": 164324721
+        },
+        "korri-compositor.service": {
+          "pid": 748122,
+          "started": 87957282465
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 2569242,
+          "started": 219957620000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 164531729
+        },
+        "korri-limits.service": {
+          "pid": 4035,
+          "started": 164533214
+        },
+        "korri-local-signer.service": {
+          "pid": 2569201,
+          "started": 219956806525
+        },
+        "korri-plugin-admin.service": {
+          "pid": 748266,
+          "started": 87969764633
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 87893718128
+        },
+        "korri-portal-credentials.service": {
+          "pid": 0,
+          "started": 162355048
+        },
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 1489945,
+          "started": 168435600000
+        },
+        "korri-sunshine.service": {
+          "pid": 2083614,
+          "started": 426660463253
+        },
+        "korrid.service": {
+          "pid": 2083501,
+          "started": 426653099424
+        }
+      },
+      "changed": []
+    },
+    "pass": true,
+    "pids_unchanged": {},
+    "run_folder": "/tmp/korri-stream-cadence-sender-2w48sua6",
+    "run_folder_bytes": 15703760,
+    "run_folder_removed": true,
+    "stray_processes_killed": [],
+    "remaining_processes": [],
+    "other_processes": [],
+    "new_input_devices": [],
+    "gone_input_devices": [],
+    "input_rule": "record",
+    "errors": []
+  },
+  "emulator_stop": {
+    "started": true,
+    "exit_code": 0,
+    "processes_left": []
+  },
+  "emulator_sound": {
+    "rate": 48000,
+    "channels": 2,
+    "seconds": 45.0,
+    "seconds_of_sound": 38.4,
+    "seconds_at_1000_hz": 36.4,
+    "median_rms_at_1000_hz": 270.3,
+    "seconds_at_440_hz": 1.9,
+    "median_rms_at_440_hz": 200.4
+  },
+  "pass": false
+}

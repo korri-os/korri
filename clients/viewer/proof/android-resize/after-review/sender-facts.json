@@ -1,0 +1,110 @@
+{
+  "model": "System Product Name",
+  "architecture": "x86_64",
+  "boot_id": "6c04d35a-b6d0-48de-a773-e6d881fb90fd",
+  "os_release": {
+    "ANSI_COLOR": "\"0;38;2;126;186;228\"",
+    "BUG_REPORT_URL": "\"https://github.com/NixOS/nixpkgs/issues\"",
+    "BUILD_ID": "\"26.11.20260923.4975466\"",
+    "CPE_NAME": "\"cpe:/o:nixos:nixos:26.11\"",
+    "DEFAULT_HOSTNAME": "nixos",
+    "DOCUMENTATION_URL": "\"https://nixos.org/learn.html\"",
+    "HOME_URL": "\"https://nixos.org/\"",
+    "ID": "nixos",
+    "LOGO": "\"nix-snowflake\"",
+    "NAME": "NixOS",
+    "PRETTY_NAME": "\"NixOS 26.11 (Zokor)\"",
+    "SUPPORT_URL": "\"https://nixos.org/community.html\"",
+    "VENDOR_NAME": "NixOS",
+    "VENDOR_URL": "\"https://nixos.org/\"",
+    "VERSION": "\"26.11 (Zokor)\"",
+    "VERSION_CODENAME": "zokor",
+    "VERSION_ID": "\"26.11\""
+  },
+  "display": {
+    "name": "HEADLESS-1",
+    "mode": {
+      "width": 1280,
+      "height": 720,
+      "refresh": 58823
+    },
+    "refresh_hz": 58.823,
+    "transform": "normal",
+    "power": true,
+    "scale": 1.0,
+    "rect": {
+      "x": 0,
+      "y": 0,
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "sunshine_version": "2026.516.143833",
+  "working_encoders": [
+    "h264_vaapi",
+    "hevc_vaapi",
+    "av1_vaapi"
+  ],
+  "fixture_user": "korri",
+  "thermal": [
+    {
+      "zone": "hwmon4/temp1",
+      "type": "k10temp Tctl",
+      "driver": "k10temp",
+      "temp": 84750,
+      "trips": [],
+      "unreadable": null,
+      "limits": {
+        "critical": null,
+        "start_below": 85000,
+        "end_at": 100000
+      }
+    }
+  ],
+  "heat_guarded": true,
+  "hardware_picture_path": false,
+  "board": [],
+  "live_games_at_start": [],
+  "input_rule": "record",
+  "tone": {
+    "hz": 1000,
+    "sink": "korri-tone"
+  },
+  "log_input": true,
+  "sunshine_port": 45723,
+  "sunshine_control_port": 45733,
+  "listening_tcp_ports": [
+    45723
+  ],
+  "processes": {
+    "compositor": {
+      "pid": 3021000
+    },
+    "sunshine": {
+      "pid": 3021022
+    },
+    "sound": {
+      "pid": 3020996
+    }
+  },
+  "sender_fixture": {
+    "application": "Desktop",
+    "renderer": "gles2",
+    "render_node": "/dev/dri/renderD128",
+    "hardware_encoder": true,
+    "attempts": [
+      {
+        "render_node": "/dev/dri/renderD128",
+        "working_encoders": [
+          "h264_vaapi",
+          "hevc_vaapi",
+          "av1_vaapi"
+        ],
+        "hardware_encoder": true,
+        "port": 45723,
+        "sunshine_version": "2026.516.143833"
+      }
+    ],
+    "run_folder": "/tmp/korri-stream-cadence-sender-2w48sua6"
+  }
+}

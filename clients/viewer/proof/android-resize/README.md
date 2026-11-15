@@ -1,7 +1,10 @@
 # #476 slice 4 — a new picture size in the middle of the stream, on the Android emulator
 
 Run on 2026-11-14 at 21:29 to 21:32 (zao local time) from commit
-`78ef93586ed4bf0b74a00adde3739777dca636e3`, with a clean tree:
+`78ef93586ed4bf0b74a00adde3739777dca636e3`, with a clean tree. That commit
+was on the branch before it was rebased onto D5 (`df9911d3f`) and before
+the review's fixes; the one run after them is at the end ("After the
+review").
 
 ```sh
 nix run .#viewer-android-proof -- --sender root@ibuki --out /tmp/korri-476-s4/proof-8 --port 5596
@@ -60,7 +63,9 @@ first decoded frame of the new size.
 ## Checks
 
 All 62 passed (`result.json`). The checks of D1 to D4 are the same as in
-`../android-d4/`. The new ones:
+`../android-d4/`, but for `frame_record_ids_move`: there the IDs had to
+rise; here they must never go back within a picture size, and a picture
+that the sender encoded twice is listed, not failed (below). The new ones:
 
 | Check | Evidence |
 | --- | --- |
@@ -95,12 +100,54 @@ between them as the table says.
 
 | Run | What happened |
 | --- | --- |
-| 1 | The sender's agent ended its session at the Android tests: 80 s without a request (the emulator's start and 104 tests), and the agent's limit is 75 s. `run.py` now keeps it alive from a thread (`0c0c1df36`). |
+| 1 | The sender's agent ended its session at the Android tests: 80 s without a request (the emulator's start and 104 tests), and the agent's limit is 75 s. `run.py` now keeps it alive from a thread (`0b5760e35`). |
 | 2 | zao's load was 18 to 20. The emulator at `nice` 10 lost most packets (`Network dropped …`, `Unrecoverable frame …`), the stream ended after 15 s (`stream terminated: -1`), and an Android sound test played too little. |
 | 3 | aka was hot (91.4 °C); the fixture refused to start. |
-| 4 | On ibuki: every check passed but `frame_record_ids_move`, which required strictly rising IDs; the sender's repeat above failed it. The check now fails a step back and counts a repeat (`d9b0efcad`). |
-| 6 | 34 checks passed up to Back; then `input keyevent KEYCODE_BACK` failed while another tool on zao installed `com.simonwjackson.korri.debug.test` into this emulator through the shared adb server. The emulator now has its own adb server (`78ef93586`). |
+| 4 | On ibuki: every check passed but `frame_record_ids_move`, which required strictly rising IDs; the sender's repeat above failed it. The check now fails a step back and lists a repeat (now in `c20ed9fa8`). |
+| 6 | 34 checks passed up to Back; then `input keyevent KEYCODE_BACK` failed while another tool on zao installed `com.simonwjackson.korri.debug.test` into this emulator through the shared adb server. The emulator now has its own adb server (`35a2747ae`). |
 | 7 | The emulator process crashed 5 s into the stream, before the size change (crashpad's `read out of range` in `emulator.log`), with zao's 5-minute load at 16 after a peak of 76; the stream had been losing frames since its start. |
+
+## After the review
+
+The review's fixes are `6f9dcf064` (a restart's maximum asked of the
+decoder again, a last configure without `max-width` and `max-height`),
+`a06e8c5d0` (a new placement while the overlay holds the input),
+`b922f448f` (an off-centre tap; `--stock-sunshine`) and `39a5d4748`
+(`--sender local`). Heavy work no longer runs on zao, so the one run after
+them ran on aka: the emulator (2 cores, `nice` 10, its own adb server) and
+aka's own fixture, from the tree of commit
+`39a5d474848d69315c114cd1033fd19f63fd2dd5` (`git archive`), on 2026-11-15
+at 09:00 to 09:03 aka time:
+
+```sh
+XDG_STATE_HOME=/var/tmp/resize-decoder/state nix run path:.#viewer-android-proof -- \
+  --sender local --stream-host 100.117.97.45 --out /var/tmp/resize-decoder/proof-11 --port 5596
+```
+
+One start before it was refused by the fixture's heat guard (86 °C)
+before anything started; aka was running another session's game test
+(`longshot`) that held it near 90 °C between short pauses.
+
+**It failed, and not at the size change.** 33 checks ran; 32 passed, and
+the run ended in D5's overlay step (`after-review/result.json`):
+
+| What | Evidence (`after-review/`) |
+| --- | --- |
+| Every resize check passed | `result.json`: the sender's output took 720x1280; `the stream's size changes from 1280x720 to 720x1280 at frame 1040; the decoder follows it (adaptive playback up to 2960x2960)` at 61.789 s; `decoded size 720x1280` and the layer at (896, 0)-(1504, 1080) at 61.852 s (`logcat.txt`) |
+| The pictures | `streaming-4.png` ID 3492 with the 1280x720 bar geometry; `resized-1.png` and `resized-4.png` IDs 103 and 399 (four shots: 103, 190, 283, 399), cell 15.0 where 15.2 is expected |
+| The off-centre tap reached the new rect | `sunshine-input.json`: a touch down and up at (0.25, 0.75), 09:01:58; the mouse's reference 607x1079, the new 608x1080 less one. The run ended before `run.py` scored it |
+| The emulator's decoder service crashed | `logcat.txt`, 82.356 s, 20.6 s after the size change, while the input step's game pad ran: SIGSEGV in `/vendor/bin/hw/android.hardware.media.c2@1.0-service-goldfish`, `C2GoldfishAvcDec::removePts(unsigned long)+401`; `Codec2 component "c2.goldfish.h264.decoder" died` |
+| The viewer then ended the stream, as designed | `output failed` and `no input buffer` for 3 s, then `picture: the decoder failed; the stream ends`; the input gate closed first, and `viewer failed: picture or input event loop failed` (D2's rule: no flush, restart or reset after a decoder error yet) |
+| What failed after it | the check `picture_moves_after_input` (`after-input-1.png` ID 1139, `after-input-2.png` with no picture), and the overlay's open on Guide, which timed out and ended the run |
+
+In the earlier runs with adaptive playback (2, 4, 6, 7 and 8 above) the
+emulator's decoder service never crashed; D1 to D5's records, without
+adaptive playback, show no such crash either. Run 7's crash was the
+emulator's own process, also on its color buffers (`Failed to find
+ColorBuffer`; here `emulator.log` has `bad color buffer handle 237`).
+Whether adaptive playback up to 2960x2960, or the goldfish decoder's
+handling of the new SPS, makes this crash likelier is not known from one
+crash in six runs.
 
 ## Not proven here
 
