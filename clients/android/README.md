@@ -222,3 +222,15 @@ and `/sdcard/Download/korri-376-UNIQUE-RUN-NAME.mp4`. No capability is written o
 logged. Resume/input routing uses injected Android keys. The other controls use
 the real SurfaceRequests. This does not prove physical controller firmware or
 USB-only overlay navigation.
+
+### Live-resize proof on the emulator (#476)
+
+`nix run .#android-live-resize-proof` is a development tool, not a product
+check. It proves today's live resize on one headless Android 12 emulator
+against stream-cadence's sender fixture with Korri's patched Sunshine
+(`--sunshine`, the `sunshine-korri` package). The test hook
+`KorriLiveResizeFixtureTest`, in the device-test APK only, opens the exact
+viewer and makes korrid's `viewerResize` call for Portrait and back. The
+proof reads the frame-ID bar in screenshots of each phase. Under the owner's
+rule of 2026-11-15 it runs on aka, as root, with `--sender local`; the
+record of the runs and the full command are in `evidence/476/README.md`.
