@@ -2308,6 +2308,43 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_new_picture_place_keeps_the_hold_and_takes_the_touches_after_it() {
+        // The sender's new size (#476) while the overlay holds the input:
+        // the app places the picture again.
+        let (mut input, mut sink) = (input(), Recorded::default());
+        let mut devices = Known::with([keyboard_device(-1), touchscreen(3)]);
+        input.hold(&mut sink);
+        let portrait = Rect {
+            left: 236,
+            top: 0,
+            right: 844,
+            bottom: 1080,
+        };
+        input.place(portrait);
+        // Still held: a key goes nowhere.
+        press(&mut input, &mut devices, &mut sink, -1, code::A, 30, 1000);
+        assert!(sink.take().is_empty());
+        input.release(&mut sink);
+        sink.take();
+        // A quarter across and three quarters down the new picture.
+        input.motion(
+            &touch_event(action::DOWN, 0, &[(388.0, 810.0)], 2000),
+            2000,
+            &mut devices,
+            &mut sink,
+        );
+        let packets = sink.take();
+        let Packet::Touch { kind, x, y, .. } = packets[0] else {
+            panic!("{packets:?}")
+        };
+        assert_eq!(kind, kind::DOWN);
+        assert!(
+            (x - 0.25).abs() < 1e-3 && (y - 0.75).abs() < 1e-3,
+            "{x}, {y}"
+        );
+    }
+
+    #[test]
     fn after_the_hold_the_mapping_starts_clean() {
         let (mut input, mut sink) = (input(), Recorded::default());
         let mut devices = Known::with([keyboard_device(-1), pad(16, 0x045e)]);
