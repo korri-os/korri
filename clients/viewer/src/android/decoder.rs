@@ -84,10 +84,19 @@ pub(crate) trait Codec: Send + Sync {
     /// The decoded picture's size, from the output format: its crop when it
     /// has one.
     fn output_size(&self) -> Option<(i32, i32)>;
+    /// Adaptive playback's largest picture for a stream of `size`, from the
+    /// decoder's capabilities (`codec::adaptive_max`); `size` itself when the
+    /// decoder cannot tell.
+    fn adaptive_max(&self, size: (i32, i32)) -> (i32, i32);
     /// Stop, configure for a picture of `size` (with adaptive playback up to
-    /// `max`, when some), and start again. No other call to the codec runs
-    /// meanwhile.
-    fn restart(&self, size: (i32, i32), max: Option<(i32, i32)>) -> Result<(), Status>;
+    /// `max`, when some, or without it when the decoder refuses it), and
+    /// start again; the maximum it was configured with. No other call to
+    /// the codec runs meanwhile.
+    fn restart(
+        &self,
+        size: (i32, i32),
+        max: Option<(i32, i32)>,
+    ) -> Result<Option<(i32, i32)>, Status>;
     fn stop(&self);
 }
 
@@ -282,9 +291,9 @@ enum Follow {
     /// Within adaptive playback's maximum: the codec takes the new SPS as it
     /// comes.
     Itself,
-    /// The codec restarts at the new size, with adaptive playback up to
-    /// `max` when it had it.
-    Restart { max: Option<(i32, i32)> },
+    /// The codec restarts at the new size; with adaptive playback when it
+    /// had it, up to the maximum that its capabilities give for that size.
+    Restart { adaptive: bool },
 }
 
 impl<C: Codec + 'static> Decoder<C> {
@@ -498,9 +507,8 @@ impl<C: Codec + 'static> Decoder<C> {
                     size,
                     follow: match configured.adaptive {
                         Some(max) if size.0 <= max.0 && size.1 <= max.1 => Follow::Itself,
-                        // A restart keeps adaptive playback, grown to hold the new size.
                         adaptive => Follow::Restart {
-                            max: adaptive.map(|max| (max.0.max(size.0), max.1.max(size.1))),
+                            adaptive: adaptive.is_some(),
                         },
                     },
                 });
@@ -540,16 +548,25 @@ impl<C: Codec + 'static> Decoder<C> {
             "picture: the stream's size changes from {}x{} to {w}x{h} at frame {frame}; {how}",
             from.0, from.1
         ));
-        if let Follow::Restart { max } = new_size.follow {
+        if let Follow::Restart { adaptive } = new_size.follow {
+            // The decoder's capabilities for the new size, asked again; never
+            // a maximum that they did not give.
+            let max = adaptive.then(|| self.codec.adaptive_max(new_size.size));
             let restarted = {
                 let _codec = self.gate.write().unwrap_or_else(PoisonError::into_inner);
                 self.codec.restart(new_size.size, max)
             };
-            if let Err(status) = restarted {
-                self.fail(format!("cannot restart the decoder at {w}x{h}: {status}"));
-                return false;
-            }
-            log::line(&format!("picture: the decoder restarted at {w}x{h}"));
+            let max = match restarted {
+                Ok(max) => max,
+                Err(status) => {
+                    self.fail(format!("cannot restart the decoder at {w}x{h}: {status}"));
+                    return false;
+                }
+            };
+            log::line(&format!(
+                "picture: the decoder restarted at {w}x{h} with adaptive playback {}",
+                max.map_or("none".into(), |(mw, mh)| format!("up to {mw}x{mh}"))
+            ));
             self.input.lock().unwrap().configured.adaptive = max;
         }
         self.input.lock().unwrap().configured.size = new_size.size;
@@ -704,7 +721,14 @@ mod tests {
         formats: VecDeque<(i32, i32)>,
         /// A restart fails with this status.
         restart_fails: Option<Status>,
+        /// A restart's configure refuses `max-width` and `max-height`.
+        refuses_max: bool,
         restarts: Vec<Restarted>,
+        /// The largest square side that the decoder supports; none: it
+        /// cannot tell.
+        largest_square: Option<i32>,
+        /// The sizes that `adaptive_max` was asked for.
+        capability_asks: Vec<(i32, i32)>,
     }
 
     /// A restart: how many buffers were queued before it, its size and its
@@ -773,7 +797,17 @@ mod tests {
         fn output_size(&self) -> Option<(i32, i32)> {
             self.script.lock().unwrap().formats.pop_front()
         }
-        fn restart(&self, size: (i32, i32), max: Option<(i32, i32)>) -> Result<(), Status> {
+        fn adaptive_max(&self, size: (i32, i32)) -> (i32, i32) {
+            let mut s = self.script.lock().unwrap();
+            s.capability_asks.push(size);
+            let largest = s.largest_square;
+            crate::codec::adaptive_max(size, |side| largest.is_some_and(|largest| side <= largest))
+        }
+        fn restart(
+            &self,
+            size: (i32, i32),
+            max: Option<(i32, i32)>,
+        ) -> Result<Option<(i32, i32)>, Status> {
             // Long enough for an output call to begin if nothing held it off.
             std::thread::sleep(Duration::from_millis(30));
             if self.in_output.load(Ordering::SeqCst) {
@@ -781,8 +815,9 @@ mod tests {
             }
             let mut s = self.script.lock().unwrap();
             let queued = s.queued.len();
+            let max = max.filter(|_| !s.refuses_max);
             s.restarts.push((queued, size, max));
-            s.restart_fails.map_or(Ok(()), Err)
+            s.restart_fails.map_or(Ok(max), Err)
         }
         fn stop(&self) {
             self.script.lock().unwrap().stopped = true;
@@ -1001,22 +1036,78 @@ mod tests {
     }
 
     #[test]
-    fn a_size_beyond_the_adaptive_maximum_restarts_with_a_larger_one() {
+    fn a_size_beyond_the_adaptive_maximum_restarts_with_the_decoders_maximum_for_it() {
         let decoder = shaped_decoder(
-            many_inputs(),
+            Script {
+                largest_square: Some(2304),
+                ..many_inputs()
+            },
             Records::default(),
             configured(Some((1280, 1280))),
             Arc::new(|_| {}),
         );
         let (landscape, full_hd) = (sps_unit(LANDSCAPE), sps_unit(FULL_HD));
         decoder.queue(idr(1, &full_hd));
+        // The decoder's capabilities are asked again, for the new size.
+        assert_eq!(script(&decoder).capability_asks, [(1920, 1080)]);
         assert_eq!(
             script(&decoder).restarts,
-            [(0, (1920, 1080), Some((1920, 1280)))]
+            [(0, (1920, 1080), Some((2304, 2304)))]
         );
-        // Back within the grown maximum: no restart.
+        // Back within the new maximum: no restart, and no question.
         decoder.queue(idr(2, &landscape));
         assert_eq!(script(&decoder).restarts.len(), 1);
+        assert_eq!(script(&decoder).capability_asks.len(), 1);
+    }
+
+    #[test]
+    fn a_restart_that_the_decoder_takes_without_its_maximum_drops_adaptive_playback() {
+        let decoder = shaped_decoder(
+            Script {
+                refuses_max: true,
+                largest_square: Some(2304),
+                ..many_inputs()
+            },
+            Records::default(),
+            configured(Some((1280, 1280))),
+            Arc::new(|_| {}),
+        );
+        let (landscape, full_hd) = (sps_unit(LANDSCAPE), sps_unit(FULL_HD));
+        decoder.queue(idr(1, &full_hd));
+        // 1280x720 was within the old maximum, but the codec has none now.
+        decoder.queue(idr(2, &landscape));
+        assert_eq!(
+            script(&decoder).restarts,
+            [(0, (1920, 1080), None), (2, (1280, 720), None)]
+        );
+        // Without adaptive playback, no capabilities are asked.
+        assert_eq!(script(&decoder).capability_asks, [(1920, 1080)]);
+    }
+
+    #[test]
+    fn with_no_larger_square_the_restart_maximum_is_the_new_size() {
+        let decoder = shaped_decoder(
+            many_inputs(),
+            Records::default(),
+            configured(Some((1280, 1280))),
+            Arc::new(|_| {}),
+        );
+        let (portrait, full_hd) = (sps_unit(PORTRAIT), sps_unit(FULL_HD));
+        decoder.queue(idr(1, &full_hd));
+        assert_eq!(
+            script(&decoder).restarts,
+            [(0, (1920, 1080), Some((1920, 1080)))]
+        );
+        // 720x1280 is not within 1920x1080: a restart again, asked again.
+        decoder.queue(idr(2, &portrait));
+        assert_eq!(
+            script(&decoder).restarts[1..],
+            [(2, (720, 1280), Some((720, 1280)))]
+        );
+        assert_eq!(
+            script(&decoder).capability_asks,
+            [(1920, 1080), (720, 1280)]
+        );
     }
 
     #[test]

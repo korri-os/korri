@@ -11,10 +11,15 @@
 //! `moonlight-stream/moonlight-android`), `MediaCodecHelper.java`: the decoder rounds
 //! (`findProbableSafeDecoder`, `findKnownSafeDecoder`, `findFirstDecoder`,
 //! `isCodecBlacklisted`), the decoder name lists,
-//! `setDecoderLowLatencyOptions` and `decoderSupportsAdaptivePlayback`, and
-//! from `MediaCodecDecoderRenderer.java` the live-resolution maximum of
-//! `initializeDecoder`. Artemis ships under the GNU GPL version 3 with no "or later" grant, so
-//! this file does too. The Rust adaptation is Korri work dated 2026-11-14.
+//! `setDecoderLowLatencyOptions` and `decoderSupportsAdaptivePlayback`.
+//! Artemis ships under the GNU GPL version 3 with no "or later" grant, so
+//! this file does too. The Rust adaptation is Korri work dated 2026-11-14
+//! and 2026-11-15.
+//!
+//! The live-resolution maximum (`adaptive_max`) is not Artemis's: Korri
+//! wrote it into its copy of `MediaCodecDecoderRenderer.java`
+//! (`initializeDecoder`, `cbfeff25b`) for its live resize. The last configure
+//! try without it (`tries`) is Korri's too.
 
 /// One entry of Android's `MediaCodecList` (REGULAR_CODECS) that decodes H.264.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -78,10 +83,10 @@ pub fn adaptive_playback(decoder: &Decoder) -> bool {
 }
 
 /// The largest picture that adaptive playback is configured for
-/// (`max-width`, `max-height`), as Artemis reserves it for live resolution:
-/// the largest square, from 4096 down to the stream's longer side in steps
-/// of 8, that the decoder supports at the stream's rate, so that either
-/// orientation fits. `supported` asks
+/// (`max-width`, `max-height`), as Korri's copy of Artemis reserves it for
+/// live resolution (`cbfeff25b`): the largest square, from 4096 down to the
+/// stream's longer side in steps of 8, that the decoder supports at the
+/// stream's rate, so that either orientation fits. `supported` asks
 /// `VideoCapabilities.areSizeAndRateSupported(side, side, rate)`. With no
 /// such square, the stream's own size.
 pub fn adaptive_max(stream: (i32, i32), mut supported: impl FnMut(i32) -> bool) -> (i32, i32) {
@@ -91,6 +96,44 @@ pub fn adaptive_max(stream: (i32, i32), mut supported: impl FnMut(i32) -> bool) 
         .step_by(8)
         .find(|&side| supported(side))
         .map_or(stream, |side| (side, side))
+}
+
+/// One configure of the decoder: a low-latency try's keys, and adaptive
+/// playback's maximum when it has one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Configure {
+    /// The low-latency try's number (`low_latency_try`).
+    pub number: u32,
+    pub keys: Vec<(&'static str, i32)>,
+    pub max: Option<(i32, i32)>,
+}
+
+/// The configures to try in turn: each low-latency try, with adaptive
+/// playback up to `max` when some; then, when `max` is some, the last try
+/// again without it. A decoder that refuses `max-width` and `max-height`
+/// still decodes, and restarts at a new size instead (`decoder.rs`).
+pub fn tries(decoder: &Decoder, max: Option<(i32, i32)>) -> Vec<Configure> {
+    let mut tries = Vec::new();
+    for number in 0.. {
+        let attempt = low_latency_try(decoder, number);
+        tries.push(Configure {
+            number,
+            keys: attempt.keys,
+            max,
+        });
+        if attempt.last {
+            break;
+        }
+    }
+    if max.is_some()
+        && let Some(last) = tries.last()
+    {
+        tries.push(Configure {
+            max: None,
+            ..last.clone()
+        });
+    }
+    tries
 }
 
 /// One configure attempt's format keys, most risky first.
@@ -296,6 +339,33 @@ mod tests {
         });
         assert_eq!(asked.last(), Some(&4000));
         assert_eq!(adaptive_max((5000, 720), |_| true), (5000, 720));
+    }
+
+    #[test]
+    fn with_adaptive_playback_the_last_configure_has_no_maximum() {
+        let goldfish = decoder("c2.goldfish.h264.decoder");
+        let max = Some((2960, 2960));
+        let tries = tries(&goldfish, max);
+        let shape: Vec<_> = tries
+            .iter()
+            .map(|t| (t.number, t.keys.len(), t.max))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                (0, 3, max),
+                (1, 2, max),
+                (2, 1, max),
+                (3, 0, max),
+                // The last try again, without max-width and max-height.
+                (3, 0, None),
+            ]
+        );
+        // Without adaptive playback, the low-latency tries alone.
+        let plain = super::tries(&goldfish, None);
+        assert_eq!(plain.len(), 4);
+        assert!(plain.iter().all(|t| t.max.is_none()));
+        assert_eq!(plain[0].keys, low_latency_try(&goldfish, 0).keys);
     }
 
     #[test]

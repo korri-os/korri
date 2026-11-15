@@ -15,22 +15,22 @@
 //! (`callback::guarded`): it would abort the app.
 //!
 //! A new picture size in the middle of the stream: the decoder is
-//! configured for adaptive playback up to Artemis's live-resolution maximum
+//! configured for adaptive playback up to Korri's live-resolution maximum
 //! when it supports it, so that it follows a new SPS by itself; otherwise
 //! `decoder.rs` restarts it at the new size. Each new decoded size, from the
 //! output format, goes to the app, which places its video layer for it.
 //!
-//! The decoder list's queries, the configure tries, the base format's
-//! colour keys and adaptive playback's maximum are ported from Korri's copy
-//! of Artemis (`clients/android`, from
-//! `simonwjackson/artemis` at `cf12c432`, a fork of
+//! The decoder list's queries, the configure tries and the base format's
+//! colour keys are ported from Korri's copy of Artemis (`clients/android`,
+//! from `simonwjackson/artemis` at `cf12c432`, a fork of
 //! `ClassicOldSong/moonlight-android`, itself a fork of
 //! `moonlight-stream/moonlight-android`), `MediaCodecHelper.java` and
-//! `MediaCodecDecoderRenderer.java` (`createBaseMediaFormat`, the tries and
-//! the live-resolution maximum in `initializeDecoder`, the decoded size on
-//! `INFO_OUTPUT_FORMAT_CHANGED`). Artemis ships under the GNU GPL version 3
-//! with no "or later" grant, so this file does too. The Rust adaptation is
-//! Korri work dated 2026-11-14 and 2026-11-15.
+//! `MediaCodecDecoderRenderer.java` (`createBaseMediaFormat`, the tries in
+//! `initializeDecoder`, the decoded size on `INFO_OUTPUT_FORMAT_CHANGED`).
+//! The live-resolution maximum's capability query is Korri's own, from
+//! `cbfeff25b` in that copy. Artemis ships under the GNU GPL version 3 with
+//! no "or later" grant, so this file does too. The Rust adaptation is Korri
+//! work dated 2026-11-14 and 2026-11-15.
 use crate::{
     callback::guarded,
     codec,
@@ -226,39 +226,34 @@ fn make_decoder(format: c_int, width: c_int, height: c_int, fps: c_int) -> Resul
     let chosen = codec::choose(&decoders, emulator)
         .with_context(|| format!("no usable {MIME} decoder (emulator {emulator})"))?;
     let size = (width, height);
-    // Artemis asks adaptive playback's maximum of the decoder; a decoder that
-    // cannot answer gets the stream's own size.
-    let adaptive = codec::adaptive_playback(chosen).then(|| {
-        adaptive_max(&chosen.name, size, fps).unwrap_or_else(|error| {
-            log::line(&format!(
-                "picture: adaptive playback up to the stream's size: {error:#}"
-            ));
-            size
-        })
-    });
+    // Adaptive playback's maximum, asked of the decoder.
+    let adaptive =
+        codec::adaptive_playback(chosen).then(|| asked_adaptive_max(&chosen.name, size, fps));
     let mut stream = stream();
     let stream = stream.as_mut().context("no picture is open")?;
-    let mut number = 0;
-    let (codec, keys) = loop {
-        let attempt = codec::low_latency_try(chosen, number);
+    let mut tries = codec::tries(chosen, adaptive).into_iter().peekable();
+    let (codec, configured) = loop {
+        let attempt = tries.next().context("no configure to try")?;
         let mut codec = NdkCodec::by_name(&chosen.name)
             .with_context(|| format!("cannot make the decoder {}", chosen.name))?;
-        let media = media_format(size, adaptive, fps, &attempt.keys);
+        let media = media_format(size, attempt.max, fps, &attempt.keys);
         match codec.configure(&media, &stream.surface) {
             Ok(()) => {
                 codec.setup = Some(Setup {
+                    name: chosen.name.clone(),
                     fps,
                     keys: attempt.keys.clone(),
                     surface: stream.surface.clone(),
                 });
-                break (codec, attempt.keys);
+                break (codec, attempt);
             }
-            Err(status) if !attempt.last => {
+            Err(status) if tries.peek().is_some() => {
                 log::line(&format!(
-                    "picture: {} try {number} refused: {status}",
-                    chosen.name
+                    "picture: {} try {} {} refused: {status}",
+                    chosen.name,
+                    attempt.number,
+                    adaptive_text(attempt.max)
                 ));
-                number += 1;
             }
             Err(status) => bail!("{} refused its last configuration: {status}", chosen.name),
         }
@@ -266,7 +261,9 @@ fn make_decoder(format: c_int, width: c_int, height: c_int, fps: c_int) -> Resul
     codec
         .start()
         .map_err(|status| anyhow!("cannot start the decoder: {status}"))?;
-    let keys: Vec<_> = keys
+    let (number, adaptive) = (configured.number, configured.max);
+    let keys: Vec<_> = configured
+        .keys
         .iter()
         .map(|(key, value)| format!("{key}={value}"))
         .collect();
@@ -408,6 +405,7 @@ fn media_format(
 
 /// What a restart configures again: the try that worked, and the Surface.
 struct Setup {
+    name: String,
     fps: i32,
     keys: Vec<(&'static str, i32)>,
     surface: NativeWindow,
@@ -575,15 +573,46 @@ impl Codec for NdkCodec {
         (size.0 > 0 && size.1 > 0).then_some(size)
     }
 
-    fn restart(&self, size: (i32, i32), max: Option<(i32, i32)>) -> Result<(), Status> {
+    fn adaptive_max(&self, size: (i32, i32)) -> (i32, i32) {
+        match &self.setup {
+            Some(setup) => asked_adaptive_max(&setup.name, size, setup.fps),
+            None => size,
+        }
+    }
+
+    fn restart(
+        &self,
+        size: (i32, i32),
+        max: Option<(i32, i32)>,
+    ) -> Result<Option<(i32, i32)>, Status> {
         let setup = self.setup.as_ref().ok_or(INVALID_OPERATION)?;
         // SAFETY: a live codec; Executing to Uninitialized.
         checked(unsafe { ndk_sys::AMediaCodec_stop(self.codec.as_ptr()) })?;
-        self.configure(
-            &media_format(size, max, setup.fps, &setup.keys),
-            &setup.surface,
-        )?;
-        self.start()
+        let configure = |max| {
+            self.configure(
+                &media_format(size, max, setup.fps, &setup.keys),
+                &setup.surface,
+            )
+        };
+        // As the first configure: without max-width and max-height when the
+        // decoder refuses them.
+        let max = match (configure(max), max) {
+            (Ok(()), max) => max,
+            (Err(status), Some(_)) => {
+                log::line(&format!(
+                    "picture: {} refused {} at {}x{}: {status}; configuring without it",
+                    setup.name,
+                    adaptive_text(max),
+                    size.0,
+                    size.1
+                ));
+                configure(None)?;
+                None
+            }
+            (Err(status), None) => return Err(status),
+        };
+        self.start()?;
+        Ok(max)
     }
 
     fn stop(&self) {
@@ -720,6 +749,24 @@ fn avc_capabilities<'a>(env: &mut JNIEnv<'a>, info: &JObject) -> jni::errors::Re
         &[(&mime).into()],
     )?
     .l()
+}
+
+/// For the log: `adaptive up to WxH` or `without adaptive playback`.
+fn adaptive_text(max: Option<(i32, i32)>) -> String {
+    max.map_or("without adaptive playback".into(), |(w, h)| {
+        format!("adaptive up to {w}x{h}")
+    })
+}
+
+/// `adaptive_max`, or the stream's own size when the decoder cannot answer.
+fn asked_adaptive_max(name: &str, size: (i32, i32), fps: i32) -> (i32, i32) {
+    adaptive_max(name, size, fps).unwrap_or_else(|error| {
+        log::line(&format!(
+            "picture: adaptive playback up to the stream's size {}x{}: {error:#}",
+            size.0, size.1
+        ));
+        size
+    })
 }
 
 /// Adaptive playback's maximum for the decoder of this name
