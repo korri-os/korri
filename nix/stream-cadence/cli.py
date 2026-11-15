@@ -1272,12 +1272,16 @@ def heat_range(samples: list[dict], guarded: set[str]) -> str:
 
 
 def locate(
-    viewer: Remote, sender: Remote, capture: str, samples: list[dict]
+    viewer: Remote, look: Callable[[], dict], capture: str, samples: list[dict]
 ) -> tuple[Location, int]:
-    """Find the ID bar on the viewer's output once the stream shows."""
+    """Find the ID bar on the viewer's output once the stream shows.
+
+    `look` samples the sender and keeps its log, so that a refusal here
+    keeps the sender's words as journal.log too.
+    """
     deadline = time.monotonic() + 45
     while time.monotonic() < deadline:
-        sender.request("sample")
+        look()
         state = viewer.request("sample")
         samples.append(state)
         if state["viewer_exit"] is not None:
@@ -1667,9 +1671,6 @@ def view_case(
         )
         # The first start only locates the bar. The second start is the measure,
         # with the capture already running, so startup time is observable.
-        viewer.request("start", command=command)
-        location, output_width = locate(viewer, sender, paths["capture"], samples)
-        viewer.request("stop")
         def look() -> dict:
             # A refusal keeps the sender's log as journal.log.
             nonlocal latest
@@ -1677,6 +1678,9 @@ def view_case(
             latest = sent["journal"]
             return sent
 
+        viewer.request("start", command=command)
+        location, output_width = locate(viewer, look, paths["capture"], samples)
+        viewer.request("stop")
         # The measured start must not wait for the locating start's session.
         facts["locating_session"] = wait_for_session_end(look)
         facts["bar_location"] = {"x": location.x, "y": location.y, "cell": location.cell}
