@@ -1,0 +1,4 @@
+Connecting to 100.117.97.45...
+Generating certificate...done
+Please enter the following PIN on the target PC: ####
+Succesfully paired
