@@ -8,6 +8,7 @@
 //! | `KorriBrainService.ensureRunning`, `privateStateRoot` | [`start`], once per process; `android_storage` |
 //! | `KorridNetwork.snapshot` | `framework_network.rs`, JNI into Android's classes |
 //! | `KorriStreamViewer` (`viewer*` callbacks) | the app's own Rust viewer, which [`start`] takes (slice D10); it provisions its client certificate with [`provision_moonlight_certificate`] |
+//! | `KorriStreamViewer.leave` (`KorridServer.leaveViewer`) | [`leave_viewer`], when the person opens the gameplay overlay (slice D5b) |
 //! | `KorriAppLauncher` (local Android games, ADR 0054) | none until slice D13 |
 //! | the foreground service | none (owner decision O2): korrid lives as long as the process |
 //!
@@ -123,6 +124,16 @@ pub async fn provision_moonlight_certificate(
                 "the Moonlight certificate was not provisioned: {code}"
             ))
         })
+}
+
+/// The person left the stream of the exact `launch` for the gameplay
+/// overlay: korrid's `session.leave`, as the Artemis viewer asks it
+/// (`KorriStreamViewer.leave`). korrid then opens its gameplay overlay
+/// (`surface/overlay.rs`), and its Resume comes back as the viewer's
+/// `resume_and_focus`. True when korrid answered that this launch runs on.
+/// It blocks: never call it on a runtime's thread.
+pub fn leave_viewer(launch: &str) -> bool {
+    super::leave_locally(launch)
 }
 
 /// The class that rustls-platform-verifier loads first.

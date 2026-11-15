@@ -518,17 +518,32 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_leaveVie
         Ok(value) => String::from(value),
         Err(_) => return jni::sys::JNI_FALSE,
     };
+    if leave_locally(&launch) {
+        jni::sys::JNI_TRUE
+    } else {
+        jni::sys::JNI_FALSE
+    }
+}
+
+/// The person left the stream of the exact `launch` for the gameplay
+/// overlay: korrid's `session.leave` through its own authenticated
+/// localhost RPC, which checks the selection and publishes Home without
+/// freezing the streamed game. True when korrid answered that this launch
+/// runs on. The Artemis viewer asks through `KorridServer.leaveViewer`, the
+/// Android app's own viewer through `app::leave_viewer`. It blocks on a
+/// runtime of its own: never call it on a runtime's thread.
+pub(crate) fn leave_locally(launch: &str) -> bool {
     if launch.len() != 32
         || !launch
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
     {
-        return jni::sys::JNI_FALSE;
+        return false;
     }
     let (Some(port), Some(capability)) =
         (crate::local_server_port(), crate::local_server_capability())
     else {
-        return jni::sys::JNI_FALSE;
+        return false;
     };
     let result = (|| {
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -545,7 +560,7 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_leaveVie
                 .post(format!("http://127.0.0.1:{port}/rpc"))
                 .bearer_auth(capability)
                 .json(&RpcRequest::SessionLeave(crate::SessionLeaveRequest {
-                    expected_launch_id: Some(launch.clone()),
+                    expected_launch_id: Some(launch.to_owned()),
                 }))
                 .send()
                 .await
@@ -563,11 +578,7 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_leaveVie
             }
         })
     })();
-    if result.is_some() {
-        jni::sys::JNI_TRUE
-    } else {
-        jni::sys::JNI_FALSE
-    }
+    result.is_some()
 }
 
 #[no_mangle]
