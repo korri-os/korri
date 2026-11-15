@@ -18,20 +18,26 @@
 //! | `onBackPressed` swallowed | the shell's input filter consumes Back (`input/android.rs`) |
 //! | `shellRendered` (the device test's readiness) | a logcat line (`host.rs`) |
 //! | `KorriSurfaceHost` (the overlay Surface) | none until slice D5 |
+//! | `KorriStreamViewer` and `Game` (korrid's viewer) | `viewer.rs`: the Rust viewer in this process, on the shell's loop (slice D10) |
 #![cfg(target_os = "android")]
 
 mod assets;
 mod host;
 mod logcat;
+mod viewer;
 
 use anyhow::{anyhow, Context, Result};
-use jni::{objects::JObject, JavaVM};
+use jni::{
+    objects::{JObject, JString},
+    JNIEnv, JavaVM,
+};
 use korri_shell::{
     backend::android::{run as run_shell, Bootstrap},
     config::Connection,
     korrid::Korrid,
 };
 use slint::android::AndroidApp;
+use std::path::PathBuf;
 
 /// The dex of rustls-platform-verifier's Kotlin component and the Kotlin
 /// standard library, unchanged (README, third-party Java). The build sets
@@ -58,8 +64,17 @@ fn run(app: AndroidApp) -> Result<()> {
     let activity = unsafe { JObject::from_raw(app.activity_as_ptr().cast()) };
     // korrid's errors carry no secret; JNI's are never formatted.
     let relays = assets::relays(&app)?;
-    let port = korrid::android_app::start(&mut env, &activity, &relays, VERIFIER_CLASSES)
-        .map_err(|error| anyhow!("korrid did not start: {error}"))?;
+    // The viewer's Moonlight key directory: Moonlight's own name, as Linux
+    // korrid's /home/korri/.config/moonlight, in storage that no backup takes.
+    let keydir = no_backup(&mut env, &activity)?.join("moonlight");
+    let port = korrid::android_app::start(
+        &mut env,
+        &activity,
+        &relays,
+        VERIFIER_CLASSES,
+        viewer::adapter(keydir),
+    )
+    .map_err(|error| anyhow!("korrid did not start: {error}"))?;
     let capability = korrid::local_server_capability().context("korrid has no capability")?;
     let connection = Connection::new(port, format!("http://127.0.0.1:{port}"), capability);
     logcat::info(&format!("korri-app: korrid serves on 127.0.0.1:{port}"));
@@ -70,7 +85,8 @@ fn run(app: AndroidApp) -> Result<()> {
         logcat::error("korri-app: korrid did not answer system.health");
     }
     let packages = assets::unpack(&app, &mut env, &activity, &SURFACES)?;
-    let host = host::AppHost::new(&app, &mut env, &activity)?;
+    let stream = viewer::Stream::new(&app, &mut env, &activity)?;
+    let host = host::AppHost::new(&app, &mut env, &activity, stream)?;
     drop(env);
     run_shell(
         app,
@@ -80,4 +96,22 @@ fn run(app: AndroidApp) -> Result<()> {
         },
         Box::new(host),
     )
+}
+
+/// `Context.getNoBackupFilesDir()`: the app's storage that no backup takes.
+fn no_backup(env: &mut JNIEnv, activity: &JObject) -> Result<PathBuf> {
+    let path = env.with_local_frame(4, |env| -> jni::errors::Result<String> {
+        let file = env
+            .call_method(activity, "getNoBackupFilesDir", "()Ljava/io/File;", &[])?
+            .l()?;
+        let path = env
+            .call_method(&file, "getAbsolutePath", "()Ljava/lang/String;", &[])?
+            .l()?;
+        Ok(env.get_string(&JString::from(path))?.into())
+    });
+    path.map(PathBuf::from).map_err(|_| {
+        // Never format a JNI error: it can carry platform details.
+        let _ = env.exception_clear();
+        anyhow!("Android's no_backup directory is unavailable")
+    })
 }

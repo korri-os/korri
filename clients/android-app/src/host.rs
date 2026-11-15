@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! The activity around the shell, in Rust: what `KorriShellActivity` did for
-//! it besides starting korrid and unpacking the packages.
-use crate::logcat;
+//! it besides starting korrid and unpacking the packages, and the stream that
+//! korrid starts in front of the shell (`viewer.rs`, slice D10).
+use crate::{logcat, viewer::Stream};
 use anyhow::Result;
 use jni::{
     objects::{GlobalRef, JIntArray, JObject, JValue},
@@ -11,7 +12,10 @@ use korri_shell::{
     backend::android::{Host, Rendered},
     input::android::DevicePresence,
 };
-use slint::android::AndroidApp;
+use slint::android::{
+    android_activity::{input::InputEvent, MainEvent},
+    AndroidApp,
+};
 
 // android.view.WindowManager.LayoutParams and WindowInsetsController values.
 const FLAG_KEEP_SCREEN_ON: i32 = 0x80;
@@ -26,21 +30,41 @@ pub struct AppHost {
     activity: GlobalRef,
     presence: DevicePresence,
     last: Option<Rendered>,
+    stream: Stream,
 }
 
 impl AppHost {
-    pub fn new(app: &AndroidApp, env: &mut JNIEnv, activity: &JObject) -> Result<Self> {
+    pub fn new(
+        app: &AndroidApp,
+        env: &mut JNIEnv,
+        activity: &JObject,
+        stream: Stream,
+    ) -> Result<Self> {
         Ok(Self {
             app: app.clone(),
             vm: env.get_java_vm()?,
             activity: env.new_global_ref(activity)?,
             presence: DevicePresence::default(),
             last: None,
+            stream,
         })
     }
 }
 
 impl Host for AppHost {
+    /// A stream in front takes the shell's input first.
+    fn input(&mut self, event: &InputEvent<'_>) -> Option<bool> {
+        self.stream.input(event)
+    }
+
+    fn main_event(&mut self, event: &MainEvent<'_>) {
+        self.stream.main_event(event);
+    }
+
+    fn tick(&mut self) {
+        self.stream.tick();
+    }
+
     /// Android tells no native code that a device went (that needs
     /// `InputDeviceListener`, a Java interface). Ask which are there.
     fn removed_input_devices(&mut self) -> Vec<i32> {

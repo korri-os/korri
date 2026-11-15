@@ -7,8 +7,17 @@
 #
 # The relay list is an asset, so one library serves two packings: `apk`
 # with the product's relays, and `fixtureApk` with one loopback relay that
-# the holder proof (proof/holder.py, #434 D9) reaches through adb.
-{ pkgs, proseql }:
+# the holder proofs (proof/holder.py, #434 D9; proof/play.py, D10) reach
+# through adb.
+#
+# Since D10 the library links the Rust viewer too (clients/viewer), with the
+# network core, OpenSSL and libopus that clients/viewer/android.nix builds
+# for each ABI (`viewerParts`), exactly as the viewer's own APK links them.
+{
+  pkgs,
+  proseql,
+  viewerParts,
+}:
 let
   inherit (pkgs) lib;
   sdk = import ../android/sdk.nix { inherit pkgs; };
@@ -127,8 +136,15 @@ let
       target = lib.replaceStrings [ "-" ] [ "_" ] abi.target;
       cargoTarget = lib.toUpper target;
       cc = "${toolchain}/bin/${abi.target}${api}-clang";
+      viewer = viewerParts.${abi.name};
     in
     ''
+      # The Rust viewer's C parts (clients/viewer/android.nix, environmentFor).
+      export MOONLIGHT_COMMON_INCLUDE=${viewer.network}/include
+      export MOONLIGHT_COMMON_LIB=${viewer.network}/lib
+      export OPUS_LIB=${viewer.opus}/lib
+      export ${cargoTarget}_OPENSSL_DIR=${viewer.openssl}
+      export ${cargoTarget}_OPENSSL_STATIC=1
       export CC_${target}=${cc}
       export CXX_${target}=${cc}++
       export AR_${target}=${toolchain}/bin/llvm-ar
@@ -151,6 +167,11 @@ let
     "libGLESv2.so"
     "libvulkan.so"
     "libjnigraphics.so"
+    # The Rust viewer (clients/viewer/android.nix, sessionLibraries): curl's
+    # zlib, the picture's AMediaCodec and the sound's AAudio.
+    "libz.so"
+    "libmediandk.so"
+    "libaaudio.so"
   ];
   library = "libkorri_android_app.so";
 
@@ -166,6 +187,9 @@ let
         ../shell/examples
         ../shell/fixtures
         ../shell/vendor
+        ../viewer/Cargo.toml
+        ../viewer/build.rs
+        ../viewer/src
         ../../services/korrid/Cargo.toml
         ../../services/korrid/src
         ../../services/korrid/examples

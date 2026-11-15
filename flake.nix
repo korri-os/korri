@@ -116,7 +116,10 @@
         };
         viewer = import ./clients/viewer { inherit pkgs; };
         # The Android app with no Korri Java: korrid and the shell (#434).
-        androidApp = import ./clients/android-app { inherit pkgs proseql; };
+        androidApp = import ./clients/android-app {
+          inherit pkgs proseql;
+          viewerParts = viewer.android.parts;
+        };
         cli = import ./clients/cli {
           inherit pkgs crane proseql;
           buildIdentity = self.rev or self.dirtyRev or null;
