@@ -2,13 +2,13 @@
 
 The native shell for Korri surfaces (`docs/briefs/2026-10-31-native-surfaces-contract.md`).
 It loads surface packages (`main.slint` + `logic.js`), runs their logic in
-QuickJS, draws them with Slint's software renderer, and talks to the korrid on
-its own device.
+QuickJS, draws them on the GPU (Slint's FemtoVG on OpenGL) or with Slint's
+software renderer, and talks to the korrid on its own device.
 
 ## Run
 
 ```
-korri-shell --packages DIR [--cache DIR] [--surfaces ID,ID…] [--placement fullscreen|WxH] [--stats]
+korri-shell --packages DIR [--cache DIR] [--surfaces ID,ID…] [--placement fullscreen|WxH] [--renderer cpu|gpu] [--stats]
 korri-shell install --packages DIR [--cache DIR]   # verify every package, write the index
 korri-shell verify PACKAGE_DIR                     # one summary as JSON
 ```
@@ -286,3 +286,11 @@ still layers. Numbers and screenshots: `evidence/`.
 
 `winit` (desktop, default), `headless` (tests), `sdl` (webOS, through
 `window-sdl/`, built with `--no-default-features --features webos`).
+
+`--renderer` chooses what draws a `winit` window (ADR 0068): `gpu` is FemtoVG
+on OpenGL (EGL on Wayland, GLX on X11), through libglvnd and the system's
+Mesa driver; `cpu` is the patched software renderer (`vendor/README.md`), the
+default. Every device moves to `gpu` once it is proven there; the NixOS
+option `services.korri.shell.renderer` sets it, and with `gpu` the unit may
+open DRM nodes. The headless backend, the tests and `bench` always draw on
+the CPU, so they do not measure the GPU path. `sdl` draws on the CPU only.

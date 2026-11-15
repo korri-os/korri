@@ -85,6 +85,18 @@ in
         A display preference, not a capability.
       '';
     };
+    renderer = lib.mkOption {
+      type = lib.types.enum [
+        "cpu"
+        "gpu"
+      ];
+      default = "cpu";
+      description = ''
+        What draws the shell's windows. Every device moves to "gpu" (ADR
+        0068) once the GPU path is proven on it; "gpu" lets the unit open
+        the GPU's DRM nodes and nothing else under /dev.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -160,6 +172,8 @@ in
             "--installed"
             "--placement"
             "fullscreen"
+            "--renderer"
+            cfg.renderer
           ]
           ++ lib.optionals (surfaces != [ ]) [
             "--surfaces"
@@ -183,12 +197,26 @@ in
         ProtectSystem = "strict";
         ProtectHome = true;
         PrivateTmp = true;
-        # Software rendering over Wayland shared memory: no /dev/dri, and no
-        # /dev/input. Controller input arrives from korrid.
-        PrivateDevices = true;
         LimitCORE = 0;
         ReadWritePaths = [ runtimeDir ];
-      };
+      }
+      // (
+        if cfg.renderer == "gpu" then
+          {
+            # The GPU: DRM nodes only (the render node's mode allows it; the
+            # card node's group does not). Never /dev/input: controller input
+            # arrives from korrid.
+            PrivateDevices = false;
+            DevicePolicy = "closed";
+            DeviceAllow = [ "char-drm rw" ];
+          }
+        else
+          {
+            # Software rendering over Wayland shared memory: no /dev/dri, and
+            # no /dev/input. Controller input arrives from korrid.
+            PrivateDevices = true;
+          }
+      );
     };
   };
 }

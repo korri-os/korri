@@ -51,6 +51,13 @@ let
         startSurface = "zone";
       };
     }).config;
+  drawn =
+    (evaluate {
+      services.korri.shell = {
+        enable = true;
+        renderer = "gpu";
+      };
+    }).config.systemd.services.korri-shell;
   service = enabled.systemd.services.korri-shell;
   daemon = enabled.systemd.services.korrid;
   credentialService = "korri-shell-credentials.service";
@@ -83,6 +90,15 @@ assert service.serviceConfig.NoNewPrivileges;
 assert service.serviceConfig.PrivateDevices;
 assert !(service.serviceConfig ? DeviceAllow);
 assert !(service.serviceConfig ? SupplementaryGroups);
+# Until a device is proven on the GPU (ADR 0068) it draws on the CPU.
+assert lib.hasInfix "--renderer cpu" service.serviceConfig.ExecStart;
+# On the GPU the unit may open DRM nodes and no other device: still no
+# /dev/input, still no group.
+assert lib.hasInfix "--renderer gpu" drawn.serviceConfig.ExecStart;
+assert !drawn.serviceConfig.PrivateDevices;
+assert drawn.serviceConfig.DevicePolicy == "closed";
+assert drawn.serviceConfig.DeviceAllow == [ "char-drm rw" ];
+assert !(drawn.serviceConfig ? SupplementaryGroups);
 assert service.serviceConfig.KillMode == "control-group";
 assert service.serviceConfig.RuntimeDirectory == "korri-shell";
 assert service.serviceConfig.RuntimeDirectoryMode == "0700";
@@ -133,8 +149,9 @@ assert builtins.elem "--installed" argv;
 assert builtins.elem "${installed}/packages" argv;
 assert builtins.elem "${installed}/cache" argv;
 assert builtins.elem "pico,velvet,zone" argv;
-assert
-  builtins.elem "zone,pico,velvet" (lib.splitString " " started.systemd.services.korri-shell.serviceConfig.ExecStart);
+assert builtins.elem "zone,pico,velvet" (
+  lib.splitString " " started.systemd.services.korri-shell.serviceConfig.ExecStart
+);
 pkgs.runCommand "korri-shell-module-check" { } ''
   grep -F 'User=korri-shell' ${pkgs.writeText "korri-shell.service" unit}
   grep -F 'Restart=on-failure' ${pkgs.writeText "korri-shell.service" unit}

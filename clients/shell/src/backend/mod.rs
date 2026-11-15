@@ -71,6 +71,24 @@ impl Placement {
     }
 }
 
+/// What draws a window (ADR 0068): the GPU, or the CPU on a device whose GPU
+/// path is not proven yet. Headless windows always draw on the CPU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Renderer {
+    Cpu,
+    Gpu,
+}
+
+impl Renderer {
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "cpu" => Some(Self::Cpu),
+            "gpu" => Some(Self::Gpu),
+            _ => None,
+        }
+    }
+}
+
 /// Counts every frame drawn by any window, for `--stats`.
 #[derive(Clone, Default)]
 pub struct FrameCounter(Rc<std::cell::Cell<u64>>, Rc<std::cell::RefCell<Intervals>>);
@@ -136,4 +154,18 @@ pub trait Backend {
     fn attach(&self, window: &slint::Window, sink: Rc<dyn Fn(HostEvent)>, frames: FrameCounter);
 
     fn place(&self, window: &slint::Window, placement: Placement);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Renderer;
+
+    #[test]
+    fn a_renderer_is_named_cpu_or_gpu() {
+        assert_eq!(Renderer::parse("cpu"), Some(Renderer::Cpu));
+        assert_eq!(Renderer::parse("gpu"), Some(Renderer::Gpu));
+        for other in ["", "GPU", "femtovg", "software", "skia"] {
+            assert_eq!(Renderer::parse(other), None, "{other}");
+        }
+    }
 }

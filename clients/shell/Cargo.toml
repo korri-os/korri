@@ -30,8 +30,10 @@ name = "surface-probe"
 
 [dependencies]
 korri-input-trace = { path = "../../packages/input-trace" }
-# Software renderer only. The window system comes from exactly one feature
-# below (`desktop`, the default, or `webos`). `unstable-fontique-011` gives the
+# The software renderer draws headless (tests, bench, previews) and on a device
+# still set to `--renderer cpu`; `desktop` adds FemtoVG on OpenGL for the GPU
+# (ADR 0068). The window system comes from exactly one feature below
+# (`desktop`, the default, or `webos`). `unstable-fontique-011` gives the
 # shared font collection the shell trims when a surface is unloaded.
 slint = { version = "=1.18.1", default-features = false, features = [
   "std",
@@ -94,8 +96,10 @@ desktop = [
   "slint/backend-winit-wayland",
   "slint/backend-winit-x11",
   "slint/unstable-winit-030",
+  "slint/renderer-femtovg",
   "slint-interpreter/backend-winit-wayland",
   "slint-interpreter/backend-winit-x11",
+  "slint-interpreter/renderer-femtovg",
 ]
 # webOS: the SDL adapter (window-sdl/), one window, no winit.
 # rquickjs 0.14 ships stale ARMv7 ArrayBuffer bindings. Generate them against

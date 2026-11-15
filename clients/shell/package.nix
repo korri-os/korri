@@ -3,15 +3,18 @@
 #   nix build .#korri-shell
 #   nix build --impure --expr '(import <nixpkgs> { system = "aarch64-linux"; }).callPackage ./clients/shell/package.nix {}'
 #
-# Software renderer, winit on Wayland and X11. The tests run with the fixture
-# korrid (feature `fixture`), which is never part of the installed output.
+# winit on Wayland and X11; FemtoVG on OpenGL for the GPU, or the software
+# renderer (`--renderer`, ADR 0068). The tests run with the fixture korrid
+# (feature `fixture`), which is never part of the installed output.
 { pkgs }:
 let
   lib = pkgs.lib;
-  # winit, xkbcommon and fontique open these with dlopen at run time; none is
-  # linked. They go on the binary's RUNPATH so the store path runs as it is.
+  # winit, glutin, xkbcommon and fontique open these with dlopen at run time;
+  # none is linked. They go on the binary's RUNPATH so the store path runs as
+  # it is. libglvnd finds the system's Mesa driver in /run/opengl-driver.
   runtimeLibraries = with pkgs; [
     wayland
+    libglvnd
     libxkbcommon
     libx11
     libxcursor

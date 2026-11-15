@@ -1,7 +1,7 @@
 //! `korri-shell`: see README.md.
 
 use korri_shell::{
-    backend::{Backend, Placement},
+    backend::{Backend, Placement, Renderer},
     config::{self, Connection},
     engine::Limits,
     input::native::NativeInput,
@@ -20,7 +20,7 @@ use std::{
 };
 
 const USAGE: &str = "usage:
-  korri-shell --packages DIR [--cache DIR] [--installed] [--surfaces ID,ID…] [--placement fullscreen|WxH] [--stats]
+  korri-shell --packages DIR [--cache DIR] [--installed] [--surfaces ID,ID…] [--placement fullscreen|WxH] [--renderer cpu|gpu] [--stats]
   korri-shell install --packages DIR [--cache DIR]
   korri-shell verify PACKAGE_DIR
   korri-shell bench --packages DIR --surface ID [--size WxH] [--frames N] [--games N] [--press SEQ] [--pref KEY=VALUE]… [--full] [--threads N]";
@@ -34,6 +34,7 @@ struct Arguments {
     cache: Option<PathBuf>,
     surfaces: Option<Vec<String>>,
     placement: Placement,
+    renderer: Renderer,
     stats: bool,
     /// Read the summaries `install` wrote; never verify at run time.
     installed: bool,
@@ -66,6 +67,7 @@ fn arguments() -> Result<Arguments, String> {
         cache: None,
         surfaces: None,
         placement: Placement::Fullscreen,
+        renderer: Renderer::Cpu,
         stats: false,
         installed: false,
         surface: None,
@@ -95,6 +97,10 @@ fn arguments() -> Result<Arguments, String> {
             "--placement" => {
                 parsed.placement = Placement::parse(&value("--placement")?)
                     .ok_or("--placement is fullscreen or WxH")?
+            }
+            "--renderer" => {
+                parsed.renderer =
+                    Renderer::parse(&value("--renderer")?).ok_or("--renderer is cpu or gpu")?
             }
             "--stats" => parsed.stats = true,
             "--installed" => parsed.installed = true,
@@ -266,11 +272,20 @@ fn run(arguments: Arguments) -> anyhow::Result<()> {
     );
 
     #[cfg(feature = "desktop")]
-    let backend: Rc<dyn Backend> = Rc::new(korri_shell::backend::winit::Winit::install()?);
+    let backend: Rc<dyn Backend> = Rc::new(korri_shell::backend::winit::Winit::install(
+        arguments.renderer,
+    )?);
     #[cfg(feature = "webos")]
-    let backend: Rc<dyn Backend> = Rc::new(
-        korri_shell::backend::sdl::Sdl::install(arguments.placement).map_err(anyhow::Error::msg)?,
-    );
+    let backend: Rc<dyn Backend> = {
+        anyhow::ensure!(
+            arguments.renderer == Renderer::Cpu,
+            "the webOS backend draws on the CPU only"
+        );
+        Rc::new(
+            korri_shell::backend::sdl::Sdl::install(arguments.placement)
+                .map_err(anyhow::Error::msg)?,
+        )
+    };
 
     let korrid = Korrid::new(connection.clone());
     anyhow::ensure!(
