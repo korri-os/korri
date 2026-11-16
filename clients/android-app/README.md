@@ -16,6 +16,7 @@ nix build .#korri-android-app-release-apk  # D12 prep: arm64, not debuggable, no
 nix run .#android-app-release-key          # D12 prep, once, on zao: the release key
 nix run .#android-app-release-sign -- UNSIGNED.apk SIGNED.apk  # D12 prep, on zao
 nix run .#android-app-d12-binding -- make WORK  # D12, on zao: the owner binding (also sign-debug, seed)
+nix run .#android-app-d12-binding-check         # its test, with a throwaway bunker; no phone
 nix run .#android-app-proof                # D8: one headless API 31 emulator, no person
 nix run .#android-app-holder-proof         # D9, on aka as root: binding and a holder's game
 nix run .#android-app-play-proof -- --sunshine PACKAGE  # D10, D11, D5b, on aka as root: a tap plays the game
@@ -736,11 +737,24 @@ nak req -k 30078 -t d=org.korri.device-owner:DEVICE wss://relay.primal.net
 | Step | What it does |
 | --- | --- |
 | `sign-debug` | Refuses an APK that is not debuggable (run-as needs one). Signs with Android's debug key, `~/.android/debug.keystore`, as the proofs do |
-| `make WORK` | Refuses a WORK that exists or is inside a Git work tree (or that git cannot place, or when git is missing: `outside-git.sh`), and a bunker file that is a link or not 0600. Reads the bunker address before it makes anything, from the file or from the terminal (not shown), and gives it to nak only in its environment. Makes the device key with the repository's korrid, has the owner's signer sign the template over NIP-46 with nak, refuses a statement that is not the template or is by another key than `--owner` (default `a80db13f…3dca`), imports it with korrid and checks `Owned` by that owner. nak talks to the signer with a client key made new for the run (`NOSTR_CLIENT_KEY`, in nak's environment only), not nak's default, which any local user can derive from `/etc/machine-id`. nak names the whole bunker address when it cannot connect; its messages go through `sed`, which replaces the secret with `REDACTED`. The owner has five minutes to approve. If make fails after it made the device key, it removes WORK, key included |
+| `make WORK` | Resolves WORK first (`realpath -m`), so `nope/../keep`, `x/..` and `.` name the folders they are. Refuses a WORK that is a link, that exists, whose parent is missing, or that is inside a Git work tree (or that git cannot place, or when git is missing: `outside-git.sh`), and a bunker file that is a link or not 0600. Reads the bunker address before it makes anything, from the file or from the terminal (not shown), and gives it to nak only in its environment. Makes the device key with the repository's korrid, has the owner's signer sign the template over NIP-46 with nak, refuses a statement that is not the template or is by another key than `--owner` (default `a80db13f…3dca`), imports it with korrid and checks `Owned` by that owner. nak talks to the signer with a client key made new for the run (`NOSTR_CLIENT_KEY`, in nak's environment only), not nak's default, which any local user can derive from `/etc/machine-id`. nak names the whole bunker address when it cannot connect; its messages go through `sed`, which replaces the secret with `REDACTED`. The owner has five minutes to approve. Only make's own `mkdir WORK`, which fails on an existing folder, makes WORK; if make fails after that, it removes that one resolved folder, device key included |
 | `seed WORK --serial SERIAL` | Needs the phone's adb serial, and prints the phone's model, its own serial and its Android version before it writes. Refuses an app that is not installed, not debuggable or has a device key already (it has started once). Writes both files with run-as and `adb exec-in`, reads their sizes back, checks they are the app's own 0600 files, then deletes `WORK/state`: the phone's device key stays on the phone only |
 
-Checked on zao on 2026-11-16, with nak 0.20.6 and a throwaway owner key
-behind `nak bunker` on a local `nak serve` relay:
+`nix run .#android-app-d12-binding-check` (`d12-binding.test.sh`) runs
+`make`'s cases with no phone: nak's own bunker, holding a throwaway owner key,
+on nak's own relay on a free loopback port, in a temporary folder. It passed
+on zao on 2026-11-16 (14 cases, 3 s): `nope/../keep`, `x/..` and `.` (run
+in a folder), an existing folder, a link to one (also with a trailing
+slash), a link that points nowhere, a missing parent and an absolute
+`nope/../keep` are refused and change nothing; two new folders bind; a
+signer of another key and a refused connection remove only their own new
+folder, the latter with `secret=REDACTED`; three runs used three client
+keys, none nak's default. Against `4812bb070`'s `make`, the same test fails
+11 cases: `nope/../keep` and `x/..` bound into the existing folders, which
+a failure would then have removed.
+
+Checked by hand on zao on 2026-11-16, with nak 0.20.6 and a throwaway owner
+key behind `nak bunker` on a local `nak serve` relay:
 
 | Case | Result |
 | --- | --- |

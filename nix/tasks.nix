@@ -10,6 +10,29 @@ let
   proseqlSource = import ../services/korrid/proseql-source.nix { inherit pkgs proseql; };
   rustToolchain = pkgs.rust-bin.stable.latest.default;
 
+  # The tools of D12's owner binding and of its test (#434).
+  d12Binding =
+    let
+      tools = import ../clients/android-app/build-tools.nix { inherit pkgs; };
+    in
+    {
+      inherit (tools) platformTools;
+      runtimeInputs = [
+        # outside-git.sh: makeTask adds git too; the script refuses to run without it.
+        pkgs.git
+        pkgs.nak
+        pkgs.python3
+        pkgs.jdk17
+        pkgs.gnugrep
+        pkgs.gnused
+        pkgs.gawk
+      ];
+      env = {
+        KORRID = "${korri.packages.${pkgs.stdenv.hostPlatform.system}.korrid}/bin/korrid";
+        KORRI_APP_BUILD_TOOLS = tools.buildTools;
+      };
+    };
+
   definitions = {
     ci-plan-check = {
       description = "Test affected-check selection, fail-closed aggregation, treaty drift, and workflow syntax.";
@@ -347,32 +370,22 @@ let
     };
     # D12's owner binding (#434): runs on zao and talks to the phone; the
     # owner's signer signs over NIP-46 (clients/android-app/d12-binding.sh).
-    android-app-d12-binding =
-      let
-        tools = import ../clients/android-app/build-tools.nix { inherit pkgs; };
-      in
-      {
-        description = "Bind the debuggable Android app to the owner's real key for D12: make, sign-debug, seed (#434).";
-        usageSuffix = " -- make WORK [--owner KEY] [--bunker-file FILE] | sign-debug UNSIGNED.apk SIGNED.apk | seed WORK --serial SERIAL";
-        runtimeInputs = [
-          # outside-git.sh: makeTask adds git too; the script refuses to run without it.
-          pkgs.git
-          pkgs.nak
-          pkgs.python3
-          pkgs.jdk17
-          pkgs.gnugrep
-          pkgs.gnused
-          pkgs.gawk
-        ];
-        env = {
-          KORRID = "${korri.packages.${pkgs.stdenv.hostPlatform.system}.korrid}/bin/korrid";
-          KORRI_APP_BUILD_TOOLS = tools.buildTools;
-        };
-        script = ''
-          export PATH="${tools.platformTools}:$PATH"
-          exec bash "$KORRI_ROOT/clients/android-app/d12-binding.sh" "$@"
-        '';
-      };
+    android-app-d12-binding = d12Binding // {
+      description = "Bind the debuggable Android app to the owner's real key for D12: make, sign-debug, seed (#434).";
+      usageSuffix = " -- make WORK [--owner KEY] [--bunker-file FILE] | sign-debug UNSIGNED.apk SIGNED.apk | seed WORK --serial SERIAL";
+      script = ''
+        export PATH="${d12Binding.platformTools}:$PATH"
+        exec bash "$KORRI_ROOT/clients/android-app/d12-binding.sh" "$@"
+      '';
+    };
+    # Its test, with nak's own bunker and relay and a throwaway owner key; no
+    # phone (clients/android-app/d12-binding.test.sh).
+    android-app-d12-binding-check = d12Binding // {
+      description = "Test D12's owner binding (make) against a throwaway NIP-46 bunker on a loopback relay (#434).";
+      script = ''
+        exec bash "$KORRI_ROOT/clients/android-app/d12-binding.test.sh"
+      '';
+    };
     hooks-install = {
       description = "Install the Git hook that refuses a commit which stages a secret.";
       runtimeInputs = [

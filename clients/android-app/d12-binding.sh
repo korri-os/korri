@@ -6,7 +6,7 @@
 #
 #   nix run .#android-app-d12-binding -- make WORK
 #   nix run .#android-app-d12-binding -- sign-debug UNSIGNED.apk SIGNED.apk
-#   adb install --no-incremental SIGNED.apk      # do not start the app yet
+#   adb -s SERIAL install --no-incremental SIGNED.apk   # do not start the app yet
 #   nix run .#android-app-d12-binding -- seed WORK --serial SERIAL
 #
 # make: korrid's own producer makes the phone's device key in WORK/state
@@ -52,12 +52,14 @@ fail() {
 # shellcheck source=clients/android-app/outside-git.sh
 source "$(dirname "${BASH_SOURCE[0]}")/outside-git.sh"
 
-# make's WORK while it holds a device key that no statement binds. make made
-# WORK, so nothing else is in it; the trap removes it when make fails.
+# make's WORK, resolved, from the moment make created it with mkdir until a
+# statement binds its device key. make's own mkdir made that folder, so
+# nothing else is in it; the trap removes that one path when make fails, and
+# nothing when it is not a real folder any more.
 unbound_work=""
 remove_unbound() {
-  if [[ -n "$unbound_work" ]]; then
-    rm -rf "$unbound_work"
+  if [[ -n "$unbound_work" && -d "$unbound_work" && ! -L "$unbound_work" ]]; then
+    rm -rf -- "$unbound_work"
     echo "d12-binding: removed $unbound_work with its unbound device key" >&2
   fi
 }
@@ -115,7 +117,13 @@ make_binding() {
     esac
   done
   [[ "$owner" =~ ^[0-9a-f]{64}$ ]] || fail "the owner must be 64 lowercase hexadecimal characters"
-  [[ ! -e "$work" ]] || fail "$work exists; make takes a new folder"
+  # Resolved first: "nope/../keep", "x/.." or "." name folders that exist,
+  # which a test of the unresolved name does not see. A link is refused too,
+  # also one that points nowhere.
+  [[ ! -L "${work%/}" ]] || fail "$work is a symbolic link; make takes a new folder"
+  work="$(realpath -m -- "$work")"
+  [[ ! -e "$work" && ! -L "$work" ]] || fail "$work exists; make takes a new folder"
+  [[ -d "$(dirname -- "$work")" ]] || fail "the folder above $work does not exist"
   outside_git "$work"
   # The bunker address first, so that a wrong one leaves no device key.
   local bunker
@@ -129,10 +137,12 @@ make_binding() {
   fi
   [[ "$bunker" == bunker://* ]] || fail "a NIP-46 bunker address starts with bunker://"
   umask 077
-  mkdir -p "$work/state"
-  work="$(realpath "$work")"
+  # Only this mkdir makes WORK, and it fails when WORK exists, so the trap
+  # can never point at a folder that was there before.
+  mkdir -- "$work" || fail "could not make $work"
   unbound_work="$work"
   trap remove_unbound EXIT
+  mkdir -- "$work/state"
   template="$work/template.json"
   signed="$work/owner.event.json"
   state="$work/state"
