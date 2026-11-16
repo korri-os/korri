@@ -329,8 +329,6 @@ activity's `android_main` attaches a new `Stream` to it.
 
 ## Korri's gameplay overlay (D5b)
 
-Status: built and checked; the emulator proof is pending (below).
-
 The shell draws its surface package's gameplay overlay into the overlay
 layer over the stream, and korrid's overlay controller drives it, as in the
 Artemis app. The D5 spike proved that the shell's renderer draws into such a
@@ -391,14 +389,16 @@ its input goes on`.
 The play proof (`proof/play.py`) runs D5b's steps where D10's stand-in step
 was, before any letter key: Guide opens the overlay over the moving stream;
 the shell takes the layer, korrid hears the leave and the shell draws; the
-frame-ID bar still rises; tesseract reads the overlay's words (Resume,
-Disconnect, Crop to fill, Flip A/B and X/Y); Crop to fill, chosen in the
-overlay, moves the video layer (the app's log, korrid's Apply through the
-treaty, SurfaceFlinger's crop, the window's left edge), and chosen again fits
-it again; the sender's Sunshine receives no input while the overlay is open;
-Back closes it through korrid's Resume, after the shell let the Surface go,
-and the picture goes on. D10's keys and tap then reach the sender. Records:
-`proof/android-app-d5b/`, once the proof has run (pending).
+picture beside the overlay's panel moves (the panel covers the left of the
+frame-ID bar, which then does not read); tesseract reads the overlay's words
+(Disconnect, Open Korri, then Crop to fill and Flip A/B and X/Y once the
+focus has taken the list down to them); Crop to fill, chosen in the overlay,
+moves the video layer (the app's log, korrid's Apply through the treaty,
+SurfaceFlinger's crop, the window's right edge, beside the panel), and
+chosen again fits it again; the sender's Sunshine receives no input while
+the overlay is open; Back closes it through korrid's Resume, after the shell
+let the Surface go, and the picture goes on. D10's keys and tap then reach
+the sender. Records: `proof/android-app-d5b/`.
 
 ## Stream controls and status (D11)
 
@@ -418,7 +418,7 @@ korrid's own callers:
 | Caller | In this app |
 | --- | --- |
 | The live-shape poll (`upstreams/live_shape.rs`, `synchronize_shape`, #476) reads the viewer's snapshot while a stream runs | Runs: the D11 proof's log shows korrid's own reads with the controls, and with Crop to fill on after the apply |
-| The gameplay overlay's snapshot poll, every second, and its `InvokeGameplayControl`, which reaches `apply` (`surface/overlay.rs`; korrid's unit tests `surface/viewer.rs`, `surface/overlay.rs`) | Built with D5b (above): the overlay lists the controls, and Crop to fill chosen in it moves the video layer. Proof pending |
+| The gameplay overlay's snapshot poll, every second, and its `InvokeGameplayControl`, which reaches `apply` (`surface/overlay.rs`; korrid's unit tests `surface/viewer.rs`, `surface/overlay.rs`) | Runs since D5b (above): the overlay lists the controls, and Crop to fill chosen in it moves the video layer (`proof/android-app-d5b/`) |
 
 Before D5b nothing in the product called `apply` here, so the D11 proof
 called korrid's adapter through a trigger, which it still does.
@@ -445,7 +445,7 @@ fits the picture again. Records: `proof/android-app-d11/`.
 | --- | --- |
 | D9 | Done: the holder proof above, and the TLS verifier's classes |
 | D10 | Done: the Rust viewer, driven by korrid, on the shell's loop (above) |
-| D5b | Built and checked, proof pending: Korri's gameplay overlay through `Overlay` (above). "Open Korri" (Background) and the camera cutout are not carried yet |
-| D11 | Done in part: 3 of Artemis's 13 stream controls (Crop to fill, Flip A/B and X/Y, Rumble), the battery and the health, through the treaty (above); shown and applied in the gameplay overlay with D5b (proof pending). Missing, and gating D7′: Toggle keyboard, Full keyboard, Pan & zoom, Mouse mode, Touch sensitivity, Keyboard as controller, Toggle local cursor, SGSR sharpness, SGSR edge threshold, Picture-in-picture |
+| D5b | Done: Korri's gameplay overlay through `Overlay` (above), proven on the emulator (`proof/android-app-d5b/`). "Open Korri" (Background) and the camera cutout are not carried yet |
+| D11 | Done in part: 3 of Artemis's 13 stream controls (Crop to fill, Flip A/B and X/Y, Rumble), the battery and the health, through the treaty (above); shown and applied in the gameplay overlay since D5b. Missing, and gating D7′: Toggle keyboard, Full keyboard, Pan & zoom, Mouse mode, Touch sensitivity, Keyboard as controller, Toggle local cursor, SGSR sharpness, SGSR edge threshold, Picture-in-picture |
 | D13 (new) | Local Android games (O3): korrid's launcher through JNI, usage polling on a Rust thread, androidx `FileProvider` bundled unchanged (`hasCode="true"`), and the Guide service, which Android allows only as a Java `AccessibilityService` subclass: one Korri Java file on #434's list, or no Guide over other apps. Gates D7′ |
 | D12 | On the Galaxy Z Fold 8 |

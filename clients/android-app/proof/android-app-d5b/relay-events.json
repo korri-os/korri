@@ -1,0 +1,68 @@
+[
+ {
+  "id": "b7f437a692d9f4120df4fbaaa0b77ad4d8eaa81d5a85a99468e630318a2071b2",
+  "pubkey": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+  "created_at": 1794797153,
+  "kind": 30078,
+  "tags": [
+   [
+    "d",
+    "org.korri.device-owner:5a775d09cbabd2e85210dd7f3265faafffb942724c1f6387cdf572fe198880ce"
+   ],
+   [
+    "device",
+    "5a775d09cbabd2e85210dd7f3265faafffb942724c1f6387cdf572fe198880ce"
+   ],
+   [
+    "status",
+    "owned"
+   ]
+  ],
+  "content": "",
+  "sig": "a052d1d9010d91bcfaa7c887ab465f195679a5ce57b0f695a3efebfa12f430dd58c54266025d75da1ab68587f0796a5a797da44b92eadc12f5cfaf8270ee6e17"
+ },
+ {
+  "id": "0216ee2218b5f51acbc50737ccf9f6311a7a20bfd7125cc7871ec199943bb100",
+  "pubkey": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+  "created_at": 1794797121,
+  "kind": 30078,
+  "tags": [
+   [
+    "d",
+    "org.korri.device-owner:6a7a5931330a6a37007ebcfd1c12a792098ef3af162a12d0d6fe60981a6f9f5a"
+   ],
+   [
+    "device",
+    "6a7a5931330a6a37007ebcfd1c12a792098ef3af162a12d0d6fe60981a6f9f5a"
+   ],
+   [
+    "status",
+    "owned"
+   ]
+  ],
+  "content": "",
+  "sig": "afc2a8f988d3122cc22ab2d61e6d02d7bd01be209a8bbabaad81a4074562220756b0c4fc1a3002d885aaccd85957328aeb76463175bc41f20b5a5963dcfec250"
+ },
+ {
+  "id": "7be54a23da50e2671c34b74d4a83863ceea0ddba52b21da81c72e7876c84dff7",
+  "pubkey": "5a775d09cbabd2e85210dd7f3265faafffb942724c1f6387cdf572fe198880ce",
+  "created_at": 1794797154,
+  "kind": 30078,
+  "tags": [
+   [
+    "d",
+    "org.korri.endpoint:6a7a5931330a6a37007ebcfd1c12a792098ef3af162a12d0d6fe60981a6f9f5a"
+   ],
+   [
+    "p",
+    "6a7a5931330a6a37007ebcfd1c12a792098ef3af162a12d0d6fe60981a6f9f5a"
+   ],
+   [
+    "expiration",
+    "1794883554"
+   ]
+  ],
+  "content": "ApG+9HWdPV/xCECRbE+ai+UKNtvrqGHmUm1IvjwSuiH6o0OC2ixsbEddiSxZoicz8qA0+yLtemzxVqXLgeNzBnmFTFbCxCqjmlaP+2e7zDUZPBVeJQSl7IfoV6Rgh2Jp0wEwH73AIM//ea8Hb65d3tzGLjuj+eMU6UhMSDVDq2iqg0z4VJmsjkOjlQ+j4BoKJqGUrnDKC3lLBYbg+sfKjEHm1WXpoCfOW0oxzvMk983/lB6AQRHmEJHjcP2yVYEol3yA0fqZIxcZG1kU458IFZwN1CkjMSTUaxUwP/YdUZ1JI0CUhwVsm1e8WP9V0Qj1hjqm43JvSitk3SP4hQPra4J3I5mH+bPEeRVtrd+BB+joTDHQLAt98XqFJPW34dsDf7IbFe8w0D0U9OIw9Andzv+dgX2cNF1JU9of07VCYOhesylGfdsnP2v0ottdHOnso1VVdV1C8DXx1C/1s1ruG6HOrXr65XOmrEnvRR0YvyRU07W1o5zjChPIoRcgtbJNhmSMVMvdqjBkWgjLWvTBNeCc56MVapkWloFdRveOFBAEynU7uLcRQIxMplczkB+/hhSN0nND0m5PHGCZ7RUpJT7dyQ==",
+  "sig": "c710ec80b1cae46e4b41557bfeb61498dd11744bf7c2ddad7bba8b5d8d69f1f2e8d5f3f38de81d09e596eb1f301f7a696277e12c25624603340b30a1c34340e1"
+ }
+]

@@ -35,9 +35,10 @@ The steps:
 6. Korri's gameplay overlay (slice D5b), before the keys of step 5: Guide
    opens it over the moving stream. The app lends the overlay layer's
    Surface to the shell, korrid hears that the person left
-   (`session.leave`), and the shell draws korrid's overlay into the layer.
-   It shows the stream's controls of D11 (read from the screenshot with
-   tesseract). Crop to fill, chosen in the overlay (a tap on its row, or the
+   (`session.leave`), and the shell draws korrid's overlay into the layer;
+   the picture beside its panel moves. It shows the stream's controls of D11
+   (read from the screenshots with tesseract, once the focus has taken the
+   list down to them). Crop to fill, chosen in the overlay (a tap on its row, or the
    D-pad when the words are not found), moves the video layer under it, and
    chosen again fits the picture again. The sender receives no input while
    the overlay is open. Back closes it through korrid's Resume, and the
@@ -317,12 +318,14 @@ def video_layer(emulator: "d8.Emulator", out: Path, name: str) -> dict:
             "entry": block.splitlines()[:12]}
 
 
-def strip_change(before: Path, after: Path) -> float:
-    """The mean change of the window's left 200 columns, where the fitted picture has its bar."""
+def strip_change(before: Path, after: Path, side: str = "left") -> float:
+    """The mean change of the window's left (or right) 200 columns, where the fitted picture has
+    its bar."""
     from PIL import Image, ImageChops
     with Image.open(before) as a, Image.open(after) as b:
         a, b = a.convert("L"), b.convert("L")
-        box = (0, 0, 200, min(a.size[1], b.size[1]))
+        width, height = min(a.size[0], b.size[0]), min(a.size[1], b.size[1])
+        box = (0, 0, 200, height) if side == "left" else (width - 200, 0, width, height)
         diff = ImageChops.difference(a.crop(box), b.crop(box)).resize((20, 54))
         values = list(diff.get_flattened_data()) if hasattr(diff, "get_flattened_data") else list(diff.getdata())
         return round(sum(values) / len(values), 1)
@@ -406,33 +409,45 @@ def controls(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
     return steps, checks
 
 
-def tesseract(png: Path) -> list[dict]:
-    """The words that tesseract reads in one image, with their boxes."""
+def tesseract(png: Path, read: int = 0) -> list[dict]:
+    """The words that tesseract reads in one image, with their boxes; `read` tells reads apart."""
     done = subprocess.run(["tesseract", str(png), "stdout", "tsv"], capture_output=True, text=True, timeout=120)
     found = []
     for line in done.stdout.splitlines()[1:]:
         cells = line.split("\t")
         if len(cells) == 12 and cells[11].strip():
-            found.append({"text": cells[11].strip(), "line": tuple(int(c) for c in cells[2:5]),
+            found.append({"text": cells[11].strip(), "line": (read, *(int(c) for c in cells[2:5])),
                           "left": int(cells[6]), "top": int(cells[7]), "width": int(cells[8]),
                           "height": int(cells[9]), "conf": float(cells[10])})
     return found
 
 
 def words(png: Path) -> list[dict]:
-    """The words in a screenshot, read as it is and, when that finds no Resume, in its negative
-    (light words over the moving picture); none without tesseract."""
+    """The words in a screenshot, read as it is and in its negative: light words over the moving
+    picture, and dark words on the focused row, read better in one or the other. None without
+    tesseract."""
     if shutil.which("tesseract") is None:
         return []
-    found = tesseract(png)
-    if phrase(found, "Resume") is None:
-        from PIL import Image, ImageOps
-        negative = png.with_name(png.stem + "-negative.png")
-        with Image.open(png) as image:
-            ImageOps.invert(image.convert("L")).save(negative)
-        found = tesseract(negative)
-        negative.unlink()
+    from PIL import Image, ImageOps
+    negative = png.with_name(png.stem + "-negative.png")
+    with Image.open(png) as image:
+        ImageOps.invert(image.convert("L")).save(negative)
+    found = tesseract(png, 0) + tesseract(negative, 1)
+    negative.unlink()
     return found
+
+
+def moved(before: Path, after: Path) -> float:
+    """The mean change of two screenshots in the window's right half, beside the overlay's panel,
+    where the moving picture shows."""
+    from PIL import Image, ImageChops
+    with Image.open(before) as a, Image.open(after) as b:
+        a, b = a.convert("L"), b.convert("L")
+        width, height = min(a.size[0], b.size[0]), min(a.size[1], b.size[1])
+        box = (width // 2, 0, width, height)
+        diff = ImageChops.difference(a.crop(box), b.crop(box)).resize((60, 54))
+        values = list(diff.get_flattened_data()) if hasattr(diff, "get_flattened_data") else list(diff.getdata())
+        return round(sum(values) / len(values), 1)
 
 
 def lines(found: list[dict]) -> list[str]:
@@ -504,14 +519,31 @@ def overlay(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.
         and logcat.wait_for(LAYER_SHOWN, mark, 10) is not None
     # korrid's overlay reads the viewer's snapshot every second and lists its controls.
     time.sleep(3)
+    # The panel covers the left of the frame-ID bar, which then does not read; the
+    # picture beside the panel must move.
     steps["overlay"] = bars(emulator, out, "overlay", 3, 1.0)
-    checks["the_picture_goes_on_under_the_overlay"] = rising(steps["overlay"])
+    steps["overlay_motion"] = [moved(out / "overlay-1.png", out / "overlay-2.png"),
+                               moved(out / "overlay-2.png", out / "overlay-3.png")]
+    checks["the_picture_moves_under_the_overlay"] = max(steps["overlay_motion"]) > 10
     found = words(out / "overlay-1.png")
     steps["tesseract"] = shutil.which("tesseract") is not None
     steps["overlay_lines"] = lines(found)
+    # korrid's own controls for an Android stream viewer; Resume has the focus.
     checks["the_overlay_is_korris_gameplay_overlay"] = all(
-        phrase(found, text) is not None for text in ("Resume", "Disconnect"))
+        phrase(found, text) is not None for text in ("Disconnect", "Open Korri"))
+    steps["resume_read"] = phrase(found, "Resume") is not None
     crop = phrase(found, "Crop to fill")
+    if crop is None:
+        # The stream controls stand below Resume, Disconnect, Open Korri and End:
+        # the focus takes the list there.
+        for _ in range(4):
+            emulator.shell("input keyevent KEYCODE_DPAD_DOWN")
+            time.sleep(0.5)
+        time.sleep(1)
+        viewer_proof.screenshot(emulator, out / "overlay-controls.png")
+        found = words(out / "overlay-controls.png")
+        steps["overlay_controls_lines"] = lines(found)
+        crop = phrase(found, "Crop to fill")
     checks["the_overlay_shows_the_streams_controls"] = crop is not None and phrase(found, "Flip") is not None
     steps["crop_to_fill_row"] = crop
     steps["chosen_by"] = "touch" if crop is not None else "keys"
@@ -519,8 +551,8 @@ def overlay(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.
     before = video_layer(emulator, out, "overlay-fit")
     viewer_proof.screenshot(emulator, out / "overlay-fit.png")
     mark = logcat.mark()
-    # Resume, Disconnect, Open Korri and End stand above it.
-    on = choose_fill(emulator, logcat, sender, crop, 4, True)
+    # A tap on the row, or Confirm on it: the focus is there.
+    on = choose_fill(emulator, logcat, sender, crop, 0, True)
     korrids_apply = logcat.wait_for(re.compile(
         r'korri-app: viewer request \{"launchId":"' + launch + r'","command":\{"kind":"Apply","value":\{"control":"viewer:'
         + launch + r':[0-9]+:[0-9]+:set-fill-mode","value":\{"kind":"toggle","value":true\}\}\}\}'), mark, 5)
@@ -533,8 +565,9 @@ def overlay(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.
     checks["surfaceflinger_crops_the_stream_under_the_overlay"] = \
         before["crop"] == FIT_CROP and after["crop"] == FILL_CROP
     viewer_proof.screenshot(emulator, out / "overlay-fill.png")
-    steps["left_strip_change"] = strip_change(out / "overlay-fit.png", out / "overlay-fill.png")
-    checks["the_picture_changes_under_the_overlay"] = steps["left_strip_change"] > 10
+    # The overlay's panel dims the window's left: the right bar, beside it, shows the change.
+    steps["right_strip_change"] = strip_change(out / "overlay-fit.png", out / "overlay-fill.png", "right")
+    checks["the_picture_changes_under_the_overlay"] = steps["right_strip_change"] > 10
     checks["the_overlay_stays_open_after_the_control"] = logcat.wait_for(OVERLAY_CLOSED, mark, 1) is None
 
     mark = logcat.mark()
