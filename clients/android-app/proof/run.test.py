@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Where the app's proofs (run.py, holder.py, play.py) build: no emulator, no
-sender, no build.
+"""Where the app's proofs (run.py, holder.py, play.py, resize.py) build: no
+emulator, no sender, no build.
 
 holder.py loads the viewer proof, which imports stream-cadence's bar decoder
 (numpy). From the repository's root, with the play proof's own Python
@@ -31,6 +31,7 @@ sys.path.insert(0, str(HERE))
 import run as d8  # noqa: E402
 import holder  # noqa: E402
 import play  # noqa: E402
+import resize  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "nix/stream-cadence/tests"))
 from test_build_store import Transport  # noqa: E402
@@ -148,6 +149,13 @@ class TheProofsHandTheirBuildStoreToEveryBuild(unittest.TestCase):
         for given, store in (([], None), (["--build-store", BUILD_STORE], BUILD_STORE)):
             with self.subTest(build_store=store):
                 built, tools = self.main(play, ["--sunshine", "SUNSHINE", "--stream-host", "192.0.2.1", *given])
+                self.assertEqual(built, [("korri-android-app-fixture-apk", store), ("korrid.federationFixture", store)])
+                self.assertEqual(tools, [(holder.viewer_proof.LOCAL, True, store)])
+
+    def test_resize(self):
+        for given, store in (([], None), (["--build-store", BUILD_STORE], BUILD_STORE)):
+            with self.subTest(build_store=store):
+                built, tools = self.main(resize, ["--sunshine", "SUNSHINE", "--stream-host", "192.0.2.1", *given])
                 self.assertEqual(built, [("korri-android-app-fixture-apk", store), ("korrid.federationFixture", store)])
                 self.assertEqual(tools, [(holder.viewer_proof.LOCAL, True, store)])
 

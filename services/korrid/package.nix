@@ -172,6 +172,11 @@ craneLib.buildPackage (
         echo 'the shipped korrid was built with the fixture feature' >&2
         exit 1
       fi
+      # Nor the Android fixture APK's proof trigger (feature `proof`, #476).
+      if ${pkgs.gnugrep}/bin/grep -l '"features":"\[[^]]*proof' "''${fingerprints[@]}"; then
+        echo 'the shipped korrid was built with the proof feature' >&2
+        exit 1
+      fi
       ${pkgs.bash}/bin/bash ${./package-runtime-check.sh} \
         "$out/bin/korrid" \
         "$out/bin/korri-local-signer" \

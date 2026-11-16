@@ -715,6 +715,60 @@ impl HostRuntime {
         .map_err(host_worker_failure)?
     }
 
+    /// A viewer asks for its own stream's encode size (#476 Route C). The
+    /// stream is the one running in Sunshine for the client certificate that
+    /// this holder provisioned for the caller, read from the caller's grant.
+    pub(crate) async fn viewer_resize(
+        &self,
+        peer: String,
+        request: crate::live_display::SessionViewerResizeRequest,
+    ) -> Result<crate::live_display::ViewerResize, RpcFailure> {
+        use crate::live_display::ViewerResize;
+        let runtime = self.clone();
+        let asked = peer.clone();
+        let launch = request.expected_launch_id.clone();
+        tokio::task::spawn_blocking(move || {
+            runtime.control()?.viewer_resize_admission(&asked, &launch)
+        })
+        .await
+        .map_err(host_worker_failure)??;
+        let grant = crate::authorization::Authorization::stream_client_grant(
+            &self.private_state_root,
+            &peer,
+        );
+        let Ok(Some((host_uuid, client_certificate))) = grant else {
+            return Ok(ViewerResize::Unavailable);
+        };
+        // Busy: the request never reaches Sunshine, so the encoder keeps its size.
+        let Ok(permit) = self.certificate_control_permit() else {
+            return Ok(ViewerResize::Refused);
+        };
+        let adapter = Arc::clone(&self.moonlight_certificate);
+        let display = request.display;
+        let answer = tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            adapter.resize(&host_uuid, &client_certificate, &display)
+        })
+        .await
+        .map_err(certificate_worker_failure)?;
+        match answer {
+            Ok(answer) => Ok(answer),
+            // No answer read: Sunshine may still change the encoder. The viewer
+            // must confirm its size, so this is no refusal.
+            Err(failure) if moonlight_certificate::outcome_unknown(&failure) => {
+                eprintln!("korrid: stream resize unknown: {}", failure.code);
+                Err(failure)
+            }
+            // The channel is absent or misconfigured, Sunshine does not know
+            // the grant, or it refuses all control: nothing changed, and the
+            // next request would fail the same way.
+            Err(failure) => {
+                eprintln!("korrid: stream resize unavailable: {}", failure.code);
+                Ok(ViewerResize::Unavailable)
+            }
+        }
+    }
+
     pub async fn prepare(
         &self,
         game_id: &str,
@@ -2077,6 +2131,14 @@ impl HostRuntime {
         })
     }
 
+    /// Tests: hold every certificate-control permit, as busy work does.
+    #[cfg(test)]
+    pub(crate) fn hold_certificate_controls(&self) -> tokio::sync::OwnedSemaphorePermit {
+        Arc::clone(&self.moonlight_certificate_permits)
+            .try_acquire_many_owned(MAX_CONCURRENT_CERTIFICATE_CONTROLS as u32)
+            .expect("no certificate-control work runs")
+    }
+
     fn certificate_control_permit(&self) -> Result<tokio::sync::OwnedSemaphorePermit, RpcFailure> {
         Arc::clone(&self.moonlight_certificate_permits)
             .try_acquire_owned()
@@ -3001,6 +3063,15 @@ esac
         }
 
         fn revoke(&self, _host_uuid: &str, _client_certificate: &str) -> Result<bool, RpcFailure> {
+            unreachable!()
+        }
+
+        fn resize(
+            &self,
+            _host_uuid: &str,
+            _client_certificate: &str,
+            _display: &crate::launcher::plugin_launch::PluginDisplay,
+        ) -> Result<crate::live_display::ViewerResize, RpcFailure> {
             unreachable!()
         }
     }

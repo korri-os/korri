@@ -316,6 +316,23 @@ impl NativeClient {
         }
     }
 
+    pub(crate) async fn viewer_resize(
+        &self,
+        request: crate::live_display::SessionViewerResizeRequest,
+    ) -> Result<crate::live_display::ViewerResize, UpstreamError> {
+        match self.call(RpcRequest::SessionViewerResize(request)).await? {
+            RpcResponse::SessionViewerResize(
+                crate::live_display::SessionViewerResizeOutcome::Ok(value),
+            ) => Ok(value),
+            RpcResponse::SessionViewerResize(
+                crate::live_display::SessionViewerResizeOutcome::Err(error),
+            ) => Err(Self::tagged_failure(error)),
+            _ => Err(UpstreamError::Wire(
+                "unexpected viewer resize response".into(),
+            )),
+        }
+    }
+
     pub async fn prepare_stream(
         &self,
         game_id: &str,

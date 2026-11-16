@@ -1671,6 +1671,8 @@ pub enum RpcRequest {
     SessionViewer(SessionViewerRequest),
     #[serde(rename = "app.session.viewer.display")]
     SessionViewerDisplay(live_display::SessionViewerDisplayRequest),
+    #[serde(rename = "app.session.viewer.resize")]
+    SessionViewerResize(live_display::SessionViewerResizeRequest),
     #[serde(rename = "app.source.status")]
     SourceStatus(SourceStatusRequest),
     #[serde(rename = "app.peer.list")]
@@ -1886,6 +1888,8 @@ pub enum RpcResponse {
     SessionViewer(SessionViewerOutcome),
     #[serde(rename = "app.session.viewer.display")]
     SessionViewerDisplay(live_display::SessionViewerDisplayOutcome),
+    #[serde(rename = "app.session.viewer.resize")]
+    SessionViewerResize(live_display::SessionViewerResizeOutcome),
     #[serde(rename = "app.source.status")]
     SourceStatus(SourceStatusOutcome),
     #[serde(rename = "app.peer.list")]
@@ -3699,6 +3703,48 @@ async fn dispatch(
             RpcResponse::SessionViewerDisplay(match outcome {
                 Ok(value) => live_display::SessionViewerDisplayOutcome::Ok(value),
                 Err(error) => live_display::SessionViewerDisplayOutcome::Err(error),
+            })
+        }
+        // The Android fixture APK's proof trigger (#476 slice 3): this device's
+        // own app asks for its selected stream's size, as the Portrait control
+        // does. No shipped korrid has this arm.
+        #[cfg(feature = "proof")]
+        RpcRequest::SessionViewerResize(request)
+            if matches!(state.mode, ServerMode::Brain(_))
+                && stream_play::device::is_local_caller(authorization) =>
+        {
+            let ServerMode::Brain(brain) = &state.mode else {
+                unreachable!("checked brain mode")
+            };
+            RpcResponse::SessionViewerResize(
+                match brain
+                    .upstream
+                    .resize_selected_stream(&request.expected_launch_id, request.display)
+                    .await
+                {
+                    Ok(answer) => live_display::SessionViewerResizeOutcome::Ok(answer),
+                    Err(error) => {
+                        live_display::SessionViewerResizeOutcome::Err(upstream_failure(error))
+                    }
+                },
+            )
+        }
+        RpcRequest::SessionViewerResize(request) => {
+            let outcome = if let (ServerMode::Host(host), Some(peer)) =
+                (&state.mode, authorization.starting_device())
+            {
+                host.viewer_resize(peer, request).await
+            } else {
+                Err(RpcFailure {
+                    code: "OperationUnsupported".into(),
+                    message:
+                        "Viewer resize requests require an authenticated peer and a native holder."
+                            .into(),
+                })
+            };
+            RpcResponse::SessionViewerResize(match outcome {
+                Ok(value) => live_display::SessionViewerResizeOutcome::Ok(value),
+                Err(error) => live_display::SessionViewerResizeOutcome::Err(error),
             })
         }
         RpcRequest::SessionPrepare(request) => {
@@ -8474,6 +8520,138 @@ command = ["sh", "-c", "sleep 1"]
     }
 
     #[tokio::test]
+    async fn holder_resizes_only_the_callers_own_stream_through_its_certificate_grant() {
+        use live_display::{SessionViewerResizeRequest, ViewerResize};
+        const PEER: &str = "2222222222222222222222222222222222222222222222222222222222222222";
+        const OTHER: &str = "3333333333333333333333333333333333333333333333333333333333333333";
+        const PEM: &str = "-----BEGIN CERTIFICATE-----\nviewer\n-----END CERTIFICATE-----\n";
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(
+            &config,
+            "label = \"zao\"\n[[games]]\nid = \"one\"\ntitle = \"One\"\ncommand = [\"game\"]\n",
+        )
+        .unwrap();
+        let private = root.path().join("private");
+        let adapter = RecordingMoonlightCertificates::matching("sunshine-host");
+        let runtime = host::HostRuntime::from_paths_with_backends(
+            &config,
+            None,
+            private.clone(),
+            Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
+            adapter.clone(),
+        );
+        runtime.claim_save_owner();
+        let launch = runtime
+            .clone()
+            .for_starting_device(Some(PEER.into()))
+            .prepare("one", None, None)
+            .await
+            .unwrap()
+            .session
+            .launch_id;
+        let portrait = launcher::plugin_launch::PluginDisplay {
+            width: 720,
+            height: 1280,
+        };
+        let ask = |peer: &str, launch: &str| {
+            let runtime = runtime.clone();
+            let request = SessionViewerResizeRequest {
+                expected_launch_id: launch.into(),
+                display: portrait.clone(),
+            };
+            let peer = peer.to_owned();
+            async move { runtime.viewer_resize(peer, request).await }
+        };
+        // A viewer that the holder never provisioned (paired with a PIN) has
+        // no grant: its stream cannot be found, and Sunshine is not asked.
+        assert_eq!(ask(PEER, &launch).await.unwrap(), ViewerResize::Unavailable);
+        assert!(adapter.calls().is_empty());
+
+        let authority = authorization::Authorization::load(&private).unwrap();
+        for device in [PEER, OTHER] {
+            authority
+                .record_certificate(
+                    &authorization::Principal::OwnerDevice {
+                        device_public_key: device.into(),
+                        owner_statement: "statement".into(),
+                        owner_public_key: "owner".into(),
+                    },
+                    "sunshine-host",
+                    PEM,
+                )
+                .unwrap();
+        }
+        assert_eq!(ask(PEER, &launch).await.unwrap(), ViewerResize::Applied);
+        assert_eq!(
+            adapter.calls(),
+            vec![format!("resize:sunshine-host:{PEM}:720x1280")]
+        );
+        // The exact launch, and only a participant of it, even with a grant.
+        assert_eq!(
+            ask(PEER, &"0".repeat(32)).await.unwrap_err().code,
+            "StaleSession"
+        );
+        assert_eq!(
+            ask(OTHER, &launch).await.unwrap_err().code,
+            "NotStreamParticipant"
+        );
+        assert_eq!(adapter.calls().len(), 1);
+
+        // The encoder's own answers, and the channel's failures as the viewer
+        // reads them. A failure that proves nothing about the encoder (no
+        // answer read, or an answer that korrid cannot read) is an error,
+        // never a refusal: the encoder may still change, so the viewer must
+        // confirm its size.
+        let failure = |code: &str| RpcFailure {
+            code: code.into(),
+            message: "failed".into(),
+        };
+        for (answer, expected) in [
+            (Ok(ViewerResize::Refused), Ok(ViewerResize::Refused)),
+            (Ok(ViewerResize::Unavailable), Ok(ViewerResize::Unavailable)),
+            (
+                Err(failure("StreamCertificateControlUnavailable")),
+                Ok(ViewerResize::Unavailable),
+            ),
+            (
+                Err(failure("StreamCertificateControlInvalid")),
+                Ok(ViewerResize::Unavailable),
+            ),
+            (Err(failure("HostMismatch")), Ok(ViewerResize::Unavailable)),
+            (
+                Err(failure("StreamCertificateControlStateIntegrityFailed")),
+                Ok(ViewerResize::Unavailable),
+            ),
+            (
+                Err(failure("StreamCertificateControlTimeout")),
+                Err("StreamCertificateControlTimeout"),
+            ),
+            (
+                Err(failure("StreamCertificateControlFailed")),
+                Err("StreamCertificateControlFailed"),
+            ),
+            (
+                Err(failure("StreamCertificateControlProtocol")),
+                Err("StreamCertificateControlProtocol"),
+            ),
+        ] {
+            adapter.answer_resizes_with(answer.clone());
+            assert_eq!(
+                ask(PEER, &launch).await.map_err(|failure| failure.code),
+                expected.map_err(String::from),
+                "{answer:?}"
+            );
+        }
+        // Busy: the request never reached Sunshine, so the encoder kept its size.
+        let held = runtime.hold_certificate_controls();
+        let sent = adapter.calls().len();
+        assert_eq!(ask(PEER, &launch).await.unwrap(), ViewerResize::Refused);
+        assert_eq!(adapter.calls().len(), sent);
+        drop(held);
+    }
+
+    #[tokio::test]
     async fn host_source_status_answers_only_for_its_own_device_key() {
         let root = tempfile::tempdir().unwrap();
         let config = root.path().join("host.toml");
@@ -9352,11 +9530,11 @@ command = ["game-two"]
         };
         assert_eq!(failure.code, "ConfirmationRequired");
     }
-    #[derive(Default)]
     pub(super) struct RecordingMoonlightCertificates {
         expected_host_uuid: String,
         calls: Mutex<Vec<String>>,
         exact_revocations: Mutex<Vec<(String, String)>>,
+        resize_answer: Mutex<Result<live_display::ViewerResize, RpcFailure>>,
     }
 
     impl RecordingMoonlightCertificates {
@@ -9365,7 +9543,12 @@ command = ["game-two"]
                 expected_host_uuid: expected_host_uuid.into(),
                 calls: Mutex::new(Vec::new()),
                 exact_revocations: Mutex::new(Vec::new()),
+                resize_answer: Mutex::new(Ok(live_display::ViewerResize::Applied)),
             })
+        }
+
+        fn answer_resizes_with(&self, answer: Result<live_display::ViewerResize, RpcFailure>) {
+            *self.resize_answer.lock().unwrap() = answer;
         }
 
         pub(super) fn calls(&self) -> Vec<String> {
@@ -9423,6 +9606,19 @@ command = ["game-two"]
                 .push((host_uuid.into(), client_certificate.into()));
             Ok(host_uuid == self.expected_host_uuid)
         }
+
+        fn resize(
+            &self,
+            host_uuid: &str,
+            client_certificate: &str,
+            display: &launcher::plugin_launch::PluginDisplay,
+        ) -> Result<live_display::ViewerResize, RpcFailure> {
+            self.calls.lock().unwrap().push(format!(
+                "resize:{host_uuid}:{client_certificate}:{}x{}",
+                display.width, display.height
+            ));
+            self.resize_answer.lock().unwrap().clone()
+        }
     }
 
     /// An owner device with no usable Sunshine certificate control.
@@ -9450,6 +9646,15 @@ command = ["game-two"]
 
         fn revoke(&self, _host_uuid: &str, _client_certificate: &str) -> Result<bool, RpcFailure> {
             panic!("a peer without certificate control must never be revoked")
+        }
+
+        fn resize(
+            &self,
+            _host_uuid: &str,
+            _client_certificate: &str,
+            _display: &launcher::plugin_launch::PluginDisplay,
+        ) -> Result<live_display::ViewerResize, RpcFailure> {
+            panic!("a peer without certificate control must never be resized")
         }
     }
 
@@ -9496,6 +9701,15 @@ command = ["game-two"]
                 code: "HostMismatch".into(),
                 message: "peer-controlled host mismatch text".into(),
             })
+        }
+
+        fn resize(
+            &self,
+            _host_uuid: &str,
+            _client_certificate: &str,
+            _display: &launcher::plugin_launch::PluginDisplay,
+        ) -> Result<live_display::ViewerResize, RpcFailure> {
+            unreachable!("no resize in the certificate-control tests")
         }
     }
 

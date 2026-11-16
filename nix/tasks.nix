@@ -346,6 +346,43 @@ let
           exec python3 "$KORRI_ROOT/clients/android-app/proof/play.py" "$@"
         '';
       };
+    android-app-resize-proof =
+      let
+        emulator = import ../clients/viewer/android/emulator.nix { inherit pkgs; };
+      in
+      {
+        description = "Prove on aka, as root, that korrid carries a live resize from the Android app to the holder's Sunshine (#476 Route C, slices 2 and 3).";
+        usageSuffix = " -- --sunshine /nix/store/...-sunshine-korri-... [--build-store STORE] [--apk FILE] [--fixture FILE] [--holder-uid N] [--port N] [--adb-port N] [--out DIRECTORY]";
+        runtimeInputs = [
+          # Pillow reads the screenshots; numpy and FFmpeg are stream-cadence's
+          # frame-ID bar decoder (bar.py).
+          (pkgs.python3.withPackages (p: [
+            p.pillow
+            p.numpy
+          ]))
+          pkgs.ffmpeg
+          # holder.ts and the Artemis acceptance's relay that it runs.
+          pkgs.bun
+          pkgs.nix
+          # A build store over ssh-ng:// (--build-store).
+          pkgs.openssh
+          pkgs.jdk17
+          pkgs.unzip
+          pkgs.procps
+        ];
+        env = {
+          KORRI_APP_EMULATOR_SDK = emulator.sdkRoot;
+          KORRI_APP_EMULATOR_IMAGE = emulator.systemImage;
+          KORRI_APP_BUILD_TOOLS = emulator.buildToolsVersion;
+          # stream-cadence builds its sender fixture from this nixpkgs.
+          CADENCE_NIXPKGS = "${pkgs.path}";
+          # The holder's systemd helper has a nix-shell shebang.
+          NIX_PATH = "nixpkgs=${pkgs.path}";
+        };
+        script = ''
+          exec python3 "$KORRI_ROOT/clients/android-app/proof/resize.py" "$@"
+        '';
+      };
     # The release key and its signing step (#434 D12) run on the machine
     # that holds the key, never in a derivation: the key stays out of the
     # store (clients/android-app/sign-release.sh).

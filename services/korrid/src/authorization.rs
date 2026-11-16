@@ -228,9 +228,9 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         RpcRequest::SessionPrepare(request) if request.launch.is_some() => {
             PeerPolicy::OwnerDeviceOnly
         }
-        RpcRequest::SessionPrepare(_) | RpcRequest::SessionViewerDisplay(_) => {
-            PeerPolicy::ExplicitScope(Scope::StreamLaunch)
-        }
+        RpcRequest::SessionPrepare(_)
+        | RpcRequest::SessionViewerDisplay(_)
+        | RpcRequest::SessionViewerResize(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::SavesStatus(_)
         | RpcRequest::SavesHistory(_)
         | RpcRequest::SavesChoose(_)
@@ -667,15 +667,6 @@ impl Authorization {
             fs::read_dir(&self.certificate_directory).map_err(|_| AuthorizationError::Storage)?
         {
             let entry = entry.map_err(|_| AuthorizationError::Storage)?;
-            let metadata =
-                fs::symlink_metadata(entry.path()).map_err(|_| AuthorizationError::Storage)?;
-            if !metadata.is_file()
-                || metadata.file_type().is_symlink()
-                || metadata.permissions().mode() & 0o077 != 0
-                || metadata.len() > MAX_GRANT_BYTES as u64
-            {
-                return Err(AuthorizationError::Storage);
-            }
             let file_name = entry
                 .file_name()
                 .into_string()
@@ -684,13 +675,31 @@ impl Authorization {
                 return Err(AuthorizationError::Storage);
             }
             validate_hex_32(&file_name)?;
-            let bytes = read_bounded(&entry.path(), MAX_GRANT_BYTES)?;
-            let grant: CertificateGrant =
-                serde_json::from_slice(&bytes).map_err(|_| AuthorizationError::Storage)?;
+            let grant = read_certificate_grant(&entry.path())?;
             grants.push((file_name, grant));
         }
         grants.sort_by(|left, right| left.0.cmp(&right.0));
         Ok(grants)
+    }
+
+    /// The host UUID and client certificate that this holder provisioned for
+    /// one peer device, from the grant `record_certificate` wrote. None when
+    /// the device has no grant, as a device paired with a PIN has none.
+    pub fn stream_client_grant(
+        private_state_root: &Path,
+        device_public_key: &str,
+    ) -> Result<Option<(String, String)>, AuthorizationError> {
+        validate_hex_32(device_public_key)?;
+        let path = private_state_root
+            .join(CERTIFICATE_DIRECTORY)
+            .join(device_public_key);
+        match fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(_) => return Err(AuthorizationError::Storage),
+            Ok(_) => {}
+        }
+        let grant = read_certificate_grant(&path)?;
+        Ok(Some((grant.host_uuid, grant.client_certificate)))
     }
 
     /// Offline only: the caller holds the identity directory lock and external
@@ -1164,6 +1173,20 @@ fn sync_directory(path: &Path) -> Result<(), AuthorizationError> {
     File::open(path)
         .and_then(|file| file.sync_all())
         .map_err(|_| AuthorizationError::Storage)
+}
+
+/// One grant file, with the checks that every reader applies.
+fn read_certificate_grant(path: &Path) -> Result<CertificateGrant, AuthorizationError> {
+    let metadata = fs::symlink_metadata(path).map_err(|_| AuthorizationError::Storage)?;
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.permissions().mode() & 0o077 != 0
+        || metadata.len() > MAX_GRANT_BYTES as u64
+    {
+        return Err(AuthorizationError::Storage);
+    }
+    let bytes = read_bounded(path, MAX_GRANT_BYTES)?;
+    serde_json::from_slice(&bytes).map_err(|_| AuthorizationError::Storage)
 }
 
 fn validate_hex_32(value: &str) -> Result<(), AuthorizationError> {
@@ -2008,6 +2031,44 @@ mod tests {
             denied.context(),
             AuthorizationContext::Peer(Principal::Unknown { .. })
         ));
+    }
+
+    #[test]
+    fn a_peers_stream_grant_is_read_from_the_record_that_provisioning_wrote() {
+        let local_owner = Keys::parse(OWNER).unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let authorization = Authorization::load(root.path()).unwrap();
+        let statement = owner_statement(&local_owner, DEVICE, "owned", NOW);
+        let attempt = authorization
+            .attempt(&local(), DEVICE, Some(&statement), None, &[], NOW)
+            .unwrap();
+        let AuthorizationContext::Peer(principal) = attempt.context() else {
+            panic!("peer principal")
+        };
+        assert_eq!(
+            Authorization::stream_client_grant(root.path(), DEVICE).unwrap(),
+            None
+        );
+        authorization
+            .record_certificate(principal, "sunshine-host", "exact-certificate")
+            .unwrap();
+        assert_eq!(
+            Authorization::stream_client_grant(root.path(), DEVICE).unwrap(),
+            Some(("sunshine-host".into(), "exact-certificate".into()))
+        );
+        assert_eq!(
+            Authorization::stream_client_grant(root.path(), &"22".repeat(32)).unwrap(),
+            None
+        );
+        // A peer key is a file name only after the existing key check.
+        for name in ["../peer-certificates", "", "AA", &"2".repeat(63)] {
+            assert!(Authorization::stream_client_grant(root.path(), name).is_err());
+        }
+        authorization.remove_certificate_grant(DEVICE).unwrap();
+        assert_eq!(
+            Authorization::stream_client_grant(root.path(), DEVICE).unwrap(),
+            None
+        );
     }
 
     #[test]

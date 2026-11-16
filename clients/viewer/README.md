@@ -505,7 +505,10 @@ feature is not "equal or better" (ADR 0062). #476 chose the route, a control
 channel that korrid owns (Route C), in five slices. Slice 4, the Android
 decoder and video layer following a size change that the sender makes in
 the middle of a stream, is below ("A new picture size in the middle of the
-stream"); the request itself is not there yet.
+stream"). Slices 2 and 3, the request, are in korrid and Sunshine patch 0046
+(`clients/android-app/README.md`, "korrid's resize request"). korrid makes
+the request only for a viewer that reports `ready`, and this viewer reports
+`ready: false`, so `Resize` is still not called.
 
 ## Android app (#391 step D, slice D1)
 
@@ -1360,9 +1363,11 @@ then presses Home, which ends the stream (Back no longer does).
 
 Slice 4 of #476's Route C, which every route needs: the sender changes the
 stream's size, with a new SPS after an IDR frame, and the viewer follows it.
-The request for a new size is not in this slice: Route C carries it later
-(korrid to korrid, then a local entry into Sunshine's resize channel).
-Until then `Resize` stays "Live resolution is unavailable".
+The request for a new size is not in this slice: Route C carries it
+(korrid to korrid, then a local entry into Sunshine's resize channel,
+slices 2 and 3). korrid asks for a size only when the viewer reports
+`ready`, which this viewer does not yet; `Resize` stays "Live resolution is
+unavailable".
 
 - **Noticing it.** `decoder.rs` reads each SPS's picture size (`sps.rs`:
   the coded size less the frame cropping, ITU-T H.264 7.4.2.1.1) and

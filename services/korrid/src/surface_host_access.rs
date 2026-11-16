@@ -118,7 +118,8 @@ impl SurfaceHostPermission {
             | RpcRequest::PluginArchiveInspect(_)
             | RpcRequest::PluginArchiveInstall(_)
             | RpcRequest::PluginSetEnabled(_)
-            | RpcRequest::SessionViewerDisplay(_) => false,
+            | RpcRequest::SessionViewerDisplay(_)
+            | RpcRequest::SessionViewerResize(_) => false,
             // A plugin's secret is a write the device shell may make (below).
             RpcRequest::CredentialSet(_) | RpcRequest::CredentialClear(_) => false,
         };

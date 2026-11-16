@@ -1,4 +1,7 @@
-use crate::{MoonlightCertificateProvisioned, RpcFailure};
+use crate::{
+    launcher::plugin_launch::PluginDisplay, live_display::ViewerResize,
+    MoonlightCertificateProvisioned, RpcFailure,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     ffi::CString,
@@ -15,6 +18,22 @@ use std::{
 const MAX_FRAME_BYTES: usize = 16_384;
 const MAX_CERTIFICATE_BYTES: usize = 12_288;
 const DEFAULT_TIMEOUT: Duration = Duration::from_millis(1_500);
+// Sunshine answers a resize within 3 s: patch 0044's 2.5 s request lifetime
+// and the 0.5 s that patch 0046 waits after it before it withdraws.
+const RESIZE_TIMEOUT: Duration = Duration::from_millis(4_000);
+
+/// True when korrid read no answer that it can trust: Sunshine may still
+/// have applied the frame. Every other failure proves that it did not, or
+/// is Sunshine's own refusal. A caller must not report such an outcome as
+/// a refusal.
+pub(crate) fn outcome_unknown(failure: &RpcFailure) -> bool {
+    matches!(
+        failure.code.as_str(),
+        "StreamCertificateControlTimeout"
+            | "StreamCertificateControlFailed"
+            | "StreamCertificateControlProtocol"
+    )
+}
 const SOCKET_ENV: &str = "KORRID_STREAM_CERTIFICATE_CONTROL_SOCKET";
 const SOCKET_GID_ENV: &str = "KORRID_STREAM_CERTIFICATE_CONTROL_GID";
 const SOCKET_PEER_UID_ENV: &str = "KORRID_STREAM_CERTIFICATE_CONTROL_PEER_UID";
@@ -33,6 +52,15 @@ pub trait MoonlightCertificateAdapter: Send + Sync {
         client_certificate: &str,
     ) -> Result<MoonlightCertificateProvisioned, RpcFailure>;
     fn revoke(&self, host_uuid: &str, client_certificate: &str) -> Result<bool, RpcFailure>;
+    /// Patch 0046: Sunshine resizes the encoder of the one running stream
+    /// that holds this client certificate. Ok is the encoder's own answer;
+    /// Err is a failure of the channel or of the request.
+    fn resize(
+        &self,
+        host_uuid: &str,
+        client_certificate: &str,
+        display: &PluginDisplay,
+    ) -> Result<ViewerResize, RpcFailure>;
 }
 
 pub fn production_adapter() -> Arc<dyn MoonlightCertificateAdapter> {
@@ -67,6 +95,15 @@ impl MoonlightCertificateAdapter for UnavailableCertificateAdapter {
     fn revoke(&self, _host_uuid: &str, _client_certificate: &str) -> Result<bool, RpcFailure> {
         Err(self.failure.clone())
     }
+
+    fn resize(
+        &self,
+        _host_uuid: &str,
+        _client_certificate: &str,
+        _display: &PluginDisplay,
+    ) -> Result<ViewerResize, RpcFailure> {
+        Err(self.failure.clone())
+    }
 }
 
 #[derive(Clone)]
@@ -78,6 +115,7 @@ struct SocketCertificateAdapter {
     expected_peer_gid: u32,
     expected_mode: u32,
     timeout: Duration,
+    resize_timeout: Duration,
 }
 
 impl SocketCertificateAdapter {
@@ -115,6 +153,7 @@ impl SocketCertificateAdapter {
             expected_peer_gid,
             expected_mode: SOCKET_MODE,
             timeout: DEFAULT_TIMEOUT,
+            resize_timeout: RESIZE_TIMEOUT,
         })
     }
 
@@ -135,10 +174,20 @@ impl SocketCertificateAdapter {
             expected_peer_gid,
             expected_mode,
             timeout: Duration::from_millis(500),
+            resize_timeout: Duration::from_millis(500),
         }
     }
 
     fn request(&self, request: EncodedSocketRequest) -> Result<SocketSuccess, RpcFailure> {
+        self.exchange(&request, self.timeout)?
+            .into_result(request.operation)
+    }
+
+    fn exchange(
+        &self,
+        request: &EncodedSocketRequest,
+        timeout: Duration,
+    ) -> Result<SocketResponse, RpcFailure> {
         let socket_identity = self.validate_path()?;
         let response = send_seqpacket(
             &self.path,
@@ -146,16 +195,15 @@ impl SocketCertificateAdapter {
             self.expected_peer_uid,
             self.expected_peer_gid,
             &request.bytes,
-            self.timeout,
+            timeout,
         )
         .map_err(socket_failure)?;
-        let decoded: SocketResponse = serde_json::from_slice(&response).map_err(|_| {
+        serde_json::from_slice(&response).map_err(|_| {
             failure(
                 "StreamCertificateControlProtocol",
                 "Stream certificate control returned an invalid response",
             )
-        })?;
-        decoded.into_result(request.operation)
+        })
     }
 
     fn validate_path(&self) -> Result<SocketIdentity, RpcFailure> {
@@ -241,6 +289,7 @@ impl MoonlightCertificateAdapter for SocketCertificateAdapter {
                 operation: SocketOperation::Attest,
                 host_uuid,
                 certificate: None,
+                display: None,
             }
             .encode()?,
         )? {
@@ -261,6 +310,7 @@ impl MoonlightCertificateAdapter for SocketCertificateAdapter {
                 operation: SocketOperation::Provision,
                 host_uuid,
                 certificate: Some(client_certificate),
+                display: None,
             }
             .encode()?,
         )? {
@@ -287,6 +337,25 @@ impl MoonlightCertificateAdapter for SocketCertificateAdapter {
             _ => Err(protocol_failure()),
         }
     }
+
+    fn resize(
+        &self,
+        host_uuid: &str,
+        client_certificate: &str,
+        display: &PluginDisplay,
+    ) -> Result<ViewerResize, RpcFailure> {
+        validate_host_uuid(host_uuid)?;
+        validate_single_pem(client_certificate)?;
+        let request = SocketRequest {
+            operation: SocketOperation::Resize,
+            host_uuid,
+            certificate: Some(client_certificate),
+            display: Some(display),
+        }
+        .encode()?;
+        self.exchange(&request, self.resize_timeout)?
+            .into_resize(display)
+    }
 }
 
 /// Pure preparation shared with offline whole-inventory preflight. JSON
@@ -301,6 +370,7 @@ pub(crate) fn encode_revoke_request(
         operation: SocketOperation::Revoke,
         host_uuid,
         certificate: Some(client_certificate),
+        display: None,
     }
     .encode()
 }
@@ -347,6 +417,7 @@ enum SocketOperation {
     Attest,
     Provision,
     Revoke,
+    Resize,
 }
 
 #[derive(Serialize)]
@@ -356,6 +427,8 @@ struct SocketRequest<'a> {
     host_uuid: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     certificate: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    display: Option<&'a PluginDisplay>,
 }
 
 // Keep response validation tied to the operation whose bounded bytes were encoded.
@@ -397,6 +470,8 @@ struct SocketResponse {
     server_certificate: Option<String>,
     #[serde(default)]
     code: Option<String>,
+    #[serde(default)]
+    display: Option<PluginDisplay>,
 }
 
 enum SocketSuccess {
@@ -413,12 +488,13 @@ impl SocketResponse {
             "error"
                 if self.matched.is_none()
                     && self.changed.is_none()
-                    && self.server_certificate.is_none() =>
+                    && self.server_certificate.is_none()
+                    && self.display.is_none() =>
             {
                 let code = self.code.ok_or_else(protocol_failure)?;
                 Err(map_stream_error(&code))
             }
-            "ok" if self.code.is_none() => match operation {
+            "ok" if self.code.is_none() && self.display.is_none() => match operation {
                 SocketOperation::Attest => {
                     match (self.matched, self.changed, self.server_certificate) {
                         (Some(matched), None, None) => Ok(SocketSuccess::Attested(matched)),
@@ -436,6 +512,29 @@ impl SocketResponse {
                         _ => Err(protocol_failure()),
                     }
                 }
+                // A resize has its own answer (into_resize).
+                SocketOperation::Resize => Err(protocol_failure()),
+            },
+            _ => Err(protocol_failure()),
+        }
+    }
+
+    /// Patch 0046's answer: the confirmed size, or patch 0044's reason. The
+    /// stream ended, its encoder has no live resolution, or Sunshine has no
+    /// patch 0046: unavailable. A pending request, a failed encoder or a size
+    /// out of bounds: refused.
+    fn into_resize(self, asked: &PluginDisplay) -> Result<ViewerResize, RpcFailure> {
+        if self.matched.is_some() || self.changed.is_some() || self.server_certificate.is_some() {
+            return Err(protocol_failure());
+        }
+        match (self.status.as_str(), self.code, self.display) {
+            ("ok", None, Some(display)) if display == *asked => Ok(ViewerResize::Applied),
+            ("error", Some(code), None) => match code.as_str() {
+                "UnsupportedEncoder" | "StreamEnded" => Ok(ViewerResize::Unavailable),
+                // A Sunshine with patch 0020 but not 0046 refuses the frame.
+                "InvalidFrame" | "UnknownOperation" => Ok(ViewerResize::Unavailable),
+                "Conflict" | "ApplyFailed" | "InvalidBounds" => Ok(ViewerResize::Refused),
+                _ => Err(map_stream_error(&code)),
             },
             _ => Err(protocol_failure()),
         }
@@ -1209,6 +1308,171 @@ mod tests {
         assert_eq!(error.code, "StreamCertificateControlFailed");
         assert_eq!(error.message, "Stream certificate control request failed");
         assert!(!error.message.contains("sunshine-host"));
+    }
+
+    const CLIENT_PEM: &str = "-----BEGIN CERTIFICATE-----\nclient\n-----END CERTIFICATE-----\n";
+    const PORTRAIT: PluginDisplay = PluginDisplay {
+        width: 720,
+        height: 1280,
+    };
+
+    /// One resize against a real seqpacket server that answers `reply`
+    /// after `delay`. Returns the request it read and the adapter's result.
+    fn resize_with_reply(
+        reply: serde_json::Value,
+        delay: Duration,
+        timeout: Duration,
+        resize_timeout: Duration,
+    ) -> (serde_json::Value, Result<ViewerResize, RpcFailure>) {
+        let root = tempfile::tempdir().unwrap();
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        let path = root.path().join("resize.sock");
+        let listener = bind_seqpacket(&path);
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o660)).unwrap();
+        let server = std::thread::spawn(move || {
+            let accepted = unsafe {
+                OwnedFd::from_raw_fd(libc::accept4(
+                    listener.as_raw_fd(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    libc::SOCK_CLOEXEC,
+                ))
+            };
+            let mut request = [0_u8; MAX_FRAME_BYTES];
+            let size = unsafe {
+                libc::recv(
+                    accepted.as_raw_fd(),
+                    request.as_mut_ptr().cast(),
+                    request.len(),
+                    0,
+                )
+            };
+            assert!(size > 0);
+            std::thread::sleep(delay);
+            let response = reply.to_string();
+            unsafe {
+                libc::send(
+                    accepted.as_raw_fd(),
+                    response.as_ptr().cast(),
+                    response.len(),
+                    libc::MSG_NOSIGNAL,
+                )
+            };
+            serde_json::from_slice::<serde_json::Value>(&request[..size as usize]).unwrap()
+        });
+        let mut adapter = SocketCertificateAdapter::for_test(
+            path,
+            unsafe { libc::geteuid() },
+            unsafe { libc::getegid() },
+            unsafe { libc::geteuid() },
+            unsafe { libc::getegid() },
+            0o660,
+        );
+        adapter.timeout = timeout;
+        adapter.resize_timeout = resize_timeout;
+        let result = adapter.resize("sunshine-host", CLIENT_PEM, &PORTRAIT);
+        (server.join().unwrap(), result)
+    }
+
+    fn resize_answer(reply: serde_json::Value) -> Result<ViewerResize, RpcFailure> {
+        resize_with_reply(
+            reply,
+            Duration::ZERO,
+            Duration::from_millis(500),
+            Duration::from_millis(500),
+        )
+        .1
+    }
+
+    #[test]
+    fn resize_sends_patch_0020s_fields_with_the_display_and_reads_the_applied_size() {
+        let (request, result) = resize_with_reply(
+            serde_json::json!({"status": "ok", "display": {"width": 720, "height": 1280}}),
+            Duration::ZERO,
+            Duration::from_millis(500),
+            Duration::from_millis(500),
+        );
+        assert_eq!(
+            request,
+            serde_json::json!({
+                "operation": "resize",
+                "hostUuid": "sunshine-host",
+                "certificate": CLIENT_PEM,
+                "display": {"width": 720, "height": 1280}
+            })
+        );
+        assert_eq!(result.unwrap(), ViewerResize::Applied);
+    }
+
+    #[test]
+    fn resize_reads_each_refusal_of_the_encoder() {
+        for (code, answer) in [
+            ("UnsupportedEncoder", ViewerResize::Unavailable),
+            ("StreamEnded", ViewerResize::Unavailable),
+            ("InvalidFrame", ViewerResize::Unavailable),
+            ("UnknownOperation", ViewerResize::Unavailable),
+            ("Conflict", ViewerResize::Refused),
+            ("ApplyFailed", ViewerResize::Refused),
+            ("InvalidBounds", ViewerResize::Refused),
+        ] {
+            assert_eq!(
+                resize_answer(serde_json::json!({"status": "error", "code": code})).unwrap(),
+                answer,
+                "{code}"
+            );
+        }
+        let mismatch =
+            resize_answer(serde_json::json!({"status": "error", "code": "HostMismatch"}))
+                .unwrap_err();
+        assert_eq!(mismatch.code, "HostMismatch");
+        let unknown =
+            resize_answer(serde_json::json!({"status": "error", "code": "Peer"})).unwrap_err();
+        assert_eq!(unknown.code, "StreamCertificateControlProtocol");
+    }
+
+    #[test]
+    fn resize_refuses_an_answer_that_is_not_the_asked_size_or_shape() {
+        for reply in [
+            serde_json::json!({"status": "ok", "display": {"width": 1280, "height": 720}}),
+            serde_json::json!({"status": "ok"}),
+            serde_json::json!({"status": "ok", "display": {"width": 720, "height": 1280}, "changed": true}),
+            serde_json::json!({"status": "ok", "matched": true}),
+        ] {
+            assert_eq!(
+                resize_answer(reply.clone()).unwrap_err().code,
+                "StreamCertificateControlProtocol",
+                "{reply}"
+            );
+        }
+    }
+
+    #[test]
+    fn resize_waits_for_the_encoder_longer_than_a_certificate_operation() {
+        // Sunshine answers within its own wait (patch 0046); the trust
+        // operations keep their shorter deadline.
+        let (_, result) = resize_with_reply(
+            serde_json::json!({"status": "ok", "display": {"width": 720, "height": 1280}}),
+            Duration::from_millis(100),
+            Duration::from_millis(20),
+            Duration::from_millis(1_000),
+        );
+        assert_eq!(result.unwrap(), ViewerResize::Applied);
+        assert!(RESIZE_TIMEOUT > DEFAULT_TIMEOUT);
+        assert!(RESIZE_TIMEOUT >= Duration::from_millis(3_500));
+    }
+
+    #[test]
+    fn an_unavailable_adapter_refuses_a_resize_with_its_own_failure() {
+        let unavailable = UnavailableCertificateAdapter {
+            failure: failure("StreamCertificateControlUnavailable", "not configured"),
+        };
+        assert_eq!(
+            unavailable
+                .resize("sunshine-host", CLIENT_PEM, &PORTRAIT)
+                .unwrap_err()
+                .code,
+            "StreamCertificateControlUnavailable"
+        );
     }
 
     #[test]

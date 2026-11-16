@@ -18,9 +18,10 @@ path = "src/lib.rs"
 
 [features]
 # The emulator proof's trigger for the stream's controls (src/proof.rs,
-# #434 D11). Only the fixture APK's library sets it; default.nix checks that
-# the product library carries none of it.
-proof = []
+# #434 D11) and for korrid's resize request (#476 slice 3). Only the fixture
+# APK's library sets it; default.nix checks that the product library carries
+# none of it.
+proof = ["korrid/proof"]
 
 [target.'cfg(target_os = "android")'.dependencies]
 # korrid in this process (services/korrid/src/android/app.rs).

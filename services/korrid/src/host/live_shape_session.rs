@@ -118,6 +118,52 @@ impl HostSessionControl {
             })
             .collect()
     }
+    /// A resize request names its exact launch, and its caller must be an
+    /// admitted participant of it, as for a viewer report. The stream is found
+    /// later through the caller's own certificate grant (#476 Route C).
+    pub(crate) fn viewer_resize_admission(
+        &self,
+        peer: &str,
+        expected_launch_id: &str,
+    ) -> Result<(), RpcFailure> {
+        let mut state = self.lock_state_named("viewer_resize_admission");
+        self.refresh_native_state_locked(&mut state);
+        let stale = || {
+            failure(
+                "StaleSession",
+                "The exact streamed session is no longer active.",
+            )
+        };
+        if !matches!(
+            &*state,
+            ActiveState::Running { launch_id, .. }
+            | ActiveState::Frozen { launch_id, .. }
+            | ActiveState::FocusFailed { launch_id, .. }
+                if launch_id == expected_launch_id
+        ) {
+            return Err(stale());
+        }
+        match read_active(&self.identity_root).map_err(|_| recovery_blocked_failure())? {
+            Some(ActiveSession::Running {
+                launch_id,
+                starter_device_public_key,
+                stream_players,
+                ..
+            }) if launch_id == expected_launch_id => {
+                if starter_device_public_key.as_deref() == Some(peer)
+                    || stream_players.iter().any(|p| p.device_public_key == peer)
+                {
+                    Ok(())
+                } else {
+                    Err(failure(
+                        "NotStreamParticipant",
+                        "Only an admitted participant can resize its stream.",
+                    ))
+                }
+            }
+            _ => Err(stale()),
+        }
+    }
     pub(crate) fn viewer_display_report(
         &self,
         peer: &str,

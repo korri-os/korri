@@ -71,3 +71,69 @@ pub enum SessionViewerDisplayOutcome {
     Ok(SessionViewerDisplay),
     Err(RpcFailure),
 }
+
+/// A viewer's request for its own stream's encode size (#476 Route C). The
+/// holder finds that stream through the caller's certificate grant, never
+/// through a field here. The size is the viewer treaty's Resize display.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SessionViewerResizeRequest {
+    pub expected_launch_id: String,
+    pub display: PluginDisplay,
+}
+/// The stream's answer, as the viewer treaty's Resize answers: applied,
+/// refused, or "Live resolution is unavailable".
+#[typeshare]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub enum ViewerResize {
+    Applied,
+    Refused,
+    Unavailable,
+}
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum SessionViewerResizeOutcome {
+    Ok(ViewerResize),
+    Err(RpcFailure),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resize_request_and_answer_have_the_wire_shapes_of_their_producers() {
+        let request: SessionViewerResizeRequest = serde_json::from_value(serde_json::json!({
+            "expectedLaunchId": "11111111111111111111111111111111",
+            "display": {"width": 720, "height": 1280}
+        }))
+        .unwrap();
+        assert_eq!(
+            request.display,
+            PluginDisplay {
+                width: 720,
+                height: 1280
+            }
+        );
+        assert!(
+            serde_json::from_value::<SessionViewerResizeRequest>(serde_json::json!({
+                "expectedLaunchId": "11111111111111111111111111111111",
+                "display": {"width": 720, "height": 1280},
+                "devicePublicKey": "another"
+            }))
+            .is_err()
+        );
+        for (answer, wire) in [
+            (ViewerResize::Applied, "Applied"),
+            (ViewerResize::Refused, "Refused"),
+            (ViewerResize::Unavailable, "Unavailable"),
+        ] {
+            assert_eq!(
+                serde_json::to_value(SessionViewerResizeOutcome::Ok(answer)).unwrap(),
+                serde_json::json!({"_tag": "Ok", "payload": wire})
+            );
+        }
+    }
+}

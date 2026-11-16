@@ -22,6 +22,10 @@ required-features = ["fixture"]
 # The federation fixture's in-memory launch units (#434 D10). Off in every
 # shipped korrid; only the fixture example asks for it.
 fixture = []
+# The Android fixture APK's proof trigger for korrid's resize request (#476
+# slice 3, `android_app::proof_resize_stream`). Off in every shipped korrid;
+# only the app's feature `proof` asks for it.
+proof = []
 
 [dependencies]
 korri-viewer-treaty = { path = "../../contracts/viewer" }

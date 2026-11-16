@@ -1,8 +1,23 @@
 use super::*;
 use crate::launcher::plugin_launch::PluginDisplay;
 use crate::linux_viewer::{LinuxViewerError, ViewerSnapshot};
-use crate::live_display::{SessionViewerDisplay, SessionViewerDisplayRequest, ViewerDisplayEvent};
+use crate::live_display::{
+    SessionViewerDisplay, SessionViewerDisplayRequest, SessionViewerResizeRequest,
+    ViewerDisplayEvent, ViewerResize,
+};
 use futures::future::BoxFuture;
+
+/// What one request for a new encode size proved about the encoder.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EncodeSize {
+    /// The encoder has the new size.
+    Changed,
+    /// The holder answered that the encoder kept its size: patch 0046
+    /// withdraws a request before it answers with a refusal.
+    Kept,
+    /// No answer proves either: a lost reply, or a viewer's own failure.
+    Unknown,
+}
 
 #[derive(Clone)]
 pub(super) struct ClientShape {
@@ -15,6 +30,8 @@ pub(super) struct ClientShape {
     last_failure: Option<String>,
     response: Option<SessionViewerDisplay>,
     busy: bool,
+    /// The holder answered that this stream has no live resolution.
+    unavailable: bool,
 }
 impl UpstreamRegistry {
     fn shape_client(
@@ -62,6 +79,72 @@ impl UpstreamRegistry {
                 event,
             })
             .await
+    }
+    /// Asks the holder for this stream's encode size (#476 Route C). The
+    /// holder finds the stream through this device's certificate grant.
+    pub(super) async fn holder_resize(
+        &self,
+        selected: &SelectedRemoteSession,
+        display: PluginDisplay,
+    ) -> Result<ViewerResize, UpstreamError> {
+        self.shape_client(selected)?
+            .viewer_resize(SessionViewerResizeRequest {
+                expected_launch_id: selected.launch_id.clone(),
+                display,
+            })
+            .await
+    }
+    /// The emulator proof's way into `holder_resize` (#476 slice 3).
+    #[cfg(feature = "proof")]
+    pub(crate) async fn resize_selected_stream(
+        &self,
+        launch: &str,
+        display: PluginDisplay,
+    ) -> Result<ViewerResize, UpstreamError> {
+        // The holder may be a federation peer: resolve it, as the shape poll
+        // and the Portrait control do, and take their lock.
+        let registry = self.resolved()?;
+        let _guard = registry.remote_prepare_mutation.lock().await;
+        let selected = registry
+            .selected()
+            .filter(|s| s.launch_id == launch)
+            .ok_or(UpstreamError::SourcePeerNotFound)?;
+        registry.holder_resize(&selected, display).await
+    }
+    /// Changes the stream's encode size. Today's Artemis app asks its own
+    /// Sunshine (`resizes_encoder`) until the D7 cut of #476 removes it. For
+    /// any other viewer korrid asks the holder, and only when the viewer is
+    /// `ready` to present a new picture size: the viewer then follows the new
+    /// size in the stream by itself.
+    async fn resize_encoder(
+        &self,
+        selected: &SelectedRemoteSession,
+        cache: &mut ClientShape,
+        ready: bool,
+        display: PluginDisplay,
+    ) -> EncodeSize {
+        if self.viewer.resizes_encoder() {
+            return match self
+                .viewer
+                .resize(&selected.launch_id, &cache.local_connection, display)
+                .await
+            {
+                Ok(()) => EncodeSize::Changed,
+                Err(_) => EncodeSize::Unknown,
+            };
+        }
+        if !ready || cache.unavailable {
+            return EncodeSize::Kept;
+        }
+        match self.holder_resize(selected, display).await {
+            Ok(ViewerResize::Applied) => EncodeSize::Changed,
+            Ok(ViewerResize::Refused) => EncodeSize::Kept,
+            Ok(ViewerResize::Unavailable) => {
+                cache.unavailable = true;
+                EncodeSize::Kept
+            }
+            Err(_) => EncodeSize::Unknown,
+        }
     }
     pub(super) async fn synchronize_shape(
         &self,
@@ -141,6 +224,7 @@ impl UpstreamRegistry {
                 restore: None,
                 last_failure: None,
                 busy: false,
+                unavailable: false,
             },
         };
         // The platform reports ready only after its screen-size events settle.
@@ -162,8 +246,14 @@ impl UpstreamRegistry {
             .await;
         match result {
             Ok(response) => {
-                self.apply_shape_response(selected, cache, response, &observed.encoded)
-                    .await
+                self.apply_shape_response(
+                    selected,
+                    cache,
+                    response,
+                    &observed.encoded,
+                    observed.ready,
+                )
+                .await
             }
             Err(error) if error.code() == "StaleViewer" => {
                 // The holder can expire presence during a network outage or
@@ -196,25 +286,24 @@ impl UpstreamRegistry {
         mut cache: ClientShape,
         mut response: SessionViewerDisplay,
         encoded: &PluginDisplay,
+        ready: bool,
     ) -> Result<(), UpstreamError> {
         let mut encoded = encoded.clone();
         cache.response = Some(response.clone());
         if let Some(previous) = cache.restore.clone() {
             cache.busy = true;
             self.publish_shape(cache.clone());
-            self.viewer
-                .resize(
-                    &selected.launch_id,
-                    &cache.local_connection,
-                    previous.clone(),
-                )
+            if self
+                .resize_encoder(selected, &mut cache, ready, previous.clone())
                 .await
-                .map_err(|_| {
-                    viewer_error(
-                        "DisplayRollbackFailed",
-                        "The previous stream size could not be confirmed",
-                    )
-                })?;
+                != EncodeSize::Changed
+            {
+                self.publish_shape(cache.clone());
+                return Err(viewer_error(
+                    "DisplayRollbackFailed",
+                    "The previous stream size could not be confirmed",
+                ));
+            }
             encoded = previous;
             cache.restore = None;
         }
@@ -227,17 +316,13 @@ impl UpstreamRegistry {
         cache.busy = response.owner && needs_size && response.display != encoded;
         self.publish_shape(cache.clone());
         if response.owner {
-            let success = !needs_size
-                || response.display == encoded
-                || self
-                    .viewer
-                    .resize(
-                        &selected.launch_id,
-                        &cache.local_connection,
-                        response.display.clone(),
-                    )
+            let outcome = if !needs_size || response.display == encoded {
+                EncodeSize::Changed
+            } else {
+                self.resize_encoder(selected, &mut cache, ready, response.display.clone())
                     .await
-                    .is_ok();
+            };
+            let success = outcome == EncodeSize::Changed;
             if let Some(revision) = response.revision.clone() {
                 response = self
                     .shape_event(
@@ -256,28 +341,29 @@ impl UpstreamRegistry {
                     )
                     .await?;
                 if !success {
-                    // A lost ACK can mean the encoder changed despite the
-                    // refusal. Always confirm the previous encoded size too.
                     if let Some(message) = response.notice.take() {
                         let _ = self.viewer.notice(&selected.launch_id, &message).await;
                     }
-                    cache.restore = Some(encoded.clone());
-                    cache.response = Some(response.clone());
-                    self.publish_shape(cache.clone());
-                    self.viewer
-                        .resize(
-                            &selected.launch_id,
-                            &cache.local_connection,
-                            encoded.clone(),
-                        )
-                        .await
-                        .map_err(|_| {
-                            viewer_error(
+                    // A lost ACK can mean the encoder changed despite the
+                    // refusal: confirm the previous encoded size too. A
+                    // holder that answered has said that the encoder kept it.
+                    if outcome == EncodeSize::Unknown {
+                        cache.restore = Some(encoded.clone());
+                        cache.response = Some(response.clone());
+                        self.publish_shape(cache.clone());
+                        if self
+                            .resize_encoder(selected, &mut cache, ready, encoded.clone())
+                            .await
+                            != EncodeSize::Changed
+                        {
+                            self.publish_shape(cache.clone());
+                            return Err(viewer_error(
                                 "DisplayRollbackFailed",
                                 "The previous stream size could not be confirmed",
-                            )
-                        })?;
-                    cache.restore = None;
+                            ));
+                        }
+                        cache.restore = None;
+                    }
                 }
             }
             if !success && !was_pending && cache.restore.is_none() {
@@ -342,14 +428,13 @@ impl UpstreamRegistry {
                     && c.response.as_ref().is_some_and(|r| r.owner)
             })
             .ok_or_else(|| LinuxViewerError::new("Only the shape owner can change orientation"))?;
-        let encoded = registry
+        let shape = registry
             .viewer
             .snapshot(launch)
             .await?
             .and_then(|s| s.shape)
             .filter(|s| s.connection == connection)
-            .ok_or_else(|| LinuxViewerError::new("Viewer connection changed"))?
-            .encoded;
+            .ok_or_else(|| LinuxViewerError::new("Viewer connection changed"))?;
         let response = registry
             .shape_event(
                 &selected,
@@ -361,7 +446,7 @@ impl UpstreamRegistry {
             .await
             .map_err(|_| LinuxViewerError::new("Couldn't reshape"))?;
         registry
-            .apply_shape_response(&selected, cache, response, &encoded)
+            .apply_shape_response(&selected, cache, response, &shape.encoded, shape.ready)
             .await
             .map_err(|_| LinuxViewerError::new("Couldn't reshape"))
     }
@@ -397,17 +482,18 @@ impl LinuxStreamViewer for ShapeControls {
                             .as_ref()
                             .is_some_and(|s| s.connection == cache.local_connection)
                 }) {
+                    let resizable =
+                        snapshot.shape.as_ref().is_some_and(|s| s.ready) && !cache.unavailable;
                     snapshot
                         .controls
                         .push(korri_surface_treaty::SurfaceGameplayControl {
                             id: Self::id(&cache),
                             label: "Portrait".into(),
                             description: None,
-                            enabled: !cache.busy
-                                && snapshot.shape.as_ref().is_some_and(|s| s.ready),
+                            enabled: !cache.busy && resizable,
                             disabled_reason: if cache.busy {
                                 Some("Reshaping".into())
-                            } else if !snapshot.shape.as_ref().is_some_and(|s| s.ready) {
+                            } else if !resizable {
                                 Some("Live resizing unavailable".into())
                             } else {
                                 None
@@ -462,6 +548,9 @@ impl LinuxStreamViewer for ShapeControls {
         d: PluginDisplay,
     ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
         self.0.viewer.resize(l, c, d)
+    }
+    fn resizes_encoder(&self) -> bool {
+        self.0.viewer.resizes_encoder()
     }
     fn start<'a>(
         &'a self,

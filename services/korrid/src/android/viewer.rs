@@ -158,6 +158,11 @@ impl LinuxStreamViewer for Adapter {
     fn change_signal(&self) -> Option<Arc<tokio::sync::Notify>> {
         Some(viewer_changed())
     }
+    // Game.resizeLiveStream sends Korri's 0x5504 request to Sunshine itself
+    // (patch 0044). It goes with this adapter at the D7 cut of #476.
+    fn resizes_encoder(&self) -> bool {
+        true
+    }
     fn notice<'a>(
         &'a self,
         launch: &'a str,

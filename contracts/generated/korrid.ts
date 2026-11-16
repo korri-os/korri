@@ -2116,6 +2116,16 @@ export interface SessionViewerRequest {
 	action: SessionViewerAction;
 }
 
+/**
+ * A viewer's request for its own stream's encode size (#476 Route C). The
+ * holder finds that stream through the caller's certificate grant, never
+ * through a field here. The size is the viewer treaty's Resize display.
+ */
+export interface SessionViewerResizeRequest {
+	expectedLaunchId: string;
+	display: PluginDisplay;
+}
+
 export interface SettingsSnapshot {
 	revision: string;
 	deviceName?: string;
@@ -2439,6 +2449,7 @@ export type RpcRequest =
 	| { _tag: "app.session.resume", payload: SessionResumeRequest }
 	| { _tag: "app.session.viewer", payload: SessionViewerRequest }
 	| { _tag: "app.session.viewer.display", payload: SessionViewerDisplayRequest }
+	| { _tag: "app.session.viewer.resize", payload: SessionViewerResizeRequest }
 	| { _tag: "app.source.status", payload: SourceStatusRequest }
 	| { _tag: "app.peer.list", payload: PeerListRequest }
 	| { _tag: "app.local-games.list", payload: LocalGamesListRequest }
@@ -2539,6 +2550,7 @@ export type RpcResponse =
 	| { _tag: "app.session.resume", outcome: SessionTransitionOutcome }
 	| { _tag: "app.session.viewer", outcome: SessionViewerOutcome }
 	| { _tag: "app.session.viewer.display", outcome: SessionViewerDisplayOutcome }
+	| { _tag: "app.session.viewer.resize", outcome: SessionViewerResizeOutcome }
 	| { _tag: "app.source.status", outcome: SourceStatusOutcome }
 	| { _tag: "app.peer.list", outcome: PeerListOutcome }
 	| { _tag: "app.local-games.list", outcome: LocalGamesListOutcome }
@@ -2643,6 +2655,10 @@ export type SessionViewerOutcome =
 	| { _tag: "Ok", payload?: undefined }
 	| { _tag: "Err", payload: RpcFailure };
 
+export type SessionViewerResizeOutcome =
+	| { _tag: "Ok", payload: ViewerResize }
+	| { _tag: "Err", payload: RpcFailure };
+
 export type SettingsSnapshotOutcome =
 	| { _tag: "Ok", payload: SettingsSnapshot }
 	| { _tag: "Err", payload: RpcFailure };
@@ -2670,6 +2686,16 @@ export type SurfaceModelOutcome =
 export type SurfacePreferencesOutcome =
 	| { _tag: "Ok", payload: import("./surface").SurfacePreferenceValues }
 	| { _tag: "Err", payload: RpcFailure };
+
+/**
+ * The stream's answer, as the viewer treaty's Resize answers: applied,
+ * refused, or "Live resolution is unavailable".
+ */
+export enum ViewerResize {
+	Applied = "Applied",
+	Refused = "Refused",
+	Unavailable = "Unavailable",
+}
 
 export type WifiAttempt =
 	| { _tag: "Idle", payload?: undefined }

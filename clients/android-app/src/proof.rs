@@ -19,6 +19,11 @@
 //! | `apply LAUNCH CONTROL choice VALUE` | with a choice |
 //! | `apply LAUNCH CONTROL range NUMBER` | with a range value |
 //! | `apply LAUNCH CONTROL none` | with no value (a command) |
+//! | `resize LAUNCH WIDTH HEIGHT` | korrid's resize request to the holder (#476 slice 3, `android_app::proof_resize_stream`) |
+//!
+//! The resize answer is the holder's: `Applied`, `Refused` or `Unavailable`.
+//! It stands in for korrid's Portrait control, which asks the same request
+//! only once the viewer reports that it can present a new size.
 use crate::{logcat, viewer};
 use korri_viewer_treaty::SurfaceGameplayControlValue as Value;
 use korrid::linux_viewer::LinuxStreamViewer;
@@ -62,6 +67,22 @@ pub fn watch(cache: PathBuf) {
 }
 
 fn run(runtime: &tokio::runtime::Runtime, command: &str) {
+    if let ["resize", launch, width, height] =
+        command.split_whitespace().collect::<Vec<_>>().as_slice()
+    {
+        let (Ok(width), Ok(height)) = (width.parse(), height.parse()) else {
+            return logcat::error(&format!("{LOG} not a size: {command}"));
+        };
+        let display = korrid::launcher::plugin_launch::PluginDisplay { width, height };
+        return match korrid::android_app::proof_resize_stream(launch, display) {
+            Ok(answer) => logcat::info(&format!(
+                "{LOG} resize {launch} {width}x{height} {answer:?}"
+            )),
+            Err(cause) => logcat::error(&format!(
+                "{LOG} resize {launch} {width}x{height} failed: {cause}"
+            )),
+        };
+    }
     let Some(adapter) = viewer::korrids_adapter() else {
         return logcat::error(&format!("{LOG} korrid holds no viewer adapter yet"));
     };

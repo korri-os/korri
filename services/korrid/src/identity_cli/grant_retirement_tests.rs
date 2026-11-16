@@ -553,6 +553,7 @@ fn grant_retirement_rejects_encoded_frame_expansion_before_any_mutation() {
         operation: super::SocketOperation::Revoke,
         host_uuid: HOST,
         certificate: Some(&expanded_certificate),
+        display: None,
     })
     .unwrap();
     assert!(encoded.len() > MAX_FRAME_BYTES);

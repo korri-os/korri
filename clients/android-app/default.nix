@@ -320,6 +320,13 @@ let
                 file = "korri_android_app";
                 feature = "proof";
               }}
+              # Nor korrid's half of it (#476 slice 3).
+              ${refuseFeature {
+                inherit (abi) target;
+                crate = "korrid";
+                file = "korrid";
+                feature = "proof";
+              }}
               if grep -q -F '${proofMarker}' $built; then
                 echo '${library} carries the proof trigger' >&2
                 exit 1

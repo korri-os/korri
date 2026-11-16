@@ -21,6 +21,7 @@ nix run .#android-app-d12-binding-check         # its test, with a throwaway bun
 nix run .#android-app-proof -- --build-store auto         # D8: one headless API 31 emulator, no person
 nix run .#android-app-holder-proof -- --build-store auto  # D9, on aka as root: binding and a holder's game
 nix run .#android-app-play-proof -- --build-store auto --sunshine PACKAGE  # D10, D11, D5b, on aka as root: a tap plays the game
+nix run .#android-app-resize-proof -- --build-store auto --sunshine PACKAGE  # #476, on aka as root: korrid carries a resize to the holder's Sunshine
 ```
 
 ## Owner decisions (2026-11-14)
@@ -178,11 +179,11 @@ debug key. It runs where it is started, so run it on aka, not zao (the
 owner's rule), with an adb server of its own (`ANDROID_ADB_SERVER_PORT`) and
 a free console port (`--port`); the record shows the command.
 
-Each proof (this one, the holder proof and the play proof) builds in the Nix
-store that `--build-store` names, with stream-cadence's build
-(`nix/stream-cadence/cli.py`): `auto` on aka itself, which copies nothing
-back. Without it the proof builds nothing: it refuses, naming the
-derivations, when Nix's plan builds anything.
+Each proof (this one, the holder proof, the play proof and the resize
+proof) builds in the Nix store that `--build-store` names, with
+stream-cadence's build (`nix/stream-cadence/cli.py`): `auto` on aka itself,
+which copies nothing back. Without it the proof builds nothing: it refuses,
+naming the derivations, when Nix's plan builds anything.
 
 | Check | How |
 | --- | --- |
@@ -474,21 +475,66 @@ korrid's own callers:
 Before D5b nothing in the product called `apply` here, so the D11 proof
 called korrid's adapter through a trigger, which it still does.
 
-**The proof trigger** (`src/proof.rs`, cargo feature `proof`): only the
-fixture APK's library is built with it, for x86_64. The proof writes one
+**The proof trigger** (`src/proof.rs`, cargo feature `proof`, which also
+sets korrid's feature `proof`): only the fixture APK's library is built with
+it, for x86_64. The proof writes one
 command into `cache/proof-command` with `run-as` (`snapshot LAUNCH`, or
 `apply LAUNCH CONTROL toggle true`), and the trigger calls korrid's own viewer
 adapter, the object that korrid holds (`viewer::adapter` returns the same
 `Arc` each time), and logs the answer: `korri-app: proof: snapshot LAUNCH {…}`
 (korrid's `ViewerSnapshot` as JSON), `korri-app: proof: apply … ok`. The
-product library's build fails if cargo built it with the feature (its
-fingerprint) or if its bytes hold the trigger's log prefix (`default.nix`).
+product library's build fails if cargo built it or korrid with the feature
+(their fingerprints) or if its bytes hold the trigger's log prefix
+(`default.nix`).
 
 The play proof (`proof/play.py`) runs D11's steps after D10's input: korrid's
 own reads and the trigger's snapshot list the controls, the battery and the
 health; Crop to fill on moves the video layer (the app's log, SurfaceFlinger's
 crop, a screenshot) and korrid reads it On; a stale control is refused; Off
 fits the picture again. Records: `proof/android-app-d11/`.
+
+## korrid's resize request (#476 Route C, slices 2 and 3)
+
+korrid, not the viewer, asks for a stream's new encode size. The viewer's
+korrid sends `app.session.viewer.resize` (the size) to the holder over the
+peer wire. The holder checks the exact launch and that the caller takes part
+in it, reads the `CertificateGrant` that it recorded when it provisioned the
+caller's certificate, and sends `resize` with that certificate to its
+Sunshine's certificate-control socket (patch 0020). Sunshine (patch 0046)
+finds the running session with that certificate and resizes its encoder
+through patch 0044's channel. The answer is `Applied`, `Refused` or
+`Unavailable`, as the viewer treaty's `Resize` answers.
+
+When the holder reads no answer from Sunshine that it can trust (a timeout,
+a failed exchange, or an answer it cannot read), Sunshine may still change
+the encoder. The holder then answers with an error, not `Refused`, and the
+viewer's korrid confirms the previous size, as after a lost answer.
+
+`Refused` is only Sunshine's own refusal (a pending request, a failed swap, a
+size out of bounds) or a busy korrid; `Unavailable` is a missing or
+misconfigured channel, a grant that Sunshine does not know, a Sunshine
+without patch 0046, an ended stream or an encoder without live resolution.
+
+Known limit: the holder records the certificate that the peer sent in its
+provision. Nothing proves that the peer holds that certificate's private key,
+so a grant does not prove that the caller is the stream's TLS client. A
+certificate is public: a peer that has another viewer's certificate can
+provision it under its own grant and, while it takes part in the same
+launch, resize that viewer's stream. It cannot stream with it: Sunshine's
+TLS still requires the private key.
+
+korrid's Portrait control uses it for a viewer that does not send its own
+request (every viewer but today's Artemis app, which still does until D7)
+and that reports `ready`. This app's viewer reports `ready: false`, so the
+control stays disabled here until the viewer reports its new decoded size.
+
+The proof (`proof/resize.py`, `nix run .#android-app-resize-proof --
+--build-store auto --sunshine PACKAGE`, on aka as root) uses D10's holder,
+sender and fixture APK, built as D10 builds them. The proof trigger's
+`resize LAUNCH WIDTH HEIGHT` sends the same request to the holder, because
+the federation fixture has no compositor: **korrid's Portrait toggle and the
+holder's Sway mode change were not run live; unit tests cover them only.**
+Record: `proof/android-app-476/`.
 
 ## The release APK (D12 prep)
 

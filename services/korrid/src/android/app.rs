@@ -136,6 +136,21 @@ pub fn leave_viewer(launch: &str) -> bool {
     super::leave_locally(launch)
 }
 
+/// The emulator proof's trigger for korrid's resize request (#476 slice 3).
+/// It asks the holder of the exact selected `launch` for the stream's
+/// encode size, as the Portrait control does once the viewer is ready to
+/// present a new size. It goes through korrid's local RPC, as
+/// [`leave_viewer`] does, so that the peer call runs on korrid's own
+/// runtime. Only the fixture APK's korrid has it (cargo feature `proof`).
+/// It blocks: never call it on a runtime's thread.
+#[cfg(feature = "proof")]
+pub fn proof_resize_stream(
+    launch: &str,
+    display: crate::launcher::plugin_launch::PluginDisplay,
+) -> Result<crate::live_display::ViewerResize, String> {
+    super::resize_locally(launch, display)
+}
+
 /// The class that rustls-platform-verifier loads first.
 const VERIFIER_CLASS: &str = "org.rustls.platformverifier.CertificateVerifier";
 

@@ -2334,6 +2334,9 @@ mod tests {
         shape_requests: Arc<Mutex<Vec<crate::live_display::SessionViewerDisplayRequest>>>,
         shape_replies:
             Arc<Mutex<std::collections::VecDeque<crate::live_display::SessionViewerDisplay>>>,
+        resize_requests: Arc<Mutex<Vec<crate::live_display::SessionViewerResizeRequest>>>,
+        resize_replies:
+            Arc<Mutex<std::collections::VecDeque<crate::live_display::SessionViewerResizeOutcome>>>,
         launch_id: String,
         active_phase: Arc<std::sync::Mutex<Option<String>>>,
         display: Arc<std::sync::Mutex<Option<crate::launcher::plugin_launch::PluginDisplay>>>,
@@ -2472,6 +2475,20 @@ mod tests {
                     },
                 )
             }
+            crate::RpcRequest::SessionViewerResize(request) => {
+                state.resize_requests.lock().unwrap().push(request);
+                crate::RpcResponse::SessionViewerResize(
+                    match state.resize_replies.lock().unwrap().pop_front() {
+                        Some(outcome) => outcome,
+                        None => crate::live_display::SessionViewerResizeOutcome::Err(
+                            crate::RpcFailure {
+                                code: "UnexpectedResizeRequest".into(),
+                                message: "no scripted reply".into(),
+                            },
+                        ),
+                    },
+                )
+            }
             crate::RpcRequest::SessionPrepare(request) => {
                 *state.terminal_error.lock().unwrap() = None;
                 *state.viewer_display.lock().unwrap() = request.viewer_display;
@@ -2589,6 +2606,8 @@ mod tests {
         use crate::live_display::{SessionViewerDisplay, ViewerDisplayEvent};
         let (url, holder) = exact_native_server(false).await;
         let viewer = TestLinuxStreamViewer::default();
+        // Today's Artemis app: its own resize changes the encode size.
+        viewer.set_resizes_encoder(true);
         let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("holder", url)])
             .with_linux_viewer(Arc::new(viewer.clone()));
         registry.prepare_stream("game", None).await.unwrap();
@@ -2679,6 +2698,228 @@ mod tests {
             .any(|c| c.label == "Portrait" && c.enabled));
     }
 
+    /// A viewer that follows a new picture size but sends no request of its
+    /// own: korrid asks the holder (#476 Route C).
+    async fn holder_resized_viewer(
+        replies: Vec<crate::live_display::SessionViewerDisplay>,
+        resizes: Vec<crate::live_display::ViewerResize>,
+    ) -> (
+        UpstreamRegistry,
+        TestLinuxStreamViewer,
+        ExactNativeState,
+        SelectedRemoteSession,
+    ) {
+        use crate::launcher::plugin_launch::PluginDisplay;
+        use crate::linux_viewer::{ViewerShapeSnapshot, ViewerSnapshot};
+        let (url, holder) = exact_native_server(false).await;
+        let viewer = TestLinuxStreamViewer::default();
+        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("holder", url)])
+            .with_linux_viewer(Arc::new(viewer.clone()));
+        registry.prepare_stream("game", None).await.unwrap();
+        let selected = registry.selected().unwrap();
+        viewer.set_snapshot(Some(ViewerSnapshot {
+            connected: Some(true),
+            shape: Some(ViewerShapeSnapshot {
+                connection: "native-connection-one".into(),
+                screen: PluginDisplay {
+                    width: 1280,
+                    height: 720,
+                },
+                encoded: PluginDisplay {
+                    width: 1280,
+                    height: 720,
+                },
+                ready: true,
+            }),
+            ..Default::default()
+        }));
+        holder.shape_replies.lock().unwrap().extend(replies);
+        holder.resize_replies.lock().unwrap().extend(
+            resizes
+                .into_iter()
+                .map(crate::live_display::SessionViewerResizeOutcome::Ok),
+        );
+        (registry, viewer, holder, selected)
+    }
+
+    fn holder_display(
+        width: u32,
+        height: u32,
+        revision: Option<&str>,
+    ) -> crate::live_display::SessionViewerDisplay {
+        crate::live_display::SessionViewerDisplay {
+            display: crate::launcher::plugin_launch::PluginDisplay { width, height },
+            owner: true,
+            portrait: false,
+            revision: revision.map(Into::into),
+            notice: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn live_shape_asks_the_holder_for_the_encode_size_of_a_viewer_without_its_own_request() {
+        use crate::launcher::plugin_launch::PluginDisplay;
+        use crate::linux_viewer::test_backend::LinuxViewerAction;
+        use crate::live_display::{ViewerDisplayEvent, ViewerResize};
+        let (registry, viewer, holder, selected) = holder_resized_viewer(
+            vec![
+                holder_display(720, 1280, Some("revision-one")),
+                holder_display(720, 1280, None),
+            ],
+            vec![ViewerResize::Applied],
+        )
+        .await;
+        registry.synchronize_shape(&selected).await.unwrap();
+        let resizes = holder.resize_requests.lock().unwrap().clone();
+        assert_eq!(resizes.len(), 1);
+        assert_eq!(resizes[0].expected_launch_id, selected.launch_id);
+        assert_eq!(
+            resizes[0].display,
+            PluginDisplay {
+                width: 720,
+                height: 1280
+            }
+        );
+        let events = holder.shape_requests.lock().unwrap().clone();
+        assert!(
+            matches!(&events[1].event, ViewerDisplayEvent::Applied { revision, .. } if revision == "revision-one")
+        );
+        // The viewer follows the stream by itself: korrid never calls its resize.
+        assert!(!viewer
+            .calls()
+            .iter()
+            .any(|call| call.action == LinuxViewerAction::Resize));
+        assert_eq!(
+            registry.selected().unwrap().display,
+            Some(PluginDisplay {
+                width: 720,
+                height: 1280
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refusal_from_the_holder_is_refused_without_a_second_resize() {
+        use crate::live_display::{ViewerDisplayEvent, ViewerResize};
+        let (registry, _viewer, holder, selected) = holder_resized_viewer(
+            vec![
+                holder_display(720, 1280, Some("revision-one")),
+                holder_display(1280, 720, None),
+            ],
+            vec![ViewerResize::Refused],
+        )
+        .await;
+        registry.synchronize_shape(&selected).await.unwrap();
+        // patch 0046 withdraws a request before it refuses: the encoder kept
+        // its size, so no rollback request follows.
+        assert_eq!(holder.resize_requests.lock().unwrap().len(), 1);
+        let events = holder.shape_requests.lock().unwrap().clone();
+        assert!(
+            matches!(&events[1].event, ViewerDisplayEvent::Refused { revision, .. } if revision == "revision-one")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_lost_answer_is_refused_and_the_previous_size_is_confirmed_at_the_holder() {
+        use crate::launcher::plugin_launch::PluginDisplay;
+        use crate::live_display::SessionViewerResizeOutcome;
+        use crate::live_display::{ViewerDisplayEvent, ViewerResize};
+        let (registry, _viewer, holder, selected) = holder_resized_viewer(
+            vec![
+                holder_display(720, 1280, Some("revision-one")),
+                holder_display(1280, 720, None),
+            ],
+            vec![],
+        )
+        .await;
+        // The first request fails at the holder: nothing proves whether the
+        // encoder changed. The second confirms the previous size.
+        holder.resize_replies.lock().unwrap().extend([
+            SessionViewerResizeOutcome::Err(crate::RpcFailure {
+                code: "PeerUnavailable".into(),
+                message: "lost".into(),
+            }),
+            SessionViewerResizeOutcome::Ok(ViewerResize::Applied),
+        ]);
+        registry.synchronize_shape(&selected).await.unwrap();
+        let resizes = holder.resize_requests.lock().unwrap().clone();
+        assert_eq!(
+            resizes
+                .iter()
+                .map(|r| r.display.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                PluginDisplay {
+                    width: 720,
+                    height: 1280
+                },
+                PluginDisplay {
+                    width: 1280,
+                    height: 720
+                }
+            ]
+        );
+        let events = holder.shape_requests.lock().unwrap().clone();
+        assert!(matches!(
+            &events[1].event,
+            ViewerDisplayEvent::Refused { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn unavailable_at_the_holder_turns_portrait_off() {
+        use crate::live_display::ViewerResize;
+        let (registry, _viewer, holder, selected) = holder_resized_viewer(
+            vec![
+                holder_display(720, 1280, Some("revision-one")),
+                holder_display(1280, 720, None),
+            ],
+            vec![ViewerResize::Unavailable],
+        )
+        .await;
+        registry.synchronize_shape(&selected).await.unwrap();
+        assert_eq!(holder.resize_requests.lock().unwrap().len(), 1);
+        let snapshot = registry
+            .local_viewer()
+            .snapshot(&selected.launch_id)
+            .await
+            .unwrap()
+            .unwrap();
+        let portrait = snapshot
+            .controls
+            .iter()
+            .find(|c| c.label == "Portrait")
+            .unwrap();
+        assert!(!portrait.enabled);
+        assert_eq!(
+            portrait.disabled_reason.as_deref(),
+            Some("Live resizing unavailable")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_viewer_that_cannot_present_a_new_size_is_never_resized_at_the_holder() {
+        use crate::live_display::ViewerDisplayEvent;
+        let (registry, viewer, holder, selected) = holder_resized_viewer(
+            vec![
+                holder_display(720, 1280, Some("revision-one")),
+                holder_display(1280, 720, None),
+            ],
+            vec![],
+        )
+        .await;
+        let mut observed = viewer.snapshot(&selected.launch_id).await.unwrap().unwrap();
+        observed.shape.as_mut().unwrap().ready = false;
+        viewer.set_snapshot(Some(observed));
+        registry.synchronize_shape(&selected).await.unwrap();
+        assert!(holder.resize_requests.lock().unwrap().is_empty());
+        let events = holder.shape_requests.lock().unwrap().clone();
+        assert!(matches!(
+            &events[1].event,
+            ViewerDisplayEvent::Refused { .. }
+        ));
+    }
+
     async fn exact_native_server(stop_pending: bool) -> (String, ExactNativeState) {
         let state = ExactNativeState {
             launch_id: "11111111111111111111111111111111".into(),
@@ -2687,6 +2928,8 @@ mod tests {
             viewer_display: Default::default(),
             shape_requests: Default::default(),
             shape_replies: Default::default(),
+            resize_requests: Default::default(),
+            resize_replies: Default::default(),
             steps: Default::default(),
             stop_pending,
             terminal_error: Default::default(),

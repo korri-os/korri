@@ -525,6 +525,55 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_leaveVie
     }
 }
 
+/// The emulator proof's resize request, through korrid's local RPC (#476).
+#[cfg(feature = "proof")]
+pub(crate) fn resize_locally(
+    launch: &str,
+    display: crate::launcher::plugin_launch::PluginDisplay,
+) -> Result<crate::live_display::ViewerResize, String> {
+    use crate::live_display::{SessionViewerResizeOutcome, SessionViewerResizeRequest};
+    let (Some(port), Some(capability)) =
+        (crate::local_server_port(), crate::local_server_capability())
+    else {
+        return Err("korrid is not running".into());
+    };
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|cause| cause.to_string())?;
+    runtime.block_on(async move {
+        let response = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|cause| cause.to_string())?
+            .post(format!("http://127.0.0.1:{port}/rpc"))
+            .bearer_auth(capability)
+            .json(&RpcRequest::SessionViewerResize(
+                SessionViewerResizeRequest {
+                    expected_launch_id: launch.to_owned(),
+                    display,
+                },
+            ))
+            .send()
+            .await
+            .map_err(|cause| cause.to_string())?
+            .error_for_status()
+            .map_err(|cause| cause.to_string())?;
+        match response
+            .json::<RpcResponse>()
+            .await
+            .map_err(|cause| cause.to_string())?
+        {
+            RpcResponse::SessionViewerResize(SessionViewerResizeOutcome::Ok(answer)) => Ok(answer),
+            RpcResponse::SessionViewerResize(SessionViewerResizeOutcome::Err(failure)) => {
+                Err(format!("{}: {}", failure.code, failure.message))
+            }
+            _ => Err("korrid answered another request".into()),
+        }
+    })
+}
+
 /// The person left the stream of the exact `launch` for the gameplay
 /// overlay: korrid's `session.leave` through its own authenticated
 /// localhost RPC, which checks the selection and publishes Home without
