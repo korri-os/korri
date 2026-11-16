@@ -647,7 +647,8 @@ aka is the home of the measure. It has no viewer plugin and must not get one
 installed (ADR 0051). `--viewer-package` lets the product's viewer run there:
 
 ```sh
-nix run .#stream-cadence -- view --sender root@aka --sender-fixture \
+# On aka, the build host. From another host: --build-store ssh-ng://root@aka.
+nix run .#stream-cadence -- view --build-store auto --sender root@aka --sender-fixture \
   --viewer root@aka --viewer-package /nix/store/…-moonlight-embedded-korri-2.7.1-korri
 ```
 
@@ -2167,8 +2168,12 @@ stand-in viewer and iproute2) in the Nix store that `--build-store` names, never
 on the host that runs the tool:
 
 ```sh
-nix run .#stream-cadence -- view --build-store ssh-ng://root@BUILD_HOST \
-  --sender root@BUILD_HOST --sender-fixture --viewer root@BUILD_HOST
+# On aka, the build host:
+nix run .#stream-cadence -- view --build-store auto \
+  --sender root@aka --sender-fixture --viewer root@aka
+# From another host:
+nix run .#stream-cadence -- view --build-store ssh-ng://root@aka \
+  --sender root@aka --sender-fixture --viewer root@aka
 ```
 
 - This host evaluates, and the build store builds (`nix build --eval-store

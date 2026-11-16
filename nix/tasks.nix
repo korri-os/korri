@@ -191,7 +191,7 @@ let
       in
       {
         description = "Prove today's Artemis live resize (#476) on one headless Android 12 emulator against a private patched Sunshine on aka.";
-        usageSuffix = " -- --sunshine /nix/store/...-sunshine-korri-... [--sender ssh-target] [--out DIRECTORY]";
+        usageSuffix = " -- --sunshine /nix/store/...-sunshine-korri-... [--sender ssh-target] [--build-store STORE] [--out DIRECTORY]";
         runtimeInputs = [
           # numpy and FFmpeg: stream-cadence's frame-ID bar decoder (bar.py).
           (pkgs.python3.withPackages (p: [ p.numpy ]))

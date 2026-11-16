@@ -10,7 +10,9 @@ hook, KorriLiveResizeFixtureTest, opens the exact viewer and makes korrid's
 call for the Portrait control and back (KorridServer.viewerResize). This
 script:
 
-1. checks the Sunshine package and the two APKs; nothing is built here;
+1. checks the Sunshine package and the two APKs; nothing is built here but
+   the sender fixture's parts, and those only in the store that
+   `--build-store` names (`auto` on aka itself);
 2. starts the sender fixture with that Sunshine, pairs a fresh key pair with
    Moonlight Embedded and the fixture's PIN, and starts the frame-ID source;
 3. starts the emulator with a 720x1280 panel, so that the viewer's screen,
@@ -322,6 +324,7 @@ def main() -> int:
     parser.add_argument("--pair-host", help="the sender's address as this host reaches it, to pair; default: --stream-host. "
                         "An emulator on the sender's own host reaches it at 10.0.2.2, and this host at 127.0.0.1")
     parser.add_argument("--sunshine", required=True, help="the sunshine-korri package in this host's store")
+    parser.add_argument(cli.BUILD_STORE_OPTION, metavar="STORE", help=cli.BUILD_STORE_HELP)
     parser.add_argument("--apk", type=Path, default=APK)
     parser.add_argument("--test-apk", type=Path, default=TEST_APK)
     parser.add_argument("--port", type=int, default=5638, help="the emulator's console port; it must be free")
@@ -355,7 +358,7 @@ def main() -> int:
     # The owner's rule (2026-11-15): heavy work, emulators included, runs on
     # aka. There the sender fixture is local, and its agent is root as over SSH.
     target, options = cli.endpoint(args.sender, [])
-    agent, _, paths = cli.tools("x86_64", target, options, ("motion", "sway"))
+    agent, _, paths = cli.tools("x86_64", target, options, ("motion", "sway"), args.build_store)
     if target is not None:
         cli.deliver(target, options, [patched["package"]])
     sender_command = agent.replace("/device.py", "/sender.py")

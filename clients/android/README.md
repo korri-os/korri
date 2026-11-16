@@ -232,5 +232,6 @@ against stream-cadence's sender fixture with Korri's patched Sunshine
 `KorriLiveResizeFixtureTest`, in the device-test APK only, opens the exact
 viewer and makes korrid's `viewerResize` call for Portrait and back. The
 proof reads the frame-ID bar in screenshots of each phase. Under the owner's
-rule of 2026-11-15 it runs on aka, as root, with `--sender local`; the
+rule of 2026-11-15 it runs on aka, as root, with `--sender local` and
+`--build-store auto` (stream-cadence's `--build-store`); the
 record of the runs and the full command are in `evidence/476/README.md`.
