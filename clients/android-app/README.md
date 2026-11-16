@@ -17,9 +17,10 @@ nix run .#android-app-release-key          # D12 prep, once, on zao: the release
 nix run .#android-app-release-sign -- UNSIGNED.apk SIGNED.apk  # D12 prep, on zao
 nix run .#android-app-d12-binding -- make WORK  # D12, on zao: the owner binding (also sign-debug, seed)
 nix run .#android-app-d12-binding-check         # its test, with a throwaway bunker; no phone
-nix run .#android-app-proof                # D8: one headless API 31 emulator, no person
-nix run .#android-app-holder-proof         # D9, on aka as root: binding and a holder's game
-nix run .#android-app-play-proof -- --sunshine PACKAGE  # D10, D11, D5b, on aka as root: a tap plays the game
+# The proofs run on aka and build in its own store (--build-store auto).
+nix run .#android-app-proof -- --build-store auto         # D8: one headless API 31 emulator, no person
+nix run .#android-app-holder-proof -- --build-store auto  # D9, on aka as root: binding and a holder's game
+nix run .#android-app-play-proof -- --build-store auto --sunshine PACKAGE  # D10, D11, D5b, on aka as root: a tap plays the game
 ```
 
 ## Owner decisions (2026-11-14)
@@ -170,12 +171,18 @@ hash, not built here.
 
 ## Proof
 
-`nix run .#android-app-proof -- --out DIR` (`proof/run.py`), with no person:
-one headless Android 12 emulator (google_apis x86_64, 2 cores, `nice` 10,
-console port 5612, its data wiped), the APK signed with the debug key. It
-runs where it is started, so run it on aka, not zao (the owner's rule), with
-an adb server of its own (`ANDROID_ADB_SERVER_PORT`) and a free console port
-(`--port`); the record shows the command.
+`nix run .#android-app-proof -- --build-store auto --out DIR` (`proof/run.py`),
+with no person: one headless Android 12 emulator (google_apis x86_64, 2
+cores, `nice` 10, console port 5612, its data wiped), the APK signed with the
+debug key. It runs where it is started, so run it on aka, not zao (the
+owner's rule), with an adb server of its own (`ANDROID_ADB_SERVER_PORT`) and
+a free console port (`--port`); the record shows the command.
+
+Each proof (this one, the holder proof and the play proof) builds in the Nix
+store that `--build-store` names, with stream-cadence's build
+(`nix/stream-cadence/cli.py`): `auto` on aka itself, which copies nothing
+back. Without it the proof builds nothing: it refuses, naming the
+derivations, when Nix's plan builds anything.
 
 | Check | How |
 | --- | --- |
@@ -212,7 +219,7 @@ Known gaps:
 
 ## The holder proof (D9)
 
-`nix run .#android-app-holder-proof -- --out DIR` (`proof/holder.py`). It
+`nix run .#android-app-holder-proof -- --build-store auto --out DIR` (`proof/holder.py`). It
 runs on aka, as root: aka has `/dev/kvm`, and since 2026-11-15 no build or
 emulator runs on zao. Copy a checkout there (`/var/tmp/<name>/`) and run it
 from that copy. One headless Android 12 emulator (2 cores, console port
@@ -301,8 +308,8 @@ What the person does, by slice D5's rules (`korri_viewer::play`) and D5b's:
 | Home, another app | The runtime stops (`Stopped`). korrid's recovery starts the stream again while its launch is selected and the app is in front: it fails at once while the app has no window, and plays again when the app returns |
 | Ctrl+Alt+Shift+Q | The runtime stops, as on Home; korrid's recovery restarts it while the app is in front |
 
-The play proof (`proof/play.py`, `nix run .#android-app-play-proof`, on aka
-as root) runs these steps on one emulator with no person: the tap, Running in
+The play proof (`proof/play.py`, `nix run .#android-app-play-proof --
+--build-store auto --sunshine PACKAGE`, on aka as root) runs these steps on one emulator with no person: the tap, Running in
 the app and in korrid, the frame-ID bar, the overlay, the keys and a tap at
 the sender, the tone, Home, and the return. Its docstring lists them. On the
 emulator a letter key starts an input method session that takes the next

@@ -22,10 +22,12 @@ nix build .#checks.x86_64-linux.korri-viewer-android
 # its proof on one headless emulator against a private Sunshine on aka.
 # Nothing heavy runs on zao: run both on aka itself, the proof against
 # aka's own fixture, which the emulator reaches at aka's Tailscale address.
+# --build-store auto builds in aka's own store; without it a proof builds
+# nothing and refuses what is in neither this host's store nor a cache.
 nix build .#korri-viewer-android-apk
-nix run .#viewer-android-proof -- --sender local --stream-host AKA_TAILSCALE_ADDRESS
+nix run .#viewer-android-proof -- --build-store auto --sender local --stream-host AKA_TAILSCALE_ADDRESS
 # The decoder's recovery (#490): emulator and sender fixture on this host.
-nix run .#viewer-android-recovery-proof -- --stream-host AKA_TAILSCALE_ADDRESS
+nix run .#viewer-android-recovery-proof -- --build-store auto --stream-host AKA_TAILSCALE_ADDRESS
 ```
 
 ## Boundaries
@@ -556,7 +558,9 @@ until D7, so D1 removes none of its Java.
 - Proof (`nix run .#viewer-android-proof`, `android/proof/run.py`): one
   headless Android 12 emulator (google_apis x86_64, 2 cores, `nice` 10,
   `android/emulator.nix`) on the build host, and stream-cadence's sender
-  fixture on aka. The tool builds everything on the build host, pairs a
+  fixture on aka. The tool builds everything in the Nix store that
+  `--build-store` names (`auto` on aka itself, stream-cadence's rule;
+  without it, it builds nothing), pairs a
   fresh key pair with the Linux viewer's `pair`, runs the x86_64 HTTPS and
   trust-anchor tests in the emulator, installs the APK and gives the app the
   key pair and pin through `run-as`. It starts the app, waits for the
@@ -679,7 +683,7 @@ buffer queue, and the compositor reads the same buffer.
   rows with no times in the frame record. Each step and its result go to
   the log (`picture: … recovery from a flush`, `picture: reset done; …`,
   `picture: the decoder returns frames again after a reset`). Proof
-  (`nix run .#viewer-android-recovery-proof -- --stream-host ADDRESS`,
+  (`nix run .#viewer-android-recovery-proof -- --build-store auto --stream-host ADDRESS`,
   `android/proof/recovery.py`, record `proof/android-recovery/`): the
   emulator and the sender fixture both on one host; the tool kills the
   emulator's Codec2 service twice while the app streams, and the frame IDs

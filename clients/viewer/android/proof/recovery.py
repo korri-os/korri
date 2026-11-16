@@ -17,6 +17,8 @@ end without a failure.
 The fixture (stock Sunshine), the pairing, the emulator and its own adb
 server are `run.py`'s. The sender is always this host (`run.py`'s
 `local`): the owner's rule puts both the emulator and the fixture on aka.
+The APK, the Linux viewer and the fixture's parts build in the store that
+`--build-store` names (`auto` on aka itself), as `run.py`'s do.
 
 The record goes to --out. The exit status is 0 only when every check passed.
 """
@@ -146,6 +148,7 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=5600, help="the emulator's console port")
     parser.add_argument("--state", type=Path, help="the emulator's home; default: a new one in --out")
     parser.add_argument("--out", type=Path, help="the record's directory; default: a new one under /tmp")
+    parser.add_argument(run.cli.BUILD_STORE_OPTION, metavar="STORE", help=run.cli.BUILD_STORE_HELP)
     args = parser.parse_args()
     root = Path(os.environ["KORRI_ROOT"])
     sdk = os.environ["KORRI_VIEWER_EMULATOR_SDK"]
@@ -159,12 +162,12 @@ def main() -> int:
     result: dict = {"stream_host": host, "checks": {}}
     checks = result["checks"]
 
-    apk = run.nix_build(root, "korri-viewer-android-apk") + "/korri-viewer-unsigned.apk"
-    viewer = run.nix_build(root, "korri-viewer")
+    apk = run.nix_build(root, "korri-viewer-android-apk", args.build_store) + "/korri-viewer-unsigned.apk"
+    viewer = run.nix_build(root, "korri-viewer", args.build_store)
     result["store"] = {"apk": apk, "viewer": viewer}
     signed = run.sign(build_tools, apk, out / "korri-viewer-debug.apk")
 
-    command, parts = run.sender_tools(root, run.LOCAL, stock_sunshine=True)
+    command, parts = run.sender_tools(run.LOCAL, stock_sunshine=True, build_store=args.build_store)
     fixture = run.Remote(command, out / "sender-agent.log")
     # Its own adb server (the console port plus 10000), which run.py's
     # emulator starts and stops.

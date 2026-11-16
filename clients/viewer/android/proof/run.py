@@ -11,9 +11,11 @@ emulator writes everything that Android plays to a WAV file on this host
 (QEMU's `wav` audio driver), so no sound reaches this host's speakers. The
 steps:
 
-1. Build the APK, the refusal probe, the Linux viewer (to pair) and the
-   x86_64 Android tests on this host. Nothing is built on the sender or the
-   emulator.
+1. Build the APK, the refusal probe, the Linux viewer (to pair), the x86_64
+   Android tests and the sender fixture's parts in the build store that
+   `--build-store` names (`auto` on aka itself, stream-cadence's rule).
+   Without it, this host builds nothing. Nothing is built on the sender or
+   the emulator.
 2. Start the sender fixture with its tone, pair a fresh key pair with the
    Linux viewer's pair command, and start the fixture's picture source.
 3. Start the emulator (2 cores) with its sound to the WAV file, run the
@@ -110,6 +112,8 @@ LIB_TESTS = ["sps::", "codec::", "decoder::", "callback::", "frame_record::", "p
 sys.path.insert(0, str(Path(os.environ["KORRI_ROOT"]) / "nix/stream-cadence"))
 import bar  # noqa: E402
 import sender  # noqa: E402
+# stream-cadence's builds: in the build store, never on this host (#489).
+import cli  # noqa: E402
 
 
 def log(text: str) -> None:
@@ -120,12 +124,18 @@ def run(args: list[str], **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(args, check=True, text=True, capture_output=True, **kwargs)
 
 
-def nix_build(root: Path, installable: str) -> str:
-    log(f"nix build {installable}")
-    return run(
-        ["nix", "build", "--no-link", "--print-out-paths", f"{root}#{installable}"],
-        timeout=3600,
-    ).stdout.split()[0]
+def nix_build(root: Path, installable: str, build_store: str | None) -> str:
+    """One output of this tree's flake, built in the build store, in this host's store.
+
+    Without a build store this host builds nothing (stream-cadence's build).
+    """
+    log(f"nix build {installable} in {build_store}" if build_store else
+        f"nix build {installable}: this host builds nothing; from its store or a cache")
+    paths = cli.build([], [f"{root}#{installable}"], build_store, timeout=3600)
+    if build_store is not None:
+        # The build host's own store (`auto`) holds them already.
+        cli.from_build_store(build_store, None, [], paths)
+    return paths[0]
 
 
 class Remote:
@@ -204,51 +214,37 @@ class Remote:
             self.log.close()
 
 
-# The sender target that names this host, as stream-cadence's `local` does:
-# its agent runs here, with no SSH and no copy.
-LOCAL = "local"
+# The sender target that names this host, stream-cadence's `local`: its agent
+# runs here, with no SSH.
+LOCAL = cli.LOCAL
 
 
-def sender_tools(root: Path, target: str, stock_sunshine: bool) -> tuple[list[str], dict]:
-    """The sender fixture's prebuilt parts, built here and copied to the sender."""
-    nixpkgs = os.environ["CADENCE_NIXPKGS"]
-    tools = f"import {json.dumps(str(root / 'nix/stream-cadence/default.nix'))} {{ inherit pkgs; }}"
-    head = f"let pkgs = import {json.dumps(nixpkgs)} {{ system = \"x86_64-linux\"; }}; tools = {tools}; in "
+def sender_tools(target: str, stock_sunshine: bool, build_store: str | None) -> tuple[list[str], dict]:
+    """The sender fixture's prebuilt parts, built in the build store and brought to the sender.
+
+    stream-cadence's tools() builds and brings them: a sender that holds them
+    all, such as the build host itself, gets no copy.
+    """
     # By default the Sunshine that encodes at its output's size: the sender
     # can change the stream's size in the middle of the stream
     # (stream-cadence's `resize`).
     sunshine = "sunshine" if stock_sunshine else "sunshineFollowingOutput"
-    names = ["python", "motion", "sway", sunshine, "pulseaudio"]
-    log("building the sender fixture's parts")
-    outputs = json.loads(
-        run(
-            ["nix", "build", "--no-link", "--json", "--impure", "--expr",
-             head + "[ " + " ".join(f"tools.runtime.{name}" for name in names) + " ]"],
-            timeout=3600,
-        ).stdout
-    )
+    log(f"the sender fixture's parts, for {target}")
+    host, options = cli.endpoint(target, [])
+    agent, _, built = cli.tools("x86_64", host, options, ("motion", "sway", sunshine, "pulseaudio"), build_store)
     # nix build --json does not keep the order of the list.
-    built = [row["outputs"]["out"] for row in outputs]
     marks = {"python": r"-python3-[\d.]", "motion": r"-stream-cadence-motion$",
              "sway": r"-sway-unwrapped-",
              "sunshine": r"-sunshine-\d" if stock_sunshine else r"-sunshine-follows-output-",
              "pulseaudio": r"-pulseaudio-\d"}
     paths = {name: next(p for p in built if re.search(mark, p)) for name, mark in marks.items()}
-    paths["source"] = run(
-        ["nix", "eval", "--raw", "--impure", "--expr", head + "toString tools.runtime.source"],
-        timeout=120,
-    ).stdout
-    store_paths = list(paths.values())
-    agent = [f"{paths['python']}/bin/python3", "-B", "-u", f"{paths['source']}/sender.py"]
-    if target == LOCAL:
-        # The sender is this host: its store has the parts already.
-        return agent, paths
-    key = Path.home() / ".config/korri/cache-key.secret"
-    if key.is_file():
-        run(["nix", "store", "sign", "--recursive", "--key-file", str(key), *store_paths], timeout=600)
-    log(f"copying them to {target}")
-    run(["nix", "copy", "--to", f"ssh://{target}", *store_paths], timeout=1200)
-    return ["ssh", "-o", "BatchMode=yes", target, shlex.join(agent)], paths
+    # tools() gives the device agent's command; the sender agent sits beside it.
+    command = shlex.split(agent)
+    paths["source"] = str(Path(command[-1]).parent)
+    command[-1] = f"{paths['source']}/sender.py"
+    if host is None:
+        return command, paths
+    return ["ssh", *options, host, shlex.join(command)], paths
 
 
 class Emulator:
@@ -1424,6 +1420,7 @@ def main() -> int:
     parser.add_argument("--out", type=Path, help="the record's directory; default: a new one under /tmp")
     parser.add_argument("--stock-sunshine", action="store_true",
                         help="the sender's stock Sunshine, and no size change in the middle of the stream (#476)")
+    parser.add_argument(cli.BUILD_STORE_OPTION, metavar="STORE", help=cli.BUILD_STORE_HELP)
     args = parser.parse_args()
     root = Path(os.environ["KORRI_ROOT"])
     sdk = os.environ["KORRI_VIEWER_EMULATOR_SDK"]
@@ -1441,11 +1438,12 @@ def main() -> int:
     result: dict = {"sender": args.sender, "stream_host": host, "checks": {}}
     checks = result["checks"]
 
-    apk = nix_build(root, "korri-viewer-android-apk") + "/korri-viewer-unsigned.apk"
-    probe_apk = nix_build(root, "korri-viewer-android-refusal-probe") + "/korri-viewer-refusal-probe-unsigned.apk"
-    feedback_apk = nix_build(root, "korri-viewer-android-feedback-probe") + "/korri-viewer-feedback-probe-unsigned.apk"
-    viewer = nix_build(root, "korri-viewer")
-    tests = nix_build(root, "checks.x86_64-linux.korri-viewer-android") + "/x86_64/tests"
+    build_store = args.build_store
+    apk = nix_build(root, "korri-viewer-android-apk", build_store) + "/korri-viewer-unsigned.apk"
+    probe_apk = nix_build(root, "korri-viewer-android-refusal-probe", build_store) + "/korri-viewer-refusal-probe-unsigned.apk"
+    feedback_apk = nix_build(root, "korri-viewer-android-feedback-probe", build_store) + "/korri-viewer-feedback-probe-unsigned.apk"
+    viewer = nix_build(root, "korri-viewer", build_store)
+    tests = nix_build(root, "checks.x86_64-linux.korri-viewer-android", build_store) + "/x86_64/tests"
     result["store"] = {"apk": apk, "refusal_probe": probe_apk, "feedback_probe": feedback_apk, "viewer": viewer, "tests": tests}
 
     signed = sign(build_tools, apk, out / "korri-viewer-debug.apk")
@@ -1463,7 +1461,7 @@ def main() -> int:
 
     resizing = not args.stock_sunshine
     result["sunshine"] = "stock" if args.stock_sunshine else "follows its output"
-    command, parts = sender_tools(root, args.sender, args.stock_sunshine)
+    command, parts = sender_tools(args.sender, args.stock_sunshine, build_store)
     fixture = Remote(command, out / "sender-agent.log")
     emulator = Emulator(sdk, state, args.port, out)
     # The agent hears from this host while the long steps run (the emulator's

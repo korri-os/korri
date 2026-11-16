@@ -162,7 +162,7 @@ let
       in
       {
         description = "Prove the Rust viewer app (#391 D1 to D5, and #476's size change in the middle of a stream) on one headless Android 12 emulator against a private Sunshine on aka.";
-        usageSuffix = " -- [--sender ssh-target] [--seconds N] [--out DIRECTORY]";
+        usageSuffix = " -- [--sender ssh-target] [--build-store STORE] [--seconds N] [--out DIRECTORY]";
         runtimeInputs = [
           # numpy and FFmpeg: stream-cadence's frame-ID bar decoder (bar.py,
           # decode.py) reads the screenshots and the frame record's recording.
@@ -220,12 +220,14 @@ let
       in
       {
         description = "Prove that the Rust viewer's picture goes on after Android's decoder service dies (#490), on one headless Android 12 emulator and a private Sunshine, both on this host.";
-        usageSuffix = " -- --stream-host ADDRESS [--kills N] [--port N] [--out DIRECTORY]";
+        usageSuffix = " -- --stream-host ADDRESS [--build-store STORE] [--kills N] [--port N] [--out DIRECTORY]";
         # run.py's tools: the recovery proof uses its fixture, pairing and app start.
         runtimeInputs = [
           (pkgs.python3.withPackages (p: [ p.numpy ]))
           pkgs.ffmpeg
           pkgs.nix
+          # A build store over ssh-ng:// (--build-store).
+          pkgs.openssh
           pkgs.jdk17
           pkgs.procps
         ];
@@ -245,11 +247,17 @@ let
       in
       {
         description = "Prove the Android app with no Korri Java (#434 D8) on one headless Android 12 emulator.";
-        usageSuffix = " -- [--port N] [--out DIRECTORY]";
+        usageSuffix = " -- [--build-store STORE] [--port N] [--out DIRECTORY]";
         runtimeInputs = [
-          # Pillow reads the screenshots.
-          (pkgs.python3.withPackages (p: [ p.pillow ]))
+          # Pillow reads the screenshots; numpy is for stream-cadence's cli,
+          # whose build (--build-store) this proof uses.
+          (pkgs.python3.withPackages (p: [
+            p.pillow
+            p.numpy
+          ]))
           pkgs.nix
+          # A build store over ssh-ng:// (--build-store).
+          pkgs.openssh
           pkgs.jdk17
           pkgs.unzip
           pkgs.procps
@@ -269,7 +277,7 @@ let
       in
       {
         description = "Prove on aka, as root, that the Android app (#434 D9) binds to the test owner and lists a holder's streamed game.";
-        usageSuffix = " -- [--port N] [--adb-port N] [--stream-host ADDRESS] [--out DIRECTORY]";
+        usageSuffix = " -- [--build-store STORE] [--port N] [--adb-port N] [--stream-host ADDRESS] [--out DIRECTORY]";
         runtimeInputs = [
           # Pillow reads the screenshots; numpy is for the viewer proof's
           # module, whose sender client this proof uses.
@@ -280,6 +288,8 @@ let
           # holder.ts and the Artemis acceptance's relay that it runs.
           pkgs.bun
           pkgs.nix
+          # A build store over ssh-ng:// (--build-store).
+          pkgs.openssh
           pkgs.jdk17
           pkgs.unzip
           pkgs.procps
@@ -303,7 +313,7 @@ let
       in
       {
         description = "Prove on aka, as root, that a tap on the holder's game starts the Rust viewer in the Android app, with its controls and Korri's gameplay overlay (#434 D10, D11, D5b).";
-        usageSuffix = " -- --sunshine /nix/store/...-sunshine-korri-... [--holder-uid N] [--port N] [--adb-port N] [--out DIRECTORY]";
+        usageSuffix = " -- --sunshine /nix/store/...-sunshine-korri-... [--build-store STORE] [--holder-uid N] [--port N] [--adb-port N] [--out DIRECTORY]";
         runtimeInputs = [
           # Pillow reads the screenshots; numpy and FFmpeg are stream-cadence's
           # frame-ID bar decoder (bar.py) and the tone's spectrum.
@@ -317,6 +327,8 @@ let
           # holder.ts and the Artemis acceptance's relay that it runs.
           pkgs.bun
           pkgs.nix
+          # A build store over ssh-ng:// (--build-store).
+          pkgs.openssh
           pkgs.jdk17
           pkgs.unzip
           pkgs.procps

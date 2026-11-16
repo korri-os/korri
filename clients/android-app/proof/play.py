@@ -18,8 +18,10 @@ It runs on aka, as root, with no person, on D9's pieces (holder.py):
 
 The steps:
 
-1. Build the fixture APK, the federation fixture and the sender's parts.
-   Read the APK: no dex, `hasCode="false"`, the viewer's network core inside.
+1. Build the fixture APK, the federation fixture and the sender's parts in
+   the build store that `--build-store` names (`auto` on aka itself; without
+   it, this host builds nothing). Read the APK: no dex, `hasCode="false"`,
+   the viewer's network core inside.
 2. Start one headless Android 12 emulator (2 cores, its own adb server, its
    data wiped, its sound into a WAV file), give its display a camera cutout
    (`--cutout`: by default the image's emulated Pixel 5, a hole in the top
@@ -963,6 +965,7 @@ def main() -> int:
     parser.add_argument("--library-seconds", type=int, default=300, help="how long Velvet may take to list the game")
     parser.add_argument("--out", type=Path, help="the record's directory; default: a new one under /tmp")
     parser.add_argument("--apk", help="a fixture APK already built from this tree (its unsigned file); default: build it")
+    parser.add_argument(d8.cli.BUILD_STORE_OPTION, metavar="STORE", help=d8.cli.BUILD_STORE_HELP)
     parser.add_argument("--cutout", default="pixel_5",
                         help="the emulated camera cutout or phone of the display (#494): NAME of the overlays "
                              "com.android.{internal,systemui}[.display.cutout].emulation.NAME, or none")
@@ -988,8 +991,8 @@ def main() -> int:
     sunshine = Path(args.sunshine) / "bin" / "sunshine"
     provenance = (Path(args.sunshine) / "share/korri/sunshine-korri/provenance").read_text()
     checks["sender_sunshine_has_certificate_control"] = CONTROL_PATCH in provenance
-    apk = args.apk or d8.nix_build(d9.ROOT, "korri-android-app-fixture-apk") + "/korri-android-app-unsigned.apk"
-    fixture = d8.nix_build(d9.ROOT, "korrid.federationFixture") + "/bin/federation_fixture"
+    apk = args.apk or d8.nix_build(d9.ROOT, "korri-android-app-fixture-apk", args.build_store) + "/korri-android-app-unsigned.apk"
+    fixture = d8.nix_build(d9.ROOT, "korrid.federationFixture", args.build_store) + "/bin/federation_fixture"
     result["store"] = {"apk": apk, "federation_fixture": fixture, "sunshine": args.sunshine}
     signed = d8.sign(build_tools, apk, out / "korri-android-app-fixture-debug.apk")
     entries = d8.run(["unzip", "-l", str(signed)]).stdout
@@ -1003,7 +1006,7 @@ def main() -> int:
     del library
     device_relay = int(relays[0].rsplit(":", 1)[1])
 
-    command, parts = viewer_proof.sender_tools(d9.ROOT, "local", stock_sunshine=True)
+    command, parts = viewer_proof.sender_tools(viewer_proof.LOCAL, stock_sunshine=True, build_store=args.build_store)
     sender = viewer_proof.Remote(command, out / "sender-agent.log")
     emulator = d8.Emulator(sdk, state, args.port, out, sound=out / "emulator-sound.wav")
     holder: "d9.Holder | None" = None

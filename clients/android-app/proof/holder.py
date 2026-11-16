@@ -21,8 +21,9 @@ existing ones:
 
 The steps:
 
-1. Build the fixture APK, the federation fixture and the sender's parts.
-   Read the APK: no dex, `hasCode="false"`, the one loopback relay, and the
+1. Build the fixture APK, the federation fixture and the sender's parts in
+   the build store that `--build-store` names (`auto` on aka itself; without
+   it, this host builds nothing). Read the APK: no dex, `hasCode="false"`, the one loopback relay, and the
    TLS verifier's classes in the library.
 2. Start the sender fixture with `Korri Stream` and its picture source, and
    read its `serverinfo` at the address the holder publishes.
@@ -211,6 +212,7 @@ def main() -> int:
     parser.add_argument("--no-sender", action="store_true",
                         help="start no sender fixture (for a hot aka): the holder publishes 127.0.0.1:9, which serves no video")
     parser.add_argument("--out", type=Path, help="the record's directory; default: a new one under /tmp")
+    parser.add_argument(d8.cli.BUILD_STORE_OPTION, metavar="STORE", help=d8.cli.BUILD_STORE_HELP)
     args = parser.parse_args()
     sdk = os.environ["KORRI_APP_EMULATOR_SDK"]
     image = os.environ["KORRI_APP_EMULATOR_IMAGE"]
@@ -226,8 +228,8 @@ def main() -> int:
     result: dict = {"stream_host": host, "checks": {}, "steps": {}}
     checks, steps = result["checks"], result["steps"]
 
-    apk = d8.nix_build(ROOT, "korri-android-app-fixture-apk") + "/korri-android-app-unsigned.apk"
-    fixture = d8.nix_build(ROOT, "korrid.federationFixture") + "/bin/federation_fixture"
+    apk = d8.nix_build(ROOT, "korri-android-app-fixture-apk", args.build_store) + "/korri-android-app-unsigned.apk"
+    fixture = d8.nix_build(ROOT, "korrid.federationFixture", args.build_store) + "/bin/federation_fixture"
     result["store"] = {"apk": apk, "federation_fixture": fixture}
     signed = d8.sign(build_tools, apk, out / "korri-android-app-fixture-debug.apk")
     badging = d8.run([str(build_tools / "aapt2"), "dump", "badging", str(signed)]).stdout
@@ -249,7 +251,7 @@ def main() -> int:
     if args.no_sender:
         result["sender"] = "not started (--no-sender): the holder's game has no live sender in this run"
     else:
-        command, parts = viewer_proof.sender_tools(ROOT, "local", stock_sunshine=True)
+        command, parts = viewer_proof.sender_tools(viewer_proof.LOCAL, stock_sunshine=True, build_store=args.build_store)
         sender = viewer_proof.Remote(command, out / "sender-agent.log")
     emulator = d8.Emulator(sdk, state, args.port, out)
     holder: Holder | None = None

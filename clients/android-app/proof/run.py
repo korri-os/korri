@@ -5,8 +5,10 @@
 One headless Android 12 emulator (API 31, x86_64, 2 cores) on the machine
 that runs this tool runs the app. The steps:
 
-1. Build the APK (Nix decides where) and read it: no dex, `hasCode="false"`,
-   Android's own NativeActivity, both ABIs, its own package (O1).
+1. Build the APK in the build store that `--build-store` names (`auto` on
+   aka itself, stream-cadence's rule; without it, this host builds nothing)
+   and read it: no dex, `hasCode="false"`, Android's own NativeActivity,
+   both ABIs, its own package (O1).
 2. Start the emulator with its data wiped (a new device), install the APK
    signed with the user's debug key, and start the app.
 3. korrid: the app logs its loopback port and the answer of the shell's
@@ -41,6 +43,10 @@ import time
 import urllib.error
 import urllib.request
 
+# stream-cadence's builds: in the build store, never on this host (#489).
+sys.path.insert(0, str(Path(os.environ["KORRI_ROOT"]) / "nix/stream-cadence"))
+import cli  # noqa: E402
+
 PACKAGE = "com.simonwjackson.korri.app"
 ACTIVITY = f"{PACKAGE}/android.app.NativeActivity"
 LIBRARY = "libkorri_android_app.so"
@@ -58,12 +64,18 @@ def run(args: list[str], **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(args, check=True, text=True, capture_output=True, **kwargs)
 
 
-def nix_build(root: Path, installable: str) -> str:
-    log(f"nix build {installable}")
-    return run(
-        ["nix", "build", "--no-link", "--print-out-paths", f"{root}#{installable}"],
-        timeout=7200,
-    ).stdout.split()[0]
+def nix_build(root: Path, installable: str, build_store: str | None) -> str:
+    """One output of this tree's flake, built in the build store, in this host's store.
+
+    Without a build store this host builds nothing (stream-cadence's build).
+    """
+    log(f"nix build {installable} in {build_store}" if build_store else
+        f"nix build {installable}: this host builds nothing; from its store or a cache")
+    paths = cli.build([], [f"{root}#{installable}"], build_store, timeout=7200)
+    if build_store is not None:
+        # The build host's own store (`auto`) holds them already.
+        cli.from_build_store(build_store, None, [], paths)
+    return paths[0]
 
 
 def debug_key() -> Path:
@@ -281,6 +293,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--port", type=int, default=5612, help="the emulator's console port")
     parser.add_argument("--out", type=Path, help="the record's directory; default: a new one under /tmp")
+    parser.add_argument(cli.BUILD_STORE_OPTION, metavar="STORE", help=cli.BUILD_STORE_HELP)
     args = parser.parse_args()
     root = Path(os.environ["KORRI_ROOT"])
     sdk = os.environ["KORRI_APP_EMULATOR_SDK"]
@@ -294,7 +307,7 @@ def main() -> int:
     checks = result["checks"]
     steps = result["steps"]
 
-    built = nix_build(root, "korri-android-app-apk")
+    built = nix_build(root, "korri-android-app-apk", args.build_store)
     apk = built + "/korri-android-app-unsigned.apk"
     result["store"] = {"apk": apk}
     signed = sign(build_tools, apk, out / "korri-android-app-debug.apk")
