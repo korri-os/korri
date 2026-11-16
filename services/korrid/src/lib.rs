@@ -59,6 +59,8 @@ pub mod network;
 pub mod onboarding;
 pub mod overlay_intent;
 pub mod owner_binding;
+#[doc(hidden)]
+pub mod owner_sign;
 pub mod peer_listener;
 mod peer_rpc;
 pub mod play_log;

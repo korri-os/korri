@@ -103,6 +103,22 @@ let
       };
     }
   );
+  # The workstation tool that has the owner's signer sign one device's owner
+  # statement with korrid's own NIP-46 client (src/bin/owner-sign.rs), for the
+  # Android app's D12 binding (clients/android-app/d12-binding.sh). It never
+  # ships to a device.
+  ownerSign = craneLib.buildPackage (
+    commonArgs
+    // {
+      inherit cargoArtifacts;
+      pname = "korrid-owner-sign";
+      cargoBuildExtraArgs = "--bin owner-sign";
+      doCheck = false;
+      meta = commonArgs.meta // {
+        mainProgram = "owner-sign";
+      };
+    }
+  );
   # The Android app's holder (examples/federation_fixture.rs): a real host
   # with the fixture's person signer, for the emulator proofs of
   # clients/android-app. It never ships to a device.
@@ -126,7 +142,7 @@ craneLib.buildPackage (
   commonArgs
   // {
     inherit cargoArtifacts;
-    passthru = { inherit viewerProbe federationFixture; };
+    passthru = { inherit viewerProbe federationFixture ownerSign; };
     # Keep reusable compilation outputs separate from the shipped runtime.
     outputs = [
       "out"
