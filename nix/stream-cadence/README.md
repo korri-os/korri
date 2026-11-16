@@ -2193,6 +2193,10 @@ nix run .#stream-cadence -- view --build-store ssh-ng://root@aka \
   builders of this host's own Nix configuration could build.
 - The result does not record the build store, and the build store changes no
   record.
+- The Android proofs (`clients/viewer/android/proof/`,
+  `clients/android-app/proof/`, `clients/android/proof/`) take the same
+  `--build-store` and build with this code: `build()` for their APKs and
+  other flake outputs, `tools()` for the sender fixture's parts (#500).
 
 aka builds only `x86_64-linux` (no `aarch64-linux` platform and no binfmt
 emulator, 2026-11-16). `--build-store` names one store for every piece of a

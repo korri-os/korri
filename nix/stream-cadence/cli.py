@@ -137,6 +137,57 @@ def cache_key() -> Path:
     return Path.home() / ".config/korri/cache-key.secret"
 
 
+BUILD_WAY = (
+    f"Build them on the build host: give {BUILD_STORE_OPTION} ssh-ng://root@BUILD_HOST, "
+    f"or {BUILD_STORE_OPTION} auto when this host is the build host."
+)
+
+
+def build(
+    flags: list[str], installable: list[str], build_store: str | None, timeout: float = 1800
+) -> list[str]:
+    """`nix build FLAGS INSTALLABLE` in the build store; the output paths.
+
+    This host evaluates, and the build store builds. Without a build store
+    this host builds nothing: Nix takes the outputs from this host's store or
+    a cache, or this refuses before it fetches anything. The Android proofs
+    build with it too (#500).
+    """
+    if build_store is None:
+        # Nix's plan, before it fetches anything: a build would first fetch
+        # the build's inputs to this host.
+        planned = execute(
+            ["nix", "build", "--dry-run", "--no-link", *flags, *installable],
+            timeout=600,
+        ).stderr
+        builds = re.findall(r"(?m)^\s+(/nix/store/\S+\.drv)\s*$", planned)
+        if builds:
+            raise Refusal(
+                f"This host builds nothing, and {len(builds)} derivation(s) are in neither its store nor a cache: "
+                + ", ".join(Path(build).name for build in builds)
+                + ". "
+                + BUILD_WAY
+            )
+        where = ["--max-jobs", "0"]
+    else:
+        where = ["--eval-store", "auto", "--store", build_store]
+    try:
+        built = execute(
+            ["nix", "build", "--no-link", "--json", *flags, *where, *installable],
+            timeout=timeout,
+        ).stdout
+    except subprocess.CalledProcessError as error:
+        if build_store is not None:
+            raise
+        raise Refusal(
+            "This host builds nothing, and a derivation is in neither its store nor a cache. "
+            + BUILD_WAY
+            + "\n"
+            + (error.stderr or "")
+        ) from error
+    return [row["outputs"]["out"] for row in json.loads(built)]
+
+
 def tools(
     architecture: str,
     target: str | None,
@@ -169,54 +220,23 @@ def tools(
     expression += "in [ " + selection + " ]"
     # This host evaluates. The build store builds; a device never does, and no
     # build is invoked over a device's SSH.
-    way = (
-        f"Build the tools on the build host: give {BUILD_STORE_OPTION} ssh-ng://root@BUILD_HOST, "
-        f"or {BUILD_STORE_OPTION} auto when this host is the build host."
-    )
     if build_store is None:
         print(
             f"Taking prebuilt tools for {architecture} from this host's store or a cache; this host builds nothing.",
             flush=True,
         )
-        # Nix's plan, before it fetches anything: a build would first fetch
-        # the build's inputs to this host.
-        planned = execute(
-            ["nix", "build", "--dry-run", "--no-link", "--impure", "--expr", expression],
-            timeout=600,
-        ).stderr
-        builds = re.findall(r"(?m)^\s+(/nix/store/\S+\.drv)\s*$", planned)
-        if builds:
-            raise Refusal(
-                f"This host builds nothing, and {len(builds)} prebuilt tool derivation(s) are in neither its store nor a cache: "
-                + ", ".join(Path(build).name for build in builds)
-                + ". "
-                + way
-            )
-        where = ["--max-jobs", "0"]
     else:
         print(f"Building prebuilt tools for {architecture} in {build_store}.", flush=True)
-        where = ["--eval-store", "auto", "--store", build_store]
-    try:
-        built = execute(
-            ["nix", "build", "--no-link", "--json", "--impure", *where, "--expr", expression],
-            timeout=1800,
-        ).stdout
-    except subprocess.CalledProcessError as error:
-        if build_store is not None:
-            raise
-        raise Refusal(
-            "This host builds nothing, and a prebuilt tool is in neither its store nor a cache. "
-            + way
-            + "\n"
-            + (error.stderr or "")
-        ) from error
-    paths = [row["outputs"]["out"] for row in json.loads(built)]
+    paths = build(["--impure"], ["--expr", expression], build_store)
     source = execute(
         ["nix", "eval", "--raw", "--impure", "--expr", source_expression], timeout=30
     ).stdout
     paths.append(source)
     if build_store is not None:
-        from_build_store(build_store, target, options, paths, source)
+        # This host evaluated the agent's source; the build store holds it
+        # beside what it built.
+        execute(["nix", "copy", "--to", build_store, source], timeout=300)
+        from_build_store(build_store, target, options, paths)
     # Without a build store, this host's store already holds the pieces.
     elif target is not None:
         deliver(target, options, paths)
@@ -229,15 +249,13 @@ def tools(
 
 
 def from_build_store(
-    build_store: str, target: str | None, options: list[str], paths: list[str], source: str
+    build_store: str, target: str | None, options: list[str], paths: list[str]
 ) -> None:
-    """Bring the pieces from the build store to the target, through this host.
+    """Bring the paths from the build store to the target, through this host.
 
-    A target that holds them all, such as the build host itself, gets no copy.
+    The target None is this host. A target that holds them all, such as the
+    build host itself, gets no copy.
     """
-    # This host evaluated the agent's source; the build store holds it beside
-    # what it built.
-    execute(["nix", "copy", "--to", build_store, source], timeout=300)
     if target is None:
         store, env = [], dict(os.environ)
     else:
@@ -259,7 +277,7 @@ def from_build_store(
         execute(["nix", "copy", "--from", build_store, *paths], timeout=1800)
     except subprocess.CalledProcessError as error:
         raise Refusal(
-            f"Cannot bring the prebuilt tools from {build_store} to this host. Sign them there with a key that this host trusts ({key}). Do not bypass signature checks.\n"
+            f"Cannot bring the built paths from {build_store} to this host. Sign them there with a key that this host trusts ({key}). Do not bypass signature checks.\n"
             + (error.stderr or "")
         ) from error
     if target is not None:

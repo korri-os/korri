@@ -26,7 +26,10 @@ PATHS = [
 
 
 class Transport:
-    """tools() against the transport peer installed as nix and nix-store."""
+    """tools(), or another caller of Nix, against the transport peer installed as nix and nix-store.
+
+    The Android proofs' tests use it too (#500).
+    """
 
     def __init__(self, case: unittest.TestCase, **knobs: str):
         directory = tempfile.TemporaryDirectory()
@@ -49,6 +52,9 @@ class Transport:
         return self
 
     def tools(self, *arguments) -> tuple[str, str, list[str]]:
+        return self.call(tools, *arguments)
+
+    def call(self, function, *arguments):
         environment = {
             "PATH": str(self.root) + os.pathsep + os.environ["PATH"],
             "HOME": str(self.root),
@@ -59,7 +65,7 @@ class Transport:
         with patch.dict(os.environ, environment), contextlib.redirect_stdout(io.StringIO()):
             # The device's settings are the only SSH settings that the tool sets.
             os.environ.pop("NIX_SSHOPTS", None)
-            return tools(*arguments)
+            return function(*arguments)
 
     def calls(self) -> list[dict]:
         if not self.log.exists():
@@ -212,6 +218,40 @@ class WithABuildStore(unittest.TestCase):
         self.assertIn("lacks a signature by a trusted key", message)
         self.assertFalse(any(command[1:3] == ["copy", "--to"] and command[3].startswith("ssh://")
                              for command in transport.commands()))
+
+
+class BuildAnInstallable(unittest.TestCase):
+    """build(), which the Android proofs call with a flake installable (#500)."""
+
+    INSTALLABLE = "/korri#korri-viewer"
+
+    def test_without_a_build_store_the_plan_and_the_build_take_the_installable_as_given(self):
+        transport = Transport(self)
+        built = transport.call(cli.build, [], [self.INSTALLABLE], None)
+        self.assertEqual(
+            transport.commands(),
+            [
+                ["nix", "build", "--dry-run", "--no-link", self.INSTALLABLE],
+                ["nix", "build", "--no-link", "--json", "--max-jobs", "0", self.INSTALLABLE],
+            ],
+        )
+        self.assertEqual(built, PATHS[:2])
+
+    def test_a_planned_build_is_refused_with_the_way_to_the_build_store(self):
+        transport = Transport(self, build="plan")
+        with self.assertRaises(Refusal) as raised:
+            transport.call(cli.build, [], [self.INSTALLABLE], None)
+        self.assertIn("transport-stream-cadence-motion.drv", str(raised.exception))
+        self.assertIn("--build-store auto", str(raised.exception))
+        self.assertEqual(len(transport.calls()), 1)
+
+    def test_the_build_store_builds_the_installable(self):
+        transport = Transport(self)
+        transport.call(cli.build, [], [self.INSTALLABLE], BUILD_STORE)
+        self.assertEqual(
+            transport.commands(),
+            [["nix", "build", "--no-link", "--json", "--eval-store", "auto", "--store", BUILD_STORE, self.INSTALLABLE]],
+        )
 
 
 class Options(unittest.TestCase):
