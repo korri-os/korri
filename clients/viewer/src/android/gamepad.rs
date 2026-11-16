@@ -467,8 +467,9 @@ impl Controllers {
     }
 
     /// `resetInputState`: every controller lets go of its buttons, sticks
-    /// and triggers, and the heartbeat repeats each one with nothing
-    /// pressed. Nothing is sent.
+    /// and triggers, forgets its emulated buttons and its Start times, and
+    /// the heartbeat repeats each one with nothing pressed. Nothing is
+    /// sent.
     pub(crate) fn reset(&mut self) {
         for c in self
             .contexts
@@ -484,6 +485,12 @@ impl Controllers {
             c.right_stick_x = 0;
             c.right_stick_y = 0;
             c.mouse.x_down = false;
+            // `InputDeviceContext.resetInputState`: a Start tap before the
+            // overlay must not count toward the quick menu after it.
+            c.emulating = 0;
+            c.back_menu_pending = false;
+            c.start_down_ms = 0;
+            c.start_up_ms = 0;
         }
         self.heartbeat.neutralize();
     }

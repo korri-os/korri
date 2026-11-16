@@ -2591,6 +2591,46 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_start_tap_before_the_hold_does_not_count_toward_the_quick_menu_after_it() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        let mut devices = Known::with([pad(16, 0x045e)]);
+        let start = |action, at, down| key(16, code::BUTTON_START, 315, action, at, down);
+        input.key(
+            &start(KeyAction::Down, 1000, 1000),
+            1000,
+            &mut devices,
+            &mut sink,
+        );
+        input.key(
+            &start(KeyAction::Up, 1050, 1000),
+            1050,
+            &mut devices,
+            &mut sink,
+        );
+        // The overlay opens and closes; the mapping forgets the tap, as
+        // Artemis's `resetInputState` clears the Start times.
+        input.hold(&mut sink);
+        input.release(&mut sink);
+        // Down again within 200 ms of the tap's up, and held: the mouse,
+        // not the quick menu.
+        input.key(
+            &start(KeyAction::Down, 1200, 1200),
+            1200,
+            &mut devices,
+            &mut sink,
+        );
+        assert_eq!(
+            input.key(
+                &start(KeyAction::Up, 2000, 1200),
+                2000,
+                &mut devices,
+                &mut sink
+            ),
+            Outcome::Handled
+        );
+    }
+
+    #[test]
     fn a_slow_second_start_held_still_turns_the_pad_into_a_mouse() {
         let (mut input, mut sink) = (input(), Recorded::default());
         let mut devices = Known::with([pad(16, 0x045e)]);
