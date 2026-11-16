@@ -1148,8 +1148,8 @@ in this app (below), so the layer shows a stand-in.
 
 - The layer (`android/src/layer.rs`): `korri-viewer-overlay`, made with
   the video layer on Android's main thread through the same JNI calls,
-  translucent (`setFormat(TRANSLUCENT)`, `setOpaque(false)`), at z 1 above
-  the video's 0, hidden. It stands out of the camera cutout, as Artemis
+  translucent (`setFormat(TRANSLUCENT)`, `setOpaque(false)`), at z 2 above
+  the video's 1 and the black backdrop's 0, hidden. It stands out of the camera cutout, as Artemis
   keeps its overlay view inside the display cutout's safe area
   (`KorriStreamCutout.keepOutOfCutout`, #494): in the window less the
   cutout's insets (`placement::keep_out_of_cutout`, host-tested), which
@@ -1159,7 +1159,7 @@ in this app (below), so the layer shows a stand-in.
   that size: when the window's size changes, `Transaction.setBufferSize`
   gives its Surface the new size, in the transaction that places the video
   again. A main event after which the cutout may have moved while the size
-  stayed (a turn by 180° asks the window to draw again, `RedrawNeeded`;
+  stayed (inferred, not logged: a turn by 180° asks the window to draw again, `RedrawNeeded`;
   `layer::may_move_the_cutout`) makes the main thread read the cutout
   again and move the layer when its place changed
   (`Layers::follow_cutout`). That size is what the shell's renderer reads

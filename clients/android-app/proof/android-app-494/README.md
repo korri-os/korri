@@ -20,7 +20,7 @@ korri-sunshine every 5 s, 44 times (`korri-sunshine-watch.log`): no TCP
 session on 47989, 47990 or 48010, and no UDP flow on 47998 to 48000 or 48002
 to 48010 in conntrack. An idle HTTPS socket from haku to 47984 had been open
 before the run (not a stream); none was open during it. k10temp read 95 °C at
-its highest and 87 °C at the end. The emulator was Android 12 (API 31),
+its highest and 95 °C at the end (`korri-sunshine-watch.log`, 06:51:00). The emulator was Android 12 (API 31),
 google_apis, x86_64, headless, 2 cores, console port 5694, its own adb server
 on 5194, its data wiped. The emulator and its adb server were stopped at the
 end, with no process left. All 96 checks passed (`result.json`): D10's, D11's,
