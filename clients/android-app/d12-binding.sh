@@ -12,14 +12,18 @@
 # make: korrid's own producer makes the phone's device key in WORK/state
 # (`korrid identity owner-binding-request`, DeviceIdentity::load_or_create)
 # and prints the owner statement template for it. The owner's signer signs
-# that template over NIP-46: the bunker address is read from a file of mode
-# 0600 or from the terminal, never from an argument, and goes to nak only in
-# its environment, with a client key made new for this run. nak's messages
-# have the bunker secret removed. The signed statement must be the template
-# exactly, by the owner (a80db13f…3dca unless --owner says otherwise); korrid
-# then imports it (`korrid identity import`), which verifies the signature
-# and stores identity/owner.event.json beside identity/device.key. If make
-# fails after it made the device key, it removes WORK, key included.
+# that template over NIP-46 through korrid's own client (owner-sign,
+# korrid's Nip46PersonSigner), the route that Amber answered for korrid
+# before; nak's client got no answer from Amber (README, D12). The bunker
+# address is read from a file of mode 0600 or from the terminal, never from
+# an argument, and reaches owner-sign only on its standard input. owner-sign
+# makes a client key for this run only, in WORK, and removes it; its
+# messages never carry the signer's text or the secret. The signed
+# statement must be the template exactly, by the owner (a80db13f…3dca unless
+# --owner says otherwise); korrid then imports it (`korrid identity
+# import`), which verifies the signature and stores identity/owner.event.json
+# beside identity/device.key. If make fails after it made the device key, it
+# removes WORK, key included.
 #
 # seed: writes those two files into the installed app's private state with
 # run-as, which only a debuggable APK allows, before the app's first start;
@@ -45,6 +49,7 @@ fail() {
 }
 
 : "${KORRID:?run through nix run .#android-app-d12-binding}"
+: "${KORRID_OWNER_SIGN:?run through nix run .#android-app-d12-binding}"
 : "${KORRI_APP_BUILD_TOOLS:?run through nix run .#android-app-d12-binding}"
 
 # WORK must not be inside a Git work tree (outside-git.sh): it holds the
@@ -148,27 +153,23 @@ make_binding() {
   state="$work/state"
 
   KORRID_PRIVATE_STATE_ROOT="$state" "$KORRID" identity owner-binding-request > "$template"
-  local device created_at client_key status=0
+  local device created_at status=0
   device="$(check template "$template")" || fail "korrid's owner statement template has an unexpected shape"
   created_at="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["created_at"])' "$template")"
   echo "the phone's device key: $device"
   echo "the statement to sign: kind 30078, created_at $created_at, by the owner $owner"
 
-  # A client key of this run only. nak's default is derived from
-  # /etc/machine-id, which every local user can read.
-  client_key="$(nak key generate)" || fail "nak could not make a client key"
-  echo "asking the owner's signer over NIP-46; approve the signing request there (kind 30078)"
-  # nak names the whole bunker address, secret included, when it cannot
-  # connect: its messages go through sed, which removes the secret. The
-  # statement goes to its file; a pipe, not a process substitution, so that
-  # sed has written everything before the script goes on. nak waits for an
-  # unreachable relay without end, so the owner has five minutes to approve.
-  NOSTR_SECRET_KEY="$bunker" NOSTR_CLIENT_KEY="$client_key" timeout 300 nak event -k 30078 --created-at "$created_at" \
-    -t "d=org.korri.device-owner:$device" -t "device=$device" -t "status=owned" -c '' 2>&1 > "$signed" |
-    sed -E 's/secret=[^&[:space:]]*/secret=REDACTED/g' >&2 || status=$?
-  unset bunker client_key
-  [[ "$status" -ne 124 ]] || fail "the owner's signer did not answer within five minutes"
-  [[ "$status" -eq 0 ]] || fail "the owner's signer did not sign (nak's message is above, without the bunker secret)"
+  echo "asking the owner's signer over NIP-46 with korrid's client: approve the connection (Korri, sign_event:30078), then the signing request (kind 30078)"
+  # printf is a bash builtin: the address goes down the pipe, never into a
+  # command line. owner-sign keeps its client key and its connection record
+  # (which holds the secret) in a temporary folder that TMPDIR puts in WORK,
+  # so the trap removes it too if owner-sign cannot. korrid's client gives
+  # each step 120 s (remote_signer.rs, REQUEST_TIMEOUT): the connection,
+  # then the signature.
+  printf '%s\n' "$bunker" |
+    TMPDIR="$work" "$KORRID_OWNER_SIGN" --template "$template" --expected-owner "$owner" > "$signed" || status=$?
+  unset bunker
+  [[ "$status" -eq 0 ]] || fail "the owner's signer did not sign (owner-sign's message is above)"
 
   check signed "$template" "$signed" "$owner" || fail "the signer returned another statement than the template"
   local imported

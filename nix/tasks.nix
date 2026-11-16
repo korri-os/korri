@@ -14,21 +14,22 @@ let
   d12Binding =
     let
       tools = import ../clients/android-app/build-tools.nix { inherit pkgs; };
+      korrid = korri.packages.${pkgs.stdenv.hostPlatform.system}.korrid;
     in
     {
       inherit (tools) platformTools;
       runtimeInputs = [
         # outside-git.sh: makeTask adds git too; the script refuses to run without it.
         pkgs.git
-        pkgs.nak
         pkgs.python3
         pkgs.jdk17
         pkgs.gnugrep
-        pkgs.gnused
         pkgs.gawk
       ];
       env = {
-        KORRID = "${korri.packages.${pkgs.stdenv.hostPlatform.system}.korrid}/bin/korrid";
+        KORRID = "${korrid}/bin/korrid";
+        # korrid's own NIP-46 client, the route that Amber answered (README, D12).
+        KORRID_OWNER_SIGN = "${korrid.ownerSign}/bin/owner-sign";
         KORRI_APP_BUILD_TOOLS = tools.buildTools;
       };
     };
@@ -427,10 +428,14 @@ let
         exec bash "$KORRI_ROOT/clients/android-app/d12-binding.sh" "$@"
       '';
     };
-    # Its test, with nak's own bunker and relay and a throwaway owner key; no
-    # phone (clients/android-app/d12-binding.test.sh).
+    # Its test, with nak's own bunker on a strfry relay and a throwaway owner
+    # key; no phone (clients/android-app/d12-binding.test.sh).
     android-app-d12-binding-check = d12Binding // {
       description = "Test D12's owner binding (make) against a throwaway NIP-46 bunker on a loopback relay (#434).";
+      runtimeInputs = d12Binding.runtimeInputs ++ [
+        pkgs.nak
+        pkgs.strfry
+      ];
       script = ''
         exec bash "$KORRI_ROOT/clients/android-app/d12-binding.test.sh"
       '';

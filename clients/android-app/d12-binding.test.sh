@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Tests of d12-binding.sh make (#434 D12) with no phone and no real signer:
-# nak's own NIP-46 bunker, holding a throwaway owner key, on nak's own relay
-# on a free loopback port, in a temporary folder that the test removes. Run
-# it on zao through its Nix app, which gives it the binding's tools:
+# nak's own NIP-46 bunker, holding a throwaway owner key, stands in for Amber;
+# korrid's own client (owner-sign) asks it. The relay is strfry on a free
+# loopback port: like relay.nip46.com and nrs.primal.net, it keeps the
+# ephemeral NIP-46 events for a while, which korrid's client needs (it reads
+# them back, it does not stay subscribed; README, D12). Everything lives in a
+# temporary folder that the test removes. Run it on zao through its Nix app,
+# which gives it the binding's tools:
 #
 #   nix run .#android-app-d12-binding-check
 #
@@ -10,12 +14,14 @@
 set -uo pipefail
 
 : "${KORRID:?run through nix run .#android-app-d12-binding-check}"
+: "${KORRID_OWNER_SIGN:?run through nix run .#android-app-d12-binding-check}"
 : "${KORRI_APP_BUILD_TOOLS:?run through nix run .#android-app-d12-binding-check}"
 binding="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/d12-binding.sh"
 scratch="$(mktemp -d)"
 pids=()
 cleanup() {
   for pid in "${pids[@]}"; do kill "$pid" 2> /dev/null; done
+  wait 2> /dev/null
   rm -rf -- "$scratch"
 }
 trap cleanup EXIT
@@ -29,7 +35,19 @@ failed() {
 
 # The relay and the bunker.
 port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
-nak serve --hostname 127.0.0.1 --port "$port" > "$scratch/relay.log" 2>&1 &
+mkdir "$scratch/strfry-db"
+cat > "$scratch/strfry.conf" <<EOF
+db = "$scratch/strfry-db/"
+dbParams {
+  mapsize = 1073741824
+}
+relay {
+  bind = "127.0.0.1"
+  port = $port
+  nofiles = 0
+}
+EOF
+strfry --config="$scratch/strfry.conf" relay > "$scratch/relay.log" 2>&1 &
 pids+=($!)
 for _ in $(seq 50); do (: > "/dev/tcp/127.0.0.1/$port") 2> /dev/null && break; sleep 0.1; done
 owner_key="$(nak key generate)"
@@ -80,13 +98,38 @@ refused "a link that points nowhere" "$tree" dangling
 refused "a folder whose parent is missing" "$tree" nope/new
 refused "an absolute nope/../keep" / "$tree/nope/../keep"
 
-# A new folder binds, through the bunker.
+# The NIP-46 requests that nak's bunker received, as "AUTHOR METHOD PARAMS".
+requests() {
+  python3 - "$scratch/bunker.log" <<'PY'
+import json, re, sys
+log = open(sys.argv[1]).read()
+for author, body in re.findall(r"request from '([0-9a-f]{64})': (\{.*?\n\})", log, re.DOTALL):
+    request = json.loads(body)
+    print(author, request.get("method"), json.dumps(request.get("params")))
+PY
+}
+
+# A new folder binds, through korrid's own client: its connect asks for
+# sign_event:30078 and names Korri (remote_signer.rs, establish).
 if output="$(cd "$tree" && bash "$binding" make fresh --owner "$owner" --bunker-file "$scratch/bunker.uri" 2>&1)" &&
   [[ "$(stat -c %a "$tree/fresh/state/identity/device.key")" == 600 ]] &&
   [[ -s "$tree/fresh/state/identity/owner.event.json" ]] && unchanged fresh; then
   pass "a new folder: bound over NIP-46, and nothing else changed"
 else
   failed "a new folder: $(tail -n 1 <<< "$output")"
+fi
+if requests | grep 'connect' | grep -q -F 'sign_event:30078' && requests | grep 'connect' | grep -q -F 'Korri'; then
+  pass "korrid's client asked: connect with sign_event:30078, named Korri"
+else
+  failed "korrid's client asked: no such connect request ($(requests | cut -d' ' -f2 | sort | uniq -c | tr -s ' \n' ' '))"
+fi
+# korrid's client made its key and its connection record in WORK, and
+# removed both; nothing in WORK holds the secret.
+if find "$tree/fresh" -name 'korri-owner-sign-*' -o -name 'nip46*' | grep -q . ||
+  grep -r -q -F "$secret" "$tree/fresh"; then
+  failed "a new folder: the client's key, its connection or the secret is still in WORK"
+else
+  pass "a new folder: no client key, connection record or secret left in WORK"
 fi
 if output="$(cd "$tree" && bash "$binding" make fresh2 --owner "$owner" --bunker-file "$scratch/bunker.uri" 2>&1)"; then
   pass "a second new folder: bound"
@@ -103,32 +146,25 @@ else
   pass "a signer of another key than --owner: refused; its new folder removed, nothing else"
 fi
 
-# A connection that the bunker refuses: nak's message, without the secret.
+# A connection that the bunker refuses: korrid names the step, never the
+# signer's text or the secret.
 if output="$(cd "$tree" && bash "$binding" make refused --owner "$owner" --bunker-file "$scratch/wrong.uri" 2>&1)"; then
   failed "a refused connection: make succeeded"
-elif grep -q -F "wrong-$secret" <<< "$output" || ! grep -q 'secret=REDACTED' <<< "$output"; then
-  failed "a refused connection: the output shows the secret, or no nak message"
+elif grep -q -F "$secret" <<< "$output" || ! grep -q 'refused connect' <<< "$output"; then
+  failed "a refused connection: the output shows the secret, or does not name the step: $(tail -n 2 <<< "$output")"
 elif [[ -e "$tree/refused" ]]; then
   failed "a refused connection: its folder is still there"
 else
-  pass "a refused connection: refused, secret=REDACTED in nak's message, folder removed"
+  pass "a refused connection: refused connect, no secret in the output, folder removed"
 fi
 
-# Each run reaches the bunker with a client key of its own, never nak's
-# default for this machine.
-default="$(nak key public "$(nak key default)")"
-mapfile -t clients < <(python3 - "$scratch/bunker.log" <<'PY' | sort -u
-import json, re, sys
-log = open(sys.argv[1]).read()
-for author, body in re.findall(r"request from '([0-9a-f]{64})': (\{.*?\n\})", log, re.DOTALL):
-    if json.loads(body).get("method") == "sign_event":
-        print(author)
-PY
-)
-if [[ "${#clients[@]}" -ge 2 ]] && ! printf '%s\n' "${clients[@]}" | grep -q "$default"; then
-  pass "client keys: ${#clients[@]} runs signed with ${#clients[@]} different keys, none nak's default"
+# Each run reaches the bunker with a client key of its own.
+mapfile -t clients < <(requests | awk '$2 == "sign_event" { print $1 }' | sort -u)
+signs="$(requests | awk '$2 == "sign_event"' | wc -l)"
+if [[ "${#clients[@]}" -ge 3 && "${#clients[@]}" -eq "$signs" ]]; then
+  pass "client keys: $signs signing requests from $signs different keys"
 else
-  failed "client keys: ${clients[*]:-none} (nak's default is $default)"
+  failed "client keys: $signs signing requests from ${#clients[@]} keys"
 fi
 
 echo "failures: $failures"

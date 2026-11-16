@@ -811,14 +811,21 @@ NIP-46 and never holds the key.
 
 The steps, on zao in a checkout. Build `.#korri-android-app-apk` and the
 app `android-app-d12-binding` on aka and copy them as the signing tools are
-copied above (the loop, with `android-app-d12-binding` as the task):
+copied above (the loop, with `android-app-d12-binding` and
+`android-app-d12-binding-check` as the tasks; their closure carries korrid
+and `owner-sign`). Why korrid's own client signs, and not nak's: below.
 
 ```sh
 nix run .#android-app-d12-binding -- sign-debug \
   /nix/store/...-korri-android-app-apk-0.1.0/korri-android-app-unsigned.apk ~/korri-android-app-debug.apk
-# The owner makes a new NIP-46 bunker address (bunker://...) in Amber; its
-# secret works once, so each make needs a new one.
-nix run .#android-app-d12-binding -- make ~/d12-binding   # paste it; approve in Amber
+# The owner makes a new NIP-46 bunker address (bunker://...) in Amber, on
+# relays that keep NIP-46 events (relay.nip46.com, nrs.primal.net); its
+# secret works once, so each make needs a new one. Put it in a 0600 file,
+# or paste it when make asks.
+nix run .#android-app-d12-binding -- make ~/d12-binding --bunker-file ~/d12-bunker.uri
+# Approve in Amber, within 120 s each: the connection (Korri, sign_event:30078;
+# Amber may offer to replace an older "Korri" connection), then the signing
+# request (kind 30078), unless the connection already allowed it.
 # The owner then removes this connection in Amber: make's client key was
 # made for this run only, and nothing uses the connection again.
 adb devices -l                                            # the phone's adb serial
@@ -832,31 +839,46 @@ nak req -k 30078 -t d=org.korri.device-owner:DEVICE wss://relay.primal.net
 | Step | What it does |
 | --- | --- |
 | `sign-debug` | Refuses an APK that is not debuggable (run-as needs one). Signs with Android's debug key, `~/.android/debug.keystore`, as the proofs do |
-| `make WORK` | Resolves WORK first (`realpath -m`), so `nope/../keep`, `x/..` and `.` name the folders they are. Refuses a WORK that is a link, that exists, whose parent is missing, or that is inside a Git work tree (or that git cannot place, or when git is missing: `outside-git.sh`), and a bunker file that is a link or not 0600. Reads the bunker address before it makes anything, from the file or from the terminal (not shown), and gives it to nak only in its environment. Makes the device key with the repository's korrid, has the owner's signer sign the template over NIP-46 with nak, refuses a statement that is not the template or is by another key than `--owner` (default `a80db13f…3dca`), imports it with korrid and checks `Owned` by that owner. nak talks to the signer with a client key made new for the run (`NOSTR_CLIENT_KEY`, in nak's environment only), not nak's default, which any local user can derive from `/etc/machine-id`. nak names the whole bunker address when it cannot connect; its messages go through `sed`, which replaces the secret with `REDACTED`. The owner has five minutes to approve. Only make's own `mkdir WORK`, which fails on an existing folder, makes WORK; if make fails after that, it removes that one resolved folder, device key included |
+| `make WORK` | Resolves WORK first (`realpath -m`), so `nope/../keep`, `x/..` and `.` name the folders they are. Refuses a WORK that is a link, that exists, whose parent is missing, or that is inside a Git work tree (or that git cannot place, or when git is missing: `outside-git.sh`), and a bunker file that is a link or not 0600. Reads the bunker address before it makes anything, from the file or from the terminal (not shown), and gives it to `owner-sign` only on its standard input, from bash's builtin `printf`, never in a command line. Makes the device key with the repository's korrid, has the owner's signer sign the template over NIP-46 with korrid's own client (`owner-sign`), refuses a statement that is not the template or is by another key than `--owner` (default `a80db13f…3dca`), imports it with korrid and checks `Owned` by that owner. `owner-sign` checks the template and the owner before it connects, makes a client key new for the run in a temporary folder that `TMPDIR` puts inside WORK, and removes it with the connection record, which holds the secret. Its messages name the step and korrid's reason (refused, or no answer within 120 s), never the signer's text or the address. The owner has 120 s for the connection and 120 s for the signature. Only make's own `mkdir WORK`, which fails on an existing folder, makes WORK; if make fails after that, it removes that one resolved folder, device key and any client key included |
 | `seed WORK --serial SERIAL` | Needs the phone's adb serial, and prints the phone's model, its own serial and its Android version before it writes. Refuses an app that is not installed, not debuggable or has a device key already (it has started once). Writes both files with run-as and `adb exec-in`, reads their sizes back, checks they are the app's own 0600 files, then deletes `WORK/state`: the phone's device key stays on the phone only |
 
 `nix run .#android-app-d12-binding-check` (`d12-binding.test.sh`) runs
-`make`'s cases with no phone: nak's own bunker, holding a throwaway owner key,
-on nak's own relay on a free loopback port, in a temporary folder. It passed
-on zao on 2026-11-16 (14 cases, 3 s): `nope/../keep`, `x/..` and `.` (run
-in a folder), an existing folder, a link to one (also with a trailing
-slash), a link that points nowhere, a missing parent and an absolute
-`nope/../keep` are refused and change nothing; two new folders bind; a
+`make`'s cases with no phone: nak's own bunker, holding a throwaway owner
+key, stands in for Amber, on a strfry relay (it keeps NIP-46 events, as
+relay.nip46.com does) on a free loopback port, in a temporary folder. It
+passed on zao on 2026-11-16 (16 cases, 5 s): `nope/../keep`, `x/..` and
+`.` (run in a folder), an existing folder, a link to one (also with a
+trailing slash), a link that points nowhere, a missing parent and an
+absolute `nope/../keep` are refused and change nothing; two new folders
+bind; korrid's client asked (`connect` with `sign_event:30078`, named
+Korri); no client key, connection record or secret is left in WORK; a
 signer of another key and a refused connection remove only their own new
-folder, the latter with `secret=REDACTED`; three runs used three client
-keys, none nak's default. Against `4812bb070`'s `make`, the same test fails
-11 cases: `nope/../keep` and `x/..` bound into the existing folders, which
-a failure would then have removed.
+folder, the latter with "The signer refused connect" and no secret in the
+output; three runs signed with three client keys. Against the nak version
+of `make` (`origin/main` before this change), the same test fails 2 cases:
+nak's `connect` carries only the key and the secret, and its refusal names
+no step. Against `4812bb070`'s `make`, the earlier test failed 11 cases:
+`nope/../keep` and `x/..` bound into the existing folders, which a failure
+would then have removed.
 
-Checked by hand on zao on 2026-11-16, with nak 0.20.6 and a throwaway owner
-key behind `nak bunker` on a local `nak serve` relay:
+nak's bunker refuses a wrong secret with `{"id", "error":
+"unauthorized"}` and no `result`. korrid's client required `result`, so it
+dropped that reply and waited 120 s; it now reads it as a refusal
+(`remote_signer.rs`, `Nip46Response`). Amber's refusals already reached
+korrid as refusals: its refused `get_public_key` stopped the SP's identity
+switch on 2026-10-22 (`45cfafc38`), so they carry `result` (inferred).
+
+Checked by hand on zao on 2026-11-16, with korrid's `owner-sign`, nak
+0.20.6's bunker holding a throwaway owner key, and a local relay:
 
 | Case | Result |
 | --- | --- |
-| `make`, twice | The template went over NIP-46, the signed statement matched it, korrid imported it and said `Owned`; the files are 0600 in 0700 folders |
-| The client key | Six runs reached the bunker with six different client keys, none of them nak's default for zao (`a81b644a…`, the key that the first version of this step used) |
-| The bunker refuses the connection (a wrong secret) | Refused; nak's message reads `secret=REDACTED`, and the secret is nowhere in the output. nak alone with the same address prints the secret |
-| A relay that refuses connections | No answer within five minutes: refused after 301 s |
+| `make`, on strfry | The template went over NIP-46, the signed statement matched it, korrid imported it and said `Owned`; the files are 0600 in 0700 folders |
+| The bunker refuses the connection (a wrong secret) | "owner-sign: The signer refused connect. Use a fresh bunker URL."; WORK removed; the secret is nowhere in the output |
+| nak's own client, for comparison | Its `connect` carries `[key, secret]` only; its requests are NIP-44, as korrid's |
+| No relay on the address's port | "Remote signer connection failed: remote signer request failed" at once; WORK removed |
+| A relay, but no signer behind the address | "The signer did not answer connect within 120 s" after 120 s; WORK removed |
+| `nak serve`, which keeps no ephemeral event | The bunker answered `connect`, but korrid never saw the reply: "did not answer connect within 120 s". So korrid's client needs at least one relay in the address that keeps NIP-46 events |
 | A signer of another key than `--owner` | Refused, nothing imported |
 | Each failure after the device key was made (the three above, and a script error) | WORK removed, key included |
 | An existing folder, a folder in this checkout, a bunker file of mode 0644, an address that is not `bunker://` | Refused; nothing made |
@@ -866,13 +888,79 @@ key behind `nak bunker` on a local `nak serve` relay:
 | The closure copy | Built nothing on zao |
 
 Not checked: `seed` (no phone; aka already ran another agent's emulator),
-Amber answering nak's NIP-46 requests, and anything on the phone.
+Amber answering korrid's client on the Fold 8, and anything on the phone.
 
 Costs: a debuggable app lets `run-as` and a debugger read its state, the
 phone's device key included, through USB or wireless debugging. The owner
 statement on the public relays names the phone's device key, as for every
 device. The debug key signs the app, so a later release install needs an
 uninstall first, which deletes the phone's korrid state.
+
+### Which NIP-46 client: korrid's own, not nak's (2026-11-16)
+
+`make` first had nak 0.20.6 ask Amber. On the Fold 8 that never finished
+(the owner's check, 2026-11-16): Amber 6.6.9 showed the connect dialog and,
+after approval, logged "Connect … ack"; nak's requests (`-p <bunker>`)
+reached relay.nip46.com, nrs.primal.net and bucket.coracle.social, but no
+reply from Amber reached any of them (none `-a <bunker>`, none
+`-p <client>`, watched live with `nak req -k 24133 --stream`); nak waited
+five minutes. Amber's NIP-55 `nostrsigner:` intent, sent with
+`adb shell am start`, showed no approval screen either. The test of that
+version passed only against nak's own bunker.
+
+The route that Amber did answer is korrid's own client,
+`Nip46PersonSigner` (`services/korrid/src/remote_signer.rs`):
+
+| What | korrid's client | Where |
+| --- | --- | --- |
+| Who makes the URI | The signer: a `bunker://` address made in Amber, pasted into korrid. korrid has no `nostrconnect://` | `remote_signer.rs`, `parse_bunker_uri`; `owner_sign.rs`, `sign` |
+| Relays | Only the ones the `bunker://` address names | `remote_signer.rs`, `bunker_relay_list` (since `5dffbe0a3`, 2026-10-22) |
+| Encryption | NIP-44 v2, both ways | `identity.rs`, `Nip46ConnectionIdentity::sign_encrypted_event`, `decrypt_event_from` |
+| `connect` | The address's key, its secret, `sign_event:30078`, `{"name":"Korri"}`; no `get_public_key`, which Amber refuses unless granted | `remote_signer.rs`, `establish` (`45cfafc38`, 2026-10-22) |
+| Replies it takes | Kind 24133, by the `bunker://` key, `p`-tagged to its client key, read back from the relays (`since` now − 300 s, every 50 ms); the owner is the signed statement's author | `relay.rs`, `read_signer_packets`; `remote_signer.rs`, `verify_exact_signed_event` |
+| Client key | `nip46-client.key`, beside `nip46.connection.json` (which holds the secret) in its private state | `identity.rs`, `Nip46ConnectionIdentity` |
+| Time | 120 s for each request: `connect`, then `sign_event` | `remote_signer.rs`, `REQUEST_TIMEOUT` |
+
+Its record with Amber: the RG35XX SP's identity switch on 2026-10-22
+(`45cfafc38` names Amber; `5dffbe0a3` and `4e34b8a9e` are fixes of the
+same afternoon), and the LG TV on 2026-11-06
+(`docs/briefs/2026-11-06-webos-milestones.md`, "Joining"), through the
+workstation tool `webos-owner-sign`, whose README names the signer as Amber
+6.6.9 (`clients/shell/webos/README.md` at `webos-final`, "Hidden
+development-only workstation signer"). The webOS cut removed that tool
+(`bed2ee4db`). ADR 0021 (`b9d1c77a2`) says the Odin 2 Portal and the RP
+Mini V2 joined "by hand" through Amber over NIP-46 the same day as the SP,
+but names no client. The tool is back as `owner-sign`
+(`services/korrid/src/owner_sign.rs`, `src/bin/owner-sign.rs`), restored
+from `webos-final`; korrid's package builds it apart
+(`package.nix`, `ownerSign`), so it never ships to a device.
+
+What Amber 6.6.9 does with a `bunker://` connection, read in its source
+(tag `v6.6.9`, `app/src/main/java/com/greenart7c3/nostrsigner/`):
+
+| Fact | Where |
+| --- | --- |
+| The address names a key of this connection only, not the account's key | `ui/NewNsecBunkerScreen.kt` 264, 282, 324 |
+| It signs its replies with that key, so a reply's author is the `bunker://` key: what korrid takes | `service/BunkerRequestUtils.kt` 184–213 |
+| It sends them to the connection's relays, the ones in the address | `service/BunkerRequestUtils.kt` 554–562; `service/EventNotificationConsumer.kt` 384 |
+| It replies in the request's encryption (NIP-04 or NIP-44) | `service/EventNotificationConsumer.kt` 209–213; `service/BunkerRequestUtils.kt` 195–201 |
+| "Connect … ack" is its history entry, written before it sends the reply: the entry does not show that a reply left the phone. If the send fails, it shows an error and undoes the connection | `service/BunkerRequestUtils.kt` 299, 509, 554, 247–253 |
+
+So Amber's replies come from the `bunker://` key on the address's relays,
+which is what korrid's client reads. The two clients' requests differ, as
+seen at a local `nak bunker`: nak's `connect` carries `[key, secret]`
+only, korrid's adds `sign_event:30078` and `{"name":"Korri"}`; both are
+NIP-44 and `p`-tag the `bunker://` key. Why no reply to nak left the phone
+is not known: Amber's source shows nothing that answers korrid and not
+nak. The change moves `make` to the route with a record, korrid's client;
+it does not prove that the cause was nak.
+
+korrid's client reads replies back instead of staying subscribed, so it
+needs a relay that keeps the ephemeral kind 24133 for a while. Checked on
+2026-11-16 from zao with a throwaway key and an unencrypted kind 24133:
+relay.nip46.com and nrs.primal.net returned it to a new request 2 s later;
+bucket.coracle.social did not return it 85 s later; relay.nsec.app did not
+connect.
 
 ## Next slices
 
