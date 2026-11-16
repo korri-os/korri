@@ -695,18 +695,22 @@ where
         self.publish_json(event_json).await
     }
 
+    /// NIP-46 packets to `recipient_public_key`; from `author_public_key`
+    /// only when it is given.
     pub async fn read_signer_packets(
         &self,
-        author_public_key: &str,
+        author_public_key: Option<&str>,
         recipient_public_key: &str,
         since: u64,
     ) -> Result<Vec<String>, RelayError> {
-        validate_public_key(author_public_key)?;
+        if let Some(author) = author_public_key {
+            validate_public_key(author)?;
+        }
         validate_public_key(recipient_public_key)?;
         let filter = RelayFilter {
             kinds: vec![24_133],
             recipient_public_key: Some(recipient_public_key.into()),
-            author_public_key: Some(author_public_key.into()),
+            author_public_key: author_public_key.map(str::to_owned),
             since: Some(since),
             limit: MAX_READ_EVENTS,
         };
@@ -2925,7 +2929,7 @@ mod tests {
         // Roster-specific outage reporting must not change signer or endpoint reads.
         assert!(reader
             .read_signer_packets(
-                second.device_public_key().unwrap(),
+                second.device_public_key(),
                 second.device_public_key().unwrap(),
                 0
             )

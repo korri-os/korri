@@ -843,9 +843,27 @@ impl Nip46ConnectionIdentity {
         expected_author: &str,
     ) -> Result<VerifiedEvent, IdentityError> {
         let expected_author = parse_public_key(expected_author)?;
+        self.decrypt_event(event_json, Some(&expected_author))
+    }
+
+    /// An event to this client from any author: signed, tagged to this client
+    /// exactly once, and NIP-44 encrypted with the conversation key of this
+    /// client and its author. Its `author` names the key that sent it.
+    pub fn decrypt_event_from_any_author(
+        &self,
+        event_json: &str,
+    ) -> Result<VerifiedEvent, IdentityError> {
+        self.decrypt_event(event_json, None)
+    }
+
+    fn decrypt_event(
+        &self,
+        event_json: &str,
+        expected_author: Option<&PublicKey>,
+    ) -> Result<VerifiedEvent, IdentityError> {
         let event = Event::from_json(event_json).map_err(|_| IdentityError::Decryption)?;
         event.verify().map_err(|_| IdentityError::Decryption)?;
-        if event.pubkey != expected_author
+        if expected_author.is_some_and(|author| event.pubkey != *author)
             || !has_exact_recipient(&event, &self.keys.public_key().to_hex())
         {
             return Err(IdentityError::Decryption);

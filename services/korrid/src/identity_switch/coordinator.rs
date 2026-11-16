@@ -183,7 +183,7 @@ impl IdentitySwitchCoordinator {
                     Nip46PersonSigner::connect_from_bunker(&staged_root, relays, &bunker_uri)
                         .map_err(|error| error.to_string())?;
                 signer
-                    .establish(unix_time())
+                    .establish(unix_time(), &new_device)
                     .await
                     .map_err(|error| error.to_string())?;
                 // The signed owner statement names the person key.

@@ -142,7 +142,7 @@ fn connection_diagnostics_do_not_echo_signer_text_or_connection_secrets() {
     assert!(message.contains("refused connect"), "{message}");
     let silent = connection_failure(crate::remote_signer::RemoteSignerError::Timeout);
     assert!(
-        silent.contains("did not answer connect within 120 s"),
+        silent.contains("did not answer connect within 300 s"),
         "{silent}"
     );
     let unreachable = connection_failure(crate::remote_signer::RemoteSignerError::Request);
@@ -174,5 +174,22 @@ fn a_signing_failure_says_korrids_reason_and_never_the_signers_text() {
     assert!(
         silent.ends_with("remote signer request timed out"),
         "{silent}"
+    );
+}
+
+#[test]
+fn the_key_that_answered_connect_is_named() {
+    let bunker = "b".repeat(64);
+    let other = "a".repeat(64);
+    assert_eq!(
+        connect_answer(&bunker, &bunker),
+        format!("The signer answered connect from the bunker:// key {bunker}.")
+    );
+    let moved = connect_answer(&bunker, &other);
+    assert!(
+        moved.starts_with(&format!(
+            "The signer answered connect from {other}, not from the bunker:// key {bunker}"
+        )),
+        "{moved}"
     );
 }

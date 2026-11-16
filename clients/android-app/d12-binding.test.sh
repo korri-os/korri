@@ -110,7 +110,9 @@ PY
 }
 
 # A new folder binds, through korrid's own client: its connect asks for
-# sign_event:30078 and names Korri (remote_signer.rs, establish).
+# sign_event:30078 and is named after the phone's device key, so Amber has
+# no older "Korri" connection to offer to replace (remote_signer.rs,
+# establish).
 if output="$(cd "$tree" && bash "$binding" make fresh --owner "$owner" --bunker-file "$scratch/bunker.uri" 2>&1)" &&
   [[ "$(stat -c %a "$tree/fresh/state/identity/device.key")" == 600 ]] &&
   [[ -s "$tree/fresh/state/identity/owner.event.json" ]] && unchanged fresh; then
@@ -118,10 +120,19 @@ if output="$(cd "$tree" && bash "$binding" make fresh --owner "$owner" --bunker-
 else
   failed "a new folder: $(tail -n 1 <<< "$output")"
 fi
-if requests | grep 'connect' | grep -q -F 'sign_event:30078' && requests | grep 'connect' | grep -q -F 'Korri'; then
-  pass "korrid's client asked: connect with sign_event:30078, named Korri"
+device="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["tags"][1][1])' "$tree/fresh/template.json" 2> /dev/null)"
+name="Korri ${device:0:8}"
+if [[ -n "$device" ]] && requests | grep ' connect ' | grep -q -F 'sign_event:30078' &&
+  requests | grep ' connect ' | grep -q -F "$name"; then
+  pass "korrid's client asked: connect with sign_event:30078, named \"$name\""
 else
-  failed "korrid's client asked: no such connect request ($(requests | cut -d' ' -f2 | sort | uniq -c | tr -s ' \n' ' '))"
+  failed "korrid's client asked: no connect named \"$name\" ($(requests | cut -d' ' -f2 | sort | uniq -c | tr -s ' \n' ' '))"
+fi
+# make says which key answered connect: here nak's bunker, from its own key.
+if grep -q -F "answered connect from the bunker:// key $owner" <<< "$output"; then
+  pass "a new folder: make named the key that answered connect"
+else
+  failed "a new folder: no line names the key that answered connect"
 fi
 # korrid's client made its key and its connection record in WORK, and
 # removed both; nothing in WORK holds the secret.

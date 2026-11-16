@@ -159,13 +159,14 @@ make_binding() {
   echo "the phone's device key: $device"
   echo "the statement to sign: kind 30078, created_at $created_at, by the owner $owner"
 
-  echo "asking the owner's signer over NIP-46 with korrid's client: approve the connection (Korri, sign_event:30078), then the signing request (kind 30078)"
+  echo "asking the owner's signer over NIP-46 with korrid's client: approve the connection \"Korri ${device:0:8}\" (sign_event:30078) within 300 s, then the signing request (kind 30078) within 120 s"
   # printf is a bash builtin: the address goes down the pipe, never into a
   # command line. owner-sign keeps its client key and its connection record
   # (which holds the secret) in a temporary folder that TMPDIR puts in WORK,
-  # so the trap removes it too if owner-sign cannot. korrid's client gives
-  # each step 120 s (remote_signer.rs, REQUEST_TIMEOUT): the connection,
-  # then the signature.
+  # so the trap removes it too if owner-sign cannot. korrid's client waits
+  # 300 s for the connection, then 120 s for the signature (remote_signer.rs,
+  # CONNECT_TIMEOUT, REQUEST_TIMEOUT). The connection is named after the
+  # device, so Amber does not offer to replace an older "Korri" connection.
   printf '%s\n' "$bunker" |
     TMPDIR="$work" "$KORRID_OWNER_SIGN" --template "$template" --expected-owner "$owner" > "$signed" || status=$?
   unset bunker

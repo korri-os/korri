@@ -823,9 +823,10 @@ nix run .#android-app-d12-binding -- sign-debug \
 # secret works once, so each make needs a new one. Put it in a 0600 file,
 # or paste it when make asks.
 nix run .#android-app-d12-binding -- make ~/d12-binding --bunker-file ~/d12-bunker.uri
-# Approve in Amber, within 120 s each: the connection (Korri, sign_event:30078;
-# Amber may offer to replace an older "Korri" connection), then the signing
-# request (kind 30078), unless the connection already allowed it.
+# Approve in Amber the connection "Korri <first 8 characters of the phone's
+# device key>" (sign_event:30078) within 300 s, then the signing request
+# (kind 30078) within 120 s, unless the connection already allowed it. make
+# prints the name and, after the connection, the key that answered.
 # The owner then removes this connection in Amber: make's client key was
 # made for this run only, and nothing uses the connection again.
 adb devices -l                                            # the phone's adb serial
@@ -839,19 +840,21 @@ nak req -k 30078 -t d=org.korri.device-owner:DEVICE wss://relay.primal.net
 | Step | What it does |
 | --- | --- |
 | `sign-debug` | Refuses an APK that is not debuggable (run-as needs one). Signs with Android's debug key, `~/.android/debug.keystore`, as the proofs do |
-| `make WORK` | Resolves WORK first (`realpath -m`), so `nope/../keep`, `x/..` and `.` name the folders they are. Refuses a WORK that is a link, that exists, whose parent is missing, or that is inside a Git work tree (or that git cannot place, or when git is missing: `outside-git.sh`), and a bunker file that is a link or not 0600. Reads the bunker address before it makes anything, from the file or from the terminal (not shown), and gives it to `owner-sign` only on its standard input, from bash's builtin `printf`, never in a command line. Makes the device key with the repository's korrid, has the owner's signer sign the template over NIP-46 with korrid's own client (`owner-sign`), refuses a statement that is not the template or is by another key than `--owner` (default `a80db13f…3dca`), imports it with korrid and checks `Owned` by that owner. `owner-sign` checks the template and the owner before it connects, makes a client key new for the run in a temporary folder that `TMPDIR` puts inside WORK, and removes it with the connection record, which holds the secret. Its messages name the step and korrid's reason (refused, or no answer within 120 s), never the signer's text or the address. The owner has 120 s for the connection and 120 s for the signature. Only make's own `mkdir WORK`, which fails on an existing folder, makes WORK; if make fails after that, it removes that one resolved folder, device key and any client key included |
+| `make WORK` | Resolves WORK first (`realpath -m`), so `nope/../keep`, `x/..` and `.` name the folders they are. Refuses a WORK that is a link, that exists, whose parent is missing, or that is inside a Git work tree (or that git cannot place, or when git is missing: `outside-git.sh`), and a bunker file that is a link or not 0600. Reads the bunker address before it makes anything, from the file or from the terminal (not shown), and gives it to `owner-sign` only on its standard input, from bash's builtin `printf`, never in a command line. Makes the device key with the repository's korrid, has the owner's signer sign the template over NIP-46 with korrid's own client (`owner-sign`), refuses a statement that is not the template or is by another key than `--owner` (default `a80db13f…3dca`), imports it with korrid and checks `Owned` by that owner. `owner-sign` checks the template and the owner before it connects, makes a client key new for the run in a temporary folder that `TMPDIR` puts inside WORK, and removes it with the connection record, which holds the secret. Its messages name the step and korrid's reason (refused, or no answer within 300 s), never the signer's text or the address, and they name the public key that answered `connect`. The owner has 300 s for the connection and 120 s for the signature. Only make's own `mkdir WORK`, which fails on an existing folder, makes WORK; if make fails after that, it removes that one resolved folder, device key and any client key included |
 | `seed WORK --serial SERIAL` | Needs the phone's adb serial, and prints the phone's model, its own serial and its Android version before it writes. Refuses an app that is not installed, not debuggable or has a device key already (it has started once). Writes both files with run-as and `adb exec-in`, reads their sizes back, checks they are the app's own 0600 files, then deletes `WORK/state`: the phone's device key stays on the phone only |
 
 `nix run .#android-app-d12-binding-check` (`d12-binding.test.sh`) runs
 `make`'s cases with no phone: nak's own bunker, holding a throwaway owner
 key, stands in for Amber, on a strfry relay (it keeps NIP-46 events, as
 relay.nip46.com does) on a free loopback port, in a temporary folder. It
-passed on zao on 2026-11-16 (16 cases, 5 s): `nope/../keep`, `x/..` and
+passed on zao on 2026-11-16 (17 cases, 6 s): `nope/../keep`, `x/..` and
 `.` (run in a folder), an existing folder, a link to one (also with a
 trailing slash), a link that points nowhere, a missing parent and an
 absolute `nope/../keep` are refused and change nothing; two new folders
 bind; korrid's client asked (`connect` with `sign_event:30078`, named
-Korri); no client key, connection record or secret is left in WORK; a
+`Korri` and the first 8 characters of the phone's device key); make named
+the key that answered `connect`; no client key, connection record or
+secret is left in WORK; a
 signer of another key and a refused connection remove only their own new
 folder, the latter with "The signer refused connect" and no secret in the
 output; three runs signed with three client keys. Against the nak version
@@ -877,8 +880,8 @@ Checked by hand on zao on 2026-11-16, with korrid's `owner-sign`, nak
 | The bunker refuses the connection (a wrong secret) | "owner-sign: The signer refused connect. Use a fresh bunker URL."; WORK removed; the secret is nowhere in the output |
 | nak's own client, for comparison | Its `connect` carries `[key, secret]` only; its requests are NIP-44, as korrid's |
 | No relay on the address's port | "Remote signer connection failed: remote signer request failed" at once; WORK removed |
-| A relay, but no signer behind the address | "The signer did not answer connect within 120 s" after 120 s; WORK removed |
-| `nak serve`, which keeps no ephemeral event | The bunker answered `connect`, but korrid never saw the reply: "did not answer connect within 120 s". So korrid's client needs at least one relay in the address that keeps NIP-46 events |
+| A relay, but no signer behind the address | "The signer did not answer connect within 300 s" after 300 s; WORK removed |
+| `nak serve`, which keeps no ephemeral event | The bunker answered `connect`, but korrid never saw the reply and gave up at its deadline (checked when that was 120 s). So korrid's client needs at least one relay in the address that keeps NIP-46 events |
 | A signer of another key than `--owner` | Refused, nothing imported |
 | Each failure after the device key was made (the three above, and a script error) | WORK removed, key included |
 | An existing folder, a folder in this checkout, a bunker file of mode 0644, an address that is not `bunker://` | Refused; nothing made |
@@ -916,10 +919,10 @@ The route that Amber did answer is korrid's own client,
 | Who makes the URI | The signer: a `bunker://` address made in Amber, pasted into korrid. korrid has no `nostrconnect://` | `remote_signer.rs`, `parse_bunker_uri`; `owner_sign.rs`, `sign` |
 | Relays | Only the ones the `bunker://` address names | `remote_signer.rs`, `bunker_relay_list` (since `5dffbe0a3`, 2026-10-22) |
 | Encryption | NIP-44 v2, both ways | `identity.rs`, `Nip46ConnectionIdentity::sign_encrypted_event`, `decrypt_event_from` |
-| `connect` | The address's key, its secret, `sign_event:30078`, `{"name":"Korri"}`; no `get_public_key`, which Amber refuses unless granted | `remote_signer.rs`, `establish` (`45cfafc38`, 2026-10-22) |
-| Replies it takes | Kind 24133, by the `bunker://` key, `p`-tagged to its client key, read back from the relays (`since` now − 300 s, every 50 ms); the owner is the signed statement's author | `relay.rs`, `read_signer_packets`; `remote_signer.rs`, `verify_exact_signed_event` |
+| `connect` | The address's key, its secret, `sign_event:30078`, `{"name":"Korri <first 8 characters of the device key>"}`; no `get_public_key`, which Amber refuses unless granted | `remote_signer.rs`, `establish`, `connection_name` (`45cfafc38`, 2026-10-22) |
+| Replies it takes | Kind 24133, `p`-tagged to its client key once, NIP-44 encrypted with the conversation key of the client and the reply's author, read back from the relays (`since` now − 300 s, every 50 ms). The reply to `connect` may come from any key that carries the request's random id, which only the `bunker://` key could read; that key then gets every later request, and its replies only count. The owner is the signed statement's author | `relay.rs`, `read_signer_packets`; `identity.rs`, `decrypt_event_from_any_author`; `remote_signer.rs`, `send_request`, `verify_exact_signed_event` |
 | Client key | `nip46-client.key`, beside `nip46.connection.json` (which holds the secret) in its private state | `identity.rs`, `Nip46ConnectionIdentity` |
-| Time | 120 s for each request: `connect`, then `sign_event` | `remote_signer.rs`, `REQUEST_TIMEOUT` |
+| Time | 300 s for `connect`, then 120 s for `sign_event` | `remote_signer.rs`, `CONNECT_TIMEOUT`, `REQUEST_TIMEOUT` |
 
 Its record with Amber: the RG35XX SP's identity switch on 2026-10-22
 (`45cfafc38` names Amber; `5dffbe0a3` and `4e34b8a9e` are fixes of the
@@ -941,19 +944,35 @@ What Amber 6.6.9 does with a `bunker://` connection, read in its source
 | Fact | Where |
 | --- | --- |
 | The address names a key of this connection only, not the account's key | `ui/NewNsecBunkerScreen.kt` 264, 282, 324 |
-| It signs its replies with that key, so a reply's author is the `bunker://` key: what korrid takes | `service/BunkerRequestUtils.kt` 184–213 |
+| It signs its replies with the key of the connection that answers: the `bunker://` key, or a new key after "Create new connection" (seen on the Fold 8, below) | `service/BunkerRequestUtils.kt` 184–213 |
 | It sends them to the connection's relays, the ones in the address | `service/BunkerRequestUtils.kt` 554–562; `service/EventNotificationConsumer.kt` 384 |
 | It replies in the request's encryption (NIP-04 or NIP-44) | `service/EventNotificationConsumer.kt` 209–213; `service/BunkerRequestUtils.kt` 195–201 |
 | "Connect … ack" is its history entry, written before it sends the reply: the entry does not show that a reply left the phone. If the send fails, it shows an error and undoes the connection | `service/BunkerRequestUtils.kt` 299, 509, 554, 247–253 |
 
-So Amber's replies come from the `bunker://` key on the address's relays,
-which is what korrid's client reads. The two clients' requests differ, as
+So Amber's replies go to the address's relays, from the key of the
+connection that answers. The two clients' requests differ, as
 seen at a local `nak bunker`: nak's `connect` carries `[key, secret]`
-only, korrid's adds `sign_event:30078` and `{"name":"Korri"}`; both are
+only, korrid's adds `sign_event:30078` and its name; both are
 NIP-44 and `p`-tag the `bunker://` key. Why no reply to nak left the phone
 is not known: Amber's source shows nothing that answers korrid and not
 nak. The change moves `make` to the route with a record, korrid's client;
 it does not prove that the cause was nak.
+
+Then korrid's client failed on the Fold 8 too, and the owner found why
+(2026-11-16): its `connect` was named `Korri`, Amber 6.6.9 already had
+connections of that name, and it asked "Replace connection" or "Create new
+connection". With "Create new connection" it made a new connection with a
+new key and answered from that key, not from the `bunker://` key. korrid
+took replies from the `bunker://` key only, so it waited 120 s and failed.
+A run with the new connection's address (key `4f926d…`) got an answer at
+once ("The signer refused connect": that secret was spent), so replies did
+reach korrid when the key matched. korrid now names each connection after
+the device it binds, takes the reply to `connect` from whichever key
+answers with the request's id, and asks that key from then on (NIP-46: the
+remote-signer key may differ from the `bunker://` key); it waits 300 s for
+`connect`. The tests in `remote_signer.rs` cover a signer that answers
+from another key, and replies from another key that do not decrypt or
+answer another request, which korrid ignores.
 
 korrid's client reads replies back instead of staying subscribed, so it
 needs a relay that keeps the ephemeral kind 24133 for a while. Checked on

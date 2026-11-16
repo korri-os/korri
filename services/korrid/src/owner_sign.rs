@@ -7,8 +7,8 @@ use crate::{
     identity::{validate_owned_statement_template, DeviceIdentity, OwnerStatementStatus},
     relay::{CoordinatedRelays, WebSocketRelayTransport},
     remote_signer::{
-        bunker_relay_list, Nip46PersonSigner, PersonSigner, PersonSignerRequest, PersonSignerState,
-        RemoteSignerError, REQUEST_TIMEOUT,
+        bunker_relay_list, connection_name, Nip46PersonSigner, PersonSigner, PersonSignerRequest,
+        PersonSignerState, RemoteSignerError, CONNECT_TIMEOUT, REQUEST_TIMEOUT,
     },
 };
 use std::{
@@ -86,7 +86,7 @@ fn connection_failure(error: RemoteSignerError) -> String {
         }
         RemoteSignerError::Timeout => format!(
             "The signer did not answer connect within {} s. Check its relays and use a fresh bunker URL.",
-            REQUEST_TIMEOUT.as_secs()
+            CONNECT_TIMEOUT.as_secs()
         ),
         error => format!(
             "Remote signer connection failed: {error}. Check its relays and use a fresh bunker URL."
@@ -94,8 +94,21 @@ fn connection_failure(error: RemoteSignerError) -> String {
     }
 }
 
+// Which key answered connect: public keys only. Amber 6.6.9 answers from a
+// new key after "Create new connection" (remote_signer.rs, establish).
+fn connect_answer(bunker_key: &str, answered_by: &str) -> String {
+    if answered_by == bunker_key {
+        format!("The signer answered connect from the bunker:// key {answered_by}.")
+    } else {
+        format!(
+            "The signer answered connect from {answered_by}, not from the bunker:// key {bunker_key}; korrid asks {answered_by} from now on."
+        )
+    }
+}
+
 pub async fn sign(template: &str, expected_owner: &str, bunker: &str) -> Result<String, String> {
-    validate_owned_statement_template(template).map_err(|error| error.to_string())?;
+    let requested =
+        validate_owned_statement_template(template).map_err(|error| error.to_string())?;
     let owner = nostr::key::PublicKey::from_hex(expected_owner)
         .map_err(|_| "Expected owner must be a valid public key")?
         .to_hex();
@@ -117,12 +130,22 @@ pub async fn sign(template: &str, expected_owner: &str, bunker: &str) -> Result<
     );
     let signer = Nip46PersonSigner::connect_from_bunker(scratch.path(), coordinator, bunker)
         .map_err(|_| "Could not prepare remote signer")?;
-    eprintln!("Approve the connection in the owner's signer, then approve the owner-binding event (kind 30078). Use the same person key as the existing federation.");
+    let bunker_key = signer.remote_signer_public_key();
+    eprintln!(
+        "Approve the connection \"{}\" in the owner's signer within {} s, then the owner-binding event (kind 30078) within {} s. Use the same person key as the existing federation.",
+        connection_name(&requested.device_public_key),
+        CONNECT_TIMEOUT.as_secs(),
+        REQUEST_TIMEOUT.as_secs()
+    );
     let operation = async {
         signer
-            .establish(crate::peer_rpc::unix_time())
+            .establish(crate::peer_rpc::unix_time(), &requested.device_public_key)
             .await
             .map_err(connection_failure)?;
+        eprintln!(
+            "{}",
+            connect_answer(&bunker_key, &signer.remote_signer_public_key())
+        );
         let state = signer
             .request(PersonSignerRequest {
                 unsigned_event_template: template.into(),

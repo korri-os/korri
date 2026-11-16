@@ -18,6 +18,8 @@ const NIP46_EVENT_KIND: u16 = 24_133;
 const OWNER_EVENT_KIND: u16 = 30_078;
 const REQUESTED_PERMISSIONS: &str = "sign_event:30078";
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+/// A new connection asks the person more than one signature does.
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(300);
 const POLL_DELAY: Duration = Duration::from_millis(50);
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_CONNECTION_BYTES: usize = 64 * 1024;
@@ -65,9 +67,10 @@ pub trait PersonSigner: Send + Sync {
 
 pub trait SignerRelayCoordinator: Send + Sync {
     fn publish<'a>(&'a self, event_json: &'a str) -> BoxFuture<'a, PublishState>;
+    /// Packets to the client, from `remote_signer_public_key` when given.
     fn responses<'a>(
         &'a self,
-        remote_signer_public_key: &'a str,
+        remote_signer_public_key: Option<&'a str>,
         client_public_key: &'a str,
         since: u64,
     ) -> BoxFuture<'a, Result<Vec<String>, RelayError>>;
@@ -83,7 +86,7 @@ where
 
     fn responses<'a>(
         &'a self,
-        remote_signer_public_key: &'a str,
+        remote_signer_public_key: Option<&'a str>,
         client_public_key: &'a str,
         since: u64,
     ) -> BoxFuture<'a, Result<Vec<String>, RelayError>> {
@@ -328,9 +331,28 @@ where
             .clone()
     }
 
+    /// The key this client sends its requests to and takes replies from.
+    pub fn remote_signer_public_key(&self) -> String {
+        self.connection
+            .lock()
+            .expect("remote signer lock poisoned")
+            .remote_signer_public_key
+            .clone()
+    }
+
     /// NIP-46 `connect` only. The person key is learned from the first signed
     /// owner statement, so the signer needs no `get_public_key` permission.
-    pub async fn establish(&self, now: u64) -> Result<(), RemoteSignerError> {
+    ///
+    /// The reply may come from another key than the `bunker://` one (NIP-46:
+    /// the remote-signer key may differ). Amber 6.6.9 answers from a new key
+    /// when the person picks "Create new connection". That key becomes the
+    /// remote signer of every later request.
+    pub async fn establish(
+        &self,
+        now: u64,
+        device_public_key: &str,
+    ) -> Result<(), RemoteSignerError> {
+        validate_public_key(device_public_key)?;
         let connection = self
             .connection
             .lock()
@@ -343,15 +365,22 @@ where
                 connection.remote_signer_public_key.clone(),
                 connection.secret.clone().unwrap_or_default(),
                 REQUESTED_PERMISSIONS.into(),
-                serde_json::json!({"name": "Korri"}).to_string(),
+                serde_json::json!({"name": connection_name(device_public_key)}).to_string(),
             ],
         };
-        match self.send_request(connect, now).await {
-            Ok(result) => {
+        // Any sender: only the holder of the bunker key could read this
+        // request, so only it knows the random request id that a reply must
+        // carry.
+        match self.send_request(connect, now, None, CONNECT_TIMEOUT).await {
+            Ok((sender, result)) => {
                 let expected = connection.secret.as_deref().unwrap_or("ack");
                 if result != expected && !(connection.secret.is_some() && result == "ack") {
                     return Err(RemoteSignerError::InvalidResponse);
                 }
+                self.connection
+                    .lock()
+                    .expect("remote signer lock poisoned")
+                    .remote_signer_public_key = sender;
             }
             // Every attempt connects with a new client key, so this means the
             // URI's one-time secret was already used by an earlier attempt.
@@ -393,7 +422,8 @@ where
             .expect("remote signer lock poisoned")
             .user_public_key
             .clone();
-        let result = self
+        let remote = self.remote_signer_public_key();
+        let (_, result) = self
             .send_request(
                 Nip46Request {
                     id: self.request_ids.next(),
@@ -401,6 +431,8 @@ where
                     params: vec![template.into()],
                 },
                 now,
+                Some(&remote),
+                REQUEST_TIMEOUT,
             )
             .await?;
         let user = verify_exact_signed_event(template_value, known.as_deref(), &result)?;
@@ -414,11 +446,16 @@ where
         Ok((user, result))
     }
 
+    /// Sends `request` to the remote signer and waits up to `wait` for its
+    /// reply from `sender`, or from any key when `sender` is `None`. Returns
+    /// the key that answered and the result.
     async fn send_request(
         &self,
         request: Nip46Request,
         now: u64,
-    ) -> Result<String, RemoteSignerError> {
+        sender: Option<&str>,
+        wait: Duration,
+    ) -> Result<(String, String), RemoteSignerError> {
         let connection = self
             .connection
             .lock()
@@ -437,13 +474,13 @@ where
         if !self.coordinator.publish(&event.json).await.accepted() {
             return Err(RemoteSignerError::Request);
         }
-        let deadline = Instant::now() + REQUEST_TIMEOUT;
-        timeout(REQUEST_TIMEOUT, async {
+        let deadline = Instant::now() + wait;
+        timeout(wait, async {
             loop {
                 let packets = self
                     .coordinator
                     .responses(
-                        &connection.remote_signer_public_key,
+                        sender,
                         &connection.client_public_key,
                         now.saturating_sub(300),
                     )
@@ -453,8 +490,10 @@ where
                     if packet.len() > MAX_RESPONSE_BYTES {
                         continue;
                     }
-                    let response = match self.decode_response(&packet, now) {
-                        Ok(response) if response.id == request.id => response,
+                    let (answered_by, response) = match self.decode_response(&packet, now, sender) {
+                        Ok((answered_by, response)) if response.id == request.id => {
+                            (answered_by, response)
+                        }
                         _ => continue,
                     };
                     if response.result == "auth_url" {
@@ -466,7 +505,7 @@ where
                             reason: signer_error_text(&error),
                         });
                     }
-                    return Ok(response.result);
+                    return Ok((answered_by, response.result));
                 }
                 if Instant::now() >= deadline {
                     return Err(RemoteSignerError::Timeout);
@@ -478,28 +517,40 @@ where
         .map_err(|_| RemoteSignerError::Timeout)?
     }
 
+    /// A reply to this client from `sender`, or from any key when `sender`
+    /// is `None`, decrypted with its author's key. Returns that author.
     fn decode_response(
         &self,
         event_json: &str,
         now: u64,
-    ) -> Result<Nip46Response, RemoteSignerError> {
-        let connection = self
-            .connection
-            .lock()
-            .expect("remote signer lock poisoned")
-            .clone();
-        let verified = self
-            .connection_identity
-            .decrypt_event_from(event_json, &connection.remote_signer_public_key)
-            .map_err(|_| RemoteSignerError::InvalidResponse)?;
+        sender: Option<&str>,
+    ) -> Result<(String, Nip46Response), RemoteSignerError> {
+        let verified = match sender {
+            Some(sender) => self
+                .connection_identity
+                .decrypt_event_from(event_json, sender),
+            None => self
+                .connection_identity
+                .decrypt_event_from_any_author(event_json),
+        }
+        .map_err(|_| RemoteSignerError::InvalidResponse)?;
         if verified.kind != NIP46_EVENT_KIND
             || verified.created_at > now.saturating_add(300)
             || verified.content.len() > MAX_RESPONSE_BYTES
         {
             return Err(RemoteSignerError::InvalidResponse);
         }
-        serde_json::from_str(&verified.content).map_err(|_| RemoteSignerError::InvalidResponse)
+        let response = serde_json::from_str(&verified.content)
+            .map_err(|_| RemoteSignerError::InvalidResponse)?;
+        Ok((verified.author, response))
     }
+}
+
+/// The name in `connect`. It names the device, so a signer that already has a
+/// "Korri" connection has no reason to offer to replace it (Amber 6.6.9 does,
+/// and its "Create new connection" then answers from a new key).
+pub(crate) fn connection_name(device_public_key: &str) -> String {
+    format!("Korri {}", &device_public_key[..8])
 }
 
 impl<C> PersonSigner for Nip46PersonSigner<C>
@@ -871,5 +922,317 @@ mod tests {
             "22".repeat(32)
         );
         assert!(bunker_relay_list(&plaintext).is_err());
+    }
+
+    struct NoRelayAuth;
+
+    impl crate::relay::RelayAuthSigner for NoRelayAuth {
+        fn sign_auth(&self, _: &str, _: &str, _: u64) -> Result<String, RelayError> {
+            unreachable!()
+        }
+    }
+
+    /// One NIP-46 reply: authored by `from`, encrypted with the conversation
+    /// key of `encrypted_by` and the client.
+    fn nip46_reply(
+        from: &Keys,
+        encrypted_by: &Keys,
+        client: &nostr::key::PublicKey,
+        id: &str,
+        result: &str,
+    ) -> String {
+        let response = serde_json::to_string(&Nip46Response {
+            id: id.into(),
+            result: result.into(),
+            error: None,
+        })
+        .unwrap();
+        let content = nip44::encrypt(
+            encrypted_by.secret_key(),
+            client,
+            response.as_bytes(),
+            nip44::Version::V2,
+        )
+        .unwrap();
+        EventBuilder::new(Kind::Custom(NIP46_EVENT_KIND), content)
+            .tag(Tag::public_key(*client))
+            .custom_created_at(Timestamp::now())
+            .finalize(from)
+            .unwrap()
+            .as_json()
+    }
+
+    /// What the test's signer does with `connect`.
+    #[derive(Clone, Copy)]
+    enum SignerBehavior {
+        Answers,
+        /// First two replies from an intruder key: one claims the request
+        /// but is encrypted under the answering key's conversation, one
+        /// decrypts but answers another request. korrid sees them alone
+        /// for two reads before the true reply.
+        ForgesThenAnswers,
+        OnlyForges,
+    }
+
+    /// A NIP-46 signer on the in-process relays. It reads the requests sent
+    /// to `bunker` or to `answering` on the first relay and answers each
+    /// from `answering` on the second, as Amber 6.6.9 does after "Create new
+    /// connection". It returns the requests it read, after `sign_event`.
+    fn spawn_signer(
+        network: Arc<InProcessRelayNetwork>,
+        relays: RelayList,
+        keys: (Keys, Keys, Keys),
+        behavior: SignerBehavior,
+    ) -> tokio::task::JoinHandle<Vec<Nip46Request>> {
+        let (bunker, answering, owner) = keys;
+        tokio::spawn(async move {
+            let inbox = relays.as_slice()[0].clone();
+            let outbox = relays.as_slice()[1].clone();
+            let mut seen = std::collections::BTreeSet::new();
+            let mut requests = Vec::new();
+            loop {
+                for addressee in [&bunker, &answering] {
+                    let filter = crate::relay::RelayFilter {
+                        kinds: vec![NIP46_EVENT_KIND],
+                        recipient_public_key: Some(addressee.public_key().to_hex()),
+                        author_public_key: None,
+                        since: None,
+                        limit: 10,
+                    };
+                    let deliveries = network
+                        .read(&inbox, &filter, Arc::new(NoRelayAuth))
+                        .await
+                        .unwrap();
+                    for delivery in deliveries {
+                        let event = Event::from_json(&delivery.event_json).unwrap();
+                        if !seen.insert(event.id) {
+                            continue;
+                        }
+                        let plaintext = nip44::decrypt(
+                            addressee.secret_key(),
+                            &event.pubkey,
+                            event.content.as_bytes(),
+                        )
+                        .unwrap();
+                        let request: Nip46Request = serde_json::from_str(&plaintext).unwrap();
+                        let result = match request.method.as_str() {
+                            "connect" => {
+                                if !matches!(behavior, SignerBehavior::Answers) {
+                                    let intruder = Keys::generate();
+                                    for reply in [
+                                        nip46_reply(
+                                            &intruder,
+                                            &answering,
+                                            &event.pubkey,
+                                            &request.id,
+                                            "ack",
+                                        ),
+                                        nip46_reply(
+                                            &intruder,
+                                            &intruder,
+                                            &event.pubkey,
+                                            "connect-0",
+                                            "ack",
+                                        ),
+                                    ] {
+                                        network.inject(&outbox, &reply).unwrap();
+                                    }
+                                    if matches!(behavior, SignerBehavior::OnlyForges) {
+                                        requests.push(request);
+                                        return requests;
+                                    }
+                                    network.delay_next_delivery(&outbox, 2);
+                                }
+                                "ack".to_owned()
+                            }
+                            "sign_event" => {
+                                let unsigned: UnsignedTemplate =
+                                    serde_json::from_str(&request.params[0]).unwrap();
+                                EventBuilder::new(Kind::Custom(unsigned.kind), unsigned.content)
+                                    .tags(
+                                        unsigned
+                                            .tags
+                                            .into_iter()
+                                            .map(|tag| Tag::parse(tag).unwrap()),
+                                    )
+                                    .custom_created_at(Timestamp::from(unsigned.created_at))
+                                    .finalize(&owner)
+                                    .unwrap()
+                                    .as_json()
+                            }
+                            other => panic!("unexpected NIP-46 request {other}"),
+                        };
+                        let reply = nip46_reply(
+                            &answering,
+                            &answering,
+                            &event.pubkey,
+                            &request.id,
+                            &result,
+                        );
+                        network.inject(&outbox, &reply).unwrap();
+                        let signed = request.method == "sign_event";
+                        requests.push(request);
+                        if signed {
+                            return requests;
+                        }
+                    }
+                }
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+    }
+
+    struct Nip46Setup {
+        network: Arc<InProcessRelayNetwork>,
+        relays: RelayList,
+        signer: Nip46PersonSigner<CoordinatedRelays<InProcessRelayNetwork>>,
+        client_root: tempfile::TempDir,
+        _device_root: tempfile::TempDir,
+        /// The device whose owner statement is signed, and its template.
+        device: String,
+        template: String,
+    }
+
+    fn nip46_setup(bunker: &Keys, owner: &Keys) -> Nip46Setup {
+        let relays = RelayList::configured(vec![
+            "ws://127.0.0.1:18011".into(),
+            "ws://127.0.0.1:18012".into(),
+        ])
+        .unwrap();
+        let network = Arc::new(InProcessRelayNetwork::new(&relays));
+        let device_root = tempfile::tempdir().unwrap();
+        let coordinator = Arc::new(
+            CoordinatedRelays::new(
+                relays.clone(),
+                owned_identity(device_root.path(), owner),
+                network.clone(),
+            )
+            .unwrap(),
+        );
+        let client_root = tempfile::tempdir().unwrap();
+        let client_identity = Nip46ConnectionIdentity::load_or_create(client_root.path()).unwrap();
+        let connection = RemoteSignerConnection {
+            client_public_key: client_identity.public_key(),
+            remote_signer_public_key: bunker.public_key().to_hex(),
+            user_public_key: None,
+            relays: relays.as_slice().to_vec(),
+            secret: Some("one-use-secret".into()),
+        };
+        let signer = Nip46PersonSigner::new(coordinator, client_identity, connection)
+            .unwrap()
+            .with_request_ids(Arc::new(SequenceRequestIds::new(&["connect-1", "sign-1"])));
+        let target_root = tempfile::tempdir().unwrap();
+        let target = DeviceIdentity::load_or_create(target_root.path()).unwrap();
+        Nip46Setup {
+            network,
+            relays,
+            signer,
+            client_root,
+            _device_root: device_root,
+            device: target.device_public_key().unwrap().to_owned(),
+            template: target
+                .owner_statement_template(OwnerStatementStatus::Owned, unix_now())
+                .unwrap(),
+        }
+    }
+
+    fn persisted_connection(setup: &Nip46Setup) -> RemoteSignerConnection {
+        let json = Nip46ConnectionIdentity::load_or_create(setup.client_root.path())
+            .unwrap()
+            .load_connection_data()
+            .unwrap()
+            .unwrap();
+        serde_json::from_str(&json).unwrap()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_signer_that_answers_connect_from_another_key_is_asked_from_that_key() {
+        let (bunker, answering, owner) = (Keys::generate(), Keys::generate(), Keys::generate());
+        let setup = nip46_setup(&bunker, &owner);
+        let signer_task = spawn_signer(
+            setup.network.clone(),
+            setup.relays.clone(),
+            (bunker.clone(), answering.clone(), owner.clone()),
+            SignerBehavior::Answers,
+        );
+        setup
+            .signer
+            .establish(unix_now(), &setup.device)
+            .await
+            .unwrap();
+        assert_eq!(
+            setup.signer.remote_signer_public_key(),
+            answering.public_key().to_hex()
+        );
+        let state = setup
+            .signer
+            .request(PersonSignerRequest {
+                unsigned_event_template: setup.template.clone(),
+            })
+            .await;
+        let requests = signer_task.await.unwrap();
+        assert!(
+            matches!(&state, PersonSignerState::Approved { owner_public_key, .. }
+                if owner_public_key == &owner.public_key().to_hex()),
+            "{state:?}"
+        );
+        // Its connect names the device, so a signer that already has a
+        // "Korri" connection has no reason to offer to replace it.
+        assert_eq!(requests[0].method, "connect");
+        assert_eq!(requests[0].params[2], "sign_event:30078");
+        assert_eq!(
+            requests[0].params[3],
+            serde_json::json!({"name": format!("Korri {}", &setup.device[..8])}).to_string()
+        );
+        let persisted = persisted_connection(&setup);
+        assert_eq!(
+            persisted.remote_signer_public_key,
+            answering.public_key().to_hex()
+        );
+        assert_eq!(persisted.user_public_key, Some(owner.public_key().to_hex()));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_reply_from_another_key_that_does_not_decrypt_is_ignored() {
+        let (bunker, answering, owner) = (Keys::generate(), Keys::generate(), Keys::generate());
+        let setup = nip46_setup(&bunker, &owner);
+        let _signer_task = spawn_signer(
+            setup.network.clone(),
+            setup.relays.clone(),
+            (bunker.clone(), answering.clone(), owner.clone()),
+            SignerBehavior::ForgesThenAnswers,
+        );
+        setup
+            .signer
+            .establish(unix_now(), &setup.device)
+            .await
+            .unwrap();
+        assert_eq!(
+            setup.signer.remote_signer_public_key(),
+            answering.public_key().to_hex()
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn connect_ignores_forged_replies_and_waits_300_s() {
+        let (bunker, answering, owner) = (Keys::generate(), Keys::generate(), Keys::generate());
+        let setup = nip46_setup(&bunker, &owner);
+        let _signer_task = spawn_signer(
+            setup.network.clone(),
+            setup.relays.clone(),
+            (bunker.clone(), answering, owner),
+            SignerBehavior::OnlyForges,
+        );
+        let started = Instant::now();
+        let result = setup.signer.establish(unix_now(), &setup.device).await;
+        assert!(
+            matches!(result, Err(RemoteSignerError::Timeout)),
+            "{result:?}"
+        );
+        assert!(started.elapsed() >= Duration::from_secs(300));
+        assert_eq!(
+            setup.signer.remote_signer_public_key(),
+            bunker.public_key().to_hex()
+        );
     }
 }
