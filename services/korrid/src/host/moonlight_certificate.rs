@@ -378,7 +378,9 @@ impl MoonlightCertificateAdapter for SocketCertificateAdapter {
                 changed: _,
                 server_certificate,
             } => {
-                validate_single_pem(&server_certificate)?;
+                // Sunshine said ok, so it applied the provision: a server
+                // certificate korrid cannot read is no proof of the opposite.
+                validate_single_pem(&server_certificate).map_err(|_| protocol_failure())?;
                 Ok(MoonlightCertificateProvisioned { server_certificate })
             }
             _ => Err(protocol_failure()),
@@ -391,7 +393,7 @@ impl MoonlightCertificateAdapter for SocketCertificateAdapter {
                 changed,
                 server_certificate,
             } => {
-                validate_single_pem(&server_certificate)?;
+                validate_single_pem(&server_certificate).map_err(|_| protocol_failure())?;
                 Ok(changed)
             }
             _ => Err(protocol_failure()),
@@ -1442,6 +1444,79 @@ mod tests {
             Duration::from_millis(500),
         )
         .1
+    }
+
+    /// Sunshine said ok, so it applied the provision or the revocation. A
+    /// server certificate that korrid cannot read afterwards is an answer
+    /// korrid cannot trust, never proof that nothing was applied.
+    #[test]
+    fn an_unreadable_server_certificate_after_ok_is_a_protocol_failure() {
+        type Call = fn(&SocketCertificateAdapter) -> RpcFailure;
+        let calls: [(&str, Call); 2] = [
+            ("provision", |adapter| {
+                adapter.provision("sunshine-host", CLIENT_PEM).unwrap_err()
+            }),
+            ("revoke", |adapter| {
+                adapter.revoke("sunshine-host", CLIENT_PEM).unwrap_err()
+            }),
+        ];
+        for (operation, call) in calls {
+            let root = tempfile::tempdir().unwrap();
+            fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+            let path = root.path().join("unreadable.sock");
+            let listener = bind_seqpacket(&path);
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o660)).unwrap();
+            let server = std::thread::spawn(move || {
+                let accepted = unsafe {
+                    OwnedFd::from_raw_fd(libc::accept4(
+                        listener.as_raw_fd(),
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                        libc::SOCK_CLOEXEC,
+                    ))
+                };
+                let mut request = [0_u8; MAX_FRAME_BYTES];
+                assert!(
+                    unsafe {
+                        libc::recv(
+                            accepted.as_raw_fd(),
+                            request.as_mut_ptr().cast(),
+                            request.len(),
+                            0,
+                        )
+                    } > 0
+                );
+                let response = serde_json::json!({
+                    "status": "ok",
+                    "changed": true,
+                    "serverCertificate": "not a certificate"
+                })
+                .to_string();
+                unsafe {
+                    libc::send(
+                        accepted.as_raw_fd(),
+                        response.as_ptr().cast(),
+                        response.len(),
+                        libc::MSG_NOSIGNAL,
+                    )
+                };
+            });
+            let adapter = SocketCertificateAdapter::for_test(
+                path,
+                unsafe { libc::geteuid() },
+                unsafe { libc::getegid() },
+                unsafe { libc::geteuid() },
+                unsafe { libc::getegid() },
+                0o660,
+            );
+            let failure = call(&adapter);
+            server.join().unwrap();
+            assert_eq!(
+                failure.code, "StreamCertificateControlProtocol",
+                "{operation}"
+            );
+            assert!(!proves_not_applied(&failure), "{operation}");
+        }
     }
 
     /// Turns go in the order they were asked for. Otherwise an older resize
