@@ -10,8 +10,11 @@ app in `clients/android` does not change; it stays the shipping Android app
 until slice D7′.
 
 ```sh
-nix build .#korri-android-app-apk          # both ABIs, unsigned
+nix build .#korri-android-app-apk          # both ABIs, unsigned, debuggable
 nix build .#korri-android-app-fixture-apk  # x86_64, the holder proof's relay and the D11 proof trigger
+nix build .#korri-android-app-release-apk  # D12 prep: arm64, not debuggable, notices, unsigned
+nix run .#android-app-release-key          # D12 prep, once, on zao: the release key
+nix run .#android-app-release-sign -- UNSIGNED.apk SIGNED.apk  # D12 prep, on zao
 nix run .#android-app-proof                # D8: one headless API 31 emulator, no person
 nix run .#android-app-holder-proof         # D9, on aka as root: binding and a holder's game
 nix run .#android-app-play-proof -- --sunshine PACKAGE  # D10, D11, D5b, on aka as root: a tap plays the game
@@ -110,9 +113,9 @@ Gradle. The output is unsigned; the proof signs it with the user's debug key.
 
 The APK is debuggable: `aapt2 link --debug-mode` sets
 `android:debuggable="true"`, which lets `run-as` and a debugger into the
-app's process and its files, korrid's private state included. It must be
-built without `--debug-mode`, and signed with a release key, before any
-distribution.
+app's process and its files, korrid's private state included. The release
+APK (below, D12 prep) is the build without `--debug-mode`, signed with a
+release key outside the store.
 
 - One `Cargo.lock` for korrid, the shell and Slint. It was made from korrid's
   and the shell's locks: every crate is at a version that one of them locks.
@@ -454,6 +457,167 @@ health; Crop to fill on moves the video layer (the app's log, SurfaceFlinger's
 crop, a screenshot) and korrid reads it On; a stale control is refused; Off
 fits the picture again. Records: `proof/android-app-d11/`.
 
+## The release APK (D12 prep)
+
+What the app needs before it goes on the owner's Galaxy Z Fold 8 (ADR
+0064). Build it on aka (the owner's rule), copy only the APK to zao, and sign
+it there, where the key is. zao does not trust aka's store signatures
+(`app-updater-1` is not in its `trusted-public-keys`), so the copy needs
+`--no-check-sigs`, which a trusted user of zao's store may pass:
+
+```sh
+nix build --eval-store auto --store ssh-ng://root@aka --print-out-paths \
+  .#korri-android-app-release-apk          # from a clean, committed checkout
+nix copy --no-check-sigs --from ssh-ng://root@aka /nix/store/...-korri-android-app-release-apk-0.1.0
+nix run .#android-app-release-sign -- \
+  /nix/store/...-korri-android-app-release-apk-0.1.0/korri-android-app-release-unsigned.apk \
+  ~/korri-android-app-release.apk
+```
+
+| | `korri-android-app-apk` | `korri-android-app-release-apk` |
+| --- | --- | --- |
+| ABIs | arm64-v8a and x86_64 | arm64-v8a only: phones. The emulator proofs keep the other two APKs |
+| Debuggable | yes (`--debug-mode`) | no: the manifest has no `android:debuggable` at all |
+| The proof trigger (`proof`) | refused (the library's fingerprint and bytes) | the same library, so refused |
+| korrid's `fixture` feature | refused in every library of the app, as in the shipped korrid | refused |
+| Notices | none | `assets/notices/NOTICES.txt` (below) |
+| Signed | no; the proofs sign with the debug key | no; the signing step signs it outside the store (below) |
+
+The build fails when: the checkout is not clean (the notices name the source
+commit, `self.rev`); `aapt2 dump xmltree` shows `debuggable` in the manifest
+or `aapt2 dump badging` shows `application-debuggable`; the APK's native
+code is other than `arm64-v8a`; the notices are missing; a dex is present.
+The library is the product library that `korri-android-app-apk` packs, with
+its symbols, as there (crash reports on the bench phone).
+
+The release APK and the debug APK have the same package and version code,
+and different signers: Android refuses one over the other. Uninstall first,
+which deletes the app's korrid state on that phone.
+
+Not proven: the release APK on a device or an emulator (D12). Nothing in the
+app reads whether it is debuggable (a reading of the source), so its
+behaviour is inferred to be the debug APK's; only `run-as` stops working,
+which the proofs use.
+
+### Signing
+
+The Artemis release key is not grounded enough to follow. The repository
+pins its certificate's SHA-256 (`clients/android/firmware/odin2portal/contract/korri-release-cert-SHA256.txt`,
+at `android-final` and here) and calls it "the selected Korri Android release
+key", but records neither where the key lives nor a command that signs with
+it. This app is also another package (owner decision O1). So the app has a
+key of its own, which the build never sees: `sign-release.sh` signs the
+built APK on the machine that holds the key.
+
+The key's folder and its file layout are the owner's choice (2026-11-16,
+#434 D12): the key on zao, under `~/.config/korri/android-signing/`, with
+mode 0600. The file names inside are this slice's:
+
+| Path on zao | What | Mode |
+| --- | --- | --- |
+| `~/.config/korri/android-signing/` | the key directory | 0700 |
+| `korri-android-app-release.p12` | PKCS#12 keystore with one key, alias `korri-android-app`: RSA 4096, self-signed, 30 years, `CN=Korri Android App Release, O=Korri` | 0600 |
+| `korri-android-app-release.password` | its password: 32 random bytes in Base64, one line | 0600 |
+| `korri-android-app-release-cert.pem` | its certificate, public | 0600 |
+
+The key was made on 2026-11-16. Its certificate's SHA-256 is
+`e473449db4d9abd868a114e07b844b51c8398120ec27949eb394f77b95e48f91`. No
+backup of it exists. Without it, an update needs an uninstall first.
+
+| Step | What it does |
+| --- | --- |
+| `nix run .#android-app-release-key [-- --key-dir DIR]` | Makes the three files with keytool, which reads the password from its file. It refuses to replace a file that exists |
+| `nix run .#android-app-release-sign -- [--key-dir DIR] UNSIGNED SIGNED` | Refuses a key file or directory that is a link, belongs to another user or has other modes; refuses a debuggable APK and one without notices; refuses an output in the Nix store. Signs with apksigner, reading the password from its file: APK Signature Scheme v3 alone, which apksigner picks for `minSdkVersion` 31, and no v4 file. Checks one signer, whose certificate is the key's. Prints the certificate's and the APK's SHA-256 |
+
+Checked on zao on 2026-11-16 with a release APK of this branch: `apksigner
+verify --print-certs` says v3, one signer, `CN=Korri Android App Release,
+O=Korri`, the certificate SHA-256 above; `aapt2 dump badging` shows no
+`application-debuggable` and `native-code: 'arm64-v8a'`. The step refused a
+debuggable APK, an output in the store, a password file of mode 0644, a key
+directory of mode 0755, a password file that is a link, and a certificate
+file of another key (a throwaway key in a temporary directory).
+
+The key, its password and the signed APK never enter the repository, the
+store or a log. `.gitleaks.toml` has no rule for a PKCS#12 file: a file
+under `~/.config` is outside every checkout.
+
+### Notices
+
+`assets/notices/NOTICES.txt` is one UTF-8 text, about 730 kB. No screen
+shows it yet: the shell has no view for it, which is design work.
+
+| Part | From |
+| --- | --- |
+| The app's licence, GPL-3.0-only (#481, ADR 0059), and its source | the packing (`default.nix`, `sourceNotice`) |
+| moonlight-common-c, ENet, its Reed-Solomon code; Valve's and SDL's controller lists in the viewer; OpenSSL; libopus | their sources: the viewer's parts (`clients/viewer/android.nix`) and the viewer's source |
+| curl, QuickJS, libsecp256k1, ring's BoringSSL code | the C that `curl-sys`, `rquickjs-sys`, `secp256k1-sys` and `ring` build, from the vendored crates |
+| Skia, and the four libraries of its archive that the library keeps: libpng, zlib (Chromium's copy), FreeType, Expat | the archive's `LICENSE_SKIA`; nixpkgs' sources and Chromium's for the four |
+| The Kotlin standard library | its project's licence, NOTICE and the Boost licence of `MathJVM.kt`, fetched at v2.0.21 |
+| LLVM libc++ and compiler-rt | the NDK toolchain's NOTICE |
+| The surface packages' fonts; Pico's `qrcode` and `dijkstrajs` | `pico-fonts.ts` (read with bun), the font licence files, the vendored licences |
+| 618 Rust crates of the arm64 library | `cargo about generate --fail` (`about.toml`, `about.hbs`) |
+| The GNU GPL version 3 | moonlight-common-c's `LICENSE.txt` |
+
+Skia's archive also holds libjpeg-turbo, Wuffs and the Vulkan Memory
+Allocator. The arm64 library keeps none of their code: `llvm-nm` finds no
+`jpeg_` (only the Rust crate zune-jpeg), `wuffs_` or VMA symbol, and finds
+libpng's, zlib's, FreeType's and Expat's. The same check found ring's,
+libsecp256k1's, QuickJS's, libc++'s and libunwind's code. Copyright lines of
+the four Skia libraries come from nixpkgs' versions, not from the revisions
+that Skia pins. No lawyer has read the notices (ADR 0059).
+
+The source is a link, not a written offer (GPL-3.0 section 6(d)): the notices
+name the commit on `https://github.com/korri-os/korri` and the command that
+builds the APK from it. That commit must be on the public repository before
+anyone receives the APK. The Linux viewer ships its corresponding source as
+a tarball (`clients/viewer/default.nix`, `correspondingSource`); the Android
+app's would hold korrid, the shell and Slint, so the APK names it instead.
+
+### The owner binding on a real phone
+
+The fixture binds the emulator's app to the test owner (secret 3,
+`f9308a01…`), whose key korrid's offline tool retires. The owner's real
+federation is owner `a80db13f…3dca`: on 2026-11-16 relay.primal.net held ten
+owned statements signed by that key, zao's device key `7bb368b2…` among them
+(signed 2026-09-06). The release APK's relays are the product's five
+(`clients/android/product.nix`); three of them held the owner's statements
+that day (relay.primal.net 10, offchain.pub 9, nostr.oxtr.dev 9), so the
+phone can read the owner's roster once it is bound.
+
+What exists:
+
+| Part | Where |
+| --- | --- |
+| korrid's half of a binding through a native person signer (NIP-55): the coordinator, which the app's korrid starts with; the RPCs `OwnerBindingSnapshot` and `OwnerBindingStart`; `update_local_owner_signer`, `take_local_owner_binding_request`, `apply_local_owner_binding`; the "Connect your identity" prompt | `services/korrid/src/owner_binding.rs`, `lib.rs`, `surface/owner_binding.rs`, `android/app.rs` |
+| The check of a returned signature against the device's template and the expected owner, and its storage | `DeviceIdentity::apply_signed_owner_binding` |
+| A NIP-46 person signer in Rust, and a first binding through any person signer | `remote_signer.rs` (`Nip46PersonSigner`), `identity::bind_automatic_owner` |
+| Discovery once bound: the owner's roster on the product relays | `RelayCoordinator::read_owner_roster` |
+| The relay messages `OwnerBindingRequested` and `OwnerBindingResponse` | `relay.rs`; nothing outside it and its tests produces or consumes them |
+
+What is missing:
+
+- A signer host. Nothing in this app attaches a signer to the coordinator
+  or runs NIP-55, which needs an activity result; Artemis's
+  `KorriOwnerBindingHost` is Java with no caller. "Set up owner" answers
+  "Open Korri to choose a signer".
+- An identity switch. It needs Linux's local signer
+  (`KORRID_LOCAL_SIGNER_SOCKET`); the app's korrid has none, so it answers
+  `can_switch_identity: false` and offers neither a backup nor a NIP-46
+  bunker.
+- D9's seeding. `run-as` works only in a debuggable APK, so the release APK
+  cannot be given an owner statement that way.
+- A peer that signs for the phone: no consumer of `OwnerBindingRequested`.
+- Which signer holds the owner's private key: no record in the repository
+  says.
+
+So no route binds the release APK to the real owner today. Choosing one is
+an owner decision, and this slice stops there: a NIP-55 signer such as Amber
+on the phone, with a host for the existing coordinator (a third-party
+result activity, or one Korri Java file on #434's list); a NIP-46 bunker,
+with korrid's `Nip46PersonSigner` wired to the first binding and a way to
+enter its address; a debuggable build seeded as in D9 with a statement that
+the owner signs; or a peer that answers `OwnerBindingRequested`.
+
 ## Next slices
 
 | Slice | What |
@@ -462,5 +626,6 @@ fits the picture again. Records: `proof/android-app-d11/`.
 | D10 | Done: the Rust viewer, driven by korrid, on the shell's loop (above) |
 | D5b | Done: Korri's gameplay overlay through `Overlay` (above), proven on the emulator (`proof/android-app-d5b/`). "Open Korri" (Background) and the camera cutout are not carried yet |
 | D11 | Done in part: 3 of Artemis's 13 stream controls (Crop to fill, Flip A/B and X/Y, Rumble), the battery and the health, through the treaty (above); shown and applied in the gameplay overlay since D5b. Missing, and gating D7′: Toggle keyboard, Full keyboard, Pan & zoom, Mouse mode, Touch sensitivity, Keyboard as controller, Toggle local cursor, SGSR sharpness, SGSR edge threshold, Picture-in-picture |
+| D12 prep | Done in part: the release APK, its key and signing step, its notices (below). Not done: an owner binding that a release build can make (below) |
 | D13 (new) | Local Android games (O3): korrid's launcher through JNI, usage polling on a Rust thread, androidx `FileProvider` bundled unchanged (`hasCode="true"`), and the Guide service, which Android allows only as a Java `AccessibilityService` subclass: one Korri Java file on #434's list, or no Guide over other apps. Gates D7′ |
 | D12 | On the Galaxy Z Fold 8 |
