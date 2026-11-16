@@ -6,23 +6,23 @@ raw-cache fallback, receipt migration, or outside repository is in this lane.
 
 ## Published input
 
-- Plugins source: `7e9c19c99b6fc85ee65f23dbedbc6607e963f149`.
-- Immutable tag: `build-7e9c19c99b6f-sunshine-resize`.
-- Publication dry run: `43700835459`; live publication: `43710325117`.
-- Catalog: <https://github.com/korri-os/plugins/releases/download/build-7e9c19c99b6f-sunshine-resize/catalog.json>.
-- Actual catalog SHA-256: `eb3a68d39baae899deb45e0d874233c2885299a0740ba418e33448ad9aadf5d8`.
-- SRI: `sha256-6zpo05uq6JnetF4Nh0IzwohSmaB0C6QY4zRIrZqt9dg=`.
+- Plugins source: `b036fa5e31604321b286f40d34adc15edee08d16`.
+- Immutable tag: `build-b036fa5e3160-sunshine-0046`.
+- Publication dry run: `43934354164`; live publication: `43953806767`.
+- Catalog: <https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json>.
+- Actual catalog SHA-256: `392054e2a3c3f38d08928c3dd3d17bc37d5e1b17772f02b760dd485dfadfbd2d`.
+- SRI: `sha256-OSBU4qPD840Ikow909F7w31eGxd3LwK3YN1IXfrfvS0=`.
 - 33 plugin IDs, 63 records. Homebrew Hub, PICO-8 and RetroBrews use `any`.
 - Bound key remains
   `korri-plugins-1:qlK5Mgb3dYhF76WC4jGhrvL+CHsU93De7GpBFtrXb98=`.
 
 The selection is the same as the previous pin,
-`build-9363f21d62b5-haku-settings`. Against it, 23 plugins changed: Sunshine
-(live-resize freeze fix, #486), Moonlight (the same bytes as
-`build-2094c1e77471-moonlight-latest-frame`), and RetroArch with every
-libretro core, melonDS, FAKE-08 and the Starter pack (plugins `0ca320b`,
-RetroArch starts without its Qt desktop menu). The other 10 plugins keep
-their store paths and archive bytes.
+`build-7e9c19c99b6f-sunshine-resize`. Against it, 2 plugins changed: Sunshine
+on both architectures (patch 0046, korrid can resize the encoder of one
+stream, #476; patch 0045, a silent peer no longer holds every HTTPS client,
+#443) and Steam on x86_64 (the same bytes as
+`build-1c5818a1ff22-steam-native-libs`). The other 31 plugins, and Steam on
+aarch64, keep their store paths and archive bytes.
 
 These identify the actual live bytes. Publication verifies the dry-run artifact
 digests and requires its catalog byte for byte before uploading those artifacts.
