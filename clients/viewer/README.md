@@ -1186,10 +1186,13 @@ in this app (below), so the layer shows a stand-in.
   `KorriOverlayHomeKey`. Guide or Back, from any device, toggles the
   overlay on its release; a whole press belongs to the state it began in,
   so the release that opened it does not close it. Artemis's quick menu
-  too (`gamepad.rs`): Start pressed again within 200 ms of its release and
-  held 750 ms opens the overlay instead of turning the pad into a mouse.
-  While the overlay is open, the volume and power keys stay Android's, and
-  every other key and every motion event is the overlay's.
+  too (`gamepad.rs`): Start pressed again within 200 ms of its release,
+  held longer than 750 ms and let go, opens the overlay on that release
+  instead of turning the pad into a mouse. Start's release goes to the
+  host first, as for any release, so that the host does not keep Start
+  pressed when no overlay layer opens. While the overlay is open, the
+  volume and power keys stay Android's, and every other key and every
+  motion event is the overlay's.
 - The hold (`Input::hold` and `release` in `src/android/input.rs`,
   host-tested): `NvConnection.setInputHeld`, one gate below every
   producer, so the heartbeat and the touch's and the emulated mouse's
@@ -1197,15 +1200,18 @@ in this app (below), so the layer shows a stand-in.
   controller let go (its last mask, nothing pressed), every key that is
   down go up, every mouse button go up and, after a touch, a cancel of
   every touch. Then the mapping starts clean (`resetStreamInputState`:
-  controllers, heartbeat, modifiers, mouse buttons, the absolute touch),
+  controllers with their emulated buttons and Start times, heartbeat,
+  modifiers, mouse buttons, the absolute touch),
   and nothing more goes but a controller's arrival. When it closes, the
   mapping starts clean again, and input goes again. The hold sends only
   into the sink it is given, which in the app is the core behind its gate
   (`CORE_GATE`): no let-go reaches a core that stops. The report counts
   what the hold kept (`… held`).
 - Leaving: Back no longer ends the stream. Ctrl+Alt+Shift+Q and leaving
-  the app (Home, another app) end it; before the stream starts, Back
-  still leaves.
+  the app (Home, another app) end it. Back leaves only while the app
+  waits for its window (`wait_for_window` in `android/src/lib.rs`); from
+  the moment the layers are made, before the stream has started too, it
+  goes to the overlay.
 - `catch_unwind`: D5 adds no `extern "C"` callback. The hold and release
   run inside the input's `Guarded`; the main-thread posts run under
   android-activity's own `catch_unwind`.
@@ -1318,17 +1324,24 @@ must be let go, the pad must send nothing while the overlay is open (the
 heartbeat included), and the input after it closes must be. The proof
 then presses Home, which ends the stream (Back no longer does).
 
-- On the emulator the open overlay costs frames. In the kept run the
-  decoder asked for an IDR frame 0.43 times a second while the overlay was
-  open and 0.03 times a second while it was not; in an earlier run, 1.55
-  and 0.26. The emulator's composer took all three layers as DEVICE
-  (`surfaceflinger-overlay-open.txt`); this emulator's composer runs on
-  the host, in software with `-gpu swiftshader_indirect` (inferred). Its
-  missed frames rose by 142 in the 8.6 s that the overlay was open, and
-  by 55 in the 5.5 s after. The spike saw the same kind of loss with a
-  static overlay shown. Whether a phone's
-  composer puts the video and the overlay on hardware planes is the
-  spike's open risk, for the bench phone (step H).
+- Frames with the overlay open: these runs do not show that the overlay
+  costs frames. On zao the decoder lost more frames while the overlay was
+  open. In the kept run it asked for an IDR frame 0.43 times a second
+  while the overlay was open and 0.03 times a second while it was not;
+  in an earlier run, 1.55 and 0.26. The emulator's composer took all
+  three layers as DEVICE (`surfaceflinger-overlay-open.txt`); this
+  emulator's composer runs on the host, in software with
+  `-gpu swiftshader_indirect` (inferred). Its missed frames rose by 142
+  in the 8.6 s that the overlay was open, and by 55 in the 5.5 s after.
+  But zao ran other work then (a load average of 24 in an earlier run,
+  `proof/android-d5/README.md`), and the runs do not separate the
+  overlay's cost from that load. On aka, #476's run
+  (`proof/android-resize/`) had the overlay open for 7.3 s and 1.7 s; in
+  the whole stream its decoder asked for no IDR frame, and no frame went
+  undecoded or dropped (`result.json`, `picture_losses`). The spike presented fewer frames with a static overlay shown,
+  also on zao, at loads of 5 to 90. Whether a phone's composer puts the
+  video and the overlay on hardware planes is the spike's open risk, for
+  the bench phone (step H).
 - Not proven: a real phone, the arm64 library, a press's time to its
   packet with the overlay closing, a fold or turn while the overlay is
   open (the overlay buffer's resize is written but not exercised: in

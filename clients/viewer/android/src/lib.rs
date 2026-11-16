@@ -3,7 +3,7 @@
 //! `NativeActivity` runs one launch of the shared viewer in this process
 //! (ADR 0060), with the in-process lifecycle in the place of korrid's socket.
 //! The app is that lifecycle's controller: it sends Start once its window
-//! exists, and Stop on Back or when the window goes, and writes every event
+//! exists, and Stop when the window goes, and writes every event
 //! and reply to logcat. The picture is Android's hardware decoder rendering
 //! into a video layer that the app makes (slice D2, `layer.rs`); the layer
 //! follows the window's size and the decoded picture's size, which the
@@ -145,7 +145,8 @@ impl Controller {
     }
 }
 
-/// Before the stream's input exists: Back leaves, as it ends a stream.
+/// While the app waits for its window: Back leaves, and nothing starts.
+/// From the moment the layers are made, Back goes to the overlay.
 fn back_pressed(app: &AndroidApp) -> bool {
     let mut pressed = false;
     if let Ok(mut input) = app.input_events_iter() {
