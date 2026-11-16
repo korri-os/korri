@@ -311,6 +311,36 @@ let
           exec python3 "$KORRI_ROOT/clients/android-app/proof/play.py" "$@"
         '';
       };
+    # The release key and its signing step (#434 D12) run on the machine
+    # that holds the key, never in a derivation: the key stays out of the
+    # store (clients/android-app/sign-release.sh).
+    android-app-release-key = {
+      description = "Make the Android app's release key in ~/.config/korri/android-signing (#434 D12); it never replaces one.";
+      usageSuffix = " -- [--key-dir DIRECTORY]";
+      runtimeInputs = [
+        pkgs.jdk17
+        pkgs.gnugrep
+        pkgs.gnused
+      ];
+      env.KORRI_APP_BUILD_TOOLS = import ../clients/android-app/build-tools.nix { inherit pkgs; };
+      script = ''
+        exec bash "$KORRI_ROOT/clients/android-app/sign-release.sh" key "$@"
+      '';
+    };
+    android-app-release-sign = {
+      description = "Sign the Android app's release APK (.#korri-android-app-release-apk) with the release key, outside the store (#434 D12).";
+      usageSuffix = " -- [--key-dir DIRECTORY] UNSIGNED.apk SIGNED.apk";
+      runtimeInputs = [
+        pkgs.jdk17
+        pkgs.unzip
+        pkgs.gnugrep
+        pkgs.gnused
+      ];
+      env.KORRI_APP_BUILD_TOOLS = import ../clients/android-app/build-tools.nix { inherit pkgs; };
+      script = ''
+        exec bash "$KORRI_ROOT/clients/android-app/sign-release.sh" sign "$@"
+      '';
+    };
     hooks-install = {
       description = "Install the Git hook that refuses a commit which stages a secret.";
       runtimeInputs = [
