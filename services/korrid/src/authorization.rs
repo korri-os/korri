@@ -617,10 +617,33 @@ impl Authorization {
         write_private_atomically(&self.certificate_path(&device_public_key), &bytes)
     }
 
+    /// The host UUID and certificate of one device's grant, if it has one.
+    pub fn device_certificate_grant(
+        &self,
+        device_public_key: &str,
+    ) -> Result<Option<(String, String)>, AuthorizationError> {
+        let path = self.certificate_path(device_public_key);
+        match fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(_) => Err(AuthorizationError::Storage),
+            Ok(_) => {
+                let grant = read_certificate_grant(&path)?;
+                Ok(Some((grant.host_uuid, grant.client_certificate)))
+            }
+        }
+    }
+
     /// Writes a provision's grant before the provision is sent, so that trust
     /// which Sunshine applies has a grant even when the caller goes away
     /// before the answer. Undo it with `abandon_certificate_grant`, and only
     /// after a failure that proves Sunshine did not apply the provision.
+    ///
+    /// An error can come after the grant's rename, when the directory sync
+    /// fails: the grant may then be in place. The caller treats it as
+    /// written: it sends nothing and undoes nothing. A grant whose provision
+    /// was never sent names a certificate that Sunshine does not trust, which
+    /// is harmless. An undo would be one more write that can fail the same
+    /// way.
     pub fn begin_certificate_grant(
         &self,
         principal: &Principal,

@@ -516,23 +516,35 @@ that restores the size. At most four of the holder's operations run or wait
 at once; a fifth is refused as busy before it reaches Sunshine.
 
 When korrid reads no answer it can trust (a timeout, a failed exchange, an
-answer it cannot read), Sunshine may still apply the frame. That can still
-happen when Sunshine itself is slower than the deadline. The caller can also
-go away first: the viewer's korrid gives up after 5 s, the holder's request
-handler is then dropped, but the blocking exchange still sends its frame. So
-only a failure that proves Sunshine did not apply a frame (korrid never sent
-it, or Sunshine refused it before any change) counts as a failure:
+answer it cannot read, also after an "ok"), Sunshine may still apply the
+frame. That can still happen when Sunshine itself is slower than the
+deadline. The caller can also go away first: the viewer's korrid gives up
+after 5 s, and the holder's request handler is then dropped. A resize's
+blocking exchange still sends its frame. A provision or a revocation runs in
+a task of its own and ends anyway. So only a failure that proves Sunshine
+did not apply a frame (korrid never sent it, or Sunshine refused it before
+any change) counts as a failure.
+
+The holder runs one device's provisions and revocations, and their
+reconciliation, one at a time: it takes the device's lock before the socket
+turn and holds it from the first grant change to the last.
 
 | Operation | What korrid does |
 | --- | --- |
 | resize | Any other failure is an error, not `Refused`: the viewer's korrid confirms the previous size, as after a lost answer |
-| provision | The holder writes the `CertificateGrant` before it sends the provision, and puts back the grant that it replaced (or removes it) only after a proven failure. So every certificate that a provision makes Sunshine trust has a grant when Sunshine applies it, even if the caller went away. A grant for a certificate that Sunshine does not trust is harmless: revoking it changes nothing, and a resize with it finds no stream |
-| revoke | The holder removes the grant only after Sunshine confirmed the revocation. A revocation that Sunshine applies after its caller went away leaves the grant of a certificate that Sunshine no longer trusts, which is the harmless case above. The grant stays until the device revokes or provisions again, or until reconciliation retires it when the device's authority ends; each of those sends a revocation that changes nothing and removes the grant |
+| provision | If the device's grant names another certificate, the holder first revokes that one in Sunshine (#502). Only Sunshine's confirmation lets the provision go on; after any other answer Sunshine may still trust it, so the holder keeps that grant and refuses the provision. Then the holder writes the new grant before it sends the provision, and puts back the grant that it replaced (now only one for the same certificate) or removes it only after a proven failure. A grant write that fails may still have left the grant, when only the directory sync after the rename failed: the holder then sends nothing and undoes nothing. So every certificate that a provision makes Sunshine trust has its grant before Sunshine applies it, even if the caller went away |
+| revoke | The holder removes the device's grant only after Sunshine confirmed the revocation, and only when the grant names the certificate that was revoked. A revocation whose answer korrid did not read leaves the grant of a certificate that Sunshine may no longer trust |
 
-Known gap: a grant names one certificate for each device. When a device
-provisions a different certificate, the new grant replaces the old one while
-Sunshine still trusts both, so the old certificate has no grant. This is
-older than #476 and needs a decision on the grant's schema.
+A grant for a certificate that Sunshine does not trust is harmless: revoking
+it changes nothing, and a resize with it reaches at most the device's own
+stream. It stays until the device revokes or provisions again, or until
+reconciliation retires it when the device's authority ends.
+
+A grant names one certificate for each device. Since #502 a provision of a
+new certificate also retires the old one in Sunshine, so a device's
+provisions leave at most one trusted certificate, and its grant names it. A
+certificate whose grant an older korrid replaced before #502 is still
+trusted without a grant; reconciliation does not see it.
 
 `Refused` is only Sunshine's own refusal (a pending request, a failed swap, a
 size out of bounds) or a busy korrid; `Unavailable` is a missing or

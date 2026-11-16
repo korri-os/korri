@@ -87,11 +87,6 @@ struct PeerResponseEnvelope {
     response: RpcResponse,
 }
 
-struct ProvisionedCertificate {
-    host_uuid: String,
-    client_certificate: String,
-}
-
 #[derive(Clone)]
 pub struct PeerCredentials {
     identity: Arc<Mutex<DeviceIdentity>>,
@@ -304,6 +299,212 @@ pub struct PeerRpcServer {
     replay: Arc<ReplayGuard>,
     authorization: Authorization,
     clock: Clock,
+    certificate_locks: DeviceCertificateLocks,
+}
+
+/// One lock for each device's certificate work: its provisions, its
+/// revocations and their reconciliation. A device's grant write, the
+/// exchange with Sunshine and any undo run as one, so that no other of its
+/// operations can come between them. Take it before the socket turn
+/// (`host/moonlight_certificate.rs`), never while holding one.
+#[derive(Clone, Default)]
+struct DeviceCertificateLocks(Arc<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>);
+
+impl DeviceCertificateLocks {
+    async fn lock(&self, device_public_key: &str) -> tokio::sync::OwnedMutexGuard<()> {
+        let lock = {
+            let mut locks = self
+                .0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            // A lock that no operation holds or waits for is not needed.
+            locks.retain(|_, lock| Arc::strong_count(lock) > 1);
+            locks
+                .entry(device_public_key.to_owned())
+                .or_default()
+                .clone()
+        };
+        lock.lock_owned().await
+    }
+}
+
+/// A peer's provision or revocation, with the device lock held from start
+/// to end. It runs as its own task, so it ends even when the caller goes
+/// away and the request's handler is dropped.
+struct CertificateTransaction {
+    app: AppState,
+    authorization: Authorization,
+    locks: DeviceCertificateLocks,
+}
+
+impl CertificateTransaction {
+    async fn run(
+        self,
+        context: AuthorizationContext,
+        request: RpcRequest,
+    ) -> Result<RpcResponse, PeerRpcError> {
+        let device = match (&context, &request) {
+            (
+                AuthorizationContext::Peer(principal),
+                RpcRequest::MoonlightCertificateProvision(asked),
+            ) if authorization::authorize(&context, &request).is_ok()
+                && crate::host::moonlight_certificate::validate_host_uuid(&asked.host_uuid)
+                    .is_ok()
+                && crate::host::moonlight_certificate::validate_single_pem(
+                    &asked.client_certificate,
+                )
+                .is_ok() =>
+            {
+                Some(principal.device_public_key().to_owned())
+            }
+            (AuthorizationContext::Peer(principal), RpcRequest::MoonlightCertificateRevoke(_))
+                if authorization::authorize(&context, &request).is_ok() =>
+            {
+                Some(principal.device_public_key().to_owned())
+            }
+            _ => None,
+        };
+        // Dispatch refuses or rejects the request before any grant changes.
+        let Some(device) = device else {
+            return dispatch(&self.app, &context, request)
+                .await
+                .map_err(|_| PeerRpcError::Unauthorized);
+        };
+        let _device = self.locks.lock(&device).await;
+        match request {
+            RpcRequest::MoonlightCertificateProvision(asked) => {
+                self.provision(&context, &device, asked).await
+            }
+            RpcRequest::MoonlightCertificateRevoke(asked) => {
+                self.revoke(&context, &device, asked).await
+            }
+            _ => unreachable!("only provisions and revocations are certificate transactions"),
+        }
+    }
+
+    async fn provision(
+        &self,
+        context: &AuthorizationContext,
+        device: &str,
+        asked: crate::MoonlightCertificateProvisionRequest,
+    ) -> Result<RpcResponse, PeerRpcError> {
+        let AuthorizationContext::Peer(principal) = context else {
+            unreachable!("a provision transaction has a peer context")
+        };
+        // #502: a device has one grant. Before Sunshine trusts another of its
+        // certificates, it stops trusting the one that the grant names. Only
+        // Sunshine's confirmation lets the provision go on; after any other
+        // answer Sunshine may still trust the earlier certificate, so its
+        // grant stays and the provision is refused.
+        let granted = self
+            .authorization
+            .device_certificate_grant(device)
+            .map_err(|_| PeerRpcError::Storage)?;
+        if let Some((_, earlier)) =
+            granted.filter(|(_, earlier)| *earlier != asked.client_certificate)
+        {
+            let revoked = dispatch(
+                &self.app,
+                &AuthorizationContext::TrustReconciliation,
+                RpcRequest::MoonlightCertificateRevoke(MoonlightCertificateRevokeRequest {
+                    host_uuid: asked.host_uuid.clone(),
+                    client_certificate: earlier,
+                }),
+            )
+            .await
+            .map_err(|_| PeerRpcError::Trust)?;
+            match revoked {
+                RpcResponse::MoonlightCertificateRevoke(MoonlightCertificateRevokeOutcome::Ok(
+                    _,
+                )) => {
+                    self.authorization
+                        .remove_certificate_grant(device)
+                        .map_err(|_| PeerRpcError::Storage)?;
+                }
+                RpcResponse::MoonlightCertificateRevoke(
+                    MoonlightCertificateRevokeOutcome::Err(failure),
+                ) => {
+                    return Ok(RpcResponse::MoonlightCertificateProvision(
+                        MoonlightCertificateProvisionOutcome::Err(crate::RpcFailure {
+                            code: failure.code,
+                            message: "This device's earlier certificate could not be retired first"
+                                .into(),
+                        }),
+                    ));
+                }
+                _ => return Err(PeerRpcError::Trust),
+            }
+        }
+        // The grant is written before the provision can reach Sunshine: the
+        // blocking exchange runs on even when this task's caller is gone.
+        // A failed write may still have left the grant (after its rename):
+        // nothing is sent, and nothing is undone.
+        let pending = self
+            .authorization
+            .begin_certificate_grant(principal, &asked.host_uuid, &asked.client_certificate)
+            .map_err(|_| PeerRpcError::Storage)?;
+        let response = match dispatch(
+            &self.app,
+            context,
+            RpcRequest::MoonlightCertificateProvision(asked),
+        )
+        .await
+        {
+            Ok(response) => response,
+            Err(_) => {
+                self.authorization
+                    .abandon_certificate_grant(pending)
+                    .map_err(|_| PeerRpcError::Storage)?;
+                return Err(PeerRpcError::Unauthorized);
+            }
+        };
+        // Only a failure that proves Sunshine did not apply it undoes the grant.
+        if matches!(
+            &response,
+            RpcResponse::MoonlightCertificateProvision(
+                MoonlightCertificateProvisionOutcome::Err(failure)
+            ) if crate::host::moonlight_certificate::proves_not_applied(failure)
+        ) {
+            self.authorization
+                .abandon_certificate_grant(pending)
+                .map_err(|_| PeerRpcError::Storage)?;
+        }
+        Ok(response)
+    }
+
+    async fn revoke(
+        &self,
+        context: &AuthorizationContext,
+        device: &str,
+        asked: MoonlightCertificateRevokeRequest,
+    ) -> Result<RpcResponse, PeerRpcError> {
+        let certificate = asked.client_certificate.clone();
+        let response = dispatch(
+            &self.app,
+            context,
+            RpcRequest::MoonlightCertificateRevoke(asked),
+        )
+        .await
+        .map_err(|_| PeerRpcError::Unauthorized)?;
+        // The grant goes once Sunshine confirmed, and only when it names the
+        // certificate that Sunshine stopped trusting.
+        let confirmed = matches!(
+            &response,
+            RpcResponse::MoonlightCertificateRevoke(MoonlightCertificateRevokeOutcome::Ok(_))
+        );
+        if confirmed
+            && self
+                .authorization
+                .device_certificate_grant(device)
+                .map_err(|_| PeerRpcError::Storage)?
+                .is_some_and(|(_, granted)| granted == certificate)
+        {
+            self.authorization
+                .remove_certificate_grant(device)
+                .map_err(|_| PeerRpcError::Storage)?;
+        }
+        Ok(response)
+    }
 }
 
 impl PeerRpcServer {
@@ -324,6 +525,7 @@ impl PeerRpcServer {
             replay: Arc::new(ReplayGuard::new(private_state_root)?),
             authorization,
             clock: Arc::new(unix_time),
+            certificate_locks: DeviceCertificateLocks::default(),
         })
     }
 
@@ -342,6 +544,7 @@ impl PeerRpcServer {
             authorization: Authorization::load(private_state_root)
                 .map_err(|_| PeerRpcError::Storage)?,
             clock,
+            certificate_locks: DeviceCertificateLocks::default(),
         })
     }
 
@@ -481,70 +684,26 @@ impl PeerRpcServer {
             event_id,
             context,
         } = authenticated;
-        let provision = provisioned_certificate(&envelope.request);
-        let revocation = revoked_certificate(&envelope.request);
-        // A provision's grant is written before the provision can reach
-        // Sunshine. The caller may go away before the answer, and its handler
-        // with it, while the blocking exchange still sends the frame: trust
-        // that Sunshine applies must never be without a grant. Only a failure
-        // that proves Sunshine did not apply it undoes the grant.
-        let pending_grant = match (&provision, &context) {
-            (Some(certificate), AuthorizationContext::Peer(principal))
-                if authorization::authorize(&context, &envelope.request).is_ok()
-                    && crate::host::moonlight_certificate::validate_host_uuid(
-                        &certificate.host_uuid,
-                    )
-                    .is_ok()
-                    && crate::host::moonlight_certificate::validate_single_pem(
-                        &certificate.client_certificate,
-                    )
-                    .is_ok() =>
-            {
-                Some(
-                    self.authorization
-                        .begin_certificate_grant(
-                            principal,
-                            &certificate.host_uuid,
-                            &certificate.client_certificate,
-                        )
-                        .map_err(|_| PeerRpcError::Storage)?,
-                )
-            }
-            _ => None,
+        let response = if matches!(
+            &envelope.request,
+            RpcRequest::MoonlightCertificateProvision(_)
+                | RpcRequest::MoonlightCertificateRevoke(_)
+        ) {
+            // Its own task: the transaction ends, and releases the device,
+            // even when the caller gives up and this handler is dropped.
+            let transaction = CertificateTransaction {
+                app: self.app.clone(),
+                authorization: self.authorization.clone(),
+                locks: self.certificate_locks.clone(),
+            };
+            tokio::spawn(transaction.run(context, envelope.request))
+                .await
+                .map_err(|_| PeerRpcError::Storage)??
+        } else {
+            dispatch(&self.app, &context, envelope.request)
+                .await
+                .map_err(|_| PeerRpcError::Unauthorized)?
         };
-        let response = match dispatch(&self.app, &context, envelope.request).await {
-            Ok(response) => response,
-            Err(_) => {
-                if let Some(pending) = pending_grant {
-                    self.authorization
-                        .abandon_certificate_grant(pending)
-                        .map_err(|_| PeerRpcError::Storage)?;
-                }
-                return Err(PeerRpcError::Unauthorized);
-            }
-        };
-        if let Some(pending) = pending_grant {
-            if matches!(
-                &response,
-                RpcResponse::MoonlightCertificateProvision(
-                    MoonlightCertificateProvisionOutcome::Err(failure)
-                ) if crate::host::moonlight_certificate::proves_not_applied(failure)
-            ) {
-                self.authorization
-                    .abandon_certificate_grant(pending)
-                    .map_err(|_| PeerRpcError::Storage)?;
-            }
-        }
-        if revocation
-            && matches!(
-                response,
-                RpcResponse::MoonlightCertificateRevoke(MoonlightCertificateRevokeOutcome::Ok(_))
-            )
-        {
-            self.authorization
-                .remove_certificate_grant(&author)
-                .map_err(|_| PeerRpcError::Storage)?;
-        }
         let response_envelope = PeerResponseEnvelope {
             version: PEER_RPC_VERSION,
             recipient: author.clone(),
@@ -573,12 +732,25 @@ impl PeerRpcServer {
             .certificate_revocations(local_state, now)
             .map_err(|_| PeerRpcError::Storage)?;
         for revocation in revocations {
+            let _device = self
+                .certificate_locks
+                .lock(&revocation.device_public_key)
+                .await;
+            // The device may have provisioned again while this waited for it.
+            if !self
+                .authorization
+                .certificate_revocations(local_state, now)
+                .map_err(|_| PeerRpcError::Storage)?
+                .contains(&revocation)
+            {
+                continue;
+            }
             let response = dispatch(
                 &self.app,
                 &AuthorizationContext::TrustReconciliation,
                 RpcRequest::MoonlightCertificateRevoke(MoonlightCertificateRevokeRequest {
-                    host_uuid: revocation.host_uuid,
-                    client_certificate: revocation.client_certificate,
+                    host_uuid: revocation.host_uuid.clone(),
+                    client_certificate: revocation.client_certificate.clone(),
                 }),
             )
             .await
@@ -739,20 +911,6 @@ impl ReplayGuard {
 
 fn has_exact_recipient(tags: &[Vec<String>], expected: &str) -> bool {
     tags.len() == 1 && tags[0].as_slice() == ["p", expected]
-}
-
-fn provisioned_certificate(request: &RpcRequest) -> Option<ProvisionedCertificate> {
-    match request {
-        RpcRequest::MoonlightCertificateProvision(request) => Some(ProvisionedCertificate {
-            host_uuid: request.host_uuid.clone(),
-            client_certificate: request.client_certificate.clone(),
-        }),
-        _ => None,
-    }
-}
-
-fn revoked_certificate(request: &RpcRequest) -> bool {
-    matches!(request, RpcRequest::MoonlightCertificateRevoke(_))
 }
 
 fn prepare_private_directory(path: &Path) -> Result<(), PeerRpcError> {
@@ -1565,27 +1723,26 @@ mod tests {
         }
     }
 
-    /// A provision that fails with proof that Sunshine did not apply it puts
-    /// back the grant that it replaced: the device's earlier certificate is
-    /// still trusted, and its grant must stay. Any other outcome keeps the
-    /// new grant.
+    /// The grant always names the certificate that Sunshine trusts for the
+    /// device. The same certificate again with a proven failure puts back
+    /// the grant it replaced. Another certificate first retires the earlier
+    /// one in Sunshine (#502): a proven failure then leaves no grant and no
+    /// trust; an unknown outcome keeps the new grant.
     #[tokio::test]
-    async fn a_proven_failure_puts_back_the_grant_that_the_provision_replaced() {
-        let (host_root, client_root, credentials, host_key, config) = setup();
-        let client_key = DeviceIdentity::load_or_create(client_root.path())
-            .unwrap()
-            .device_public_key()
-            .unwrap()
-            .to_owned();
+    async fn a_proven_failure_leaves_the_grant_of_the_certificate_that_sunshine_trusts() {
         let earlier = "-----BEGIN CERTIFICATE-----\nearlier\n-----END CERTIFICATE-----\n";
         let newer = "-----BEGIN CERTIFICATE-----\nnewer\n-----END CERTIFICATE-----\n";
-        for (at, (code, kept)) in [
-            ("HostMismatch", earlier),
-            ("StreamCertificateControlTimeout", newer),
-        ]
-        .into_iter()
-        .enumerate()
-        {
+        for (code, asked, kept) in [
+            ("HostMismatch", earlier, Some(earlier)),
+            ("HostMismatch", newer, None),
+            ("StreamCertificateControlTimeout", newer, Some(newer)),
+        ] {
+            let (host_root, client_root, credentials, host_key, config) = setup();
+            let client_key = DeviceIdentity::load_or_create(client_root.path())
+                .unwrap()
+                .device_public_key()
+                .unwrap()
+                .to_owned();
             // The earlier certificate, applied: the device's grant names it.
             let applies = Arc::new(HeldProvision::default());
             applies.release();
@@ -1600,8 +1757,8 @@ mod tests {
                 host_key.clone(),
                 credentials.clone(),
                 NOW,
-                token(130 + 4 * at as u8),
-                token(131 + 4 * at as u8),
+                token(130),
+                token(131),
             )
             .moonlight_certificate_provision("sunshine-host", earlier)
             .await
@@ -1617,19 +1774,302 @@ mod tests {
                 host_key.clone(),
                 credentials.clone(),
                 NOW,
-                token(132 + 4 * at as u8),
-                token(133 + 4 * at as u8),
+                token(132),
+                token(133),
             );
             assert!(client
-                .moonlight_certificate_provision("sunshine-host", newer)
+                .moonlight_certificate_provision("sunshine-host", asked)
                 .await
                 .is_err());
             assert_eq!(
                 Authorization::stream_client_grant(host_root.path(), &client_key).unwrap(),
-                Some(("sunshine-host".into(), kept.into())),
-                "{code}"
+                kept.map(|kept| ("sunshine-host".to_owned(), kept.to_owned())),
+                "{code} {asked}"
             );
         }
+    }
+
+    /// A Sunshine channel that records each certificate operation. The first
+    /// provision can be held until the test lets it end, and can then fail;
+    /// a revocation can fail. Everything else is applied.
+    #[derive(Default)]
+    struct ScriptedSunshine {
+        calls: Mutex<Vec<String>>,
+        hold_first_provision: bool,
+        first_provision_fails: Option<&'static str>,
+        revoke_fails: Option<&'static str>,
+        // (the first provision is on its way, the test let it end)
+        held: Mutex<(bool, bool)>,
+        changed: std::sync::Condvar,
+    }
+
+    impl ScriptedSunshine {
+        fn calls(&self) -> Vec<String> {
+            self.calls.lock().unwrap().clone()
+        }
+
+        async fn until_held(&self) {
+            while !self.held.lock().unwrap().0 {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }
+
+        fn release(&self) {
+            self.held.lock().unwrap().1 = true;
+            self.changed.notify_all();
+        }
+
+        fn failure(code: &str) -> crate::RpcFailure {
+            crate::RpcFailure {
+                code: code.into(),
+                message: "failed".into(),
+            }
+        }
+    }
+
+    fn certificate_name(pem: &str) -> &str {
+        pem.lines().nth(1).unwrap_or_default()
+    }
+
+    impl crate::host::moonlight_certificate::MoonlightCertificateAdapter for ScriptedSunshine {
+        fn available(&self) -> bool {
+            true
+        }
+
+        fn attest(&self, _host_uuid: &str) -> Result<bool, crate::RpcFailure> {
+            Ok(true)
+        }
+
+        fn provision(
+            &self,
+            _host_uuid: &str,
+            client_certificate: &str,
+        ) -> Result<crate::MoonlightCertificateProvisioned, crate::RpcFailure> {
+            let first = {
+                let mut calls = self.calls.lock().unwrap();
+                calls.push(format!(
+                    "provision:{}",
+                    certificate_name(client_certificate)
+                ));
+                calls
+                    .iter()
+                    .filter(|call| call.starts_with("provision:"))
+                    .count()
+                    == 1
+            };
+            if first && self.hold_first_provision {
+                let mut held = self.held.lock().unwrap();
+                held.0 = true;
+                while !held.1 {
+                    held = self.changed.wait(held).unwrap();
+                }
+            }
+            match self.first_provision_fails.filter(|_| first) {
+                Some(code) => Err(Self::failure(code)),
+                None => Ok(crate::MoonlightCertificateProvisioned {
+                    server_certificate:
+                        "-----BEGIN CERTIFICATE-----\nserver\n-----END CERTIFICATE-----\n".into(),
+                }),
+            }
+        }
+
+        fn revoke(
+            &self,
+            host_uuid: &str,
+            client_certificate: &str,
+        ) -> Result<bool, crate::RpcFailure> {
+            self.calls.lock().unwrap().push(format!(
+                "revoke:{host_uuid}:{}",
+                certificate_name(client_certificate)
+            ));
+            match self.revoke_fails {
+                Some(code) => Err(Self::failure(code)),
+                None => Ok(true),
+            }
+        }
+
+        fn resize(
+            &self,
+            _host_uuid: &str,
+            _client_certificate: &str,
+            _display: &crate::launcher::plugin_launch::PluginDisplay,
+        ) -> Result<crate::live_display::ViewerResize, crate::RpcFailure> {
+            unreachable!("no resize in the provision tests")
+        }
+    }
+
+    fn certificate_event(
+        credentials: &PeerCredentials,
+        host_key: &str,
+        request: RpcRequest,
+        at: u8,
+    ) -> String {
+        credentials
+            .encode_request_with_tokens(host_key, request, NOW, token(at), token(at + 1))
+            .unwrap()
+            .event_json
+    }
+
+    fn provision_request(pem: &str) -> RpcRequest {
+        RpcRequest::MoonlightCertificateProvision(crate::MoonlightCertificateProvisionRequest {
+            host_uuid: "sunshine-host".into(),
+            client_certificate: pem.into(),
+        })
+    }
+
+    fn revoke_request(pem: &str) -> RpcRequest {
+        RpcRequest::MoonlightCertificateRevoke(MoonlightCertificateRevokeRequest {
+            host_uuid: "sunshine-host".into(),
+            client_certificate: pem.into(),
+        })
+    }
+
+    /// Two provisions of one certificate by one device: the first fails with
+    /// proof and undoes its grant, the second is applied. Each writes the same
+    /// grant, so the first's undo must not run after the second's write.
+    #[tokio::test]
+    async fn one_devices_provisions_run_one_at_a_time() {
+        let (host_root, client_root, credentials, host_key, config) = setup();
+        let client_key = DeviceIdentity::load_or_create(client_root.path())
+            .unwrap()
+            .device_public_key()
+            .unwrap()
+            .to_owned();
+        let pem = "-----BEGIN CERTIFICATE-----\nclient\n-----END CERTIFICATE-----\n";
+        let sunshine = Arc::new(ScriptedSunshine {
+            hold_first_provision: true,
+            first_provision_fails: Some("HostMismatch"),
+            ..Default::default()
+        });
+        let server = crate::tests::secure_host_peer_server_with_certificate_adapter_at(
+            &config,
+            host_root.path(),
+            sunshine.clone(),
+            NOW,
+        );
+        let first = {
+            let server = server.clone();
+            let event = certificate_event(&credentials, &host_key, provision_request(pem), 160);
+            tokio::spawn(async move { server.handle(&event, NOW, None).await })
+        };
+        sunshine.until_held().await;
+        let mut second = {
+            let server = server.clone();
+            let event = certificate_event(&credentials, &host_key, provision_request(pem), 162);
+            tokio::spawn(async move { server.handle(&event, NOW, None).await })
+        };
+        // Without one turn per device, the second ends here.
+        let early = tokio::time::timeout(std::time::Duration::from_millis(300), &mut second)
+            .await
+            .ok();
+        sunshine.release();
+        first.await.unwrap().unwrap();
+        match early {
+            Some(ended) => ended,
+            None => second.await,
+        }
+        .unwrap()
+        .unwrap();
+        assert_eq!(sunshine.calls(), ["provision:client", "provision:client"]);
+        assert_eq!(
+            Authorization::stream_client_grant(host_root.path(), &client_key).unwrap(),
+            Some(("sunshine-host".into(), pem.into()))
+        );
+    }
+
+    /// #502: a device has one grant. Before Sunshine trusts another of its
+    /// certificates, it stops trusting the one that the grant names; only a
+    /// confirmed revocation lets the new provision go.
+    #[tokio::test]
+    async fn another_certificate_is_trusted_only_after_the_earlier_one_is_revoked() {
+        let earlier = "-----BEGIN CERTIFICATE-----\nearlier\n-----END CERTIFICATE-----\n";
+        let newer = "-----BEGIN CERTIFICATE-----\nnewer\n-----END CERTIFICATE-----\n";
+        for revoke_fails in [
+            None,
+            Some("StreamCertificateControlTimeout"),
+            Some("StreamCertificateControlBusy"),
+        ] {
+            let (host_root, client_root, credentials, host_key, config) = setup();
+            let client_key = DeviceIdentity::load_or_create(client_root.path())
+                .unwrap()
+                .device_public_key()
+                .unwrap()
+                .to_owned();
+            let sunshine = Arc::new(ScriptedSunshine {
+                revoke_fails,
+                ..Default::default()
+            });
+            let server = crate::tests::secure_host_peer_server_with_certificate_adapter_at(
+                &config,
+                host_root.path(),
+                sunshine.clone(),
+                NOW,
+            );
+            for (at, pem) in [(170, earlier), (172, newer)] {
+                server
+                    .handle(
+                        &certificate_event(&credentials, &host_key, provision_request(pem), at),
+                        NOW,
+                        None,
+                    )
+                    .await
+                    .unwrap();
+            }
+            let (calls, kept) = match revoke_fails {
+                None => (
+                    vec![
+                        "provision:earlier",
+                        "revoke:sunshine-host:earlier",
+                        "provision:newer",
+                    ],
+                    newer,
+                ),
+                // Unknown or refused: Sunshine may still trust the earlier
+                // certificate, so its grant stays and the newer one waits.
+                Some(_) => (
+                    vec!["provision:earlier", "revoke:sunshine-host:earlier"],
+                    earlier,
+                ),
+            };
+            assert_eq!(sunshine.calls(), calls, "{revoke_fails:?}");
+            assert_eq!(
+                Authorization::stream_client_grant(host_root.path(), &client_key).unwrap(),
+                Some(("sunshine-host".into(), kept.into())),
+                "{revoke_fails:?}"
+            );
+        }
+    }
+
+    /// A revocation removes the caller's grant only when the grant names the
+    /// certificate that it revoked.
+    #[tokio::test]
+    async fn a_revocation_removes_only_the_grant_of_the_certificate_it_revoked() {
+        let (host_root, client_root, credentials, host_key, config) = setup();
+        let client_key = DeviceIdentity::load_or_create(client_root.path())
+            .unwrap()
+            .device_public_key()
+            .unwrap()
+            .to_owned();
+        let granted = "-----BEGIN CERTIFICATE-----\ngranted\n-----END CERTIFICATE-----\n";
+        let other = "-----BEGIN CERTIFICATE-----\nother\n-----END CERTIFICATE-----\n";
+        let sunshine = Arc::new(ScriptedSunshine::default());
+        let server = crate::tests::secure_host_peer_server_with_certificate_adapter_at(
+            &config,
+            host_root.path(),
+            sunshine.clone(),
+            NOW,
+        );
+        let grant = || Authorization::stream_client_grant(host_root.path(), &client_key).unwrap();
+        let send = |request, at| {
+            let server = server.clone();
+            let event = certificate_event(&credentials, &host_key, request, at);
+            async move { server.handle(&event, NOW, None).await.unwrap() }
+        };
+        send(provision_request(granted), 180).await;
+        send(revoke_request(other), 182).await;
+        assert_eq!(grant(), Some(("sunshine-host".into(), granted.into())));
+        send(revoke_request(granted), 184).await;
+        assert_eq!(grant(), None);
     }
 
     /// A Sunshine channel whose provision runs until the test lets it end.
