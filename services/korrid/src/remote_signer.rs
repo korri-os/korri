@@ -557,6 +557,10 @@ struct Nip46Request {
 #[serde(deny_unknown_fields)]
 struct Nip46Response {
     id: String,
+    // A refusal may carry only the error: nak's bunker sends
+    // {"id", "error": "unauthorized"}. Without this default korrid dropped
+    // that reply and waited out REQUEST_TIMEOUT.
+    #[serde(default)]
     result: String,
     #[serde(default)]
     error: Option<String>,
@@ -838,6 +842,15 @@ mod tests {
         assert!(already_connected("Already connected"));
         assert!(!already_connected("invalid secret"));
         assert_eq!(signer_error_text(&"x".repeat(500)).len(), 200);
+    }
+
+    #[test]
+    fn a_refusal_without_a_result_is_read_as_a_refusal() {
+        let response: Nip46Response =
+            serde_json::from_str(r#"{"id":"connect-1","error":"unauthorized"}"#).unwrap();
+        assert_eq!(response.error.as_deref(), Some("unauthorized"));
+        assert_eq!(response.result, "");
+        assert!(serde_json::from_str::<Nip46Response>(r#"{"result":"ack"}"#).is_err());
     }
 
     #[test]
