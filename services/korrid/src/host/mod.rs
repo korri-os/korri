@@ -755,7 +755,7 @@ impl HostRuntime {
             Ok(answer) => Ok(answer),
             // No answer read: Sunshine may still change the encoder. The viewer
             // must confirm its size, so this is no refusal.
-            Err(failure) if moonlight_certificate::outcome_unknown(&failure) => {
+            Err(failure) if !moonlight_certificate::proves_not_applied(&failure) => {
                 eprintln!("korrid: stream resize unknown: {}", failure.code);
                 Err(failure)
             }

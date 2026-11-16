@@ -483,33 +483,55 @@ impl PeerRpcServer {
         } = authenticated;
         let provision = provisioned_certificate(&envelope.request);
         let revocation = revoked_certificate(&envelope.request);
-        let response = dispatch(&self.app, &context, envelope.request)
-            .await
-            .map_err(|_| PeerRpcError::Unauthorized)?;
-        if let Some(certificate) = provision {
-            // A provision whose answer korrid did not read may still be
-            // applied in Sunshine. Keep its grant: a grant for trust that is
-            // absent is harmless, trust without a grant cannot be revoked.
+        // A provision's grant is written before the provision can reach
+        // Sunshine. The caller may go away before the answer, and its handler
+        // with it, while the blocking exchange still sends the frame: trust
+        // that Sunshine applies must never be without a grant. Only a failure
+        // that proves Sunshine did not apply it undoes the grant.
+        let pending_grant = match (&provision, &context) {
+            (Some(certificate), AuthorizationContext::Peer(principal))
+                if authorization::authorize(&context, &envelope.request).is_ok()
+                    && crate::host::moonlight_certificate::validate_host_uuid(
+                        &certificate.host_uuid,
+                    )
+                    .is_ok()
+                    && crate::host::moonlight_certificate::validate_single_pem(
+                        &certificate.client_certificate,
+                    )
+                    .is_ok() =>
+            {
+                Some(
+                    self.authorization
+                        .begin_certificate_grant(
+                            principal,
+                            &certificate.host_uuid,
+                            &certificate.client_certificate,
+                        )
+                        .map_err(|_| PeerRpcError::Storage)?,
+                )
+            }
+            _ => None,
+        };
+        let response = match dispatch(&self.app, &context, envelope.request).await {
+            Ok(response) => response,
+            Err(_) => {
+                if let Some(pending) = pending_grant {
+                    self.authorization
+                        .abandon_certificate_grant(pending)
+                        .map_err(|_| PeerRpcError::Storage)?;
+                }
+                return Err(PeerRpcError::Unauthorized);
+            }
+        };
+        if let Some(pending) = pending_grant {
             if matches!(
                 &response,
                 RpcResponse::MoonlightCertificateProvision(
-                    MoonlightCertificateProvisionOutcome::Ok(_)
-                )
-            ) || matches!(
-                &response,
-                RpcResponse::MoonlightCertificateProvision(
                     MoonlightCertificateProvisionOutcome::Err(failure)
-                ) if crate::host::moonlight_certificate::outcome_unknown(failure)
+                ) if crate::host::moonlight_certificate::proves_not_applied(failure)
             ) {
-                let AuthorizationContext::Peer(principal) = &context else {
-                    unreachable!("a peer attempt always has a peer context")
-                };
                 self.authorization
-                    .record_certificate(
-                        principal,
-                        &certificate.host_uuid,
-                        &certificate.client_certificate,
-                    )
+                    .abandon_certificate_grant(pending)
                     .map_err(|_| PeerRpcError::Storage)?;
             }
         }
@@ -1503,15 +1525,18 @@ mod tests {
             ("StreamCertificateControlInvalid", false),
             ("HostMismatch", false),
             ("InvalidMoonlightClientCertificate", false),
+            ("InvalidMoonlightHostUuid", false),
+            ("StreamCertificateControlPersistenceFailed", false),
+            ("StreamCertificateControlStateIntegrityFailed", false),
         ]
         .into_iter()
         .enumerate()
         {
-            let app = crate::secure_host_router_with_certificate_adapter_at(
+            let app = crate::tests::secure_host_router_with_certificate_adapter_at(
                 &config,
                 host_root.path(),
-                NOW,
                 Arc::new(ProvisionEndsIn(code)),
+                NOW,
             );
             let client = crate::upstream_native::NativeClient::new_secure_at(
                 serve(app).await,
@@ -1538,6 +1563,184 @@ mod tests {
                     .unwrap();
             }
         }
+    }
+
+    /// A provision that fails with proof that Sunshine did not apply it puts
+    /// back the grant that it replaced: the device's earlier certificate is
+    /// still trusted, and its grant must stay. Any other outcome keeps the
+    /// new grant.
+    #[tokio::test]
+    async fn a_proven_failure_puts_back_the_grant_that_the_provision_replaced() {
+        let (host_root, client_root, credentials, host_key, config) = setup();
+        let client_key = DeviceIdentity::load_or_create(client_root.path())
+            .unwrap()
+            .device_public_key()
+            .unwrap()
+            .to_owned();
+        let earlier = "-----BEGIN CERTIFICATE-----\nearlier\n-----END CERTIFICATE-----\n";
+        let newer = "-----BEGIN CERTIFICATE-----\nnewer\n-----END CERTIFICATE-----\n";
+        for (at, (code, kept)) in [
+            ("HostMismatch", earlier),
+            ("StreamCertificateControlTimeout", newer),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            // The earlier certificate, applied: the device's grant names it.
+            let applies = Arc::new(HeldProvision::default());
+            applies.release();
+            let app = crate::tests::secure_host_router_with_certificate_adapter_at(
+                &config,
+                host_root.path(),
+                applies,
+                NOW,
+            );
+            crate::upstream_native::NativeClient::new_secure_at(
+                serve(app).await,
+                host_key.clone(),
+                credentials.clone(),
+                NOW,
+                token(130 + 4 * at as u8),
+                token(131 + 4 * at as u8),
+            )
+            .moonlight_certificate_provision("sunshine-host", earlier)
+            .await
+            .unwrap();
+            let app = crate::tests::secure_host_router_with_certificate_adapter_at(
+                &config,
+                host_root.path(),
+                Arc::new(ProvisionEndsIn(code)),
+                NOW,
+            );
+            let client = crate::upstream_native::NativeClient::new_secure_at(
+                serve(app).await,
+                host_key.clone(),
+                credentials.clone(),
+                NOW,
+                token(132 + 4 * at as u8),
+                token(133 + 4 * at as u8),
+            );
+            assert!(client
+                .moonlight_certificate_provision("sunshine-host", newer)
+                .await
+                .is_err());
+            assert_eq!(
+                Authorization::stream_client_grant(host_root.path(), &client_key).unwrap(),
+                Some(("sunshine-host".into(), kept.into())),
+                "{code}"
+            );
+        }
+    }
+
+    /// A Sunshine channel whose provision runs until the test lets it end.
+    #[derive(Default)]
+    struct HeldProvision {
+        // (the frame is on its way, the test let it end, Sunshine applied it)
+        state: Mutex<(bool, bool, bool)>,
+        changed: std::sync::Condvar,
+    }
+
+    impl HeldProvision {
+        async fn until(&self, done: impl Fn(&(bool, bool, bool)) -> bool) {
+            while !done(&self.state.lock().unwrap()) {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }
+
+        fn release(&self) {
+            self.state.lock().unwrap().1 = true;
+            self.changed.notify_all();
+        }
+    }
+
+    impl crate::host::moonlight_certificate::MoonlightCertificateAdapter for HeldProvision {
+        fn available(&self) -> bool {
+            true
+        }
+
+        fn attest(&self, _host_uuid: &str) -> Result<bool, crate::RpcFailure> {
+            Ok(true)
+        }
+
+        fn provision(
+            &self,
+            _host_uuid: &str,
+            _client_certificate: &str,
+        ) -> Result<crate::MoonlightCertificateProvisioned, crate::RpcFailure> {
+            let mut state = self.state.lock().unwrap();
+            state.0 = true;
+            while !state.1 {
+                state = self.changed.wait(state).unwrap();
+            }
+            state.2 = true;
+            Ok(crate::MoonlightCertificateProvisioned {
+                server_certificate:
+                    "-----BEGIN CERTIFICATE-----\nserver\n-----END CERTIFICATE-----\n".into(),
+            })
+        }
+
+        fn revoke(
+            &self,
+            _host_uuid: &str,
+            _client_certificate: &str,
+        ) -> Result<bool, crate::RpcFailure> {
+            Ok(true)
+        }
+
+        fn resize(
+            &self,
+            _host_uuid: &str,
+            _client_certificate: &str,
+            _display: &crate::launcher::plugin_launch::PluginDisplay,
+        ) -> Result<crate::live_display::ViewerResize, crate::RpcFailure> {
+            unreachable!("no resize in the provision tests")
+        }
+    }
+
+    /// The caller gives up (NATIVE_RPC_TIMEOUT), and hyper or the iroh path
+    /// drops the request's handler. The blocking provision still sends its
+    /// frame, and Sunshine applies it. Its grant must already exist.
+    #[tokio::test]
+    async fn a_provision_whose_caller_went_away_keeps_its_certificate_grant() {
+        let (host_root, client_root, credentials, host_key, config) = setup();
+        let client_key = DeviceIdentity::load_or_create(client_root.path())
+            .unwrap()
+            .device_public_key()
+            .unwrap()
+            .to_owned();
+        let pem = "-----BEGIN CERTIFICATE-----\nclient\n-----END CERTIFICATE-----\n";
+        let held = Arc::new(HeldProvision::default());
+        let server = crate::tests::secure_host_peer_server_with_certificate_adapter_at(
+            &config,
+            host_root.path(),
+            held.clone(),
+            NOW,
+        );
+        let event = credentials
+            .encode_request_with_tokens(
+                &host_key,
+                RpcRequest::MoonlightCertificateProvision(
+                    crate::MoonlightCertificateProvisionRequest {
+                        host_uuid: "sunshine-host".into(),
+                        client_certificate: pem.into(),
+                    },
+                ),
+                NOW,
+                token(150),
+                token(151),
+            )
+            .unwrap()
+            .event_json;
+        let handling = tokio::spawn(async move { server.handle(&event, NOW, None).await });
+        held.until(|state| state.0).await;
+        handling.abort();
+        assert!(handling.await.unwrap_err().is_cancelled());
+        held.release();
+        held.until(|state| state.2).await;
+        assert_eq!(
+            Authorization::stream_client_grant(host_root.path(), &client_key).unwrap(),
+            Some(("sunshine-host".into(), pem.into()))
+        );
     }
 
     #[tokio::test]

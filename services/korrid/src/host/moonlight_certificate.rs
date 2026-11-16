@@ -35,16 +35,25 @@ fn socket_turn() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// True when korrid read no answer that it can trust: Sunshine may still
-/// have applied the frame. Every other failure proves that it did not, or
-/// is Sunshine's own refusal. A caller must not report such an outcome as
-/// a refusal, and must keep the record of a provision that may have applied.
-pub(crate) fn outcome_unknown(failure: &RpcFailure) -> bool {
+/// True when a failure proves that Sunshine did not apply the frame: korrid
+/// never sent it, or Sunshine refused it before any change. After any other
+/// failure (a timeout, a failed exchange, an answer korrid cannot read, a
+/// failure korrid does not know) Sunshine may still apply it. Such an outcome
+/// is never a refusal, and the record of a provision then stays.
+pub(crate) fn proves_not_applied(failure: &RpcFailure) -> bool {
     matches!(
         failure.code.as_str(),
-        "StreamCertificateControlTimeout"
-            | "StreamCertificateControlFailed"
-            | "StreamCertificateControlProtocol"
+        // Refused in korrid before the socket.
+        "StreamCertificateControlBusy"
+            | "InvalidMoonlightHostUuid"
+            | "InvalidMoonlightClientCertificate"
+            // The socket is absent or failed its checks before a frame was sent.
+            | "StreamCertificateControlUnavailable"
+            | "StreamCertificateControlInvalid"
+            // Sunshine refused before any change, or restored its state.
+            | "HostMismatch"
+            | "StreamCertificateControlPersistenceFailed"
+            | "StreamCertificateControlStateIntegrityFailed"
     )
 }
 const SOCKET_ENV: &str = "KORRID_STREAM_CERTIFICATE_CONTROL_SOCKET";

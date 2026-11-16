@@ -459,6 +459,14 @@ enum RevocationTarget {
     PersonPass(String),
 }
 
+/// A grant written before its provision was sent (`begin_certificate_grant`).
+#[derive(Debug)]
+pub struct PendingCertificateGrant {
+    device_public_key: String,
+    written: Vec<u8>,
+    replaced: Option<Vec<u8>>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CertificateGrant {
@@ -604,42 +612,59 @@ impl Authorization {
         host_uuid: &str,
         client_certificate: &str,
     ) -> Result<(), AuthorizationError> {
-        let (device_public_key, authorization) = match principal {
-            Principal::OwnerDevice {
-                device_public_key,
-                owner_statement,
-                ..
-            } => (
-                device_public_key,
-                CertificateAuthorization::OwnerDevice {
-                    owner_statement: owner_statement.clone(),
-                },
-            ),
-            Principal::Household {
-                device_public_key,
-                owner_statement,
-                person_pass,
-            }
-            | Principal::Guest {
-                device_public_key,
-                owner_statement,
-                person_pass,
-            } => (
-                device_public_key,
-                CertificateAuthorization::PersonPass {
-                    owner_statement: owner_statement.clone(),
-                    person_pass: person_pass.event_json.clone(),
-                },
-            ),
-            Principal::Unknown { .. } => return Err(AuthorizationError::InvalidEvidence),
+        let (device_public_key, bytes) =
+            certificate_grant_record(principal, host_uuid, client_certificate)?;
+        write_private_atomically(&self.certificate_path(&device_public_key), &bytes)
+    }
+
+    /// Writes a provision's grant before the provision is sent, so that trust
+    /// which Sunshine applies has a grant even when the caller goes away
+    /// before the answer. Undo it with `abandon_certificate_grant`, and only
+    /// after a failure that proves Sunshine did not apply the provision.
+    pub fn begin_certificate_grant(
+        &self,
+        principal: &Principal,
+        host_uuid: &str,
+        client_certificate: &str,
+    ) -> Result<PendingCertificateGrant, AuthorizationError> {
+        let (device_public_key, written) =
+            certificate_grant_record(principal, host_uuid, client_certificate)?;
+        let _state = self.state.lock().map_err(|_| AuthorizationError::Storage)?;
+        let path = self.certificate_path(&device_public_key);
+        let replaced = match fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(_) => return Err(AuthorizationError::Storage),
+            Ok(_) => Some(read_certificate_grant_bytes(&path)?),
         };
-        let grant = CertificateGrant {
-            host_uuid: host_uuid.into(),
-            client_certificate: client_certificate.into(),
-            authorization,
-        };
-        let bytes = serde_json::to_vec(&grant).map_err(|_| AuthorizationError::Storage)?;
-        write_private_atomically(&self.certificate_path(device_public_key), &bytes)
+        write_private_atomically(&path, &written)?;
+        Ok(PendingCertificateGrant {
+            device_public_key,
+            written,
+            replaced,
+        })
+    }
+
+    /// Puts back the grant that `begin_certificate_grant` replaced, or removes
+    /// the one it wrote. A grant that another provision has written since is
+    /// left as it is.
+    pub fn abandon_certificate_grant(
+        &self,
+        pending: PendingCertificateGrant,
+    ) -> Result<(), AuthorizationError> {
+        let _state = self.state.lock().map_err(|_| AuthorizationError::Storage)?;
+        let path = self.certificate_path(&pending.device_public_key);
+        match fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(_) => return Err(AuthorizationError::Storage),
+            Ok(_) => {}
+        }
+        if read_certificate_grant_bytes(&path)? != pending.written {
+            return Ok(());
+        }
+        match pending.replaced {
+            Some(replaced) => write_private_atomically(&path, &replaced),
+            None => self.complete_certificate_revocation(&pending.device_public_key),
+        }
     }
 
     pub fn certificate_revocations(
@@ -1177,6 +1202,11 @@ fn sync_directory(path: &Path) -> Result<(), AuthorizationError> {
 
 /// One grant file, with the checks that every reader applies.
 fn read_certificate_grant(path: &Path) -> Result<CertificateGrant, AuthorizationError> {
+    serde_json::from_slice(&read_certificate_grant_bytes(path)?)
+        .map_err(|_| AuthorizationError::Storage)
+}
+
+fn read_certificate_grant_bytes(path: &Path) -> Result<Vec<u8>, AuthorizationError> {
     let metadata = fs::symlink_metadata(path).map_err(|_| AuthorizationError::Storage)?;
     if !metadata.is_file()
         || metadata.file_type().is_symlink()
@@ -1185,8 +1215,51 @@ fn read_certificate_grant(path: &Path) -> Result<CertificateGrant, Authorization
     {
         return Err(AuthorizationError::Storage);
     }
-    let bytes = read_bounded(path, MAX_GRANT_BYTES)?;
-    serde_json::from_slice(&bytes).map_err(|_| AuthorizationError::Storage)
+    read_bounded(path, MAX_GRANT_BYTES)
+}
+
+/// A principal's grant for one certificate, and the device it is filed under.
+fn certificate_grant_record(
+    principal: &Principal,
+    host_uuid: &str,
+    client_certificate: &str,
+) -> Result<(String, Vec<u8>), AuthorizationError> {
+    let (device_public_key, authorization) = match principal {
+        Principal::OwnerDevice {
+            device_public_key,
+            owner_statement,
+            ..
+        } => (
+            device_public_key,
+            CertificateAuthorization::OwnerDevice {
+                owner_statement: owner_statement.clone(),
+            },
+        ),
+        Principal::Household {
+            device_public_key,
+            owner_statement,
+            person_pass,
+        }
+        | Principal::Guest {
+            device_public_key,
+            owner_statement,
+            person_pass,
+        } => (
+            device_public_key,
+            CertificateAuthorization::PersonPass {
+                owner_statement: owner_statement.clone(),
+                person_pass: person_pass.event_json.clone(),
+            },
+        ),
+        Principal::Unknown { .. } => return Err(AuthorizationError::InvalidEvidence),
+    };
+    let grant = CertificateGrant {
+        host_uuid: host_uuid.into(),
+        client_certificate: client_certificate.into(),
+        authorization,
+    };
+    let bytes = serde_json::to_vec(&grant).map_err(|_| AuthorizationError::Storage)?;
+    Ok((device_public_key.clone(), bytes))
 }
 
 fn validate_hex_32(value: &str) -> Result<(), AuthorizationError> {

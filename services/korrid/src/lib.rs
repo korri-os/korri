@@ -5902,26 +5902,6 @@ fn secure_host_router_with_in_memory_units_at(
         .router(None)
 }
 
-#[cfg(test)]
-fn secure_host_router_with_certificate_adapter_at(
-    config_path: impl AsRef<Path>,
-    private_state_root: &Path,
-    now: u64,
-    adapter: Arc<dyn host::moonlight_certificate::MoonlightCertificateAdapter>,
-) -> Router {
-    let runtime = host::HostRuntime::from_paths_with_backends(
-        config_path.as_ref(),
-        None,
-        private_state_root.to_owned(),
-        Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
-        adapter,
-    );
-    let (lan, _) = app_states(runtime);
-    peer_rpc::PeerRpcServer::new_at(lan, private_state_root, now)
-        .expect("load or create peer RPC identity")
-        .router(None)
-}
-
 fn app_states(runtime: host::HostRuntime) -> (AppState, AppState) {
     app_states_with(runtime, acquisition::AcquisitionCoordinator::default())
 }
@@ -9749,12 +9729,27 @@ command = ["game-two"]
         plain_host_routers(runtime)
     }
 
-    fn secure_host_router_with_certificate_adapter_at(
+    pub(super) fn secure_host_router_with_certificate_adapter_at(
         config_path: &Path,
         private_state_root: &Path,
         adapter: Arc<dyn host::moonlight_certificate::MoonlightCertificateAdapter>,
         now: u64,
     ) -> Router {
+        secure_host_peer_server_with_certificate_adapter_at(
+            config_path,
+            private_state_root,
+            adapter,
+            now,
+        )
+        .router(None)
+    }
+
+    pub(super) fn secure_host_peer_server_with_certificate_adapter_at(
+        config_path: &Path,
+        private_state_root: &Path,
+        adapter: Arc<dyn host::moonlight_certificate::MoonlightCertificateAdapter>,
+        now: u64,
+    ) -> peer_rpc::PeerRpcServer {
         let runtime = host::HostRuntime::from_paths_with_backends(
             config_path,
             None,
@@ -9765,7 +9760,6 @@ command = ["game-two"]
         let (lan, _) = app_states(runtime);
         peer_rpc::PeerRpcServer::new_at(lan, private_state_root, now)
             .expect("load or create peer RPC identity")
-            .router(None)
     }
 
     async fn serve_router(app: Router) -> String {
