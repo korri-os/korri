@@ -1107,7 +1107,7 @@ pub(crate) mod tests {
     use std::{
         collections::HashMap,
         sync::{
-            Arc, Mutex as StdMutex,
+            Arc, Condvar, Mutex as StdMutex,
             atomic::{AtomicUsize, Ordering as AtomicOrdering},
         },
         time::Instant,
@@ -1128,6 +1128,32 @@ pub(crate) mod tests {
         pub battery_delay: Duration,
         pub battery_panics: bool,
         pub begun: Arc<Begun>,
+        /// The first call stalls until the test lets it go.
+        pub hold_first: Option<Arc<Hold>>,
+    }
+
+    /// A call into Android that stalls, as a Binder call can, until the test
+    /// lets it go: what happens behind it then does not depend on how soon
+    /// each thread runs (#493). The stall ends after 10 s, so a test that
+    /// fails first does not leave the feedback thread waiting.
+    #[derive(Default)]
+    pub(crate) struct Hold {
+        gone: StdMutex<bool>,
+        changed: Condvar,
+    }
+
+    impl Hold {
+        fn stall(&self) {
+            let gone = self.gone.lock().unwrap();
+            let _ = self
+                .changed
+                .wait_timeout_while(gone, Duration::from_secs(10), |gone| !*gone)
+                .unwrap();
+        }
+        fn let_go(&self) {
+            *self.gone.lock().unwrap() = true;
+            self.changed.notify_all();
+        }
     }
 
     /// How many calls and battery reads have started. A test that needs one
@@ -1170,7 +1196,12 @@ pub(crate) mod tests {
 
     impl Outputs for Scripted {
         fn call(&mut self, call: &Call) -> Result<()> {
-            self.begun.calls.fetch_add(1, AtomicOrdering::SeqCst);
+            let earlier = self.begun.calls.fetch_add(1, AtomicOrdering::SeqCst);
+            if earlier == 0
+                && let Some(hold) = &self.hold_first
+            {
+                hold.stall();
+            }
             std::thread::sleep(self.delay);
             if self.panics {
                 panic!("a JNI fault");
@@ -1862,9 +1893,13 @@ pub(crate) mod tests {
     #[test]
     fn rumble_behind_a_slow_call_collapses_and_the_stop_is_not_kept_waiting() {
         let _turn = CORE_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
-        // Each call into Android takes 100 ms: a Binder call that stalls.
+        // The first call into Android stalls until the test lets it go. The
+        // checks below then count calls, not milliseconds: on a starved
+        // machine the core's 2000 rumbles took longer than any fixed call,
+        // and the threads took longer than any fixed stop (#493).
+        let hold = Arc::new(Hold::default());
         let outputs = Scripted {
-            delay: Duration::from_millis(100),
+            hold_first: Some(hold.clone()),
             ..Default::default()
         };
         let made = outputs.clone();
@@ -1873,25 +1908,38 @@ pub(crate) mod tests {
             .seats()
             .seated(seat(18, 0, Rumble::Dual(Owner::Device), false));
         worker.serve_core();
-        // The host's rumble comes behind a call that is under way. Without
-        // that wait, a loaded machine could run the stop before the feedback
-        // thread took the seat: the stop then had no rumble to cancel (#493).
         unsafe { rumble(0, 0x0100, 0x0100) };
         outputs.calls_begun(1);
+        // The host's rumbles come behind the call that stalls. They wait as
+        // one value per controller, the last: 2001 rumbles, one value.
         rumbles_then_zero(2000);
-        let began = Instant::now();
-        assert!(worker.stop(STOP_WAIT), "the stop waited behind the rumble");
-        assert!(
-            began.elapsed() < Duration::from_secs(1),
-            "{:?}",
-            began.elapsed()
-        );
-        let calls = outputs.calls.lock().unwrap().clone();
-        // A few rumbles at most, then the stop's cancels.
-        assert!(calls.len() <= 5, "{} calls: {calls:?}", calls.len());
         assert_eq!(
-            calls[calls.len() - 2..],
+            worker.mailbox.inbox.lock().unwrap().rumble,
+            BTreeMap::from([(0, (0, 0))])
+        );
+        // The stop comes while the call stalls, and the call returns after.
+        let (mailbox, letting_go) = (worker.mailbox.clone(), hold.clone());
+        let returns = std::thread::spawn(move || {
+            let until = Instant::now() + Duration::from_secs(10);
+            while !mailbox.stopping() && Instant::now() < until {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            letting_go.let_go();
+        });
+        assert!(
+            worker.stop(Duration::from_secs(10)),
+            "the stop waited behind the rumble"
+        );
+        returns.join().unwrap();
+        // The stop waited for the call under way alone: none of the rumbles
+        // behind it reached Android, only the stop's cancels.
+        assert_eq!(
+            *outputs.calls.lock().unwrap(),
             [
+                Call::Combined {
+                    target: Target::Device(18),
+                    amplitudes: vec![1, 1]
+                },
                 Call::CancelManager {
                     target: Target::Device(18)
                 },
