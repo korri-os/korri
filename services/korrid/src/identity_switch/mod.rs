@@ -7,6 +7,8 @@ mod coordinator;
 mod journal;
 mod storage;
 
+#[cfg(test)]
+pub(crate) use coordinator::revoke_stream_client_trust;
 pub use coordinator::{
     recover_pending_identity_switch, IdentitySwitchCoordinator, ReplacementIdentity,
 };

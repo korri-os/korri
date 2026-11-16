@@ -12,7 +12,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
@@ -417,6 +417,47 @@ pub struct Authorization {
     state: Arc<Mutex<AuthorizationState>>,
     revocation_directory: PathBuf,
     certificate_directory: PathBuf,
+    certificate_locks: DeviceCertificateLocks,
+}
+
+/// One lock for each device's certificate work: its provisions, its
+/// revocations, their reconciliation, and the identity switch's revocation
+/// of its grant. A device's grant write, the exchange with Sunshine and any
+/// undo run as one, so that no other of its operations can come between
+/// them. Everyone who shares an `Authorization` shares its locks. Take a
+/// lock before the socket turn (`host/moonlight_certificate.rs`), never
+/// while holding one, and hold one device's lock at a time.
+#[derive(Clone, Default)]
+pub(crate) struct DeviceCertificateLocks(Arc<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>);
+
+impl DeviceCertificateLocks {
+    fn device(&self, device_public_key: &str) -> Arc<tokio::sync::Mutex<()>> {
+        let mut locks = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // A lock that no operation holds or waits for is not needed.
+        locks.retain(|_, lock| Arc::strong_count(lock) > 1);
+        locks
+            .entry(device_public_key.to_owned())
+            .or_default()
+            .clone()
+    }
+
+    /// Waits for the device. Reconciliation waits in the request's own
+    /// handler, so its wait ends with that handler. The identity switch waits
+    /// in its own task.
+    pub(crate) async fn lock(&self, device_public_key: &str) -> tokio::sync::OwnedMutexGuard<()> {
+        self.device(device_public_key).lock_owned().await
+    }
+
+    /// The device, or None while another operation holds it.
+    pub(crate) fn try_lock(
+        &self,
+        device_public_key: &str,
+    ) -> Option<tokio::sync::OwnedMutexGuard<()>> {
+        self.device(device_public_key).try_lock_owned().ok()
+    }
 }
 
 struct AuthorizationState {
@@ -501,7 +542,12 @@ impl Authorization {
             })),
             revocation_directory,
             certificate_directory,
+            certificate_locks: DeviceCertificateLocks::default(),
         })
+    }
+
+    pub(crate) fn certificate_locks(&self) -> &DeviceCertificateLocks {
+        &self.certificate_locks
     }
 
     /// Outbound static routes lack an owner statement, but cannot override
@@ -511,19 +557,20 @@ impl Authorization {
         Ok(is_owner_device_revoked(&state.revocations, owner, device))
     }
 
-    pub fn stream_client_grants(&self) -> Result<Vec<(String, String)>, AuthorizationError> {
-        self.certificate_grants().map(|grants| {
-            grants
-                .into_iter()
-                .map(|(_, grant)| (grant.host_uuid, grant.client_certificate))
-                .collect()
-        })
+    /// The devices that have a certificate grant, in the order of their keys.
+    pub fn certificate_grant_devices(&self) -> Result<Vec<String>, AuthorizationError> {
+        self.certificate_grants()
+            .map(|grants| grants.into_iter().map(|(device, _)| device).collect())
     }
 
+    /// Forgets the revocations. It removes no certificate grant: a grant goes
+    /// only after Sunshine confirmed the revoke of its certificate, which the
+    /// identity switch does for each device before this. A grant that is
+    /// still here names a certificate that Sunshine may trust, and
+    /// reconciliation revokes it under the new owner.
     pub fn reset_after_identity_switch(&self) -> Result<(), AuthorizationError> {
         let mut state = self.state.lock().map_err(|_| AuthorizationError::Storage)?;
         clear_private_directory(&self.revocation_directory)?;
-        clear_private_directory(&self.certificate_directory)?;
         state.revocations.clear();
         state.pending_revocations.clear();
         Ok(())
@@ -788,6 +835,7 @@ impl Authorization {
             })),
             revocation_directory,
             certificate_directory,
+            certificate_locks: DeviceCertificateLocks::default(),
         })
     }
 

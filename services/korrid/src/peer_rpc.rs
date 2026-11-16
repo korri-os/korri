@@ -299,53 +299,18 @@ pub struct PeerRpcServer {
     replay: Arc<ReplayGuard>,
     authorization: Authorization,
     clock: Clock,
-    certificate_locks: DeviceCertificateLocks,
 }
 
-/// One lock for each device's certificate work: its provisions, its
-/// revocations and their reconciliation. A device's grant write, the
-/// exchange with Sunshine and any undo run as one, so that no other of its
-/// operations can come between them. Take it before the socket turn
-/// (`host/moonlight_certificate.rs`), never while holding one.
-#[derive(Clone, Default)]
-struct DeviceCertificateLocks(Arc<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>);
-
-impl DeviceCertificateLocks {
-    fn device(&self, device_public_key: &str) -> Arc<tokio::sync::Mutex<()>> {
-        let mut locks = self
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        // A lock that no operation holds or waits for is not needed.
-        locks.retain(|_, lock| Arc::strong_count(lock) > 1);
-        locks
-            .entry(device_public_key.to_owned())
-            .or_default()
-            .clone()
-    }
-
-    /// Waits for the device. Only reconciliation waits: it runs in the
-    /// request's own handler, so its wait ends with that handler.
-    async fn lock(&self, device_public_key: &str) -> tokio::sync::OwnedMutexGuard<()> {
-        self.device(device_public_key).lock_owned().await
-    }
-
-    /// The device, or None while another operation holds it.
-    fn try_lock(&self, device_public_key: &str) -> Option<tokio::sync::OwnedMutexGuard<()>> {
-        self.device(device_public_key).try_lock_owned().ok()
-    }
-}
-
-/// A peer's provision or revocation, with the device lock held from start
-/// to end. It runs as its own task, so it ends even when the caller goes
-/// away and the request's handler is dropped. It does not wait for the
+/// A peer's provision or revocation, with the device lock
+/// (`authorization::DeviceCertificateLocks`) held from start to end. It runs
+/// as its own task, so it ends even when the caller goes away and the
+/// request's handler is dropped. It does not wait for the
 /// device: while another operation holds it, the request is answered busy
 /// before anything changes. So one device has at most one such task, and no
 /// queue of tasks that outlive their callers.
 struct CertificateTransaction {
     app: AppState,
     authorization: Authorization,
-    locks: DeviceCertificateLocks,
 }
 
 impl CertificateTransaction {
@@ -381,7 +346,7 @@ impl CertificateTransaction {
                 .await
                 .map_err(|_| PeerRpcError::Unauthorized);
         };
-        let Some(_device) = self.locks.try_lock(&device) else {
+        let Some(_device) = self.authorization.certificate_locks().try_lock(&device) else {
             let busy = crate::RpcFailure {
                 code: "StreamCertificateControlBusy".into(),
                 message: "This device's certificate work is busy".into(),
@@ -551,7 +516,6 @@ impl PeerRpcServer {
             replay: Arc::new(ReplayGuard::new(private_state_root)?),
             authorization,
             clock: Arc::new(unix_time),
-            certificate_locks: DeviceCertificateLocks::default(),
         })
     }
 
@@ -570,7 +534,6 @@ impl PeerRpcServer {
             authorization: Authorization::load(private_state_root)
                 .map_err(|_| PeerRpcError::Storage)?,
             clock,
-            certificate_locks: DeviceCertificateLocks::default(),
         })
     }
 
@@ -720,7 +683,6 @@ impl PeerRpcServer {
             let transaction = CertificateTransaction {
                 app: self.app.clone(),
                 authorization: self.authorization.clone(),
-                locks: self.certificate_locks.clone(),
             };
             tokio::spawn(transaction.run(context, envelope.request))
                 .await
@@ -759,7 +721,8 @@ impl PeerRpcServer {
             .map_err(|_| PeerRpcError::Storage)?;
         for revocation in revocations {
             let _device = self
-                .certificate_locks
+                .authorization
+                .certificate_locks()
                 .lock(&revocation.device_public_key)
                 .await;
             // The device may have provisioned again while this waited for it.
@@ -2117,6 +2080,122 @@ mod tests {
         assert_eq!(grant(), Some(("sunshine-host".into(), granted.into())));
         send(revoke_request(granted), 184).await;
         assert_eq!(grant(), None);
+    }
+
+    /// #503: the identity switch revokes a device's grant with the device's
+    /// lock held, as a provision does. A provision that Sunshine holds runs
+    /// as one: the switch's revoke waits until it ends, and then revokes the
+    /// certificate that the provision granted.
+    #[tokio::test]
+    async fn the_identity_switch_waits_for_a_provision_that_sunshine_holds() {
+        let (host_root, client_root, credentials, host_key, config) = setup();
+        let client_key = DeviceIdentity::load_or_create(client_root.path())
+            .unwrap()
+            .device_public_key()
+            .unwrap()
+            .to_owned();
+        let pem = "-----BEGIN CERTIFICATE-----\nclient\n-----END CERTIFICATE-----\n";
+        let sunshine = Arc::new(ScriptedSunshine {
+            hold_first_provision: true,
+            ..Default::default()
+        });
+        let server = crate::tests::secure_host_peer_server_with_certificate_adapter_at(
+            &config,
+            host_root.path(),
+            sunshine.clone(),
+            NOW,
+        );
+        let provision = {
+            let server = server.clone();
+            let event = certificate_event(&credentials, &host_key, provision_request(pem), 190);
+            tokio::spawn(async move { server.handle(&event, NOW, None).await })
+        };
+        sunshine.until_held().await;
+        let mut switch = tokio::spawn(crate::identity_switch::revoke_stream_client_trust(
+            server.authorization.clone(),
+            sunshine.clone(),
+        ));
+        // Sunshine holds the provision on a blocking thread until it is
+        // released, so what happened meanwhile is read first and checked after.
+        let early = tokio::time::timeout(std::time::Duration::from_millis(300), &mut switch)
+            .await
+            .ok();
+        let while_held = sunshine.calls();
+        sunshine.release();
+        provision.await.unwrap().unwrap();
+        let waited = early.is_none();
+        match early {
+            Some(switched) => switched,
+            None => switch.await,
+        }
+        .unwrap()
+        .unwrap();
+        assert!(
+            waited,
+            "the switch waits for the device while it provisions"
+        );
+        assert_eq!(while_held, ["provision:client"]);
+        assert_eq!(
+            sunshine.calls(),
+            ["provision:client", "revoke:sunshine-host:client"]
+        );
+        assert_eq!(
+            Authorization::stream_client_grant(host_root.path(), &client_key).unwrap(),
+            None
+        );
+    }
+
+    /// #503: the identity switch removes a grant only after Sunshine
+    /// confirmed its revoke. The reset that follows the switch removes no
+    /// grant: a grant that is still there names a certificate that Sunshine
+    /// may trust, and reconciliation revokes it under the new owner.
+    #[tokio::test]
+    async fn the_identity_switch_keeps_a_grant_that_sunshine_did_not_revoke() {
+        let (host_root, client_root, credentials, host_key, config) = setup();
+        let client_key = DeviceIdentity::load_or_create(client_root.path())
+            .unwrap()
+            .device_public_key()
+            .unwrap()
+            .to_owned();
+        let pem = "-----BEGIN CERTIFICATE-----\nclient\n-----END CERTIFICATE-----\n";
+        let sunshine = Arc::new(ScriptedSunshine {
+            revoke_fails: Some("StreamCertificateControlTimeout"),
+            ..Default::default()
+        });
+        let server = crate::tests::secure_host_peer_server_with_certificate_adapter_at(
+            &config,
+            host_root.path(),
+            sunshine.clone(),
+            NOW,
+        );
+        server
+            .handle(
+                &certificate_event(&credentials, &host_key, provision_request(pem), 192),
+                NOW,
+                None,
+            )
+            .await
+            .unwrap();
+        let granted = Some(("sunshine-host".to_owned(), pem.to_owned()));
+        assert!(crate::identity_switch::revoke_stream_client_trust(
+            server.authorization.clone(),
+            sunshine.clone(),
+        )
+        .await
+        .is_err());
+        assert_eq!(
+            sunshine.calls(),
+            ["provision:client", "revoke:sunshine-host:client"]
+        );
+        assert_eq!(
+            Authorization::stream_client_grant(host_root.path(), &client_key).unwrap(),
+            granted
+        );
+        server.authorization.reset_after_identity_switch().unwrap();
+        assert_eq!(
+            Authorization::stream_client_grant(host_root.path(), &client_key).unwrap(),
+            granted
+        );
     }
 
     /// A Sunshine channel whose provision runs until the test lets it end.

@@ -423,10 +423,8 @@ async fn complete_commit(
 
     if let Some(resources) = live_resources {
         revoke_stream_client_trust(
-            resources
-                .authorization
-                .stream_client_grants()
-                .map_err(|error| error.to_string())?,
+            resources.authorization.clone(),
+            crate::host::moonlight_certificate::production_adapter(),
         )
         .await?;
         resources
@@ -444,9 +442,8 @@ async fn complete_commit(
         let authorization =
             Authorization::load(&storage.live_private_root()).map_err(|error| error.to_string())?;
         revoke_stream_client_trust(
-            authorization
-                .stream_client_grants()
-                .map_err(|error| error.to_string())?,
+            authorization.clone(),
+            crate::host::moonlight_certificate::production_adapter(),
         )
         .await?;
         authorization
@@ -469,21 +466,56 @@ async fn complete_commit(
     storage.finish_commit().map_err(|error| error.to_string())
 }
 
-async fn revoke_stream_client_trust(grants: Vec<(String, String)>) -> Result<(), String> {
-    if grants.is_empty() {
-        return Ok(());
-    }
-    tokio::task::spawn_blocking(move || {
-        let adapter = crate::host::moonlight_certificate::production_adapter();
-        for (host_uuid, client_certificate) in grants {
+/// Sunshine stops trusting each device's granted certificate, and then the
+/// grant goes. Each device's revoke holds the device's certificate lock
+/// (`authorization::DeviceCertificateLocks`), as its provisions and their
+/// reconciliation do, so none of them can come between the revoke and the
+/// grant's removal (#503). Like reconciliation, it waits for one device at a
+/// time, in the order of their keys, and takes the lock before the socket
+/// turn. A revoke that Sunshine does not confirm keeps its grant and stops
+/// the switch.
+pub(crate) async fn revoke_stream_client_trust(
+    authorization: Authorization,
+    adapter: Arc<dyn crate::host::moonlight_certificate::MoonlightCertificateAdapter>,
+) -> Result<(), String> {
+    for device in authorization
+        .certificate_grant_devices()
+        .map_err(|error| error.to_string())?
+    {
+        let held = authorization.certificate_locks().lock(&device).await;
+        let authorization = authorization.clone();
+        let adapter = adapter.clone();
+        // One blocking step from the grant's read to its removal. It keeps
+        // the device until it ends, even when this task is dropped first.
+        tokio::task::spawn_blocking(move || -> Result<(), String> {
+            let _device = held;
+            // The device may have provisioned again while this waited for it.
+            let Some((host_uuid, certificate)) = authorization
+                .device_certificate_grant(&device)
+                .map_err(|error| error.to_string())?
+            else {
+                return Ok(());
+            };
             adapter
-                .revoke(&host_uuid, &client_certificate)
+                .revoke(&host_uuid, &certificate)
                 .map_err(|error| error.message)?;
-        }
-        Ok(())
-    })
-    .await
-    .map_err(|_| "Stream-client trust cleanup worker failed".to_owned())?
+            // Sunshine confirmed. The grant goes only when it names the
+            // certificate that Sunshine stopped trusting.
+            if authorization
+                .device_certificate_grant(&device)
+                .map_err(|error| error.to_string())?
+                .is_some_and(|(_, granted)| granted == certificate)
+            {
+                authorization
+                    .remove_certificate_grant(&device)
+                    .map_err(|error| error.to_string())?;
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|_| "Stream-client trust cleanup worker failed".to_owned())??;
+    }
+    Ok(())
 }
 
 fn owned_statement(identity: &DeviceIdentity) -> Result<VerifiedOwnerStatement, String> {
