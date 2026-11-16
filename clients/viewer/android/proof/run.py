@@ -820,6 +820,22 @@ HEX_FIELDS = {"keyAction", "keyCode", "modifiers", "flags", "eventType", "pointe
 HEARTBEAT_MS = 250
 
 
+def heartbeat_repeated_the_release(gaps: list[int]) -> bool:
+    """The gaps between a gone pad's release and the heartbeat's four repeats.
+
+    The heartbeat keeps its own 250 ms clock (gamepad.rs `Heartbeat`, as
+    Artemis's `ControllerHeartbeat`). The app sends the release when its
+    twice-a-second device check sees the pad gone, at any point of that
+    clock, so the first repeat follows the release by up to one period, plus
+    the delay of the app's loop and of the network. No fixed bound fits that
+    delay. The first repeat must be the heartbeat's next tick: less than two
+    periods after the release. Each later repeat follows the one before by
+    one period, give or take 50 ms.
+    """
+    return (len(gaps) == 4 and gaps[0] < 2 * HEARTBEAT_MS
+            and all(abs(gap - HEARTBEAT_MS) <= 50 for gap in gaps[1:]))
+
+
 def input_arrived(packets: list[dict], placed: dict) -> dict:
     """What the sender's Sunshine received, against what the proof sent."""
     def value(packet: dict, name: str) -> int:
@@ -888,11 +904,7 @@ def input_arrived(packets: list[dict], placed: dict) -> dict:
             # The pad went: its number is free, it let go of everything, and
             # the heartbeat said so four more times.
             "pad_let_go_when_it_went": len(gone) == 5,
-            # The release goes at once; the heartbeat repeats it on its own
-            # 250 ms clock, so the first repeat comes 0 to 250 ms later.
-            "pad_heartbeat_repeats_every_250_ms": len(gaps) == 4
-                and gaps[0] <= HEARTBEAT_MS + 50
-                and all(abs(gap - HEARTBEAT_MS) <= 50 for gap in gaps[1:]),
+            "pad_heartbeat_repeats_every_250_ms": heartbeat_repeated_the_release(gaps),
         },
     }
 

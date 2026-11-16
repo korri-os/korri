@@ -988,7 +988,12 @@ stick, the right trigger, the hat, B, and X held for a second; then the pad
 goes. The sender fixture's Sunshine logs each input packet that it
 receives (`log_input`, `nix/stream-cadence/README.md`) and passes none on;
 the proof reads what arrived there. Screenshots after the input show the
-picture still moving.
+picture still moving. When the pad goes, its release must arrive, then the
+heartbeat's four repeats: the first at the heartbeat's next tick, which
+can be anything up to one period after the release plus the delay of the
+loop and the network, so less than 500 ms is wanted; the next three
+250 ms apart, give or take 50. `android/proof/run.test.py` runs that rule
+over recorded gaps, with no emulator (its docstring has the command).
 
 - Not proven: a real phone's controllers, touch screen and keyboard, and
   any time from a press to its packet (step H, the Galaxy Z Fold 8). That
