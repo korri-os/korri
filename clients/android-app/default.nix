@@ -5,6 +5,11 @@
 # the emulator, at API 31 (ADR 0064). The APK is debuggable and not signed;
 # the proofs sign it with the user's debug key. Not for distribution.
 #
+# `releaseApk` (#434 D12) is the APK for a phone: the same product library
+# for arm64 only, not debuggable, with its notices (notices.nix). It is not
+# signed either: sign-release.sh signs it with the release key, outside the
+# store (README).
+#
 # The relay list is an asset: `apk` packs the product's relays, and
 # `fixtureApk` one loopback relay that the holder proofs (proof/holder.py,
 # #434 D9; proof/play.py, D10) reach through adb.
@@ -21,6 +26,9 @@
   pkgs,
   proseql,
   viewerParts,
+  # The flake's own commit, which the release APK's notices name as its
+  # source. Null for a checkout that is not clean.
+  sourceRevision ? null,
 }:
 let
   inherit (pkgs) lib;
@@ -67,8 +75,9 @@ let
     };
   # The component's classes call kotlin.enums.EnumEntries (Kotlin 1.9 and
   # later); its POM names no version.
+  kotlinVersion = "2.0.21";
   kotlinStdlib = pkgs.fetchurl {
-    url = "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.0.21/kotlin-stdlib-2.0.21.jar";
+    url = "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/${kotlinVersion}/kotlin-stdlib-${kotlinVersion}.jar";
     hash = "sha256-8xzFPxBafkjAk2g7vVQ3Vh0SM5IFE3dLRwgFZBvtvAk=";
   };
   verifierDex =
@@ -209,6 +218,32 @@ let
 
   cargoDeps = pkgs.rustPlatform.importCargoLock { lockFile = ./Cargo.lock; };
 
+  # Fails the build when cargo built `crate`'s library with `feature`. It
+  # reads the features of cargo's build fingerprints, as
+  # services/korrid/package.nix checks the shipped korrid. Each match is
+  # tested, so the glob options of the later phases stay as stdenv set them.
+  refuseFeature =
+    {
+      target,
+      crate,
+      file,
+      feature,
+    }:
+    ''
+      fingerprints=()
+      for fingerprint in target/${target}/release/.fingerprint/${crate}-*/lib-${file}.json; do
+        if [ -e "$fingerprint" ]; then fingerprints+=("$fingerprint"); fi
+      done
+      if (( ''${#fingerprints[@]} == 0 )); then
+        echo 'no build fingerprint of ${crate} to check its features' >&2
+        exit 1
+      fi
+      if grep -l '"features":"\[[^]]*${feature}' "''${fingerprints[@]}"; then
+        echo '${library} was built with the feature ${feature} of ${crate}' >&2
+        exit 1
+      fi
+    '';
+
   # The library for one ABI. Its own derivation, so that a change to the
   # packages or the manifest packs the APK again without compiling.
   # `proof`: the fixture's library, with the proof's trigger.
@@ -260,6 +295,15 @@ let
           exit 1
         fi
         "${toolchain}/bin/llvm-nm" --defined-only --extern-only $built | grep -q ' T ANativeActivity_onCreate$'
+        # No library of this app carries the federation fixture's in-memory
+        # launch units (korrid's feature `fixture`, #434 D10), as no shipped
+        # korrid does (services/korrid/package.nix).
+        ${refuseFeature {
+          inherit (abi) target;
+          crate = "korrid";
+          file = "korrid";
+          feature = "fixture";
+        }}
         ${
           if proof then
             ''
@@ -270,20 +314,12 @@ let
             ''
               # The product library never carries the proof's trigger (feature
               # `proof`, #434 D11): the features cargo built it with, and its bytes.
-              # Each match is tested, so the glob options of the later phases stay
-              # as stdenv set them.
-              fingerprints=()
-              for fingerprint in target/${abi.target}/release/.fingerprint/korri-android-app-*/lib-korri_android_app.json; do
-                if [ -e "$fingerprint" ]; then fingerprints+=("$fingerprint"); fi
-              done
-              if (( ''${#fingerprints[@]} == 0 )); then
-                echo 'no build fingerprint of the library to check its features' >&2
-                exit 1
-              fi
-              if grep -l '"features":"\[[^]]*proof' "''${fingerprints[@]}"; then
-                echo '${library} was built with the proof feature' >&2
-                exit 1
-              fi
+              ${refuseFeature {
+                inherit (abi) target;
+                crate = "korri-android-app";
+                file = "korri_android_app";
+                feature = "proof";
+              }}
               if grep -q -F '${proofMarker}' $built; then
                 echo '${library} carries the proof trigger' >&2
                 exit 1
@@ -308,12 +344,79 @@ let
     };
   };
 
+  # The release APK's notices (notices.nix): every licence of what the APK
+  # carries, except the source commit, which the packing adds.
+  notices = import ./notices.nix {
+    inherit
+      pkgs
+      src
+      cargoDeps
+      rust
+      surfaces
+      skiaVersion
+      kotlinVersion
+      ndk
+      ;
+    viewerParts = viewerParts.arm64-v8a;
+    skiaArchive = "${skia}/skia-binaries-${skiaKey abis.arm64-v8a.target}.tar.gz";
+    target = abis.arm64-v8a.target;
+  };
+
+  # The paragraph that opens the release APK's notices: the licence of the
+  # whole app and where its source is (GPL-3.0 section 6(d)). The commit is
+  # the flake's own revision, which Nix knows only for a clean checkout.
+  sourceNotice =
+    revision:
+    pkgs.writeText "korri-android-app-source-notice" ''
+      Korri (native), the Android app com.simonwjackson.korri.app
+      ===========================================================
+
+      This app is free software. Its library links Korri's stream viewer,
+      whose Android parts port Artemis code under the GNU General Public
+      License version 3 only, and moonlight-common-c, which is under GPL
+      version 3 with no "or later" grant. So the app as a whole is
+      distributed under the GNU General Public License version 3 only
+      (GPL-3.0-only). The full text of that licence is at the end of this
+      file. This app comes with ABSOLUTELY NO WARRANTY, to the extent
+      permitted by law (sections 15 and 16 of the licence).
+
+      Source code
+      -----------
+
+      The complete corresponding source code of this build is commit
+      ${revision} of the public repository
+      https://github.com/korri-os/korri, at
+
+        https://github.com/korri-os/korri/tree/${revision}
+
+      flake.lock, clients/android-app/Cargo.lock and the hashes in the Nix
+      files of that commit pin every other source that the build reads,
+      each from a public location: nixpkgs (OpenSSL, libopus and the
+      toolchains), moonlight-embedded (moonlight-common-c and ENet),
+      proseql, the Rust crates on crates.io, and the Kotlin standard
+      library and rustls-platform-verifier's Kotlin component on Maven
+      repositories. Skia is the prebuilt archive of rust-skia's release
+      ${skiaVersion}, built from https://github.com/rust-skia/rust-skia at
+      tag ${skiaVersion}. This command builds the same unsigned APK:
+
+        nix build github:korri-os/korri/${revision}#korri-android-app-release-apk
+
+      The parts of the app that other people wrote, and their licences,
+      follow.
+
+    '';
+
   # One packing of `libs` (by ABI), with `relays` as the relay list.
+  # `release` is null for a build for development and the proofs, which is
+  # debuggable. For the release APK it holds the source commit (null when
+  # the checkout is not clean, which fails the build): such an APK is not
+  # debuggable and carries the notices (assets/notices/NOTICES.txt).
   packApk =
     {
       pname,
       relays,
       libs,
+      release ? null,
     }:
     pkgs.stdenv.mkDerivation {
       inherit pname;
@@ -322,7 +425,10 @@ let
         root = ./.;
         fileset = ./AndroidManifest.xml;
       };
-      nativeBuildInputs = [ pkgs.zip ];
+      nativeBuildInputs = [
+        pkgs.zip
+        pkgs.unzip
+      ];
       dontStrip = true;
       dontFixup = true;
       buildPhase = ''
@@ -347,21 +453,60 @@ let
         test -f assets/surfaces/velvet/main.slint
         test -f assets/surfaces/velvet/logic.js
         install -m 0644 ${relays} assets/relays.json
-        # --debug-mode makes the APK debuggable, as the viewer's is: a build for
-        # development and the proofs. A distribution build leaves it out (README).
-        ${buildTools}/aapt2 link -o unsigned.apk -I ${framework} \
-          --manifest AndroidManifest.xml -A assets --debug-mode
+        ${
+          if release == null then
+            ''
+              # --debug-mode makes the APK debuggable, as the viewer's is: a build
+              # for development and the proofs. The release APK leaves it out.
+              ${buildTools}/aapt2 link -o unsigned.apk -I ${framework} \
+                --manifest AndroidManifest.xml -A assets --debug-mode
+            ''
+          else if release.revision == null then
+            ''
+              echo 'the release APK names its source commit: build it from a clean, committed checkout' >&2
+              exit 1
+            ''
+          else
+            ''
+              mkdir -p assets/notices
+              cat ${sourceNotice release.revision} ${notices}/NOTICES.txt > assets/notices/NOTICES.txt
+              ${buildTools}/aapt2 link -o unsigned.apk -I ${framework} \
+                --manifest AndroidManifest.xml -A assets
+            ''
+        }
         # Fixed times and no extra attributes, as aapt2 writes its entries.
         find stage -exec touch -h -d @315532800 {} +
         (cd stage && zip -q -r -X ../unsigned.apk lib)
         ${buildTools}/zipalign -p -f 4 unsigned.apk aligned.apk
+        ${lib.optionalString (release != null) ''
+          # Not debuggable: no android:debuggable in the manifest at all, so
+          # neither run-as nor a debugger reaches the app's process and files.
+          ${buildTools}/aapt2 dump xmltree --file AndroidManifest.xml aligned.apk > manifest.txt
+          if grep -i debuggable manifest.txt; then
+            echo 'the release APK is debuggable' >&2
+            exit 1
+          fi
+          ${buildTools}/aapt2 dump badging aligned.apk > badging.txt
+          if grep application-debuggable badging.txt; then
+            echo 'the release APK is debuggable' >&2
+            exit 1
+          fi
+          grep -q -x "native-code: ${lib.concatMapStringsSep " " (name: "'${name}'") (lib.attrNames libs)}" badging.txt
+          unzip -l aligned.apk > entries.txt
+          grep -q ' assets/notices/NOTICES.txt$' entries.txt
+          if grep -q 'classes.*\.dex$' entries.txt; then
+            echo 'the release APK carries a dex' >&2
+            exit 1
+          fi
+        ''}
         runHook postBuild
       '';
       installPhase = ''
         runHook preInstall
         mkdir -p $out
-        cp aligned.apk $out/korri-android-app-unsigned.apk
+        cp aligned.apk $out/korri-android-app-${lib.optionalString (release != null) "release-"}unsigned.apk
         cp elf-*.txt $out/
+        ${lib.optionalString (release != null) "cp manifest.txt badging.txt $out/"}
         runHook postInstall
       '';
     };
@@ -375,11 +520,22 @@ let
     relays = fixtureRelays;
     libs = fixtureLibraries;
   };
+  # The APK for a phone (#434 D12): the product library for arm64-v8a only,
+  # not debuggable, with the notices. It is not signed: the release key
+  # stays out of the store (sign-release.sh signs it, README).
+  releaseApk = packApk {
+    pname = "korri-android-app-release-apk";
+    relays = productRelays;
+    libs = { inherit (libraries) arm64-v8a; };
+    release.revision = sourceRevision;
+  };
 in
 {
   inherit
     apk
     fixtureApk
+    releaseApk
+    notices
     libraries
     surfaces
     verifierDex

@@ -119,6 +119,8 @@
         androidApp = import ./clients/android-app {
           inherit pkgs proseql;
           viewerParts = viewer.android.parts;
+          # The release APK names its source commit (#434 D12).
+          sourceRevision = self.rev or null;
         };
         cli = import ./clients/cli {
           inherit pkgs crane proseql;
@@ -257,6 +259,9 @@
           # The same source with the proof trigger (x86_64) and the holder
           # proof's loopback relay, never shipped.
           korri-android-app-fixture-apk = androidApp.fixtureApk;
+          # The APK for a phone: arm64, not debuggable, with its notices, and
+          # not signed (clients/android-app/README.md, D12).
+          korri-android-app-release-apk = androidApp.releaseApk;
         };
         checks = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
           inputplumber.checks

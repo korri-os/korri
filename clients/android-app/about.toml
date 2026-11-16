@@ -1,0 +1,71 @@
+# cargo-about's rules for the Rust crates in the release APK's notices
+# (notices.nix, #434 D12).
+#
+# The release APK carries the arm64 library only. Every Korri dependency of
+# the library is Android-only (Cargo.toml), so the graph is read for that
+# target.
+targets = ["aarch64-linux-android"]
+# Korri's own crates (publish = false) are not third-party: the notices'
+# first paragraph covers them.
+private = { ignore = true }
+# Build scripts, proc macros' builds and tests put no code in the library.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+# A crate that offers a choice is listed under the first of these that it
+# offers. Slint is listed under GPL-3.0-only: ADR 0059 uses Slint under
+# GPL-3.0-only in a binary that links the viewer. Nothing else here is
+# accepted, so a crate under any other licence fails the build.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "BSD-2-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "Unlicense",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+    "MPL-2.0",
+    "bzip2-1.0.6",
+    "0BSD",
+    "MIT-0",
+    "BSD-1-Clause",
+    "OpenSSL",
+    "GPL-3.0-only",
+]
+# cargo-about's own readings of crates whose licence files it cannot read
+# alone.
+workarounds = ["ring", "rustls"]
+
+# Korri's viewer is Korri's own crate, but its manifest does not say
+# `publish = false`. Its licence is the app's, in the notices' first
+# paragraph; its Zlib part (src/android/controller_list.rs) is a part of its
+# own in notices.nix, with Valve's and SDL's copyright.
+[korri-viewer]
+accepted = ["GPL-3.0-or-later"]
+
+# proseql's crates carry no licence field or file. The repository's licence
+# is MIT (its LICENSE, two directories up, which the checksum pins).
+[proseql-engine.clarify]
+license = "MIT"
+[[proseql-engine.clarify.files]]
+path = "../../LICENSE"
+license = "MIT"
+checksum = "db35c25efd58e49a97e611debc2714807b73655154fca5f4ae4102af72e32d6a"
+
+[proseql-formats.clarify]
+license = "MIT"
+[[proseql-formats.clarify.files]]
+path = "../../LICENSE"
+license = "MIT"
+checksum = "db35c25efd58e49a97e611debc2714807b73655154fca5f4ae4102af72e32d6a"
+
+[proseql-storage.clarify]
+license = "MIT"
+[[proseql-storage.clarify.files]]
+path = "../../LICENSE"
+license = "MIT"
+checksum = "db35c25efd58e49a97e611debc2714807b73655154fca5f4ae4102af72e32d6a"
