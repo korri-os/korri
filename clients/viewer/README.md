@@ -1149,11 +1149,26 @@ in this app (below), so the layer shows a stand-in.
 - The layer (`android/src/layer.rs`): `korri-viewer-overlay`, made with
   the video layer on Android's main thread through the same JNI calls,
   translucent (`setFormat(TRANSLUCENT)`, `setOpaque(false)`), at z 1 above
-  the video's 0, hidden. Its buffers have the window's size: when the
-  window's size changes, `Transaction.setBufferSize` gives its Surface the
-  new size, in the transaction that places the video again. That size is
-  what the shell's renderer reads (`SurfaceWindow::from_surface` and
-  `resize`). Opening and closing are one `setVisibility` transaction each,
+  the video's 0, hidden. It stands out of the camera cutout, as Artemis
+  keeps its overlay view inside the display cutout's safe area
+  (`KorriStreamCutout.keepOutOfCutout`, #494): in the window less the
+  cutout's insets (`placement::keep_out_of_cutout`, host-tested), which
+  the main thread reads from the window
+  (`getRootWindowInsets().getInsets(WindowInsets.Type.displayCutout())`)
+  each time it places the layer, with one `setGeometry`. Its buffers have
+  that size: when the window's size changes, `Transaction.setBufferSize`
+  gives its Surface the new size, in the transaction that places the video
+  again. A main event after which the cutout may have moved while the size
+  stayed (a turn by 180° asks the window to draw again, `RedrawNeeded`;
+  `layer::may_move_the_cutout`) makes the main thread read the cutout
+  again and move the layer when its place changed
+  (`Layers::follow_cutout`). That size is what the shell's renderer reads
+  (`SurfaceWindow::from_surface` and `resize`), and a touch reaches the
+  shell's overlay from the layer's corner (`Layers::overlay_origin`), as
+  `Game.dispatchTouchEvent` offsets it. The log names each place:
+  `overlay: layer placed at (L, T)-(R, B) in the window WxH, out of the
+  display cutout (left …, top …, right …, bottom …)`. The video and the
+  backdrop still reach the window's edges, into the cutout. Opening and closing are one `setVisibility` transaction each,
   posted to the main thread without waiting; the main thread logs when it
   has applied it (`overlay: layer shown: posted … ms before, applied in …
   ms`). A hidden layer is not composed. When Android does not make the
@@ -1206,6 +1221,7 @@ in this app (below), so the layer shows a stand-in.
 | Five-finger tap, floating menu button | Open the menu | Not carried: the tap is on the trackpad path, which D4 does not carry |
 | A failed overlay | A toast, and the overlay closes | No layer: the stream plays without an overlay |
 | Back | Opens the overlay; Home leaves | The same |
+| The camera cutout | The overlay view's margins are the display cutout's insets, and follow them (`KorriStreamCutout.keepOutOfCutout`) | The layer stands in the window less the cutout's insets, and follows them (#494) |
 
 **Why the shell's overlay cannot run in this app.** The overlay that the
 shell draws today needs, in Artemis's process:
@@ -1265,7 +1281,7 @@ Surface to the shell, which draws korrid's gameplay overlay into it
   gets no stand-in (a Surface that the CPU has drawn into stays the CPU's,
   and EGL cannot draw into it), `Layers::overlay_surface` gives its
   `android.view.Surface`, and `Layers::overlay_resized` says when its
-  buffers took the window's new size.
+  buffers took a new size.
 - `play::Play` with `Shell`: Guide or Back opens the overlay and holds the
   input as before, and answers `Routed::Opened`; the app brings the shell's
   overlay. What the open overlay takes waits for the shell
@@ -1362,8 +1378,9 @@ Until then `Resize` stays "Live resolution is unavailable".
   (scale to fit), and the picture would keep the old shape. The input's
   placement follows, so touches and the mouse map into the new picture.
   Until the transaction applies, a frame or two of the new size can show
-  in the old shape. The gameplay overlay (slice D5) covers the window, so
-  a new stream size leaves its place and buffers as they are; an open
+  in the old shape. The gameplay overlay's place (slice D5) does not
+  depend on the stream, so a new stream size leaves its place and buffers
+  as they are; an open
   overlay stays open and the input stays held (`input::tests`, a new
   placement while held).
 - **In the log:** `picture: the stream's size changes from 1280x720 to

@@ -34,10 +34,22 @@
 //! its window black at the first frame (`Game.revealKorriStream`): until
 //! then the window shows what it showed.
 //!
-//! The overlay layer (slice D5) is translucent, covers the window and starts
-//! hidden. Its buffers follow the window's size (`Transaction.setBufferSize`),
-//! so whatever draws into its Surface draws at the window's size. Showing
-//! and hiding it is one `setVisibility`; a hidden layer is not composed.
+//! The overlay layer (slice D5) is translucent and starts hidden. It stays
+//! out of the camera cutout, as Artemis keeps its overlay view inside the
+//! display cutout's safe area (`KorriStreamCutout.keepOutOfCutout`, #494):
+//! it covers the window less the cutout's insets
+//! (`placement::keep_out_of_cutout`), which Android's main thread reads from
+//! the window (`View.getRootWindowInsets`) each time it places the layer.
+//! Its buffers take that size (`Transaction.setBufferSize`), so whatever
+//! draws into its Surface draws at that size, and a touch reaches the
+//! shell's overlay from the layer's corner ([`Layers::overlay_origin`]). The
+//! layer follows the cutout when the window's size changes
+//! ([`Layers::follow`]), and when a main event says that the cutout may have
+//! moved while the size stayed, as in a turn by 180°
+//! ([`may_move_the_cutout`], [`Layers::follow_cutout`]). The video and the
+//! backdrop still reach the window's edges, into the cutout, as Artemis's
+//! stream does. Showing and hiding the overlay is one `setVisibility`; a
+//! hidden layer is not composed.
 //! What draws into it is the app's [`Presenter`]: the viewer's own app draws
 //! D5's stand-in once with the CPU, and again when the window's size
 //! changes; the Korri app lends its Surface to the shell's overlay renderer
@@ -53,7 +65,7 @@
 //! ([`Pending::poll`]), so its thread never waits for Android's main thread.
 use crate::{
     overlay::Presenter,
-    placement::{Fill, Rect, geometry, letterbox, place},
+    placement::{Fill, Insets, Rect, geometry, keep_out_of_cutout, letterbox, place},
 };
 use android_activity::{AndroidApp, MainEvent, PollEvent};
 use anyhow::{Context, Result, anyhow};
@@ -65,7 +77,7 @@ use ndk::{hardware_buffer_format::HardwareBufferFormat, native_window::NativeWin
 use std::{
     ptr::NonNull,
     sync::{
-        Arc,
+        Arc, Mutex, MutexGuard, PoisonError,
         atomic::{AtomicBool, Ordering},
         mpsc::{self, RecvTimeoutError},
     },
@@ -110,6 +122,11 @@ pub struct Layers {
     /// The gameplay overlay's layer; none when Android did not make it.
     /// The stream plays without an overlay then.
     overlay: Option<Layer>,
+    /// Where the overlay layer is in the window, out of the display cutout,
+    /// as Android's main thread last placed it.
+    overlay_place: Arc<Mutex<Rect>>,
+    /// The activity, whose window's insets give the display cutout.
+    activity: GlobalRef,
     presenter: Presenter,
     /// The overlay's buffers took a new size since it was last asked
     /// ([`Layers::overlay_resized`]): Android's main thread sets it once it
@@ -152,6 +169,8 @@ pub struct Pending {
     window: (i32, i32),
     placed: Rect,
     presenter: Presenter,
+    overlay_place: Arc<Mutex<Rect>>,
+    activity: GlobalRef,
 }
 
 impl Pending {
@@ -207,6 +226,8 @@ impl Pending {
                     video,
                     backdrop,
                     overlay,
+                    overlay_place: self.overlay_place.clone(),
+                    activity: self.activity.clone(),
                     presenter: self.presenter,
                     overlay_resized: Arc::new(AtomicBool::new(false)),
                     stream: self.stream,
@@ -242,6 +263,9 @@ impl Layers {
             env.new_global_ref(activity)
         })?;
         let (sender, receiver) = mpsc::channel();
+        // The layers keep the activity, for the cutout of its window.
+        let (kept, overlay_place) = (activity.clone(), Arc::new(Mutex::new(whole(window))));
+        let place = overlay_place.clone();
         app.run_on_java_main_thread(Box::new(move || {
             let made = attached(vm, |env| {
                 make_video(env, activity.as_obj(), stream, placed, window)
@@ -255,17 +279,19 @@ impl Layers {
                             Err(error)
                         }
                     });
-                let overlay = attached(vm, |env| make_overlay(env, activity.as_obj(), window))
-                    .and_then(|overlay| match presenter {
-                        Presenter::Shell => Ok(overlay),
-                        Presenter::StandIn => match draw_stand_in(&overlay.surface) {
-                            Ok(()) => Ok(overlay),
-                            Err(error) => {
-                                remove(vm, overlay);
-                                Err(error)
-                            }
-                        },
-                    });
+                let overlay = attached(vm, |env| {
+                    make_overlay(env, activity.as_obj(), window, &place)
+                })
+                .and_then(|overlay| match presenter {
+                    Presenter::Shell => Ok(overlay),
+                    Presenter::StandIn => match draw_stand_in(&overlay.surface) {
+                        Ok(()) => Ok(overlay),
+                        Err(error) => {
+                            remove(vm, overlay);
+                            Err(error)
+                        }
+                    },
+                });
                 Made {
                     video,
                     backdrop,
@@ -284,6 +310,8 @@ impl Layers {
             window,
             placed,
             presenter,
+            overlay_place,
+            activity: kept,
         })
     }
 
@@ -328,9 +356,10 @@ impl Layers {
     /// to landscape can come after Android gives the window (it was 1x1 in
     /// one emulator run), and a fold changes it too. One `setGeometry` for
     /// the video and one that stretches the backdrop over the window, and
-    /// the overlay's buffers take the window's size; then the stand-in is
-    /// drawn again at that size, or the shell's renderer hears of the new
-    /// size ([`Layers::overlay_resized`]). Posted to the main thread without
+    /// the overlay goes out of the display cutout that the window has now,
+    /// its buffers of that size; then the stand-in is drawn again at that
+    /// size, or the shell's renderer hears of the new size
+    /// ([`Layers::overlay_resized`]). Posted to the main thread without
     /// waiting. False when the size is the same.
     pub fn follow(&mut self, app: &AndroidApp, window: &NativeWindow) -> bool {
         let size = (window.width(), window.height());
@@ -349,42 +378,75 @@ impl Layers {
             .overlay
             .as_ref()
             .map(|overlay| (overlay.control.clone(), overlay.surface.clone()));
+        let (activity, place) = (self.activity.clone(), self.overlay_place.clone());
         let (presenter, overlay_resized) = (self.presenter, self.overlay_resized.clone());
         app.run_on_java_main_thread(Box::new(move || {
-            let resized = attached(vm, |env| {
+            let moved = attached(vm, |env| {
                 let transaction =
                     env.new_object("android/view/SurfaceControl$Transaction", "()V", &[])?;
                 set_geometry(env, &transaction, video.as_obj(), stream, placed, size)?;
                 if let Some((backdrop, buffer)) = &backdrop {
                     cover(env, &transaction, backdrop.as_obj(), *buffer, size)?;
                 }
-                if let Some((overlay, _)) = &overlay {
-                    env.call_method(
-                        &transaction,
-                        "setBufferSize",
-                        "(Landroid/view/SurfaceControl;II)Landroid/view/SurfaceControl$Transaction;",
-                        &[JValue::Object(overlay.as_obj()), size.0.into(), size.1.into()],
-                    )?;
-                }
+                let moved = match &overlay {
+                    Some((overlay, _)) => {
+                        let out = out_of_cutout(env, activity.as_obj(), size)?;
+                        put_overlay(env, &transaction, overlay.as_obj(), out.bounds)?;
+                        Some(out)
+                    }
+                    None => None,
+                };
                 env.call_method(&transaction, "apply", "()V", &[])?;
-                Ok(())
+                Ok(moved)
             });
             // `apply` gave the overlay's Surface its new default size.
-            let (Ok(()), Some((_, surface))) = (resized, overlay) else {
-                return;
-            };
-            match presenter {
-                Presenter::Shell => overlay_resized.store(true, Ordering::Release),
-                Presenter::StandIn => {
-                    if let Err(error) = draw_stand_in(&surface) {
-                        crate::log::line(&format!(
-                            "overlay: the stand-in was not drawn again: {error:#}"
-                        ));
-                    }
-                }
+            if let (Ok(Some(moved)), Some((_, surface))) = (moved, overlay) {
+                overlay_moved(&place, moved, size, presenter, &overlay_resized, &surface);
             }
         }));
         true
+    }
+
+    /// Place the overlay out of the display cutout again when the cutout may
+    /// have moved while the window kept its size ([`may_move_the_cutout`]):
+    /// a turn by 180° takes it to the other side. Android's main thread reads
+    /// the window's cutout and moves the layer only when its place changed:
+    /// one `setGeometry`, and `setBufferSize` when its size changed too. Posted
+    /// without waiting.
+    pub fn follow_cutout(&self, app: &AndroidApp) {
+        let Some(overlay) = &self.overlay else {
+            return;
+        };
+        let vm = app.vm_as_ptr() as usize;
+        let (control, surface) = (overlay.control.clone(), overlay.surface.clone());
+        let (activity, place, window) = (
+            self.activity.clone(),
+            self.overlay_place.clone(),
+            self.window,
+        );
+        let (presenter, overlay_resized) = (self.presenter, self.overlay_resized.clone());
+        app.run_on_java_main_thread(Box::new(move || {
+            let moved = attached(vm, |env| {
+                let moved = out_of_cutout(env, activity.as_obj(), window)?;
+                if moved.bounds == *lock(&place) {
+                    return Ok(None);
+                }
+                let transaction =
+                    env.new_object("android/view/SurfaceControl$Transaction", "()V", &[])?;
+                put_overlay(env, &transaction, control.as_obj(), moved.bounds)?;
+                env.call_method(&transaction, "apply", "()V", &[])?;
+                Ok(Some(moved))
+            });
+            match moved {
+                Ok(Some(moved)) => {
+                    overlay_moved(&place, moved, window, presenter, &overlay_resized, &surface)
+                }
+                Ok(None) => {}
+                Err(error) => crate::log::line(&format!(
+                    "overlay: the layer was not placed out of the display cutout again: {error:#}"
+                )),
+            }
+        }));
     }
 
     /// Place the video for a new size of the decoded picture: the sender
@@ -392,8 +454,7 @@ impl Layers {
     /// without waiting: `setBufferSize`, so that the video layer's buffer
     /// queue scales the decoder's buffers to the new size and not to the old
     /// one, and `setGeometry` with the new shape's letterbox. The overlay
-    /// covers the window and keeps its place and buffers. False when the
-    /// size is the same.
+    /// keeps its place and buffers. False when the size is the same.
     ///
     /// The decoder gives its first size with its first picture: the black
     /// backdrop then shows under the video, once ([`Layers::reveal`]).
@@ -526,6 +587,14 @@ impl Layers {
     /// renderer must let it go before that.
     pub fn overlay_surface(&self) -> Option<&GlobalRef> {
         self.overlay.as_ref().map(|overlay| &overlay.java_surface)
+    }
+
+    /// The overlay layer's corner in the window, where Android's main thread
+    /// last placed it: a touch reaches the shell's overlay in the layer's
+    /// pixels, the window's less this corner.
+    pub fn overlay_origin(&self) -> (f32, f32) {
+        let place = *lock(&self.overlay_place);
+        (place.left as f32, place.top as f32)
     }
 
     /// Whether the overlay's buffers took a new size since the last call:
@@ -879,22 +948,196 @@ fn make_backdrop(
     finish(env, &layer)
 }
 
-/// The overlay layer: above the video, the window's size, hidden.
+/// The overlay layer: above the video, out of the display cutout that the
+/// window has now, hidden. Its place goes into `place` once it is applied.
 fn make_overlay(
     env: &mut JNIEnv,
     activity: &JObject,
     window: (i32, i32),
+    place: &Mutex<Rect>,
 ) -> jni::errors::Result<Layer> {
+    let out = out_of_cutout(env, activity, window)?;
     let (layer, transaction) = make_layer(
         env,
         activity,
         "korri-viewer-overlay",
-        window,
+        buffer_size(out.bounds),
         Blend::Translucent,
     )?;
     stack(env, &transaction, &layer, OVERLAY_Z, false)?;
+    put_overlay(env, &transaction, &layer, out.bounds)?;
     env.call_method(&transaction, "apply", "()V", &[])?;
-    finish(env, &layer)
+    let made = finish(env, &layer)?;
+    *lock(place) = out.bounds;
+    log_overlay(out, window);
+    Ok(made)
+}
+
+/// The overlay's place in a window of `window` pixels and the display
+/// cutout's insets that give it.
+#[derive(Clone, Copy)]
+struct OutOfCutout {
+    bounds: Rect,
+    cutout: Insets,
+}
+
+/// The overlay's place out of the display cutout that the activity's window
+/// has now (`placement::keep_out_of_cutout`).
+fn out_of_cutout(
+    env: &mut JNIEnv,
+    activity: &JObject,
+    window: (i32, i32),
+) -> jni::errors::Result<OutOfCutout> {
+    let cutout = cutout(env, activity)?;
+    Ok(OutOfCutout {
+        bounds: keep_out_of_cutout(window, cutout),
+        cutout,
+    })
+}
+
+/// The display cutout's insets on the activity's window, as its views have
+/// them now: `getRootWindowInsets().getInsets(WindowInsets.Type.displayCutout())`,
+/// the insets that reach Artemis's overlay view. A window that has no
+/// insets yet (not attached) has no cutout, as Artemis's view has no margins
+/// before its first insets. API 30.
+fn cutout(env: &mut JNIEnv, activity: &JObject) -> jni::errors::Result<Insets> {
+    let window = env
+        .call_method(activity, "getWindow", "()Landroid/view/Window;", &[])?
+        .l()?;
+    let decor = env
+        .call_method(&window, "getDecorView", "()Landroid/view/View;", &[])?
+        .l()?;
+    let insets = env
+        .call_method(
+            &decor,
+            "getRootWindowInsets",
+            "()Landroid/view/WindowInsets;",
+            &[],
+        )?
+        .l()?;
+    if insets.is_null() {
+        return Ok(Insets::default());
+    }
+    let mask = env
+        .call_static_method(
+            "android/view/WindowInsets$Type",
+            "displayCutout",
+            "()I",
+            &[],
+        )?
+        .i()?;
+    let cutout = env
+        .call_method(
+            &insets,
+            "getInsets",
+            "(I)Landroid/graphics/Insets;",
+            &[mask.into()],
+        )?
+        .l()?;
+    let mut side = |name: &str| {
+        env.get_field(&cutout, name, "I")
+            .and_then(|value| value.i())
+    };
+    Ok(Insets {
+        left: side("left")?,
+        top: side("top")?,
+        right: side("right")?,
+        bottom: side("bottom")?,
+    })
+}
+
+/// The overlay layer's buffers for its place: its size, at least a pixel
+/// each way, as a buffer must have.
+fn buffer_size(bounds: Rect) -> (i32, i32) {
+    (
+        (bounds.right - bounds.left).max(1),
+        (bounds.bottom - bounds.top).max(1),
+    )
+}
+
+/// The overlay layer at `bounds` in the window, its buffers of that size,
+/// drawn one to one.
+fn put_overlay(
+    env: &mut JNIEnv,
+    transaction: &JObject,
+    layer: &JObject,
+    bounds: Rect,
+) -> jni::errors::Result<()> {
+    let buffer = buffer_size(bounds);
+    env.call_method(
+        transaction,
+        "setBufferSize",
+        format!("(Landroid/view/SurfaceControl;II){TRANSACTION}"),
+        &[JValue::Object(layer), buffer.0.into(), buffer.1.into()],
+    )?;
+    put(env, transaction, layer, whole(buffer), bounds)
+}
+
+/// Android's main thread applied the overlay's new place: touches count from
+/// it now. When its size changed, the stand-in is drawn again at that size,
+/// or the shell's renderer hears of it ([`Layers::overlay_resized`]).
+fn overlay_moved(
+    place: &Mutex<Rect>,
+    moved: OutOfCutout,
+    window: (i32, i32),
+    presenter: Presenter,
+    resized: &AtomicBool,
+    surface: &NativeWindow,
+) {
+    let before = std::mem::replace(&mut *lock(place), moved.bounds);
+    log_overlay(moved, window);
+    if buffer_size(before) == buffer_size(moved.bounds) {
+        return;
+    }
+    match presenter {
+        Presenter::Shell => resized.store(true, Ordering::Release),
+        Presenter::StandIn => {
+            if let Err(error) = draw_stand_in(surface) {
+                crate::log::line(&format!(
+                    "overlay: the stand-in was not drawn again: {error:#}"
+                ));
+            }
+        }
+    }
+}
+
+fn log_overlay(out: OutOfCutout, window: (i32, i32)) {
+    let OutOfCutout { bounds, cutout } = out;
+    crate::log::line(&format!(
+        "overlay: layer placed at ({}, {})-({}, {}) in the window {}x{}, out of the display cutout (left {}, top {}, right {}, bottom {})",
+        bounds.left,
+        bounds.top,
+        bounds.right,
+        bounds.bottom,
+        window.0,
+        window.1,
+        cutout.left,
+        cutout.top,
+        cutout.right,
+        cutout.bottom
+    ));
+}
+
+/// Whether an app's main event may have moved the display cutout in its
+/// window while the window kept its size, so that the app asks for
+/// [`Layers::follow_cutout`]. A turn by 180° changes no size; Android asks
+/// the window to draw again after it (`RedrawNeeded`). The others come with
+/// a new configuration, content area or window size.
+pub fn may_move_the_cutout(event: &MainEvent<'_>) -> bool {
+    matches!(
+        event,
+        MainEvent::RedrawNeeded { .. }
+            | MainEvent::ConfigChanged { .. }
+            | MainEvent::ContentRectChanged { .. }
+            | MainEvent::WindowResized { .. }
+            | MainEvent::InsetsChanged { .. }
+    )
+}
+
+/// The lock, also after a panic on another thread held it: the place it
+/// guards is whole at every step.
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Fill a window's buffer, with the CPU, once: `pixel` gives the value at

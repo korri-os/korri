@@ -140,12 +140,16 @@ impl Play {
         }
     }
 
-    pub fn motion(&mut self, motion: &MotionEvent) -> Routed {
+    /// `layers` give the overlay layer's place: a touch reaches the shell's
+    /// overlay in the layer's pixels.
+    pub fn motion(&mut self, layers: &Layers, motion: &MotionEvent) -> Routed {
         // The overlay takes every motion event while it is open.
         if self.gameplay.overlay == Overlay::Open {
             self.gameplay.taken_motions += 1;
             if self.gameplay.presenter == Presenter::Shell {
-                self.gameplay.forwarded.motion(&events::motion(motion));
+                self.gameplay
+                    .forwarded
+                    .motion(&events::motion(motion), layers.overlay_origin());
             }
             return Routed::Handled;
         }

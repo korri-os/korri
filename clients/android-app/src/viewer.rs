@@ -71,7 +71,7 @@ use korri_viewer::{
     feedback_jni,
     input::{self as stream_input, Settings},
     launch,
-    layer::{Layers, Pending},
+    layer::{may_move_the_cutout, Layers, Pending},
     lifecycle::{ControlChange, ControlChanges, Lifecycle},
     options::Options,
     overlay::{is_system_key, Presenter},
@@ -654,6 +654,10 @@ pub struct Stream {
     id: u64,
     orders: mpsc::Receiver<Order>,
     phase: Phase,
+    /// A main event said that the display cutout may have moved in the
+    /// window (`layer::may_move_the_cutout`): the next tick of a stream
+    /// places its overlay out of the cutout again.
+    cutout_may_move: bool,
 }
 
 impl Stream {
@@ -677,6 +681,7 @@ impl Stream {
             id,
             orders,
             phase: Phase::Idle,
+            cutout_may_move: false,
         })
     }
 
@@ -722,7 +727,7 @@ impl Stream {
             // Every motion stays the stream's: a touch in the bars must not
             // reach the shell drawn under the video.
             InputEvent::MotionEvent(motion) => {
-                playing.play.motion(motion);
+                playing.play.motion(&playing.layers, motion);
                 Routed::Handled
             }
             _ => Routed::Unhandled,
@@ -759,6 +764,7 @@ impl Stream {
                 self.shared.window.store(false, Ordering::Release);
                 self.leave("the activity ended");
             }
+            _ if may_move_the_cutout(event) => self.cutout_may_move = true,
             _ => {}
         }
     }
@@ -1014,6 +1020,11 @@ impl Stream {
             .app
             .native_window()
             .is_some_and(|window| playing.layers.follow(&self.app, &window));
+        // A new size places the overlay out of the cutout already; a turn by
+        // 180° keeps the size and moves the cutout (#494).
+        if std::mem::take(&mut self.cutout_may_move) && !window {
+            playing.layers.follow_cutout(&self.app);
+        }
         // The sender changed the stream's size (#476): the decoder gives the
         // new one with its first frame. The video's place and the input's
         // map into it follow; the overlay and a held input stay as they are.

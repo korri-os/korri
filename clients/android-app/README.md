@@ -386,16 +386,26 @@ through `tests/host.rs`); the input's are the viewer's
   front yet, so korrid's overlay shows "Could not leave the stream". If
   korrid never presents its overlay after the leave, the stream's input
   stays held until Home, as in Artemis.
-- Not carried: the camera cutout. The overlay layer covers the whole
-  window, the cutout's corner too, so the package's controls can fall under
-  the camera hole. Artemis keeps its overlay view inside the cutout's safe
-  area (`KorriStreamCutout.keepOutOfCutout`: the view's margins follow the
-  display cutout's insets, through rotation and folding) while the stream
-  under it reaches the edge. This needs doing before D12, on a phone with
-  a cutout; the emulator has none.
+- The camera cutout (#494): the overlay layer stands out of it, as Artemis
+  keeps its overlay view inside the display cutout's safe area
+  (`KorriStreamCutout.keepOutOfCutout`: the view's margins are the cutout's
+  insets). The layer covers the window less the cutout's insets
+  (`korri_viewer::placement::keep_out_of_cutout`), which Android's main
+  thread reads from the window each time it places the layer, and the
+  shell draws at that size. It follows the cutout when the window turns: a
+  new window size places it again, and a turn by 180°, which keeps the
+  size and moves the cutout to the other side, reaches the loop thread as
+  a main event (`layer::may_move_the_cutout`); its next tick asks the main
+  thread to place the layer again, which moves it only if its place
+  changed. A touch reaches the shell's overlay from the layer's corner, as
+  `Game.dispatchTouchEvent` offsets it. The video and the backdrop still
+  reach the window's edges, into the cutout. Not yet proven on a phone
+  (D12).
 
 The logcat lines: the viewer library's `overlay: open on Guide; the
-stream's input is held`, `overlay: layer shown`, `overlay: layer hidden` and
+stream's input is held`, `overlay: layer placed at (L, T)-(R, B) in the
+window WxH, out of the display cutout (left …, top …, right …, bottom …)`,
+`overlay: layer shown`, `overlay: layer hidden` and
 `overlay: closed on korrid resumed the stream after … s; it took … keys and
 … motion events`; the app's `korri-app: overlay: the shell took the layer's
 Surface; korrid hears that the person left`, `korri-app: overlay: korrid's
@@ -624,7 +634,7 @@ the owner signs; or a peer that answers `OwnerBindingRequested`.
 | --- | --- |
 | D9 | Done: the holder proof above, and the TLS verifier's classes |
 | D10 | Done: the Rust viewer, driven by korrid, on the shell's loop (above) |
-| D5b | Done: Korri's gameplay overlay through `Overlay` (above), proven on the emulator (`proof/android-app-d5b/`). "Open Korri" (Background) and the camera cutout are not carried yet |
+| D5b | Done: Korri's gameplay overlay through `Overlay` (above), proven on the emulator (`proof/android-app-d5b/`). "Open Korri" (Background) is not carried yet; the camera cutout came with #494 |
 | D11 | Done in part: 3 of Artemis's 13 stream controls (Crop to fill, Flip A/B and X/Y, Rumble), the battery and the health, through the treaty (above); shown and applied in the gameplay overlay since D5b. Missing, and gating D7′: Toggle keyboard, Full keyboard, Pan & zoom, Mouse mode, Touch sensitivity, Keyboard as controller, Toggle local cursor, SGSR sharpness, SGSR edge threshold, Picture-in-picture |
 | D12 prep | Done in part: the release APK, its key and signing step, its notices (below). Not done: an owner binding that a release build can make (below) |
 | D13 (new) | Local Android games (O3): korrid's launcher through JNI, usage polling on a Rust thread, androidx `FileProvider` bundled unchanged (`hasCode="true"`), and the Guide service, which Android allows only as a Java `AccessibilityService` subclass: one Korri Java file on #434's list, or no Guide over other apps. Gates D7′ |

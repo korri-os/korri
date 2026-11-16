@@ -374,12 +374,18 @@ fn drive(
         let wait = play
             .next_deadline()
             .map_or(100, |at| at.saturating_sub(now_ms()).clamp(0, 100));
-        let mut stop = false;
+        let (mut stop, mut cutout_may_move) = (false, false);
         app.poll_events(Some(Duration::from_millis(wait as u64)), |event| {
-            // Leaving the app ends the stream, as Artemis's Game activity
-            // does in onStop: its window and the layer's parent go.
-            if let PollEvent::Main(MainEvent::Destroy | MainEvent::TerminateWindow { .. }) = event {
-                stop = true;
+            match event {
+                // Leaving the app ends the stream, as Artemis's Game activity
+                // does in onStop: its window and the layer's parent go.
+                PollEvent::Main(MainEvent::Destroy | MainEvent::TerminateWindow { .. }) => {
+                    stop = true
+                }
+                PollEvent::Main(main) if layer::may_move_the_cutout(&main) => {
+                    cutout_may_move = true
+                }
+                _ => {}
             }
         });
         stop |= events(app, &mut play, layer);
@@ -390,12 +396,14 @@ fn drive(
             play.end();
             controller.send(ViewerCommand::Stop)?;
         }
-        if !stop
-            && let Some(window) = app.native_window()
-            && layer.follow(app, &window)
-        {
-            placed(layer, &window);
-            play.place(layer.placed);
+        if !stop && let Some(window) = app.native_window() {
+            if layer.follow(app, &window) {
+                placed(layer, &window);
+                play.place(layer.placed);
+            } else if cutout_may_move {
+                // A turn by 180° keeps the size and moves the cutout (#494).
+                layer.follow_cutout(app);
+            }
         }
         // The sender changed the stream's size: the decoder gives the new
         // one when its first frame comes out. Only the video's place and the
@@ -423,7 +431,7 @@ fn events(app: &AndroidApp, play: &mut Play, layer: &layer::Layers) -> bool {
     while events.next(|event| {
         let routed = match event {
             InputEvent::KeyEvent(key) => play.key(app, layer, key),
-            InputEvent::MotionEvent(motion) => play.motion(motion),
+            InputEvent::MotionEvent(motion) => play.motion(layer, motion),
             _ => Routed::Unhandled,
         };
         match routed {

@@ -147,7 +147,8 @@ pub struct Forwarded {
     keys: Vec<i32>,
     /// Quintuples: device, then X, Y, hat X and hat Y in thousandths.
     axes: Vec<i32>,
-    /// Quadruples: Android action, pointer, X and Y in the window's pixels.
+    /// Quadruples: Android action, pointer, X and Y in the overlay layer's
+    /// pixels.
     pointers: Vec<f32>,
 }
 
@@ -190,8 +191,9 @@ impl Forwarded {
     /// press, drag and release, goes to the overlay's window
     /// (`Game.dispatchTouchEvent`); any other motion is a controller's stick
     /// or nothing (`Game.dispatchGenericMotionEvent`), as Android splits them
-    /// (`MotionEvent.isTouchEvent`).
-    pub fn motion(&mut self, event: &MotionEvent) {
+    /// (`MotionEvent.isTouchEvent`). `origin` is the overlay layer's corner in
+    /// the window, where it is now: out of the display cutout (#494).
+    pub fn motion(&mut self, event: &MotionEvent, origin: (f32, f32)) {
         let touch = matches!(
             event.action,
             action::DOWN
@@ -203,7 +205,7 @@ impl Forwarded {
                 | action::POINTER_UP
         );
         if event.source & source::CLASS_POINTER != 0 && touch {
-            self.touch(event);
+            self.touch(event, origin);
         } else {
             self.stick(event);
         }
@@ -231,10 +233,11 @@ impl Forwarded {
     }
 
     /// `KorriSurfaceHost.forwardTouch`: the finger that went down or up, or
-    /// every finger of a move or a cancel, in the window's pixels. The
-    /// overlay's layer covers the window from its corner, so they are the
-    /// layer's pixels too. A controller's touch never comes here.
-    fn touch(&mut self, event: &MotionEvent) {
+    /// every finger of a move or a cancel, in the overlay layer's pixels: the
+    /// window's, less the layer's corner `origin`, as `Game.dispatchTouchEvent`
+    /// offsets them by the overlay view's place in the window. A controller's
+    /// touch never comes here.
+    fn touch(&mut self, event: &MotionEvent, origin: (f32, f32)) {
         if event.source & source::CLASS_JOYSTICK != 0
             || event.source & DPAD == DPAD
             || event.source & source::GAMEPAD == source::GAMEPAD
@@ -257,8 +260,12 @@ impl Forwarded {
             {
                 continue;
             }
-            self.pointers
-                .extend([phase as f32, pointer.id as f32, pointer.x, pointer.y]);
+            self.pointers.extend([
+                phase as f32,
+                pointer.id as f32,
+                pointer.x - origin.0,
+                pointer.y - origin.1,
+            ]);
         }
     }
 
@@ -417,6 +424,9 @@ mod tests {
 
     // The shell's overlay's input (slice D5b), as `KorriSurfaceHost` queues it.
 
+    /// An overlay layer that covers the window from its corner: no cutout.
+    const WINDOW_CORNER: (f32, f32) = (0.0, 0.0);
+
     const MOVE_X_Y: [(u32, f32); 4] = [
         (axis::X, 0.5),
         (axis::Y, -1.2),
@@ -513,11 +523,11 @@ mod tests {
     #[test]
     fn a_controllers_stick_and_hat_reach_the_overlay_in_thousandths() {
         let mut forwarded = Forwarded::default();
-        forwarded.motion(&stick(source::JOYSTICK, action::MOVE));
+        forwarded.motion(&stick(source::JOYSTICK, action::MOVE), WINDOW_CORNER);
         // A D-pad that reports a hat is a controller too.
-        forwarded.motion(&stick(DPAD, action::MOVE));
+        forwarded.motion(&stick(DPAD, action::MOVE), WINDOW_CORNER);
         // A cancel centres them.
-        forwarded.motion(&stick(source::JOYSTICK, action::CANCEL));
+        forwarded.motion(&stick(source::JOYSTICK, action::CANCEL), WINDOW_CORNER);
         assert_eq!(
             forwarded.take_axes(),
             [
@@ -531,20 +541,19 @@ mod tests {
     fn other_motions_that_are_no_touch_go_nowhere() {
         let mut forwarded = Forwarded::default();
         // A controller's other actions, a mouse's hover and scroll, a trackball.
-        forwarded.motion(&stick(source::JOYSTICK, action::DOWN));
-        forwarded.motion(&motion(
-            source::MOUSE,
-            action::HOVER_MOVE,
-            0,
-            &[(0, 1.0, 1.0)],
-        ));
-        forwarded.motion(&motion(source::MOUSE, action::SCROLL, 0, &[(0, 1.0, 1.0)]));
-        forwarded.motion(&motion(
-            source::MOUSE_RELATIVE,
-            action::MOVE,
-            0,
-            &[(0, 1.0, 1.0)],
-        ));
+        forwarded.motion(&stick(source::JOYSTICK, action::DOWN), WINDOW_CORNER);
+        forwarded.motion(
+            &motion(source::MOUSE, action::HOVER_MOVE, 0, &[(0, 1.0, 1.0)]),
+            WINDOW_CORNER,
+        );
+        forwarded.motion(
+            &motion(source::MOUSE, action::SCROLL, 0, &[(0, 1.0, 1.0)]),
+            WINDOW_CORNER,
+        );
+        forwarded.motion(
+            &motion(source::MOUSE_RELATIVE, action::MOVE, 0, &[(0, 1.0, 1.0)]),
+            WINDOW_CORNER,
+        );
         assert!(forwarded.take_axes().is_empty());
         assert!(forwarded.take_pointers().is_empty());
     }
@@ -553,29 +562,44 @@ mod tests {
     fn a_touch_reaches_the_overlay_in_pixels_with_androids_action() {
         let mut forwarded = Forwarded::default();
         let screen = source::TOUCHSCREEN;
-        forwarded.motion(&motion(screen, action::DOWN, 0, &[(7, 100.5, 200.0)]));
+        forwarded.motion(
+            &motion(screen, action::DOWN, 0, &[(7, 100.5, 200.0)]),
+            WINDOW_CORNER,
+        );
         // A second finger: only it went down.
-        forwarded.motion(&motion(
-            screen,
-            action::POINTER_DOWN,
-            1,
-            &[(7, 101.0, 201.0), (9, 300.0, 400.0)],
-        ));
+        forwarded.motion(
+            &motion(
+                screen,
+                action::POINTER_DOWN,
+                1,
+                &[(7, 101.0, 201.0), (9, 300.0, 400.0)],
+            ),
+            WINDOW_CORNER,
+        );
         // A move: every finger.
-        forwarded.motion(&motion(
-            screen,
-            action::MOVE,
-            0,
-            &[(7, 102.0, 202.0), (9, 301.0, 401.0)],
-        ));
+        forwarded.motion(
+            &motion(
+                screen,
+                action::MOVE,
+                0,
+                &[(7, 102.0, 202.0), (9, 301.0, 401.0)],
+            ),
+            WINDOW_CORNER,
+        );
         // The first finger lifts, then the second.
-        forwarded.motion(&motion(
-            screen,
-            action::POINTER_UP,
-            0,
-            &[(7, 102.0, 202.0), (9, 301.0, 401.0)],
-        ));
-        forwarded.motion(&motion(screen, action::UP, 0, &[(9, 302.0, 402.0)]));
+        forwarded.motion(
+            &motion(
+                screen,
+                action::POINTER_UP,
+                0,
+                &[(7, 102.0, 202.0), (9, 301.0, 401.0)],
+            ),
+            WINDOW_CORNER,
+        );
+        forwarded.motion(
+            &motion(screen, action::UP, 0, &[(9, 302.0, 402.0)]),
+            WINDOW_CORNER,
+        );
         assert_eq!(
             forwarded.take_pointers(),
             [
@@ -585,14 +609,15 @@ mod tests {
         );
         // A cancel and an outside touch cancel every finger; a mouse's
         // press is a touch, as Artemis's activity receives it.
-        forwarded.motion(&motion(
-            screen,
-            action::CANCEL,
-            0,
-            &[(1, 1.0, 2.0), (2, 3.0, 4.0)],
-        ));
-        forwarded.motion(&motion(screen, OUTSIDE, 0, &[(1, 5.0, 6.0)]));
-        forwarded.motion(&motion(source::MOUSE, action::DOWN, 0, &[(0, 7.0, 8.0)]));
+        forwarded.motion(
+            &motion(screen, action::CANCEL, 0, &[(1, 1.0, 2.0), (2, 3.0, 4.0)]),
+            WINDOW_CORNER,
+        );
+        forwarded.motion(&motion(screen, OUTSIDE, 0, &[(1, 5.0, 6.0)]), WINDOW_CORNER);
+        forwarded.motion(
+            &motion(source::MOUSE, action::DOWN, 0, &[(0, 7.0, 8.0)]),
+            WINDOW_CORNER,
+        );
         assert_eq!(
             forwarded.take_pointers(),
             [
@@ -602,24 +627,66 @@ mod tests {
         assert!(forwarded.take_axes().is_empty());
     }
 
+    // #494: the overlay layer stands out of the display cutout, 136 px from
+    // the window's left edge. A touch reaches it in its own pixels, as
+    // `Game.dispatchTouchEvent` offsets it by the overlay view's place.
+    #[test]
+    fn a_touch_reaches_the_overlay_from_the_layers_corner() {
+        let mut forwarded = Forwarded::default();
+        let screen = source::TOUCHSCREEN;
+        forwarded.motion(
+            &motion(screen, action::DOWN, 0, &[(0, 236.0, 50.5)]),
+            (136.0, 0.0),
+        );
+        forwarded.motion(
+            &motion(
+                screen,
+                action::MOVE,
+                0,
+                &[(0, 140.0, 60.0), (1, 2000.0, 70.0)],
+            ),
+            (136.0, 0.0),
+        );
+        // In a window turned by 180° the cutout is at the right: the
+        // layer's corner is the window's.
+        forwarded.motion(
+            &motion(screen, action::UP, 0, &[(0, 236.0, 50.5)]),
+            WINDOW_CORNER,
+        );
+        assert_eq!(
+            forwarded.take_pointers(),
+            [
+                0.0, 0.0, 100.0, 50.5, 2.0, 0.0, 4.0, 60.0, 2.0, 1.0, 1864.0, 70.0, 1.0, 0.0,
+                236.0, 50.5
+            ]
+        );
+    }
+
     #[test]
     fn a_touch_off_the_numbers_or_from_a_controller_goes_nowhere() {
         let mut forwarded = Forwarded::default();
         let screen = source::TOUCHSCREEN;
-        forwarded.motion(&motion(screen, action::DOWN, 0, &[(0, f32::NAN, 1.0)]));
-        forwarded.motion(&motion(
-            screen,
-            action::MOVE,
-            0,
-            &[(0, 1.0, f32::INFINITY), (1, 2.0, 3.0)],
-        ));
-        forwarded.motion(&motion(
-            screen | source::GAMEPAD,
-            action::DOWN,
-            0,
-            &[(0, 1.0, 1.0)],
-        ));
-        forwarded.motion(&motion(screen, action::BUTTON_PRESS, 0, &[(0, 1.0, 1.0)]));
+        forwarded.motion(
+            &motion(screen, action::DOWN, 0, &[(0, f32::NAN, 1.0)]),
+            WINDOW_CORNER,
+        );
+        forwarded.motion(
+            &motion(
+                screen,
+                action::MOVE,
+                0,
+                &[(0, 1.0, f32::INFINITY), (1, 2.0, 3.0)],
+            ),
+            WINDOW_CORNER,
+        );
+        forwarded.motion(
+            &motion(screen | source::GAMEPAD, action::DOWN, 0, &[(0, 1.0, 1.0)]),
+            WINDOW_CORNER,
+        );
+        forwarded.motion(
+            &motion(screen, action::BUTTON_PRESS, 0, &[(0, 1.0, 1.0)]),
+            WINDOW_CORNER,
+        );
         assert_eq!(forwarded.take_pointers(), [2.0, 1.0, 2.0, 3.0]);
     }
 
@@ -627,13 +694,11 @@ mod tests {
     fn clear_drops_what_waits() {
         let mut forwarded = Forwarded::default();
         forwarded.key(&key(PAD, BUTTON_A, KeyAction::Down));
-        forwarded.motion(&stick(source::JOYSTICK, action::MOVE));
-        forwarded.motion(&motion(
-            source::TOUCHSCREEN,
-            action::DOWN,
-            0,
-            &[(0, 1.0, 1.0)],
-        ));
+        forwarded.motion(&stick(source::JOYSTICK, action::MOVE), WINDOW_CORNER);
+        forwarded.motion(
+            &motion(source::TOUCHSCREEN, action::DOWN, 0, &[(0, 1.0, 1.0)]),
+            WINDOW_CORNER,
+        );
         forwarded.clear();
         assert!(forwarded.take_keys().is_empty());
         assert!(forwarded.take_axes().is_empty());

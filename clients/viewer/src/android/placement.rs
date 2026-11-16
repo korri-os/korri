@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Where the video layer goes in the app's window. Pure; the app applies it
-//! with one `SurfaceControl.Transaction.setGeometry` call.
+//! Where the video layer and the gameplay overlay's layer go in the app's
+//! window. Pure; the app applies each with one
+//! `SurfaceControl.Transaction.setGeometry` call.
 //!
 //! Two placements, as Artemis's stream view has (`StreamContainer.onMeasure`):
 //! the picture fits the window with bars (its default, `ScaleMode.FIT`), or
 //! it fills the window and its edges are cut ("Crop to fill", slice D11).
+//! The video reaches into the camera cutout; the overlay stays out of it
+//! ([`keep_out_of_cutout`], #494).
 
 /// A rectangle in window pixels, as `android.graphics.Rect` holds it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -13,6 +16,33 @@ pub struct Rect {
     pub top: i32,
     pub right: i32,
     pub bottom: i32,
+}
+
+/// The display cutout's insets on the window's four sides, in pixels:
+/// `WindowInsets.getInsets(WindowInsets.Type.displayCutout())`, which
+/// Artemis reads through `WindowInsetsCompat`. None is zero on each side.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Insets {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+}
+
+/// Where the gameplay overlay goes in the window: inside the display
+/// cutout's safe area, as Artemis lays out its overlay view
+/// (`KorriStreamCutout.keepOutOfCutout`): the cutout's insets are the
+/// margins of a view that matches its parent, the whole window. Insets that
+/// leave no room give no width or no height, as Android's layout does.
+pub fn keep_out_of_cutout(window: (i32, i32), cutout: Insets) -> Rect {
+    let width = (window.0 - cutout.left - cutout.right).max(0);
+    let height = (window.1 - cutout.top - cutout.bottom).max(0);
+    Rect {
+        left: cutout.left,
+        top: cutout.top,
+        right: cutout.left + width,
+        bottom: cutout.top + height,
+    }
 }
 
 /// The largest rectangle with the stream's shape that fits the window,
@@ -271,6 +301,76 @@ mod tests {
         fill.ask(false);
         assert!(fill.answered(false));
         assert!(fill.applied() && fill.placing());
+    }
+
+    fn cutout(left: i32, top: i32, right: i32, bottom: i32) -> Insets {
+        Insets {
+            left,
+            top,
+            right,
+            bottom,
+        }
+    }
+
+    // #494: Artemis's own case (`KorriStreamCutoutTest`), the folded Fold
+    // with its 104 px cutout inset, on whichever side the turn puts it.
+    #[test]
+    fn the_overlay_keeps_out_of_the_cutout_on_any_side() {
+        assert_eq!(
+            keep_out_of_cutout((1972, 1248), cutout(104, 0, 0, 0)),
+            rect(104, 0, 1972, 1248)
+        );
+        assert_eq!(
+            keep_out_of_cutout((1248, 1972), cutout(0, 104, 0, 0)),
+            rect(0, 104, 1248, 1972)
+        );
+        assert_eq!(
+            keep_out_of_cutout((1972, 1248), cutout(0, 0, 104, 0)),
+            rect(0, 0, 1868, 1248)
+        );
+        assert_eq!(
+            keep_out_of_cutout((1248, 1972), cutout(0, 0, 0, 104)),
+            rect(0, 0, 1248, 1868)
+        );
+        assert_eq!(
+            keep_out_of_cutout((2400, 1080), cutout(10, 20, 30, 40)),
+            rect(10, 20, 2370, 1040)
+        );
+    }
+
+    #[test]
+    fn with_no_cutout_the_overlay_covers_the_window() {
+        for window in [(2400, 1080), (1080, 2400), (1, 1)] {
+            assert_eq!(
+                keep_out_of_cutout(window, Insets::default()),
+                rect(0, 0, window.0, window.1)
+            );
+        }
+    }
+
+    // A turn by 180° moves the cutout to the other side and keeps the size:
+    // the overlay moves, its size stays.
+    #[test]
+    fn a_half_turn_moves_the_overlay_and_keeps_its_size() {
+        let left = keep_out_of_cutout((2400, 1080), cutout(136, 0, 0, 0));
+        let right = keep_out_of_cutout((2400, 1080), cutout(0, 0, 136, 0));
+        assert_eq!((left.left, right.left), (136, 0));
+        assert_eq!(
+            (left.right - left.left, left.bottom - left.top),
+            (right.right - right.left, right.bottom - right.top)
+        );
+    }
+
+    #[test]
+    fn a_cutout_that_leaves_no_room_gives_no_width() {
+        assert_eq!(
+            keep_out_of_cutout((100, 50), cutout(80, 0, 40, 0)),
+            rect(80, 0, 80, 50)
+        );
+        assert_eq!(
+            keep_out_of_cutout((100, 50), cutout(0, 30, 0, 30)),
+            rect(0, 30, 100, 30)
+        );
     }
 
     #[test]
