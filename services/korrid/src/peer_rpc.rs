@@ -487,11 +487,19 @@ impl PeerRpcServer {
             .await
             .map_err(|_| PeerRpcError::Unauthorized)?;
         if let Some(certificate) = provision {
+            // A provision whose answer korrid did not read may still be
+            // applied in Sunshine. Keep its grant: a grant for trust that is
+            // absent is harmless, trust without a grant cannot be revoked.
             if matches!(
-                response,
+                &response,
                 RpcResponse::MoonlightCertificateProvision(
                     MoonlightCertificateProvisionOutcome::Ok(_)
                 )
+            ) || matches!(
+                &response,
+                RpcResponse::MoonlightCertificateProvision(
+                    MoonlightCertificateProvisionOutcome::Err(failure)
+                ) if crate::host::moonlight_certificate::outcome_unknown(failure)
             ) {
                 let AuthorizationContext::Peer(principal) = &context else {
                     unreachable!("a peer attempt always has a peer context")
@@ -1429,6 +1437,107 @@ mod tests {
             post(&base, "/peer-rpc", unknown.event_json).await.status(),
             StatusCode::FORBIDDEN
         );
+    }
+
+    /// A Sunshine channel whose provision ends in one exact failure.
+    struct ProvisionEndsIn(&'static str);
+
+    impl crate::host::moonlight_certificate::MoonlightCertificateAdapter for ProvisionEndsIn {
+        fn available(&self) -> bool {
+            true
+        }
+
+        fn attest(&self, _host_uuid: &str) -> Result<bool, crate::RpcFailure> {
+            Ok(true)
+        }
+
+        fn provision(
+            &self,
+            _host_uuid: &str,
+            _client_certificate: &str,
+        ) -> Result<crate::MoonlightCertificateProvisioned, crate::RpcFailure> {
+            Err(crate::RpcFailure {
+                code: self.0.into(),
+                message: "failed".into(),
+            })
+        }
+
+        fn revoke(
+            &self,
+            _host_uuid: &str,
+            _client_certificate: &str,
+        ) -> Result<bool, crate::RpcFailure> {
+            Ok(true)
+        }
+
+        fn resize(
+            &self,
+            _host_uuid: &str,
+            _client_certificate: &str,
+            _display: &crate::launcher::plugin_launch::PluginDisplay,
+        ) -> Result<crate::live_display::ViewerResize, crate::RpcFailure> {
+            unreachable!("no resize in the provision tests")
+        }
+    }
+
+    /// korrid may give up on a provision whose frame Sunshine still applies
+    /// (no answer read, or one korrid cannot read). The grant must then stay,
+    /// or Sunshine would trust a certificate that no grant names: no
+    /// reconciliation could revoke it. A failure that proves Sunshine did not
+    /// apply the frame records nothing.
+    #[tokio::test]
+    async fn a_provision_that_may_have_reached_sunshine_keeps_its_certificate_grant() {
+        let (host_root, client_root, credentials, host_key, config) = setup();
+        let client_key = DeviceIdentity::load_or_create(client_root.path())
+            .unwrap()
+            .device_public_key()
+            .unwrap()
+            .to_owned();
+        let pem = "-----BEGIN CERTIFICATE-----\nclient\n-----END CERTIFICATE-----\n";
+        for (at, (code, granted)) in [
+            ("StreamCertificateControlTimeout", true),
+            ("StreamCertificateControlFailed", true),
+            ("StreamCertificateControlProtocol", true),
+            ("StreamCertificateControlBusy", false),
+            ("StreamCertificateControlUnavailable", false),
+            ("StreamCertificateControlInvalid", false),
+            ("HostMismatch", false),
+            ("InvalidMoonlightClientCertificate", false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let app = crate::secure_host_router_with_certificate_adapter_at(
+                &config,
+                host_root.path(),
+                NOW,
+                Arc::new(ProvisionEndsIn(code)),
+            );
+            let client = crate::upstream_native::NativeClient::new_secure_at(
+                serve(app).await,
+                host_key.clone(),
+                credentials.clone(),
+                NOW,
+                token(100 + 2 * at as u8),
+                token(101 + 2 * at as u8),
+            );
+            assert!(client
+                .moonlight_certificate_provision("sunshine-host", pem)
+                .await
+                .is_err());
+            let grant = Authorization::stream_client_grant(host_root.path(), &client_key).unwrap();
+            assert_eq!(grant.is_some(), granted, "{code}");
+            if let Some((host_uuid, certificate)) = grant {
+                assert_eq!(
+                    (host_uuid.as_str(), certificate.as_str()),
+                    ("sunshine-host", pem)
+                );
+                Authorization::load(host_root.path())
+                    .unwrap()
+                    .remove_certificate_grant(&client_key)
+                    .unwrap();
+            }
+        }
     }
 
     #[tokio::test]

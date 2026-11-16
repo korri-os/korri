@@ -22,10 +22,23 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_millis(1_500);
 // and the 0.5 s that patch 0046 waits after it before it withdraws.
 const RESIZE_TIMEOUT: Duration = Duration::from_millis(4_000);
 
+/// Sunshine serves one control connection at a time (patch 0020's serve
+/// loop), and a resize holds it for up to 3 s. A client that connected
+/// meanwhile would wait in Sunshine's listen queue while its own deadline
+/// ran, give up, and still have its frame applied later. So this process
+/// sends one operation at a time, and each deadline starts at its turn.
+static SOCKET_TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn socket_turn() -> std::sync::MutexGuard<'static, ()> {
+    SOCKET_TURN
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// True when korrid read no answer that it can trust: Sunshine may still
 /// have applied the frame. Every other failure proves that it did not, or
 /// is Sunshine's own refusal. A caller must not report such an outcome as
-/// a refusal.
+/// a refusal, and must keep the record of a provision that may have applied.
 pub(crate) fn outcome_unknown(failure: &RpcFailure) -> bool {
     matches!(
         failure.code.as_str(),
@@ -188,6 +201,7 @@ impl SocketCertificateAdapter {
         request: &EncodedSocketRequest,
         timeout: Duration,
     ) -> Result<SocketResponse, RpcFailure> {
+        let _turn = socket_turn();
         let socket_identity = self.validate_path()?;
         let response = send_seqpacket(
             &self.path,
@@ -269,6 +283,7 @@ fn required_id_env(name: &str, label: &str) -> Result<u32, RpcFailure> {
 
 impl MoonlightCertificateAdapter for SocketCertificateAdapter {
     fn available(&self) -> bool {
+        let _turn = socket_turn();
         let Ok(socket_identity) = self.validate_path() else {
             return false;
         };
@@ -1382,6 +1397,90 @@ mod tests {
             Duration::from_millis(500),
         )
         .1
+    }
+
+    /// Sunshine serves one connection at a time (patch 0020's serve loop). A
+    /// provision that connects while a resize still holds Sunshine must wait
+    /// for its turn here, with its deadline starting at that turn. Otherwise
+    /// it times out in korrid while its frame waits in Sunshine's queue, and
+    /// Sunshine applies it after korrid reported a failure.
+    #[test]
+    fn a_certificate_operation_waits_for_its_turn_before_its_deadline_starts() {
+        use std::sync::mpsc;
+        let root = tempfile::tempdir().unwrap();
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        let path = root.path().join("serial.sock");
+        let listener = bind_seqpacket(&path);
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o660)).unwrap();
+        let (serving, served) = mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let mut operations = Vec::new();
+            for hold in [Duration::from_millis(400), Duration::ZERO] {
+                let accepted = unsafe {
+                    OwnedFd::from_raw_fd(libc::accept4(
+                        listener.as_raw_fd(),
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                        libc::SOCK_CLOEXEC,
+                    ))
+                };
+                let mut request = [0_u8; MAX_FRAME_BYTES];
+                let size = unsafe {
+                    libc::recv(
+                        accepted.as_raw_fd(),
+                        request.as_mut_ptr().cast(),
+                        request.len(),
+                        0,
+                    )
+                };
+                assert!(size > 0);
+                let request: serde_json::Value =
+                    serde_json::from_slice(&request[..size as usize]).unwrap();
+                let operation = request["operation"].as_str().unwrap().to_owned();
+                serving.send(operation.clone()).unwrap();
+                std::thread::sleep(hold);
+                let response = match operation.as_str() {
+                    "resize" => serde_json::json!({"status": "ok", "display": request["display"]}),
+                    _ => serde_json::json!({
+                        "status": "ok",
+                        "changed": true,
+                        "serverCertificate": "-----BEGIN CERTIFICATE-----\nserver\n-----END CERTIFICATE-----\n"
+                    }),
+                }
+                .to_string();
+                // A client that gave up has closed: its frame was still applied.
+                unsafe {
+                    libc::send(
+                        accepted.as_raw_fd(),
+                        response.as_ptr().cast(),
+                        response.len(),
+                        libc::MSG_NOSIGNAL,
+                    )
+                };
+                operations.push(operation);
+            }
+            operations
+        });
+        let mut adapter = SocketCertificateAdapter::for_test(
+            path,
+            unsafe { libc::geteuid() },
+            unsafe { libc::getegid() },
+            unsafe { libc::geteuid() },
+            unsafe { libc::getegid() },
+            0o660,
+        );
+        adapter.timeout = Duration::from_millis(150);
+        adapter.resize_timeout = Duration::from_millis(2_000);
+        let resizing = {
+            let adapter = adapter.clone();
+            std::thread::spawn(move || adapter.resize("sunshine-host", CLIENT_PEM, &PORTRAIT))
+        };
+        // Sunshine has the resize's frame; the provision comes after it.
+        assert_eq!(served.recv().unwrap(), "resize");
+        let provisioned = adapter.provision("sunshine-host", CLIENT_PEM);
+        assert!(provisioned.is_ok(), "{:?}", provisioned.err());
+        assert_eq!(resizing.join().unwrap().unwrap(), ViewerResize::Applied);
+        assert_eq!(server.join().unwrap(), ["resize", "provision"]);
     }
 
     #[test]

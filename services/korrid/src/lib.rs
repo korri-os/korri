@@ -5902,6 +5902,26 @@ fn secure_host_router_with_in_memory_units_at(
         .router(None)
 }
 
+#[cfg(test)]
+fn secure_host_router_with_certificate_adapter_at(
+    config_path: impl AsRef<Path>,
+    private_state_root: &Path,
+    now: u64,
+    adapter: Arc<dyn host::moonlight_certificate::MoonlightCertificateAdapter>,
+) -> Router {
+    let runtime = host::HostRuntime::from_paths_with_backends(
+        config_path.as_ref(),
+        None,
+        private_state_root.to_owned(),
+        Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
+        adapter,
+    );
+    let (lan, _) = app_states(runtime);
+    peer_rpc::PeerRpcServer::new_at(lan, private_state_root, now)
+        .expect("load or create peer RPC identity")
+        .router(None)
+}
+
 fn app_states(runtime: host::HostRuntime) -> (AppState, AppState) {
     app_states_with(runtime, acquisition::AcquisitionCoordinator::default())
 }

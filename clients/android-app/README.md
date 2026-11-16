@@ -505,10 +505,22 @@ finds the running session with that certificate and resizes its encoder
 through patch 0044's channel. The answer is `Applied`, `Refused` or
 `Unavailable`, as the viewer treaty's `Resize` answers.
 
-When the holder reads no answer from Sunshine that it can trust (a timeout,
-a failed exchange, or an answer it cannot read), Sunshine may still change
-the encoder. The holder then answers with an error, not `Refused`, and the
-viewer's korrid confirms the previous size, as after a lost answer.
+Sunshine serves one control connection at a time, and a resize holds it for
+up to 3 s. A request that waited in Sunshine's queue could pass its own
+deadline in korrid and still be applied later. So korrid sends one
+certificate-control operation at a time (attest, provision, revoke, resize
+and its readiness probe), and each deadline starts when the operation has the
+socket: 1.5 s, and 4 s for a resize. At most four of the holder's operations
+run or wait at once; a fifth is refused as busy before it reaches Sunshine.
+When korrid reads no answer it can trust (a timeout, a failed exchange, or an
+answer it cannot read), it does not know whether Sunshine applied the frame.
+That can still happen when Sunshine itself is slower than the deadline, and
+the next operation then waits in Sunshine's queue after all:
+
+| Operation | korrid's answer then |
+| --- | --- |
+| resize | an error, not `Refused`: the viewer's korrid confirms the previous size, as after a lost answer |
+| provision | an error to the viewer, but the holder keeps the `CertificateGrant`, so that trust which Sunshine applied is never without a grant. A grant for trust that Sunshine did not apply is harmless: a revocation of it changes nothing |
 
 `Refused` is only Sunshine's own refusal (a pending request, a failed swap, a
 size out of bounds) or a busy korrid; `Unavailable` is a missing or
