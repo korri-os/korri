@@ -21,8 +21,9 @@ The steps:
 1. Build the fixture APK, the federation fixture and the sender's parts.
    Read the APK: no dex, `hasCode="false"`, the viewer's network core inside.
 2. Start one headless Android 12 emulator (2 cores, its own adb server, its
-   data wiped, its sound into a WAV file), install the APK and seed the
-   member's identity (D9).
+   data wiped, its sound into a WAV file), give its display a camera cutout
+   (`--cutout`: by default the image's emulated Pixel 5, a hole in the top
+   left corner), install the APK and seed the member's identity (D9).
 3. Start the sender fixture with certificate control for the holder's user,
    and the frame-ID source; the seat receiver; the holder as that user, with
    both sockets' variables. Start the app and wait until Velvet lists the
@@ -42,7 +43,11 @@ The steps:
    D-pad when the words are not found), moves the video layer under it, and
    chosen again fits the picture again. The sender receives no input while
    the overlay is open. Back closes it through korrid's Resume, and the
-   picture goes on.
+   picture goes on. Before its controls (#494): the overlay's layer stands
+   out of the display cutout in SurfaceFlinger, as Artemis keeps its overlay
+   view; the emulator's accelerometer turns the display by 180°, to the
+   other landscape turn, and the layer follows the cutout to the other side,
+   then back. The video and the backdrop still reach the window's edges.
 7. The stream's controls and status (slice D11), through the fixture APK's
    proof trigger (src/proof.rs), which calls korrid's own viewer adapter:
    korrid's snapshot lists Crop to fill and Flip A/B and X/Y (and Rumble
@@ -134,6 +139,22 @@ BLACK = 8
 BACKDROP_SHOWN = "picture: the black backdrop shows under the video, with its first picture"
 # The video layer's placement in the window that the layers were made in, before the turn.
 PLACED_IN = re.compile(r"korri-app: viewer video layer \d+x\d+ placed at .* in the window (\d+)x(\d+)")
+# #494: Android's emulated display cutouts and phones are overlays of the system image (`cmd overlay`):
+# com.android.internal.display.cutout.emulation.NAME, and for a phone com.android.internal.emulation.NAME
+# with SystemUI's com.android.systemui.emulation.NAME. A cutout alone on one edge, with no rounded
+# corners, crashes this image's SystemUI (ScreenDecorations, PrivacyDotViewController: no bottom dots),
+# so the default is a phone, the Pixel 5: a hole in the top left corner, and rounded corners.
+CUTOUT_OVERLAYS = re.compile(r"^\s*\[[ x]\]\s+(com\.android\.(?:internal|systemui)(?:\.display\.cutout)?\.emulation\.(\S+))\s*$", re.M)
+# The viewer library's line when Android's main thread placed the overlay layer (layer.rs).
+OVERLAY_PLACED = re.compile(
+    r"overlay: layer placed at \((-?\d+), (-?\d+)\)-\((-?\d+), (-?\d+)\) in the window (\d+)x(\d+), "
+    r"out of the display cutout \(left (-?\d+), top (-?\d+), right (-?\d+), bottom (-?\d+)\)")
+# The window in landscape, as FITTED.
+WINDOW = (2400, 1080)
+# The emulator's accelerometer (m/s², x:y:z) that holds the phone in each landscape turn, as the
+# display's rotation answered it on this image (2026-11-16): 90° with the phone's left side down.
+ACCELERATIONS = {90: "9.81:0:0", 270: "-9.81:0:0"}
+RECT = r"Rect\((-?\d+), (-?\d+) - (-?\d+), (-?\d+)\)"
 # Windows virtual keys of K, O, R, I, and the marker M (input packets' keyCode).
 KEYS = {"KEYCODE_K": 0x4B, "KEYCODE_O": 0x4F, "KEYCODE_R": 0x52, "KEYCODE_I": 0x49}
 MARKER = ("KEYCODE_M", 0x4D)
@@ -420,11 +441,12 @@ def panel_over_black(strip) -> dict:
             "pass": near >= 0.995 * pixels and max(mode) <= 40}
 
 
-def outside(png: Path, placement: str, panel: bool = False) -> dict:
+def outside(png: Path, placement: str, panel: bool = False, overlay: "list[int] | None" = None) -> dict:
     """The window outside the picture placed as `placement`, below the status bar, in strips (#495).
-    Each must be black. With the overlay open (`panel`), Velvet's panel stands at the window's left
-    edge over the whole left bar, which must show the panel over black. With Crop to fill nothing
-    lies outside the picture: no strip."""
+    Each must be black. With the overlay open (`panel`), Velvet's panel stands at the overlay layer's
+    left edge over the whole left bar, which must show the panel over black. The layer stands out of
+    the display cutout (#494, `overlay`: its place): beside it the bars show the backdrop, black.
+    With Crop to fill nothing lies outside the picture: no strip."""
     from PIL import Image
     left, top, right, bottom = PLACED[placement]
     with Image.open(png) as image:
@@ -434,6 +456,13 @@ def outside(png: Path, placement: str, panel: bool = False) -> dict:
              "right": (right + EDGE, STATUS_BAR_ROWS, width, height),
              "top": (max(left, 0), STATUS_BAR_ROWS, min(right, width), top - EDGE),
              "bottom": (max(left, 0), bottom + EDGE, min(right, width), height)}
+    if panel and overlay is not None:
+        if overlay[0] > 0:
+            boxes["left"] = (overlay[0] + EDGE, STATUS_BAR_ROWS, left - EDGE, height)
+            boxes["left_beside_the_overlay"] = (0, STATUS_BAR_ROWS, overlay[0] - EDGE, height)
+        if overlay[2] < width:
+            boxes["right"] = (right + EDGE, STATUS_BAR_ROWS, overlay[2] - EDGE, height)
+            boxes["right_beside_the_overlay"] = (overlay[2] + EDGE, STATUS_BAR_ROWS, width, height)
     strips = {}
     for name, box in boxes.items():
         if box[2] <= box[0] or box[3] <= box[1]:
@@ -442,6 +471,168 @@ def outside(png: Path, placement: str, panel: bool = False) -> dict:
         strips[name] = {"box": list(box), **(panel_over_black(strip) if panel and name == "left" else black(strip))}
     return {"file": png.name, "placement": placement, "overlay_open": panel, "strips": strips,
             "pass": all(strip["pass"] for strip in strips.values())}
+
+
+def display(emulator: "d8.Emulator", out: "Path | None" = None, name: str = "") -> dict:
+    """The display's turn and its camera cutout as the window manager has them now (#494), from
+    `dumpsys activity activities`: DisplayRotation's mRotation, and the display's InsetsState, whose
+    DisplayCutout gives the cutout's safe insets and the rectangles that bound it, in the display's
+    pixels for that turn. With `out`, its lines go to display-NAME.txt."""
+    dump = emulator.shell("dumpsys activity activities", timeout=60, check=False).stdout
+    kept = [line.rstrip() for line in dump.splitlines()
+            if re.search(r"mRotation=\d|mCurrentAppOrientation=|mDisplayFrame=|mDisplayCutout=|mLastFiltered[XYZ]=", line)]
+    if out is not None:
+        (out / f"display-{name}.txt").write_text("\n".join(kept) + "\n")
+    rotation = re.search(r"^\s+mRotation=(\d)\b", dump, re.M)
+    cutout = re.search(r"mDisplayCutout=DisplayCutout\{insets=" + RECT + r".*?boundingRect=\{Bounds=\[(.*?)\]\}", dump)
+    rects = [[int(v) for v in found] for found in re.findall(RECT, cutout.group(5))] if cutout else []
+    return {"file": f"display-{name}.txt" if out is not None else None,
+            "rotation": int(rotation.group(1)) * 90 if rotation else None,
+            "cutout": [int(v) for v in cutout.groups()[:4]] if cutout else None,
+            "cutout_rects": [r for r in rects if r[2] > r[0] and r[3] > r[1]]}
+
+
+def enable_cutout(emulator: "d8.Emulator", out: Path, name: str) -> dict:
+    """One of Android's emulated camera cutouts or phones on the emulator's display (#494): each of its
+    overlays, enabled before the app starts, and the display once the window manager reports the
+    cutout (at most 60 s)."""
+    listed = CUTOUT_OVERLAYS.findall(emulator.shell("cmd overlay list", check=False).stdout)
+    packages = [package for package, called in listed if called == name]
+    step: dict = {"name": name, "listed": [package for package, _ in listed], "overlays": packages, "enable": []}
+    for package in packages:
+        enabled = emulator.shell(f"cmd overlay enable {package}", check=False)
+        step["enable"].append((enabled.stdout + enabled.stderr).strip())
+    until = time.monotonic() + 60
+    while True:
+        shown = display(emulator, out, "cutout-enabled")
+        if (shown["cutout"] and any(shown["cutout"])) or time.monotonic() >= until:
+            break
+        time.sleep(2)
+    step["display"] = shown
+    # SystemUI draws the cutout and the rounded corners again; it must live through that.
+    time.sleep(10)
+    crashes = emulator.adb("logcat", "-d", "-b", "crash", check=False, timeout=60).stdout
+    step["systemui_crashes"] = crashes.count("Process: com.android.systemui")
+    return step
+
+
+def turn(emulator: "d8.Emulator", to: int) -> dict:
+    """The display turned to `to` degrees by the emulator's accelerometer, at most 15 s. The stream
+    asked for SENSOR_LANDSCAPE (`viewer.rs`, `orient`), which follows the accelerometer between the
+    two landscape turns."""
+    acceleration = ACCELERATIONS[to]
+    set_to = emulator.adb("emu", "sensor", "set", "acceleration", acceleration, check=False, timeout=30)
+    step = {"to": to, "acceleration": acceleration, "answer": (set_to.stdout + set_to.stderr).strip()}
+    began = time.monotonic()
+    rotation = None
+    while time.monotonic() - began < 15:
+        rotation = display(emulator)["rotation"]
+        if rotation == to:
+            return {**step, "turned": True, "seconds": round(time.monotonic() - began, 1)}
+        time.sleep(0.5)
+    return {**step, "turned": False, "rotation": rotation}
+
+
+def overlay_layer(emulator: "d8.Emulator", out: Path, name: str) -> dict:
+    """The app's layers in SurfaceFlinger's dump (`video_layer`), and the overlay layer's entry with
+    its position and crop, and that of the layer that holds its buffers (`bbq-wrapper`, its child):
+    where it shows, its size and its newest buffer's size (#494)."""
+    layers = video_layer(emulator, out, name)
+    blocks = re.split(r"\n(?=\+ )", (out / layers["file"]).read_text())
+    block = named(blocks, "korri-viewer-overlay")
+    overlay = entry(block)
+    position = re.search(r"\bpos=\((-?\d+),\s*(-?\d+)\)", block)
+    overlay["pos"] = [int(v) for v in position.groups()] if position else None
+    called = re.search(r"\((korri-viewer-overlay#\d+)\)", block.splitlines()[0]) if block else None
+    buffers_block = child_of(blocks, called.group(1)) if called else ""
+    buffers = entry(buffers_block)
+    size = re.search(r"\bsize=\(\s*(-?\d+),\s*(-?\d+)\)", buffers_block)
+    buffer = re.search(r"activeBuffer=\[\s*(\d+)x\s*(\d+):", buffers_block)
+    buffers["size"] = [int(v) for v in size.groups()] if size else None
+    buffers["buffer"] = [int(v) for v in buffer.groups()] if buffer else None
+    return {**layers, "overlay": overlay, "overlay_buffers": buffers}
+
+
+def last_placed(logcat: "d8.Logcat", since: int = 0) -> "list[int] | None":
+    """The newest overlay place that the app logged after `since`: left, top, right, bottom, the
+    window's width and height, and the cutout's insets."""
+    found = [OVERLAY_PLACED.search(line) for line in logcat.lines()[since:]]
+    found = [match for match in found if match]
+    return [int(v) for v in found[-1].groups()] if found else None
+
+
+def keeps_out(shown: dict, layers: dict, placed: "list[int] | None") -> dict:
+    """#494 in one turn of the display, with the overlay open: the overlay layer stands in the window
+    less the display cutout's safe insets, as Artemis lays out its overlay view
+    (`KorriStreamCutout.keepOutOfCutout`); it shows exactly there, its buffers are that size, and it
+    meets none of the rectangles that bound the cutout. The app logged that place for these insets.
+    The video and the black backdrop still reach the window's edges, into the cutout."""
+    width, height = WINDOW
+    cutout = shown["cutout"] or [0, 0, 0, 0]
+    left, top, right, bottom = cutout
+    place = [left, top, width - right, height - bottom]
+    size = [place[2] - place[0], place[3] - place[1]]
+    overlay, buffers = layers["overlay"], layers["overlay_buffers"]
+    visible = buffers["visible"]
+    shows = [min(r[0] for r in visible), min(r[1] for r in visible),
+             max(r[2] for r in visible), max(r[3] for r in visible)] if visible else None
+    meets = [r for r in shown["cutout_rects"]
+             if r[0] < place[2] and place[0] < r[2] and r[1] < place[3] and place[1] < r[3]]
+    return {"place": place, "cutout": cutout, "cutout_rects": shown["cutout_rects"], "rotation": shown["rotation"],
+            "layer_pos": overlay["pos"], "layer_crop": overlay["crop"], "layer_hidden": None if overlay["flags"] is None
+            else bool(overlay["flags"] & 0x1), "buffers_visible": visible, "buffers_size": buffers["size"],
+            "buffer": buffers["buffer"], "logged": placed, "meets": meets, "checks": {
+                "the_display_has_a_cutout": any(cutout) and bool(shown["cutout_rects"]),
+                "the_layer_stands_in_the_window_less_the_cutouts_insets":
+                    overlay["pos"] == place[:2] and overlay["crop"] == [0, 0, *size],
+                "it_shows_exactly_there_with_buffers_of_that_size":
+                    shows == place and buffers["size"] == size and buffers["buffer"] == size,
+                "it_meets_none_of_the_cutouts_rectangles": bool(shown["cutout_rects"]) and not meets,
+                "the_app_placed_it_so_for_these_insets": placed == [*place, width, height, *cutout],
+                "the_video_and_the_backdrop_reach_the_windows_edges":
+                    layers["crop"] == FIT_CROP and backdrop_covers_the_window(layers),
+            }}
+
+
+def cutout_turns(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.Remote",
+                 out: Path) -> tuple[dict, dict]:
+    """#494, with the overlay open and drawn: its layer keeps out of the display cutout in this
+    landscape turn; the display turns by 180°, which moves the cutout to the window's other side and
+    keeps the window's size, and the layer follows it; it turns back, and the layer follows again."""
+    steps: dict = {}
+    checks: dict = {}
+    shown = display(emulator, out, "overlay-first")
+    steps["first"] = keeps_out(shown, overlay_layer(emulator, out, "overlay-cutout-first"), last_placed(logcat))
+    first = shown["rotation"]
+    if first not in (90, 270):
+        steps["error"] = f"the stream is not in a landscape turn: {first}"
+        return steps, {"the_overlay_keeps_out_of_the_cutout_turned_and_back": False}
+    for name, to in (("turned", (first + 180) % 360), ("back", first)):
+        sender.request("clock")
+        mark = logcat.mark()
+        steps[f"turn_{name}"] = turn(emulator, to)
+        moved = waiting(logcat, sender, OVERLAY_PLACED, mark, 15)
+        # The rotation's animation ends; the layer is placed already.
+        time.sleep(2)
+        steps[name] = keeps_out(display(emulator, out, f"overlay-{name}"),
+                                overlay_layer(emulator, out, f"overlay-cutout-{name}"), last_placed(logcat, mark))
+        steps[name]["moved_in_the_log"] = moved is not None
+        viewer_proof.screenshot(emulator, out / f"overlay-cutout-{name}.png")
+    for name in ("first", "turned", "back"):
+        for check, passed in steps[name]["checks"].items():
+            checks[f"{check}_{name}"] = passed
+    checks["a_half_turn_takes_the_cutout_and_the_overlay_to_the_other_side"] = (
+        steps["turn_turned"]["turned"] and steps["turned"]["moved_in_the_log"]
+        and steps["turned"]["place"] != steps["first"]["place"]
+        and steps["turned"]["place"][2] - steps["turned"]["place"][0]
+        == steps["first"]["place"][2] - steps["first"]["place"][0])
+    checks["turned_back_the_overlay_is_where_it_was"] = (
+        steps["turn_back"]["turned"] and steps["back"]["moved_in_the_log"]
+        and steps["back"]["place"] == steps["first"]["place"])
+    steps["bars"] = [outside(out / f"overlay-cutout-{name}.png", "fit", panel=True, overlay=steps[name]["place"])
+                     for name in ("turned", "back")]
+    checks["the_bars_are_black_beside_the_overlay_in_both_turns"] = black_bars(steps["bars"])
+    return steps, checks
 
 
 def black_bars(shots: list[dict]) -> bool:
@@ -640,8 +831,9 @@ def choose_fill(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_pr
 
 
 def overlay(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.Remote", out: Path,
-            launch: str) -> tuple[dict, dict]:
-    """Slice D5b: Korri's gameplay overlay over the stream, its controls, its hold, and its close."""
+            launch: str, cutout: bool) -> tuple[dict, dict]:
+    """Slice D5b: Korri's gameplay overlay over the stream, its controls, its hold, and its close.
+    With a display `cutout`, its layer keeps out of it in both landscape turns (#494)."""
     steps: dict = {}
     checks: dict = {}
     sender.request("clock")
@@ -661,6 +853,12 @@ def overlay(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.
         and logcat.wait_for(LAYER_SHOWN, mark, 10) is not None
     # korrid's overlay reads the viewer's snapshot every second and lists its controls.
     time.sleep(3)
+    place = None
+    if cutout:
+        log("the overlay's layer and the camera cutout, in both landscape turns (#494)")
+        steps["cutout"], cutout_checks = cutout_turns(emulator, logcat, sender, out)
+        checks.update(cutout_checks)
+        place = steps["cutout"]["first"]["place"]
     # The panel covers the left of the frame-ID bar, which then does not read; the
     # picture beside the panel must move.
     steps["overlay"] = bars(emulator, out, "overlay", 3, 1.0)
@@ -724,7 +922,7 @@ def overlay(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.
     checks["chosen_again_it_fits_the_picture_again"] = off is not None \
         and logcat.wait_for(FITTED, mark, 5) is not None and steps["layer_fit_again"]["crop"] == FIT_CROP
     viewer_proof.screenshot(emulator, out / "overlay-fit-again.png")
-    steps["bars_overlay_fit"] = [outside(out / name, "fit", panel=True)
+    steps["bars_overlay_fit"] = [outside(out / name, "fit", panel=True, overlay=place)
                                  for name in open_fitted + ["overlay-fit-again.png"]]
     checks["the_bars_are_black_beside_and_under_the_open_overlay"] = black_bars(steps["bars_overlay_fit"])
 
@@ -765,6 +963,9 @@ def main() -> int:
     parser.add_argument("--library-seconds", type=int, default=300, help="how long Velvet may take to list the game")
     parser.add_argument("--out", type=Path, help="the record's directory; default: a new one under /tmp")
     parser.add_argument("--apk", help="a fixture APK already built from this tree (its unsigned file); default: build it")
+    parser.add_argument("--cutout", default="pixel_5",
+                        help="the emulated camera cutout or phone of the display (#494): NAME of the overlays "
+                             "com.android.{internal,systemui}[.display.cutout].emulation.NAME, or none")
     args = parser.parse_args()
     if os.geteuid() != 0:
         raise SystemExit("run it as root: the sender's certificate control socket is root's, and the holder drops to its own user")
@@ -820,6 +1021,14 @@ def main() -> int:
             "sdk": emulator.shell("getprop ro.build.version.sdk").stdout.strip(),
             "abi": emulator.shell("getprop ro.product.cpu.abi").stdout.strip(),
         }
+        cutout = args.cutout != "none"
+        if cutout:
+            steps["display_cutout"] = enable_cutout(emulator, out, args.cutout)
+            shown = steps["display_cutout"]["display"]
+            checks["the_emulators_display_has_a_camera_cutout"] = bool(shown["cutout"]) and any(shown["cutout"])
+            checks["systemui_lives_with_the_cutout"] = steps["display_cutout"]["systemui_crashes"] == 0
+            if not checks["systemui_lives_with_the_cutout"]:
+                raise RuntimeError("SystemUI crashes with this cutout; read logcat's crash buffer")
         emulator.adb("uninstall", PACKAGE, check=False, timeout=120)
         installed = emulator.adb("install", "--no-incremental", str(signed), check=False, timeout=600)
         (out / "adb-install.txt").write_text(installed.stdout + installed.stderr)
@@ -947,7 +1156,7 @@ def main() -> int:
         # input method session over the app, which then takes the next Back
         # (README, "The viewer in the app").
         log("Guide: Korri's gameplay overlay over the stream (D5b)")
-        steps["gameplay_overlay"], overlay_checks = overlay(emulator, logcat, sender, out, launch)
+        steps["gameplay_overlay"], overlay_checks = overlay(emulator, logcat, sender, out, launch, cutout)
         checks.update(overlay_checks)
 
         log("the input: keys and a tap at the sender")

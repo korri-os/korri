@@ -428,6 +428,19 @@ the overlay is open; Back closes it through korrid's Resume, after the shell
 let the Surface go, and the picture goes on. D10's keys and tap then reach
 the sender. Records: `proof/android-app-d5b/`.
 
+The emulator's display has a camera cutout since #494 (`--cutout`, by
+default the system image's emulated Pixel 5: a hole in the top left corner,
+and rounded corners; a cutout overlay alone, such as `corner`, crashes this
+image's SystemUI, whose screen decorations need rounded corners or a second
+cutout). With the overlay open and drawn, and
+before its controls, the proof reads the overlay layer in SurfaceFlinger:
+it stands in the window less the cutout's insets that the window manager
+reports, shows exactly there with buffers of that size, meets none of the
+cutout's rectangles, and the app logged that place; the video and the
+backdrop still reach the window's edges. The emulator's accelerometer then
+turns the display by 180°, to the other landscape turn, and back; the layer
+follows the cutout each time. Records: `proof/android-app-494/`.
+
 ## Stream controls and status (D11)
 
 O4: korrid's snapshot of the stream carries the controls, the battery and
