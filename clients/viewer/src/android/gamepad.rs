@@ -249,7 +249,7 @@ pub(crate) enum Key {
     /// Not a controller key: the keyboard may take it.
     Unhandled,
     /// Start was pressed twice quickly and held the second time: open the
-    /// gameplay overlay. Nothing was sent for this press's up.
+    /// gameplay overlay. Start's release was sent first, as for any up.
     Overlay,
 }
 
@@ -383,14 +383,18 @@ impl Controllers {
         match press {
             Press::NotMine => return Key::Unhandled,
             Press::Eaten => return Key::Handled,
-            // Artemis opens the overlay, which holds the input, before it
-            // sends this state; the hold drops it.
-            Press::Overlay => return Key::Overlay,
             Press::ToggleMouse => toggle_mouse(self.context(id), now_ms),
-            Press::Send => {}
+            Press::Overlay | Press::Send => {}
         }
+        // Start's release goes before the overlay opens. Artemis sends it
+        // after its overlay holds the input, which drops it; when no
+        // overlay opens here (no overlay layer), the host would keep Start
+        // pressed. An open overlay's hold lets go of it again.
         self.send(id, devices, sink);
-        Key::Handled
+        match press {
+            Press::Overlay => Key::Overlay,
+            _ => Key::Handled,
+        }
     }
 
     /// `handleMotionEvent`: a joystick event's axes.
@@ -1118,7 +1122,8 @@ enum Press {
     NotMine,
     /// Start was held: the mouse emulation goes on or off, then send.
     ToggleMouse,
-    /// Start was pressed twice quickly and held: the gameplay overlay.
+    /// Start was pressed twice quickly and held: send, then the gameplay
+    /// overlay.
     Overlay,
 }
 

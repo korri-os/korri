@@ -2568,16 +2568,21 @@ pub(crate) mod tests {
             ),
             Outcome::Overlay
         );
-        // The hold that follows lets go of Start; the up itself sends
-        // nothing, and the pad does not become a mouse.
-        assert!(sink.take().is_empty());
+        // Start's release goes before the overlay opens: when no overlay
+        // opens to hold the input, the host must not keep Start pressed,
+        // and the heartbeat repeats it released.
+        assert_eq!(sink.take(), [Packet::Controller(controller(0, 1, 0))]);
+        input.tick(2000, &mut sink);
+        input.tick(2000 + HEARTBEAT_MS, &mut sink);
+        assert_eq!(sink.take(), [Packet::Controller(controller(0, 1, 0))]);
+        // The pad does not become a mouse.
         input.motion(
-            &joystick(16, &[(axis::X, 1.0)], 2010),
-            2010,
+            &joystick(16, &[(axis::X, 1.0)], 2260),
+            2260,
             &mut devices,
             &mut sink,
         );
-        input.tick(2100, &mut sink);
+        input.tick(2400, &mut sink);
         assert!(
             sink.take()
                 .iter()
