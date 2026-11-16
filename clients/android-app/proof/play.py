@@ -55,6 +55,15 @@ The steps:
    Starting the app again lets korrid's recovery start the stream again.
 9. Stop the emulator, its adb server, the holder and the sender.
 
+The bars (#495): in each screenshot of the stream, the window outside the
+picture is black, below the status bar that the emulator keeps drawn: with
+the picture fitted and with Crop to fill (then nothing lies outside it),
+with the overlay open and closed, after the window turned to landscape and
+when the stream starts again. Under the overlay's panel the bar shows the
+panel over black. The app's black backdrop layer shows with the first
+picture, under the video in SurfaceFlinger's tree; nothing of the shell's
+library shows there.
+
 The record goes to --out; no private key enters it. The exit status is 0
 only when every check passed.
 """
@@ -115,6 +124,16 @@ FITTED = "placed at (240, 0)-(2160, 1080) in the window 2400x1080"
 FILLED = "placed at (0, -135)-(2400, 1215) in the window 2400x1080, cropped to fill"
 FIT_CROP = [0, 0, 1280, 720]
 FILL_CROP = [0, 72, 1280, 648]
+# The bars (#495): the picture's place in the window (left, top, right, bottom), as FITTED and FILLED.
+PLACED = {"fit": (240, 0, 2160, 1080), "fill": (0, -135, 2400, 1215)}
+# The rows at the top that the emulator's status bar draws over (README, "Known gaps"); not read.
+STATUS_BAR_ROWS = 100
+# The pixels beside the picture's edge that are not read, and the brightest channel that is black.
+EDGE = 2
+BLACK = 8
+BACKDROP_SHOWN = "picture: the black backdrop shows under the video, with its first picture"
+# The video layer's placement in the window that the layers were made in, before the turn.
+PLACED_IN = re.compile(r"korri-app: viewer video layer \d+x\d+ placed at .* in the window (\d+)x(\d+)")
 # Windows virtual keys of K, O, R, I, and the marker M (input packets' keyCode).
 KEYS = {"KEYCODE_K": 0x4B, "KEYCODE_O": 0x4F, "KEYCODE_R": 0x52, "KEYCODE_I": 0x49}
 MARKER = ("KEYCODE_M", 0x4D)
@@ -306,16 +325,133 @@ def toggles(snapshot: "dict | None") -> dict:
     return listed
 
 
+def entry(block: str) -> dict:
+    """One layer's entry in SurfaceFlinger's dump: its z, its flags (0x1: hidden), whether it is
+    opaque, its crop, its parent and the rectangles where it is visible on the display."""
+    crop = re.search(r"crop=\[\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\]", block)
+    z = re.search(r"\bz=\s*(-?\d+)", block)
+    flags = re.search(r"\bflags=(0x[0-9a-f]+)", block)
+    opaque = re.search(r"\bisOpaque=(\d)", block)
+    parent = re.search(r"^\s+parent=(.*?)\s*$", block, re.M)
+    region = re.search(r"Region VisibleRegion[^\n]*\n((?:\s+\[[^\n]*\n)*)", block + "\n")
+    visible = [[int(v) for v in re.findall(r"-?\d+", line)] for line in (region.group(1) if region else "").splitlines()]
+    return {"found": bool(block), "crop": [int(v) for v in crop.groups()] if crop else None,
+            "z": int(z.group(1)) if z else None, "flags": int(flags.group(1), 16) if flags else None,
+            "opaque": opaque.group(1) == "1" if opaque else None, "parent": parent.group(1) if parent else None,
+            "visible": visible, "entry": block.splitlines()[:12]}
+
+
+def named(blocks: list[str], name: str) -> str:
+    """The block of the first layer whose name holds `name`."""
+    return next((b for b in blocks if b.startswith("+ ") and name in b.splitlines()[0]), "")
+
+
+def child_of(blocks: list[str], parent: str) -> str:
+    """The block of a layer whose parent is the layer named `parent` (with its number)."""
+    return next((b for b in blocks if b.startswith("+ ") and re.search(rf"^\s+parent={re.escape(parent)}\s*$", b, re.M)), "")
+
+
 def video_layer(emulator: "d8.Emulator", out: Path, name: str) -> dict:
-    """The video layer's entry in SurfaceFlinger's dump, and its crop."""
+    """The video layer's entry in SurfaceFlinger's dump, and its crop. For #495: the backdrop's entry
+    and that of its buffers' layer (`bbq-wrapper`, its child), and that of the window's own buffer,
+    which the shell draws into, the parent of the app's layers."""
     dump = emulator.shell("dumpsys SurfaceFlinger", timeout=60).stdout
     (out / f"surfaceflinger-{name}.txt").write_text(dump)
     blocks = re.split(r"\n(?=\+ )", dump)
-    block = next((b for b in blocks if b.startswith("+ ") and "korri-viewer-video" in b.splitlines()[0]), "")
-    crop = re.search(r"crop=\[\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\]", block)
-    return {"file": f"surfaceflinger-{name}.txt", "found": bool(block),
-            "crop": [int(v) for v in crop.groups()] if crop else None,
-            "entry": block.splitlines()[:12]}
+    video = entry(named(blocks, "korri-viewer-video"))
+    backdrop_block = named(blocks, "korri-viewer-backdrop")
+    backdrop = entry(backdrop_block)
+    backdrop_name = re.search(r"\((korri-viewer-backdrop#\d+)\)", backdrop_block.splitlines()[0]) if backdrop_block else None
+    buffers = entry(child_of(blocks, backdrop_name.group(1)) if backdrop_name else "")
+    window = entry(next((b for b in blocks if video["parent"] and b.startswith("+ BufferStateLayer (")
+                         and b.splitlines()[0].startswith(f"+ BufferStateLayer ({video['parent']})")), ""))
+    return {"file": f"surfaceflinger-{name}.txt", **video, "backdrop": backdrop, "backdrop_buffers": buffers,
+            "window": window}
+
+
+def backdrop_covers_the_window(layer: dict) -> bool:
+    """SurfaceFlinger's tree with the picture fitted: the backdrop lies under the video and shows; its
+    buffers are opaque and visible exactly in the bars; nothing of the shell's window is visible."""
+    backdrop, buffers, window = layer["backdrop"], layer["backdrop_buffers"], layer["window"]
+    left, _, right, _ = PLACED["fit"]
+    bars = [[0, 0, left, 1080], [right, 0, 2400, 1080]]
+    return (layer["found"] and backdrop["found"] and buffers["found"] and window["found"]
+            and None not in (layer["z"], backdrop["z"], backdrop["flags"])
+            and backdrop["z"] < layer["z"] and not backdrop["flags"] & 0x1
+            and buffers["opaque"] is True and buffers["visible"] == bars and window["visible"] == [])
+
+
+def brightest_channel(strip):
+    """Each pixel's brightest channel of a Pillow RGB image, as one band."""
+    from PIL import ImageChops
+    red, green, blue = strip.split()
+    return ImageChops.lighter(ImageChops.lighter(red, green), blue)
+
+
+def black(strip) -> dict:
+    """A strip of the window is black: 99.9 % of its pixels have no channel above BLACK."""
+    histogram = brightest_channel(strip).histogram()
+    pixels = sum(histogram)
+    dark = sum(histogram[:BLACK + 1])
+    return {"rule": "black", "pixels": pixels, "black_share": round(dark / pixels, 5),
+            "brightest": max(value for value, count in enumerate(histogram) if count),
+            "pass": dark >= 0.999 * pixels}
+
+
+def panel_over_black(strip) -> dict:
+    """A bar under Velvet's panel, which is 94 % opaque: where the panel draws only its background,
+    the strip is one colour, the panel's over black, and dark. The panel's own drawing (pixels with
+    a brightness of 60 or more, and the 5 pixels around them: its words, rows and their edges) is
+    not read. The shell's library under the panel shows as other colours there."""
+    from PIL import ImageFilter
+    drawn = strip.convert("L").point(lambda v: 255 if v >= 60 else 0).filter(ImageFilter.MaxFilter(11))
+    masked = strip.copy()
+    sentinel = (255, 0, 255)
+    masked.paste(sentinel, mask=drawn)
+    colours = [(count, colour) for count, colour in masked.getcolors(strip.width * strip.height)
+               if colour != sentinel]
+    pixels = sum(count for count, _ in colours)
+    if not pixels:
+        return {"rule": "panel over black", "pixels": 0, "pass": False}
+    mode = max(colours)[1]
+    near = sum(count for count, colour in colours if all(abs(a - b) <= 2 for a, b in zip(colour, mode)))
+    return {"rule": "panel over black", "pixels": pixels, "colour": list(mode),
+            "share_of_that_colour": round(near / pixels, 5),
+            "pass": near >= 0.995 * pixels and max(mode) <= 40}
+
+
+def outside(png: Path, placement: str, panel: bool = False) -> dict:
+    """The window outside the picture placed as `placement`, below the status bar, in strips (#495).
+    Each must be black. With the overlay open (`panel`), Velvet's panel stands at the window's left
+    edge over the whole left bar, which must show the panel over black. With Crop to fill nothing
+    lies outside the picture: no strip."""
+    from PIL import Image
+    left, top, right, bottom = PLACED[placement]
+    with Image.open(png) as image:
+        image = image.convert("RGB")
+    width, height = image.size
+    boxes = {"left": (0, STATUS_BAR_ROWS, left - EDGE, height),
+             "right": (right + EDGE, STATUS_BAR_ROWS, width, height),
+             "top": (max(left, 0), STATUS_BAR_ROWS, min(right, width), top - EDGE),
+             "bottom": (max(left, 0), bottom + EDGE, min(right, width), height)}
+    strips = {}
+    for name, box in boxes.items():
+        if box[2] <= box[0] or box[3] <= box[1]:
+            continue
+        strip = image.crop(box)
+        strips[name] = {"box": list(box), **(panel_over_black(strip) if panel and name == "left" else black(strip))}
+    return {"file": png.name, "placement": placement, "overlay_open": panel, "strips": strips,
+            "pass": all(strip["pass"] for strip in strips.values())}
+
+
+def black_bars(shots: list[dict]) -> bool:
+    """Every screenshot was read and passed, and each had bars to read."""
+    return bool(shots) and all(shot["pass"] and shot["strips"] for shot in shots)
+
+
+def filled(shots: list[dict]) -> bool:
+    """Every screenshot was read with Crop to fill: the picture covers the window, nothing lies outside."""
+    return bool(shots) and all(shot["pass"] and not shot["strips"] for shot in shots)
 
 
 def strip_change(before: Path, after: Path, side: str = "left") -> float:
@@ -369,6 +505,7 @@ def controls(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
     before = video_layer(emulator, out, "fit")
     viewer_proof.screenshot(emulator, out / "controls-fit.png")
     steps["layer_fit"] = before
+    checks["the_backdrop_covers_the_shells_window_under_the_video"] = backdrop_covers_the_window(before)
     mark = logcat.mark()
     steps["apply_fill_on"] = proof_apply(emulator, logcat, launch, listed[FILL]["id"], "toggle true")
     checks["korrids_apply_turns_crop_to_fill_on"] = steps["apply_fill_on"] == "ok"
@@ -386,8 +523,10 @@ def controls(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
     viewer_proof.screenshot(emulator, out / "controls-fill.png")
     steps["fill_bar"] = viewer_proof.describe(viewer_proof.read_bar(out / "controls-fill.png"))
     steps["left_strip_change"] = strip_change(out / "controls-fit.png", out / "controls-fill.png")
-    # The fitted picture leaves the shell's window in the left 240 columns.
+    # The fitted picture leaves the black backdrop in the left 240 columns.
     checks["the_picture_reaches_the_windows_edge"] = steps["left_strip_change"] > 10
+    steps["bars_fill"] = [outside(out / "controls-fill.png", "fill")]
+    checks["nothing_but_the_picture_shows_with_crop_to_fill"] = filled(steps["bars_fill"])
     on = proof_snapshot(emulator, logcat, launch)
     steps["snapshot_fill_on"] = toggles(on)
     checks["korrids_snapshot_shows_crop_to_fill_on"] = toggles(on).get(FILL, {}).get("value") is True
@@ -403,6 +542,9 @@ def controls(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
     steps["layer_fit_again"] = video_layer(emulator, out, "fit-again")
     checks["crop_to_fill_off_fits_the_picture_again"] = steps["apply_fill_off"] == "ok" \
         and logcat.wait_for(FITTED, mark, 5) is not None and steps["layer_fit_again"]["crop"] == FIT_CROP
+    viewer_proof.screenshot(emulator, out / "controls-fit-again.png")
+    steps["bars_fit"] = [outside(out / name, "fit") for name in ("controls-fit.png", "controls-fit-again.png")]
+    checks["the_bars_are_black_before_and_after_crop_to_fill"] = black_bars(steps["bars_fit"])
     off = proof_snapshot(emulator, logcat, launch)
     steps["snapshot_fill_off"] = toggles(off)
     checks["korrids_snapshot_shows_crop_to_fill_off"] = toggles(off).get(FILL, {}).get("value") is False
@@ -550,6 +692,8 @@ def overlay(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.
 
     before = video_layer(emulator, out, "overlay-fit")
     viewer_proof.screenshot(emulator, out / "overlay-fit.png")
+    open_fitted = [shot["file"] for shot in steps["overlay"]] + [
+        name for name in ("overlay-controls.png", "overlay-fit.png") if (out / name).is_file()]
     mark = logcat.mark()
     # A tap on the row, or Confirm on it: the focus is there.
     on = choose_fill(emulator, logcat, sender, crop, 0, True)
@@ -565,6 +709,8 @@ def overlay(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.
     checks["surfaceflinger_crops_the_stream_under_the_overlay"] = \
         before["crop"] == FIT_CROP and after["crop"] == FILL_CROP
     viewer_proof.screenshot(emulator, out / "overlay-fill.png")
+    steps["bars_overlay_fill"] = [outside(out / "overlay-fill.png", "fill", panel=True)]
+    checks["nothing_but_the_picture_shows_with_crop_to_fill_under_the_overlay"] = filled(steps["bars_overlay_fill"])
     # The overlay's panel dims the window's left: the right bar, beside it, shows the change.
     steps["right_strip_change"] = strip_change(out / "overlay-fit.png", out / "overlay-fill.png", "right")
     checks["the_picture_changes_under_the_overlay"] = steps["right_strip_change"] > 10
@@ -577,6 +723,10 @@ def overlay(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.
     steps["layer_fit_again"] = video_layer(emulator, out, "overlay-fit-again")
     checks["chosen_again_it_fits_the_picture_again"] = off is not None \
         and logcat.wait_for(FITTED, mark, 5) is not None and steps["layer_fit_again"]["crop"] == FIT_CROP
+    viewer_proof.screenshot(emulator, out / "overlay-fit-again.png")
+    steps["bars_overlay_fit"] = [outside(out / name, "fit", panel=True)
+                                 for name in open_fitted + ["overlay-fit-again.png"]]
+    checks["the_bars_are_black_beside_and_under_the_open_overlay"] = black_bars(steps["bars_overlay_fit"])
 
     time.sleep(2)
     while_open = sender_packets(sender)[held_from:]
@@ -598,6 +748,8 @@ def overlay(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.
     time.sleep(1)
     steps["after_overlay"] = bars(emulator, out, "after-overlay", 3, 1.0)
     checks["the_picture_goes_on_after_the_overlay"] = rising(steps["after_overlay"])
+    steps["bars_after_overlay"] = [outside(out / shot["file"], "fit") for shot in steps["after_overlay"]]
+    checks["the_bars_are_black_after_the_overlay_closed"] = black_bars(steps["bars_after_overlay"])
     return steps, checks
 
 
@@ -782,6 +934,14 @@ def main() -> int:
         steps["first_bar"] = first_bar(emulator, out, "stream-first", 30)
         steps["picture"] = bars(emulator, out, "stream", 4, 1.0)
         checks["frame_ids_rise_in_screenshots"] = rising(steps["picture"])
+        # The bars (#495): the layers were made in the portrait window, which then turned.
+        windows = [(int(m.group(1)), int(m.group(2))) for m in
+                   (PLACED_IN.search(line) for line in logcat.lines()[launch_mark:]) if m]
+        steps["placed_in_windows"] = windows
+        checks["the_window_turned_before_the_bars_were_read"] = len(set(windows)) >= 2 and windows[-1] == (2400, 1080)
+        checks["the_backdrop_shows_with_the_first_picture"] = logcat.wait_for(BACKDROP_SHOWN, launch_mark, 5) is not None
+        steps["bars_stream"] = [outside(out / shot["file"], "fit") for shot in steps["picture"]]
+        checks["the_bars_are_black_beside_the_picture"] = black_bars(steps["bars_stream"])
 
         # Before any letter key: on the emulator a hardware letter key starts an
         # input method session over the app, which then takes the next Back
@@ -835,6 +995,8 @@ def main() -> int:
             steps["again_first_bar"] = first_bar(emulator, out, "again-first", 30)
             steps["again_picture"] = bars(emulator, out, "again", 3, 1.0)
         checks["returning_resumes_the_stream"] = steps["again_running"] and rising(steps.get("again_picture", []))
+        steps["bars_again"] = [outside(out / shot["file"], "fit") for shot in steps.get("again_picture", [])]
+        checks["the_bars_are_black_when_the_stream_starts_again"] = black_bars(steps["bars_again"])
 
         lines = logcat.lines()
         crashes = [l for l in lines if "FATAL" in l or "Fatal signal" in l or "korri: panic" in l or "ANR in" in l]
