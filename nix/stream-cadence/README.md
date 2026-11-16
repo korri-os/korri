@@ -49,6 +49,7 @@ nix run .#stream-cadence -- run --device operator@device:SSH_PORT \
 | `--require-vblank-lock` | Stop on fallback/safety guard, or a missing lock marker at first receive |
 | `--max-torn-frames N` | No limit; when given, gate each scored window's absolute torn-frame count |
 | `--max-unreadable-frames N` | 0; maximum total unreadable frames across all scored windows |
+| `--build-store STORE` | None: this host builds nothing. The Nix store that builds the runtime pieces; see "Where the runtime pieces are built". `view` takes it too |
 
 The display refresh is the ceiling. Each window records
 `expected_new_frames = min(requested_fps, refresh_hz) * seconds`. A request to
@@ -2158,16 +2159,52 @@ end real stray processes, and run the host-mode viewer fixture with stand-in
 programs. The app build depends on the source gate. Tests also run Ruff and
 Mypy over every production Python module.
 
-Every device executable is built on this host or configured remote builders.
+### Where the runtime pieces are built
+
+`run` and `view` build the pieces that they copy to a target (the motion
+source, Python, the capture, the press, and for a fixture sway, Sunshine, the
+stand-in viewer and iproute2) in the Nix store that `--build-store` names, never
+on the host that runs the tool:
+
+```sh
+nix run .#stream-cadence -- view --build-store ssh-ng://root@BUILD_HOST \
+  --sender root@BUILD_HOST --sender-fixture --viewer root@BUILD_HOST
+```
+
+- This host evaluates, and the build store builds (`nix build --eval-store
+  auto --store STORE`). On the build host itself, give `--build-store auto`.
+- A target that already holds every piece gets no copy: when the device is the
+  build host, nothing comes back to this host. For another target, this host
+  signs the pieces in the build store with `~/.config/korri/cache-key.secret`,
+  takes them with its own signature checks in force, and copies them to the
+  device as below. The target `local` takes them into this host's store only.
+- Without `--build-store`, this host builds nothing. The tool first asks Nix
+  for its plan (`nix build --dry-run`). When the plan builds a derivation, the
+  tool refuses, names the derivations and `--build-store`, and fetches
+  nothing: a build would first fetch its inputs to this host (3.3 GiB for the
+  `resize` Sunshine on 2026-11-16). Otherwise Nix takes the pieces from this
+  host's store or a cache, with `--max-jobs 0`, so that a build that the plan
+  did not show is refused too. This also refuses a piece that the remote
+  builders of this host's own Nix configuration could build.
+- The result does not record the build store, and the build store changes no
+  record.
+
+aka builds only `x86_64-linux` (no `aarch64-linux` platform and no binfmt
+emulator, 2026-11-16). `--build-store` names one store for every piece of a
+run. An `aarch64` device therefore needs a build store that builds
+`aarch64-linux`, or every piece already in this host's store or a cache. A
+`view` between an `x86_64` and an `aarch64` device needs the second.
+
 The controller selects by remote `uname -m`, signs the immutable closures with
 `~/.config/korri/cache-key.secret` when available, and uses `nix copy`. A device
 must already trust the signing key; the tool never weakens signature checks or
 changes Nix configuration. It creates no GC root or profile entry. Each result's
-`discovered.imported_store_paths` records the immutable closure roots submitted
-to `nix copy`; Nix also copies their referenced dependencies. Imported store
+`discovered.imported_store_paths` records the immutable closure roots of the
+pieces, which `nix copy` copies when the target lacks them; Nix also copies
+their referenced dependencies. Imported store
 objects can remain until normal GC; all mutable test files live in the one
 temporary run directory. First use can
-wait for the configured architecture builder. No build is dispatched by a device.
+wait for the build store. No build is dispatched by a device.
 
 `tests/record-device.py` reads acceptance fixtures. `tests/prepare-device.py` is
 an explicit, separate operator utility for the authorized one-time restart or

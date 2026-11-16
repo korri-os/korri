@@ -129,12 +129,26 @@ def endpoint(value: str, extra_options: list[str]) -> tuple[str | None, list[str
     return ssh_target(value, None, extra_options)
 
 
+BUILD_STORE_OPTION = "--build-store"
+
+
+def cache_key() -> Path:
+    """This host's cache signing key, which the devices trust."""
+    return Path.home() / ".config/korri/cache-key.secret"
+
+
 def tools(
     architecture: str,
     target: str | None,
     options: list[str],
     parts: tuple[str, ...] = ("motion",),
+    build_store: str | None = None,
 ) -> tuple[str, str, list[str]]:
+    """Build the runtime pieces in the build store and bring them to the target.
+
+    Without a build store this host builds nothing: Nix takes the pieces from
+    this host's store or a cache, or the tool refuses.
+    """
     if architecture not in ("aarch64", "x86_64"):
         raise Refusal(
             f"No prebuilt motion source for {architecture}; add and verify that architecture on a build host."
@@ -153,24 +167,58 @@ def tools(
     selection = " ".join("tools.runtime." + name for name in ("python", *parts))
     source_expression = expression + "in toString tools.runtime.source"
     expression += "in [ " + selection + " ]"
-    # This Nix command runs on the client/build host. Never invoke a build over SSH.
-    print(
-        f"Building prebuilt tools for {architecture} on this host or its builders.",
-        flush=True,
+    # This host evaluates. The build store builds; a device never does, and no
+    # build is invoked over a device's SSH.
+    way = (
+        f"Build the tools on the build host: give {BUILD_STORE_OPTION} ssh-ng://root@BUILD_HOST, "
+        f"or {BUILD_STORE_OPTION} auto when this host is the build host."
     )
-    outputs = json.loads(
-        execute(
-            ["nix", "build", "--no-link", "--json", "--impure", "--expr", expression],
+    if build_store is None:
+        print(
+            f"Taking prebuilt tools for {architecture} from this host's store or a cache; this host builds nothing.",
+            flush=True,
+        )
+        # Nix's plan, before it fetches anything: a build would first fetch
+        # the build's inputs to this host.
+        planned = execute(
+            ["nix", "build", "--dry-run", "--no-link", "--impure", "--expr", expression],
+            timeout=600,
+        ).stderr
+        builds = re.findall(r"(?m)^\s+(/nix/store/\S+\.drv)\s*$", planned)
+        if builds:
+            raise Refusal(
+                f"This host builds nothing, and {len(builds)} prebuilt tool derivation(s) are in neither its store nor a cache: "
+                + ", ".join(Path(build).name for build in builds)
+                + ". "
+                + way
+            )
+        where = ["--max-jobs", "0"]
+    else:
+        print(f"Building prebuilt tools for {architecture} in {build_store}.", flush=True)
+        where = ["--eval-store", "auto", "--store", build_store]
+    try:
+        built = execute(
+            ["nix", "build", "--no-link", "--json", "--impure", *where, "--expr", expression],
             timeout=1800,
         ).stdout
-    )
-    paths = [row["outputs"]["out"] for row in outputs]
+    except subprocess.CalledProcessError as error:
+        if build_store is not None:
+            raise
+        raise Refusal(
+            "This host builds nothing, and a prebuilt tool is in neither its store nor a cache. "
+            + way
+            + "\n"
+            + (error.stderr or "")
+        ) from error
+    paths = [row["outputs"]["out"] for row in json.loads(built)]
     source = execute(
         ["nix", "eval", "--raw", "--impure", "--expr", source_expression], timeout=30
     ).stdout
     paths.append(source)
-    # The host that runs the tool already holds what it built.
-    if target is not None:
+    if build_store is not None:
+        from_build_store(build_store, target, options, paths, source)
+    # Without a build store, this host's store already holds the pieces.
+    elif target is not None:
         deliver(target, options, paths)
     python = next(path for path in paths if re.search(r"-python3-[\d.]", path))
     motion = next((path for path in paths if path.endswith("-stream-cadence-motion")), "")
@@ -180,8 +228,46 @@ def tools(
     return agent, motion + "/bin/stream-cadence-motion", paths
 
 
+def from_build_store(
+    build_store: str, target: str | None, options: list[str], paths: list[str], source: str
+) -> None:
+    """Bring the pieces from the build store to the target, through this host.
+
+    A target that holds them all, such as the build host itself, gets no copy.
+    """
+    # This host evaluated the agent's source; the build store holds it beside
+    # what it built.
+    execute(["nix", "copy", "--to", build_store, source], timeout=300)
+    if target is None:
+        store, env = [], dict(os.environ)
+    else:
+        store, env = ["--store", "ssh://" + target], dict(os.environ, NIX_SSHOPTS=shlex.join(options))
+    missing = execute(
+        ["nix-store", *store, "--check-validity", "--print-invalid", *paths], env=env, timeout=60
+    ).stdout.split()
+    if not missing:
+        return
+    # Signed where they were built, with the key that deliver signs with, so
+    # that this host takes them with its signature checks in force.
+    key = cache_key()
+    if key.is_file():
+        execute(
+            ["nix", "store", "sign", "--store", build_store, "--recursive", "--key-file", str(key), *paths],
+            timeout=300,
+        )
+    try:
+        execute(["nix", "copy", "--from", build_store, *paths], timeout=1800)
+    except subprocess.CalledProcessError as error:
+        raise Refusal(
+            f"Cannot bring the prebuilt tools from {build_store} to this host. Sign them there with a key that this host trusts ({key}). Do not bypass signature checks.\n"
+            + (error.stderr or "")
+        ) from error
+    if target is not None:
+        deliver(target, options, paths)
+
+
 def deliver(target: str, options: list[str], paths: list[str]) -> None:
-    key = Path.home() / ".config/korri/cache-key.secret"
+    key = cache_key()
     if key.is_file():
         execute(
             ["nix", "store", "sign", "--recursive", "--key-file", str(key), *paths],
@@ -1230,7 +1316,9 @@ def run(args: argparse.Namespace) -> int:
     architecture = execute(
         ["ssh", *options, target, "uname -m"], timeout=20
     ).stdout.strip()
-    agent, motion, args.imported_store_paths = tools(architecture, target, options)
+    agent, motion, args.imported_store_paths = tools(
+        architecture, target, options, ("motion",), args.build_store
+    )
     args.out = (
         args.out.resolve()
         if args.out
@@ -2144,7 +2232,7 @@ def view(args: argparse.Namespace) -> int:
             if target is None
             else execute(["ssh", *options, target, "uname -m"], timeout=20).stdout.strip()
         )
-        agent, _, paths = tools(architecture, target, options, extra)
+        agent, _, paths = tools(architecture, target, options, extra, args.build_store)
         return agent, paths
 
     def part(paths: list[str], mark: str, program: str = "") -> str:
@@ -2497,6 +2585,13 @@ def resolution(value: str) -> tuple[int, int]:
     return int(match.group(1)), int(match.group(2))
 
 
+BUILD_STORE_HELP = (
+    "the Nix store that builds the tool's runtime pieces: ssh-ng://root@BUILD_HOST, or auto on the build host "
+    "itself. A target that holds every piece, such as the build host, gets no copy. Without it, "
+    "this host builds nothing: it takes the pieces from its store or a cache, or refuses"
+)
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(
         description="Distinct streamed frames, with source/capture attribution against the discovered display ceiling."
@@ -2514,6 +2609,7 @@ def parser() -> argparse.ArgumentParser:
         help="OpenSSH -o setting passed to every device SSH connection and nix copy; repeatable",
     )
     measure.add_argument("--stream-host")
+    measure.add_argument(BUILD_STORE_OPTION, metavar="STORE", help=BUILD_STORE_HELP)
     measure.add_argument("--fps", action="append", type=positive)
     measure.add_argument("--resolution", type=resolution)
     measure.add_argument(
@@ -2574,6 +2670,7 @@ def parser() -> argparse.ArgumentParser:
         help="copy a second viewer package and alternate baseline then candidate, --runs each, in one private sender session; requires --viewer-package and --sender-fixture",
     )
     watch.add_argument("--ssh-option", action="append", default=[])
+    watch.add_argument(BUILD_STORE_OPTION, metavar="STORE", help=BUILD_STORE_HELP)
     watch.add_argument("--stream-host", help="sender address as this host reaches it")
     watch.add_argument(
         "--viewer-stream-host", help="sender address as the viewer reaches it"

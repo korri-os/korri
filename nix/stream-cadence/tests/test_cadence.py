@@ -512,8 +512,10 @@ class CommandTests(unittest.TestCase):
             )
             self.assertEqual(shlex.split(copy["ssh_options"]), options)
             self.assertEqual(imported, copy["arguments"][3:])
+            # The first build is the plan (--dry-run): this host builds nothing.
             self.assertEqual(
-                [call["arguments"][0] for call in calls], ["build", "eval", "copy"]
+                [call["arguments"][0] for call in calls],
+                ["build", "build", "eval", "copy"],
             )
             self.assertIn("--no-link", calls[0]["arguments"])
             self.assertNotIn(
