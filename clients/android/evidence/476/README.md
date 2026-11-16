@@ -180,7 +180,7 @@ per the owner's rule), build the proof's runtime on aka
 run there as root:
 
 ```sh
-KORRI_ROOT=$PWD android-live-resize-proof --sender local \
+KORRI_ROOT=$PWD android-live-resize-proof --sender local --build-store auto \
   --stream-host 10.0.2.2 --pair-host 127.0.0.1 \
   --sunshine /nix/store/wr5cindzb0iqwc1kviyfmwg8ppmy99pj-sunshine-korri-2026.914.233613-korri \
   --apk app-arm64-v8a-debug.apk --test-apk app-debug-androidTest.apk --out DIRECTORY

@@ -2189,7 +2189,7 @@ nix run .#stream-cadence -- view --build-store ssh-ng://root@aka \
   nothing: a build would first fetch its inputs to this host (3.3 GiB for the
   `resize` Sunshine on 2026-11-16). Otherwise Nix takes the pieces from this
   host's store or a cache, with `--max-jobs 0`, so that a build that the plan
-  did not show is refused too. This also refuses a piece that the remote
+  did not show is refused too, unless a remote builder in this host's Nix configuration takes it. This also refuses a piece that the remote
   builders of this host's own Nix configuration could build.
 - The result does not record the build store, and the build store changes no
   record.
