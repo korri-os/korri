@@ -1,0 +1,6 @@
+2026-11-16T03:21:40.848211+00:00 haku korri-shell[14543]: SHELL_STATS fps=19.770 frames=99 seconds=5.008 heap_bytes=1196344 interval_ms_p50=16.8 p95=76.9 max=8774.3
+2026-11-16T03:21:45.848767+00:00 haku korri-shell[14543]: SHELL_STATS fps=50.994 frames=255 seconds=5.001 heap_bytes=1196344 interval_ms_p50=16.8 p95=34.5 max=49.1
+2026-11-16T03:21:50.873906+00:00 haku korri-shell[14543]: SHELL_STATS fps=49.553 frames=249 seconds=5.025 heap_bytes=1196894 interval_ms_p50=16.9 p95=36.8 max=63.8
+2026-11-16T03:21:55.873511+00:00 haku korri-shell[14543]: SHELL_STATS fps=51.602 frames=258 seconds=5.000 heap_bytes=1196951 interval_ms_p50=16.8 p95=34.3 max=52.8
+2026-11-16T03:22:00.883564+00:00 haku korri-shell[14543]: SHELL_STATS fps=49.908 frames=250 seconds=5.009 heap_bytes=1196951 interval_ms_p50=16.8 p95=36.3 max=66.7
+2026-11-16T03:22:05.891977+00:00 haku korri-shell[14543]: SHELL_STATS fps=48.714 frames=244 seconds=5.009 heap_bytes=1197136 interval_ms_p50=17.0 p95=33.9 max=63.5

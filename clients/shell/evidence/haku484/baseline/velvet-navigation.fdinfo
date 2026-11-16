@@ -1,0 +1,3943 @@
+3634.97 11516.11
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	6545445954 ns
+drm-cycles-fragment:	5120290252
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	252374599 ns
+drm-cycles-vertex-tiler:	177333146
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171328 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42304 KiB
+drm-purgeable-memory:	10484 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	6545445954 ns
+drm-cycles-fragment:	5120290252
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	252374599 ns
+drm-cycles-vertex-tiler:	177333146
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171328 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42304 KiB
+drm-purgeable-memory:	10420 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	6545445954 ns
+drm-cycles-fragment:	5120290252
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	252374599 ns
+drm-cycles-vertex-tiler:	177333146
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171328 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42304 KiB
+drm-purgeable-memory:	10420 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 897094978)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3635.97 11518.38
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	7096291999 ns
+drm-cycles-fragment:	5557680024
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	288993941 ns
+drm-cycles-vertex-tiler:	206677764
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171788 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11356 KiB
+drm-resident-memory:	42764 KiB
+drm-purgeable-memory:	9664 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	7096291999 ns
+drm-cycles-fragment:	5557680024
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	288993941 ns
+drm-cycles-vertex-tiler:	206677764
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171788 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11356 KiB
+drm-resident-memory:	42764 KiB
+drm-purgeable-memory:	9664 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	7096291999 ns
+drm-cycles-fragment:	5557680024
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	288993941 ns
+drm-cycles-vertex-tiler:	206677764
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171788 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11356 KiB
+drm-resident-memory:	42764 KiB
+drm-purgeable-memory:	9664 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 49533410)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3636.99 11520.90
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	7702333086 ns
+drm-cycles-fragment:	6051771684
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	325905518 ns
+drm-cycles-vertex-tiler:	236930560
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	170608 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11348 KiB
+drm-resident-memory:	41584 KiB
+drm-purgeable-memory:	8508 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	7702333086 ns
+drm-cycles-fragment:	6051771684
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	326768255 ns
+drm-cycles-vertex-tiler:	237641736
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	170608 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	6136 KiB
+drm-resident-memory:	41584 KiB
+drm-purgeable-memory:	8508 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	7702333086 ns
+drm-cycles-fragment:	6051771684
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	326768255 ns
+drm-cycles-vertex-tiler:	237641736
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	170608 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11348 KiB
+drm-resident-memory:	41584 KiB
+drm-purgeable-memory:	8508 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 52328325)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3638.00 11523.29
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	8319300948 ns
+drm-cycles-fragment:	6551752592
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	364415686 ns
+drm-cycles-vertex-tiler:	268156682
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	169980 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11392 KiB
+drm-resident-memory:	40956 KiB
+drm-purgeable-memory:	7836 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	8319300948 ns
+drm-cycles-fragment:	6551752592
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	364415686 ns
+drm-cycles-vertex-tiler:	268156682
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	169980 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11392 KiB
+drm-resident-memory:	40956 KiB
+drm-purgeable-memory:	7836 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	8319300948 ns
+drm-cycles-fragment:	6551752592
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	364415686 ns
+drm-cycles-vertex-tiler:	268156682
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	169980 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11392 KiB
+drm-resident-memory:	40956 KiB
+drm-purgeable-memory:	7836 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 48918004)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3639.03 11525.89
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	8908619829 ns
+drm-cycles-fragment:	7033558664
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	400656747 ns
+drm-cycles-vertex-tiler:	298014190
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	169980 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11348 KiB
+drm-resident-memory:	40956 KiB
+drm-purgeable-memory:	7836 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	8908619829 ns
+drm-cycles-fragment:	7033558664
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	400656747 ns
+drm-cycles-vertex-tiler:	298014190
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	169980 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11348 KiB
+drm-resident-memory:	40956 KiB
+drm-purgeable-memory:	7836 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	8918828584 ns
+drm-cycles-fragment:	7041903426
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	400656747 ns
+drm-cycles-vertex-tiler:	298014190
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	169980 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	40956 KiB
+drm-purgeable-memory:	8092 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 41639576)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3640.03 11528.29
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	9501610151 ns
+drm-cycles-fragment:	7514872942
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	436379513 ns
+drm-cycles-vertex-tiler:	327121894
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	170056 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	41032 KiB
+drm-purgeable-memory:	8084 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	9501610151 ns
+drm-cycles-fragment:	7514872942
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	436379513 ns
+drm-cycles-vertex-tiler:	327121894
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	170056 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	41032 KiB
+drm-purgeable-memory:	8020 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	9501610151 ns
+drm-cycles-fragment:	7514872942
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	436379513 ns
+drm-cycles-vertex-tiler:	327121894
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	170056 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	41032 KiB
+drm-purgeable-memory:	7956 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 54279292)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3641.05 11530.81
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	10116553721 ns
+drm-cycles-fragment:	8013027048
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	473563209 ns
+drm-cycles-vertex-tiler:	357435714
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	172136 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11392 KiB
+drm-resident-memory:	43112 KiB
+drm-purgeable-memory:	8924 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	10116553721 ns
+drm-cycles-fragment:	8013027048
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	473563209 ns
+drm-cycles-vertex-tiler:	357435714
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	172136 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11392 KiB
+drm-resident-memory:	43112 KiB
+drm-purgeable-memory:	8924 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	10116553721 ns
+drm-cycles-fragment:	8013027048
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	473563209 ns
+drm-cycles-vertex-tiler:	357435714
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	172136 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11392 KiB
+drm-resident-memory:	43112 KiB
+drm-purgeable-memory:	8924 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 52318572)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3642.08 11533.13
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	10730754592 ns
+drm-cycles-fragment:	8511289436
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	510265675 ns
+drm-cycles-vertex-tiler:	387275144
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	172136 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11356 KiB
+drm-resident-memory:	43112 KiB
+drm-purgeable-memory:	8964 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	10730754592 ns
+drm-cycles-fragment:	8511289436
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	510658252 ns
+drm-cycles-vertex-tiler:	387598234
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	172136 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11356 KiB
+drm-resident-memory:	43112 KiB
+drm-purgeable-memory:	8964 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	10730754592 ns
+drm-cycles-fragment:	8511289436
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	510658252 ns
+drm-cycles-vertex-tiler:	387598234
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	172136 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11356 KiB
+drm-resident-memory:	43112 KiB
+drm-purgeable-memory:	8964 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 31607859)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3643.10 11535.65
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	11353279211 ns
+drm-cycles-fragment:	9018051580
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	546903392 ns
+drm-cycles-vertex-tiler:	417300176
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171108 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11352 KiB
+drm-resident-memory:	42084 KiB
+drm-purgeable-memory:	7888 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	11353279211 ns
+drm-cycles-fragment:	9018051580
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	546903392 ns
+drm-cycles-vertex-tiler:	417300176
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171108 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11352 KiB
+drm-resident-memory:	42084 KiB
+drm-purgeable-memory:	7888 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	11353279211 ns
+drm-cycles-fragment:	9018051580
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	546903392 ns
+drm-cycles-vertex-tiler:	417300176
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171108 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11352 KiB
+drm-resident-memory:	42084 KiB
+drm-purgeable-memory:	7888 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 50435226)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3644.13 11538.04
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	11933985622 ns
+drm-cycles-fragment:	9488627422
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	581665429 ns
+drm-cycles-vertex-tiler:	445588930
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171328 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11396 KiB
+drm-resident-memory:	42304 KiB
+drm-purgeable-memory:	8116 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	11933985622 ns
+drm-cycles-fragment:	9488627422
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	581665429 ns
+drm-cycles-vertex-tiler:	445588930
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171328 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11396 KiB
+drm-resident-memory:	42304 KiB
+drm-purgeable-memory:	8116 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	11933985622 ns
+drm-cycles-fragment:	9488627422
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	581665429 ns
+drm-cycles-vertex-tiler:	445588930
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171328 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11396 KiB
+drm-resident-memory:	42304 KiB
+drm-purgeable-memory:	8116 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 36452282)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3645.15 11540.45
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	12543590781 ns
+drm-cycles-fragment:	9985258870
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	617536356 ns
+drm-cycles-vertex-tiler:	474960856
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171328 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42304 KiB
+drm-purgeable-memory:	8124 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	12543590781 ns
+drm-cycles-fragment:	9985258870
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	617536356 ns
+drm-cycles-vertex-tiler:	474960856
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171328 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42304 KiB
+drm-purgeable-memory:	8060 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	12543590781 ns
+drm-cycles-fragment:	9985258870
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	617536356 ns
+drm-cycles-vertex-tiler:	474960856
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171328 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	8604 KiB
+drm-resident-memory:	42304 KiB
+drm-purgeable-memory:	8060 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 37507887)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3646.19 11542.91
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	13130358508 ns
+drm-cycles-fragment:	10461648698
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	652397268 ns
+drm-cycles-vertex-tiler:	503365976
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171328 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11348 KiB
+drm-resident-memory:	42304 KiB
+drm-purgeable-memory:	8176 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	13130358508 ns
+drm-cycles-fragment:	10461648698
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	652397268 ns
+drm-cycles-vertex-tiler:	503365976
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171328 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11348 KiB
+drm-resident-memory:	42304 KiB
+drm-purgeable-memory:	8176 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	13130358508 ns
+drm-cycles-fragment:	10461648698
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	652397268 ns
+drm-cycles-vertex-tiler:	503365976
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171328 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11348 KiB
+drm-resident-memory:	42304 KiB
+drm-purgeable-memory:	8176 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 25450245)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3647.23 11545.20
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	13728380194 ns
+drm-cycles-fragment:	10949057914
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	687878529 ns
+drm-cycles-vertex-tiler:	532430168
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171328 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11356 KiB
+drm-resident-memory:	42304 KiB
+drm-purgeable-memory:	8168 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	13728380194 ns
+drm-cycles-fragment:	10949057914
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	687878529 ns
+drm-cycles-vertex-tiler:	532430168
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171328 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11356 KiB
+drm-resident-memory:	42304 KiB
+drm-purgeable-memory:	8168 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	13728380194 ns
+drm-cycles-fragment:	10949057914
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	687878529 ns
+drm-cycles-vertex-tiler:	532430168
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171328 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11356 KiB
+drm-resident-memory:	42304 KiB
+drm-purgeable-memory:	8168 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 34836638)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3648.26 11547.67
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	14364365887 ns
+drm-cycles-fragment:	11464928148
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	724592362 ns
+drm-cycles-vertex-tiler:	562314472
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171328 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42304 KiB
+drm-purgeable-memory:	8336 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	14364365887 ns
+drm-cycles-fragment:	11464928148
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	724592362 ns
+drm-cycles-vertex-tiler:	562314472
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171328 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42304 KiB
+drm-purgeable-memory:	8272 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	14364365887 ns
+drm-cycles-fragment:	11464928148
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	724592362 ns
+drm-cycles-vertex-tiler:	562314472
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171328 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42304 KiB
+drm-purgeable-memory:	8272 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 37091684)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3649.31 11549.98
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	14966124466 ns
+drm-cycles-fragment:	11951544942
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	760568002 ns
+drm-cycles-vertex-tiler:	591478056
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171484 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42460 KiB
+drm-purgeable-memory:	8328 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	14966124466 ns
+drm-cycles-fragment:	11951544942
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	760568002 ns
+drm-cycles-vertex-tiler:	591478056
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171484 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	5480 KiB
+drm-resident-memory:	42460 KiB
+drm-purgeable-memory:	8328 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	14966124466 ns
+drm-cycles-fragment:	11951544942
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	760955913 ns
+drm-cycles-vertex-tiler:	591797164
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171484 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11352 KiB
+drm-resident-memory:	42460 KiB
+drm-purgeable-memory:	8328 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 11912500)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3650.36 11552.15
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	15550037778 ns
+drm-cycles-fragment:	12421940524
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	796049572 ns
+drm-cycles-vertex-tiler:	620121914
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11348 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8296 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	15550037778 ns
+drm-cycles-fragment:	12421940524
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	796049572 ns
+drm-cycles-vertex-tiler:	620121914
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11348 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8296 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	15550037778 ns
+drm-cycles-fragment:	12421940524
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	796049572 ns
+drm-cycles-vertex-tiler:	620121914
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11348 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8296 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 23559940)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3651.42 11554.53
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	16135244864 ns
+drm-cycles-fragment:	12897586676
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	831636131 ns
+drm-cycles-vertex-tiler:	649101014
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11400 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8248 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	16135244864 ns
+drm-cycles-fragment:	12897586676
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	831636131 ns
+drm-cycles-vertex-tiler:	649101014
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11400 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8248 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	16135244864 ns
+drm-cycles-fragment:	12897586676
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	831636131 ns
+drm-cycles-vertex-tiler:	649101014
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11400 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8248 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 11822499)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3652.45 11556.62
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	16734418733 ns
+drm-cycles-fragment:	13382278586
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	867799309 ns
+drm-cycles-vertex-tiler:	678424868
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11352 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8236 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	16734418733 ns
+drm-cycles-fragment:	13382278586
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	867799309 ns
+drm-cycles-vertex-tiler:	678424868
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11352 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8236 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	16734418733 ns
+drm-cycles-fragment:	13382278586
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	867799309 ns
+drm-cycles-vertex-tiler:	678424868
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11352 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8236 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 22139918)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3653.48 11558.98
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	17360490258 ns
+drm-cycles-fragment:	13888292116
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	904080896 ns
+drm-cycles-vertex-tiler:	707700142
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11356 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8296 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	17360490258 ns
+drm-cycles-fragment:	13888292116
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	904080896 ns
+drm-cycles-vertex-tiler:	707700142
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11356 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8296 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	17360490258 ns
+drm-cycles-fragment:	13888292116
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	904080896 ns
+drm-cycles-vertex-tiler:	707700142
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11356 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8296 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 43996781)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3654.50 11561.31
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	17981816442 ns
+drm-cycles-fragment:	14395834710
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	940893594 ns
+drm-cycles-vertex-tiler:	737997946
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11388 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8256 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	17981816442 ns
+drm-cycles-fragment:	14395834710
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	940893594 ns
+drm-cycles-vertex-tiler:	737997946
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11388 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8256 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	17981816442 ns
+drm-cycles-fragment:	14395834710
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	940893594 ns
+drm-cycles-vertex-tiler:	737997946
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	7808 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8256 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 43226208)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3655.53 11563.63
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	18591485188 ns
+drm-cycles-fragment:	14893866428
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	976327325 ns
+drm-cycles-vertex-tiler:	767194294
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8304 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	18591485188 ns
+drm-cycles-fragment:	14893866428
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	976327325 ns
+drm-cycles-vertex-tiler:	767194294
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8240 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	18591485188 ns
+drm-cycles-fragment:	14893866428
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	976327325 ns
+drm-cycles-vertex-tiler:	767194294
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11364 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8240 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 38438576)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3656.57 11566.09
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	19215491751 ns
+drm-cycles-fragment:	15398528998
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1012890952 ns
+drm-cycles-vertex-tiler:	796821834
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11344 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8292 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	19215491751 ns
+drm-cycles-fragment:	15398528998
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1012890952 ns
+drm-cycles-vertex-tiler:	796821834
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11344 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8292 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	19215491751 ns
+drm-cycles-fragment:	15398528998
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1012890952 ns
+drm-cycles-vertex-tiler:	796821834
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11344 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8292 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 27295334)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3657.60 11568.41
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	19791108127 ns
+drm-cycles-fragment:	15867320590
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1046880370 ns
+drm-cycles-vertex-tiler:	824651206
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11356 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8296 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	19791108127 ns
+drm-cycles-fragment:	15867320590
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1046880370 ns
+drm-cycles-vertex-tiler:	824651206
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11356 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8296 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	19791108127 ns
+drm-cycles-fragment:	15867320590
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1046880370 ns
+drm-cycles-vertex-tiler:	824651206
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11356 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8296 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 40412376)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3658.63 11570.87
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	20359999939 ns
+drm-cycles-fragment:	16325596378
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1080663588 ns
+drm-cycles-vertex-tiler:	851897892
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11348 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8256 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	20359999939 ns
+drm-cycles-fragment:	16325596378
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1080663588 ns
+drm-cycles-vertex-tiler:	851897892
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11348 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8256 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	20359999939 ns
+drm-cycles-fragment:	16325596378
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1080663588 ns
+drm-cycles-vertex-tiler:	851897892
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11348 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8256 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 49598104)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3659.65 11573.22
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	20958689358 ns
+drm-cycles-fragment:	16814791506
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1117042895 ns
+drm-cycles-vertex-tiler:	881846828
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11364 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8244 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	20958689358 ns
+drm-cycles-fragment:	16814791506
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1117042895 ns
+drm-cycles-vertex-tiler:	881846828
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11364 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8244 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	20958689358 ns
+drm-cycles-fragment:	16814791506
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1117042895 ns
+drm-cycles-vertex-tiler:	881846828
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11364 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8244 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 45944787)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3660.67 11575.70
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	21566595917 ns
+drm-cycles-fragment:	17311495166
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1153160287 ns
+drm-cycles-vertex-tiler:	911624074
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11396 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8240 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	21566595917 ns
+drm-cycles-fragment:	17311495166
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1153160287 ns
+drm-cycles-vertex-tiler:	911624074
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	10892 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8240 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	21576757131 ns
+drm-cycles-fragment:	17319796336
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1153160287 ns
+drm-cycles-vertex-tiler:	911624074
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8496 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 41778103)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                2
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3661.68 11578.04
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	22174982855 ns
+drm-cycles-fragment:	17808476268
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1189423789 ns
+drm-cycles-vertex-tiler:	941471334
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11348 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8244 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	22174982855 ns
+drm-cycles-fragment:	17808476268
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1189423789 ns
+drm-cycles-vertex-tiler:	941471334
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11348 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8244 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	22174982855 ns
+drm-cycles-fragment:	17808476268
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1189423789 ns
+drm-cycles-vertex-tiler:	941471334
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11348 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8244 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 46561901)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3662.70 11580.58
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	22805273016 ns
+drm-cycles-fragment:	18323266064
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1225670394 ns
+drm-cycles-vertex-tiler:	971294576
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8552 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	22805273016 ns
+drm-cycles-fragment:	18323266064
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1225670394 ns
+drm-cycles-vertex-tiler:	971294576
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8552 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	22805273016 ns
+drm-cycles-fragment:	18323266064
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1225670394 ns
+drm-cycles-vertex-tiler:	971294576
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8488 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 38649275)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                2
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3663.72 11582.94
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	23385229280 ns
+drm-cycles-fragment:	18797001516
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1261480957 ns
+drm-cycles-vertex-tiler:	1000814792
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8500 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	23385229280 ns
+drm-cycles-fragment:	18797001516
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1261480957 ns
+drm-cycles-vertex-tiler:	1000814792
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8500 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	23385229280 ns
+drm-cycles-fragment:	18797001516
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1261480957 ns
+drm-cycles-vertex-tiler:	1000814792
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8436 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 50813206)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3664.74 11585.19
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	23965863149 ns
+drm-cycles-fragment:	19265813460
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1296581916 ns
+drm-cycles-vertex-tiler:	1029070926
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8544 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	23965863149 ns
+drm-cycles-fragment:	19265813460
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1296581916 ns
+drm-cycles-vertex-tiler:	1029070926
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8544 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	23965863149 ns
+drm-cycles-fragment:	19265813460
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1296581916 ns
+drm-cycles-vertex-tiler:	1029070926
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8544 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 56205746)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0
+3665.76 11587.54
+pos:	0
+flags:	0400000
+mnt_id:	28
+ino:	9
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154214
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	154223
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	24559499324 ns
+drm-cycles-fragment:	19743811220
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1332751810 ns
+drm-cycles-vertex-tiler:	1058086592
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11348 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8296 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	24559499324 ns
+drm-cycles-fragment:	19743811220
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1332751810 ns
+drm-cycles-vertex-tiler:	1058086592
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11348 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8296 KiB
+pos:	0
+flags:	02400002
+mnt_id:	861
+ino:	169
+drm-driver:	panfrost
+drm-client-id:	86
+drm-engine-fragment:	24559499324 ns
+drm-cycles-fragment:	19743811220
+drm-maxfreq-fragment:	800000000 Hz
+drm-curfreq-fragment:	800000000 Hz
+drm-engine-vertex-tiler:	1332751810 ns
+drm-cycles-vertex-tiler:	1058086592
+drm-maxfreq-vertex-tiler:	800000000 Hz
+drm-curfreq-vertex-tiler:	800000000 Hz
+drm-total-memory:	171456 KiB
+drm-shared-memory:	3636 KiB
+drm-active-memory:	11348 KiB
+drm-resident-memory:	42432 KiB
+drm-purgeable-memory:	8296 KiB
+pos:	0
+flags:	02
+mnt_id:	12
+ino:	154204
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	12
+ino:	155966
+scm_fds: 0
+pos:	0
+flags:	02000002
+mnt_id:	19
+ino:	207
+tfd:        9 events:       1b data:        200000000  pos:0 ino:cf sdev:11
+tfd:        8 events:       1b data:        100000000  pos:0 ino:cf sdev:11
+tfd:        6 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        5 events: 4000001b data: ffffffffffffffff  pos:0 ino:cf sdev:11
+tfd:        3 events:       1b data:                1  pos:0 ino:2613e sdev:a
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 0
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+clockid: 1
+ticks: 0
+settime flags: 00
+it_value: (0, 32655661)
+it_interval: (0, 0)
+pos:	0
+flags:	02400002
+mnt_id:	0
+ino:	2126
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 1
+eventfd-semaphore: 0
+pos:	0
+flags:	02004002
+mnt_id:	19
+ino:	207
+eventfd-count:                0
+eventfd-id: 2
+eventfd-semaphore: 0

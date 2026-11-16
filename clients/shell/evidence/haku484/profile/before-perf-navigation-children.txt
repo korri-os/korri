@@ -1,0 +1,208 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 1K of event 'armv8_cortex_a55/cycles/P'
+# Event count (approx.): 34479310572
+#
+# Children      Self  Command          Shared Object                Symbol                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
+# ........  ........  ...............  ...........................  .............................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+#
+    45.44%     0.38%  korri-shell      korri-shell                  [.] <i_slint_core::item_tree::ItemVisitor_vtable_mod::ItemVisitorVTable>::new::visit_item::<i_slint_core::item_rendering::render_item_children::{closure#0}>
+    45.28%     0.86%  korri-shell      korri-shell                  [.] <slint_interpreter::instance::Instance as i_slint_core::item_tree::ItemTree_vtable_mod::ItemTree>::visit_children_item
+    39.45%     1.80%  korri-shell      korri-shell                  [.] <i_slint_renderer_femtovg::FemtoVGRenderer<i_slint_renderer_femtovg::opengl::OpenGLBackend>>::render
+    37.40%     0.60%  korri-shell      korri-shell                  [.] <slint_interpreter::instance::Instance>::visit_dynamic_children
+    33.70%     0.05%  korri-shell      korri-shell                  [.] <i_slint_renderer_femtovg::FemtoVGRenderer<i_slint_renderer_femtovg::opengl::OpenGLBackend>>::internal_render_with_post_callback::{closure#1}
+    30.27%     0.00%  korri-shell      korri-shell                  [.] <winit::platform_impl::linux::wayland::event_loop::EventLoop<i_slint_backend_winit::SlintEvent>>::pump_events::<&mut <winit::event_loop::EventLoop<i_slint_backend_winit::SlintEvent> as winit::platform::run_on_demand::EventLoopExtRunOnDemand>::run_app_on_demand<i_slint_backend_winit::event_loop::EventLoopState>::{closure#0}>
+    29.51%     0.00%  korri-shell      korri-shell                  [.] <i_slint_backend_winit::Backend as i_slint_core::platform::Platform>::run_event_loop
+    29.10%     0.00%  korri-shell      korri-shell                  [.] <&mut <winit::event_loop::EventLoop<i_slint_backend_winit::SlintEvent> as winit::platform::run_on_demand::EventLoopExtRunOnDemand>::run_app_on_demand<i_slint_backend_winit::event_loop::EventLoopState>::{closure#0} as core::ops::function::FnMut<(winit::event::Event<i_slint_backend_winit::SlintEvent>, &winit::event_loop::ActiveEventLoop)>>::call_mut
+    28.84%     0.00%  korri-shell      korri-shell                  [.] <i_slint_backend_winit::renderer::femtovg::GlutinFemtoVGRenderer as i_slint_backend_winit::renderer::WinitCompatibleRenderer>::render
+    28.73%     0.05%  korri-shell      korri-shell                  [.] <i_slint_backend_winit::event_loop::EventLoopState as winit::application::ApplicationHandler<i_slint_backend_winit::SlintEvent>>::window_event
+    28.63%     0.00%  korri-shell      korri-shell                  [.] <i_slint_backend_winit::winitwindowadapter::WinitWindowAdapter>::draw
+    27.15%     0.12%  korri-shell      korri-shell                  [.] <femtovg::Canvas<femtovg::renderer::opengl::OpenGl>>::flush_to_output::<()>
+    19.89%     0.00%  korri-shell      [kernel.kallsyms]            [.] el0t_64_sync
+    19.89%     0.00%  korri-shell      [kernel.kallsyms]            [.] el0t_64_sync_handler
+    16.68%     0.17%  korri-shell      korri-shell                  [.] <i_slint_renderer_femtovg::itemrenderer::GLItemRenderer<femtovg::renderer::opengl::OpenGl> as i_slint_core::item_rendering::ItemRenderer>::filter_item
+    16.41%     0.27%  korri-shell      [kernel.kallsyms]            [.] el0_svc
+    16.28%     1.52%  korri-shell      korri-shell                  [.] <slint_interpreter::instance::Instance as i_slint_core::item_tree::ItemTree_vtable_mod::ItemTree>::item_geometry::{closure#1}
+    16.08%     0.00%  korri-shell      [kernel.kallsyms]            [.] do_el0_svc
+    16.08%     0.16%  korri-shell      [kernel.kallsyms]            [.] el0_svc_common.constprop.0
+    15.63%     0.05%  korri-shell      [kernel.kallsyms]            [.] invoke_syscall.constprop.0
+    14.59%     0.16%  korri-shell      libgallium-26.2.3.so         [.] _mesa_draw_arrays.part.0
+    12.84%     1.30%  korri-shell      libgallium-26.2.3.so         [.] panfrost_draw_vbo
+    11.73%     0.52%  korri-shell      korri-shell                  [.] i_slint_core::item_rendering::render_layer::<i_slint_renderer_femtovg::itemrenderer::GLItemRenderer<femtovg::renderer::opengl::OpenGl>>
+    11.37%     0.16%  korri-shell      libgallium-26.2.3.so         [.] u_vbuf_draw_vbo
+    11.29%     0.07%  korri-shell      korri-shell                  [.] <i_slint_renderer_femtovg::itemrenderer::GLItemRenderer<femtovg::renderer::opengl::OpenGl> as i_slint_core::item_rendering::ItemRenderer>::visit_clip
+    11.18%     0.12%  korri-shell      korri-shell                  [.] <i_slint_core::properties::PropertyTracker>::evaluate_as_dependency_root::<core::option::Option<(euclid::point::Point2D<f32, i_slint_core::lengths::PhysicalPx>, alloc::rc::Rc<i_slint_renderer_femtovg::images::Texture<femtovg::renderer::opengl::OpenGl>>)>, i_slint_core::item_rendering::render_layer<i_slint_renderer_femtovg::itemrenderer::GLItemRenderer<femtovg::renderer::opengl::OpenGl>>::{closure#1}>
+    10.81%     1.03%  korri-shell      korri-shell                  [.] slint_interpreter::eval::load_property
+    10.63%     2.42%  korri-shell      korri-shell                  [.] slint_interpreter::eval::eval_expression
+    10.04%     0.11%  korri-shell      korri-shell                  [.] <femtovg::renderer::opengl::OpenGl>::convex_fill
+     9.41%     0.05%  korri-shell      libdrm.so.2.134.0            [.] drmIoctl
+     9.35%     0.00%  korri-shell      libc.so.6                    [.] __GI___ioctl
+     8.81%     0.06%  korri-shell      [kernel.kallsyms]            [.] __arm64_sys_ioctl
+     8.64%     0.00%  korri-shell      libgallium-26.2.3.so         [.] panfrost_batch_submit
+     8.09%     0.17%  korri-shell      korri-shell                  [.] <i_slint_renderer_femtovg::itemrenderer::GLItemRenderer<femtovg::renderer::opengl::OpenGl> as i_slint_core::item_rendering::ItemRenderer>::visit_opacity
+     7.83%     1.40%  korri-shell      korri-shell                  [.] <femtovg::Canvas<femtovg::renderer::opengl::OpenGl>>::fill_path_internal
+     7.76%     0.12%  korri-shell      [kernel.kallsyms]            [.] drm_ioctl_kernel
+     7.76%     0.06%  korri-shell      [kernel.kallsyms]            [.] drm_ioctl
+     7.01%     0.46%  korri-shell      korri-shell                  [.] <i_slint_renderer_femtovg::itemrenderer::GLItemRenderer<femtovg::renderer::opengl::OpenGl>>::render_and_blend_layer
+     6.96%     0.00%  korri-shell      korri-shell                  [.] <femtovg::renderer::opengl::OpenGl>::triangles
+     6.81%     0.06%  korri-shell      korri-shell                  [.] <i_slint_backend_winit::renderer::femtovg::glcontext::OpenGLContext as i_slint_renderer_femtovg::opengl::OpenGLInterface>::swap_buffers
+     6.81%     0.00%  korri-shell      korri-shell                  [.] <i_slint_renderer_femtovg::opengl::OpenGLBackend as i_slint_renderer_femtovg::GraphicsBackend>::present_surface
+     6.75%     0.16%  korri-shell      korri-shell                  [.] <femtovg::renderer::opengl::gl_texture::GlTexture>::new
+     6.75%     0.00%  korri-shell      korri-shell                  [.] <femtovg::image::ImageStore<femtovg::renderer::opengl::gl_texture::GlTexture>>::alloc::<femtovg::renderer::opengl::OpenGl>
+     6.53%     0.00%  korri-shell      korri-shell                  [.] <i_slint_renderer_femtovg::images::Texture<femtovg::renderer::opengl::OpenGl>>::new_empty_on_gpu
+     6.37%     0.05%  korri-shell      libgallium-26.2.3.so         [.] teximage_err
+     6.37%     0.00%  korri-shell      libgallium-26.2.3.so         [.] _mesa_TexImage2D
+     6.32%     0.00%  korri-shell      libEGL_mesa.so.0.0.0         [.] eglSwapBuffers
+     6.22%     0.00%  korri-shell      libEGL_mesa.so.0.0.0         [.] dri2_swap_buffers
+     6.17%     0.00%  korri-shell      libEGL_mesa.so.0.0.0         [.] dri2_wl_swap_buffers_with_damage
+     6.12%     1.45%  korri-shell      libgallium-26.2.3.so         [.] panfrost_update_shader_state
+     5.98%     0.00%  korri-shell      libgallium-26.2.3.so         [.] jm_submit_batch_v7
+     5.95%     0.00%  korri-shell      libgallium-26.2.3.so         [.] st_TexSubImage
+     5.93%     0.11%  korri-shell      libgallium-26.2.3.so         [.] jm_submit_jc
+     5.90%     0.00%  korri-shell      libgallium-26.2.3.so         [.] u_default_texture_subdata
+     5.83%     0.00%  korri-shell      libgallium-26.2.3.so         [.] st_TexImage
+     5.71%     0.00%  logic-velvet     korri-shell                  [.] std::sys::backtrace::__rust_begin_short_backtrace::<<korri_shell::logic::Logic>::start::{closure#0}, ()>
+     5.62%     0.00%  korri-shell      libgallium-26.2.3.so         [.] dri_flush
+     5.40%     0.00%  korri-shell      libgallium-26.2.3.so         [.] st_context_flush
+     5.37%     0.00%  logic-velvet     korri-shell                  [.] <<korri_shell::logic::Logic>::next::{closure#0}::{closure#0} as core::ops::function::FnOnce<(&mut korri_shell::logic::Worker,)>>::call_once::{shim:vtable#0}
+     5.35%     0.00%  korri-shell      korri-shell                  [.] i_slint_core::items::PathVTable::render::<i_slint_core::items::path::Path>
+     5.33%     0.00%  korri-shell      libgallium-26.2.3.so         [.] panfrost_flush
+     5.29%     0.17%  korri-shell      korri-shell                  [.] <i_slint_renderer_femtovg::itemrenderer::GLItemRenderer<femtovg::renderer::opengl::OpenGl> as i_slint_core::item_rendering::ItemRenderer>::draw_path
+     5.19%     0.05%  korri-shell      [panfrost]                   [.] panfrost_ioctl_submit
+     5.14%     0.05%  korri-shell      libgallium-26.2.3.so         [.] panfrost_bo_create
+     4.99%     0.00%  logic-velvet     korri-shell                  [.] <std::thread::lifecycle::spawn_unchecked<<korri_shell::logic::Logic>::start::{closure#0}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+     4.99%     0.00%  logic-velvet     korri-shell                  [.] <std::sys::thread::unix::Thread>::new::thread_start
+     4.99%     0.00%  logic-velvet     libc.so.6                    [.] start_thread
+     4.98%     4.10%  korri-shell      korri-shell                  [.] <slint_interpreter::api::Value as core::clone::Clone>::clone.3936
+     4.93%     0.06%  korri-shell      libgallium-26.2.3.so         [.] panfrost_flush_all_batches
+     4.93%     0.00%  logic-velvet     libc.so.6                    [.] thread_start
+     4.10%     0.00%  korri-shell      libgallium-26.2.3.so         [.] panfrost_pool_alloc_backing
+     3.87%     0.00%  korri-shell      libgallium-26.2.3.so         [.] panfrost_ptr_unmap
+     3.83%     1.67%  korri-shell      korri-shell                  [.] <i_slint_core::properties::PropertyHandle>::update::<euclid::size::Size2D<f32, i_slint_core::lengths::LogicalPx>>
+     3.73%     0.06%  korri-shell      libgallium-26.2.3.so         [.] panfrost_bo_mmap
+     3.67%     0.05%  korri-shell      [kernel.kallsyms]            [.] __arm64_sys_mmap
+     3.67%     0.00%  korri-shell      libc.so.6                    [.] __mmap
+     3.63%     0.33%  korri-shell      libgallium-26.2.3.so         [.] st_prepare_draw
+     3.57%     0.11%  korri-shell      korri-shell                  [.] <femtovg::renderer::opengl::OpenGl>::set_uniforms
+     3.57%     0.06%  korri-shell      [kernel.kallsyms]            [.] ksys_mmap_pgoff
+     3.53%     0.28%  logic-velvet     korri-shell                  [.] JS_CallInternal
+     3.50%     0.00%  logic-velvet     korri-shell                  [.] <korri_shell::logic::Worker>::step
+     3.48%     0.37%  korri-shell      [kernel.kallsyms]            [.] el0_da
+     3.46%     0.06%  korri-shell      [kernel.kallsyms]            [.] vm_mmap_pgoff
+     3.28%     0.00%  korri-shell      [kernel.kallsyms]            [.] do_mmap
+     3.28%     0.00%  korri-shell      libgallium-26.2.3.so         [.] panfrost_resource_create_with_modifier
+     3.25%     0.00%  korri-shell      [panfrost]                   [.] panfrost_job_push
+     3.22%     0.12%  korri-shell      libgallium-26.2.3.so         [.] panfrost_bo_unreference
+     3.11%     0.05%  korri-shell      [kernel.kallsyms]            [.] do_mem_abort
+     3.05%     0.00%  korri-shell      korri-shell                  [.] <femtovg::renderer::opengl::OpenGl>::clear_rect
+     2.97%     0.57%  korri-shell      korri-shell                  [.] <femtovg::path::Path>::cache
+     2.95%     0.22%  korri-shell      [kernel.kallsyms]            [.] do_page_fault
+     2.93%     0.00%  korri-shell      libgallium-26.2.3.so         [.] st_Clear
+     2.90%     0.00%  logic-velvet     korri-shell                  [.] JS_Call
+     2.89%     0.42%  korri-shell      libgallium-26.2.3.so         [.] panfrost_get_batch
+     2.89%     0.00%  korri-shell      libgallium-26.2.3.so         [.] panfrost_get_batch_for_fbo
+     2.78%     0.05%  korri-shell      libgallium-26.2.3.so         [.] panfrost_batch_update_access
+     2.71%     1.42%  korri-shell      libc.so.6                    [.] __memcpy_generic
+     2.46%     0.00%  korri-shell      libgallium-26.2.3.so         [.] util_blitter_blit
+     2.40%     0.21%  korri-shell      libc.so.6                    [.] realloc
+     2.40%     0.00%  korri-shell      [kernel.kallsyms]            [.] mmap_region
+     2.39%     0.00%  logic-velvet     korri-shell                  [.] js_call_c_function
+     2.33%     0.00%  korri-shell      korri-shell                  [.] i_slint_core::textlayout::sharedparley::draw_text::<i_slint_renderer_femtovg::itemrenderer::GLItemRenderer<femtovg::renderer::opengl::OpenGl>>::{closure#1}
+     2.33%     0.05%  korri-shell      libgallium-26.2.3.so         [.] panfrost_batch_cleanup
+     2.29%     0.51%  korri-shell      libgallium-26.2.3.so         [.] jm_launch_draw_v7
+     2.27%     0.11%  korri-shell      korri-shell                  [.] <femtovg::Canvas<femtovg::renderer::opengl::OpenGl>>::draw_glyph_run::<core::iter::adapters::map::Map<&mut dyn core::iter::traits::iterator::Iterator<Item = parley::layout::glyph::Glyph>, <i_slint_renderer_femtovg::itemrenderer::GLItemRenderer<femtovg::renderer::opengl::OpenGl> as i_slint_core::textlayout::sharedparley::draw::GlyphRenderer>::draw_glyph_run::{closure#1}>>
+     2.26%     0.00%  korri-shell      korri-shell                  [.] <femtovg::renderer::opengl::OpenGl>::concave_fill
+     2.25%     0.00%  korri-shell      libgallium-26.2.3.so         [.] panfrost_clear
+     2.25%     0.00%  korri-shell      libgallium-26.2.3.so         [.] panfrost_pool_init
+     2.22%     0.00%  logic-velvet     korri-shell                  [.] <korri_shell::engine::Engine>::call_json
+     2.21%     0.00%  korri-shell      korri-shell                  [.] <i_slint_renderer_femtovg::itemrenderer::GLItemRenderer<femtovg::renderer::opengl::OpenGl> as i_slint_core::textlayout::sharedparley::draw::GlyphRenderer>::draw_glyph_run::{closure#2}
+     2.20%     0.11%  korri-shell      korri-shell                  [.] <femtovg::text::GlyphAtlas>::render_atlas::<femtovg::renderer::opengl::OpenGl, core::iter::adapters::map::Map<core::slice::iter::Iter<femtovg::PositionedGlyph>, <femtovg::Canvas<femtovg::renderer::opengl::OpenGl>>::draw_glyph_run<core::iter::adapters::map::Map<&mut dyn core::iter::traits::iterator::Iterator<Item = parley::layout::glyph::Glyph>, <i_slint_renderer_femtovg::itemrenderer::GLItemRenderer<femtovg::renderer::opengl::OpenGl> as i_slint_core::textlayout::sharedparley::draw::GlyphRenderer>::draw_glyph_run::{closure#1}>>::{closure#1}>>
+     2.18%     0.34%  korri-shell      libgallium-26.2.3.so         [.] pan_pool_alloc_aligned
+     2.18%     2.18%  korri-shell      korri-shell                  [.] <slint_interpreter::instance::Instance as i_slint_core::item_tree::ItemTree_vtable_mod::ItemTree>::get_item_ref
+     2.18%     0.22%  korri-shell      [kernel.kallsyms]            [.] handle_mm_fault
+     2.16%     0.00%  korri-shell      libgallium-26.2.3.so         [.] panfrost_pool_cleanup
+     2.13%     0.28%  korri-shell      libc.so.6                    [.] _int_realloc
+     2.12%     0.00%  korri-shell      [kernel.kallsyms]            [.] __mmap_region
+     2.11%     1.43%  korri-shell      libc.so.6                    [.] _int_malloc
+     2.10%     0.00%  korri-shell      korri-shell                  [.] <i_slint_renderer_femtovg::itemrenderer::GLItemRenderer<femtovg::renderer::opengl::OpenGl> as i_slint_core::item_rendering::ItemRenderer>::draw_text
+     2.07%     0.06%  korri-shell      libgallium-26.2.3.so         [.] util_blitter_blit_generic
+     2.04%     0.17%  korri-shell      korri-shell                  [.] <femtovg::text::GlyphAtlas>::render_glyph::<femtovg::renderer::opengl::OpenGl>
+     2.00%     0.00%  korri-shell      libc.so.6                    [.] __munmap
+     1.98%     0.00%  korri-shell      korri-shell                  [.] slint_interpreter::bindings::install_property_init::{closure#0}
+     1.98%     0.00%  korri-shell      korri-shell                  [.] i_slint_core::items::ComplexTextVTable::render::<i_slint_core::items::text::ComplexText>
+     1.96%     0.00%  korri-shell      [kernel.kallsyms]            [.] do_translation_fault
+     1.94%     0.52%  korri-shell      libgallium-26.2.3.so         [.] panfrost_bo_cache_fetch.isra.0
+     1.91%     0.06%  korri-shell      libgallium-26.2.3.so         [.] blitter_draw
+     1.91%     0.00%  korri-shell      libgallium-26.2.3.so         [.] blitter_draw_tex
+     1.91%     0.00%  korri-shell      libgallium-26.2.3.so         [.] do_blits
+     1.89%     0.06%  korri-shell      libgallium-26.2.3.so         [.] panfrost_kmod_bo_label.part.0
+     1.89%     0.05%  korri-shell      [kernel.kallsyms]            [.] __vm_munmap
+     1.89%     0.00%  korri-shell      [kernel.kallsyms]            [.] __arm64_sys_munmap
+     1.86%     0.00%  korri-shell      korri-shell                  [.] <femtovg::renderer::opengl::OpenGl as femtovg::renderer::Renderer>::update_image
+     1.86%     0.00%  korri-shell      libgallium-26.2.3.so         [.] _mesa_TexSubImage2D
+     1.86%     0.00%  korri-shell      libgallium-26.2.3.so         [.] texsubimage_err
+     1.84%     0.00%  korri-shell      [kernel.kallsyms]            [.] do_vmi_munmap
+     1.83%     0.05%  korri-shell      [kernel.kallsyms]            [.] do_vmi_align_munmap
+     1.82%     0.00%  logic-velvet     korri-shell                  [.] <korri_shell::engine::Engine>::call_string
+     1.82%     0.00%  logic-velvet     korri-shell                  [.] <rquickjs_core::value::function::args::Args>::apply::<alloc::string::String>
+     1.80%     0.00%  korri-shell      libgallium-26.2.3.so         [.] texture_sub_image
+     1.78%     0.00%  korri-shell      korri-shell                  [.] <i_slint_renderer_femtovg::itemrenderer::GLItemRenderer<femtovg::renderer::opengl::OpenGl> as i_slint_core::textlayout::sharedparley::draw::GlyphRenderer>::draw_glyph_run
+     1.75%     0.05%  korri-shell      libgallium-26.2.3.so         [.] panfrost_ptr_map
+     1.74%     0.00%  korri-shell      libgallium-26.2.3.so         [.] _mesa_bufferobj_data
+     1.74%     0.00%  korri-shell      libgallium-26.2.3.so         [.] buffer_data_error
+     1.71%     1.71%  korri-shell      korri-shell                  [.] <i_slint_core::properties::PropertyHandle>::register_as_dependency_to_current_binding
+     1.68%     0.00%  korri-shell      libgallium-26.2.3.so         [.] guess_and_alloc_texture
+     1.68%     0.00%  korri-shell      libgallium-26.2.3.so         [.] st_AllocTextureImageBuffer
+     1.68%     0.00%  korri-shell      libgallium-26.2.3.so         [.] st_texture_create
+     1.68%     0.05%  korri-shell      korri-shell                  [.] <i_slint_renderer_femtovg::itemrenderer::GLItemRenderer<femtovg::renderer::opengl::OpenGl> as i_slint_core::item_rendering::ItemRenderer>::draw_border_rectangle
+     1.68%     0.00%  korri-shell      korri-shell                  [.] i_slint_core::items::BasicBorderRectangleVTable::render::<i_slint_core::items::BasicBorderRectangle>
+     1.61%     0.22%  korri-shell      korri-shell                  [.] <alloc::raw_vec::RawVecInner>::finish_grow
+     1.61%     0.00%  korri-shell      korri-shell                  [.] i_slint_core::properties::alloc_binding_holder::evaluate::<slint_interpreter::api::Value, <i_slint_core::properties::Property<slint_interpreter::api::Value>>::set_binding_comparing<alloc::boxed::Box<dyn core::ops::function::Fn<(), Output = slint_interpreter::api::Value>>>::{closure#0}>
+     1.57%     0.00%  korri-shell      libgallium-26.2.3.so         [.] u_default_buffer_subdata
+     1.55%     0.05%  korri-shell      korri-shell                  [.] <i_slint_renderer_femtovg::itemrenderer::GLItemRenderer<femtovg::renderer::opengl::OpenGl> as i_slint_core::item_rendering::ItemRenderer>::draw_rectangle
+     1.54%     0.34%  korri-shell      korri-shell                  [.] <i_slint_core::items::path::Path>::fitted_path_events
+     1.51%     0.17%  korri-shell      korri-shell                  [.] <winit::platform_impl::linux::wayland::event_loop::EventLoop<i_slint_backend_winit::SlintEvent>>::loop_dispatch::<core::option::Option<core::time::Duration>>
+     1.46%     0.00%  korri-shell      libgallium-26.2.3.so         [.] panfrost_resource_init_afbc_headers
+     1.45%     0.00%  korri-shell      korri-shell                  [.] i_slint_core::items::RectangleVTable::render::<i_slint_core::items::Rectangle>
+     1.44%     0.28%  korri-shell      [kernel.kallsyms]            [k] __handle_mm_fault
+     1.38%     0.00%  korrid-watch-ve  korri-shell                  [.] <std::sys::thread::unix::Thread>::new::thread_start
+     1.38%     0.00%  korrid-watch-ve  korri-shell                  [.] <std::thread::lifecycle::spawn_unchecked<<korri_shell::korrid::Korrid>::watch::{closure#0}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+     1.38%     0.00%  korrid-watch-ve  korri-shell                  [.] std::sys::backtrace::__rust_begin_short_backtrace::<<korri_shell::korrid::Korrid>::watch::{closure#0}, ()>
+     1.38%     0.00%  korrid-watch-ve  libc.so.6                    [.] start_thread
+     1.38%     0.00%  korrid-watch-ve  libc.so.6                    [.] thread_start
+     1.36%     0.05%  korri-shell      korri-shell                  [.] <i_slint_core::textlayout::sharedparley::layout::Layout>::draw::<i_slint_renderer_femtovg::itemrenderer::GLItemRenderer<femtovg::renderer::opengl::OpenGl>>
+     1.35%     0.05%  korri-shell      [gpu_sched]                  [.] drm_sched_job_add_implicit_dependencies
+     1.35%     0.11%  logic-velvet     korri-shell                  [.] <serde_json::value::Value as serde_core::de::Deserialize>::deserialize::<&mut serde_json::de::Deserializer<serde_json::read::StrRead>>
+     1.35%     0.00%  logic-velvet     korri-shell                  [.] serde_json::de::from_trait::<serde_json::read::StrRead, serde_json::value::Value>
+     1.32%     0.60%  korri-shell      libc.so.6                    [.] _int_free_chunk
+     1.30%     0.06%  korri-shell      libgallium-26.2.3.so         [.] _mesa_DrawArrays
+     1.24%     0.00%  korri-shell      libgallium-26.2.3.so         [.] panfrost_flush_batches_accessing_rsrc
+     1.24%     0.05%  korri-shell      [gpu_sched]                  [.] drm_sched_job_add_resv_dependencies
+     1.22%     0.06%  korri-shell      libgallium-26.2.3.so         [.] _mesa_UseProgram
+     1.21%     1.06%  korri-shell      libgallium-26.2.3.so         [.] panfrost_emit_const_buf
+     1.21%     0.05%  korri-shell      [kernel.kallsyms]            [.] vms_complete_munmap_vmas
+     1.21%     0.94%  logic-velvet     libc.so.6                    [.] __libc_malloc2
+     1.19%     0.97%  korri-shell      korri-shell                  [.] core::ptr::drop_glue::<hashbrown::raw::RawTable<(smol_str::SmolStr, slint_interpreter::api::Value)>>
+     1.19%     0.06%  korri-shell      korri-shell                  [.] <i_slint_core::textlayout::sharedparley::shaping::TextParagraph>::draw_glyph_run::<i_slint_renderer_femtovg::itemrenderer::GLItemRenderer<femtovg::renderer::opengl::OpenGl>>
+     1.18%     0.05%  logic-velvet     korri-shell                  [.] JS_JSONStringify
+     1.18%     0.00%  korri-shell      korri-shell                  [.] <femtovg::renderer::opengl::OpenGl>::set_target
+     1.17%     0.00%  korri-shell      [panfrost]                   [.] panfrost_ioctl_set_label_bo
+     1.16%     0.17%  korri-shell      korri-shell                  [.] i_slint_core::properties::sources_changed
+     1.14%     0.00%  korri-shell      libgallium-26.2.3.so         [.] _mesa_update_state
+     1.13%     0.22%  korri-shell      [gpu_sched]                  [.] drm_sched_job_add_dependency
+     1.13%     0.00%  korri-shell      korri-shell                  [.] <i_slint_core::textlayout::sharedparley::shaping::TextParagraph>::draw_glyph_run_with_selection::<i_slint_renderer_femtovg::itemrenderer::GLItemRenderer<femtovg::renderer::opengl::OpenGl>>
+     1.13%     0.06%  logic-velvet     korri-shell                  [.] js_json_to_str.isra.0
+     1.10%     0.60%  korri-shell      korri-shell                  [.] <femtovg::path::cache::PathCache>::tesselate_bezier
+     1.10%     0.57%  korri-shell      libgallium-26.2.3.so         [.] _mesa_uniform
+     1.08%     0.17%  korri-shell      libgallium-26.2.3.so         [.] _mesa_update_state_locked
+     1.06%     0.15%  korri-shell      [kernel.kallsyms]            [.] perf_event_mmap
+     1.02%     0.10%  korri-shell      libc.so.6                    [.] __libc_malloc2
+     1.01%     0.00%  logic-velvet     korri-shell                  [.] <korri_shell::engine::Engine>::call_unit
+
+
+#
+# (Tip: Profiling branch (mis)predictions with: perf record -b / perf report)
+#
