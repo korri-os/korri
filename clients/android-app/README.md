@@ -509,18 +509,30 @@ Sunshine serves one control connection at a time, and a resize holds it for
 up to 3 s. A request that waited in Sunshine's queue could pass its own
 deadline in korrid and still be applied later. So korrid sends one
 certificate-control operation at a time (attest, provision, revoke, resize
-and its readiness probe), and each deadline starts when the operation has the
-socket: 1.5 s, and 4 s for a resize. At most four of the holder's operations
-run or wait at once; a fifth is refused as busy before it reaches Sunshine.
-When korrid reads no answer it can trust (a timeout, a failed exchange, or an
-answer it cannot read), it does not know whether Sunshine applied the frame.
-That can still happen when Sunshine itself is slower than the deadline, and
-the next operation then waits in Sunshine's queue after all:
+and its readiness probe), in the order they asked for their turn, and each
+deadline starts when the operation has the socket: 1.5 s, and 4 s for a
+resize. The order matters: an older resize must not run after a newer one
+that restores the size. At most four of the holder's operations run or wait
+at once; a fifth is refused as busy before it reaches Sunshine.
 
-| Operation | korrid's answer then |
+When korrid reads no answer it can trust (a timeout, a failed exchange, an
+answer it cannot read), Sunshine may still apply the frame. That can still
+happen when Sunshine itself is slower than the deadline. The caller can also
+go away first: the viewer's korrid gives up after 5 s, the holder's request
+handler is then dropped, but the blocking exchange still sends its frame. So
+only a failure that proves Sunshine did not apply a frame (korrid never sent
+it, or Sunshine refused it before any change) counts as a failure:
+
+| Operation | What korrid does |
 | --- | --- |
-| resize | an error, not `Refused`: the viewer's korrid confirms the previous size, as after a lost answer |
-| provision | an error to the viewer, but the holder keeps the `CertificateGrant`, so that trust which Sunshine applied is never without a grant. A grant for trust that Sunshine did not apply is harmless: a revocation of it changes nothing |
+| resize | Any other failure is an error, not `Refused`: the viewer's korrid confirms the previous size, as after a lost answer |
+| provision | The holder writes the `CertificateGrant` before it sends the provision, and puts back the grant that it replaced (or removes it) only after a proven failure. So every certificate that a provision makes Sunshine trust has a grant when Sunshine applies it, even if the caller went away. A grant for a certificate that Sunshine does not trust is harmless: revoking it changes nothing, and a resize with it finds no stream |
+| revoke | The holder removes the grant only after Sunshine confirmed the revocation. A revocation that Sunshine applies after its caller went away leaves the grant of a certificate that Sunshine no longer trusts, which is the harmless case above. The grant stays until the device revokes or provisions again, or until reconciliation retires it when the device's authority ends; each of those sends a revocation that changes nothing and removes the grant |
+
+Known gap: a grant names one certificate for each device. When a device
+provisions a different certificate, the new grant replaces the old one while
+Sunshine still trusts both, so the old certificate has no grant. This is
+older than #476 and needs a decision on the grant's schema.
 
 `Refused` is only Sunshine's own refusal (a pending request, a failed swap, a
 size out of bounds) or a busy korrid; `Unavailable` is a missing or

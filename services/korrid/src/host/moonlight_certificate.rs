@@ -27,12 +27,48 @@ const RESIZE_TIMEOUT: Duration = Duration::from_millis(4_000);
 /// meanwhile would wait in Sunshine's listen queue while its own deadline
 /// ran, give up, and still have its frame applied later. So this process
 /// sends one operation at a time, and each deadline starts at its turn.
-static SOCKET_TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+/// Turns go first in, first out: a waiting resize must not run after a
+/// newer one that restores the size.
+struct SocketTurns {
+    // (the next ticket to hand out, the ticket whose turn it is)
+    tickets: std::sync::Mutex<(u64, u64)>,
+    changed: std::sync::Condvar,
+}
 
-fn socket_turn() -> std::sync::MutexGuard<'static, ()> {
-    SOCKET_TURN
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+static SOCKET_TURNS: SocketTurns = SocketTurns {
+    tickets: std::sync::Mutex::new((0, 0)),
+    changed: std::sync::Condvar::new(),
+};
+
+/// Held for one operation; the next ticket's turn begins when it drops.
+struct SocketTurn;
+
+impl Drop for SocketTurn {
+    fn drop(&mut self) {
+        SOCKET_TURNS.lock().1 += 1;
+        SOCKET_TURNS.changed.notify_all();
+    }
+}
+
+impl SocketTurns {
+    fn lock(&self) -> std::sync::MutexGuard<'_, (u64, u64)> {
+        self.tickets
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+fn socket_turn() -> SocketTurn {
+    let mut tickets = SOCKET_TURNS.lock();
+    let ticket = tickets.0;
+    tickets.0 += 1;
+    while tickets.1 != ticket {
+        tickets = SOCKET_TURNS
+            .changed
+            .wait(tickets)
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+    }
+    SocketTurn
 }
 
 /// True when a failure proves that Sunshine did not apply the frame: korrid
@@ -1406,6 +1442,32 @@ mod tests {
             Duration::from_millis(500),
         )
         .1
+    }
+
+    /// Turns go in the order they were asked for. Otherwise an older resize
+    /// could run after a newer one that restores the size, and leave the
+    /// encoder at the size that the viewer gave up on.
+    #[test]
+    fn turns_are_served_in_the_order_they_were_asked_for() {
+        let order = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let first = socket_turn();
+        let older = {
+            let order = order.clone();
+            std::thread::spawn(move || {
+                let _turn = socket_turn();
+                order.lock().unwrap().push("older");
+            })
+        };
+        // The older operation now waits for its turn.
+        std::thread::sleep(Duration::from_millis(100));
+        drop(first);
+        // A newer one asks at once, as the thread that just finished can.
+        {
+            let _turn = socket_turn();
+            order.lock().unwrap().push("newer");
+        }
+        older.join().unwrap();
+        assert_eq!(*order.lock().unwrap(), ["older", "newer"]);
     }
 
     /// Sunshine serves one connection at a time (patch 0020's serve loop). A
