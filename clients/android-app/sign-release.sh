@@ -54,17 +54,9 @@ private() {
   [[ "$(stat -c %a "$path")" == "$want" ]] || fail "$path has mode $(stat -c %a "$path"), not $want"
 }
 
-# The key directory, or the nearest folder above it that exists, must not
-# be inside a Git work tree: there `git add` could stage the key. The check
-# ignores GIT_DIR and GIT_WORK_TREE, which would point Git elsewhere.
-outside_git() {
-  local path
-  path="$(realpath -m "$directory")"
-  while [[ ! -e "$path" ]]; do path="$(dirname "$path")"; done
-  if [[ "$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$path" rev-parse --is-inside-work-tree 2> /dev/null)" == true ]]; then
-    fail "$directory is inside the Git work tree $(env -u GIT_DIR -u GIT_WORK_TREE git -C "$path" rev-parse --show-toplevel); keep the key outside every checkout"
-  fi
-}
+# The key directory must not be inside a Git work tree (outside-git.sh).
+# shellcheck source=clients/android-app/outside-git.sh
+source "$(dirname "${BASH_SOURCE[0]}")/outside-git.sh"
 
 # The SHA-256 of a certificate, lowercase hexadecimal with no separators.
 certificate_digest() {
@@ -73,7 +65,7 @@ certificate_digest() {
 
 make_key() {
   [[ $# -eq 0 ]] || usage
-  outside_git
+  outside_git "$directory"
   umask 077
   if [[ ! -e "$directory" ]]; then
     mkdir -p "$directory"
@@ -101,7 +93,7 @@ make_key() {
 sign() {
   [[ $# -eq 2 ]] || usage
   local unsigned="$1" signed="$2" manifest digest signer verified
-  outside_git
+  outside_git "$directory"
   private "$directory" 700
   for file in "$keystore" "$password" "$certificate"; do
     [[ -e "$file" ]] || fail "$file is missing: make the key with nix run .#android-app-release-key"

@@ -7,17 +7,19 @@
 #   nix run .#android-app-d12-binding -- make WORK
 #   nix run .#android-app-d12-binding -- sign-debug UNSIGNED.apk SIGNED.apk
 #   adb install --no-incremental SIGNED.apk      # do not start the app yet
-#   nix run .#android-app-d12-binding -- seed WORK [--serial SERIAL]
+#   nix run .#android-app-d12-binding -- seed WORK --serial SERIAL
 #
 # make: korrid's own producer makes the phone's device key in WORK/state
 # (`korrid identity owner-binding-request`, DeviceIdentity::load_or_create)
 # and prints the owner statement template for it. The owner's signer signs
 # that template over NIP-46: the bunker address is read from a file of mode
 # 0600 or from the terminal, never from an argument, and goes to nak only in
-# its environment. The signed statement must be the template exactly, by
-# the owner (a80db13f…3dca unless --owner says otherwise); korrid then imports
-# it (`korrid identity import`), which verifies the signature and stores
-# identity/owner.event.json beside identity/device.key.
+# its environment, with a client key made new for this run. nak's messages
+# have the bunker secret removed. The signed statement must be the template
+# exactly, by the owner (a80db13f…3dca unless --owner says otherwise); korrid
+# then imports it (`korrid identity import`), which verifies the signature
+# and stores identity/owner.event.json beside identity/device.key. If make
+# fails after it made the device key, it removes WORK, key included.
 #
 # seed: writes those two files into the installed app's private state with
 # run-as, which only a debuggable APK allows, before the app's first start;
@@ -33,7 +35,7 @@ owner="a80db13fd36d6e15cb45df12db658da04dd6dc7c6d9200dcebabdcb207ed3dca"
 usage() {
   echo "usage: d12-binding.sh make WORK [--owner KEY] [--bunker-file FILE]" >&2
   echo "       d12-binding.sh sign-debug UNSIGNED.apk SIGNED.apk" >&2
-  echo "       d12-binding.sh seed WORK [--serial SERIAL]" >&2
+  echo "       d12-binding.sh seed WORK --serial SERIAL" >&2
   exit 2
 }
 
@@ -45,15 +47,60 @@ fail() {
 : "${KORRID:?run through nix run .#android-app-d12-binding}"
 : "${KORRI_APP_BUILD_TOOLS:?run through nix run .#android-app-d12-binding}"
 
-# WORK, or the nearest folder above it that exists, must not be inside a Git
-# work tree: WORK holds the phone's device key until seed deletes it.
-outside_git() {
-  local path
-  path="$(realpath -m "$1")"
-  while [[ ! -e "$path" ]]; do path="$(dirname "$path")"; done
-  if [[ "$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$path" rev-parse --is-inside-work-tree 2> /dev/null)" == true ]]; then
-    fail "$1 is inside a Git work tree; keep it outside every checkout"
+# WORK must not be inside a Git work tree (outside-git.sh): it holds the
+# phone's device key until seed deletes it.
+# shellcheck source=clients/android-app/outside-git.sh
+source "$(dirname "${BASH_SOURCE[0]}")/outside-git.sh"
+
+# make's WORK while it holds a device key that no statement binds. make made
+# WORK, so nothing else is in it; the trap removes it when make fails.
+unbound_work=""
+remove_unbound() {
+  if [[ -n "$unbound_work" ]]; then
+    rm -rf "$unbound_work"
+    echo "d12-binding: removed $unbound_work with its unbound device key" >&2
   fi
+}
+
+# Checks of korrid's template, the signed statement and korrid's answer.
+# Each prints what failed and exits non-zero.
+check() {
+  python3 - "$@" <<'EOF'
+import json
+import sys
+
+
+def require(condition, message):
+    if not condition:
+        sys.exit(message)
+
+
+kind = sys.argv[1]
+if kind == "template":
+    # Prints the device key that the template names.
+    template = json.load(open(sys.argv[2]))
+    tags = template.get("tags")
+    require(isinstance(tags, list) and len(tags) == 3 and all(isinstance(t, list) and len(t) == 2 for t in tags),
+            "korrid's template does not have the three tags of an owner statement")
+    device = tags[1][1]
+    require(template.get("kind") == 30078 and template.get("content") == "",
+            "korrid's template is not of kind 30078 with empty content")
+    require(tags == [["d", "org.korri.device-owner:" + device], ["device", device], ["status", "owned"]],
+            "korrid's template names no device as owned")
+    print(device)
+elif kind == "signed":
+    template, signed, owner = json.load(open(sys.argv[2])), json.load(open(sys.argv[3])), sys.argv[4]
+    require(signed.get("pubkey") == owner, "the signer signed as " + str(signed.get("pubkey")) + ", not as the owner " + owner)
+    for field in ("kind", "created_at", "tags", "content"):
+        require(signed.get(field) == template[field], "the signed statement's " + field + " is not the template's")
+elif kind == "imported":
+    state, device, owner = json.loads(sys.argv[2]), sys.argv[3], sys.argv[4]
+    require(state.get("_tag") == "Owned", "korrid says " + str(state.get("_tag")) + ", not Owned")
+    require(state.get("devicePublicKey") == device, "korrid names another device")
+    require(state.get("ownerPublicKey") == owner, "korrid names another owner")
+else:
+    sys.exit("no such check: " + kind)
+EOF
 }
 
 make_binding() {
@@ -84,48 +131,45 @@ make_binding() {
   umask 077
   mkdir -p "$work/state"
   work="$(realpath "$work")"
+  unbound_work="$work"
+  trap remove_unbound EXIT
   template="$work/template.json"
   signed="$work/owner.event.json"
   state="$work/state"
 
   KORRID_PRIVATE_STATE_ROOT="$state" "$KORRID" identity owner-binding-request > "$template"
-  local device created_at
-  device="$(python3 - "$template" <<'EOF'
-import json, sys
-template = json.load(open(sys.argv[1]))
-tags = template["tags"]
-device = tags[1][1]
-assert template["kind"] == 30078 and template["content"] == ""
-assert tags == [["d", "org.korri.device-owner:" + device], ["device", device], ["status", "owned"]]
-print(device)
-EOF
-)" || fail "korrid's owner statement template has an unexpected shape"
+  local device created_at client_key status=0
+  device="$(check template "$template")" || fail "korrid's owner statement template has an unexpected shape"
   created_at="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["created_at"])' "$template")"
   echo "the phone's device key: $device"
   echo "the statement to sign: kind 30078, created_at $created_at, by the owner $owner"
 
-  echo "asking the owner's signer; approve the signing request there (kind 30078)"
-  NOSTR_SECRET_KEY="$bunker" nak event -k 30078 --created-at "$created_at" \
-    -t "d=org.korri.device-owner:$device" -t "device=$device" -t "status=owned" -c '' > "$signed"
-  unset bunker
+  # A client key of this run only. nak's default is derived from
+  # /etc/machine-id, which every local user can read.
+  client_key="$(nak key generate)" || fail "nak could not make a client key"
+  echo "asking the owner's signer over NIP-46; approve the signing request there (kind 30078)"
+  # nak names the whole bunker address, secret included, when it cannot
+  # connect: its messages go through sed, which removes the secret. The
+  # statement goes to its file; a pipe, not a process substitution, so that
+  # sed has written everything before the script goes on. nak waits for an
+  # unreachable relay without end, so the owner has five minutes to approve.
+  NOSTR_SECRET_KEY="$bunker" NOSTR_CLIENT_KEY="$client_key" timeout 300 nak event -k 30078 --created-at "$created_at" \
+    -t "d=org.korri.device-owner:$device" -t "device=$device" -t "status=owned" -c '' 2>&1 > "$signed" |
+    sed -E 's/secret=[^&[:space:]]*/secret=REDACTED/g' >&2 || status=$?
+  unset bunker client_key
+  [[ "$status" -ne 124 ]] || fail "the owner's signer did not answer within five minutes"
+  [[ "$status" -eq 0 ]] || fail "the owner's signer did not sign (nak's message is above, without the bunker secret)"
 
-  python3 - "$template" "$signed" "$owner" <<'EOF' || fail "the signer returned another statement than the template, or another owner's"
-import json, sys
-template, signed, owner = json.load(open(sys.argv[1])), json.load(open(sys.argv[2])), sys.argv[3]
-assert signed["pubkey"] == owner, "owner"
-for field in ("kind", "created_at", "tags", "content"):
-    assert signed[field] == template[field], field
-EOF
+  check signed "$template" "$signed" "$owner" || fail "the signer returned another statement than the template"
   local imported
-  imported="$(KORRID_PRIVATE_STATE_ROOT="$state" "$KORRID" identity import --file "$signed")"
-  python3 - "$imported" "$device" "$owner" <<'EOF' || fail "korrid did not store an owned identity for this device and owner: $imported"
-import json, sys
-state = json.loads(sys.argv[1])
-assert state["_tag"] == "Owned"
-assert state["devicePublicKey"] == sys.argv[2] and state["ownerPublicKey"] == sys.argv[3]
-EOF
+  imported="$(KORRID_PRIVATE_STATE_ROOT="$state" "$KORRID" identity import --file "$signed")" ||
+    fail "korrid refused the signed statement"
+  check imported "$imported" "$device" "$owner" || fail "korrid did not store an owned identity for this device and owner"
+  # Bound: the device key is no longer removed.
+  unbound_work=""
+  trap - EXIT
   echo "bound: device $device, owner $owner"
-  echo "next: install the debug APK, do not start it, then run seed $work"
+  echo "next: install the debug APK, do not start it, then run seed $work --serial SERIAL"
 }
 
 sign_debug() {
@@ -151,38 +195,44 @@ sign_debug() {
 
 seed() {
   [[ $# -ge 1 ]] || usage
-  local work="$1" serial=() name local_size listed installed
+  local work="$1" serial="" name local_size listed installed model android device_serial
   shift
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --serial) [[ $# -ge 2 ]] || usage; serial=(-s "$2"); shift 2 ;;
+      --serial) [[ $# -ge 2 ]] || usage; serial="$2"; shift 2 ;;
       *) usage ;;
     esac
   done
+  [[ -n "$serial" ]] || fail "seed needs --serial SERIAL, the phone's adb serial (adb devices -l)"
   for name in device.key owner.event.json; do
     [[ -s "$work/state/identity/$name" ]] || fail "$work/state/identity/$name is missing: run make first"
   done
-  installed="$(adb "${serial[@]}" shell pm path "$package")" || true
+  # The phone that seed writes to, named before anything is written.
+  model="$(adb -s "$serial" shell getprop ro.product.model | tr -d '\r')" || fail "adb cannot reach $serial"
+  device_serial="$(adb -s "$serial" shell getprop ro.serialno | tr -d '\r')"
+  android="$(adb -s "$serial" shell getprop ro.build.version.release | tr -d '\r')"
+  echo "target: $model, device serial $device_serial, adb serial $serial, Android $android"
+  installed="$(adb -s "$serial" shell pm path "$package")" || true
   grep -q '^package:' <<< "$installed" || fail "$package is not installed"
-  adb "${serial[@]}" shell run-as "$package" true ||
+  adb -s "$serial" shell run-as "$package" true ||
     fail "run-as refuses $package: install the debuggable APK (sign-debug)"
-  if adb "${serial[@]}" shell run-as "$package" ls "$identity/device.key" > /dev/null 2>&1; then
+  if adb -s "$serial" shell run-as "$package" ls "$identity/device.key" > /dev/null 2>&1; then
     fail "the app already has a device key, so it has started once; seed only a new install"
   fi
-  adb "${serial[@]}" shell run-as "$package" sh -c "'umask 077 && mkdir -p $identity'"
+  adb -s "$serial" shell run-as "$package" sh -c "'umask 077 && mkdir -p $identity'"
   for name in device.key owner.event.json; do
     # adb exec-in returns neither the device command's status nor waits for
     # its end: read the size back until it is all there (proof/holder.py).
-    adb "${serial[@]}" exec-in "run-as $package sh -c 'umask 077 && cat > $identity/$name'" < "$work/state/identity/$name"
+    adb -s "$serial" exec-in "run-as $package sh -c 'umask 077 && cat > $identity/$name'" < "$work/state/identity/$name"
     local_size="$(stat -c %s "$work/state/identity/$name")"
     for _ in $(seq 15); do
-      [[ "$(adb "${serial[@]}" shell run-as "$package" wc -c "$identity/$name" | awk '{print $1}')" == "$local_size" ]] && break
+      [[ "$(adb -s "$serial" shell run-as "$package" wc -c "$identity/$name" | awk '{print $1}')" == "$local_size" ]] && break
       sleep 1
     done
-    [[ "$(adb "${serial[@]}" shell run-as "$package" wc -c "$identity/$name" | awk '{print $1}')" == "$local_size" ]] ||
+    [[ "$(adb -s "$serial" shell run-as "$package" wc -c "$identity/$name" | awk '{print $1}')" == "$local_size" ]] ||
       fail "the app's storage did not take $name"
   done
-  listed="$(adb "${serial[@]}" shell run-as "$package" ls -l "$identity")"
+  listed="$(adb -s "$serial" shell run-as "$package" ls -l "$identity")"
   echo "$listed"
   [[ "$(grep -c -- '-rw-------' <<< "$listed")" == 2 ]] || fail "the seeded files are not the app's own 0600 files"
   # The phone's device key stays on the phone only.

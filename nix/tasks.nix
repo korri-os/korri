@@ -318,6 +318,8 @@ let
       description = "Make the Android app's release key in ~/.config/korri/android-signing (#434 D12); it never replaces one.";
       usageSuffix = " -- [--key-dir DIRECTORY]";
       runtimeInputs = [
+        # outside-git.sh: makeTask adds git too; the scripts refuse to run without it.
+        pkgs.git
         pkgs.jdk17
         pkgs.gnugrep
         pkgs.gnused
@@ -331,6 +333,8 @@ let
       description = "Sign the Android app's release APK (.#korri-android-app-release-apk) with the release key, outside the store (#434 D12).";
       usageSuffix = " -- [--key-dir DIRECTORY] UNSIGNED.apk SIGNED.apk";
       runtimeInputs = [
+        # outside-git.sh: makeTask adds git too; the scripts refuse to run without it.
+        pkgs.git
         pkgs.jdk17
         pkgs.unzip
         pkgs.gnugrep
@@ -349,8 +353,10 @@ let
       in
       {
         description = "Bind the debuggable Android app to the owner's real key for D12: make, sign-debug, seed (#434).";
-        usageSuffix = " -- make WORK [--owner KEY] [--bunker-file FILE] | sign-debug UNSIGNED.apk SIGNED.apk | seed WORK [--serial SERIAL]";
+        usageSuffix = " -- make WORK [--owner KEY] [--bunker-file FILE] | sign-debug UNSIGNED.apk SIGNED.apk | seed WORK --serial SERIAL";
         runtimeInputs = [
+          # outside-git.sh: makeTask adds git too; the script refuses to run without it.
+          pkgs.git
           pkgs.nak
           pkgs.python3
           pkgs.jdk17

@@ -720,11 +720,15 @@ copied above (the loop, with `android-app-d12-binding` as the task):
 ```sh
 nix run .#android-app-d12-binding -- sign-debug \
   /nix/store/...-korri-android-app-apk-0.1.0/korri-android-app-unsigned.apk ~/korri-android-app-debug.apk
-# The owner makes a NIP-46 bunker address (bunker://...) in Amber.
+# The owner makes a new NIP-46 bunker address (bunker://...) in Amber; its
+# secret works once, so each make needs a new one.
 nix run .#android-app-d12-binding -- make ~/d12-binding   # paste it; approve in Amber
-adb uninstall com.simonwjackson.korri.app                 # only if installed; deletes its state
-adb install --no-incremental ~/korri-android-app-debug.apk  # do not start the app yet
-nix run .#android-app-d12-binding -- seed ~/d12-binding [--serial SERIAL]
+# The owner then removes this connection in Amber: make's client key was
+# made for this run only, and nothing uses the connection again.
+adb devices -l                                            # the phone's adb serial
+adb -s SERIAL uninstall com.simonwjackson.korri.app       # only if installed; deletes its state
+adb -s SERIAL install --no-incremental ~/korri-android-app-debug.apk  # do not start the app yet
+nix run .#android-app-d12-binding -- seed ~/d12-binding --serial SERIAL
 # Start the app. Its korrid publishes its statement:
 nak req -k 30078 -t d=org.korri.device-owner:DEVICE wss://relay.primal.net
 ```
@@ -732,18 +736,25 @@ nak req -k 30078 -t d=org.korri.device-owner:DEVICE wss://relay.primal.net
 | Step | What it does |
 | --- | --- |
 | `sign-debug` | Refuses an APK that is not debuggable (run-as needs one). Signs with Android's debug key, `~/.android/debug.keystore`, as the proofs do |
-| `make WORK` | Refuses a WORK that exists or is inside a Git work tree, and a bunker file that is a link or not 0600. Reads the bunker address before it makes anything, from the file or from the terminal (not shown), and gives it to nak only in its environment. Makes the device key with the repository's korrid, has the owner's signer sign the template over NIP-46 with nak, refuses a statement that is not the template or is by another key than `--owner` (default `a80db13f…3dca`), imports it with korrid and checks `Owned` by that owner |
-| `seed WORK` | Refuses an app that is not installed, not debuggable or has a device key already (it has started once). Writes both files with run-as and `adb exec-in`, reads their sizes back, checks they are the app's own 0600 files, then deletes `WORK/state`: the phone's device key stays on the phone only |
+| `make WORK` | Refuses a WORK that exists or is inside a Git work tree (or that git cannot place, or when git is missing: `outside-git.sh`), and a bunker file that is a link or not 0600. Reads the bunker address before it makes anything, from the file or from the terminal (not shown), and gives it to nak only in its environment. Makes the device key with the repository's korrid, has the owner's signer sign the template over NIP-46 with nak, refuses a statement that is not the template or is by another key than `--owner` (default `a80db13f…3dca`), imports it with korrid and checks `Owned` by that owner. nak talks to the signer with a client key made new for the run (`NOSTR_CLIENT_KEY`, in nak's environment only), not nak's default, which any local user can derive from `/etc/machine-id`. nak names the whole bunker address when it cannot connect; its messages go through `sed`, which replaces the secret with `REDACTED`. The owner has five minutes to approve. If make fails after it made the device key, it removes WORK, key included |
+| `seed WORK --serial SERIAL` | Needs the phone's adb serial, and prints the phone's model, its own serial and its Android version before it writes. Refuses an app that is not installed, not debuggable or has a device key already (it has started once). Writes both files with run-as and `adb exec-in`, reads their sizes back, checks they are the app's own 0600 files, then deletes `WORK/state`: the phone's device key stays on the phone only |
 
-Checked on zao on 2026-11-16: `make` end to end with a throwaway owner key
-behind `nak bunker` on a local `nak serve` relay. The template went over
-NIP-46, the signed statement matched it, korrid imported it and said
-`Owned`, and the files were 0600 in 0700 folders. `make` refused a signer
-of another key than `--owner` (no statement stored), an existing folder, a
-folder inside this checkout, a bunker file of mode 0644 (nothing made) and
-an address that is not `bunker://`. `sign-debug` refused the release APK and
-signed the debug APK (`CN=Android Debug`, apksigner verifies it). The
-closure copy built nothing on zao.
+Checked on zao on 2026-11-16, with nak 0.20.6 and a throwaway owner key
+behind `nak bunker` on a local `nak serve` relay:
+
+| Case | Result |
+| --- | --- |
+| `make`, twice | The template went over NIP-46, the signed statement matched it, korrid imported it and said `Owned`; the files are 0600 in 0700 folders |
+| The client key | Six runs reached the bunker with six different client keys, none of them nak's default for zao (`a81b644a…`, the key that the first version of this step used) |
+| The bunker refuses the connection (a wrong secret) | Refused; nak's message reads `secret=REDACTED`, and the secret is nowhere in the output. nak alone with the same address prints the secret |
+| A relay that refuses connections | No answer within five minutes: refused after 301 s |
+| A signer of another key than `--owner` | Refused, nothing imported |
+| Each failure after the device key was made (the three above, and a script error) | WORK removed, key included |
+| An existing folder, a folder in this checkout, a bunker file of mode 0644, an address that is not `bunker://` | Refused; nothing made |
+| `seed` without `--serial`; with a serial that a private adb server does not know | Refused before any write |
+| `outside-git.sh`, through the release steps and `make` | Refused: git missing, a repository that git calls of dubious ownership (the earlier check read only `true` from git and would pass there, by its code), this checkout, the same with `GIT_DIR` elsewhere; the real key folder passes |
+| `sign-debug` | Refused the release APK; signed the debug APK (`CN=Android Debug`, apksigner verifies it) |
+| The closure copy | Built nothing on zao |
 
 Not checked: `seed` (no phone; aka already ran another agent's emulator),
 Amber answering nak's NIP-46 requests, and anything on the phone.
