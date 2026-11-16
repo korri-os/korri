@@ -1324,8 +1324,9 @@ must be let go, the pad must send nothing while the overlay is open (the
 heartbeat included), and the input after it closes must be. The proof
 then presses Home, which ends the stream (Back no longer does).
 
-- Frames with the overlay open: these runs do not show that the overlay
-  costs frames. On zao the decoder lost more frames while the overlay was
+- Frames with the overlay open: the composer missed more frames while
+  the overlay was open, on both hosts. The decoder lost frames only on
+  the loaded host. On zao the decoder lost more frames while the overlay was
   open. In the kept run it asked for an IDR frame 0.43 times a second
   while the overlay was open and 0.03 times a second while it was not;
   in an earlier run, 1.55 and 0.26. The emulator's composer took all
@@ -1336,9 +1337,12 @@ then presses Home, which ends the stream (Back no longer does).
   But zao ran other work then (a load average of 24 in an earlier run,
   `proof/android-d5/README.md`), and the runs do not separate the
   overlay's cost from that load. On aka, #476's run
-  (`proof/android-resize/`) had the overlay open for 7.3 s and 1.7 s; in
-  the whole stream its decoder asked for no IDR frame, and no frame went
-  undecoded or dropped (`result.json`, `picture_losses`). The spike presented fewer frames with a static overlay shown,
+  (`proof/android-resize/`) had the overlay open for 7.3 s and 1.7 s. Its
+  logcat has no "IDR frame request sent" line, and no frame went
+  undecoded or dropped (`result.json`, `picture_losses`). But the
+  composer's missed frames (`hwc_missed`, `result.json`) went 54, 70,
+  73: 16 in the 7.3 s open and 3 in the 4.6 s after, about 3.4 times
+  the rate with the overlay open. The spike presented fewer frames with a static overlay shown,
   also on zao, at loads of 5 to 90. Whether a phone's composer puts the
   video and the overlay on hardware planes is the spike's open risk, for
   the bench phone (step H).
