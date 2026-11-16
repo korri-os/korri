@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! The app's layers: the video and, above it, the gameplay overlay. Each is
-//! a `SurfaceControl` made through JNI calls into Android's own classes (API
-//! 29 and 31), as the D5 spike found
+//! The app's layers: a black backdrop, the video above it and, above both,
+//! the gameplay overlay. Each is a `SurfaceControl` made through JNI calls
+//! into Android's own classes (API 29 and 31), as the D5 spike found
 //! (`docs/research/2026-11-14-android-overlay-spike.md`, design C). The NDK
 //! cannot make a child of the NativeActivity window: on API 31 and 34
 //! `ASurfaceControl_createFromWindow` returns NULL for it.
@@ -21,6 +21,18 @@
 //! picture's size changes in the middle of the stream (#476), one
 //! transaction gives the video layer's buffer queue that size
 //! (`setBufferSize`) and places the new shape (`setGeometry`).
+//!
+//! The backdrop (#495) is opaque black and covers the window, above the
+//! window's own buffer and under the video, so the bars beside or above the
+//! picture are black, and so is what shows through the overlay there. The
+//! Korri app cannot fill its window black, as the viewer's own app does: the
+//! shell draws its library into that window and goes on drawing it during
+//! the stream. The backdrop's buffer is filled once with the CPU; when the
+//! window's size changes, the same `setGeometry` transaction that places the
+//! video stretches it over the window. It shows from the stream's first
+//! decoded picture on ([`Layers::restream`]), as Artemis's Korri mode turns
+//! its window black at the first frame (`Game.revealKorriStream`): until
+//! then the window shows what it showed.
 //!
 //! The overlay layer (slice D5) is translucent, covers the window and starts
 //! hidden. Its buffers follow the window's size (`Transaction.setBufferSize`),
@@ -66,6 +78,12 @@ const MAKE_DEADLINE: Duration = Duration::from_secs(5);
 /// `android.graphics.PixelFormat.TRANSLUCENT`.
 const TRANSLUCENT: i32 = -3;
 
+/// The layers' order among the window root's children. The window's own
+/// buffer, which the shell draws into in the Korri app, is below 0.
+const BACKDROP_Z: i32 = 0;
+const VIDEO_Z: i32 = 1;
+const OVERLAY_Z: i32 = 2;
+
 /// One layer, its Surface and the native window of that Surface. A
 /// SurfaceControl's finalizer would remove the layer; the app releases both
 /// itself.
@@ -75,8 +93,20 @@ struct Layer {
     java_surface: GlobalRef,
 }
 
+/// The black backdrop under the video and the size of its one buffer: the
+/// window's when it was made.
+struct Backdrop {
+    layer: Layer,
+    buffer: (i32, i32),
+    /// Asked to show: it shows from the stream's first decoded picture on.
+    shown: bool,
+}
+
 pub struct Layers {
     video: Layer,
+    /// The black backdrop; none when Android did not make it. The bars then
+    /// show the window's own buffer.
+    backdrop: Option<Backdrop>,
     /// The gameplay overlay's layer; none when Android did not make it.
     /// The stream plays without an overlay then.
     overlay: Option<Layer>,
@@ -95,14 +125,28 @@ pub struct Layers {
     fill: Fill,
 }
 
-/// What Android's main thread sends back: the video layer, and the overlay
-/// layer or why there is none.
-type Made = Result<(Layer, Result<Layer>)>;
+/// What Android's main thread sends back: the video layer, and the backdrop
+/// and the overlay layer or why there is none.
+struct Made {
+    video: Layer,
+    backdrop: Result<Layer>,
+    overlay: Result<Layer>,
+}
+
+impl Made {
+    /// Remove every layer, on Android's main thread.
+    fn remove(self, vm: usize) {
+        remove(vm, self.video);
+        for layer in [self.backdrop, self.overlay].into_iter().flatten() {
+            remove(vm, layer);
+        }
+    }
+}
 
 /// Layers that Android's main thread is making. Dropping it before they are
 /// made is safe: the main thread then removes what it made.
 pub struct Pending {
-    receiver: mpsc::Receiver<Made>,
+    receiver: mpsc::Receiver<Result<Made>>,
     until: Instant,
     stream: (i32, i32),
     window: (i32, i32),
@@ -131,27 +175,47 @@ impl Pending {
             }
             Err(RecvTimeoutError::Timeout) => return None,
         };
-        Some(made.map(|(video, overlay)| {
-            let overlay = match overlay {
-                Ok(overlay) => Some(overlay),
-                Err(error) => {
-                    crate::log::line(&format!(
-                        "overlay: no layer; the stream plays without an overlay: {error:#}"
-                    ));
-                    None
+        Some(made.map(
+            |Made {
+                 video,
+                 backdrop,
+                 overlay,
+             }| {
+                let backdrop = match backdrop {
+                    Ok(layer) => Some(Backdrop {
+                        layer,
+                        buffer: self.window,
+                        shown: false,
+                    }),
+                    Err(error) => {
+                        crate::log::line(&format!(
+                            "picture: no backdrop layer; the bars show the window: {error:#}"
+                        ));
+                        None
+                    }
+                };
+                let overlay = match overlay {
+                    Ok(overlay) => Some(overlay),
+                    Err(error) => {
+                        crate::log::line(&format!(
+                            "overlay: no layer; the stream plays without an overlay: {error:#}"
+                        ));
+                        None
+                    }
+                };
+                Layers {
+                    video,
+                    backdrop,
+                    overlay,
+                    presenter: self.presenter,
+                    overlay_resized: Arc::new(AtomicBool::new(false)),
+                    stream: self.stream,
+                    window: self.window,
+                    placed: self.placed,
+                    fill: Fill::default(),
                 }
-            };
-            Layers {
-                video,
-                overlay,
-                presenter: self.presenter,
-                overlay_resized: Arc::new(AtomicBool::new(false)),
-                stream: self.stream,
-                window: self.window,
-                placed: self.placed,
-                fill: Fill::default(),
-            }
-        }))
+            },
+        ))
     }
 }
 
@@ -183,6 +247,14 @@ impl Layers {
                 make_video(env, activity.as_obj(), stream, placed, window)
             })
             .map(|video| {
+                let backdrop = attached(vm, |env| make_backdrop(env, activity.as_obj(), window))
+                    .and_then(|backdrop| match fill_black(&backdrop.surface) {
+                        Ok(()) => Ok(backdrop),
+                        Err(error) => {
+                            remove(vm, backdrop);
+                            Err(error)
+                        }
+                    });
                 let overlay = attached(vm, |env| make_overlay(env, activity.as_obj(), window))
                     .and_then(|overlay| match presenter {
                         Presenter::Shell => Ok(overlay),
@@ -194,14 +266,15 @@ impl Layers {
                             }
                         },
                     });
-                (video, overlay)
+                Made {
+                    video,
+                    backdrop,
+                    overlay,
+                }
             });
             // The asking thread stopped waiting: remove what it will never use.
-            if let Err(mpsc::SendError(Ok((video, overlay)))) = sender.send(made) {
-                remove(vm, video);
-                if let Ok(overlay) = overlay {
-                    remove(vm, overlay);
-                }
+            if let Err(mpsc::SendError(Ok(made))) = sender.send(made) {
+                made.remove(vm);
             }
         }));
         Ok(Pending {
@@ -253,7 +326,8 @@ impl Layers {
 
     /// Place the video again when the window's size has changed: the turn
     /// to landscape can come after Android gives the window (it was 1x1 in
-    /// one emulator run), and a fold changes it too. One `setGeometry`, and
+    /// one emulator run), and a fold changes it too. One `setGeometry` for
+    /// the video and one that stretches the backdrop over the window, and
     /// the overlay's buffers take the window's size; then the stand-in is
     /// drawn again at that size, or the shell's renderer hears of the new
     /// size ([`Layers::overlay_resized`]). Posted to the main thread without
@@ -267,6 +341,10 @@ impl Layers {
         self.placed = place(self.stream, size, self.fill.placing());
         let vm = app.vm_as_ptr() as usize;
         let (video, stream, placed) = (self.video.control.clone(), self.stream, self.placed);
+        let backdrop = self
+            .backdrop
+            .as_ref()
+            .map(|backdrop| (backdrop.layer.control.clone(), backdrop.buffer));
         let overlay = self
             .overlay
             .as_ref()
@@ -277,6 +355,9 @@ impl Layers {
                 let transaction =
                     env.new_object("android/view/SurfaceControl$Transaction", "()V", &[])?;
                 set_geometry(env, &transaction, video.as_obj(), stream, placed, size)?;
+                if let Some((backdrop, buffer)) = &backdrop {
+                    cover(env, &transaction, backdrop.as_obj(), *buffer, size)?;
+                }
                 if let Some((overlay, _)) = &overlay {
                     env.call_method(
                         &transaction,
@@ -313,7 +394,11 @@ impl Layers {
     /// one, and `setGeometry` with the new shape's letterbox. The overlay
     /// covers the window and keeps its place and buffers. False when the
     /// size is the same.
+    ///
+    /// The decoder gives its first size with its first picture: the black
+    /// backdrop then shows under the video, once ([`Layers::reveal`]).
     pub fn restream(&mut self, app: &AndroidApp, stream: (i32, i32)) -> bool {
+        self.reveal(app);
         if stream == self.stream || stream.0 <= 0 || stream.1 <= 0 {
             return false;
         }
@@ -338,6 +423,40 @@ impl Layers {
                 });
         }));
         true
+    }
+
+    /// Show the black backdrop under the video, the first time only: one
+    /// `setVisibility`, posted to the main thread without waiting. The main
+    /// thread logs when it has applied it.
+    fn reveal(&mut self, app: &AndroidApp) {
+        let Some(backdrop) = self.backdrop.as_mut().filter(|backdrop| !backdrop.shown) else {
+            return;
+        };
+        backdrop.shown = true;
+        let vm = app.vm_as_ptr() as usize;
+        let control = backdrop.layer.control.clone();
+        app.run_on_java_main_thread(Box::new(move || {
+            let applied = attached(vm, |env| {
+                let transaction =
+                    env.new_object("android/view/SurfaceControl$Transaction", "()V", &[])?;
+                env.call_method(
+                    &transaction,
+                    "setVisibility",
+                    format!("(Landroid/view/SurfaceControl;Z){TRANSACTION}"),
+                    &[JValue::Object(control.as_obj()), true.into()],
+                )?;
+                env.call_method(&transaction, "apply", "()V", &[])?;
+                Ok(())
+            });
+            match applied {
+                Ok(()) => crate::log::line(
+                    "picture: the black backdrop shows under the video, with its first picture",
+                ),
+                Err(error) => crate::log::line(&format!(
+                    "picture: the black backdrop was not shown; the bars show the window: {error:#}"
+                )),
+            }
+        }));
     }
 
     /// Fill the window with the picture, its edges cut, or fit it with bars
@@ -456,9 +575,17 @@ impl Layers {
     /// main thread may wait for this one (in `onDestroy`).
     pub fn release(self, app: &AndroidApp) {
         let vm = app.vm_as_ptr() as usize;
-        let Self { video, overlay, .. } = self;
+        let Self {
+            video,
+            backdrop,
+            overlay,
+            ..
+        } = self;
         app.run_on_java_main_thread(Box::new(move || {
             remove(vm, video);
+            if let Some(backdrop) = backdrop {
+                remove(vm, backdrop.layer);
+            }
             if let Some(overlay) = overlay {
                 remove(vm, overlay);
             }
@@ -517,8 +644,41 @@ fn set_geometry(
     window: (i32, i32),
 ) -> jni::errors::Result<()> {
     let (source, shown) = geometry(stream, placed, window);
+    put(env, transaction, layer, source, shown)
+}
+
+/// The backdrop's buffer of `buffer` pixels, stretched over the whole
+/// window: the stretch of one black buffer is black.
+fn cover(
+    env: &mut JNIEnv,
+    transaction: &JObject,
+    layer: &JObject,
+    buffer: (i32, i32),
+    window: (i32, i32),
+) -> jni::errors::Result<()> {
+    put(env, transaction, layer, whole(buffer), whole(window))
+}
+
+fn whole(size: (i32, i32)) -> Rect {
+    Rect {
+        left: 0,
+        top: 0,
+        right: size.0,
+        bottom: size.1,
+    }
+}
+
+/// One `setGeometry`, with no rotation: the layer's buffer part `source`
+/// into `destination`, in window pixels.
+fn put(
+    env: &mut JNIEnv,
+    transaction: &JObject,
+    layer: &JObject,
+    source: Rect,
+    destination: Rect,
+) -> jni::errors::Result<()> {
     let source = rect(env, source)?;
-    let destination = rect(env, shown)?;
+    let destination = rect(env, destination)?;
     env.call_method(
         transaction,
         "setGeometry",
@@ -543,6 +703,21 @@ fn rect<'a>(env: &mut JNIEnv<'a>, r: Rect) -> jni::errors::Result<JObject<'a>> {
 
 const TRANSACTION: &str = "Landroid/view/SurfaceControl$Transaction;";
 
+/// How a layer's buffers cover what is under it. It is fixed when the layer
+/// is built: on API 31 the child layer that holds a layer's buffers
+/// (`bbq-wrapper`) takes its opacity from the layer's build, and a later
+/// `Transaction.setOpaque` does not reach it (SurfaceFlinger's dump in the
+/// #495 proof).
+#[derive(Clone, Copy)]
+enum Blend {
+    /// As the decoder's buffers are.
+    Decoded,
+    /// Opaque: the compositor leaves out what is under it.
+    Opaque,
+    /// With alpha.
+    Translucent,
+}
+
 /// A layer named `name` with buffers of `size`, its reparent transaction to
 /// the window's root (not yet applied) and its Surface.
 fn make_layer<'a>(
@@ -550,7 +725,7 @@ fn make_layer<'a>(
     activity: &JObject,
     name: &str,
     size: (i32, i32),
-    translucent: bool,
+    blend: Blend,
 ) -> jni::errors::Result<(JObject<'a>, JObject<'a>)> {
     let window = env
         .call_method(activity, "getWindow", "()Landroid/view/Window;", &[])?
@@ -583,18 +758,25 @@ fn make_layer<'a>(
         "(II)Landroid/view/SurfaceControl$Builder;",
         &[size.0.into(), size.1.into()],
     )?;
-    if translucent {
-        env.call_method(
-            &builder,
-            "setFormat",
-            "(I)Landroid/view/SurfaceControl$Builder;",
-            &[TRANSLUCENT.into()],
-        )?;
+    let opaque = match blend {
+        Blend::Decoded => None,
+        Blend::Opaque => Some(true),
+        Blend::Translucent => {
+            env.call_method(
+                &builder,
+                "setFormat",
+                "(I)Landroid/view/SurfaceControl$Builder;",
+                &[TRANSLUCENT.into()],
+            )?;
+            Some(false)
+        }
+    };
+    if let Some(opaque) = opaque {
         env.call_method(
             &builder,
             "setOpaque",
             "(Z)Landroid/view/SurfaceControl$Builder;",
-            &[false.into()],
+            &[opaque.into()],
         )?;
     }
     let layer = env
@@ -659,8 +841,7 @@ fn finish(env: &mut JNIEnv, layer: &JObject) -> jni::errors::Result<Layer> {
     })
 }
 
-/// The video layer: above the window's own buffer, which shows in the
-/// bars, and placed.
+/// The video layer: above the backdrop, and placed.
 fn make_video(
     env: &mut JNIEnv,
     activity: &JObject,
@@ -668,9 +849,32 @@ fn make_video(
     placed: Rect,
     window: (i32, i32),
 ) -> jni::errors::Result<Layer> {
-    let (layer, transaction) = make_layer(env, activity, "korri-viewer-video", stream, false)?;
-    stack(env, &transaction, &layer, 0, true)?;
+    let (layer, transaction) =
+        make_layer(env, activity, "korri-viewer-video", stream, Blend::Decoded)?;
+    stack(env, &transaction, &layer, VIDEO_Z, true)?;
     set_geometry(env, &transaction, &layer, stream, placed, window)?;
+    env.call_method(&transaction, "apply", "()V", &[])?;
+    finish(env, &layer)
+}
+
+/// The black backdrop: above the window's own buffer, under the video, with
+/// a buffer of the window's size over the window, opaque, so that the
+/// compositor leaves out the window under it, and hidden. Its buffer is not
+/// filled yet.
+fn make_backdrop(
+    env: &mut JNIEnv,
+    activity: &JObject,
+    window: (i32, i32),
+) -> jni::errors::Result<Layer> {
+    let (layer, transaction) = make_layer(
+        env,
+        activity,
+        "korri-viewer-backdrop",
+        window,
+        Blend::Opaque,
+    )?;
+    stack(env, &transaction, &layer, BACKDROP_Z, false)?;
+    cover(env, &transaction, &layer, window, window)?;
     env.call_method(&transaction, "apply", "()V", &[])?;
     finish(env, &layer)
 }
@@ -681,8 +885,14 @@ fn make_overlay(
     activity: &JObject,
     window: (i32, i32),
 ) -> jni::errors::Result<Layer> {
-    let (layer, transaction) = make_layer(env, activity, "korri-viewer-overlay", window, true)?;
-    stack(env, &transaction, &layer, 1, false)?;
+    let (layer, transaction) = make_layer(
+        env,
+        activity,
+        "korri-viewer-overlay",
+        window,
+        Blend::Translucent,
+    )?;
+    stack(env, &transaction, &layer, OVERLAY_Z, false)?;
     env.call_method(&transaction, "apply", "()V", &[])?;
     finish(env, &layer)
 }
@@ -705,8 +915,8 @@ fn fill(window: &NativeWindow, pixel: impl Fn(usize, usize) -> u32) -> Result<()
     Ok(())
 }
 
-/// One CPU fill of the app's own window, black: it shows in the letterbox
-/// bars, under the video layer. Once, not for each frame.
+/// One CPU fill of a window, black: the viewer's own app fills its own
+/// window, and the backdrop's buffer is filled so. Once, not for each frame.
 pub fn fill_black(window: &NativeWindow) -> Result<()> {
     fill(window, |_, _| 0xff00_0000)
 }

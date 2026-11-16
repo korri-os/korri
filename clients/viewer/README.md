@@ -593,7 +593,12 @@ buffer queue, and the compositor reads the same buffer.
   more `setGeometry`, posted to the main thread: the turn to landscape can
   come after Android gives the window (one emulator run saw a 1x1 window
   then), and a fold changes the size too.
-  The app fills its own window black once; it shows in the bars. The layer
+  The app fills its own window black once. Under the video, a black backdrop
+  layer covers the window (#495): opaque, one CPU-filled buffer, stretched
+  over the window by the same transaction that places the video, and shown
+  from the first decoded picture on, as Artemis's Korri mode turns its
+  window black at the first frame. It is what shows in the bars in the Korri
+  app, whose window the shell draws its library into. The layer
   is made on Android's main thread, with the app's own global reference to
   the activity, after the window exists and outside android-activity's
   event callback. While the app waits for it, it keeps handling

@@ -305,6 +305,21 @@ Back, so the proof opens the overlay before it sends letters.
 
 Records: `proof/android-app-d10/`.
 
+### The bars beside the picture (#495)
+
+The shell draws its library into the activity's window, and goes on drawing
+it while a stream plays (its readiness line logs Velvet's home page under
+the overlay). Until #495 the video layer, the picture's size, lay straight
+above that window, so the bars beside a 16:9 picture showed the library,
+and so did the overlay's panel, which is 94 % opaque. The viewer's layers
+(`korri_viewer::layer`) now hold a black backdrop between the window and
+the video: opaque, covering the window, stretched with it when it turns, and
+shown from the first decoded picture on, as Artemis's Korri mode turns its
+window black at the first frame. The play proof reads the bars in each
+screenshot of the stream (`outside` in `proof/play.py`): black with the
+picture fitted, nothing outside it with Crop to fill, the panel over black
+with the overlay open. Records: `proof/android-app-495/`.
+
 ## The event loop: one poller (D10)
 
 Slint's android-activity platform owns `AndroidApp::poll_events` and the input
