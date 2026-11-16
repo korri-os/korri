@@ -263,6 +263,12 @@ still layers. Numbers and screenshots: `evidence/`.
 
 ## Development tools
 
+- `KORRI_SHELL_PROFILE=1` (device diagnostics, off by default): the shell logs one
+  `SHELL_PROFILE` line per frame drawn (its CPU time from the redraw request to the end of
+  rendering, the frame profile's geometry, bindings, text and instantiation times, items
+  walked), one per layer FemtoVG drew again into a texture (its size and time), and one per
+  logic call, view diff and view apply. No view, model or input content is logged.
+  `evidence/haku484/` is how it was used.
 - `examples/fixture-korrid.rs`: the fixture korrid as a process.
   `--model FILE` serves another `SurfaceModel` (a Ready catalog's `games`
   become the window's games; a model's `fixtureGameActions` are published for

@@ -840,6 +840,9 @@ where
     };
 
     cache.get_or_update_cache_entry(item_rc, || {
+        #[cfg(feature = "std")]
+        let layer_started = crate::frame_profile::enabled().then(std::time::Instant::now);
+        let rendered = (|| {
         // Don't track dependencies of the bounding rect here: the actual
         // rendering below will track them as it walks the children.
         let bounding_rect = crate::properties::evaluate_no_tracking(|| compute_bounds(renderer));
@@ -857,6 +860,25 @@ where
 
         let image = renderer.render_into_layer(target, item_rc, bounding_rect);
         Some((physical_origin, image))
+        })();
+        // A layer cache miss: its children were drawn into a new texture (#484 diagnostics).
+        #[cfg(feature = "std")]
+        if let Some(started) = layer_started {
+            let elapsed = started.elapsed();
+            let size = item_rc.geometry().size;
+            std::eprintln!(
+                "SHELL_PROFILE phase=layer w={:.0} h={:.0} ms={:.3} item={}",
+                size.width,
+                size.height,
+                elapsed.as_secs_f64() * 1000.0,
+                item_rc.index()
+            );
+            crate::frame_profile::record(|p| {
+                p.layer_draw.count += 1;
+                p.layer_draw.time += elapsed;
+            });
+        }
+        rendered
     })
 }
 

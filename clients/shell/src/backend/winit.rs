@@ -49,11 +49,24 @@ impl Backend for Winit {
 
     fn attach(&self, window: &slint::Window, sink: Rc<dyn Fn(HostEvent)>, frames: FrameCounter) {
         use winit::event::{ElementState, TouchPhase, WindowEvent};
+        let profile = crate::profile::enabled();
+        if profile {
+            i_slint_core::frame_profile::set_enabled(true);
+            // A window attached again keeps its first notifier (AlreadySet).
+            let _ = window.set_rendering_notifier(|state, _| {
+                if matches!(state, slint::RenderingState::AfterRendering) {
+                    crate::profile::frame_rendered();
+                }
+            });
+        }
         let first = Cell::new(true);
         let touches = RefCell::new(std::collections::HashSet::new());
         window.on_winit_window_event(move |_, event| {
             match event {
                 WindowEvent::RedrawRequested => {
+                    if profile {
+                        crate::profile::frame_started();
+                    }
                     frames.add();
                     if first.replace(false) {
                         sink(HostEvent::FirstFrame);

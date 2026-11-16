@@ -25,3 +25,5 @@ pub mod view;
 
 #[cfg(feature = "fixture")]
 pub mod fixture;
+
+pub(crate) mod profile;

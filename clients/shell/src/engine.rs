@@ -465,6 +465,12 @@ impl Engine {
         });
         if self.loading.is_none() {
             let took = started.elapsed();
+            if crate::profile::enabled() {
+                eprintln!(
+                    "SHELL_PROFILE phase=engine call={name} ms={:.3}",
+                    took.as_secs_f64() * 1000.0
+                );
+            }
             self.max_call = self.max_call.max(took);
             if self.slowest.is_none_or(|(_, slowest)| took > slowest) {
                 self.slowest = Some((name, took));

@@ -150,7 +150,15 @@ impl Worker {
         if self.engine.view_stale() {
             self.engine.views_drawn();
             let next = self.engine.view()?;
-            view = Some((next.clone(), self.views.next(&next)));
+            let started = std::time::Instant::now();
+            let diff = self.views.next(&next);
+            if crate::profile::enabled() {
+                eprintln!(
+                    "SHELL_PROFILE phase=diff ms={:.3}",
+                    started.elapsed().as_secs_f64() * 1000.0
+                );
+            }
+            view = Some((next.clone(), diff));
             if self.gameplay && self.engine.has_overlay() {
                 overlay = self
                     .engine

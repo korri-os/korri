@@ -431,8 +431,17 @@ fn convert_from(
                     .downcast_ref::<VecModel<Value>>()
                     .filter(|rows| rows.row_count() == *before)
                 {
+                    // The row's own diff: a nested list that did not change keeps its model,
+                    // so its repeater keeps its instances (#484).
                     update_rows(rows, items, diffs, |i, json, prior| {
-                        convert_from(json, item, prior, None, images, &Path::Index(path, i))
+                        convert_from(
+                            json,
+                            item,
+                            prior,
+                            diffs.get(i),
+                            images,
+                            &Path::Index(path, i),
+                        )
                     })?;
                     return Ok(Value::Model(model.clone()));
                 }
@@ -689,6 +698,13 @@ impl Binder {
             self.last.insert(property, value);
             changed += 1;
         }
+        if crate::profile::enabled() {
+            eprintln!(
+                "SHELL_PROFILE phase=apply convert_ms={:.3} set_ms={:.3} changed={changed}",
+                self.timing.0.as_secs_f64() * 1000.0,
+                self.timing.1.as_secs_f64() * 1000.0
+            );
+        }
         Ok(changed)
     }
 }
@@ -912,6 +928,56 @@ mod tests {
         };
         assert_eq!(item.get_field("item-count"), Some(&Value::Number(3.0)));
         assert_eq!(item.get_field("fraction"), Some(&Value::Number(1.5)));
+        Ok(())
+    }
+
+    /// A row that changes one field keeps the models of its unchanged nested lists, so
+    /// a repeater over them keeps its instances (#484: a tile's title lines).
+    #[test]
+    fn a_changed_row_keeps_its_unchanged_nested_list() -> Result<()> {
+        crate::backend::headless::Headless::install();
+        let definition = compile(
+            "export struct Card { focused: bool, lines: [string] }
+             export component Surface inherits Window { in property <[Card]> cards; }",
+        );
+        let instance = definition.create()?;
+        let dir = tempfile::tempdir()?;
+        let mut images = ImageCache::new(dir.path());
+        let mut binder = Binder::new(&definition);
+        let lines = |cards: &Value| match cards {
+            Value::Model(m) => match m.row_data(0) {
+                Some(Value::Struct(s)) => s.get_field("lines").cloned(),
+                _ => None,
+            },
+            _ => None,
+        };
+        let card =
+            |focused: bool, title: &str| json!({"focused": focused, "lines": [title, "TWO"]});
+        binder.apply(
+            &instance,
+            &json!({"cards": [card(false, "ONE")]}),
+            &mut images,
+        )?;
+        let before = lines(&instance.get_property("cards")?);
+        binder.apply(
+            &instance,
+            &json!({"cards": [card(true, "ONE")]}),
+            &mut images,
+        )?;
+        let after = lines(&instance.get_property("cards")?);
+        assert!(
+            before.is_some() && before == after,
+            "the lines keep their model"
+        );
+        binder.apply(
+            &instance,
+            &json!({"cards": [card(true, "NEW")]}),
+            &mut images,
+        )?;
+        let Some(Value::Model(changed)) = lines(&instance.get_property("cards")?) else {
+            panic!("model")
+        };
+        assert_eq!(changed.row_data(0), Some(Value::String("NEW".into())));
         Ok(())
     }
 
