@@ -29,6 +29,17 @@ description = "korrid device or iroh private key or surrounding runtime state"
 # bare hexadecimal secret can be distinguished from a digest by content.
 path = '''(^|/)(korri-state/.*|identity/(device|iroh)\.key)$'''
 
+# The Android app's release keystore and its password file
+# (clients/android-app/sign-release.sh, #434 D12). They live in
+# ~/.config/korri/android-signing/, outside every checkout, and the signing
+# step refuses a key folder inside a Git work tree. A PKCS#12 file is binary
+# and the password is a bare Base64 string, so the names are what identify
+# them if one is ever copied into a checkout.
+[[rules]]
+id = "korri-android-release-key"
+description = "The Android app's release keystore or its password file"
+path = '''(^|/)korri-android-app-release\.(p12|password)$'''
+
 [allowlist]
 description = "Values and paths that carry no secret."
 regexes = [

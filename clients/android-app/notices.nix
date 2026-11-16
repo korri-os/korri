@@ -5,8 +5,8 @@
 #
 # Its parts, in order:
 # - what cargo does not build (the viewer's C parts, Skia's archive and what
-#   it holds, the dexed Kotlin, the NDK's C++ library), and the C code that a
-#   crate bundles and builds;
+#   it holds, the dexed Kotlin, the NDK's C++ library, Rust's standard
+#   library), and the C code that a crate bundles and builds;
 # - the surface packages' fonts and Pico's vendored scripts;
 # - the Rust crates of the arm64 library, by cargo-about (about.toml);
 # - the GNU GPL version 3, the licence of the app as a whole.
@@ -93,6 +93,7 @@ pkgs.stdenv.mkDerivation {
     pkgs.rustPlatform.cargoSetupHook
     pkgs.cargo-about
     pkgs.bun
+    pkgs.python3
   ];
   dontConfigure = true;
   buildPhase = ''
@@ -191,6 +192,12 @@ pkgs.stdenv.mkDerivation {
       part 'LLVM libc++ and compiler-rt' \
         "The Android NDK's C++ standard library and compiler runtime, linked statically. The LLVM exceptions in their licence apply." \
         llvm.txt
+      # Rust ships its standard library's notices as HTML only.
+      python3 ${./html-notice.py} ${rust}/share/doc/rust/COPYRIGHT-library.html > rust-std.txt
+      grep -q '^Copyright notices for The Rust Standard Library$' rust-std.txt
+      part 'The Rust standard library ${rust.version}' \
+        "Rust's core, alloc and std, and the crates they are built from, compiled into the library by the toolchain that built it. Rust's own notice for this release follows." \
+        rust-std.txt
       printf '\n'
       printf "Slint's Java helper (SlintAndroidJavaHelper) is part of the crate\ni-slint-backend-android-activity, under the Rust crates below.\n"
 

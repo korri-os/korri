@@ -533,9 +533,9 @@ it. This app is also another package (owner decision O1). So the app has a
 key of its own, which the build never sees: `sign-release.sh` signs the
 built APK on the machine that holds the key.
 
-The key's folder and its file layout are the owner's choice (2026-11-16,
-#434 D12): the key on zao, under `~/.config/korri/android-signing/`, with
-mode 0600. The file names inside are this slice's:
+The key's folder is the owner's choice (2026-11-16, #434 D12): the key on
+zao, under `~/.config/korri/android-signing/`, with mode 0600. The file
+names inside it are this slice's:
 
 | Path on zao | What | Mode |
 | --- | --- | --- |
@@ -548,10 +548,26 @@ The key was made on 2026-11-16. Its certificate's SHA-256 is
 `e473449db4d9abd868a114e07b844b51c8398120ec27949eb394f77b95e48f91`. No
 backup of it exists. Without it, an update needs an uninstall first.
 
+The signing tools need Android's build tools, which are unfree. zao never
+builds them: build both apps on aka and copy their closure to zao, in a
+checkout on zao. `nix run` then finds the apps in zao's store and builds
+nothing. The copy needs `--no-check-sigs` for the reason above:
+
+```sh
+for task in android-app-release-key android-app-release-sign; do
+  drv="$(nix eval --raw ".#apps.x86_64-linux.$task.program" \
+    --apply 'program: builtins.head (builtins.attrNames (builtins.getContext program))')"
+  out="$(nix build --eval-store auto --store ssh-ng://root@aka \
+    --print-out-paths --no-link "$drv^out")"
+  nix copy --no-check-sigs --from ssh-ng://root@aka "$out"
+  nix build --dry-run --no-link "$drv^out"   # prints nothing: nothing to build
+done
+```
+
 | Step | What it does |
 | --- | --- |
-| `nix run .#android-app-release-key [-- --key-dir DIR]` | Makes the three files with keytool, which reads the password from its file. It refuses to replace a file that exists |
-| `nix run .#android-app-release-sign -- [--key-dir DIR] UNSIGNED SIGNED` | Refuses a key file or directory that is a link, belongs to another user or has other modes; refuses a debuggable APK and one without notices; refuses an output in the Nix store. Signs with apksigner, reading the password from its file: APK Signature Scheme v3 alone, which apksigner picks for `minSdkVersion` 31, and no v4 file. Checks one signer, whose certificate is the key's. Prints the certificate's and the APK's SHA-256 |
+| `nix run .#android-app-release-key [-- --key-dir DIR]` | Refuses a key directory inside a Git work tree. Makes the three files with keytool, which reads the password from its file. It refuses to replace a file that exists |
+| `nix run .#android-app-release-sign -- [--key-dir DIR] UNSIGNED SIGNED` | Refuses a key directory inside a Git work tree, and a key file or directory that is a link, belongs to another user or has other modes; refuses a debuggable APK and one without notices; refuses an output in the Nix store. Signs with apksigner, reading the password from its file: APK Signature Scheme v3 alone, which apksigner picks for `minSdkVersion` 31, and no v4 file. Checks one signer, whose certificate is the key's. Prints the certificate's and the APK's SHA-256 |
 
 Checked on zao on 2026-11-16 with a release APK of this branch: `apksigner
 verify --print-certs` says v3, one signer, `CN=Korri Android App Release,
@@ -561,13 +577,24 @@ debuggable APK, an output in the store, a password file of mode 0644, a key
 directory of mode 0755, a password file that is a link, and a certificate
 file of another key (a throwaway key in a temporary directory).
 
+Both steps also refused a key directory inside this checkout (it did not
+exist yet; the key step made nothing), the same with `GIT_DIR` set
+elsewhere, and a key directory in which `git init` had been run.
+
 The key, its password and the signed APK never enter the repository, the
-store or a log. `.gitleaks.toml` has no rule for a PKCS#12 file: a file
-under `~/.config` is outside every checkout.
+store or a log. If the keystore or its password file is ever copied into a
+checkout, the pre-commit hook refuses it: `.gitleaks.toml` has the path rule
+`korri-android-release-key` for both names. gitleaks skips a staged file
+that git calls binary, so `.gitattributes` gives `*.p12` the `diff`
+attribute; then gitleaks's own `pkcs12-file` rule fires too. Checked with
+the hook's gitleaks (8.30.1) in scratch repositories: a real keystore and
+password file under those names, at the root and in subfolders, are
+refused; without the attribute the keystore passed; `x…` and `….bak`
+names and the certificate pass.
 
 ### Notices
 
-`assets/notices/NOTICES.txt` is one UTF-8 text, about 730 kB. No screen
+`assets/notices/NOTICES.txt` is one UTF-8 text, about 990 kB. No screen
 shows it yet: the shell has no view for it, which is design work.
 
 | Part | From |
@@ -578,6 +605,7 @@ shows it yet: the shell has no view for it, which is design work.
 | Skia, and the four libraries of its archive that the library keeps: libpng, zlib (Chromium's copy), FreeType, Expat | the archive's `LICENSE_SKIA`; nixpkgs' sources and Chromium's for the four |
 | The Kotlin standard library | its project's licence, NOTICE and the Boost licence of `MathJVM.kt`, fetched at v2.0.21 |
 | LLVM libc++ and compiler-rt | the NDK toolchain's NOTICE |
+| The Rust standard library (core, alloc, std and the crates they are built from) | the toolchain's own `COPYRIGHT-library.html`, as text (`html-notice.py`) |
 | The surface packages' fonts; Pico's `qrcode` and `dijkstrajs` | `pico-fonts.ts` (read with bun), the font licence files, the vendored licences |
 | 618 Rust crates of the arm64 library | `cargo about generate --fail` (`about.toml`, `about.hbs`) |
 | The GNU GPL version 3 | moonlight-common-c's `LICENSE.txt` |
@@ -593,7 +621,10 @@ that Skia pins. No lawyer has read the notices (ADR 0059).
 The source is a link, not a written offer (GPL-3.0 section 6(d)): the notices
 name the commit on `https://github.com/korri-os/korri` and the command that
 builds the APK from it. That commit must be on the public repository before
-anyone receives the APK. The Linux viewer ships its corresponding source as
+anyone receives the APK. The link works only while `korri-os/korri` is
+public: `gh repo view korri-os/korri --json visibility` said `PUBLIC` on
+2026-11-16. If the repository becomes private, the link fails, and the APK
+needs a written offer or the source beside it. The Linux viewer ships its corresponding source as
 a tarball (`clients/viewer/default.nix`, `correspondingSource`); the Android
 app's would hold korrid, the shell and Slint, so the APK names it instead.
 

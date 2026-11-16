@@ -5,3 +5,7 @@ services/inputd/nix/inputplumber-ignore-before-reconnect.patch whitespace=-blank
 nix/devices/rpminiv2/systemd/*.patch whitespace=-blank-at-eol
 # Font licences ship verbatim from their foundries, trailing spaces included.
 clients/shell/packages/zone/fonts/Jersey10-OFL.txt whitespace=-blank-at-eol
+# Show a PKCS#12 file to the secret scan. gitleaks skips a staged file that
+# git calls binary, so neither its pkcs12-file rule nor the path rule for the
+# Android release keystore in .gitleaks.toml would see one without this.
+*.p12 diff

@@ -8,8 +8,9 @@
 # The key never enters the repository, the Nix store or a log: apksigner and
 # keytool read the keystore and its password from files in the key
 # directory, and this script prints only public facts (the certificate's
-# SHA-256 and the signed APK's SHA-256). The key directory and its layout
-# are the owner's choice for D12 (README):
+# SHA-256 and the signed APK's SHA-256). The key directory is the owner's
+# choice for D12; the file names in it are this slice's (README). Both steps
+# refuse a key directory inside a Git work tree, where a key could be staged:
 #
 #   ~/.config/korri/android-signing/            mode 0700
 #     korri-android-app-release.p12             PKCS#12 keystore, one key, 0600
@@ -53,6 +54,18 @@ private() {
   [[ "$(stat -c %a "$path")" == "$want" ]] || fail "$path has mode $(stat -c %a "$path"), not $want"
 }
 
+# The key directory, or the nearest folder above it that exists, must not
+# be inside a Git work tree: there `git add` could stage the key. The check
+# ignores GIT_DIR and GIT_WORK_TREE, which would point Git elsewhere.
+outside_git() {
+  local path
+  path="$(realpath -m "$directory")"
+  while [[ ! -e "$path" ]]; do path="$(dirname "$path")"; done
+  if [[ "$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$path" rev-parse --is-inside-work-tree 2> /dev/null)" == true ]]; then
+    fail "$directory is inside the Git work tree $(env -u GIT_DIR -u GIT_WORK_TREE git -C "$path" rev-parse --show-toplevel); keep the key outside every checkout"
+  fi
+}
+
 # The SHA-256 of a certificate, lowercase hexadecimal with no separators.
 certificate_digest() {
   keytool -printcert -file "$1" | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr '[:upper:]' '[:lower:]'
@@ -60,6 +73,7 @@ certificate_digest() {
 
 make_key() {
   [[ $# -eq 0 ]] || usage
+  outside_git
   umask 077
   if [[ ! -e "$directory" ]]; then
     mkdir -p "$directory"
@@ -87,6 +101,7 @@ make_key() {
 sign() {
   [[ $# -eq 2 ]] || usage
   local unsigned="$1" signed="$2" manifest digest signer verified
+  outside_git
   private "$directory" 700
   for file in "$keystore" "$password" "$certificate"; do
     [[ -e "$file" ]] || fail "$file is missing: make the key with nix run .#android-app-release-key"
