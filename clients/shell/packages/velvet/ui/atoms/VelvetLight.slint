@@ -13,6 +13,9 @@ import { Tokens } from "../tokens.slint";
 export component VelvetLight inherits Rectangle {
     in property <color> glow: Tokens.usher;
     in property <bool> narrow;
+    // Keep the static gradients in one window-sized texture during stage motion (#484).
+    clip: true;
+    cache-rendering-hint: true;
     Rectangle {
         x: Math.round((parent.width * (root.narrow ? 0.5 : 0.7) - self.width / 2) / 1px) * 1px;
         y: Math.round((parent.height * (root.narrow ? 0.2 : 0.32) - self.height / 2) / 1px) * 1px;

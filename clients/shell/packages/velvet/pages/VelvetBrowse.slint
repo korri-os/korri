@@ -47,6 +47,10 @@ export component VelvetBrowse inherits Rectangle {
     // The load reveal (main.slint turns `Tokens.revealed` once): the pick rises in and the
     // strip follows tile by tile.
     clip: true;
+    // The stage drifts under a foreground at rest: keep the foreground in one texture then.
+    // Off while it moves, when the texture would be drawn again every frame (#484).
+    in property <bool> resting;
+    cache-rendering-hint: root.resting;
     // A finger's vertical swipe (owner, 2026-11-13): the page follows it, and past an eighth
     // of the window, or on a quick flick, it moves one level (the logic's Down or Up). The
     // library's own shelves take the swipe there (VelvetLobby).
@@ -94,6 +98,8 @@ export component VelvetBrowse inherits Rectangle {
                 y: root.depth == 0 ? 0px : -root.height;
                 width: root.width;
                 height: root.height;
+                // The pick's page leaves as a whole. Stop walking its off-stage drawing (#484).
+                clip: true;
                 animate y { duration: Tokens.t-layer; easing: cubic-bezier(0.22, 1, 0.36, 1); }
                 VelvetPick {
                     y: Tokens.revealed ? 0px : Tokens.screen.pad-y * Tokens.unit * 0.35;
@@ -176,6 +182,10 @@ export component VelvetBrowse inherits Rectangle {
                 y: root.depth == 2 ? 0px : root.depth == 1 && Tokens.screen.peek-y > 0 ? (Tokens.screen.peek-y - Tokens.screen.lib-top) * Tokens.unit : root.height;
                 width: root.width;
                 height: root.height;
+                // The lobby has its own page bounds, including while it enters.
+                clip: true;
+                // Under the row it only peeks and holds still: one texture then (#484).
+                cache-rendering-hint: root.depth < 2;
                 animate y { duration: Tokens.t-layer; easing: cubic-bezier(0.22, 1, 0.36, 1); }
                 // The library's head.
                 HorizontalLayout {

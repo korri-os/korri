@@ -7,11 +7,17 @@ import { Tokens } from "../tokens.slint";
 export component VelvetEdge inherits Rectangle {
     in property <bool> lit;
     in property <length> radius;
-    border-radius: radius;
-    border-width: Tokens.edge;
-    border-color: Tokens.house-light;
-    opacity: lit ? 1 : 0;
-    animate opacity { duration: Tokens.t-ring; easing: cubic-bezier(0.4, 0, 0.2, 1); }
+    // Each ring fades by itself: a fading parent with a child is drawn through an
+    // offscreen layer on the GPU every frame of the fade (#484). The rings do not overlap.
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        border-radius: root.radius;
+        border-width: Tokens.edge;
+        border-color: Tokens.house-light;
+        opacity: root.lit ? 1 : 0;
+        animate opacity { duration: Tokens.t-ring; easing: cubic-bezier(0.4, 0, 0.2, 1); }
+    }
     Rectangle {
         x: Tokens.edge;
         y: Tokens.edge;
@@ -20,5 +26,7 @@ export component VelvetEdge inherits Rectangle {
         border-radius: Math.max(0px, root.radius - Tokens.edge);
         border-width: Tokens.hair;
         border-color: Tokens.shade-45;
+        opacity: root.lit ? 1 : 0;
+        animate opacity { duration: Tokens.t-ring; easing: cubic-bezier(0.4, 0, 0.2, 1); }
     }
 }

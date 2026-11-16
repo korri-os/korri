@@ -149,6 +149,7 @@ export component Surface inherits Window {
         shelf-tiles: root.shelf-tiles;
         shelf-at: root.shelf-at;
         depth: root.home-depth;
+        resting: root.stage.drift;
         inert: root.layer != "screen";
         activated(target, at, released) => { root.activated(target, at, released); }
         dragged(region, by) => { root.dragged(region, by); }

@@ -54,10 +54,12 @@ export component VelvetTile inherits Rectangle {
     property <float> grow: !(root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "none")) ? 0.95 : (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && !root.inert && !root.fixed ? Tokens.focus-scale : 1;
     animate grow { duration: Tokens.t-focus; easing: cubic-bezier(0.16, 1, 0.3, 1); }
     card := Rectangle {
-        x: (root.width - self.width) / 2;
+        // On whole pixels: the rounded clip is a GPU layer drawn again whenever its size
+        // changes, and the grow's sub-pixel tail drew it again every frame for nothing (#484).
+        x: Math.round((root.width - self.width) / 2 / 1px) * 1px;
         y: root.height - self.height;
-        width: root.width * root.grow;
-        height: root.height * root.grow;
+        width: Math.round(root.width * root.grow / 1px) * 1px;
+        height: Math.round(root.height * root.grow / 1px) * 1px;
         clip: true;
         // In or out, never between for long: the renderer fades each part by itself, so a
         // half-shown card would show its no-art card through its picture.
@@ -168,14 +170,6 @@ export component VelvetTile inherits Rectangle {
             text: root.tile.count;
             size: Math.clamp(root.height * 0.05, Tokens.tile-type-least, Tokens.tile-type-most);
         }
-        if root.tile.kind == "game": VelvetBadge {
-            x: Math.max(Tokens.inset-least, parent.height * 0.03);
-            y: root.tile.badge-top ? self.x : parent.height - self.height - self.x;
-            text: root.tile.badge;
-            size: Math.clamp(root.height * 0.045, Tokens.tile-type-least, Tokens.tile-type-most);
-            opacity: (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && !root.inert && root.tile.badge != "" ? 1 : 0;
-            animate opacity { duration: Tokens.t-meta; delay: (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && !root.inert && root.tile.badge != "" ? Tokens.dwell : 0ms; easing: ease-out; }
-        }
         // A tile on a row that is not the focused one steps back under a veil.
         Rectangle {
             width: parent.width;
@@ -184,12 +178,28 @@ export component VelvetTile inherits Rectangle {
             opacity: root.tile.rests ? 1 : 0;
             animate opacity { duration: Tokens.t-focus; easing: cubic-bezier(0.4, 0, 0.2, 1); }
         }
-        VelvetEdge {
-            width: parent.width;
-            height: parent.height;
-            radius: Tokens.card-radius(root.height);
-            lit: root.lit;
-        }
+    }
+    // Over the card, not in it, like the edge below: its fade would draw the card's layer again.
+    if root.tile.kind == "game": VelvetBadge {
+        x: card.x + Math.max(Tokens.inset-least, card.height * 0.03);
+        y: card.y + (root.tile.badge-top ? Math.max(Tokens.inset-least, card.height * 0.03) : card.height - self.height - Math.max(Tokens.inset-least, card.height * 0.03));
+        text: root.tile.badge;
+        size: Math.clamp(root.height * 0.045, Tokens.tile-type-least, Tokens.tile-type-most);
+        // Hidden is not drawn: at opacity 0 the renderer still draws it into a layer (#484).
+        visible: self.opacity > 0;
+        opacity: (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && !root.inert && root.tile.badge != "" && (root.tile.poster.shown || root.tile.art-kind != "none") ? 1 : 0;
+        animate opacity { duration: Tokens.t-meta; delay: (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && !root.inert && root.tile.badge != "" ? Tokens.dwell : 0ms; easing: ease-out; }
+    }
+    // Over the card, not in it: the card's rounded clip is a GPU layer, drawn again
+    // whenever anything inside it changes (#484). The edge stands inside the card's corner.
+    VelvetEdge {
+        x: card.x;
+        y: card.y;
+        width: card.width;
+        height: card.height;
+        radius: Tokens.card-radius(root.height);
+        lit: root.lit;
+        opacity: card.opacity;
     }
     VelvetTap {
         width: parent.width;

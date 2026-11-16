@@ -9,6 +9,9 @@ import { Tokens } from "../tokens.slint";
 
 export component VelvetScrim inherits Rectangle {
     in property <bool> narrow;
+    // Keep the static gradients in one window-sized texture during stage motion (#484).
+    clip: true;
+    cache-rendering-hint: true;
     // The fall-off: clear around the subject, velvet towards the corners.
     Rectangle {
         // On whole pixels (VelvetLight says why).
