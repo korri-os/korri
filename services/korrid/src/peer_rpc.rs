@@ -311,26 +311,37 @@ pub struct PeerRpcServer {
 struct DeviceCertificateLocks(Arc<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>);
 
 impl DeviceCertificateLocks {
+    fn device(&self, device_public_key: &str) -> Arc<tokio::sync::Mutex<()>> {
+        let mut locks = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // A lock that no operation holds or waits for is not needed.
+        locks.retain(|_, lock| Arc::strong_count(lock) > 1);
+        locks
+            .entry(device_public_key.to_owned())
+            .or_default()
+            .clone()
+    }
+
+    /// Waits for the device. Only reconciliation waits: it runs in the
+    /// request's own handler, so its wait ends with that handler.
     async fn lock(&self, device_public_key: &str) -> tokio::sync::OwnedMutexGuard<()> {
-        let lock = {
-            let mut locks = self
-                .0
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            // A lock that no operation holds or waits for is not needed.
-            locks.retain(|_, lock| Arc::strong_count(lock) > 1);
-            locks
-                .entry(device_public_key.to_owned())
-                .or_default()
-                .clone()
-        };
-        lock.lock_owned().await
+        self.device(device_public_key).lock_owned().await
+    }
+
+    /// The device, or None while another operation holds it.
+    fn try_lock(&self, device_public_key: &str) -> Option<tokio::sync::OwnedMutexGuard<()>> {
+        self.device(device_public_key).try_lock_owned().ok()
     }
 }
 
 /// A peer's provision or revocation, with the device lock held from start
 /// to end. It runs as its own task, so it ends even when the caller goes
-/// away and the request's handler is dropped.
+/// away and the request's handler is dropped. It does not wait for the
+/// device: while another operation holds it, the request is answered busy
+/// before anything changes. So one device has at most one such task, and no
+/// queue of tasks that outlive their callers.
 struct CertificateTransaction {
     app: AppState,
     authorization: Authorization,
@@ -370,7 +381,22 @@ impl CertificateTransaction {
                 .await
                 .map_err(|_| PeerRpcError::Unauthorized);
         };
-        let _device = self.locks.lock(&device).await;
+        let Some(_device) = self.locks.try_lock(&device) else {
+            let busy = crate::RpcFailure {
+                code: "StreamCertificateControlBusy".into(),
+                message: "This device's certificate work is busy".into(),
+            };
+            return Ok(match request {
+                RpcRequest::MoonlightCertificateProvision(_) => {
+                    RpcResponse::MoonlightCertificateProvision(
+                        MoonlightCertificateProvisionOutcome::Err(busy),
+                    )
+                }
+                _ => RpcResponse::MoonlightCertificateRevoke(
+                    MoonlightCertificateRevokeOutcome::Err(busy),
+                ),
+            });
+        };
         match request {
             RpcRequest::MoonlightCertificateProvision(asked) => {
                 self.provision(&context, &device, asked).await
@@ -1924,11 +1950,13 @@ mod tests {
         })
     }
 
-    /// Two provisions of one certificate by one device: the first fails with
-    /// proof and undoes its grant, the second is applied. Each writes the same
-    /// grant, so the first's undo must not run after the second's write.
+    /// One device's certificate requests do not queue: while one runs, the
+    /// next is answered busy at once and changes nothing. A queue would have
+    /// no limit, and its waiting tasks would outlive their callers. Here the
+    /// first provision is held and then fails with proof, so it undoes its
+    /// grant; a second one of the same certificate must not have run between.
     #[tokio::test]
-    async fn one_devices_provisions_run_one_at_a_time() {
+    async fn a_devices_certificate_request_is_busy_while_another_runs() {
         let (host_root, client_root, credentials, host_key, config) = setup();
         let client_key = DeviceIdentity::load_or_create(client_root.path())
             .unwrap()
@@ -1953,27 +1981,46 @@ mod tests {
             tokio::spawn(async move { server.handle(&event, NOW, None).await })
         };
         sunshine.until_held().await;
-        let mut second = {
-            let server = server.clone();
-            let event = certificate_event(&credentials, &host_key, provision_request(pem), 162);
-            tokio::spawn(async move { server.handle(&event, NOW, None).await })
-        };
-        // Without one turn per device, the second ends here.
-        let early = tokio::time::timeout(std::time::Duration::from_millis(300), &mut second)
-            .await
-            .ok();
+        // Sunshine holds the first provision on a blocking thread until it is
+        // released, so the answers are read first and checked after.
+        let mut answers = Vec::new();
+        for (at, request) in [(162, provision_request(pem)), (164, revoke_request(pem))] {
+            let encoded = credentials
+                .encode_request_with_tokens(&host_key, request, NOW, token(at), token(at + 1))
+                .unwrap();
+            let answer = tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                server.handle(&encoded.event_json, NOW, None),
+            )
+            .await;
+            answers.push((encoded, answer));
+        }
         sunshine.release();
         first.await.unwrap().unwrap();
-        match early {
-            Some(ended) => ended,
-            None => second.await,
+        for (encoded, answer) in answers {
+            let answer = answer
+                .expect("answered at once, not queued behind the first")
+                .unwrap();
+            let failure = match credentials
+                .decode_response(&host_key, &encoded, &answer, NOW)
+                .unwrap()
+            {
+                RpcResponse::MoonlightCertificateProvision(
+                    MoonlightCertificateProvisionOutcome::Err(failure),
+                )
+                | RpcResponse::MoonlightCertificateRevoke(
+                    MoonlightCertificateRevokeOutcome::Err(failure),
+                ) => failure,
+                other => panic!("expected busy, got {other:?}"),
+            };
+            assert_eq!(failure.code, "StreamCertificateControlBusy");
         }
-        .unwrap()
-        .unwrap();
-        assert_eq!(sunshine.calls(), ["provision:client", "provision:client"]);
+        // Only the first reached Sunshine; it failed with proof and undid its
+        // grant. Sunshine trusts nothing, and no grant names anything.
+        assert_eq!(sunshine.calls(), ["provision:client"]);
         assert_eq!(
             Authorization::stream_client_grant(host_root.path(), &client_key).unwrap(),
-            Some(("sunshine-host".into(), pem.into()))
+            None
         );
     }
 

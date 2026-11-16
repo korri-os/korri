@@ -527,7 +527,10 @@ any change) counts as a failure.
 
 The holder runs one device's provisions and revocations, and their
 reconciliation, one at a time: it takes the device's lock before the socket
-turn and holds it from the first grant change to the last.
+turn and holds it from the first grant change to the last. A provision or a
+revocation does not wait for that lock. While another operation of the same
+device holds it, the holder answers `StreamCertificateControlBusy` before
+anything changes, so no queue of tasks outlives its callers.
 
 | Operation | What korrid does |
 | --- | --- |
