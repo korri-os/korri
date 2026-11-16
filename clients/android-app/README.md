@@ -330,8 +330,11 @@ the video: opaque, covering the window, stretched with it when it turns, and
 shown from the first decoded picture on, as Artemis's Korri mode turns its
 window black at the first frame. The play proof reads the bars in each
 screenshot of the stream (`outside` in `proof/play.py`): black with the
-picture fitted, nothing outside it with Crop to fill, the panel over black
-with the overlay open. Records: `proof/android-app-495/`.
+picture fitted, the panel over black with the overlay open. With Crop to
+fill it reads the picture's real bounds in SurfaceFlinger's dump
+(`fills_the_window`): the video's buffers show over the whole window, and
+the backdrop's buffers and the shell's window show nowhere (#497). Records:
+`proof/android-app-495/`.
 
 ## The event loop: one poller (D10)
 

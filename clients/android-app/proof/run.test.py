@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Where the app's proofs (run.py, holder.py, play.py, resize.py) build: no
-emulator, no sender, no build.
+"""Where the app's proofs (run.py, holder.py, play.py, resize.py) build, and
+how play.py reads where the picture shows with Crop to fill: no emulator, no
+sender, no build.
 
 holder.py loads the viewer proof, which imports stream-cadence's bar decoder
 (numpy). From the repository's root, with the play proof's own Python
@@ -18,6 +19,7 @@ import contextlib
 import io
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -158,6 +160,33 @@ class TheProofsHandTheirBuildStoreToEveryBuild(unittest.TestCase):
                 built, tools = self.main(resize, ["--sunshine", "SUNSHINE", "--stream-host", "192.0.2.1", *given])
                 self.assertEqual(built, [("korri-android-app-fixture-apk", store), ("korrid.federationFixture", store)])
                 self.assertEqual(tools, [(holder.viewer_proof.LOCAL, True, store)])
+
+
+class CropToFillReadsWhereThePictureShows(unittest.TestCase):
+    """play.py's fills_the_window reads the picture's real bounds in SurfaceFlinger's dump (#497): here
+    in the dumps that the #495 proof recorded (android-app-495/surfaceflinger-layers.txt)."""
+
+    def fills(self, name: str) -> dict:
+        text = (HERE / "android-app-495/surfaceflinger-layers.txt").read_text()
+        sections = {part.split()[1]: part for part in re.split(r"^(?=== )", text, flags=re.M) if part.startswith("== ")}
+        return play.fills_the_window({"file": name, **play.app_layers(sections[name])})
+
+    def test_with_crop_to_fill_the_picture_covers_the_window_and_nothing_else_shows(self):
+        shown = self.fills("surfaceflinger-fill.txt")
+        self.assertEqual(shown["bounds"], [0, 0, 2400, 1080])
+        self.assertEqual((shown["backdrop_visible"], shown["window_visible"]), ([], []))
+        self.assertTrue(shown["pass"])
+
+    def test_with_the_picture_fitted_the_check_fails_on_the_bars(self):
+        for name in ("surfaceflinger-fit.txt", "surfaceflinger-overlay-fit.txt"):
+            with self.subTest(name=name):
+                shown = self.fills(name)
+                self.assertEqual(shown["bounds"], [240, 0, 2160, 1080])
+                self.assertEqual(shown["backdrop_visible"], [[0, 0, 240, 1080], [2160, 0, 2400, 1080]])
+                self.assertFalse(shown["pass"])
+
+    def test_without_the_video_layer_the_check_fails(self):
+        self.assertFalse(play.fills_the_window({"file": "none", **play.app_layers("")})["pass"])
 
 
 if __name__ == "__main__":

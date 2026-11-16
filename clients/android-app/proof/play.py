@@ -131,8 +131,9 @@ FITTED = "placed at (240, 0)-(2160, 1080) in the window 2400x1080"
 FILLED = "placed at (0, -135)-(2400, 1215) in the window 2400x1080, cropped to fill"
 FIT_CROP = [0, 0, 1280, 720]
 FILL_CROP = [0, 72, 1280, 648]
-# The bars (#495): the picture's place in the window (left, top, right, bottom), as FITTED and FILLED.
-PLACED = {"fit": (240, 0, 2160, 1080), "fill": (0, -135, 2400, 1215)}
+# The bars (#495): the fitted picture's place in the window (left, top, right, bottom), as FITTED.
+# With Crop to fill the picture's real bounds come from SurfaceFlinger (`fills_the_window`).
+PLACED = {"fit": (240, 0, 2160, 1080)}
 # The rows at the top that the emulator's status bar draws over (README, "Known gaps"); not read.
 STATUS_BAR_ROWS = 100
 # The pixels beside the picture's edge that are not read, and the brightest channel that is black.
@@ -375,20 +376,33 @@ def child_of(blocks: list[str], parent: str) -> str:
 
 
 def video_layer(emulator: "d8.Emulator", out: Path, name: str) -> dict:
-    """The video layer's entry in SurfaceFlinger's dump, and its crop. For #495: the backdrop's entry
-    and that of its buffers' layer (`bbq-wrapper`, its child), and that of the window's own buffer,
-    which the shell draws into, the parent of the app's layers."""
+    """The app's layers in SurfaceFlinger's dump (`app_layers`), which goes to
+    surfaceflinger-NAME.txt."""
     dump = emulator.shell("dumpsys SurfaceFlinger", timeout=60).stdout
     (out / f"surfaceflinger-{name}.txt").write_text(dump)
+    return {"file": f"surfaceflinger-{name}.txt", **app_layers(dump)}
+
+
+def buffers_of(blocks: list[str], block: str, name: str) -> dict:
+    """The entry of the layer that holds the buffers (`bbq-wrapper`, its child) of the layer `name`."""
+    called = re.search(rf"\(({re.escape(name)}#\d+)\)", block.splitlines()[0]) if block else None
+    return entry(child_of(blocks, called.group(1)) if called else "")
+
+
+def app_layers(dump: str) -> dict:
+    """The video layer's entry in SurfaceFlinger's dump, and its crop, and that of its buffers' layer:
+    where the picture really shows (#497). For #495: the backdrop's entry and that of its buffers'
+    layer, and that of the window's own buffer, which the shell draws into, the parent of the app's
+    layers."""
     blocks = re.split(r"\n(?=\+ )", dump)
-    video = entry(named(blocks, "korri-viewer-video"))
+    video_block = named(blocks, "korri-viewer-video")
+    video = entry(video_block)
     backdrop_block = named(blocks, "korri-viewer-backdrop")
     backdrop = entry(backdrop_block)
-    backdrop_name = re.search(r"\((korri-viewer-backdrop#\d+)\)", backdrop_block.splitlines()[0]) if backdrop_block else None
-    buffers = entry(child_of(blocks, backdrop_name.group(1)) if backdrop_name else "")
     window = entry(next((b for b in blocks if video["parent"] and b.startswith("+ BufferStateLayer (")
                          and b.splitlines()[0].startswith(f"+ BufferStateLayer ({video['parent']})")), ""))
-    return {"file": f"surfaceflinger-{name}.txt", **video, "backdrop": backdrop, "backdrop_buffers": buffers,
+    return {**video, "video_buffers": buffers_of(blocks, video_block, "korri-viewer-video"),
+            "backdrop": backdrop, "backdrop_buffers": buffers_of(blocks, backdrop_block, "korri-viewer-backdrop"),
             "window": window}
 
 
@@ -447,8 +461,7 @@ def outside(png: Path, placement: str, panel: bool = False, overlay: "list[int] 
     """The window outside the picture placed as `placement`, below the status bar, in strips (#495).
     Each must be black. With the overlay open (`panel`), Velvet's panel stands at the overlay layer's
     left edge over the whole left bar, which must show the panel over black. The layer stands out of
-    the display cutout (#494, `overlay`: its place): beside it the bars show the backdrop, black.
-    With Crop to fill nothing lies outside the picture: no strip."""
+    the display cutout (#494, `overlay`: its place): beside it the bars show the backdrop, black."""
     from PIL import Image
     left, top, right, bottom = PLACED[placement]
     with Image.open(png) as image:
@@ -642,9 +655,22 @@ def black_bars(shots: list[dict]) -> bool:
     return bool(shots) and all(shot["pass"] and shot["strips"] for shot in shots)
 
 
-def filled(shots: list[dict]) -> bool:
-    """Every screenshot was read with Crop to fill: the picture covers the window, nothing lies outside."""
-    return bool(shots) and all(shot["pass"] and not shot["strips"] for shot in shots)
+def fills_the_window(layer: dict) -> dict:
+    """With Crop to fill, from SurfaceFlinger's dump (`app_layers`): the picture's real bounds, where
+    the video's buffers show, cover the whole window, and neither the backdrop's buffers nor the
+    shell's window show anywhere (#497). The visible rectangles of one layer do not overlap, so they
+    cover the window when they lie in it and their areas add up to its own."""
+    width, height = WINDOW
+    shown = layer["video_buffers"]["visible"]
+    inside = all(0 <= r[0] < r[2] <= width and 0 <= r[1] < r[3] <= height for r in shown)
+    area = sum((r[2] - r[0]) * (r[3] - r[1]) for r in shown)
+    bounds = [min(r[0] for r in shown), min(r[1] for r in shown),
+              max(r[2] for r in shown), max(r[3] for r in shown)] if shown else None
+    return {"file": layer["file"], "bounds": bounds, "visible": shown,
+            "backdrop_visible": layer["backdrop_buffers"]["visible"], "window_visible": layer["window"]["visible"],
+            "pass": (layer["found"] and layer["video_buffers"]["found"] and inside and area == width * height
+                     and layer["backdrop_buffers"]["found"] and layer["backdrop_buffers"]["visible"] == []
+                     and layer["window"]["found"] and layer["window"]["visible"] == [])}
 
 
 def strip_change(before: Path, after: Path, side: str = "left") -> float:
@@ -718,8 +744,8 @@ def controls(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
     steps["left_strip_change"] = strip_change(out / "controls-fit.png", out / "controls-fill.png")
     # The fitted picture leaves the black backdrop in the left 240 columns.
     checks["the_picture_reaches_the_windows_edge"] = steps["left_strip_change"] > 10
-    steps["bars_fill"] = [outside(out / "controls-fill.png", "fill")]
-    checks["nothing_but_the_picture_shows_with_crop_to_fill"] = filled(steps["bars_fill"])
+    steps["picture_fill"] = fills_the_window(after)
+    checks["nothing_but_the_picture_shows_with_crop_to_fill"] = steps["picture_fill"]["pass"]
     on = proof_snapshot(emulator, logcat, launch)
     steps["snapshot_fill_on"] = toggles(on)
     checks["korrids_snapshot_shows_crop_to_fill_on"] = toggles(on).get(FILL, {}).get("value") is True
@@ -909,8 +935,8 @@ def overlay(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.
     checks["surfaceflinger_crops_the_stream_under_the_overlay"] = \
         before["crop"] == FIT_CROP and after["crop"] == FILL_CROP
     viewer_proof.screenshot(emulator, out / "overlay-fill.png")
-    steps["bars_overlay_fill"] = [outside(out / "overlay-fill.png", "fill", panel=True)]
-    checks["nothing_but_the_picture_shows_with_crop_to_fill_under_the_overlay"] = filled(steps["bars_overlay_fill"])
+    steps["picture_overlay_fill"] = fills_the_window(after)
+    checks["nothing_but_the_picture_shows_with_crop_to_fill_under_the_overlay"] = steps["picture_overlay_fill"]["pass"]
     # The overlay's panel dims the window's left: the right bar, beside it, shows the change.
     steps["right_strip_change"] = strip_change(out / "overlay-fit.png", out / "overlay-fill.png", "right")
     checks["the_picture_changes_under_the_overlay"] = steps["right_strip_change"] > 10
