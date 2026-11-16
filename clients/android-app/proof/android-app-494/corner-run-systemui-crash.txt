@@ -1,0 +1,33 @@
+== The earlier run (05:36 to 05:41 UTC), with the corner cutout alone (com.android.internal.display.cutout.emulation.corner)
+== display-cutout-enabled.txt
+    mCurrentAppOrientation=SCREEN_ORIENTATION_NOSENSOR
+    mRotation=0 mDeferredRotationPauseCount=0
+        mLastFilteredX=0.0
+        mLastFilteredY=9.776321
+        mLastFilteredZ=0.812345
+      mDisplayFrame=Rect(0, 0 - 1080, 2400)
+      mDisplayCutout=DisplayCutout{insets=Rect(0, 126 - 0, 0) waterfall=Insets{left=0, top=0, right=0, bottom=0} boundingRect={Bounds=[Rect(0, 0 - 0, 0), Rect(954, 0 - 1080, 126), Rect(0, 0 - 0, 0), Rect(0, 0 - 0, 0)]} cutoutPathParserInfo={CutoutPathParserInfo{displayWidth=1080 displayHeight=2400 density={2.625} cutoutSpec={M 0,0 L -48, 0 C -48,48 -48,48 0,48 Z @dp @right} rotation={0} scale={1.0}}}}
+
+== logcat: SystemUI's first crash, at the app's start
+11-16 05:37:25.153  2895  3204 E AndroidRuntime: FATAL EXCEPTION: ScreenDecorations
+11-16 05:37:25.153  2895  3204 E AndroidRuntime: Process: com.android.systemui, PID: 2895
+11-16 05:37:25.153  2895  3204 E AndroidRuntime: java.lang.NullPointerException: Parameter specified as non-null is null: method kotlin.jvm.internal.Intrinsics.checkNotNullParameter, parameter bottomLeft
+11-16 05:37:25.153  2895  3204 E AndroidRuntime: 	at com.android.systemui.statusbar.events.PrivacyDotViewController.initialize(Unknown Source:22)
+11-16 05:37:25.153  2895  3204 E AndroidRuntime: 	at com.android.systemui.ScreenDecorations.setupDecorations(ScreenDecorations.java:315)
+11-16 05:37:25.153  2895  3204 E AndroidRuntime: 	at com.android.systemui.ScreenDecorations.startOnScreenDecorationsThread(ScreenDecorations.java:252)
+11-16 05:37:25.153  2895  3204 E AndroidRuntime: 	at com.android.systemui.ScreenDecorations.$r8$lambda$bRx4s-frKyGv-SmpobluoualBbQ(Unknown Source:0)
+11-16 05:37:25.153  2895  3204 E AndroidRuntime: 	at com.android.systemui.ScreenDecorations$$ExternalSyntheticLambda2.run(Unknown Source:2)
+11-16 05:37:25.153  2895  3204 E AndroidRuntime: 	at android.os.Handler.handleCallback(Handler.java:938)
+11-16 05:37:25.153  2895  3204 E AndroidRuntime: 	at android.os.Handler.dispatchMessage(Handler.java:99)
+11-16 05:37:25.153  2895  3204 E AndroidRuntime: 	at android.os.Looper.loopOnce(Looper.java:201)
+11-16 05:37:25.153  2895  3204 E AndroidRuntime: 	at android.os.Looper.loop(Looper.java:288)
+11-16 05:37:25.153  2895  3204 E AndroidRuntime: 	at android.os.HandlerThread.run(HandlerThread.java:67)
+11-16 05:37:25.155   329   329 I netd    : bandwidthRemoveInterfaceQuota(eth0) <0.48ms>
+11-16 05:37:25.156   329   329 I netd    : bandwidthSetInterfaceQuota(eth0, 9223372036854775807) <0.36ms>
+
+== logcat: SystemUI crashes in the run: 814, the last at 11-16 05:41:45.812
+11-16 05:37:25.159   526  1600 W ActivityManager: Process com.android.systemui has crashed too many times, killing! Reason: crashed quickly
+11-16 05:37:27.709   526  3279 W ActivityManager: Process com.android.systemui has crashed too many times, killing! Reason: crashed quickly
+
+== logcat: the app's window went before its stream started
+11-16 05:38:44.974  3115  3153 E korri   : korri-app: viewer 4a658b5ba293e021fc528b9d5a69e8ef not shown: the app's window went before the stream started

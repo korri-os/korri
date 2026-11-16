@@ -399,8 +399,9 @@ through `tests/host.rs`); the input's are the viewer's
   thread to place the layer again, which moves it only if its place
   changed. A touch reaches the shell's overlay from the layer's corner, as
   `Game.dispatchTouchEvent` offsets it. The video and the backdrop still
-  reach the window's edges, into the cutout. Not yet proven on a phone
-  (D12).
+  reach the window's edges, into the cutout. Proven on the emulator with
+  its emulated Pixel 5, in both landscape turns (`proof/android-app-494/`);
+  not yet on a phone (D12).
 
 The logcat lines: the viewer library's `overlay: open on Guide; the
 stream's input is held`, `overlay: layer placed at (L, T)-(R, B) in the
