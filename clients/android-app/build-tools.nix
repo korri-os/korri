@@ -1,7 +1,8 @@
-# Android's build tools alone (apksigner, aapt2), at the version that
-# ../android/sdk.nix builds with, for the release signing step
-# (sign-release.sh, #434 D12). No NDK, platform or emulator: the step runs on
-# the owner's machine, where the key is, and only signs.
+# Android's build tools (apksigner, aapt2), at the version that
+# ../android/sdk.nix builds with, and its platform tools (adb), for the steps
+# that run on the owner's machine: the release signing step (sign-release.sh)
+# and D12's owner binding (d12-binding.sh), #434. No NDK, platform or
+# emulator: those steps only sign, read manifests and talk to a phone.
 { pkgs }:
 let
   sdk = import ../android/sdk.nix { inherit pkgs; };
@@ -15,5 +16,9 @@ let
     includeSources = false;
     extraLicenses = [ "android-sdk-license" ];
   };
+  root = "${composition.androidsdk}/libexec/android-sdk";
 in
-"${composition.androidsdk}/libexec/android-sdk/build-tools/${sdk.buildToolsVersion}"
+{
+  buildTools = "${root}/build-tools/${sdk.buildToolsVersion}";
+  platformTools = "${root}/platform-tools";
+}

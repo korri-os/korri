@@ -15,6 +15,7 @@ nix build .#korri-android-app-fixture-apk  # x86_64, the holder proof's relay an
 nix build .#korri-android-app-release-apk  # D12 prep: arm64, not debuggable, notices, unsigned
 nix run .#android-app-release-key          # D12 prep, once, on zao: the release key
 nix run .#android-app-release-sign -- UNSIGNED.apk SIGNED.apk  # D12 prep, on zao
+nix run .#android-app-d12-binding -- make WORK  # D12, on zao: the owner binding (also sign-debug, seed)
 nix run .#android-app-proof                # D8: one headless API 31 emulator, no person
 nix run .#android-app-holder-proof         # D9, on aka as root: binding and a holder's game
 nix run .#android-app-play-proof -- --sunshine PACKAGE  # D10, D11, D5b, on aka as root: a tap plays the game
@@ -665,13 +666,93 @@ What is missing:
 - Which signer holds the owner's private key: no record in the repository
   says.
 
-So no route binds the release APK to the real owner today. Choosing one is
-an owner decision, and this slice stops there: a NIP-55 signer such as Amber
-on the phone, with a host for the existing coordinator (a third-party
-result activity, or one Korri Java file on #434's list); a NIP-46 bunker,
-with korrid's `Nip46PersonSigner` wired to the first binding and a way to
-enter its address; a debuggable build seeded as in D9 with a statement that
-the owner signs; or a peer that answers `OwnerBindingRequested`.
+So no route binds the release APK to the real owner today. The routes were:
+a NIP-55 signer such as Amber on the phone, with a host for the existing
+coordinator (a third-party result activity, or one Korri Java file on
+#434's list); a NIP-46 bunker, with korrid's `Nip46PersonSigner` wired to
+the first binding and a way to enter its address; a debuggable build seeded
+as in D9 with a statement that the owner signs; or a peer that answers
+`OwnerBindingRequested`. The owner chose the third for D12 (below).
+
+### D12's debuggable route (owner decision, 2026-11-16)
+
+D12 runs a debuggable build of the app, seeded as in D9, but bound to the
+owner's real key `a80db13f…3dca` with a statement that the owner signs
+(`d12-binding.sh`, `nix run .#android-app-d12-binding`).
+
+The statement is korrid's own owner statement for the phone's new device
+key: a Nostr event of kind 30078 with empty content and exactly three tags,
+`["d", "org.korri.device-owner:DEVICE"]`, `["device", "DEVICE"]` and
+`["status", "owned"]` (`identity.rs`: `owner_tags`, `parse_owner_statement`),
+signed by `a80db13f…3dca`. `korrid identity owner-binding-request` makes the
+device key and prints that template; `korrid identity import` checks a
+signed statement and stores it as `identity/owner.event.json` beside
+`identity/device.key`. The app reads both from
+`<no_backup>/korrid-state/identity/`, where D9 seeds them.
+
+Who can sign it today: only the owner's own signer. Checked on zao on
+2026-11-16 (public files, read with sudo):
+
+| Fact | Where |
+| --- | --- |
+| zao's local signer holds the person key `f77dae0a…`, not the owner's | `/run/korri-local-signer/public/person.pub` |
+| zao's korrid has `nip46-client.key` (2026-10-26) but no `nip46.connection.json`: no NIP-46 signer is connected there | `/var/lib/korrid/identity/` |
+| zao's owner statement: by `a80db13f…3dca`, created 2026-09-06 04:24:20 UTC, stored 2026-09-07 | `/var/lib/korrid/identity/owner.event.json` |
+
+zao's statement came from the guarded offline test-owner replacement
+(`korrid identity replace-test-owner-offline`, approved 2026-09-06,
+`docs/research/korrid-identity-protocol.md`), whose template "the user's
+signer" signed; the repository does not say which signer. The record of
+2026-10-22 (ADR 0021 on the unlanded branch `docs/device-join-design`,
+`b9d1c77a2`) says that the Odin 2 Portal and the RP Mini V2 joined the same
+way: the person's phone signer, Amber, signed each template over NIP-46,
+and the person key stayed in the phone. The RG35XX SP's repair note records
+its NIP-46 owner `a80d…` and that its local signer does not hold that key
+(`services/korrid/deploy/save-sync-migration/SP-ACCOUNT-REPAIR.md`). So the
+owner's private key is in Amber on the owner's phone: inferred from those
+records, which do not say which phone. The script asks that signer over
+NIP-46 and never holds the key.
+
+The steps, on zao in a checkout. Build `.#korri-android-app-apk` and the
+app `android-app-d12-binding` on aka and copy them as the signing tools are
+copied above (the loop, with `android-app-d12-binding` as the task):
+
+```sh
+nix run .#android-app-d12-binding -- sign-debug \
+  /nix/store/...-korri-android-app-apk-0.1.0/korri-android-app-unsigned.apk ~/korri-android-app-debug.apk
+# The owner makes a NIP-46 bunker address (bunker://...) in Amber.
+nix run .#android-app-d12-binding -- make ~/d12-binding   # paste it; approve in Amber
+adb uninstall com.simonwjackson.korri.app                 # only if installed; deletes its state
+adb install --no-incremental ~/korri-android-app-debug.apk  # do not start the app yet
+nix run .#android-app-d12-binding -- seed ~/d12-binding [--serial SERIAL]
+# Start the app. Its korrid publishes its statement:
+nak req -k 30078 -t d=org.korri.device-owner:DEVICE wss://relay.primal.net
+```
+
+| Step | What it does |
+| --- | --- |
+| `sign-debug` | Refuses an APK that is not debuggable (run-as needs one). Signs with Android's debug key, `~/.android/debug.keystore`, as the proofs do |
+| `make WORK` | Refuses a WORK that exists or is inside a Git work tree, and a bunker file that is a link or not 0600. Reads the bunker address before it makes anything, from the file or from the terminal (not shown), and gives it to nak only in its environment. Makes the device key with the repository's korrid, has the owner's signer sign the template over NIP-46 with nak, refuses a statement that is not the template or is by another key than `--owner` (default `a80db13f…3dca`), imports it with korrid and checks `Owned` by that owner |
+| `seed WORK` | Refuses an app that is not installed, not debuggable or has a device key already (it has started once). Writes both files with run-as and `adb exec-in`, reads their sizes back, checks they are the app's own 0600 files, then deletes `WORK/state`: the phone's device key stays on the phone only |
+
+Checked on zao on 2026-11-16: `make` end to end with a throwaway owner key
+behind `nak bunker` on a local `nak serve` relay. The template went over
+NIP-46, the signed statement matched it, korrid imported it and said
+`Owned`, and the files were 0600 in 0700 folders. `make` refused a signer
+of another key than `--owner` (no statement stored), an existing folder, a
+folder inside this checkout, a bunker file of mode 0644 (nothing made) and
+an address that is not `bunker://`. `sign-debug` refused the release APK and
+signed the debug APK (`CN=Android Debug`, apksigner verifies it). The
+closure copy built nothing on zao.
+
+Not checked: `seed` (no phone; aka already ran another agent's emulator),
+Amber answering nak's NIP-46 requests, and anything on the phone.
+
+Costs: a debuggable app lets `run-as` and a debugger read its state, the
+phone's device key included, through USB or wireless debugging. The owner
+statement on the public relays names the phone's device key, as for every
+device. The debug key signs the app, so a later release install needs an
+uninstall first, which deletes the phone's korrid state.
 
 ## Next slices
 
