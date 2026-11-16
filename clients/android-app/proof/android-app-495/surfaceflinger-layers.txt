@@ -1,0 +1,118 @@
+== surfaceflinger-fit.txt (the picture fitted, the overlay closed (D11's step)): the window's own buffer, which the shell draws into, and the app's layers with the layers that hold their buffers (bbq-wrapper)
++ BufferStateLayer (com.simonwjackson.korri.app/android.app.NativeActivity#0) uid=10145
+  Region VisibleRegion (this=0 count=0)
+      layerStack=   0, z=        0, pos=(0,0), size=(2400,1080), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000102, tr=[0.00, 0.00][0.00, 0.00]
+      parent=83d917e com.simonwjackson.korri.app/android.app.NativeActivity#0
+      activeBuffer=[2400x1080:2400,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={windowType:1, dequeueTime:171284157131, ownerUID:10145, ownerPID:2910}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (korri-viewer-backdrop#0) uid=10145
+  Region VisibleRegion (this=0 count=0)
+      layerStack=   0, z=        0, pos=(0,0), size=(  -1,  -1), crop=[  0,   0, 1080, 2400], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000002, tr=[2.22, 0.00][0.00, 0.45]
+      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0
+      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (bbq-wrapper#0) uid=10145
+  Region VisibleRegion (this=0 count=2)
+    [  0,   0, 240, 1080]
+    [2160,   0, 2400, 1080]
+      layerStack=   0, z=        0, pos=(0,0), size=(1080,2400), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000102, tr=[2.22, 0.00][0.00, 0.45]
+      parent=korri-viewer-backdrop#0
+      activeBuffer=[1080x2400:1080,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:110062079783}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (korri-viewer-video#0) uid=10145
+  Region VisibleRegion (this=0 count=0)
+      layerStack=   0, z=        1, pos=(240,0), size=(  -1,  -1), crop=[  0,   0, 1280, 720], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000000, tr=[1.50, 0.00][0.00, 1.50]
+      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0
+      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (bbq-wrapper#0) uid=10145
+  Region VisibleRegion (this=0 count=1)
+    [240,   0, 2160, 1080]
+      layerStack=   0, z=        0, pos=(240,0), size=(1280, 720), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=BT601_525 SMPTE_170M Limited range, defaultPixelFormat=Unknown 0x000023, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000100, tr=[1.50, 0.00][0.00, 1.50]
+      parent=korri-viewer-video#0
+      activeBuffer=[1280x 720:1280,Unknown 0x000023], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:171303530305}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (korri-viewer-overlay#0) uid=10145
+  Region VisibleRegion (this=0 count=0)
+      layerStack=   0, z=        2, pos=(0,0), size=(  -1,  -1), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000001, tr=[0.00, 0.00][0.00, 0.00]
+      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0
+      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (bbq-wrapper#0) uid=10145
+  Region VisibleRegion (this=0 count=0)
+      layerStack=   0, z=        0, pos=(0,0), size=(2400,1080), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000100, tr=[0.00, 0.00][0.00, 0.00]
+      parent=korri-viewer-overlay#0
+      activeBuffer=[2400x1080:2400,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:156067743730}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
+
+== surfaceflinger-fill.txt (Crop to fill, the overlay closed (D11's step)): the window's own buffer, which the shell draws into, and the app's layers with the layers that hold their buffers (bbq-wrapper)
++ BufferStateLayer (com.simonwjackson.korri.app/android.app.NativeActivity#0) uid=10145
+  Region VisibleRegion (this=0 count=0)
+      layerStack=   0, z=        0, pos=(0,0), size=(2400,1080), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000102, tr=[0.00, 0.00][0.00, 0.00]
+      parent=83d917e com.simonwjackson.korri.app/android.app.NativeActivity#0
+      activeBuffer=[2400x1080:2400,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:173553790486, windowType:1, ownerPID:2910, ownerUID:10145}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (korri-viewer-backdrop#0) uid=10145
+  Region VisibleRegion (this=0 count=0)
+      layerStack=   0, z=        0, pos=(0,0), size=(  -1,  -1), crop=[  0,   0, 1080, 2400], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000002, tr=[2.22, 0.00][0.00, 0.45]
+      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0
+      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (bbq-wrapper#0) uid=10145
+  Region VisibleRegion (this=0 count=0)
+      layerStack=   0, z=        0, pos=(0,0), size=(1080,2400), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000102, tr=[2.22, 0.00][0.00, 0.45]
+      parent=korri-viewer-backdrop#0
+      activeBuffer=[1080x2400:1080,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:110062079783}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (korri-viewer-video#0) uid=10145
+  Region VisibleRegion (this=0 count=0)
+      layerStack=   0, z=        1, pos=(0,-135), size=(  -1,  -1), crop=[  0,  72, 1280, 648], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000000, tr=[1.88, 0.00][0.00, 1.88]
+      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0
+      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (bbq-wrapper#0) uid=10145
+  Region VisibleRegion (this=0 count=1)
+    [  0,   0, 2400, 1080]
+      layerStack=   0, z=        0, pos=(0,-135), size=(1280, 720), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=BT601_525 SMPTE_170M Limited range, defaultPixelFormat=Unknown 0x000023, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000100, tr=[1.88, 0.00][0.00, 1.88]
+      parent=korri-viewer-video#0
+      activeBuffer=[1280x 720:1280,Unknown 0x000023], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:173622081726}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (korri-viewer-overlay#0) uid=10145
+  Region VisibleRegion (this=0 count=0)
+      layerStack=   0, z=        2, pos=(0,0), size=(  -1,  -1), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000001, tr=[0.00, 0.00][0.00, 0.00]
+      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0
+      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (bbq-wrapper#0) uid=10145
+  Region VisibleRegion (this=0 count=0)
+      layerStack=   0, z=        0, pos=(0,0), size=(2400,1080), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000100, tr=[0.00, 0.00][0.00, 0.00]
+      parent=korri-viewer-overlay#0
+      activeBuffer=[2400x1080:2400,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:156067743730}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
+
+== surfaceflinger-overlay-fit.txt (the picture fitted, the overlay open (D5b's step)): the window's own buffer, which the shell draws into, and the app's layers with the layers that hold their buffers (bbq-wrapper)
++ BufferStateLayer (com.simonwjackson.korri.app/android.app.NativeActivity#0) uid=10145
+  Region VisibleRegion (this=0 count=0)
+      layerStack=   0, z=        0, pos=(0,0), size=(2400,1080), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000102, tr=[0.00, 0.00][0.00, 0.00]
+      parent=83d917e com.simonwjackson.korri.app/android.app.NativeActivity#0
+      activeBuffer=[2400x1080:2400,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={windowType:1, dequeueTime:145966475225, ownerUID:10145, ownerPID:2910}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (korri-viewer-backdrop#0) uid=10145
+  Region VisibleRegion (this=0 count=0)
+      layerStack=   0, z=        0, pos=(0,0), size=(  -1,  -1), crop=[  0,   0, 1080, 2400], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000002, tr=[2.22, 0.00][0.00, 0.45]
+      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0
+      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (bbq-wrapper#0) uid=10145
+  Region VisibleRegion (this=0 count=2)
+    [  0,   0, 240, 1080]
+    [2160,   0, 2400, 1080]
+      layerStack=   0, z=        0, pos=(0,0), size=(1080,2400), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000102, tr=[2.22, 0.00][0.00, 0.45]
+      parent=korri-viewer-backdrop#0
+      activeBuffer=[1080x2400:1080,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:110062079783}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (korri-viewer-video#0) uid=10145
+  Region VisibleRegion (this=0 count=0)
+      layerStack=   0, z=        1, pos=(240,0), size=(  -1,  -1), crop=[  0,   0, 1280, 720], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000000, tr=[1.50, 0.00][0.00, 1.50]
+      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0
+      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (bbq-wrapper#0) uid=10145
+  Region VisibleRegion (this=0 count=1)
+    [240,   0, 2160, 1080]
+      layerStack=   0, z=        0, pos=(240,0), size=(1280, 720), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=BT601_525 SMPTE_170M Limited range, defaultPixelFormat=Unknown 0x000023, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000100, tr=[1.50, 0.00][0.00, 1.50]
+      parent=korri-viewer-video#0
+      activeBuffer=[1280x 720:1280,Unknown 0x000023], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:146106093845}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (korri-viewer-overlay#0) uid=10145
+  Region VisibleRegion (this=0 count=0)
+      layerStack=   0, z=        2, pos=(0,0), size=(  -1,  -1), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000000, tr=[0.00, 0.00][0.00, 0.00]
+      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0
+      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (bbq-wrapper#0) uid=10145
+  Region VisibleRegion (this=0 count=1)
+    [  0,   0, 2400, 1080]
+      layerStack=   0, z=        0, pos=(0,0), size=(2400,1080), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000100, tr=[0.00, 0.00][0.00, 0.00]
+      parent=korri-viewer-overlay#0
+      activeBuffer=[2400x1080:2400,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:145410905638}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 

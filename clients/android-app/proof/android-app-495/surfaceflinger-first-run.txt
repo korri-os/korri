@@ -1,0 +1,20 @@
+== The first run's surfaceflinger-fit.txt (the backdrop made opaque with Transaction.setOpaque): the window's own buffer and the backdrop with the layer that holds its buffers (bbq-wrapper). The bbq-wrapper is not opaque (flags 0x100, isOpaque=0), so the window stays visible in the bars under it.
++ BufferStateLayer (com.simonwjackson.korri.app/android.app.NativeActivity#0) uid=10145
+  Region VisibleRegion (this=0 count=2)
+    [  0,   0, 240, 1080]
+    [2160,   0, 2400, 1080]
+      layerStack=   0, z=        0, pos=(0,0), size=(2400,1080), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000102, tr=[0.00, 0.00][0.00, 0.00]
+      parent=efe833a com.simonwjackson.korri.app/android.app.NativeActivity#0
+      activeBuffer=[2400x1080:2400,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={windowType:1, dequeueTime:173869092117, ownerUID:10145, ownerPID:2766}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (korri-viewer-backdrop#0) uid=10145
+  Region VisibleRegion (this=0 count=0)
+      layerStack=   0, z=        0, pos=(0,0), size=(  -1,  -1), crop=[  0,   0, 1080, 2400], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000002, tr=[2.22, 0.00][0.00, 0.45]
+      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0
+      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
++ BufferStateLayer (bbq-wrapper#0) uid=10145
+  Region VisibleRegion (this=0 count=2)
+    [  0,   0, 240, 1080]
+    [2160,   0, 2400, 1080]
+      layerStack=   0, z=        0, pos=(0,0), size=(1080,2400), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000100, tr=[2.22, 0.00][0.00, 0.45]
+      parent=korri-viewer-backdrop#0
+      activeBuffer=[1080x2400:1080,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:109194644451}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, 
