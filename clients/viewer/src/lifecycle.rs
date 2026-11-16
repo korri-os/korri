@@ -743,6 +743,23 @@ mod tests {
         }
     }
 
+    /// The stream's thread: the next change that Apply sent, within 10 s. A
+    /// change that this thread takes after Apply's deadline is cancelled and
+    /// never comes, so the wait ends: the test fails and does not hang (#493).
+    fn next_change(changes: &ControlChanges) -> ControlChange {
+        let until = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(change) = changes.next() {
+                return change;
+            }
+            assert!(
+                std::time::Instant::now() < until,
+                "the stream's thread took no change in 10 s"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
     // Linux's viewer, and Android's before its stream attaches them: the
     // replies of the trait's defaults.
     #[test]
@@ -800,14 +817,10 @@ mod tests {
         connect(&lifecycle);
         let id = fill(&observed(&lifecycle));
         let stream = std::thread::spawn(move || {
-            loop {
-                if let Some(change) = changes.next() {
-                    let asked = change.change;
-                    change.done(Ok(()));
-                    return asked;
-                }
-                std::thread::sleep(Duration::from_millis(5));
-            }
+            let change = next_change(&changes);
+            let asked = change.change;
+            change.done(Ok(()));
+            asked
         });
         assert!(matches!(ask(&lifecycle, turn_on(&id)), R::Ok));
         assert_eq!(
@@ -834,13 +847,8 @@ mod tests {
 
         // The stream's thread cannot perform it.
         let stream = std::thread::spawn(move || {
-            loop {
-                if let Some(change) = changes.next() {
-                    change.done(Err("the video layer did not move".into()));
-                    return changes;
-                }
-                std::thread::sleep(Duration::from_millis(5));
-            }
+            next_change(&changes).done(Err("the video layer did not move".into()));
+            changes
         });
         assert!(matches!(
             ask(&lifecycle, turn_on(&id)),
@@ -887,13 +895,8 @@ mod tests {
             value: Some(SurfaceGameplayControlValue::Toggle { value: false }),
         };
         let stream = std::thread::spawn(move || {
-            loop {
-                if let Some(change) = changes.next() {
-                    change.done(Ok(()));
-                    return changes;
-                }
-                std::thread::sleep(Duration::from_millis(5));
-            }
+            next_change(&changes).done(Ok(()));
+            changes
         });
         assert!(matches!(ask(&lifecycle, off.clone()), R::Ok));
         let changes = stream.join().unwrap();
@@ -935,14 +938,9 @@ mod tests {
         let id = fill(&observed(&lifecycle));
         let (late, answer_now) = mpsc::channel::<()>();
         let stream = std::thread::spawn(move || {
-            loop {
-                if let Some(change) = changes.next() {
-                    answer_now.recv().unwrap();
-                    change.done(Ok(()));
-                    return;
-                }
-                std::thread::sleep(Duration::from_millis(5));
-            }
+            let change = next_change(&changes);
+            answer_now.recv().unwrap();
+            change.done(Ok(()));
         });
         assert!(matches!(ask(&lifecycle, turn_on(&id)), R::Error { .. }));
         late.send(()).unwrap();

@@ -1115,7 +1115,8 @@ pub(crate) mod tests {
 
     /// Android's side, as a test scripts it: it records each call, gives
     /// each device the battery that the test set, fails the calls of the
-    /// devices in `failing`, and takes `delay` for each call.
+    /// devices in `failing`, and takes `delay` for each call. It counts the
+    /// calls and battery reads that have started (`begun`).
     #[derive(Clone, Default)]
     pub(crate) struct Scripted {
         pub calls: Arc<StdMutex<Vec<Call>>>,
@@ -1126,6 +1127,16 @@ pub(crate) mod tests {
         /// A battery read takes this long, or panics.
         pub battery_delay: Duration,
         pub battery_panics: bool,
+        pub begun: Arc<Begun>,
+    }
+
+    /// How many calls and battery reads have started. A test that needs one
+    /// under way waits for it here: on a loaded machine the feedback thread
+    /// can start later than any fixed sleep allows (#493).
+    #[derive(Default)]
+    pub(crate) struct Begun {
+        calls: AtomicUsize,
+        battery_reads: AtomicUsize,
     }
 
     impl Scripted {
@@ -1135,10 +1146,31 @@ pub(crate) mod tests {
         fn set_battery(&self, device: i32, battery: Option<Battery>) {
             self.batteries.lock().unwrap().insert(device, battery);
         }
+        /// Wait until `count` calls into Android have started.
+        fn calls_begun(&self, count: usize) {
+            begun(&self.begun.calls, count, "call into Android");
+        }
+        /// Wait until `count` battery reads have started.
+        fn battery_reads_begun(&self, count: usize) {
+            begun(&self.begun.battery_reads, count, "battery read");
+        }
+    }
+
+    /// Wait until `counter` reaches `count`. The test fails after 10 s.
+    fn begun(counter: &AtomicUsize, count: usize, what: &str) {
+        let until = Instant::now() + Duration::from_secs(10);
+        while counter.load(AtomicOrdering::SeqCst) < count {
+            assert!(
+                Instant::now() < until,
+                "{what} {count} did not start in 10 s"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     impl Outputs for Scripted {
         fn call(&mut self, call: &Call) -> Result<()> {
+            self.begun.calls.fetch_add(1, AtomicOrdering::SeqCst);
             std::thread::sleep(self.delay);
             if self.panics {
                 panic!("a JNI fault");
@@ -1156,6 +1188,9 @@ pub(crate) mod tests {
             Ok(())
         }
         fn battery(&mut self, device: i32) -> Result<Option<Battery>> {
+            self.begun
+                .battery_reads
+                .fetch_add(1, AtomicOrdering::SeqCst);
             std::thread::sleep(self.battery_delay);
             if self.battery_panics {
                 panic!("a Binder fault");
@@ -1838,6 +1873,11 @@ pub(crate) mod tests {
             .seats()
             .seated(seat(18, 0, Rumble::Dual(Owner::Device), false));
         worker.serve_core();
+        // The host's rumble comes behind a call that is under way. Without
+        // that wait, a loaded machine could run the stop before the feedback
+        // thread took the seat: the stop then had no rumble to cancel (#493).
+        unsafe { rumble(0, 0x0100, 0x0100) };
+        outputs.calls_begun(1);
         rumbles_then_zero(2000);
         let began = Instant::now();
         assert!(worker.stop(STOP_WAIT), "the stop waited behind the rumble");
@@ -1915,7 +1955,7 @@ pub(crate) mod tests {
         worker.serve_core();
         unsafe { rumble(0, 0xff00, 0xff00) };
         // The first rumble's call is under way; more waits behind it.
-        std::thread::sleep(Duration::from_millis(100));
+        outputs.calls_begun(1);
         unsafe {
             rumble(1, 0xff00, 0xff00);
             set_controller_led(0, 1, 2, 3);
@@ -1984,10 +2024,11 @@ pub(crate) mod tests {
                 0
             }
         }
-        let mut worker = Worker::start(move || Ok(outputs), Shared(sent.clone()), clock).unwrap();
+        let made = outputs.clone();
+        let mut worker = Worker::start(move || Ok(made), Shared(sent.clone()), clock).unwrap();
         worker.seats().seated(seat(18, 0, Rumble::None, false));
         // The battery read is under way when the stream stops.
-        std::thread::sleep(Duration::from_millis(100));
+        outputs.battery_reads_begun(1);
         assert!(!worker.stop(Duration::from_millis(100)));
         // It ends after the stop: a new stream may be running by then.
         std::thread::sleep(Duration::from_millis(1000));
