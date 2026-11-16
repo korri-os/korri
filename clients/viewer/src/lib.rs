@@ -24,6 +24,9 @@ pub mod lifecycle;
 // Android's picture, sound and input. The pure parts also build on the host
 // for their tests.
 #[cfg(any(test, target_os = "android"))]
+#[path = "android/answer.rs"]
+mod answer;
+#[cfg(any(test, target_os = "android"))]
 #[path = "android/audio.rs"]
 mod audio;
 #[cfg(any(test, target_os = "android"))]

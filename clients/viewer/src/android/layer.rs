@@ -63,7 +63,11 @@
 //! (`clients/android-app`), whose loop is Slint's: it asks for them
 //! ([`Layers::request`]) and reads the answer at each tick
 //! ([`Pending::poll`]), so its thread never waits for Android's main thread.
+//! When an app stops waiting (a stop, or the window goes), the main thread
+//! removes the layers that it made, also those that it sent already
+//! (`answer.rs`, #497).
 use crate::{
+    answer::{self, Answer},
     overlay::Presenter,
     placement::{Fill, Insets, Rect, geometry, keep_out_of_cutout, letterbox, place},
 };
@@ -160,10 +164,11 @@ impl Made {
     }
 }
 
-/// Layers that Android's main thread is making. Dropping it before they are
-/// made is safe: the main thread then removes what it made.
+/// Layers that Android's main thread is making. Dropping it before it gave
+/// the layers is safe: the main thread then removes what it made, whether
+/// it sent them already or not.
 pub struct Pending {
-    receiver: mpsc::Receiver<Result<Made>>,
+    answer: Answer<Result<Made>>,
     until: Instant,
     stream: (i32, i32),
     window: (i32, i32),
@@ -182,7 +187,7 @@ impl Pending {
 
     /// As [`Pending::poll`], waiting at most `timeout` for the answer.
     fn wait(&mut self, timeout: Duration) -> Option<Result<Layers>> {
-        let made = match self.receiver.recv_timeout(timeout) {
+        let made = match self.answer.recv_timeout(timeout) {
             Ok(made) => made,
             Err(RecvTimeoutError::Disconnected) => {
                 return Some(Err(anyhow!("Android's main thread dropped the layers")));
@@ -262,7 +267,16 @@ impl Layers {
             let activity = unsafe { JObject::from_raw(app.activity_as_ptr() as jni::sys::jobject) };
             env.new_global_ref(activity)
         })?;
-        let (sender, receiver) = mpsc::channel();
+        let post = {
+            let app = app.clone();
+            Box::new(move |work: answer::Work| app.run_on_java_main_thread(Box::new(work)))
+        };
+        // Made layers that no one takes any more: the main thread removes them.
+        let (reply, answer) = answer::channel(post, move |made: Result<Made>| {
+            if let Ok(made) = made {
+                made.remove(vm);
+            }
+        });
         // The layers keep the activity, for the cutout of its window.
         let (kept, overlay_place) = (activity.clone(), Arc::new(Mutex::new(whole(window))));
         let place = overlay_place.clone();
@@ -298,13 +312,11 @@ impl Layers {
                     overlay,
                 }
             });
-            // The asking thread stopped waiting: remove what it will never use.
-            if let Err(mpsc::SendError(Ok(made))) = sender.send(made) {
-                made.remove(vm);
-            }
+            // When the asking thread stopped waiting, this removes them.
+            reply.send(made);
         }));
         Ok(Pending {
-            receiver,
+            answer,
             until: Instant::now() + MAKE_DEADLINE,
             stream,
             window,
