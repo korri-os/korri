@@ -329,8 +329,8 @@ mod tests {
         assert!(Options::for_lifecycle(PathBuf::new(), None).is_err());
     }
 
-    // #391 step E: the build's default core streams (nightjar-core where a
-    // Linux build has it, `network_core::Kind::default`) unless -networkcore
+    // #391 step E: the build's default core streams (nightjar-core where the
+    // build has it, `network_core::Kind::default`) unless -networkcore
     // names one, anywhere among the arguments, as a wrapper may append it.
     #[test]
     fn the_network_core_is_the_builds_default_unless_named() {

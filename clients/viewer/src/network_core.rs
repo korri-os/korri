@@ -8,10 +8,9 @@
 //! starts, and every input packet and reading goes to that core
 //! (`active`): the picture, sound and input code of a platform never names
 //! a core. `nightjar.rs` is nightjar-core, built with the `nightjar`
-//! feature, on Linux and Android. On Linux it is the default where it is
-//! built (ADR 0062: it measured equal); Moonlight's C core
-//! (`moonlight_common_c.rs`) is the default elsewhere and the fallback by
-//! option.
+//! feature, on Linux and Android, and then the default (ADR 0062: it
+//! measured equal); Moonlight's C core (`moonlight_common_c.rs`) is the
+//! default in a build without it and the fallback by option.
 //!
 //! The platform's video and audio code stays behind the C core's callback
 //! tables (`DECODER_RENDERER_CALLBACKS`, `AUDIO_RENDERER_CALLBACKS`) and its
@@ -40,11 +39,11 @@ pub enum Kind {
 }
 
 impl Default for Kind {
-    /// nightjar-core on Linux where the build has it (#391 step E: it
-    /// measured equal, ADR 0062); the C core on Android until its own proof
-    /// passes, and in a build without it.
+    /// nightjar-core where the build has it (#391 step E: it measured equal
+    /// on Linux, ADR 0062, and Android's app passed its emulator proof with
+    /// it); the C core in a build without it.
     fn default() -> Self {
-        if cfg!(all(feature = "nightjar", not(target_os = "android"))) {
+        if cfg!(feature = "nightjar") {
             Self::Nightjar
         } else {
             Self::MoonlightCommonC
@@ -297,12 +296,11 @@ pub(crate) mod tests {
         Installed(turn)
     }
 
-    // ADR 0062: nightjar-core measured equal (#391 step E), so a Linux build
-    // with it streams with it; `-networkcore c` keeps the C core. Android
-    // keeps the C core until its own proof passes.
+    // ADR 0062: nightjar-core measured equal (#391 step E), so a build with
+    // it streams with it; `-networkcore c` keeps the C core.
     #[test]
-    fn nightjar_streams_where_linux_builds_it_unless_c_is_named() {
-        let built = cfg!(all(feature = "nightjar", not(target_os = "android")));
+    fn nightjar_streams_where_built_unless_c_is_named() {
+        let built = cfg!(feature = "nightjar");
         assert_eq!(
             Kind::default(),
             if built {

@@ -1991,31 +1991,31 @@ Notice (Artemis shows a toast) and Resize (#476) stay unavailable.
 With the cargo feature `nightjar` the viewer carries nightjar-core, a Rust
 port of moonlight-common-c (`vendor/README.md`: the pin, the licence and
 Korri's edits), beside the C core (`moonlight-common-c`). nightjar-core
-measured equal to the C core in turns (`proof/nightjar/README.md`), so on
-Linux it is the default core where the build has it (ADR 0062), and
-`-networkcore c` streams with the C core:
+measured equal to the C core in turns (`proof/nightjar/README.md`), and the
+Android viewer app passed its emulator proof with it
+(`proof/android-nightjar/`), so it is the default core where the build has
+it (ADR 0062), and `-networkcore c` streams with the C core:
 
 - Linux: the PC package, `korri-viewer`, builds it (x86_64; the aarch64
   package does not, below). `korri-viewer-nightjar` is nightjar-core with
   no other Rust part, the turns' candidate; its `bin/moonlight` appends
   `-networkcore nightjar`.
-- Android: `nix build .#korri-viewer-android-nightjar-apk` (the viewer's
-  own app, both ABIs) and `.#checks.x86_64-linux.korri-viewer-android-nightjar`
-  (the session part and its tests, both ABIs). The app's crate has the same
+- Android: `nix build .#korri-viewer-android-apk` (the viewer's own app,
+  both ABIs) and `.#checks.x86_64-linux.korri-viewer-android` (the session
+  part and its tests, both ABIs) build it. The app's crate has the same
   feature (`android/Cargo.toml`). The starting intent's `args` pick the core
-  as on Linux: `-networkcore nightjar` among them, else the C core.
-  `android/proof/run.py --network-core nightjar` builds and starts that APK
-  so. On arm64-v8a the build gives rustc `--cfg aes_armv8 --cfg
+  as on Linux: `-networkcore c` among them, else nightjar-core.
+  `android/proof/run.py` streams with the default; `--network-core c`
+  adds that option. On arm64-v8a the build gives rustc `--cfg aes_armv8 --cfg
   polyval_armv8` (`android.nix`): RustCrypto's `aes` 0.8 and `polyval` 0.6,
   which nightjar-core decrypts with, compile their ARMv8 AES and PMULL code
   only under these cfgs and choose it at run time on a CPU that has the
   instructions (cpufeatures reads Android's `getauxval`). nightjar-core
   refuses an aarch64 build without them (`crypto.rs:10`), so that no phone
   decrypts video in software by mistake. The check proves both modules are
-  in the arm64 library. On Android the C core stays the default for now;
-  the app's emulator proof with nightjar-core is `proof/android-nightjar/`.
-  The Korri app
-  (`clients/android-app`) keeps the C core only.
+  in the arm64 library. The Korri app (`clients/android-app`) builds the
+  viewer without the feature, so it keeps the C core: it has no proof with
+  nightjar-core yet.
 
 `src/network_core/nightjar.rs` puts nightjar-core's `Session` behind
 `NetworkCore`. The platform's picture, sound and input code does not

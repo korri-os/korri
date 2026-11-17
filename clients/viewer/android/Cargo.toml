@@ -11,8 +11,9 @@ crate-type = ["cdylib"]
 path = "src/lib.rs"
 
 [features]
-# nightjar-core as a second network core (#391 step E): the intent's
-# `-networkcore nightjar` picks it. Off by default: the C core streams.
+# nightjar-core as a second network core (#391 step E). The app's build
+# (`../android.nix`) gives it, and it is then the default core; the
+# intent's `-networkcore c` picks the C core.
 nightjar = ["korri-viewer/nightjar"]
 
 [dependencies]

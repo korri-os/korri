@@ -122,12 +122,11 @@ import cli  # noqa: E402
 
 def viewer_app(network_core: str) -> tuple[str, str, list[str]]:
     """The APK, the Android tests and the stream's extra arguments for a
-    network core (#391 step E): nightjar-core's builds carry the `nightjar`
-    feature, and the stream asks for it by name; the C core is the default."""
-    if network_core == "nightjar":
-        return ("korri-viewer-android-nightjar-apk", "checks.x86_64-linux.korri-viewer-android-nightjar",
-                ["-networkcore", "nightjar"])
-    return "korri-viewer-android-apk", "checks.x86_64-linux.korri-viewer-android", []
+    network core (#391 step E): both builds carry the `nightjar` feature, and
+    nightjar-core is the app's default; the stream asks for the C core by
+    name."""
+    arguments = ["-networkcore", "c"] if network_core == "c" else []
+    return "korri-viewer-android-apk", "checks.x86_64-linux.korri-viewer-android", arguments
 
 
 def log(text: str) -> None:
@@ -1533,8 +1532,8 @@ def main() -> int:
     parser.add_argument("--out", type=Path, help="the record's directory; default: a new one under /tmp")
     parser.add_argument("--stock-sunshine", action="store_true",
                         help="the sender's stock Sunshine, and no size change in the middle of the stream (#476)")
-    parser.add_argument("--network-core", choices=("c", "nightjar"), default="c",
-                        help="the stream's network core (#391 step E); nightjar builds the APK with nightjar-core")
+    parser.add_argument("--network-core", choices=("nightjar", "c"), default="nightjar",
+                        help="the stream's network core (#391 step E): nightjar-core, the app's default, or the C core by -networkcore c")
     parser.add_argument(cli.BUILD_STORE_OPTION, metavar="STORE", help=cli.BUILD_STORE_HELP)
     args = parser.parse_args()
     root = Path(os.environ["KORRI_ROOT"])

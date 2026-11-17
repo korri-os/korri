@@ -44,9 +44,9 @@ their ARMv8 AES and PMULL code only under these cfgs, and nightjar-core
 refuses to build for aarch64 without them (`client/src/crypto.rs:10`), so
 that no aarch64 build decrypts in software by mistake. They concern those
 two crates, not nightjar-core's own code, so no edit here replaces them:
-the viewer's Android build gives rustc the same two cfgs for arm64-v8a, in
-its nightjar builds only (`../android.nix`). Linux aarch64 would need the
-same; `korri-viewer-nightjar` is x86_64 only.
+the viewer's Android check and app give rustc the same two cfgs for
+arm64-v8a (`../android.nix`). Linux aarch64 would need the same; the
+viewer's Linux packages build nightjar-core on x86_64 only.
 
 To move the pin: copy the same paths from the new commit with `git archive`
 in one commit with no edits, then make the edits above again in the next.
