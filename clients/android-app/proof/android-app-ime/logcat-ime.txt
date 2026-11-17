@@ -1,0 +1,28 @@
+11-17 11:02:40.441  2595  2595 I korri   : korri-app: proof: ime state decor DecorView@3a9f88b[NativeActivity] layout requested false ime visible Some(false)
+11-17 11:02:41.199  2595  2595 D InputMethodManager: showSoftInput() view=android.app.NativeActivity$NativeContentView{f9b5d68 VFED..... .F....ID 0,0-1080,2400 aid=1073741824} flags=0 reason=SHOW_TOGGLE_SOFT_INPUT
+11-17 11:02:41.203  2595  2595 I korri-viewer: keyboard: the soft keyboard toggled; the stream's view has the focus
+11-17 11:02:41.205  2595  2660 I korri   : korri-app: proof: ime toggle Ok(Ok(()))
+11-17 11:02:42.009  2595  2595 D InsetsController: show(ime(), fromIme=true)
+11-17 11:02:45.962  2595  2595 I korri   : korri-app: proof: ime state decor DecorView@3a9f88b[NativeActivity] layout requested false ime visible Some(true)
+11-17 11:02:46.963  2595  2595 I korri   : korri-app: proof: ime layout requested
+11-17 11:02:50.716  2595  2595 I korri   : korri-app: proof: ime state decor DecorView@3a9f88b[NativeActivity] layout requested false ime visible Some(true)
+11-17 11:02:51.721  2595  2595 I korri-viewer: keyboard: the soft keyboard toggled; the stream's view has the focus
+11-17 11:02:51.722  2595  2660 I korri   : korri-app: proof: ime toggle Ok(Ok(()))
+11-17 11:02:56.474  2595  2595 I korri   : korri-app: proof: ime state decor DecorView@3a9f88b[NativeActivity] layout requested false ime visible Some(false)
+11-17 11:02:57.225  2595  2595 I korri   : korri-app: proof: ime layout requested
+11-17 11:03:00.726  2595  2595 I korri   : korri-app: proof: ime state decor DecorView@3a9f88b[NativeActivity] layout requested false ime visible Some(false)
+11-17 11:03:01.477  2595  2595 I korri   : korri-app: proof: ime callback-off cleared ["SlintInputView"]
+11-17 11:03:04.228  2595  2595 I korri   : korri-app: proof: ime state decor DecorView@3a9f88b[NativeActivity] layout requested false ime visible Some(false)
+11-17 11:03:04.979  2595  2595 D InputMethodManager: showSoftInput() view=android.app.NativeActivity$NativeContentView{f9b5d68 VFED..... .F....ID 0,0-1080,2400 aid=1073741824} flags=0 reason=SHOW_TOGGLE_SOFT_INPUT
+11-17 11:03:04.983  2595  2595 I korri-viewer: keyboard: the soft keyboard toggled; the stream's view has the focus
+11-17 11:03:04.983  2595  2660 I korri   : korri-app: proof: ime toggle Ok(Ok(()))
+11-17 11:03:05.038  2595  2595 D InsetsController: show(ime(), fromIme=true)
+11-17 11:03:09.485  2595  2595 I korri   : korri-app: proof: ime state decor DecorView@3a9f88b[NativeActivity] layout requested false ime visible Some(true)
+11-17 11:03:10.241  2595  2595 I korri-viewer: keyboard: the soft keyboard toggled; the stream's view has the focus
+11-17 11:03:10.242  2595  2660 I korri   : korri-app: proof: ime toggle Ok(Ok(()))
+11-17 11:03:14.994  2595  2595 I korri   : korri-app: proof: ime state decor DecorView@3a9f88b[NativeActivity] layout requested false ime visible Some(false)
+11-17 11:03:15.745  2595  2595 D InputMethodManager: showSoftInput() view=android.app.NativeActivity$NativeContentView{f9b5d68 VFED..... .F....ID 0,0-1080,2400 aid=1073741824} flags=0 reason=SHOW_TOGGLE_SOFT_INPUT
+11-17 11:03:15.749  2595  2595 I korri-viewer: keyboard: the soft keyboard toggled; the stream's view has the focus
+11-17 11:03:15.749  2595  2660 I korri   : korri-app: proof: ime toggle Ok(Ok(()))
+11-17 11:03:15.790  2595  2595 D InsetsController: show(ime(), fromIme=true)
+11-17 11:03:20.251  2595  2595 I korri   : korri-app: proof: ime state decor DecorView@3a9f88b[NativeActivity] layout requested false ime visible Some(true)

@@ -2,7 +2,10 @@
 //! The activity around the shell, in Rust: what `KorriShellActivity` did for
 //! it besides starting korrid and unpacking the packages, the stream that
 //! korrid starts in front of the shell (`viewer.rs`, slice D10), and the
-//! gameplay overlay's Surface over that stream (slice D5b).
+//! gameplay overlay's Surface over that stream (slice D5b). At each resume
+//! and focus it also takes the insets animation callbacks off the window's
+//! views, so that the input method's keyboard is drawn
+//! (`korri_viewer::soft_keyboard`).
 use crate::{logcat, viewer::Stream};
 use anyhow::Result;
 use jni::{
@@ -13,6 +16,7 @@ use korri_shell::{
     backend::android::{Host, Overlay, Rendered},
     input::android::DevicePresence,
 };
+use korri_viewer::soft_keyboard;
 use slint::android::{
     android_activity::{input::InputEvent, MainEvent},
     AndroidApp,
@@ -133,6 +137,22 @@ impl Host for AppHost {
                 Err(_) => {
                     let _ = env.exception_clear();
                     logcat::error("korri-app: the window flags were not applied");
+                }
+            }
+            // Slint's text view sets an insets animation callback, and with
+            // one the keyboard is never drawn in this window (Slint #11791).
+            // Its own keyboard's insets still reach it through its listener.
+            let cleared = env.with_local_frame(16, |env| {
+                soft_keyboard::without_insets_animations(env, activity.as_obj())
+            });
+            match cleared {
+                Ok(views) => logcat::info(&format!(
+                    "korri-app: no insets animation callback on {views} views: \
+                     the input method's keyboard is drawn"
+                )),
+                Err(_) => {
+                    let _ = env.exception_clear();
+                    logcat::error("korri-app: the insets animation callbacks stay");
                 }
             }
         }));

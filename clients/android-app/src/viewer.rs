@@ -687,9 +687,6 @@ struct Playing {
     /// A change that waits for Android's main thread: "Crop to fill" for
     /// the layer to move, "Toggle keyboard" for the input method's call.
     answering: Option<(ControlChange, mpsc::Receiver<anyhow::Result<()>>)>,
-    /// "Toggle keyboard" gave the stream's view the focus: when the stream
-    /// ends, the keyboard hides and the view gives the focus back.
-    keyboard: bool,
     /// The shell's gameplay overlay over this stream (slice D5b).
     hosted: Hosted,
     /// Where each opening's leave thread answers, with the opening's
@@ -1145,6 +1142,10 @@ impl Stream {
         }
         events::unbuffered(&self.app);
         // The stream's controls and status, for korrid's snapshot and
+        // The stream's view holds the focus while it plays, as Artemis's
+        // does: a letter key reaches the stream, and the soft keyboard types
+        // into it, never into the shell's text view.
+        soft_keyboard::take_focus(&self.app);
         // Apply; this activity is their lease.
         let changes = lifecycle.controls(self.id, status::readings);
         let touch = status::touchscreen();
@@ -1168,7 +1169,6 @@ impl Stream {
             rumble,
             touch,
             answering: None,
-            keyboard: false,
             hosted: Hosted::default(),
             answers,
             left,
@@ -1279,7 +1279,6 @@ impl Stream {
                 // korrid has closed the overlay first (the control
                 // dismisses it): the keyboard shows over the stream.
                 Change::ToggleKeyboard => {
-                    playing.keyboard = true;
                     playing.answering = Some((change, soft_keyboard::toggle(&self.app)));
                     return;
                 }
@@ -1319,14 +1318,12 @@ impl Stream {
             mut play,
             runtime,
             resumes,
-            keyboard,
             ..
         } = *playing;
         refuse_resumes(resumes, "the stream ended");
         play.end();
-        if keyboard {
-            soft_keyboard::give_back(&self.app);
-        }
+        // The keyboard hides, and the shell's text view can take the focus.
+        soft_keyboard::give_back(&self.app);
         let joined = runtime.join();
         match &joined {
             Ok(Ok(())) => logcat::info(&format!("korri-app: viewer {launch} ended")),
@@ -1444,7 +1441,6 @@ impl Drop for Stream {
                     rumble: _,
                     touch: _,
                     answering: _,
-                    keyboard: _,
                     hosted: _,
                     answers: _,
                     left: _,

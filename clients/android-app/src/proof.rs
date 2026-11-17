@@ -32,8 +32,12 @@ use std::{path::PathBuf, sync::Once, thread, time::Duration};
 const COMMAND: &str = "proof-command";
 const LOG: &str = "korri-app: proof:";
 
+/// The activity's app, for the input method's commands (DIAGNOSIS ONLY).
+static APP: std::sync::OnceLock<slint::android::AndroidApp> = std::sync::OnceLock::new();
+
 /// Watch for the proof's commands, once per process.
-pub fn watch(cache: PathBuf) {
+pub fn watch(cache: PathBuf, app: &slint::android::AndroidApp) {
+    let _ = APP.set(app.clone());
     static STARTED: Once = Once::new();
     STARTED.call_once(|| {
         let path = cache.join(COMMAND);
@@ -83,6 +87,9 @@ fn run(runtime: &tokio::runtime::Runtime, command: &str) {
             )),
         };
     }
+    if let ["ime", what] = command.split_whitespace().collect::<Vec<_>>().as_slice() {
+        return ime(what);
+    }
     let Some(adapter) = viewer::korrids_adapter() else {
         return logcat::error(&format!("{LOG} korrid holds no viewer adapter yet"));
     };
@@ -119,4 +126,148 @@ fn run(runtime: &tokio::runtime::Runtime, command: &str) {
         }
         _ => logcat::error(&format!("{LOG} no such command: {command}")),
     }
+}
+
+/// DIAGNOSIS ONLY: the input method's steps, one at a time, on Android's
+/// main thread. `toggle` and `give-back` are the viewer's own calls;
+/// `layout` asks the window for one traversal; `callback-off` takes the
+/// insets animation callback off Slint's text view; `state` logs the decor
+/// view (its flags) and whether the IME's insets are visible.
+fn ime(what: &str) {
+    use jni::{objects::JValue, JavaVM};
+    let Some(app) = APP.get() else {
+        return logcat::error(&format!("{LOG} ime {what}: no app"));
+    };
+    match what {
+        "toggle" => {
+            let answer = korri_viewer::soft_keyboard::toggle(app);
+            let got = answer.recv_timeout(Duration::from_secs(5));
+            return logcat::info(&format!("{LOG} ime toggle {got:?}"));
+        }
+        "give-back" => {
+            korri_viewer::soft_keyboard::give_back(app);
+            return logcat::info(&format!("{LOG} ime give-back posted"));
+        }
+        "layout" | "callback-off" | "state" => {}
+        _ => return logcat::error(&format!("{LOG} ime {what}: no such step")),
+    }
+    let vm = app.vm_as_ptr() as usize;
+    let activity = (|| -> anyhow::Result<jni::objects::GlobalRef> {
+        let vm = unsafe { JavaVM::from_raw(vm as *mut jni::sys::JavaVM) }?;
+        let env = vm.attach_current_thread()?;
+        let activity =
+            unsafe { jni::objects::JObject::from_raw(app.activity_as_ptr() as jni::sys::jobject) };
+        Ok(env.new_global_ref(activity)?)
+    })();
+    let Ok(activity) = activity else {
+        return logcat::error(&format!("{LOG} ime {what}: no activity"));
+    };
+    let what = what.to_owned();
+    app.run_on_java_main_thread(Box::new(move || {
+        let Ok(vm) = (unsafe { JavaVM::from_raw(vm as *mut jni::sys::JavaVM) }) else {
+            return;
+        };
+        let Ok(mut env) = vm.attach_current_thread() else {
+            return;
+        };
+        let done = env.with_local_frame(32, |env| -> jni::errors::Result<String> {
+            let window = env
+                .call_method(
+                    activity.as_obj(),
+                    "getWindow",
+                    "()Landroid/view/Window;",
+                    &[],
+                )?
+                .l()?;
+            let decor = env
+                .call_method(&window, "getDecorView", "()Landroid/view/View;", &[])?
+                .l()?;
+            match what.as_str() {
+                "layout" => {
+                    env.call_method(&decor, "requestLayout", "()V", &[])?;
+                    Ok("requested".into())
+                }
+                "callback-off" => {
+                    let content = env
+                        .call_method(
+                            activity.as_obj(),
+                            "findViewById",
+                            "(I)Landroid/view/View;",
+                            &[0x0102_0002i32.into()],
+                        )?
+                        .l()?;
+                    let count = env
+                        .call_method(&content, "getChildCount", "()I", &[])?
+                        .i()?;
+                    let mut cleared = Vec::new();
+                    for index in 0..count {
+                        let child = env
+                            .call_method(
+                                &content,
+                                "getChildAt",
+                                "(I)Landroid/view/View;",
+                                &[index.into()],
+                            )?
+                            .l()?;
+                        let class = env
+                            .call_method(&child, "getClass", "()Ljava/lang/Class;", &[])?
+                            .l()?;
+                        let name = env
+                            .call_method(&class, "getName", "()Ljava/lang/String;", &[])?
+                            .l()?;
+                        let name: String = env.get_string(&name.into())?.into();
+                        if name.ends_with("SlintInputView") {
+                            env.call_method(
+                                &child,
+                                "setWindowInsetsAnimationCallback",
+                                "(Landroid/view/WindowInsetsAnimation$Callback;)V",
+                                &[JValue::Object(&jni::objects::JObject::null())],
+                            )?;
+                            cleared.push(name);
+                        }
+                    }
+                    Ok(format!("cleared {cleared:?}"))
+                }
+                _ => {
+                    let text = env
+                        .call_method(&decor, "toString", "()Ljava/lang/String;", &[])?
+                        .l()?;
+                    let text: String = env.get_string(&text.into())?.into();
+                    let laid = env
+                        .call_method(&decor, "isLayoutRequested", "()Z", &[])?
+                        .z()?;
+                    let insets = env
+                        .call_method(
+                            &decor,
+                            "getRootWindowInsets",
+                            "()Landroid/view/WindowInsets;",
+                            &[],
+                        )?
+                        .l()?;
+                    let ime = env
+                        .call_static_method("android/view/WindowInsets$Type", "ime", "()I", &[])?
+                        .i()?;
+                    let visible = if insets.is_null() {
+                        None
+                    } else {
+                        Some(
+                            env.call_method(&insets, "isVisible", "(I)Z", &[ime.into()])?
+                                .z()?,
+                        )
+                    };
+                    Ok(format!(
+                        "decor {text} layout requested {laid} ime visible {visible:?}"
+                    ))
+                }
+            }
+        });
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
+        }
+        match done {
+            Ok(said) => logcat::info(&format!("{LOG} ime {what} {said}")),
+            Err(cause) => logcat::error(&format!("{LOG} ime {what} failed: {cause}")),
+        }
+    }));
 }

@@ -9,12 +9,22 @@
 //! maps as a hardware keyboard's. In the Korri app the focus can be in
 //! Slint's text view (`SlintInputView`, a text editor that Slint's Android
 //! backend adds to the activity), and what the keyboard types there goes to
-//! the shell. So the toggle first gives the focus to NativeActivity's own
-//! view, which is no text editor either: the keys then come through the
-//! activity's input queue, and the stream's input maps them as it maps a
-//! hardware keyboard's (slice D4). The view keeps the focus while the
-//! stream runs. When the stream ends, the keyboard hides and the view gives
-//! the focus back ([`give_back`]).
+//! the shell. So NativeActivity's own view takes the focus while a stream
+//! plays ([`take_focus`], and again before each toggle): it is no text
+//! editor either, so the keys come through the activity's input queue, and
+//! the stream's input maps them as it maps a hardware keyboard's (slice D4).
+//! When the stream ends, the keyboard hides and the view gives the focus
+//! back ([`give_back`]).
+//!
+//! Android 12 draws the keyboard only once the window's insets controller
+//! shows the IME's leash. With any `WindowInsetsAnimation.Callback` in the
+//! window it runs that animation on the UI thread (`InsetsController`,
+//! `hasAnimationCallbacks`), and in this NativeActivity window the leash then
+//! stays hidden: the keyboard is shown but never drawn (Slint's issue #11791;
+//! `clients/android-app/proof/android-app-ime/`). Slint's helper sets such a
+//! callback on its text view. [`without_insets_animations`] takes every
+//! callback off the window's views: the controller then animates on its own
+//! thread and shows the leash.
 //!
 //! Text that no key event carries (`KeyEvent.ACTION_MULTIPLE`, which Artemis
 //! sends with `LiSendUtf8TextEvent`) does not reach the stream: the NDK gives
@@ -43,6 +53,79 @@ enum Found {
     NoView,
     NotFocused,
     NotServed,
+}
+
+/// The stream's view takes the focus from Slint's text view, on Android's
+/// main thread, as Artemis's stream view holds it while it streams.
+pub fn take_focus(app: &AndroidApp) {
+    let vm = app.vm_as_ptr() as usize;
+    let activity = match activity(app) {
+        Ok(activity) => activity,
+        Err(cause) => {
+            crate::log::line(&format!(
+                "keyboard: the stream's view has no focus: {cause:#}"
+            ));
+            return;
+        }
+    };
+    app.run_on_java_main_thread(Box::new(move || {
+        match on_main(vm, |env| focus_on_main(env, activity.as_obj())) {
+            Ok(Some(true)) => crate::log::line("keyboard: the stream's view has the focus"),
+            Ok(Some(false)) => {
+                crate::log::line("keyboard: the stream's view did not take the focus")
+            }
+            Ok(None) => crate::log::line("keyboard: the activity has no NativeActivity view"),
+            Err(cause) => crate::log::line(&format!(
+                "keyboard: the stream's view has no focus: {cause:#}"
+            )),
+        }
+    }));
+}
+
+/// Take every `WindowInsetsAnimation.Callback` off the window's decor view,
+/// its content view and the content's children (NativeActivity's view and
+/// Slint's text view), so that the input method's keyboard is drawn (above).
+/// On Android's main thread. The count says how many views it cleared.
+pub fn without_insets_animations(env: &mut JNIEnv, activity: &JObject) -> jni::errors::Result<i32> {
+    const SET: &str = "setWindowInsetsAnimationCallback";
+    const CALLBACK: &str = "(Landroid/view/WindowInsetsAnimation$Callback;)V";
+    let none = JObject::null();
+    let window = env
+        .call_method(activity, "getWindow", "()Landroid/view/Window;", &[])?
+        .l()?;
+    let decor = env
+        .call_method(&window, "getDecorView", "()Landroid/view/View;", &[])?
+        .l()?;
+    env.call_method(&decor, SET, CALLBACK, &[JValue::Object(&none)])?;
+    let content = env
+        .call_method(
+            activity,
+            "findViewById",
+            "(I)Landroid/view/View;",
+            &[CONTENT.into()],
+        )?
+        .l()?;
+    if content.is_null() {
+        return Ok(1);
+    }
+    env.call_method(&content, SET, CALLBACK, &[JValue::Object(&none)])?;
+    let count = env
+        .call_method(&content, "getChildCount", "()I", &[])?
+        .i()?;
+    for index in 0..count {
+        let child = env
+            .call_method(
+                &content,
+                "getChildAt",
+                "(I)Landroid/view/View;",
+                &[index.into()],
+            )?
+            .l()?;
+        if !child.is_null() {
+            env.call_method(&child, SET, CALLBACK, &[JValue::Object(&none)])?;
+        }
+    }
+    Ok(2 + count)
 }
 
 /// Toggle the soft keyboard over the stream. The answer comes once the main
@@ -129,16 +212,31 @@ fn on_main<T>(vm: usize, work: impl FnOnce(&mut JNIEnv) -> jni::errors::Result<T
     result.map_err(|error| anyhow!("{error}"))
 }
 
-/// The view takes the focus, the input method serves it, then
-/// `toggleSoftInput(0, 0)`, `Game.toggleKeyboard`'s call.
-fn toggle_on_main(env: &mut JNIEnv, activity: &JObject) -> jni::errors::Result<Found> {
+/// NativeActivity's view becomes focusable and takes the focus. `None`:
+/// there is no such view; `Some(false)`: it did not take the focus.
+fn focus_on_main(env: &mut JNIEnv, activity: &JObject) -> jni::errors::Result<Option<bool>> {
     let Some(view) = native_view(env, activity)? else {
-        return Ok(Found::NoView);
+        return Ok(None);
     };
     env.call_method(&view, "setFocusable", "(Z)V", &[true.into()])?;
     env.call_method(&view, "setFocusableInTouchMode", "(Z)V", &[true.into()])?;
-    if !env.call_method(&view, "requestFocus", "()Z", &[])?.z()? {
-        return Ok(Found::NotFocused);
+    Ok(Some(
+        env.call_method(&view, "requestFocus", "()Z", &[])?.z()?,
+    ))
+}
+
+/// The window's views lose their insets animation callbacks, the view takes
+/// the focus, the input method serves it, then `toggleSoftInput(0, 0)`,
+/// `Game.toggleKeyboard`'s call.
+fn toggle_on_main(env: &mut JNIEnv, activity: &JObject) -> jni::errors::Result<Found> {
+    without_insets_animations(env, activity)?;
+    let Some(view) = native_view(env, activity)? else {
+        return Ok(Found::NoView);
+    };
+    match focus_on_main(env, activity)? {
+        Some(true) => {}
+        Some(false) => return Ok(Found::NotFocused),
+        None => return Ok(Found::NoView),
     }
     let manager = input_methods(env, activity)?;
     if manager.is_null() {

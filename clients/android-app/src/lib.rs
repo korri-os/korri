@@ -90,7 +90,7 @@ fn run(app: AndroidApp) -> Result<()> {
         logcat::error("korri-app: korrid did not answer system.health");
     }
     #[cfg(feature = "proof")]
-    proof::watch(pins.clone());
+    proof::watch(pins.clone(), &app);
     let packages = assets::unpack(&app, &mut env, &activity, &SURFACES)?;
     let stream = viewer::Stream::new(&app, &mut env, &activity)?;
     let host = host::AppHost::new(&app, &mut env, &activity, stream)?;
