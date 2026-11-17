@@ -156,6 +156,23 @@ pub struct VerifiedOwnerStatement {
 }
 
 impl VerifiedOwnerStatement {
+    /// Whether this evidence replaces `current` for the same owner and
+    /// device. A statement that the person key signed is never replaced by
+    /// a vouch chain and always replaces one: the person key overrules
+    /// devices (ADR 0071). Between two of a kind, the newer wins.
+    pub fn supersedes(&self, current: &Self) -> bool {
+        if self.owner_public_key != current.owner_public_key
+            || self.device_public_key != current.device_public_key
+        {
+            return false;
+        }
+        match (self.vouchers.is_empty(), current.vouchers.is_empty()) {
+            (false, true) => false,
+            (true, false) => true,
+            _ => self.is_newer_than(current),
+        }
+    }
+
     /// Compare evidence for the same owner/device address using NIP-01 ordering.
     pub fn is_newer_than(&self, current: &Self) -> bool {
         self.owner_public_key == current.owner_public_key
@@ -855,6 +872,17 @@ impl DeviceIdentity {
             .map(Keys::public_key)
             .ok_or(IdentityError::NoDeviceKey)
     }
+}
+
+/// One owner write at a time on this device: setup's end binding the
+/// automatic owner, and a join storing its vouch. Each reads the identity
+/// from disk again while it holds this.
+pub(crate) async fn owner_write() -> tokio::sync::MutexGuard<'static, ()> {
+    static OWNER_WRITE: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+    OWNER_WRITE
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await
 }
 
 /// Bind the automatic owner at start, but only after setup ended (ADR 0022).

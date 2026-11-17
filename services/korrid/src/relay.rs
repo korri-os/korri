@@ -983,7 +983,7 @@ where
                         latest: evidence.clone(),
                         revocation: None,
                     });
-                if evidence.statement.is_newer_than(&entry.latest.statement) {
+                if evidence.statement.supersedes(&entry.latest.statement) {
                     entry.latest = evidence.clone();
                 }
                 // Authorization treats any signed same-owner revocation as terminal.

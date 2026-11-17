@@ -11,7 +11,7 @@
 
 use super::{code::Nameplate, JoiningDevice};
 use crate::{
-    identity::{DeviceIdentity, OWNER_EVENT_KIND},
+    identity::{DeviceIdentity, VerifiedEvent, OWNER_EVENT_KIND},
     relay::{
         DeviceAuthSigner, RelayAuthSigner, RelayFilter, RelayList, RelayTransport, MAX_READ_EVENTS,
     },
@@ -175,7 +175,7 @@ impl Rendezvous {
             .iter()
             .filter_map(|event_json| {
                 let event = DeviceIdentity::verify_event(event_json).ok()?;
-                if !is_current(&event.tags, now) {
+                if !is_plausible_open(&event, now, lifetime) {
                     return None;
                 }
                 let identifier = event
@@ -234,7 +234,7 @@ impl Rendezvous {
                     && event.author != own
                     && event.tags.first().map(Vec::as_slice)
                         == Some(&["d".to_owned(), open_identifier(nameplate)][..])
-                    && is_current(&event.tags, now)
+                    && is_plausible_open(event, now, lifetime)
             })
             .max_by(|left, right| {
                 left.created_at
@@ -383,11 +383,27 @@ fn tags(identifier: String, expires_at: u64) -> Vec<Vec<String>> {
     ]
 }
 
-/// Join events always carry an expiration; one that has passed is ignored
-/// even when a relay still holds it.
-fn is_current(tags: &[Vec<String>], now: u64) -> bool {
+/// An open event that counts: it has not expired, it is not dated in the
+/// future, and it does not hold its nameplate for longer than one code lasts.
+fn is_plausible_open(event: &VerifiedEvent, now: u64, lifetime: u64) -> bool {
+    event.created_at <= now.saturating_add(CLOCK_SKEW_SECONDS)
+        && is_current(&event.tags, now)
+        && expiration(&event.tags).is_some_and(|expires_at| {
+            expires_at
+                <= event
+                    .created_at
+                    .saturating_add(lifetime + CLOCK_SKEW_SECONDS)
+        })
+}
+
+fn expiration(tags: &[Vec<String>]) -> Option<u64> {
     tags.iter()
         .find(|tag| tag.len() == 2 && tag[0] == "expiration")
         .and_then(|tag| tag[1].parse::<u64>().ok())
-        .is_some_and(|expires_at| expires_at > now)
+}
+
+/// Join events always carry an expiration; one that has passed is ignored
+/// even when a relay still holds it.
+fn is_current(tags: &[Vec<String>], now: u64) -> bool {
+    expiration(tags).is_some_and(|expires_at| expires_at > now)
 }

@@ -175,3 +175,52 @@ fn reach_relay_admits_a_device_that_a_member_vouched_for() {
         .unwrap();
     assert!(access.allows(joined_endpoint));
 }
+
+#[test]
+fn the_local_relay_stops_when_a_voucher_of_its_own_device_is_revoked() {
+    let owner = Keys::generate();
+    let voucher_root = tempfile::tempdir().unwrap();
+    let voucher = owned(voucher_root.path(), &owner);
+    let voucher_key = voucher.device_public_key().unwrap().to_owned();
+    let root = tempfile::tempdir().unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    let mut local = crate::identity::DeviceIdentity::load_or_create(root.path()).unwrap();
+    let local_key = local.device_public_key().unwrap().to_owned();
+    local
+        .apply_owner_statement(
+            &voucher
+                .vouch_for(&local_key, unix_time())
+                .unwrap()
+                .owner_statement,
+        )
+        .unwrap();
+    let directory = FederationDirectory::open(
+        root.path(),
+        PeerCredentials::from_identity(local),
+        Authorization::load(root.path()).unwrap(),
+        Arc::new(unix_time),
+    )
+    .unwrap();
+    let endpoint = iroh::SecretKey::generate().public();
+    let access = relay::Membership {
+        directory: directory.clone(),
+        bindings: Arc::new(RwLock::new(BTreeMap::new())),
+        local: endpoint,
+    };
+    assert!(access.allows(endpoint));
+    let revoked = EventBuilder::new(Kind::Custom(30_078), "")
+        .tags([
+            Tag::parse(["d", &format!("org.korri.device-owner:{voucher_key}")]).unwrap(),
+            Tag::parse(["device", &voucher_key]).unwrap(),
+            Tag::parse(["status", "revoked"]).unwrap(),
+        ])
+        .custom_created_at(Timestamp::from(unix_time() + 1))
+        .finalize(&owner)
+        .unwrap()
+        .as_json();
+    directory
+        .apply_membership(&directory.begin_work().unwrap(), &[revoked])
+        .unwrap();
+    assert!(!access.allows(endpoint));
+}

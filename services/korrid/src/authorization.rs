@@ -487,6 +487,11 @@ impl AuthorizationAttempt {
     pub fn context(&self) -> &AuthorizationContext {
         &self.context
     }
+
+    /// Whether this attempt's own candidate revocations revoke one device.
+    pub fn revokes_device(&self, owner: &str, device: &str) -> bool {
+        is_owner_device_revoked(&self.revocations, owner, device)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

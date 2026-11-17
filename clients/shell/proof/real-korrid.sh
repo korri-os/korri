@@ -18,6 +18,10 @@ head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$root/shell-credentials/KO
 KORRID_PRIVATE_STATE_ROOT="$root/state" "$bin/korrid" identity status |
   jq -er '.devicePublicKey | select(test("^[0-9a-f]{64}$"))' >"$root/signer-credentials/expected-device-public-key"
 chmod 0400 "$root/signer-credentials/expected-device-public-key"
+# Setup has ended here (ADR 0022), so korrid binds its automatic owner at
+# start, as before. A device in setup stays unowned and restarts with exit 75
+# when setup ends, which would stop this proof.
+install -m 0600 /dev/null "$root/state/onboarding-finished"
 
 children=()
 cleanup() {

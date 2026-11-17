@@ -604,3 +604,171 @@ fn a_vouch_chain_to_another_person_key_is_not_a_roster_member() {
     ));
     assert!(d.snapshot().unwrap().is_empty());
 }
+
+fn owned_device(owner: &Keys, at: u64) -> (tempfile::TempDir, DeviceIdentity) {
+    let root = tempfile::tempdir().unwrap();
+    let mut identity = DeviceIdentity::load_or_create(root.path()).unwrap();
+    let key = identity.device_public_key().unwrap().to_owned();
+    identity
+        .apply_owner_statement(&binding(owner, &key, "owned", at))
+        .unwrap();
+    (root, identity)
+}
+
+#[test]
+fn a_revoked_voucher_leaves_the_roster_of_the_device_it_vouched_for() {
+    // V and W are owned by the person key. X, this device, joined through V.
+    let owner = Keys::generate();
+    let (_v_root, voucher) = owned_device(&owner, 10);
+    let (_w_root, other) = owned_device(&owner, 10);
+    let (v, w) = (
+        voucher.device_public_key().unwrap().to_owned(),
+        other.device_public_key().unwrap().to_owned(),
+    );
+    let root = tempfile::tempdir().unwrap();
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    let mut local = DeviceIdentity::load_or_create(root.path()).unwrap();
+    let x = local.device_public_key().unwrap().to_owned();
+    local
+        .apply_owner_statement(&voucher.vouch_for(&x, 20).unwrap().owner_statement)
+        .unwrap();
+    let authorization = Authorization::load(root.path()).unwrap();
+    let d = FederationDirectory::open(
+        root.path(),
+        PeerCredentials::from_identity(local.clone()),
+        authorization.clone(),
+        Arc::new(|| 1000),
+    )
+    .unwrap();
+    d.apply_membership(
+        &d.begin_work().unwrap(),
+        &[
+            voucher.owner_statement_json().unwrap(),
+            other.owner_statement_json().unwrap(),
+        ],
+    )
+    .unwrap();
+    assert_eq!(d.snapshot().unwrap().len(), 2);
+    assert!(!d.peer_is_revoked(&v).unwrap());
+    assert!(!d.peer_is_revoked(&x).unwrap());
+
+    // One relay batch: V's revocation, and a newer statement for W.
+    let w_newer = binding(&owner, &w, "owned", 30);
+    d.apply_membership(
+        &d.begin_work().unwrap(),
+        &[binding(&owner, &v, "revoked", 31), w_newer.clone()],
+    )
+    .unwrap();
+    let peers = d.snapshot().unwrap();
+    assert_eq!(peers.len(), 1);
+    assert_eq!(peers[0].device_public_key, w);
+    assert_eq!(
+        peers[0].membership.event_id,
+        DeviceIdentity::verify_event(&w_newer).unwrap().id
+    );
+    // X no longer authorizes V.
+    assert!(d.peer_is_revoked(&v).unwrap());
+    let attempt = authorization
+        .attempt(
+            local.state(),
+            &v,
+            voucher.owner_statement_json().as_deref(),
+            None,
+            &[],
+            1000,
+        )
+        .unwrap();
+    assert!(matches!(
+        attempt.context(),
+        AuthorizationContext::Peer(Principal::Unknown { .. })
+    ));
+    // X's own chain passes through V, so its own relay stops serving.
+    assert!(d.peer_is_revoked(&x).unwrap());
+    // Later batches still apply.
+    let (_y_root, added) = owned_device(&owner, 40);
+    d.apply_membership(
+        &d.begin_work().unwrap(),
+        &[added.owner_statement_json().unwrap()],
+    )
+    .unwrap();
+    assert_eq!(d.snapshot().unwrap().len(), 2);
+}
+
+#[test]
+fn a_remembered_chain_with_a_revoked_voucher_makes_its_device_revoked() {
+    let f = Fixture::new();
+    let d = f.directory().unwrap();
+    // The peer vouched for Z; then the person key revoked the peer.
+    let z_root = tempfile::tempdir().unwrap();
+    let z = DeviceIdentity::load_or_create(z_root.path())
+        .unwrap()
+        .device_public_key()
+        .unwrap()
+        .to_owned();
+    let vouch = f.peer.vouch_for(&z, 20).unwrap();
+    d.apply_membership(
+        &d.begin_work().unwrap(),
+        std::slice::from_ref(&vouch.owner_statement),
+    )
+    .unwrap();
+    assert!(!d.peer_is_revoked(&z).unwrap());
+    // The revocation is known, but the batch does not prune Z yet: commit it
+    // through the shared authority alone.
+    let attempt = d
+        .authorization
+        .attempt(
+            f.credentials.identity_snapshot().unwrap().state(),
+            &z,
+            None,
+            None,
+            &[binding(&f.owner, &f.key(), "revoked", 30)],
+            1000,
+        )
+        .unwrap();
+    d.authorization.commit_revocations(&attempt).unwrap();
+    assert!(d.peer_is_revoked(&z).unwrap());
+}
+
+#[test]
+fn a_vouch_chain_never_replaces_a_person_signed_statement() {
+    let f = Fixture::new();
+    let d = f.directory().unwrap();
+    f.roster(&d);
+    let (_voucher_root, voucher) = owned_device(&f.owner, 10);
+    let chain = voucher.vouch_for(&f.key(), 50).unwrap().owner_statement;
+    d.apply_membership(&d.begin_work().unwrap(), std::slice::from_ref(&chain))
+        .unwrap();
+    let membership = &d.snapshot().unwrap()[0].membership;
+    assert!(membership.vouchers.is_empty());
+    assert_eq!(
+        membership.event_id,
+        DeviceIdentity::verify_event(&f.peer.owner_statement_json().unwrap())
+            .unwrap()
+            .id
+    );
+
+    // A device known through a chain takes the person key's statement, even
+    // an older one.
+    let z_root = tempfile::tempdir().unwrap();
+    let z = DeviceIdentity::load_or_create(z_root.path())
+        .unwrap()
+        .device_public_key()
+        .unwrap()
+        .to_owned();
+    let vouched = voucher.vouch_for(&z, 60).unwrap().owner_statement;
+    d.apply_membership(&d.begin_work().unwrap(), std::slice::from_ref(&vouched))
+        .unwrap();
+    let person_signed = binding(&f.owner, &z, "owned", 5);
+    d.apply_membership(
+        &d.begin_work().unwrap(),
+        std::slice::from_ref(&person_signed),
+    )
+    .unwrap();
+    let peers = d.snapshot().unwrap();
+    let z_peer = peers
+        .iter()
+        .find(|peer| peer.device_public_key == z)
+        .unwrap();
+    assert!(z_peer.membership.vouchers.is_empty());
+    assert_eq!(z_peer.membership.created_at, 5);
+}

@@ -73,6 +73,10 @@ pkgs.writeShellApplication {
       | jq -er 'select(._tag == "Unowned" or ._tag == "Owned" or ._tag == "Revoked") | .devicePublicKey | select(test("^[0-9a-f]{64}$"))' \
       > "$signer_credential_root/expected-device-public-key"
     chmod 0400 "$signer_credential_root/expected-device-public-key"
+    # Setup has ended here (ADR 0022), so korrid binds its automatic owner at
+    # start, as before. A device in setup stays unowned and restarts with
+    # exit 75 when setup ends, which would stop this runtime.
+    install -m 0600 /dev/null "$state_root/onboarding-finished"
 
     systemd-socket-activate --now \
       -E "CREDENTIALS_DIRECTORY=$signer_credential_root" \

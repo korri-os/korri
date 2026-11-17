@@ -115,6 +115,8 @@ pub async fn finish_with_automatic_owner<S>(
 where
     S: PersonSigner + ?Sized,
 {
+    // A join may be storing its vouch: read the identity under the same lock.
+    let _owner_write = crate::identity::owner_write().await;
     let unowned = matches!(
         DeviceIdentity::load_or_create(root).map(|identity| identity.state().clone()),
         Ok(IdentityState::Unowned { .. })

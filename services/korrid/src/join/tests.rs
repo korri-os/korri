@@ -15,13 +15,17 @@ use std::sync::atomic::AtomicBool;
 const START: u64 = 1_800_000_000;
 
 fn statement(person: &Keys, device: &str) -> String {
+    statement_at(person, device, START - 100)
+}
+
+fn statement_at(person: &Keys, device: &str, at: u64) -> String {
     EventBuilder::new(Kind::Custom(OWNER_EVENT_KIND), "")
         .tags([
             Tag::parse(["d", &format!("org.korri.device-owner:{device}")]).unwrap(),
             Tag::parse(["device", device]).unwrap(),
             Tag::parse(["status", "owned"]).unwrap(),
         ])
-        .custom_created_at(Timestamp::from(START - 100))
+        .custom_created_at(Timestamp::from(at))
         .finalize(person)
         .unwrap()
         .as_json()
@@ -80,6 +84,7 @@ impl Network {
             timing: JoinTiming {
                 code_lifetime: 300,
                 accept_wait: 300,
+                answer_wait: 30,
                 watch: 60,
                 poll: Duration::from_millis(5),
             },
@@ -410,4 +415,349 @@ async fn each_side_needs_its_own_identity_state_and_a_valid_code() {
         failure(new.join.enter("1234561234", unnamed)),
         "JoinUnavailable"
     );
+}
+
+/// The ids of a stored owner statement's events, own event first.
+fn chain_ids(owner_statement: &str) -> Vec<String> {
+    let value: serde_json::Value = serde_json::from_str(owner_statement).unwrap();
+    match value {
+        serde_json::Value::Array(events) => events
+            .iter()
+            .map(|event| event["id"].as_str().unwrap().to_owned())
+            .collect(),
+        event => vec![event["id"].as_str().unwrap().to_owned()],
+    }
+}
+
+fn rendezvous_for(network: &Network, device: &Device) -> rendezvous::Rendezvous {
+    rendezvous::Rendezvous::new(
+        network.relays.clone(),
+        Arc::new(network.network.clone()),
+        device.identity(),
+    )
+}
+
+#[tokio::test]
+async fn a_hello_with_no_answer_spends_the_code_and_the_next_code_says_so() {
+    let network = Network::new();
+    let (owned, squatter) = (network.device(true), network.device(false));
+    let first = shown(owned.join.start().await.unwrap());
+    let nameplate = code::Nameplate::parse(&first.code[..3]).unwrap();
+    let squatting = rendezvous_for(&network, &squatter);
+    let open = squatting
+        .find_open(nameplate, START, 300)
+        .await
+        .unwrap()
+        .expect("the owned device's open event");
+    squatting
+        .send(
+            nameplate,
+            &open.owned_device,
+            &rendezvous::Message::Hello { open: open.id },
+            START,
+            START + 300,
+        )
+        .await
+        .unwrap();
+    // The owned device answers the hello; the squatter never answers back.
+    let mut offered = false;
+    for _ in 0..2000 {
+        offered = !squatting
+            .receive(
+                nameplate,
+                Some(&owned.key),
+                &[rendezvous::Step::Offer],
+                START,
+                START,
+            )
+            .await
+            .unwrap()
+            .is_empty();
+        if offered {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+    assert!(offered, "the owned device never offered");
+    network.advance(29);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(matches!(
+        owned.join.status(),
+        JoinStatus::ShowingCode(code) if code.code == first.code
+    ));
+    network.advance(1);
+    let second = shown(
+        until(
+            &owned,
+            |status| matches!(status, JoinStatus::ShowingCode(code) if code.code != first.code),
+            "the owned device shows a new code",
+        )
+        .await,
+    );
+    assert!(second.wrong_code_tried);
+}
+
+#[tokio::test]
+async fn open_events_dated_in_the_future_or_held_too_long_are_ignored() {
+    let network = Network::new();
+    let reader = network.device(false);
+    let stranger = Keys::generate();
+    let open = |nameplate: &str, created_at: u64, expires_at: u64| {
+        let event = EventBuilder::new(Kind::Custom(OWNER_EVENT_KIND), "")
+            .tags([
+                Tag::parse(["d", &format!("org.korri.join:{nameplate}")]).unwrap(),
+                Tag::parse(["expiration", &expires_at.to_string()]).unwrap(),
+            ])
+            .custom_created_at(Timestamp::from(created_at))
+            .finalize(&stranger)
+            .unwrap()
+            .as_json();
+        network
+            .network
+            .inject(&network.relays.as_slice()[0], &event)
+            .unwrap();
+    };
+    open("111", START + 61, START + 300);
+    open("222", START, START + 300 + 61 + 1);
+    open("333", START, START + 300);
+    let rendezvous = rendezvous_for(&network, &reader);
+    let nameplate = |digits: &str| code::Nameplate::parse(digits).unwrap();
+    assert_eq!(
+        rendezvous.nameplates_in_use(START, 300).await.unwrap(),
+        [nameplate("333")].into_iter().collect()
+    );
+    for ignored in ["111", "222"] {
+        assert!(rendezvous
+            .find_open(nameplate(ignored), START, 300)
+            .await
+            .unwrap()
+            .is_none());
+    }
+    assert_eq!(
+        rendezvous
+            .find_open(nameplate("333"), START, 300)
+            .await
+            .unwrap()
+            .map(|open| open.owned_device),
+        Some(stranger.public_key().to_hex())
+    );
+}
+
+#[tokio::test]
+async fn the_vouch_names_the_owned_devices_statement_at_accept_time() {
+    let network = Network::new();
+    let (owned, new) = (network.device(true), network.device(false));
+    let code = shown(owned.join.start().await.unwrap());
+    new.join.enter(&code.code, facts()).unwrap();
+    until(
+        &owned,
+        |status| matches!(status, JoinStatus::AwaitingAccept(_)),
+        "owned device asks for Accept",
+    )
+    .await;
+    // The person key signs a newer statement for the owned device while it
+    // waits for Accept.
+    let newer = statement_at(&network.person, &owned.key, START - 10);
+    owned.identity().apply_owner_statement(&newer).unwrap();
+    owned
+        .join
+        .0
+        .context
+        .credentials
+        .reload_identity(owned.root.path())
+        .unwrap();
+    owned.join.decide(true).await.unwrap();
+    until(
+        &new,
+        |status| matches!(status, JoinStatus::Joined(_)),
+        "new device joins",
+    )
+    .await;
+    let ids = chain_ids(&new.identity().owner_statement_json().unwrap());
+    assert_eq!(ids.len(), 2);
+    assert_eq!(ids[1], chain_ids(&newer)[0]);
+}
+
+#[test]
+fn debug_output_never_shows_a_codes_secret() {
+    let status = JoinStatus::ShowingCode(JoinCodeShown {
+        code: "123 4561234".into(),
+        expires_at: START,
+        wrong_code_tried: false,
+    });
+    let printed = format!("{status:?}");
+    assert!(printed.contains("123"), "{printed}");
+    assert!(!printed.contains("4561234"), "{printed}");
+    let response = crate::RpcResponse::JoinStatus(JoinOutcome::Ok(status));
+    assert!(!format!("{response:?}").contains("4561234"));
+}
+
+#[tokio::test]
+async fn setup_cannot_finish_while_the_device_is_joining() {
+    let network = Network::new();
+    let (owned, new) = (network.device(true), network.device(false));
+    assert!(!new.join.joining());
+    let code = shown(owned.join.start().await.unwrap());
+    assert!(!owned.join.joining());
+    new.join.enter(&code.code, facts()).unwrap();
+    assert!(new.join.joining());
+    until(
+        &new,
+        |status| matches!(status, JoinStatus::WaitingForAccept),
+        "new device waits for Accept",
+    )
+    .await;
+    assert!(new.join.joining());
+    owned.join.decide(false).await.unwrap();
+    until(
+        &new,
+        |status| matches!(status, JoinStatus::Refused),
+        "new device learns of the refusal",
+    )
+    .await;
+    assert!(!new.join.joining());
+}
+
+/// A new device, a vouch for it, and the local signer that setup's end
+/// would bind it to.
+struct SetupRace {
+    _signer_root: tempfile::TempDir,
+    owned: Device,
+    new: Device,
+    vouch: String,
+    signer: crate::local_signer::LocalPersonSigner,
+    person: String,
+}
+
+impl SetupRace {
+    fn new(network: &Network) -> Self {
+        let (owned, new) = (network.device(true), network.device(false));
+        let vouch = owned
+            .identity()
+            .vouch_for(&new.key, START)
+            .unwrap()
+            .owner_statement;
+        let signer_root = tempfile::tempdir().unwrap();
+        let signer =
+            crate::local_signer::LocalPersonSigner::load_or_create(signer_root.path(), &new.key)
+                .unwrap();
+        Self {
+            _signer_root: signer_root,
+            owned,
+            new,
+            vouch,
+            signer,
+            person: network.person.public_key().to_hex(),
+        }
+    }
+
+    async fn store_vouch(&self) -> JoinStatus {
+        session::store_vouch(
+            &self.new.join.0.context,
+            &self.new.key,
+            &self.owned.key,
+            &self.vouch,
+        )
+        .await
+    }
+
+    async fn finish_setup(&self) -> bool {
+        let (outcome, bound) = crate::onboarding::finish_with_automatic_owner(
+            self.new.root.path(),
+            &self.signer,
+            START,
+        )
+        .await;
+        assert!(matches!(
+            outcome,
+            crate::onboarding::OnboardingStatusOutcome::Ok(_)
+        ));
+        bound
+    }
+
+    fn owner(&self) -> String {
+        match self.new.identity().state() {
+            IdentityState::Owned {
+                owner_public_key, ..
+            } => owner_public_key.clone(),
+            state => panic!("the new device has no owner: {state:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn setup_that_ends_after_a_stored_vouch_keeps_the_vouch() {
+    let network = Network::new();
+    let race = SetupRace::new(&network);
+    assert!(matches!(race.store_vouch().await, JoinStatus::Joined(_)));
+    assert!(!race.finish_setup().await);
+    assert_eq!(race.owner(), race.person);
+}
+
+#[tokio::test]
+async fn a_vouch_that_arrives_after_setup_ended_is_refused() {
+    let network = Network::new();
+    let race = SetupRace::new(&network);
+    assert!(race.finish_setup().await);
+    let JoinStatus::Failed(failure) = race.store_vouch().await else {
+        panic!("the vouch replaced the automatic owner")
+    };
+    assert_eq!(failure.code, "JoinStoreFailed");
+    assert_ne!(race.owner(), race.person);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_vouch_and_setup_end_at_once_leave_exactly_one_owner() {
+    let network = Network::new();
+    for _ in 0..8 {
+        let race = Arc::new(SetupRace::new(&network));
+        let (stored, bound) = tokio::join!(
+            {
+                let race = race.clone();
+                tokio::spawn(async move { race.store_vouch().await })
+            },
+            {
+                let race = race.clone();
+                tokio::spawn(async move { race.finish_setup().await })
+            }
+        );
+        let (stored, bound) = (stored.unwrap(), bound.unwrap());
+        let joined = matches!(stored, JoinStatus::Joined(_));
+        assert_ne!(joined, bound, "{stored:?}");
+        assert_eq!(race.owner() == race.person, joined);
+    }
+}
+
+#[tokio::test]
+async fn the_roster_keeps_a_person_signed_statement_over_a_newer_vouch_chain() {
+    let network = Network::new();
+    let (owned, reader) = (network.device(true), network.device(true));
+    let device = Keys::generate().public_key().to_hex();
+    let person_signed = statement_at(&network.person, &device, START - 50);
+    let vouch = owned.identity().vouch_for(&device, START).unwrap();
+    for event in [
+        person_signed.clone(),
+        vouch.event_json.clone(),
+        owned.identity().owner_statement_json().unwrap(),
+    ] {
+        network
+            .network
+            .inject(&network.relays.as_slice()[0], &event)
+            .unwrap();
+    }
+    let roster = CoordinatedRelays::new(
+        network.relays.clone(),
+        reader.identity(),
+        Arc::new(network.network.clone()),
+    )
+    .unwrap()
+    .read_owner_roster()
+    .await
+    .unwrap();
+    let entry = roster
+        .iter()
+        .find(|entry| entry.latest.statement.device_public_key == device)
+        .unwrap();
+    assert!(entry.latest.statement.vouchers.is_empty());
+    assert_eq!(entry.latest.event_json, person_signed);
 }

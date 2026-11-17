@@ -313,15 +313,44 @@ impl FederationDirectory {
             .map_err(|_| FederationError::Identity)
     }
 
+    /// Whether this device holds a revocation of the device, or of any
+    /// device that vouched for it (ADR 0069). The chain is the local
+    /// identity's own for the local device, and the remembered one for a
+    /// peer. A static route with no remembered chain has only its device.
     pub fn peer_is_revoked(&self, device: &str) -> Result<bool, FederationError> {
+        let state = self.state.lock().map_err(|_| FederationError::Storage)?;
         self.credentials
             .with_identity(|identity| {
                 let Some(owner) = owner_key(identity) else {
                     return Ok(true);
                 };
-                self.authorization
-                    .is_device_revoked(owner, device)
-                    .map_err(|_| FederationError::Identity)
+                let chain = if identity.device_public_key() == Some(device) {
+                    identity.owner_statement_json()
+                } else {
+                    state
+                        .memory
+                        .peers
+                        .get(device)
+                        .map(|peer| peer.owner_statement.clone())
+                };
+                let vouchers = match chain {
+                    Some(statement) => {
+                        DeviceIdentity::verify_owner_statement(&statement, device)
+                            .map_err(|_| FederationError::Identity)?
+                            .vouchers
+                    }
+                    None => Vec::new(),
+                };
+                for device in std::iter::once(device).chain(vouchers.iter().map(String::as_str)) {
+                    if self
+                        .authorization
+                        .is_device_revoked(owner, device)
+                        .map_err(|_| FederationError::Identity)?
+                    {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
             })
             .map_err(|_| FederationError::Identity)?
     }
@@ -470,25 +499,31 @@ impl FederationDirectory {
                 // The owner signatures themselves authorize these terminal facts.
                 // Reuse Authorization's verifier and exact signed-event storage;
                 // this is relay evidence ingestion, not an RPC/replay-nonce path.
-                let local_statement = identity
-                    .owner_statement_json()
-                    .ok_or(FederationError::Identity)?;
+                // Only the local device's own standing gates the batch. A batch
+                // that revokes one of its vouchers must still commit, or the
+                // revoked voucher would stay a peer here.
+                let (Some(owner), Some(device), Some(local_statement)) = (
+                    owner_key(identity),
+                    identity.device_public_key(),
+                    identity.owner_statement_json(),
+                ) else {
+                    return Err(FederationError::Identity);
+                };
                 let attempt = authorization
                     .attempt(
                         identity.state(),
-                        identity
-                            .device_public_key()
-                            .ok_or(FederationError::Identity)?,
+                        device,
                         Some(&local_statement),
                         None,
                         &revocations,
                         now,
                     )
                     .map_err(|_| FederationError::Identity)?;
-                if !matches!(
-                    attempt.context(),
-                    AuthorizationContext::Peer(Principal::OwnerDevice { .. })
-                ) {
+                if attempt.revokes_device(owner, device)
+                    || authorization
+                        .is_device_revoked(owner, device)
+                        .map_err(|_| FederationError::Identity)?
+                {
                     return Err(FederationError::Identity);
                 }
                 authorization
@@ -507,13 +542,12 @@ impl FederationDirectory {
                 match memory.peers.get_mut(&statement.device_public_key) {
                     Some(peer) => {
                         let current = verify_membership(identity, &peer.owner_statement)?;
-                        if statement.is_newer_than(&current) {
+                        if statement.supersedes(&current) {
                             peer.owner_statement = event.clone();
                             changed = true;
                         }
                         // Stale binding snapshots must not advance observation metadata.
-                        if statement.event_id == current.event_id
-                            || statement.is_newer_than(&current)
+                        if statement.event_id == current.event_id || statement.supersedes(&current)
                         {
                             peer.last_seen = peer.last_seen.max(now);
                         }

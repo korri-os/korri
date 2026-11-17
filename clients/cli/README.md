@@ -116,15 +116,18 @@ wrong code was tried. When a device enters the right code, it shows the
 device's name, kind and network, and asks for one Accept. On Accept, korrid
 signs a vouch for the device (ADR 0069).
 
-`korri join enter [CODE]` runs on a device without an owner, such as a device
-that is still in setup (ADR 0022). Omit `CODE` to type it at the prompt. When
-the other device accepts, this device stores the vouch and korrid restarts
-with its new owner.
+`korri join enter` runs on a device without an owner, such as a device that
+is still in setup (ADR 0022). Type the code at the prompt. A `CODE` argument
+exists for scripts; other users of the device can see it. When the other
+device accepts, this device stores the vouch and korrid restarts with its new
+owner. Setup cannot finish while the device is joining.
 
 Both commands end with one response on stdout. Ctrl-C stops following the
 join; an owned device ends a join that no one follows after 60 seconds.
-The hidden flag `--proof-accept-without-asking` accepts the matched device
-with no person in the loop. It exists only for automated proofs.
+Only a CLI built with the `proof` cargo feature has
+`join start --proof-accept-without-asking`, which accepts the matched device
+with no person in the loop and warns on stderr. The product build does not
+enable the feature.
 
 ### Remote signer waits
 

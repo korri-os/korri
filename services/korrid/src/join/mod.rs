@@ -112,7 +112,7 @@ impl JoiningDevice {
 }
 
 #[typeshare]
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JoinCodeShown {
     /// The nameplate, a space, then the secret.
@@ -121,6 +121,20 @@ pub struct JoinCodeShown {
     pub expires_at: u64,
     /// The code before this one ended because a wrong code was tried.
     pub wrong_code_tried: bool,
+}
+
+/// Logs and Debug output show the nameplate, never the secret. JoinStatus
+/// and every response that carries it print through this.
+impl std::fmt::Debug for JoinCodeShown {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let nameplate: String = self.code.chars().take(3).collect();
+        formatter
+            .debug_struct("JoinCodeShown")
+            .field("nameplate", &nameplate)
+            .field("expires_at", &self.expires_at)
+            .field("wrong_code_tried", &self.wrong_code_tried)
+            .finish_non_exhaustive()
+    }
 }
 
 #[typeshare]
@@ -168,6 +182,9 @@ pub struct JoinTiming {
     pub code_lifetime: u64,
     /// How long a matched join waits for the person's Accept.
     pub accept_wait: u64,
+    /// How long the owned device waits for an answer after a device said
+    /// hello. Then the hello counts as the code's one guess.
+    pub answer_wait: u64,
     /// An owned device's join ends when no one has asked for its status for
     /// this long, so a closed terminal does not keep showing codes.
     pub watch: u64,
@@ -180,6 +197,7 @@ impl Default for JoinTiming {
         Self {
             code_lifetime: 300,
             accept_wait: 300,
+            answer_wait: 30,
             watch: 60,
             poll: Duration::from_millis(1500),
         }
@@ -266,6 +284,16 @@ impl JoinCoordinator {
         self.touch();
         self.0.reads.fetch_add(1, Ordering::SeqCst);
         self.0.status.borrow().clone()
+    }
+
+    /// Whether this device is joining another device right now. Setup must
+    /// not end then (ADR 0022): it would bind an automatic owner, and the
+    /// join's vouch could no longer bind the device.
+    pub fn joining(&self) -> bool {
+        matches!(
+            *self.0.status.borrow(),
+            JoinStatus::Matching | JoinStatus::WaitingForAccept
+        )
     }
 
     /// Start showing codes on this owned device. Returns the first code.

@@ -9,7 +9,7 @@ use crate::{
     output::{self, Output},
     prompt,
 };
-use clap::{Arg, ArgAction, ArgMatches, Command};
+use clap::{Arg, ArgMatches, Command};
 use korrid::{
     join::{
         JoinAcceptRequest, JoinEnterRequest, JoinOutcome, JoinStartRequest, JoinStatus,
@@ -22,30 +22,34 @@ use std::time::Duration;
 
 const POLL: Duration = Duration::from_millis(1000);
 /// The proof-only switch. It accepts the first device whose code matches,
-/// with no person in the loop. Never use it to join a real device.
+/// with no person in the loop. Only a build with the `proof` feature has it;
+/// the product build never does.
+#[cfg(feature = "proof")]
 const PROOF_ACCEPT: &str = "proof-accept-without-asking";
 
 pub struct Join;
 impl Module for Join {
     fn command(&self) -> Command {
+        let start = Command::new("start").about(
+            "On a device that has an owner: show a code, then accept or refuse the device that enters it",
+        );
+        #[cfg(feature = "proof")]
+        let start = start.arg(
+            Arg::new(PROOF_ACCEPT)
+                .long(PROOF_ACCEPT)
+                .action(clap::ArgAction::SetTrue)
+                .help("Proof build only: accept the matched device without asking"),
+        );
         Command::new("join")
             .about("Join a new device to this person's devices with a 10-digit code")
             .subcommand_required(true)
-            .subcommand(
-                Command::new("start")
-                    .about("On a device that has an owner: show a code, then accept or refuse the device that enters it")
-                    .arg(
-                        Arg::new(PROOF_ACCEPT)
-                            .long(PROOF_ACCEPT)
-                            .action(ArgAction::SetTrue)
-                            .hide(true)
-                            .help("Automated proofs only: accept the matched device without asking"),
-                    ),
-            )
+            .subcommand(start)
             .subcommand(
                 Command::new("enter")
-                    .about("On a new device without an owner: enter the code that the other device shows")
-                    .arg(Arg::new("code").value_name("CODE").help("The 10 digits; omit to type them at the prompt")),
+                    .about("On a new device without an owner: type the code that the other device shows")
+                    .arg(Arg::new("code").value_name("CODE").help(
+                        "For scripts only. Omit it and type the code at the prompt: a code on the command line is visible to other users of this device",
+                    )),
             )
     }
 
@@ -56,7 +60,7 @@ impl Module for Join {
             ));
         }
         match args.subcommand() {
-            Some(("start", args)) => start(context, args.get_flag(PROOF_ACCEPT)),
+            Some(("start", args)) => start(context, proof_accept(args)),
             Some(("enter", args)) => {
                 let code = match args.get_one::<String>("code") {
                     Some(code) => code.clone(),
@@ -67,6 +71,22 @@ impl Module for Join {
             _ => Err(CliError::usage("Choose join start or join enter.")),
         }
     }
+}
+
+#[cfg(feature = "proof")]
+fn proof_accept(args: &ArgMatches) -> bool {
+    let accept = args.get_flag(PROOF_ACCEPT);
+    if accept {
+        eprintln!(
+            "WARNING: PROOF BUILD. This join accepts the device whose code matches without asking. Never use it to join a real device."
+        );
+    }
+    accept
+}
+
+#[cfg(not(feature = "proof"))]
+fn proof_accept(_: &ArgMatches) -> bool {
+    false
 }
 
 fn start(context: &Context, proof_accept: bool) -> Result<Output, CliError> {
@@ -198,6 +218,21 @@ fn remaining(expires_at: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(not(feature = "proof"))]
+    #[test]
+    fn the_product_build_has_no_proof_accept_flag() {
+        let parsed = crate::command().try_get_matches_from([
+            "korri",
+            "join",
+            "start",
+            "--proof-accept-without-asking",
+        ]);
+        assert!(parsed.is_err());
+        assert!(crate::command()
+            .try_get_matches_from(["korri", "join", "start"])
+            .is_ok());
+    }
 
     #[test]
     fn the_joining_device_is_described_by_its_facts() {

@@ -135,6 +135,9 @@ async fn code_round(
     {
         return Round::Done(failed("JoinRelaysUnavailable", UNREACHABLE));
     }
+    // A device that says hello and never answers would hold the code until
+    // it expires. After a short wait its hello counts as the code's guess.
+    let answer_by = clock().saturating_add(context.timing.answer_wait);
     let (message, confirmation, device) = loop {
         let now = clock();
         if shown.is_expired(now) {
@@ -142,6 +145,14 @@ async fn code_round(
         }
         if reporter.unwatched(now) {
             return Round::Unwatched;
+        }
+        if now >= answer_by {
+            let _ = shown.take_guess(now);
+            let mismatch = Message::Mismatch { session };
+            let _ = rendezvous
+                .send(nameplate, &peer, &mismatch, now, expires_at)
+                .await;
+            return Round::Mismatch;
         }
         if let Ok(messages) = rendezvous
             .receive(
@@ -238,7 +249,11 @@ async fn vouch(
     session: String,
     expires_at: u64,
 ) -> JoinStatus {
-    let identity = rendezvous.identity();
+    // The identity as it is now, not as it was when the code was shown: it
+    // may have a newer owner statement, or no owner at all.
+    let Ok(identity) = context.credentials.identity_snapshot() else {
+        return failed("IdentityUnavailable", "Device identity is unavailable.");
+    };
     let IdentityState::Owned {
         owner_public_key, ..
     } = identity.state()
@@ -401,12 +416,19 @@ pub(super) async fn joining(
         Some(_) => return JoinStatus::Refused,
         None => return failed("JoinNoAnswer", NO_ANSWER),
     };
-    store_vouch(context, &own, &peer, &owner_statement)
+    store_vouch(context, &own, &peer, &owner_statement).await
 }
 
 /// Store the vouch chain the owned device sent, after checking that this
-/// exact device signed its first link.
-fn store_vouch(context: &JoinContext, own: &str, peer: &str, owner_statement: &str) -> JoinStatus {
+/// exact device signed its first link. It holds the owner-write lock that
+/// setup's end also holds, and reads the identity again under it: a device
+/// that got its automatic owner in the meantime refuses the vouch.
+pub(super) async fn store_vouch(
+    context: &JoinContext,
+    own: &str,
+    peer: &str,
+    owner_statement: &str,
+) -> JoinStatus {
     let invalid = || {
         failed(
             "JoinVouchInvalid",
@@ -421,8 +443,16 @@ fn store_vouch(context: &JoinContext, own: &str, peer: &str, owner_statement: &s
     {
         return invalid();
     }
-    let stored = DeviceIdentity::load_or_create(&context.private_state_root)
-        .and_then(|mut identity| identity.apply_owner_statement(owner_statement));
+    let _owner_write = crate::identity::owner_write().await;
+    let stored =
+        DeviceIdentity::load_or_create(&context.private_state_root).and_then(|mut identity| {
+            match identity.state() {
+                IdentityState::Unowned { .. } => identity.apply_owner_statement(owner_statement),
+                _ => Err(crate::identity::IdentityError::Invalid(
+                    "the device got an owner during the join".into(),
+                )),
+            }
+        });
     if stored.is_err() {
         return failed(
             "JoinStoreFailed",

@@ -3245,6 +3245,18 @@ async fn dispatch(
         }
         RpcRequest::OnboardingFinish(_) => {
             RpcResponse::OnboardingFinish(match &state.identity_switch {
+                // ADR 0022: a device that is joining keeps setup open until the
+                // join ends. Its end would bind an automatic owner instead.
+                _ if state
+                    .join
+                    .as_ref()
+                    .is_some_and(join::JoinCoordinator::joining) =>
+                {
+                    onboarding::OnboardingStatusOutcome::Err(RpcFailure {
+                        code: "JoinInProgress".into(),
+                        message: "This device is joining another device. Finish setup when the join ends.".into(),
+                    })
+                }
                 // ADR 0022: setup's end binds the automatic identity of a device
                 // that did not join. korrid then restarts with it, as it starts
                 // after setup.
