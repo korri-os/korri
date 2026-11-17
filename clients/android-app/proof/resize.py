@@ -27,11 +27,17 @@ The steps:
 3. The answer is `Applied`; Sunshine's log names the request from korrid and
    the new encoder; the app's decoder and video layer take 720x1280; the bar
    reads and rises in the new letterbox. Then the same back to 1280x720.
+4. korrid's own viewer adapter, the snapshot that korrid's live-shape poll
+   reads (the trigger's `snapshot LAUNCH`): the viewer reports `ready`, so
+   live-shape may ask the holder for a new size and enable Portrait, and its
+   `encoded` size follows each change in the same connection.
 
 Not run here: korrid's Portrait toggle and the holder's display change (a
 Sway mode and the display hooks). The federation fixture has no compositor,
-so its `viewer_display_report` refuses before any encoder size; the trigger
-stands in for the toggle's last step. Unit tests cover both.
+so its `viewer_display_report` refuses before any encoder size, and korrid
+then lists no Portrait control at all; the trigger stands in for the
+toggle's last step. Unit tests cover both, and that a ready viewer's
+Portrait is enabled (`services/korrid/src/upstreams.rs`).
 
 The record goes to --out; no private key enters it. The exit status is 0
 only when every check passed.
@@ -111,7 +117,13 @@ def bar_in_place(png: Path, placed: dict, stream: tuple[int, int]) -> dict:
     return found
 
 
-def resize(emulator, logcat, sender, out: Path, launch: str, size: tuple[int, int], name: str) -> tuple[dict, dict]:
+def shape(snapshot: "dict | None") -> dict:
+    """The viewer's shape in korrid's snapshot: its connection, encoded size and readiness."""
+    return ((snapshot or {}).get("shape") or {})
+
+
+def resize(emulator, logcat, sender, out: Path, launch: str, size: tuple[int, int], name: str,
+           connection: "str | None") -> tuple[dict, dict]:
     """One request through korrid; what each side shows afterwards."""
     mark = logcat.mark()
     # The agent's sample is Sunshine's whole log since the stream started.
@@ -142,6 +154,9 @@ def resize(emulator, logcat, sender, out: Path, launch: str, size: tuple[int, in
     done["app_lines"] = [l for l in lines if "picture: " in l or "video layer" in l or "proof: resize" in l]
     ids = [shot["id"] for shot in shots if "id" in shot]
     w, h = size
+    # What korrid's live-shape poll reads now: the viewer's new encoded size.
+    observed = shape(d10.proof_snapshot(emulator, logcat, launch))
+    done["korrids_snapshot_shape"] = observed
     checks = {
         f"{name}_korrid_answers_applied": done["answer"] == "Applied",
         f"{name}_sunshine_took_korrids_request": any(
@@ -153,6 +168,9 @@ def resize(emulator, logcat, sender, out: Path, launch: str, size: tuple[int, in
         f"{name}_the_bar_has_the_new_geometry": bool(shots) and all(shot.get("in_place") for shot in shots),
         f"{name}_the_picture_moves": len(ids) >= 3 and all(b > a for a, b in zip(ids, ids[1:])),
         f"{name}_the_decoder_did_not_fail": not any("the decoder failed" in l for l in lines),
+        f"{name}_korrid_reads_the_new_encoded_size": observed.get("encoded") == {"width": w, "height": h},
+        f"{name}_the_viewer_stays_ready_in_the_same_connection": observed.get("ready") is True
+        and connection is not None and observed.get("connection") == connection,
     }
     return done, checks
 
@@ -319,10 +337,19 @@ def main() -> int:
             time.sleep(1)
         ids = [s["id"] for s in steps["picture"] if "id" in s]
         checks["the_picture_moves_at_1280x720"] = len(ids) >= 3 and all(b > a for a, b in zip(ids, ids[1:]))
+        # #476: the Rust viewer follows a new stream size, so it says so to
+        # korrid, whose live-shape poll reads this snapshot.
+        first = shape(d10.proof_snapshot(emulator, logcat, launch))
+        steps["korrids_snapshot_shape"] = first
+        checks["the_viewer_reports_ready_to_korrid"] = first.get("ready") is True
+        checks["korrid_reads_the_encoded_size_1280x720"] = first.get("encoded") == {"width": STREAM[0], "height": STREAM[1]}
+        connection = first.get("connection")
 
-        steps["portrait"], portrait_checks = resize(emulator, logcat, sender, out, launch, PORTRAIT, "portrait")
+        steps["portrait"], portrait_checks = resize(emulator, logcat, sender, out, launch, PORTRAIT, "portrait",
+                                                    connection)
         checks.update(portrait_checks)
-        steps["landscape"], landscape_checks = resize(emulator, logcat, sender, out, launch, STREAM, "landscape")
+        steps["landscape"], landscape_checks = resize(emulator, logcat, sender, out, launch, STREAM, "landscape",
+                                                      connection)
         checks.update(landscape_checks)
 
         crashes = [l for l in logcat.lines() if "FATAL" in l or "Fatal signal" in l or "korri: panic" in l or "ANR in" in l]
