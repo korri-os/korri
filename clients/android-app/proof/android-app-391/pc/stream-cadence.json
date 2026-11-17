@@ -1,0 +1,18 @@
+{
+ "startup_ms": 257.983317,
+ "packet_to_display_ms": 1.709432,
+ "viewer_ran": {
+  "kind": "copied-product",
+  "place": "fixture",
+  "moonlight": "/nix/store/8s44rjrc9fk55f1p3p8dy5wpywnj352w-korri-viewer-0.1.0/bin/moonlight",
+  "release_version": null,
+  "package": "/nix/store/8s44rjrc9fk55f1p3p8dy5wpywnj352w-korri-viewer-0.1.0",
+  "copied_from": "aka",
+  "signed_by": [],
+  "requested_platform": "x11_vaapi",
+  "decode": "vaapi",
+  "render_nodes": [
+   "/dev/dri/renderD129"
+  ]
+ }
+}

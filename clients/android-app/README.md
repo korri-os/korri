@@ -335,7 +335,8 @@ The viewer's steps and the app's write `start:` lines with their
 monotonic times (`clients/viewer`, "The start's timeline"). The play proof
 reads them from the tap to the first frame into `result.json`
 (`steps.start_timeline`), with the emulator's TCP counters over the same
-time (`steps.emulator_tcp_from_tap_to_first_frame`).
+time (`steps.emulator_tcp_from_tap_to_first_frame`). Records:
+`proof/android-app-391/`.
 
 ### The bars beside the picture (#495)
 

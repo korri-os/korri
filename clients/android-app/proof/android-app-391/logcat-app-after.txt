@@ -1,0 +1,595 @@
+11-17 05:52:52.971   523  1557 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.simonwjackson.korri.app/android.app.NativeActivity} from uid 2000
+11-17 05:52:53.015   748   803 D StartingSurfaceDrawer: addSplashScreen com.simonwjackson.korri.app theme=103012a task=13 suggestType=3
+11-17 05:52:53.021   523   565 I ActivityManager: Start proc 4903:com.simonwjackson.korri.app/u0a145 for pre-top-activity {com.simonwjackson.korri.app/android.app.NativeActivity}
+11-17 05:52:53.109  4903  4903 V GraphicsEnvironment: ANGLE Developer option for 'com.simonwjackson.korri.app' set to: 'default'
+11-17 05:52:53.238  4903  4945 I korri   : korrid: Android TLS verifier classes loaded
+11-17 05:52:53.258  4903  4945 I korri   : korrid: Android network observed: 4 addresses on [eth0, wlan0]
+11-17 05:52:53.267  4903  4943 I korri   : korri-app: korrid serves on 127.0.0.1:43103
+11-17 05:52:53.281  4903  4945 I korri   : korrid discovery: @korri:android-app discovery is not enabled
+11-17 05:52:53.299  4903  4943 I korri   : korri-app: korrid answered system.health
+11-17 05:52:53.303  4903  4956 I korri   : korri-app: proof: watching /data/user/0/com.simonwjackson.korri.app/cache/proof-command
+11-17 05:52:53.910  4903  4903 I korri   : korri-app: window flags applied; system bars hidden: true
+11-17 05:52:53.991   523   553 I ActivityTaskManager: Displayed com.simonwjackson.korri.app/android.app.NativeActivity: +987ms
+11-17 05:52:54.425   523  1732 W InputManager-JNI: Input channel object '66cca0d Splash Screen com.simonwjackson.korri.app (client)' was disposed without first being removed with the input manager!
+11-17 05:52:54.569  4903  4943 I korri   : korri-app: shell rendered surface=velvet page=empty count=0 selected=0
+11-17 05:52:54.570  4903  4903 I korri   : korri-app: window flags applied; system bars hidden: true
+11-17 05:52:54.659  4903  4943 I korri   : korri-app: shell rendered surface=velvet page=empty count=0 selected=0
+11-17 05:53:54.263  4903  4943 I korri   : korri-app: shell rendered surface=velvet page=home count=4 selected=1
+11-17 05:54:08.705  4903  4943 I korri   : korri-app: shell rendered surface=velvet page=detail count=0 selected=1
+11-17 05:54:12.678  4903  4945 I korri   : korrid: viewer display sent with prepare: none
+11-17 05:54:12.717  4903  4953 I korri-viewer: start: korrid starts the viewer at 119852.150 ms
+11-17 05:54:12.728  4903  4943 I korri-viewer: start: video layers asked at 119865.397 ms
+11-17 05:54:12.728  4903  4943 I korri-viewer: start: window turn asked at 119865.574 ms
+11-17 05:54:12.746  4903  4903 I korri-viewer: overlay: layer placed at (0, 136)-(1080, 2400) in the window 1080x2400, out of the display cutout (left 0, top 136, right 0, bottom 0)
+11-17 05:54:12.792  4903  4954 I korri-viewer: start: client certificate read at 119928.732 ms
+11-17 05:54:12.813  4903  4943 I korri-viewer: start: video layers made at 119949.788 ms
+11-17 05:54:13.345   523  2751 I WindowManager: finishDrawing of orientation change: Window{f25a0e1 u0 com.simonwjackson.korri.app/android.app.NativeActivity} 131ms
+11-17 05:54:13.362   523   557 I WindowManager: Screen frozen for +607ms due to Window{f25a0e1 u0 com.simonwjackson.korri.app/android.app.NativeActivity}
+11-17 05:54:13.512  4903  4954 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:36385
+11-17 05:54:13.512  4903  4954 I korri-viewer: start: server certificate provisioned at 120649.563 ms
+11-17 05:54:13.539  4903  4943 I korri   : korri-app: viewer video layer 1280x720 placed at (0, 896)-(1080, 1504) in the window 1080x2400
+11-17 05:54:13.571  4903  4943 I korri   : korri-app: viewer input: controllers attached at the start: mask 0x0
+11-17 05:54:13.571  4903  4943 I korri   : korri-app: viewer request {"launchId":"7d4aa86932f4fd746f7eadaa4a728386","command":{"kind":"Start","value":{"address":"192.168.1.117:36385"}}}
+11-17 05:54:13.571  4903  4903 I korri-viewer: input: unbuffered dispatch requested
+11-17 05:54:13.583  4903  5960 I korri-viewer: start: Start at 120720.399 ms
+11-17 05:54:13.755  4903  4943 I korri-viewer: start: window now 2400x1080 at 120892.097 ms
+11-17 05:54:13.755  4903  4943 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-17 05:54:13.763  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:54:14.405  4903  5960 I korri-viewer: start: http serverinfo answered at 121542.139 ms (connected 304.2 ms, first byte 792.3 ms, total 792.3 ms)
+11-17 05:54:15.485  4903  5960 I korri-viewer: start: https serverinfo answered at 122622.025 ms (connected 627.3 ms, TLS done 1033.4 ms, first byte 1079.4 ms, total 1079.4 ms)
+11-17 05:54:15.495  4903  5960 I korri-viewer: start: paired at 122632.084 ms
+11-17 05:54:16.511  4903  5960 I korri-viewer: start: https applist answered at 123648.044 ms (connected 504.1 ms, TLS done 1006.3 ms, first byte 1013.3 ms, total 1015.9 ms)
+11-17 05:54:16.511  4903  5960 I korri-viewer: start: picture and input ready at 123648.403 ms
+11-17 05:54:16.559  4903  5965 I korri-viewer: start: decoders listed at 123695.797 ms
+11-17 05:54:16.559  4903  5965 I korri-viewer: picture: decoders for video/avc: c2.goldfish.h264.decoder (hardware true, software-only false, alias false, low-latency false, high true, adaptive true); c2.android.avc.decoder (hardware false, software-only true, alias false, low-latency false, high true, adaptive true); OMX.google.h264.decoder (hardware false, software-only true, alias true, low-latency false, high true, adaptive true)
+11-17 05:54:16.950  4903  5965 I korri-viewer: picture: decode mediacodec decoder c2.goldfish.h264.decoder hardware true software-only false low-latency-feature false try 0 keys low-latency=1,vdec-lowlatency=1,priority=0 size 1280x720@60 adaptive 2960x2960
+11-17 05:54:16.950  4903  5965 I korri-viewer: start: decoder made at 124086.755 ms
+11-17 05:54:18.203  4903  5960 I korri-viewer: start: https launch answered at 125340.296 ms (connected 5.2 ms, TLS done 511.3 ms, first byte 1691.4 ms, total 1691.7 ms)
+11-17 05:54:18.205  4903  5960 I korri-viewer: RTSP port: 36406
+11-17 05:54:18.205  4903  5960 I korri-viewer: Initializing platform...
+11-17 05:54:18.206  4903  5960 I korri-viewer: start: core platform init begins at 125342.756 ms
+11-17 05:54:18.207  4903  5960 I korri-viewer: start: core platform init done at 125344.100 ms
+11-17 05:54:18.213  4903  5960 I korri-viewer: done
+11-17 05:54:18.213  4903  5960 I korri-viewer: Resolving host name...
+11-17 05:54:18.213  4903  5960 I korri-viewer: start: core name resolution begins at 125350.180 ms
+11-17 05:54:18.213  4903  5960 I korri-viewer: start: core name resolution done at 125350.206 ms
+11-17 05:54:18.213  4903  5960 I korri-viewer: done
+11-17 05:54:18.213  4903  5960 I korri-viewer: Initializing audio stream...
+11-17 05:54:18.213  4903  5960 I korri-viewer: start: core audio stream init begins at 125350.226 ms
+11-17 05:54:18.213  4903  5960 I korri-viewer: start: core audio stream init done at 125350.376 ms
+11-17 05:54:18.213  4903  5960 I korri-viewer: done
+11-17 05:54:18.213  4903  5960 I korri-viewer: Starting RTSP handshake...
+11-17 05:54:18.213  4903  5960 I korri-viewer: start: core RTSP handshake begins at 125350.402 ms
+11-17 05:54:20.205  4903  5960 I korri-viewer: Reference frame invalidation is not supported by this host
+11-17 05:54:20.206  4903  5960 I korri-viewer: start: RTSP DESCRIBE answered at 127342.895 ms
+11-17 05:54:21.231  4903  5960 I korri-viewer: Audio port: 36396
+11-17 05:54:21.232  4903  5960 I korri-viewer: start: RTSP SETUP audio answered at 128369.066 ms
+11-17 05:54:21.770  4903  5960 I korri-viewer: Video port: 36394
+11-17 05:54:21.770  4903  5960 I korri-viewer: start: RTSP SETUP video answered at 128907.104 ms
+11-17 05:54:22.300  4903  5960 I korri-viewer: Control port: 36395
+11-17 05:54:22.300  4903  5960 I korri-viewer: start: RTSP SETUP control answered at 129437.336 ms
+11-17 05:54:23.524  4903  5960 I korri-viewer: start: core RTSP handshake done at 130661.652 ms
+11-17 05:54:23.524  4903  5960 I korri-viewer: done
+11-17 05:54:23.524  4903  5960 I korri-viewer: Initializing control stream...
+11-17 05:54:23.524  4903  5960 I korri-viewer: start: core control stream init begins at 130661.706 ms
+11-17 05:54:23.524  4903  5960 I korri-viewer: start: core control stream init done at 130661.714 ms
+11-17 05:54:23.524  4903  5960 I korri-viewer: done
+11-17 05:54:23.525  4903  5960 I korri-viewer: Initializing video stream...
+11-17 05:54:23.525  4903  5960 I korri-viewer: start: core video stream init begins at 130661.727 ms
+11-17 05:54:23.525  4903  5960 I korri-viewer: start: core video stream init done at 130661.830 ms
+11-17 05:54:23.525  4903  5960 I korri-viewer: done
+11-17 05:54:23.525  4903  5960 I korri-viewer: Initializing input stream...
+11-17 05:54:23.525  4903  5960 I korri-viewer: start: core input stream init begins at 130661.843 ms
+11-17 05:54:23.525  4903  5960 I korri-viewer: start: core input stream init done at 130661.849 ms
+11-17 05:54:23.525  4903  5960 I korri-viewer: done
+11-17 05:54:23.525  4903  5960 I korri-viewer: Starting control stream...
+11-17 05:54:23.525  4903  5960 I korri-viewer: start: core control stream start begins at 130661.863 ms
+11-17 05:54:23.625  4903  5960 I korri-viewer: start: core control stream start done at 130762.169 ms
+11-17 05:54:23.625  4903  5960 I korri-viewer: done
+11-17 05:54:23.625  4903  5960 I korri-viewer: Starting video stream...
+11-17 05:54:23.625  4903  5960 I korri-viewer: start: core video stream start begins at 130762.213 ms
+11-17 05:54:23.625  4903  5960 I korri-viewer: start: decoder taken at 130762.300 ms
+11-17 05:54:23.625  4903  5960 I korri-viewer: start: core video stream start done at 130762.403 ms
+11-17 05:54:23.625  4903  5960 I korri-viewer: done
+11-17 05:54:23.625  4903  5960 I korri-viewer: Starting audio stream...
+11-17 05:54:23.625  4903  5960 I korri-viewer: start: core audio stream start begins at 130762.425 ms
+11-17 05:54:23.790  4903  5980 I korri-viewer: Received first video packet after 100 ms
+11-17 05:54:23.790  4903  5980 I korri-viewer: start: first video packet at 130926.857 ms
+11-17 05:54:24.047  4903  5979 I korri-viewer: picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 1279, 719), width: int32(1280), height: int32(720), max-height: int32(2960), max-width: int32(2960), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}
+11-17 05:54:24.051  4903  5979 I korri-viewer: picture: decoded size 1280x720
+11-17 05:54:24.054  4903  5979 I korri-viewer: start: first frame shown at 131191.587 ms
+11-17 05:54:24.193  4903  4903 I korri-viewer: picture: the black backdrop shows under the video, with its first picture
+11-17 05:54:24.474  4903  5960 I korri-viewer: sound: output try 0 asked low-latency granted none sharing shared rate 48000 channels 2 burst 960 capacity 2132 buffer 1920 (asked 1920) packet 240 frames
+11-17 05:54:24.484  4903  5960 I korri-viewer: sound: playing
+11-17 05:54:24.486  4903  5960 I korri-viewer: start: core audio stream start done at 131622.851 ms
+11-17 05:54:24.486  4903  5960 I korri-viewer: done
+11-17 05:54:24.486  4903  5960 I korri-viewer: Starting input stream...
+11-17 05:54:24.486  4903  5960 I korri-viewer: start: core input stream start begins at 131623.163 ms
+11-17 05:54:24.486  4903  5960 I korri-viewer: start: core input stream start done at 131623.309 ms
+11-17 05:54:24.486  4903  5960 I korri-viewer: done
+11-17 05:54:24.520  4903  5960 I korri   : korri-app: viewer event {"kind":"Status","value":"Running"}
+11-17 05:54:24.523  4903  5960 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":true,"controls":[]}}
+11-17 05:54:24.524  4903  5961 I korri   : korri-app: viewer reply Start {"kind":"Ok"}
+11-17 05:54:24.568  4903  5985 I korri-viewer: Received first audio packet after 0 ms
+11-17 05:54:24.568  4903  5985 I korri-viewer: start: first audio packet at 131705.649 ms
+11-17 05:54:24.568  4903  5985 I korri-viewer: Initial audio resync period: 500 milliseconds
+11-17 05:54:24.581  4903  4953 I korri   : korri-app: viewer status for korrid: 7d4aa86932f4fd746f7eadaa4a728386 Running
+11-17 05:54:24.645  4903  4954 I korri   : korri-app: viewer snapshot for korrid: 7d4aa86932f4fd746f7eadaa4a728386 {"connected":true,"batteryPercent":100.0,"controls":[{"id":"viewer:7d4aa86932f4fd746f7eadaa4a728386:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:7d4aa86932f4fd746f7eadaa4a728386:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-17 05:54:33.939  4903  4943 I korri-viewer: overlay: open on Guide; the stream's input is held
+11-17 05:54:34.006  4903  4943 I korri   : korri-app: overlay: the shell took the layer's Surface; korrid hears that the person left
+11-17 05:54:34.143  4903  4943 I korri   : korri-app: overlay: korrid's session.leave for 7d4aa86932f4fd746f7eadaa4a728386: ok
+11-17 05:54:34.200  4903  4945 I korri   : Cannot load custom font /data/user/0/com.simonwjackson.korri.app/cache/surfaces/velvet/fonts/Archivo-SemiCondensed-Bold.ttf: slint platform not initialized
+11-17 05:54:34.212  4903  4945 I korri   : Cannot load custom font /data/user/0/com.simonwjackson.korri.app/cache/surfaces/velvet/fonts/Archivo-SemiCondensed.ttf: slint platform not initialized
+11-17 05:54:34.213  4903  4945 I korri   : Cannot load custom font /data/user/0/com.simonwjackson.korri.app/cache/surfaces/velvet/fonts/BigShoulders-ExtraBold-Text.ttf: slint platform not initialized
+11-17 05:54:34.223  4903  4945 I korri   : Cannot load custom font /data/user/0/com.simonwjackson.korri.app/cache/surfaces/velvet/fonts/BigShoulders-ExtraBold.ttf: slint platform not initialized
+11-17 05:54:34.667  4903  4943 I korri   : korri-app: overlay: the shell drew it; the layer shows
+11-17 05:54:34.672  4903  4903 I korri-viewer: overlay: layer shown: posted 0.1 ms before, applied in 5.20 ms
+11-17 05:54:34.672  4903  4943 I korri   : korri-app: shell rendered surface=velvet page=home count=4 selected=1
+11-17 05:54:39.064   523  2622 I WindowManager: finishDrawing of orientation change: Window{f25a0e1 u0 com.simonwjackson.korri.app/android.app.NativeActivity} 85ms
+11-17 05:54:39.088   523   557 I WindowManager: Screen frozen for +285ms due to Window{f25a0e1 u0 com.simonwjackson.korri.app/android.app.NativeActivity}
+11-17 05:54:39.167  4903  4903 I korri-viewer: overlay: layer placed at (0, 0)-(2264, 1080) in the window 2400x1080, out of the display cutout (left 0, top 0, right 136, bottom 0)
+11-17 05:54:43.988   523   972 I WindowManager: finishDrawing of orientation change: Window{f25a0e1 u0 com.simonwjackson.korri.app/android.app.NativeActivity} 178ms
+11-17 05:54:44.004   523   557 I WindowManager: Screen frozen for +602ms due to Window{f25a0e1 u0 com.simonwjackson.korri.app/android.app.NativeActivity}
+11-17 05:54:44.105  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:55:04.236  4903  4954 I korri   : korri-app: viewer request {"launchId":"7d4aa86932f4fd746f7eadaa4a728386","command":{"kind":"Apply","value":{"control":"viewer:7d4aa86932f4fd746f7eadaa4a728386:1:1:set-fill-mode","value":{"kind":"toggle","value":true}}}}
+11-17 05:55:04.464  4903  4943 I korri   : korri-app: viewer video layer 1280x720 placed at (0, -135)-(2400, 1215) in the window 2400x1080, cropped to fill
+11-17 05:55:04.464  4903  4943 I korri   : korri-app: viewer control set-fill-mode is true
+11-17 05:55:04.469  4903  4954 I korri   : korri-app: viewer reply Apply {"kind":"Ok"}
+11-17 05:55:04.470  4903  4953 I korri   : korri-app: viewer snapshot for korrid: 7d4aa86932f4fd746f7eadaa4a728386 {"connected":true,"sampledAtMs":171052.0,"batteryPercent":100.0,"streamHealth":{"rttMs":54.0,"deliveredBitrateKbps":5805.465791940019,"framesDropped":13.0},"controls":[{"id":"viewer:7d4aa86932f4fd746f7eadaa4a728386:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":true,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:7d4aa86932f4fd746f7eadaa4a728386:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-17 05:55:13.492  4903  5980 I korri-viewer: Reached consecutive drop limit
+11-17 05:55:30.704  4903  5975 I korri-viewer: Control stream received unexpected disconnect event
+11-17 05:55:30.718  4903  6198 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:55:30.722  4903  5960 I korri-viewer: input: the core takes no more input
+11-17 05:55:30.843  4903  5976 I korri-viewer: Failed to send ENet control packet
+11-17 05:55:30.844  4903  5976 I korri-viewer: Loss Stats: Transaction failed: 11
+11-17 05:55:30.886  4903  5959 I korri-viewer: feedback: ended: 0 rumbles, 0 trigger rumbles, 0 lights, 1 calls to Android; 0 battery reads, 0 battery reports sent, 0 outside the stream; 0 failed
+11-17 05:55:30.899  4903  5960 I korri-viewer: feedback: vibration and lights stopped
+11-17 05:55:30.899  4903  5960 I korri-viewer: Stopping input stream...
+11-17 05:55:30.911  4903  5960 I korri-viewer: done
+11-17 05:55:30.918  4903  5960 I korri-viewer: Stopping audio stream...
+11-17 05:55:31.093  4903  4954 I korri   : korri-app: viewer snapshot for korrid: 7d4aa86932f4fd746f7eadaa4a728386 {"connected":false,"controls":[]}
+11-17 05:55:31.165  4903  5960 I korri-viewer: sound: stream closed
+11-17 05:55:31.165  4903  5960 I korri-viewer: sound: ended: 4602 callbacks, 1517760 frames played, 1006080 frames silent, 1926 short callbacks after the first sound, 9155 packets, 10 concealed, 2831 dropped over 40 ms pending, 0 not decoded, 104 device xruns, 0 reopened
+11-17 05:55:31.165  4903  5960 I korri-viewer: done
+11-17 05:55:31.165  4903  5960 I korri-viewer: Stopping video stream...
+11-17 05:55:31.346  4903  5960 I korri-viewer: picture: decoder stopped
+11-17 05:55:31.363  4903  5960 I korri-viewer: done
+11-17 05:55:31.363  4903  5960 I korri-viewer: Stopping control stream...
+11-17 05:55:31.363  4903  5960 I korri-viewer: ENet peer is already disconnected
+11-17 05:55:31.363  4903  5960 I korri-viewer: done
+11-17 05:55:31.363  4903  5960 I korri-viewer: Cleaning up input stream...
+11-17 05:55:31.363  4903  5960 I korri-viewer: done
+11-17 05:55:31.363  4903  5960 I korri-viewer: Cleaning up video stream...
+11-17 05:55:31.363  4903  5960 I korri-viewer: done
+11-17 05:55:31.363  4903  5960 I korri-viewer: Cleaning up control stream...
+11-17 05:55:31.363  4903  5960 I korri-viewer: done
+11-17 05:55:31.363  4903  5960 I korri-viewer: Cleaning up audio stream...
+11-17 05:55:31.369  4903  5960 I korri-viewer: done
+11-17 05:55:31.369  4903  5960 I korri-viewer: Cleaning up platform...
+11-17 05:55:31.369  4903  5960 I korri-viewer: done
+11-17 05:55:31.375  4903  5960 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:55:31.375  4903  5960 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:55:31.528  4903  4903 I korri-viewer: overlay: layer hidden: posted 0.1 ms before, applied in 47.67 ms
+11-17 05:55:31.680  4903  4953 I korri   : korri-app: viewer status for korrid: 7d4aa86932f4fd746f7eadaa4a728386 Stopped
+11-17 05:55:31.681  4903  4953 I korri-viewer: start: korrid starts the viewer at 198818.211 ms
+11-17 05:55:31.694  4903  4943 I korri   : korri-app: overlay: the shell let the layer's Surface go
+11-17 05:55:31.694  4903  4943 I korri-viewer: overlay: closed on the stream ended after 57.8 s; it took 8 keys and 2 motion events; the stream's input goes on
+11-17 05:55:31.698  4903  4954 I korri-viewer: start: client certificate read at 198834.945 ms
+11-17 05:55:31.999  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 not shown: another launch is in front
+11-17 05:55:32.007  4903  4943 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:55:32.007  4903  4943 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:55:32.007  4903  4943 I korri-viewer: input: ended: 0 keys, 0 controller states, 0 arrivals, 0 mouse, 0 touches sent; 0 held; 0 unsupported, 0 outside the stream, 0 failed
+11-17 05:55:32.011  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 failed: stream terminated: -1
+11-17 05:55:32.174  4903  4953 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:36385
+11-17 05:55:32.174  4903  4953 I korri-viewer: start: server certificate provisioned at 199310.914 ms
+11-17 05:55:32.247  4903  4953 I korri-viewer: start: korrid starts the viewer at 199383.753 ms
+11-17 05:55:32.325  4903  4953 I korri-viewer: start: client certificate read at 199462.677 ms
+11-17 05:55:32.707  4903  4943 I korri-viewer: start: video layers asked at 199844.065 ms
+11-17 05:55:32.707  4903  4943 I korri-viewer: start: window turn asked at 199844.129 ms
+11-17 05:55:33.511  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:55:33.574  4903  4943 I korri-viewer: start: video layers made at 200711.461 ms
+11-17 05:55:33.574  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 not shown: the server certificate was not provisioned
+11-17 05:55:33.574  4903  4943 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:55:33.574  4903  4943 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:55:33.853  4903  4945 I korri   : korri-shell: performance defect: velvet view for KorriPublished took 51 ms, over the 50 ms call budget; velvet keeps running
+11-17 05:55:33.890  4903  4954 I korri-viewer: start: korrid starts the viewer at 201026.948 ms
+11-17 05:55:33.902  4903  4954 I korri-viewer: start: client certificate read at 201039.677 ms
+11-17 05:55:34.126  4903  4943 I korri-viewer: start: video layers asked at 201262.767 ms
+11-17 05:55:34.126  4903  4943 I korri-viewer: start: window turn asked at 201262.803 ms
+11-17 05:55:34.225  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:55:34.235  4903  4953 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:36385
+11-17 05:55:34.253  4903  4953 I korri-viewer: start: server certificate provisioned at 201390.178 ms
+11-17 05:55:34.402  4903  4943 I korri-viewer: start: video layers made at 201538.987 ms
+11-17 05:55:34.615  4903  4943 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-17 05:55:34.941  4903  4943 I korri   : korri-app: viewer input: controllers attached at the start: mask 0x0
+11-17 05:55:34.941  4903  4943 I korri   : korri-app: viewer request {"launchId":"7d4aa86932f4fd746f7eadaa4a728386","command":{"kind":"Start","value":{"address":"192.168.1.117:36385"}}}
+11-17 05:55:34.941  4903  4903 I korri-viewer: input: unbuffered dispatch requested
+11-17 05:55:34.978  4903  6207 I korri-viewer: start: Start at 202115.386 ms
+11-17 05:55:35.047  4903  6207 I korri-viewer: start: http serverinfo answered at 202184.345 ms (connected 12.2 ms, first byte 45.7 ms, total 45.7 ms)
+11-17 05:55:45.049  4903  6206 I korri-viewer: feedback: ended: 0 rumbles, 0 trigger rumbles, 0 lights, 1 calls to Android; 0 battery reads, 0 battery reports sent, 0 outside the stream; 0 failed
+11-17 05:55:45.051  4903  6207 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:55:45.051  4903  6207 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:55:45.054  4903  6208 I korri   : korri-app: viewer reply Start {"kind":"Error","value":{"message":"serverinfo request failed: [28] Timeout was reached (Connection timed out after 10000 milliseconds)"}}
+11-17 05:55:45.056  4903  4943 I korri-viewer: input: ended: 0 keys, 0 controller states, 0 arrivals, 0 mouse, 0 touches sent; 0 held; 0 unsupported, 2 outside the stream, 0 failed
+11-17 05:55:45.061  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 failed: serverinfo request failed: [28] Timeout was reached (Connection timed out after 10000 milliseconds)
+11-17 05:55:45.068  4903  4954 I korri-viewer: start: korrid starts the viewer at 212205.414 ms
+11-17 05:55:45.071  4903  4953 I korri-viewer: start: client certificate read at 212207.932 ms
+11-17 05:55:45.113  4903  4943 I korri-viewer: start: video layers asked at 212250.399 ms
+11-17 05:55:45.113  4903  4943 I korri-viewer: start: window turn asked at 212250.591 ms
+11-17 05:55:45.217  4903  4954 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:36385
+11-17 05:55:45.217  4903  4954 I korri-viewer: start: server certificate provisioned at 212354.517 ms
+11-17 05:55:45.241  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:55:45.243  4903  4943 I korri-viewer: start: video layers made at 212379.810 ms
+11-17 05:55:45.287  4903  4943 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-17 05:55:45.310  4903  4943 I korri   : korri-app: viewer input: controllers attached at the start: mask 0x0
+11-17 05:55:45.311  4903  4943 I korri   : korri-app: viewer request {"launchId":"7d4aa86932f4fd746f7eadaa4a728386","command":{"kind":"Start","value":{"address":"192.168.1.117:36385"}}}
+11-17 05:55:45.311  4903  4903 I korri-viewer: input: unbuffered dispatch requested
+11-17 05:55:45.316  4903  6218 I korri-viewer: start: Start at 212453.349 ms
+11-17 05:55:45.320  4903  6218 I korri-viewer: start: http serverinfo answered at 212457.175 ms (connected 1.7 ms, first byte 3.1 ms, total 3.1 ms)
+11-17 05:55:55.323  4903  6217 I korri-viewer: feedback: ended: 0 rumbles, 0 trigger rumbles, 0 lights, 1 calls to Android; 0 battery reads, 0 battery reports sent, 0 outside the stream; 0 failed
+11-17 05:55:55.324  4903  6218 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:55:55.324  4903  6218 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:55:55.324  4903  6219 I korri   : korri-app: viewer reply Start {"kind":"Error","value":{"message":"serverinfo request failed: [28] Timeout was reached (Connection timed out after 10001 milliseconds)"}}
+11-17 05:55:55.331  4903  4943 I korri-viewer: input: ended: 0 keys, 0 controller states, 0 arrivals, 0 mouse, 0 touches sent; 0 held; 0 unsupported, 0 outside the stream, 0 failed
+11-17 05:55:55.331  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 failed: serverinfo request failed: [28] Timeout was reached (Connection timed out after 10001 milliseconds)
+11-17 05:55:55.426  4903  4953 I korri-viewer: start: korrid starts the viewer at 222563.578 ms
+11-17 05:55:55.429  4903  4953 I korri-viewer: start: client certificate read at 222565.746 ms
+11-17 05:55:55.439  4903  4943 I korri-viewer: start: video layers asked at 222576.096 ms
+11-17 05:55:55.439  4903  4943 I korri-viewer: start: window turn asked at 222576.129 ms
+11-17 05:55:55.454  4903  4954 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:36385
+11-17 05:55:55.454  4903  4954 I korri-viewer: start: server certificate provisioned at 222591.519 ms
+11-17 05:55:55.520  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:55:55.521  4903  4943 I korri-viewer: start: video layers made at 222658.641 ms
+11-17 05:55:55.521  4903  4943 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-17 05:55:55.567  4903  4943 I korri   : korri-app: viewer input: controllers attached at the start: mask 0x0
+11-17 05:55:55.568  4903  4943 I korri   : korri-app: viewer request {"launchId":"7d4aa86932f4fd746f7eadaa4a728386","command":{"kind":"Start","value":{"address":"192.168.1.117:36385"}}}
+11-17 05:55:55.568  4903  4903 I korri-viewer: input: unbuffered dispatch requested
+11-17 05:55:55.568  4903  6221 I korri-viewer: start: Start at 222705.457 ms
+11-17 05:55:55.574  4903  6221 I korri-viewer: start: http serverinfo answered at 222711.525 ms (connected 0.9 ms, first byte 1.5 ms, total 1.5 ms)
+11-17 05:56:01.322  4903  4943 I korri-viewer: overlay: open on Back; the stream's input is held
+11-17 05:56:01.325  4903  4943 I korri   : korri-app: overlay: the shell took the layer's Surface; korrid hears that the person left
+11-17 05:56:05.578  4903  6220 I korri-viewer: feedback: ended: 0 rumbles, 0 trigger rumbles, 0 lights, 1 calls to Android; 0 battery reads, 0 battery reports sent, 0 outside the stream; 0 failed
+11-17 05:56:05.582  4903  6221 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:56:05.583  4903  6221 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:56:05.583  4903  6222 I korri   : korri-app: viewer reply Start {"kind":"Error","value":{"message":"serverinfo request failed: [28] Timeout was reached (Connection timed out after 10000 milliseconds)"}}
+11-17 05:56:05.591  4903  4943 I korri   : korri-app: overlay: the shell let the layer's Surface go
+11-17 05:56:05.591  4903  4943 I korri-viewer: overlay: closed on the stream ended after 4.3 s; it took 0 keys and 0 motion events; the stream's input goes on
+11-17 05:56:05.602  4903  4943 I korri-viewer: input: ended: 0 keys, 0 controller states, 0 arrivals, 0 mouse, 0 touches sent; 0 held; 0 unsupported, 0 outside the stream, 0 failed
+11-17 05:56:05.602  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 failed: serverinfo request failed: [28] Timeout was reached (Connection timed out after 10000 milliseconds)
+11-17 05:56:05.640  4903  4954 I korri-viewer: start: korrid starts the viewer at 232777.632 ms
+11-17 05:56:05.641  4903  4954 I korri-viewer: start: client certificate read at 232778.670 ms
+11-17 05:56:05.654  4903  4943 I korri-viewer: start: video layers asked at 232791.149 ms
+11-17 05:56:05.654  4903  4943 I korri-viewer: start: window turn asked at 232791.191 ms
+11-17 05:56:05.731  4903  4953 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:36385
+11-17 05:56:05.731  4903  4953 I korri-viewer: start: server certificate provisioned at 232868.089 ms
+11-17 05:56:05.826  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:56:05.858  4903  4943 I korri-viewer: start: video layers made at 232995.474 ms
+11-17 05:56:06.046  4903  4943 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-17 05:56:06.112  4903  4943 I korri   : korri-app: viewer input: controllers attached at the start: mask 0x0
+11-17 05:56:06.112  4903  4943 I korri   : korri-app: viewer request {"launchId":"7d4aa86932f4fd746f7eadaa4a728386","command":{"kind":"Start","value":{"address":"192.168.1.117:36385"}}}
+11-17 05:56:06.113  4903  4903 I korri-viewer: input: unbuffered dispatch requested
+11-17 05:56:06.120  4903  6252 I korri-viewer: start: Start at 233257.001 ms
+11-17 05:56:06.142  4903  6252 I korri-viewer: start: http serverinfo answered at 233279.289 ms (connected 5.8 ms, first byte 19.4 ms, total 19.4 ms)
+11-17 05:56:16.144  4903  6251 I korri-viewer: feedback: ended: 0 rumbles, 0 trigger rumbles, 0 lights, 1 calls to Android; 0 battery reads, 0 battery reports sent, 0 outside the stream; 0 failed
+11-17 05:56:16.145  4903  6252 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:56:16.145  4903  6252 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:56:16.145  4903  6253 I korri   : korri-app: viewer reply Start {"kind":"Error","value":{"message":"serverinfo request failed: [28] Timeout was reached (Connection timed out after 10000 milliseconds)"}}
+11-17 05:56:16.161  4903  4943 I korri-viewer: input: ended: 0 keys, 0 controller states, 0 arrivals, 0 mouse, 0 touches sent; 0 held; 0 unsupported, 0 outside the stream, 0 failed
+11-17 05:56:16.161  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 failed: serverinfo request failed: [28] Timeout was reached (Connection timed out after 10000 milliseconds)
+11-17 05:56:16.189  4903  4953 I korri-viewer: start: korrid starts the viewer at 243326.519 ms
+11-17 05:56:16.190  4903  4954 I korri-viewer: start: client certificate read at 243326.941 ms
+11-17 05:56:16.218  4903  4943 I korri-viewer: start: video layers asked at 243355.635 ms
+11-17 05:56:16.218  4903  4943 I korri-viewer: start: window turn asked at 243355.716 ms
+11-17 05:56:16.332  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:56:16.342  4903  4943 I korri-viewer: start: video layers made at 243479.210 ms
+11-17 05:56:16.785  4903  4953 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:36385
+11-17 05:56:16.785  4903  4953 I korri-viewer: start: server certificate provisioned at 243922.216 ms
+11-17 05:56:16.800  4903  4943 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-17 05:56:16.808  4903  4943 I korri   : korri-app: viewer input: controllers attached at the start: mask 0x0
+11-17 05:56:16.808  4903  4943 I korri   : korri-app: viewer request {"launchId":"7d4aa86932f4fd746f7eadaa4a728386","command":{"kind":"Start","value":{"address":"192.168.1.117:36385"}}}
+11-17 05:56:16.809  4903  4903 I korri-viewer: input: unbuffered dispatch requested
+11-17 05:56:16.809  4903  6276 I korri-viewer: start: Start at 243946.304 ms
+11-17 05:56:17.776  4903  6276 I korri-viewer: start: http serverinfo answered at 244912.947 ms (connected 462.5 ms, first byte 965.5 ms, total 965.5 ms)
+11-17 05:56:27.779  4903  6275 I korri-viewer: feedback: ended: 0 rumbles, 0 trigger rumbles, 0 lights, 1 calls to Android; 0 battery reads, 0 battery reports sent, 0 outside the stream; 0 failed
+11-17 05:56:27.779  4903  6276 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:56:27.779  4903  6276 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:56:27.780  4903  6277 I korri   : korri-app: viewer reply Start {"kind":"Error","value":{"message":"serverinfo request failed: [28] Timeout was reached (Connection timed out after 10000 milliseconds)"}}
+11-17 05:56:27.786  4903  4953 I korri-viewer: start: korrid starts the viewer at 254922.861 ms
+11-17 05:56:27.786  4903  4953 I korri-viewer: start: client certificate read at 254923.400 ms
+11-17 05:56:27.791  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 not shown: another launch is in front
+11-17 05:56:27.791  4903  4943 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:56:27.791  4903  4943 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:56:27.791  4903  4943 I korri-viewer: input: ended: 0 keys, 0 controller states, 0 arrivals, 0 mouse, 0 touches sent; 0 held; 0 unsupported, 0 outside the stream, 0 failed
+11-17 05:56:27.791  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 failed: serverinfo request failed: [28] Timeout was reached (Connection timed out after 10000 milliseconds)
+11-17 05:56:28.048  4903  4954 I korri-viewer: start: korrid starts the viewer at 255184.839 ms
+11-17 05:56:28.048  4903  4954 I korri-viewer: start: client certificate read at 255185.339 ms
+11-17 05:56:28.052  4903  4943 I korri-viewer: start: video layers asked at 255189.014 ms
+11-17 05:56:28.052  4903  4943 I korri-viewer: start: window turn asked at 255189.061 ms
+11-17 05:56:28.077  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:56:28.088  4903  4943 I korri-viewer: start: video layers made at 255225.695 ms
+11-17 05:56:28.842  4903  4954 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:36385
+11-17 05:56:28.843  4903  4954 I korri-viewer: start: server certificate provisioned at 255980.403 ms
+11-17 05:56:28.860  4903  4943 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-17 05:56:28.867  4903  4943 I korri   : korri-app: viewer input: controllers attached at the start: mask 0x0
+11-17 05:56:28.867  4903  4943 I korri   : korri-app: viewer request {"launchId":"7d4aa86932f4fd746f7eadaa4a728386","command":{"kind":"Start","value":{"address":"192.168.1.117:36385"}}}
+11-17 05:56:28.867  4903  4903 I korri-viewer: input: unbuffered dispatch requested
+11-17 05:56:28.868  4903  6279 I korri-viewer: start: Start at 256005.333 ms
+11-17 05:56:29.820  4903  6279 I korri-viewer: start: http serverinfo answered at 256956.969 ms (connected 446.9 ms, first byte 950.5 ms, total 950.5 ms)
+11-17 05:56:37.327  1309  1309 I AndroidIME: AbstractIme.onActivate():86 LatinIme.onActivate() : EditorInfo = inputType=Text imeActionName=UNSPECIFIED dump=[inputType=0x1 imeOptions=0x10000000 privateImeOptions=null actionLabel=null actionId=0 initialSelStart=0 initialSelEnd=0 initialCapsMode=0x0 hintText=null label=null packageName=com.simonwjackson.korri.app autofillId=1073741824 fieldId=-1 fieldName=null extras=null hintLocales=null contentMimeTypes=null ], IncognitoMode = false, DeviceLocked = false
+11-17 05:56:39.826  4903  6278 I korri-viewer: feedback: ended: 0 rumbles, 0 trigger rumbles, 0 lights, 1 calls to Android; 0 battery reads, 0 battery reports sent, 0 outside the stream; 0 failed
+11-17 05:56:39.827  4903  6279 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:56:39.828  4903  6279 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:56:39.829  4903  6280 I korri   : korri-app: viewer reply Start {"kind":"Error","value":{"message":"serverinfo request failed: [28] Timeout was reached (Connection timed out after 10003 milliseconds)"}}
+11-17 05:56:39.853  4903  4943 I korri-viewer: input: ended: 0 keys, 0 controller states, 0 arrivals, 0 mouse, 0 touches sent; 0 held; 0 unsupported, 2 outside the stream, 0 failed
+11-17 05:56:39.853  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 failed: serverinfo request failed: [28] Timeout was reached (Connection timed out after 10003 milliseconds)
+11-17 05:56:40.001  4903  4953 I korri-viewer: start: korrid starts the viewer at 267138.543 ms
+11-17 05:56:40.002  4903  4953 I korri-viewer: start: client certificate read at 267139.335 ms
+11-17 05:56:40.003  4903  4943 I korri-viewer: start: video layers asked at 267140.188 ms
+11-17 05:56:40.003  4903  4943 I korri-viewer: start: window turn asked at 267140.234 ms
+11-17 05:56:40.112  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 not shown: the server certificate was not provisioned
+11-17 05:56:40.113  4903  4943 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:56:40.113  4903  4943 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:56:40.114  4903  4954 I korri-viewer: start: korrid starts the viewer at 267250.844 ms
+11-17 05:56:40.114  4903  4954 I korri-viewer: start: client certificate read at 267251.480 ms
+11-17 05:56:40.131  4903  4943 I korri-viewer: start: video layers asked at 267268.402 ms
+11-17 05:56:40.131  4903  4943 I korri-viewer: start: window turn asked at 267268.547 ms
+11-17 05:56:40.172  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:56:40.449  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:56:40.478  4903  4943 I korri-viewer: start: video layers made at 267615.194 ms
+11-17 05:56:40.997  4903  4954 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:36385
+11-17 05:56:40.997  4903  4954 I korri-viewer: start: server certificate provisioned at 268134.458 ms
+11-17 05:56:41.006  4903  4943 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-17 05:56:41.019  4903  4943 I korri   : korri-app: viewer input: controllers attached at the start: mask 0x0
+11-17 05:56:41.019  4903  4943 I korri   : korri-app: viewer request {"launchId":"7d4aa86932f4fd746f7eadaa4a728386","command":{"kind":"Start","value":{"address":"192.168.1.117:36385"}}}
+11-17 05:56:41.019  4903  4903 I korri-viewer: input: unbuffered dispatch requested
+11-17 05:56:41.020  4903  6366 I korri-viewer: start: Start at 268157.300 ms
+11-17 05:56:41.526  4903  6366 I korri-viewer: start: http serverinfo answered at 268663.510 ms (connected 459.5 ms, first byte 505.0 ms, total 505.1 ms)
+11-17 05:56:44.431  4903  4956 I korri   : korri-app: proof: snapshot 7d4aa86932f4fd746f7eadaa4a728386 null
+11-17 05:56:46.861  4903  4943 I korri   : korri-app: viewer stops: the app's window went
+11-17 05:56:46.861  4903  4943 I korri-viewer: input: ended: 0 keys, 0 controller states, 0 arrivals, 0 mouse, 0 touches sent; 0 held; 0 unsupported, 0 outside the stream, 0 failed
+11-17 05:56:46.861  4903  4943 I korri   : korri-app: viewer request {"launchId":"7d4aa86932f4fd746f7eadaa4a728386","command":{"kind":"Stop"}}
+11-17 05:56:46.877  4903  4903 E BLASTBufferQueue: [ViewRootImpl[NativeActivity]#0](f:0,a:1) Applying pending transactions on dtor 32
+11-17 05:56:46.912  4903  6365 I korri-viewer: feedback: ended: 0 rumbles, 0 trigger rumbles, 0 lights, 1 calls to Android; 0 battery reads, 0 battery reports sent, 0 outside the stream; 0 failed
+11-17 05:56:46.928  4903  6366 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:56:46.928  4903  6366 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:56:46.928  4903  6367 I korri   : korri-app: viewer reply Start {"kind":"Error","value":{"message":"viewer disconnected before Start completed"}}
+11-17 05:56:46.929  4903  6412 I korri   : korri-app: viewer reply Stop {"kind":"Ok"}
+11-17 05:56:47.061  4903  4943 I korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 ended
+11-17 05:56:47.108  4903  4954 I korri-viewer: start: korrid starts the viewer at 274245.131 ms
+11-17 05:56:47.162  4903  4953 I korri-viewer: start: korrid starts the viewer at 274299.012 ms
+11-17 05:56:47.274  4903  4954 I korri-viewer: start: korrid starts the viewer at 274411.454 ms
+11-17 05:56:47.381  4903  4953 I korri-viewer: start: korrid starts the viewer at 274518.066 ms
+11-17 05:56:48.309  4903  4953 I korri-viewer: start: korrid starts the viewer at 275445.978 ms
+11-17 05:56:48.418  4903  4953 I korri-viewer: start: korrid starts the viewer at 275555.316 ms
+11-17 05:56:49.340  4903  4954 I korri-viewer: start: korrid starts the viewer at 276477.365 ms
+11-17 05:56:49.466  4903  4954 I korri-viewer: start: korrid starts the viewer at 276603.583 ms
+11-17 05:56:50.334  4903  4954 I korri-viewer: start: korrid starts the viewer at 277471.589 ms
+11-17 05:56:50.552  4903  4953 I korri-viewer: start: korrid starts the viewer at 277689.348 ms
+11-17 05:56:51.326  4903  4954 I korri-viewer: start: korrid starts the viewer at 278462.944 ms
+11-17 05:56:51.643  4903  4954 I korri-viewer: start: korrid starts the viewer at 278779.793 ms
+11-17 05:56:52.341  4903  4953 I korri-viewer: start: korrid starts the viewer at 279478.355 ms
+11-17 05:56:52.774  4903  4953 I korri-viewer: start: korrid starts the viewer at 279911.600 ms
+11-17 05:56:53.346  4903  4953 I korri-viewer: start: korrid starts the viewer at 280482.718 ms
+11-17 05:56:53.859  4903  4954 I korri-viewer: start: korrid starts the viewer at 280996.044 ms
+11-17 05:56:54.341  4903  4954 I korri-viewer: start: korrid starts the viewer at 281478.236 ms
+11-17 05:56:54.978  4903  4954 I korri-viewer: start: korrid starts the viewer at 282115.581 ms
+11-17 05:56:55.339  4903  4954 I korri-viewer: start: korrid starts the viewer at 282476.067 ms
+11-17 05:56:56.048  4903  4953 I korri-viewer: start: korrid starts the viewer at 283185.250 ms
+11-17 05:56:56.315  4903  4953 I korri-viewer: start: korrid starts the viewer at 283452.653 ms
+11-17 05:56:57.095  4903  4953 I korri-viewer: start: korrid starts the viewer at 284231.772 ms
+11-17 05:56:57.353  4903  4953 I korri-viewer: start: korrid starts the viewer at 284490.696 ms
+11-17 05:56:58.170  4903  4953 I korri-viewer: start: korrid starts the viewer at 285307.128 ms
+11-17 05:56:58.311  4903  4953 I korri-viewer: start: korrid starts the viewer at 285447.927 ms
+11-17 05:56:59.234  4903  4953 I korri-viewer: start: korrid starts the viewer at 286370.712 ms
+11-17 05:56:59.341  4903  4954 I korri-viewer: start: korrid starts the viewer at 286477.793 ms
+11-17 05:57:00.288  4903  4953 I korri-viewer: start: korrid starts the viewer at 287425.679 ms
+11-17 05:57:00.344  4903  4954 I korri-viewer: start: korrid starts the viewer at 287481.408 ms
+11-17 05:57:01.341  4903  4953 I korri-viewer: start: korrid starts the viewer at 288477.866 ms
+11-17 05:57:01.378  4903  4954 I korri-viewer: start: korrid starts the viewer at 288515.098 ms
+11-17 05:57:02.346  4903  4953 I korri-viewer: start: korrid starts the viewer at 289482.769 ms
+11-17 05:57:02.535  4903  4953 I korri-viewer: start: korrid starts the viewer at 289671.808 ms
+11-17 05:57:03.344  4903  4954 I korri-viewer: start: korrid starts the viewer at 290480.992 ms
+11-17 05:57:03.634  4903  4954 I korri-viewer: start: korrid starts the viewer at 290771.133 ms
+11-17 05:57:04.322  4903  4953 I korri-viewer: start: korrid starts the viewer at 291459.705 ms
+11-17 05:57:04.713  4903  4953 I korri-viewer: start: korrid starts the viewer at 291849.747 ms
+11-17 05:57:05.318  4903  4953 I korri-viewer: start: korrid starts the viewer at 292455.287 ms
+11-17 05:57:05.837  4903  4954 I korri-viewer: start: korrid starts the viewer at 292973.710 ms
+11-17 05:57:06.344  4903  4953 I korri-viewer: start: korrid starts the viewer at 293480.925 ms
+11-17 05:57:06.968  4903  4954 I korri-viewer: start: korrid starts the viewer at 294105.670 ms
+11-17 05:57:07.331  4903  4953 I korri-viewer: start: korrid starts the viewer at 294467.900 ms
+11-17 05:57:08.075  4903  4954 I korri-viewer: start: korrid starts the viewer at 295212.466 ms
+11-17 05:57:08.323  4903  4953 I korri-viewer: start: korrid starts the viewer at 295460.145 ms
+11-17 05:57:09.178  4903  4954 I korri-viewer: start: korrid starts the viewer at 296315.582 ms
+11-17 05:57:09.347  4903  4953 I korri-viewer: start: korrid starts the viewer at 296484.057 ms
+11-17 05:57:10.249   523  2658 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.simonwjackson.korri.app/android.app.NativeActivity} from uid 2000
+11-17 05:57:10.277  4903  4954 I korri-viewer: start: korrid starts the viewer at 297413.889 ms
+11-17 05:57:10.312  4903  4903 I korri   : korri-app: window flags applied; system bars hidden: true
+11-17 05:57:10.350  4903  4953 I korri-viewer: start: korrid starts the viewer at 297486.864 ms
+11-17 05:57:11.293  4903  4953 I korri-viewer: start: korrid starts the viewer at 298430.403 ms
+11-17 05:57:11.294  4903  4953 I korri-viewer: start: client certificate read at 298431.153 ms
+11-17 05:57:11.395  4903  4943 I korri-viewer: start: video layers asked at 298532.696 ms
+11-17 05:57:11.396  4903  4943 I korri-viewer: start: window turn asked at 298532.729 ms
+11-17 05:57:11.396  4903  4943 I korri   : korri-app: shell rendered surface=velvet page=home count=4 selected=1
+11-17 05:57:11.423  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:57:11.429  4903  4943 I korri-viewer: start: video layers made at 298566.308 ms
+11-17 05:57:11.430  4903  4903 I korri   : korri-app: window flags applied; system bars hidden: true
+11-17 05:57:11.994  4903  4954 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:36385
+11-17 05:57:11.994  4903  4954 I korri-viewer: start: server certificate provisioned at 299131.417 ms
+11-17 05:57:12.011  4903  4943 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-17 05:57:12.013  4903  4943 I korri   : korri-app: viewer input: controllers attached at the start: mask 0x0
+11-17 05:57:12.013  4903  4943 I korri   : korri-app: viewer request {"launchId":"7d4aa86932f4fd746f7eadaa4a728386","command":{"kind":"Start","value":{"address":"192.168.1.117:36385"}}}
+11-17 05:57:12.014  4903  4903 I korri-viewer: input: unbuffered dispatch requested
+11-17 05:57:12.014  4903  6430 I korri-viewer: start: Start at 299151.027 ms
+11-17 05:57:12.990  4903  6430 I korri-viewer: start: http serverinfo answered at 300127.645 ms (connected 474.8 ms, first byte 975.8 ms, total 975.8 ms)
+11-17 05:57:13.333  4903  4943 I korri   : korri-app: shell rendered surface=velvet page=home count=4 selected=1
+11-17 05:57:22.993  4903  6429 I korri-viewer: feedback: ended: 0 rumbles, 0 trigger rumbles, 0 lights, 1 calls to Android; 0 battery reads, 0 battery reports sent, 0 outside the stream; 0 failed
+11-17 05:57:22.993  4903  6430 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:57:22.993  4903  6430 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:57:22.993  4903  6431 I korri   : korri-app: viewer reply Start {"kind":"Error","value":{"message":"serverinfo request failed: [28] Timeout was reached (Connection timed out after 10000 milliseconds)"}}
+11-17 05:57:22.996  4903  4954 I korri-viewer: start: korrid starts the viewer at 310133.675 ms
+11-17 05:57:22.997  4903  4954 I korri-viewer: start: client certificate read at 310134.070 ms
+11-17 05:57:23.007  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 not shown: another launch is in front
+11-17 05:57:23.008  4903  4943 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:57:23.008  4903  4943 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:57:23.008  4903  4943 I korri-viewer: input: ended: 0 keys, 0 controller states, 0 arrivals, 0 mouse, 0 touches sent; 0 held; 0 unsupported, 0 outside the stream, 0 failed
+11-17 05:57:23.008  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 failed: serverinfo request failed: [28] Timeout was reached (Connection timed out after 10000 milliseconds)
+11-17 05:57:23.879  4903  4954 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:36385
+11-17 05:57:23.879  4903  4954 I korri-viewer: start: server certificate provisioned at 311016.669 ms
+11-17 05:57:23.884  4903  4953 I korri-viewer: start: korrid starts the viewer at 311020.901 ms
+11-17 05:57:23.884  4903  4953 I korri-viewer: start: client certificate read at 311021.294 ms
+11-17 05:57:23.894  4903  4943 I korri-viewer: start: video layers asked at 311031.507 ms
+11-17 05:57:23.894  4903  4943 I korri-viewer: start: window turn asked at 311031.543 ms
+11-17 05:57:23.903  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:57:23.910  4903  4943 I korri-viewer: start: video layers made at 311047.667 ms
+11-17 05:57:24.883  4903  4953 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:36385
+11-17 05:57:24.884  4903  4953 I korri-viewer: start: server certificate provisioned at 312020.880 ms
+11-17 05:57:24.893  4903  4943 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-17 05:57:24.896  4903  4943 I korri   : korri-app: viewer input: controllers attached at the start: mask 0x0
+11-17 05:57:24.896  4903  4943 I korri   : korri-app: viewer request {"launchId":"7d4aa86932f4fd746f7eadaa4a728386","command":{"kind":"Start","value":{"address":"192.168.1.117:36385"}}}
+11-17 05:57:24.896  4903  6433 I korri-viewer: start: Start at 312033.442 ms
+11-17 05:57:24.896  4903  4903 I korri-viewer: input: unbuffered dispatch requested
+11-17 05:57:25.877  4903  6433 I korri-viewer: start: http serverinfo answered at 313013.811 ms (connected 478.7 ms, first byte 979.8 ms, total 979.8 ms)
+11-17 05:57:35.884  4903  6432 I korri-viewer: feedback: ended: 0 rumbles, 0 trigger rumbles, 0 lights, 1 calls to Android; 0 battery reads, 0 battery reports sent, 0 outside the stream; 0 failed
+11-17 05:57:35.890  4903  6433 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:57:35.890  4903  6433 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:57:35.907  4903  6434 I korri   : korri-app: viewer reply Start {"kind":"Error","value":{"message":"serverinfo request failed: [28] Timeout was reached (Connection timed out after 10001 milliseconds)"}}
+11-17 05:57:35.908  4903  4943 I korri-viewer: input: ended: 0 keys, 0 controller states, 0 arrivals, 0 mouse, 0 touches sent; 0 held; 0 unsupported, 0 outside the stream, 0 failed
+11-17 05:57:35.909  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 failed: serverinfo request failed: [28] Timeout was reached (Connection timed out after 10001 milliseconds)
+11-17 05:57:35.918  4903  4953 I korri-viewer: start: korrid starts the viewer at 323054.789 ms
+11-17 05:57:35.918  4903  4953 I korri-viewer: start: client certificate read at 323055.178 ms
+11-17 05:57:35.925  4903  4943 I korri-viewer: start: video layers asked at 323062.224 ms
+11-17 05:57:35.925  4903  4943 I korri-viewer: start: window turn asked at 323062.255 ms
+11-17 05:57:36.007  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:57:36.032  4903  4943 I korri-viewer: start: video layers made at 323168.930 ms
+11-17 05:57:36.774  4903  4954 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:36385
+11-17 05:57:36.774  4903  4954 I korri-viewer: start: server certificate provisioned at 323911.354 ms
+11-17 05:57:36.788  4903  4943 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-17 05:57:36.790  4903  4943 I korri   : korri-app: viewer input: controllers attached at the start: mask 0x0
+11-17 05:57:36.791  4903  4943 I korri   : korri-app: viewer request {"launchId":"7d4aa86932f4fd746f7eadaa4a728386","command":{"kind":"Start","value":{"address":"192.168.1.117:36385"}}}
+11-17 05:57:36.791  4903  4903 I korri-viewer: input: unbuffered dispatch requested
+11-17 05:57:36.791  4903  6441 I korri-viewer: start: Start at 323928.066 ms
+11-17 05:57:37.771  4903  6441 I korri-viewer: start: http serverinfo answered at 324908.132 ms (connected 478.1 ms, first byte 979.6 ms, total 979.6 ms)
+11-17 05:57:47.776  4903  6440 I korri-viewer: feedback: ended: 0 rumbles, 0 trigger rumbles, 0 lights, 1 calls to Android; 0 battery reads, 0 battery reports sent, 0 outside the stream; 0 failed
+11-17 05:57:47.777  4903  6441 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:57:47.777  4903  6441 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:57:47.777  4903  6442 I korri   : korri-app: viewer reply Start {"kind":"Error","value":{"message":"serverinfo request failed: [28] Timeout was reached (Connection timed out after 10001 milliseconds)"}}
+11-17 05:57:47.784  4903  4943 I korri-viewer: input: ended: 0 keys, 0 controller states, 0 arrivals, 0 mouse, 0 touches sent; 0 held; 0 unsupported, 0 outside the stream, 0 failed
+11-17 05:57:47.784  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 failed: serverinfo request failed: [28] Timeout was reached (Connection timed out after 10001 milliseconds)
+11-17 05:57:47.790  4903  4953 I korri-viewer: start: korrid starts the viewer at 334927.229 ms
+11-17 05:57:47.794  4903  4953 I korri-viewer: start: client certificate read at 334931.187 ms
+11-17 05:57:47.799  4903  4943 I korri-viewer: start: video layers asked at 334936.428 ms
+11-17 05:57:47.799  4903  4943 I korri-viewer: start: window turn asked at 334936.461 ms
+11-17 05:57:47.911  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:57:47.917  4903  4943 I korri-viewer: start: video layers made at 335053.796 ms
+11-17 05:57:48.304  4903  4953 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:36385
+11-17 05:57:48.305  4903  4953 I korri-viewer: start: server certificate provisioned at 335441.773 ms
+11-17 05:57:48.309  4903  4943 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-17 05:57:48.311  4903  4943 I korri   : korri-app: viewer input: controllers attached at the start: mask 0x0
+11-17 05:57:48.311  4903  4943 I korri   : korri-app: viewer request {"launchId":"7d4aa86932f4fd746f7eadaa4a728386","command":{"kind":"Start","value":{"address":"192.168.1.117:36385"}}}
+11-17 05:57:48.311  4903  6445 I korri-viewer: start: Start at 335448.313 ms
+11-17 05:57:48.311  4903  4903 I korri-viewer: input: unbuffered dispatch requested
+11-17 05:57:49.304  4903  6445 I korri-viewer: start: http serverinfo answered at 336441.083 ms (connected 490.6 ms, first byte 992.1 ms, total 992.2 ms)
+11-17 05:57:59.306  4903  6444 I korri-viewer: feedback: ended: 0 rumbles, 0 trigger rumbles, 0 lights, 1 calls to Android; 0 battery reads, 0 battery reports sent, 0 outside the stream; 0 failed
+11-17 05:57:59.306  4903  6445 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:57:59.306  4903  6445 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:57:59.306  4903  6446 I korri   : korri-app: viewer reply Start {"kind":"Error","value":{"message":"serverinfo request failed: [28] Timeout was reached (Connection timed out after 10000 milliseconds)"}}
+11-17 05:57:59.309  4903  4953 I korri-viewer: start: korrid starts the viewer at 346445.963 ms
+11-17 05:57:59.309  4903  4953 I korri-viewer: start: client certificate read at 346446.225 ms
+11-17 05:57:59.316  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 not shown: another launch is in front
+11-17 05:57:59.316  4903  4943 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:57:59.316  4903  4943 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:57:59.316  4903  4943 I korri-viewer: input: ended: 0 keys, 0 controller states, 0 arrivals, 0 mouse, 0 touches sent; 0 held; 0 unsupported, 0 outside the stream, 0 failed
+11-17 05:57:59.316  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 failed: serverinfo request failed: [28] Timeout was reached (Connection timed out after 10000 milliseconds)
+11-17 05:57:59.555  4903  4954 I korri-viewer: start: korrid starts the viewer at 346692.643 ms
+11-17 05:57:59.556  4903  4954 I korri-viewer: start: client certificate read at 346692.950 ms
+11-17 05:57:59.557  4903  4943 I korri-viewer: start: video layers asked at 346693.966 ms
+11-17 05:57:59.557  4903  4943 I korri-viewer: start: window turn asked at 346694.001 ms
+11-17 05:57:59.605  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:57:59.609  4903  4943 I korri-viewer: start: video layers made at 346746.330 ms
+11-17 05:58:00.155  4903  4954 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:36385
+11-17 05:58:00.156  4903  4954 I korri-viewer: start: server certificate provisioned at 347292.787 ms
+11-17 05:58:00.167  4903  4943 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-17 05:58:00.171  4903  4943 I korri   : korri-app: viewer input: controllers attached at the start: mask 0x0
+11-17 05:58:00.171  4903  4943 I korri   : korri-app: viewer request {"launchId":"7d4aa86932f4fd746f7eadaa4a728386","command":{"kind":"Start","value":{"address":"192.168.1.117:36385"}}}
+11-17 05:58:00.171  4903  4903 I korri-viewer: input: unbuffered dispatch requested
+11-17 05:58:00.171  4903  6450 I korri-viewer: start: Start at 347308.449 ms
+11-17 05:58:01.144  4903  6450 I korri-viewer: start: http serverinfo answered at 348281.331 ms (connected 472.1 ms, first byte 972.2 ms, total 972.2 ms)
+11-17 05:58:11.145  4903  6449 I korri-viewer: feedback: ended: 0 rumbles, 0 trigger rumbles, 0 lights, 1 calls to Android; 0 battery reads, 0 battery reports sent, 0 outside the stream; 0 failed
+11-17 05:58:11.146  4903  6450 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:58:11.146  4903  6450 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:58:11.146  4903  6451 I korri   : korri-app: viewer reply Start {"kind":"Error","value":{"message":"serverinfo request failed: [28] Timeout was reached (Connection timed out after 10000 milliseconds)"}}
+11-17 05:58:11.148  4903  4954 I korri-viewer: start: korrid starts the viewer at 358285.190 ms
+11-17 05:58:11.148  4903  4954 I korri-viewer: start: client certificate read at 358285.472 ms
+11-17 05:58:11.153  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 not shown: another launch is in front
+11-17 05:58:11.153  4903  4943 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:58:11.153  4903  4943 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:58:11.153  4903  4943 I korri-viewer: input: ended: 0 keys, 0 controller states, 0 arrivals, 0 mouse, 0 touches sent; 0 held; 0 unsupported, 0 outside the stream, 0 failed
+11-17 05:58:11.153  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 failed: serverinfo request failed: [28] Timeout was reached (Connection timed out after 10000 milliseconds)
+11-17 05:58:11.578  4903  4954 I korri-viewer: start: korrid starts the viewer at 358715.548 ms
+11-17 05:58:11.579  4903  4954 I korri-viewer: start: client certificate read at 358715.837 ms
+11-17 05:58:11.591  4903  4943 I korri-viewer: start: video layers asked at 358727.742 ms
+11-17 05:58:11.591  4903  4943 I korri-viewer: start: window turn asked at 358727.762 ms
+11-17 05:58:11.599  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:58:11.606  4903  4943 I korri-viewer: start: video layers made at 358743.182 ms
+11-17 05:58:12.142  4903  4954 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:36385
+11-17 05:58:12.142  4903  4954 I korri-viewer: start: server certificate provisioned at 359279.126 ms
+11-17 05:58:12.152  4903  4943 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-17 05:58:12.154  4903  4943 I korri   : korri-app: viewer input: controllers attached at the start: mask 0x0
+11-17 05:58:12.154  4903  4943 I korri   : korri-app: viewer request {"launchId":"7d4aa86932f4fd746f7eadaa4a728386","command":{"kind":"Start","value":{"address":"192.168.1.117:36385"}}}
+11-17 05:58:12.154  4903  4903 I korri-viewer: input: unbuffered dispatch requested
+11-17 05:58:12.154  4903  6453 I korri-viewer: start: Start at 359291.693 ms
+11-17 05:58:13.139  4903  6453 I korri-viewer: start: http serverinfo answered at 360276.505 ms (connected 483.0 ms, first byte 984.2 ms, total 984.2 ms)
+11-17 05:58:23.141  4903  6452 I korri-viewer: feedback: ended: 0 rumbles, 0 trigger rumbles, 0 lights, 1 calls to Android; 0 battery reads, 0 battery reports sent, 0 outside the stream; 0 failed
+11-17 05:58:23.141  4903  6453 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:58:23.141  4903  6453 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:58:23.141  4903  6454 I korri   : korri-app: viewer reply Start {"kind":"Error","value":{"message":"serverinfo request failed: [28] Timeout was reached (Connection timed out after 10000 milliseconds)"}}
+11-17 05:58:23.141  4903  4943 I korri-viewer: input: ended: 0 keys, 0 controller states, 0 arrivals, 0 mouse, 0 touches sent; 0 held; 0 unsupported, 0 outside the stream, 0 failed
+11-17 05:58:23.141  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 failed: serverinfo request failed: [28] Timeout was reached (Connection timed out after 10000 milliseconds)
+11-17 05:58:23.144  4903  4954 I korri-viewer: start: korrid starts the viewer at 370281.439 ms
+11-17 05:58:23.145  4903  4954 I korri-viewer: start: client certificate read at 370281.734 ms
+11-17 05:58:23.158  4903  4943 I korri-viewer: start: video layers asked at 370295.042 ms
+11-17 05:58:23.158  4903  4943 I korri-viewer: start: window turn asked at 370295.092 ms
+11-17 05:58:23.166  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:58:23.174  4903  4943 I korri-viewer: start: video layers made at 370311.209 ms
+11-17 05:58:23.615  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 not shown: the server certificate was not provisioned
+11-17 05:58:23.616  4903  4943 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:58:23.616  4903  4943 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:58:23.622  4903  4954 I korri-viewer: start: korrid starts the viewer at 370759.465 ms
+11-17 05:58:23.623  4903  4953 I korri-viewer: start: client certificate read at 370760.247 ms
+11-17 05:58:23.632  4903  4943 I korri-viewer: start: video layers asked at 370768.955 ms
+11-17 05:58:23.632  4903  4943 I korri-viewer: start: window turn asked at 370769.306 ms
+11-17 05:58:23.678  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:58:23.694  4903  4943 I korri-viewer: start: video layers made at 370830.726 ms
+11-17 05:58:24.198  4903  4953 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:36385
+11-17 05:58:24.198  4903  4953 I korri-viewer: start: server certificate provisioned at 371335.390 ms
+11-17 05:58:24.206  4903  4943 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-17 05:58:24.213  4903  4943 I korri   : korri-app: viewer input: controllers attached at the start: mask 0x0
+11-17 05:58:24.213  4903  4943 I korri   : korri-app: viewer request {"launchId":"7d4aa86932f4fd746f7eadaa4a728386","command":{"kind":"Start","value":{"address":"192.168.1.117:36385"}}}
+11-17 05:58:24.213  4903  4903 I korri-viewer: input: unbuffered dispatch requested
+11-17 05:58:24.214  4903  6626 I korri-viewer: start: Start at 371351.581 ms
+11-17 05:58:25.180  4903  6626 I korri-viewer: start: http serverinfo answered at 372317.077 ms (connected 463.0 ms, first byte 964.7 ms, total 964.7 ms)
+11-17 05:58:35.182  4903  6625 I korri-viewer: feedback: ended: 0 rumbles, 0 trigger rumbles, 0 lights, 1 calls to Android; 0 battery reads, 0 battery reports sent, 0 outside the stream; 0 failed
+11-17 05:58:35.182  4903  6626 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:58:35.182  4903  6626 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:58:35.182  4903  6627 I korri   : korri-app: viewer reply Start {"kind":"Error","value":{"message":"serverinfo request failed: [28] Timeout was reached (Connection timed out after 10000 milliseconds)"}}
+11-17 05:58:35.185  4903  4953 I korri-viewer: start: korrid starts the viewer at 382321.791 ms
+11-17 05:58:35.185  4903  4953 I korri-viewer: start: client certificate read at 382322.099 ms
+11-17 05:58:35.188  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 not shown: another launch is in front
+11-17 05:58:35.188  4903  4943 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-17 05:58:35.188  4903  4943 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-17 05:58:35.188  4903  4943 I korri-viewer: input: ended: 0 keys, 0 controller states, 0 arrivals, 0 mouse, 0 touches sent; 0 held; 0 unsupported, 0 outside the stream, 0 failed
+11-17 05:58:35.188  4903  4943 E korri   : korri-app: viewer 7d4aa86932f4fd746f7eadaa4a728386 failed: serverinfo request failed: [28] Timeout was reached (Connection timed out after 10000 milliseconds)
+11-17 05:58:35.628  4903  4954 I korri-viewer: start: korrid starts the viewer at 382765.370 ms
+11-17 05:58:35.629  4903  4954 I korri-viewer: start: client certificate read at 382765.781 ms
+11-17 05:58:35.639  4903  4943 I korri-viewer: start: video layers asked at 382776.382 ms
+11-17 05:58:35.639  4903  4943 I korri-viewer: start: window turn asked at 382776.402 ms
+11-17 05:58:35.646  4903  4903 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-17 05:58:35.656  4903  4943 I korri-viewer: start: video layers made at 382793.031 ms
+11-17 05:58:36.212  4903  4954 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:36385
+11-17 05:58:36.212  4903  4954 I korri-viewer: start: server certificate provisioned at 383349.684 ms
+11-17 05:58:36.219  4903  4943 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-17 05:58:36.222  4903  4943 I korri   : korri-app: viewer input: controllers attached at the start: mask 0x0
+11-17 05:58:36.222  4903  4943 I korri   : korri-app: viewer request {"launchId":"7d4aa86932f4fd746f7eadaa4a728386","command":{"kind":"Start","value":{"address":"192.168.1.117:36385"}}}
+11-17 05:58:36.222  4903  6640 I korri-viewer: start: Start at 383359.291 ms
+11-17 05:58:36.222  4903  4903 I korri-viewer: input: unbuffered dispatch requested
+11-17 05:58:37.209  4903  6640 I korri-viewer: start: http serverinfo answered at 384346.639 ms (connected 485.6 ms, first byte 986.7 ms, total 986.7 ms)

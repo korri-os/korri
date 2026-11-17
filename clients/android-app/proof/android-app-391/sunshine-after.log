@@ -1,0 +1,159 @@
+[2026-11-17 05:54:16.943]: Info: Display device configuration is disabled. Reverting any active display device configuration.
+[2026-11-17 05:54:16.943]: Info: // Testing for available encoders, this may generate errors. You can safely ignore those errors. //
+[2026-11-17 05:54:16.943]: Info: Trying encoder [nvenc]
+[2026-11-17 05:54:16.943]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 05:54:16.943]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 05:54:16.943]: Info: Screencasting with Wayland's protocol
+[2026-11-17 05:54:16.943]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 05:54:16.947]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 05:54:16.996]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-17 05:54:16.996]: Info: Creating encoder [h264_nvenc]
+[2026-11-17 05:54:16.996]: Info: Color coding: SDR (Rec. 601)
+[2026-11-17 05:54:16.996]: Info: Color depth: 8-bit
+[2026-11-17 05:54:16.996]: Info: Color range: JPEG
+[2026-11-17 05:54:17.015]: Error: Couldn't load cuda: -1
+[2026-11-17 05:54:17.015]: Info: Encoder [nvenc] failed
+[2026-11-17 05:54:17.017]: Info: Trying encoder [vulkan]
+[2026-11-17 05:54:17.017]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 05:54:17.017]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 05:54:17.017]: Info: Screencasting with Wayland's protocol
+[2026-11-17 05:54:17.017]: Error: [wlgrab] Could not initialize display with the given hw device type.
+[2026-11-17 05:54:17.219]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 05:54:17.219]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 05:54:17.219]: Info: Screencasting with Wayland's protocol
+[2026-11-17 05:54:17.219]: Error: [wlgrab] Could not initialize display with the given hw device type.
+[2026-11-17 05:54:17.425]: Info: Encoder [vulkan] failed
+[2026-11-17 05:54:17.425]: Info: Trying encoder [vaapi]
+[2026-11-17 05:54:17.425]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 05:54:17.425]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 05:54:17.425]: Info: Screencasting with Wayland's protocol
+[2026-11-17 05:54:17.425]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 05:54:17.426]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 05:54:17.426]: Info: Creating encoder [h264_vaapi]
+[2026-11-17 05:54:17.426]: Info: Color coding: SDR (Rec. 601)
+[2026-11-17 05:54:17.426]: Info: Color depth: 8-bit
+[2026-11-17 05:54:17.426]: Info: Color range: JPEG
+[2026-11-17 05:54:17.511]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-17 05:54:17.532]: Info: vaapi vendor: Mesa Gallium driver 26.2.3 for AMD Radeon RX 7900 XT (radeonsi, navi31, ACO, DRM 3.64, 7.2.7)
+[2026-11-17 05:54:17.535]: Info: Streaming bitrate is 1000000
+[2026-11-17 05:54:17.535]: Info: Using normal encoding mode
+[2026-11-17 05:54:17.535]: Info: [VAAPI] Quality level set to 0 (fastest level: 32)
+[2026-11-17 05:54:17.535]: Info: [VAAPI] Using CBR rate control with standard VBV size
+[2026-11-17 05:54:17.734]: Info: Creating encoder [hevc_vaapi]
+[2026-11-17 05:54:17.734]: Info: Color coding: SDR (Rec. 601)
+[2026-11-17 05:54:17.734]: Info: Color depth: 8-bit
+[2026-11-17 05:54:17.734]: Info: Color range: JPEG
+[2026-11-17 05:54:17.758]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-17 05:54:17.764]: Info: vaapi vendor: Mesa Gallium driver 26.2.3 for AMD Radeon RX 7900 XT (radeonsi, navi31, ACO, DRM 3.64, 7.2.7)
+[2026-11-17 05:54:17.765]: Info: Streaming bitrate is 1000000
+[2026-11-17 05:54:17.765]: Info: Using normal encoding mode
+[2026-11-17 05:54:17.765]: Info: [VAAPI] Quality level set to 0 (fastest level: 32)
+[2026-11-17 05:54:17.765]: Info: [VAAPI] Using CBR rate control with standard VBV size
+[2026-11-17 05:54:17.825]: Info: Creating encoder [av1_vaapi]
+[2026-11-17 05:54:17.829]: Info: Color coding: SDR (Rec. 601)
+[2026-11-17 05:54:17.829]: Info: Color depth: 8-bit
+[2026-11-17 05:54:17.829]: Info: Color range: JPEG
+[2026-11-17 05:54:17.847]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-17 05:54:17.897]: Info: vaapi vendor: Mesa Gallium driver 26.2.3 for AMD Radeon RX 7900 XT (radeonsi, navi31, ACO, DRM 3.64, 7.2.7)
+[2026-11-17 05:54:17.898]: Info: Streaming bitrate is 1000000
+[2026-11-17 05:54:17.898]: Info: Using normal encoding mode
+[2026-11-17 05:54:17.898]: Info: [VAAPI] Quality level set to 0 (fastest level: 32)
+[2026-11-17 05:54:17.898]: Info: [VAAPI] Using VBR rate control with single frame VBV size (whitelist override)
+[2026-11-17 05:54:17.899]: Warning: [av1_vaapi @ 0x71a8b805ba80] Multiple slices were requested but this codec does not support controlling slices.
+[2026-11-17 05:54:17.935]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 05:54:17.935]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 05:54:17.935]: Info: Screencasting with Wayland's protocol
+[2026-11-17 05:54:17.935]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 05:54:17.941]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 05:54:17.945]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 05:54:17.946]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 05:54:17.946]: Info: Screencasting with Wayland's protocol
+[2026-11-17 05:54:17.946]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 05:54:17.947]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 05:54:17.947]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 05:54:17.947]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 05:54:17.947]: Info: Screencasting with Wayland's protocol
+[2026-11-17 05:54:17.947]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 05:54:17.949]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 05:54:17.949]: Info: Creating encoder [hevc_vaapi]
+[2026-11-17 05:54:17.949]: Info: Color coding: SDR (Rec. 709)
+[2026-11-17 05:54:17.949]: Info: Color depth: 10-bit
+[2026-11-17 05:54:17.949]: Info: Color range: JPEG
+[2026-11-17 05:54:17.979]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-17 05:54:17.983]: Info: vaapi vendor: Mesa Gallium driver 26.2.3 for AMD Radeon RX 7900 XT (radeonsi, navi31, ACO, DRM 3.64, 7.2.7)
+[2026-11-17 05:54:17.986]: Info: Streaming bitrate is 1000000
+[2026-11-17 05:54:17.986]: Info: Using normal encoding mode
+[2026-11-17 05:54:17.986]: Info: [VAAPI] Quality level set to 0 (fastest level: 32)
+[2026-11-17 05:54:17.986]: Info: [VAAPI] Using CBR rate control with standard VBV size
+[2026-11-17 05:54:18.026]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 05:54:18.026]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 05:54:18.027]: Info: Screencasting with Wayland's protocol
+[2026-11-17 05:54:18.027]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 05:54:18.034]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 05:54:18.034]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 05:54:18.034]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 05:54:18.034]: Info: Screencasting with Wayland's protocol
+[2026-11-17 05:54:18.034]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 05:54:18.036]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 05:54:18.039]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 05:54:18.039]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 05:54:18.039]: Info: Screencasting with Wayland's protocol
+[2026-11-17 05:54:18.039]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 05:54:18.039]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 05:54:18.039]: Info: Creating encoder [av1_vaapi]
+[2026-11-17 05:54:18.039]: Info: Color coding: SDR (Rec. 709)
+[2026-11-17 05:54:18.039]: Info: Color depth: 10-bit
+[2026-11-17 05:54:18.039]: Info: Color range: JPEG
+[2026-11-17 05:54:18.051]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-17 05:54:18.054]: Info: vaapi vendor: Mesa Gallium driver 26.2.3 for AMD Radeon RX 7900 XT (radeonsi, navi31, ACO, DRM 3.64, 7.2.7)
+[2026-11-17 05:54:18.055]: Info: Streaming bitrate is 1000000
+[2026-11-17 05:54:18.055]: Info: Using normal encoding mode
+[2026-11-17 05:54:18.055]: Info: [VAAPI] Quality level set to 0 (fastest level: 32)
+[2026-11-17 05:54:18.055]: Info: [VAAPI] Using VBR rate control with single frame VBV size (whitelist override)
+[2026-11-17 05:54:18.056]: Warning: [av1_vaapi @ 0x71a8b805ba80] Multiple slices were requested but this codec does not support controlling slices.
+[2026-11-17 05:54:18.112]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 05:54:18.112]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 05:54:18.113]: Info: Screencasting with Wayland's protocol
+[2026-11-17 05:54:18.114]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 05:54:18.115]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 05:54:18.115]: Info: 
+[2026-11-17 05:54:18.115]: Info: // Ignore any errors mentioned above, they are not relevant. //
+[2026-11-17 05:54:18.115]: Info: 
+[2026-11-17 05:54:18.115]: Info: Found H.264 encoder: h264_vaapi [vaapi]
+[2026-11-17 05:54:18.115]: Info: Found HEVC encoder: hevc_vaapi [vaapi]
+[2026-11-17 05:54:18.115]: Info: Found AV1 encoder: av1_vaapi [vaapi]
+[2026-11-17 05:54:18.115]: Info: Executing [Desktop]
+[2026-11-17 05:54:22.723]: Info: New streaming session started [active sessions: 1]
+[2026-11-17 05:54:22.730]: Warning: setpriority failed for nice -10: Permission denied
+[2026-11-17 05:54:22.730]: Warning: setpriority failed for nice -15: Permission denied
+[2026-11-17 05:54:22.731]: Warning: setpriority failed for nice -10: Permission denied
+[2026-11-17 05:54:22.787]: Warning: Couldn't create virtual sink for stereo: Module initialization failed
+[2026-11-17 05:54:22.787]: Warning: Couldn't create virtual sink for surround-51: Module initialization failed
+[2026-11-17 05:54:22.787]: Warning: Couldn't create virtual sink for surround-71: Module initialization failed
+[2026-11-17 05:54:22.788]: Info: Found default monitor by name: korri-tone.monitor
+[2026-11-17 05:54:22.794]: Warning: setpriority failed for nice -15: Permission denied
+[2026-11-17 05:54:22.794]: Warning: setpriority failed for nice -10: Permission denied
+[2026-11-17 05:54:22.796]: Info: Opus initialized: 48 kHz, 2 channels, 96 kbps (total), LOWDELAY
+[2026-11-17 05:54:23.546]: Info: CLIENT CONNECTED
+[2026-11-17 05:54:23.553]: Warning: setpriority failed for nice -10: Permission denied
+[2026-11-17 05:54:23.557]: Info: [wlgrab] -------- Start of Wayland monitor list --------
+[2026-11-17 05:54:23.557]: Info: [wlgrab] Monitor 0 is HEADLESS-1: Headless output 1
+[2026-11-17 05:54:23.557]: Info: [wlgrab] --------- End of Wayland monitor list ---------
+[2026-11-17 05:54:23.558]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 05:54:23.558]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 05:54:23.558]: Info: Screencasting with Wayland's protocol
+[2026-11-17 05:54:23.558]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 05:54:23.559]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 05:54:23.559]: Warning: setpriority failed for nice -15: Permission denied
+[2026-11-17 05:54:23.564]: Info: Creating encoder [h264_vaapi]
+[2026-11-17 05:54:23.564]: Info: Color coding: SDR (Rec. 601)
+[2026-11-17 05:54:23.564]: Info: Color depth: 8-bit
+[2026-11-17 05:54:23.564]: Info: Color range: MPEG
+[2026-11-17 05:54:23.578]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-17 05:54:23.585]: Info: vaapi vendor: Mesa Gallium driver 26.2.3 for AMD Radeon RX 7900 XT (radeonsi, navi31, ACO, DRM 3.64, 7.2.7)
+[2026-11-17 05:54:23.587]: Info: Streaming bitrate is 7308000
+[2026-11-17 05:54:23.587]: Info: Using normal encoding mode
+[2026-11-17 05:54:23.587]: Info: [VAAPI] Quality level set to 0 (fastest level: 32)
+[2026-11-17 05:54:23.587]: Info: [VAAPI] Using CBR rate control with standard VBV size
+[2026-11-17 05:54:23.606]: Info: Minimum FPS target set to ~30fps (33.3333ms)
+[2026-11-17 05:55:32.276]: Info: 192.168.1.117: Ping Timeout

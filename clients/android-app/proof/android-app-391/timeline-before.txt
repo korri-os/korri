@@ -1,0 +1,67 @@
+    217.8  app/viewer  korrid starts the viewer                      
+    611.4  app/viewer  client certificate read                       
+   1125.0  aka:50903   SYN GET /serverinfo                           SYN-ACK +0.0, request +288.0, answer +288.2, server FIN +288.2 ms
+   1503.3  app/viewer  server certificate provisioned                
+   1634.5  app/viewer  video layers asked                            
+   1822.1  app/viewer  video layers made                             
+   1878.8  app/viewer  window turn asked                             
+   1899.7  app/viewer  Start                                         
+   2440.5  aka:50903   SYN GET /serverinfo?uniqueid=0123456789ABCDEF&uuid=f5a928e6-2393-48b SYN-ACK +0.0, request +480.1, answer +480.5, server FIN +480.6 ms
+   2917.5  app/viewer  http serverinfo answered                      connected 476.8 ms, first byte 976.9 ms, total 976.9 ms
+   3044.4  app/viewer  window now 2400x1080                          
+   3419.9  aka:50898   SYN                                           SYN-ACK +0.0, request +501.8, answer +505.7, server FIN +1021.7 ms
+   3938.3  app/viewer  https serverinfo answered                     connected 482.7 ms, TLS done 1012.7 ms, first byte 1020.7 ms, total 1020.7 ms
+   3938.4  app/viewer  paired                                        
+   4446.0  aka:50898   SYN                                           SYN-ACK +0.0, request +541.6, answer +543.8, server FIN +1118.4 ms
+   5055.1  app/viewer  https applist answered                        connected 543.4 ms, TLS done 1075.9 ms, first byte 1111.1 ms, total 1116.6 ms
+   5055.1  app/viewer  picture and input ready                       
+   5583.7  aka:50898   SYN                                           SYN-ACK +0.0, request +562.9, answer +563.7, server FIN +106152.2 ms
+   6959.0  app/viewer  https launch answered                         connected 568.2 ms, TLS done 1020.9 ms, first byte 1881.3 ms, total 1903.8 ms
+   6959.3  app/viewer  core platform init begins                     
+   6960.0  app/viewer  core platform init done                       
+   6960.1  app/viewer  core name resolution begins                   
+   6960.1  app/viewer  core name resolution done                     
+   6960.2  app/viewer  core audio stream init begins                 
+   6960.3  app/viewer  core RTSP handshake begins                    
+   6960.3  app/viewer  core audio stream init done                   
+   7472.0  aka:50924   SYN                                           SYN-ACK +0.0, request +552.4, answer +553.0, server FIN +553.1 ms
+   8469.5  aka:50924   SYN                                           SYN-ACK +0.0, request +679.9, answer +680.1, server FIN +680.1 ms
+   9110.5  app/viewer  RTSP DESCRIBE answered                        
+   9610.4  aka:50924   SYN                                           SYN-ACK +0.0, request +375.6, answer +375.7, server FIN +375.7 ms
+   9980.2  app/viewer  RTSP SETUP audio answered                     
+  10508.3  aka:50924   SYN                                           SYN-ACK +0.0, request +168.2, answer +168.3, server FIN +168.3 ms
+  10595.5  app/viewer  RTSP SETUP video answered                     
+  11099.5  aka:50924   SYN                                           SYN-ACK +0.0, request +561.3, answer +561.4, server FIN +561.5 ms
+  11831.3  app/viewer  RTSP SETUP control answered                   
+  12338.8  aka:50924   SYN                                           SYN-ACK +0.0, request +446.3, answer +450.3, server FIN +450.3 ms
+  13251.7  aka:50924   SYN                                           SYN-ACK +0.0, request +539.9, answer +540.1, server FIN +540.1 ms
+  13398.0  app/viewer  core RTSP handshake done                      
+  13398.0  app/viewer  core control stream init begins               
+  13398.0  app/viewer  core control stream init done                 
+  13398.0  app/viewer  core video stream init begins                 
+  13398.2  app/viewer  core control stream start begins              
+  13398.2  app/viewer  core input stream init begins                 
+  13398.2  app/viewer  core input stream init done                   
+  13398.2  app/viewer  core video stream init done                   
+  13409.9  app/viewer  core control stream start done                
+  13410.0  app/viewer  core video stream start begins                
+  13621.0  app/viewer  decoders listed                               
+  14794.7  app/viewer  decoder made                                  
+  14795.2  app/viewer  core video stream start done                  
+  14811.8  app/viewer  core audio stream start begins                
+  14979.7  app/viewer  first video packet                            
+  15372.5  app/viewer  first frame shown                             
+ 115186.3  aka:50903   SYN GET /serverinfo                           SYN-ACK +0.0, request +59.0, answer +59.1, server FIN +59.1 ms
+ 115892.2  aka:50903   SYN GET /serverinfo?uniqueid=0123456789ABCDEF&uuid=52cb66a6-ee62-41c SYN-ACK +0.0, request +374.6, answer +375.1, server FIN +375.2 ms
+ 116785.9  aka:50898   SYN                                           SYN-ACK +0.0, request +476.6, answer +477.4, server FIN +978.1 ms
+ 117765.0  aka:50898   SYN                                           SYN-ACK +0.0, request +535.6, answer +536.3, server FIN +1052.3 ms
+ 118817.4  aka:50898   SYN                                           SYN-ACK +0.0, request +2.2, answer +2.9, server FIN +14417.1 ms
+ 119327.1  aka:50924   SYN                                           SYN-ACK +0.0, request +503.6, answer +503.8, server FIN +503.8 ms
+ 120331.1  aka:50924   SYN                                           SYN-ACK +0.0, request +514.0, answer +514.2, server FIN +514.2 ms
+ 121361.0  aka:50924   SYN                                           SYN-ACK +0.0, request +492.5, answer +492.6, server FIN +492.7 ms
+ 122345.9  aka:50924   SYN                                           SYN-ACK +0.0, request +503.3, answer +503.5, server FIN +503.6 ms
+ 122882.5  aka:50924   SYN                                           SYN-ACK +0.0, request +515.8, answer +516.0, server FIN +516.0 ms
+ 123426.3  aka:50924   SYN                                           SYN-ACK +0.0, request +500.5, answer +502.3, server FIN +502.3 ms
+ 123930.3  aka:50924   SYN                                           SYN-ACK +0.0, request +521.4, answer +521.5, server FIN +521.5 ms
+tap to first frame: 15372.5 ms
+emulator TCP from tap to first frame: {'active_opens': 32, 'retransmitted_segments': 0, 'syn_retransmits': 0}

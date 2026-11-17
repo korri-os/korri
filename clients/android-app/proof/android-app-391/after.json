@@ -1,0 +1,211 @@
+{
+ "pass": false,
+ "error": null,
+ "stream_host": "192.168.1.117",
+ "emulator": {
+  "release": "12",
+  "sdk": "31",
+  "abi": "x86_64"
+ },
+ "failed_checks": [
+  "chosen_again_it_fits_the_picture_again",
+  "back_closes_the_overlay_through_korrids_resume",
+  "the_layer_hides_and_the_shell_lets_its_surface_go_before_the_input_goes_on",
+  "the_picture_goes_on_after_the_overlay",
+  "keys_reach_the_sender",
+  "a_touch_reaches_the_sender",
+  "korrids_snapshot_lists_the_controls",
+  "korrids_snapshot_shows_the_streams_health",
+  "korrids_snapshot_shows_the_battery",
+  "korrids_status_reads_stopped",
+  "returning_resumes_the_stream",
+  "the_bars_are_black_when_the_stream_starts_again"
+ ],
+ "steps": {
+  "seconds_from_tap_to_start": 1.1,
+  "seconds_from_tap_to_running": 12.3,
+  "start_timeline": {
+   "tapped": "11-17 05:54:12.544684",
+   "steps": [
+    {
+     "step": "korrid starts the viewer",
+     "ms_after_tap": 172.3
+    },
+    {
+     "step": "video layers asked",
+     "ms_after_tap": 185.6
+    },
+    {
+     "step": "window turn asked",
+     "ms_after_tap": 185.7
+    },
+    {
+     "step": "client certificate read",
+     "ms_after_tap": 248.9
+    },
+    {
+     "step": "video layers made",
+     "ms_after_tap": 270.0
+    },
+    {
+     "step": "server certificate provisioned",
+     "ms_after_tap": 969.7
+    },
+    {
+     "step": "Start",
+     "ms_after_tap": 1040.6
+    },
+    {
+     "step": "window now 2400x1080",
+     "ms_after_tap": 1212.3
+    },
+    {
+     "step": "http serverinfo answered",
+     "ms_after_tap": 1862.3,
+     "detail": "connected 304.2 ms, first byte 792.3 ms, total 792.3 ms"
+    },
+    {
+     "step": "https serverinfo answered",
+     "ms_after_tap": 2942.2,
+     "detail": "connected 627.3 ms, TLS done 1033.4 ms, first byte 1079.4 ms, total 1079.4 ms"
+    },
+    {
+     "step": "paired",
+     "ms_after_tap": 2952.2
+    },
+    {
+     "step": "https applist answered",
+     "ms_after_tap": 3968.2,
+     "detail": "connected 504.1 ms, TLS done 1006.3 ms, first byte 1013.3 ms, total 1015.9 ms"
+    },
+    {
+     "step": "picture and input ready",
+     "ms_after_tap": 3968.6
+    },
+    {
+     "step": "decoders listed",
+     "ms_after_tap": 4016.0
+    },
+    {
+     "step": "decoder made",
+     "ms_after_tap": 4406.9
+    },
+    {
+     "step": "https launch answered",
+     "ms_after_tap": 5660.5,
+     "detail": "connected 5.2 ms, TLS done 511.3 ms, first byte 1691.4 ms, total 1691.7 ms"
+    },
+    {
+     "step": "core platform init begins",
+     "ms_after_tap": 5662.9
+    },
+    {
+     "step": "core platform init done",
+     "ms_after_tap": 5664.3
+    },
+    {
+     "step": "core name resolution begins",
+     "ms_after_tap": 5670.3
+    },
+    {
+     "step": "core name resolution done",
+     "ms_after_tap": 5670.4
+    },
+    {
+     "step": "core audio stream init begins",
+     "ms_after_tap": 5670.4
+    },
+    {
+     "step": "core audio stream init done",
+     "ms_after_tap": 5670.5
+    },
+    {
+     "step": "core RTSP handshake begins",
+     "ms_after_tap": 5670.6
+    },
+    {
+     "step": "RTSP DESCRIBE answered",
+     "ms_after_tap": 7663.1
+    },
+    {
+     "step": "RTSP SETUP audio answered",
+     "ms_after_tap": 8689.2
+    },
+    {
+     "step": "RTSP SETUP video answered",
+     "ms_after_tap": 9227.3
+    },
+    {
+     "step": "RTSP SETUP control answered",
+     "ms_after_tap": 9757.5
+    },
+    {
+     "step": "core RTSP handshake done",
+     "ms_after_tap": 10981.8
+    },
+    {
+     "step": "core control stream init begins",
+     "ms_after_tap": 10981.9
+    },
+    {
+     "step": "core control stream init done",
+     "ms_after_tap": 10981.9
+    },
+    {
+     "step": "core video stream init begins",
+     "ms_after_tap": 10981.9
+    },
+    {
+     "step": "core video stream init done",
+     "ms_after_tap": 10982.0
+    },
+    {
+     "step": "core input stream init begins",
+     "ms_after_tap": 10982.0
+    },
+    {
+     "step": "core input stream init done",
+     "ms_after_tap": 10982.0
+    },
+    {
+     "step": "core control stream start begins",
+     "ms_after_tap": 10982.0
+    },
+    {
+     "step": "core control stream start done",
+     "ms_after_tap": 11082.3
+    },
+    {
+     "step": "core video stream start begins",
+     "ms_after_tap": 11082.4
+    },
+    {
+     "step": "decoder taken",
+     "ms_after_tap": 11082.5
+    },
+    {
+     "step": "core video stream start done",
+     "ms_after_tap": 11082.6
+    },
+    {
+     "step": "core audio stream start begins",
+     "ms_after_tap": 11082.6
+    },
+    {
+     "step": "first video packet",
+     "ms_after_tap": 11247.0
+    },
+    {
+     "step": "first frame shown",
+     "ms_after_tap": 11511.8
+    }
+   ],
+   "ms_from_tap_to_first_frame": 11511.8
+  },
+  "emulator_tcp_from_tap_to_first_frame": {
+   "active_opens": 32,
+   "retransmitted_segments": 0,
+   "syn_retransmits": 0
+  }
+ }
+}

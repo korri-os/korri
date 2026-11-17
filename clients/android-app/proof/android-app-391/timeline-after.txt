@@ -1,0 +1,110 @@
+    166.5  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +113.0, answer +115.6, server FIN +115.7 ms
+    172.3  app/viewer  korrid starts the viewer                      
+    185.6  app/viewer  video layers asked                            
+    185.7  app/viewer  window turn asked                             
+    248.9  app/viewer  client certificate read                       
+    270.0  app/viewer  video layers made                             
+    969.7  app/viewer  server certificate provisioned                
+    986.5  aka:36385   SYN GET /serverinfo?uniqueid=0123456789ABCDEF&uuid=1f405ecd-88ce-41f SYN-ACK +0.0, request +304.0, answer +304.2, server FIN +304.2 ms
+   1040.6  app/viewer  Start                                         
+   1212.3  app/viewer  window now 2400x1080                          
+   1779.1  aka:36380   SYN                                           SYN-ACK +0.0, request +642.4, answer +665.4, server FIN +1090.0 ms
+   1862.3  app/viewer  http serverinfo answered                      connected 304.2 ms, first byte 792.3 ms, total 792.3 ms
+   2872.0  aka:36380   SYN                                           SYN-ACK +0.0, request +504.5, answer +505.1, server FIN +1017.0 ms
+   2942.2  app/viewer  https serverinfo answered                     connected 627.3 ms, TLS done 1033.4 ms, first byte 1079.4 ms, total 1079.4 ms
+   2952.2  app/viewer  paired                                        
+   3888.9  aka:36380   SYN                                           SYN-ACK +0.0, request +2.3, answer +3.1, server FIN +265395.9 ms
+   3968.2  app/viewer  https applist answered                        connected 504.1 ms, TLS done 1006.3 ms, first byte 1013.3 ms, total 1015.9 ms
+   3968.6  app/viewer  picture and input ready                       
+   4016.0  app/viewer  decoders listed                               
+   4406.9  app/viewer  decoder made                                  
+   5598.6  aka:36406   SYN                                           SYN-ACK +0.0, request +508.4, answer +508.6, server FIN +508.6 ms
+   5660.5  app/viewer  https launch answered                         connected 5.2 ms, TLS done 511.3 ms, first byte 1691.4 ms, total 1691.7 ms
+   5662.9  app/viewer  core platform init begins                     
+   5664.3  app/viewer  core platform init done                       
+   5670.3  app/viewer  core name resolution begins                   
+   5670.4  app/viewer  core audio stream init begins                 
+   5670.4  app/viewer  core name resolution done                     
+   5670.5  app/viewer  core audio stream init done                   
+   5670.6  app/viewer  core RTSP handshake begins                    
+   6617.1  aka:36406   SYN                                           SYN-ACK +0.0, request +485.4, answer +487.3, server FIN +487.3 ms
+   7580.2  aka:36406   SYN                                           SYN-ACK +0.0, request +514.2, answer +514.3, server FIN +514.4 ms
+   7663.1  app/viewer  RTSP DESCRIBE answered                        
+   8617.4  aka:36406   SYN                                           SYN-ACK +0.0, request +489.3, answer +489.4, server FIN +489.4 ms
+   8689.2  app/viewer  RTSP SETUP audio answered                     
+   9148.3  aka:36406   SYN                                           SYN-ACK +0.0, request +498.5, answer +498.6, server FIN +498.7 ms
+   9227.3  app/viewer  RTSP SETUP video answered                     
+   9678.5  aka:36406   SYN                                           SYN-ACK +0.0, request +498.4, answer +499.6, server FIN +500.7 ms
+   9757.5  app/viewer  RTSP SETUP control answered                   
+  10689.2  aka:36406   SYN                                           SYN-ACK +0.0, request +194.3, answer +207.4, server FIN +207.5 ms
+  10981.8  app/viewer  core RTSP handshake done                      
+  10981.9  app/viewer  core control stream init begins               
+  10981.9  app/viewer  core control stream init done                 
+  10981.9  app/viewer  core video stream init begins                 
+  10982.0  app/viewer  core control stream start begins              
+  10982.0  app/viewer  core input stream init begins                 
+  10982.0  app/viewer  core input stream init done                   
+  10982.0  app/viewer  core video stream init done                   
+  11082.3  app/viewer  core control stream start done                
+  11082.4  app/viewer  core video stream start begins                
+  11082.5  app/viewer  decoder taken                                 
+  11082.6  app/viewer  core audio stream start begins                
+  11082.6  app/viewer  core video stream start done                  
+  11247.0  app/viewer  first video packet                            
+  11511.8  app/viewer  first frame shown                             
+  79096.2  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +13.7, answer +13.9, server FIN +14.0 ms
+  80010.0  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +43.9, answer +52.4, server FIN +52.5 ms
+  81312.7  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +14.0, answer +14.3, server FIN +14.4 ms
+  82374.2  aka:36385   SYN GET /serverinfo?uniqueid=0123456789ABCDEF&uuid=42e7748a-9ae1-43c SYN-ACK +0.0, request +16.2, answer +16.4, server FIN +16.5 ms
+  82424.4  aka:36380   SYN                                           SYN-ACK +0.0, request +43.8, answer +186861.2, server FIN +- ms
+  92443.7  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +0.6, answer +0.7, server FIN +0.7 ms
+  92689.5  aka:36385   SYN GET /serverinfo?uniqueid=0123456789ABCDEF&uuid=f6bc60c3-4437-445 SYN-ACK +0.0, request +1.8, answer +2.0, server FIN +2.0 ms
+  92692.7  aka:36380   SYN                                           SYN-ACK +0.0, request +1.8, answer +176593.3, server FIN +- ms
+ 102801.4  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +0.7, answer +0.9, server FIN +0.9 ms
+ 102945.4  aka:36385   SYN GET /serverinfo?uniqueid=0123456789ABCDEF&uuid=7b79974c-3a36-40d SYN-ACK +0.0, request +0.6, answer +0.8, server FIN +0.8 ms
+ 102947.0  aka:36380   SYN                                           SYN-ACK +0.0, request +1.1, answer +166339.3, server FIN +- ms
+ 113014.4  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +0.9, answer +1.2, server FIN +1.2 ms
+ 113495.2  aka:36385   SYN GET /serverinfo?uniqueid=0123456789ABCDEF&uuid=a04584d9-a568-485 SYN-ACK +0.0, request +15.5, answer +16.1, server FIN +16.1 ms
+ 113514.7  aka:36380   SYN                                           SYN-ACK +0.0, request +3.9, answer +155772.0, server FIN +- ms
+ 123569.2  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +114.0, answer +114.4, server FIN +114.4 ms
+ 124184.2  aka:36385   SYN GET /serverinfo?uniqueid=0123456789ABCDEF&uuid=cc25b8c0-ba43-475 SYN-ACK +0.0, request +461.0, answer +461.3, server FIN +461.3 ms
+ 125148.7  aka:36380   SYN                                           SYN-ACK +0.0, request +504.4, answer +144138.4, server FIN +- ms
+ 135159.2  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +35.4, answer +35.8, server FIN +35.8 ms
+ 135423.3  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +260.9, answer +261.2, server FIN +261.2 ms
+ 136241.8  aka:36385   SYN GET /serverinfo?uniqueid=0123456789ABCDEF&uuid=eb8e2045-0d92-42a SYN-ACK +0.0, request +449.8, answer +450.0, server FIN +450.0 ms
+ 137194.4  aka:36380   SYN                                           SYN-ACK +0.0, request +505.5, answer +132093.1, server FIN +- ms
+ 147383.7  aka:36385   SYN                                           SYN-ACK +0.0, request +-, answer +-, server FIN +472.6 ms
+ 147488.2  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +362.3, answer +362.4, server FIN +362.5 ms
+ 148394.9  aka:36385   SYN GET /serverinfo?uniqueid=0123456789ABCDEF&uuid=d2da0c6f-2b33-4ed SYN-ACK +0.0, request +460.4, answer +460.5, server FIN +460.6 ms
+ 148902.5  aka:36380   SYN                                           SYN-ACK +0.0, request +19.4, answer +120385.3, server FIN +- ms
+ 178666.0  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +192.6, answer +192.7, server FIN +192.7 ms
+ 179386.5  aka:36385   SYN GET /serverinfo?uniqueid=0123456789ABCDEF&uuid=f7d69179-230c-4f4 SYN-ACK +0.0, request +474.5, answer +474.6, server FIN +474.6 ms
+ 180362.2  aka:36380   SYN                                           SYN-ACK +0.0, request +490.2, answer +88925.9, server FIN +- ms
+ 190368.6  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +375.9, answer +376.1, server FIN +376.1 ms
+ 191255.8  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +489.2, answer +489.3, server FIN +489.3 ms
+ 192268.7  aka:36385   SYN GET /serverinfo?uniqueid=0123456789ABCDEF&uuid=c30e83ac-e75d-46f SYN-ACK +0.0, request +478.3, answer +478.4, server FIN +478.4 ms
+ 193248.3  aka:36380   SYN                                           SYN-ACK +0.0, request +510.4, answer +76040.2, server FIN +- ms
+ 203291.4  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +350.0, answer +350.1, server FIN +350.2 ms
+ 204162.9  aka:36385   SYN GET /serverinfo?uniqueid=0123456789ABCDEF&uuid=43fc8bf9-59ba-463 SYN-ACK +0.0, request +477.9, answer +478.1, server FIN +478.1 ms
+ 205142.7  aka:36380   SYN                                           SYN-ACK +0.0, request +501.5, answer +64146.2, server FIN +- ms
+ 215167.4  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +4.0, answer +4.8, server FIN +4.8 ms
+ 215683.3  aka:36385   SYN GET /serverinfo?uniqueid=0123456789ABCDEF&uuid=b1895183-b384-4ca SYN-ACK +0.0, request +491.6, answer +492.1, server FIN +492.1 ms
+ 216677.0  aka:36380   SYN                                           SYN-ACK +0.0, request +118.8, answer +52612.2, server FIN +- ms
+ 226680.1  aka:36385   SYN                                           SYN-ACK +0.0, request +-, answer +-, server FIN +329.9 ms
+ 226929.4  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +80.8, answer +81.2, server FIN +81.2 ms
+ 227543.8  aka:36385   SYN GET /serverinfo?uniqueid=0123456789ABCDEF&uuid=700814ba-9d7a-434 SYN-ACK +0.0, request +471.7, answer +471.9, server FIN +471.9 ms
+ 228516.4  aka:36380   SYN                                           SYN-ACK +0.0, request +500.9, answer +40773.2, server FIN +- ms
+ 238519.2  aka:36385   SYN                                           SYN-ACK +0.0, request +-, answer +-, server FIN +487.7 ms
+ 238949.8  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +57.2, answer +57.3, server FIN +57.4 ms
+ 239526.1  aka:36385   SYN GET /serverinfo?uniqueid=0123456789ABCDEF&uuid=99ffd19b-4a39-498 SYN-ACK +0.0, request +482.9, answer +483.1, server FIN +483.1 ms
+ 240510.6  aka:36380   SYN                                           SYN-ACK +0.0, request +501.3, answer +28779.4, server FIN +- ms
+ 250515.5  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +28.4, answer +28.7, server FIN +28.8 ms
+ 250998.3  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +50.4, answer +50.6, server FIN +50.6 ms
+ 251589.3  aka:36385   SYN GET /serverinfo?uniqueid=0123456789ABCDEF&uuid=89182173-a38b-434 SYN-ACK +0.0, request +459.7, answer +459.9, server FIN +459.9 ms
+ 252554.6  aka:36380   SYN                                           SYN-ACK +0.0, request +497.7, answer +16735.7, server FIN +- ms
+ 262555.6  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +21.4, answer +21.6, server FIN +21.6 ms
+ 262999.3  aka:36385   SYN GET /serverinfo                           SYN-ACK +0.0, request +77.6, answer +77.8, server FIN +77.8 ms
+ 263593.8  aka:36385   SYN GET /serverinfo?uniqueid=0123456789ABCDEF&uuid=24b864d0-23a3-444 SYN-ACK +0.0, request +485.1, answer +485.3, server FIN +485.3 ms
+ 264580.3  aka:36380   SYN                                           SYN-ACK +0.0, request +501.9, answer +4710.3, server FIN +- ms
+tap to first frame: 11511.8 ms
+emulator TCP from tap to first frame: {'active_opens': 32, 'retransmitted_segments': 0, 'syn_retransmits': 0}
