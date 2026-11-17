@@ -205,6 +205,16 @@ pub enum Outcome {
 /// local address away.
 struct Waker {
     socket: UdpSocket,
+    // Korri: on Unix the wake also goes through a local socket pair that the control thread
+    // polls beside its control socket, which no network delay reaches: the datagram to the
+    // control socket's own address takes whatever delay the loopback has (a netem delay in a
+    // test pair), and the thread then woke only at its next `MAX_IDLE_WAIT` tick
+    // (clients/viewer/vendor/README.md).
+    #[cfg(unix)]
+    pair: (
+        std::os::unix::net::UnixDatagram,
+        std::os::unix::net::UnixDatagram,
+    ),
 }
 
 /// Where wakes for the control socket at `enet_local` go. A specific local address keeps its
@@ -234,7 +244,19 @@ impl Waker {
         let socket = UdpSocket::bind(wake_bind(target))?;
         socket.set_nonblocking(true)?;
         socket.connect(target)?;
-        Ok(Self { socket })
+        // Korri: the local pair, both ends non-blocking.
+        #[cfg(unix)]
+        let pair = {
+            let (wake, woken) = std::os::unix::net::UnixDatagram::pair()?;
+            wake.set_nonblocking(true)?;
+            woken.set_nonblocking(true)?;
+            (wake, woken)
+        };
+        Ok(Self {
+            socket,
+            #[cfg(unix)]
+            pair,
+        })
     }
 
     fn retarget(&self, enet_local: SocketAddr) -> io::Result<()> {
@@ -242,7 +264,20 @@ impl Waker {
     }
 
     fn wake(&self) {
+        // Korri: the local pair first, on Unix.
+        #[cfg(unix)]
+        let _ = self.pair.0.send(&[0]);
         let _ = self.socket.send(&[0]);
+    }
+
+    /// Korri: takes the wakes that the control thread has seen, so that a stale one does not
+    /// end its next wait.
+    fn drain(&self) {
+        #[cfg(unix)]
+        {
+            let mut wakes = [0u8; 64];
+            while self.pair.1.recv(&mut wakes).is_ok() {}
+        }
     }
 }
 
@@ -598,6 +633,40 @@ fn poll_readable(_: &UdpSocket, _: Duration) -> io::Result<()> {
 }
 
 impl ControlSocket {
+    /// Korri: [`ControlSocket::wait`] that a wake from `waker`'s local pair also ends, on Unix.
+    fn wait_or_woken(&self, timeout: Duration, waker: &Waker) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::io::AsRawFd;
+            if self.reinject.is_some() || timeout.is_zero() {
+                return;
+            }
+            let mut fds = [
+                libc::pollfd {
+                    fd: self.socket.as_raw_fd(),
+                    events: libc::POLLIN,
+                    revents: 0,
+                },
+                libc::pollfd {
+                    fd: waker.pair.1.as_raw_fd(),
+                    events: libc::POLLIN,
+                    revents: 0,
+                },
+            ];
+            // SAFETY: two valid pollfds for sockets that outlive the call.
+            if unsafe { libc::poll(fds.as_mut_ptr(), 2, poll_millis(timeout)) } < 0
+                && io::Error::last_os_error().kind() != io::ErrorKind::Interrupted
+            {
+                self.wait_blocking(timeout);
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = waker;
+            self.wait(timeout);
+        }
+    }
+
     /// Sleeps until a datagram arrives or `timeout` passes. A readiness poll leaves the socket
     /// non-blocking; if the poll fails, a blocking peek waits instead.
     fn wait(&self, timeout: Duration) {
@@ -1192,6 +1261,8 @@ impl ControlClient {
                 return Outcome::Stopped;
             }
             self.shared.wake_pending.store(false, Ordering::Release);
+            // Korri: the wakes up to here are seen.
+            self.shared.waker.drain();
             let timer = self.transmit(now, false);
             let received = match self.service() {
                 Ok(received) => received,
@@ -1226,7 +1297,8 @@ impl ControlClient {
                 self.host.next_service_in(self.peer),
                 [timer, roam_timer],
             );
-            self.host.socket().wait(wait);
+            // Korri: a wake ends the wait at once (`Waker`).
+            self.host.socket().wait_or_woken(wait, &self.shared.waker);
         }
     }
 
