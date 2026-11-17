@@ -34,12 +34,26 @@ int main(void) {
   fits(1280, 720, 1080, 2400, 0, 896, 1080, 608);
   // A tall stream in a square window rounds to the nearest pixel.
   fits(1080, 2400, 1000, 1000, 275, 0, 450, 1000);
-  // Within a pixel of the window's shape: the nearest pixel, never a stretch.
+  // Bars of less than one percent come from korrid's rounding of sizes to
+  // 8 pixels: the picture fills the window instead.
   fits(1920, 1080, 1537, 865, 0, 0, 1537, 865);
-  fits(1368, 768, 1366, 768, 0, 0, 1366, 767);
+  fits(1368, 768, 1366, 768, 0, 0, 1366, 768);
+  fits(1920, 1088, 1920, 1080, 0, 0, 1920, 1080);
+  fits(1288, 720, 1280, 720, 0, 0, 1280, 720);
+  // One percent or more is a shape: bars, even in a small window.
+  fits(16, 9, 10, 10, 0, 2, 10, 6);
+  fits(1280, 720, 1280, 736, 0, 8, 1280, 720);
   // No window yet: nothing to show, and no division by zero.
   fits(1280, 720, 0, 0, 0, 0, 0, 0);
   fits(0, 0, 1280, 720, 280, 0, 720, 720);
+
+  // Only a picture with no bars fills its window.
+  assert(picture_fills_window(picture_fit(1280, 720, 1920, 1080)));
+  assert(picture_fills_window(picture_fit(1920, 1080, 1537, 865)));
+  assert(!picture_fills_window(picture_fit(720, 1280, 1920, 1080)));
+  assert(!picture_fills_window(picture_fit(1280, 720, 1080, 1920)));
+  assert(picture_fills_window(picture_fit(1368, 768, 1366, 768)));
+  assert(!picture_fills_window(picture_fit(1280, 720, 1280, 736)));
 
   int width = 0, height = 0;
   assert(picture_shown_size(&width, &height) == 0);

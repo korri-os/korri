@@ -46,6 +46,8 @@ static struct imported_surface {
 static bool put_surface_shown;
 // vaPutSurface refused the first frame of this session, so EGL presents.
 static bool present_through_egl;
+// EGL could not present a picture with bars: vaPutSurface shows it (#476).
+static bool egl_unusable;
 
 static VADisplay device_display(AVBufferRef* ref) {
   AVHWDeviceContext* device = (AVHWDeviceContext*)ref->data;
@@ -103,6 +105,7 @@ void vaapi_cleanup_lib(void) {
   vaapi_egl_cleanup();
   put_surface_shown = false;
   present_through_egl = false;
+  egl_unusable = false;
   av_buffer_unref(&presentation_ref);
   if (presentation_x11) {
     XCloseDisplay(presentation_x11);
@@ -229,11 +232,19 @@ static VAStatus present_egl(AVFrame* dec_frame, Window win, struct picture_place
 
 void vaapi_queue(AVFrame* dec_frame, Window win, struct picture_place place) {
   VAStatus status;
-  if (present_through_egl) {
+  // vaPutSurface draws its destination rectangle only. Mesa leaves the rest
+  // of its back buffer as an earlier frame left it, so bars would show an
+  // old picture. A picture with bars goes through EGL, which clears the
+  // whole window first (#476); one that fills the window stays here.
+  if (present_through_egl || (!picture_fills_window(place) && !egl_unusable)) {
     status = present_egl(dec_frame, win, place);
     if (status == VA_STATUS_SUCCESS)
       return;
-    goto error;
+    if (present_through_egl)
+      goto error;
+    fprintf(stderr, "EGL cannot present here (%s); a picture with bars goes through vaPutSurface\n",
+        vaErrorStr(status));
+    egl_unusable = true;
   }
   // The frame pool owns surface IDs. Retain that pool while imports exist,
   // and discard its imports when the decoder changes pools (e.g. a resize).
@@ -254,8 +265,6 @@ void vaapi_queue(AVFrame* dec_frame, Window win, struct picture_place place) {
   status = import_surface(decoded, &surface);
   if (status != VA_STATUS_SUCCESS)
     goto error;
-  // The driver draws the picture at its place and fills the rest of the
-  // window with black (Mesa's compositor clears what no layer covers).
   status = vaPutSurface(target, surface, win, 0, 0, dec_frame->width,
       dec_frame->height, place.x, place.y, place.width, place.height, NULL, 0, 0);
   // Keep the decoded buffer alive until the GPU has finished reading it.

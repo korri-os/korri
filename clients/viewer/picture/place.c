@@ -21,6 +21,14 @@ struct picture_place picture_fit(int picture_width, int picture_height,
     shown_width = (down * width + height / 2) / height;
     shown_height = down;
   }
+  // Bars of less than one percent come from the rounding of stream sizes
+  // (korrid rounds them to 8 pixels), not from a shape: the picture fills
+  // the window, stretched by less than one percent, as it was before #476.
+  // A presenter then needs no bars at all (ffmpeg_vaapi.c).
+  if ((across - shown_width) * 100 < across && (down - shown_height) * 100 < down) {
+    shown_width = across;
+    shown_height = down;
+  }
   return (struct picture_place){
     .window_width = (int)across,
     .window_height = (int)down,
@@ -29,6 +37,11 @@ struct picture_place picture_fit(int picture_width, int picture_height,
     .width = (int)shown_width,
     .height = (int)shown_height,
   };
+}
+
+bool picture_fills_window(struct picture_place place) {
+  return place.x == 0 && place.y == 0 &&
+         place.width == place.window_width && place.height == place.window_height;
 }
 
 // Width in the high half, height in the low half; 0 before the first picture.
