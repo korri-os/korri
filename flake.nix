@@ -202,6 +202,8 @@
             korri-viewer-rust-audio-output = viewer.rustAudioOutputPackage;
             # The viewer with the Rust port of its C VA-API EGL presenter (#391 step F).
             korri-viewer-rust-egl-presenter = viewer.rustEglPresenterPackage;
+            # The viewer with the Rust port of its C X11 window and input (#391 step F).
+            korri-viewer-rust-x11-window = viewer.rustX11WindowPackage;
             korri-shell = shell.package;
             korri-shell-surfaces = shell.surfaces;
             korri-plymouth-theme = pkgs.callPackage ./brand/plymouth/package.nix { };

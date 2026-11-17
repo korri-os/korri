@@ -25,6 +25,9 @@ mod player_io;
 mod player_io;
 pub mod session;
 pub mod stream;
+// The X11 VA-API platform's window and its input have a Rust port too
+// (#391 step F).
+pub mod x11_window;
 
 pub mod lifecycle;
 

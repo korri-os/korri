@@ -18,6 +18,9 @@ nix develop .#viewer --command xvfb-run -a cargo test --manifest-path clients/vi
 # surfaces with both presenters through Mesa's software EGL and compares
 # the pixels.
 nix build .#korri-viewer-rust-egl-presenter
+# The Rust X11 window and its input (#391 step F, below): its package runs
+# both windows on private Xvfb servers and compares what they do.
+nix build .#korri-viewer-rust-x11-window
 # Handheld path: aarch64 builds on aarch64 builders (here fuji or yari), never
 # on a device. The x86_64 check then starts that build under qemu-aarch64.
 nix build .#packages.aarch64-linux.korri-viewer
@@ -632,6 +635,81 @@ removals.
 Not proven: a real VA-API surface through the port (the sandbox has no
 GPU; Mesa's software import is not radeonsi's or iHD's), Intel, and any
 number.
+
+## X11 window in Rust (#391 step F, slice F4)
+
+`src/x11_window/window.rs` is the Rust port of the X11 VA-API platform's
+window and its keyboard and mouse: `picture/video/x11_window.c` (the window
+part of Moonlight's `x11_setup`) and `io/input/x11.c`, with
+`io/input/keyboard.h`'s key table in `keyboard.rs`. It uses `x11rb` 0.14.0
+(MIT or Apache-2.0), the X11 protocol in Rust. The carried C stays the
+default. The cargo feature `rust-x11-window` builds the port, and
+`-x11window rust` chooses it; `korri-viewer-rust-x11-window`'s
+`bin/moonlight` appends that option. On the SDL platform and on
+`v4l2request` the option is refused: neither has this window.
+
+The window's lines of `x11_setup` are moved, unchanged, into their own
+file, `picture/video/x11_window.c`, as `x11_window_open` (GPL-3 §5a:
+`video/x11.c` modified by Korri on 2026-11-17 by this move). With the
+feature, Rust owns that name and chooses at run time; `build.rs` compiles
+the C file with a `-D` rename to `carried_x11_window_open`. `video/x11.c`
+keeps its Xlib display for VA-API and for the presenter, and asks
+`x11_window_open` for the window. The Rust window connects to the same
+display (Xlib's `XDisplayString`) on a connection of its own, and adds its
+handler to the same descriptor loop (`loop.h`), which the stream's thread
+polls as before. `picture/bridge.c` gains `picture_poll_descriptors`, the
+loop alone, which `picture_poll` now calls and the tests use.
+
+What stays as in C: the window's size, event mask, `WM_NAME` "Moonlight",
+`WM_PROTOCOLS` with `WM_DELETE_WINDOW` and blank cursor; the fullscreen
+request to the root (`_NET_WM_STATE`); every key through the same table,
+with shift, alt and control tracked by key code; Ctrl+Alt+Shift+Q to quit
+and Ctrl+Alt+Shift with another key's release to toggle the grab; the
+buttons, scroll and horizontal scroll; the relative mouse, warped back to
+(640, 360) while grabbed; `WM_DELETE_WINDOW` to quit. Two quirks of the C
+stay too, so that the measure judges the language alone: buttons 4 to 7
+scroll on both their press and their release, and the handler's `button`
+is set once for each read, not for each event, so a scroll (or a button
+past 9) that follows another button in the same read sends that button's
+press or release again.
+
+What differs:
+
+- The window has its own X11 connection. Its requests go out at the end
+  of the open; the C's last ones (`WM_PROTOCOLS`, the cursor) wait for the
+  display's next flush.
+- An X11 error is logged; Xlib's default handler ends the process. A lost
+  connection ends the stream through its teardown (the loop's -1); Xlib
+  ends the process.
+- A window that cannot open ends the stream through its teardown
+  (`PlayerIo::poll` returns -1 before any frame); the C has no such case.
+- The window goes when the stream's I/O drops, a moment after the core
+  stops; the C's goes with the display in the decoder's cleanup.
+- The port logs one line when it opens (`picture: the Rust X11 window
+  ...`).
+
+Tests (`src/x11_window/tests.rs`), each window on a private Xvfb with a
+1920x1080 screen, so that the warp lands inside a 1280x720 window:
+
+- The window: another client sees the same size, map state, event masks,
+  `WM_NAME` and `WM_PROTOCOLS` from both.
+- Fullscreen: a client that acts as the window manager receives the same
+  create, map request and `_NET_WM_STATE` message from both.
+- Input: another client sends a script of events with `XSendEvent` (keys
+  with and without shift, buttons 1 to 10, keys outside the table, moves
+  grabbed and ungrabbed, the grab toggled and back, `WM_DELETE_WINDOW`,
+  the quit chord). Each group, then the descriptor loop until it is
+  quiet: the same loop results, the same packets at the network core and
+  the same real pointer position from both. With the button reset for each
+  event, or with no warp, the test fails (checked by hand on aka).
+- The key table equals `io/input/keyboard.h`'s, read from the file.
+- A closed window is gone, and the loop has nothing left; a window that
+  cannot open makes `failed()` true until the next stream.
+
+Not proven: the window under a real compositor (sway, Xwayland) and its
+focus by korrid, a key from a real keyboard through XTEST, and any number.
+Number 5 of ADR 0062 (a key on the viewer's window to its packet) and
+number 4 (startup) are the ones this slice can move.
 
 ## Android session part (#391 step D, slice D0)
 

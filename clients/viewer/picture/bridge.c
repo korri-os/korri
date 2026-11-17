@@ -72,6 +72,9 @@ PDECODER_RENDERER_CALLBACKS picture_callbacks(void) {
 // its descriptor loop. Only the SDL platform runs the SDL event loop.
 int picture_poll(int timeout) {
   if (!using_vaapi && !using_request) return sdl_poll(timeout);
+  return picture_poll_descriptors(timeout);
+}
+int picture_poll_descriptors(int timeout) {
   int result = poll(fds, count, timeout);
   if (result < 0) return errno == EINTR ? 0 : -1;
   for (int i = 0; i < count; ++i) {

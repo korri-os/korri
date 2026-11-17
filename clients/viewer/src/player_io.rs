@@ -33,6 +33,10 @@ impl PlayerIo {
         // its first frame calls it, after this.
         #[cfg(feature = "rust-egl-presenter")]
         crate::egl_presenter::select(o.egl_presenter);
+        // The X11 VA-API window's code for this stream (#391 step F): the
+        // decoder's setup calls it, after this.
+        #[cfg(feature = "rust-x11-window")]
+        crate::x11_window::select(o.x11_window);
         // SAFETY: called under stream's connection lock, on its event thread.
         let vaapi = unsafe {
             ffi::picture_init(
@@ -54,6 +58,10 @@ impl PlayerIo {
         ensure!(
             vaapi || io.audio_device.is_none(),
             "You can't select an audio device for SDL"
+        );
+        ensure!(
+            vaapi || o.x11_window == crate::x11_window::Kind::Carried,
+            "the Rust X11 window serves X11 VA-API, and this stream's picture is SDL's"
         );
         let mapping = io
             ._mapping
@@ -81,6 +89,10 @@ impl PlayerIo {
         mapping: Option<CString>,
         audio_device: Option<CString>,
     ) -> Result<Self> {
+        ensure!(
+            o.x11_window == crate::x11_window::Kind::Carried,
+            "the Rust X11 window serves X11 VA-API, and v4l2request makes its own window"
+        );
         let inputs = o
             .inputs
             .iter()
@@ -176,6 +188,13 @@ impl PlayerIo {
     /// One turn of the presenter's or the input's event loop: 0 to go on, a
     /// positive value when the window asks to quit, negative on failure.
     pub(crate) fn poll(&self, timeout_ms: i32) -> i32 {
+        // The Rust X11 window did not open: x11.c would show frames on
+        // window 0, and Xlib would end the process. The stream ends here,
+        // through its teardown, before a frame comes.
+        #[cfg(feature = "rust-x11-window")]
+        if crate::x11_window::failed() {
+            return -1;
+        }
         unsafe { ffi::picture_poll(timeout_ms) }
     }
 }
@@ -184,6 +203,12 @@ impl Drop for PlayerIo {
         // The caller stops and joins the core before dropping the session's I/O.
         unsafe {
             ffi::viewer_input_destroy();
+        }
+        // The Rust X11 window's connection leaves the descriptor loop before
+        // the loop goes; the C's window went with x11.c's display.
+        #[cfg(feature = "rust-x11-window")]
+        crate::x11_window::close();
+        unsafe {
             ffi::picture_destroy();
         }
     }

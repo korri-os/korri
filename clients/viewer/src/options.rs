@@ -39,6 +39,9 @@ pub struct Options {
     /// The code that draws X11's pictures through EGL (`-eglpresenter`,
     /// #391 step F).
     pub egl_presenter: crate::egl_presenter::Kind,
+    /// The code that makes X11's window and reads its keys and mouse
+    /// (`-x11window`, #391 step F).
+    pub x11_window: crate::x11_window::Kind,
 }
 
 /// Moonlight's `MAX_INPUTS` (config.h).
@@ -118,6 +121,7 @@ impl Options {
             network_core: Default::default(),
             audio_output: Default::default(),
             egl_presenter: Default::default(),
+            x11_window: Default::default(),
         };
         while let Some(arg) = args.next() {
             if !arg.starts_with('-') {
@@ -151,7 +155,7 @@ impl Options {
                 }
                 "keydir" | "app" | "platform" | "width" | "height" | "fps" | "bitrate"
                 | "packetsize" | "codec" | "port" | "mapping" | "audio" | "remote" | "surround"
-                | "rotate" | "networkcore" | "audiooutput" | "eglpresenter" => {
+                | "rotate" | "networkcore" | "audiooutput" | "eglpresenter" | "x11window" => {
                     let value = args
                         .next()
                         .ok_or_else(|| anyhow::anyhow!("missing value for {arg}"))?;
@@ -192,6 +196,7 @@ impl Options {
                         "eglpresenter" => {
                             o.egl_presenter = crate::egl_presenter::Kind::parse(&value)?
                         }
+                        "x11window" => o.x11_window = crate::x11_window::Kind::parse(&value)?,
                         "audio" => o.audio_device = Some(value),
                         _ => unreachable!(),
                     }
@@ -386,6 +391,29 @@ mod tests {
         );
         assert!(parse(&["-eglpresenter", "wgpu"]).is_err());
         assert!(parse(&["-eglpresenter"]).is_err());
+    }
+
+    // #391 step F4: the carried C makes the X11 window unless -x11window
+    // names the Rust port.
+    #[test]
+    fn the_x11_window_is_the_carried_cs_unless_named() {
+        use crate::x11_window::Kind;
+        let parse = |extra: &[&str]| {
+            let mut args = vec!["stream", "-keydir", "/k", "host"];
+            args.extend_from_slice(extra);
+            Options::parse(args.into_iter().map(str::to_owned))
+        };
+        assert_eq!(parse(&[]).unwrap().x11_window, Kind::Carried);
+        assert_eq!(
+            parse(&["-x11window", "c"]).unwrap().x11_window,
+            Kind::Carried
+        );
+        assert_eq!(
+            parse(&["-x11window", "rust"]).is_ok(),
+            cfg!(feature = "rust-x11-window")
+        );
+        assert!(parse(&["-x11window", "winit"]).is_err());
+        assert!(parse(&["-x11window"]).is_err());
     }
 
     #[test]

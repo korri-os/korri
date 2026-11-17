@@ -5,6 +5,9 @@ int picture_init(int vaapi, int width, int height, int fullscreen);
 void picture_init_request(int auto_window_resize);
 PDECODER_RENDERER_CALLBACKS picture_callbacks(void);
 int picture_poll(int timeout);
+// One turn of the descriptor loop alone (`loop.h`), whatever the platform:
+// 0 to go on, 1 when a handler asks to quit, -1 on failure.
+int picture_poll_descriptors(int timeout);
 void picture_destroy(void);
 // The opt-in frame record (frame_times.c). Each descriptor may be -1; both
 // belong to C from here on. Open before the connection; close after it stops.

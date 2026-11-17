@@ -18,6 +18,10 @@ rust-audio-output = ["dep:alsa", "dep:libpulse-binding", "dep:libpulse-simple-bi
 # chosen with `-eglpresenter rust` (#391 step F, slice F3). Linux only. Off
 # by default: the carried C presents.
 rust-egl-presenter = ["dep:khronos-egl", "dep:glow"]
+# The Rust port of the carried C X11 window and its keyboard and mouse
+# (src/x11_window/), chosen with `-x11window rust` (#391 step F, slice F4).
+# Linux only. Off by default: the carried C makes the window.
+rust-x11-window = ["dep:x11rb"]
 
 [dependencies]
 korri-viewer-treaty = { path = "../../contracts/viewer" }
@@ -42,6 +46,8 @@ libpulse-simple-binding = { version = "2.29", optional = true }
 # and OpenGL ES through its entry points.
 khronos-egl = { version = "6", features = ["static"], optional = true }
 glow = { version = "0.18", optional = true }
+# The Rust X11 window: the X11 protocol in Rust, on a connection of its own.
+x11rb = { version = "0.14", optional = true }
 
 # Android has no libcurl. Build the crate's own copy of curl, the release that
 # nixpkgs gives Linux, against the OpenSSL that android.nix supplies.

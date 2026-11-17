@@ -350,6 +350,28 @@ let
       platforms = [ "x86_64-linux" ];
     };
   });
+  # The same viewer with the Rust port of the carried C X11 window and its
+  # keyboard and mouse (#391 step F, slice F4, src/x11_window/).
+  # `bin/korri-viewer` still makes its window with the carried C unless
+  # `-x11window rust` is given; `bin/moonlight` gives it, as
+  # `nightjarPackage` does. Its tests run both windows, each on a private
+  # Xvfb with a screen of its own, so the check has Xvfb.
+  rustX11WindowPackage = package.overrideAttrs (old: {
+    pname = "korri-viewer-rust-x11-window";
+    cargoBuildFeatures = [ "rust-x11-window" ];
+    cargoCheckFeatures = [ "rust-x11-window" ];
+    nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.makeBinaryWrapper ];
+    nativeCheckInputs = (old.nativeCheckInputs or [ ]) ++ [ pkgs.xvfb ];
+    postInstall = old.postInstall + ''
+      rm $out/bin/moonlight
+      makeBinaryWrapper $out/bin/korri-viewer $out/bin/moonlight \
+        --append-flags "-x11window rust"
+    '';
+    meta = old.meta // {
+      # A candidate for the measure on aka; no handheld runs it.
+      platforms = [ "x86_64-linux" ];
+    };
+  });
   # GPL-3 corresponding source of `package` (ADR 0059): this package's Rust,
   # C and recipe, the network core with its ENet, and the vendored crates.
   # The plugin carries it beside the binary. nixpkgs' shared libraries are
@@ -408,6 +430,7 @@ in
     nightjarPackage
     rustAudioOutputPackage
     rustEglPresenterPackage
+    rustX11WindowPackage
     network
     pictureCheck
     ioCheck
@@ -427,6 +450,8 @@ in
           xvfb-run
           # The Rust audio output's tests (cargo feature rust-audio-output).
           pulseaudio
+          # The Rust X11 window's tests (cargo feature rust-x11-window).
+          xvfb
         ]);
       buildInputs = libraries;
       LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [

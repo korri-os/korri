@@ -21,7 +21,11 @@ fn main() {
     let headers = if android {
         vec![format!("{include}/Limelight.h")]
     } else {
-        vec!["picture/bridge.h".into(), "io/bridge.h".into()]
+        vec![
+            "picture/bridge.h".into(),
+            "picture/loop.h".into(),
+            "io/bridge.h".into(),
+        ]
     };
     let bindings = headers
         .iter()
@@ -39,6 +43,12 @@ fn main() {
         // battery.
         .allowlist_function("LiSendControllerBatteryEvent")
         .allowlist_function("picture_.*|viewer_.*")
+        // The descriptor loop that the carried C's handlers run in; the Rust
+        // X11 window (src/x11_window/) adds its own.
+        .allowlist_function("loop_(add|remove)_fd")
+        .allowlist_var("LOOP_(OK|RETURN)")
+        // The keyboard modifiers and mouse buttons of the Rust X11 window.
+        .allowlist_var("MODIFIER_(SHIFT|CTRL|ALT)|BUTTON_(LEFT|MIDDLE|RIGHT|X1|X2)")
         .allowlist_type("(STREAM_CONFIGURATION|SERVER_INFORMATION|CONNECTION_LISTENER_CALLBACKS|DECODER_RENDERER_CALLBACKS|AUDIO_RENDERER_CALLBACKS|OPUS_MULTISTREAM_CONFIGURATION|DECODE_UNIT|LENTRY)")
         // Android's decoder (src/android/picture.rs) reads decode units; its
         // sound (src/android/sound.rs) names its capabilities.
@@ -190,6 +200,36 @@ fn main() {
             .write_to_file(PathBuf::from(env::var("OUT_DIR").unwrap()).join("presenter.rs"))
             .unwrap();
     }
+    // The X11 window and its input (#391 step F, slice F4,
+    // src/x11_window/). With the feature, Rust takes `x11_window_open` and
+    // chooses at run time; the carried C keeps it as `carried_x11_window_open`.
+    // The caller, video/x11.c, does not change.
+    let x11_window = env::var_os("CARGO_FEATURE_RUST_X11_WINDOW").is_some();
+    const X11_WINDOWS: [&str; 1] = ["video/x11_window.c"];
+    if x11_window {
+        let mut carried = c.clone();
+        carried
+            .define("x11_window_open", Some("carried_x11_window_open"))
+            .file("picture/video/x11_window.c")
+            .flag_if_supported("-Wno-unused-parameter")
+            .opt_level(2)
+            .compile("korri_carried_x11_window");
+        println!("cargo:rustc-link-lib=X11");
+        // Xlib's calls that the Rust window makes (the display's name) and
+        // that its tests make, from the header of the libX11 linked above.
+        includes
+            .iter()
+            .fold(
+                bindgen::Builder::default().header_contents("x11.h", "#include <X11/Xlib.h>\n"),
+                |builder, path| builder.clang_arg(format!("-I{}", path.display())),
+            )
+            .allowlist_function("X(OpenDisplay|CloseDisplay|ConnectionNumber|Sync|DisplayString)")
+            .generate_comments(false)
+            .generate()
+            .expect("generate the X11 window's binding from Xlib's header")
+            .write_to_file(PathBuf::from(env::var("OUT_DIR").unwrap()).join("x11.rs"))
+            .unwrap();
+    }
     for file in [
         "bridge.c",
         "frame_times.c",
@@ -197,6 +237,7 @@ fn main() {
         "sdl.c",
         "util.c",
         "video/x11.c",
+        "video/x11_window.c",
         "video/sdl.c",
         "video/ffmpeg.c",
         "video/ffmpeg_vaapi.c",
@@ -204,6 +245,7 @@ fn main() {
     ]
     .into_iter()
     .filter(|file| !(egl_presenter && EGL_PRESENTERS.contains(file)))
+    .filter(|file| !(x11_window && X11_WINDOWS.contains(file)))
     {
         c.file(format!("picture/{file}"));
     }

@@ -19,6 +19,7 @@
  */
 
 #include "video.h"
+#include "x11_window.h"
 #include "ffmpeg.h"
 #ifdef HAVE_VAAPI
 #include "ffmpeg_vaapi.h"
@@ -143,29 +144,7 @@ int x11_setup(int videoFormat, int width, int height, int redrawRate, void* cont
     display_height = height;
   }
 
-  Window root = DefaultRootWindow(display);
-  XSetWindowAttributes winattr = { .event_mask = PointerMotionMask | ButtonPressMask | ButtonReleaseMask | KeyPressMask | KeyReleaseMask };
-  window = XCreateWindow(display, root, 0, 0, display_width, display_height, 0, CopyFromParent, InputOutput, CopyFromParent, CWEventMask, &winattr);
-  XMapWindow(display, window);
-  XStoreName(display, window, "Moonlight");
-
-  if (drFlags & DISPLAY_FULLSCREEN) {
-    Atom wm_state = XInternAtom(display, "_NET_WM_STATE", False);
-    Atom fullscreen = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", False);
-
-    XEvent xev = {0};
-    xev.type = ClientMessage;
-    xev.xclient.window = window;
-    xev.xclient.message_type = wm_state;
-    xev.xclient.format = 32;
-    xev.xclient.data.l[0] = 1;
-    xev.xclient.data.l[1] = fullscreen;
-    xev.xclient.data.l[2] = 0;
-
-    XSendEvent(display, DefaultRootWindow(display), False, SubstructureRedirectMask | SubstructureNotifyMask, &xev);
-  }
-  XFlush(display);
-  viewer_input_x11(display, window);
+  window = x11_window_open(display, display_width, display_height, drFlags);
 
   int avc_flags;
   if (drFlags & X11_VAAPI_ACCELERATION)
