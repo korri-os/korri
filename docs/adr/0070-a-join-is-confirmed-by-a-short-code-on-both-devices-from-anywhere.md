@@ -9,6 +9,11 @@ a short code from the other device instead. The two devices can be on any
 networks: they find each other through public Nostr relays (ADR 0026), not
 only on the same home network or tailnet.
 
+The new device finds the owned device the same way near or far: the person
+types a short code from one device into the other (owner decision, 2026-11-16,
+recorded with this ADR). Whether the compare-and-Accept step stays when a
+typed code already ties the two devices together is open.
+
 The code is what makes relays safe for this. A relay, or anyone who reads the
 relay, cannot sit between the two devices without the codes differing.
 
