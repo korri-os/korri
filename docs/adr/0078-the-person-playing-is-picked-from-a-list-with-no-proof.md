@@ -21,3 +21,6 @@ split. The split keeps both versions, so no progress is lost.
 
 - Anyone at the device can play as any member, and as the owner.
 - The person playing and the device owner are now separate ideas on a device.
+- In couch co-op, the saves go to the person the device plays as when the
+  game starts. That matches stream play and netplay, where the holder's
+  saves count. Player 2's progress never enters player 2's own history.

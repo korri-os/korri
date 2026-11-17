@@ -71,6 +71,14 @@ _Avoid_: PIN, pairing code, password, join code
 The explicit, consented replacement of a device owner by a different person key. It is the only way device authority moves.
 _Avoid_: login, account transfer, sign in
 
+**Guest**:
+A person who uses another person's devices for one visit and keeps nothing after it. A guest needs no person key. When they have one, it only shows their name.
+_Avoid_: anonymous user, visitor, guest account
+
+**Visit**:
+The time a guest spends at a device or on its stream. A guest's saves last until the visit ends.
+_Avoid_: guest session, stay
+
 **Client part**:
 The part of a device's software that people see and touch on that device: the shell, its screen and its local controls. A device without people at it has no client part.
 _Avoid_: client device, frontend, UI mode

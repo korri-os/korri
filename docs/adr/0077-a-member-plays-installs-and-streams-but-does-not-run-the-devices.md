@@ -17,8 +17,11 @@ On the owner's devices a member can:
 Only the owner changes device settings, such as Wi-Fi, displays and library
 folders, and only the owner admits other people (ADR 0075).
 
+A member keeps their place until the owner removes them. Membership has no
+end date (owner decision, 2026-11-17).
+
 A member does not need a Korri device. An owned device can create a member,
-with the member's own recovery words (ADR 0072).
+with the member's own recovery words (ADR 0079).
 
 ## Considered options
 
