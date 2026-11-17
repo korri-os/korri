@@ -52,7 +52,7 @@ The person key a local signer creates when setup ends without a join. It is a re
 _Avoid_: guest account, default user
 
 **Join**:
-Binding a device that has no owner to an existing person key: an owned device vouches for it after the person enters the join confirmation code and accepts. The device receives no copy of the person key.
+Binding a device that has no owner to an existing person key: an owned device vouches for it after the person enters the join confirmation code and accepts it on the owned device. The device receives no copy of the person key.
 _Avoid_: pair, link, sign in, adopt
 
 **Removal**:

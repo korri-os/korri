@@ -24,7 +24,7 @@ So devices look for each other in this order:
 
 The relay list follows NIP-05: `https://korri.app/.well-known/nostr.json` with
 its `relays` field, served by Cloudflare Pages. The list is not signed. Every
-message on the relays is signed, so a wrong list, for
+message on the relays is signed, and private messages are encrypted, so a wrong list, for
 example after someone takes over a lapsed domain, causes an outage but cannot
 forge a join or read data.
 
