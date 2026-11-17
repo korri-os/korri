@@ -12,7 +12,6 @@ import { Tokens } from "../tokens.slint";
 import { Page, Row, Pill, Tile } from "../types.slint";
 import { VelvetHead } from "../atoms/VelvetHead.slint";
 import { VelvetWords } from "../atoms/VelvetWords.slint";
-import { VelvetQr } from "../atoms/VelvetQr.slint";
 import { VelvetButtons } from "../molecules/VelvetButtons.slint";
 import { VelvetTile } from "../molecules/VelvetTile.slint";
 import { VelvetRows } from "VelvetRows.slint";
@@ -31,7 +30,7 @@ export component VelvetProgramme inherits Rectangle {
     property <length> body: Tokens.screen.body * u;
     property <length> fact: Tokens.screen.fact * u;
     property <bool> beside: Tokens.screen.panel-beside;
-    property <bool> panelled: page.panel == "qr" || page.panel == "text" || page.panel == "tile";
+    property <bool> panelled: page.panel == "text" || page.panel == "tile";
     property <length> page-w: panelled || beside ? Tokens.screen.page-w * u : Math.min(self.width - 2 * pad-x, Tokens.page-most);
     property <length> head-foot: (Tokens.screen.head-y + Tokens.screen.head-h) * u;
     property <length> sub-h: page.sub == "" ? 0px : sub.preferred-height + fact * 0.4;
@@ -95,13 +94,6 @@ export component VelvetProgramme inherits Rectangle {
         width: root.beside ? Tokens.screen.panel-w * root.u : parent.width - 2 * root.pad-x;
         height: root.panel-h;
         property <length> art: Math.min(self.height * (root.beside ? 0.56 : 1), root.beside ? self.width : self.width * 0.42);
-        if root.page.panel == "qr": VelvetQr {
-            x: 0;
-            y: 0;
-            width: parent.art;
-            height: parent.art;
-            code: root.page.qr;
-        }
         for tile in root.tiles: VelvetTile {
             x: 0;
             y: 0;

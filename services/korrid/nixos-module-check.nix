@@ -354,7 +354,6 @@ assert
     KORRID_BOOT_ID = "%b";
     KORRID_PRIVATE_STATE_ROOT = "/var/lib/korrid";
     KORRID_LOCAL_SIGNER_SOCKET = "/run/korri-local-signer/signer.sock";
-    KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE = "/run/korri-local-signer/public/person.pub";
     KORRID_RELAYS = ''["wss://relay.example.com"]'';
     KORRID_STORAGE_ROOT = "/var/lib/korri";
     KORRID_STREAM_PRIVATE_STATE_ROOT = "/home/korri/.config/sunshine";
@@ -380,9 +379,7 @@ assert lib.hasInfix ''Environment="KORRID_BOOT_ID=%b"''
 assert service.serviceConfig.ProcSubset == "pid";
 assert service.serviceConfig.ProtectKernelTunables;
 assert service.environment.KORRID_LOCAL_SIGNER_SOCKET == "/run/korri-local-signer/signer.sock";
-assert
-  service.environment.KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE
-  == "/run/korri-local-signer/public/person.pub";
+assert !(service.environment ? KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE);
 assert service.environment.KORRID_STREAM_PRIVATE_STATE_ROOT == "/home/korri/.config/sunshine";
 assert service.environment.KORRID_CONTROL_SOCKET == "/run/korrid-control/control.sock";
 assert service.environment.KORRID_CONTROL_DIRECTORY == "/run/korrid-control";
@@ -436,35 +433,26 @@ assert builtins.elem "korri-local-signer.service" service.requires;
 assert builtins.elem "korri-local-signer.service" service.after;
 assert signerService.serviceConfig.User == "korri-local-signer";
 assert signerService.serviceConfig.Group == "korri-local-signer";
-assert
-  signerService.environment.KORRI_LOCAL_SIGNER_PRIVATE_STATE_ROOT == "/var/lib/korri-local-signer";
+# ADR 0082: the signer keeps no person key, so it has no state to name.
+assert !(signerService.environment ? KORRI_LOCAL_SIGNER_PRIVATE_STATE_ROOT);
 assert signerService.environment.KORRI_LOCAL_SIGNER_PEER_UID == "976";
 assert signerService.environment.KORRI_LOCAL_SIGNER_PEER_GID == "976";
-assert
-  signerService.environment.KORRI_LOCAL_SIGNER_PUBLIC_KEY_FILE
-  == "/run/korri-local-signer/public/person.pub";
+assert !(signerService.environment ? KORRI_LOCAL_SIGNER_PUBLIC_KEY_FILE);
 assert builtins.elem "korri-local-signer-device-credential.service" signerService.requires;
 assert builtins.elem "korri-local-signer-device-credential.service" signerService.after;
 assert
   signerService.serviceConfig.LoadCredential
   == "expected-device-public-key:/run/korri-local-signer/expected-device-public-key";
 assert signerService.serviceConfig.ExecStart == "${korridPackage}/bin/korri-local-signer";
-assert signerService.serviceConfig.StateDirectory == "korri-local-signer";
-assert signerService.serviceConfig.StateDirectoryMode == "0700";
+assert !(signerService.serviceConfig ? StateDirectory);
+assert signerService.serviceConfig.LimitCORE == 0;
 assert signerService.serviceConfig.RestrictAddressFamilies == [ "AF_UNIX" ];
 assert signerService.serviceConfig.PrivateNetwork;
-assert
-  signerService.serviceConfig.ReadWritePaths == [
-    "/var/lib/korri-local-signer"
-    "/run/korri-local-signer/public"
-  ];
+assert !(signerService.serviceConfig ? ReadWritePaths);
 assert signerCredentialService.serviceConfig.User == "root";
 assert signerCredentialService.serviceConfig.ReadOnlyPaths == [ "/var/lib/korrid" ];
 assert signerCredentialService.serviceConfig.ReadWritePaths == [ "/run/korri-local-signer" ];
-assert builtins.elem "/var/lib/korri-local-signer"
-  signerCredentialService.serviceConfig.InaccessiblePaths;
 assert builtins.elem "/var/lib/korrid" signerService.serviceConfig.InaccessiblePaths;
-assert builtins.elem "/var/lib/korri-local-signer" service.serviceConfig.InaccessiblePaths;
 assert signerSocket.socketConfig.ListenStream == "/run/korri-local-signer/signer.sock";
 assert signerSocket.socketConfig.SocketUser == "korri-local-signer";
 assert signerSocket.socketConfig.SocketGroup == "korrid";
@@ -499,14 +487,10 @@ assert builtins.elem "systemd-tmpfiles-setup.service" socket.requires;
 assert builtins.elem "systemd-tmpfiles-setup.service" socket.after;
 assert builtins.elem "systemd-tmpfiles-resetup.service" socket.after;
 assert builtins.elem "d /run/korrid-control 0750 root korri-control -" tmpfiles;
-assert builtins.elem "d /run/korri-local-signer/public 2750 korri-local-signer korrid -" tmpfiles;
 assert builtins.elem "d /var/lib/korrid 0700 korrid korrid -" tmpfiles;
 assert builtins.elem "d /var/lib/korrid/identity 0700 korrid korrid -" tmpfiles;
 assert builtins.elem "d /run/korri-local-signer 0751 root korrid -" tmpfiles;
-assert builtins.elem "d /var/lib/korri-local-signer 0700 korri-local-signer korri-local-signer -"
-  tmpfiles;
-assert
-  !(builtins.elem "d /var/lib/korri-local-signer/identity 0700 korri-local-signer korri-local-signer -" tmpfiles);
+assert !(lib.any (rule: lib.hasInfix "/var/lib/korri-local-signer" rule) tmpfiles);
 assert builtins.elem "d /dev/inputplumber 0700 root root -" tmpfiles;
 assert builtins.elem "d /dev/inputplumber/sources 0700 root root -" tmpfiles;
 assert builtins.elem "systemd-tmpfiles-setup-dev.service" service.after;
@@ -592,10 +576,10 @@ assert hasFailedAssertion "service UIDs must be distinct" sameUid;
 assert hasFailedAssertion "runtime user must not hold raw input" broadRuntime;
 assert hasFailedAssertion "korrid, or local-signer service groups" certificateControlRuntime;
 assert hasFailedAssertion
-  "korrid and local-signer private state roots and optional stream-host private state root must be normalized absolute paths"
+  "korrid's private state root and the optional stream-host private state root must be normalized absolute paths"
   invalidPrivatePath;
 assert hasFailedAssertion
-  "korrid and local-signer private state roots and optional stream-host private state root must be normalized absolute paths"
+  "korrid's private state root and the optional stream-host private state root must be normalized absolute paths"
   invalidStreamPrivatePath;
 assert hasFailedAssertion "controlSocket and its directory must be normalized absolute paths"
   invalidControlPath;

@@ -17,19 +17,11 @@ pub enum DataDisposition {
     Delete,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ReplacementSigner {
-    Local,
-    Nip46,
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct IdentitySwitchJournal {
     phase: JournalPhase,
     data_disposition: DataDisposition,
-    replacement_signer: ReplacementSigner,
     old_owner_revocation: String,
     old_owner_was_published: bool,
 }
@@ -48,14 +40,12 @@ impl IdentitySwitchJournal {
     pub fn new(
         phase: JournalPhase,
         data_disposition: DataDisposition,
-        replacement_signer: ReplacementSigner,
         old_owner_revocation: String,
         old_owner_was_published: bool,
     ) -> Result<Self, JournalError> {
         let journal = Self {
             phase,
             data_disposition,
-            replacement_signer,
             old_owner_revocation,
             old_owner_was_published,
         };
@@ -69,10 +59,6 @@ impl IdentitySwitchJournal {
 
     pub fn data_disposition(&self) -> DataDisposition {
         self.data_disposition
-    }
-
-    pub fn replacement_signer(&self) -> ReplacementSigner {
-        self.replacement_signer
     }
 
     pub fn old_owner_revocation(&self) -> &str {

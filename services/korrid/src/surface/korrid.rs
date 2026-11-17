@@ -11,12 +11,11 @@ use crate::{
     acquisition::{self, AcquisitionOutcome},
     game_routes::SelectedGameLaunchOutcome,
     network, onboarding, plugin_admin, CatalogSnapshotOutcome, HealthOutcome,
-    IdentityBackupOutcome, IdentityRetiredDeleteOutcome, IdentityStatusOutcome,
-    IdentitySwitchOutcome, LibraryFoldersSnapshotOutcome, LocalGamesListOutcome,
-    OwnerBindingOutcome, PeerListOutcome, PluginChangeOutcome, PluginRepositoriesOutcome,
-    RpcFailure, RpcRequest, RpcResponse, SensitiveSettingOutcome, SessionEndOutcome,
-    SessionReserveOutcome, SessionStatusOutcome, SessionTransitionOutcome, SettingsSnapshotOutcome,
-    SettingsUpdateOutcome,
+    IdentityStatusOutcome, IdentitySwitchOutcome, LibraryFoldersSnapshotOutcome,
+    LocalGamesListOutcome, OwnerBindingOutcome, PeerListOutcome, PluginChangeOutcome,
+    PluginRepositoriesOutcome, RpcFailure, RpcRequest, RpcResponse, SensitiveSettingOutcome,
+    SessionEndOutcome, SessionReserveOutcome, SessionStatusOutcome, SessionTransitionOutcome,
+    SettingsSnapshotOutcome, SettingsUpdateOutcome,
 };
 
 pub type Reply = Pin<Box<dyn Future<Output = Result<RpcResponse, Refusal>> + Send>>;
@@ -341,51 +340,6 @@ impl Korrid {
             IdentityStatusOutcome
         )
     }
-    pub async fn export_identity_backup(
-        &self,
-        password: String,
-        retired_public_key: Option<String>,
-    ) -> IdentityBackupOutcome {
-        match retired_public_key {
-            None => call!(
-                self,
-                Mapping::Route,
-                IdentityBackupExport,
-                crate::IdentityBackupExportRequest { password },
-                IdentityBackupOutcome
-            ),
-            Some(public_key) => call!(
-                self,
-                Mapping::Route,
-                IdentityRetiredExport,
-                crate::IdentityRetiredExportRequest {
-                    public_key,
-                    password
-                },
-                IdentityBackupOutcome
-            ),
-        }
-    }
-    pub async fn switch_identity_from_backup(
-        &self,
-        encrypted_secret: String,
-        password: String,
-        data_disposition: crate::IdentityDataDisposition,
-        trust_loss_confirmed: bool,
-    ) -> IdentitySwitchOutcome {
-        call!(
-            self,
-            Mapping::Route,
-            IdentityLocalSwitch,
-            crate::IdentityLocalSwitchRequest {
-                encrypted_secret,
-                password,
-                data_disposition,
-                trust_loss_confirmed
-            },
-            IdentitySwitchOutcome
-        )
-    }
     pub async fn switch_identity_to_nip46(
         &self,
         bunker_uri: String,
@@ -402,22 +356,6 @@ impl Korrid {
                 trust_loss_confirmed
             },
             IdentitySwitchOutcome
-        )
-    }
-    pub async fn delete_retired_identity(
-        &self,
-        public_key: String,
-        backup_confirmed: bool,
-    ) -> IdentityRetiredDeleteOutcome {
-        call!(
-            self,
-            Mapping::Route,
-            IdentityRetiredDelete,
-            crate::IdentityRetiredDeleteRequest {
-                public_key,
-                backup_confirmed
-            },
-            IdentityRetiredDeleteOutcome
         )
     }
     pub async fn owner_binding_snapshot(&self) -> OwnerBindingOutcome {

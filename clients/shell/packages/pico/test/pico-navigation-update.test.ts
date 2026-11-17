@@ -113,7 +113,7 @@ describe("input acts on what is shown", () => {
   })
 
   test("closing Settings with System also closes its identity dialog", () => {
-    const { nav } = story(fixtureModel, system, { _tag: "PressedSettingAction", actionId: "identity:backup" }, system)
+    const { nav } = story(fixtureModel, system, { _tag: "PressedSettingAction", actionId: "identity:switch:nip46" }, system)
     expect(nav.settings).toBeUndefined()
   })
 })

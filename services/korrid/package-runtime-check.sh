@@ -54,30 +54,27 @@ relay_pid=$!
 sleep 0.1
 kill -0 "$relay_pid"
 # Identity storage requires exactly 0700, regardless of the builder's umask.
-mkdir -m 0700 "$root/private" "$root/signer-private" "$root/signer-credentials"
-mkdir -m 0750 "$root/signer-public"
+mkdir -m 0700 "$root/private" "$root/signer-credentials"
 KORRID_PRIVATE_STATE_ROOT="$root/private" "$binary" identity status \
   | "$jq_bin" -er 'select(._tag == "Unowned" or ._tag == "Owned" or ._tag == "Revoked") | .devicePublicKey | select(test("^[0-9a-f]{64}$"))' \
   > "$root/signer-credentials/expected-device-public-key"
 chmod 0400 "$root/signer-credentials/expected-device-public-key"
-# Setup has ended on this device (ADR 0022), so korrid binds its automatic
-# owner at start. A host device in setup stays unowned, so that it can join.
-install -m 0600 /dev/null "$root/private/onboarding-finished"
+# A device in setup stays unowned, so that it can join; its setup ends only
+# when the person confirms its recovery words (ADRs 0022 and 0082). The
+# local signer keeps nothing on disk.
 "$socket_activate" --now \
   -E "CREDENTIALS_DIRECTORY=$root/signer-credentials" \
-  -E "KORRI_LOCAL_SIGNER_PRIVATE_STATE_ROOT=$root/signer-private" \
   -E "KORRI_LOCAL_SIGNER_PEER_UID=$(id -u)" \
   -E "KORRI_LOCAL_SIGNER_PEER_GID=$(id -g)" \
-  -E "KORRI_LOCAL_SIGNER_PUBLIC_KEY_FILE=$root/signer-public/person.pub" \
   -l "$root/signer.sock" "$signer_binary" \
   >"$root/signer-stdout" 2>"$root/signer-stderr" &
 signer_pid=$!
 for _ in $(seq 1 100); do
-  [[ -f "$root/signer-public/person.pub" ]] && break
+  [[ -S "$root/signer.sock" ]] && break
   kill -0 "$signer_pid" 2>/dev/null || break
   sleep 0.01
 done
-[[ -f "$root/signer-public/person.pub" ]]
+[[ -S "$root/signer.sock" ]]
 printf '%s\n' \
   'label = "package-check"' \
   '[[games]]' \
@@ -98,7 +95,6 @@ KORRID_HOST_CONFIG="$root/host.toml" \
 KORRID_STORAGE_ROOT="$root/storage" \
 KORRID_PRIVATE_STATE_ROOT="$root/private" \
 KORRID_LOCAL_SIGNER_SOCKET="$root/signer.sock" \
-KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE="$root/signer-public/person.pub" \
 KORRID_RELAYS='["ws://127.0.0.1:43998"]' \
 KORRID_STREAM_PRIVATE_STATE_ROOT="$root/sunshine" \
 KORRID_SYSTEMCTL="$root/systemctl" \
@@ -110,7 +106,7 @@ KORRID_CLI_PEER_UID="$(id -u)" \
     -l "$root/cli.sock" -l "$root/control.sock" \
     -E HOME -E KORRID_MODE -E KORRID_ADDRESS -E KORRID_HOST_CONFIG \
     -E KORRID_STORAGE_ROOT -E KORRID_PRIVATE_STATE_ROOT \
-    -E KORRID_LOCAL_SIGNER_SOCKET -E KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE \
+    -E KORRID_LOCAL_SIGNER_SOCKET \
     -E KORRID_RELAYS -E KORRID_STREAM_PRIVATE_STATE_ROOT \
     -E KORRID_SYSTEMCTL -E KORRID_SYSTEMD_RUN \
     -E KORRID_CONTROL_PEER_UID -E KORRID_CONTROL_PEER_GID -E KORRID_CLI_PEER_UID \
@@ -157,14 +153,9 @@ cli_input_status="$("$curl_bin" --silent --output /dev/null --write-out '%{http_
 [[ -d "$root/private/identity" ]]
 [[ "$(stat -c '%a' "$root/private/identity")" == 700 ]]
 [[ "$(stat -c '%a' "$root/private/identity/device.key")" == 600 ]]
-[[ "$(stat -c '%a' "$root/private/identity/owner.event.json")" == 600 ]]
-[[ "$(stat -c '%a' "$root/signer-private/identity")" == 700 ]]
-[[ "$(stat -c '%a' "$root/signer-private/identity/active")" == 700 ]]
-[[ "$(stat -c '%a' "$root/signer-private/identity/active/person.key")" == 600 ]]
-[[ ! -e "$root/signer-private/identity/person.key" ]]
+[[ ! -e "$root/private/identity/owner.event.json" ]]
 [[ ! -e "$root/private/identity/person.key" ]]
-[[ ! -e "$root/signer-private/identity/device.key" ]]
 [[ ! -e "$root/home/.local/state/korri/identity" ]]
 [[ ! -e "$root/relay-connections" ]]
 
-printf 'korrid package runtime check passed with a local-only automatic owner (peer-rpc: HTTP 400; rpc: HTTP 426; named CLI: allowed; inputd setup: denied; CLI input: absent; relay connections: 0)\n'
+printf 'korrid package runtime check passed with a device in setup and no person key on disk (peer-rpc: HTTP 400; rpc: HTTP 426; named CLI: allowed; inputd setup: denied; CLI input: absent; relay connections: 0)\n'

@@ -137,7 +137,6 @@ async fn forwarding_rejects_unsigned_and_local_only_targets_with_existing_failur
 
 #[tokio::test]
 async fn identity_status_reads_owned_and_unowned_live_authority_without_creating_state() {
-    use std::sync::Mutex;
     for owned in [false, true] {
         let root = tempfile::tempdir().unwrap();
         let private = root.path().join("private");
@@ -155,17 +154,8 @@ async fn identity_status_reads_owned_and_unowned_live_authority_without_creating
             Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
         );
         let (mut state, _) = app_states(runtime);
+        // Status reads only the live identity; it never asks the signer.
         let socket = root.path().join("signer.sock");
-        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
-        let signer_root = root.path().join("signer");
-        let public = root.path().join("person.pub");
-        let device = Arc::new(Mutex::new(resources.credentials.public_key().unwrap()));
-        let signer = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.unwrap();
-            local_signer::serve_connection(stream, signer_root, device, public)
-                .await
-                .unwrap();
-        });
         state.identity_switch = Some(Arc::new(identity_switch::IdentitySwitchCoordinator::new(
             private.clone(),
             socket,
@@ -199,8 +189,12 @@ async fn identity_status_reads_owned_and_unowned_live_authority_without_creating
         };
         assert_eq!(status.identity, expected);
         assert!(!private.join("identity").exists());
-        signer.await.unwrap();
+        assert!(!socket_exists(&root.path().join("signer.sock")));
     }
+}
+
+fn socket_exists(path: &std::path::Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok()
 }
 
 #[tokio::test]

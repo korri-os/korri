@@ -151,7 +151,7 @@ export const SCENARIOS: readonly Scenario[] = [
   { name: "settings-edit-name", ref: "PicoSettings.page/EditName", model: base, keys: [...toSettings, "Down", "Return"] },
   { name: "settings-error", ref: "PicoSettings.page/Error", model: { ...failedSettingsModel, fixtureGameActions: actions }, keys: toSettings },
   { name: "settings-plugins", ref: "PicoSettings.page/PluginsHub", model: { ...pluginModels.repositories, fixtureGameActions: actions }, keys: [...toSettings, "Right"] },
-  { name: "settings-identity", ref: "PicoSettings.page/IdentityActions", model: { ...base, settings: [], identityManagement: { localBackupAvailable: true, retiredPublicKeys: [], status: { _tag: "Idle" } } }, keys: toSettings },
+  { name: "settings-identity", ref: "PicoSettings.page/IdentityActions", model: { ...base, settings: [], identityManagement: { status: { _tag: "Idle" } } }, keys: toSettings },
   // Launch settings and the runner picker
   // The one list (ADR 0066), from hand-written models that follow the treaty. Written after the cut: only Loading has a Caliper reference.
   { name: "launch-default", ref: "PicoLaunchSettings.page/Local", model: { ...withLaunchSettings(base, launchFixtures.local), fixtureGameActions: actions } },

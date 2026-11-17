@@ -127,7 +127,7 @@ const freshSettings: readonly SurfaceSettingGroup[] = [
 export const onboardingModel: SurfaceModel = {
   ...fixtureModel,
   settings: freshSettings,
-  identityManagement: { localBackupAvailable: true, retiredPublicKeys: [], status: { _tag: "Idle" } },
+  identityManagement: { status: { _tag: "Idle" } },
   network: offlineNetwork,
   onboarding: { controllers: fixtureControllers },
 }
@@ -175,9 +175,6 @@ export const starterPackModel: SurfaceModel = withStarterPack({ ...onboardingMod
 
 /** The same device with Wi-Fi in Settings, after setup. */
 export const wifiSettingsModel: SurfaceModel = { ...fixtureModel, settings: [], network: onlineNetwork }
-
-/** A stand-in for Korri's encrypted backup: the right prefix, nothing real. */
-export const fixtureBackupText = "ncryptsec1qgg9947rlpvqu76pj5ecreduyjmn8wqjnkpe0preview"
 
 const withWifi = (model: SurfaceModel, change: (network: SurfaceNetwork) => SurfaceNetwork): SurfaceModel =>
   model.network === undefined ? model : { ...model, network: change(model.network) }
@@ -249,21 +246,17 @@ export function answerRequest(request: PicoRequest): FixtureAnswer | undefined {
       }
     case "DismissSettingsProblem":
       return { now: model => ({ ...model, settingsStatus: { _tag: "Idle" } }) }
-    case "SwitchIdentityFromBackup":
     case "SwitchIdentityToNip46":
       return {
-        now: model => identityStatus(model, { _tag: "Working", operation: request._tag === "SwitchIdentityToNip46" ? "Waiting for your signer" : "Opening your backup" }),
+        now: model => identityStatus(model, { _tag: "Working", operation: "Waiting for your signer" }),
         later: { ms: 1500, then: model => identityStatus(model, { _tag: "Switched", ownerPublicKey: "preview" }) },
       }
-    case "ExportIdentityBackup":
-      return { now: model => identityStatus(model, { _tag: "BackupReady", encryptedSecret: fixtureBackupText }) }
     case "DismissIdentityStatus":
       return { now: model => identityStatus(model, { _tag: "Idle" }) }
     case "FinishOnboarding":
       return { now: ({ onboarding: _done, ...model }) => model }
     case "LaunchGame":
     case "RunGameAction":
-    case "DeleteRetiredIdentity":
     case "InvokeGameplayControl":
     case "DismissGameplayOverlay":
     case "Retry":
@@ -271,7 +264,6 @@ export function answerRequest(request: PicoRequest): FixtureAnswer | undefined {
     case "Reload":
     case "ChooseFont":
     case "RememberFont":
-    case "RenderQr":
     case "Wait":
     case "OpenStore":
     case "SearchStore":

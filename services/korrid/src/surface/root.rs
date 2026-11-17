@@ -1757,21 +1757,6 @@ impl Root {
                     launchables.dismiss_settings_problem()
                 }
             }
-            SurfaceRequest::ExportIdentityBackup {
-                password,
-                retired_public_key,
-            } => launchables.export_identity_backup(password, retired_public_key),
-            SurfaceRequest::SwitchIdentityFromBackup {
-                encrypted_secret,
-                password,
-                disposition,
-                trust_loss_confirmed,
-            } => launchables.switch_identity_from_backup(
-                encrypted_secret,
-                password,
-                disposition,
-                trust_loss_confirmed,
-            ),
             SurfaceRequest::SwitchIdentityToNip46 {
                 bunker_uri,
                 disposition,
@@ -1779,10 +1764,6 @@ impl Root {
             } => {
                 launchables.switch_identity_to_nip46(bunker_uri, disposition, trust_loss_confirmed)
             }
-            SurfaceRequest::DeleteRetiredIdentity {
-                public_key,
-                backup_confirmed,
-            } => launchables.delete_retired_identity(public_key, backup_confirmed),
             SurfaceRequest::DismissIdentityStatus => launchables.dismiss_identity_status(),
             SurfaceRequest::RunGameAction { game_id, action_id } => {
                 let current = launchables.state();

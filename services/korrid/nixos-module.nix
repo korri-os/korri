@@ -27,8 +27,6 @@ let
   cliDirectory = builtins.dirOf cfg.cliSocket;
   personGroup = config.users.users.${cfg.runtimeUser}.group;
   signerSocketDirectory = builtins.dirOf cfg.localSignerSocket;
-  signerPublicDirectory = "${signerSocketDirectory}/public";
-  signerPublicKeyFile = "${signerPublicDirectory}/person.pub";
   signerExpectedDeviceFile = "${signerSocketDirectory}/expected-device-public-key";
   normalizeRelayUrl =
     value:
@@ -208,10 +206,6 @@ in
     privateStateRoot = lib.mkOption {
       type = lib.types.str;
       default = "/var/lib/korrid";
-    };
-    localSignerPrivateStateRoot = lib.mkOption {
-      type = lib.types.str;
-      default = "/var/lib/korri-local-signer";
     };
     limitsSocket = lib.mkOption {
       type = lib.types.str;
@@ -403,20 +397,12 @@ in
       {
         assertion =
           validAbsolutePath cfg.privateStateRoot
-          && validAbsolutePath cfg.localSignerPrivateStateRoot
           && (cfg.streamPrivateStateRoot == null || validAbsolutePath cfg.streamPrivateStateRoot);
-        message = "korrid and local-signer private state roots and optional stream-host private state root must be normalized absolute paths.";
+        message = "korrid's private state root and the optional stream-host private state root must be normalized absolute paths.";
       }
       {
         assertion = validAbsolutePath cfg.localSignerSocket && validAbsolutePath signerSocketDirectory;
         message = "local signer socket and its directory must be normalized absolute paths.";
-      }
-      {
-        assertion =
-          cfg.privateStateRoot != cfg.localSignerPrivateStateRoot
-          && !lib.hasPrefix "${cfg.privateStateRoot}/" cfg.localSignerPrivateStateRoot
-          && !lib.hasPrefix "${cfg.localSignerPrivateStateRoot}/" cfg.privateStateRoot;
-        message = "korrid and local-signer private state roots must not overlap.";
       }
       {
         assertion = validAbsolutePath cfg.controlSocket && validAbsolutePath controlDirectory;
@@ -488,10 +474,8 @@ in
       "d ${controlDirectory} 0750 root ${controlGroup} -"
       "d ${cliDirectory} 0750 root ${personGroup} -"
       "d ${signerSocketDirectory} 0751 root ${serviceGroup} -"
-      "d ${signerPublicDirectory} 2750 ${signerUser} ${serviceGroup} -"
       "d ${cfg.privateStateRoot} 0700 ${serviceUser} ${serviceGroup} -"
       "d ${cfg.privateStateRoot}/identity 0700 ${serviceUser} ${serviceGroup} -"
-      "d ${cfg.localSignerPrivateStateRoot} 0700 ${signerUser} ${signerGroup} -"
       "d /dev/inputplumber 0700 root root -"
       "d /dev/inputplumber/sources 0700 root root -"
     ];
@@ -601,7 +585,6 @@ in
         ReadOnlyPaths = [ cfg.privateStateRoot ];
         ReadWritePaths = [ signerSocketDirectory ];
         InaccessiblePaths = [
-          cfg.localSignerPrivateStateRoot
           cfg.storageRoot
           "-${cfg.compositorControlDirectory}"
           "-/dev/inputplumber/sources"
@@ -629,10 +612,8 @@ in
       ++ lib.optional bundleCfg.enable "korri-bundle-selector.service";
       before = [ "korrid.service" ];
       environment = {
-        KORRI_LOCAL_SIGNER_PRIVATE_STATE_ROOT = cfg.localSignerPrivateStateRoot;
         KORRI_LOCAL_SIGNER_PEER_UID = toString cfg.uid;
         KORRI_LOCAL_SIGNER_PEER_GID = toString cfg.gid;
-        KORRI_LOCAL_SIGNER_PUBLIC_KEY_FILE = signerPublicKeyFile;
       }
       // lib.optionalAttrs bundleCfg.enable {
         KORRI_BUNDLE_ACTIVE = bundleCfg.activePath;
@@ -641,8 +622,9 @@ in
         ExecStart = localSignerExecutable;
         User = signerUser;
         Group = signerGroup;
-        StateDirectory = "korri-local-signer";
-        StateDirectoryMode = "0700";
+        # The signer keeps nothing on disk: a person key lives only in its
+        # memory, and never in a core dump (ADR 0082).
+        LimitCORE = 0;
         Restart = "on-failure";
         RestartSec = 1;
         UMask = "0027";
@@ -665,10 +647,6 @@ in
         LockPersonality = true;
         MemoryDenyWriteExecute = false;
         SystemCallArchitectures = "native";
-        ReadWritePaths = [
-          cfg.localSignerPrivateStateRoot
-          signerPublicDirectory
-        ];
         InaccessiblePaths = [
           cfg.privateStateRoot
           cfg.storageRoot
@@ -729,7 +707,6 @@ in
         # path unless it is marked optional, so hide these only when present.
         InaccessiblePaths = [
           cfg.storageRoot
-          cfg.localSignerPrivateStateRoot
           "-${cfg.compositorControlDirectory}"
           "-/dev/inputplumber/sources"
           "/dev/uinput"
@@ -773,7 +750,6 @@ in
         KORRID_STORAGE_ROOT = cfg.storageRoot;
         KORRID_PRIVATE_STATE_ROOT = cfg.privateStateRoot;
         KORRID_LOCAL_SIGNER_SOCKET = cfg.localSignerSocket;
-        KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE = signerPublicKeyFile;
         KORRID_CONTROL_SOCKET = cfg.controlSocket;
         KORRID_CLI_SOCKET = cfg.cliSocket;
         KORRID_CLI_PEER_UID = toString cfg.runtimeUid;
@@ -872,7 +848,6 @@ in
         InaccessiblePaths = [
           "/dev/uinput"
           "-/dev/inputplumber/sources"
-          cfg.localSignerPrivateStateRoot
         ]
         ++ lib.optional (cfg.streamPrivateStateRoot != null) "-${cfg.streamPrivateStateRoot}";
       };

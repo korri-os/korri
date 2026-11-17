@@ -8,17 +8,15 @@ import { PicoControllerCheck } from "../ui/organisms/PicoControllerCheck.slint";
 import { PicoGamesFound } from "../ui/organisms/PicoGamesFound.slint";
 import { PicoSetupDone } from "../ui/organisms/PicoSetupDone.slint";
 import { PicoTextEditor, EditorView } from "../ui/organisms/PicoTextEditor.slint";
-import { PicoIdentityDialog, IdentityView } from "../ui/organisms/PicoIdentityDialog.slint";
 import { PicoScreenShell, FrameView } from "../ui/templates/PicoScreenShell.slint";
 
 // First-boot setup: HELLO, WI-FI, NAME, YOU, PADS, GAMES, PLAY on the step
-// track; Pico's keyboard for a name or a password; the backup dialog.
+// track; Pico's keyboard for a name, a password or a signer's address.
 export component PicoOnboarding inherits Rectangle {
     callback activated(target: string, at: float, released: bool);
     in property <FrameView> frame;
     in property <SetupView> setup;
     in property <EditorView> editor;
-    in property <IdentityView> identity;
     in property <string> mode: "setup";
     shell := PicoScreenShell {  activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
@@ -27,7 +25,6 @@ export component PicoOnboarding inherits Rectangle {
         height: root.height;
         frame: frame;
         if mode == "editor" : PicoTextEditor { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  editor: editor; }
-        if mode == "identity" : PicoIdentityDialog { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  identity: identity; }
         if mode == "setup" && setup.step == "hello" : PicoSetupWelcome { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  setup: setup; }
         if mode == "setup" && setup.step == "wifi" : PicoWifiSetup { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: 60 * Tokens.p; setup: setup; }
         if mode == "setup" && setup.step == "you" : PicoIdentitySetup { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: 60 * Tokens.p; setup: setup; }

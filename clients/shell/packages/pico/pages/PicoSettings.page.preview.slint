@@ -66,8 +66,8 @@ export component Identity inherits Window {
         y: 0;
         width: parent.width;
         height: parent.height;
-        frame: { place: "SETTINGS", sep: false, label: "BACK UP IDENTITY", clock: "10:24", readout: "", hints: [{ key: "a", label: "SELECT" },{ key: "b", label: "BACK" }], has-lead: false, lead-kind: "menu", lead: { label: "MENU", detail: "", focused: false, disabled: false, warn: false, lit: false }, track: [] };
+        frame: { place: "SETTINGS", sep: false, label: "SWITCH TO NIP-46", clock: "10:24", readout: "", hints: [{ key: "a", label: "SELECT" },{ key: "b", label: "BACK" }], has-lead: false, lead-kind: "menu", lead: { label: "MENU", detail: "", focused: false, disabled: false, warn: false, lit: false }, track: [] };
         mode: "identity";
-        identity: { title: "BACK UP IDENTITY", note: "Korri cannot recover a lost key.", rows: [{ label: "Password", detail: "—", focused: true, target: true, disabled: false, warn: false, lit: false }, { label: "CREATE BACKUP", detail: "", focused: false, disabled: true, warn: false, lit: false }, { label: "CLOSE", detail: "", focused: false, disabled: false, warn: false, lit: false }] };
+        identity: { title: "SWITCH TO NIP-46", note: "Save files and save states stay under the plugin account.", rows: [{ label: "Bunker URI", detail: "—", focused: true, target: true, disabled: false, warn: false, lit: false }, { label: "SWITCH IDENTITY", detail: "", focused: false, disabled: true, warn: true, lit: false }, { label: "CLOSE", detail: "", focused: false, disabled: false, warn: false, lit: false }] };
     }
 }

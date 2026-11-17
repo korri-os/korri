@@ -2,6 +2,7 @@ use super::*;
 use crate::{
     identity::{DeviceIdentity, OwnerStatementStatus},
     local_signer::LocalPersonSigner,
+    recovery_words::RecoveryWords,
     remote_signer::{PersonSigner, PersonSignerRequest, PersonSignerState},
 };
 use ::nostr::event::FinalizeEvent;
@@ -54,12 +55,11 @@ fn setup_name_precedes_profile_and_empty_setup_falls_back_to_profile() {
 }
 
 #[tokio::test]
-async fn local_person_signer_stores_a_name_that_survives_restart_without_a_network() {
+async fn a_name_the_person_key_signed_survives_restart_without_a_network() {
     let root = tempfile::tempdir().unwrap();
-    let signer_root = tempfile::tempdir().unwrap();
     let mut identity = DeviceIdentity::load_or_create(root.path()).unwrap();
-    let signer = LocalPersonSigner::load_or_create(
-        signer_root.path(),
+    let signer = LocalPersonSigner::from_words(
+        &RecoveryWords::generate(),
         identity.device_public_key().unwrap(),
     )
     .unwrap();

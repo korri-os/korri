@@ -72,8 +72,7 @@ views `logic.ts` makes of those models.
 | `logic.ts` → `logic.js` | `globalThis.surface`. Rebuild with `./build.sh` (bun). |
 | `src/state`, `src/pico-*.ts` | Pico's behaviour, from the web Pico. |
 | `src/model.ts` | The generated treaty as Pico's code reads it: the cursor window handed over as `catalog.games`. |
-| `src/native/` | The adapter: Pico's own cursor (`focus.ts`), the screens as views and focus targets, requests to Korri, the QR code as a path. |
-| `src/vendor/` | `qrcode`'s encoder and `dijkstrajs`, MIT, unchanged (a package ships no `node_modules`). |
+| `src/native/` | The adapter: Pico's own cursor (`focus.ts`), the screens as views and focus targets, requests to Korri. |
 | `fonts/` | The ten faces as TTF (converted from the web Pico's woff2) and the licences that travel with them. |
 | `test/` | The ported behaviour tests and the gates (below). |
 | `preview/` | Scenarios, the render script, the Caliper references and the side-by-side and five-size images. |

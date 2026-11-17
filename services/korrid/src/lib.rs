@@ -1373,32 +1373,45 @@ pub enum OwnerBindingOutcome {
 pub struct IdentityStatus {
     pub identity: identity::IdentityState,
     pub can_switch_identity: bool,
-    pub local_backup_available: bool,
-    pub retired_public_keys: Vec<String>,
 }
 
+/// Switch this device to the person key that recovery words make (ADR
+/// 0073). The new key signs the device's new owner statement in the local
+/// signer, which then erases it. The current owner signs the old
+/// statement's revocation as before. korrid carries the words in memory only
+/// and Debug never shows them.
 #[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct IdentityBackupExportRequest {
-    pub password: String,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IdentityBackup {
-    pub encrypted_secret: String,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct IdentityLocalSwitchRequest {
-    pub encrypted_secret: String,
-    pub password: String,
+pub struct IdentityWordsSwitchRequest {
+    /// The 12 recovery words of the new person key.
+    pub words: String,
+    /// The current owner's NIP-46 bunker URI, for a device that keeps no
+    /// connection to its owner's signer. korrid uses it for the one
+    /// revocation and keeps nothing of it after the switch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_owner_bunker_uri: Option<String>,
     pub data_disposition: IdentityDataDisposition,
     pub trust_loss_confirmed: bool,
+}
+
+impl std::fmt::Debug for IdentityWordsSwitchRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("IdentityWordsSwitchRequest")
+            .field("data_disposition", &self.data_disposition)
+            .field("trust_loss_confirmed", &self.trust_loss_confirmed)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Drop for IdentityWordsSwitchRequest {
+    fn drop(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.words);
+        if let Some(uri) = &mut self.current_owner_bunker_uri {
+            zeroize::Zeroize::zeroize(uri);
+        }
+    }
 }
 
 #[typeshare]
@@ -1408,22 +1421,6 @@ pub struct IdentityNip46SwitchRequest {
     pub bunker_uri: String,
     pub data_disposition: IdentityDataDisposition,
     pub trust_loss_confirmed: bool,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct IdentityRetiredExportRequest {
-    pub public_key: String,
-    pub password: String,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct IdentityRetiredDeleteRequest {
-    pub public_key: String,
-    pub backup_confirmed: bool,
 }
 
 #[typeshare]
@@ -1444,24 +1441,8 @@ pub enum IdentityStatusOutcome {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
-pub enum IdentityBackupOutcome {
-    Ok(IdentityBackup),
-    Err(RpcFailure),
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "_tag", content = "payload")]
 pub enum IdentitySwitchOutcome {
     Ok(IdentitySwitchCompleted),
-    Err(RpcFailure),
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "_tag", content = "payload")]
-pub enum IdentityRetiredDeleteOutcome {
-    Ok(IdentityStatus),
     Err(RpcFailure),
 }
 
@@ -1614,6 +1595,10 @@ pub enum RpcRequest {
     AcquisitionAcquireCancel(acquisition::AcquireCancelRequest),
     #[serde(rename = "system.onboarding.finish")]
     OnboardingFinish(onboarding::OnboardingFinishRequest),
+    #[serde(rename = "system.onboarding.recovery-words")]
+    OnboardingRecoveryWords(onboarding::OnboardingRecoveryWordsRequest),
+    #[serde(rename = "system.onboarding.confirm-words")]
+    OnboardingConfirmWords(onboarding::OnboardingConfirmWordsRequest),
     #[serde(rename = "system.onboarding.status")]
     OnboardingStatus(onboarding::OnboardingStatusRequest),
     #[serde(rename = "system.wifi.connectHidden")]
@@ -1715,16 +1700,10 @@ pub enum RpcRequest {
     OwnerBindingSnapshot(OwnerBindingRequest),
     #[serde(rename = "system.identity.owner-binding.start")]
     OwnerBindingStart(OwnerBindingRequest),
-    #[serde(rename = "system.identity.backup.export")]
-    IdentityBackupExport(IdentityBackupExportRequest),
-    #[serde(rename = "system.identity.switch.local")]
-    IdentityLocalSwitch(IdentityLocalSwitchRequest),
+    #[serde(rename = "system.identity.switch.words")]
+    IdentityWordsSwitch(IdentityWordsSwitchRequest),
     #[serde(rename = "system.identity.switch.nip46")]
     IdentityNip46Switch(IdentityNip46SwitchRequest),
-    #[serde(rename = "system.identity.retired.export")]
-    IdentityRetiredExport(IdentityRetiredExportRequest),
-    #[serde(rename = "system.identity.retired.delete")]
-    IdentityRetiredDelete(IdentityRetiredDeleteRequest),
     #[serde(rename = "system.identity.join.start")]
     JoinStart(join::JoinStartRequest),
     #[serde(rename = "system.identity.join.enter")]
@@ -1841,6 +1820,10 @@ pub enum RpcResponse {
     AcquisitionAcquireCancel(acquisition::AcquireJobOutcome),
     #[serde(rename = "system.onboarding.finish")]
     OnboardingFinish(onboarding::OnboardingStatusOutcome),
+    #[serde(rename = "system.onboarding.recovery-words")]
+    OnboardingRecoveryWords(onboarding::RecoveryWordsOutcome),
+    #[serde(rename = "system.onboarding.confirm-words")]
+    OnboardingConfirmWords(onboarding::OnboardingStatusOutcome),
     #[serde(rename = "system.onboarding.status")]
     OnboardingStatus(onboarding::OnboardingStatusOutcome),
     #[serde(rename = "system.wifi.connectHidden")]
@@ -1940,16 +1923,10 @@ pub enum RpcResponse {
     OwnerBindingSnapshot(OwnerBindingOutcome),
     #[serde(rename = "system.identity.owner-binding.start")]
     OwnerBindingStart(OwnerBindingOutcome),
-    #[serde(rename = "system.identity.backup.export")]
-    IdentityBackupExport(IdentityBackupOutcome),
-    #[serde(rename = "system.identity.switch.local")]
-    IdentityLocalSwitch(IdentitySwitchOutcome),
+    #[serde(rename = "system.identity.switch.words")]
+    IdentityWordsSwitch(IdentitySwitchOutcome),
     #[serde(rename = "system.identity.switch.nip46")]
     IdentityNip46Switch(IdentitySwitchOutcome),
-    #[serde(rename = "system.identity.retired.export")]
-    IdentityRetiredExport(IdentityBackupOutcome),
-    #[serde(rename = "system.identity.retired.delete")]
-    IdentityRetiredDelete(IdentityRetiredDeleteOutcome),
     #[serde(rename = "system.identity.join.start")]
     JoinStart(join::JoinOutcome),
     #[serde(rename = "system.identity.join.enter")]
@@ -3247,24 +3224,43 @@ async fn dispatch(
         RpcRequest::OnboardingFinish(_) => {
             RpcResponse::OnboardingFinish(match &state.identity_switch {
                 // ADR 0022: a device that is joining keeps setup open until the
-                // join ends. Its end would bind an automatic owner instead.
-                _ if state
-                    .join
-                    .as_ref()
-                    .is_some_and(join::JoinCoordinator::joining) =>
-                {
-                    onboarding::OnboardingStatusOutcome::Err(RpcFailure {
-                        code: "JoinInProgress".into(),
-                        message: "This device is joining another device. Finish setup when the join ends.".into(),
-                    })
-                }
-                // ADR 0022: setup's end binds the automatic identity of a device
-                // that did not join. korrid then restarts with it, as it starts
-                // after setup.
+                // join ends.
+                _ if joining(state) => join_in_progress(),
+                // ADR 0082: a device without an owner ends setup only by
+                // confirming its recovery words.
                 Some(coordinator) => {
-                    let (outcome, bound) = onboarding::finish_with_automatic_owner(
+                    onboarding::finish_with_owner(
                         state.private_state_root(),
-                        &coordinator.automatic_owner_signer(),
+                        &coordinator.local_signer(),
+                    )
+                    .await
+                }
+                None => onboarding::finish(state.private_state_root()),
+            })
+        }
+        RpcRequest::OnboardingRecoveryWords(_) => {
+            RpcResponse::OnboardingRecoveryWords(match &state.identity_switch {
+                Some(coordinator) => {
+                    onboarding::recovery_words(
+                        state.private_state_root(),
+                        &coordinator.local_signer(),
+                    )
+                    .await
+                }
+                None => onboarding::RecoveryWordsOutcome::Err(identity_unavailable()),
+            })
+        }
+        RpcRequest::OnboardingConfirmWords(request) => {
+            RpcResponse::OnboardingConfirmWords(match &state.identity_switch {
+                _ if joining(state) => join_in_progress(),
+                // ADRs 0022 and 0082: confirmed words give a device that did
+                // not join its automatic identity, and setup ends. korrid then
+                // restarts with it, as it starts after setup.
+                Some(coordinator) => {
+                    let (outcome, bound) = onboarding::confirm_words(
+                        state.private_state_root(),
+                        &coordinator.local_signer(),
+                        &request.words,
                         peer_rpc::unix_time(),
                     )
                     .await;
@@ -3273,7 +3269,7 @@ async fn dispatch(
                     }
                     outcome
                 }
-                None => onboarding::finish(state.private_state_root()),
+                None => onboarding::OnboardingStatusOutcome::Err(identity_unavailable()),
             })
         }
         RpcRequest::OnboardingRestart(_) => {
@@ -4515,13 +4511,10 @@ async fn dispatch(
             let outcome = match &state.identity_switch {
                 Some(coordinator) => coordinator
                     .status_snapshot()
-                    .await
-                    .map(|(identity, local_backup_available, retired_public_keys)| {
+                    .map(|identity| {
                         IdentityStatusOutcome::Ok(IdentityStatus {
                             identity,
                             can_switch_identity: true,
-                            local_backup_available,
-                            retired_public_keys,
                         })
                     })
                     .unwrap_or_else(|message| {
@@ -4535,8 +4528,6 @@ async fn dispatch(
                             IdentityStatusOutcome::Ok(IdentityStatus {
                                 identity,
                                 can_switch_identity: false,
-                                local_backup_available: false,
-                                retired_public_keys: Vec::new(),
                             })
                         }
                         _ => IdentityStatusOutcome::Err(RpcFailure {
@@ -4565,32 +4556,17 @@ async fn dispatch(
             };
             RpcResponse::OwnerBindingStart(outcome)
         }
-        RpcRequest::IdentityBackupExport(request) => {
-            let outcome = match &state.identity_switch {
-                Some(coordinator) => coordinator
-                    .export_active_backup(request.password)
-                    .await
-                    .map(|encrypted_secret| {
-                        IdentityBackupOutcome::Ok(IdentityBackup { encrypted_secret })
-                    })
-                    .unwrap_or_else(|message| {
-                        IdentityBackupOutcome::Err(identity_failure(message))
-                    }),
-                None => IdentityBackupOutcome::Err(identity_unavailable()),
-            };
-            RpcResponse::IdentityBackupExport(outcome)
-        }
-        RpcRequest::IdentityLocalSwitch(request) => {
+        RpcRequest::IdentityWordsSwitch(request) => {
             let outcome = match &state.identity_switch {
                 Some(coordinator) => {
                     let coordinator = Arc::clone(coordinator);
                     let result = tokio::spawn(async move {
                         let result = coordinator
                             .switch(
-                                identity_switch::ReplacementIdentity::LocalBackup {
-                                    encrypted_secret: request.encrypted_secret,
-                                    password: request.password,
+                                identity_switch::ReplacementIdentity::Words {
+                                    words: zeroize::Zeroizing::new(request.words.clone()),
                                 },
+                                request.current_owner_bunker_uri.as_deref(),
                                 request.data_disposition.into(),
                                 request.trust_loss_confirmed,
                             )
@@ -4611,7 +4587,7 @@ async fn dispatch(
                 }
                 None => IdentitySwitchOutcome::Err(identity_unavailable()),
             };
-            RpcResponse::IdentityLocalSwitch(outcome)
+            RpcResponse::IdentityWordsSwitch(outcome)
         }
         RpcRequest::IdentityNip46Switch(request) => {
             let outcome = match &state.identity_switch {
@@ -4623,6 +4599,7 @@ async fn dispatch(
                                 identity_switch::ReplacementIdentity::Nip46 {
                                     bunker_uri: request.bunker_uri,
                                 },
+                                None,
                                 request.data_disposition.into(),
                                 request.trust_loss_confirmed,
                             )
@@ -4645,56 +4622,20 @@ async fn dispatch(
             };
             RpcResponse::IdentityNip46Switch(outcome)
         }
-        RpcRequest::IdentityRetiredExport(request) => {
-            let outcome = match &state.identity_switch {
-                Some(coordinator) => coordinator
-                    .export_retired_backup(request.public_key, request.password)
-                    .await
-                    .map(|encrypted_secret| {
-                        IdentityBackupOutcome::Ok(IdentityBackup { encrypted_secret })
-                    })
-                    .unwrap_or_else(|message| {
-                        IdentityBackupOutcome::Err(identity_failure(message))
-                    }),
-                None => IdentityBackupOutcome::Err(identity_unavailable()),
-            };
-            RpcResponse::IdentityRetiredExport(outcome)
-        }
-        RpcRequest::IdentityRetiredDelete(request) => {
-            let outcome = match &state.identity_switch {
-                Some(_) if !request.backup_confirmed => {
-                    IdentityRetiredDeleteOutcome::Err(identity_failure(
-                        "Retired-key deletion requires explicit backup confirmation".into(),
-                    ))
-                }
-                Some(coordinator) => match coordinator.delete_retired_key(request.public_key).await
-                {
-                    Ok(()) => coordinator
-                        .status_snapshot()
-                        .await
-                        .map(|(identity, local_backup_available, retired_public_keys)| {
-                            IdentityRetiredDeleteOutcome::Ok(IdentityStatus {
-                                identity,
-                                can_switch_identity: true,
-                                local_backup_available,
-                                retired_public_keys,
-                            })
-                        })
-                        .unwrap_or_else(|message| {
-                            IdentityRetiredDeleteOutcome::Err(identity_failure(message))
-                        }),
-                    Err(message) => IdentityRetiredDeleteOutcome::Err(identity_failure(message)),
-                },
-                None => IdentityRetiredDeleteOutcome::Err(identity_unavailable()),
-            };
-            RpcResponse::IdentityRetiredDelete(outcome)
-        }
         RpcRequest::JoinStart(_) => RpcResponse::JoinStart(match &state.join {
             Some(join) => join_outcome(join.start().await),
             None => join::JoinOutcome::Err(identity_unavailable()),
         }),
         RpcRequest::JoinEnter(request) => RpcResponse::JoinEnter(match &state.join {
-            Some(join) => join_outcome(join.enter(&request.code, joining_device(state).await)),
+            Some(join) => join_outcome(
+                join.enter(
+                    &request.code,
+                    request.current_words.as_deref(),
+                    request.trust_loss_confirmed,
+                    joining_device(state).await,
+                )
+                .await,
+            ),
             None => join::JoinOutcome::Err(identity_unavailable()),
         }),
         RpcRequest::JoinStatus(_) => RpcResponse::JoinStatus(match &state.join {
@@ -5316,6 +5257,22 @@ fn identity_unavailable() -> RpcFailure {
         code: "OperationUnsupported".into(),
         message: "identity management is unavailable on this device".into(),
     }
+}
+
+/// Whether this device is joining another device. Setup must not end then
+/// (ADR 0022).
+fn joining(state: &AppState) -> bool {
+    state
+        .join
+        .as_ref()
+        .is_some_and(join::JoinCoordinator::joining)
+}
+
+fn join_in_progress() -> onboarding::OnboardingStatusOutcome {
+    onboarding::OnboardingStatusOutcome::Err(RpcFailure {
+        code: "JoinInProgress".into(),
+        message: "This device is joining another device. Finish setup when the join ends.".into(),
+    })
 }
 
 fn join_outcome(result: Result<join::JoinStatus, RpcFailure>) -> join::JoinOutcome {
@@ -6189,6 +6146,7 @@ fn secure_host_routers_with_federation(
         clock: Arc::new(peer_rpc::unix_time),
         timing: join::JoinTiming::default(),
         joined: Arc::new(schedule_identity_restart),
+        switch: identity_switch.clone(),
     });
     lan.join = Some(join.clone());
     local.join = Some(join);
@@ -10756,5 +10714,33 @@ command = ["game-two"]
             host.calls(),
             ["attest:sunshine-host", "provision:sunshine-host"]
         );
+    }
+
+    #[test]
+    fn a_words_switch_keeps_its_words_and_bunker_uri_out_of_debug() {
+        let words =
+            "leader monkey parrot ring guide accident before fence cannon height naive bean";
+        let plain: IdentityWordsSwitchRequest = serde_json::from_value(serde_json::json!({
+            "words": words,
+            "dataDisposition": "transfer",
+            "trustLossConfirmed": true,
+        }))
+        .unwrap();
+        assert_eq!(plain.current_owner_bunker_uri, None);
+        assert!(!serde_json::to_string(&plain)
+            .unwrap()
+            .contains("currentOwnerBunkerUri"));
+        let with_uri: IdentityWordsSwitchRequest = serde_json::from_value(serde_json::json!({
+            "words": words,
+            "currentOwnerBunkerUri": "bunker://aa?relay=wss%3A%2F%2Frelay.example.com&secret=hush",
+            "dataDisposition": "delete",
+            "trustLossConfirmed": true,
+        }))
+        .unwrap();
+        assert!(with_uri.current_owner_bunker_uri.is_some());
+        let shown = format!("{with_uri:?}");
+        for secret in ["leader", "bean", "bunker", "hush"] {
+            assert!(!shown.contains(secret), "{shown}");
+        }
     }
 }

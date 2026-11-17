@@ -5,7 +5,6 @@
 import type {
   SurfaceAction,
   SurfaceController,
-  SurfaceIdentityManagement,
   SurfaceModel,
   SurfaceSettingItem,
 } from "./model"
@@ -83,22 +82,12 @@ export interface PicoIdentityChoice {
 }
 
 export type PicoIdentityView =
-  | { readonly _tag: "Choose"; readonly offline: boolean; readonly restore: PicoIdentityChoice; readonly signer: PicoIdentityChoice }
+  | { readonly _tag: "Choose"; readonly offline: boolean; readonly signer: PicoIdentityChoice }
   /** Korri is working; `label` is its own word for what. */
   | { readonly _tag: "Working"; readonly label: string }
-  /** `canBackUp`: Korri holds a key here that the backup dialog can export. */
-  | { readonly _tag: "Ready"; readonly origin: IdentityOrigin; readonly canBackUp: boolean }
-  /** `backup` is shown cut; the password only as its length. `confirmed`:
-   * the player's answer to the trust-loss question. `ready`: the form is
-   * filled and confirmed. */
-  | {
-      readonly _tag: "Restore"
-      readonly backup: string
-      readonly passwordLength: number
-      readonly confirmed: boolean
-      readonly ready: boolean
-      readonly problem?: string
-    }
+  | { readonly _tag: "Ready"; readonly origin: IdentityOrigin }
+  /** `confirmed`: the player's answer to the trust-loss question. `ready`:
+   * the form is filled and confirmed. */
   | {
       readonly _tag: "Signer"
       readonly uri: string
@@ -163,17 +152,7 @@ export type PicoOnboardingScreen =
   | { readonly _tag: "Hello"; readonly askWifi: boolean }
   | { readonly _tag: "Wifi"; readonly view: PicoWifiView }
   | { readonly _tag: "Entry"; readonly entry: PicoSetupEntryView }
-  | {
-      readonly _tag: "Identity"
-      readonly view: PicoIdentityView
-      /** The backup dialog, when open: what is typed, Korri's identity
-       * status for it, and the QR code once drawn. */
-      readonly backup?: {
-        readonly password: string
-        readonly identity?: SurfaceIdentityManagement
-        readonly qr?: string
-      }
-    }
+  | { readonly _tag: "Identity"; readonly view: PicoIdentityView }
   | { readonly _tag: "Pads"; readonly view: PicoPadsView }
   | { readonly _tag: "Games"; readonly view: PicoGamesView; readonly starterPack: PicoStarterPackView }
   | { readonly _tag: "Play"; readonly facts: readonly PicoSetupFact[]; readonly finishing: boolean }
@@ -295,29 +274,10 @@ function identityView(identity: IdentityStep, korri: SurfaceModel): PicoIdentity
       return {
         _tag: "Choose",
         offline: isOffline(korri),
-        restore: choice(korri, "You have an ncryptsec backup and its password."),
         signer: choice(korri, "NIP-46: the key stays in your signer app."),
       }
     case "Ready":
-      // A restored or signer identity is already kept elsewhere; a new one
-      // is offered its backup now.
-      return {
-        _tag: "Ready",
-        origin: identity.origin,
-        canBackUp: identity.origin === "created" && korri.identityManagement?.localBackupAvailable === true,
-      }
-    case "Restore": {
-      if (identity.sent && status?._tag === "Working") return { _tag: "Working", label: status.operation }
-      const problem = identity.sent && status?._tag === "Problem" ? status.message : undefined
-      return {
-        _tag: "Restore",
-        backup: cut(identity.backup, 18),
-        passwordLength: [...identity.password].length,
-        confirmed: identity.confirmed,
-        ready: identity.confirmed && identity.backup.trim() !== "" && identity.password !== "",
-        ...(problem === undefined ? {} : { problem }),
-      }
-    }
+      return { _tag: "Ready", origin: identity.origin }
     case "Signer": {
       if (identity.sent && status?._tag === "Working") return { _tag: "Approving", uri: cut(identity.uri, 22) }
       const problem = identity.sent && status?._tag === "Problem" ? status.message : undefined
@@ -333,19 +293,6 @@ function identityView(identity: IdentityStep, korri: SurfaceModel): PicoIdentity
 }
 
 function identityEntry(identity: IdentityStep): PicoSetupEntryView | undefined {
-  if (identity._tag === "Restore" && identity.editing !== undefined) {
-    const { draft, field, shown } = identity.editing
-    return field === "password"
-      ? {
-          place: "BACKUP PASSWORD", prompt: "Backup password", fieldLabel: "Backup password",
-          placeholder: "Password", secret: true, shown, draft, submitLabel: "OK", ready: true, busy: false,
-        }
-      : {
-          place: "BACKUP", prompt: "Encrypted backup", fieldLabel: "Encrypted backup",
-          note: "It starts with ncryptsec.", placeholder: "ncryptsec…", secret: false, shown: true, draft,
-          submitLabel: "OK", ready: true, busy: false,
-        }
-  }
   if (identity._tag === "Signer" && identity.editing !== undefined) {
     return {
       place: "SIGNER", prompt: "Signer address", fieldLabel: "Signer address",
@@ -496,7 +443,7 @@ export function starterPackView(korri: SurfaceModel): PicoStarterPackView {
   }
 }
 
-const ORIGIN_FACT: Readonly<Record<IdentityOrigin, string>> = { created: "New key", restored: "Restored", signer: "Signer" }
+const ORIGIN_FACT: Readonly<Record<IdentityOrigin, string>> = { created: "New key", signer: "Signer" }
 
 /** The summary: Korri's facts as they stand now, and how the identity came. */
 function facts(nav: OnboardingNav, korri: SurfaceModel): readonly PicoSetupFact[] {
@@ -535,19 +482,7 @@ export function picoOnboardingScreen(nav: OnboardingNav, korri: SurfaceModel): P
     case "you": {
       const entry = identityEntry(nav.identity)
       if (entry !== undefined) return { _tag: "Entry", entry }
-      const view = identityView(nav.identity, korri)
-      const backup = nav.backup
-      if (backup === undefined) return { _tag: "Identity", view }
-      const identity = korri.identityManagement
-      return {
-        _tag: "Identity",
-        view,
-        backup: {
-          password: backup.password,
-          ...(identity === undefined ? {} : { identity }),
-          ...(backup.qr?.dataUrl === undefined ? {} : { qr: backup.qr.dataUrl }),
-        },
-      }
+      return { _tag: "Identity", view: identityView(nav.identity, korri) }
     }
     case "pads":
       return { _tag: "Pads", view: padsView(korri) }

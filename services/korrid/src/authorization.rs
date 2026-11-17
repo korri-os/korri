@@ -300,12 +300,13 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         RpcRequest::OwnerBindingSnapshot(_) | RpcRequest::OwnerBindingStart(_) => {
             PeerPolicy::LocalSurfaceHostOnly
         }
+        // Recovery words reach korrid only from a person at this device
+        // (ADR 0082).
         RpcRequest::IdentityStatus(_)
-        | RpcRequest::IdentityBackupExport(_)
-        | RpcRequest::IdentityLocalSwitch(_)
+        | RpcRequest::IdentityWordsSwitch(_)
         | RpcRequest::IdentityNip46Switch(_)
-        | RpcRequest::IdentityRetiredExport(_)
-        | RpcRequest::IdentityRetiredDelete(_) => PeerPolicy::LocalOnly,
+        | RpcRequest::OnboardingRecoveryWords(_)
+        | RpcRequest::OnboardingConfirmWords(_) => PeerPolicy::LocalOnly,
         // A join binds this device or vouches for another (ADR 0069). The
         // person does it at the device; no peer may start or answer it.
         RpcRequest::JoinStart(_)
@@ -399,11 +400,10 @@ pub fn is_security_mutation(request: &RpcRequest) -> bool {
             | RpcRequest::LaunchProfileSelect(_)
             | RpcRequest::CredentialSet(_)
             | RpcRequest::CredentialClear(_)
-            | RpcRequest::IdentityBackupExport(_)
-            | RpcRequest::IdentityLocalSwitch(_)
+            | RpcRequest::OnboardingRecoveryWords(_)
+            | RpcRequest::OnboardingConfirmWords(_)
+            | RpcRequest::IdentityWordsSwitch(_)
             | RpcRequest::IdentityNip46Switch(_)
-            | RpcRequest::IdentityRetiredExport(_)
-            | RpcRequest::IdentityRetiredDelete(_)
             | RpcRequest::JoinStart(_)
             | RpcRequest::JoinEnter(_)
             | RpcRequest::JoinAccept(_)
@@ -1593,31 +1593,25 @@ mod tests {
             ),
             (
                 request(
-                    serde_json::json!({"_tag":"system.identity.backup.export","payload":{"password":"p"}}),
+                    serde_json::json!({"_tag":"system.identity.switch.words","payload":{"words":"w","dataDisposition":"transfer","trustLossConfirmed":true}}),
                 ),
                 Local,
             ),
             (
                 request(
-                    serde_json::json!({"_tag":"system.identity.switch.local","payload":{"encryptedSecret":"ncryptsec","password":"p","dataDisposition":"transfer","trustLossConfirmed":true}}),
+                    serde_json::json!({"_tag":"system.onboarding.recovery-words","payload":{}}),
+                ),
+                Local,
+            ),
+            (
+                request(
+                    serde_json::json!({"_tag":"system.onboarding.confirm-words","payload":{"words":["a","b","c"]}}),
                 ),
                 Local,
             ),
             (
                 request(
                     serde_json::json!({"_tag":"system.identity.switch.nip46","payload":{"bunkerUri":"bunker://x","dataDisposition":"delete","trustLossConfirmed":true}}),
-                ),
-                Local,
-            ),
-            (
-                request(
-                    serde_json::json!({"_tag":"system.identity.retired.export","payload":{"publicKey":"k","password":"p"}}),
-                ),
-                Local,
-            ),
-            (
-                request(
-                    serde_json::json!({"_tag":"system.identity.retired.delete","payload":{"publicKey":"k","backupConfirmed":true}}),
                 ),
                 Local,
             ),
@@ -1642,7 +1636,7 @@ mod tests {
                 Local,
             ),
         ];
-        assert_eq!(cases.len(), 35);
+        assert_eq!(cases.len(), 34);
         for (request, expected) in cases {
             assert_eq!(policy_for(&request), expected);
             assert_eq!(

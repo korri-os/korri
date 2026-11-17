@@ -1,24 +1,28 @@
 //! A join (ADRs 0069 and 0070) from a terminal. `join start` runs on an
 //! owned device: it shows the code, then asks for one Accept. `join enter`
-//! runs on the new device with the 10 digits. Both follow korrid's join
-//! status until the join ends. Codes and progress go to stderr; the final
-//! response goes to stdout, as for every command.
+//! runs on the joining device with the 10 digits. A joining device that has
+//! its own person key first needs that key's recovery words and the
+//! person's acceptance that its device trust resets (ADRs 0023 and 0082).
+//! Both follow korrid's join status until the join ends. Codes and progress
+//! go to stderr; the final response goes to stdout, as for every command.
 use crate::{
     error::CliError,
     module::{Context, Module},
     output::{self, Output},
-    prompt,
+    prompt, recovery_terminal,
 };
 use clap::{Arg, ArgMatches, Command};
 use korrid::{
+    identity::IdentityState,
     join::{
         JoinAcceptRequest, JoinEnterRequest, JoinOutcome, JoinStartRequest, JoinStatus,
         JoinStatusRequest, JoiningDevice,
     },
     network::NetworkConnection,
-    RpcRequest, RpcResponse,
+    IdentityStatusOutcome, IdentityStatusRequest, RpcRequest, RpcResponse,
 };
 use std::time::Duration;
+use zeroize::Zeroizing;
 
 const POLL: Duration = Duration::from_millis(1000);
 /// The proof-only switch. It accepts the first device whose code matches,
@@ -46,7 +50,7 @@ impl Module for Join {
             .subcommand(start)
             .subcommand(
                 Command::new("enter")
-                    .about("On a new device without an owner: type the code that the other device shows")
+                    .about("On the joining device: type the code that the other device shows. A device that has its own person key also needs that key's 12 recovery words")
                     .arg(Arg::new("code").value_name("CODE").help(
                         "For scripts only. Omit it and type the code at the prompt: a code on the command line is visible to other users of this device",
                     )),
@@ -62,11 +66,12 @@ impl Module for Join {
         match args.subcommand() {
             Some(("start", args)) => start(context, proof_accept(args)),
             Some(("enter", args)) => {
+                let current_words = current_words(context)?;
                 let code = match args.get_one::<String>("code") {
                     Some(code) => code.clone(),
                     None => prompt::read("Join code (10 digits)")?,
                 };
-                enter(context, code)
+                enter(context, code, current_words)
             }
             _ => Err(CliError::usage("Choose join start or join enter.")),
         }
@@ -131,8 +136,41 @@ fn start(context: &Context, proof_accept: bool) -> Result<Output, CliError> {
     }
 }
 
-fn enter(context: &Context, code: String) -> Result<Output, CliError> {
-    let mut response = context.rpc(&RpcRequest::JoinEnter(JoinEnterRequest { code }))?;
+/// A device that has an owner joins another person key only with its own
+/// person key's recovery words (ADR 0082), and only when the person accepts
+/// that its device trust resets (ADR 0023). None for a device without one.
+fn current_words(context: &Context) -> Result<Option<Zeroizing<String>>, CliError> {
+    let owned = matches!(
+        context.rpc(&RpcRequest::IdentityStatus(IdentityStatusRequest {}))?,
+        RpcResponse::IdentityStatus(IdentityStatusOutcome::Ok(status))
+            if matches!(status.identity, IdentityState::Owned { .. })
+    );
+    if !owned {
+        return Ok(None);
+    }
+    eprintln!(
+        "This device has its own person key. Joining moves it to the other device's person key. It keeps its saves and play history.\n\
+         Korri's own device trust resets: devices that streamed from this one pair again. Moonlight apps paired with a PIN stay paired."
+    );
+    // This acknowledgement is not the destructive --yes confirmation.
+    prompt::confirm(
+        "Join, and reset Korri's device trust on this device?",
+        false,
+    )?;
+    recovery_terminal::read_words("This device's 12 recovery words").map(Some)
+}
+
+fn enter(
+    context: &Context,
+    code: String,
+    current_words: Option<Zeroizing<String>>,
+) -> Result<Output, CliError> {
+    let trust_loss_confirmed = current_words.is_some();
+    let mut response = context.rpc(&RpcRequest::JoinEnter(JoinEnterRequest {
+        code,
+        current_words: current_words.map(|words| words.to_string()),
+        trust_loss_confirmed,
+    }))?;
     let mut waiting_shown = false;
     loop {
         match status(&response) {

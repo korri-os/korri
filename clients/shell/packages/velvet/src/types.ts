@@ -198,10 +198,9 @@ export interface ButtonSpec {
 }
 
 export interface PanelSide {
-  readonly kind: "qr" | "text" | "tile"
+  readonly kind: "text" | "tile"
   readonly title?: string
   readonly lines?: readonly string[]
-  readonly qr?: string
   readonly game?: Game
 }
 
@@ -259,9 +258,6 @@ export type Entry =
   | { readonly e: "hiddenSsid" }
   | { readonly e: "hiddenPassword"; readonly ssid: string }
   | { readonly e: "storeSearch"; readonly providerId: string; readonly provider: string }
-  | { readonly e: "backupPassword"; readonly retiredPublicKey?: string }
-  | { readonly e: "switchSecret" }
-  | { readonly e: "switchPassword"; readonly encryptedSecret: string }
   | { readonly e: "bunker" }
 
 export interface KeyboardState {
@@ -295,14 +291,10 @@ export interface AskState {
 
 // ---- Identity (the switch needs several answers before it is sent) ----
 
-export type IdentitySource =
-  | { readonly kind: "backup"; readonly encryptedSecret: string; readonly password: string }
-  | { readonly kind: "bunker"; readonly bunkerUri: string }
+export type IdentitySource = { readonly kind: "bunker"; readonly bunkerUri: string }
 
 export type IdentityFlow =
   | { readonly f: "idle" }
-  /** A backup was asked for: Korri's Working, then its BackupReady, is the page. */
-  | { readonly f: "backup" }
   | { readonly f: "disposition"; readonly source: IdentitySource }
   | { readonly f: "trust"; readonly source: IdentitySource; readonly disposition: SurfaceIdentityDisposition }
 

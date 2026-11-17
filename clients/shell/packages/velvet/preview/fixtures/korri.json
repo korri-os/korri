@@ -809,44 +809,20 @@
  },
  "identity": {
   "idle": {
-   "localBackupAvailable": false,
-   "retiredPublicKeys": [],
    "status": {
     "_tag": "Idle"
-   }
-  },
-  "retired": {
-   "localBackupAvailable": false,
-   "retiredPublicKeys": [
-    "npub13h8y59c8ql6ctesyg4zq9xnu3zntx0vxc9uw5px2g8nmt6fajva29st0rt",
-    "npub1rv0azdehye6fnpm22r2754pe07w6j2x5ugdvqlasmakwugj4gyu70dny08"
-   ],
-   "status": {
-    "_tag": "Idle"
-   }
-  },
-  "backup": {
-   "localBackupAvailable": false,
-   "retiredPublicKeys": [],
-   "status": {
-    "_tag": "BackupReady",
-    "encryptedSecret": "ncryptsec1qpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzr"
    }
   },
   "problem": {
-   "localBackupAvailable": false,
-   "retiredPublicKeys": [],
    "status": {
     "_tag": "Problem",
-    "message": "The password does not open this backup. Check it and try again."
+    "message": "The signer did not answer. Check its relays and try again."
    }
   },
   "working": {
-   "localBackupAvailable": false,
-   "retiredPublicKeys": [],
    "status": {
     "_tag": "Working",
-    "operation": "Making a backup"
+    "operation": "Connecting signer"
    }
   }
  },

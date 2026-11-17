@@ -17,7 +17,6 @@
  */
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
-import { qrDataUrl } from "../src/qr"
 import { PACKAGE, play, scenario } from "../test/korri"
 import { literal } from "./slint-literal"
 
@@ -91,7 +90,6 @@ const one = (component: string, props: string) => `${component} { ${props} }`
     { name: "Danger", body: one("VelvetPill", `x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; pill: ${l({ ...pills[0], label: "Remove folder", icon: "", focused: false, quiet: true, danger: true })};`) },
     { name: "Menu", body: one("VelvetPill", `x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; pill: ${l(home.home.menu)}; size: Tokens.screen.small * ${U};`) },
   ])
-  add("atoms", "VelvetQr", [{ name: "Backup", body: one("VelvetQr", `${centre("Math.min(parent.width, parent.height) * 0.6", "self.width")} code: @image-url("../../preview/art/qr.png");`) }])
   add("atoms", "VelvetScrim", [
     { name: "Wide", body: `Rectangle { ${FILL} background: Tokens.light-45; VelvetScrim { width: parent.width; height: parent.height; } }` },
     { name: "Narrow", body: `Rectangle { ${FILL} background: Tokens.light-45; VelvetScrim { width: parent.width; height: parent.height; narrow: true; } }` },
@@ -206,7 +204,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
     const ll = lit(layer)
     return { name, body: one(component, `${FILL} page: ${ll(v.list)}; rows: ${ll(v.listRows)}; buttons: ${ll(v.listButtons)}; panel-lines: ${ll(v.listPanelLines)}; tiles: ${ll(v.listTiles)};`) }
   }
-  add("organisms", "VelvetProgramme", [["Settings", "settings"], ["Wifi", "wifi"], ["Backup", "identity-backup"], ["Store", "store-results"], ["Offer", "store-offer"], ["FirstBoot", "first-boot"]].map(([name, scene]) => programme("VelvetProgramme", "organisms")(name!, scene!)))
+  add("organisms", "VelvetProgramme", [["Settings", "settings"], ["Wifi", "wifi"], ["Store", "store-results"], ["Offer", "store-offer"], ["FirstBoot", "first-boot"]].map(([name, scene]) => programme("VelvetProgramme", "organisms")(name!, scene!)))
   add("organisms", "VelvetRows", [
     { name: "Settings", body: one("VelvetRows", `x: Tokens.screen.pad-x * ${U}; y: Tokens.screen.pad-y * ${U}; width: Tokens.screen.page-w * ${U}; height: parent.height - 2 * self.y; rows: ${l(view("settings").listRows)};`) },
     { name: "Launch", body: one("VelvetRows", `x: Tokens.screen.pad-x * ${U}; y: Tokens.screen.pad-y * ${U}; width: Tokens.screen.page-w * ${U}; height: parent.height - 2 * self.y; rows: ${l(view("launch-settings").listRows)};`) },
@@ -245,9 +243,6 @@ const one = (component: string, props: string) => `${component} { ${props} }`
   add("pages", "VelvetSet", [set("EveryGame", "set"), set("NoArt", "set-no-art"), set("Pill", "set-pill"), set("OneSystem", "set-system")])
 }
 
-// The backup's code for VelvetQr's preview: Velvet's own encoder draws it.
-mkdirSync(join(PACKAGE, "preview/art"), { recursive: true })
-writeFileSync(join(PACKAGE, "preview/art/qr.png"), Buffer.from(qrDataUrl("ncryptsec1" + "qpzr".repeat(20)).split(",")[1]!, "base64"))
 
 // Old previews go first, so a component that left takes its preview with it.
 for (const dir of ["ui/atoms", "ui/molecules", "ui/organisms", "pages"]) {

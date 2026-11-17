@@ -180,10 +180,7 @@ function identityCurtain(state: State, model: Model): CurtainSpec | undefined {
     }
   }
   if (flow.f === "trust") {
-    const source = flow.source
-    const request = source.kind === "backup"
-      ? send({ _tag: "SwitchIdentityFromBackup", encryptedSecret: source.encryptedSecret, password: source.password, disposition: flow.disposition, trustLossConfirmed: true })
-      : send({ _tag: "SwitchIdentityToNip46", bunkerUri: source.bunkerUri, disposition: flow.disposition, trustLossConfirmed: true })
+    const request = send({ _tag: "SwitchIdentityToNip46", bunkerUri: flow.source.bunkerUri, disposition: flow.disposition, trustLossConfirmed: true })
     return {
       key: "identity:trust", kind: "ask", kicker: "Switch identity?", progress: NO_PROGRESS,
       words: ["Your other devices stop trusting this one until you approve it again."],

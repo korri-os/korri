@@ -85,7 +85,7 @@ export global Tokens {
     // main.slint writes the view's `screen`; a preview frame its own (640x480
     // until the preview renderer writes the logic's for its size). .slint
     // sizes from it and never decides structure itself.
-    in-out property <Screen> screen: { a: 2, w-art: 320, h-art: 240, wide: false, tall: false, strip-level: 2, tabs-wrap: false, save-beside: true };
+    in-out property <Screen> screen: { a: 2, w-art: 320, h-art: 240, wide: false, tall: false, strip-level: 2, tabs-wrap: false };
     out property <length> unit: 1px;
     out property <length> a: screen.a * 1px;
     out property <float> w-art: screen.w-art;

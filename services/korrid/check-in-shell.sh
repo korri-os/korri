@@ -65,32 +65,28 @@ cp "$ROOT/services/korrid/tests/fixtures/check-library.yaml" "$local_storage_roo
 export KORRI_LOCAL_STORAGE_ROOT="$local_storage_root"
 export KORRID_PRIVATE_STATE_ROOT="$local_storage_root/private"
 export KORRID_LOCAL_SIGNER_SOCKET="$local_storage_root/signer.sock"
-export KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE="$local_storage_root/signer-public/person.pub"
 if (exec 9<>/dev/tcp/127.0.0.1/49117) 2>/dev/null; then
   echo 'korrid check port 49117 is already occupied' >&2
   exit 1
 fi
-mkdir -m 0700 "$KORRID_PRIVATE_STATE_ROOT" "$local_storage_root/signer-private" "$local_storage_root/signer-credentials"
-mkdir -m 0750 "$local_storage_root/signer-public"
+mkdir -m 0700 "$KORRID_PRIVATE_STATE_ROOT" "$local_storage_root/signer-credentials"
 "$CARGO_TARGET_DIR/debug/korrid" identity status \
   | jq -er 'select(._tag == "Unowned" or ._tag == "Owned" or ._tag == "Revoked") | .devicePublicKey | select(test("^[0-9a-f]{64}$"))' \
   > "$local_storage_root/signer-credentials/expected-device-public-key"
 chmod 0400 "$local_storage_root/signer-credentials/expected-device-public-key"
 systemd-socket-activate --now \
   -E "CREDENTIALS_DIRECTORY=$local_storage_root/signer-credentials" \
-  -E "KORRI_LOCAL_SIGNER_PRIVATE_STATE_ROOT=$local_storage_root/signer-private" \
   -E "KORRI_LOCAL_SIGNER_PEER_UID=$(id -u)" \
   -E "KORRI_LOCAL_SIGNER_PEER_GID=$(id -g)" \
-  -E "KORRI_LOCAL_SIGNER_PUBLIC_KEY_FILE=$KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE" \
   -l "$KORRID_LOCAL_SIGNER_SOCKET" \
   "$CARGO_TARGET_DIR/debug/korri-local-signer" &
 signer_pid=$!
 for _ in $(seq 1 100); do
-  [[ -f "$KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE" ]] && break
+  [[ -S "$KORRID_LOCAL_SIGNER_SOCKET" ]] && break
   kill -0 "$signer_pid" 2>/dev/null || break
   sleep 0.01
 done
-[[ -f "$KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE" ]]
+[[ -S "$KORRID_LOCAL_SIGNER_SOCKET" ]]
 "$CARGO_TARGET_DIR/debug/korrid" &
 server_pid=$!
 cleanup_server() {

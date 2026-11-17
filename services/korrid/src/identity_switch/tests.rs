@@ -1,5 +1,5 @@
 use super::{
-    journal::{DataDisposition, IdentitySwitchJournal, JournalPhase, ReplacementSigner},
+    journal::{DataDisposition, IdentitySwitchJournal, JournalPhase},
     storage::{
         ExchangeFault, ExchangePosition, IdentitySwitchStorage, IdentitySwitchStorageError,
         RenameExchange, WriteFault,
@@ -60,7 +60,6 @@ impl Fixture {
         IdentitySwitchJournal::new(
             JournalPhase::Preparing,
             DataDisposition::Transfer,
-            ReplacementSigner::Local,
             self.revocation.clone(),
             true,
         )
@@ -110,7 +109,6 @@ fn journal_is_strict_bounded_private_and_verifies_the_revoked_event() {
         serde_json::json!({
             "phase":"preparing",
             "dataDisposition":"transfer",
-            "replacementSigner":"local",
             "oldOwnerRevocation":fixture.revocation,
             "oldOwnerWasPublished":true,
             "extra":false
@@ -118,23 +116,19 @@ fn journal_is_strict_bounded_private_and_verifies_the_revoked_event() {
         serde_json::json!({
             "phase":"unknown",
             "dataDisposition":"transfer",
-            "replacementSigner":"local",
             "oldOwnerRevocation":fixture.revocation,
             "oldOwnerWasPublished":true
         }),
         serde_json::json!({
             "phase":"preparing",
             "dataDisposition":"keep",
-            "replacementSigner":"local",
             "oldOwnerRevocation":fixture.revocation,
             "oldOwnerWasPublished":true
         }),
         serde_json::json!({
             "phase":"preparing",
             "dataDisposition":"transfer",
-            "replacementSigner":"device",
-            "oldOwnerRevocation":fixture.revocation,
-            "oldOwnerWasPublished":true
+            "oldOwnerRevocation":fixture.revocation
         }),
     ];
     for value in cases {
@@ -151,7 +145,6 @@ fn journal_is_strict_bounded_private_and_verifies_the_revoked_event() {
     let invalid = IdentitySwitchJournal::new(
         JournalPhase::Preparing,
         DataDisposition::Delete,
-        ReplacementSigner::Nip46,
         owned,
         false,
     );
@@ -430,7 +423,6 @@ fn commit_cannot_change_prepared_choices_or_run_from_preparing() {
     let changed = IdentitySwitchJournal::new(
         JournalPhase::Commit,
         DataDisposition::Delete,
-        ReplacementSigner::Local,
         fixture.revocation.clone(),
         true,
     )

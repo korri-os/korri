@@ -91,13 +91,12 @@ a representative game or release.
 | `save-sync.ts`: inspect history / choose split / restore | `saves status`; `saves history GAME`; `saves choose GAME SNAPSHOT --yes`; `saves restore GAME SNAPSHOT --yes` | Local; keeps other history; restores explicitly overwrite |
 | `network-onboarding.ts`: scan / connect saved or open Wi-Fi | `wifi scan`; `wifi connect ID` | Exact network ID |
 | `network-onboarding.ts`: connect hidden Wi-Fi / supply password | `wifi connect SSID --hidden --password-stdin` | Same existing network schema; private input |
-| `network-onboarding.ts`: finish / restart setup | `setup finish`; `setup restart` | Same onboarding marker; finish gives a device without an owner its automatic identity (ADR 0022) |
+| `network-onboarding.ts`: finish / restart setup | `setup finish`; `setup restart` | Same onboarding marker; on a device without an owner, finish shows its recovery words and gives it its automatic identity once they are confirmed (ADRs 0022 and 0082). No surface shows the words yet |
 | Setup surfaces: configure device name and seats | `setup --name NAME --seats COUNT`; `devices rename NAME`; `controllers seats COUNT` | Same settings revisions |
 | Setup surfaces: physical controller testing | **Recorded portal-only exception** | Requires physical semantic input; configured seat count is not a test |
 | `starter-pack-onboarding.ts`: accept / skip optional starter pack | `plugins on @korri:starter-pack`; `library folders rescan`; or omit both | Existing effects; no separate starter-pack schema |
-| `use-launchables.ts`: export active / retired identity backup | `identity backup [--retired PUBLIC_KEY]` | Password-encrypted output; private password input |
-| `use-launchables.ts`: switch identity from encrypted backup / NIP-46 | `identity switch local`; `identity switch nip46` | Same coordinator and data disposition; trust-loss confirmation stays explicit |
-| `use-launchables.ts`: delete retained identity key | `identity retired delete PUBLIC_KEY` | Same backup confirmation; `--yes` does not manufacture it |
+| `use-launchables.ts`: switch identity to NIP-46 | `identity switch nip46` | Same coordinator and data disposition; trust-loss confirmation stays explicit |
+| No surface: switch identity to recovery words (ADR 0073) | `identity switch words` | Same coordinator and data disposition; words through hidden input only |
 | Start surface | **No korrid producer** | The device image sets `services.korri.shell.startSurface`; the shell switches surfaces at run time |
 | Browse, search/filter a library, close sheets, retry reads, dismiss notices | `library games list`, `status`, or repeat the relevant read | Navigation/transient presentation; no settings mutation |
 

@@ -9,7 +9,7 @@ use crate::{
     error::CliError,
     module::{Context, Module},
     output::{self, Output},
-    prompt, settings_input, wifi,
+    prompt, recovery_terminal, settings_input, wifi,
 };
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use korrid::{network::*, onboarding::*, *};
@@ -18,7 +18,7 @@ pub struct Setup;
 impl Module for Setup {
     fn command(&self) -> Command {
         Command::new("setup").about("Start or rerun setup using the shell's network, settings and completion calls; keep the current identity unless explicitly switched")
-            .after_help("Physical controller testing remains in the shell. The optional existing starter-pack offer is available as: korri plugins on @korri:starter-pack, then korri library folders rescan. A device without an owner stays without one during setup, so it can join; finishing setup gives it its automatic identity.")
+            .after_help("Physical controller testing remains in the shell. The optional existing starter-pack offer is available as: korri plugins on @korri:starter-pack, then korri library folders rescan. A device without an owner stays without one during setup, so it can join. Finishing setup on a device that did not join shows 12 recovery words and their QR code; setup ends when you type back the words it asks for.")
             .args_conflicts_with_subcommands(true)
             .arg(Arg::new("seats").long("seats").value_name("COUNT").help("Configured seat count, not physical controller assignment"))
             .arg(Arg::new("name").long("name").value_name("DEVICE_NAME"))
@@ -27,7 +27,7 @@ impl Module for Setup {
             .arg(Arg::new("password-stdin").long("password-stdin").action(ArgAction::SetTrue).requires("network"))
             .subcommand(Command::new("status").about("Show setup, seats, name and network without changing them"))
             .subcommand(Command::new("restart").about("Confirm and rerun setup; retain settings, identity, games and saves"))
-            .subcommand(Command::new("finish").about("Finish setup; an owned device keeps its owner, a device without one gets its automatic identity"))
+            .subcommand(Command::new("finish").about("Finish setup; an owned device keeps its owner, a device without one gets its automatic identity after you confirm its recovery words"))
     }
     fn run(&self, args: &ArgMatches, context: &Context) -> Result<Output, CliError> {
         if context.device.is_some() {
@@ -45,11 +45,7 @@ impl Module for Setup {
                     context.rpc(&RpcRequest::OnboardingRestart(OnboardingRestartRequest {}))?,
                 );
             }
-            Some("finish") => {
-                return single(
-                    context.rpc(&RpcRequest::OnboardingFinish(OnboardingFinishRequest {}))?,
-                )
-            }
+            Some("finish") => return finish(context),
             _ => {}
         }
         if let Some(count) = args.get_one::<String>("seats") {
@@ -134,6 +130,54 @@ impl Module for Setup {
         aggregate(responses)
     }
 }
+/// How many times the person may type the asked words before setup stops.
+const CONFIRMATION_TRIES: usize = 3;
+
+/// End setup. A device without an owner first shows new recovery words; the
+/// person types back the words it asks for, and then the device gets its
+/// automatic identity (ADRs 0022 and 0082).
+fn finish(context: &Context) -> Result<Output, CliError> {
+    let response = context.rpc(&RpcRequest::OnboardingFinish(OnboardingFinishRequest {}))?;
+    if !matches!(
+        &response,
+        RpcResponse::OnboardingFinish(OnboardingStatusOutcome::Err(failure))
+            if failure.code == "RecoveryWordsNeeded"
+    ) {
+        return single(response);
+    }
+    recovery_terminal::require_terminal()?;
+    let shown = match context.rpc(&RpcRequest::OnboardingRecoveryWords(
+        OnboardingRecoveryWordsRequest {},
+    ))? {
+        RpcResponse::OnboardingRecoveryWords(RecoveryWordsOutcome::Ok(shown)) => shown,
+        other => return single(other),
+    };
+    let mut response = None;
+    for _ in 0..CONFIRMATION_TRIES {
+        recovery_terminal::show(&shown.words)?;
+        let answers = recovery_terminal::ask_confirmation(&shown.confirm_positions)?;
+        let reply = context.rpc(&RpcRequest::OnboardingConfirmWords(
+            OnboardingConfirmWordsRequest {
+                words: answers.to_vec(),
+            },
+        ))?;
+        let mismatch = match &reply {
+            RpcResponse::OnboardingConfirmWords(OnboardingStatusOutcome::Err(failure))
+                if failure.code == "RecoveryWordsMismatch" =>
+            {
+                Some(failure.message.clone())
+            }
+            _ => None,
+        };
+        response = Some(reply);
+        match mismatch {
+            Some(message) => eprintln!("{} The words show again.", output::text(&message)),
+            None => break,
+        }
+    }
+    single(response.expect("at least one confirmation try"))
+}
+
 fn single(response: RpcResponse) -> Result<Output, CliError> {
     let human = describe(&response);
     Ok(Output::one(response, human))
@@ -145,6 +189,9 @@ fn aggregate(responses: Vec<RpcResponse>) -> Result<Output, CliError> {
 }
 fn describe(response: &RpcResponse) -> String {
     match response {
+        RpcResponse::OnboardingConfirmWords(OnboardingStatusOutcome::Ok(_)) => {
+            "Setup: finished. This device has its own person key now. Your paper holds the only copy of it.".into()
+        }
         RpcResponse::OnboardingStatus(OnboardingStatusOutcome::Ok(status))
         | RpcResponse::OnboardingRestart(OnboardingStatusOutcome::Ok(status))
         | RpcResponse::OnboardingFinish(OnboardingStatusOutcome::Ok(status)) => format!(

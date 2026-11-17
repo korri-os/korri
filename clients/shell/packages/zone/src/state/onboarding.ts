@@ -16,9 +16,10 @@
  * owns every fact a step shows; `update` receives its model beside this
  * value. Nothing here is stored: a restart begins at CONTROLLERS.
  *
- * The treaty asks for no identity call at first boot: a device starts with
- * its own new identity, so START on the NEW SAVE card records the player's
- * choice here and sends nothing. Restoring a save belongs to SAVE DATA.
+ * The treaty asks for no identity call at first boot: a device that did not
+ * join makes its own person key when setup ends (ADR 0022), so START on the
+ * NEW SAVE card records the player's choice here and sends nothing. A signer
+ * belongs to SAVE DATA.
  */
 import type { SurfaceModel, SurfaceSettingItem } from "../../../../../../contracts/generated/surface"
 import { ask, stay, type ZoneStep } from "./requests"

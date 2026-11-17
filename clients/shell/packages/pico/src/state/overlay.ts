@@ -92,7 +92,6 @@ function step(state: PicoOverlayState, message: PicoOverlayMessage): PicoStep<Pi
       return dismiss(state)
     case "PressedOptions":
     case "KorriPublished":
-    case "RenderedQr":
       return stay(state)
     case "AskedControl":
       return stay({ ...state, asking: message.control })

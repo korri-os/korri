@@ -292,18 +292,28 @@ async fn vouch(
     })
 }
 
-/// The new device: find the owned device, check the code, wait for its
-/// vouch and store it.
+/// A vouch that the owned device sent: for `own`, from `peer`.
+pub(super) struct Vouched {
+    pub own: String,
+    pub peer: String,
+    pub owner_statement: String,
+}
+
+/// The joining device: find the owned device, check the code and wait for
+/// its vouch. The caller stores it.
 pub(super) async fn joining(
     context: &JoinContext,
     rendezvous: &Rendezvous,
     reporter: &Reporter,
     code: JoinCode,
     device: JoiningDevice,
-) -> JoinStatus {
+) -> Result<Vouched, JoinStatus> {
     let clock = || (context.clock)();
     let Some(own) = rendezvous.identity().device_public_key().map(str::to_owned) else {
-        return failed("IdentityUnavailable", "Device identity is unavailable.");
+        return Err(failed(
+            "IdentityUnavailable",
+            "Device identity is unavailable.",
+        ));
     };
     let nameplate = code.nameplate();
     let lifetime = context.timing.code_lifetime;
@@ -312,10 +322,10 @@ pub(super) async fn joining(
     let open = loop {
         let now = clock();
         if now >= deadline {
-            return failed(
+            return Err(failed(
                 "JoinCodeNotFound",
                 "No device shows this code. Check the code and try again.",
-            );
+            ));
         }
         if let Ok(Some(open)) = rendezvous.find_open(nameplate, now, lifetime).await {
             break open;
@@ -330,7 +340,7 @@ pub(super) async fn joining(
         .send(nameplate, &peer, &hello, clock(), deadline)
         .await
     else {
-        return failed("JoinRelaysUnavailable", UNREACHABLE);
+        return Err(failed("JoinRelaysUnavailable", UNREACHABLE));
     };
     let offer = match wait_for(
         context,
@@ -345,13 +355,13 @@ pub(super) async fn joining(
     .await
     {
         Some(Message::Offer { message, .. }) => message,
-        _ => return failed("JoinNoAnswer", NO_ANSWER),
+        _ => return Err(failed("JoinNoAnswer", NO_ANSWER)),
     };
     let Ok(offer) = hex::decode(offer) else {
-        return failed("JoinCodeMismatch", MISMATCH);
+        return Err(failed("JoinCodeMismatch", MISMATCH));
     };
     let Ok((responder, answer)) = Responder::answer(&code.secret(), &peer, &own, &offer) else {
-        return failed("JoinCodeMismatch", MISMATCH);
+        return Err(failed("JoinCodeMismatch", MISMATCH));
     };
     let session = hex::encode(responder.session());
     let answer = Message::Answer {
@@ -365,7 +375,7 @@ pub(super) async fn joining(
         .await
         .is_err()
     {
-        return failed("JoinRelaysUnavailable", UNREACHABLE);
+        return Err(failed("JoinRelaysUnavailable", UNREACHABLE));
     }
     let same_session = |message: &Message| match message {
         Message::Confirm { session: other, .. }
@@ -387,14 +397,14 @@ pub(super) async fn joining(
     .await
     {
         Some(Message::Confirm { confirmation, .. }) => confirmation,
-        Some(_) => return failed("JoinCodeMismatch", MISMATCH),
-        None => return failed("JoinNoAnswer", NO_ANSWER),
+        Some(_) => return Err(failed("JoinCodeMismatch", MISMATCH)),
+        None => return Err(failed("JoinNoAnswer", NO_ANSWER)),
     };
     let checked = hex::decode(confirmation)
         .ok()
         .and_then(|confirmation| responder.confirm(&confirmation).ok());
     if checked.is_none() {
-        return failed("JoinCodeMismatch", MISMATCH);
+        return Err(failed("JoinCodeMismatch", MISMATCH));
     }
     reporter.set(JoinStatus::WaitingForAccept);
     let decided_by = clock() + context.timing.accept_wait;
@@ -413,41 +423,48 @@ pub(super) async fn joining(
         Some(Message::Vouch {
             owner_statement, ..
         }) => owner_statement,
-        Some(_) => return JoinStatus::Refused,
-        None => return failed("JoinNoAnswer", NO_ANSWER),
+        Some(_) => return Err(JoinStatus::Refused),
+        None => return Err(failed("JoinNoAnswer", NO_ANSWER)),
     };
-    store_vouch(context, &own, &peer, &owner_statement).await
+    Ok(Vouched {
+        own,
+        peer,
+        owner_statement,
+    })
+}
+
+/// The vouch's statement, when it is an owned statement for this exact
+/// device whose first link the owned device signed.
+fn checked_vouch(vouched: &Vouched) -> Option<crate::identity::VerifiedOwnerStatement> {
+    let statement =
+        DeviceIdentity::verify_owner_statement(&vouched.owner_statement, &vouched.own).ok()?;
+    (statement.status == OwnerStatementStatus::Owned
+        && statement.vouchers.first() == Some(&vouched.peer))
+    .then_some(statement)
+}
+
+fn vouch_invalid() -> JoinStatus {
+    failed(
+        "JoinVouchInvalid",
+        "The other device sent a vouch that Korri cannot check.",
+    )
 }
 
 /// Store the vouch chain the owned device sent, after checking that this
 /// exact device signed its first link. It holds the owner-write lock that
 /// setup's end also holds, and reads the identity again under it: a device
 /// that got its automatic owner in the meantime refuses the vouch.
-pub(super) async fn store_vouch(
-    context: &JoinContext,
-    own: &str,
-    peer: &str,
-    owner_statement: &str,
-) -> JoinStatus {
-    let invalid = || {
-        failed(
-            "JoinVouchInvalid",
-            "The other device sent a vouch that Korri cannot check.",
-        )
+pub(super) async fn store_vouch(context: &JoinContext, vouched: &Vouched) -> JoinStatus {
+    let Some(statement) = checked_vouch(vouched) else {
+        return vouch_invalid();
     };
-    let Ok(statement) = DeviceIdentity::verify_owner_statement(owner_statement, own) else {
-        return invalid();
-    };
-    if statement.status != OwnerStatementStatus::Owned
-        || statement.vouchers.first().map(String::as_str) != Some(peer)
-    {
-        return invalid();
-    }
     let _owner_write = crate::identity::owner_write().await;
     let stored =
         DeviceIdentity::load_or_create(&context.private_state_root).and_then(|mut identity| {
             match identity.state() {
-                IdentityState::Unowned { .. } => identity.apply_owner_statement(owner_statement),
+                IdentityState::Unowned { .. } => {
+                    identity.apply_owner_statement(&vouched.owner_statement)
+                }
                 _ => Err(crate::identity::IdentityError::Invalid(
                     "the device got an owner during the join".into(),
                 )),
@@ -463,9 +480,36 @@ pub(super) async fn store_vouch(
         .credentials
         .reload_identity(&context.private_state_root);
     JoinStatus::Joined(JoinedDevice {
-        device_public_key: own.into(),
+        device_public_key: vouched.own.clone(),
         owner_public_key: statement.owner_public_key,
     })
+}
+
+/// An owned device that joined: the vouch names its new device key. The
+/// identity switch stores it there, keeps the device's data, revokes the
+/// old statement with the old key's signature, and resets device trust
+/// (ADRs 0023 and 0082).
+pub(super) async fn switch_to_vouch(
+    context: &JoinContext,
+    prepared: crate::identity_switch::PreparedSwitch,
+    vouched: &Vouched,
+) -> JoinStatus {
+    if checked_vouch(vouched).is_none() {
+        return vouch_invalid();
+    }
+    let Some(switch) = &context.switch else {
+        return failed(
+            "JoinUnavailable",
+            "This device cannot change its person key.",
+        );
+    };
+    match switch.finish_join(prepared, &vouched.owner_statement).await {
+        Ok(owner_public_key) => JoinStatus::Joined(JoinedDevice {
+            device_public_key: vouched.own.clone(),
+            owner_public_key,
+        }),
+        Err(message) => failed("JoinSwitchFailed", &message),
+    }
 }
 
 /// The first message from the peer that fits, or None at the deadline.

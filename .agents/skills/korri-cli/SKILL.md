@@ -28,7 +28,8 @@ After exit 1 from a mutation, read every response before you act again. `play` a
 `--yes` confirms destruction only. These choices come from the user, never from `--yes` or from you:
 
 - the plugin approval digest (`--approval`) and publisher trust (`plugins trust`); show the user the `plugins review` output
-- `dataDisposition` and `trustLossConfirmed` for `identity switch`, and `--backup-confirmed` for `identity retired delete`
+- `dataDisposition` and `trustLossConfirmed` for `identity switch`
+- recovery words: `setup finish`, `identity switch words` and `join enter` on an owned device need a person at a terminal; never type, store or log the words for them
 - `saves restore`, which overwrites the current saves
 
 `identity reset` is unavailable by design. For device identity recovery, stop and ask the user.

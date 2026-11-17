@@ -31,7 +31,6 @@ import { freshGames, homeOf, LISTS_START, PICK_DAYS, shelvesOf, wants } from "..
 import { forget } from "../src/memo"
 import { plan } from "../src/plan"
 import { posterFor } from "../src/poster"
-import { qrDataUrl } from "../src/qr"
 import type { Game, Lists, State } from "../src/types"
 import { PACKAGE, Play, scenario, scenarios, SIZES } from "./korri"
 
@@ -203,13 +202,12 @@ describe("the leaves: by their whole arguments, exactly", () => {
     sameWhateverCameBefore([["b\u0000c", "a"], ["c", "a\u0000b"]] as const, ([title, system]) => posterFor(title, system))
   })
 
-  test("the order of places, the plan, the code of a backup", () => {
+  test("the order of places and the plan", () => {
     const places: [number, number][] = []
     for (const count of [0, 1, 2, 6, 14, 4096, 4097]) for (const from of [0, 1, 5, 13, 4095, 4096]) if (count <= 20 || from === 0) places.push([count, from])
     places.push([1, 4096], [2, 0])
     sameWhateverCameBefore(places, ([count, from]) => nearest(count, from))
     sameWhateverCameBefore([...SIZES, [640, 481], [641, 480], [640, 480]] as const, ([width, height]) => plan(width, height))
-    sameWhateverCameBefore(["nsec1abc", "nsec1abd", "", "nsec1abc"], text => qrDataUrl(text).length + qrDataUrl(text).slice(-24))
   })
 
   test("a tile: by its game, its place and the pictures its view has asked for", () => {

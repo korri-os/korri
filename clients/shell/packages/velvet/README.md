@@ -25,7 +25,6 @@ table and its capability map are in `docs/design/surfaces/velvet/DIRECTION.md`.
 | `src/systems.ts`, `src/drawings-slots.ts` | The machines Velvet has a drawing for; the palette's places. Shared by the logic and the build. |
 | `src/memo.ts` | The one rule for everything kept between calls: a kept answer is found by all it depends on, exactly, and forgetting it changes only time. Every module says there how to forget what it keeps. |
 | `src/fit.ts`, `src/measure.ts`, `src/words.ts` | Fitting caps titles and fact lines from the fonts' advance tables; words about time and size. |
-| `src/qr.ts` | The backup's QR code (own encoder, held equal to `qrcode` by test). |
 | `fonts/` | Big Shoulders ExtraBold (display, caps) at opsz 72, and at opsz 28 as Big Shoulders Text for display type under 48 px (looser spacing; the fit measures with it); Archivo semi-condensed 400 and 700; their OFL texts; `fonts/source/` the scripts that cut them. |
 | `test/` | The gates and tests (`bun test packages/velvet/test` in `clients/shell`). |
 | `preview/` | `scenarios.ts` → `scenarios/*.json` (99 models with the presses to each screen), `fixtures/korri.json` (Korri's slices), `art/` (self-drawn test pictures and `build.py`), `previews.ts`, `shots.sh` (the real shell under Xvfb), `probe.sh` (the shell's probe over every scenario). |
@@ -39,7 +38,7 @@ thresholds decide structure, never a device:
 | Name | Value | What changes |
 | --- | --- | --- |
 | `NARROW_RATIO` | width / height under 0.9 | The pick stacks under the hero's band; buttons stand one under the other; a list page's panel stands over its rows. |
-| `PANEL_BESIDE_RATIO` | 1.25 and at least 560 px wide | A list page's panel (the backup's QR code) stands beside the rows. |
+| `PANEL_BESIDE_RATIO` | 1.25 and at least 560 px wide | A list page's panel stands beside the rows. |
 | `EMPTY_WIDE_RATIO` | 1.5 | The empty library's ghost tiles stand beside the invitation. |
 | `MOST_COLUMNS` | 5 | The most tiles a set shows across (the pixel budget, below). |
 | `SHELF_SLOTS` | 5 | Games on a lobby shelf before "See all". |
@@ -76,7 +75,7 @@ shell, `VELVET_FRAMES` (below) through the test harness.
 | Settings and every interaction | `settings`, `settings-choice`, `settings-text`, `settings-text-symbols`, `settings-secret`, `settings-destructive`, `settings-saving`, `settings-problem`, `settings-foot` | `pages/VelvetList.Settings`, `VelvetRow`, `VelvetKeyboard` |
 | Wi-Fi and hidden networks | `wifi`, `wifi-password`, `wifi-hidden`, `wifi-failed`, `wifi-none` | `VelvetList.Wifi`, `VelvetSignal` |
 | First boot | `first-boot`, `first-boot-wifi`, `first-boot-names`, `first-boot-starter`, `first-boot-ready` | `VelvetProgramme.FirstBoot` |
-| Identity and backup | `identity`, `identity-last`, `identity-backup`, `identity-password`, `identity-working`, `identity-problem`, `identity-switched`, `identity-retired` | `VelvetList.Identity`, `VelvetProgramme.Backup`, `VelvetQr` |
+| Identity | `identity`, `identity-bunker`, `identity-working`, `identity-problem`, `identity-switched` | `VelvetList.Identity` |
 | The store and its search | `store`, `store-none`, `store-search`, `store-results`, `store-offer`, `store-confirm`, `store-downloading` | `VelvetList.Store`, `VelvetProgramme.Store`, `.Offer` |
 | Invites | `invites`, `invite-notice` | `VelvetList.Invites`, `VelvetNotice` |
 | Saves, the runner, launch settings | `saves`, `saves-empty`, `saves-restore`, `runner`, `launch-settings`, `launch-changes`, `launch-keep`, `launch-streamed`, `launch-unreachable`, `launch-conflict`, `launch-loading`, `launch-empty` | `VelvetList.Saves`, `.Runner`, `.LaunchSettings` |
@@ -335,11 +334,11 @@ bash packages/velvet/preview/shots.sh  <korri-shell> <fixture-korrid> OUT [SIZES
 ```
 
 `probe.sh` runs the shell's own probe (where each press goes, and a tap on
-every target) over scenarios' models. Over all 99 it takes hours; these 35
+every target) over scenarios' models. Over all 96 it takes hours; these 33
 have the models that differ: `home home-no-art set-peer home-fresh home-one
 home-stale empty error loading first-boot first-boot-starter wifi wifi-none
 wifi-failed store store-results store-offer store-downloading identity
-identity-backup identity-retired saves runner launch-settings launch-changes
+saves runner launch-settings launch-changes
 launch-unreachable overlay
 overlay-groups busy-steps problem-long confirm choose-save invites
 settings-problem ended`.
@@ -364,4 +363,4 @@ last frames; `VELVET_PREVIEW_OUT=DIR` writes every preview state.
 | `fresh` | Not started with 0, 1, 3, 60, 200, 300 and 10,000 unplayed games, among the first of Korri's order and after every played one: the first one in the row, on the shelf and first in the set; each page asked once with its own cursor; the number of questions in each. |
 | `memo` | Every binding in `src/` that can change is named in an `onForget`; each selection answers the same with its memory warm, warm from another order, and empty; `update` and `view` at every step of every scenario and of generated plays. |
 | `poster` | The generated drawings and palettes: every card names ones that are there, its title fits its box, its ink stands out, and a card in a view is two numbers and its title. |
-| `plan`, `browse`, `touch`, `motion`, `words`, `qr` | The plan's invariants over a sweep of sizes; the owner's decisions as behaviour; launch settings as one list; the rest. |
+| `plan`, `browse`, `touch`, `motion`, `words` | The plan's invariants over a sweep of sizes; the owner's decisions as behaviour; launch settings as one list; the rest. |

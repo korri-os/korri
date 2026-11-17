@@ -1,16 +1,14 @@
 use super::*;
 use crate::{
-    authorization::{AuthorizationContext, Principal},
-    host::control::InMemoryLaunchUnitBackend,
-    identity::OwnerStatementStatus,
-    local_signer::{serve_connection, LocalPersonSigner},
+    authorization::AuthorizationContext, host::control::InMemoryLaunchUnitBackend,
+    identity::OwnerStatementStatus, local_signer::LocalPersonSigner, recovery_words::RecoveryWords,
 };
 use std::{fs, process::Command};
 
 #[test]
-fn local_cli_person_name_dispatch_preserves_signer_authority_and_cas() {
-    // The real signer selector reads process configuration. Isolate it rather
-    // than change the environment of other Rust tests or inject a signing bypass.
+fn an_automatic_identity_shows_its_name_but_cannot_sign_a_new_one() {
+    // Publication reads KORRID_RELAYS from the process. Isolate it rather
+    // than change the environment of other Rust tests.
     let root = tempfile::tempdir().unwrap();
     let output = Command::new(std::env::current_exe().unwrap())
         .args([
@@ -19,10 +17,6 @@ fn local_cli_person_name_dispatch_preserves_signer_authority_and_cas() {
             "--ignored",
             "--nocapture",
         ])
-        .env(
-            "KORRID_LOCAL_SIGNER_SOCKET",
-            root.path().join("signer.sock"),
-        )
         .env("KORRI_PERSON_NAME_DISPATCH_TEST_ROOT", root.path())
         .env_remove("KORRID_RELAYS")
         .output()
@@ -84,53 +78,50 @@ fn editable(snapshot: &SettingsSnapshot) -> bool {
 }
 
 #[tokio::test]
-#[ignore = "subprocess helper; isolates the actual signer environment"]
+#[ignore = "subprocess helper; isolates the relay environment"]
 async fn cli_person_name_dispatch_child() {
-    let socket = PathBuf::from(std::env::var_os("KORRID_LOCAL_SIGNER_SOCKET").unwrap());
     let root = PathBuf::from(
         std::env::var_os("KORRI_PERSON_NAME_DISPATCH_TEST_ROOT")
             .expect("run this helper through its subprocess parent test"),
     );
-    assert_eq!(socket, root.join("signer.sock"));
     let private = root.join("device-private");
-    let signer_root = root.join("signer-private");
     let mut identity = DeviceIdentity::load_or_create(&private).unwrap();
     let device_key = identity.device_public_key().unwrap().to_owned();
-    let local = LocalPersonSigner::load_or_create(&signer_root, &device_key).unwrap();
-    let binding = identity
-        .owner_statement_template(OwnerStatementStatus::Owned, 1)
-        .unwrap();
-    let PersonSignerState::Approved {
-        owner_public_key,
-        signed_event_json,
-        ..
-    } = local
-        .request(PersonSignerRequest {
-            unsigned_event_template: binding.clone(),
-        })
-        .await
-    else {
-        panic!("actual local signer refused owner binding")
-    };
-    identity
-        .apply_signed_owner_binding(&binding, &owner_public_key, &signed_event_json)
-        .unwrap();
-    let listener = tokio::net::UnixListener::bind(&socket).unwrap();
-    let expected = Arc::new(Mutex::new(device_key));
-    let public = root.join("person.pub");
-    let server = tokio::spawn(async move {
-        loop {
-            let (stream, _) = listener.accept().await.unwrap();
-            serve_connection(
-                stream,
-                signer_root.clone(),
-                expected.clone(),
-                public.clone(),
-            )
-            .await
+    // The person key exists only while setup signs with it (ADR 0082). It
+    // signed the owner statement and a name; then it is gone.
+    let signed_name = {
+        let local = LocalPersonSigner::from_words(&RecoveryWords::generate(), &device_key).unwrap();
+        let binding = identity
+            .owner_statement_template(OwnerStatementStatus::Owned, 1)
             .unwrap();
-        }
-    });
+        let PersonSignerState::Approved {
+            owner_public_key,
+            signed_event_json,
+            ..
+        } = local
+            .request(PersonSignerRequest {
+                unsigned_event_template: binding.clone(),
+            })
+            .await
+        else {
+            panic!("the words' key refused the owner binding")
+        };
+        identity
+            .apply_signed_owner_binding(&binding, &owner_public_key, &signed_event_json)
+            .unwrap();
+        let PersonSignerState::Approved {
+            signed_event_json, ..
+        } = local
+            .request(PersonSignerRequest {
+                unsigned_event_template: template("Simon", 2).unwrap(),
+            })
+            .await
+        else {
+            panic!("the words' key refused the name")
+        };
+        identity.store_person_name(&signed_event_json).unwrap();
+        signed_event_json
+    };
 
     let config = root.join("host.toml");
     fs::write(&config, "label = \"person-name-test\"\n").unwrap();
@@ -145,136 +136,37 @@ async fn cli_person_name_dispatch_child() {
     )
     .with_route_registry(library, registry);
     let (mut state, _) = crate::app_states(runtime);
-    assert!(
-        state.surface_host_access.is_none(),
-        "the person socket needs no surface host access object"
-    );
     let cli = AuthorizationContext::LocalCli;
-    let initial = read(&state, &cli).await;
-    assert!(
-        editable(&initial),
-        "ready signer must advertise person-name to LocalCli: {initial:?}"
-    );
-    assert!(initial.person_name.is_none());
-    let SettingsUpdateOutcome::Ok(updated) = write(&state, &cli, &initial.revision, "Simon").await
-    else {
-        panic!("LocalCli name write failed")
-    };
-    assert_eq!(updated.person_name.as_deref(), Some("Simon"));
-    assert!(editable(&updated));
     let signed_record = private.join("identity/person-name.event.json");
-    let signed_bytes = fs::read(&signed_record).unwrap();
-    let event = DeviceIdentity::load_or_create(&private)
-        .unwrap()
-        .person_name_event()
-        .unwrap();
-    assert_eq!(
-        verified_name(&event, &owner_public_key).as_deref(),
-        Some("Simon")
+    let initial = read(&state, &cli).await;
+    assert_eq!(initial.person_name.as_deref(), Some("Simon"));
+    assert!(
+        !editable(&initial),
+        "no device holds the person key, so no one can edit the name: {initial:?}"
     );
     assert_failure(
-        write(&state, &cli, "unobserved-stale-revision", "Not signed").await,
-        "SettingsConflict",
-    );
-    assert_eq!(fs::read(&signed_record).unwrap(), signed_bytes);
-    assert_failure(
-        write(&state, &cli, &updated.revision, &"x".repeat(65)).await,
-        "SettingsInvalid",
-    );
-    assert_eq!(fs::read(&signed_record).unwrap(), signed_bytes);
-
-    let peer = AuthorizationContext::Peer(Principal::OwnerDevice {
-        device_public_key: "33".repeat(32),
-        owner_public_key: owner_public_key.clone(),
-        owner_statement: "verified".into(),
-    });
-    for denied in [AuthorizationContext::LocalUnixControl, peer.clone()] {
-        assert_failure(
-            write(&state, &denied, &updated.revision, "Denied").await,
-            "OperationUnsupported",
-        );
-    }
-    assert!(!editable(&read(&state, &peer).await));
-    assert_failure(
-        write(
-            &state,
-            &AuthorizationContext::LocalSurfaceHost,
-            &updated.revision,
-            "Denied",
-        )
-        .await,
-        "OperationUnsupported",
+        write(&state, &cli, &initial.revision, "Changed").await,
+        "PersonSignerUnavailable",
     );
     state.surface_host_access = Some(SurfaceHostAccess::new(
         "person-name-cap",
         "https://shell.example",
-        SurfaceHostPermission::ReadOnly,
+        SurfaceHostPermission::Full,
     ));
-    assert!(!editable(
-        &read(&state, &AuthorizationContext::LocalSurfaceHost).await
-    ));
+    let surface_host = read(&state, &AuthorizationContext::LocalSurfaceHost).await;
+    assert_eq!(surface_host.person_name.as_deref(), Some("Simon"));
+    assert!(!editable(&surface_host));
     assert_failure(
         write(
             &state,
             &AuthorizationContext::LocalSurfaceHost,
-            &updated.revision,
-            "Denied",
+            &surface_host.revision,
+            "Changed",
         )
         .await,
-        "OperationUnsupported",
-    );
-    assert!(
-        editable(&read(&state, &cli).await),
-        "surface host restrictions must not demote the CLI"
-    );
-    assert_eq!(fs::read(&signed_record).unwrap(), signed_bytes);
-    // LocalSessions already permits person-name, unlike other owner settings.
-    for permission in [
-        SurfaceHostPermission::LocalSessions,
-        SurfaceHostPermission::Full,
-    ] {
-        state.surface_host_access = Some(SurfaceHostAccess::new(
-            "person-name-cap",
-            "https://shell.example",
-            permission,
-        ));
-        let surface_host = read(&state, &AuthorizationContext::LocalSurfaceHost).await;
-        assert_eq!(
-            surface_host.person_name,
-            read(&state, &cli).await.person_name
-        );
-        assert!(editable(&surface_host));
-        let SettingsUpdateOutcome::Ok(host_update) = write(
-            &state,
-            &AuthorizationContext::LocalSurfaceHost,
-            &surface_host.revision,
-            "Shell name",
-        )
-        .await
-        else {
-            panic!("existing {permission:?} surface host name write regressed")
-        };
-        assert_eq!(host_update.person_name.as_deref(), Some("Shell name"));
-        assert_eq!(
-            read(&state, &cli).await.person_name,
-            host_update.person_name
-        );
-    }
-
-    server.abort();
-    let _ = server.await;
-    let before_unavailable = fs::read(&signed_record).unwrap();
-    let unavailable = read(&state, &cli).await;
-    assert_eq!(unavailable.person_name.as_deref(), Some("Shell name"));
-    assert!(
-        !editable(&unavailable),
-        "unavailable signer must remove the edit affordance"
-    );
-    assert_failure(
-        write(&state, &cli, &unavailable.revision, "No signer").await,
         "PersonSignerUnavailable",
     );
-    assert_eq!(fs::read(&signed_record).unwrap(), before_unavailable);
+    assert_eq!(fs::read_to_string(&signed_record).unwrap(), signed_name);
     // This child owns its environment. Exercise the real idle publication path
     // over a simulated minute, not a separately retained test transport.
     use futures::{SinkExt, StreamExt};

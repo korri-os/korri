@@ -13,12 +13,9 @@ import { picoSessionReturnFromModel, picoSessionReturnOnPlay } from "../pico-ses
 import { PICO_STORE_QUERY_MAX } from "../pico-store-view"
 import {
   PICO_FONT_SETTING,
-  PICO_IDENTITY_BACKUP_ACTION,
-  PICO_IDENTITY_SWITCH_LOCAL_ACTION,
   PICO_IDENTITY_SWITCH_NIP46_ACTION,
   PICO_WIFI_HIDDEN_ACTION,
   PICO_WIFI_SCAN_ACTION,
-  picoIdentityRetiredKey,
   picoWifiNetworkId,
   picoSettingsViewFromModel,
   picoNumberFits,
@@ -58,7 +55,7 @@ import {
 export function update(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): PicoStep<PicoNavigation> {
   const result = step(settleLaunch(endNotices(nav, message), korri), message, korri)
   const settled = settleIdle(settleEditor(settleLaunch(settleSession(result.model, korri), korri), korri), korri)
-  const identity = settleIdentity(nav, settled, korri)
+  const identity = settleIdentity(nav, settled)
   const invites = settleInvites(identity.model, korri)
   return { model: invites.model, requests: [...result.requests, ...identity.requests, ...invites.requests] }
 }
@@ -317,7 +314,7 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
       return stay(nav.settings === undefined ? nav : { ...nav, settings: { ...nav.settings, group: message.group } })
     case "PressedSettingAction": {
       if (message.actionId.startsWith("identity:")) {
-        return stay(withQuestion(nav, { _tag: "Identity", actionId: message.actionId, form: IDENTITY_FORM, qr: undefined }))
+        return stay(withQuestion(nav, { _tag: "Identity", actionId: message.actionId, form: IDENTITY_FORM }))
       }
       // Pico's own Wi-Fi rows go to the Wi-Fi commands, never to runAction.
       if (message.actionId === PICO_WIFI_SCAN_ACTION) {
@@ -429,12 +426,6 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
       if (question?._tag !== "Identity" || korri.identityManagement?.status._tag === "Working") return stay(nav)
       const request = identityRequest(question.actionId, question.form)
       return request === undefined ? stay(nav) : ask(nav, request)
-    }
-    case "RenderedQr": {
-      const question = nav.settings?.question
-      return question?._tag === "Identity" && question.qr?.text === message.text
-        ? stay(withQuestion(nav, { ...question, qr: { text: message.text, dataUrl: message.dataUrl } }))
-        : stay(nav)
     }
     case "Waited":
       // A notice's time is up. The invite stays on home.
@@ -594,38 +585,16 @@ function settleEditor(nav: PicoNavigation, korri: SurfaceModel): PicoNavigation 
 /**
  * The identity dialog. Opening, changing or closing it clears the status Korri
  * shows for the last identity operation, so an old result never greets a new
- * one. A backup Korri made is drawn as a QR code.
+ * one.
  */
-function settleIdentity(before: PicoNavigation, nav: PicoNavigation, korri: SurfaceModel): PicoStep<PicoNavigation> {
+function settleIdentity(before: PicoNavigation, nav: PicoNavigation): PicoStep<PicoNavigation> {
   const requests: PicoRequest[] = []
   if (identityAction(before) !== identityAction(nav)) requests.push({ _tag: "DismissIdentityStatus" })
-  const question = nav.settings?.question
-  if (question?._tag !== "Identity") return { model: nav, requests }
-  const status = korri.identityManagement?.status
-  const text = status?._tag === "BackupReady" ? status.encryptedSecret : undefined
-  if (text === question.qr?.text) return { model: nav, requests }
-  if (text === undefined) return { model: withQuestion(nav, { ...question, qr: undefined }), requests }
-  requests.push({ _tag: "RenderQr", text })
-  return { model: withQuestion(nav, { ...question, qr: { text, dataUrl: undefined } }), requests }
+  return { model: nav, requests }
 }
 
 /** What a submitted identity form asks Korri to do, when the form is complete. */
 function identityRequest(actionId: string, form: IdentityForm): PicoRequest | undefined {
-  const exportKey = picoIdentityRetiredKey(actionId, "export")
-  const deleteKey = picoIdentityRetiredKey(actionId, "delete")
-  if (actionId === PICO_IDENTITY_BACKUP_ACTION || exportKey !== undefined) {
-    return form.password.trim() === "" ? undefined
-      : { _tag: "ExportIdentityBackup", password: form.password, retiredPublicKey: exportKey }
-  }
-  if (actionId === PICO_IDENTITY_SWITCH_LOCAL_ACTION) {
-    return !form.confirmed || form.secret.trim() === "" || form.password.trim() === "" ? undefined : {
-      _tag: "SwitchIdentityFromBackup",
-      encryptedSecret: form.secret,
-      password: form.password,
-      disposition: form.disposition,
-      trustLossConfirmed: form.confirmed,
-    }
-  }
   if (actionId === PICO_IDENTITY_SWITCH_NIP46_ACTION) {
     return !form.confirmed || form.bunkerUri.trim() === "" ? undefined : {
       _tag: "SwitchIdentityToNip46",
@@ -633,9 +602,6 @@ function identityRequest(actionId: string, form: IdentityForm): PicoRequest | un
       disposition: form.disposition,
       trustLossConfirmed: form.confirmed,
     }
-  }
-  if (deleteKey !== undefined) {
-    return form.confirmed ? { _tag: "DeleteRetiredIdentity", publicKey: deleteKey, backupConfirmed: form.confirmed } : undefined
   }
   return undefined
 }

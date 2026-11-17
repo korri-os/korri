@@ -8,10 +8,7 @@
 import type { SurfaceIdentityManagement } from "../model"
 import type { PicoLaunchView } from "../pico-launch-view"
 import {
-  PICO_IDENTITY_BACKUP_ACTION,
-  PICO_IDENTITY_SWITCH_LOCAL_ACTION,
   PICO_IDENTITY_SWITCH_NIP46_ACTION,
-  picoIdentityRetiredKey,
   picoNumberFits,
   picoNumberRange,
   picoSettingsViewFromModel,
@@ -23,7 +20,6 @@ import {
 import type { PicoTextDraft } from "../pico-text-draft"
 import { picoWifiEntryView } from "../pico-wifi-view"
 import { IDENTITY_FORM, type IdentityForm, type Settings, type SettingsQuestion } from "../state/navigation"
-import { qrPath } from "./qr"
 import type { Target } from "./focus"
 import { frame } from "./frame"
 import { keyboard, type KeyPress } from "./keyboard"
@@ -609,18 +605,13 @@ export interface IdentityView {
   readonly title: string
   readonly problem: string
   readonly note: string
-  readonly qr: string
-  readonly qrSize: number
-  readonly secret: string
   readonly rows: readonly ButtonView[]
 }
 
-export const NO_IDENTITY: IdentityView = { title: "", problem: "", note: "", qr: "", qrSize: 0, secret: "", rows: [] }
-
-const mask = (text: string) => "•".repeat([...text].length)
+export const NO_IDENTITY: IdentityView = { title: "", problem: "", note: "", rows: [] }
 
 /**
- * The identity dialog (PicoIdentityDialog): its fields open Pico's keyboard,
+ * The identity dialog (PicoIdentityDialog): its field opens Pico's keyboard,
  * the records choice cycles, the statement ticks, and the answer sends what
  * the form holds.
  */
@@ -634,49 +625,20 @@ export function identityScreen(ctx: Ctx, asking: Extract<SettingsQuestion, { _ta
   const identity: SurfaceIdentityManagement | undefined = model.identityManagement
   const status = identity?.status
   const working = status?._tag === "Working"
-  const exportKey = picoIdentityRetiredKey(action, "export")
-  const deleteKey = picoIdentityRetiredKey(action, "delete")
-  const switching = action === PICO_IDENTITY_SWITCH_LOCAL_ACTION || action === PICO_IDENTITY_SWITCH_NIP46_ACTION
-  const title = action === PICO_IDENTITY_BACKUP_ACTION ? "BACK UP IDENTITY"
-    : action === PICO_IDENTITY_SWITCH_LOCAL_ACTION ? "SWITCH FROM BACKUP"
-    : action === PICO_IDENTITY_SWITCH_NIP46_ACTION ? "SWITCH TO NIP-46"
-    : exportKey !== undefined ? "BACK UP RETIRED KEY"
-    : "DELETE RETIRED KEY"
+  const title = "SWITCH TO NIP-46"
   const rows: { readonly id: string; readonly view: ButtonView; readonly act?: Act }[] = []
-  const field = (id: Typing["field"], label: string, value: string, secret: boolean) => rows.push({
+  const field = (id: Typing["field"], label: string, value: string) => rows.push({
     id,
-    view: button(label, { detail: value === "" ? "—" : secret ? mask(value) : value.length > 18 ? `${value.slice(0, 18)}…` : value }),
-    act: [local(state => ({ ...state, typing: { field: id, label, draft: { text: value, capitals: false, symbols: false }, secret } }))],
+    view: button(label, { detail: value === "" ? "—" : value.length > 18 ? `${value.slice(0, 18)}…` : value }),
+    act: [local(state => ({ ...state, typing: { field: id, label, draft: { text: value, capitals: false, symbols: false }, secret: false } }))],
   })
   let note = ""
-  let qr = ""
-  let qrSize = 0
-  let secret = ""
-  if (status?._tag === "BackupReady") {
-    note = "Korri cannot recover a lost key. If this backup is not exported before device loss, the identity is unrecoverable. Store it outside the device."
-    const drawn = qrPath(status.encryptedSecret)
-    qr = drawn?.path ?? ""
-    qrSize = drawn?.size ?? 0
-    secret = status.encryptedSecret
-    rows.push({ id: "done", view: button("DONE"), act: [nav({ _tag: "ClosedIdentity" })] })
-  } else if (status?._tag === "Switched") {
+  if (status?._tag === "Switched") {
     note = "Korri is restarting with the new identity."
     rows.push({ id: "close", view: button("CLOSE"), act: [nav({ _tag: "ClosedIdentity" })] })
   } else {
-    if (action === PICO_IDENTITY_BACKUP_ACTION || exportKey !== undefined) {
-      field("identity:password", "Password", form.password, true)
-      rows.push({
-        id: "submit",
-        view: button(working && status?._tag === "Working" ? status.operation : "CREATE BACKUP", { disabled: working || form.password.trim() === "" }),
-        act: [nav({ _tag: "SubmittedIdentity" })],
-      })
-    }
-    if (action === PICO_IDENTITY_SWITCH_LOCAL_ACTION) {
-      field("identity:secret", "Encrypted backup", form.secret, false)
-      field("identity:password", "Password", form.password, true)
-    }
-    if (action === PICO_IDENTITY_SWITCH_NIP46_ACTION) field("identity:bunkerUri", "Bunker URI", form.bunkerUri, false)
-    if (switching) {
+    if (action === PICO_IDENTITY_SWITCH_NIP46_ACTION) {
+      field("identity:bunkerUri", "Bunker URI", form.bunkerUri)
       rows.push({
         id: "disposition",
         view: button("Local records", { detail: form.disposition === "transfer" ? "◀ Transfer ▶" : "◀ Delete ▶" }),
@@ -688,21 +650,12 @@ export function identityScreen(ctx: Ctx, asking: Extract<SettingsQuestion, { _ta
         act: [nav({ _tag: "CheckedIdentityConfirmation", confirmed: !form.confirmed })],
       })
       note = "Save files and save states stay under the plugin account."
-      const incomplete = !form.confirmed || (action === PICO_IDENTITY_SWITCH_LOCAL_ACTION ? form.secret.trim() === "" || form.password.trim() === "" : form.bunkerUri.trim() === "")
+      const incomplete = !form.confirmed || form.bunkerUri.trim() === ""
       rows.push({
         id: "submit",
         view: button(working && status?._tag === "Working" ? status.operation : "SWITCH IDENTITY", { warn: true, disabled: working || incomplete }),
         act: [nav({ _tag: "SubmittedIdentity" })],
       })
-    }
-    if (deleteKey !== undefined) {
-      note = "Delete this private key only after its encrypted backup is stored elsewhere."
-      rows.push({
-        id: "confirmed",
-        view: button(`${form.confirmed ? "[X]" : "[ ]"} I have stored its backup`),
-        act: [nav({ _tag: "CheckedIdentityConfirmation", confirmed: !form.confirmed })],
-      })
-      rows.push({ id: "submit", view: button("DELETE KEY", { warn: true, disabled: working || !form.confirmed }), act: [nav({ _tag: "SubmittedIdentity" })] })
     }
     rows.push({ id: "close", view: button("CLOSE"), act: [nav({ _tag: "ClosedIdentity" })] })
   }
@@ -721,16 +674,13 @@ export function identityScreen(ctx: Ctx, asking: Extract<SettingsQuestion, { _ta
         title,
         problem: status?._tag === "Problem" ? status.message : "",
         note,
-        qr,
-        qrSize,
-        secret,
         rows: rows.map(row => ({ ...row.view, ...mark(row.id, focused) })),
       },
     },
   }
 }
 
-/** Pico's keyboard over a form field (identity, a backup password). */
+/** Pico's keyboard over a form field: a signer's address. */
 export function typingScreen(ctx: Ctx, typing: Typing, place: string): Screen {
   const focused = ctx.s.focus
   const edit = (change: (draft: PicoTextDraft) => PicoTextDraft): Act =>
@@ -766,13 +716,7 @@ export function typingScreen(ctx: Ctx, typing: Typing, place: string): Screen {
 function commitTyping(typing: Typing): Act {
   const value = typing.draft.text
   switch (typing.field) {
-    case "identity:password":
-      return [nav({ _tag: "EditedIdentity", field: "password", value })]
-    case "identity:secret":
-      return [nav({ _tag: "EditedIdentity", field: "secret", value })]
     case "identity:bunkerUri":
       return [nav({ _tag: "EditedIdentity", field: "bunkerUri", value })]
-    case "backup:password":
-      return [{ to: "setup", message: { _tag: "EditedBackupPassword", password: value } }]
   }
 }
