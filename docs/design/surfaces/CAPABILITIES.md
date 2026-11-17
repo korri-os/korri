@@ -129,16 +129,14 @@ Rules for an answer:
 
 ## Identity (`SurfaceModel.identityManagement`)
 
-- **C16 Export backup.** Ask for a password, `exportIdentityBackup`, then
-  show `BackupReady.encryptedSecret` so a person can carry it away (a QR
-  code and the text).
-- **C17 Switch from backup.** Enter an encrypted secret and its password,
-  choose the `disposition` (transfer or delete), confirm trust loss,
-  `switchIdentityFromBackup`.
+- **C16 Export backup.** Removed: no device keeps a person key (ADR 0082).
+  No surface answers it.
+- **C17 Switch from backup.** Removed with C16 (ADR 0082). No surface
+  answers it.
 - **C18 Switch by bunker.** Enter a NIP-46 bunker URI, disposition, trust-loss
   confirmation, `switchIdentityToNip46`.
-- **C19 Retired keys.** List `retiredPublicKeys`; `deleteRetiredIdentity`
-  only after `backupConfirmed`.
+- **C19 Retired keys.** Removed with C16 (ADR 0082). No surface answers
+  it.
 - **C20 Identity status.** Working with an `operation`, Problem with a
   message, Switched with the new `ownerPublicKey`; `dismissIdentityStatus()`.
 

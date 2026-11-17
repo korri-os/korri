@@ -28,7 +28,7 @@ A plugin with no publisher signature. Its namespace proves nothing about who mad
 Putting an author's own plugin build on a device without a plugin repository. The device owner still approves it.
 
 **Person key**:
-The key that identifies one person to Korri, made from that person's recovery words. It is used only for Korri, never as the person's social Nostr identity. korrid never holds its private half.
+The key that identifies one person to Korri, made from that person's recovery words. It is used only for Korri, never as the person's social Nostr identity. korrid never stores its private half; it carries the recovery words in memory only while the person uses them.
 _Avoid_: account, user key, login, npub
 
 **Recovery words**:
