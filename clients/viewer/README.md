@@ -583,6 +583,11 @@ What differs:
   The pixels are the same (below).
 - A failed setup releases its EGL display at once; the C keeps it until
   its cleanup. Both then show no frame and say why once.
+- Each log line's `(EGL 0x...)` is the error of the call that failed.
+  khronos-egl reads `eglGetError` itself, which clears it, so the port
+  keeps the code that the call returned. For a swap that fails, the C
+  reads `eglGetError` after `eglDestroyImageKHR` and prints `0x3000`; the
+  port prints the swap's own code.
 - The port logs one line when it starts (`picture: the Rust EGL presenter
   shows VA-API surfaces`), so a run shows which code drew.
 
@@ -599,6 +604,8 @@ Tests (`src/egl_presenter/tests.rs`), on Xvfb with Mesa's software EGL
   black outside the place, bright in the left half and dark in the right.
 - An export of two layers, or one that names a missing object: neither
   shows it.
+- A setup on a window that is gone fails with `EGL_BAD_NATIVE_WINDOW`
+  (`0x300b`), the surface's own error, not `0x3000`.
 - The import's attributes, plane by plane, with and without modifiers;
   the colour hints from the frame's matrix and range.
 

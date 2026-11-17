@@ -10,9 +10,9 @@ pub(super) fn api() -> &'static egl::Instance<egl::Static> {
     &egl::API
 }
 
-/// Why no window came. The presenter words it as its C does.
+/// The step that gave no window. The presenter words it as its C does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Failure {
+pub(super) enum Step {
     Display,
     Initialize,
     Config,
@@ -22,7 +22,34 @@ pub(super) enum Failure {
     Current,
 }
 
-/// The last EGL error of this thread, as `eglGetError` gives it.
+/// A step that failed, and EGL's error code for it. khronos-egl reads
+/// `eglGetError` itself when a call fails, which clears it: the code comes
+/// with the call's error, not from a later `eglGetError`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Failure {
+    pub(super) step: Step,
+    pub(super) code: i32,
+}
+
+impl Failure {
+    /// A call that failed with `error`.
+    fn at(step: Step) -> impl FnOnce(egl::Error) -> Self {
+        move |error| Self {
+            step,
+            code: error.native(),
+        }
+    }
+
+    /// A call whose error khronos-egl did not read: it is still pending.
+    fn pending(step: Step) -> Self {
+        Self {
+            step,
+            code: error_code(),
+        }
+    }
+}
+
+/// The pending EGL error of this thread, as `eglGetError` gives it.
 pub(super) fn error_code() -> i32 {
     api()
         .get_error()
@@ -38,8 +65,11 @@ impl Display {
     /// `x11` is a live Xlib `Display*`.
     pub(super) unsafe fn open(x11: *mut c_void) -> Result<Self, Failure> {
         // SAFETY: the caller's display.
-        let display = unsafe { api().get_display(x11) }.ok_or(Failure::Display)?;
-        api().initialize(display).map_err(|_| Failure::Initialize)?;
+        let display =
+            unsafe { api().get_display(x11) }.ok_or_else(|| Failure::pending(Step::Display))?;
+        api()
+            .initialize(display)
+            .map_err(Failure::at(Step::Initialize))?;
         Ok(Self(Some(display)))
     }
 
@@ -47,11 +77,12 @@ impl Display {
         self.0.expect("a display until it becomes a window's")
     }
 
-    pub(super) fn extensions(&self) -> String {
+    /// The display's extensions, or EGL's error code.
+    pub(super) fn extensions(&self) -> Result<String, i32> {
         api()
             .query_string(Some(self.get()), egl::EXTENSIONS)
             .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_default()
+            .map_err(|error| error.native())
     }
 
     /// A context of OpenGL ES 2 from the first config that matches
@@ -60,12 +91,11 @@ impl Display {
         let display = self.get();
         let config = api()
             .choose_first_config(display, config)
-            .ok()
-            .flatten()
-            .ok_or(Failure::Config)?;
+            .map_err(Failure::at(Step::Config))?
+            .ok_or_else(|| Failure::pending(Step::Config))?;
         api()
             .bind_api(egl::OPENGL_ES_API)
-            .map_err(|_| Failure::Api)?;
+            .map_err(Failure::at(Step::Api))?;
         let context = api()
             .create_context(
                 display,
@@ -73,25 +103,25 @@ impl Display {
                 None,
                 &[egl::CONTEXT_CLIENT_VERSION, 2, egl::NONE],
             )
-            .map_err(|_| Failure::Context)?;
+            .map_err(Failure::at(Step::Context))?;
         // SAFETY: the caller's X11 window on this display; an XID.
         let surface = unsafe {
             api().create_window_surface(display, config, window as egl::NativeWindowType, None)
         };
         let surface = match surface {
             Ok(surface) => surface,
-            Err(_) => {
+            Err(error) => {
+                let failure = Failure::at(Step::Surface)(error);
                 let _ = api().destroy_context(display, context);
-                return Err(Failure::Surface);
+                return Err(failure);
             }
         };
-        if api()
-            .make_current(display, Some(surface), Some(surface), Some(context))
-            .is_err()
+        if let Err(error) = api().make_current(display, Some(surface), Some(surface), Some(context))
         {
+            let failure = Failure::at(Step::Current)(error);
             let _ = api().destroy_surface(display, surface);
             let _ = api().destroy_context(display, context);
-            return Err(Failure::Current);
+            return Err(failure);
         }
         self.0 = None;
         // SAFETY: the context is current on this thread; glow reads its
@@ -139,8 +169,11 @@ impl Window {
         let _ = api().make_current(self.display, None, None, None);
     }
 
-    pub(super) fn swap(&self) -> bool {
-        api().swap_buffers(self.display, self.surface).is_ok()
+    /// The frame went to the window, or EGL's error code.
+    pub(super) fn swap(&self) -> Result<(), i32> {
+        api()
+            .swap_buffers(self.display, self.surface)
+            .map_err(|error| error.native())
     }
 
     /// An EGL function that `eglGetProcAddress` gives.

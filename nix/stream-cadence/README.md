@@ -1744,7 +1744,7 @@ picture fills it. Korri's X11 VA-API viewer then shows each frame with
 (`clients/viewer/picture/video/vaapi_egl.c`) never runs: it draws only a
 picture with bars (#476), or every picture where `vaPutSurface` cannot
 present (Intel under Xwayland, #477). Step F of #391 replaces that
-presenter (`clients/viewer/README.md`, "EGL presenters in Rust"), so a
+presenter (`clients/viewer/README.md`, "EGL presenter in Rust"), so a
 measure of it on aka needs bars.
 
 ```sh

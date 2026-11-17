@@ -11,7 +11,7 @@
 //! same), and a setup that fails releases its display at once, where the C
 //! keeps it until the cleanup.
 use super::{
-    egl::{Display, Failure, Window, error_code},
+    egl::{Display, Step, Window, error_code},
     ffi,
 };
 use crate::log;
@@ -71,12 +71,15 @@ fn state() -> MutexGuard<'static, State> {
     STATE.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-fn fail(what: &str) -> bool {
-    log::line(&format!(
-        "VAAPI EGL presentation: {what} (EGL 0x{:x})",
-        error_code()
-    ));
+/// The log line of a failure, with EGL's error code as the C prints it.
+fn fail(what: &str, code: i32) -> bool {
+    log::line(&format!("VAAPI EGL presentation: {what} (EGL 0x{code:x})"));
     false
+}
+
+/// A failure after a call whose error is still pending, as the C reads it.
+fn pending(what: &'static str) -> (&'static str, i32) {
+    (what, error_code())
 }
 
 /// `vaapi_egl_present`: draws the exported surface at `place` in the
@@ -103,8 +106,8 @@ pub(super) unsafe fn present(
                 log::line("picture: the Rust EGL presenter shows VA-API surfaces");
                 State::Ready(Box::new(ready))
             }
-            Err(what) => {
-                fail(what);
+            Err((what, code)) => {
+                fail(what, code);
                 State::Failed
             }
         };
@@ -115,6 +118,17 @@ pub(super) unsafe fn present(
     }
 }
 
+/// The setup's refusal for this display and window, if any: the C's words
+/// and EGL's error code.
+///
+/// # Safety
+/// As `present`.
+#[cfg(test)]
+pub(super) unsafe fn refusal(x11: *mut c_void, window: c_ulong) -> Option<(&'static str, i32)> {
+    // SAFETY: the caller's display and window.
+    unsafe { Vaapi::setup(x11, window) }.err()
+}
+
 /// `vaapi_egl_cleanup`.
 pub(super) fn cleanup() {
     *state() = State::Unset;
@@ -123,12 +137,16 @@ pub(super) fn cleanup() {
 impl Vaapi {
     /// # Safety
     /// As `present`.
-    unsafe fn setup(x11: *mut c_void, window: c_ulong) -> Result<Self, &'static str> {
+    /// Why it failed: the C's words and EGL's error code.
+    unsafe fn setup(x11: *mut c_void, window: c_ulong) -> Result<Self, (&'static str, i32)> {
         // SAFETY: the caller's display.
-        let display = unsafe { Display::open(x11) }.map_err(|_| "no EGL display")?;
-        let extensions = display.extensions();
+        let display =
+            unsafe { Display::open(x11) }.map_err(|failure| ("no EGL display", failure.code))?;
+        let extensions = display
+            .extensions()
+            .map_err(|code| ("EGL cannot import a dmabuf", code))?;
         if !extensions.contains("EGL_EXT_image_dma_buf_import") {
-            return Err("EGL cannot import a dmabuf");
+            return Err(pending("EGL cannot import a dmabuf"));
         }
         let modifiers = extensions.contains("EGL_EXT_image_dma_buf_import_modifiers");
         let config = [
@@ -144,13 +162,14 @@ impl Vaapi {
             egl::OPENGL_ES2_BIT,
             egl::NONE,
         ];
-        let window = display
-            .window(window, &config)
-            .map_err(|failure| match failure {
-                Failure::Config => "no window config",
-                Failure::Api => "no OpenGL ES",
+        let window = display.window(window, &config).map_err(|failure| {
+            let what = match failure.step {
+                Step::Config => "no window config",
+                Step::Api => "no OpenGL ES",
                 _ => "no context on the window",
-            })?;
+            };
+            (what, failure.code)
+        })?;
         // The newest frame goes out at once. The compositor picks the frame
         // that each refresh shows, so a wait for the display here only adds
         // delay.
@@ -167,17 +186,17 @@ impl Vaapi {
         let (Some(create_image), Some(destroy_image), Some(image_target_texture), true) =
             (procs.0, procs.1, procs.2, external)
         else {
-            return Err("OpenGL ES cannot sample an external image");
+            return Err(pending("OpenGL ES cannot sample an external image"));
         };
         let gl = &window.gl;
         // SAFETY: the window's context is current on this thread.
         let (visible, last) = unsafe {
-            let program = gl.create_program().map_err(|_| NO_OBJECT)?;
+            let program = gl.create_program().map_err(|_| pending(NO_OBJECT))?;
             for (kind, source) in [
                 (glow::VERTEX_SHADER, VERTEX_SOURCE),
                 (glow::FRAGMENT_SHADER, FRAGMENT_SOURCE),
             ] {
-                let shader = gl.create_shader(kind).map_err(|_| NO_OBJECT)?;
+                let shader = gl.create_shader(kind).map_err(|_| pending(NO_OBJECT))?;
                 gl.shader_source(shader, source);
                 gl.compile_shader(shader);
                 gl.attach_shader(program, shader);
@@ -185,17 +204,17 @@ impl Vaapi {
             gl.bind_attrib_location(program, 0, "position");
             gl.link_program(program);
             if !gl.get_program_link_status(program) {
-                return Err("the shader did not link");
+                return Err(pending("the shader did not link"));
             }
             gl.use_program(Some(program));
             let visible = gl.get_uniform_location(program, "visible");
             let last = gl.get_uniform_location(program, "last");
-            let corners = gl.create_buffer().map_err(|_| NO_OBJECT)?;
+            let corners = gl.create_buffer().map_err(|_| pending(NO_OBJECT))?;
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(corners));
             gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, bytes_of(&CORNERS), glow::STATIC_DRAW);
             gl.vertex_attrib_pointer_f32(0, 2, glow::FLOAT, false, 0, 0);
             gl.enable_vertex_attrib_array(0);
-            let texture = gl.create_texture().map_err(|_| NO_OBJECT)?;
+            let texture = gl.create_texture().map_err(|_| pending(NO_OBJECT))?;
             let external = ffi::GL_TEXTURE_EXTERNAL_OES;
             gl.bind_texture(external, Some(texture));
             gl.tex_parameter_i32(external, glow::TEXTURE_MIN_FILTER, glow::LINEAR as i32);
@@ -233,7 +252,7 @@ impl Vaapi {
     ) -> bool {
         let Some(attributes) = import_attributes(picture, colour_hints(frame), self.modifiers)
         else {
-            return fail("EGL refused the decoded picture");
+            return fail("EGL refused the decoded picture", error_code());
         };
         let display = self.window.display.as_ptr();
         // SAFETY: a valid attribute list that ends with EGL_NONE; the fds
@@ -248,7 +267,7 @@ impl Vaapi {
             )
         };
         if image.is_null() {
-            return fail("EGL refused the decoded picture");
+            return fail("EGL refused the decoded picture", error_code());
         }
         let gl = &self.window.gl;
         let (coded_width, coded_height) = (picture.width as f32, picture.height as f32);
@@ -287,7 +306,12 @@ impl Vaapi {
         let shown = self.window.swap();
         // SAFETY: the image made above, no longer sampled.
         unsafe { (self.destroy_image)(display, image) };
-        shown || fail("the window did not take the frame")
+        // The swap's own error code: the C reads eglGetError after the
+        // destroy, which has cleared it.
+        shown.map_or_else(
+            |code| fail("the window did not take the frame", code),
+            |()| true,
+        )
     }
 }
 

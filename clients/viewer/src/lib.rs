@@ -4,8 +4,8 @@
 // Linux's sound also has a Rust port of its C (#391 step F, behind a feature).
 pub mod audio_output;
 mod callback;
-// The X11 platform's EGL presenters have Rust ports too (#391 step F).
 pub mod controls;
+// The X11 VA-API platform's EGL presenter has a Rust port too (#391 step F).
 pub mod egl_presenter;
 mod frame_record;
 #[cfg(not(target_os = "android"))]

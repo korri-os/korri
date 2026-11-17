@@ -364,6 +364,38 @@ fn an_export_that_egl_cannot_take_is_not_shown_by_either() {
 }
 
 #[test]
+fn a_setup_that_fails_reports_egls_own_error_code() {
+    let _picture = exclusive();
+    let display = connection();
+    // A window that is gone: EGL can make no surface on it.
+    // SAFETY: Xlib's own calls on the live connection.
+    let gone = unsafe {
+        let window = ffi::XCreateSimpleWindow(
+            display,
+            ffi::XDefaultRootWindow(display),
+            0,
+            0,
+            16,
+            16,
+            0,
+            0,
+            0,
+        );
+        ffi::XDestroyWindow(display, window);
+        ffi::XSync(display, 0);
+        window
+    };
+    // SAFETY: a live display; the window's XID names nothing.
+    let refused = unsafe { vaapi::refusal(display.cast(), gone) };
+    // khronos-egl reads and so clears eglGetError: a later read would give
+    // EGL_SUCCESS (0x3000), not the surface's error.
+    assert_eq!(
+        refused,
+        Some(("no context on the window", khronos_egl::BAD_NATIVE_WINDOW))
+    );
+}
+
+#[test]
 fn the_import_names_each_plane_and_the_colour_as_the_c_does() {
     let narrow = ffi::EGL_YUV_NARROW_RANGE_EXT as i32;
     let rec709 = ffi::EGL_ITU_REC709_EXT as i32;
