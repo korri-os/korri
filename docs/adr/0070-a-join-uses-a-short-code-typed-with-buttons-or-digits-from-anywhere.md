@@ -1,7 +1,6 @@
 # A join uses a short code, typed with buttons or digits, from anywhere
 
-**Owner decision, 2026-11-16.** Design in progress: the key exchange is not
-chosen.
+**Owner decision, 2026-11-16.**
 
 An owned device shows a join confirmation code. The person enters it on the
 new device. The two devices can be on any networks, near or far. They find
@@ -25,7 +24,10 @@ certain. Start and Select often open a system menu, so the code does not use
 them. Face buttons go by their role (confirm, back), not by letter, because
 Nintendo and Xbox swap A and B.
 
-The two devices run a key exchange built on the code (a PAKE). A relay, or
+The two devices run a key exchange built on the code (a PAKE). It uses
+1Password's CPace code, the only audited one in Rust (Cure53, 2022), copied
+into Korri at one exact commit and kept behind one module. Changing it later
+costs little: it runs only during a join, and nothing stored depends on it. A relay, or
 anyone who reads the relay, cannot get between the two devices without the
 code. Each code allows one guess.
 
