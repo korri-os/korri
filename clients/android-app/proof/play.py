@@ -58,9 +58,17 @@ The steps:
    (the adapter's log); korrid's apply turns Crop to fill on, which
    moves the video layer (the app's log, SurfaceFlinger's crop, a
    screenshot), and off again; a control of another runtime is refused.
-8. Home leaves the app: the runtime stops and korrid reads Stopped.
-   Starting the app again lets korrid's recovery start the stream again.
-9. Stop the emulator, its adb server, the holder and the sender.
+   On a touch screen korrid's snapshot also lists Toggle keyboard, a
+   command that closes the overlay.
+8. Toggle keyboard (#434, toward D7′), through the same trigger: korrid's
+   apply shows Android's soft keyboard over the stream, served to
+   NativeActivity's own view (`dumpsys input_method`); a tap on one of its
+   letters reaches the sender's Sunshine as a key; the second apply hides
+   it.
+9. Home leaves the app: the runtime stops and korrid reads Stopped, and the
+   keyboard's focus goes back. Starting the app again lets korrid's
+   recovery start the stream again.
+10. Stop the emulator, its adb server, the holder and the sender.
 
 The bars (#495): in each screenshot of the stream, the window outside the
 picture is black, below the status bar that the emulator keeps drawn: with
@@ -127,6 +135,12 @@ PROOF_APPLY = re.compile(r"korri-app: proof: apply ([0-9a-f]{32}) (\S+) (\S+) (o
 FILL = "set-fill-mode"
 FLIP = "set-face-button-flip"
 RUMBLE = "set-rumble"
+KEYBOARD = "toggle-keyboard"
+# Toggle keyboard: the app's line, and the viewer library's (soft_keyboard.rs).
+KEYBOARD_RAN = "korri-app: viewer control toggle-keyboard ran"
+KEYBOARD_TOGGLED = "keyboard: the soft keyboard toggled; the stream's view has the focus"
+KEYBOARD_GIVEN_BACK = "keyboard: the soft keyboard hides; the stream's view gives the focus back"
+NATIVE_VIEW = "android.app.NativeActivity$NativeContentView"
 # The emulator's window in landscape; a 1280x720 stream (placement.rs's tests).
 FITTED = "placed at (240, 0)-(2160, 1080) in the window 2400x1080"
 FILLED = "placed at (0, -135)-(2400, 1215) in the window 2400x1080, cropped to fill"
@@ -401,6 +415,35 @@ def toggles(snapshot: "dict | None") -> dict:
             "id": control["id"], "label": control.get("label"), "kind": interaction.get("kind"),
             "value": interaction.get("value")}
     return listed
+
+
+def touchscreen(emulator: "d8.Emulator") -> bool:
+    """Whether Android says that the device has a touch screen: the app then offers Toggle keyboard."""
+    return emulator.shell("pm has-feature android.hardware.touchscreen", check=False).stdout.strip() == "true"
+
+
+def input_method(emulator: "d8.Emulator", out: Path, name: str) -> dict:
+    """Android's input method: whether its keyboard shows, and the view that it serves."""
+    text = emulator.shell("dumpsys input_method", check=False).stdout
+    (out / f"input-method-{name}.txt").write_text(text)
+    shown = re.search(r"\bmInputShown=(true|false)", text)
+    served = re.search(r"\bmServedView=(\S+)", text)
+    return {"shown": None if shown is None else shown.group(1) == "true",
+            "served": None if served is None else served.group(1)}
+
+
+def keyboard_frame(emulator: "d8.Emulator", out: Path) -> "list[int] | None":
+    """The input method window's frame on the display (left, top, right, bottom), from the window manager."""
+    text = emulator.shell("dumpsys window windows", check=False).stdout
+    (out / "window-keyboard.txt").write_text(text)
+    for section in re.split(r"\n(?=\s*Window #)", text):
+        first = section.strip().splitlines()[0] if section.strip() else ""
+        if "InputMethod}" not in first:
+            continue
+        found = re.search(r"\b(?:mFrame|frame)=\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]", section)
+        if found:
+            return [int(v) for v in found.groups()]
+    return None
 
 
 def entry(block: str) -> dict:
@@ -753,11 +796,17 @@ def controls(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
     listed = toggles(first)
     steps["listed"] = listed
     prefix = f"viewer:{launch}:"
-    # No controller that can rumble takes part, so Rumble is not offered.
+    # No controller that can rumble takes part, so Rumble is not offered. On a
+    # touch screen Toggle keyboard is, a command first in Artemis's order.
+    expected = {KEYBOARD, FILL, FLIP} if touchscreen(emulator) else {FILL, FLIP}
+    steps["expected"] = sorted(expected)
     checks["korrids_snapshot_lists_the_controls"] = (
-        set(listed) == {FILL, FLIP}
-        and all(c["id"].startswith(prefix) and c["kind"] == "toggle" and c["value"] is False
-                for c in listed.values())
+        set(listed) == expected
+        and all(c["id"].startswith(prefix) for c in listed.values())
+        and all(c["kind"] == "toggle" and c["value"] is False for name, c in listed.items() if name != KEYBOARD)
+        and (KEYBOARD not in listed
+             or (listed[KEYBOARD]["kind"] == "command" and listed[KEYBOARD]["label"] == "Toggle keyboard"
+                 and next(iter(listed)) == KEYBOARD))
         and listed[FILL]["label"] == "Crop to fill" and listed[FLIP]["label"] == "Flip A/B and X/Y")
     steps["rumble_offered"] = RUMBLE in listed
     health = (first or {}).get("streamHealth") or {}
@@ -771,7 +820,7 @@ def controls(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
     # while the stream runs. The adapter logs a read whose controls changed.
     own = korrids_read(logcat, launch, 0, False, 10)
     steps["korrids_own_read"] = toggles(own)
-    checks["korrid_itself_reads_the_controls_through_the_treaty"] = set(toggles(own)) == {FILL, FLIP}
+    checks["korrid_itself_reads_the_controls_through_the_treaty"] = set(toggles(own)) == expected
     if FILL not in listed:
         return steps, checks
 
@@ -821,6 +870,62 @@ def controls(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
     off = proof_snapshot(emulator, logcat, launch)
     steps["snapshot_fill_off"] = toggles(off)
     checks["korrids_snapshot_shows_crop_to_fill_off"] = toggles(off).get(FILL, {}).get("value") is False
+    return steps, checks
+
+
+def keyboard(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.Remote", out: Path,
+             launch: str, listed: dict) -> tuple[dict, dict]:
+    """Toggle keyboard (#434, toward D7′): korrid's apply shows Android's soft keyboard over the stream,
+    served to NativeActivity's own view; a tap on one of its letters reaches the sender as a key; the
+    second apply hides it."""
+    steps: dict = {}
+    checks: dict = {}
+    sender.request("clock")
+    control = listed.get(KEYBOARD)
+    checks["korrid_offers_toggle_keyboard_on_a_touch_screen"] = control is not None \
+        and control["kind"] == "command" and control["label"] == "Toggle keyboard"
+    if control is None:
+        return steps, checks
+    steps["before"] = input_method(emulator, out, "before")
+    mark = logcat.mark()
+    steps["apply_on"] = proof_apply(emulator, logcat, launch, control["id"], "none")
+    # A command's Apply carries no value.
+    request = logcat.wait_for(re.compile(
+        r'korri-app: viewer request \{"launchId":"' + launch + r'","command":\{"kind":"Apply","value":\{"control":"'
+        + re.escape(control["id"]) + r'"\}\}\}'), mark, 5)
+    checks["korrids_apply_runs_toggle_keyboard_through_the_treaty"] = \
+        steps["apply_on"] == "ok" and request is not None and logcat.wait_for(KEYBOARD_RAN, mark, 5) is not None
+    checks["the_streams_view_takes_the_focus_and_the_keyboard_toggles"] = \
+        logcat.wait_for(KEYBOARD_TOGGLED, mark, 5) is not None
+    time.sleep(2)
+    steps["shown"] = input_method(emulator, out, "shown")
+    checks["the_keyboard_shows_for_the_streams_view"] = \
+        steps["shown"]["shown"] is True and NATIVE_VIEW in (steps["shown"]["served"] or "")
+    viewer_proof.screenshot(emulator, out / "keyboard.png")
+    frame = keyboard_frame(emulator, out)
+    steps["keyboard_frame"] = frame
+    codes: list[int] = []
+    if frame is not None:
+        left, top, right, bottom = frame
+        before = len(sender_packets(sender))
+        # The middle of the keyboard's second row of letters.
+        x, y = (left + right) // 2, top + (bottom - top) * 2 // 5
+        steps["key_tap"] = [x, y]
+        emulator.shell(f"input tap {x} {y}")
+        time.sleep(3)
+        codes = [int(p["fields"].get("keyCode", "0"), 16) & 0xFF
+                 for p in sender_packets(sender)[before:] if p["kind"] == "keyboard"]
+    steps["typed_codes"] = codes
+    # Windows virtual keys of the letters, A to Z.
+    checks["a_letter_of_the_soft_keyboard_reaches_the_sender"] = any(0x41 <= code <= 0x5A for code in codes)
+    steps["apply_off"] = proof_apply(emulator, logcat, launch, control["id"], "none")
+    time.sleep(2)
+    steps["hidden"] = input_method(emulator, out, "hidden")
+    checks["toggled_again_the_keyboard_hides"] = steps["apply_off"] == "ok" and steps["hidden"]["shown"] is False
+    after = toggles(proof_snapshot(emulator, logcat, launch))
+    steps["snapshot_after"] = after
+    checks["toggle_keyboard_changes_no_value"] = after.get(KEYBOARD, {}).get("kind") == "command" \
+        and after.get(FILL, {}).get("value") is False and after.get(FLIP, {}).get("value") is False
     return steps, checks
 
 
@@ -969,6 +1074,9 @@ def overlay(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.
     checks["the_overlay_shows_the_streams_controls"] = crop is not None and phrase(found, "Flip") is not None
     steps["crop_to_fill_row"] = crop
     steps["chosen_by"] = "touch" if crop is not None else "keys"
+    # On a touch screen Toggle keyboard is the first stream control, above Crop to fill.
+    steps["toggle_keyboard_row"] = phrase(found, "Toggle keyboard")
+    below = 1 if touchscreen(emulator) else 0
 
     before = video_layer(emulator, out, "overlay-fit")
     viewer_proof.screenshot(emulator, out / "overlay-fit.png")
@@ -976,7 +1084,7 @@ def overlay(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.
         name for name in ("overlay-controls.png", "overlay-fit.png") if (out / name).is_file()]
     mark = logcat.mark()
     # A tap on the row, or Confirm on it: the focus is there.
-    on = choose_fill(emulator, logcat, sender, crop, 0, True)
+    on = choose_fill(emulator, logcat, sender, crop, below, True)
     korrids_apply = logcat.wait_for(re.compile(
         r'korri-app: viewer request \{"launchId":"' + launch + r'","command":\{"kind":"Apply","value":\{"control":"viewer:'
         + launch + r':[0-9]+:[0-9]+:set-fill-mode","value":\{"kind":"toggle","value":true\}\}\}\}'), mark, 5)
@@ -1277,6 +1385,11 @@ def main() -> int:
         steps["controls"], controls_checks = controls(emulator, logcat, sender, out, launch)
         checks.update(controls_checks)
 
+        log("Toggle keyboard: Android's soft keyboard over the stream")
+        steps["keyboard"], keyboard_checks = keyboard(
+            emulator, logcat, sender, out, launch, steps["controls"].get("listed") or {})
+        checks.update(keyboard_checks)
+
         log("Home: leaving the app ends the stream")
         home_mark = logcat.mark()
         emulator.shell("input keyevent KEYCODE_HOME")
@@ -1285,6 +1398,9 @@ def main() -> int:
         checks["the_runtime_ends_and_its_layers_go"] = logcat.wait_for(ENDED, home_mark, 30) is not None
         checks["korrids_status_reads_stopped"] = logcat.wait_for(
             re.compile(rf"korri-app: viewer status for korrid: {launch} Stopped"), home_mark, 20) is not None
+        if "apply_on" in steps["keyboard"]:
+            checks["the_streams_end_hides_the_keyboard_and_gives_the_focus_back"] = \
+                logcat.wait_for(KEYBOARD_GIVEN_BACK, home_mark, 30) is not None
         time.sleep(2)
         d8.screenshot(emulator, out / "home.png")
         steps["after_home"] = d8.focused(emulator)

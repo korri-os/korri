@@ -19,15 +19,16 @@
 //!
 //! | Effect | Label | Interaction |
 //! | --- | --- | --- |
+//! | `toggle-keyboard` | Toggle keyboard | command (`Game.toggleKeyboard`); listed only on a device with a touch screen, as Artemis lists its touch controls (`touchOnly`); closes the overlay |
 //! | `set-fill-mode` | Crop to fill | toggle (`Game.toggleFillMode`: fit or fill) |
 //! | `set-face-button-flip` | Flip A/B and X/Y | toggle (`ControllerHandler.handleFlipFaceButtons`) |
 //! | `set-rumble` | Rumble | toggle (`Game.setRumble`), listed only while a controller that can rumble is in the stream (`ControllerHandler.hasRumble`) |
 //!
 //! The others need what this viewer does not have: Artemis's on-screen
-//! keyboards and controller, its pan and zoom, its mouse modes, its GL
-//! renderer (SGSR, the local cursor) and picture-in-picture
-//! (`clients/viewer/README.md`, slice D11).
-use anyhow::{Result, bail};
+//! full keyboard and controller, its pan and zoom, its mouse modes and touch
+//! sensitivity, its pointer capture (the local cursor), its GL renderer
+//! (SGSR) and picture-in-picture (`clients/viewer/README.md`, slice D11).
+use anyhow::{Result, anyhow, bail};
 use korri_viewer_treaty::{
     SurfaceGameplayControl, SurfaceGameplayControlInteraction as Interaction,
     SurfaceGameplayControlValue as Value, SurfaceStreamHealth,
@@ -36,6 +37,9 @@ use korri_viewer_treaty::{
 /// One control: an effect of Artemis's executor (`Effect`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Control {
+    /// `TOGGLE_KEYBOARD`: show Android's soft keyboard over the stream, or
+    /// hide it.
+    ToggleKeyboard,
     /// `SET_FILL_MODE`: crop the picture to fill the window, or fit it.
     Fill,
     /// `SET_FACE_BUTTON_FLIP`: a controller's A is B and X is Y, and back.
@@ -46,11 +50,17 @@ pub enum Control {
 
 impl Control {
     /// In Artemis's order (`Effect.values()`).
-    pub const ALL: [Control; 3] = [Control::Fill, Control::FlipFaceButtons, Control::Rumble];
+    pub const ALL: [Control; 4] = [
+        Control::ToggleKeyboard,
+        Control::Fill,
+        Control::FlipFaceButtons,
+        Control::Rumble,
+    ];
 
     /// The effect's wire name (`Effect.wire()`).
     pub fn wire(self) -> &'static str {
         match self {
+            Control::ToggleKeyboard => "toggle-keyboard",
             Control::Fill => "set-fill-mode",
             Control::FlipFaceButtons => "set-face-button-flip",
             Control::Rumble => "set-rumble",
@@ -60,38 +70,79 @@ impl Control {
     /// `KorriViewerControls.label`.
     pub fn label(self) -> &'static str {
         match self {
+            Control::ToggleKeyboard => "Toggle keyboard",
             Control::Fill => "Crop to fill",
             Control::FlipFaceButtons => "Flip A/B and X/Y",
             Control::Rumble => "Rumble",
         }
     }
 
-    /// `KorriViewerControls.dismiss`: none of these closes the overlay.
+    /// `KorriViewerControls.dismiss`: Toggle keyboard closes the overlay,
+    /// so that the keyboard shows over the stream.
     pub fn dismiss(self) -> bool {
-        false
+        matches!(self, Control::ToggleKeyboard)
     }
 
     /// `KorriViewerControls.supported`: whether the stream can perform it
     /// now.
     fn offered(self, offer: Offer) -> bool {
         match self {
+            Control::ToggleKeyboard => offer.touch,
             Control::Fill | Control::FlipFaceButtons => true,
             Control::Rumble => offer.rumble,
+        }
+    }
+
+    /// `KorriViewerControls.interaction`: a toggle with its value, or a
+    /// command, which has none.
+    fn interaction(self, values: Values) -> Interaction {
+        // `KorriViewerControls.toggle`.
+        let toggle = |value| Interaction::Toggle {
+            value,
+            true_label: "On".into(),
+            false_label: "Off".into(),
+        };
+        match self {
+            Control::ToggleKeyboard => Interaction::Command,
+            Control::Fill => toggle(values.fill),
+            Control::FlipFaceButtons => toggle(values.flip_face_buttons),
+            Control::Rumble => toggle(values.rumble),
+        }
+    }
+
+    /// The change that `value` asks for, checked as
+    /// `KorriMoonlightActionExecutor.valid` checks it: a command takes no
+    /// value, a toggle takes a toggle.
+    fn change(self, value: Option<&Value>) -> Result<Change> {
+        let toggle = |make: fn(bool) -> Change| match value {
+            Some(Value::Toggle { value }) => Ok(make(*value)),
+            _ => Err(anyhow!("{} takes a toggle", self.label())),
+        };
+        match self {
+            Control::ToggleKeyboard => match value {
+                None => Ok(Change::ToggleKeyboard),
+                Some(_) => bail!("{} takes no value", self.label()),
+            },
+            Control::Fill => toggle(Change::Fill),
+            Control::FlipFaceButtons => toggle(Change::FlipFaceButtons),
+            Control::Rumble => toggle(Change::Rumble),
         }
     }
 }
 
 /// What the stream can perform that depends on its devices: rumble needs a
-/// controller that can rumble (`ControllerHandler.hasRumble`). The thread
-/// that owns the stream says it.
+/// controller that can rumble (`ControllerHandler.hasRumble`), and the touch
+/// controls a touch screen (`KorriViewerControls.included`, its
+/// `FEATURE_TOUCHSCREEN`). The thread that owns the stream says it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Offer {
     pub rumble: bool,
+    pub touch: bool,
 }
 
 /// The stream's control values. The defaults are Artemis's: the picture
 /// fits (`ScaleMode.FIT`), the face buttons are not flipped, and rumble is
-/// on (`checkbox_enable_rumble`).
+/// on (`checkbox_enable_rumble`). A command has no value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Values {
     pub fill: bool,
@@ -110,30 +161,39 @@ impl Default for Values {
 }
 
 impl Values {
-    pub fn get(self, control: Control) -> bool {
-        match control {
-            Control::Fill => self.fill,
-            Control::FlipFaceButtons => self.flip_face_buttons,
-            Control::Rumble => self.rumble,
-        }
-    }
-
     /// These values after `change`.
     pub fn with(mut self, change: Change) -> Self {
-        match change.control {
-            Control::Fill => self.fill = change.value,
-            Control::FlipFaceButtons => self.flip_face_buttons = change.value,
-            Control::Rumble => self.rumble = change.value,
+        match change {
+            Change::Fill(value) => self.fill = value,
+            Change::FlipFaceButtons(value) => self.flip_face_buttons = value,
+            Change::Rumble(value) => self.rumble = value,
+            // The keyboard's visibility belongs to Android's window
+            // (`KorriViewerControls.apply` remembers nothing for it).
+            Change::ToggleKeyboard => {}
         }
         self
     }
 }
 
-/// A change that `Apply` asked for and `parse` accepted.
+/// A change that `Apply` asked for and `parse` accepted: a toggle's new
+/// value, or a command to run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Change {
-    pub control: Control,
-    pub value: bool,
+pub enum Change {
+    ToggleKeyboard,
+    Fill(bool),
+    FlipFaceButtons(bool),
+    Rumble(bool),
+}
+
+impl Change {
+    pub fn control(self) -> Control {
+        match self {
+            Change::ToggleKeyboard => Control::ToggleKeyboard,
+            Change::Fill(_) => Control::Fill,
+            Change::FlipFaceButtons(_) => Control::FlipFaceButtons,
+            Change::Rumble(_) => Control::Rumble,
+        }
+    }
 }
 
 /// The ids' common part (`KorriViewerControls.prefix`): the launch, the
@@ -158,12 +218,7 @@ pub fn list(prefix: &str, values: Values, offer: Offer) -> Vec<SurfaceGameplayCo
             disabled_reason: None,
             destructive: false,
             dismiss_on_success: control.dismiss(),
-            // `KorriViewerControls.toggle`.
-            interaction: Interaction::Toggle {
-                value: values.get(control),
-                true_label: "On".into(),
-                false_label: "Off".into(),
-            },
+            interaction: control.interaction(values),
         })
         .collect()
 }
@@ -181,11 +236,7 @@ pub fn parse(prefix: &str, id: &str, value: Option<&Value>, offer: Offer) -> Res
     else {
         bail!("Unknown or stale stream control");
     };
-    let value = match value {
-        Some(Value::Toggle { value }) => *value,
-        _ => bail!("{} takes a toggle", control.label()),
-    };
-    Ok(Change { control, value })
+    control.change(value)
 }
 
 /// The stream's status besides its controls, as Artemis's snapshot reads
@@ -222,6 +273,14 @@ mod tests {
         String::from_utf8(bytes).unwrap().trim_end().to_owned()
     }
 
+    /// Each listed control's wire name, in the list's order.
+    fn wires(prefix: &str, offer: Offer) -> Vec<String> {
+        list(prefix, Values::default(), offer)
+            .into_iter()
+            .map(|c| c.id.trim_start_matches(prefix).to_owned())
+            .collect()
+    }
+
     #[test]
     fn ids_are_artemis_prefix_and_wire_name() {
         assert_eq!(
@@ -230,7 +289,14 @@ mod tests {
         );
     }
 
-    const RUMBLE: Offer = Offer { rumble: true };
+    const RUMBLE: Offer = Offer {
+        rumble: true,
+        touch: false,
+    };
+    const TOUCH: Offer = Offer {
+        rumble: false,
+        touch: true,
+    };
 
     #[test]
     fn the_list_is_artemis_json_for_each_control_with_its_value() {
@@ -242,14 +308,22 @@ mod tests {
                 flip_face_buttons: false,
                 rumble: true,
             },
-            RUMBLE,
+            Offer {
+                rumble: true,
+                touch: true,
+            },
         );
-        // KorriViewerControls.snapshot's object for each, in its key order.
+        // KorriViewerControls.snapshot's object for each, in its key order,
+        // and in Artemis's order (`Effect.values()`): TOGGLE_KEYBOARD comes
+        // before SET_FILL_MODE.
         assert_eq!(
             json(&listed),
             format!(
                 concat!(
-                    r#"[{{"id":"{0}set-fill-mode","label":"Crop to fill","enabled":true,"#,
+                    r#"[{{"id":"{0}toggle-keyboard","label":"Toggle keyboard","enabled":true,"#,
+                    r#""destructive":false,"dismissOnSuccess":true,"#,
+                    r#""interaction":{{"kind":"command"}}}},"#,
+                    r#"{{"id":"{0}set-fill-mode","label":"Crop to fill","enabled":true,"#,
                     r#""destructive":false,"dismissOnSuccess":false,"#,
                     r#""interaction":{{"kind":"toggle","value":true,"trueLabel":"On","falseLabel":"Off"}}}},"#,
                     r#"{{"id":"{0}set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"#,
@@ -268,18 +342,12 @@ mod tests {
     #[test]
     fn rumble_is_listed_and_taken_only_while_a_controller_can_rumble() {
         let prefix = prefix(LAUNCH, 1, 1);
-        let wires = |offer| {
-            list(&prefix, Values::default(), offer)
-                .into_iter()
-                .map(|c| c.id.trim_start_matches(&prefix).to_owned())
-                .collect::<Vec<_>>()
-        };
         assert_eq!(
-            wires(Offer::default()),
+            wires(&prefix, Offer::default()),
             ["set-fill-mode", "set-face-button-flip"]
         );
         assert_eq!(
-            wires(RUMBLE),
+            wires(&prefix, RUMBLE),
             ["set-fill-mode", "set-face-button-flip", "set-rumble"]
         );
         let id = format!("{prefix}set-rumble");
@@ -287,22 +355,77 @@ mod tests {
         assert!(parse(&prefix, &id, Some(&off), Offer::default()).is_err());
         assert_eq!(
             parse(&prefix, &id, Some(&off), RUMBLE).unwrap(),
-            Change {
-                control: Control::Rumble,
-                value: false
-            }
+            Change::Rumble(false)
         );
         // Artemis's default: rumble on.
         assert!(Values::default().rumble);
     }
 
+    // KorriViewerControls.included: TOGGLE_KEYBOARD is one of the effects
+    // that Artemis lists only on a device with a touch screen (`touchOnly`).
+    #[test]
+    fn toggle_keyboard_is_listed_and_taken_only_on_a_touch_screen() {
+        let prefix = prefix(LAUNCH, 1, 1);
+        assert_eq!(
+            wires(&prefix, TOUCH),
+            ["toggle-keyboard", "set-fill-mode", "set-face-button-flip"]
+        );
+        let id = format!("{prefix}toggle-keyboard");
+        assert!(parse(&prefix, &id, None, Offer::default()).is_err());
+        assert!(parse(&prefix, &id, None, RUMBLE).is_err());
+        assert_eq!(
+            parse(&prefix, &id, None, TOUCH).unwrap(),
+            Change::ToggleKeyboard
+        );
+    }
+
+    // KorriMoonlightActionExecutor.valid: a COMMAND takes no value, and a
+    // TOGGLE takes a toggle.
+    #[test]
+    fn a_command_takes_no_value_and_a_toggle_takes_a_toggle() {
+        let prefix = prefix(LAUNCH, 1, 1);
+        let keyboard = format!("{prefix}toggle-keyboard");
+        for value in [
+            Value::Toggle { value: true },
+            Value::Choice { value: "0".into() },
+            Value::Range { value: 1.0 },
+        ] {
+            assert!(
+                parse(&prefix, &keyboard, Some(&value), TOUCH).is_err(),
+                "{value:?}"
+            );
+        }
+        assert!(parse(&prefix, &format!("{prefix}set-fill-mode"), None, TOUCH).is_err());
+    }
+
+    // KorriViewerControls.apply: TOGGLE_KEYBOARD remembers nothing, because
+    // the keyboard's visibility belongs to Android's window, not to the
+    // stream's values.
+    #[test]
+    fn toggling_the_keyboard_changes_no_value_and_closes_the_overlay() {
+        let changed = Values {
+            fill: true,
+            flip_face_buttons: true,
+            rumble: false,
+        };
+        assert_eq!(changed.with(Change::ToggleKeyboard), changed);
+        assert_eq!(Change::ToggleKeyboard.control(), Control::ToggleKeyboard);
+        // KorriViewerControls.dismiss.
+        assert!(Control::ToggleKeyboard.dismiss());
+        assert!(!Control::Fill.dismiss() && !Control::Rumble.dismiss());
+    }
+
     #[test]
     fn a_toggle_of_a_listed_control_is_a_change() {
         let prefix = prefix(LAUNCH, 1, 1);
-        for (wire, control) in [
-            ("set-fill-mode", Control::Fill),
-            ("set-face-button-flip", Control::FlipFaceButtons),
-            ("set-rumble", Control::Rumble),
+        let all = Offer {
+            rumble: true,
+            touch: true,
+        };
+        for (wire, change) in [
+            ("set-fill-mode", Change::Fill as fn(bool) -> Change),
+            ("set-face-button-flip", Change::FlipFaceButtons),
+            ("set-rumble", Change::Rumble),
         ] {
             for value in [true, false] {
                 assert_eq!(
@@ -310,19 +433,16 @@ mod tests {
                         &prefix,
                         &format!("{prefix}{wire}"),
                         Some(&Value::Toggle { value }),
-                        RUMBLE
+                        all
                     )
                     .unwrap(),
-                    Change { control, value }
+                    change(value)
                 );
+                assert_eq!(change(value).control().wire(), wire);
             }
         }
-        let change = Change {
-            control: Control::FlipFaceButtons,
-            value: true,
-        };
         assert_eq!(
-            Values::default().with(change),
+            Values::default().with(Change::FlipFaceButtons(true)),
             Values {
                 fill: false,
                 flip_face_buttons: true,
@@ -349,6 +469,13 @@ mod tests {
                 parse(&prefix, &stale, Some(&toggle), RUMBLE).is_err(),
                 "{stale}"
             );
+        }
+        // Another runtime's or activity's command.
+        for stale in [
+            format!("{}toggle-keyboard", super::prefix(LAUNCH, 2, 1)),
+            format!("{}toggle-keyboard", super::prefix(LAUNCH, 1, 2)),
+        ] {
+            assert!(parse(&prefix, &stale, None, TOUCH).is_err(), "{stale}");
         }
         let id = format!("{prefix}set-fill-mode");
         for wrong in [

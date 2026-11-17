@@ -15,12 +15,14 @@
 //! them to the runtime's lifecycle when the stream starts
 //! (`Lifecycle::controls`, with the viewer's battery and health readings).
 //! korrid's `snapshot` then lists them, and its `apply` is the treaty's
-//! Apply, which the loop thread performs at its next tick: "Crop to fill"
+//! Apply, which the loop thread performs at its next tick: "Toggle keyboard"
+//! shows or hides Android's soft keyboard over the stream (confirmed once
+//! Android's main thread has made the call, `soft_keyboard`), "Crop to fill"
 //! moves the video layer (confirmed once Android's main thread has applied
 //! the transaction), "Flip A/B and X/Y" changes the controllers' mapping,
 //! and "Rumble" goes to the controllers' feedback thread (slice D4b's). The
 //! loop thread offers Rumble while a controller that can rumble is in the
-//! stream.
+//! stream, and Toggle keyboard on a device with a touch screen.
 //!
 //! The adapter hands a launch to the loop thread over a channel, because the
 //! layers and the input belong to that thread. The loop thread never waits:
@@ -73,7 +75,7 @@ use hosted::{Closing, Hosted, Step};
 use jni::{objects::GlobalRef, objects::JObject, JNIEnv, JavaVM};
 use korri_shell::backend::android::Overlay;
 use korri_viewer::{
-    controls::{Control, Offer},
+    controls::{Change, Offer},
     devices::AndroidDevices,
     events,
     feedback::RumbleSwitch,
@@ -88,7 +90,7 @@ use korri_viewer::{
     picture::{FrameRecord, Picture},
     play::{Play, Routed},
     session::Identity,
-    status,
+    soft_keyboard, status,
 };
 use korri_viewer_treaty::{ViewerCommand, ViewerReply, ViewerRequest};
 use korrid::{
@@ -680,8 +682,14 @@ struct Playing {
     changes: ControlChanges,
     /// The control "Rumble": the controllers' feedback thread takes it.
     rumble: RumbleSwitch,
-    /// "Crop to fill" waits for Android's main thread to move the layer.
-    placing: Option<(ControlChange, mpsc::Receiver<anyhow::Result<()>>)>,
+    /// The device has a touch screen: the stream offers its touch controls.
+    touch: bool,
+    /// A change that waits for Android's main thread: "Crop to fill" for
+    /// the layer to move, "Toggle keyboard" for the input method's call.
+    answering: Option<(ControlChange, mpsc::Receiver<anyhow::Result<()>>)>,
+    /// "Toggle keyboard" gave the stream's view the focus: when the stream
+    /// ends, the keyboard hides and the view gives the focus back.
+    keyboard: bool,
     /// The shell's gameplay overlay over this stream (slice D5b).
     hosted: Hosted,
     /// Where each opening's leave thread answers, with the opening's
@@ -1139,6 +1147,7 @@ impl Stream {
         // The stream's controls and status, for korrid's snapshot and
         // Apply; this activity is their lease.
         let changes = lifecycle.controls(self.id, status::readings);
+        let touch = status::touchscreen();
         let (answers, left) = mpsc::channel();
         Phase::Playing(Box::new(Playing {
             launch,
@@ -1157,7 +1166,9 @@ impl Stream {
             decoded,
             changes,
             rumble,
-            placing: None,
+            touch,
+            answering: None,
+            keyboard: false,
             hosted: Hosted::default(),
             answers,
             left,
@@ -1227,45 +1238,60 @@ impl Stream {
     }
 
     /// korrid's changes to the stream's controls, in order: each is
-    /// confirmed once it has taken effect. A fill waits for its layer.
+    /// confirmed once it has taken effect. A fill waits for its layer, and a
+    /// keyboard toggle for the input method's call.
     fn controls(&self, playing: &mut Playing) {
         // Rumble is offered while a controller that can rumble is in the
-        // stream, as Artemis offers it.
+        // stream, and the touch controls on a touch screen, as Artemis
+        // offers them.
         playing.changes.offer(Offer {
             rumble: playing.play.has_rumble(),
+            touch: playing.touch,
         });
-        if let Some((change, answer)) = playing.placing.take() {
+        if let Some((change, answer)) = playing.answering.take() {
+            let failed = match change.change {
+                Change::ToggleKeyboard => "the soft keyboard did not toggle",
+                Change::Fill(_) | Change::FlipFaceButtons(_) | Change::Rumble(_) => {
+                    "the video layer did not move"
+                }
+            };
             let result = match answer.try_recv() {
                 Err(mpsc::TryRecvError::Empty) => {
-                    playing.placing = Some((change, answer));
+                    playing.answering = Some((change, answer));
                     return;
                 }
                 Ok(Ok(())) => Ok(()),
-                Ok(Err(cause)) => Err(format!("the video layer did not move: {cause:#}")),
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    Err("the video layer did not move".to_owned())
-                }
+                Ok(Err(cause)) => Err(format!("{failed}: {cause:#}")),
+                Err(mpsc::TryRecvError::Disconnected) => Err(failed.to_owned()),
             };
-            // The fill counts only now; one that the main thread did not
-            // apply is undone.
-            playing.layers.fill_answered(&self.app, result.is_ok());
-            // Touches map into the picture's place once it is there.
-            playing.play.place(playing.layers.placed);
-            log_placement(&playing.layers);
+            if let Change::Fill(_) = change.change {
+                // The fill counts only now; one that the main thread did not
+                // apply is undone.
+                playing.layers.fill_answered(&self.app, result.is_ok());
+                // Touches map into the picture's place once it is there.
+                playing.play.place(playing.layers.placed);
+                log_placement(&playing.layers);
+            }
             done(change, result);
         }
         while let Some(change) = playing.changes.next() {
-            let value = change.change.value;
-            match change.change.control {
-                Control::Fill => match playing.layers.set_fill(&self.app, value) {
+            match change.change {
+                // korrid has closed the overlay first (the control
+                // dismisses it): the keyboard shows over the stream.
+                Change::ToggleKeyboard => {
+                    playing.keyboard = true;
+                    playing.answering = Some((change, soft_keyboard::toggle(&self.app)));
+                    return;
+                }
+                Change::Fill(value) => match playing.layers.set_fill(&self.app, value) {
                     Some(answer) => {
-                        playing.placing = Some((change, answer));
+                        playing.answering = Some((change, answer));
                         return;
                     }
                     // The window has the stream's shape: nothing moves.
                     None => done(change, Ok(())),
                 },
-                Control::FlipFaceButtons => {
+                Change::FlipFaceButtons(value) => {
                     let result = if playing.play.set_flip_face_buttons(value) {
                         Ok(())
                     } else {
@@ -1275,7 +1301,7 @@ impl Stream {
                 }
                 // In effect at once for the host's next rumble; the
                 // feedback thread stops the vibrations that run.
-                Control::Rumble => {
+                Change::Rumble(value) => {
                     playing.rumble.set(value);
                     done(change, Ok(()));
                 }
@@ -1293,10 +1319,14 @@ impl Stream {
             mut play,
             runtime,
             resumes,
+            keyboard,
             ..
         } = *playing;
         refuse_resumes(resumes, "the stream ended");
         play.end();
+        if keyboard {
+            soft_keyboard::give_back(&self.app);
+        }
         let joined = runtime.join();
         match &joined {
             Ok(Ok(())) => logcat::info(&format!("korri-app: viewer {launch} ended")),
@@ -1412,7 +1442,9 @@ impl Drop for Stream {
                     decoded: _,
                     changes: _,
                     rumble: _,
-                    placing: _,
+                    touch: _,
+                    answering: _,
+                    keyboard: _,
                     hosted: _,
                     answers: _,
                     left: _,
@@ -1635,15 +1667,22 @@ fn log_placement(layers: &Layers) {
 
 /// A control change has taken effect, or could not: korrid's Apply answers.
 fn done(change: ControlChange, result: Result<(), String>) {
-    let (control, value) = (change.change.control, change.change.value);
-    match &result {
-        Ok(()) => logcat::info(&format!(
-            "korri-app: viewer control {} is {value}",
-            control.wire()
+    let wire = change.change.control().wire();
+    match (change.change, &result) {
+        (Change::ToggleKeyboard, Ok(())) => {
+            logcat::info(&format!("korri-app: viewer control {wire} ran"))
+        }
+        (Change::ToggleKeyboard, Err(why)) => logcat::error(&format!(
+            "korri-app: viewer control {wire} did not run: {why}"
         )),
-        Err(why) => logcat::error(&format!(
-            "korri-app: viewer control {} not set to {value}: {why}",
-            control.wire()
+        (Change::Fill(value) | Change::FlipFaceButtons(value) | Change::Rumble(value), Ok(())) => {
+            logcat::info(&format!("korri-app: viewer control {wire} is {value}"))
+        }
+        (
+            Change::Fill(value) | Change::FlipFaceButtons(value) | Change::Rumble(value),
+            Err(why),
+        ) => logcat::error(&format!(
+            "korri-app: viewer control {wire} not set to {value}: {why}"
         )),
     }
     change.done(result);

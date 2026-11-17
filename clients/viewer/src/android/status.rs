@@ -3,7 +3,8 @@
 //! battery and the stream's health, read as Artemis's snapshot reads them
 //! (`KorriViewerControls.snapshot`, `MediaCodecDecoderRenderer.viewerHealth`).
 //! A controller passes [`readings`] to `Lifecycle::controls`; it runs on the
-//! thread that asks for a snapshot.
+//! thread that asks for a snapshot. [`touchscreen`] says whether the stream
+//! may offer the touch controls.
 use crate::{controls::Readings, log, picture};
 use jni::{
     JavaVM,
@@ -14,6 +15,55 @@ use korri_viewer_treaty::SurfaceStreamHealth;
 /// `Context.BATTERY_SERVICE` and `BatteryManager.BATTERY_PROPERTY_CAPACITY`.
 const BATTERY_SERVICE: &str = "batterymanager";
 const BATTERY_PROPERTY_CAPACITY: i32 = 4;
+
+/// `PackageManager.FEATURE_TOUCHSCREEN`.
+const FEATURE_TOUCHSCREEN: &str = "android.hardware.touchscreen";
+
+/// Whether the device has a touch screen
+/// (`PackageManager.hasSystemFeature(FEATURE_TOUCHSCREEN)`), as
+/// `KorriViewerControls.supported` asks: Artemis lists its touch controls
+/// only then. Through JNI on this thread; false when it cannot be read.
+pub fn touchscreen() -> bool {
+    let context = ndk_context::android_context();
+    // SAFETY: the process's VM, which android-activity gave ndk-context.
+    let Ok(vm) = (unsafe { JavaVM::from_raw(context.vm().cast()) }) else {
+        return false;
+    };
+    let Ok(mut env) = vm.attach_current_thread() else {
+        return false;
+    };
+    // SAFETY: ndk-context's global reference to the activity, which it
+    // keeps; this wrapper does not delete it.
+    let activity = unsafe { JObject::from_raw(context.context().cast()) };
+    let touch = env.with_local_frame(8, |env| -> jni::errors::Result<bool> {
+        let manager = env
+            .call_method(
+                &activity,
+                "getPackageManager",
+                "()Landroid/content/pm/PackageManager;",
+                &[],
+            )?
+            .l()?;
+        let feature = env.new_string(FEATURE_TOUCHSCREEN)?;
+        env.call_method(
+            &manager,
+            "hasSystemFeature",
+            "(Ljava/lang/String;)Z",
+            &[JValue::Object(&feature)],
+        )?
+        .z()
+    });
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_clear();
+    }
+    match touch {
+        Ok(touch) => touch,
+        Err(error) => {
+            log::line(&format!("status: the touch screen is unknown: {error}"));
+            false
+        }
+    }
+}
 
 /// The battery and the health now; each is absent when it cannot be read.
 pub fn readings() -> Readings {

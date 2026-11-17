@@ -87,6 +87,10 @@ pub mod placement;
 #[cfg(target_os = "android")]
 #[path = "android/play.rs"]
 pub mod play;
+// The soft keyboard over the stream, for "Toggle keyboard" (#434, D7′).
+#[cfg(target_os = "android")]
+#[path = "android/soft_keyboard.rs"]
+pub mod soft_keyboard;
 #[cfg(target_os = "android")]
 #[path = "android/sound.rs"]
 mod sound;

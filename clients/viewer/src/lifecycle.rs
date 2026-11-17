@@ -856,14 +856,62 @@ mod tests {
             asked
         });
         assert!(matches!(ask(&lifecycle, turn_on(&id)), R::Ok));
-        assert_eq!(
-            stream.join().unwrap(),
-            Change {
-                control: controls::Control::Fill,
-                value: true
-            }
-        );
+        assert_eq!(stream.join().unwrap(), Change::Fill(true));
         assert_eq!(toggles(&observed(&lifecycle))[0], (id, true));
+    }
+
+    // "Toggle keyboard" (#434, D7′): a command, listed on a touch screen,
+    // that closes the overlay. Apply takes it with no value, the stream's
+    // thread runs it, and no value changes (KorriViewerControls.apply).
+    #[test]
+    fn a_command_reaches_the_streams_thread_with_no_value() {
+        let lifecycle = in_app();
+        let changes = lifecycle.controls(1, Readings::default);
+        connect(&lifecycle);
+        assert!(
+            !observed(&lifecycle)
+                .controls
+                .iter()
+                .any(|control| control.id.ends_with(":toggle-keyboard")),
+            "listed without a touch screen"
+        );
+        changes.offer(Offer {
+            touch: true,
+            ..Offer::default()
+        });
+        let before = observed(&lifecycle);
+        let keyboard = before
+            .controls
+            .first()
+            .expect("Toggle keyboard first, in Artemis's order")
+            .clone();
+        assert!(keyboard.id.ends_with(":toggle-keyboard"), "{keyboard:?}");
+        assert_eq!(
+            keyboard.interaction,
+            korri_viewer_treaty::SurfaceGameplayControlInteraction::Command
+        );
+        assert!(keyboard.dismiss_on_success);
+
+        // A value is refused before it reaches the stream.
+        assert!(matches!(
+            ask(&lifecycle, turn_on(&keyboard.id)),
+            R::Error { .. }
+        ));
+        assert!(changes.next().is_none());
+
+        let stream = std::thread::spawn(move || {
+            let change = next_change(&changes);
+            let asked = change.change;
+            change.done(Ok(()));
+            asked
+        });
+        let run = C::Apply {
+            control: keyboard.id.clone(),
+            value: None,
+        };
+        assert!(matches!(ask(&lifecycle, run), R::Ok));
+        assert_eq!(stream.join().unwrap(), Change::ToggleKeyboard);
+        assert_eq!(observed(&lifecycle).controls, before.controls);
     }
 
     #[test]
@@ -919,7 +967,10 @@ mod tests {
         let changes = lifecycle.controls(1, Readings::default);
         connect(&lifecycle);
         assert_eq!(toggles(&observed(&lifecycle)).len(), 2);
-        changes.offer(Offer { rumble: true });
+        changes.offer(Offer {
+            rumble: true,
+            ..Offer::default()
+        });
         let listed = toggles(&observed(&lifecycle));
         let (rumble, on) = listed.last().unwrap().clone();
         assert!(rumble.ends_with(":set-rumble") && on, "{listed:?}");

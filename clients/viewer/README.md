@@ -1913,10 +1913,11 @@ that it already carried).
 Artemis can list thirteen controls (`KorriViewerControls.included`; its
 `label` names a fourteenth, Rotate screen, that `included` never lets
 through). A control is listed only when its viewer can perform it. This
-viewer lists three, and the status:
+viewer lists four, and the status:
 
 | Item | Source in Artemis | Here |
 | --- | --- | --- |
+| Toggle keyboard (`toggle-keyboard`, command, closes the overlay) | `Game.toggleKeyboard`: `InputMethodManager.toggleSoftInput(0, 0)`. Listed only on a touch screen, as Artemis lists its touch controls (`KorriViewerControls.included`, `touchOnly`, `FEATURE_TOUCHSCREEN`) | The same call on Android's main thread (`soft_keyboard.rs`), through JNI. Listed only when `PackageManager.hasSystemFeature(FEATURE_TOUCHSCREEN)` (`status::touchscreen`). Before the call, NativeActivity's own view takes the focus, because the focus can be in Slint's text view (`SlintInputView`, a text editor), where the keyboard would type into the shell. NativeActivity's view is no text editor, as Artemis's stream view is not, so the input method sends key events, and D4's keyboard mapping sends them to the host. Apply answers once the main thread has made the call and the input method serves that view; no value changes (`KorriViewerControls.apply` remembers nothing for it). korrid closes the overlay before it applies (`dismissOnSuccess`). When the stream ends, the keyboard hides and the view gives the focus back. Not carried: text that no key event carries (`KeyEvent.ACTION_MULTIPLE`, Artemis's `LiSendUtf8TextEvent`), as in D4 |
 | Crop to fill (`set-fill-mode`, toggle) | `Game.toggleFillMode`, `StreamContainer.setFillDisplay` | The video layer covers the window and its edges are cut (`placement::fill`): the layer's source crop is the stream's part that shows (`placement::geometry`), one `setGeometry`. The fill counts only once Android's main thread has applied it; one that it did not apply is undone (`placement::Fill`). The input maps into the whole picture, as Artemis's oversized view does |
 | Flip A/B and X/Y (`set-face-button-flip`, toggle) | `ControllerHandler.handleFlipFaceButtons` | The same swap after the remapping, for each press from then on (`gamepad.rs`) |
 | Rumble (`set-rumble`, toggle, on at the start) | `Game.setRumble`, `ControllerHandler.stopRumble`; listed only with a controller that can rumble (`hasRumble`) | Listed only while a controller of the stream can rumble with its own vibrators or the phone's (`Controllers::has_rumble`). Off: the core's rumble and trigger rumble are dropped as they come (`feedback.rs`'s inbox), and the feedback thread sets every controller's motors and triggers to 0 (`Feedback::stop_rumble`). On: the host's next rumble goes through. Apply answers once the switch is in the inbox; the vibrations stop at the feedback thread's next turn |
@@ -1928,7 +1929,9 @@ Ids are Artemis's: `viewer:<launch>:<generation>:<lease>:<effect>`. The
 generation is the runtime's number in the process (each Start of a launch
 has its own lifecycle), the lease the activity that shows it, so a control
 of an earlier runtime or activity is refused. Labels, `On`/`Off`, enabled,
-not destructive and `dismissOnSuccess` false are Artemis's. The values
+not destructive and `dismissOnSuccess` (true only for Toggle keyboard) are
+Artemis's. A command takes no value in Apply, and a toggle takes a toggle
+(`KorriMoonlightActionExecutor.valid`). The values
 belong to one stream and start at Artemis's defaults (fit, not flipped);
 nothing stores them (`KorriStreamControlState`).
 
@@ -1951,11 +1954,12 @@ Not carried, each because this viewer lacks the feature, not the control:
 
 | Artemis control | What it needs |
 | --- | --- |
-| Toggle keyboard, Full keyboard | Android's soft keyboard with text input, Artemis's own keyboard view; the NDK gives no characters (D4) |
+| Full keyboard | Artemis's own keyboard view (`KeyBoardLayoutController`) |
 | Pan & zoom | Artemis's `PanZoomHandler` gestures |
 | Mouse mode, Touch sensitivity | Artemis's trackpad modes; D4 carries multi-touch only |
 | Keyboard as controller | Artemis's on-screen controller |
-| Toggle local cursor, SGSR sharpness, SGSR edge threshold | Artemis's GL renderer; MediaCodec renders straight into the layer here |
+| Toggle local cursor | Pointer capture: Artemis's `toggleLocalCursor` requests or releases it (`AndroidNativePointerCaptureProvider`), and a captured mouse is relative; D4 carries an absolute mouse only |
+| SGSR sharpness, SGSR edge threshold | Artemis's GL renderer; MediaCodec renders straight into the layer here |
 | Picture-in-picture | An activity in picture-in-picture mode; leaving the app ends the stream here (D10) |
 
 Notice (Artemis shows a toast) and Resize (#476) stay unavailable.
