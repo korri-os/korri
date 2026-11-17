@@ -48,11 +48,11 @@ The person key a local signer creates when setup ends without a join. It is a re
 _Avoid_: guest account, default user
 
 **Join**:
-Binding a device that has no owner to an existing person key. A key holder signs the device's first owner statement; the device receives no copy of the person key.
+Binding a device that has no owner to an existing person key. A device the person already owns vouches for it, after the person confirms the same join confirmation code on both devices. The device receives no copy of the person key.
 _Avoid_: pair, link, sign in, adopt
 
 **Key holder**:
-A Korri device whose local signer holds the person key, or a phone signer linked to that person key. The device that created the automatic identity is one; the person can make another device one on purpose. Only a key holder can approve a join; on a phone signer the approval is its signing prompt.
+A Korri device whose local signer holds the person key, or a phone signer linked to that person key. The device that created the automatic identity is one; the person can make another device one on purpose. The person key stays cold: a key holder recovers and removes devices, but it is not needed for a join.
 _Avoid_: primary device, main device, master
 
 **Protection**:
@@ -63,9 +63,13 @@ _Avoid_: account protection, account recovery
 Ending one device's membership in a person's devices with a revoked owner statement that a key holder signs. A removed device can never rejoin with the same device key.
 _Avoid_: unpair, forget, sign out
 
-**Join code**:
-The eight-digit code a device that wants to join shows, and the person enters on a key holder when the devices cannot find each other. It works once and expires.
-_Avoid_: PIN, pairing code, password
+**Vouch**:
+An owned device's signed approval of a join. It makes the new device owned, as an owner statement does.
+_Avoid_: delegation, invite
+
+**Join confirmation code**:
+The short code that both devices show during a join, which the person compares before tapping Accept on each. A device with no screen shows none; the person types the other device's code into it. It works once.
+_Avoid_: PIN, pairing code, password, join code
 
 **Identity switch**:
 The explicit, consented replacement of a device owner by a different person key. It is the only way device authority moves.

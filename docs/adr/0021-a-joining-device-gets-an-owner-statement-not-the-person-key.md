@@ -1,5 +1,7 @@
 # A joining device gets an owner statement, not the person key
 
+**Superseded by ADR 0069 (2026-11-16):** any owned device now vouches for a join.
+
 **Owner decision, 2026-10-22.**
 
 When a device joins a person's devices, a key holder signs the new device's
