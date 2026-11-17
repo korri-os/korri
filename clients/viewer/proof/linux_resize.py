@@ -132,10 +132,18 @@ def picture_in_place(image, stream: tuple[int, int]) -> dict:
     found: dict = {"expected": want, "brightest_outside_picture": int(image[outside].max()) if outside.any() else 0}
     try:
         at = bar.search(image)
+        found["read"] = "search"
     except ValueError as error:
-        found["unreadable"] = str(error)
-        found["in_place"] = False
-        return found
+        # The search measures the cell from the sync's four runs, to a pixel:
+        # at a cell of 10 px that is 5 %, and 36 cells drift off the bar.
+        # Read where an aspect fit puts the bar instead, within a pixel or
+        # two and 2 % of its cell; a stretched picture has no bar there.
+        at = near(image, want)
+        if at is None:
+            found["unreadable"] = str(error)
+            found["in_place"] = False
+            return found
+        found["read"] = "at the fitted place"
     found.update(viewer_proof.describe(bar.read(image, at)), x=round(at.x, 1), y=at.y, cell=round(float(at.cell), 2))
     found["in_place"] = (
         abs(at.cell - want["cell"]) <= 0.15 * want["cell"]
@@ -144,6 +152,18 @@ def picture_in_place(image, stream: tuple[int, int]) -> dict:
         and found["brightest_outside_picture"] <= BLACK
     )
     return found
+
+
+def near(image, want: dict) -> "bar.Location | None":
+    """The bar read close to where an aspect fit puts it: the first clean read."""
+    cell = want["cell"]
+    for scale in (1.0, 0.99, 1.01, 0.98, 1.02):
+        for row in (1.0, 0.5, 1.5):
+            for dx in (0, -1, 1, -2, 2):
+                at = bar.Location(want["x"] + dx, want["y"] + row * cell, cell * scale)
+                if isinstance(bar.read(image, at), bar.Clean):
+                    return at
+    return None
 
 
 def screenshot(viewer: cli.Remote, capture: str, path: Path):
@@ -178,8 +198,11 @@ def pictures(sender: cli.Remote, viewer: cli.Remote, capture: str, out: Path, na
     return shots
 
 
-def when_cool(ask, minutes: float = 20):
-    """`ask()`, again while the heat guard refuses: builds heat aka for a while."""
+def when_cool(ask, agents: list, minutes: float = 20):
+    """`ask()`, again while the heat guard refuses: builds heat aka for a while.
+
+    The agents end a session that they have not heard from for 75 s, so each
+    hears from the host every 10 s of the wait."""
     until = time.monotonic() + minutes * 60
     while True:
         try:
@@ -188,7 +211,10 @@ def when_cool(ask, minutes: float = 20):
             if "The device is hot" not in str(error) or time.monotonic() > until:
                 raise
             log(f"waiting for the heat guard: {error}")
-            time.sleep(30)
+            for _ in range(3):
+                time.sleep(10)
+                for agent in agents:
+                    agent.request("clock")
 
 
 def unused_user(uid: int) -> None:
@@ -282,14 +308,14 @@ def main() -> int:
     prepared = None
     try:
         seat = viewer.request("discover")
-        when_cool(lambda: viewer.request("check"))
+        when_cool(lambda: viewer.request("check"), [sender, viewer])
         result["viewer_platform"] = seat["platform"]
         checks["the_viewer_takes_pc_va_api"] = seat["platform"] == "x11_vaapi"
         log("starting the sender fixture: Korri's Sunshine, certificate control, a private pair namespace")
         prepared = when_cool(lambda: sender.request(
             "prepare", sway=paths["sway"], sunshine=str(package / "bin/sunshine"),
             private_x_namespace=True, width=STREAM[0], height=STREAM[1], fps=60,
-            certificate_control={"uid": args.caller_uid, "gid": args.caller_uid}))
+            certificate_control={"uid": args.caller_uid, "gid": args.caller_uid}), [sender, viewer])
         facts = prepared["facts"]
         (out / "sender-facts.json").write_text(json.dumps(facts, indent=2))
         control = facts["sender_fixture"]["certificate_control"]
@@ -318,11 +344,14 @@ def main() -> int:
         checks["the_frame_record_was_asked"] = started.get("frame_times_refused") is None
         keep_alive(sender, viewer, 8)
         # The holder's request carries Sunshine's identity and the viewer's
-        # client certificate, as a grant holds them.
+        # client certificate, as a grant holds them. Both run folders are in
+        # the pair's own /tmp: read them through its mount namespace.
+        pair = Path("/proc", str(facts["pair_namespace"]["pid"]), "root")
         run_folder = Path(facts["sender_fixture"]["run_folder"])
-        host_uuid = json.loads((run_folder / "home" / "state.json").read_text())["root"]["uniqueid"]
+        state = pair / run_folder.relative_to("/") / "home" / "state.json"
+        host_uuid = json.loads(state.read_text())["root"]["uniqueid"]
         certificate = scratch / "client.pem"
-        shutil.copyfile(Path(keydir) / "client.pem", certificate)
+        shutil.copyfile(pair / Path(keydir).relative_to("/") / "client.pem", certificate)
         scratch.chmod(0o755)
         certificate.chmod(0o644)
 
