@@ -4,7 +4,7 @@
 
 A new device creates its automatic identity only when setup ends without a
 join. Until then it has no owner. A device that joins during setup therefore
-takes its first owner statement as a plain first binding: no identity switch,
+takes its vouch (ADR 0069) as a plain first binding: no identity switch,
 no data-disposition question, and no lost pairings. The cost: nothing that
 needs an owner, such as save sync or peers, works before setup ends.
 

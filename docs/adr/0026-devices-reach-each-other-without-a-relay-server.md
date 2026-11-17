@@ -39,7 +39,7 @@ person hosts to carry their traffic.
 - Korri hosts a service of its own only when that service is free to run and
   durable, so that it keeps working with no one paying for it or maintaining
   it. The Korri-run fallback Nostr relay that the device-join design proposed
-  (ADR 0025 on the `docs/device-join-design` branch) is dropped: devices use
+  (ADR 0025) is dropped: devices use
   public relays only.
 - The connection library is chosen from a spike that builds the hardest case,
   two devices away from home, with the strongest candidates.

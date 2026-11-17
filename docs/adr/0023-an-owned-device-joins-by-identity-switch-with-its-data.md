@@ -3,8 +3,8 @@
 **Owner decision, 2026-10-22.**
 
 A device that already has its own automatic identity joins another person key
-from Settings ("Join my other devices"). It uses the same join code and approval
-as setup. Underneath it is an identity switch that transfers local data, behind
+from Settings ("Join my other devices"). It uses the same join confirmation code and
+Accept as setup (ADR 0070). Underneath it is an identity switch that transfers local data, behind
 one confirmation. The person keeps saves and play history, and they start to
 sync with the new owner's devices.
 

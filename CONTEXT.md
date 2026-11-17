@@ -40,7 +40,7 @@ The name Korri shows for a person key: the name the person typed during setup. W
 _Avoid_: username, display name, nickname
 
 **Device owner**:
-The person key whose signed statement binds one device key. It is the person for every local call on that device.
+The person key that one device key is bound to, by an owner statement or a vouch. It is the person for every local call on that device.
 _Avoid_: active user, current user
 
 **Local signer**:
@@ -52,19 +52,11 @@ The person key a local signer creates when setup ends without a join. It is a re
 _Avoid_: guest account, default user
 
 **Join**:
-Binding a device that has no owner to an existing person key. A device the person already owns vouches for it, after the person enters that device's join confirmation code on the new one. The device receives no copy of the person key.
+Binding a device that has no owner to an existing person key: an owned device vouches for it after the person enters the join confirmation code and accepts. The device receives no copy of the person key.
 _Avoid_: pair, link, sign in, adopt
 
-**Key holder**:
-A Korri device whose local signer holds the person key, or a phone signer linked to that person key. The device that created the automatic identity is one; the person can make another device one on purpose. The person key stays cold: a key holder recovers and removes devices, but it is not needed for a join.
-_Avoid_: primary device, main device, master
-
-**Protection**:
-A second way back to the person key besides the key holder a person has: another key holder, a phone signer, or an encrypted backup. Korri offers it once after a second device joins.
-_Avoid_: account protection, account recovery
-
 **Removal**:
-Ending one device's membership in a person's devices with a revoked owner statement that a key holder signs. A removed device can never rejoin with the same device key.
+Ending one device's membership in a person's devices. Any owned device can remove another, and the person key can undo it.
 _Avoid_: unpair, forget, sign out
 
 **Vouch**:

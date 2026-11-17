@@ -5,7 +5,7 @@
 Once a device has joined a person's devices, the person never authenticates
 anything else between those devices. Save sync, peer access, endpoint
 discovery and Moonlight streaming trust all follow from the owner statements
-and happen without a prompt, a PIN or a code. Any feature that would ask the
+and vouches (ADR 0069), and happen without a prompt, a PIN or a code. Any feature that would ask the
 person to pair, approve or type something again between two of their own
 devices is a defect against this decision.
 

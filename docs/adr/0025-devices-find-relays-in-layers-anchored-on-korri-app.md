@@ -2,6 +2,9 @@
 
 **Owner decision, 2026-10-22.**
 
+**Partly superseded by ADR 0026 (2026-10-22):** devices use public relays
+only; layer 3 is dropped.
+
 A Korri device must still reach its other devices after being switched off for
 years. Public Nostr relays do not last that long: relay.nostr.band, one of the
 two relays every image shipped, was dead on 2026-10-22, and Nostr has no
@@ -21,7 +24,7 @@ So devices look for each other in this order:
 
 The relay list follows NIP-05: `https://korri.app/.well-known/nostr.json` with
 its `relays` field, served by Cloudflare Pages. The list is not signed. Every
-message on the relays is already signed and encrypted, so a wrong list, for
+message on the relays is signed, so a wrong list, for
 example after someone takes over a lapsed domain, causes an outage but cannot
 forge a join or read data.
 

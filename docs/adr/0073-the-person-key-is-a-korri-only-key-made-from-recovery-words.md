@@ -7,8 +7,8 @@ words (ADR 0072). It is not the person's social Nostr identity, and Korri
 does not ask a phone signer such as Amber for it.
 
 The reasons: the public device list (ADR 0069) is then not tied to the
-person's public identity. A stolen Korri key cannot post as the person. And
-because the key guards only entertainment devices, Korri can keep recovery
+person's public identity. A stolen Korri key cannot post as the person.
+Because the key guards only entertainment devices, Korri can keep recovery
 simple.
 
 ## Considered options
@@ -22,9 +22,8 @@ simple.
 - Korri cannot read the person's name or picture from a Nostr profile. The
   person types a name at setup.
 - Later social features, such as seeing friends by their Nostr key, need a
-  link between the two keys.
-- The owner's three current devices (Odin 2 Portal, RP Mini V2, Galaxy Z
-  Fold 8) move to a new person key once.
+  way to connect the two keys.
+- The owner's current devices move to a new person key once.
 - They move by a one-off identity switch on each device that keeps its data
-  (ADR 0023): the old key approves each move once in Amber, then retires
-  (owner decision, 2026-11-16). This is an operation, not code that stays.
+  (ADR 0023): the old key approves each move once in Amber, then Korri stops
+  using it (owner decision, 2026-11-16). This is an operation, not code that stays.

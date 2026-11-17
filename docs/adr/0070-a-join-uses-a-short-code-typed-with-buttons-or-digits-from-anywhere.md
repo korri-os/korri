@@ -13,14 +13,22 @@ symbol as both its digit and its button. A person with a controller presses
 the buttons. A person with a keyboard, or at a terminal, types the digits.
 That gives 279,936 codes.
 
-Every Korri device has a D-pad and two face buttons, and nothing more is
+Every Korri controller has a D-pad and two face buttons, and nothing more is
 certain. Start and Select often open a system menu, so the code does not use
 them. Face buttons go by their role (confirm, back), not by letter, because
 Nintendo and Xbox swap A and B.
 
 The two devices run a key exchange built on the code (a PAKE). A relay, or
-anyone who reads the relay, cannot sit between the two devices without
-knowing the code, and each join allows one guess.
+anyone who reads the relay, cannot get between the two devices without the
+code. Each code allows one guess.
+
+When the code matches, the owned device asks for one Accept and names the
+joining device. The person can refuse a device they did not expect.
+
+Korri never trusts a network. A home network, an airport Wi-Fi and a tailnet
+are the same to a join: a nearby path only helps the devices find each other
+faster. Only the code proves which device is joining. Korri never needs
+Tailscale (ADR 0026); it is an optional plugin (ADR 0041).
 
 A device with no screen joins with the `korri` command on that device, from a
 terminal or SSH.

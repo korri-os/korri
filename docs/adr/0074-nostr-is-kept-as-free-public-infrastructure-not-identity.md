@@ -5,9 +5,10 @@
 Korri keeps Nostr for four things only. Public relays are a free mailbox where
 two devices on different networks find each other, with no server that Korri
 runs (ADR 0026). Relays keep small encrypted records while a device is off
-(ADR 0027). Relays hold the public vouch and removal record (ADR 0069). And
+(ADR 0027). Relays hold the public vouches and removals (ADR 0069).
 Nostr's keys, signatures, encryption (NIP-44) and recovery words (NIP-06) are
-standard, with libraries korrid already uses.
+standard. korrid's Nostr library already does NIP-44; NIP-06 is a feature of
+the same library that korrid does not enable yet.
 
 Korri does not use Nostr as the person's social identity (ADR 0073), and a
 join does not go through a phone signer over NIP-46.
