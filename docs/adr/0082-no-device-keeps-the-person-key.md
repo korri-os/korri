@@ -34,5 +34,7 @@ device, a stolen device can do only what any owned device can do (ADRs 0069,
 - Today the local signer keeps the automatic person key and can export it with
   a password (`local_signer.rs`), and an identity switch signs with the
   current person key (`identity_switch/coordinator.rs`). That code must
-  change. Whether a switch away from an automatic identity (ADR 0023) needs
-  its recovery words is not decided.
+  change.
+- A device that has its own automatic identity joins another person key
+  (ADR 0023) only after the person enters that identity's recovery words. The
+  old key then signs its release, as today (owner decision, 2026-11-16).

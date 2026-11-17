@@ -22,6 +22,10 @@ The two devices run a key exchange built on the code (a PAKE). A relay, or
 anyone who reads the relay, cannot get between the two devices without the
 code. Each code allows one guess.
 
+A code is valid for 5 minutes. When it runs out, the owned device shows a new
+one. A wrong code ends that code at once: the owned device shows a new code
+and says that a wrong code was tried (owner decisions, 2026-11-16).
+
 When the code matches, the owned device asks for one Accept. It shows the
 joining device's name, what kind of device it is, and how it connects. A name
 can be faked, so the name alone is not enough (owner decision, 2026-11-16).
