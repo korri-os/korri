@@ -173,6 +173,112 @@ class TheStreamsNetworkCore(unittest.TestCase):
                           ["-networkcore", "nightjar"]))
 
 
+class TheStreamStartsAgainAfterItsStop(unittest.TestCase):
+    """The stop-hang fix (#391 step E): after Home ends the stream, the app
+    streams again, as korrid's recovery starts it again in D10."""
+
+    HOST, PORT = "192.0.2.1", 47989
+    CORE = ["-networkcore", "nightjar"]
+    RUNNING = '1.0 korri-viewer: event {"kind":"Status","value":"Running"}'
+    REPLY = '1.1 korri-viewer: reply Start {"kind":"Ok"}'
+    STOPPED = '9.0 korri-viewer: event {"kind":"Status","value":"Stopped"}'
+    ENDED = "9.1 korri-viewer: viewer ended"
+
+    def extras(self, command: list[str]) -> dict[str, str]:
+        return {command[at + 1]: command[at + 2] for at, word in enumerate(command) if word == "--es"}
+
+    def test_the_first_start_asks_for_the_frame_record(self):
+        command = run.stream_start(self.HOST, self.PORT, self.CORE, "d2-proof", record=True)
+        self.assertEqual(command[:5], ["am", "start", "-W", "-n", run.ACTIVITY])
+        extras = self.extras(command)
+        self.assertEqual(extras["launch_id"], "d2-proof")
+        self.assertEqual(extras["address"], "192.0.2.1:47989")
+        self.assertEqual(extras["CADENCE_FRAME_TIMES"], f"{run.FILES}/times.csv")
+        self.assertEqual(extras["CADENCE_DUMP"], f"{run.FILES}/recording.video")
+
+    def test_the_second_start_has_its_own_launch_and_no_frame_record(self):
+        command = run.stream_start(self.HOST, self.PORT, self.CORE, "d2-proof-again", record=False)
+        extras = self.extras(command)
+        self.assertEqual(extras["launch_id"], "d2-proof-again")
+        self.assertEqual(extras["KORRI_MOONLIGHT_SERVER_CERTIFICATE"], f"{run.FILES}/server.pem")
+        self.assertNotIn("CADENCE_FRAME_TIMES", extras)
+        self.assertNotIn("CADENCE_DUMP", extras)
+
+    def test_both_starts_stream_with_the_core(self):
+        for record in (True, False):
+            command = run.stream_start(self.HOST, self.PORT, self.CORE, "x", record=record)
+            arguments = command[command.index("--esa") + 2].split(",")
+            self.assertEqual(arguments[:3], ["stream", "-app", run.APPLICATION])
+            self.assertEqual(arguments[-3:], [*self.CORE, self.HOST])
+
+    def test_a_wait_from_a_mark_skips_the_lines_before_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            logcat = run.Logcat.__new__(run.Logcat)
+            logcat.path = Path(directory, "logcat.txt")
+            logcat.path.write_text(f"{self.RUNNING}\n{self.STOPPED}\n{self.RUNNING.replace('1.0', '10.0')}\n")
+            pattern = r'korri-viewer: event \{"kind":"Status","value":"Running"\}'
+            self.assertEqual(logcat.wait_for(pattern, 1), self.RUNNING)
+            self.assertTrue(logcat.wait_for(pattern, 1, since=1).startswith("10.0 "))
+            with self.assertRaises(RuntimeError):
+                logcat.wait_for(pattern, 0.1, since=3)
+
+    def test_a_second_stream_that_ran_and_ended_passes(self):
+        shots = [{"id": 100}, {"id": 160}, {"id": 221}]
+        checks = run.restart_checks([self.RUNNING, self.REPLY, self.STOPPED, self.ENDED], shots)
+        self.assertEqual(checks, dict.fromkeys(checks, True))
+        self.assertEqual(sorted(checks), ["restart_no_crash", "restart_picture_moves", "restart_running_event",
+                                          "restart_start_reply_ok", "restart_stopped_event",
+                                          "restart_viewer_ended_without_failure"])
+
+    def test_a_second_stream_whose_picture_stands_or_cannot_be_read_fails(self):
+        lines = [self.RUNNING, self.REPLY, self.STOPPED, self.ENDED]
+        for shots in ([{"id": 100}, {"id": 100}, {"id": 101}], [{"id": 100}, {"unreadable": "x"}, {"id": 101}],
+                      [{"id": 100}]):
+            with self.subTest(shots=shots):
+                self.assertFalse(run.restart_checks(lines, shots)["restart_picture_moves"])
+
+    def test_a_second_stream_that_failed_or_crashed_fails(self):
+        shots = [{"id": 1}, {"id": 2}]
+        failed = run.restart_checks([self.RUNNING, self.REPLY, self.STOPPED, "9.1 korri-viewer: viewer failed: x"], shots)
+        self.assertFalse(failed["restart_viewer_ended_without_failure"])
+        crashed = run.restart_checks([self.RUNNING, "5.0 libc: Fatal signal 11 (SIGSEGV)", self.STOPPED, self.ENDED], shots)
+        self.assertFalse(crashed["restart_no_crash"])
+        self.assertFalse(crashed["restart_start_reply_ok"])
+        self.assertFalse(run.restart_checks([self.RUNNING, self.REPLY], shots)["restart_stopped_event"])
+
+
+class EachCoreBeginsItsStopWithItsOwnLine(unittest.TestCase):
+    """The input's gate and the feedback stop before the core begins to stop:
+    the C core's first stop line is moonlight-common-c's, nightjar-core's the
+    adapter's statistics (#391 step E). Lines from android-d4b's logcat and
+    the nightjar proof's."""
+
+    GATE = "116.104 I korri-viewer: input: the core takes no more input"
+    FEEDBACK = "116.128 I korri-viewer: feedback: ended: 0 rumbles, 0 trigger rumbles, 0 lights, 2 calls to Android"
+    FEEDBACK_STOPPED = "116.129 I korri-viewer: feedback: vibration and lights stopped"
+    C_STOPPING = "116.168 I korri-viewer: Stopping input stream..."
+    NIGHTJAR_STOPPING = "123.299 I korri-viewer: nightjar: at the stop: SessionStats { rtt: Some((4ms, 4ms)) }"
+    STOPPED = '116.310 I korri-viewer: event {"kind":"Status","value":"Stopped"}'
+
+    def lines(self, stopping: str) -> list[str]:
+        return [self.GATE, self.FEEDBACK, self.FEEDBACK_STOPPED, stopping, self.STOPPED]
+
+    def test_each_core_passes_with_its_own_stop_line(self):
+        for core, stopping in (("c", self.C_STOPPING), ("nightjar", self.NIGHTJAR_STOPPING)):
+            with self.subTest(core=core):
+                checks = run.stop_order_checks(self.lines(stopping), core)
+                self.assertEqual(checks, {"input_gate_closed_before_the_core_stopped": True,
+                                          "feedback_stopped_after_the_gate_and_before_the_core": True})
+
+    def test_the_other_cores_line_is_no_stop(self):
+        self.assertEqual(set(run.stop_order_checks(self.lines(self.NIGHTJAR_STOPPING), "c").values()), {False})
+        self.assertEqual(set(run.stop_order_checks(self.lines(self.C_STOPPING), "nightjar").values()), {False})
+
+    def test_a_gate_after_the_cores_stop_fails(self):
+        late = [self.FEEDBACK, self.FEEDBACK_STOPPED, self.NIGHTJAR_STOPPING, self.GATE, self.STOPPED]
+        self.assertEqual(set(run.stop_order_checks(late, "nightjar").values()), {False})
+
+
 class TheProofsHandTheirBuildStoreToEveryBuild(unittest.TestCase):
     """run.py's and recovery.py's --build-store reaches each nix_build and sender_tools."""
 

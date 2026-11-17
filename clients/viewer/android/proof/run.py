@@ -47,7 +47,11 @@ steps:
    Stopped: the feedback (slice D4b) must stop between the input's gate and
    the core's stop.
 5. Read the frame record from the app, decode its recording, and read the
-   picture path (`decode`) and the sound's report from logcat.
+   picture path (`decode`) and the sound's report from logcat. Then start
+   the app again, as korrid's recovery does after Home (#434 D10), with no
+   frame record: the second stream must run, its bar move, and Home end it
+   with Stopped too (#391 step E's stop-hang fix: a stop that never returned
+   held the next stream).
 6. The refusal probe, an ordinary app, asks Android to start the viewer: it
    is refused. Granted DUMP through adb, it is allowed. The feedback probe
    (slice D4b) plays the core's part, which the fixture's Sunshine does not
@@ -369,10 +373,11 @@ class Logcat:
     def lines(self) -> list[str]:
         return self.path.read_text(errors="replace").splitlines()
 
-    def wait_for(self, pattern: str, timeout: float) -> str:
+    def wait_for(self, pattern: str, timeout: float, since: int = 0) -> str:
+        """The first line from line `since` on that matches `pattern`."""
         until = time.monotonic() + timeout
         while time.monotonic() < until:
-            for line in self.lines():
+            for line in self.lines()[since:]:
                 if re.search(pattern, line):
                     return line
             time.sleep(0.5)
@@ -381,6 +386,104 @@ class Logcat:
     def close(self) -> None:
         self.process.terminate()
         self.process.wait(timeout=10)
+
+
+def stream_start(host: str, port: int, core_arguments: list[str], launch_id: str, record: bool) -> list[str]:
+    """The `am start` that streams the fixture's application; `record` asks
+    for the frame record and its recording, which take only new file names."""
+    moonlight = ["stream", "-app", APPLICATION, "-width", str(STREAM_SIZE[0]), "-height", str(STREAM_SIZE[1]),
+                 "-fps", "60", "-keydir", f"{FILES}/keys", *core_arguments, host]
+    extras = [("launch_id", launch_id), ("address", f"{host}:{port}"),
+              ("KORRI_MOONLIGHT_SERVER_CERTIFICATE", f"{FILES}/server.pem")]
+    if record:
+        extras += [("CADENCE_FRAME_TIMES", f"{FILES}/times.csv"), ("CADENCE_DUMP", f"{FILES}/recording.video")]
+    return ["am", "start", "-W", "-n", ACTIVITY, *(word for name, value in extras for word in ("--es", name, value)),
+            "--esa", "args", ",".join(moonlight)]
+
+
+RUNNING = r'korri-viewer: event \{"kind":"Status","value":"Running"\}'
+START_OK = r'korri-viewer: reply Start \{"kind":"Ok"\}'
+STOPPED = r'korri-viewer: event \{"kind":"Status","value":"Stopped"\}'
+VIEWER_END = r"korri-viewer: viewer (ended|failed)"
+
+
+# The first line that each network core logs when it begins to stop:
+# moonlight-common-c's LiStopConnection, and the nightjar adapter's statistics
+# before nightjar-core's teardown (src/network_core/nightjar.rs, `stop`).
+CORE_STOPPING = {"c": "korri-viewer: Stopping input stream", "nightjar": "korri-viewer: nightjar: at the stop: "}
+
+
+def stop_order_checks(app: list[str], network_core: str) -> dict:
+    """The input's gate closed before the core began to stop, and the
+    feedback (slice D4b) stopped after the gate and before the core, so
+    before the stream ended."""
+    def first(text: str) -> int | None:
+        return next((at for at, l in enumerate(app) if text in l), None)
+
+    closed_at = first("input: the core takes no more input")
+    stopping_at = first(CORE_STOPPING[network_core])
+    feedback_at = first("korri-viewer: feedback: ended: ")
+    stopped_feedback_at = first("korri-viewer: feedback: vibration and lights stopped")
+    stopped_at = first('"value":"Stopped"')
+    return {
+        "input_gate_closed_before_the_core_stopped": None not in (closed_at, stopping_at) and closed_at < stopping_at,
+        "feedback_stopped_after_the_gate_and_before_the_core": (
+            None not in (closed_at, feedback_at, stopped_feedback_at, stopping_at, stopped_at)
+            and closed_at < feedback_at < stopped_feedback_at < stopping_at < stopped_at),
+    }
+
+
+def crashed(lines: list[str]) -> bool:
+    return any("Fatal signal" in l or "FATAL EXCEPTION" in l or "panic:" in l for l in lines)
+
+
+def restart_checks(lines: list[str], shots: list[dict]) -> dict:
+    """The second stream's checks, over the logcat lines since its start and
+    the screenshots taken while it ran."""
+    ids = [shot["id"] for shot in shots if "id" in shot]
+    ended = next((l for l in lines if re.search(VIEWER_END, l)), "")
+    return {
+        "restart_running_event": any(re.search(RUNNING, l) for l in lines),
+        "restart_start_reply_ok": any(re.search(START_OK, l) for l in lines),
+        "restart_picture_moves": len(ids) == len(shots) >= 2 and all(b > a for a, b in zip(ids, ids[1:])),
+        "restart_stopped_event": any(re.search(STOPPED, l) for l in lines),
+        "restart_viewer_ended_without_failure": "viewer ended" in ended,
+        "restart_no_crash": not crashed(lines),
+    }
+
+
+def stream_again(emulator: "Emulator", logcat: Logcat, fixture: "Remote", out: Path, host: str, port: int,
+                 core_arguments: list[str]) -> dict:
+    """The stop-hang fix (#391 step E): after Home ended the stream, the app
+    streams again, as korrid's recovery starts it again in D10. Reads the
+    bar moving, then Home ends the second stream too."""
+    fixture.request("clock")
+    mark = len(logcat.lines())
+    pid_before = emulator.shell(f"pidof {PACKAGE}", check=False).stdout.strip()
+    log("starting the app again")
+    started = emulator.shell(shlex.join(stream_start(host, port, core_arguments, "d2-proof-again", record=False)))
+    (out / "am-start-again.txt").write_text(started.stdout)
+    logcat.wait_for(RUNNING, 60, since=mark)
+    logcat.wait_for(START_OK, 30, since=mark)
+    pid = emulator.shell(f"pidof {PACKAGE}", check=False).stdout.strip()
+    shots = []
+    for shot in range(3):
+        path = out / f"again-{shot + 1}.png"
+        screenshot(emulator, path)
+        shots.append({"file": path.name, **describe(read_bar(path))})
+        time.sleep(1)
+    fixture.request("clock")
+    log("pressing Home again")
+    emulator.shell("input keyevent KEYCODE_HOME")
+    logcat.wait_for(STOPPED, 60, since=mark)
+    logcat.wait_for(VIEWER_END, 30, since=mark)
+    lines = logcat.lines()[mark:]
+    app = [l for l in lines if " korri-viewer" in l or "AndroidRuntime" in l or " DEBUG " in l]
+    (out / "logcat-again.txt").write_text("\n".join(app) + "\n")
+    # Not checks: whether Android kept the app's process between the two
+    # streams is Android's choice.
+    return {"pid_after_the_first_stream": pid_before, "pid": pid, "screenshots": shots,
+            "checks": restart_checks(lines, shots)}
 
 
 def pair(viewer: str, keys: Path, pin: Path, host: str, port: int, fixture: Remote, out: Path) -> None:
@@ -1539,15 +1642,7 @@ def main() -> int:
         # (stream-cadence's device.py): tell it the host is alive.
         fixture.request("clock")
         logcat = Logcat(emulator, out / "logcat-all.txt")
-        moonlight = ["stream", "-app", APPLICATION, "-width", str(STREAM_SIZE[0]), "-height", str(STREAM_SIZE[1]),
-                     "-fps", "60", "-keydir", f"{FILES}/keys", *core_arguments, host]
-        start = ["am", "start", "-W", "-n", ACTIVITY,
-                 "--es", "launch_id", "d2-proof",
-                 "--es", "address", f"{host}:{port}",
-                 "--es", "KORRI_MOONLIGHT_SERVER_CERTIFICATE", f"{FILES}/server.pem",
-                 "--es", "CADENCE_FRAME_TIMES", f"{FILES}/times.csv",
-                 "--es", "CADENCE_DUMP", f"{FILES}/recording.video",
-                 "--esa", "args", ",".join(moonlight)]
+        start = stream_start(host, port, core_arguments, "d2-proof", record=True)
         log("starting the app")
         began = time.monotonic()
         started = emulator.shell(shlex.join(start))
@@ -1725,7 +1820,7 @@ def main() -> int:
         lines = logcat.lines()
         app = [l for l in lines if " korri-viewer" in l or "AndroidRuntime" in l or " DEBUG " in l]
         (out / "logcat.txt").write_text("\n".join(app) + "\n")
-        checks["no_crash"] = not any("Fatal signal" in l or "FATAL EXCEPTION" in l or "panic:" in l for l in lines)
+        checks["no_crash"] = not crashed(lines)
 
         # The sound, as the app reports it: its output, what it played, and
         # its end, which closes its last stream, before the viewer reported
@@ -1757,19 +1852,11 @@ def main() -> int:
         ended_input = next((l.split("input: ended: ", 1)[1] for l in app if "input: ended: " in l), "")
         result["input_report"] = ended_input
         checks["input_report_has_no_failure"] = bool(ended_input) and ended_input.endswith(" 0 failed")
-        # The core's input gate closed before the core began to stop.
-        closed_at = next((at for at, l in enumerate(app) if "input: the core takes no more input" in l), None)
-        stopping_at = next((at for at, l in enumerate(app) if "korri-viewer: Stopping input stream" in l), None)
-        checks["input_gate_closed_before_the_core_stopped"] = (closed_at is not None and stopping_at is not None
-                                                               and closed_at < stopping_at)
-        # Slice D4b: the feedback stopped after the gate closed and before
-        # the core began to stop, so before the stream ended.
+        # The core's input gate closed before the core began to stop, and
+        # (slice D4b) the feedback stopped between the two.
+        checks.update(stop_order_checks(app, args.network_core))
         feedback_at = next((at for at, l in enumerate(app) if "korri-viewer: feedback: ended: " in l), None)
-        stopped_feedback_at = next((at for at, l in enumerate(app) if "korri-viewer: feedback: vibration and lights stopped" in l), None)
         result["feedback_report"] = app[feedback_at].split("feedback: ended: ", 1)[1] if feedback_at is not None else ""
-        checks["feedback_stopped_after_the_gate_and_before_the_core"] = (
-            None not in (closed_at, feedback_at, stopped_feedback_at, stopping_at, stopped_at)
-            and closed_at < feedback_at < stopped_feedback_at < stopping_at < stopped_at)
         checks["feedback_report_has_no_failure"] = result["feedback_report"].endswith(" 0 failed")
 
         # The picture path, as the app reports it.
@@ -1814,6 +1901,13 @@ def main() -> int:
             checks["frame_record_written"] = False
         recording.unlink(missing_ok=True)
 
+        # The input that the sender received in the first stream: its slices'
+        # checks read only these packets.
+        first_stream_packets = len(sender.input_packets(fixture.request("sample")["journal"])[0])
+        again = stream_again(emulator, logcat, fixture, out, host, port, core_arguments)
+        result["restart"] = {key: value for key, value in again.items() if key != "checks"}
+        checks.update(again["checks"])
+
         # The refusal probe: an ordinary app may not start the viewer; one
         # that adb granted DUMP may.
         emulator.adb("install", str(probe), timeout=300)
@@ -1854,6 +1948,8 @@ def main() -> int:
         # Only info and above: the debug lines can hold the launch's keys.
         (out / "sunshine.log").write_text(kept)
         (out / "sunshine-input.json").write_text(json.dumps(packets, indent=1) + "\n")
+        result["restart"]["input_packets_at_the_sender"] = len(packets) - first_stream_packets
+        packets = packets[:first_stream_packets]
         # Slice D4's packets come before slice D4b's DualShock 4 arrived,
         # and D4b's before slice D5's marker key.
         marker = next((at for at, p in enumerate(packets) if p["kind"] == "keyboard"
