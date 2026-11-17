@@ -22,4 +22,4 @@ someone else's.
 
 - A guest on a stream can play and watch only, as stream play already
   allows. It cannot end or change the session.
-- One code per visit.
+- One code per visit. A family member's devices need no code (ADR 0081).

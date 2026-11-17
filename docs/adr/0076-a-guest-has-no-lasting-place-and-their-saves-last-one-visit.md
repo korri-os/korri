@@ -37,7 +37,9 @@ when the device sleeps or shuts down (owner decisions, 2026-11-17).
 
 - A short sleep in the middle of a party ends the visit and deletes its
   saves.
-- A guest can play any installed game. Physical access to a device is
+- A guest can play any game that the device in front of them can play,
+  including a game streamed from another of the owner's devices. A guest at
+  the TV can start the owner's PC. Physical access to a device is
   already an accepted risk, as for a console in a living room.
 - A guest who wants to keep progress must get a lasting place before the
   visit ends.

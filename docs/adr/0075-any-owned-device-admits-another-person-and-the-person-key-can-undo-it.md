@@ -11,6 +11,15 @@ The reason is the same as for a join. A friend arrives, and the person has
 only the device in their hand. Needing the cold person key for every visit
 would make the feature unused.
 
+A person with their own Korri device becomes family by the join flow
+(ADR 0070): their device enters a 7-symbol code that the owner's device
+shows, and the owner accepts them as family. A person with no device is
+created on the owner's device (ADR 0079).
+
+Family admissions are public on relays, like vouches and removals
+(ADR 0069), with keys and dates only. A person can be family on any number of
+owners' devices (owner decisions, 2026-11-17).
+
 ## Considered options
 
 - **Only the person key admits.** Safe from a thief. Rejected: it needs the
@@ -26,3 +35,7 @@ would make the feature unused.
   an admission is not decided.
 - A thief who holds an owned device can admit strangers until the person
   removes that device.
+- Anyone who knows the owner's person key can see how many family keys the
+  owner has, and when each was added or removed.
+- A family member's save history copies to every owner's devices where they
+  are family (ADR 0081).

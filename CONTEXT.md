@@ -71,9 +71,17 @@ _Avoid_: PIN, pairing code, password, join code
 The explicit, consented replacement of a device owner by a different person key. It is the only way device authority moves.
 _Avoid_: login, account transfer, sign in
 
+**Family member**:
+A person with their own person key and a lasting place among another person's devices, until they are removed or leave. A device owner, their family members and guests are the three tiers of people on a device.
+_Avoid_: household, member, resident, admin, normal user
+
 **Guest**:
 A person who uses another person's devices for one visit and keeps nothing after it. A guest needs no person key. When they have one, it only shows their name.
 _Avoid_: anonymous user, visitor, guest account
+
+**Lead**:
+The person whose save history, profiles and launch settings a session uses: the person a device plays as when the game starts. In couch co-op, the other players' progress goes to the lead.
+_Avoid_: player, active user, current user, profile
 
 **Visit**:
 The time a guest spends at a device or on its stream. Anyone at a device can start one. It ends when someone picks another person on the device, when the device sleeps or shuts down, or, on a stream, when the session ends or the guest disconnects. A guest's saves last until the visit ends.

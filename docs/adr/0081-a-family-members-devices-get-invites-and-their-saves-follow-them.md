@@ -20,7 +20,8 @@ the family TV and later gets a handheld keeps their progress.
 
 ## Consequences
 
-- The owner's devices must accept devices that the family member's person
-  key vouched for (ADR 0069), not only the owner's own devices.
-- Records now cross from one person's devices to another person's devices.
-  Until now they spread only among one person's devices.
+- The owner's devices must accept the family member's devices, whose
+  ownership comes from the family member's own vouches (ADR 0069).
+- ADR 0027 spreads records between "devices of the federation". A family
+  member's devices are now part of that federation for the family member's
+  own records. Which other records they receive is not decided.
