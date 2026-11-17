@@ -23,13 +23,13 @@
 //! | `set-fill-mode` | Crop to fill | toggle (`Game.toggleFillMode`: fit or fill) |
 //! | `set-zoom-mode` | Pan & zoom | toggle (`Game.setZoomMode`), listed only on a touch screen; closes the overlay; a new mouse mode turns it off |
 //! | `set-mouse-mode` | Mouse mode | choice of Artemis's six modes (`Game.applyMouseMode`, `getMouseModeLabels`), listed only on a touch screen |
+//! | `set-local-cursor` | Toggle local cursor | command (`Game.toggleLocalCursor`), listed only while a mouse, a touchpad or an emulated mouse is there (`viewerHasPointer`); closes the overlay |
 //! | `set-face-button-flip` | Flip A/B and X/Y | toggle (`ControllerHandler.handleFlipFaceButtons`) |
 //! | `set-rumble` | Rumble | toggle (`Game.setRumble`), listed only while a controller that can rumble is in the stream (`ControllerHandler.hasRumble`) |
 //!
 //! The others need what this viewer does not have: Artemis's on-screen
-//! full keyboard and controller, its touch sensitivity, its
-//! pointer capture (the local cursor), its GL renderer (SGSR) and
-//! picture-in-picture (`clients/viewer/README.md`, slice D11).
+//! full keyboard and controller, its touch sensitivity, its GL renderer
+//! (SGSR) and picture-in-picture (`clients/viewer/README.md`, slice D11).
 use anyhow::{Result, anyhow, bail};
 use korri_viewer_treaty::{
     SurfaceGameplayControl, SurfaceGameplayControlInteraction as Interaction,
@@ -49,6 +49,9 @@ pub enum Control {
     Zoom,
     /// `SET_MOUSE_MODE`: how the touch screen reaches the host.
     MouseMode,
+    /// `SET_LOCAL_CURSOR`: Android's pointer shows over the stream and the
+    /// mouse points, or it hides and the mouse is captured.
+    LocalCursor,
     /// `SET_FACE_BUTTON_FLIP`: a controller's A is B and X is Y, and back.
     FlipFaceButtons,
     /// `SET_RUMBLE`: the host's rumble reaches the controllers, or not.
@@ -57,11 +60,12 @@ pub enum Control {
 
 impl Control {
     /// In Artemis's order (`Effect.values()`).
-    pub const ALL: [Control; 6] = [
+    pub const ALL: [Control; 7] = [
         Control::ToggleKeyboard,
         Control::Fill,
         Control::Zoom,
         Control::MouseMode,
+        Control::LocalCursor,
         Control::FlipFaceButtons,
         Control::Rumble,
     ];
@@ -73,6 +77,7 @@ impl Control {
             Control::Fill => "set-fill-mode",
             Control::Zoom => "set-zoom-mode",
             Control::MouseMode => "set-mouse-mode",
+            Control::LocalCursor => "set-local-cursor",
             Control::FlipFaceButtons => "set-face-button-flip",
             Control::Rumble => "set-rumble",
         }
@@ -85,16 +90,20 @@ impl Control {
             Control::Fill => "Crop to fill",
             Control::Zoom => "Pan & zoom",
             Control::MouseMode => "Mouse mode",
+            Control::LocalCursor => "Toggle local cursor",
             Control::FlipFaceButtons => "Flip A/B and X/Y",
             Control::Rumble => "Rumble",
         }
     }
 
-    /// `KorriViewerControls.dismiss`: Toggle keyboard and Pan & zoom close
-    /// the overlay, so that the keyboard shows, or the fingers reach the
-    /// picture.
+    /// `KorriViewerControls.dismiss`: Toggle keyboard, Pan & zoom and
+    /// Toggle local cursor close the overlay, so that the keyboard shows,
+    /// the fingers reach the picture, or the mouse the stream.
     pub fn dismiss(self) -> bool {
-        matches!(self, Control::ToggleKeyboard | Control::Zoom)
+        matches!(
+            self,
+            Control::ToggleKeyboard | Control::Zoom | Control::LocalCursor
+        )
     }
 
     /// `KorriViewerControls.supported`: whether the stream can perform it
@@ -104,6 +113,7 @@ impl Control {
             // Artemis's touch controls (`touchOnly`).
             Control::ToggleKeyboard | Control::Zoom | Control::MouseMode => offer.touch,
             Control::Fill | Control::FlipFaceButtons => true,
+            Control::LocalCursor => offer.pointer,
             Control::Rumble => offer.rumble,
         }
     }
@@ -118,7 +128,7 @@ impl Control {
             false_label: "Off".into(),
         };
         match self {
-            Control::ToggleKeyboard => Interaction::Command,
+            Control::ToggleKeyboard | Control::LocalCursor => Interaction::Command,
             Control::Fill => toggle(values.fill),
             Control::Zoom => toggle(values.zoom),
             // The value is the mode's index, each option a mode's label.
@@ -145,11 +155,13 @@ impl Control {
             Some(Value::Toggle { value }) => Ok(make(*value)),
             _ => Err(anyhow!("{} takes a toggle", self.label())),
         };
+        let command = |change: Change| match value {
+            None => Ok(change),
+            Some(_) => Err(anyhow!("{} takes no value", self.label())),
+        };
         match self {
-            Control::ToggleKeyboard => match value {
-                None => Ok(Change::ToggleKeyboard),
-                Some(_) => bail!("{} takes no value", self.label()),
-            },
+            Control::ToggleKeyboard => command(Change::ToggleKeyboard),
+            Control::LocalCursor => command(Change::LocalCursor),
             Control::Fill => toggle(Change::Fill),
             Control::Zoom => toggle(Change::Zoom),
             Control::MouseMode => match value {
@@ -167,13 +179,16 @@ impl Control {
 }
 
 /// What the stream can perform that depends on its devices: rumble needs a
-/// controller that can rumble (`ControllerHandler.hasRumble`), and the touch
+/// controller that can rumble (`ControllerHandler.hasRumble`), the touch
 /// controls a touch screen (`KorriViewerControls.included`, its
-/// `FEATURE_TOUCHSCREEN`). The thread that owns the stream says it.
+/// `FEATURE_TOUCHSCREEN`), and the local cursor a mouse, a touchpad, or a
+/// controller with mouse emulation on (`Game.viewerHasPointer`). The thread
+/// that owns the stream says it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Offer {
     pub rumble: bool,
     pub touch: bool,
+    pub pointer: bool,
 }
 
 /// Artemis's mouse modes: the touch screen as the host's touch screen, an
@@ -266,8 +281,9 @@ impl Values {
                 self.zoom = false;
             }
             // The keyboard's visibility belongs to Android's window
-            // (`KorriViewerControls.apply` remembers nothing for it).
-            Change::ToggleKeyboard => {}
+            // (`KorriViewerControls.apply` remembers nothing for it). The
+            // local cursor's is the input's; the snapshot shows none.
+            Change::ToggleKeyboard | Change::LocalCursor => {}
         }
         self
     }
@@ -281,6 +297,7 @@ pub enum Change {
     Fill(bool),
     Zoom(bool),
     MouseMode(MouseMode),
+    LocalCursor,
     FlipFaceButtons(bool),
     Rumble(bool),
 }
@@ -292,6 +309,7 @@ impl Change {
             Change::Fill(_) => Control::Fill,
             Change::Zoom(_) => Control::Zoom,
             Change::MouseMode(_) => Control::MouseMode,
+            Change::LocalCursor => Control::LocalCursor,
             Change::FlipFaceButtons(_) => Control::FlipFaceButtons,
             Change::Rumble(_) => Control::Rumble,
         }
@@ -394,10 +412,17 @@ mod tests {
     const RUMBLE: Offer = Offer {
         rumble: true,
         touch: false,
+        pointer: false,
     };
     const TOUCH: Offer = Offer {
         rumble: false,
         touch: true,
+        pointer: false,
+    };
+    const POINTER: Offer = Offer {
+        rumble: false,
+        touch: false,
+        pointer: true,
     };
 
     #[test]
@@ -415,12 +440,13 @@ mod tests {
             Offer {
                 rumble: true,
                 touch: true,
+                pointer: true,
             },
         );
         // KorriViewerControls.snapshot's object for each, in its key order,
         // and in Artemis's order (`Effect.values()`): TOGGLE_KEYBOARD comes
-        // before SET_FILL_MODE, then SET_ZOOM_MODE and SET_MOUSE_MODE. Mouse
-        // mode's choices are `getMouseModeLabels()`,
+        // before SET_FILL_MODE, then SET_ZOOM_MODE, SET_MOUSE_MODE and
+        // SET_LOCAL_CURSOR. Mouse mode's choices are `getMouseModeLabels()`,
         // `R.array.mouse_mode_names`, with their indexes as values.
         assert_eq!(
             json(&listed),
@@ -444,6 +470,9 @@ mod tests {
                     r#"{{"value":"3","label":"Track pad(Gaming/Long press to drag)"}},"#,
                     r#"{{"value":"4","label":"Disabled"}},"#,
                     r#"{{"value":"5","label":"Absolute touch (left/right click swapped)"}}]}}}},"#,
+                    r#"{{"id":"{0}set-local-cursor","label":"Toggle local cursor","enabled":true,"#,
+                    r#""destructive":false,"dismissOnSuccess":true,"#,
+                    r#""interaction":{{"kind":"command"}}}},"#,
                     r#"{{"id":"{0}set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"#,
                     r#""destructive":false,"dismissOnSuccess":false,"#,
                     r#""interaction":{{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}}},"#,
@@ -541,12 +570,45 @@ mod tests {
         assert!(!Control::Fill.dismiss() && !Control::Rumble.dismiss());
     }
 
+    // KorriViewerControls.supported: SET_LOCAL_CURSOR needs
+    // viewerHasPointer, and is no touch control. It is a COMMAND
+    // (`toggleLocalCursor`) that closes the overlay (`dismiss`); apply
+    // remembers the cursor's visibility, which the snapshot does not report.
+    #[test]
+    fn toggle_local_cursor_is_a_command_listed_only_with_a_pointer_device() {
+        let prefix = prefix(LAUNCH, 1, 1);
+        assert_eq!(
+            wires(&prefix, POINTER),
+            ["set-fill-mode", "set-local-cursor", "set-face-button-flip"]
+        );
+        assert!(!wires(&prefix, TOUCH).contains(&"set-local-cursor".to_owned()));
+        let id = format!("{prefix}set-local-cursor");
+        assert!(parse(&prefix, &id, None, TOUCH).is_err());
+        assert!(parse(&prefix, &id, None, Offer::default()).is_err());
+        assert_eq!(
+            parse(&prefix, &id, None, POINTER).unwrap(),
+            Change::LocalCursor
+        );
+        for value in [
+            Value::Toggle { value: true },
+            Value::Choice { value: "0".into() },
+        ] {
+            assert!(parse(&prefix, &id, Some(&value), POINTER).is_err());
+        }
+        assert!(Control::LocalCursor.dismiss());
+        assert_eq!(Change::LocalCursor.control(), Control::LocalCursor);
+        assert_eq!(Control::LocalCursor.label(), "Toggle local cursor");
+        let changed = Values::default().with(Change::Fill(true));
+        assert_eq!(changed.with(Change::LocalCursor), changed);
+    }
+
     #[test]
     fn a_toggle_of_a_listed_control_is_a_change() {
         let prefix = prefix(LAUNCH, 1, 1);
         let all = Offer {
             rumble: true,
             touch: true,
+            pointer: true,
         };
         for (wire, change) in [
             ("set-fill-mode", Change::Fill as fn(bool) -> Change),

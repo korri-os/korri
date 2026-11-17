@@ -21,11 +21,21 @@
 //! moves the video layer (confirmed once Android's main thread has applied
 //! the transaction), "Pan & zoom" gives the touch screen's gestures to the
 //! picture's zoom, which moves the video layer, "Mouse mode" changes the
-//! touch screen's mapping, "Flip A/B and X/Y" the controllers', and
-//! "Rumble" goes to the controllers' feedback thread (slice D4b's). The
-//! loop thread offers Rumble while a controller that can rumble is in the
-//! stream, and Toggle keyboard, Pan & zoom and Mouse mode on a device with
-//! a touch screen.
+//! touch screen's mapping, "Toggle local cursor" shows Android's pointer
+//! and lets the mouse's capture go, or hides it and captures the mouse
+//! again, "Flip A/B and X/Y" changes the controllers' mapping, and "Rumble"
+//! goes to the controllers' feedback thread (slice D4b's). The loop thread
+//! offers Rumble while a controller that can rumble is in the stream,
+//! Toggle keyboard, Pan & zoom and Mouse mode on a device with a touch
+//! screen, and Toggle local cursor while a mouse, a touchpad or an emulated
+//! mouse is there.
+//!
+//! The stream's input grabs the mouse while the stream plays, as Artemis's
+//! does (`korri_viewer::capture`): Android captures it for NativeActivity's
+//! view, which has the focus then, and the loop thread makes the input's
+//! calls on that view through Android's main thread
+//! (`korri_viewer::pointer_capture`), at each tick, at a regained focus and
+//! at the stream's end.
 //!
 //! The adapter hands a launch to the loop thread over a channel, because the
 //! layers and the input belong to that thread. The loop thread never waits:
@@ -92,6 +102,7 @@ use korri_viewer::{
     overlay::{is_system_key, Presenter},
     picture::{FrameRecord, Picture},
     play::{Play, Routed},
+    pointer_capture,
     session::Identity,
     soft_keyboard, status,
 };
@@ -880,6 +891,15 @@ impl Stream {
                 self.shared.window.store(false, Ordering::Release);
                 self.leave("the activity ended");
             }
+            // Android's pointer capture goes with the window's focus
+            // (`Game.onWindowFocusChanged`).
+            MainEvent::GainedFocus | MainEvent::LostFocus => {
+                if let Phase::Playing(playing) = &mut self.phase {
+                    if !playing.stopping {
+                        playing.play.focus(matches!(event, MainEvent::GainedFocus));
+                    }
+                }
+            }
             _ if may_move_the_cutout(event) => self.cutout_may_move = true,
             _ => {}
         }
@@ -1096,6 +1116,7 @@ impl Stream {
         let settings = Settings {
             mouse_emulation: options.mouse_emulation,
             gestures: events::gesture_config(&self.app),
+            chromeos: status::chromeos(),
         };
         let decoded = Decoded::default();
         let picture = Picture {
@@ -1215,7 +1236,7 @@ impl Stream {
         if !playing.stopping && playing.lifecycle.stop_requested() {
             // korrid asked for Stop: nothing more goes to the stream.
             playing.stopping = true;
-            playing.play.end();
+            end_play(&self.app, &mut playing.play);
             let steps = playing.hosted.close(Closing::StreamStops);
             perform(&self.app, &mut playing, steps);
         }
@@ -1223,6 +1244,7 @@ impl Stream {
             return Phase::Playing(playing);
         }
         playing.play.tick();
+        pointer_capture::perform(&self.app, playing.play.take_capture());
         // Pan and zoom's gestures move the picture; touches then map into
         // its new place.
         let gestures = playing.play.take_gestures();
@@ -1274,6 +1296,7 @@ impl Stream {
         playing.changes.offer(Offer {
             rumble: playing.play.has_rumble(),
             touch: playing.touch,
+            pointer: playing.play.has_pointer(),
         });
         if let Some((change, answer)) = playing.answering.take() {
             let failed = match change.change {
@@ -1281,6 +1304,7 @@ impl Stream {
                 Change::Fill(_)
                 | Change::Zoom(_)
                 | Change::MouseMode(_)
+                | Change::LocalCursor
                 | Change::FlipFaceButtons(_)
                 | Change::Rumble(_) => "the video layer did not move",
             };
@@ -1340,6 +1364,26 @@ impl Stream {
                     };
                     done(change, result);
                 }
+                // korrid has closed the overlay first (the control
+                // dismisses it). Android's main thread makes the calls on
+                // the view in order, after this tick's.
+                Change::LocalCursor => {
+                    let result = if playing.play.toggle_local_cursor() {
+                        logcat::info(&format!(
+                            "korri-app: viewer local cursor {}",
+                            if playing.play.local_cursor() == Some(true) {
+                                "shows; the mouse points"
+                            } else {
+                                "hides; the mouse is captured"
+                            }
+                        ));
+                        pointer_capture::perform(&self.app, playing.play.take_capture());
+                        Ok(())
+                    } else {
+                        Err("the stream's input has ended".to_owned())
+                    };
+                    done(change, result);
+                }
                 Change::FlipFaceButtons(value) => {
                     let result = if playing.play.set_flip_face_buttons(value) {
                         Ok(())
@@ -1371,7 +1415,7 @@ impl Stream {
             ..
         } = *playing;
         refuse_resumes(resumes, "the stream ended");
-        play.end();
+        end_play(&self.app, &mut play);
         // The keyboard hides, and the shell's text view can take the focus.
         soft_keyboard::give_back(&self.app);
         let joined = runtime.join();
@@ -1407,7 +1451,7 @@ impl Stream {
                 if !playing.stopping {
                     logcat::info(&format!("korri-app: viewer stops: {why}"));
                     playing.stopping = true;
-                    playing.play.end();
+                    end_play(&self.app, &mut playing.play);
                     let steps = playing.hosted.close(Closing::StreamStops);
                     perform(&self.app, &mut playing, steps);
                     stop_on_a_thread(&playing.launch, playing.lifecycle.clone());
@@ -1722,14 +1766,21 @@ fn zoomed(scale: f32) -> String {
     }
 }
 
+/// The stream stops: nothing more goes to its input, and the input lets
+/// the mouse go on the stream's view (`setInputGrabState(false)`).
+fn end_play(app: &AndroidApp, play: &mut Play) {
+    play.end();
+    pointer_capture::perform(app, play.take_capture());
+}
+
 /// A control change has taken effect, or could not: korrid's Apply answers.
 fn done(change: ControlChange, result: Result<(), String>) {
     let wire = change.change.control().wire();
     match (change.change, &result) {
-        (Change::ToggleKeyboard, Ok(())) => {
+        (Change::ToggleKeyboard | Change::LocalCursor, Ok(())) => {
             logcat::info(&format!("korri-app: viewer control {wire} ran"))
         }
-        (Change::ToggleKeyboard, Err(why)) => logcat::error(&format!(
+        (Change::ToggleKeyboard | Change::LocalCursor, Err(why)) => logcat::error(&format!(
             "korri-app: viewer control {wire} did not run: {why}"
         )),
         (Change::MouseMode(mode), Ok(())) => logcat::info(&format!(

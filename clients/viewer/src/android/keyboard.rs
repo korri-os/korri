@@ -321,8 +321,8 @@ impl Keyboard {
     }
 
     /// `handleSpecialKeys`. Of Artemis's three combinations only Q (quit)
-    /// acts; Z (input grab) and C (cursor) need the pointer capture that
-    /// the viewer does not take, and are eaten as in Artemis.
+    /// acts; Z (input grab) and C (cursor) are eaten as in Artemis, and not
+    /// carried. The stream control "Toggle local cursor" does what C does.
     pub(crate) fn special(&mut self, key_code: u32, down: bool) -> Special {
         use code::*;
         let modifier = match key_code {

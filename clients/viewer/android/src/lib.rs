@@ -293,6 +293,7 @@ fn stream(
     let settings = Settings {
         mouse_emulation: options.mouse_emulation,
         gestures: events::gesture_config(app),
+        chromeos: false,
     };
     // The controllers' rumble, light and battery reports, on their own
     // thread for the whole run: the input tells it which controller is
@@ -319,6 +320,10 @@ fn stream(
         launch: id,
         requests: Vec::new(),
     };
+    // This app has no stream controls, so no "Toggle local cursor" to
+    // let a captured mouse go: it makes none of the input's calls on its
+    // view (`Play::take_capture`), and a mouse stays absolute, as slice D4
+    // carried it.
     let play = Play::new(
         settings,
         attached,
@@ -392,6 +397,8 @@ fn drive(
         });
         stop |= events(app, &mut play, layer);
         play.tick();
+        // Not made on the view (above).
+        play.take_capture();
         if stop && !stopping {
             stopping = true;
             // Nothing more goes to a stream that stops.

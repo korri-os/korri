@@ -19,13 +19,20 @@
 //! `NvConnection.setInputHeld` is, keeps everything but a controller's
 //! arrival from the stream.
 //!
+//! The stream grabs the input at its start and lets it go at its end
+//! (`grab`): a mouse is the stream's only while it is grabbed, and Android
+//! captures it then unless the local cursor shows (`capture.rs`). The app
+//! makes the calls on the view that `take_capture` gives.
+//!
 //! Ported from Korri's copy of Artemis (`clients/android`, from
 //! `simonwjackson/artemis` at `cf12c432`, a fork of
 //! `ClassicOldSong/moonlight-android`, itself a fork of
 //! `moonlight-stream/moonlight-android`): `Game.java`'s input routing.
 //! Artemis ships under the GNU GPL version 3 with no "or later" grant, so
 //! this file does too. The Rust adaptation is Korri work dated 2026-11-14.
+pub use super::capture::Call;
 use super::{
+    capture::{Capture, Pointers},
     feedback::{Phone, Seats, Vibration},
     gamepad::{self, Controllers, Key},
     gestures::{Gesture, GestureConfig, PanZoomGestures},
@@ -350,6 +357,9 @@ pub struct Settings {
     pub mouse_emulation: bool,
     /// The device's `ViewConfiguration`, for the gestures of pan and zoom.
     pub gestures: GestureConfig,
+    /// The device is a Chromebook (`org.chromium.arc.device_management`):
+    /// a touch screen can have the mouse's capture (`capture.rs`).
+    pub chromeos: bool,
 }
 
 /// Everything the stream's input holds, on the app's thread.
@@ -367,6 +377,12 @@ pub struct Input {
     zoom: Option<PanZoomGestures>,
     /// What the gestures reported, for the picture's zoom.
     gestures: Vec<Gesture>,
+    /// The grab and the mouse's capture (`Game.setInputGrabState`).
+    capture: Capture,
+    /// What the attached devices offer the mouse, as last read.
+    pointers: Pointers,
+    mouse_emulation: bool,
+    chromeos: bool,
 }
 
 /// Artemis's input hold (`NvConnection.setInputHeld`): one gate below every
@@ -541,6 +557,57 @@ impl Input {
             gesture_config: settings.gestures,
             zoom: None,
             gestures: Vec::new(),
+            capture: Capture::default(),
+            pointers: Pointers::default(),
+            mouse_emulation: settings.mouse_emulation,
+            chromeos: settings.chromeos,
+        }
+    }
+
+    /// `setInputGrabState`: the stream grabs its input at its start, and
+    /// Android captures the mouse when a device can be captured; at its end
+    /// it lets go, and every motion is Android's again.
+    pub fn grab(&mut self, grab: bool, devices: &mut dyn Devices) {
+        self.read_pointers(devices);
+        self.capture.grab(grab, self.pointers.compatible);
+    }
+
+    /// The stream's control "Toggle local cursor" (`Game.toggleLocalCursor`):
+    /// the pointer shows and the capture goes, or the pointer hides and
+    /// Android captures it again.
+    pub fn toggle_local_cursor(&mut self, devices: &mut dyn Devices) {
+        self.read_pointers(devices);
+        self.capture.toggle_local_cursor(self.pointers.compatible);
+    }
+
+    /// Whether the local cursor shows (`Game.localCursor`).
+    pub fn local_cursor(&self) -> bool {
+        self.capture.cursor_visible()
+    }
+
+    /// The window gained or lost the focus (`onWindowFocusChanged`).
+    pub fn focus(&mut self, focused: bool, now_ms: i64) {
+        self.capture.focus(focused, now_ms);
+    }
+
+    /// The calls on the stream's view since the last take, in order, for
+    /// Android's main thread (`pointer_capture.rs`).
+    pub fn take_capture(&mut self) -> Vec<Call> {
+        self.capture.take_calls()
+    }
+
+    /// The stream offers "Toggle local cursor" (`viewerHasPointer`): a
+    /// mouse or a touchpad is attached, or mouse emulation is on and a
+    /// controller came.
+    pub fn has_pointer(&self) -> bool {
+        (self.mouse_emulation && self.controllers.has_controller()) || self.pointers.pointer
+    }
+
+    /// Read what the attached devices offer the mouse; the list kept when
+    /// Android cannot be asked.
+    fn read_pointers(&mut self, devices: &mut dyn Devices) {
+        if let Some(ids) = devices.ids() {
+            self.pointers = Pointers::read(&ids, devices, self.chromeos);
         }
     }
 
@@ -707,6 +774,10 @@ impl Input {
         devices: &mut dyn Devices,
         sink: &mut dyn Sink,
     ) -> bool {
+        // "Pass through mouse/touch/joystick input if we're not grabbing."
+        if !self.capture.grabbed() {
+            return false;
+        }
         let sink = &mut Counting {
             sink,
             hold: &mut self.hold,
@@ -726,7 +797,11 @@ impl Input {
             return false;
         }
         if super::touch::is_mouse(event) {
-            self.mouse.event(event, self.video, sink);
+            // "Ignore mouse input if we're not capturing from our input
+            // source"; eaten, so that Android makes no d-pad of it.
+            if self.capture.capturing() {
+                self.mouse.event(event, self.video, sink);
+            }
             return true;
         }
         if event.source == source::TOUCHPAD {
@@ -752,10 +827,17 @@ impl Input {
 
     /// Ask Android which devices it has: the controllers of those that went
     /// go too. A list that cannot be had says nothing about any device, so
-    /// every controller stays.
+    /// every controller stays. A device that came or went is followed by
+    /// the mouse's capture too.
     pub fn check_devices(&mut self, devices: &mut dyn Devices, sink: &mut dyn Sink) {
         if let Some(present) = devices.ids() {
             self.present(&present, sink);
+            let pointers = Pointers::read(&present, devices, self.chromeos);
+            let changed = pointers.changed(&self.pointers);
+            self.pointers = pointers;
+            if changed {
+                self.capture.devices_changed(self.pointers.compatible);
+            }
         }
     }
 
@@ -785,14 +867,19 @@ impl Input {
         };
         self.touch.tick(now_ms, self.video, sink);
         self.controllers.tick(now_ms, sink);
+        self.capture.tick(now_ms, self.pointers.compatible);
     }
 
     /// When `tick` next has work.
     pub fn next_deadline(&self) -> Option<i64> {
-        [self.touch.next_deadline(), self.controllers.next_deadline()]
-            .into_iter()
-            .flatten()
-            .min()
+        [
+            self.touch.next_deadline(),
+            self.controllers.next_deadline(),
+            self.capture.next_deadline(),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
     }
 
     /// What the input sent, for the log.
@@ -1062,15 +1149,20 @@ pub(crate) mod tests {
     };
 
     fn input() -> Input {
-        Input::new(
+        let mut input = Input::new(
             Settings {
                 mouse_emulation: true,
                 gestures: GESTURES,
+                chromeos: false,
             },
             0,
             VIDEO,
             seats().0,
-        )
+        );
+        // The stream grabs its input at its start (`Play::new`).
+        input.grab(true, &mut Known::default());
+        input.take_capture();
+        input
     }
 
     fn key(
@@ -1350,6 +1442,7 @@ pub(crate) mod tests {
                 Settings {
                     mouse_emulation: true,
                     gestures: GESTURES,
+                    chromeos: false,
                 },
                 0b11,
                 VIDEO,
@@ -1603,6 +1696,7 @@ pub(crate) mod tests {
             Settings {
                 mouse_emulation: true,
                 gestures: GESTURES,
+                chromeos: false,
             },
             0,
             VIDEO,
@@ -1900,6 +1994,7 @@ pub(crate) mod tests {
             Settings {
                 mouse_emulation: false,
                 gestures: GESTURES,
+                chromeos: false,
             },
             0,
             VIDEO,
@@ -3067,6 +3162,7 @@ pub(crate) mod tests {
             Settings {
                 mouse_emulation: true,
                 gestures: GESTURES,
+                chromeos: false,
             },
             0,
             VIDEO,
@@ -3250,6 +3346,7 @@ pub(crate) mod tests {
             Settings {
                 mouse_emulation: true,
                 gestures: GESTURES,
+                chromeos: false,
             },
             0,
             VIDEO,
@@ -3294,5 +3391,273 @@ pub(crate) mod tests {
             pad(18, 0x054c),
         ]);
         assert_eq!(attached(&mut devices), 0b11);
+    }
+
+    /// The emulator's PS/2 mouse (`getevent -p`).
+    fn mouse_device(id: i32) -> Device {
+        Device {
+            id,
+            name: "ImExPS/2 Generic Explorer Mouse".into(),
+            sources: source::MOUSE,
+            ..Default::default()
+        }
+    }
+
+    /// A Samsung phone's `sec_touchpad` on Android 12: a touch screen that
+    /// is also a keyboard and a mouse (`hasCaptureCompatibleInputDevice`).
+    fn sec_touchpad(id: i32) -> Device {
+        Device {
+            id,
+            name: "sec_touchpad".into(),
+            sources: source::TOUCHSCREEN | source::KEYBOARD | source::MOUSE,
+            ..Default::default()
+        }
+    }
+
+    fn ungrabbed(mouse_emulation: bool, chromeos: bool, attached: u16) -> Input {
+        Input::new(
+            Settings {
+                mouse_emulation,
+                gestures: GESTURES,
+                chromeos,
+            },
+            attached,
+            VIDEO,
+            seats().0,
+        )
+    }
+
+    /// A mouse's event, captured (`SOURCE_MOUSE_RELATIVE`, its x and y the
+    /// move) or not (`SOURCE_MOUSE`, its x and y in the window).
+    fn mouse_motion(source: u32, action: u32, x: f32, y: f32, buttons: u32) -> MotionEvent {
+        MotionEvent {
+            device: 7,
+            source,
+            action,
+            button_state: buttons,
+            pointers: vec![Pointer {
+                tool_type: tool::MOUSE,
+                x,
+                y,
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    // `handleMotionEvent`: `eventHasRelativeMouseAxes` and
+    // `getRelativeAxisX/Y` (the batched moves too), then `sendMouseMove`;
+    // the buttons as without capture. A move of nothing sends nothing.
+    #[test]
+    fn a_captured_mouse_moves_the_host_mouse_relatively() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        let mut devices = Known::with([mouse_device(7)]);
+        let mut moved = mouse_motion(source::MOUSE_RELATIVE, action::MOVE, 12.0, -5.0, 0);
+        moved.history = vec![HistorySample {
+            time_ms: 990,
+            positions: vec![(3.0, 1.0)],
+        }];
+        assert!(input.motion(&moved, 1000, &mut devices, &mut sink));
+        let pressed = mouse_motion(source::MOUSE_RELATIVE, action::BUTTON_PRESS, 0.0, 0.0, 0x01);
+        input.motion(&pressed, 1010, &mut devices, &mut sink);
+        let released = mouse_motion(source::MOUSE_RELATIVE, action::BUTTON_RELEASE, 0.0, 0.0, 0);
+        input.motion(&released, 1020, &mut devices, &mut sink);
+        assert_eq!(
+            sink.take(),
+            [
+                Packet::MouseMove { dx: 15, dy: -4 },
+                Packet::MouseButton {
+                    pressed: true,
+                    button: MOUSE_LEFT
+                },
+                Packet::MouseButton {
+                    pressed: false,
+                    button: MOUSE_LEFT
+                },
+            ]
+        );
+    }
+
+    // `setInputGrabState(true)` at the stream's start: `enableCapture`
+    // hides the pointer over the stream and captures it when a device can
+    // be captured. Before it the mouse is eaten (`isCapturingActive`), and
+    // after `setInputGrabState(false)` every motion is Android's
+    // (`grabbedInput`).
+    #[test]
+    fn the_stream_grabs_the_mouse_at_its_start_and_lets_it_go_at_its_end() {
+        let mut input = ungrabbed(true, false, 0);
+        let mut sink = Recorded::default();
+        let mut devices = Known::with([touchscreen(3), mouse_device(7)]);
+        let hover = mouse_motion(source::MOUSE, action::HOVER_MOVE, 540.0, 514.0, 0);
+        assert!(input.motion(&hover, 1000, &mut devices, &mut sink));
+        assert_eq!(sink.take(), []);
+        input.grab(true, &mut devices);
+        assert_eq!(input.take_capture(), [Call::HideIcon, Call::Request]);
+        assert!(!input.local_cursor());
+        // A mouse that Android did not capture still points into the picture.
+        assert!(input.motion(&hover, 1010, &mut devices, &mut sink));
+        assert!(matches!(sink.take()[..], [Packet::MousePosition { .. }]));
+        input.grab(false, &mut devices);
+        assert_eq!(input.take_capture(), [Call::ShowIcon, Call::Release]);
+        assert!(!input.motion(&hover, 1020, &mut devices, &mut sink));
+        assert!(!input.motion(
+            &touch_event(action::DOWN, 0, &[(540.0, 514.0)], 1030),
+            1030,
+            &mut devices,
+            &mut sink
+        ));
+        assert_eq!(sink.take(), []);
+    }
+
+    // `toggleLocalCursor`: the local cursor shows, Android lets the mouse
+    // go and it points into the picture again (`showCursor`); toggled
+    // again it hides and is captured (`hideCursor`).
+    #[test]
+    fn toggle_local_cursor_lets_the_mouse_go_and_takes_it_again() {
+        let mut input = ungrabbed(true, false, 0);
+        let mut sink = Recorded::default();
+        let mut devices = Known::with([mouse_device(7)]);
+        input.grab(true, &mut devices);
+        input.take_capture();
+        input.toggle_local_cursor(&mut devices);
+        assert!(input.local_cursor());
+        assert_eq!(input.take_capture(), [Call::ShowIcon, Call::Release]);
+        let hover = mouse_motion(source::MOUSE, action::HOVER_MOVE, 540.0, 514.0, 0);
+        assert!(input.motion(&hover, 1000, &mut devices, &mut sink));
+        assert!(matches!(sink.take()[..], [Packet::MousePosition { .. }]));
+        input.toggle_local_cursor(&mut devices);
+        assert!(!input.local_cursor());
+        assert_eq!(input.take_capture(), [Call::HideIcon, Call::Request]);
+    }
+
+    // `toggleLocalCursor` grabs first when the input is not grabbed.
+    #[test]
+    fn toggle_local_cursor_grabs_an_input_that_is_not_grabbed() {
+        let mut input = ungrabbed(true, false, 0);
+        let mut devices = Known::with([mouse_device(7)]);
+        input.grab(false, &mut devices);
+        input.take_capture();
+        input.toggle_local_cursor(&mut devices);
+        assert_eq!(
+            input.take_capture(),
+            [Call::HideIcon, Call::Request, Call::ShowIcon, Call::Release]
+        );
+        let mut sink = Recorded::default();
+        let hover = mouse_motion(source::MOUSE, action::HOVER_MOVE, 540.0, 514.0, 0);
+        assert!(input.motion(&hover, 1000, &mut devices, &mut sink));
+        assert!(matches!(sink.take()[..], [Packet::MousePosition { .. }]));
+    }
+
+    // `hasCaptureCompatibleInputDevice`: a mouse, a relative mouse or a
+    // touchpad, but never a touch screen, except on ChromeOS. Without one
+    // the pointer only hides.
+    #[test]
+    fn only_a_mouse_that_is_no_touch_screen_is_captured_but_on_chromeos() {
+        for (devices, chromeos, calls) in [
+            (
+                vec![touchscreen(3), keyboard_device(-1)],
+                false,
+                &[Call::HideIcon][..],
+            ),
+            (
+                vec![touchscreen(3), sec_touchpad(4)],
+                false,
+                &[Call::HideIcon][..],
+            ),
+            (
+                vec![touchscreen(3), sec_touchpad(4)],
+                true,
+                &[Call::HideIcon, Call::Request][..],
+            ),
+            (
+                vec![touchscreen(3), mouse_device(7)],
+                false,
+                &[Call::HideIcon, Call::Request][..],
+            ),
+        ] {
+            let mut input = ungrabbed(true, chromeos, 0);
+            let names: Vec<String> = devices.iter().map(|d| d.name.clone()).collect();
+            input.grab(true, &mut Known::with(devices));
+            assert_eq!(input.take_capture(), calls, "{names:?} chromeos {chromeos}");
+        }
+    }
+
+    // `viewerHasPointer`, which offers "Toggle local cursor": a mouse or a
+    // touchpad, a touch screen that is one too, or a controller while
+    // mouse emulation is on.
+    #[test]
+    fn a_mouse_a_touchpad_or_an_emulated_mouse_offers_the_local_cursor() {
+        for (devices, mouse_emulation, attached, offered) in [
+            (vec![touchscreen(3), keyboard_device(-1)], true, 0, false),
+            (vec![touchscreen(3), mouse_device(7)], true, 0, true),
+            (vec![sec_touchpad(4)], true, 0, true),
+            (vec![pad(16, 0x045e)], true, 1, true),
+            (vec![pad(16, 0x045e)], false, 1, false),
+        ] {
+            let mut input = ungrabbed(mouse_emulation, false, attached);
+            let names: Vec<String> = devices.iter().map(|d| d.name.clone()).collect();
+            let mut devices = Known::with(devices);
+            input.grab(true, &mut devices);
+            assert_eq!(input.has_pointer(), offered, "{names:?} {mouse_emulation}");
+        }
+        // A mouse that comes later is read with the devices.
+        let mut input = ungrabbed(false, false, 0);
+        let mut devices = Known::with([touchscreen(3)]);
+        input.grab(true, &mut devices);
+        assert!(!input.has_pointer());
+        devices = Known::with([touchscreen(3), mouse_device(7)]);
+        input.check_devices(&mut devices, &mut Recorded::default());
+        assert!(input.has_pointer());
+    }
+
+    // `onWindowFocusChanged`: focus regained while the pointer is captured
+    // and hidden asks for the capture again 500 ms later; not while the
+    // local cursor shows, and not on a loss of focus.
+    #[test]
+    fn regained_focus_asks_for_the_capture_again_half_a_second_later() {
+        let mut input = ungrabbed(true, false, 0);
+        let mut devices = Known::with([mouse_device(7)]);
+        let mut sink = Recorded::default();
+        input.grab(true, &mut devices);
+        input.take_capture();
+        input.focus(false, 1000);
+        assert_eq!(input.next_deadline(), None);
+        input.focus(true, 2000);
+        assert_eq!(input.next_deadline(), Some(2500));
+        input.tick(2499, &mut sink);
+        assert_eq!(input.take_capture(), []);
+        input.tick(2500, &mut sink);
+        assert_eq!(input.take_capture(), [Call::Request]);
+        assert_eq!(input.next_deadline(), None);
+        input.toggle_local_cursor(&mut devices);
+        input.take_capture();
+        input.focus(true, 3000);
+        assert_eq!(input.next_deadline(), None);
+    }
+
+    // `onInputDeviceAdded`, `onInputDeviceRemoved` and
+    // `onInputDeviceChanged`, which `hideCursor` listens for and
+    // `showCursor` stops: a device that comes or goes makes the view take
+    // the capture, or let it go, by what is attached then.
+    #[test]
+    fn a_device_that_comes_or_goes_while_the_pointer_hides_is_followed() {
+        let mut input = ungrabbed(true, false, 0);
+        let mut sink = Recorded::default();
+        let mut devices = Known::with([touchscreen(3)]);
+        input.grab(true, &mut devices);
+        assert_eq!(input.take_capture(), [Call::HideIcon]);
+        input.check_devices(&mut devices, &mut sink);
+        assert_eq!(input.take_capture(), []);
+        devices = Known::with([touchscreen(3), mouse_device(7)]);
+        input.check_devices(&mut devices, &mut sink);
+        assert_eq!(input.take_capture(), [Call::Follow { compatible: true }]);
+        devices = Known::with([touchscreen(3)]);
+        input.check_devices(&mut devices, &mut sink);
+        assert_eq!(input.take_capture(), [Call::Follow { compatible: false }]);
+        input.toggle_local_cursor(&mut devices);
+        input.take_capture();
+        devices = Known::with([touchscreen(3), mouse_device(7)]);
+        input.check_devices(&mut devices, &mut sink);
+        assert_eq!(input.take_capture(), []);
     }
 }

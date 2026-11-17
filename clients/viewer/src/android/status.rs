@@ -4,7 +4,8 @@
 //! (`KorriViewerControls.snapshot`, `MediaCodecDecoderRenderer.viewerHealth`).
 //! A controller passes [`readings`] to `Lifecycle::controls`; it runs on the
 //! thread that asks for a snapshot. [`touchscreen`] says whether the stream
-//! may offer the touch controls.
+//! may offer the touch controls, and [`chromeos`] whether a touch screen may
+//! have the mouse's capture (`capture.rs`).
 use crate::{controls::Readings, log, picture};
 use jni::{
     JavaVM,
@@ -18,12 +19,27 @@ const BATTERY_PROPERTY_CAPACITY: i32 = 4;
 
 /// `PackageManager.FEATURE_TOUCHSCREEN`.
 const FEATURE_TOUCHSCREEN: &str = "android.hardware.touchscreen";
+/// The feature by which `AndroidNativePointerCaptureProvider` knows
+/// ChromeOS.
+const FEATURE_CHROMEOS: &str = "org.chromium.arc.device_management";
 
 /// Whether the device has a touch screen
 /// (`PackageManager.hasSystemFeature(FEATURE_TOUCHSCREEN)`), as
 /// `KorriViewerControls.supported` asks: Artemis lists its touch controls
 /// only then. Through JNI on this thread; false when it cannot be read.
 pub fn touchscreen() -> bool {
+    feature(FEATURE_TOUCHSCREEN, "the touch screen")
+}
+
+/// Whether the device runs ChromeOS, as Artemis's capture provider asks:
+/// there a touch screen may have the mouse's capture. Through JNI on this
+/// thread; false when it cannot be read.
+pub fn chromeos() -> bool {
+    feature(FEATURE_CHROMEOS, "ChromeOS")
+}
+
+/// `PackageManager.hasSystemFeature`; false when it cannot be read.
+fn feature(name: &str, what: &str) -> bool {
     let context = ndk_context::android_context();
     // SAFETY: the process's VM, which android-activity gave ndk-context.
     let Ok(vm) = (unsafe { JavaVM::from_raw(context.vm().cast()) }) else {
@@ -35,7 +51,7 @@ pub fn touchscreen() -> bool {
     // SAFETY: ndk-context's global reference to the activity, which it
     // keeps; this wrapper does not delete it.
     let activity = unsafe { JObject::from_raw(context.context().cast()) };
-    let touch = env.with_local_frame(8, |env| -> jni::errors::Result<bool> {
+    let has = env.with_local_frame(8, |env| -> jni::errors::Result<bool> {
         let manager = env
             .call_method(
                 &activity,
@@ -44,7 +60,7 @@ pub fn touchscreen() -> bool {
                 &[],
             )?
             .l()?;
-        let feature = env.new_string(FEATURE_TOUCHSCREEN)?;
+        let feature = env.new_string(name)?;
         env.call_method(
             &manager,
             "hasSystemFeature",
@@ -56,10 +72,10 @@ pub fn touchscreen() -> bool {
     if env.exception_check().unwrap_or(false) {
         let _ = env.exception_clear();
     }
-    match touch {
-        Ok(touch) => touch,
+    match has {
+        Ok(has) => has,
         Err(error) => {
-            log::line(&format!("status: the touch screen is unknown: {error}"));
+            log::line(&format!("status: {what} is unknown: {error}"));
             false
         }
     }

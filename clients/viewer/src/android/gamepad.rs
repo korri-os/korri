@@ -261,6 +261,9 @@ pub(crate) struct Controllers {
     current: u16,
     initial: u16,
     mouse_emulation: bool,
+    /// `hasGameController`: a device with a joystick's axes was attached
+    /// at the start or has sent since. It stays.
+    game_controller: bool,
     /// `prefConfig.flipFaceButtons`: A is B and X is Y (slice D11).
     flip_face_buttons: bool,
     heartbeat: Heartbeat,
@@ -295,6 +298,7 @@ impl Controllers {
             current: 0,
             initial,
             mouse_emulation,
+            game_controller: initial != 0,
             flip_face_buttons: false,
             heartbeat: Heartbeat::default(),
             seats,
@@ -324,7 +328,9 @@ impl Controllers {
         let device = device?;
         if let std::collections::btree_map::Entry::Vacant(entry) = self.contexts.entry(device_id) {
             // Every device, for the checks that look at the others.
-            entry.insert(new_context(device, &everything(devices), &devices.phone()));
+            let context = new_context(device, &everything(devices), &devices.phone());
+            self.game_controller |= context.has_joystick_axes;
+            entry.insert(context);
         }
         Some(device_id)
     }
@@ -466,6 +472,13 @@ impl Controllers {
         self.contexts.values().any(|c| c.rumble != Rumble::None)
     }
 
+    /// `ControllerHandler.hasController`: some controller came
+    /// (`hasGameController`). With mouse emulation on, the stream then
+    /// offers "Toggle local cursor" (`Game.viewerHasPointer`).
+    pub(crate) fn has_controller(&self) -> bool {
+        self.game_controller
+    }
+
     /// `resetInputState`: every controller lets go of its buttons, sticks
     /// and triggers, forgets its emulated buttons and its Start times, and
     /// the heartbeat repeats each one with nothing pressed. Nothing is
@@ -593,6 +606,7 @@ impl Controllers {
         self.contexts
             .entry(other_id)
             .or_insert_with(|| new_context(other, &all, &phone));
+        self.game_controller |= self.contexts[&other_id].has_joystick_axes;
         self.assign_at(other_id, devices, sink, true);
         Some(self.contexts[&other_id].number)
     }

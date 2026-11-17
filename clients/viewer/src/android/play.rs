@@ -12,11 +12,17 @@
 //! Guide's and Back's presses too, and the app closes it ([`Play::close`])
 //! when korrid resumes the stream.
 //!
+//! The input grabs the mouse from the stream's start to its stop
+//! (`capture.rs`): the app makes the calls on the stream's view that
+//! [`Play::take_capture`] gives (`pointer_capture.rs`), the last ones after
+//! [`Play::end`].
+//!
 //! The thread that owns the app's events calls it: the viewer's own loop
 //! (`clients/viewer/android`), or the shell's input filter and timer in the
 //! Korri app (`clients/android-app`). Either way it runs on one thread, and
 //! never waits.
 use crate::{
+    capture::Call,
     devices::{AndroidDevices, now_ms},
     events,
     feedback::Seats,
@@ -62,28 +68,35 @@ pub struct Play {
     /// When the attached devices were last asked for.
     checked: i64,
     ended: bool,
+    /// The calls on the stream's view that the stream's end made.
+    released: Vec<Call>,
 }
 
 impl Play {
     /// `attached` is the launch's controller mask (`input::attached`), read
     /// from `devices` before the runtime started. `seats`: where the input
     /// tells the controllers' feedback which controller is which
-    /// (`feedback::Worker::seats`).
+    /// (`feedback::Worker::seats`). The input grabs the mouse now, as
+    /// Artemis's does once its stream has started
+    /// (`setInputGrabState(true)`).
     pub fn new(
         settings: Settings,
         attached: u16,
         placed: Rect,
-        devices: AndroidDevices,
+        mut devices: AndroidDevices,
         seats: Box<dyn Seats>,
         presenter: Presenter,
     ) -> Self {
+        let mut input = Input::new(settings, attached, placed, seats);
+        input.grab(true, &mut devices);
         Self {
-            input: Guarded(Some(Input::new(settings, attached, placed, seats))),
+            input: Guarded(Some(input)),
             sink: core_sink(),
             devices,
             gameplay: Gameplay::new(presenter),
             checked: now_ms(),
             ended: false,
+            released: Vec::new(),
         }
     }
 
@@ -232,6 +245,46 @@ impl Play {
             .unwrap_or_default()
     }
 
+    /// The stream's control "Toggle local cursor": the pointer shows and the
+    /// capture goes, or the pointer hides and Android captures the mouse
+    /// again. False when the input has ended.
+    pub fn toggle_local_cursor(&mut self) -> bool {
+        let Self { input, devices, .. } = self;
+        input
+            .run("local cursor", |input| input.toggle_local_cursor(devices))
+            .is_some()
+    }
+
+    /// Whether the local cursor shows; none once the input has ended.
+    pub fn local_cursor(&self) -> Option<bool> {
+        self.input.0.as_ref().map(Input::local_cursor)
+    }
+
+    /// A mouse, a touchpad or an emulated mouse is there: the stream offers
+    /// "Toggle local cursor". False once the input has ended.
+    pub fn has_pointer(&self) -> bool {
+        self.input.0.as_ref().is_some_and(Input::has_pointer)
+    }
+
+    /// The window gained or lost the focus: Android's capture went with
+    /// it, and is asked for again.
+    pub fn focus(&mut self, focused: bool) {
+        self.input
+            .run("focus", |input| input.focus(focused, now_ms()));
+    }
+
+    /// The calls on the stream's view since the last take, in order, for
+    /// `pointer_capture::perform`.
+    pub fn take_capture(&mut self) -> Vec<Call> {
+        let mut calls = std::mem::take(&mut self.released);
+        calls.extend(
+            self.input
+                .run("capture", Input::take_capture)
+                .unwrap_or_default(),
+        );
+        calls
+    }
+
     /// The stream's control "Flip A/B and X/Y" (slice D11). False when the
     /// input has ended.
     pub fn set_flip_face_buttons(&mut self, flip: bool) -> bool {
@@ -242,8 +295,10 @@ impl Play {
             .is_some()
     }
 
-    /// The stream stops: nothing more goes to it. The first call logs what
-    /// the input did; a later one does nothing.
+    /// The stream stops: nothing more goes to it, and the input lets the
+    /// mouse go (`setInputGrabState(false)`), also when a panic ended the
+    /// input first: [`Play::take_capture`] has the calls. The first call
+    /// logs what the input did; a later one does nothing.
     pub fn end(&mut self) {
         if std::mem::replace(&mut self.ended, true) {
             return;
@@ -251,6 +306,14 @@ impl Play {
         if self.gameplay.overlay == Overlay::Open {
             log::line("overlay: open when the stream stopped");
         }
+        let Self { input, devices, .. } = self;
+        let released = input.run("let go", |input| {
+            let mut calls = input.take_capture();
+            input.grab(false, devices);
+            calls.extend(input.take_capture());
+            calls
+        });
+        self.released = released.unwrap_or_else(|| vec![Call::ShowIcon, Call::Release]);
         if let Some(input) = self.input.0.take() {
             log::line(&format!("input: ended: {}", input.report()));
         }

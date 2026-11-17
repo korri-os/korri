@@ -39,6 +39,11 @@ mod answer;
 #[cfg(any(test, target_os = "android"))]
 #[path = "android/audio.rs"]
 mod audio;
+// The mouse's pointer capture over the stream, for "Toggle local cursor"
+// (#434, D7′): what to call on the stream's view, and the calls by JNI.
+#[cfg(any(test, target_os = "android"))]
+#[path = "android/capture.rs"]
+pub mod capture;
 #[cfg(any(test, target_os = "android"))]
 #[path = "android/codec.rs"]
 mod codec;
@@ -95,6 +100,9 @@ pub mod placement;
 #[cfg(target_os = "android")]
 #[path = "android/play.rs"]
 pub mod play;
+#[cfg(target_os = "android")]
+#[path = "android/pointer_capture.rs"]
+pub mod pointer_capture;
 // The soft keyboard over the stream, for "Toggle keyboard" (#434, D7′).
 #[cfg(target_os = "android")]
 #[path = "android/soft_keyboard.rs"]

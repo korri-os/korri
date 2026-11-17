@@ -11,7 +11,8 @@
 //! touch pad (`trackpad.rs`), mode 3 a relative mouse (`relative.rs`), and
 //! mode 4 takes the touches and sends nothing. A change of mode lets go of
 //! what the old one held, as Artemis's `cancelTouch` does. A mouse moves the
-//! host's pointer to the same place in the picture.
+//! host's pointer to the same place in the picture; a mouse that Android
+//! has captured for the stream (`capture.rs`) moves it by its own moves.
 //!
 //! Ported from Korri's copy of Artemis (`clients/android`, from
 //! `simonwjackson/artemis` at `cf12c432`, a fork of
@@ -23,7 +24,7 @@
 //! Korri work dated 2026-11-14.
 use super::{
     gamepad::{MOUSE_LEFT, MOUSE_RIGHT},
-    input::{Device, MotionEvent, Packet, Sink, action, axis, tool},
+    input::{Device, MotionEvent, Packet, Sink, action, axis, source, tool},
     relative::Relative,
     trackpad::Trackpad,
 };
@@ -687,18 +688,40 @@ const BUTTON_TERTIARY: u32 = 0x04;
 const BUTTON_STYLUS_PRIMARY: u32 = 0x20;
 const BUTTON_STYLUS_SECONDARY: u32 = 0x40;
 
-/// A mouse without pointer capture: its place in the picture, its buttons
-/// and its wheel (`handleMotionEvent`'s mouse branch).
+/// A mouse: its move when Android has captured it, else its place in the
+/// picture; its buttons and its wheel (`handleMotionEvent`'s mouse branch).
 #[derive(Debug, Default)]
 pub(crate) struct Mouse {
     buttons: u32,
+}
+
+/// `eventHasRelativeMouseAxes` with `getRelativeAxisX` and `getRelativeAxisY`:
+/// a captured mouse's move (`SOURCE_MOUSE_RELATIVE`), with the moves batched
+/// into the event before it, as Java's `(short)` makes it.
+fn relative(event: &MotionEvent) -> Option<(i16, i16)> {
+    let p = event.pointers.first()?;
+    if event.source != source::MOUSE_RELATIVE || p.tool_type != tool::MOUSE {
+        return None;
+    }
+    let (mut x, mut y) = (p.x, p.y);
+    for (dx, dy) in event.history.iter().filter_map(|s| s.positions.first()) {
+        x += dx;
+        y += dy;
+    }
+    Some((x as i32 as i16, y as i32 as i16))
 }
 
 impl Mouse {
     pub(crate) fn event(&mut self, event: &MotionEvent, video: Rect, sink: &mut dyn Sink) {
         let state = event.button_state;
         let changed = state ^ self.buttons;
-        if let Some(p) = event.pointers.first() {
+        if let Some((dx, dy)) = relative(event) {
+            // `sendMouseMove`: Artemis's absolute mouse mode, which sends it
+            // as a place, is off by default and not carried.
+            if dx != 0 || dy != 0 {
+                sink.send(Packet::MouseMove { dx, dy });
+            }
+        } else if let Some(p) = event.pointers.first() {
             // The place first: a pen without hover may have moved far.
             let (x, y) = in_picture(video, p.x, p.y);
             let (width, height) = size(video);

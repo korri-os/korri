@@ -115,6 +115,7 @@ fn probe(gestures: GestureConfig) -> Result<()> {
         Settings {
             mouse_emulation: false,
             gestures,
+            chromeos: false,
         },
         0,
         Rect {

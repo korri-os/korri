@@ -188,7 +188,7 @@ pub fn give_back(app: &AndroidApp) {
 
 /// Our own reference to the activity, taken on the calling thread:
 /// android-activity's may be gone by the time the main thread runs.
-fn activity(app: &AndroidApp) -> Result<GlobalRef> {
+pub(crate) fn activity(app: &AndroidApp) -> Result<GlobalRef> {
     // SAFETY: android-activity's VM, alive for the process, and its global
     // reference to the activity, valid on this thread until it handles
     // Destroy.
@@ -200,7 +200,10 @@ fn activity(app: &AndroidApp) -> Result<GlobalRef> {
 
 /// `work` on this thread, attached to the VM; a Java exception is logged and
 /// cleared.
-fn on_main<T>(vm: usize, work: impl FnOnce(&mut JNIEnv) -> jni::errors::Result<T>) -> Result<T> {
+pub(crate) fn on_main<T>(
+    vm: usize,
+    work: impl FnOnce(&mut JNIEnv) -> jni::errors::Result<T>,
+) -> Result<T> {
     // SAFETY: android-activity's VM, alive for the process.
     let vm = unsafe { JavaVM::from_raw(vm as *mut jni::sys::JavaVM) }?;
     let mut env = vm.attach_current_thread()?;
@@ -283,7 +286,7 @@ fn give_back_on_main(env: &mut JNIEnv, activity: &JObject) -> jni::errors::Resul
 }
 
 /// NativeActivity's own view, among the activity's content.
-fn native_view<'local>(
+pub(crate) fn native_view<'local>(
     env: &mut JNIEnv<'local>,
     activity: &JObject,
 ) -> jni::errors::Result<Option<JObject<'local>>> {
