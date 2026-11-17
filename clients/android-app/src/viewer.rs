@@ -229,6 +229,7 @@ pub fn adapter(keydir: PathBuf, pins: PathBuf) -> Arc<Adapter> {
                         "korri-app: viewer could not remove the pinned certificates of an earlier process: {cause}"
                     )),
                 }
+                make_the_client_key(keydir.clone());
                 Arc::new(Shared {
                     keydir,
                     pins,
@@ -244,6 +245,26 @@ pub fn adapter(keydir: PathBuf, pins: PathBuf) -> Arc<Adapter> {
             Arc::new(Adapter(shared.clone()))
         })
         .clone()
+}
+
+/// The client key is made when the app starts, on a thread of its own, not
+/// in the first launch's start (#510): RSA's prime search took 0.08 s to
+/// 1.07 s there on the emulator. A start that asks for it meanwhile waits
+/// for it (`Identity::load_or_generate`); one that finds it loads it.
+fn make_the_client_key(keydir: PathBuf) {
+    let made = thread::Builder::new()
+        .name("viewer-client-key".into())
+        .spawn(move || {
+            if let Err(cause) = client_certificate(&keydir) {
+                logcat::error(&format!("korri-app: viewer client key not made: {cause}"));
+            }
+        });
+    if let Err(cause) = made {
+        // The first start makes it then.
+        logcat::error(&format!(
+            "korri-app: viewer client key waits for the first start: {cause}"
+        ));
+    }
 }
 
 /// The adapter that korrid holds, once `adapter` has made it: the emulator

@@ -333,7 +333,8 @@ that arrives while the stream in front ends (its stop asked for, its
 runtime returned, or its Stopped reported) waits for it and then begins,
 instead of being refused: korrid starts again as soon as it reads Stopped,
 which can come before the loop thread's next tick lets the old stream go
-(`rules::arriving`). Until #391 the layers were asked only after the
+(`rules::arriving`). The client key is made when the app starts, on a
+thread of its own (#510), not in the first launch's start. Until #391 the layers were asked only after the
 certificate, and the window turned only after Start.
 
 The viewer's steps and the app's write `start:` lines with their

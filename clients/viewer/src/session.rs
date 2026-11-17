@@ -34,7 +34,15 @@ impl Identity {
         );
         Ok(Self { cert, key })
     }
+    /// The key pair of `dir`, made on its first use. Callers in one process
+    /// take turns (#510: the Android app makes it when it starts, while a
+    /// launch may already ask for it), so one makes it and the others load
+    /// it.
     pub fn load_or_generate(dir: &Path) -> Result<Self> {
+        static MAKING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _turn = MAKING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if dir.join("client.pem").exists() || dir.join("key.pem").exists() {
             return Self::load(dir);
         }
@@ -119,6 +127,11 @@ impl Transport {
         easy.ssl_key(keys.join("key.pem"))?;
         easy.connect_timeout(Duration::from_secs(10))?;
         easy.timeout(Duration::from_secs(120))?;
+        // Sunshine closes each connection after its answer and waits for the
+        // client's close; until then its HTTPS serves no one else without
+        // korri-plugins patch 0045 (#510). A kept connection held it for the
+        // whole stream, and the next request went into it first.
+        easy.forbid_reuse(true)?;
         easy.fail_on_error(true)?;
         easy.proxy("")?;
         easy.follow_location(false)?;

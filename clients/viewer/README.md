@@ -90,6 +90,13 @@ is missing, malformed or wrong. HTTP discovers only the HTTPS port and serves
 the PIN exchange. Authenticated serverinfo, applist and launch/resume have no
 HTTP fallback. The existing `client.pem`, `key.pem` and `uniqueid.dat` names
 come from Moonlight's key-directory producer; korrid provisioning is unchanged.
+Each HTTP connection closes once its answer is in (`CURLOPT_FORBID_REUSE`,
+#510): Sunshine closes it after the answer and waits for the client, and
+without korri-plugins patch 0045 its HTTPS serves no one else meanwhile. A
+connection kept for reuse held it for the whole stream, and the next request
+went into the closed connection before a new one. Callers in one process
+make the key pair in turn (`Identity::load_or_generate`), so the Android app
+can make it when it starts while a launch asks for it.
 
 The Rust HTTP/session and PIN exchange follow Moonlight Embedded's
 `libgamestream/client.c`, Copyright (C) 2015–2017 Iwan Timmer. The Rust
