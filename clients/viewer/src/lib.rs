@@ -91,6 +91,10 @@ pub mod play;
 #[cfg(target_os = "android")]
 #[path = "android/soft_keyboard.rs"]
 pub mod soft_keyboard;
+// Artemis's mouse modes 3 and 2 for the touch screen (#434, D7′).
+#[cfg(any(test, target_os = "android"))]
+#[path = "android/relative.rs"]
+mod relative;
 #[cfg(target_os = "android")]
 #[path = "android/sound.rs"]
 mod sound;
@@ -104,6 +108,9 @@ pub mod status;
 #[cfg(any(test, target_os = "android"))]
 #[path = "android/touch.rs"]
 mod touch;
+#[cfg(any(test, target_os = "android"))]
+#[path = "android/trackpad.rs"]
+mod trackpad;
 #[cfg(any(test, target_os = "android"))]
 #[path = "android/video_stats.rs"]
 mod video_stats;

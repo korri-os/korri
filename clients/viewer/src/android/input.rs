@@ -31,7 +31,7 @@ use super::{
     keyboard::{self, Keyboard, Special, code},
     touch::{Mouse, Touch},
 };
-use crate::{log, placement::Rect};
+use crate::{controls::MouseMode, log, placement::Rect};
 use std::{
     collections::{BTreeMap, BTreeSet},
     rc::Rc,
@@ -577,6 +577,17 @@ impl Input {
         self.video = video;
     }
 
+    /// The stream's control "Mouse mode" (`Game.applyMouseMode`): what the
+    /// old mode held lets go, through the hold while the overlay is open.
+    pub fn set_mouse_mode(&mut self, mode: MouseMode, sink: &mut dyn Sink) {
+        let sink = &mut Counting {
+            sink,
+            hold: &mut self.hold,
+            counts: &mut self.counts,
+        };
+        self.touch.set_mode(mode, sink);
+    }
+
     /// The stream's control "Flip A/B and X/Y" (slice D11).
     pub fn set_flip_face_buttons(&mut self, flip: bool) {
         self.controllers.set_flip_face_buttons(flip);
@@ -809,6 +820,7 @@ impl Sink for Core {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::controls::MouseMode;
     use crate::{
         feedback::{Owner, Phone, Rumble, Seat, Seats, Vibration, Vibrators},
         gamepad::{
@@ -2023,6 +2035,284 @@ pub(crate) mod tests {
                 },
             ]
         );
+    }
+
+    // Mouse mode (#434, D7′), `Game.applyMouseMode`: one gesture's events.
+    /// One touch event of a gesture: its action, its index, the pointers'
+    /// places and its time.
+    type Step<'a> = (u32, usize, &'a [(f32, f32)], i64);
+
+    fn gesture(input: &mut Input, sink: &mut Recorded, events: &[Step]) {
+        let mut devices = Known::with([touchscreen(3)]);
+        for &(action, index, points, time_ms) in events {
+            assert!(input.motion(
+                &touch_event(action, index, points, time_ms),
+                time_ms,
+                &mut devices,
+                sink
+            ));
+        }
+    }
+
+    fn clicked(pressed: bool, button: u8) -> Packet {
+        Packet::MouseButton { pressed, button }
+    }
+
+    // Mode 1, "Absolute touch": the absolute mouse even for a host that
+    // takes touches.
+    #[test]
+    fn absolute_touch_clicks_where_it_tapped_on_a_host_that_takes_touches() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        input.set_mouse_mode(MouseMode::Absolute, &mut sink);
+        gesture(
+            &mut input,
+            &mut sink,
+            &[
+                (action::DOWN, 0, &[(540.0, 514.0)], 1000),
+                (action::UP, 0, &[(540.0, 514.0)], 1040),
+            ],
+        );
+        input.tick(1140, &mut sink);
+        assert_eq!(
+            sink.take(),
+            [
+                Packet::MousePosition {
+                    x: 540,
+                    y: 304,
+                    width: 1080,
+                    height: 608
+                },
+                clicked(true, MOUSE_LEFT),
+                clicked(false, MOUSE_LEFT),
+            ]
+        );
+    }
+
+    // Mode 5: the same, with the buttons swapped (`AbsoluteTouchContext`'s
+    // `swapped`).
+    #[test]
+    fn swapped_absolute_touch_taps_with_the_right_button() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        input.set_mouse_mode(MouseMode::AbsoluteSwapped, &mut sink);
+        gesture(
+            &mut input,
+            &mut sink,
+            &[
+                (action::DOWN, 0, &[(540.0, 514.0)], 1000),
+                (action::UP, 0, &[(540.0, 514.0)], 1040),
+            ],
+        );
+        input.tick(1140, &mut sink);
+        let packets = sink.take();
+        assert_eq!(
+            packets[1..],
+            [clicked(true, MOUSE_RIGHT), clicked(false, MOUSE_RIGHT)]
+        );
+    }
+
+    // Mode 4: touches are taken, and nothing reaches the host.
+    #[test]
+    fn disabled_touch_sends_nothing() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        input.set_mouse_mode(MouseMode::Disabled, &mut sink);
+        gesture(
+            &mut input,
+            &mut sink,
+            &[
+                (action::DOWN, 0, &[(540.0, 514.0)], 1000),
+                (action::MOVE, 0, &[(600.0, 514.0)], 1020),
+                (action::UP, 0, &[(600.0, 514.0)], 1040),
+            ],
+        );
+        input.tick(2000, &mut sink);
+        assert!(sink.take().is_empty());
+        assert_eq!(input.next_deadline(), None);
+    }
+
+    // Mode 3, `RelativeTouchContext`: a move is relative, scaled to
+    // 1280x720 from the picture's 1080x608; a tap clicks, released 100 ms
+    // later.
+    #[test]
+    fn gaming_trackpad_moves_relatively_and_a_tap_clicks() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        input.set_mouse_mode(MouseMode::TrackpadGaming, &mut sink);
+        gesture(
+            &mut input,
+            &mut sink,
+            &[
+                (action::DOWN, 0, &[(100.0, 300.0)], 1000),
+                (action::MOVE, 0, &[(140.0, 300.0)], 1020),
+                (action::UP, 0, &[(140.0, 300.0)], 1040),
+            ],
+        );
+        // round(40 × 1280 / 1080) = 47; the move is no tap.
+        assert_eq!(sink.take(), [Packet::MouseMove { dx: 47, dy: 0 }]);
+        assert_eq!(input.next_deadline(), None);
+        gesture(
+            &mut input,
+            &mut sink,
+            &[
+                (action::DOWN, 0, &[(300.0, 400.0)], 2000),
+                (action::UP, 0, &[(300.0, 400.0)], 2100),
+            ],
+        );
+        assert_eq!(sink.take(), [clicked(true, MOUSE_LEFT)]);
+        assert_eq!(input.next_deadline(), Some(2200));
+        input.tick(2200, &mut sink);
+        assert_eq!(sink.take(), [clicked(false, MOUSE_LEFT)]);
+    }
+
+    // Mode 3: a press held 650 ms drags.
+    #[test]
+    fn gaming_trackpad_long_press_drags() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        input.set_mouse_mode(MouseMode::TrackpadGaming, &mut sink);
+        gesture(
+            &mut input,
+            &mut sink,
+            &[(action::DOWN, 0, &[(100.0, 300.0)], 1000)],
+        );
+        input.tick(1649, &mut sink);
+        assert!(sink.take().is_empty());
+        input.tick(1650, &mut sink);
+        gesture(
+            &mut input,
+            &mut sink,
+            &[
+                (action::MOVE, 0, &[(200.0, 300.0)], 1700),
+                (action::UP, 0, &[(200.0, 300.0)], 1750),
+            ],
+        );
+        assert_eq!(
+            sink.take(),
+            [
+                clicked(true, MOUSE_LEFT),
+                // round(100 × 1280 / 1080) = 119.
+                Packet::MouseMove { dx: 119, dy: 0 },
+                clicked(false, MOUSE_LEFT),
+            ]
+        );
+    }
+
+    // Mode 2, `TrackpadContext`: a tap clicks, released 230 ms later.
+    #[test]
+    fn natural_trackpad_tap_clicks() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        input.set_mouse_mode(MouseMode::TrackpadNatural, &mut sink);
+        gesture(
+            &mut input,
+            &mut sink,
+            &[
+                (action::DOWN, 0, &[(100.0, 300.0)], 1000),
+                (action::UP, 0, &[(100.0, 300.0)], 1050),
+            ],
+        );
+        assert_eq!(sink.take(), [clicked(true, MOUSE_LEFT)]);
+        assert_eq!(input.next_deadline(), Some(1280));
+        input.tick(1280, &mut sink);
+        assert_eq!(sink.take(), [clicked(false, MOUSE_LEFT)]);
+    }
+
+    // Mode 2: faster moves go further (the cube root of the move over 8
+    // pixels), and a fast move goes on after the lift, then stops.
+    #[test]
+    fn natural_trackpad_accelerates_and_flicks() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        input.set_mouse_mode(MouseMode::TrackpadNatural, &mut sink);
+        gesture(
+            &mut input,
+            &mut sink,
+            &[
+                (action::DOWN, 0, &[(100.0, 300.0)], 1000),
+                (action::MOVE, 0, &[(108.0, 300.0)], 1010),
+                (action::MOVE, 0, &[(172.0, 300.0)], 1020),
+                (action::UP, 0, &[(172.0, 300.0)], 1020),
+            ],
+        );
+        assert_eq!(
+            sink.take(),
+            [
+                Packet::MouseMove { dx: 8, dy: 0 },
+                Packet::MouseMove { dx: 128, dy: 0 },
+            ]
+        );
+        // 128 pixels in 10 ms: 12.8 pixels a millisecond, one frame each
+        // 10 ms, slowing by 0.93 a frame.
+        assert_eq!(input.next_deadline(), Some(1020));
+        let mut now = 1020;
+        while let Some(at) = input.next_deadline() {
+            assert!(at <= now + 10 && now < 4000, "the flick never stops");
+            now = at;
+            input.tick(now, &mut sink);
+        }
+        let flick = sink.take();
+        assert_eq!(flick[0], Packet::MouseMove { dx: 128, dy: 0 });
+        assert!(
+            flick.len() > 20
+                && flick.iter().all(|p| matches!(
+                    p, Packet::MouseMove { dx, dy: 0 } if *dx > 0
+                ))
+        );
+    }
+
+    // Mode 2: a tap of two fingers is a right click.
+    #[test]
+    fn natural_trackpad_two_finger_tap_is_a_right_click() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        input.set_mouse_mode(MouseMode::TrackpadNatural, &mut sink);
+        gesture(
+            &mut input,
+            &mut sink,
+            &[
+                (action::DOWN, 0, &[(100.0, 300.0)], 1000),
+                (
+                    action::POINTER_DOWN,
+                    1,
+                    &[(100.0, 300.0), (200.0, 300.0)],
+                    1020,
+                ),
+                (
+                    action::POINTER_UP,
+                    1,
+                    &[(100.0, 300.0), (200.0, 300.0)],
+                    1080,
+                ),
+                (action::UP, 0, &[(100.0, 300.0)], 1100),
+            ],
+        );
+        assert_eq!(sink.take(), [clicked(true, MOUSE_RIGHT)]);
+        input.tick(1080 + 230, &mut sink);
+        assert_eq!(sink.take(), [clicked(false, MOUSE_RIGHT)]);
+    }
+
+    // `applyMouseMode` cancels each context first: a drag lets go, and the
+    // new mode's touches follow.
+    #[test]
+    fn a_new_mouse_mode_lets_go_of_a_drag() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        input.set_mouse_mode(MouseMode::TrackpadGaming, &mut sink);
+        gesture(
+            &mut input,
+            &mut sink,
+            &[(action::DOWN, 0, &[(100.0, 300.0)], 1000)],
+        );
+        input.tick(1650, &mut sink);
+        assert_eq!(sink.take(), [clicked(true, MOUSE_LEFT)]);
+        input.set_mouse_mode(MouseMode::MultiTouch, &mut sink);
+        assert_eq!(sink.take(), [clicked(false, MOUSE_LEFT)]);
+        assert_eq!(input.next_deadline(), None);
+        gesture(
+            &mut input,
+            &mut sink,
+            &[(action::DOWN, 0, &[(540.0, 514.0)], 2000)],
+        );
+        assert!(matches!(
+            sink.take()[..],
+            [Packet::Touch {
+                kind: kind::DOWN,
+                ..
+            }]
+        ));
     }
 
     #[test]

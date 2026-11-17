@@ -206,6 +206,15 @@ impl Play {
         self.input.0.as_ref().is_some_and(Input::has_rumble)
     }
 
+    /// The stream's control "Mouse mode": the touch screen's mode from now
+    /// on. False when the input has ended.
+    pub fn set_mouse_mode(&mut self, mode: crate::controls::MouseMode) -> bool {
+        let Self { input, sink, .. } = self;
+        input
+            .run("mouse mode", |input| input.set_mouse_mode(mode, sink))
+            .is_some()
+    }
+
     /// The stream's control "Flip A/B and X/Y" (slice D11). False when the
     /// input has ended.
     pub fn set_flip_face_buttons(&mut self, flip: bool) -> bool {

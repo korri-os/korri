@@ -21,17 +21,18 @@
 //! | --- | --- | --- |
 //! | `toggle-keyboard` | Toggle keyboard | command (`Game.toggleKeyboard`); listed only on a device with a touch screen, as Artemis lists its touch controls (`touchOnly`); closes the overlay |
 //! | `set-fill-mode` | Crop to fill | toggle (`Game.toggleFillMode`: fit or fill) |
+//! | `set-mouse-mode` | Mouse mode | choice of Artemis's six modes (`Game.applyMouseMode`, `getMouseModeLabels`), listed only on a touch screen |
 //! | `set-face-button-flip` | Flip A/B and X/Y | toggle (`ControllerHandler.handleFlipFaceButtons`) |
 //! | `set-rumble` | Rumble | toggle (`Game.setRumble`), listed only while a controller that can rumble is in the stream (`ControllerHandler.hasRumble`) |
 //!
 //! The others need what this viewer does not have: Artemis's on-screen
-//! full keyboard and controller, its pan and zoom, its mouse modes and touch
-//! sensitivity, its pointer capture (the local cursor), its GL renderer
-//! (SGSR) and picture-in-picture (`clients/viewer/README.md`, slice D11).
+//! full keyboard and controller, its pan and zoom, its touch sensitivity, its
+//! pointer capture (the local cursor), its GL renderer (SGSR) and
+//! picture-in-picture (`clients/viewer/README.md`, slice D11).
 use anyhow::{Result, anyhow, bail};
 use korri_viewer_treaty::{
     SurfaceGameplayControl, SurfaceGameplayControlInteraction as Interaction,
-    SurfaceGameplayControlValue as Value, SurfaceStreamHealth,
+    SurfaceGameplayControlValue as Value, SurfaceSettingChoice, SurfaceStreamHealth,
 };
 
 /// One control: an effect of Artemis's executor (`Effect`).
@@ -42,6 +43,8 @@ pub enum Control {
     ToggleKeyboard,
     /// `SET_FILL_MODE`: crop the picture to fill the window, or fit it.
     Fill,
+    /// `SET_MOUSE_MODE`: how the touch screen reaches the host.
+    MouseMode,
     /// `SET_FACE_BUTTON_FLIP`: a controller's A is B and X is Y, and back.
     FlipFaceButtons,
     /// `SET_RUMBLE`: the host's rumble reaches the controllers, or not.
@@ -50,9 +53,10 @@ pub enum Control {
 
 impl Control {
     /// In Artemis's order (`Effect.values()`).
-    pub const ALL: [Control; 4] = [
+    pub const ALL: [Control; 5] = [
         Control::ToggleKeyboard,
         Control::Fill,
+        Control::MouseMode,
         Control::FlipFaceButtons,
         Control::Rumble,
     ];
@@ -62,6 +66,7 @@ impl Control {
         match self {
             Control::ToggleKeyboard => "toggle-keyboard",
             Control::Fill => "set-fill-mode",
+            Control::MouseMode => "set-mouse-mode",
             Control::FlipFaceButtons => "set-face-button-flip",
             Control::Rumble => "set-rumble",
         }
@@ -72,6 +77,7 @@ impl Control {
         match self {
             Control::ToggleKeyboard => "Toggle keyboard",
             Control::Fill => "Crop to fill",
+            Control::MouseMode => "Mouse mode",
             Control::FlipFaceButtons => "Flip A/B and X/Y",
             Control::Rumble => "Rumble",
         }
@@ -87,7 +93,8 @@ impl Control {
     /// now.
     fn offered(self, offer: Offer) -> bool {
         match self {
-            Control::ToggleKeyboard => offer.touch,
+            // Artemis's touch controls (`touchOnly`).
+            Control::ToggleKeyboard | Control::MouseMode => offer.touch,
             Control::Fill | Control::FlipFaceButtons => true,
             Control::Rumble => offer.rumble,
         }
@@ -105,6 +112,17 @@ impl Control {
         match self {
             Control::ToggleKeyboard => Interaction::Command,
             Control::Fill => toggle(values.fill),
+            // The value is the mode's index, each option a mode's label.
+            Control::MouseMode => Interaction::Choice {
+                value: values.mouse_mode.value().into(),
+                options: MouseMode::ALL
+                    .into_iter()
+                    .map(|mode| SurfaceSettingChoice {
+                        value: mode.value().into(),
+                        label: mode.label().into(),
+                    })
+                    .collect(),
+            },
             Control::FlipFaceButtons => toggle(values.flip_face_buttons),
             Control::Rumble => toggle(values.rumble),
         }
@@ -112,7 +130,7 @@ impl Control {
 
     /// The change that `value` asks for, checked as
     /// `KorriMoonlightActionExecutor.valid` checks it: a command takes no
-    /// value, a toggle takes a toggle.
+    /// value, a toggle takes a toggle, a choice one of its options.
     fn change(self, value: Option<&Value>) -> Result<Change> {
         let toggle = |make: fn(bool) -> Change| match value {
             Some(Value::Toggle { value }) => Ok(make(*value)),
@@ -124,6 +142,14 @@ impl Control {
                 Some(_) => bail!("{} takes no value", self.label()),
             },
             Control::Fill => toggle(Change::Fill),
+            Control::MouseMode => match value {
+                Some(Value::Choice { value }) => MouseMode::ALL
+                    .into_iter()
+                    .find(|mode| mode.value() == value)
+                    .map(Change::MouseMode)
+                    .ok_or_else(|| anyhow!("{} takes a choice of 0 to 5", self.label())),
+                _ => bail!("{} takes a choice", self.label()),
+            },
             Control::FlipFaceButtons => toggle(Change::FlipFaceButtons),
             Control::Rumble => toggle(Change::Rumble),
         }
@@ -140,14 +166,67 @@ pub struct Offer {
     pub touch: bool,
 }
 
+/// Artemis's mouse modes: the touch screen as the host's touch screen, an
+/// absolute mouse, a touch pad, a relative mouse, nothing, or an absolute
+/// mouse with its buttons swapped (`Game.applyMouseMode`). The value on the
+/// wire is the mode's index, its label `R.array.mouse_mode_names`'s.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MouseMode {
+    #[default]
+    MultiTouch,
+    Absolute,
+    TrackpadNatural,
+    TrackpadGaming,
+    Disabled,
+    AbsoluteSwapped,
+}
+
+impl MouseMode {
+    /// In index order.
+    pub const ALL: [MouseMode; 6] = [
+        MouseMode::MultiTouch,
+        MouseMode::Absolute,
+        MouseMode::TrackpadNatural,
+        MouseMode::TrackpadGaming,
+        MouseMode::Disabled,
+        MouseMode::AbsoluteSwapped,
+    ];
+
+    /// The index, as `Game.mouseMode` gives it.
+    pub fn value(self) -> &'static str {
+        match self {
+            MouseMode::MultiTouch => "0",
+            MouseMode::Absolute => "1",
+            MouseMode::TrackpadNatural => "2",
+            MouseMode::TrackpadGaming => "3",
+            MouseMode::Disabled => "4",
+            MouseMode::AbsoluteSwapped => "5",
+        }
+    }
+
+    /// `R.array.mouse_mode_names` (`res/values/strings.xml`).
+    pub fn label(self) -> &'static str {
+        match self {
+            MouseMode::MultiTouch => "Multi touch",
+            MouseMode::Absolute => "Absolute touch",
+            MouseMode::TrackpadNatural => "Track pad(Natural/Double tap to drag)",
+            MouseMode::TrackpadGaming => "Track pad(Gaming/Long press to drag)",
+            MouseMode::Disabled => "Disabled",
+            MouseMode::AbsoluteSwapped => "Absolute touch (left/right click swapped)",
+        }
+    }
+}
+
 /// The stream's control values. The defaults are Artemis's: the picture
-/// fits (`ScaleMode.FIT`), the face buttons are not flipped, and rumble is
-/// on (`checkbox_enable_rumble`). A command has no value.
+/// fits (`ScaleMode.FIT`), the face buttons are not flipped, rumble is on
+/// (`checkbox_enable_rumble`), and the touch screen is multi-touch
+/// (`mouse_mode_list` "0"). A command has no value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Values {
     pub fill: bool,
     pub flip_face_buttons: bool,
     pub rumble: bool,
+    pub mouse_mode: MouseMode,
 }
 
 impl Default for Values {
@@ -156,6 +235,7 @@ impl Default for Values {
             fill: false,
             flip_face_buttons: false,
             rumble: true,
+            mouse_mode: MouseMode::default(),
         }
     }
 }
@@ -167,6 +247,7 @@ impl Values {
             Change::Fill(value) => self.fill = value,
             Change::FlipFaceButtons(value) => self.flip_face_buttons = value,
             Change::Rumble(value) => self.rumble = value,
+            Change::MouseMode(mode) => self.mouse_mode = mode,
             // The keyboard's visibility belongs to Android's window
             // (`KorriViewerControls.apply` remembers nothing for it).
             Change::ToggleKeyboard => {}
@@ -181,6 +262,7 @@ impl Values {
 pub enum Change {
     ToggleKeyboard,
     Fill(bool),
+    MouseMode(MouseMode),
     FlipFaceButtons(bool),
     Rumble(bool),
 }
@@ -190,6 +272,7 @@ impl Change {
         match self {
             Change::ToggleKeyboard => Control::ToggleKeyboard,
             Change::Fill(_) => Control::Fill,
+            Change::MouseMode(_) => Control::MouseMode,
             Change::FlipFaceButtons(_) => Control::FlipFaceButtons,
             Change::Rumble(_) => Control::Rumble,
         }
@@ -307,6 +390,7 @@ mod tests {
                 fill: true,
                 flip_face_buttons: false,
                 rumble: true,
+                mouse_mode: MouseMode::TrackpadGaming,
             },
             Offer {
                 rumble: true,
@@ -315,7 +399,9 @@ mod tests {
         );
         // KorriViewerControls.snapshot's object for each, in its key order,
         // and in Artemis's order (`Effect.values()`): TOGGLE_KEYBOARD comes
-        // before SET_FILL_MODE.
+        // before SET_FILL_MODE, and SET_MOUSE_MODE after it. Mouse mode's
+        // choices are `getMouseModeLabels()`, `R.array.mouse_mode_names`,
+        // with their indexes as values.
         assert_eq!(
             json(&listed),
             format!(
@@ -326,6 +412,15 @@ mod tests {
                     r#"{{"id":"{0}set-fill-mode","label":"Crop to fill","enabled":true,"#,
                     r#""destructive":false,"dismissOnSuccess":false,"#,
                     r#""interaction":{{"kind":"toggle","value":true,"trueLabel":"On","falseLabel":"Off"}}}},"#,
+                    r#"{{"id":"{0}set-mouse-mode","label":"Mouse mode","enabled":true,"#,
+                    r#""destructive":false,"dismissOnSuccess":false,"#,
+                    r#""interaction":{{"kind":"choice","value":"3","options":["#,
+                    r#"{{"value":"0","label":"Multi touch"}},"#,
+                    r#"{{"value":"1","label":"Absolute touch"}},"#,
+                    r#"{{"value":"2","label":"Track pad(Natural/Double tap to drag)"}},"#,
+                    r#"{{"value":"3","label":"Track pad(Gaming/Long press to drag)"}},"#,
+                    r#"{{"value":"4","label":"Disabled"}},"#,
+                    r#"{{"value":"5","label":"Absolute touch (left/right click swapped)"}}]}}}},"#,
                     r#"{{"id":"{0}set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"#,
                     r#""destructive":false,"dismissOnSuccess":false,"#,
                     r#""interaction":{{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}}},"#,
@@ -368,7 +463,12 @@ mod tests {
         let prefix = prefix(LAUNCH, 1, 1);
         assert_eq!(
             wires(&prefix, TOUCH),
-            ["toggle-keyboard", "set-fill-mode", "set-face-button-flip"]
+            [
+                "toggle-keyboard",
+                "set-fill-mode",
+                "set-mouse-mode",
+                "set-face-button-flip"
+            ]
         );
         let id = format!("{prefix}toggle-keyboard");
         assert!(parse(&prefix, &id, None, Offer::default()).is_err());
@@ -407,6 +507,7 @@ mod tests {
             fill: true,
             flip_face_buttons: true,
             rumble: false,
+            mouse_mode: MouseMode::Disabled,
         };
         assert_eq!(changed.with(Change::ToggleKeyboard), changed);
         assert_eq!(Change::ToggleKeyboard.control(), Control::ToggleKeyboard);
@@ -446,9 +547,61 @@ mod tests {
             Values {
                 fill: false,
                 flip_face_buttons: true,
-                rumble: true
+                rumble: true,
+                mouse_mode: MouseMode::MultiTouch,
             }
         );
+    }
+
+    // KorriViewerControls.included: SET_MOUSE_MODE is a touch control, and
+    // KorriMoonlightActionExecutor.valid takes a choice of one digit, 0 to 5.
+    // The default is Artemis's, multi-touch ("mouse_mode_list" "0").
+    #[test]
+    fn mouse_mode_is_a_touch_choice_of_artemis_six_modes() {
+        let prefix = prefix(LAUNCH, 1, 1);
+        let id = format!("{prefix}set-mouse-mode");
+        let choice = |value: &str| Value::Choice {
+            value: value.into(),
+        };
+        assert!(parse(&prefix, &id, Some(&choice("3")), RUMBLE).is_err());
+        for (value, mode) in [
+            ("0", MouseMode::MultiTouch),
+            ("1", MouseMode::Absolute),
+            ("2", MouseMode::TrackpadNatural),
+            ("3", MouseMode::TrackpadGaming),
+            ("4", MouseMode::Disabled),
+            ("5", MouseMode::AbsoluteSwapped),
+        ] {
+            assert_eq!(
+                parse(&prefix, &id, Some(&choice(value)), TOUCH).unwrap(),
+                Change::MouseMode(mode)
+            );
+            assert_eq!(mode.value(), value);
+            assert_eq!(Change::MouseMode(mode).control(), Control::MouseMode);
+        }
+        for wrong in [
+            Some(choice("6")),
+            Some(choice("")),
+            Some(choice("03")),
+            Some(choice("-1")),
+            Some(choice("a")),
+            Some(Value::Toggle { value: true }),
+            Some(Value::Range { value: 1.0 }),
+            None,
+        ] {
+            assert!(
+                parse(&prefix, &id, wrong.as_ref(), TOUCH).is_err(),
+                "{wrong:?}"
+            );
+        }
+        assert_eq!(Values::default().mouse_mode, MouseMode::MultiTouch);
+        assert_eq!(
+            Values::default()
+                .with(Change::MouseMode(MouseMode::TrackpadNatural))
+                .mouse_mode,
+            MouseMode::TrackpadNatural
+        );
+        assert!(!Control::MouseMode.dismiss());
     }
 
     // KorriViewerControlsTest.staleIdentityAndInvalidRangesHaveNoEffect.

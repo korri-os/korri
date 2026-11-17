@@ -914,6 +914,59 @@ mod tests {
         assert_eq!(observed(&lifecycle).controls, before.controls);
     }
 
+    // "Mouse mode" (#434, D7′): a choice, listed on a touch screen. Apply
+    // takes one of its options, the stream's thread performs it, and the
+    // snapshot then shows the new choice (KorriStreamControlState).
+    #[test]
+    fn a_choice_reaches_the_streams_thread_and_the_snapshot_shows_it() {
+        use korri_viewer_treaty::SurfaceGameplayControlInteraction as Interaction;
+        let lifecycle = in_app();
+        let changes = lifecycle.controls(1, Readings::default);
+        connect(&lifecycle);
+        changes.offer(Offer {
+            touch: true,
+            ..Offer::default()
+        });
+        let mouse = |snapshot: &ViewerSnapshot| {
+            snapshot
+                .controls
+                .iter()
+                .find(|control| control.id.ends_with(":set-mouse-mode"))
+                .cloned()
+                .expect("Mouse mode is listed on a touch screen")
+        };
+        let control = mouse(&observed(&lifecycle));
+        assert!(
+            matches!(&control.interaction, Interaction::Choice { value, options }
+                if value == "0" && options.len() == 6),
+            "{control:?}"
+        );
+        let choose = |value: &str| C::Apply {
+            control: control.id.clone(),
+            value: Some(SurfaceGameplayControlValue::Choice {
+                value: value.into(),
+            }),
+        };
+        // Not one of the options: refused before it reaches the stream.
+        assert!(matches!(ask(&lifecycle, choose("9")), R::Error { .. }));
+        assert!(changes.next().is_none());
+        let stream = std::thread::spawn(move || {
+            let change = next_change(&changes);
+            let asked = change.change;
+            change.done(Ok(()));
+            asked
+        });
+        assert!(matches!(ask(&lifecycle, choose("2")), R::Ok));
+        assert_eq!(
+            stream.join().unwrap(),
+            Change::MouseMode(controls::MouseMode::TrackpadNatural)
+        );
+        assert!(matches!(
+            mouse(&observed(&lifecycle)).interaction,
+            Interaction::Choice { value, .. } if value == "2"
+        ));
+    }
+
     #[test]
     fn a_refused_or_stale_change_changes_nothing() {
         let lifecycle = in_app();

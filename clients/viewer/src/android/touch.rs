@@ -2,11 +2,16 @@
 //! The touch screen and a physical mouse. Pure; `input.rs` routes the
 //! events and sends the packets.
 //!
-//! The touch screen follows Artemis's default mouse mode, "multi-touch"
-//! (mode 0): each finger goes to the host as a touch, and a host that takes
-//! no touch gets an absolute mouse instead (`AbsoluteTouchContext`): a tap
-//! clicks, a long press right-clicks, a second finger scrolls. A mouse
-//! moves the host's pointer to the same place in the picture.
+//! The touch screen follows Artemis's mouse mode, the stream's control
+//! "Mouse mode" (`Game.applyMouseMode`): by default "multi-touch" (mode 0),
+//! where each finger goes to the host as a touch, and a host that takes no
+//! touch gets an absolute mouse instead (`AbsoluteTouchContext`): a tap
+//! clicks, a long press right-clicks, a second finger scrolls. Modes 1 and 5
+//! are that absolute mouse alone, 5 with its buttons swapped; mode 2 is a
+//! touch pad (`trackpad.rs`), mode 3 a relative mouse (`relative.rs`), and
+//! mode 4 takes the touches and sends nothing. A change of mode lets go of
+//! what the old one held, as Artemis's `cancelTouch` does. A mouse moves the
+//! host's pointer to the same place in the picture.
 //!
 //! Ported from Korri's copy of Artemis (`clients/android`, from
 //! `simonwjackson/artemis` at `cf12c432`, a fork of
@@ -19,8 +24,10 @@
 use super::{
     gamepad::{MOUSE_LEFT, MOUSE_RIGHT},
     input::{Device, MotionEvent, Packet, Sink, action, axis, tool},
+    relative::Relative,
+    trackpad::Trackpad,
 };
-use crate::placement::Rect;
+use crate::{controls::MouseMode, placement::Rect};
 use std::f32::consts::FRAC_PI_4;
 
 /// `LiSendTouchEvent`'s event types (`Limelight.h`).
@@ -39,7 +46,7 @@ pub(crate) const ROTATION_UNKNOWN: u16 = 0xffff;
 /// `LI_ERR_UNSUPPORTED`: the host takes no touch.
 pub(crate) const UNSUPPORTED: i32 = -5501;
 
-const MOUSE_MIDDLE: u8 = 0x02;
+pub(crate) const MOUSE_MIDDLE: u8 = 0x02;
 
 /// `MotionEvent.FLAG_CANCELED` (API 33; never set before).
 const FLAG_CANCELED: u32 = 0x20;
@@ -78,14 +85,119 @@ fn touch_type(event: &MotionEvent) -> Option<u8> {
     })
 }
 
-/// The touch screen in Artemis's multi-touch mode.
-#[derive(Debug, Default)]
+/// `TouchContext`: one finger's mouse, by its index in the gesture. Points
+/// are in the picture's own pixels, from its corner. Its `Handler`
+/// callbacks are deadlines on the input's clock (`now_ms`).
+pub(crate) trait Context {
+    /// `touchDownEvent`: `new` is false when the second finger became the
+    /// first.
+    fn down(
+        &mut self,
+        at: (i32, i32),
+        time_ms: i64,
+        now_ms: i64,
+        new: bool,
+        video: Rect,
+        sink: &mut dyn Sink,
+    );
+    /// `touchMoveEvent`.
+    fn moved(
+        &mut self,
+        at: (i32, i32),
+        time_ms: i64,
+        now_ms: i64,
+        video: Rect,
+        sink: &mut dyn Sink,
+    );
+    /// `touchUpEvent`.
+    fn up(&mut self, at: (i32, i32), time_ms: i64, now_ms: i64, video: Rect, sink: &mut dyn Sink);
+    /// `cancelTouch`.
+    fn cancel(&mut self, sink: &mut dyn Sink);
+    /// `isCancelled`.
+    fn cancelled(&self) -> bool;
+    /// `setPointerCount`.
+    fn pointers(&mut self, count: usize, now_ms: i64, sink: &mut dyn Sink);
+    /// When its next callback is due.
+    fn deadline(&self) -> Option<i64>;
+    /// Run its earliest callback that is due by `now_ms`; false when none is.
+    fn fire(&mut self, now_ms: i64, video: Rect, sink: &mut dyn Sink) -> bool;
+}
+
+/// The touch screen in Artemis's mouse mode.
+#[derive(Debug)]
 pub(crate) struct Touch {
-    /// The absolute mouse, one context for each of the first two fingers.
-    fingers: [Finger; 2],
+    mode: MouseMode,
+    /// `touchContextMap`: one context for each of the first two fingers.
+    contexts: Contexts,
+}
+
+impl Default for Touch {
+    fn default() -> Self {
+        Self {
+            mode: MouseMode::default(),
+            contexts: Contexts::new(MouseMode::default()),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum Contexts {
+    /// `AbsoluteTouchContext`: modes 0, 1 and 5.
+    Absolute([Finger; 2]),
+    /// `TrackpadContext`: mode 2.
+    Trackpad([Trackpad; 2]),
+    /// `RelativeTouchContext`: mode 3.
+    Relative([Relative; 2]),
+    /// Mode 4: none.
+    None,
+}
+
+impl Contexts {
+    fn new(mode: MouseMode) -> Self {
+        let absolute = |swapped| {
+            Self::Absolute([0, 1].map(|index| Finger {
+                index,
+                swapped,
+                ..Finger::default()
+            }))
+        };
+        match mode {
+            MouseMode::MultiTouch | MouseMode::Absolute => absolute(false),
+            MouseMode::AbsoluteSwapped => absolute(true),
+            MouseMode::TrackpadNatural => Self::Trackpad([0, 1].map(Trackpad::new)),
+            MouseMode::TrackpadGaming => Self::Relative([0, 1].map(Relative::new)),
+            MouseMode::Disabled => Self::None,
+        }
+    }
+
+    fn each(&mut self) -> Vec<&mut dyn Context> {
+        match self {
+            Self::Absolute(all) => all.iter_mut().map(|c| c as &mut dyn Context).collect(),
+            Self::Trackpad(all) => all.iter_mut().map(|c| c as &mut dyn Context).collect(),
+            Self::Relative(all) => all.iter_mut().map(|c| c as &mut dyn Context).collect(),
+            Self::None => Vec::new(),
+        }
+    }
+
+    fn deadline(&self) -> Option<i64> {
+        match self {
+            Self::Absolute(all) => all.iter().flat_map(Context::deadline).min(),
+            Self::Trackpad(all) => all.iter().flat_map(Context::deadline).min(),
+            Self::Relative(all) => all.iter().flat_map(Context::deadline).min(),
+            Self::None => None,
+        }
+    }
 }
 
 impl Touch {
+    /// The stream's control "Mouse mode" (`Game.applyMouseMode`): every
+    /// context lets go (`cancelTouch`), and the mode's own take their place.
+    pub(crate) fn set_mode(&mut self, mode: MouseMode, sink: &mut dyn Sink) {
+        self.cancel(sink);
+        self.mode = mode;
+        self.contexts = Contexts::new(mode);
+    }
+
     /// A touch screen's event. False: not one this mode takes.
     pub(crate) fn event(
         &mut self,
@@ -95,15 +207,17 @@ impl Touch {
         now_ms: i64,
         sink: &mut dyn Sink,
     ) -> bool {
-        if send_touch(event, device, video, sink) {
-            return true;
+        match self.mode {
+            // Touch is off: it is taken, and nothing goes to the host.
+            MouseMode::Disabled => return true,
+            MouseMode::MultiTouch if send_touch(event, device, video, sink) => return true,
+            _ => {}
         }
-        self.absolute(event, video, now_ms, sink)
+        self.contexts(event, video, now_ms, sink)
     }
 
-    /// `handleTouchInput` with the absolute contexts, for a host that takes
-    /// no touch.
-    fn absolute(
+    /// `handleTouchInput` with the mode's contexts.
+    fn contexts(
         &mut self,
         event: &MotionEvent,
         video: Rect,
@@ -112,66 +226,63 @@ impl Touch {
     ) -> bool {
         let index = event.action_index;
         let count = event.pointers.len();
-        if index >= self.fingers.len() {
+        let mut contexts = self.contexts.each();
+        if index >= contexts.len() {
             return false;
         }
-        let at = |pointer: usize| -> (i32, i32) {
-            event.pointers.get(pointer).map_or((0, 0), |p| {
-                (
-                    (p.x - video.left as f32) as i32,
-                    (p.y - video.top as f32) as i32,
-                )
-            })
+        let place = |(x, y): (f32, f32)| {
+            (
+                (x - video.left as f32) as i32,
+                (y - video.top as f32) as i32,
+            )
+        };
+        let at = |pointer: usize| {
+            event
+                .pointers
+                .get(pointer)
+                .map_or((0, 0), |p| place((p.x, p.y)))
         };
         match event.action {
             action::MOVE => {
                 for sample in &event.history {
-                    for (finger, f) in self.fingers.iter_mut().enumerate() {
-                        if let Some(&(x, y)) =
+                    for (finger, context) in contexts.iter_mut().enumerate() {
+                        if let Some(&point) =
                             sample.positions.get(finger).filter(|_| finger < count)
                         {
-                            let (x, y) = (
-                                (x - video.left as f32) as i32,
-                                (y - video.top as f32) as i32,
-                            );
-                            f.moved(finger, x, y, video, sink);
+                            context.moved(place(point), sample.time_ms, now_ms, video, sink);
                         }
                     }
                 }
-                for (finger, f) in self.fingers.iter_mut().enumerate() {
+                for (finger, context) in contexts.iter_mut().enumerate() {
                     if finger < count {
-                        let (x, y) = at(finger);
-                        f.moved(finger, x, y, video, sink);
+                        context.moved(at(finger), event.event_time_ms, now_ms, video, sink);
                     }
                 }
             }
             action::DOWN | action::POINTER_DOWN => {
-                for (finger, f) in self.fingers.iter_mut().enumerate() {
-                    f.pointers(finger, count, sink);
+                for context in contexts.iter_mut() {
+                    context.pointers(count, now_ms, sink);
                 }
-                let (x, y) = at(index);
-                self.fingers[index].down(index, x, y, event.event_time_ms, now_ms, true);
+                contexts[index].down(at(index), event.event_time_ms, now_ms, true, video, sink);
             }
             action::UP | action::POINTER_UP => {
-                let (x, y) = at(index);
                 if event.flags & FLAG_CANCELED != 0 {
-                    self.fingers[index].cancel(sink);
+                    contexts[index].cancel(sink);
                 } else {
-                    self.fingers[index].up(index, x, y, event.event_time_ms, now_ms, video, sink);
+                    contexts[index].up(at(index), event.event_time_ms, now_ms, video, sink);
                 }
-                for (finger, f) in self.fingers.iter_mut().enumerate() {
-                    f.pointers(finger, count.saturating_sub(1), sink);
+                for context in contexts.iter_mut() {
+                    context.pointers(count.saturating_sub(1), now_ms, sink);
                 }
-                if index == 0 && count > 1 && !self.fingers[0].cancelled {
+                if index == 0 && count > 1 && !contexts[0].cancelled() {
                     // The second finger is now the first.
-                    let (x, y) = at(1);
-                    self.fingers[0].down(0, x, y, event.event_time_ms, now_ms, false);
+                    contexts[0].down(at(1), event.event_time_ms, now_ms, false, video, sink);
                 }
             }
             action::CANCEL => {
-                for (finger, f) in self.fingers.iter_mut().enumerate() {
-                    f.cancel(sink);
-                    f.pointers(finger, 0, sink);
+                for context in contexts.iter_mut() {
+                    context.cancel(sink);
+                    context.pointers(0, now_ms, sink);
                 }
             }
             _ => return false,
@@ -179,28 +290,34 @@ impl Touch {
         true
     }
 
-    /// The absolute mouse's timers that are due, in their order.
+    /// The contexts' callbacks that are due, in their order.
     pub(crate) fn tick(&mut self, now_ms: i64, video: Rect, sink: &mut dyn Sink) {
-        while let Some((finger, timer)) = self
-            .fingers
-            .iter()
-            .enumerate()
-            .flat_map(|(finger, f)| f.due(now_ms).map(|timer| (finger, timer)))
-            .min_by_key(|&(_, (at, _))| at)
-        {
-            self.fingers[finger].fire(timer.1, video, sink);
+        loop {
+            let mut contexts = self.contexts.each();
+            let Some(first) = contexts
+                .iter()
+                .enumerate()
+                .filter_map(|(i, c)| c.deadline().filter(|&at| at <= now_ms).map(|at| (at, i)))
+                .min()
+                .map(|(_, i)| i)
+            else {
+                return;
+            };
+            if !contexts[first].fire(now_ms, video, sink) {
+                return;
+            }
         }
     }
 
     pub(crate) fn next_deadline(&self) -> Option<i64> {
-        self.fingers.iter().flat_map(Finger::deadline).min()
+        self.contexts.deadline()
     }
 
     /// `cancelTouch` on each context: its timers stop and its mouse button
     /// goes up.
     pub(crate) fn cancel(&mut self, sink: &mut dyn Sink) {
-        for finger in &mut self.fingers {
-            finger.cancel(sink);
+        for context in self.contexts.each() {
+            context.cancel(sink);
         }
     }
 }
@@ -311,9 +428,12 @@ enum Timer {
     LeftUp,
 }
 
-/// `AbsoluteTouchContext`: one finger as an absolute mouse.
+/// `AbsoluteTouchContext`: one finger as an absolute mouse. Its primary
+/// button is the left one, or the right one when `swapped` (mode 5).
 #[derive(Debug, Default)]
 struct Finger {
+    index: usize,
+    swapped: bool,
     down_at: (i32, i32),
     down_ms: i64,
     up_at: (i32, i32),
@@ -332,81 +452,25 @@ fn distance(a: (i32, i32), b: (i32, i32)) -> f64 {
 }
 
 impl Finger {
-    fn down(&mut self, index: usize, x: i32, y: i32, time_ms: i64, now_ms: i64, new: bool) {
-        if !new {
-            // A finger that moves up to first place is no new touch.
-            return;
-        }
-        self.down_at = (x, y);
-        self.last = (x, y);
-        self.down_ms = time_ms;
-        self.cancelled = false;
-        self.tap = false;
-        self.long_press = false;
-        if index == 0 {
-            self.tap_down_ms = Some(now_ms + TOUCH_DOWN_DEAD_ZONE_MS);
-            self.long_press_ms = Some(now_ms + LONG_PRESS_MS);
+    /// `buttonPrimary`: a tap's button.
+    fn primary(&self) -> u8 {
+        if self.swapped {
+            MOUSE_RIGHT
+        } else {
+            MOUSE_LEFT
         }
     }
 
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "Artemis's touchUpEvent and its context"
-    )]
-    fn up(
-        &mut self,
-        index: usize,
-        x: i32,
-        y: i32,
-        time_ms: i64,
-        now_ms: i64,
-        video: Rect,
-        sink: &mut dyn Sink,
-    ) {
-        if self.cancelled {
-            return;
+    /// `buttonSecondary`: a long press's button.
+    fn secondary(&self) -> u8 {
+        if self.swapped {
+            MOUSE_LEFT
+        } else {
+            MOUSE_RIGHT
         }
-        if index == 0 {
-            self.long_press_ms = None;
-            self.tap_down_ms = None;
-            if self.long_press {
-                button(sink, false, MOUSE_RIGHT);
-            } else if self.tap {
-                button(sink, false, MOUSE_LEFT);
-            } else {
-                // A tap inside the dead zone's time: click where it went
-                // down, and let go 100 ms later for hosts that poll.
-                self.confirm_tap(video, sink);
-                self.left_up_ms = Some(now_ms + LEFT_BUTTON_UP_MS);
-            }
-        }
-        self.last = (x, y);
-        self.up_at = (x, y);
-        self.up_ms = time_ms;
     }
 
-    fn moved(&mut self, index: usize, x: i32, y: i32, video: Rect, sink: &mut dyn Sink) {
-        if self.cancelled {
-            return;
-        }
-        if index == 0 {
-            if distance((x, y), self.down_at) > LONG_PRESS_DISTANCE {
-                self.long_press_ms = None;
-            }
-            // Motion inside the dead zone after the touch is ignored.
-            if self.tap || distance((x, y), self.down_at) > TOUCH_DOWN_DEAD_ZONE_DISTANCE {
-                self.confirm_tap(video, sink);
-                position(video, x, y, sink);
-            }
-        } else if index == 1 {
-            sink.send(Packet::Scroll {
-                amount: ((y - self.last.1) * SCROLL_SPEED_FACTOR) as i16,
-            });
-        }
-        self.last = (x, y);
-    }
-
-    /// `tapConfirmed`: the left button goes down, at the touch's place
+    /// `tapConfirmed`: the primary button goes down, at the touch's place
     /// unless it is a double tap.
     fn confirm_tap(&mut self, video: Rect, sink: &mut dyn Sink) {
         if self.tap || self.long_press {
@@ -419,25 +483,7 @@ impl Finger {
         {
             position(video, self.down_at.0, self.down_at.1, sink);
         }
-        button(sink, true, MOUSE_LEFT);
-    }
-
-    fn cancel(&mut self, sink: &mut dyn Sink) {
-        self.cancelled = true;
-        self.long_press_ms = None;
-        self.tap_down_ms = None;
-        if self.long_press {
-            button(sink, false, MOUSE_RIGHT);
-        } else if self.tap {
-            button(sink, false, MOUSE_LEFT);
-        }
-    }
-
-    /// `setPointerCount`: a second finger ends the first one's click.
-    fn pointers(&mut self, index: usize, count: usize, sink: &mut dyn Sink) {
-        if index == 0 && count > 1 {
-            self.cancel(sink);
-        }
+        button(sink, true, self.primary());
     }
 
     fn timers(&self) -> impl Iterator<Item = (i64, Timer)> + '_ {
@@ -449,38 +495,140 @@ impl Finger {
         .into_iter()
         .flatten()
     }
+}
 
-    fn due(&self, now_ms: i64) -> Option<(i64, Timer)> {
-        self.timers()
-            .filter(|&(at, _)| at <= now_ms)
-            .min_by_key(|&(at, _)| at)
+impl Context for Finger {
+    fn down(
+        &mut self,
+        (x, y): (i32, i32),
+        time_ms: i64,
+        now_ms: i64,
+        new: bool,
+        _video: Rect,
+        _sink: &mut dyn Sink,
+    ) {
+        if !new {
+            // A finger that moves up to first place is no new touch.
+            return;
+        }
+        self.down_at = (x, y);
+        self.last = (x, y);
+        self.down_ms = time_ms;
+        self.cancelled = false;
+        self.tap = false;
+        self.long_press = false;
+        if self.index == 0 {
+            self.tap_down_ms = Some(now_ms + TOUCH_DOWN_DEAD_ZONE_MS);
+            self.long_press_ms = Some(now_ms + LONG_PRESS_MS);
+        }
+    }
+
+    fn up(&mut self, at: (i32, i32), time_ms: i64, now_ms: i64, video: Rect, sink: &mut dyn Sink) {
+        if self.cancelled {
+            return;
+        }
+        if self.index == 0 {
+            self.long_press_ms = None;
+            self.tap_down_ms = None;
+            if self.long_press {
+                button(sink, false, self.secondary());
+            } else if self.tap {
+                button(sink, false, self.primary());
+            } else {
+                // A tap inside the dead zone's time: click where it went
+                // down, and let go 100 ms later for hosts that poll.
+                self.confirm_tap(video, sink);
+                self.left_up_ms = Some(now_ms + LEFT_BUTTON_UP_MS);
+            }
+        }
+        self.last = at;
+        self.up_at = at;
+        self.up_ms = time_ms;
+    }
+
+    fn moved(
+        &mut self,
+        (x, y): (i32, i32),
+        _time_ms: i64,
+        _now_ms: i64,
+        video: Rect,
+        sink: &mut dyn Sink,
+    ) {
+        if self.cancelled {
+            return;
+        }
+        if self.index == 0 {
+            if distance((x, y), self.down_at) > LONG_PRESS_DISTANCE {
+                self.long_press_ms = None;
+            }
+            // Motion inside the dead zone after the touch is ignored.
+            if self.tap || distance((x, y), self.down_at) > TOUCH_DOWN_DEAD_ZONE_DISTANCE {
+                self.confirm_tap(video, sink);
+                position(video, x, y, sink);
+            }
+        } else if self.index == 1 {
+            sink.send(Packet::Scroll {
+                amount: ((y - self.last.1) * SCROLL_SPEED_FACTOR) as i16,
+            });
+        }
+        self.last = (x, y);
+    }
+
+    fn cancel(&mut self, sink: &mut dyn Sink) {
+        self.cancelled = true;
+        self.long_press_ms = None;
+        self.tap_down_ms = None;
+        if self.long_press {
+            button(sink, false, self.secondary());
+        } else if self.tap {
+            button(sink, false, self.primary());
+        }
+    }
+
+    fn cancelled(&self) -> bool {
+        self.cancelled
+    }
+
+    /// `setPointerCount`: a second finger ends the first one's click.
+    fn pointers(&mut self, count: usize, _now_ms: i64, sink: &mut dyn Sink) {
+        if self.index == 0 && count > 1 {
+            Context::cancel(self, sink);
+        }
     }
 
     fn deadline(&self) -> Option<i64> {
         self.timers().map(|(at, _)| at).min()
     }
 
-    fn fire(&mut self, timer: Timer, video: Rect, sink: &mut dyn Sink) {
+    fn fire(&mut self, now_ms: i64, video: Rect, sink: &mut dyn Sink) -> bool {
+        let Some((_, timer)) = self
+            .timers()
+            .filter(|&(at, _)| at <= now_ms)
+            .min_by_key(|&(at, _)| at)
+        else {
+            return false;
+        };
         match timer {
             Timer::TapDown => {
                 self.tap_down_ms = None;
                 self.confirm_tap(video, sink);
             }
             Timer::LongPress => {
-                // A long press is a right click, not a left one.
+                // A long press is a secondary click, not a primary one.
                 self.long_press_ms = None;
                 self.tap_down_ms = None;
                 self.long_press = true;
                 if self.tap {
-                    button(sink, false, MOUSE_LEFT);
+                    button(sink, false, self.primary());
                 }
-                button(sink, true, MOUSE_RIGHT);
+                button(sink, true, self.secondary());
             }
             Timer::LeftUp => {
                 self.left_up_ms = None;
-                button(sink, false, MOUSE_LEFT);
+                button(sink, false, self.primary());
             }
         }
+        true
     }
 }
 

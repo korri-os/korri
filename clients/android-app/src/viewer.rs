@@ -19,10 +19,11 @@
 //! shows or hides Android's soft keyboard over the stream (confirmed once
 //! Android's main thread has made the call, `soft_keyboard`), "Crop to fill"
 //! moves the video layer (confirmed once Android's main thread has applied
-//! the transaction), "Flip A/B and X/Y" changes the controllers' mapping,
-//! and "Rumble" goes to the controllers' feedback thread (slice D4b's). The
-//! loop thread offers Rumble while a controller that can rumble is in the
-//! stream, and Toggle keyboard on a device with a touch screen.
+//! the transaction), "Mouse mode" changes the touch screen's mapping, "Flip
+//! A/B and X/Y" the controllers', and "Rumble" goes to the controllers'
+//! feedback thread (slice D4b's). The loop thread offers Rumble while a
+//! controller that can rumble is in the stream, and Toggle keyboard and
+//! Mouse mode on a device with a touch screen.
 //!
 //! The adapter hands a launch to the loop thread over a channel, because the
 //! layers and the input belong to that thread. The loop thread never waits:
@@ -1141,11 +1142,11 @@ impl Stream {
             logcat::error(&format!("korri-app: viewer Start was not sent: {cause}"));
         }
         events::unbuffered(&self.app);
-        // The stream's controls and status, for korrid's snapshot and
         // The stream's view holds the focus while it plays, as Artemis's
         // does: a letter key reaches the stream, and the soft keyboard types
         // into it, never into the shell's text view.
         soft_keyboard::take_focus(&self.app);
+        // The stream's controls and status, for korrid's snapshot and
         // Apply; this activity is their lease.
         let changes = lifecycle.controls(self.id, status::readings);
         let touch = status::touchscreen();
@@ -1251,9 +1252,10 @@ impl Stream {
         if let Some((change, answer)) = playing.answering.take() {
             let failed = match change.change {
                 Change::ToggleKeyboard => "the soft keyboard did not toggle",
-                Change::Fill(_) | Change::FlipFaceButtons(_) | Change::Rumble(_) => {
-                    "the video layer did not move"
-                }
+                Change::Fill(_)
+                | Change::MouseMode(_)
+                | Change::FlipFaceButtons(_)
+                | Change::Rumble(_) => "the video layer did not move",
             };
             let result = match answer.try_recv() {
                 Err(mpsc::TryRecvError::Empty) => {
@@ -1290,6 +1292,16 @@ impl Stream {
                     // The window has the stream's shape: nothing moves.
                     None => done(change, Ok(())),
                 },
+                // In effect for the next touch; what the old mode held
+                // lets go now.
+                Change::MouseMode(mode) => {
+                    let result = if playing.play.set_mouse_mode(mode) {
+                        Ok(())
+                    } else {
+                        Err("the stream's input has ended".to_owned())
+                    };
+                    done(change, result);
+                }
                 Change::FlipFaceButtons(value) => {
                     let result = if playing.play.set_flip_face_buttons(value) {
                         Ok(())
@@ -1670,6 +1682,14 @@ fn done(change: ControlChange, result: Result<(), String>) {
         }
         (Change::ToggleKeyboard, Err(why)) => logcat::error(&format!(
             "korri-app: viewer control {wire} did not run: {why}"
+        )),
+        (Change::MouseMode(mode), Ok(())) => logcat::info(&format!(
+            "korri-app: viewer control {wire} is {}",
+            mode.value()
+        )),
+        (Change::MouseMode(mode), Err(why)) => logcat::error(&format!(
+            "korri-app: viewer control {wire} not set to {}: {why}",
+            mode.value()
         )),
         (Change::Fill(value) | Change::FlipFaceButtons(value) | Change::Rumble(value), Ok(())) => {
             logcat::info(&format!("korri-app: viewer control {wire} is {value}"))

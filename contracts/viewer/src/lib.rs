@@ -7,7 +7,7 @@
 // that a viewer needs no second contract crate to make them.
 pub use korri_surface_treaty::{
     SurfaceGameplayControl, SurfaceGameplayControlInteraction, SurfaceGameplayControlValue,
-    SurfaceStreamHealth,
+    SurfaceSettingChoice, SurfaceStreamHealth,
 };
 use serde::{Deserialize, Serialize};
 use std::io::{self, BufRead, Read, Write};
