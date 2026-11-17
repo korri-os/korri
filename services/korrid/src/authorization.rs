@@ -301,12 +301,13 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
             PeerPolicy::LocalSurfaceHostOnly
         }
         // Recovery words reach korrid only from a person at this device
-        // (ADR 0082).
-        RpcRequest::IdentityStatus(_)
-        | RpcRequest::IdentityWordsSwitch(_)
-        | RpcRequest::IdentityNip46Switch(_)
+        // (ADR 0082): the shell or the CLI, never inputd's control socket.
+        RpcRequest::IdentityWordsSwitch(_)
         | RpcRequest::OnboardingRecoveryWords(_)
-        | RpcRequest::OnboardingConfirmWords(_) => PeerPolicy::LocalOnly,
+        | RpcRequest::OnboardingConfirmWords(_) => PeerPolicy::LocalSurfaceHostOnly,
+        RpcRequest::IdentityStatus(_) | RpcRequest::IdentityNip46Switch(_) => {
+            PeerPolicy::LocalOnly
+        }
         // A join binds this device or vouches for another (ADR 0069). The
         // person does it at the device; no peer may start or answer it.
         RpcRequest::JoinStart(_)
@@ -1461,7 +1462,7 @@ mod tests {
     fn every_current_request_tag_has_one_explicit_policy() {
         use PeerPolicy::{
             CatalogOrStreamScope as Both, ExplicitScope as Scope, LocalOnly as Local,
-            OwnerDeviceOnly as Owner,
+            LocalSurfaceHostOnly as Person, OwnerDeviceOnly as Owner,
         };
         let stream = Scope(super::Scope::StreamLaunch);
         let cases = vec![
@@ -1595,19 +1596,19 @@ mod tests {
                 request(
                     serde_json::json!({"_tag":"system.identity.switch.words","payload":{"words":"w","dataDisposition":"transfer","trustLossConfirmed":true}}),
                 ),
-                Local,
+                Person,
             ),
             (
                 request(
                     serde_json::json!({"_tag":"system.onboarding.recovery-words","payload":{}}),
                 ),
-                Local,
+                Person,
             ),
             (
                 request(
                     serde_json::json!({"_tag":"system.onboarding.confirm-words","payload":{"words":["a","b","c"]}}),
                 ),
-                Local,
+                Person,
             ),
             (
                 request(
@@ -1667,6 +1668,17 @@ mod tests {
             ("system.onboarding.status", serde_json::json!({})),
             ("system.onboarding.finish", serde_json::json!({})),
             ("system.onboarding.restart", serde_json::json!({})),
+            // The recovery words: inputd's control socket must never get
+            // them (ADR 0082).
+            ("system.onboarding.recovery-words", serde_json::json!({})),
+            (
+                "system.onboarding.confirm-words",
+                serde_json::json!({"words":["a","b","c"]}),
+            ),
+            (
+                "system.identity.switch.words",
+                serde_json::json!({"words":"w","dataDisposition":"transfer","trustLossConfirmed":true}),
+            ),
         ] {
             let request = request(serde_json::json!({"_tag":tag,"payload":payload}));
             assert_eq!(policy_for(&request), PeerPolicy::LocalSurfaceHostOnly);

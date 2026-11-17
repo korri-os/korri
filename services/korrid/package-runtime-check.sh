@@ -146,6 +146,12 @@ control_status="$("$curl_bin" --silent --output /dev/null --write-out '%{http_co
   -H 'content-type: application/json' \
   -d '{"_tag":"system.onboarding.status","payload":{}}')"
 [[ "$control_status" == 403 ]]
+# The recovery words never reach inputd's control socket (ADR 0082).
+words_status="$("$curl_bin" --silent --output /dev/null --write-out '%{http_code}' \
+  --unix-socket "$root/control.sock" http://localhost/rpc \
+  -H 'content-type: application/json' \
+  -d '{"_tag":"system.onboarding.recovery-words","payload":{}}')"
+[[ "$words_status" == 403 ]]
 cli_input_status="$("$curl_bin" --silent --output /dev/null --write-out '%{http_code}' \
   --unix-socket "$root/cli.sock" http://localhost/)"
 [[ "$cli_input_status" == 404 ]]

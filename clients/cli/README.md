@@ -94,7 +94,7 @@ choose identity data disposition or acknowledge trust loss.
 ### Recovery words
 
 A person key is made from 12 recovery words (ADRs 0072, 0073 and 0082). The
-words never go to stdout, into a JSON response or into an argument.
+words never go to stdout, into the CLI's output or into an argument.
 
 `korri setup finish` on a device without an owner shows new words and their
 QR code on the terminal's other screen, so they do not stay in its

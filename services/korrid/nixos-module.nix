@@ -814,6 +814,9 @@ in
         RuntimeDirectoryPreserve = "restart";
         Restart = "on-failure";
         RestartSec = 1;
+        # korrid carries the recovery words in memory while they are in use
+        # (ADR 0082), so a crash must not write them to a core file.
+        LimitCORE = 0;
         NoNewPrivileges = true;
         CapabilityBoundingSet = [ ];
         AmbientCapabilities = [ ];
