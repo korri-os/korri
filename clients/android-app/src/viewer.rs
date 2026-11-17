@@ -30,7 +30,10 @@
 //! certificate, which follows over a channel of its own: the layers are made
 //! and the window turns meanwhile, and the runtime starts once the loop
 //! thread has both (#391, `rules::making`). A launch refused before that
-//! lets its layers go and turns the window back.
+//! lets its layers go and turns the window back. A launch that arrives
+//! while the stream in front ends waits for it (`rules::arriving`): korrid
+//! starts again as soon as it reads Stopped, which can be before the loop
+//! thread's next tick lets the old stream go.
 //!
 //! The certificates, as korrid provisions them for its Linux viewers:
 //!
@@ -670,6 +673,24 @@ struct Playing {
     _pin: Pin,
 }
 
+impl Playing {
+    /// The stream ends: its stop was asked for, its runtime has returned,
+    /// or its lifecycle has reported its end. korrid reads Stopped then, and
+    /// can start again before the next tick lets this stream go.
+    fn ending(&self) -> bool {
+        self.stopping
+            || self.runtime.is_finished()
+            || matches!(
+                self.lifecycle.request(ViewerRequest {
+                    launch_id: self.launch.clone(),
+                    command: ViewerCommand::Status,
+                }),
+                ViewerReply::Status(status)
+                    if LinuxViewerStatus::from(status) == LinuxViewerStatus::Stopped
+            )
+    }
+}
+
 /// The decoded picture's newest size: the decoder's output thread stores
 /// it (`Picture.resized`) and the next tick of the shell's 16 ms timer
 /// takes it, so the decoder never waits for the loop thread.
@@ -698,6 +719,9 @@ pub struct Stream {
     id: u64,
     orders: mpsc::Receiver<Order>,
     phase: Phase,
+    /// A launch that waits for the stream in front to end
+    /// (`rules::arriving`); it begins once the phase is idle.
+    waiting: Option<Show>,
     /// A main event said that the display cutout may have moved in the
     /// window (`layer::may_move_the_cutout`): the next tick of a stream
     /// places its overlay out of the cutout again.
@@ -725,6 +749,7 @@ impl Stream {
             id,
             orders,
             phase: Phase::Idle,
+            waiting: None,
             cutout_may_move: false,
         })
     }
@@ -743,6 +768,11 @@ impl Stream {
             Phase::Making(making) => self.make(*making),
             Phase::Playing(playing) => self.play(playing),
         };
+        if matches!(self.phase, Phase::Idle) {
+            if let Some(show) = self.waiting.take() {
+                self.begin(show);
+            }
+        }
     }
 
     /// The shell's input filter asks first (`Host::input`). While a stream
@@ -821,8 +851,26 @@ impl Stream {
     }
 
     fn begin(&mut self, show: Show) {
-        if !matches!(self.phase, Phase::Idle) {
-            return refuse(show, "another launch is in front");
+        let front = match &self.phase {
+            Phase::Idle => rules::Front::Idle,
+            Phase::Making(_) => rules::Front::Starting,
+            Phase::Playing(playing) if playing.ending() => rules::Front::Ending,
+            Phase::Playing(_) => rules::Front::Playing,
+        };
+        match rules::arriving(front) {
+            rules::Arriving::Begin => {}
+            rules::Arriving::Wait => {
+                logcat::info(&format!(
+                    "korri-app: viewer {} waits for the stream in front to end",
+                    show.launch
+                ));
+                // korrid retries a start that it gave up: the newer waits.
+                if let Some(older) = self.waiting.replace(show) {
+                    refuse(older, "a newer launch came while it waited");
+                }
+                return;
+            }
+            rules::Arriving::Refuse(why) => return refuse(show, why),
         }
         let Some(window) = self
             .window_size()
@@ -897,15 +945,16 @@ impl Stream {
         let certificate = if making.pin.is_some() {
             Part::Ready
         } else {
-            match making.show.certificate.try_recv() {
-                Ok(None) => Part::Waiting,
+            rules::certificate(match making.show.certificate.try_recv() {
+                Ok(None) => rules::Certificate::Waiting,
                 Ok(Some(Ok(pin))) => {
                     making.pin = Some(pin);
-                    Part::Ready
+                    rules::Certificate::Provisioned
                 }
-                Ok(Some(Err(why))) => Part::Failed(why),
-                Err(_) => Part::Failed("the server certificate was not provisioned".into()),
-            }
+                Ok(Some(Err(why))) => rules::Certificate::Refused(why),
+                // korrid dropped its start call: the sender went with it.
+                Err(_) => rules::Certificate::StartEnded,
+            })
         };
         match rules::making(
             making.show.lifecycle.stop_requested(),
@@ -963,6 +1012,7 @@ impl Stream {
             Ok(devices) => devices,
             Err(cause) => {
                 layers.release(&self.app);
+                self.orient(None);
                 refuse(
                     show,
                     &format!("the input devices are unreadable: {cause:#}"),
@@ -984,6 +1034,7 @@ impl Stream {
             Ok(feedback) => feedback,
             Err(cause) => {
                 layers.release(&self.app);
+                self.orient(None);
                 refuse(
                     show,
                     &format!("the controllers' feedback did not start: {cause:#}"),
@@ -1029,6 +1080,7 @@ impl Stream {
             Ok(runtime) => runtime,
             Err(cause) => {
                 layers.release(&self.app);
+                self.orient(None);
                 lifecycle.failed(format!("the viewer's thread did not start: {cause}"));
                 let _ = started.send(Err("the viewer's thread did not start".into()));
                 return Phase::Idle;
@@ -1240,6 +1292,9 @@ impl Stream {
     /// The person leaves the stream: its runtime stops. Stop waits for the
     /// runtime, so it runs on a thread of its own.
     fn leave(&mut self, why: &str) {
+        if let Some(show) = self.waiting.take() {
+            refuse(show, &format!("{why} before the stream started"));
+        }
         match std::mem::replace(&mut self.phase, Phase::Idle) {
             Phase::Idle => {}
             Phase::Making(mut making) => {
@@ -1314,6 +1369,9 @@ impl Drop for Stream {
                 Order::Resume(resume) => refuse_resumes(vec![resume.closed], "the activity ended"),
             },
         );
+        if let Some(show) = self.waiting.take() {
+            refuse(show, "the activity ended");
+        }
         match std::mem::replace(&mut self.phase, Phase::Idle) {
             Phase::Idle => {}
             Phase::Making(mut making) => {

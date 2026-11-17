@@ -460,12 +460,17 @@ stream-cadence's start and display times and of the frame record. The
 steps: Start (or the command's own start without a lifecycle); each HTTP
 request with libcurl's connect, TLS, first byte and total times; the pair
 check; the picture and input; every stage of the network core
-(`stageStarting`, `stageComplete`); the RTSP answers that the core names in
-its log (DESCRIBE, the three SETUPs) and its first video and audio packet
-(`marks::core_step`, through `src/core_log.c`); on Android the decoder
-(`decoders listed`, `decoder made`, `decoder taken`); the first frame that
-reached the display. The core logs nothing after OPTIONS or ANNOUNCE, so
-those answers have no mark of their own. On Linux the first frame's line
+(`stageStarting`, `stageComplete`); the RTSP answers that the C core names
+in its log and its first video and audio packet (`marks::core_step`,
+through `src/core_log.c`); on Android the decoder (`decoders listed`,
+`decoder made`, `decoder taken`); the first frame that reached the
+display. The C core logs the three SETUP answers on every host. It logs
+nothing after OPTIONS or ANNOUNCE, and after DESCRIBE only on a host
+without reference frame invalidation ("Reference frame invalidation is not
+supported by this host", `RtspConnection.c`), such as Sunshine with H.264:
+elsewhere SETUP audio's mark ends OPTIONS and DESCRIBE together.
+nightjar-core logs none of these lines; with it, the stage marks bracket
+the RTSP handshake. On Linux the first frame's line
 comes from `picture/frame_times.c`, at the presenter's hand-off; on Android
 from the decoder's output thread, at the first frame released to the
 Surface. The Korri app adds its own steps before Start (korrid's start, the

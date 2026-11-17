@@ -16,10 +16,14 @@
 //!
 //! The steps: Start; each HTTP request, with libcurl's connect, TLS, first
 //! byte and total times; the pair check; the network core's stages
-//! (`stageStarting`, `stageComplete`); the RTSP answers that the core names
-//! in its log (`core_step`); the decoder; the first frame. The core logs no
-//! line after OPTIONS or ANNOUNCE, so those two answers have no mark of
-//! their own.
+//! (`stageStarting`, `stageComplete`); the RTSP answers that the C core
+//! names in its log (`core_step`); the decoder; the first frame. The C core
+//! logs the three SETUP answers on every host, but no line after OPTIONS or
+//! ANNOUNCE, and a line after DESCRIBE only on a host without reference
+//! frame invalidation (`RtspConnection.c`; Sunshine's H.264 stream is
+//! such a host). Where DESCRIBE has no mark, SETUP audio's mark ends OPTIONS
+//! and DESCRIBE together. nightjar-core logs none of these lines: with it,
+//! the RTSP handshake's stage marks are its only ones.
 use std::{
     ffi::{CStr, c_char},
     sync::atomic::{AtomicBool, Ordering},
@@ -136,7 +140,9 @@ pub(crate) fn stage(stage: i32) -> &'static str {
 
 /// The step that one line of the network core names: the RTSP answers it
 /// logs (`RtspConnection.c`) and its first packets. The core at its pin
-/// writes these words; nothing else in the line matters.
+/// writes these words; nothing else in the line matters. DESCRIBE's line
+/// comes only from a host without reference frame invalidation; the SETUP
+/// lines come from every host.
 pub(crate) fn core_step(text: &str) -> Option<&'static str> {
     let text = text.trim_start();
     [
@@ -265,7 +271,9 @@ mod tests {
     #[test]
     fn the_cores_rtsp_lines_name_their_steps() {
         // The core's own words at its pin (RtspConnection.c, VideoStream.c,
-        // AudioStream.c), as its log callback gets them.
+        // AudioStream.c), as its log callback gets them. The first is logged
+        // after DESCRIBE only when the host lacks reference frame
+        // invalidation (RtspConnection.c:1125).
         for (text, step) in [
             (
                 "Reference frame invalidation is not supported by this host\n",

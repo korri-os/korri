@@ -21,9 +21,17 @@ nix run .#stream-cadence -- view --build-store auto --sender local --sender-fixt
 
 | Run | Build | Result |
 | --- | --- | --- |
-| Before, 04:58–05:03 | `76f527e77` (marks only), `/nix/store/6s585167xlqrg394msf2gzs2627i7rnl-korri-android-app-fixture-apk-0.1.0` | 97 of 97 checks |
-| After, 05:52–05:58 | `e2ff274a5` (marks and fixes), `/nix/store/z41qbqimf9yxyqi8rmiraf60vcjjvxy7-korri-android-app-fixture-apk-0.1.0` | 72 of 84: the first start and its picture passed; the stream died later (below) |
-| PC private pair, 03:24 | `76f527e77`, `/nix/store/8s44rjrc9fk55f1p3p8dy5wpywnj352w-korri-viewer-0.1.0` | valid, `startup_ms` 258 |
+| Before, 04:58–05:03 | The fixture APK with the marks only ("each step from Start to the first frame logs its monotonic time") | 97 of 97 checks |
+| After, 05:52–05:58 | The fixture APK with the marks, the early decoder and the layers beside the certificate | 72 of 84: the first start and its picture passed; the stream died later (below) |
+| PC private pair, 03:24 | `korri-viewer` with the marks only | valid, `startup_ms` 258 |
+
+The builds' store paths are left out. Each was built on aka from a copy of
+the branch before it was rebased onto `main`, and the copies differed from
+the commits in rustfmt's layout and one lint attribute, so a clean build of
+the commits gives other paths. The code that ran is the commits' code on
+their earlier base, `0e34272af`. Sunshine's H.264 stream has no reference
+frame invalidation, so the core logged the line that marks DESCRIBE's
+answer in every run here; on a host with it, that mark is missing.
 
 `before.json` and `after.json` hold each run's failed checks, its
 `start_timeline` and its TCP counters (from `result.json`);
@@ -117,9 +125,11 @@ so it had no encoder probe.
   `last_render_device` starts empty. The proof's Sunshine starts fresh, so
   every proof pays it; the product's pays it once per restart. Outside Korri.
 - **The decoder was made inside the core's video start**: 1.39 s here
-  (0.28 s in #495). Ours: fixed (`d94145a1f`).
+  (0.28 s in #495). Ours: fixed ("Android's decoder is made while the
+  stream connects").
 - **The layers waited for the certificate, and the window turned only
-  after Start**: 0.19 s and 0.4 s. Ours: fixed (`e2ff274a5`); Start now
+  after Start**: 0.19 s and 0.4 s. Ours: fixed ("the layers and the
+  window's turn wait for no certificate"); Start now
   comes 71 ms after the certificate instead of 397 ms.
 - **The client key is made at the first start after install**: 393 ms
   before, 77 ms after (RSA prime search varies; 1.07 s in a run where it

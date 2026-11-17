@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! The stream's rules that need no Android: the launches queued for an
-//! activity when it ends, a launch's start while its layers and its server
-//! certificate are made side by side, the end of the runtime's thread, the
+//! activity when it ends, a launch that arrives while another is in front,
+//! a launch's start while its layers and its server certificate are made
+//! side by side, the end of the runtime's thread, the
 //! keys that go on to Android, the files of the pinned server certificates,
 //! the blocking calls from korrid's async code, and the screen that the
 //! viewer reports. The
@@ -38,6 +39,66 @@ pub(crate) fn close<T>(
     drop(shows);
     while let Ok(launch) = queue.try_recv() {
         refuse(launch);
+    }
+}
+
+/// What the loop thread has in front when a launch arrives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Front {
+    Idle,
+    /// A launch whose layers or server certificate are still being made.
+    Starting,
+    /// A stream that plays.
+    Playing,
+    /// A stream that ends: its stop was asked for, or its runtime has
+    /// reported its end. Its layers go at one of the next ticks.
+    Ending,
+}
+
+/// What the loop thread does with a launch that arrives.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Arriving {
+    Begin,
+    /// It waits until the stream in front has ended, then begins. korrid
+    /// starts again as soon as it reads the old stream's Stopped, which can
+    /// come before the loop thread's next tick lets that stream go.
+    Wait,
+    Refuse(&'static str),
+}
+
+/// A launch that arrives: it begins on an idle loop, waits behind a stream
+/// that ends, and is refused beside a launch that starts or a stream that
+/// plays.
+pub(crate) fn arriving(front: Front) -> Arriving {
+    match front {
+        Front::Idle => Arriving::Begin,
+        Front::Ending => Arriving::Wait,
+        Front::Playing => Arriving::Refuse("another launch is in front"),
+        Front::Starting => Arriving::Refuse("another launch is starting"),
+    }
+}
+
+/// What a launch's certificate channel gave at one tick.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Certificate {
+    Waiting,
+    Provisioned,
+    /// korrid's broker did not provision it, with why.
+    Refused(String),
+    /// The channel closed with nothing in it: korrid dropped its start call
+    /// before the certificate came.
+    StartEnded,
+}
+
+/// The certificate's part of a launch.
+pub(crate) fn certificate(certificate: Certificate) -> Part {
+    match certificate {
+        Certificate::Waiting => Part::Waiting,
+        Certificate::Provisioned => Part::Ready,
+        Certificate::Refused(why) => Part::Failed(why),
+        Certificate::StartEnded => {
+            Part::Failed("korrid's start ended before the server certificate came".into())
+        }
     }
 }
 
@@ -281,6 +342,42 @@ mod tests {
                 Making::Refuse("the app's window went while the layers were made".into())
             );
         }
+    }
+
+    // Review of #391: korrid's recovery started again while the old stream
+    // was still ending, and the launch was refused.
+    #[test]
+    fn a_launch_waits_behind_a_stream_that_ends_and_is_refused_only_beside_one_that_runs() {
+        assert_eq!(arriving(Front::Idle), Arriving::Begin);
+        assert_eq!(arriving(Front::Ending), Arriving::Wait);
+        assert_eq!(
+            arriving(Front::Playing),
+            Arriving::Refuse("another launch is in front")
+        );
+        assert_eq!(
+            arriving(Front::Starting),
+            Arriving::Refuse("another launch is starting")
+        );
+    }
+
+    // Review of #391: a start that korrid dropped is not a certificate
+    // that korrid's broker could not provision.
+    #[test]
+    fn a_certificate_that_never_came_says_whether_korrid_ended_its_start() {
+        assert_eq!(certificate(Certificate::Waiting), Part::Waiting);
+        assert_eq!(certificate(Certificate::Provisioned), Part::Ready);
+        assert_eq!(
+            certificate(Certificate::Refused("the holder refused".into())),
+            Part::Failed("the holder refused".into())
+        );
+        let Part::Failed(why) = certificate(Certificate::StartEnded) else {
+            panic!("a start that ended is a failed part");
+        };
+        assert_eq!(
+            why,
+            "korrid's start ended before the server certificate came"
+        );
+        assert!(!why.contains("not provisioned"));
     }
 
     #[test]

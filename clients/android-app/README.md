@@ -328,7 +328,12 @@ and the runtime starts once the loop thread has both (`rules::making`,
 host-tested). A stop, a window that goes, or a part that fails ends the
 launch without waiting for the other part: the layers go, made ones at once
 and ones still being made once the main thread has made them, and the
-window turns back. Until #391 the layers were asked only after the
+window turns back, as it does when the runtime does not start. A launch
+that arrives while the stream in front ends (its stop asked for, its
+runtime returned, or its Stopped reported) waits for it and then begins,
+instead of being refused: korrid starts again as soon as it reads Stopped,
+which can come before the loop thread's next tick lets the old stream go
+(`rules::arriving`). Until #391 the layers were asked only after the
 certificate, and the window turned only after Start.
 
 The viewer's steps and the app's write `start:` lines with their
