@@ -9,11 +9,11 @@ least formal clear word. A close friend can be family too.
 
 On the owner's devices a family member can:
 
-- play the installed games with their own save history.
-- keep their own profiles and launch settings for a game.
-- play on a stream and start games on the owner's devices from their own
+- Play the installed games with their own save history.
+- Keep their own profiles and launch settings for a game.
+- Play on a stream and start games on the owner's devices from their own
   devices, near or far.
-- install and remove games and plugins.
+- Install and remove games and plugins.
 
 Only the owner changes device settings, such as Wi-Fi and displays, and only
 the owner admits other people (ADR 0075).
@@ -50,11 +50,11 @@ with their own recovery words (ADR 0079).
 - The removal of a family member is not a device removal (CONTEXT.md,
   Removal). Whether the person key can undo it is not decided. How a device
   that was offline learns of it is not decided.
-- Launch settings have no place for a person today, and only a device of the
+- Launch settings have no place for a person today, except a profile, and only a device of the
   same owner can change a streamed game's settings (ADR 0066). Where a family
   member's own launch settings live is not decided.
-- "Family" already means a runner family. Write "runner family" for runners
-  and "family member" for people.
+- "Family" already means a runner family. "Family" names the tier, "family
+  member" names one person, and "runner family" names runners.
 - The code's `household` pass tier is the old name for this tier.
 - A family member sees the owner's whole library. Limits per person, for
   example for a child, are a later design (owner decision, 2026-11-17).

@@ -10,7 +10,7 @@ holds a controller seat as a guest (ADR 0076). It holds it until the session
 ends or the friend disconnects (owner decision, 2026-11-17).
 
 The code and Accept are the same as for a join (ADR 0070). They work near or
-far, the code is a PAKE, and they trust no network. For the owner's own
+far, the key exchange on the code is a PAKE, and they trust no network. For the owner's own
 devices, the person at the holding device approves nothing. A guest is
 different, because the device is someone else's.
 
@@ -23,8 +23,10 @@ different, because the device is someone else's.
 
 - A guest on a stream can play and watch only, as stream play already
   allows. It cannot end or change the session. Today a pass with
-  `stream.launch` can end a session (`services/korrid/src/authorization.rs`),
+  `stream.launch` can end a session and call `SessionControlInvoke`,
+  `SessionLeave` and `SessionResume` (`services/korrid/src/authorization.rs`),
   so the code must change.
-- A guest's seat ends when the friend disconnects. That is an exception to
+- A guest's seat ends when the friend disconnects. Whether a dropped
+  connection also ends it is not decided. That is an exception to
   seat reservation, which keeps a seat while a controller is disconnected.
 - One code per visit. A family member's devices need no code (ADR 0081).

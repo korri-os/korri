@@ -7,9 +7,9 @@ family member says "it is me playing now" by picking their name from a list
 on the device. Korri asks for no code and no confirmation on another device.
 
 These are entertainment devices, and the owner wants this to be next to
-invisible. If a child plays as a parent from the parent's last save, the
-parent's save history gets a split. The split keeps both versions, so no
-progress is lost.
+invisible. If a child plays as a parent, the child's play goes into the
+parent's save history. Earlier snapshots stay in that history and can be
+restored (ADR 0014), so no progress is lost.
 
 The person a session uses is the **lead**. When a device wakes, it shows its
 list of people with the last lead already selected, so one press starts.
@@ -35,10 +35,10 @@ decisions, 2026-11-17).
 
 - Anyone at the device can play as any family member, and as the owner.
 - Every wake costs one press, even on a handheld only the owner uses.
-- The lead and the device owner are now separate ideas on a device. Only the
-  owner changes device settings and admits people (ADR 0077). Whether those
-  actions follow the lead, or stay open to anyone at an owned device, is not
+- The lead and the device owner are now separate ideas on a device. With no
+  proof of the lead, anyone at an owned device can act as the owner. How
+  Korri keeps device settings and admissions to the owner (ADR 0077) is not
   decided.
-- When two people play together on one device, the saves go to the lead.
-  That matches stream play and netplay, where the holder's saves count. The
-  second person's progress never enters their own history.
+- When several people play together on one device, the saves go to the
+  lead. That matches stream play and netplay, where the holder's saves
+  count. The other people's progress never enters their own histories.

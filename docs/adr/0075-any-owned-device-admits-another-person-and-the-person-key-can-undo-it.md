@@ -36,8 +36,9 @@ owners' devices (owner decisions, 2026-11-17).
 - A thief who holds an owned device can admit strangers until the person
   removes that device.
 - Anyone who knows the owner's public key can see how many family keys the
-  owner has, and when each was added.
+  owner has added, and when.
 - A family member's save history follows them to every owner's devices where
-  they are family (owner decision, 2026-11-17).
+  they are family (owner decision, 2026-11-17). How the saves reach a second
+  owner's devices is not decided.
 - ADR 0069 names two uses of the person key: recovery and undoing a removal.
   This ADR adds a third: undoing an admission.

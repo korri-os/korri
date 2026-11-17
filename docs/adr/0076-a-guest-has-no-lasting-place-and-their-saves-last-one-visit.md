@@ -48,5 +48,4 @@ when the device sleeps or shuts down (owner decisions, 2026-11-17).
   already an accepted risk, as for a console in a living room.
 - A guest who wants to keep progress must become family before the visit
   ends. Then the visit's saves move into the new family member's save
-  history (owner decision, 2026-11-17). Only the owner can admit, so the
-  owner must be there or reachable to Accept.
+  history (owner decision, 2026-11-17).

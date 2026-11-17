@@ -32,7 +32,7 @@ The key that identifies one person to Korri, made from that person's recovery wo
 _Avoid_: account, user key, login, npub
 
 **Recovery words**:
-The 12 words, with a QR code of them, from which a person key is made. The person keeps them on paper and needs them only when every owned device is lost.
+The 12 words, with a QR code of them, from which a person key is made. The person keeps them on paper. They need them when every owned device is lost, or, for a family member made on another person's device, to set up their first own device.
 _Avoid_: seed, backup phrase, mnemonic
 
 **Person name**:
@@ -73,14 +73,14 @@ _Avoid_: login, account transfer, sign in
 
 **Family member**:
 A person with their own person key and a lasting place among another person's devices, until they are removed or leave. A device owner, their family members and guests are the three tiers of people on a device.
-_Avoid_: household, member, resident, admin, normal user
+_Avoid_: household, member, resident, admin, normal user, family (alone, for one person)
 
 **Guest**:
-A person who uses another person's devices for one visit and keeps nothing after it. A guest needs no person key. When they have one, it only shows their name.
+A person who uses another person's devices for one visit and keeps nothing after it. A guest needs no person key. When they have one, it gives them no lasting place.
 _Avoid_: anonymous user, visitor, guest account
 
 **Lead**:
-The person whose save history, profiles and launch settings a session uses: the person a device plays as when the game starts. In couch co-op, the other players' progress goes to the lead.
+The person whose save history, profiles and launch settings a session uses: the person a device plays as when the game starts. When people play together on one device, all progress goes to the lead.
 _Avoid_: player, active user, current user, profile
 
 **Visit**:
