@@ -32,7 +32,7 @@ The key that identifies one person to Korri, made from that person's recovery wo
 _Avoid_: account, user key, login, npub
 
 **Recovery words**:
-The 12 words, with a QR code of them, from which a person key is made. The person keeps them on paper; after setup they are the only copy of the person key. They need them to undo a removal, when every owned device is lost, or, for a family member made on another person's device, to set up their first own device.
+The 12 words, with a QR code of them, from which a person key is made. After setup they are the only copy of the person key, kept on paper. They are needed to undo a removal or an admission, when every owned device is lost, or, for a family member made on another person's device, to set up their first own device.
 _Avoid_: seed, backup phrase, mnemonic
 
 **Person name**:
@@ -48,7 +48,7 @@ A separate service on a device that holds a person key and signs for korrid on r
 _Avoid_: keystore, wallet
 
 **Automatic identity**:
-The person key a device makes when setup ends without a join. It is a real person key, not a temporary account; the device shows its recovery words and then erases it.
+The person key a device makes when setup ends without a join. It is a real person key, not a temporary account. The device shows its recovery words, then erases the key.
 _Avoid_: guest account, default user
 
 **Join**:

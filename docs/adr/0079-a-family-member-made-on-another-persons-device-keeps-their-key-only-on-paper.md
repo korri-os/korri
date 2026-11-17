@@ -22,5 +22,5 @@ when the family member later sets up a device of their own.
 
 - If the family member loses the paper, they get a new person key. Their save
   history stays with the old key.
-- ADR 0072 says a person needs the recovery words only when every owned
-  device is lost. This ADR adds a second use: setting up a first device.
+- ADR 0072 lists this use of the recovery words: setting up a first own
+  device.
