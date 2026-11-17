@@ -26,3 +26,6 @@ simple.
   link between the two keys.
 - The owner's three current devices (Odin 2 Portal, RP Mini V2, Galaxy Z
   Fold 8) move to a new person key once.
+- They move by a one-off identity switch on each device that keeps its data
+  (ADR 0023): the old key approves each move once in Amber, then retires
+  (owner decision, 2026-11-16). This is an operation, not code that stays.
