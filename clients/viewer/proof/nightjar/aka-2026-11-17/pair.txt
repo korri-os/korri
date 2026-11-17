@@ -1,0 +1,2 @@
+Please enter the following PIN on the target PC: 2596
+Successfully paired

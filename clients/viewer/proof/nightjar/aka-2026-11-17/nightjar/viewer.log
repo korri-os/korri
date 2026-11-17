@@ -1,0 +1,11 @@
+Platform SDL
+Couldn't open codec: h264_v4l2m2m
+Using FFmpeg decoder: h264
+Video receive buffer: 2016 KiB, as asked
+Video receive takes up to 32 queued datagrams per call
+Video receive UDP_GRO is on: coalesced reads are split per datagram
+CRITICAL: You are using the SDL disk i/o audio driver!
+CRITICAL:  Writing to file [/var/tmp/step-e-core/proof-nightjar/nightjar/sound.raw], format=S16LE channels=2 freq=48000.
+Received first video packet after 0 ms
+Received first audio packet
+nightjar: at the stop: SessionStats { rtt: Some((1ms, 0ns)), video: VideoStats { packet_count_video: 21483, packet_count_fec: 4965, packets_received: 26448, packets_recovered: 0, decrypt_failures: 0, frames_completed: 1355, frame_drops: 0, decoder_drops: 0 }, audio: AudioStats { packet_count_audio: 4419, packet_count_fec: 2210, packet_count_fec_recovered: 0, packet_count_fec_failed: 0, packet_count_oos: 0, packet_count_invalid: 0, packet_count_fec_invalid: 0, decrypt_failures: 0 }, frames_submitted: 1355, frames_need_idr: 0, decode_queue_overflows: 0, early_chunks_dropped: 0, frames_skipped: 0, chunks_skipped: 0, decode_queue_len: 0, audio_packets: 4419, audio_queue_len: 0, audio_queue_overflows: 0, connection_status: Some(Okay), input_contact_lost: false }

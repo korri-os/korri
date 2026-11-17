@@ -1,0 +1,339 @@
+[2026-11-17 01:01:58.745]: Info: Display device configuration is disabled. Reverting any active display device configuration.
+[2026-11-17 01:01:58.745]: Info: // Testing for available encoders, this may generate errors. You can safely ignore those errors. //
+[2026-11-17 01:01:58.745]: Info: Trying encoder [nvenc]
+[2026-11-17 01:01:58.745]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 01:01:58.745]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 01:01:58.745]: Info: Screencasting with Wayland's protocol
+[2026-11-17 01:01:58.745]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 01:01:58.745]: Info: [wayland] Found display [wayland-1]
+[2026-11-17 01:01:58.745]: Info: [wayland] Found interface: wl_shm(2) version 2
+[2026-11-17 01:01:58.745]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-17 01:01:58.745]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-17 01:01:58.745]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-17 01:01:58.745]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-17 01:01:58.745]: Info: [wayland] Resolution: 1280x720
+[2026-11-17 01:01:58.745]: Info: [wayland] Name: HEADLESS-1
+[2026-11-17 01:01:58.745]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-17 01:01:58.745]: Info: [wayland] Offset: 0x0
+[2026-11-17 01:01:58.745]: Info: [wayland] Logical size: 1280x720
+[2026-11-17 01:01:58.745]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 01:01:58.753]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-17 01:01:58.754]: Info: Creating encoder [h264_nvenc]
+[2026-11-17 01:01:58.754]: Info: Color coding: SDR (Rec. 601)
+[2026-11-17 01:01:58.754]: Info: Color depth: 8-bit
+[2026-11-17 01:01:58.754]: Info: Color range: JPEG
+[2026-11-17 01:01:58.754]: Error: Couldn't load cuda: -1
+[2026-11-17 01:01:58.754]: Info: Encoder [nvenc] failed
+[2026-11-17 01:01:58.755]: Info: Trying encoder [vulkan]
+[2026-11-17 01:01:58.755]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 01:01:58.755]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 01:01:58.755]: Info: Screencasting with Wayland's protocol
+[2026-11-17 01:01:58.755]: Error: [wlgrab] Could not initialize display with the given hw device type.
+[2026-11-17 01:01:58.955]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 01:01:58.955]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 01:01:58.955]: Info: Screencasting with Wayland's protocol
+[2026-11-17 01:01:58.955]: Error: [wlgrab] Could not initialize display with the given hw device type.
+[2026-11-17 01:01:59.155]: Info: Encoder [vulkan] failed
+[2026-11-17 01:01:59.155]: Info: Trying encoder [vaapi]
+[2026-11-17 01:01:59.155]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 01:01:59.155]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 01:01:59.156]: Info: Screencasting with Wayland's protocol
+[2026-11-17 01:01:59.156]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 01:01:59.156]: Info: [wayland] Found display [wayland-1]
+[2026-11-17 01:01:59.156]: Info: [wayland] Found interface: wl_shm(2) version 2
+[2026-11-17 01:01:59.156]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-17 01:01:59.156]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-17 01:01:59.156]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-17 01:01:59.156]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-17 01:01:59.156]: Info: [wayland] Resolution: 1280x720
+[2026-11-17 01:01:59.156]: Info: [wayland] Name: HEADLESS-1
+[2026-11-17 01:01:59.156]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-17 01:01:59.156]: Info: [wayland] Offset: 0x0
+[2026-11-17 01:01:59.156]: Info: [wayland] Logical size: 1280x720
+[2026-11-17 01:01:59.156]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 01:01:59.156]: Info: Creating encoder [h264_vaapi]
+[2026-11-17 01:01:59.156]: Info: Color coding: SDR (Rec. 601)
+[2026-11-17 01:01:59.156]: Info: Color depth: 8-bit
+[2026-11-17 01:01:59.156]: Info: Color range: JPEG
+[2026-11-17 01:01:59.163]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-17 01:01:59.167]: Info: vaapi vendor: Mesa Gallium driver 26.2.3 for AMD Radeon RX 7900 XT (radeonsi, navi31, ACO, DRM 3.64, 7.2.7)
+[2026-11-17 01:01:59.168]: Info: Streaming bitrate is 1000000
+[2026-11-17 01:01:59.168]: Info: Using normal encoding mode
+[2026-11-17 01:01:59.168]: Info: [VAAPI] Quality level set to 0 (fastest level: 32)
+[2026-11-17 01:01:59.168]: Info: [VAAPI] Using CBR rate control with standard VBV size
+[2026-11-17 01:01:59.180]: Info: Creating encoder [hevc_vaapi]
+[2026-11-17 01:01:59.180]: Info: Color coding: SDR (Rec. 601)
+[2026-11-17 01:01:59.180]: Info: Color depth: 8-bit
+[2026-11-17 01:01:59.180]: Info: Color range: JPEG
+[2026-11-17 01:01:59.188]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-17 01:01:59.192]: Info: vaapi vendor: Mesa Gallium driver 26.2.3 for AMD Radeon RX 7900 XT (radeonsi, navi31, ACO, DRM 3.64, 7.2.7)
+[2026-11-17 01:01:59.192]: Info: Streaming bitrate is 1000000
+[2026-11-17 01:01:59.192]: Info: Using normal encoding mode
+[2026-11-17 01:01:59.192]: Info: [VAAPI] Quality level set to 0 (fastest level: 32)
+[2026-11-17 01:01:59.192]: Info: [VAAPI] Using CBR rate control with standard VBV size
+[2026-11-17 01:01:59.200]: Info: Creating encoder [av1_vaapi]
+[2026-11-17 01:01:59.200]: Info: Color coding: SDR (Rec. 601)
+[2026-11-17 01:01:59.200]: Info: Color depth: 8-bit
+[2026-11-17 01:01:59.200]: Info: Color range: JPEG
+[2026-11-17 01:01:59.208]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-17 01:01:59.211]: Info: vaapi vendor: Mesa Gallium driver 26.2.3 for AMD Radeon RX 7900 XT (radeonsi, navi31, ACO, DRM 3.64, 7.2.7)
+[2026-11-17 01:01:59.212]: Info: Streaming bitrate is 1000000
+[2026-11-17 01:01:59.212]: Info: Using normal encoding mode
+[2026-11-17 01:01:59.212]: Info: [VAAPI] Quality level set to 0 (fastest level: 32)
+[2026-11-17 01:01:59.212]: Info: [VAAPI] Using VBR rate control with single frame VBV size (whitelist override)
+[2026-11-17 01:01:59.212]: Warning: [av1_vaapi @ 0x7bea5c095b40] Multiple slices were requested but this codec does not support controlling slices.
+[2026-11-17 01:01:59.218]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 01:01:59.218]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 01:01:59.218]: Info: Screencasting with Wayland's protocol
+[2026-11-17 01:01:59.218]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 01:01:59.218]: Info: [wayland] Found display [wayland-1]
+[2026-11-17 01:01:59.218]: Info: [wayland] Found interface: wl_shm(2) version 2
+[2026-11-17 01:01:59.218]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-17 01:01:59.219]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-17 01:01:59.219]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-17 01:01:59.219]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-17 01:01:59.219]: Info: [wayland] Resolution: 1280x720
+[2026-11-17 01:01:59.219]: Info: [wayland] Name: HEADLESS-1
+[2026-11-17 01:01:59.219]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-17 01:01:59.219]: Info: [wayland] Offset: 0x0
+[2026-11-17 01:01:59.219]: Info: [wayland] Logical size: 1280x720
+[2026-11-17 01:01:59.219]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 01:01:59.219]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 01:01:59.219]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 01:01:59.219]: Info: Screencasting with Wayland's protocol
+[2026-11-17 01:01:59.219]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 01:01:59.219]: Info: [wayland] Found display [wayland-1]
+[2026-11-17 01:01:59.219]: Info: [wayland] Found interface: wl_shm(2) version 2
+[2026-11-17 01:01:59.219]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-17 01:01:59.219]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-17 01:01:59.219]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-17 01:01:59.219]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-17 01:01:59.219]: Info: [wayland] Resolution: 1280x720
+[2026-11-17 01:01:59.219]: Info: [wayland] Name: HEADLESS-1
+[2026-11-17 01:01:59.219]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-17 01:01:59.219]: Info: [wayland] Offset: 0x0
+[2026-11-17 01:01:59.219]: Info: [wayland] Logical size: 1280x720
+[2026-11-17 01:01:59.219]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 01:01:59.219]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 01:01:59.219]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 01:01:59.219]: Info: Screencasting with Wayland's protocol
+[2026-11-17 01:01:59.219]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 01:01:59.219]: Info: [wayland] Found display [wayland-1]
+[2026-11-17 01:01:59.219]: Info: [wayland] Found interface: wl_shm(2) version 2
+[2026-11-17 01:01:59.219]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-17 01:01:59.219]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-17 01:01:59.219]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-17 01:01:59.220]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-17 01:01:59.220]: Info: [wayland] Resolution: 1280x720
+[2026-11-17 01:01:59.220]: Info: [wayland] Name: HEADLESS-1
+[2026-11-17 01:01:59.220]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-17 01:01:59.220]: Info: [wayland] Offset: 0x0
+[2026-11-17 01:01:59.220]: Info: [wayland] Logical size: 1280x720
+[2026-11-17 01:01:59.220]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 01:01:59.220]: Info: Creating encoder [hevc_vaapi]
+[2026-11-17 01:01:59.220]: Info: Color coding: SDR (Rec. 709)
+[2026-11-17 01:01:59.220]: Info: Color depth: 10-bit
+[2026-11-17 01:01:59.220]: Info: Color range: JPEG
+[2026-11-17 01:01:59.226]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-17 01:01:59.230]: Info: vaapi vendor: Mesa Gallium driver 26.2.3 for AMD Radeon RX 7900 XT (radeonsi, navi31, ACO, DRM 3.64, 7.2.7)
+[2026-11-17 01:01:59.231]: Info: Streaming bitrate is 1000000
+[2026-11-17 01:01:59.231]: Info: Using normal encoding mode
+[2026-11-17 01:01:59.231]: Info: [VAAPI] Quality level set to 0 (fastest level: 32)
+[2026-11-17 01:01:59.231]: Info: [VAAPI] Using CBR rate control with standard VBV size
+[2026-11-17 01:01:59.239]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 01:01:59.239]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 01:01:59.239]: Info: Screencasting with Wayland's protocol
+[2026-11-17 01:01:59.239]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 01:01:59.239]: Info: [wayland] Found display [wayland-1]
+[2026-11-17 01:01:59.239]: Info: [wayland] Found interface: wl_shm(2) version 2
+[2026-11-17 01:01:59.239]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-17 01:01:59.239]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-17 01:01:59.239]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-17 01:01:59.239]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-17 01:01:59.239]: Info: [wayland] Resolution: 1280x720
+[2026-11-17 01:01:59.239]: Info: [wayland] Name: HEADLESS-1
+[2026-11-17 01:01:59.239]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-17 01:01:59.239]: Info: [wayland] Offset: 0x0
+[2026-11-17 01:01:59.239]: Info: [wayland] Logical size: 1280x720
+[2026-11-17 01:01:59.239]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 01:01:59.239]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 01:01:59.239]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 01:01:59.239]: Info: Screencasting with Wayland's protocol
+[2026-11-17 01:01:59.239]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 01:01:59.239]: Info: [wayland] Found display [wayland-1]
+[2026-11-17 01:01:59.239]: Info: [wayland] Found interface: wl_shm(2) version 2
+[2026-11-17 01:01:59.239]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-17 01:01:59.239]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-17 01:01:59.240]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-17 01:01:59.240]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-17 01:01:59.240]: Info: [wayland] Resolution: 1280x720
+[2026-11-17 01:01:59.240]: Info: [wayland] Name: HEADLESS-1
+[2026-11-17 01:01:59.240]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-17 01:01:59.240]: Info: [wayland] Offset: 0x0
+[2026-11-17 01:01:59.240]: Info: [wayland] Logical size: 1280x720
+[2026-11-17 01:01:59.240]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 01:01:59.240]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 01:01:59.240]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 01:01:59.240]: Info: Screencasting with Wayland's protocol
+[2026-11-17 01:01:59.240]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 01:01:59.240]: Info: [wayland] Found display [wayland-1]
+[2026-11-17 01:01:59.240]: Info: [wayland] Found interface: wl_shm(2) version 2
+[2026-11-17 01:01:59.240]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-17 01:01:59.240]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-17 01:01:59.240]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-17 01:01:59.240]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-17 01:01:59.240]: Info: [wayland] Resolution: 1280x720
+[2026-11-17 01:01:59.240]: Info: [wayland] Name: HEADLESS-1
+[2026-11-17 01:01:59.240]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-17 01:01:59.240]: Info: [wayland] Offset: 0x0
+[2026-11-17 01:01:59.240]: Info: [wayland] Logical size: 1280x720
+[2026-11-17 01:01:59.240]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 01:01:59.240]: Info: Creating encoder [av1_vaapi]
+[2026-11-17 01:01:59.240]: Info: Color coding: SDR (Rec. 709)
+[2026-11-17 01:01:59.240]: Info: Color depth: 10-bit
+[2026-11-17 01:01:59.240]: Info: Color range: JPEG
+[2026-11-17 01:01:59.247]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-17 01:01:59.250]: Info: vaapi vendor: Mesa Gallium driver 26.2.3 for AMD Radeon RX 7900 XT (radeonsi, navi31, ACO, DRM 3.64, 7.2.7)
+[2026-11-17 01:01:59.251]: Info: Streaming bitrate is 1000000
+[2026-11-17 01:01:59.251]: Info: Using normal encoding mode
+[2026-11-17 01:01:59.251]: Info: [VAAPI] Quality level set to 0 (fastest level: 32)
+[2026-11-17 01:01:59.251]: Info: [VAAPI] Using VBR rate control with single frame VBV size (whitelist override)
+[2026-11-17 01:01:59.251]: Warning: [av1_vaapi @ 0x7bea5c095b40] Multiple slices were requested but this codec does not support controlling slices.
+[2026-11-17 01:01:59.258]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 01:01:59.258]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 01:01:59.258]: Info: Screencasting with Wayland's protocol
+[2026-11-17 01:01:59.258]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 01:01:59.258]: Info: [wayland] Found display [wayland-1]
+[2026-11-17 01:01:59.258]: Info: [wayland] Found interface: wl_shm(2) version 2
+[2026-11-17 01:01:59.258]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-17 01:01:59.258]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-17 01:01:59.258]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-17 01:01:59.258]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-17 01:01:59.258]: Info: [wayland] Resolution: 1280x720
+[2026-11-17 01:01:59.258]: Info: [wayland] Name: HEADLESS-1
+[2026-11-17 01:01:59.258]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-17 01:01:59.258]: Info: [wayland] Offset: 0x0
+[2026-11-17 01:01:59.258]: Info: [wayland] Logical size: 1280x720
+[2026-11-17 01:01:59.258]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 01:01:59.258]: Info: 
+[2026-11-17 01:01:59.258]: Info: // Ignore any errors mentioned above, they are not relevant. //
+[2026-11-17 01:01:59.258]: Info: 
+[2026-11-17 01:01:59.258]: Info: Found H.264 encoder: h264_vaapi [vaapi]
+[2026-11-17 01:01:59.258]: Info: Found HEVC encoder: hevc_vaapi [vaapi]
+[2026-11-17 01:01:59.258]: Info: Found AV1 encoder: av1_vaapi [vaapi]
+[2026-11-17 01:01:59.258]: Info: Executing [Desktop]
+[2026-11-17 01:01:59.260]: Info: Video encryption enabled
+[2026-11-17 01:01:59.260]: Info: New streaming session started [active sessions: 1]
+[2026-11-17 01:01:59.264]: Warning: setpriority failed for nice -15: Permission denied
+[2026-11-17 01:01:59.264]: Warning: setpriority failed for nice -10: Permission denied
+[2026-11-17 01:01:59.264]: Warning: setpriority failed for nice -10: Permission denied
+[2026-11-17 01:01:59.264]: Info: CLIENT CONNECTED
+[2026-11-17 01:01:59.270]: Info: [wayland] Found display [wayland-1]
+[2026-11-17 01:01:59.270]: Warning: setpriority failed for nice -10: Permission denied
+[2026-11-17 01:01:59.270]: Info: [wayland] Found interface: wl_shm(2) version 2
+[2026-11-17 01:01:59.270]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-17 01:01:59.270]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-17 01:01:59.270]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-17 01:01:59.270]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-17 01:01:59.270]: Info: [wayland] Resolution: 1280x720
+[2026-11-17 01:01:59.270]: Info: [wayland] Name: HEADLESS-1
+[2026-11-17 01:01:59.270]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-17 01:01:59.270]: Info: [wayland] Offset: 0x0
+[2026-11-17 01:01:59.270]: Info: [wayland] Logical size: 1280x720
+[2026-11-17 01:01:59.270]: Info: [wlgrab] -------- Start of Wayland monitor list --------
+[2026-11-17 01:01:59.270]: Info: [wlgrab] Monitor 0 is HEADLESS-1: Headless output 1
+[2026-11-17 01:01:59.270]: Info: [wlgrab] --------- End of Wayland monitor list ---------
+[2026-11-17 01:01:59.270]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 01:01:59.270]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 01:01:59.270]: Info: Screencasting with Wayland's protocol
+[2026-11-17 01:01:59.270]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 01:01:59.270]: Info: [wayland] Found display [wayland-1]
+[2026-11-17 01:01:59.270]: Info: [wayland] Found interface: wl_shm(2) version 2
+[2026-11-17 01:01:59.270]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-17 01:01:59.270]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-17 01:01:59.271]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-17 01:01:59.271]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-17 01:01:59.271]: Info: [wayland] Resolution: 1280x720
+[2026-11-17 01:01:59.271]: Info: [wayland] Name: HEADLESS-1
+[2026-11-17 01:01:59.271]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-17 01:01:59.271]: Info: [wayland] Offset: 0x0
+[2026-11-17 01:01:59.271]: Info: [wayland] Logical size: 1280x720
+[2026-11-17 01:01:59.271]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 01:01:59.271]: Info: Creating encoder [h264_vaapi]
+[2026-11-17 01:01:59.271]: Info: Color coding: SDR (Rec. 601)
+[2026-11-17 01:01:59.271]: Info: Color depth: 8-bit
+[2026-11-17 01:01:59.271]: Info: Color range: MPEG
+[2026-11-17 01:01:59.271]: Warning: setpriority failed for nice -15: Permission denied
+[2026-11-17 01:01:59.277]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-17 01:01:59.281]: Info: vaapi vendor: Mesa Gallium driver 26.2.3 for AMD Radeon RX 7900 XT (radeonsi, navi31, ACO, DRM 3.64, 7.2.7)
+[2026-11-17 01:01:59.281]: Info: Streaming bitrate is 7308000
+[2026-11-17 01:01:59.281]: Info: Using normal encoding mode
+[2026-11-17 01:01:59.281]: Info: [VAAPI] Quality level set to 0 (fastest level: 32)
+[2026-11-17 01:01:59.281]: Info: [VAAPI] Using CBR rate control with standard VBV size
+[2026-11-17 01:01:59.287]: Info: Minimum FPS target set to ~30fps (33.3333ms)
+[2026-11-17 01:01:59.764]: Warning: Couldn't create virtual sink for stereo: Module initialization failed
+[2026-11-17 01:01:59.764]: Warning: Couldn't create virtual sink for surround-51: Module initialization failed
+[2026-11-17 01:01:59.764]: Warning: Couldn't create virtual sink for surround-71: Module initialization failed
+[2026-11-17 01:01:59.764]: Info: Found default monitor by name: korri-tone.monitor
+[2026-11-17 01:01:59.765]: Warning: setpriority failed for nice -15: Permission denied
+[2026-11-17 01:01:59.765]: Warning: setpriority failed for nice -10: Permission denied
+[2026-11-17 01:01:59.765]: Info: Opus initialized: 48 kHz, 2 channels, 96 kbps (total), LOWDELAY
+[2026-11-17 01:02:22.198]: Info: CLIENT DISCONNECTED
+[2026-11-17 01:02:25.553]: Info: Display device configuration is disabled. Reverting any active display device configuration.
+[2026-11-17 01:02:25.554]: Info: Video encryption enabled
+[2026-11-17 01:02:25.554]: Info: New streaming session started [active sessions: 1]
+[2026-11-17 01:02:25.554]: Warning: setpriority failed for nice -10: Permission denied
+[2026-11-17 01:02:25.554]: Warning: setpriority failed for nice -15: Permission denied
+[2026-11-17 01:02:25.554]: Warning: setpriority failed for nice -10: Permission denied
+[2026-11-17 01:02:25.554]: Info: CLIENT CONNECTED
+[2026-11-17 01:02:25.555]: Warning: setpriority failed for nice -10: Permission denied
+[2026-11-17 01:02:25.555]: Info: [wayland] Found display [wayland-1]
+[2026-11-17 01:02:25.555]: Info: [wayland] Found interface: wl_shm(2) version 2
+[2026-11-17 01:02:25.555]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-17 01:02:25.555]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-17 01:02:25.556]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-17 01:02:25.556]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-17 01:02:25.556]: Info: [wayland] Resolution: 1280x720
+[2026-11-17 01:02:25.556]: Info: [wayland] Name: HEADLESS-1
+[2026-11-17 01:02:25.556]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-17 01:02:25.556]: Info: [wayland] Offset: 0x0
+[2026-11-17 01:02:25.556]: Info: [wayland] Logical size: 1280x720
+[2026-11-17 01:02:25.556]: Info: [wlgrab] -------- Start of Wayland monitor list --------
+[2026-11-17 01:02:25.556]: Info: [wlgrab] Monitor 0 is HEADLESS-1: Headless output 1
+[2026-11-17 01:02:25.556]: Info: [wlgrab] --------- End of Wayland monitor list ---------
+[2026-11-17 01:02:25.556]: Error: Failed to gain CAP_SYS_ADMIN
+[2026-11-17 01:02:25.556]: Info: [misc] drop_elevated_privileges succeeded in dropping capabilities
+[2026-11-17 01:02:25.556]: Info: Screencasting with Wayland's protocol
+[2026-11-17 01:02:25.556]: Info: [wlgrab] Requested frame rate [60fps]
+[2026-11-17 01:02:25.556]: Info: [wayland] Found display [wayland-1]
+[2026-11-17 01:02:25.556]: Info: [wayland] Found interface: wl_shm(2) version 2
+[2026-11-17 01:02:25.556]: Info: [wayland] Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-11-17 01:02:25.556]: Info: [wayland] Found interface: zxdg_output_manager_v1(9) version 3
+[2026-11-17 01:02:25.556]: Info: [wayland] Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-11-17 01:02:25.556]: Info: [wayland] Found interface: wl_output(57) version 4
+[2026-11-17 01:02:25.556]: Info: [wayland] Resolution: 1280x720
+[2026-11-17 01:02:25.556]: Info: [wayland] Name: HEADLESS-1
+[2026-11-17 01:02:25.556]: Info: [wayland] Found monitor: Headless output 1
+[2026-11-17 01:02:25.556]: Info: [wayland] Offset: 0x0
+[2026-11-17 01:02:25.556]: Info: [wayland] Logical size: 1280x720
+[2026-11-17 01:02:25.556]: Info: [wlgrab] Selected monitor [Headless output 1] for streaming
+[2026-11-17 01:02:25.556]: Info: Creating encoder [h264_vaapi]
+[2026-11-17 01:02:25.556]: Info: Color coding: SDR (Rec. 601)
+[2026-11-17 01:02:25.556]: Info: Color depth: 8-bit
+[2026-11-17 01:02:25.556]: Info: Color range: MPEG
+[2026-11-17 01:02:25.556]: Warning: setpriority failed for nice -15: Permission denied
+[2026-11-17 01:02:25.563]: Warning: EGL: context priority set to HIGH but CAP_SYS_NICE capability is missing
+[2026-11-17 01:02:25.566]: Info: vaapi vendor: Mesa Gallium driver 26.2.3 for AMD Radeon RX 7900 XT (radeonsi, navi31, ACO, DRM 3.64, 7.2.7)
+[2026-11-17 01:02:25.567]: Info: Streaming bitrate is 7308000
+[2026-11-17 01:02:25.567]: Info: Using normal encoding mode
+[2026-11-17 01:02:25.567]: Info: [VAAPI] Quality level set to 0 (fastest level: 32)
+[2026-11-17 01:02:25.567]: Info: [VAAPI] Using CBR rate control with standard VBV size
+[2026-11-17 01:02:25.569]: Info: Minimum FPS target set to ~30fps (33.3333ms)
+[2026-11-17 01:02:26.055]: Warning: Couldn't create virtual sink for stereo: Module initialization failed
+[2026-11-17 01:02:26.055]: Warning: Couldn't create virtual sink for surround-51: Module initialization failed
+[2026-11-17 01:02:26.055]: Warning: Couldn't create virtual sink for surround-71: Module initialization failed
+[2026-11-17 01:02:26.055]: Info: Found default monitor by name: korri-tone.monitor
+[2026-11-17 01:02:26.055]: Warning: setpriority failed for nice -15: Permission denied
+[2026-11-17 01:02:26.055]: Warning: setpriority failed for nice -10: Permission denied
+[2026-11-17 01:02:26.055]: Info: Opus initialized: 48 kHz, 2 channels, 96 kbps (total), LOWDELAY
+[2026-11-17 01:02:48.987]: Info: CLIENT DISCONNECTED

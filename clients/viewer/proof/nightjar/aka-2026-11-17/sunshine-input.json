@@ -1,0 +1,282 @@
+[
+ {
+  "kind": "relative mouse move",
+  "time": "2026-11-17 01:01:59.270",
+  "fields": {
+   "deltaX": "1",
+   "deltaY": "1"
+  }
+ },
+ {
+  "kind": "relative mouse move",
+  "time": "2026-11-17 01:01:59.280",
+  "fields": {
+   "deltaX": "-1",
+   "deltaY": "-1"
+  }
+ },
+ {
+  "kind": "relative mouse move",
+  "time": "2026-11-17 01:02:19.311",
+  "fields": {
+   "deltaX": "200",
+   "deltaY": "200"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:19.315",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "8043",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:19.319",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "8043",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:19.629",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "8043",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:19.635",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "8043",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:19.945",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "8043",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:19.952",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "8043",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:20.261",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "8043",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:20.267",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "8043",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:20.576",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "8043",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:20.583",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "8043",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "mouse button",
+  "time": "2026-11-17 01:02:20.893",
+  "fields": {
+   "action": "00000008",
+   "button": "01"
+  }
+ },
+ {
+  "kind": "mouse button",
+  "time": "2026-11-17 01:02:20.893",
+  "fields": {
+   "action": "00000009",
+   "button": "01"
+  }
+ },
+ {
+  "kind": "relative mouse move",
+  "time": "2026-11-17 01:02:25.555",
+  "fields": {
+   "deltaX": "1",
+   "deltaY": "1"
+  }
+ },
+ {
+  "kind": "relative mouse move",
+  "time": "2026-11-17 01:02:25.565",
+  "fields": {
+   "deltaX": "-1",
+   "deltaY": "-1"
+  }
+ },
+ {
+  "kind": "relative mouse move",
+  "time": "2026-11-17 01:02:46.103",
+  "fields": {
+   "deltaX": "200",
+   "deltaY": "200"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:46.107",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "804E",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:46.113",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "804E",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:46.422",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "804E",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:46.429",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "804E",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:46.738",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "804E",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:46.744",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "804E",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:47.054",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "804E",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:47.060",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "804E",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:47.370",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "804E",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-17 01:02:47.376",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "804E",
+   "modifiers": "00",
+   "flags": "00"
+  }
+ },
+ {
+  "kind": "mouse button",
+  "time": "2026-11-17 01:02:47.685",
+  "fields": {
+   "action": "00000008",
+   "button": "01"
+  }
+ },
+ {
+  "kind": "mouse button",
+  "time": "2026-11-17 01:02:47.685",
+  "fields": {
+   "action": "00000009",
+   "button": "01"
+  }
+ }
+]

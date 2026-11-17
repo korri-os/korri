@@ -1,0 +1,23 @@
+baseline viewer: copied product package (/nix/store/xc2kqd2lxxv1h1s9dscymjkmwnnqykxq-korri-viewer-0.1.0/bin/moonlight, copied from aka, signed by no key), in the fixture, OpenGL on /dev/dri/renderD129
+candidate viewer: copied product package (/nix/store/zqya4nbg6hwi0z0vj01v4vskmvl52adl-korri-viewer-nightjar-0.1.0/bin/moonlight, copied from aka, signed by no key), in the fixture, OpenGL on /dev/dri/renderD129
+The two results ran different viewers; every verdict below compares these two.
+baseline picture: requested_platform=x11_vaapi, decode=vaapi
+candidate picture: requested_platform=x11_vaapi, decode=vaapi
+what else ran on the machine, share of all CPUs: baseline: sender device 0.9%..17.4%, viewer device 0.9%..17.4%; candidate: sender device 0.9%..16.3%, viewer device 0.9%..16.3%
+number | metric | baseline runs | candidate runs | verdict
+1 packet arrival to display | packet_to_display_ms | not measured | not measured | not measured
+1 sender presentation to display | latency_p50_ms | 12.006..13.053 | 11.872..13.158 | equal
+1 sender presentation to display | latency_p95_ms | 19.196..20.340 | 19.108..20.614 | equal
+2 smoothness | dropped_frames | 0.000..1.000 | 0.000..0.000 | equal
+2 smoothness | repeated_frames | 229.000..234.000 | 228.000..235.000 | equal
+2 smoothness | late_frames | 229.000..234.000 | 228.000..234.000 | equal
+2 smoothness | torn_frames | 0.000..0.000 | 0.000..0.000 | equal
+2 smoothness | unreadable_frames | 0.000..0.000 | 0.000..0.000 | equal
+2 smoothness | output_repeats | 0.000..0.000 | 0.000..0.000 | equal
+3 CPU and battery | cpu_seconds_per_second | 0.011..0.020 | 0.011..0.020 | equal
+3 CPU and battery | battery_mw | not measured | not measured | not measured
+4 startup | startup_ms | 240.688..273.807 | 144.496..225.157 | better
+5 input | input_ms | 0.051..0.077 | 0.056..0.083 | equal
+5 input | input_missed | 0.000..0.000 | 0.000..0.000 | equal
+6 stability | stream_stalls | 0.000..0.000 | 0.000..0.000 | equal
+6 stability | viewer_exits | 0.000..0.000 | 0.000..0.000 | equal

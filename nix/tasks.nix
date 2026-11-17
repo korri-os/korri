@@ -186,6 +186,29 @@ let
           exec python3 "$KORRI_ROOT/clients/viewer/android/proof/run.py" "$@"
         '';
       };
+    viewer-nightjar-proof = {
+      description = "Prove that the Linux viewer streams with each network core, C and nightjar-core (#391 step E), against a private patched Sunshine on this host, with picture, sound and input.";
+      usageSuffix = " -- --viewer /nix/store/...-korri-viewer-nightjar-... --sunshine /nix/store/...-sunshine-korri-... [--build-store STORE] [--seconds N] [--out DIRECTORY]";
+      runtimeInputs = [
+        # numpy and FFmpeg: stream-cadence's frame-ID bar decoder (bar.py)
+        # reads the screenshots; numpy finds the tone.
+        (pkgs.python3.withPackages (p: [ p.numpy ]))
+        pkgs.ffmpeg
+        pkgs.nix
+        pkgs.openssh
+        pkgs.procps
+        pkgs.xorg-server
+        pkgs.xwd
+        pkgs.xdotool
+      ];
+      env = {
+        # stream-cadence builds its sender fixture from this nixpkgs.
+        CADENCE_NIXPKGS = "${pkgs.path}";
+      };
+      script = ''
+        exec python3 "$KORRI_ROOT/clients/viewer/proof/nightjar/run.py" "$@"
+      '';
+    };
     android-live-resize-proof =
       let
         emulator = import ../clients/viewer/android/emulator.nix { inherit pkgs; };

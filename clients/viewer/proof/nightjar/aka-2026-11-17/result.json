@@ -1,0 +1,282 @@
+{
+  "viewer": "/nix/store/zqya4nbg6hwi0z0vj01v4vskmvl52adl-korri-viewer-nightjar-0.1.0",
+  "sunshine": "/nix/store/ap898nhjj347ysnaf3jpp4ynzndh88a6-sunshine-korri-2026.914.233613-korri",
+  "checks": {
+    "sender_runs_korris_sunshine": true,
+    "sender_requires_encryption": true,
+    "sender_plays_the_tone": true,
+    "sender_logs_input": true,
+    "c_picture_reads_and_rises": true,
+    "c_streamed_until_the_stop": true,
+    "c_plays_the_tone": true,
+    "c_frame_record_shows_frames": true,
+    "nightjar_picture_reads_and_rises": true,
+    "nightjar_streamed_until_the_stop": true,
+    "nightjar_plays_the_tone": true,
+    "nightjar_frame_record_shows_frames": true,
+    "c_keys_reached_the_sender": true,
+    "nightjar_keys_reached_the_sender": true,
+    "clicks_reached_the_sender": true,
+    "nightjar_reported_its_session": true
+  },
+  "c": {
+    "command": [
+      "stream",
+      "-platform",
+      "sdl",
+      "-app",
+      "Desktop",
+      "-width",
+      "1280",
+      "-height",
+      "720",
+      "-fps",
+      "60",
+      "-windowed",
+      "-viewonly",
+      "-keydir",
+      "/tmp/korri-viewer-nightjar-keys-5mszm95x",
+      "-port",
+      "39701",
+      "-networkcore",
+      "c",
+      "127.0.0.1"
+    ],
+    "frames": [
+      {
+        "id": 207
+      },
+      {
+        "id": 408
+      },
+      {
+        "id": 609
+      },
+      {
+        "id": 810
+      },
+      {
+        "id": 1011
+      },
+      {
+        "id": 1212
+      }
+    ],
+    "running_before_the_stop": true,
+    "exit": 0,
+    "sound": {
+      "seconds": 22.9,
+      "seconds_of_sound": 20.1,
+      "seconds_at_1000_hz": 20.1
+    },
+    "frame_record": {
+      "units": 1333,
+      "shown": 1324,
+      "enqueue_to_display_ms_p50": 2.97
+    },
+    "stats_at_the_stop": null,
+    "keyboard_packets_at_the_sender": 10
+  },
+  "nightjar": {
+    "command": [
+      "stream",
+      "-platform",
+      "sdl",
+      "-app",
+      "Desktop",
+      "-width",
+      "1280",
+      "-height",
+      "720",
+      "-fps",
+      "60",
+      "-windowed",
+      "-viewonly",
+      "-keydir",
+      "/tmp/korri-viewer-nightjar-keys-5mszm95x",
+      "-port",
+      "39701",
+      "-networkcore",
+      "nightjar",
+      "127.0.0.1"
+    ],
+    "frames": [
+      {
+        "id": 1769
+      },
+      {
+        "id": 1970
+      },
+      {
+        "id": 2170
+      },
+      {
+        "id": 2371
+      },
+      {
+        "id": 2572
+      },
+      {
+        "id": 2773
+      }
+    ],
+    "running_before_the_stop": true,
+    "exit": 0,
+    "sound": {
+      "seconds": 23.4,
+      "seconds_of_sound": 22.2,
+      "seconds_at_1000_hz": 22.1
+    },
+    "frame_record": {
+      "units": 1366,
+      "shown": 1355,
+      "enqueue_to_display_ms_p50": 2.99
+    },
+    "stats_at_the_stop": "nightjar: at the stop: SessionStats { rtt: Some((1ms, 0ns)), video: VideoStats { packet_count_video: 21483, packet_count_fec: 4965, packets_received: 26448, packets_recovered: 0, decrypt_failures: 0, frames_completed: 1355, frame_drops: 0, decoder_drops: 0 }, audio: AudioStats { packet_count_audio: 4419, packet_count_fec: 2210, packet_count_fec_recovered: 0, packet_count_fec_failed: 0, packet_count_oos: 0, packet_count_invalid: 0, packet_count_fec_invalid: 0, decrypt_failures: 0 }, frames_submitted: 1355, frames_need_idr: 0, decode_queue_overflows: 0, early_chunks_dropped: 0, frames_skipped: 0, chunks_skipped: 0, decode_queue_len: 0, audio_packets: 4419, audio_queue_len: 0, audio_queue_overflows: 0, connection_status: Some(Okay), input_contact_lost: false }",
+    "keyboard_packets_at_the_sender": 10
+  },
+  "mouse_button_packets_at_the_sender": 4,
+  "sender_restore": {
+    "live_games": [],
+    "product_units": {
+      "at_start": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 8317014
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 219956135598
+        },
+        "korri-clock-governor.service": {
+          "pid": 3896,
+          "started": 164324721
+        },
+        "korri-compositor.service": {
+          "pid": 748122,
+          "started": 87957282465
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 2569242,
+          "started": 219957620000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 164531729
+        },
+        "korri-limits.service": {
+          "pid": 4035,
+          "started": 164533214
+        },
+        "korri-local-signer.service": {
+          "pid": 2569201,
+          "started": 219956806525
+        },
+        "korri-plugin-admin.service": {
+          "pid": 748266,
+          "started": 87969764633
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 87893718128
+        },
+        "korri-portal-credentials.service": {
+          "pid": 0,
+          "started": 162355048
+        },
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 1158271,
+          "started": 617470040000
+        },
+        "korri-sunshine.service": {
+          "pid": 1158281,
+          "started": 617470079114
+        },
+        "korrid.service": {
+          "pid": 2083501,
+          "started": 426653099424
+        }
+      },
+      "at_end": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 8317014
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 219956135598
+        },
+        "korri-clock-governor.service": {
+          "pid": 3896,
+          "started": 164324721
+        },
+        "korri-compositor.service": {
+          "pid": 748122,
+          "started": 87957282465
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 2569242,
+          "started": 219957620000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 164531729
+        },
+        "korri-limits.service": {
+          "pid": 4035,
+          "started": 164533214
+        },
+        "korri-local-signer.service": {
+          "pid": 2569201,
+          "started": 219956806525
+        },
+        "korri-plugin-admin.service": {
+          "pid": 748266,
+          "started": 87969764633
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 87893718128
+        },
+        "korri-portal-credentials.service": {
+          "pid": 0,
+          "started": 162355048
+        },
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 1158271,
+          "started": 617470040000
+        },
+        "korri-sunshine.service": {
+          "pid": 1158281,
+          "started": 617470079114
+        },
+        "korrid.service": {
+          "pid": 2083501,
+          "started": 426653099424
+        }
+      },
+      "changed": []
+    },
+    "pass": true,
+    "pids_unchanged": {},
+    "run_folder": "/tmp/korri-stream-cadence-sender-qfcybl0x",
+    "run_folder_bytes": 24605762,
+    "run_folder_removed": true,
+    "stray_processes_killed": [],
+    "remaining_processes": [],
+    "other_processes": [],
+    "new_input_devices": [],
+    "gone_input_devices": [],
+    "input_rule": "record",
+    "errors": []
+  },
+  "passed": true
+}
