@@ -567,8 +567,17 @@ TLS still requires the private key.
 
 korrid's Portrait control uses it for a viewer that does not send its own
 request (every viewer but today's Artemis app, which still does until D7)
-and that reports `ready`. This app's viewer reports `ready: false`, so the
-control stays disabled here until the viewer reports its new decoded size.
+and that reports `ready`. This app's viewer reports `ready: true`: it
+follows a new stream size since #476 slice 4, and its `encoded` size follows
+each change (`clients/viewer/README.md`, "A new stream size in the middle of
+the stream"). It reports a shape because its Start names a screen: the
+window's size, longer side first (`rules::screen`), as the Artemis app
+reports its screen (`KorriStreamViewer.screenStreamSize`); Portrait is a
+stream control, not the way the phone is held. So korrid's live-shape runs
+for this app as for the Artemis app: on a holder with display authority the
+holder's display and the stream take the phone's shape. korrid's viewer
+display at prepare is still none here, so a stream starts at Moonlight's
+1280x720 and live-shape changes it after the start.
 
 The proof (`proof/resize.py`, `nix run .#android-app-resize-proof --
 --build-store auto --sunshine PACKAGE`, on aka as root) uses D10's holder,
@@ -576,7 +585,11 @@ sender and fixture APK, built as D10 builds them. The proof trigger's
 `resize LAUNCH WIDTH HEIGHT` sends the same request to the holder, because
 the federation fixture has no compositor: **korrid's Portrait toggle and the
 holder's Sway mode change were not run live; unit tests cover them only.**
-Record: `proof/android-app-476/`.
+The fixture's holder refuses the viewer's shape reports, so korrid lists no
+Portrait control there; the proof reads what enables it: korrid's own
+snapshot of the viewer says `ready: true`, and its `encoded` size follows
+each change in the same connection. Record: `proof/android-app-476/` (35 of
+35 checks).
 
 ## The release APK (D12 prep)
 

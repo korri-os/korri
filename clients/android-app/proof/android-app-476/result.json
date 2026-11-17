@@ -9,6 +9,8 @@
     "korrid_provisioned_the_certificate": true,
     "viewer_reports_running": true,
     "the_picture_moves_at_1280x720": true,
+    "the_viewer_reports_ready_to_korrid": true,
+    "korrid_reads_the_encoded_size_1280x720": true,
     "portrait_korrid_answers_applied": true,
     "portrait_sunshine_took_korrids_request": true,
     "portrait_sunshine_swapped_its_encoder": true,
@@ -18,6 +20,8 @@
     "portrait_the_bar_has_the_new_geometry": true,
     "portrait_the_picture_moves": true,
     "portrait_the_decoder_did_not_fail": true,
+    "portrait_korrid_reads_the_new_encoded_size": true,
+    "portrait_the_viewer_stays_ready_in_the_same_connection": true,
     "landscape_korrid_answers_applied": true,
     "landscape_sunshine_took_korrids_request": true,
     "landscape_sunshine_swapped_its_encoder": true,
@@ -27,6 +31,8 @@
     "landscape_the_bar_has_the_new_geometry": true,
     "landscape_the_picture_moves": true,
     "landscape_the_decoder_did_not_fail": true,
+    "landscape_korrid_reads_the_new_encoded_size": true,
+    "landscape_the_viewer_stays_ready_in_the_same_connection": true,
     "no_crash_panic_or_anr": true,
     "holder_joined_its_discovery": true,
     "sunshine_holds_one_client_that_korrid_provisioned": true
@@ -35,7 +41,7 @@
     "first_bar": {
       "file": "stream-first.png",
       "tries": 1,
-      "id": 5327
+      "id": 5314
     },
     "placed": {
       "left": 240,
@@ -50,7 +56,7 @@
     "picture": [
       {
         "file": "stream-1.png",
-        "id": 5498,
+        "id": 5490,
         "x": 336.0,
         "y": 270.0,
         "cell": 48.0,
@@ -62,7 +68,7 @@
       },
       {
         "file": "stream-2.png",
-        "id": 5593,
+        "id": 5583,
         "x": 336.0,
         "y": 270.0,
         "cell": 48.0,
@@ -74,7 +80,7 @@
       },
       {
         "file": "stream-3.png",
-        "id": 5689,
+        "id": 5675,
         "x": 336.0,
         "y": 270.0,
         "cell": 48.0,
@@ -86,7 +92,7 @@
       },
       {
         "file": "stream-4.png",
-        "id": 5783,
+        "id": 5778,
         "x": 336.0,
         "y": 270.0,
         "cell": 48.0,
@@ -97,13 +103,25 @@
         "in_place": true
       }
     ],
+    "korrids_snapshot_shape": {
+      "connection": "3098:120:567405988",
+      "screen": {
+        "width": 2400,
+        "height": 1080
+      },
+      "encoded": {
+        "width": 1280,
+        "height": 720
+      },
+      "ready": true
+    },
     "portrait": {
       "size": [
         720,
         1280
       ],
       "answer": "Applied",
-      "seconds_to_answer": 0.66,
+      "seconds_to_answer": 0.57,
       "placed": {
         "left": 896,
         "top": 0,
@@ -117,7 +135,7 @@
       "screenshots": [
         {
           "file": "portrait-1.png",
-          "id": 6034,
+          "id": 6055,
           "x": 927.0,
           "y": 455.0,
           "cell": 15.0,
@@ -129,7 +147,7 @@
         },
         {
           "file": "portrait-2.png",
-          "id": 6124,
+          "id": 6137,
           "x": 927.0,
           "y": 455.0,
           "cell": 15.0,
@@ -141,7 +159,7 @@
         },
         {
           "file": "portrait-3.png",
-          "id": 6212,
+          "id": 6223,
           "x": 927.0,
           "y": 455.0,
           "cell": 15.0,
@@ -153,7 +171,7 @@
         },
         {
           "file": "portrait-4.png",
-          "id": 6298,
+          "id": 6308,
           "x": 927.0,
           "y": 455.0,
           "cell": 15.0,
@@ -165,16 +183,29 @@
         }
       ],
       "sunshine_lines": [
-        "[2026-11-16 10:41:12.681]: Info: Runtime resolution applied: 720x1280",
-        "[2026-11-16 10:41:12.681]: Info: Korri certificate control: resize to 720x1280 applied"
+        "[2026-11-17 02:29:57.377]: Info: Runtime resolution applied: 720x1280",
+        "[2026-11-17 02:29:57.377]: Info: Korri certificate control: resize to 720x1280 applied"
       ],
       "app_lines": [
-        "11-16 10:41:13.072  3220  6414 I korri-viewer: picture: the stream's size changes from 1280x720 to 720x1280 at frame 600; the decoder follows it (adaptive playback up to 2960x2960)",
-        "11-16 10:41:13.091  3220  3271 I korri   : korri-app: proof: resize da411db1851c2f6cbba7c5353b9d9e66 720x1280 Applied",
-        "11-16 10:41:13.137  3220  6412 I korri-viewer: picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 719, 1279), width: int32(720), height: int32(1280), max-height: int32(2960), max-width: int32(2960), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}",
-        "11-16 10:41:13.137  3220  6412 I korri-viewer: picture: decoded size 720x1280",
-        "11-16 10:41:13.197  3220  3256 I korri   : korri-app: viewer video layer 720x1280 placed at (896, 0)-(1504, 1080) in the window 2400x1080"
-      ]
+        "11-17 02:29:57.733  3098  6012 I korri-viewer: picture: the stream's size changes from 1280x720 to 720x1280 at frame 629; the decoder follows it (adaptive playback up to 2960x2960)",
+        "11-17 02:29:57.733  3098  3131 I korri   : korri-app: proof: resize 6be52975f4c631838df5609a73faf387 720x1280 Applied",
+        "11-17 02:29:57.811  3098  6010 I korri-viewer: picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 719, 1279), width: int32(720), height: int32(1280), max-height: int32(2960), max-width: int32(2960), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}",
+        "11-17 02:29:57.811  3098  6010 I korri-viewer: picture: decoded size 720x1280",
+        "11-17 02:29:57.842  3098  5986 I korri-viewer: picture: the picture shown is 720x1280",
+        "11-17 02:29:57.873  3098  3124 I korri   : korri-app: viewer video layer 720x1280 placed at (896, 0)-(1504, 1080) in the window 2400x1080"
+      ],
+      "korrids_snapshot_shape": {
+        "connection": "3098:120:567405988",
+        "screen": {
+          "width": 2400,
+          "height": 1080
+        },
+        "encoded": {
+          "width": 720,
+          "height": 1280
+        },
+        "ready": true
+      }
     },
     "landscape": {
       "size": [
@@ -182,7 +213,7 @@
         720
       ],
       "answer": "Applied",
-      "seconds_to_answer": 0.59,
+      "seconds_to_answer": 0.58,
       "placed": {
         "left": 240,
         "top": 0,
@@ -196,7 +227,7 @@
       "screenshots": [
         {
           "file": "landscape-1.png",
-          "id": 6529,
+          "id": 6570,
           "x": 336.0,
           "y": 270.0,
           "cell": 48.0,
@@ -208,7 +239,7 @@
         },
         {
           "file": "landscape-2.png",
-          "id": 6623,
+          "id": 6668,
           "x": 336.0,
           "y": 270.0,
           "cell": 48.0,
@@ -220,7 +251,7 @@
         },
         {
           "file": "landscape-3.png",
-          "id": 6715,
+          "id": 6761,
           "x": 336.0,
           "y": 270.0,
           "cell": 48.0,
@@ -232,7 +263,7 @@
         },
         {
           "file": "landscape-4.png",
-          "id": 6807,
+          "id": 6863,
           "x": 336.0,
           "y": 270.0,
           "cell": 48.0,
@@ -244,31 +275,44 @@
         }
       ],
       "sunshine_lines": [
-        "[2026-11-16 10:41:21.408]: Info: Runtime resolution applied: 1280x720",
-        "[2026-11-16 10:41:21.408]: Info: Korri certificate control: resize to 1280x720 applied"
+        "[2026-11-17 02:30:06.854]: Info: Runtime resolution applied: 1280x720",
+        "[2026-11-17 02:30:06.854]: Info: Korri certificate control: resize to 1280x720 applied"
       ],
       "app_lines": [
-        "11-16 10:41:21.778  3220  6414 I korri-viewer: picture: the stream's size changes from 720x1280 to 1280x720 at frame 1086; the decoder follows it (adaptive playback up to 2960x2960)",
-        "11-16 10:41:21.778  3220  3271 I korri   : korri-app: proof: resize da411db1851c2f6cbba7c5353b9d9e66 1280x720 Applied",
-        "11-16 10:41:21.846  3220  6412 I korri-viewer: picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 1279, 719), width: int32(1280), height: int32(720), max-height: int32(2960), max-width: int32(2960), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}",
-        "11-16 10:41:21.846  3220  6412 I korri-viewer: picture: decoded size 1280x720",
-        "11-16 10:41:21.937  3220  3256 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080"
-      ]
+        "11-17 02:30:07.202  3098  6012 I korri-viewer: picture: the stream's size changes from 720x1280 to 1280x720 at frame 1154; the decoder follows it (adaptive playback up to 2960x2960)",
+        "11-17 02:30:07.210  3098  3131 I korri   : korri-app: proof: resize 6be52975f4c631838df5609a73faf387 1280x720 Applied",
+        "11-17 02:30:07.290  3098  6010 I korri-viewer: picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 1279, 719), width: int32(1280), height: int32(720), max-height: int32(2960), max-width: int32(2960), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}",
+        "11-17 02:30:07.290  3098  6010 I korri-viewer: picture: decoded size 1280x720",
+        "11-17 02:30:07.336  3098  5986 I korri-viewer: picture: the picture shown is 1280x720",
+        "11-17 02:30:07.366  3098  3124 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080"
+      ],
+      "korrids_snapshot_shape": {
+        "connection": "3098:120:567405988",
+        "screen": {
+          "width": 2400,
+          "height": 1080
+        },
+        "encoded": {
+          "width": 1280,
+          "height": 720
+        },
+        "ready": true
+      }
     }
   },
   "store": {
-    "apk": "/nix/store/9avkx39mjc6dfhl3q7x23l3y9msknj2i-korri-android-app-fixture-apk-0.1.0/korri-android-app-unsigned.apk",
-    "federation_fixture": "/nix/store/ydh0rhkhwc1qqdwp6jrw7rkjp5zbdcvq-korrid-federation-fixture-0.0.0/bin/federation_fixture",
+    "apk": "/nix/store/rdzsfb2a2krhb63ixdgj76mnl2837bsa-korri-android-app-fixture-apk-0.1.0/korri-android-app-unsigned.apk",
+    "federation_fixture": "/nix/store/524p0cslbrhzc9h7bsg8psqsvagsy1dh-korrid-federation-fixture-0.0.0/bin/federation_fixture",
     "sunshine": "/nix/store/ap898nhjj347ysnaf3jpp4ynzndh88a6-sunshine-korri-2026.914.233613-korri"
   },
-  "member_device": "8f4f8f847631a5679af91514951b3ed530a7427c44b30fb3d57111a35debe1bc",
-  "moonlight_address": "192.168.1.117:44245",
+  "member_device": "62f44dfc7c6fe1548c6c2b579075bde0750a38b4fdde4331d62243caf35f908c",
+  "moonlight_address": "192.168.1.117:55211",
   "holder": {
-    "port": 42351,
-    "device": "33b4c3a0ba5de67c2c1fec40e4585ca54970821ca6e7697c89553a0f628d8694",
-    "relay_port": 43629
+    "port": 33223,
+    "device": "e2524d83c2c4be2b01f0e0681e05cae9236c9d8e23f5dea40d62b4015ac042ab",
+    "relay_port": 33173
   },
-  "launch": "da411db1851c2f6cbba7c5353b9d9e66",
+  "launch": "6be52975f4c631838df5609a73faf387",
   "crashes": [],
   "emulator_stop": {
     "started": true,
@@ -328,12 +372,12 @@
           "started": 8321684
         },
         "korri-sunshine-input-setup.service": {
-          "pid": 1489945,
-          "started": 168435600000
+          "pid": 1158271,
+          "started": 617470040000
         },
         "korri-sunshine.service": {
-          "pid": 2923004,
-          "started": 560411459365
+          "pid": 1158281,
+          "started": 617470079114
         },
         "korrid.service": {
           "pid": 2083501,
@@ -390,12 +434,12 @@
           "started": 8321684
         },
         "korri-sunshine-input-setup.service": {
-          "pid": 1489945,
-          "started": 168435600000
+          "pid": 1158271,
+          "started": 617470040000
         },
         "korri-sunshine.service": {
-          "pid": 2923004,
-          "started": 560411459365
+          "pid": 1158281,
+          "started": 617470079114
         },
         "korrid.service": {
           "pid": 2083501,
@@ -406,8 +450,8 @@
     },
     "pass": true,
     "pids_unchanged": {},
-    "run_folder": "/tmp/korri-stream-cadence-sender-rvsll3ju",
-    "run_folder_bytes": 3844726,
+    "run_folder": "/tmp/korri-stream-cadence-sender-9y3ebwlv",
+    "run_folder_bytes": 3863446,
     "run_folder_removed": true,
     "stray_processes_killed": [],
     "remaining_processes": [],

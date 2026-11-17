@@ -51,7 +51,7 @@
       "zone": "hwmon4/temp1",
       "type": "k10temp Tctl",
       "driver": "k10temp",
-      "temp": 78500,
+      "temp": 78750,
       "trips": [],
       "unreadable": null,
       "limits": {
@@ -68,17 +68,17 @@
   "input_rule": "record",
   "tone": null,
   "log_input": false,
-  "sunshine_port": 44245,
-  "sunshine_control_port": 44255,
+  "sunshine_port": 55211,
+  "sunshine_control_port": 55221,
   "listening_tcp_ports": [
-    44245
+    55211
   ],
   "processes": {
     "compositor": {
-      "pid": 3533759
+      "pid": 1808083
     },
     "sunshine": {
-      "pid": 3533786
+      "pid": 1808104
     }
   },
   "sender_fixture": {
@@ -106,7 +106,7 @@
       ]
     },
     "certificate_control": {
-      "KORRID_STREAM_CERTIFICATE_CONTROL_SOCKET": "/run/korri-cadence-certificate-86z8q595/control.sock",
+      "KORRID_STREAM_CERTIFICATE_CONTROL_SOCKET": "/run/korri-cadence-certificate-3cl70ivh/control.sock",
       "KORRID_STREAM_CERTIFICATE_CONTROL_GID": "59034",
       "KORRID_STREAM_CERTIFICATE_CONTROL_PEER_UID": "0",
       "KORRID_STREAM_CERTIFICATE_CONTROL_PEER_GID": "0"
@@ -120,10 +120,10 @@
           "av1_vaapi"
         ],
         "hardware_encoder": true,
-        "port": 44245,
+        "port": 55211,
         "sunshine_version": "2026.914.233613-korri"
       }
     ],
-    "run_folder": "/tmp/korri-stream-cadence-sender-rvsll3ju"
+    "run_folder": "/tmp/korri-stream-cadence-sender-9y3ebwlv"
   }
 }
