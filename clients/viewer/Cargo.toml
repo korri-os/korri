@@ -3,7 +3,8 @@ name = "korri-viewer"
 version = "0.1.0"
 edition = "2024"
 # Zlib: the controller lists of Valve and SDL (src/android/controller_list.rs).
-license = "GPL-3.0-or-later AND GPL-3.0-only AND Zlib"
+# Apache-2.0: the gesture detectors ported from Android (src/android/gestures.rs).
+license = "GPL-3.0-or-later AND GPL-3.0-only AND Zlib AND Apache-2.0"
 
 [features]
 # nightjar-core (vendor/nightjar, GPL-3.0-only) as a second network core,

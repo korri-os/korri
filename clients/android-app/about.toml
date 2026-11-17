@@ -42,8 +42,10 @@ workarounds = ["ring", "rustls"]
 
 # Korri's viewer is Korri's own crate, but its manifest does not say
 # `publish = false`. Its licence is the app's, in the notices' first
-# paragraph; its Zlib part (src/android/controller_list.rs) is a part of its
-# own in notices.nix, with Valve's and SDL's copyright.
+# paragraph. Its Zlib part (src/android/controller_list.rs) and its
+# Apache-2.0 part (src/android/gestures.rs) are parts of their own in
+# notices.nix, with Valve's and SDL's copyright and with the Android Open
+# Source Project's NOTICE and the Apache License's text.
 [korri-viewer]
 accepted = ["GPL-3.0-or-later"]
 

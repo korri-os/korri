@@ -82,6 +82,17 @@ let
     (kotlinLicence "third_party/boost_LICENSE.txt" "sha256-jYKRyvHO4m0jrPPrZ8n5otWPHGgbFqT76Mv7njwLWps=")
   ];
   moonlight = viewerParts.network.src;
+  # Korri's viewer ports parts of two of Android 12's classes for its pan and
+  # zoom (clients/viewer/src/android/gestures.rs, Apache-2.0). Their project's
+  # NOTICE at that release: its notice for the Android code, and the Apache
+  # License, Version 2.0, that it carries. Its other notices are for code
+  # that Korri did not take.
+  aospRelease = "android-12.0.0_r34";
+  aospNotice = pkgs.fetchurl {
+    name = "aosp-${aospRelease}-frameworks-base-NOTICE";
+    url = "https://raw.githubusercontent.com/aosp-mirror/platform_frameworks_base/${aospRelease}/NOTICE";
+    hash = "sha256-z03XzqW2vNJiLd01KbPHTRa6K020RFdbxvXDP4qWBTA=";
+  };
 in
 pkgs.stdenv.mkDerivation {
   pname = "korri-android-app-notices";
@@ -147,6 +158,17 @@ pkgs.stdenv.mkDerivation {
       part "Valve's and SDL's controller lists" \
         "Data in Korri's viewer (clients/viewer/src/android/controller_list.rs), taken from Valve's controller_list.h and SDL's minisdl.c and changed by Korri." \
         controller-list.txt
+      # The NOTICE's first block, the Android code's, up to the next block;
+      # then the licence's terms.
+      awk 'NR > 5 && /^ *=+ *$/ { exit } { print }' ${aospNotice} > aosp-notice.txt
+      grep -q '^Android Code$' aosp-notice.txt
+      grep -q '^The Android Open Source Project (http://source.android.com).$' aosp-notice.txt
+      sed -n '/^ *Apache License$/,/^ *END OF TERMS AND CONDITIONS$/p' ${aospNotice} > aosp-apache.txt
+      grep -q 'Version 2.0, January 2004' aosp-apache.txt
+      grep -q 'END OF TERMS AND CONDITIONS' aosp-apache.txt
+      part 'The Android Open Source Project' \
+        "Code in Korri's viewer (clients/viewer/src/android/gestures.rs), ported from Android's ScaleGestureDetector and GestureDetector (frameworks/base, ${aospRelease}) and changed by Korri, under the Apache License, Version 2.0. The NOTICE of frameworks/base for its Android code, and the licence, follow." \
+        aosp-notice.txt aosp-apache.txt
       part 'OpenSSL ${viewerParts.openssl.version}' \
         "The viewer's cryptography and TLS, from nixpkgs' source, linked statically." \
         "$(unpacked ${viewerParts.openssl.src} LICENSE.txt)"

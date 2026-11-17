@@ -3,8 +3,9 @@ name = "korri-android-app"
 version = "0.1.0"
 edition = "2021"
 # The Rust viewer's Android parts port Artemis code under GPL-3.0-only
-# (clients/viewer/README.md), so the library is GPL-3.0-only.
-license = "GPL-3.0-or-later AND GPL-3.0-only AND Zlib"
+# (clients/viewer/README.md), so the library is GPL-3.0-only. Zlib and
+# Apache-2.0: the viewer's parts under them (clients/viewer/Cargo.toml).
+license = "GPL-3.0-or-later AND GPL-3.0-only AND Zlib AND Apache-2.0"
 publish = false
 description = "The Korri Android app with no Korri Java: korrid, the native shell and the Rust viewer in one NativeActivity library"
 

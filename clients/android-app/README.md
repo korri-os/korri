@@ -775,6 +775,7 @@ shows it yet: the shell has no view for it, which is design work.
 | --- | --- |
 | The app's licence, GPL-3.0-only (#481, ADR 0059), and its source | the packing (`default.nix`, `sourceNotice`) |
 | moonlight-common-c, ENet, its Reed-Solomon code; Valve's and SDL's controller lists in the viewer; OpenSSL; libopus | their sources: the viewer's parts (`clients/viewer/android.nix`) and the viewer's source |
+| The Android Open Source Project: the viewer's gesture detectors (`gestures.rs`, Apache-2.0) | `frameworks/base`'s NOTICE at `android-12.0.0_r34`, fetched: its notice for the Android code and the Apache License, Version 2.0 |
 | curl, QuickJS, libsecp256k1, ring's BoringSSL code | the C that `curl-sys`, `rquickjs-sys`, `secp256k1-sys` and `ring` build, from the vendored crates |
 | Skia, and the four libraries of its archive that the library keeps: libpng, zlib (Chromium's copy), FreeType, Expat | the archive's `LICENSE_SKIA`; nixpkgs' sources and Chromium's for the four |
 | The Kotlin standard library | its project's licence, NOTICE and the Boost licence of `MathJVM.kt`, fetched at v2.0.21 |

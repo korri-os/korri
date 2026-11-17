@@ -486,6 +486,15 @@ impl Finger {
         button(sink, true, self.primary());
     }
 
+    /// Whether a long press and a tap hold their buttons down; from now on
+    /// neither does.
+    fn let_go(&mut self) -> (bool, bool) {
+        (
+            std::mem::take(&mut self.long_press),
+            std::mem::take(&mut self.tap),
+        )
+    }
+
     fn timers(&self) -> impl Iterator<Item = (i64, Timer)> + '_ {
         [
             self.tap_down_ms.map(|at| (at, Timer::TapDown)),
@@ -530,9 +539,13 @@ impl Context for Finger {
         if self.index == 0 {
             self.long_press_ms = None;
             self.tap_down_ms = None;
-            if self.long_press {
+            // A button that goes up here is up: a later cancel sends no
+            // second release (Artemis keeps `confirmedTap` and
+            // `confirmedLongPress`, and does).
+            let (long_press, tap) = self.let_go();
+            if long_press {
                 button(sink, false, self.secondary());
-            } else if self.tap {
+            } else if tap {
                 button(sink, false, self.primary());
             } else {
                 // A tap inside the dead zone's time: click where it went
@@ -578,9 +591,10 @@ impl Context for Finger {
         self.cancelled = true;
         self.long_press_ms = None;
         self.tap_down_ms = None;
-        if self.long_press {
+        let (long_press, tap) = self.let_go();
+        if long_press {
             button(sink, false, self.secondary());
-        } else if self.tap {
+        } else if tap {
             button(sink, false, self.primary());
             // The tap's own release went with it.
             self.left_up_ms = None;
@@ -627,6 +641,7 @@ impl Context for Finger {
             }
             Timer::LeftUp => {
                 self.left_up_ms = None;
+                self.tap = false;
                 button(sink, false, self.primary());
             }
         }

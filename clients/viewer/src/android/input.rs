@@ -2373,6 +2373,72 @@ pub(crate) mod tests {
         }
     }
 
+    // Review P2, as in Artemis's `AbsoluteTouchContext`: a tap's or a long
+    // press's button went up with the finger, or by the tap's 100 ms timer,
+    // but the context still held it as down (`confirmedTap`,
+    // `confirmedLongPress`), and a later mouse mode sent a second button-up.
+    // Each button now goes up once.
+    #[test]
+    fn an_absolute_touch_lets_go_of_its_button_once() {
+        type Touches = &'static [Step<'static>];
+        let cases: [(&str, Touches, i64); 3] = [
+            // Held past the dead zone's 100 ms: a click at the touch's place
+            // from then, let go with the finger.
+            (
+                "a held tap",
+                &[
+                    (action::DOWN, 0, &[(540.0, 514.0)], 1000),
+                    (action::UP, 0, &[(540.0, 514.0)], 1200),
+                ],
+                1100,
+            ),
+            // Up inside the dead zone: a click, let go 100 ms later.
+            (
+                "a quick tap",
+                &[
+                    (action::DOWN, 0, &[(540.0, 514.0)], 1000),
+                    (action::UP, 0, &[(540.0, 514.0)], 1040),
+                ],
+                1140,
+            ),
+            // Held 650 ms: a right click, let go with the finger.
+            (
+                "a long press",
+                &[
+                    (action::DOWN, 0, &[(540.0, 514.0)], 1000),
+                    (action::UP, 0, &[(540.0, 514.0)], 1700),
+                ],
+                1650,
+            ),
+        ];
+        for (name, touches, timers_ms) in cases {
+            let (mut input, mut sink) = (input(), Recorded::default());
+            input.set_mouse_mode(MouseMode::Absolute, &mut sink);
+            let (down, up) = touches.split_at(1);
+            gesture(&mut input, &mut sink, down);
+            input.tick(timers_ms, &mut sink);
+            gesture(&mut input, &mut sink, up);
+            input.tick(2000, &mut sink);
+            let buttons = |packets: &[Packet], pressed: bool| {
+                packets
+                    .iter()
+                    .filter(
+                        |p| matches!(p, Packet::MouseButton { pressed: p, .. } if *p == pressed),
+                    )
+                    .count()
+            };
+            let sent = sink.take();
+            assert!(buttons(&sent, true) > 0, "{name}: {sent:?}");
+            assert_eq!(
+                buttons(&sent, true),
+                buttons(&sent, false),
+                "{name}: {sent:?}"
+            );
+            input.set_mouse_mode(MouseMode::MultiTouch, &mut sink);
+            assert_eq!(sink.take(), [], "{name}");
+        }
+    }
+
     // `applyMouseMode` cancels each context first: a drag lets go, and the
     // new mode's touches follow.
     #[test]
