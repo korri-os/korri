@@ -103,6 +103,7 @@ fn main() {
     for file in [
         "bridge.c",
         "frame_times.c",
+        "place.c",
         "sdl.c",
         "util.c",
         "video/x11.c",

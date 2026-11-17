@@ -27,6 +27,7 @@
 
 #include "../frame_times.h"
 #include "../loop.h"
+#include "../place.h"
 #include "../util.h"
 
 #include <X11/Xatom.h>
@@ -92,20 +93,22 @@ static int frame_handle(int pipefd) {
   frame = pending_frame;
   pending_frame = NULL;
   pthread_mutex_unlock(&frame_mutex);
-  if (frame) {
+  /* Windowed setup uses the encoded size, but a compositor can resize
+   * that window independently (including fullscreen on another output).
+   * Query here so presentation follows the actual render target without
+   * relying on input event handling or changing decoder dimensions. The
+   * picture fits that window with its own shape, which can change in the
+   * middle of the stream (Korri #476). */
+  XWindowAttributes attributes;
+  if (frame && XGetWindowAttributes(display, window, &attributes) &&
+      attributes.width > 0 && attributes.height > 0) {
+    struct picture_place place = picture_fit(frame->width, frame->height,
+        attributes.width, attributes.height);
     if (ffmpeg_decoder == SOFTWARE)
-      egl_draw(frame->data);
+      egl_draw(frame, place);
     #ifdef HAVE_VAAPI
-    else if (ffmpeg_decoder == VAAPI) {
-      /* Windowed setup uses the encoded size, but a compositor can resize
-       * that window independently (including fullscreen on another output).
-       * Query here so presentation follows the actual render target without
-       * relying on input event handling or changing decoder dimensions. */
-      XWindowAttributes attributes;
-      if (XGetWindowAttributes(display, window, &attributes) &&
-          attributes.width > 0 && attributes.height > 0)
-        vaapi_queue(frame, window, attributes.width, attributes.height);
-    }
+    else if (ffmpeg_decoder == VAAPI)
+      vaapi_queue(frame, window, place);
     #endif
   }
 

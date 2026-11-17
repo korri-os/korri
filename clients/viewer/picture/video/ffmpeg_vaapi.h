@@ -20,7 +20,10 @@
 #include <va/va.h>
 #include <X11/Xlib.h>
 
+#include "../place.h"
+
 int vaapi_init_lib(Display* display);
 void vaapi_cleanup_lib(void);
 int vaapi_init(AVCodecContext* decoder_ctx);
-void vaapi_queue(AVFrame* dec_frame, Window win, int width, int height);
+// Korri: the picture goes at `place` in the window (#476).
+void vaapi_queue(AVFrame* dec_frame, Window win, struct picture_place place);

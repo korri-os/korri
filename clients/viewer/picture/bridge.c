@@ -4,6 +4,7 @@
 #include "video/video.h"
 #include "sdl.h"
 #include "loop.h"
+#include "place.h"
 #include <poll.h>
 #include <errno.h>
 #include <stdio.h>
@@ -40,6 +41,7 @@ void loop_remove_fd(int fd) {
   }
 }
 int picture_init(int vaapi, int width, int height, int fullscreen) {
+  picture_shown_reset();
   using_vaapi = vaapi && x11_init(false, true) == INIT_VAAPI;
   if (using_vaapi) {
     puts("Platform X Window System (VAAPI)");
@@ -55,6 +57,7 @@ int picture_init(int vaapi, int width, int height, int fullscreen) {
 // because the decoder's display thread makes its own window. main.c sets
 // this variable for every platform; only the v4l2request presenter reads it.
 void picture_init_request(int auto_window_resize) {
+  picture_shown_reset();
   using_request = 1;
   setenv("MOONLIGHT_AUTO_WINDOW_RESIZE", auto_window_resize ? "1" : "0", 1);
   puts("Platform V4L2 Request (stateless) + DRM PRIME GL");

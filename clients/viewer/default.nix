@@ -180,7 +180,7 @@ let
         export ALSA_CONFIG_PATH="$PWD/alsa.conf"
         ./check-audio "$TMPDIR/decoded.pcm"
         cc -std=gnu11 ${ioFlags} -I${source}/picture \
-          ${source}/tests/test-input.c ${ioSources} ${source}/picture/frame_times.c \
+          ${source}/tests/test-input.c ${ioSources} ${source}/picture/frame_times.c ${source}/picture/place.c \
           $(pkg-config --cflags --libs ${ioLibraries}) \
           -L${network}/lib -lmoonlight-common-c -pthread -lm \
           -Wl,--wrap=LiSendKeyboardEvent,--wrap=LiSendMouseButtonEvent,--wrap=LiSendMousePositionEvent,--wrap=LiSendMouseMoveEvent,--wrap=LiSendMultiControllerEvent,--wrap=udev_new \
@@ -234,9 +234,12 @@ let
             $(pkg-config --cflags --libs libavutil) -L${network}/lib -Wl,-rpath,${network}/lib \
             -lmoonlight-common-c -pthread -o check-frame-times
           ./check-frame-times
+          cc -std=gnu11 -Wall -Wextra -Werror -I${source}/picture -I${network}/include \
+            ${source}/picture/place.c ${source}/tests/test-place.c -o check-place
+          ./check-place
           cc -Wall -Wextra -Werror -Wno-unused-parameter -I${source}/picture -I${network}/include \
             ${source}/picture/video/ffmpeg_vaapi.c ${source}/picture/video/vaapi_egl.c \
-            ${source}/picture/frame_times.c ${source}/tests/test-vaapi.c \
+            ${source}/picture/frame_times.c ${source}/picture/place.c ${source}/tests/test-vaapi.c \
             $(pkg-config --cflags --libs libavcodec libavutil libva-x11 x11 egl glesv2) -L${network}/lib -Wl,-rpath,${network}/lib \
             -lmoonlight-common-c -pthread -o check-vaapi
           export HOME="$TMPDIR" LIBVA_DRIVER_NAME=korri_missing_driver
@@ -244,16 +247,32 @@ let
           cc -std=gnu11 -DHAVE_X11 -DHAVE_VAAPI \
             -ffunction-sections -fdata-sections -Wl,--gc-sections \
             -I${source}/picture -I${network}/include \
-            ${source}/tests/test-x11-vaapi-size.c ${source}/picture/video/egl.c \
+            ${source}/tests/test-x11-vaapi-size.c ${source}/picture/video/egl.c ${source}/picture/place.c \
             $(pkg-config --cflags --libs libavcodec libavutil libva-x11 x11 egl glesv2) -o check-size
           xvfb-run -a -s '-screen 0 4096x2304x24 -nolisten tcp' ./check-size
+          cc -std=gnu11 -Wall -Wextra -Werror -Wno-unused-parameter -I${source}/picture -I${network}/include \
+            ${source}/tests/test-egl.c ${source}/picture/video/egl.c ${source}/picture/place.c \
+            $(pkg-config --cflags --libs libavutil x11 egl glesv2) -o check-egl
           cc -std=gnu11 -DHAVE_SDL -I${source}/picture -I${network}/include \
           ${ioFlags} ${source}/tests/test-sdl.c ${ioSources} ${source}/picture/bridge.c ${source}/picture/video/sdl.c \
           ${source}/picture/video/ffmpeg.c ${source}/picture/video/ffmpeg_vaapi.c ${source}/picture/video/vaapi_egl.c \
-          ${source}/picture/util.c ${source}/picture/frame_times.c \
+          ${source}/picture/util.c ${source}/picture/frame_times.c ${source}/picture/place.c \
           $(pkg-config --cflags --libs libavcodec libavutil libva-x11 egl glesv2 ${ioLibraries}) -L${network}/lib -lmoonlight-common-c -pthread -lm -o check-sdl
         ffmpeg -v error -f lavfi -i testsrc=size=128x72:rate=30 -frames:v 4 \
           -c:v libx264 -pix_fmt yuv420p -tune zerolatency -f h264 frames.h264
+        # The same source at a portrait size: the stream's new size (#476).
+        ffmpeg -v error -f lavfi -i testsrc=size=72x128:rate=30 -frames:v 4 \
+          -c:v libx264 -pix_fmt yuv420p -tune zerolatency -f h264 portrait.h264
+        LD_LIBRARY_PATH=${
+          pkgs.lib.makeLibraryPath [
+            network
+            pkgs.libglvnd
+            pkgs.mesa
+          ]
+        } \
+          LIBGL_ALWAYS_SOFTWARE=1 __EGL_VENDOR_LIBRARY_FILENAMES=${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json \
+          EGL_PLATFORM=x11 LIBGL_DRIVERS_PATH=${pkgs.mesa}/lib/dri \
+          xvfb-run -a -s '-screen 0 640x480x24 -nolisten tcp' ./check-egl
         LD_LIBRARY_PATH=${
           pkgs.lib.makeLibraryPath [
             network
@@ -263,7 +282,7 @@ let
         } \
           LIBGL_ALWAYS_SOFTWARE=1 __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_DRIVERS_PATH=${pkgs.mesa}/lib/dri \
           SDL_VIDEODRIVER=x11 SDL_RENDER_DRIVER=software \
-          xvfb-run -a -s '-screen 0 640x480x24 -nolisten tcp' ./check-sdl frames.h264
+          xvfb-run -a -s '-screen 0 640x480x24 -nolisten tcp' ./check-sdl frames.h264 portrait.h264
         touch "$out"
       '';
   # GPL-3 corresponding source of `package` (ADR 0059): this package's Rust,

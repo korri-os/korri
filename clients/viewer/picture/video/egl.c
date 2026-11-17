@@ -45,12 +45,14 @@ static const char* fragment_source = "\
 uniform lowp sampler2D ymap;\
 uniform lowp sampler2D umap;\
 uniform lowp sampler2D vmap;\
+uniform mediump vec3 visible;\
+uniform mediump vec3 last;\
 varying mediump vec2 tex_position;\
 \
 void main() {\
-  mediump float y = texture2D(ymap, tex_position).r;\
-  mediump float u = texture2D(umap, tex_position).r - .5;\n\
-  mediump float v = texture2D(vmap, tex_position).r - .5;\n\
+  mediump float y = texture2D(ymap, vec2(min(tex_position.x * visible.x, last.x), tex_position.y)).r;\
+  mediump float u = texture2D(umap, vec2(min(tex_position.x * visible.y, last.y), tex_position.y)).r - .5;\n\
+  mediump float v = texture2D(vmap, vec2(min(tex_position.x * visible.z, last.z), tex_position.y)).r - .5;\n\
   lowp float r = y + 1.28033 * v;\
   lowp float g = y - .21482 * u - .38059 * v;\
   lowp float b = y + 2.12798 * u;\
@@ -79,6 +81,11 @@ static bool current;
 
 static GLuint texture_id[3], texture_uniform[3];
 static GLuint shader_program;
+// Korri (#476): each texture holds whole rows of its plane, padding included,
+// and the shader reads only the visible part of them. A new frame size or
+// row length makes the textures again.
+static int line_sizes[3];
+static GLint visible_uniform, last_uniform;
 
 void egl_init(EGLNativeDisplayType native_display, NativeWindowType native_window, int display_width, int display_height) {
   width = display_width;
@@ -161,15 +168,22 @@ void egl_init(EGLNativeDisplayType native_display, NativeWindowType native_windo
     glBindTexture(GL_TEXTURE_2D, texture_id[i]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    // A row's length is seldom a power of two; OpenGL ES 2 samples such a
+    // texture only when it clamps.
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, i > 0 ? width / 2 : width, i > 0 ? height / 2 : height, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, 0);
 
     texture_uniform[i] = glGetUniformLocation(shader_program, texture_mappings[i]);
+    line_sizes[i] = 0;
   }
+  visible_uniform = glGetUniformLocation(shader_program, "visible");
+  last_uniform = glGetUniformLocation(shader_program, "last");
 
   eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 }
 
-void egl_draw(uint8_t* image[3]) {
+void egl_draw(const AVFrame* frame, struct picture_place place) {
   if (!current) {
     eglMakeCurrent(display, surface, surface, context);
     current = true;
@@ -178,16 +192,39 @@ void egl_draw(uint8_t* image[3]) {
   glUseProgram(shader_program);
   glEnableVertexAttribArray(0);
 
+  int widths[3] = { frame->width, (frame->width + 1) / 2, (frame->width + 1) / 2 };
+  int heights[3] = { frame->height, (frame->height + 1) / 2, (frame->height + 1) / 2 };
+  bool resized = frame->width != width || frame->height != height;
+  GLfloat visible[3], last[3];
   for (int i = 0; i < 3; i++) {
+    if (frame->linesize[i] < widths[i])
+      return;
     glActiveTexture(GL_TEXTURE0 + i);
     glBindTexture(GL_TEXTURE_2D, texture_id[i]);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, i > 0 ? width / 2 : width, i > 0 ? height / 2 : height, GL_LUMINANCE, GL_UNSIGNED_BYTE, image[i]);
+    if (resized || frame->linesize[i] != line_sizes[i]) {
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, frame->linesize[i], heights[i], 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, frame->data[i]);
+      line_sizes[i] = frame->linesize[i];
+    } else
+      glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, frame->linesize[i], heights[i], GL_LUMINANCE, GL_UNSIGNED_BYTE, frame->data[i]);
     glUniform1i(texture_uniform[i], i);
+    // Stop at the centre of the last visible texel, so that the filter does
+    // not blend the row's padding in.
+    visible[i] = (GLfloat)widths[i] / frame->linesize[i];
+    last[i] = (widths[i] - .5f) / frame->linesize[i];
   }
+  width = frame->width;
+  height = frame->height;
+  glUniform3f(visible_uniform, visible[0], visible[1], visible[2]);
+  glUniform3f(last_uniform, last[0], last[1], last[2]);
 
+  // Black bars around the picture; OpenGL counts rows from the bottom.
+  glClearColor(0.f, 0.f, 0.f, 1.f);
+  glClear(GL_COLOR_BUFFER_BIT);
+  glViewport(place.x, place.window_height - place.y - place.height, place.width, place.height);
   glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
-  eglSwapBuffers(display, surface);
+  if (eglSwapBuffers(display, surface))
+    picture_shown(frame->width, frame->height);
 }
 
 void egl_destroy() {

@@ -10,4 +10,8 @@ void picture_destroy(void);
 // belong to C from here on. Open before the connection; close after it stops.
 int picture_frame_times_open(int times_fd, int recording_fd);
 int picture_frame_times_close(void);
+// The size of the last picture that a presenter showed (place.c): 1 and the
+// size, or 0 before the first. The stream's thread reads it after each poll
+// and reports a new size as the encoded size (#476).
+int picture_shown_size(int* width, int* height);
 void picture_log(const char* format, ...);

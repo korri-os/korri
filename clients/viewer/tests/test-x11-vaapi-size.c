@@ -3,18 +3,16 @@
 #include "video/x11.c"
 #include <assert.h>
 
-static int presented_width;
-static int presented_height;
+static struct picture_place presented;
 static int presentations;
 static int64_t presented_pts;
 static AVFrame* arrive_during_presentation;
 enum decoders ffmpeg_decoder = VAAPI;
 
-void vaapi_queue(AVFrame* frame, Window target, int width, int height) {
+void vaapi_queue(AVFrame* frame, Window target, struct picture_place place) {
   assert(frame);
   assert(target == window);
-  presented_width = width;
-  presented_height = height;
+  presented = place;
   assert(frame->buf[0] != NULL);
   presented_pts = frame->pts;
   presentations++;
@@ -26,15 +24,22 @@ void vaapi_queue(AVFrame* frame, Window target, int width, int height) {
   }
 }
 
-static void present_at(AVFrame* frame, int width, int height) {
+// The picture fits the window: the window's size, and the picture's place in it.
+static void present_in(AVFrame* frame, int width, int height, int x, int y, int shown_width, int shown_height) {
   XResizeWindow(display, window, width, height);
   XSync(display, False);
   int before = presentations;
   queue_frame(frame);
   assert(frame_handle(pipefd[0]) == LOOP_OK);
   assert(presentations == before + 1);
-  assert(presented_width == width);
-  assert(presented_height == height);
+  assert(presented.window_width == width && presented.window_height == height);
+  assert(presented.x == x && presented.y == y);
+  assert(presented.width == shown_width && presented.height == shown_height);
+}
+
+// A picture of the window's shape fills it.
+static void present_at(AVFrame* frame, int width, int height) {
+  present_in(frame, width, height, 0, 0, width, height);
 }
 
 int main(void) {
@@ -64,6 +69,20 @@ int main(void) {
   frame.height = display_height = 2160;
   present_at(&frame, 1280, 720);
   present_at(&frame, 1920, 1080);
+
+  // The stream's size changes in the middle of the stream (#476): the same
+  // window shows a portrait picture between bars at the sides, never
+  // stretched, and the landscape picture fills it again afterwards.
+  frame.width = 720;
+  frame.height = 1280;
+  present_in(&frame, 1920, 1080, 656, 0, 608, 1080);
+  frame.width = 1280;
+  frame.height = 720;
+  present_at(&frame, 1920, 1080);
+  // A landscape picture in a portrait window: bars above and below.
+  present_in(&frame, 1080, 1920, 0, 656, 1080, 608);
+  frame.width = display_width = 3840;
+  frame.height = display_height = 2160;
 
   // A burst replaces the single pending frame, rather than filling a pipe
   // or keeping decoder-owned wrappers. The renderer sees only the newest ID.

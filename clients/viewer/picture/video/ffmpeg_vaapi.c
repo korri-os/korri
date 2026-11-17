@@ -29,6 +29,7 @@
 #include <X11/Xlib.h>
 
 #include "../frame_times.h"
+#include "../place.h"
 #include "vaapi_egl.h"
 
 #define MAX_SURFACES 16
@@ -205,7 +206,7 @@ static VAStatus import_surface(VASurfaceID decoded, VASurfaceID* surface) {
 }
 
 // The decoder's own surface goes to EGL: no second VA display takes part.
-static VAStatus present_egl(AVFrame* dec_frame, Window win, int width, int height) {
+static VAStatus present_egl(AVFrame* dec_frame, Window win, struct picture_place place) {
   VASurfaceID decoded = (VASurfaceID)(uintptr_t)dec_frame->data[3];
   VADRMPRIMESurfaceDescriptor descriptor;
   VAStatus status = vaSyncSurface(device_display(device_ref), decoded);
@@ -216,19 +217,20 @@ static VAStatus present_egl(AVFrame* dec_frame, Window win, int width, int heigh
       VA_EXPORT_SURFACE_READ_ONLY | VA_EXPORT_SURFACE_COMPOSED_LAYERS, &descriptor);
   if (status != VA_STATUS_SUCCESS)
     return status;
-  bool shown = vaapi_egl_present(presentation_x11, win, width, height, &descriptor, dec_frame);
+  bool shown = vaapi_egl_present(presentation_x11, win, place, &descriptor, dec_frame);
   for (uint32_t i = 0; i < descriptor.num_objects; ++i)
     close(descriptor.objects[i].fd);
   if (!shown)
     return VA_STATUS_ERROR_OPERATION_FAILED;
   frame_times_displayed(dec_frame->pts);
+  picture_shown(dec_frame->width, dec_frame->height);
   return VA_STATUS_SUCCESS;
 }
 
-void vaapi_queue(AVFrame* dec_frame, Window win, int width, int height) {
+void vaapi_queue(AVFrame* dec_frame, Window win, struct picture_place place) {
   VAStatus status;
   if (present_through_egl) {
-    status = present_egl(dec_frame, win, width, height);
+    status = present_egl(dec_frame, win, place);
     if (status == VA_STATUS_SUCCESS)
       return;
     goto error;
@@ -252,12 +254,15 @@ void vaapi_queue(AVFrame* dec_frame, Window win, int width, int height) {
   status = import_surface(decoded, &surface);
   if (status != VA_STATUS_SUCCESS)
     goto error;
+  // The driver draws the picture at its place and fills the rest of the
+  // window with black (Mesa's compositor clears what no layer covers).
   status = vaPutSurface(target, surface, win, 0, 0, dec_frame->width,
-      dec_frame->height, 0, 0, width, height, NULL, 0, 0);
+      dec_frame->height, place.x, place.y, place.width, place.height, NULL, 0, 0);
   // Keep the decoded buffer alive until the GPU has finished reading it.
   if (status == VA_STATUS_SUCCESS) {
     put_surface_shown = true;
     frame_times_displayed(dec_frame->pts);
+    picture_shown(dec_frame->width, dec_frame->height);
     status = vaSyncSurface(target, surface);
   } else if (!put_surface_shown) {
     // Intel's drivers present through DRI2, and Xwayland has none (#477).
@@ -266,7 +271,7 @@ void vaapi_queue(AVFrame* dec_frame, Window win, int width, int height) {
         vaErrorStr(status));
     clear_imports();
     present_through_egl = true;
-    status = present_egl(dec_frame, win, width, height);
+    status = present_egl(dec_frame, win, place);
   }
   if (status == VA_STATUS_SUCCESS)
     return;

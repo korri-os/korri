@@ -18,7 +18,11 @@
  */
 
 #include <EGL/egl.h>
+#include <libavutil/frame.h>
+
+#include "../place.h"
 
 void egl_init(EGLNativeDisplayType native_display, NativeWindowType native_window, int display_width, int display_height);
-void egl_draw(uint8_t* image[3]);
+// Korri: draws a YUV 4:2:0 frame of any size at `place`, black around it.
+void egl_draw(const AVFrame* frame, struct picture_place place);
 void egl_destroy();

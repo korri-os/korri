@@ -167,7 +167,7 @@ static EGLImageKHR import(const VADRMPRIMESurfaceDescriptor* picture, const AVFr
   return create_image(display, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, NULL, attributes);
 }
 
-bool vaapi_egl_present(Display* x11, Window window, int window_width, int window_height,
+bool vaapi_egl_present(Display* x11, Window window, struct picture_place place,
     const VADRMPRIMESurfaceDescriptor* picture, const AVFrame* frame) {
   if (!ready) {
     if (display != EGL_NO_DISPLAY)
@@ -181,14 +181,18 @@ bool vaapi_egl_present(Display* x11, Window window, int window_width, int window
   if (image == EGL_NO_IMAGE_KHR)
     return fail("EGL refused the decoded picture");
   image_target_texture(GL_TEXTURE_EXTERNAL_OES, image);
-  // The surface has the coded size. Map the visible part onto the window,
-  // and stop at the centre of its last texel, so that the filter does not
-  // blend the padding in.
+  // The surface has the coded size. Map the visible part onto its place in
+  // the window, and stop at the centre of its last texel, so that the filter
+  // does not blend the padding in.
   glUniform2f(visible_uniform,
       (float)frame->width / picture->width, (float)frame->height / picture->height);
   glUniform2f(last_uniform,
       (frame->width - .5f) / picture->width, (frame->height - .5f) / picture->height);
-  glViewport(0, 0, window_width, window_height);
+  // Black bars around the picture (#476). A clear covers the whole window,
+  // whatever the viewport; OpenGL counts the viewport's rows from the bottom.
+  glClearColor(0.f, 0.f, 0.f, 1.f);
+  glClear(GL_COLOR_BUFFER_BIT);
+  glViewport(place.x, place.window_height - place.y - place.height, place.width, place.height);
   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
   // The decoder reuses the surface when its frame is released.
   glFinish();
