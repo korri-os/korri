@@ -207,6 +207,8 @@ let
         ../viewer/src
         ../../services/korrid/Cargo.toml
         ../../services/korrid/src
+        # The vendored CPace crate (the join's key exchange, ADR 0070).
+        ../../services/korrid/vendor
         ../../services/korrid/examples
         # Producer declaration snapshots that the library includes.
         ../../services/korrid/tests/fixtures/first-party
