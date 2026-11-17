@@ -1,7 +1,7 @@
 # Recovery is twelve words and a QR code on paper
 
-**Owner decision, 2026-11-16.** Design in progress: what the QR code holds,
-and whether the person key is a Korri-only key, are not decided.
+**Owner decision, 2026-11-16.** The QR code holds the 12 words as plain text,
+so any phone camera shows them and the Korri app reads them (ADR 0073).
 
 At setup, Korri shows the person key as 12 recovery words (BIP39, as Nostr's
 NIP-06 uses them) and a QR code of them, for the person to keep on paper. The

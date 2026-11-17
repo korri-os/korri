@@ -28,11 +28,15 @@ A plugin with no publisher signature. Its namespace proves nothing about who mad
 Putting an author's own plugin build on a device without a plugin repository. The device owner still approves it.
 
 **Person key**:
-The Nostr key that identifies one person to Korri. korrid never holds its private half.
-_Avoid_: account, user key, login
+The key that identifies one person to Korri, made from that person's recovery words. It is used only for Korri, never as the person's social Nostr identity. korrid never holds its private half.
+_Avoid_: account, user key, login, npub
+
+**Recovery words**:
+The 12 words, with a QR code of them, from which a person key is made. The person keeps them on paper and needs them only when every owned device is lost.
+_Avoid_: seed, backup phrase, mnemonic
 
 **Person name**:
-The name Korri shows for a person key: the name the person typed during setup, or else the name in their Nostr profile. When neither exists, Korri shows the device's label in place of a person.
+The name Korri shows for a person key: the name the person typed during setup. When there is none, Korri shows the device's label in place of a person.
 _Avoid_: username, display name, nickname
 
 **Device owner**:
