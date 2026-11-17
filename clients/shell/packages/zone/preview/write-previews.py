@@ -42,7 +42,8 @@ DIALOG = '{ shown: true, headline: "Delete save", lines: ["The save on this devi
 BUSY = '{ shown: true, kicker: "Starting", detail: "Waiting for zao to answer", game: "Spelunky", buttons: [{ label: "Cancel", focused: true, lit: true }] }'
 STEPS = '{ shown: true, kicker: "Starting Hollow Knight", game: "Hollow Knight", buttons: [{ label: "Cancel", focused: true, lit: true }], steps: 4, step: 2, step-words: "Step 3 of 4 · Getting the game ready" }'
 PROGRESS = '{ shown: true, kicker: "Downloading FEX rootfs", game: "Hollow Knight", buttons: [{ label: "Cancel", focused: true, lit: true }], meter: true, share: 0.5, figures: "612 MB of 1.2 GB · 6.4 MB/s · 1:30 left" }'
-SAVE_CARDS = '[{ header: "Switch", word: "Bunker", emblem: "link" }]'
+SAVE_CARDS = ('[{ header: "Back up", word: "This key", emblem: "key", foot: "New", foot-kind: "open" }, { header: "Switch", word: "From backup", emblem: "restore" },'
+              ' { header: "Switch", word: "Bunker", emblem: "link" }, { header: "Retired", word: "npub1e7k…7vj20y4z", emblem: "retired" }]')
 PAUSED_ROWS = ('[{ kind: "item", label: "Continue", focused: true, bars: -1 }, { kind: "item", label: "Screen filter", value: "Sharp", value-fact: true, choice: true, bars: -1 },'
                ' { kind: "title", label: "Sound" }, { kind: "range", label: "Volume", value: "60", value-fact: true, choice: true, bars: 60 },'
                ' { kind: "item", label: "Exit", danger: true, bars: -1 }]')
@@ -95,6 +96,7 @@ STATES = {
         ("Continue", '{ label: "Continue", kind: "continue" }'), ("Download", '{ label: "Download 1.5 GB", kind: "download" }')]],
     "atoms/ZoneUnderline": [("Default", f'{centred(f"80 * {A}", f"20 * {A}")} width: 80 * {A}; height: 20 * {A}; run: 19 * {A};', "")],
     "atoms/ZoneVersus": [("Default", f'{centred(f"60 * {A}", f"28 * {A}")} width: 60 * {A}; height: 28 * {A};', "")],
+    "atoms/ZoneQrWell": [("Default", f'{centred("min(parent.width, parent.height) - 16 * " + A, "min(parent.width, parent.height) - 16 * " + A)} width: min(parent.width, parent.height) - 16 * {A}; height: self.width; code: @image-url("../../art/veil-1.png");', 'ground: "savedata";')],
     "atoms/ZoneSignal": [("Wifi", f'{centred("self.natural", f"14 * {A}")} width: self.natural; height: 14 * {A}; signal: {{ shown: true, name: "hummingbird-lake", korri: true, bars: 3, strength: "72%" }};', ""),
                          ("Cut", f'{centred(f"80 * {A}", f"14 * {A}")} width: 80 * {A}; height: 14 * {A}; signal: {{ shown: true, name: "NETGEAR-5G-supercalifragilistic", korri: true, bars: 1, strength: "21%" }};', "")],
     # molecules
@@ -124,8 +126,8 @@ STATES = {
                                 ("Changed", f'x: 8 * {A}; y: 8 * {A}; width: parent.width - 16 * {A}; it: {{ kind: "item", label: "Render scale", value: "2x", value-fact: true, focused: true, choice: true, changed: true, was: "was 4x", bars: -1, holds: true }};', 'ground: "options";'),
                                 ("ChangedNoRoom", f'x: 8 * {A}; y: 8 * {A}; width: parent.width - 16 * {A}; it: {{ kind: "item", label: "Texture filter", value: "Sharp bilinear, integer prescale", value-fact: true, choice: true, changed: true, bars: -1 }};', 'ground: "options";'),
                                 ("Keep", f'x: 8 * {A}; y: 8 * {A}; width: parent.width - 16 * {A}; primary: true; it: {{ kind: "item", label: "Keep 2 changes", value: "This game", value-fact: true, focused: true, choice: true, bars: -1, holds: true }};', 'ground: "options";')],
-    "molecules/ZoneSaveCard": [("Bunker", f'{centred(f"93 * {A}", f"133 * {A}")} width: 93 * {A}; height: 133 * {A}; focused: true; card: {{ header: "Switch", word: "Bunker", emblem: "link" }};', 'ground: "savedata";'),
-                               ("NotAvailable", f'{centred(f"93 * {A}", f"133 * {A}")} width: 93 * {A}; height: 133 * {A}; card: {{ header: "Identity", word: "Not available", emblem: "retired" }};', 'ground: "savedata";')],
+    "molecules/ZoneSaveCard": [("New", f'{centred(f"93 * {A}", f"133 * {A}")} width: 93 * {A}; height: 133 * {A}; focused: true; card: {{ header: "Back up", word: "This key", emblem: "key", foot: "New", foot-kind: "open" }};', 'ground: "savedata";'),
+                               ("Retired", f'{centred(f"93 * {A}", f"133 * {A}")} width: 93 * {A}; height: 133 * {A}; card: {{ header: "Retired", word: "npub1e7k…7vj20y4z", emblem: "retired" }};', 'ground: "savedata";')],
     "molecules/ZoneSectionCard": [("Default", f'{centred(f"8 * {A}", f"90 * {A}")} width: 8 * {A}; height: 90 * {A}; caption: "On zao";', "")],
     "molecules/ZoneTabStrip": [("Games", f'x: 0; y: 0; width: parent.width; height: Tokens.top-h; tabs: {TABS}; tabs-shown: true; hints: {HINTS};', ""),
                                ("FocusedTab", f'x: 0; y: 0; width: parent.width; height: Tokens.top-h; tabs: [{{ label: "Games" }}, {{ label: "Options", active: true, focused: true }}, {{ label: "Save data" }}]; tabs-shown: true; hints: {HINTS};', 'ground: "options";'),
@@ -147,7 +149,9 @@ STATES = {
                                     ("LongChoice", f'x: 40 * {A}; y: (parent.height - self.height) / 2; width: parent.width - 60 * {A}; height: 34 * {A}; it: {{ kind: "item", label: "Mouse mode", value: "Track pad(Natural/Double tap to drag)", value-fact: true, focused: true, choice: true, bars: -1 }};', 'ground: "paused";')],
     "organisms/ZoneRowList": [("Options", f'x: 8 * {A}; y: 8 * {A}; width: parent.width - 16 * {A}; height: parent.height - 16 * {A}; rows: {ROWS};', 'ground: "options";')],
     "organisms/ZoneRunWithRoute": [("Saved", f'x: 8 * {A}; y: 8 * {A}; width: parent.width - 16 * {A}; route: {{ kind: "route", label: "RetroArch mGBA", value: "/nix/store/8n1x2-retroarch-1.19.1", value-fact: true, focused: true, tags: [{{ label: "Saved", kind: "here" }}, {{ label: "This game", kind: "system", korri: true }}] }};', 'ground: "options";')],
-    "organisms/ZoneSaveBand": [("Default", f'{FILL} cards: {SAVE_CARDS}; at: 0; marked: true;', 'ground: "savedata";')],
+    "organisms/ZoneSaveBand": [("Default", f'{FILL} cards: {SAVE_CARDS}; at: 0; marked: true;', 'ground: "savedata";'),
+                               ("Retired", f'{FILL} cards: {SAVE_CARDS}; at: 3; marked: true; retired: [{{ label: "Back up", focused: true, lit: true }}, {{ label: "Delete" }}];', 'ground: "savedata";')],
+    "organisms/ZoneSecretSlab": [("Focused", f'x: 8 * {A}; y: 8 * {A}; width: parent.width - 16 * {A}; height: parent.height - 16 * {A}; focused: true; secret: "ncry ptse c1wn 4zqd 7meh jmmn 4sa8 a2zy u4qm yvdk vr6z 0dxh 47p0 p2b4 nzc3 kx3j";', 'ground: "savedata";')],
     "organisms/ZoneStatusLayer": [("Busy", f'{FILL} busy: {BUSY};', ""), ("Problem", f'{FILL} dialog: {{ shown: true, headline: "Couldn\'t start", korri: true, lines: ["The emulator exited before the game loaded."], title: "Spelunky", buttons: [{{ label: "Dismiss", focused: true }}, {{ label: "Retry" }}] }};', ""),
                                   ("Running", f'{FILL} hud: {{ shown: true, kicker: "Playing on zao", title: "The Legend of Zelda: Oracle of Seasons" }};', ""), ("Progress", f'{FILL} busy: {PROGRESS};', ""), ("Steps", f'{FILL} busy: {STEPS};', "")],
     "organisms/ZoneStepStrip": [("Second", f'x: 0; y: (parent.height - self.height) / 2; width: parent.width; pip: 1;', "")],
@@ -173,7 +177,8 @@ PAGES = {
     "ZoneRunWith": [("Ready", f'{FILL} hints: {HINTS}; foot: {FOOT}; head: {{ shown: true, title: "Wario Land 4", tags: [{{ label: "Ready", kind: "system" }}] }}; rows: [{{ kind: "text", label: "Choose a runner on this device. Launch once does not change saved choices.", label-fact: true }}, {{ kind: "route", label: "RetroArch mGBA", label-fact: true, value: "/nix/store/8n1x2-retroarch-1.19.1", value-fact: true, focused: true, tags: [{{ label: "Saved", kind: "here" }}, {{ label: "System gba", kind: "system", korri: true }}] }}, {{ kind: "buttons", buttons: [{{ label: "Launch once" }}, {{ label: "Remember for this game" }}] }}];', 'ground: "options";')],
     "ZoneStore": [("Results", f'{FILL} hints: {HINTS}; foot: {FOOT}; head: {{ shown: true, title: "PICO-8 BBS" }}; rows: [{{ kind: "title", label: "Search" }}, {{ kind: "item", label: "Search for", value: "cel", value-fact: true, bars: -1 }}, {{ kind: "title", label: "Results" }}, {{ kind: "item", label: "Celeste Classic 2", label-fact: true, value: "PICO-8", value-fact: true, focused: true, bars: -1 }}];', 'ground: "options";')],
     # ZoneLaunchSettings: its states are the views of the LAUNCH SETTINGS scenarios, written by preview/launch-scenarios.ts.
-    "ZoneSaveData": [("Band", f'{FILL} tabs: [{{ label: "Games" }}, {{ label: "Options" }}, {{ label: "Save data", active: true }}]; hints: {HINTS}; foot: {FOOT}; cards: {SAVE_CARDS}; marked: true;', 'ground: "savedata";')],
+    "ZoneSaveData": [("Band", f'{FILL} tabs: [{{ label: "Games" }}, {{ label: "Options" }}, {{ label: "Save data", active: true }}]; hints: {HINTS}; foot: {FOOT}; cards: {SAVE_CARDS}; marked: true;', 'ground: "savedata";'),
+                     ("Backup", f'{FILL} tabs: [{{ label: "Games" }}, {{ label: "Options" }}, {{ label: "Save data", active: true }}]; hints: {HINTS}; foot: {FOOT}; qr-shown: true; qr: @image-url("../art/veil-1.png"); secret: "ncry ptse c1wn 4zqd 7meh jmmn 4sa8 a2zy"; slab-focused: true;', 'ground: "savedata";')],
     "ZoneOnboarding": [("Controllers", f'{FILL} hints: {HINTS}; banner: "Controllers"; pip: 0; seats: [{{ seat: "1P", name: "Xbox Wireless Controller", heard: true, focused: true }}, {{ seat: "2P", name: "8BitDo Pro 2", heard: true }}]; versus: true; seat-name: "Xbox Wireless Controller"; next: {{ label: "Next", lit: true }};', ""),
                        ("Identity", f'{FILL} hints: {HINTS}; banner: "Identity"; pip: 3; new-save: {{ shown: true, focused: true }}; next: {{ label: "Finish", disabled: true }};', "")],
     "ZonePaused": [("Default", f'{FILL} rows: {PAUSED_ROWS}; hints: {HINTS};', 'ground: "paused";'),

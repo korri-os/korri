@@ -11,8 +11,8 @@
  *    Pico's own cursor (src/native/focus.ts); confirm as the focused
  *    control's press;
  *  - turns Pico's requests into Korri's (`SurfaceRequest`), and answers the
- *    one that was Pico's host's own: the idle wait is kept by the shell's
- *    `Tick` (contract A1, 7.1);
+ *    two that were Pico's host's own: a QR code is drawn here, and the idle
+ *    wait is kept by the shell's `Tick` (contract A1, 7.1);
  *  - keeps the catalog window on what Pico shows: Find's query, section and
  *    order go to Korri as `MoveCatalog`, the window follows the cursor with
  *    `Around`, and the game under the cursor is reported with `FocusGame`.
@@ -48,6 +48,7 @@ import { memo, share } from "./memo"
 import { type Direction, type FocusPlan, moveFocus, resolveExits, settleFocus, type Target } from "./focus"
 import { cartView, type CartView, flatEntry, HINT_A, HINT_B, HINT_LEFT, HINT_RIGHT, type HintView } from "./kit"
 import { launchScreen, settingsScreen } from "./panel"
+import { qrPath } from "./qr"
 import { overlayScreen, runnerScreen } from "./sheet"
 import { setupScreen } from "./setup"
 import { storeScreen } from "./store"
@@ -99,7 +100,7 @@ interface Step {
 
 // ---- Requests ----
 
-/** Pico's request as Korri's. Pico's own (a wait) answers here. */
+/** Pico's request as Korri's. Pico's own two (a QR code, a wait) answer here. */
 function korriRequest(request: PicoRequest, s: State): SurfaceRequest | undefined {
   switch (request._tag) {
     case "LaunchGame":
@@ -109,6 +110,7 @@ function korriRequest(request: PicoRequest, s: State): SurfaceRequest | undefine
     case "ChooseFont":
     case "RememberFont":
       return { _tag: "RememberPreference", key: PICO_FONT_KEY, value: request.font }
+    case "RenderQr":
     case "Wait":
       return undefined
     default:
@@ -125,6 +127,15 @@ function deliver(step: Step, dispatch: Dispatch, korri: KorriModel): Step {
   const answer = (picoRequests: readonly PicoRequest[], to: "nav" | "setup" | "overlay"): void => {
     for (const request of picoRequests) {
       if (request._tag === "ChooseFont") state = { ...state, font: request.font }
+      if (request._tag === "RenderQr") {
+        // Drawn by main.slint from the module grid; the program only needs
+        // to know the code exists, so it hears back at once.
+        const reply = { _tag: "RenderedQr" as const, text: request.text, dataUrl: qrPath(request.text) === undefined ? "" : "drawn" }
+        const next = deliver({ state, requests: [] }, to === "setup" ? { to: "setup", message: reply } : { to: "nav", message: reply }, korri)
+        state = next.state
+        requests.push(...next.requests)
+        continue
+      }
       if (request._tag === "Wait") {
         // A notice's 8 s is drawn by main.slint and ended by the next press;
         // a range's commit wait ends at once (see `deliverOverlay`).

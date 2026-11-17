@@ -19,6 +19,7 @@ import type { SurfaceModel } from "../../../../../contracts/generated/surface"
 import { launchCursor, launchListEntry, launchPlan } from "./plan/launch-settings"
 import { buttonRow, dialogButtons, tabsPlan, type ZoneScreen } from "./plan/screen"
 import { dialogKey, dialogRoom, dialogWindow, dialogWords } from "./plan/dialog-words"
+import { planSaveData } from "./plan/save-data"
 import { topLayer, ZONE_TABS } from "./state/navigation"
 import { zoneShown, type ZoneShown, type ZoneSurfaceState } from "./state/surface"
 
@@ -144,7 +145,7 @@ const hasTargets = (value: unknown): boolean => {
  * the foot) never hold an entry with `focused`, and walking them cost most
  * of a view call in QuickJS.
  */
-const FOCUS_KEYS = ["tabs", "cardMarks", "actions", "find", "get", "optsRows", "keyboard", "dialog", "busy", "saveCards", "seats", "next", "newSave", "rows", "keep"] as const
+const FOCUS_KEYS = ["tabs", "cardMarks", "actions", "find", "get", "optsRows", "keyboard", "dialog", "busy", "saveCards", "retired", "slab", "seats", "next", "newSave", "rows", "keep"] as const
 
 /** The layers .slint draws only while shown (main.slint, ZoneGames, ZoneStatusLayer: each under `if ….shown`). */
 const HIDDEN_WHOLE = ["keyboard", "dialog", "busy", "hud", "launchCard", "tally"] as const
@@ -175,6 +176,7 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
   // ---- The plan's decisions .slint draws ----
   const activeTab = Math.max(0, ZONE_TABS.indexOf(nav.tab))
   const tabs = tabsPlan(ZONE_TABS.map(tab => (raw.tabs as Btnish[])[ZONE_TABS.indexOf(tab)]?.label ?? ""), activeTab, screen)
+  const bodyH = screen.height - screen.topH - screen.footH
   view.screen = {
     a,
     wArt: screen.wArt,
@@ -183,8 +185,10 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
     tall: screen.select.strips === "tall",
     stripLevel: ["inline", "tight", "keys", "stacked"].indexOf(screen.top.level),
     tabsWrap: tabs.wraps,
+    saveBeside: planSaveData(screen.width, bodyH).slab === "beside",
   }
   view.actions = lines(raw.actions as Btnish[], screen.width, c1, screen)
+  view.retired = lines(raw.retired as Btnish[], screen.width, c1, screen)
   const dialog = raw.dialog as Json & { buttons: Btnish[]; headline: string; korri: boolean; lines: string[]; title: string }
   const planned = dialogButtons(dialog.buttons.map(button => button.label), screen)
   // The headline and Korri's lines: the window of them that fits between the
@@ -254,7 +258,12 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
     // Cards out of ZoneCardBand's reach keep `focused`: they are targets not drawn yet (the band brings
     // each in as the cursor nears it), and each keeps its place among the band's entries.
   }
-  if (page !== "savedata") hide("saveCards")
+  const qr = view.qrShown === true
+  if (page !== "savedata" || qr) {
+    hide("saveCards")
+    hide("retired")
+  }
+  if (page !== "savedata" || !qr) hide("slab")
   if (page !== "onboarding") {
     for (const key of ["seats", "next", "newSave"]) hide(key)
   } else {
@@ -287,6 +296,8 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
   if (!hidden.has("dialog")) view.dialog = regionOf(view.dialog, "dialog")
   if (!hidden.has("busy")) view.busy = regionOf(view.busy, "busy")
   if (!hidden.has("saveCards")) view.saveCards = byIndex(regionOf(view.saveCards, "saves"), raw.saveFocus)
+  if (!hidden.has("retired")) view.retired = regionOf(view.retired, "retired")
+  if (!hidden.has("slab")) view.slab = regionOf(view.slab, "secret")
   if (!hidden.has("seats")) view.seats = regionOf(view.seats, "seats")
   if (!hidden.has("next")) view.next = regionOf(view.next, "next")
   if (!hidden.has("newSave")) view.newSave = regionOf(view.newSave, "save")
@@ -363,10 +374,16 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
         plan.tabs = present("rows") ? { down: { to: "list", entry: "active" } } : {}
         plan.list = { up: { to: "tabs", entry: "active" } }
         break
-      case "savedata":
-        plan.tabs = { down: { to: "saves", entry: "active" } }
-        plan.saves = { up: { to: "tabs", entry: "active" } }
+      case "savedata": {
+        const secret = present("slab") || (view.qrShown === true)
+        plan.tabs = secret ? { down: { to: "secret", entry: "first" } } : { down: { to: "saves", entry: "active" } }
+        if (secret) plan.secret = { up: { to: "tabs", entry: "active" } }
+        else {
+          plan.saves = { up: { to: "tabs", entry: "active" }, ...(present("retired") ? { down: { to: "retired", entry: "first" } } : {}) }
+          if (present("retired")) plan.retired = { up: { to: "saves", entry: "active" } }
+        }
         break
+      }
       case "runwith":
       case "store": {
         const rows = (view.rows as Json[]).map((entry, index) => (hasTargets(entry) ? index : -1)).filter(index => index >= 0)
@@ -432,6 +449,8 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
   // SAVE DATA's and first boot's parts, on a page that is neither (main.slint draws them only there).
   if (page !== "savedata" && page !== "onboarding" && "saveCards" in view) {
     view.saveCards = []
+    view.retired = []
+    view.slab = NOTHING
     view.seats = []
     view.next = NOTHING
     view.newSave = NOTHING

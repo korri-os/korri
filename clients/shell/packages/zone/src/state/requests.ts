@@ -14,12 +14,21 @@ export type ZoneRequest =
   | { readonly _tag: "RunAction"; readonly actionId: string }
   | { readonly _tag: "ChangeSetting"; readonly settingId: string; readonly value: string }
   | { readonly _tag: "DismissSettingsProblem" }
+  | { readonly _tag: "ExportIdentityBackup"; readonly password: string; readonly retiredPublicKey?: string }
+  | {
+      readonly _tag: "SwitchIdentityFromBackup"
+      readonly encryptedSecret: string
+      readonly password: string
+      readonly disposition: SurfaceIdentityDisposition
+      readonly trustLossConfirmed: boolean
+    }
   | {
       readonly _tag: "SwitchIdentityToNip46"
       readonly bunkerUri: string
       readonly disposition: SurfaceIdentityDisposition
       readonly trustLossConfirmed: boolean
     }
+  | { readonly _tag: "DeleteRetiredIdentity"; readonly publicKey: string; readonly backupConfirmed: boolean }
   | { readonly _tag: "DismissIdentityStatus" }
   | { readonly _tag: "RunGameAction"; readonly gameId: string; readonly actionId: string }
   | { readonly _tag: "InvokeGameplayControl"; readonly controlId: string; readonly value?: SurfaceGameplayControlValue }

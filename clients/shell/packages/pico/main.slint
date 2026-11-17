@@ -139,7 +139,7 @@ export component Surface inherits Window {
             if page == "settings" : PicoSettings {  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; panel: panel; card: card; editor: editor; identity: identity; mode: mode; }
             if page == "launch" : PicoLaunchSettings {  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; panel: panel; card: card; editor: editor; identity: identity; mode: mode; }
             if page == "store" : PicoStore {  dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; store: store; card: card; editor: editor; mode: mode; }
-            if page == "setup" : PicoOnboarding {  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; setup: setup; editor: editor; mode: mode; }
+            if page == "setup" : PicoOnboarding {  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; setup: setup; editor: editor; identity: identity; mode: mode; }
             if page == "runner" : PicoRunnerPicker {  activated(target, at, released) => { root.activated(target, at, released); }  sheet: sheet; }
             if attract.shown : PicoAttract { activated(target, at, released) => { root.activated(target, at, released); }  attract: attract; }
             if !split.on && notices.length > 0 : PicoInviteNotices { notices: notices; round: notice-round; }
