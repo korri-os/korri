@@ -13,6 +13,16 @@ as well." Under ADR 0021 the phone was the arbiter for every device. A join
 needed the phone, Amber, and a relay that both could reach. Joins failed in
 ways the owner could not see (issue #434, D12).
 
+Vouches and removals are public on Nostr relays and hold only keys and dates,
+no device names (owner decision, 2026-11-16). A peer checks them with no
+shared secret, and a removal reaches every device the same way. Anyone who
+knows the person's public key can see how many devices they own and when
+each joined or left. That is the accepted cost. Encrypting the record would
+need a group key, and a mistake in it could hide a removal from a device.
+
+This design covers one person's own devices. Household members and guests
+(issue #178) are designed separately.
+
 ## Considered options
 
 - **Keep the phone as the only key holder and fix the experience.** Least
