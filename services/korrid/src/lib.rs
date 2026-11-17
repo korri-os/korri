@@ -68,6 +68,7 @@ pub mod play_log;
 pub mod plugin_admin;
 pub mod plugin_repositories;
 pub mod plugin_secrets;
+pub mod recovery_words;
 pub mod relay;
 pub mod remote_signer;
 mod rename;

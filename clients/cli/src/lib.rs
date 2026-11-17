@@ -16,6 +16,7 @@ pub mod plugin_sideload;
 pub mod plugins;
 mod private_terminal;
 pub mod prompt;
+pub mod recovery_qr;
 pub mod saves;
 mod settings_input;
 pub mod setup;
