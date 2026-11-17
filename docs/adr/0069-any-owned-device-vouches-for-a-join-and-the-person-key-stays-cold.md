@@ -1,7 +1,7 @@
 # Any owned device vouches for a join, and the person key stays cold
 
-**Owner decision, 2026-11-16.** Supersedes ADR 0021. No device keeps the person key after setup
-(ADR 0082).
+**Owner decision, 2026-11-16.** Supersedes ADR 0021. No device keeps the
+person key after setup (ADR 0082).
 
 Any device the person already owns can approve a join. It vouches for the new
 device with its own device key. The person key no longer signs each join. It
@@ -12,7 +12,8 @@ A vouch is the owner statement that a person key signs today (kind 30078,
 with the device and its status), signed instead by the vouching device's key.
 It adds two things: the person key it belongs to, and the id of the voucher's
 own owner statement or vouch. A peer follows that chain back to a statement
-that the person key signed (owner decision, 2026-11-16).
+that the person key signed (owner decision, 2026-11-16). How the two
+additions are written is not decided.
 
 The owner's reason: "If you and I, as the developer and product owner, are
 having trouble with this scenario, the standard user is going to face problems
@@ -20,8 +21,8 @@ as well." Under ADR 0021 the phone was the arbiter for every device. A join
 needed the phone, Amber, and a relay that both could reach. Joins failed in
 ways the owner could not see (issue #434, D12).
 
-Vouches and removals are public on Nostr relays and hold only keys and dates,
-no device names (owner decision, 2026-11-16). A peer checks them with no
+Vouches and removals are public on Nostr relays and hold keys, dates and
+statement ids, no device names (owner decision, 2026-11-16). A peer checks them with no
 shared secret, and a removal reaches every device the same way. Anyone who
 knows the person's public key can see how many devices they own and when
 each joined or left. That is the accepted cost. Encrypting them would

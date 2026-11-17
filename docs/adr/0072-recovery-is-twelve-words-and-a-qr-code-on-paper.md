@@ -8,11 +8,12 @@ QR code holds the 12 words as plain text, so any phone camera shows them. The
 words have no extra passphrase, and after setup they are the only copy of the
 person key (ADR 0082).
 
-The person needs them to undo a removal or an admission (ADRs 0071 and 0075)
-and when every owned device is lost. A family member made on another person's
-device also needs them to set up their first own device (ADR 0079). For
-everything else, any one surviving device vouches for new
-devices and removes lost ones (ADRs 0069 and 0071).
+The person needs them to undo a removal or an admission (ADRs 0071 and 0075),
+to move a device off its automatic identity (ADR 0082), and when every owned
+device is lost. A family member made on another person's device also needs
+them to set up their first own device (ADR 0079). For everything else, any one
+surviving device vouches for new devices and removes lost ones (ADRs 0069 and
+0071).
 
 ## Considered options
 
