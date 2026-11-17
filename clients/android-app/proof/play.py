@@ -64,7 +64,9 @@ The steps:
    korrid's applies turns Android's soft keyboard over, served to
    NativeActivity's own view (`dumpsys input_method`); with it shown, a tap
    on one of its letters reaches the sender's Sunshine as a key; the last
-   apply hides it.
+   apply hides it. Mouse mode, then: korrid's apply of the gaming track pad
+   (3) makes a swipe a relative mouse move at the sender, disabled (4) makes
+   a tap send nothing, and multi-touch (0) makes it a touch again.
 9. Home leaves the app: the runtime stops and korrid reads Stopped, and the
    keyboard's focus goes back. Starting the app again lets korrid's
    recovery start the stream again.
@@ -136,6 +138,10 @@ FILL = "set-fill-mode"
 FLIP = "set-face-button-flip"
 RUMBLE = "set-rumble"
 KEYBOARD = "toggle-keyboard"
+MOUSE = "set-mouse-mode"
+# `R.array.mouse_mode_names`, by index.
+MOUSE_MODES = ["Multi touch", "Absolute touch", "Track pad(Natural/Double tap to drag)",
+               "Track pad(Gaming/Long press to drag)", "Disabled", "Absolute touch (left/right click swapped)"]
 # Toggle keyboard: the app's line, and the viewer library's (soft_keyboard.rs).
 KEYBOARD_RAN = "korri-app: viewer control toggle-keyboard ran"
 KEYBOARD_TOGGLED = "keyboard: the soft keyboard toggled; the stream's view has the focus"
@@ -431,6 +437,22 @@ def input_method(emulator: "d8.Emulator", out: Path, name: str) -> dict:
     served = re.search(r"^\s*mServedView=(\S+)", text, re.M)
     return {"shown": None if shown is None else shown.group(1) == "true",
             "served": None if served is None else served.group(1)}
+
+
+def keyboard_drawn(surfaceflinger: str) -> dict:
+    """Whether SurfaceFlinger shows the input method's keyboard: its insets leash not hidden (flag 0x1)
+    and its window's layer visible somewhere on the display."""
+    leash, rects = None, None
+    for block in surfaceflinger.split("\n+ "):
+        head = block.splitlines()[0] if block else ""
+        if "InputMethod" in head and "insets_animation" in head:
+            flags = re.search(r"\bflags=(0x[0-9a-f]+)", block)
+            leash = None if flags is None else int(flags.group(1), 16)
+        if head.startswith("BufferStateLayer (InputMethod#"):
+            region = re.search(r"Region VisibleRegion \(this=\w+ count=(\d+)\)", block)
+            rects = None if region is None else int(region.group(1))
+    return {"leash_flags": leash, "visible_rects": rects,
+            "drawn": leash is not None and leash & 0x1 == 0 and bool(rects)}
 
 
 def keyboard_keys(emulator: "d8.Emulator", out: Path) -> "list[int] | None":
@@ -799,13 +821,17 @@ def controls(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
     steps["listed"] = listed
     prefix = f"viewer:{launch}:"
     # No controller that can rumble takes part, so Rumble is not offered. On a
-    # touch screen Toggle keyboard is, a command first in Artemis's order.
-    expected = {KEYBOARD, FILL, FLIP} if touchscreen(emulator) else {FILL, FLIP}
+    # touch screen Toggle keyboard is, a command first in Artemis's order, and
+    # Mouse mode, a choice after Crop to fill.
+    expected = {KEYBOARD, FILL, MOUSE, FLIP} if touchscreen(emulator) else {FILL, FLIP}
     steps["expected"] = sorted(expected)
     checks["korrids_snapshot_lists_the_controls"] = (
         set(listed) == expected
         and all(c["id"].startswith(prefix) for c in listed.values())
-        and all(c["kind"] == "toggle" and c["value"] is False for name, c in listed.items() if name != KEYBOARD)
+        and all(c["kind"] == "toggle" and c["value"] is False for name, c in listed.items()
+                if name not in (KEYBOARD, MOUSE))
+        and (MOUSE not in listed or (listed[MOUSE]["kind"] == "choice" and listed[MOUSE]["value"] == "0"
+                                     and listed[MOUSE]["label"] == "Mouse mode"))
         and (KEYBOARD not in listed
              or (listed[KEYBOARD]["kind"] == "command" and listed[KEYBOARD]["label"] == "Toggle keyboard"
                  and next(iter(listed)) == KEYBOARD))
@@ -922,8 +948,9 @@ def keyboard(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
         if states[-1]["shown"] is True:
             keys = keyboard_keys(emulator, out)
             # The record of the shown keyboard: its layers and the insets that the window manager controls.
-            (out / "surfaceflinger-keyboard.txt").write_text(
-                emulator.shell("dumpsys SurfaceFlinger", check=False).stdout)
+            layers = emulator.shell("dumpsys SurfaceFlinger", check=False).stdout
+            (out / "surfaceflinger-keyboard.txt").write_text(layers)
+            steps["drawn"] = keyboard_drawn(layers)
             (out / "window-insets-keyboard.txt").write_text(emulator.shell("dumpsys window", check=False).stdout)
         steps["keyboard_keys"] = keys
         steps["key_taps"] = []
@@ -951,6 +978,8 @@ def keyboard(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
             all(answer == "ok" for answer in applies)
             and all(a["shown"] is not None and b["shown"] is (not a["shown"]) for a, b in zip(states, states[1:]))
             and all(NATIVE_VIEW in (state["served"] or "") for state in states[1:]))
+        # The input method shown is not enough: Android 12 draws it only once the window shows its leash.
+        checks["the_shown_keyboard_is_drawn"] = steps.get("drawn", {}).get("drawn") is True
         # Windows virtual keys of the letters, A to Z.
         checks["a_letter_of_the_soft_keyboard_reaches_the_sender"] = any(0x41 <= code <= 0x5A for code in codes)
         checks["toggled_again_the_keyboard_hides"] = states[-1]["shown"] is False
@@ -961,6 +990,53 @@ def keyboard(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
     steps["snapshot_after"] = after
     checks["toggle_keyboard_changes_no_value"] = after.get(KEYBOARD, {}).get("kind") == "command" \
         and after.get(FILL, {}).get("value") is False and after.get(FLIP, {}).get("value") is False
+    return steps, checks
+
+
+def mouse_mode(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.Remote", out: Path,
+               launch: str, snapshot: "dict | None") -> tuple[dict, dict]:
+    """Mouse mode (#434, toward D7′): korrid's apply of each choice changes what the touch screen sends.
+    The gaming track pad (3) sends relative mouse moves, disabled (4) sends nothing, multi-touch (0) a touch,
+    or on a host that takes none, as this sender, Artemis's absolute mouse."""
+    steps: dict = {}
+    checks: dict = {}
+    sender.request("clock")
+    control = next((c for c in (snapshot or {}).get("controls", []) if c["id"].endswith(":" + MOUSE)), None)
+    options = (control or {}).get("interaction", {}).get("options", [])
+    checks["korrid_offers_mouse_mode_with_artemis_six_modes"] = control is not None \
+        and [o.get("label") for o in options] == MOUSE_MODES \
+        and [o.get("value") for o in options] == [str(i) for i in range(6)]
+    if control is None:
+        return steps, checks
+    # Across the middle of the fitted picture (FITTED), and a tap there.
+    swipe, tap_at = "input swipe 900 540 1300 600 300", "input tap 1200 540"
+
+    def choose(value: str) -> bool:
+        mark = logcat.mark()
+        answer = proof_apply(emulator, logcat, launch, control["id"], f"choice {value}")
+        took = logcat.wait_for(f"korri-app: viewer control {MOUSE} is {value}", mark, 5) is not None
+        steps[f"apply_{value}"] = answer
+        return answer == "ok" and took
+
+    def after(command: str) -> list[str]:
+        before = len(sender_packets(sender))
+        emulator.shell(command)
+        time.sleep(3)
+        return [p["kind"] for p in sender_packets(sender)[before:]]
+
+    checks["korrids_apply_sets_the_gaming_track_pad"] = choose("3")
+    steps["gaming_swipe"] = after(swipe)
+    checks["the_gaming_track_pad_moves_the_mouse_relatively"] = "relative mouse move" in steps["gaming_swipe"] \
+        and not {"touch", "absolute mouse move"} & set(steps["gaming_swipe"])
+    shown = toggles(proof_snapshot(emulator, logcat, launch)).get(MOUSE, {})
+    checks["korrids_snapshot_shows_the_gaming_track_pad"] = shown.get("value") == "3"
+    checks["korrids_apply_turns_touch_off"] = choose("4")
+    steps["disabled_tap"] = after(tap_at)
+    checks["with_touch_off_a_tap_sends_nothing"] = not steps["disabled_tap"]
+    checks["korrids_apply_sets_multi_touch_again"] = choose("0")
+    steps["multi_touch_tap"] = after(tap_at)
+    # The fixture's Sunshine takes no touch, so multi-touch falls back to Artemis's absolute mouse.
+    checks["multi_touch_sends_its_tap_again"] = bool({"touch", "absolute mouse move"} & set(steps["multi_touch_tap"]))
     return steps, checks
 
 
@@ -1107,12 +1183,16 @@ def overlay(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.
         found = words(out / "overlay-controls.png")
         steps["overlay_controls_lines"] = lines(found)
         crop = phrase(found, "Crop to fill")
-    checks["the_overlay_shows_the_streams_controls"] = crop is not None and phrase(found, "Flip") is not None
+    # On a touch screen Toggle keyboard is the first stream control, above Crop to fill, and Mouse mode
+    # follows it, which takes Flip A/B and X/Y below the overlay's last row.
+    touch = touchscreen(emulator)
+    steps["toggle_keyboard_row"] = phrase(found, "Toggle keyboard")
+    checks["the_overlay_shows_the_streams_controls"] = crop is not None and (
+        steps["toggle_keyboard_row"] is not None and phrase(found, "Mouse mode") is not None if touch
+        else phrase(found, "Flip") is not None)
     steps["crop_to_fill_row"] = crop
     steps["chosen_by"] = "touch" if crop is not None else "keys"
-    # On a touch screen Toggle keyboard is the first stream control, above Crop to fill.
-    steps["toggle_keyboard_row"] = phrase(found, "Toggle keyboard")
-    below = 1 if touchscreen(emulator) else 0
+    below = 1 if touch else 0
 
     before = video_layer(emulator, out, "overlay-fit")
     viewer_proof.screenshot(emulator, out / "overlay-fit.png")
@@ -1415,6 +1495,12 @@ def main() -> int:
         steps["input"] = {"keyboard_codes_after_marker": after,
                           "kinds": sorted({p["kind"] for p in packets})}
         checks["keys_reach_the_sender"] = all(code in after for code in KEYS.values())
+        # While the stream plays, its own view holds the focus, as Artemis's does: a hardware letter key
+        # reaches the stream and summons no input method for Slint's text view.
+        steps["input_method_after_keys"] = input_method(emulator, out, "after-keys")
+        checks["letter_keys_in_the_stream_summon_no_keyboard"] = \
+            steps["input_method_after_keys"]["shown"] is False \
+            and NATIVE_VIEW in (steps["input_method_after_keys"]["served"] or "")
         checks["a_touch_reaches_the_sender"] = any(p["kind"] in ("touch", "absolute mouse move") for p in packets)
 
         log("the stream's controls and status (D11): korrid's snapshot and apply")
@@ -1425,6 +1511,11 @@ def main() -> int:
         steps["keyboard"], keyboard_checks = keyboard(
             emulator, logcat, sender, out, launch, steps["controls"].get("listed") or {})
         checks.update(keyboard_checks)
+
+        log("Mouse mode: the touch screen as a track pad, off, and multi-touch again")
+        steps["mouse_mode"], mouse_checks = mouse_mode(
+            emulator, logcat, sender, out, launch, steps["controls"].get("snapshot"))
+        checks.update(mouse_checks)
 
         log("Home: leaving the app ends the stream")
         home_mark = logcat.mark()

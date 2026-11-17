@@ -31,7 +31,7 @@ nix run .#android-app-resize-proof -- --build-store auto --sunshine PACKAGE  # #
 | O1 | The new app installs side by side with the Artemis app, under its own package name. | Package `com.simonwjackson.korri.app`, label "Korri (native)". It is a separate federation device with its own korrid state. It does not answer the HOME intent; the Artemis app keeps that. |
 | O2 | korrid runs only while the app is open, with no foreground service yet. | korrid starts once per process and lives as long as the process. No service keeps the process alive in the background: Android can freeze or end it there, and nothing restarts korrid until a person opens the app (the Artemis app's `START_REDELIVER_INTENT` has no equivalent). |
 | O3 | Local Android games stay, with androidx `FileProvider` bundled unchanged. | Not in D8. Slice D13 (below) brings them; `FileProvider` then needs a third-party dex and `hasCode="true"`. |
-| O4 | The stream controls come in D11: carry every control and status item that the Artemis app reports to korrid. | D11 (below) carries 3 of Artemis's 13 controls (Crop to fill, Flip A/B and X/Y, Rumble), the battery and the health; Toggle keyboard came after it. The other 9 are missing, because the Rust viewer lacks what each needs (`clients/viewer/README.md`, slice D11): Full keyboard, Pan & zoom, Mouse mode, Touch sensitivity, Keyboard as controller, Toggle local cursor, SGSR sharpness, SGSR edge threshold, Picture-in-picture. They gate D7′. |
+| O4 | The stream controls come in D11: carry every control and status item that the Artemis app reports to korrid. | D11 (below) carries 3 of Artemis's 13 controls (Crop to fill, Flip A/B and X/Y, Rumble), the battery and the health; Toggle keyboard and Mouse mode came after it. The other 8 are missing, because the Rust viewer lacks what each needs (`clients/viewer/README.md`, slice D11): Full keyboard, Pan & zoom, Touch sensitivity, Keyboard as controller, Toggle local cursor, SGSR sharpness, SGSR edge threshold, Picture-in-picture. They gate D7′. |
 
 ## What runs
 
@@ -496,7 +496,7 @@ controls, their source in Artemis, and the ones it cannot carry). Here:
 | --- | --- |
 | Attach | When a stream starts, the loop thread attaches its controls to the runtime's lifecycle (`Lifecycle::controls`), with the viewer's readings (`korri_viewer::status::readings`: the battery through JNI, the decoder's health, the core's round trip). The activity's number is the controls' lease |
 | `snapshot` | The treaty's Snapshot, on a thread of korrid's blocking pool (the readings go into Android), as Apply's request; its health sample is dated in korrid's clock without losing its age (`ViewerSnapshot::date_sample`, the rule of korrid's Java adapter, now shared). The log names each snapshot whose controls changed: `korri-app: viewer snapshot for korrid: LAUNCH {…}` |
-| `apply` | The treaty's Apply (`korri-app: viewer request {…Apply…}` and its reply). The loop thread performs the change at its next tick: Crop to fill moves the video layer and counts, and answers, only once Android's main thread has applied the transaction (one that it did not apply is undone), then moves the input's map; Flip A/B and X/Y changes the controllers' mapping; Rumble goes to the controllers' feedback thread (D4b's), and is offered only while a controller that can rumble is in the stream. Each logs `korri-app: viewer control EFFECT is VALUE`. Toggle keyboard (a command, offered on a touch screen) answers once Android's main thread has given NativeActivity's view the focus and called `toggleSoftInput` (`korri_viewer::soft_keyboard`), and logs `korri-app: viewer control toggle-keyboard ran`; when the stream ends, the keyboard hides and the view gives the focus back |
+| `apply` | The treaty's Apply (`korri-app: viewer request {…Apply…}` and its reply). The loop thread performs the change at its next tick: Crop to fill moves the video layer and counts, and answers, only once Android's main thread has applied the transaction (one that it did not apply is undone), then moves the input's map; Flip A/B and X/Y changes the controllers' mapping; Rumble goes to the controllers' feedback thread (D4b's), and is offered only while a controller that can rumble is in the stream. Each logs `korri-app: viewer control EFFECT is VALUE`. Toggle keyboard (a command, offered on a touch screen) answers once Android's main thread has given NativeActivity's view the focus and called `toggleSoftInput` (`korri_viewer::soft_keyboard`), and logs `korri-app: viewer control toggle-keyboard ran`; NativeActivity's view holds the focus while a stream plays, and when the stream ends the keyboard hides and the view gives the focus back. Mouse mode (a choice, offered on a touch screen) changes the touch screen's mapping and logs `korri-app: viewer control set-mouse-mode is N` |
 
 korrid's own callers:
 
@@ -526,18 +526,29 @@ health; Crop to fill on moves the video layer (the app's log, SurfaceFlinger's
 crop, a screenshot) and korrid reads it On; a stale control is refused; Off
 fits the picture again. Records: `proof/android-app-d11/`.
 
-Toggle keyboard (toward D7′) runs next in the same proof, through the same
-trigger (`apply LAUNCH CONTROL none`): each apply must turn the input
-method's keyboard over, served to NativeActivity's view (`dumpsys
-input_method`); with it shown, a tap in the middle of its letters must reach
-the sender's Sunshine as a letter key; the last apply hides it; and after
-Home the app logs that the view gave the focus back. On the emulator's touch
-screen the snapshot lists it first, so the overlay step's D-pad path takes
-one more step down to Crop to fill. Records: `proof/android-app-keyboard/`,
-104 of 105 checks: everything up to the input method's state passes, and
-**the keyboard is never drawn**, so no letter reaches the sender. The IME's
-insets leash, which the app's window controls, stays hidden in
-SurfaceFlinger; it does the same for Slint's text view. Cause not known.
+Toggle keyboard and Mouse mode (toward D7′) run next in the same proof,
+through the same trigger. Toggle keyboard (`apply LAUNCH CONTROL none`):
+each apply must turn the input method's keyboard over, served to
+NativeActivity's view (`dumpsys input_method`); shown, it must be drawn (the
+IME's insets leash shown in SurfaceFlinger), and a tap in the middle of its
+letters must reach the sender's Sunshine as a letter key; the last apply
+hides it; after Home the app logs that the view gave the focus back. A
+hardware letter key in the stream must summon no input method. Mouse mode
+(`apply LAUNCH CONTROL choice N`): with the gaming track pad (3) a swipe is
+relative mouse moves at the sender, disabled (4) a tap sends nothing, and
+multi-touch (0) sends it again. On the emulator's touch screen both are
+listed, Toggle keyboard first, so the overlay step's D-pad path takes one
+more step down to Crop to fill. Records: `proof/android-app-keyboard/`, 115 of
+115 checks.
+
+Why the keyboard was never drawn before (`proof/android-app-ime/`): Slint's
+helper sets a `WindowInsetsAnimation.Callback` on its text view, and with one
+Android 12 runs the keyboard's insets animation on the UI thread, where in
+this NativeActivity window the IME's leash stays hidden (Slint's issue
+#11791). The host takes every such callback off the window's views at each
+resume and focus, and the Toggle keyboard control before each toggle
+(`korri_viewer::soft_keyboard::without_insets_animations`). The same holds
+for the shell's own text fields, which this proof did not try.
 
 ## korrid's resize request (#476 Route C, slices 2 and 3)
 
@@ -1046,7 +1057,7 @@ connect.
 | D9 | Done: the holder proof above, and the TLS verifier's classes |
 | D10 | Done: the Rust viewer, driven by korrid, on the shell's loop (above) |
 | D5b | Done: Korri's gameplay overlay through `Overlay` (above), proven on the emulator (`proof/android-app-d5b/`). "Open Korri" (Background) is not carried yet; the camera cutout came with #494 |
-| D11 | Done in part: 4 of Artemis's 13 stream controls (Toggle keyboard, Crop to fill, Flip A/B and X/Y, Rumble), the battery and the health, through the treaty (above); shown and applied in the gameplay overlay since D5b. Missing, and gating D7′: Full keyboard, Pan & zoom, Mouse mode, Touch sensitivity, Keyboard as controller, Toggle local cursor, SGSR sharpness, SGSR edge threshold, Picture-in-picture |
+| D11 | Done in part: 5 of Artemis's 13 stream controls (Toggle keyboard, Crop to fill, Mouse mode, Flip A/B and X/Y, Rumble), the battery and the health, through the treaty (above); shown and applied in the gameplay overlay since D5b. Missing, and gating D7′: Full keyboard, Pan & zoom, Touch sensitivity, Keyboard as controller, Toggle local cursor, SGSR sharpness, SGSR edge threshold, Picture-in-picture |
 | D12 prep | Done in part: the release APK, its key and signing step, its notices (below). Not done: an owner binding that a release build can make (below) |
 | D13 (new) | Local Android games (O3): korrid's launcher through JNI, usage polling on a Rust thread, androidx `FileProvider` bundled unchanged (`hasCode="true"`), and the Guide service, which Android allows only as a Java `AccessibilityService` subclass: one Korri Java file on #434's list, or no Guide over other apps. Gates D7′ |
 | D12 | On the Galaxy Z Fold 8 |

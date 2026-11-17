@@ -485,9 +485,9 @@ Archive:  /var/tmp/d7-controls-run/proof/korri-android-app-fixture-debug.apk
      1243  01-01-1980 00:00   assets/surfaces/zone/ui/templates/ZoneShell.template.preview.slint
     10325  01-01-1980 00:00   assets/surfaces/zone/ui/tokens.slint
      6614  01-01-1980 00:00   assets/surfaces/zone/ui/types.slint
-122007216  01-01-1980 00:00   lib/x86_64/libkorri_android_app.so
+122073568  01-01-1980 00:00   lib/x86_64/libkorri_android_app.so
     62342  01-01-1980 00:00   META-INF/ANDROIDD.SF
      1221  01-01-1980 00:00   META-INF/ANDROIDD.RSA
     62215  01-01-1980 00:00   META-INF/MANIFEST.MF
 ---------                     -------
-125033914                     488 files
+125100266                     488 files
