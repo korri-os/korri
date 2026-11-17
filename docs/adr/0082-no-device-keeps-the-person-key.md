@@ -27,7 +27,8 @@ device, a stolen device can do only what any owned device can do (ADRs 0069,
 ## Consequences
 
 - To undo a removal or an admission, to move a device off its automatic
-  identity, or to recover after every device is lost, the person enters the recovery words or scans their QR code.
+  identity, or to recover after every device is lost, the person enters the
+  recovery words or scans their QR code.
 - The person must confirm the words at setup. Setup cannot end before that.
 - After setup, a device holds the person key only while the person uses the
   recovery words, and then erases it. korrid still never holds it.

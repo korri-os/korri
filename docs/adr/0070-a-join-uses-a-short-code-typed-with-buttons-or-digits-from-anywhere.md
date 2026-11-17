@@ -15,9 +15,9 @@ digits.
 The first 3 symbols are a public nameplate. They tell the new device where on
 the relays the owned device waits. The owned device picks a nameplate that no
 other join uses at that moment. The last 7 symbols are the secret: 279,936
-possible values. The meeting place never comes from the secret, because a
-relay could try every value at once and learn it (owner decision,
-2026-11-16).
+possible values. The meeting place never comes from the secret. If it did,
+anyone who reads the relays could test all 279,936 values and find the secret
+(owner decision, 2026-11-16).
 
 Every Korri controller has a D-pad and two face buttons, and nothing more is
 certain. Start and Select often open a system menu, so the code does not use
@@ -25,15 +25,21 @@ them. Face buttons go by their role (confirm, back), not by letter, because
 Nintendo and Xbox swap A and B.
 
 The two devices run a key exchange built on the code (a PAKE). It uses
-1Password's CPace code, the only audited one in Rust (Cure53, 2022), copied
-into Korri at one exact commit and kept behind one module. Changing it later
-costs little: it runs only during a join, and nothing stored depends on it. A relay, or
-anyone who reads the relay, cannot get between the two devices without the
-code. Each code allows one guess.
+1Password's audited Rust CPace (Cure53, 2022). Korri copies it
+at one exact commit and keeps it behind one module. Changing it later costs
+little: it runs only during a join, and nothing stored depends on it. CPace is
+an agent's choice (2026-11-16), not the owner's. The owner may overturn it.
+
+A relay, or anyone who reads the relay, cannot get between the two devices
+without the code. Each code allows one guess.
 
 A code is valid for 5 minutes. When it runs out, the owned device shows a new
 one. A wrong code ends that code at once: the owned device shows a new code
 and says that a wrong code was tried (owner decisions, 2026-11-16).
+
+There are only 216 nameplates, shared by everyone on the public relays.
+Someone could hold all of them and block every join. How Korri handles this
+is not decided.
 
 When the code matches, the owned device asks for one Accept. It shows the
 joining device's name, what kind of device it is, and how it connects. A name

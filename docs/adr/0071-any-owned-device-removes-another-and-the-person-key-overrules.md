@@ -4,7 +4,7 @@
 
 Any device the person owns can remove another owned device. The person key
 can undo a removal. When a device is removed, the devices it vouched for stay
-owned.
+owned, as far as the remover knows.
 
 The reason: when a device is stolen, the person must be able to remove it at
 once from whatever device is in their hand. Reaching the cold person key
@@ -14,19 +14,23 @@ A removal is the owner statement with status "revoked", signed by the
 removing device's key. It lists the devices that the removed device had
 vouched for, as far as the remover knows. Any other vouch from the removed
 device is invalid. A device sets its own timestamps, so without that list a
-removed device could sign a vouch dated before its removal.
+removed device could sign a vouch dated before its removal. A removal also
+carries what a vouch carries: the person key it belongs to and the id of the
+remover's own statement or vouch, so a peer can check that the remover is
+owned. That last part is an agent's choice (2026-11-16); the owner may
+overturn it.
 
 The person key undoes a removal by signing a newer owner statement with status
-"owned" for that device. It overrides removals signed by devices. A removal
-signed by the person key stays final, as today (owner decisions,
+"owned" for that device. That statement overrides removals signed by devices.
+A removal signed by the person key stays final, as today (owner decisions,
 2026-11-16).
 
 ## Considered options
 
 - **Only the person key removes.** Safe from a thief. Rejected: it needs the
   cold key even to retire an old device.
-- **Removal also removes the devices it vouched for**, or lists them for
-  review. Rejected by the owner as more than the common case needs.
+- **Removal also removes the devices it vouched for**, or asks the person to
+  review each of them. Rejected by the owner as more than the common case needs.
 - **Accept that a removed device can back-date vouches.** Rejected: a thief
   would keep a way to add devices.
 - **A separate undo record that names the removal.** Rejected: one more record
@@ -40,5 +44,5 @@ signed by the person key stays final, as today (owner decisions,
   removed, if the remover knew of it. The person must remove it on its own.
 - A vouch that the remover had not seen yet becomes invalid. That device must
   join again.
-- Today a revocation is final whoever signs it. That rule changes for
-  removals signed by devices.
+- Today only the person key signs a revocation, and it is final. A removal
+  signed by a device is new, and the person key can undo it.

@@ -22,10 +22,10 @@ needed the phone, Amber, and a relay that both could reach. Joins failed in
 ways the owner could not see (issue #434, D12).
 
 Vouches and removals are public on Nostr relays and hold keys, dates and
-statement ids, no device names (owner decision, 2026-11-16). A peer checks them with no
-shared secret, and a removal reaches every device the same way. Anyone who
-knows the person's public key can see how many devices they own and when
-each joined or left. That is the accepted cost. Encrypting them would
+statement ids, no device names (owner decision, 2026-11-16). A peer checks
+them with no shared secret, and a removal reaches every device the same way.
+Anyone who knows the person's public key can see how many devices they own
+and when each joined or left. That is the accepted cost. Encrypting them would
 need a group key, and a mistake in it could hide a removal from a device.
 
 This design covers one person's own devices. Household members and guests
@@ -39,15 +39,16 @@ This design covers one person's own devices. Household members and guests
 - **A threshold owner key (FROST, for example 2 of 3 devices).** Stronger.
   Rejected: complex, the Nostr tooling for it is young, and the owner wants
   nothing that he has to maintain.
+- **A separate vouch record next to the owner statement.** It would leave
+  today's checks alone, but give two record kinds and two ways to be a member.
+  Rejected by the owner.
 
 ## Consequences
 
 - A stolen owned device can admit more devices until the person removes it.
-  Devices it vouched for stay owned when it is removed (ADR 0071).
+  Devices it vouched for stay owned when it is removed, as far as the remover
+  knows (ADR 0071).
 - Peers must accept a device whose ownership comes from a vouch, not only from
   a statement that the person key signed. Every membership check today
   expects the person key as the author, so each one changes.
-- **Considered:** a separate vouch record next to the owner statement. It
-  would leave today's checks alone, but give two record kinds and two ways to
-  be a member. Rejected by the owner.
 - Joins no longer need a phone signer.
