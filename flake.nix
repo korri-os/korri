@@ -256,6 +256,8 @@
           h700-kernel = h700.kernelCross;
           # The NDK's compilers run on x86_64 Linux only.
           korri-viewer-android-apk = viewer.android.apk;
+          # The same with nightjar-core as a second network core (#391 step E).
+          korri-viewer-android-nightjar-apk = viewer.android.nightjarApk;
           # Test apps for the viewer's emulator proof, never shipped.
           korri-viewer-android-refusal-probe = viewer.android.refusalProbe;
           korri-viewer-android-feedback-probe = viewer.android.feedbackProbe;
@@ -419,6 +421,7 @@
             };
             # The NDK's compilers run on x86_64 Linux only.
             korri-viewer-android = viewer.android.check;
+            korri-viewer-android-nightjar = viewer.android.nightjarCheck;
           }
         );
       }

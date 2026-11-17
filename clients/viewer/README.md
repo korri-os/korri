@@ -1700,14 +1700,30 @@ Notice (Artemis shows a toast) and Resize (#476) stay unavailable.
 
 ## Network cores (#391 step E)
 
-The C core (`moonlight-common-c`) is the default and the only core on
-Android. With the cargo feature `nightjar` (Linux, `nix build
-.#korri-viewer-nightjar`) the viewer also carries nightjar-core, a Rust
-port of moonlight-common-c (`vendor/README.md`: the pin, the licence and
-Korri's one edit), and `-networkcore nightjar` streams with it. In that
-package `bin/moonlight` appends the option, so the stage-0 tool runs it as
-a candidate beside `korri-viewer`; `bin/korri-viewer` still streams with
-the C core unless asked.
+The C core (`moonlight-common-c`) is the default. With the cargo feature
+`nightjar` the viewer also carries nightjar-core, a Rust port of
+moonlight-common-c (`vendor/README.md`: the pin, the licence and Korri's
+edits), and `-networkcore nightjar` streams with it:
+
+- Linux: `nix build .#korri-viewer-nightjar`. Its `bin/moonlight` appends
+  the option, so the stage-0 tool runs it as a candidate beside
+  `korri-viewer`; `bin/korri-viewer` still streams with the C core unless
+  asked.
+- Android: `nix build .#korri-viewer-android-nightjar-apk` (the viewer's
+  own app, both ABIs) and `.#checks.x86_64-linux.korri-viewer-android-nightjar`
+  (the session part and its tests, both ABIs). The app's crate has the same
+  feature (`android/Cargo.toml`). The starting intent's `args` pick the core
+  as on Linux: `-networkcore nightjar` among them, else the C core.
+  `android/proof/run.py --network-core nightjar` builds and starts that APK
+  so. On arm64-v8a the build gives rustc `--cfg aes_armv8 --cfg
+  polyval_armv8` (`android.nix`): RustCrypto's `aes` 0.8 and `polyval` 0.6,
+  which nightjar-core decrypts with, compile their ARMv8 AES and PMULL code
+  only under these cfgs and choose it at run time on a CPU that has the
+  instructions (cpufeatures reads Android's `getauxval`). nightjar-core
+  refuses an aarch64 build without them (`crypto.rs:10`), so that no phone
+  decrypts video in software by mistake. The check proves both modules are
+  in the arm64 library. The Korri app (`clients/android-app`) keeps the C
+  core only.
 
 `src/network_core/nightjar.rs` puts nightjar-core's `Session` behind
 `NetworkCore`. The platform's picture, sound and input code does not
@@ -1727,7 +1743,7 @@ judge):
 | | C core | nightjar-core here |
 | --- | --- | --- |
 | Video datagrams | One `recvfrom` each | `recvmmsg` batches with UDP GRO (`receive_coalescing`, nightjar-cli's and its apps' setting) |
-| Thread priorities | None | None while the decoder takes frames on the receive thread (`CAPABILITY_DIRECT_SUBMIT`, which every Linux decoder here sets): with "prioritize stream traffic" (`network_priority`) off, nightjar-core raises no thread and asks no D-Bus service. A decoder without direct submit would get nightjar-core's `VideoDec` thread, which it always raises on Linux (nice -8, else -4, then the desktop portal or RealtimeKit; `vendor/nightjar/protocol/client/src/priority.rs:447`) |
+| Thread priorities | None | None while the decoder takes frames on the receive thread (`CAPABILITY_DIRECT_SUBMIT`, which every Linux decoder here sets): with "prioritize stream traffic" (`network_priority`) off, nightjar-core raises no thread and asks no D-Bus service. A decoder without direct submit gets nightjar-core's `VideoDec` thread, which it always raises (`vendor/nightjar/protocol/client/src/priority.rs:447`): on Linux nice -8, else -4, then the desktop portal or RealtimeKit; on Android, whose decoder (`src/android/picture.rs`) has no direct submit, nice -8 or -4 with `setpriority` only. The C core runs its decode thread at the default priority |
 | A controller touch | No touchpad index | The controller's first touchpad |
 | Its log | The C core's lines, among them one for each unrecoverable frame, IDR request and reference frame invalidation | nightjar-core's lines, which name no loss or request; at the stop its statistics (`nightjar: at the stop: …`: FEC repairs, frames dropped, decrypt failures) and the IDR requests and invalidations it sent (`nightjar: recovery requests sent: …`) |
 
@@ -1735,10 +1751,9 @@ The proof on aka, with Korri's patched Sunshine, picture, sound and input,
 and the turns of the measure against the C core:
 `proof/nightjar/README.md`.
 
-Not done: Android (the seam would carry nightjar-core there too; this slice
-builds it for Linux only), aarch64 (nightjar-core refuses to build for aarch64
-without `--cfg aes_armv8 --cfg polyval_armv8`, `vendor/README.md`), and a
-korrid setting to choose the core.
+Not done: the Korri app with nightjar-core, Linux aarch64 (`korri-viewer-nightjar`
+is x86_64 only; it would need the same two cfgs), an emulator or phone run
+on Android, and a korrid setting to choose the core.
 
 ## Next slices
 

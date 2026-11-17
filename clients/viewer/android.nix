@@ -9,6 +9,10 @@
 #   Java and no Gradle. Nix builds the libraries with cargo and packs them with
 #   aapt2 and zipalign. The APK is not signed; android/proof/run.py signs it
 #   with the user's debug key.
+# - nightjarCheck, nightjarApk: the same with the `nightjar` feature, which
+#   adds nightjar-core as a second network core (#391 step E,
+#   vendor/README.md). The intent's `-networkcore nightjar` picks it; the C
+#   core stays the default.
 {
   pkgs,
   upstream,
@@ -30,6 +34,19 @@ let
       target = "aarch64-linux-android";
       opensslTarget = "android-arm64";
       machine = "AArch64";
+      # RustCrypto's aes 0.8 and polyval 0.6, which nightjar-core decrypts
+      # with, compile their ARMv8 AES and PMULL code only under these two
+      # cfgs; without them every aarch64 build decrypts in software.
+      # nightjar-core refuses to build for aarch64 without them
+      # (vendor/nightjar/protocol/client/src/crypto.rs:10). Nightjar's own
+      # protocol/.cargo/config.toml sets them, which a cargo run outside its
+      # workspace never reads. Only the nightjar builds take them.
+      nightjarRustflags = [
+        "--cfg"
+        "aes_armv8"
+        "--cfg"
+        "polyval_armv8"
+      ];
     };
     x86_64 = {
       target = "x86_64-linux-android";
@@ -158,9 +175,14 @@ let
 
   # One cargo invocation's environment for one ABI. The core's path is not
   # scoped by target in build.rs, so each ABI gets its own invocation.
-  environmentFor =
-    part:
+  # `nightjar` adds the ABI's flags for nightjar-core.
+  environmentWith =
+    nightjar: part:
     let
+      rustflags = [
+        "-C link-arg=-Wl,-z,max-page-size=16384"
+      ]
+      ++ lib.optionals nightjar (part.nightjarRustflags or [ ]);
       # Shell names cannot hold "-"; cc-rs and bindgen also read the "_" form.
       target = lib.replaceStrings [ "-" ] [ "_" ] part.target;
       cargoTarget = lib.toUpper target;
@@ -176,9 +198,10 @@ let
       export AR_${target}=${toolchain}/bin/llvm-ar
       export CARGO_TARGET_${cargoTarget}_LINKER=${cc}
       # 16 KiB load segments, as clients/android/build.sh links its libraries.
-      export CARGO_TARGET_${cargoTarget}_RUSTFLAGS="-C link-arg=-Wl,-z,max-page-size=16384"
+      export CARGO_TARGET_${cargoTarget}_RUSTFLAGS="${lib.concatStringsSep " " rustflags}"
       export BINDGEN_EXTRA_CLANG_ARGS_${target}="--target=${part.target}${api} --sysroot=${toolchain}/sysroot"
     '';
+  environmentFor = environmentWith false;
   forEachPart = script: lib.concatMapStrings script (lib.attrValues parts);
 
   common = {
@@ -215,60 +238,82 @@ let
     "libaaudio.so"
   ];
 
-  check = pkgs.stdenv.mkDerivation (
-    common
-    // {
-      name = "korri-viewer-android-check";
-      src = lib.fileset.toSource {
-        root = ../..;
-        fileset = sourceFiles;
-      };
-      sourceRoot = "source/clients/viewer";
-      inherit cargoDeps;
-      buildPhase = ''
-        runHook preBuild
-        export HOME=$TMPDIR
-        ${forEachPart (part: ''
-          (
-            ${environmentFor part}
-            cargo build --locked --release --offline --lib --target ${part.target}
-            # The HTTPS test drives Transport and the launch chain into the
-            # core; linking it proves that every symbol of that path resolves.
-            cargo test --locked --release --offline --no-run --target ${part.target} \
-              --lib --test https --test trust_anchor --message-format=json > tests-${part.name}.json
-          )
-        '')}
-        runHook postBuild
-      '';
-      installPhase = ''
-        runHook preInstall
-        ${forEachPart (part: ''
-          mkdir -p $out/${part.name}/tests
-          test -s target/${part.target}/release/libkorri_viewer.rlib
-          for test in https trust_anchor; do
-            executable=$(grep -o "\"executable\":\"[^\"]*/$test-[^\"]*\"" tests-${part.name}.json | cut -d'"' -f4)
+  checkWith =
+    nightjar:
+    let
+      features = lib.optionalString nightjar " --features nightjar";
+    in
+    pkgs.stdenv.mkDerivation (
+      common
+      // {
+        name = if nightjar then "korri-viewer-android-nightjar-check" else "korri-viewer-android-check";
+        src = lib.fileset.toSource {
+          root = ../..;
+          fileset = sourceFiles;
+        };
+        sourceRoot = "source/clients/viewer";
+        inherit cargoDeps;
+        buildPhase = ''
+          runHook preBuild
+          export HOME=$TMPDIR
+          ${forEachPart (part: ''
+            (
+              ${environmentWith nightjar part}
+              cargo build --locked --release --offline --lib --target ${part.target}${features}
+              # The HTTPS test drives Transport and the launch chain into the
+              # core; linking it proves that every symbol of that path resolves.
+              cargo test --locked --release --offline --no-run --target ${part.target} \
+                --lib --test https --test trust_anchor${features} --message-format=json > tests-${part.name}.json
+            )
+          '')}
+          runHook postBuild
+        '';
+        installPhase = ''
+          runHook preInstall
+          ${forEachPart (part: ''
+            mkdir -p $out/${part.name}/tests
+            test -s target/${part.target}/release/libkorri_viewer.rlib
+            for test in https trust_anchor; do
+              executable=$(grep -o "\"executable\":\"[^\"]*/$test-[^\"]*\"" tests-${part.name}.json | cut -d'"' -f4)
+              test -x "$executable"
+              cp "$executable" $out/${part.name}/tests/$test
+            done
+            # The library's own tests: the proof runs the picture's pure parts.
+            executable=$(grep -o "\"executable\":\"[^\"]*/korri_viewer-[^\"]*\"" tests-${part.name}.json | cut -d'"' -f4)
             test -x "$executable"
-            cp "$executable" $out/${part.name}/tests/$test
-          done
-          # The library's own tests: the proof runs the picture's pure parts.
-          executable=$(grep -o "\"executable\":\"[^\"]*/korri_viewer-[^\"]*\"" tests-${part.name}.json | cut -d'"' -f4)
-          test -x "$executable"
-          cp "$executable" $out/${part.name}/tests/lib
-          https=$out/${part.name}/tests/https
-          ${readElf part sessionLibraries "$https" "$out/${part.name}/https-elf.txt"}
-          grep -q 'Requesting program interpreter: /system/bin/linker64' $out/${part.name}/https-elf.txt
-          # curl, OpenSSL and the core are inside the executable. The crate's
-          # curl hides its symbols, so they are local (t), not global.
-          "${toolchain}/bin/llvm-nm" --defined-only "$https" > symbols.txt
-          for symbol in LiStartConnection LiStopConnection curl_multi_perform SSL_CTX_new EVP_aes_128_gcm viewer_android_log opus_multistream_decode; do
-            grep -Eq " [Tt] $symbol$" symbols.txt || { echo "missing $symbol" >&2; exit 1; }
-            echo "$symbol" >> $out/${part.name}/symbols.txt
-          done
-        '')}
-        runHook postInstall
-      '';
-    }
-  );
+            cp "$executable" $out/${part.name}/tests/lib
+            https=$out/${part.name}/tests/https
+            ${readElf part sessionLibraries "$https" "$out/${part.name}/https-elf.txt"}
+            grep -q 'Requesting program interpreter: /system/bin/linker64' $out/${part.name}/https-elf.txt
+            # curl, OpenSSL and the core are inside the executable. The crate's
+            # curl hides its symbols, so they are local (t), not global.
+            "${toolchain}/bin/llvm-nm" --defined-only "$https" > symbols.txt
+            for symbol in LiStartConnection LiStopConnection curl_multi_perform SSL_CTX_new EVP_aes_128_gcm viewer_android_log opus_multistream_decode; do
+              grep -Eq " [Tt] $symbol$" symbols.txt || { echo "missing $symbol" >&2; exit 1; }
+              echo "$symbol" >> $out/${part.name}/symbols.txt
+            done
+            ${lib.optionalString nightjar ''
+              # The launch chain of the HTTPS test reaches nightjar-core's
+              # session through the seam (`Session::start` is inlined into
+              # the adapter; its inner `session::start` stays). On aarch64
+              # its AES and POLYVAL also
+              # have their ARMv8 code (the cfgs above), which the crates pick
+              # at run time on a CPU that has the instructions.
+              "${toolchain}/bin/llvm-nm" --demangle --defined-only "$https" > nightjar-symbols.txt
+              for symbol in 'nightjar_core::session::start' ${
+                lib.optionalString (part ? nightjarRustflags) "'aes::armv8::' 'polyval::backend::pmull::'"
+              }; do
+                grep -qF "$symbol" nightjar-symbols.txt || { echo "missing $symbol" >&2; exit 1; }
+                echo "$symbol" >> $out/${part.name}/symbols.txt
+              done
+            ''}
+          '')}
+          runHook postInstall
+        '';
+      }
+    );
+  check = checkWith false;
+  nightjarCheck = checkWith true;
 
   # The app's own crate has its own lock: the viewer's crates at the same
   # versions, and android-activity and jni.
@@ -281,50 +326,57 @@ let
   ];
   library = "libkorri_viewer_android.so";
 
-  apk = pkgs.stdenv.mkDerivation (
-    common
-    // {
-      pname = "korri-viewer-android-apk";
-      version = "0.1.0";
-      src = lib.fileset.toSource {
-        root = ../..;
-        fileset = appFiles;
-      };
-      sourceRoot = "source/clients/viewer/android";
-      cargoDeps = pkgs.rustPlatform.importCargoLock { lockFile = ./android/Cargo.lock; };
-      nativeBuildInputs = common.nativeBuildInputs ++ [ pkgs.zip ];
-      buildPhase = ''
-        runHook preBuild
-        export HOME=$TMPDIR
-        ${forEachPart (part: ''
-          (
-            ${environmentFor part}
-            cargo build --locked --release --offline --lib --target ${part.target}
-          )
-          mkdir -p stage/lib/${part.name}
-          cp target/${part.target}/release/${library} stage/lib/${part.name}/
-          ${readElf part sessionLibraries "stage/lib/${part.name}/${library}" "elf-${part.name}.txt"}
-          grep -q 'Shared library' elf-${part.name}.txt
-          "${toolchain}/bin/llvm-nm" --defined-only --extern-only stage/lib/${part.name}/${library} \
-            | grep -q ' T ANativeActivity_onCreate$'
-        '')}
-        ${buildTools}/aapt2 link -o unsigned.apk -I ${framework} \
-          --manifest AndroidManifest.xml --debug-mode
-        # Fixed times and no extra attributes, as aapt2 writes its entries.
-        find stage -exec touch -h -d @315532800 {} +
-        (cd stage && zip -q -r -X ../unsigned.apk lib)
-        ${buildTools}/zipalign -p -f 4 unsigned.apk aligned.apk
-        runHook postBuild
-      '';
-      installPhase = ''
-        runHook preInstall
-        mkdir -p $out
-        cp aligned.apk $out/korri-viewer-unsigned.apk
-        cp elf-*.txt $out/
-        runHook postInstall
-      '';
-    }
-  );
+  apkWith =
+    nightjar:
+    let
+      features = lib.optionalString nightjar " --features nightjar";
+    in
+    pkgs.stdenv.mkDerivation (
+      common
+      // {
+        pname = if nightjar then "korri-viewer-android-nightjar-apk" else "korri-viewer-android-apk";
+        version = "0.1.0";
+        src = lib.fileset.toSource {
+          root = ../..;
+          fileset = appFiles;
+        };
+        sourceRoot = "source/clients/viewer/android";
+        cargoDeps = pkgs.rustPlatform.importCargoLock { lockFile = ./android/Cargo.lock; };
+        nativeBuildInputs = common.nativeBuildInputs ++ [ pkgs.zip ];
+        buildPhase = ''
+          runHook preBuild
+          export HOME=$TMPDIR
+          ${forEachPart (part: ''
+            (
+              ${environmentWith nightjar part}
+              cargo build --locked --release --offline --lib --target ${part.target}${features}
+            )
+            mkdir -p stage/lib/${part.name}
+            cp target/${part.target}/release/${library} stage/lib/${part.name}/
+            ${readElf part sessionLibraries "stage/lib/${part.name}/${library}" "elf-${part.name}.txt"}
+            grep -q 'Shared library' elf-${part.name}.txt
+            "${toolchain}/bin/llvm-nm" --defined-only --extern-only stage/lib/${part.name}/${library} \
+              | grep -q ' T ANativeActivity_onCreate$'
+          '')}
+          ${buildTools}/aapt2 link -o unsigned.apk -I ${framework} \
+            --manifest AndroidManifest.xml --debug-mode
+          # Fixed times and no extra attributes, as aapt2 writes its entries.
+          find stage -exec touch -h -d @315532800 {} +
+          (cd stage && zip -q -r -X ../unsigned.apk lib)
+          ${buildTools}/zipalign -p -f 4 unsigned.apk aligned.apk
+          runHook postBuild
+        '';
+        installPhase = ''
+          runHook preInstall
+          mkdir -p $out
+          cp aligned.apk $out/korri-viewer-unsigned.apk
+          cp elf-*.txt $out/
+          runHook postInstall
+        '';
+      }
+    );
+  apk = apkWith false;
+  nightjarApk = apkWith true;
   # The proof's refusal probe (android/proof/refusal): an ordinary app that
   # asks Android to start the viewer's activity. x86_64 only, for the
   # emulator; never shipped. Unsigned, as the APK above.
@@ -425,6 +477,8 @@ in
     parts
     check
     apk
+    nightjarCheck
+    nightjarApk
     refusalProbe
     feedbackProbe
     ;

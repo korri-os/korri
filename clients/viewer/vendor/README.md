@@ -38,9 +38,14 @@ that workspace, so they are never loaded.
 
 Not used from upstream: `protocol/.cargo/config.toml` applies only to cargo
 runs started inside `protocol/`. It sets `--cfg aes_armv8 --cfg
-polyval_armv8` for aarch64, and nightjar-core refuses to build for aarch64
-without them (`client/src/crypto.rs`). The viewer's aarch64 build with the
-feature therefore needs those flags; it has not been tried.
+polyval_armv8` for aarch64: RustCrypto's `aes` 0.8 and `polyval` 0.6 compile
+their ARMv8 AES and PMULL code only under these cfgs, and nightjar-core
+refuses to build for aarch64 without them (`client/src/crypto.rs:10`), so
+that no aarch64 build decrypts in software by mistake. They concern those
+two crates, not nightjar-core's own code, so no edit here replaces them:
+the viewer's Android build gives rustc the same two cfgs for arm64-v8a, in
+its nightjar builds only (`../android.nix`). Linux aarch64 would need the
+same; `korri-viewer-nightjar` is x86_64 only.
 
 To move the pin: copy the same paths from the new commit with `git archive`
 in one commit with no edits, then make the edits above again in the next.
