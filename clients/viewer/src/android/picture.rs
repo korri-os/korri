@@ -14,6 +14,12 @@
 //! state is process-wide, as the core itself is. No panic leaves a callback
 //! (`callback::guarded`): it would abort the app.
 //!
+//! The decoder is made early (#391): on its own thread from `open`, for the
+//! picture that the stream asked for, while the stream connects. The core's
+//! setup takes it when it asks for that picture; for any other, the early
+//! decoder goes and setup makes one, as before. `close` waits for an early
+//! decoder that no setup took, and lets it go before the Surface.
+//!
 //! A new picture size in the middle of the stream: the decoder is
 //! configured for adaptive playback up to Korri's live-resolution maximum
 //! when it supports it, so that it follows a new SPS by itself; otherwise
@@ -36,8 +42,8 @@ use crate::{
     callback::guarded,
     codec,
     decoder::{
-        self, Codec, Configured, Decoder, Frame, Health, Output, Queued, Records, Resized, Status,
-        Step,
+        self, Asked, Codec, Configured, Decoder, Frame, Health, Output, Queued, Records, Resized,
+        Status, Step,
     },
     frame_record, log,
     network::{self as ffi, DECODE_UNIT, DECODER_RENDERER_CALLBACKS},
@@ -56,6 +62,7 @@ use std::{
         Arc, Mutex, MutexGuard, PoisonError,
         atomic::{AtomicPtr, AtomicU64, Ordering},
     },
+    thread::{self, JoinHandle},
     time::Duration,
 };
 
@@ -86,6 +93,29 @@ struct Stream {
     records: Arc<Records>,
     resized: Resized,
     decoder: Option<Arc<Decoder<NdkCodec>>>,
+    /// The decoder made early for the asked picture, until setup takes it.
+    early: Option<Early>,
+}
+
+/// A decoder that its own thread makes while the stream connects.
+struct Early {
+    asked: Asked,
+    made: JoinHandle<Result<Made>>,
+}
+
+impl Early {
+    /// Its decoder, once its thread has made it.
+    fn take(self) -> Result<Made> {
+        self.made
+            .join()
+            .map_err(|_| anyhow!("the decoder's early making panicked"))?
+    }
+}
+
+/// A started codec for the Surface, and what it was configured for.
+struct Made {
+    codec: NdkCodec,
+    configured: Configured,
 }
 
 static STREAM: Mutex<Option<Stream>> = Mutex::new(None);
@@ -102,7 +132,8 @@ fn stream() -> MutexGuard<'static, Option<Stream>> {
 
 /// Make the record's files and hold the picture for the core's callbacks.
 /// Before the launch: a record that cannot be made stops nothing that ran.
-pub(crate) fn open(picture: Picture) -> Result<()> {
+/// The decoder for the `asked` picture starts to be made at once.
+pub(crate) fn open(picture: Picture, asked: Asked) -> Result<()> {
     let times = picture
         .record
         .times
@@ -136,11 +167,19 @@ pub(crate) fn open(picture: Picture) -> Result<()> {
         }
         app((width, height));
     });
+    let surface = picture.surface.clone();
+    // A thread that does not start leaves the making to setup.
+    let early = thread::Builder::new()
+        .name("picture-early".into())
+        .spawn(move || make(&surface, asked.size, asked.fps))
+        .ok()
+        .map(|made| Early { asked, made });
     *stream = Some(Stream {
         surface: picture.surface,
         records: Arc::new(Records { times, recording }),
         resized,
         decoder: None,
+        early,
     });
     Ok(())
 }
@@ -161,6 +200,10 @@ pub(crate) fn close() -> Result<()> {
     // The core calls cleanup after a setup; this covers a stream it did not.
     if let Some(decoder) = stream.decoder {
         decoder.finish();
+    }
+    // An early decoder that no setup took goes before the Surface.
+    if let Some(early) = stream.early {
+        drop(early.take());
     }
     let records = Arc::try_unwrap(stream.records)
         .map_err(|_| anyhow!("the decoder still holds the frame record"))?;
@@ -248,6 +291,46 @@ fn make_decoder(format: c_int, width: c_int, height: c_int, fps: c_int) -> Resul
     if format & ffi::VIDEO_FORMAT_MASK_H264 as c_int == 0 {
         bail!("the stream is not H.264 (format {format:#x}); this slice decodes H.264 only");
     }
+    let size = (width, height);
+    let (early, surface) = {
+        let mut stream = stream();
+        let stream = stream.as_mut().context("no picture is open")?;
+        (stream.early.take(), stream.surface.clone())
+    };
+    let made = match early {
+        Some(early) if early.asked.serves(format, size, fps) => early.take()?,
+        early => {
+            // Another picture: the early decoder goes first, as the Surface
+            // takes one codec at a time.
+            if let Some(early) = early {
+                log::line(&format!(
+                    "picture: the core asks for {width}x{height}@{fps}, not the {}x{}@{} made early",
+                    early.asked.size.0, early.asked.size.1, early.asked.fps
+                ));
+                drop(early.take());
+            }
+            make(&surface, size, fps)?
+        }
+    };
+    let mut stream = stream();
+    let stream = stream.as_mut().context("no picture is open")?;
+    let decoder = Decoder::new(
+        made.codec,
+        made.configured,
+        stream.records.clone(),
+        Health::default(),
+        stream.resized.clone(),
+    );
+    decoder.start_output()?;
+    stream.decoder = Some(decoder);
+    crate::marks::mark("decoder taken");
+    Ok(())
+}
+
+/// Make and start the decoder for an H.264 picture of `size` at `fps` on
+/// the Surface: Artemis's choice of decoder and its configure tries.
+fn make(surface: &NativeWindow, size: (i32, i32), fps: i32) -> Result<Made> {
+    let (width, height) = size;
     let decoders = decoder_list()?;
     crate::marks::mark("decoders listed");
     log::line(&format!(
@@ -270,16 +353,13 @@ fn make_decoder(format: c_int, width: c_int, height: c_int, fps: c_int) -> Resul
     let emulator = system_property("ro.hardware").as_deref() == Some("ranchu");
     let chosen = codec::choose(&decoders, emulator)
         .with_context(|| format!("no usable {MIME} decoder (emulator {emulator})"))?;
-    let size = (width, height);
     // Adaptive playback's maximum, asked of the decoder.
     let adaptive =
         codec::adaptive_playback(chosen).then(|| asked_adaptive_max(&chosen.name, size, fps));
-    let mut stream = stream();
-    let stream = stream.as_mut().context("no picture is open")?;
     let mut tries = codec::tries(chosen, adaptive).into_iter().peekable();
     let (codec, configured) = loop {
         let attempt = tries.next().context("no configure to try")?;
-        let mut codec = NdkCodec::by_name(&chosen.name, &stream.surface)
+        let mut codec = NdkCodec::by_name(&chosen.name, surface)
             .with_context(|| format!("cannot make the decoder {}", chosen.name))?;
         match codec.configure(media_format(size, attempt.max, fps, &attempt.keys)) {
             Ok(()) => {
@@ -324,22 +404,16 @@ fn make_decoder(format: c_int, width: c_int, height: c_int, fps: c_int) -> Resul
         },
         adaptive.map_or("none".into(), |(w, h)| format!("{w}x{h}")),
     ));
-    let decoder = Decoder::new(
+    crate::marks::mark("decoder made");
+    Ok(Made {
         codec,
-        Configured {
+        configured: Configured {
             size,
             fps,
             decoder: chosen.name.clone(),
             adaptive,
         },
-        stream.records.clone(),
-        Health::default(),
-        stream.resized.clone(),
-    );
-    decoder.start_output()?;
-    stream.decoder = Some(decoder);
-    crate::marks::mark("decoder made");
-    Ok(())
+    })
 }
 
 unsafe extern "C" fn start() {

@@ -463,8 +463,8 @@ check; the picture and input; every stage of the network core
 (`stageStarting`, `stageComplete`); the RTSP answers that the core names in
 its log (DESCRIBE, the three SETUPs) and its first video and audio packet
 (`marks::core_step`, through `src/core_log.c`); on Android the decoder
-(`decoders listed`, `decoder made`); the first frame that reached the
-display. The core logs nothing after OPTIONS or ANNOUNCE, so
+(`decoders listed`, `decoder made`, `decoder taken`); the first frame that
+reached the display. The core logs nothing after OPTIONS or ANNOUNCE, so
 those answers have no mark of their own. On Linux the first frame's line
 comes from `picture/frame_times.c`, at the presenter's hand-off; on Android
 from the decoder's output thread, at the first frame released to the
@@ -812,6 +812,14 @@ buffer queue, and the compositor reads the same buffer.
   `vendor.qti-ext-dec-low-latency.enable` and the three output-fence keys.
   A decoder with `FEATURE_LowLatency` gets `low-latency` alone in try 0. The
   colour keys are the core's defaults: limited range, BT.601, SDR.
+- The decoder is made early (#391): from `picture::open`, on a thread of
+  its own, for the picture that the stream asked for (H.264 at the asked
+  size and rate, `decoder::Asked`), while the stream launches and its RTSP
+  handshake runs. The core's setup takes it when it asks for that picture;
+  for another (a height that the core rounded), the early decoder goes and
+  setup makes one, as before. `picture::close` waits for an early decoder
+  that no setup took and lets it go before the Surface. In the #495 proof
+  the decoder's making took 0.28 s inside the core's video start.
 - The SPS rewrite (`src/android/sps.rs`): Artemis's patch for a stream
   without reference frame invalidation, so that the decoder buffers no
   frame: `level_idc` 31, 32 or 42 for the stream's size and rate,

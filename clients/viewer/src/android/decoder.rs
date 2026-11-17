@@ -123,6 +123,25 @@ pub(crate) struct Configured {
     pub(crate) adaptive: Option<(i32, i32)>,
 }
 
+/// The picture that the stream asked for (#391): `picture.rs` makes its
+/// decoder while the stream connects, before the core's setup asks for one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Asked {
+    pub(crate) size: (i32, i32),
+    pub(crate) fps: i32,
+}
+
+impl Asked {
+    /// The core's setup asks for this picture: an H.264 stream (the only
+    /// one that the decoder takes) at this size and rate. The core rounds an
+    /// odd height, so the size it asks for can differ.
+    pub(crate) fn serves(&self, format: c_int, size: (i32, i32), fps: i32) -> bool {
+        format & crate::network::VIDEO_FORMAT_MASK_H264 as c_int != 0
+            && size == self.size
+            && fps == self.fps
+    }
+}
+
 /// Hears each new decoded size, on the output thread; it must not block.
 pub(crate) type Resized = Arc<dyn Fn((i32, i32)) + Send + Sync>;
 
@@ -993,6 +1012,20 @@ mod tests {
     use super::*;
     use crate::sps::tests::{LANDSCAPE, PORTRAIT, decode_hex};
     use std::{sync::mpsc, time::Instant};
+
+    #[test]
+    fn the_decoder_made_early_serves_only_the_asked_picture() {
+        let asked = Asked {
+            size: (1280, 720),
+            fps: 60,
+        };
+        let h264 = crate::network::VIDEO_FORMAT_H264 as c_int;
+        assert!(asked.serves(h264, (1280, 720), 60));
+        // Another size (the core rounded an odd height), rate or codec: no.
+        assert!(!asked.serves(h264, (1280, 722), 60));
+        assert!(!asked.serves(h264, (1280, 720), 30));
+        assert!(!asked.serves(crate::network::VIDEO_FORMAT_H265 as c_int, (1280, 720), 60));
+    }
 
     /// A codec that gives what its script says and records what it was
     /// asked. Each queue is popped in turn; an empty one repeats `then`.

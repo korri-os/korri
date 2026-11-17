@@ -33,15 +33,22 @@ pub(crate) struct PlayerIo {
 }
 impl PlayerIo {
     /// Makes the picture's frame record files, when asked: before the
-    /// launch, so a record that cannot be made stops nothing that ran.
-    pub(crate) fn new(_: &Options, platform: Platform) -> Result<Self> {
+    /// launch, so a record that cannot be made stops nothing that ran. The
+    /// decoder starts to be made for the asked picture.
+    pub(crate) fn new(o: &Options, platform: Platform) -> Result<Self> {
         let picture = platform.is_some();
         let mut controllers = 0;
         let mut feedback = None;
         if let Some(app) = platform {
             controllers = app.controllers;
             feedback = Some(app.feedback);
-            picture::open(app.picture)?;
+            // The decoder for the asked picture is made while the stream
+            // connects (#391).
+            let asked = crate::decoder::Asked {
+                size: (o.width, o.height),
+                fps: o.fps,
+            };
+            picture::open(app.picture, asked)?;
         }
         Ok(Self {
             picture,
