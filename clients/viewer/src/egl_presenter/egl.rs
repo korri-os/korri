@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! What `egl.c` and `vaapi_egl.c` each set up: an EGL display of an X11
-//! connection, then an OpenGL ES 2 context and a window surface on an X11
-//! window, with OpenGL ES's calls through glow. Korri's own code.
+//! What `vaapi_egl.c` sets up: an EGL display of an X11 connection, then an
+//! OpenGL ES 2 context and a window surface on an X11 window, with OpenGL
+//! ES's calls through glow. Korri's own code.
 use khronos_egl as egl;
 use std::ffi::{c_ulong, c_void};
 
@@ -10,7 +10,7 @@ pub(super) fn api() -> &'static egl::Instance<egl::Static> {
     &egl::API
 }
 
-/// Why no window came. Each presenter words it as its C does.
+/// Why no window came. The presenter words it as its C does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Failure {
     Display,
@@ -121,8 +121,8 @@ impl Drop for Display {
 }
 
 /// A context and a surface on one X11 window, and OpenGL ES through them.
-/// Dropped, it releases both and terminates the display, as `egl_destroy`
-/// and `vaapi_egl_cleanup` do.
+/// Dropped, it releases both and terminates the display, as
+/// `vaapi_egl_cleanup` does.
 pub(super) struct Window {
     pub(super) display: egl::Display,
     pub(super) context: egl::Context,
@@ -131,21 +131,10 @@ pub(super) struct Window {
 }
 
 // SAFETY: EGL's handles belong to the process. One thread at a time uses a
-// window, behind its presenter's lock, and makes it current first.
+// window, behind the presenter's lock.
 unsafe impl Send for Window {}
 
 impl Window {
-    pub(super) fn make_current(&self) -> bool {
-        api()
-            .make_current(
-                self.display,
-                Some(self.surface),
-                Some(self.surface),
-                Some(self.context),
-            )
-            .is_ok()
-    }
-
     pub(super) fn release(&self) {
         let _ = api().make_current(self.display, None, None, None);
     }

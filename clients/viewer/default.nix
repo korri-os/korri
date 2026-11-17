@@ -250,12 +250,9 @@ let
           cc -std=gnu11 -DHAVE_X11 -DHAVE_VAAPI \
             -ffunction-sections -fdata-sections -Wl,--gc-sections \
             -I${source}/picture -I${network}/include \
-            ${source}/tests/test-x11-vaapi-size.c ${source}/picture/video/egl.c ${source}/picture/place.c \
-            $(pkg-config --cflags --libs libavcodec libavutil libva-x11 x11 egl glesv2) -o check-size
+            ${source}/tests/test-x11-vaapi-size.c ${source}/picture/place.c \
+            $(pkg-config --cflags --libs libavcodec libavutil libva-x11 x11) -o check-size
           xvfb-run -a -s '-screen 0 4096x2304x24 -nolisten tcp' ./check-size
-          cc -std=gnu11 -Wall -Wextra -Werror -Wno-unused-parameter -I${source}/picture -I${network}/include \
-            ${source}/tests/test-egl.c ${source}/picture/video/egl.c ${source}/picture/place.c \
-            $(pkg-config --cflags --libs libavutil x11 egl glesv2) -o check-egl
           cc -std=gnu11 -DHAVE_SDL -I${source}/picture -I${network}/include \
           ${ioFlags} ${source}/tests/test-sdl.c ${ioSources} ${source}/picture/bridge.c ${source}/picture/video/sdl.c \
           ${source}/picture/video/ffmpeg.c ${source}/picture/video/ffmpeg_vaapi.c ${source}/picture/video/vaapi_egl.c \
@@ -266,16 +263,6 @@ let
         # The same source at a portrait size: the stream's new size (#476).
         ffmpeg -v error -f lavfi -i testsrc=size=72x128:rate=30 -frames:v 4 \
           -c:v libx264 -pix_fmt yuv420p -tune zerolatency -f h264 portrait.h264
-        LD_LIBRARY_PATH=${
-          pkgs.lib.makeLibraryPath [
-            network
-            pkgs.libglvnd
-            pkgs.mesa
-          ]
-        } \
-          LIBGL_ALWAYS_SOFTWARE=1 __EGL_VENDOR_LIBRARY_FILENAMES=${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json \
-          EGL_PLATFORM=x11 LIBGL_DRIVERS_PATH=${pkgs.mesa}/lib/dri \
-          xvfb-run -a -s '-screen 0 640x480x24 -nolisten tcp' ./check-egl
         LD_LIBRARY_PATH=${
           pkgs.lib.makeLibraryPath [
             network
@@ -338,12 +325,12 @@ let
       platforms = [ "x86_64-linux" ];
     };
   });
-  # The same viewer with the Rust ports of the carried C EGL presenters
+  # The same viewer with the Rust port of the carried C VA-API EGL presenter
   # (#391 step F, slice F3, src/egl_presenter/). `bin/korri-viewer` still
   # draws through the carried C unless `-eglpresenter rust` is given;
-  # `bin/moonlight` gives it, as `nightjarPackage` does. Its tests draw both
-  # presenters into an Xvfb window with Mesa's software EGL and compare the
-  # pixels.
+  # `bin/moonlight` gives it, as `nightjarPackage` does. Its tests draw with
+  # both presenters into an Xvfb window with Mesa's software EGL and compare
+  # the pixels.
   rustEglPresenterPackage = package.overrideAttrs (old: {
     pname = "korri-viewer-rust-egl-presenter";
     cargoBuildFeatures = [ "rust-egl-presenter" ];

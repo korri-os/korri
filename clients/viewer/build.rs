@@ -134,20 +134,13 @@ fn main() {
             .write_to_file(PathBuf::from(env::var("OUT_DIR").unwrap()).join("audio.rs"))
             .unwrap();
     }
-    // The EGL presenters (#391 step F, src/egl_presenter/). With the
-    // feature, Rust takes their five names and chooses at run time between its
-    // own presenters and the carried C, which keeps its code under the
-    // `carried_` names. The callers, video/x11.c and video/ffmpeg_vaapi.c, do
-    // not change.
+    // The VA-API EGL presenter (#391 step F, src/egl_presenter/). With the
+    // feature, Rust takes its two names and chooses at run time between its
+    // own presenter and the carried C, which keeps its code under the
+    // `carried_` names. The caller, video/ffmpeg_vaapi.c, does not change.
     let egl_presenter = env::var_os("CARGO_FEATURE_RUST_EGL_PRESENTER").is_some();
-    const EGL_PRESENTERS: [&str; 2] = ["video/egl.c", "video/vaapi_egl.c"];
-    const EGL_NAMES: [&str; 5] = [
-        "egl_init",
-        "egl_draw",
-        "egl_destroy",
-        "vaapi_egl_present",
-        "vaapi_egl_cleanup",
-    ];
+    const EGL_PRESENTERS: [&str; 1] = ["video/vaapi_egl.c"];
+    const EGL_NAMES: [&str; 2] = ["vaapi_egl_present", "vaapi_egl_cleanup"];
     if egl_presenter {
         let mut carried = c.clone();
         for name in EGL_NAMES {
@@ -164,7 +157,7 @@ fn main() {
         // references that come before it.
         println!("cargo:rustc-link-lib=EGL");
         println!("cargo:rustc-link-lib=GLESv2");
-        // The types, names and constants that the Rust presenters read, from
+        // The types, names and constants that the Rust presenter reads, from
         // the same headers. The X11 calls serve the tests' windows.
         includes
             .iter()
@@ -173,8 +166,8 @@ fn main() {
                     .header_contents(
                         "presenter.h",
                         "#define XUTIL_DEFINE_FUNCTIONS\n\
-                         #include \"video/egl.h\"\n\
                          #include \"video/vaapi_egl.h\"\n\
+                         #include <EGL/egl.h>\n\
                          #include <EGL/eglext.h>\n\
                          #include <GLES2/gl2.h>\n\
                          #include <GLES2/gl2ext.h>\n\
@@ -183,10 +176,10 @@ fn main() {
                     .clang_arg("-Ipicture"),
                 |builder, path| builder.clang_arg(format!("-I{}", path.display())),
             )
-            .allowlist_type("AVFrame|AVPixelFormat|VADRMPRIMESurfaceDescriptor|picture_place|XImage")
-            .allowlist_function("picture_(fit|fills_window|shown|shown_size|shown_reset)")
-            .allowlist_function("av_frame_(alloc|get_buffer|free)")
-            .allowlist_function("X(OpenDisplay|CloseDisplay|DefaultRootWindow|CreateSimpleWindow|MapWindow|ResizeWindow|DestroyWindow|Sync|GetImage|GetPixel|DestroyImage)")
+            .allowlist_type("AVFrame|VADRMPRIMESurfaceDescriptor|picture_place|XImage")
+            .allowlist_function("picture_fit")
+            .allowlist_function("av_frame_(alloc|free)")
+            .allowlist_function("X(OpenDisplay|DefaultRootWindow|CreateSimpleWindow|MapWindow|DestroyWindow|Sync|GetImage|GetPixel|DestroyImage)")
             .allowlist_var("EGL_(LINUX_DMA_BUF_EXT|LINUX_DRM_FOURCC_EXT|DMA_BUF_PLANE[0-2]_(FD|OFFSET|PITCH|MODIFIER_LO|MODIFIER_HI)_EXT|YUV_COLOR_SPACE_HINT_EXT|SAMPLE_RANGE_HINT_EXT|ITU_REC(601|709|2020)_EXT|YUV_(FULL|NARROW)_RANGE_EXT)")
             .allowlist_var("GL_TEXTURE_EXTERNAL_OES|ZPixmap|VA_FOURCC_NV12")
             .generate_comments(false)
@@ -207,7 +200,6 @@ fn main() {
         "video/ffmpeg.c",
         "video/ffmpeg_vaapi.c",
         "video/vaapi_egl.c",
-        "video/egl.c",
     ]
     .into_iter()
     .filter(|file| !(egl_presenter && EGL_PRESENTERS.contains(file)))

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! The Rust EGL presenters beside the carried C, on a real Xvfb window with
-//! Mesa's software EGL (llvmpipe): the same window pixels, read back from the
-//! X server, for the same frames and places. The software picture repeats
-//! `tests/test-egl.c`'s frames. The VA-API picture needs no VA driver: Mesa
-//! imports a memfd as a dmabuf, so a decoded NV12 surface is written by
+//! The Rust VA-API EGL presenter beside the carried C, on a real Xvfb window
+//! with Mesa's software EGL (llvmpipe): the same window pixels, read back
+//! from the X server, for the same surfaces and places. No VA driver runs:
+//! Mesa imports a memfd as a dmabuf, so a decoded NV12 surface is written by
 //! hand, with padding beyond its visible size.
 use super::{Kind, chosen, ffi, select, vaapi};
 use std::{
@@ -14,8 +13,8 @@ use std::{
     sync::{Mutex, MutexGuard, PoisonError},
 };
 
-/// One presenter at a time: each keeps its state for the process, as does
-/// `place.c`'s shown size, and EGL contexts are current for a thread.
+/// One presenter at a time: each keeps its state for the process, and EGL
+/// contexts are current for a thread.
 static PICTURE: Mutex<()> = Mutex::new(());
 
 fn exclusive() -> MutexGuard<'static, ()> {
@@ -122,9 +121,9 @@ fn red(rgb: u32) -> i32 {
     ((rgb >> 16) & 0xff) as i32
 }
 
-/// test-egl.c's check of one picture: black outside `place`; inside, the
-/// left half bright and the right half dark, two pixels from the edges and
-/// the middle, where the filter blends.
+/// The check of one picture: black outside `place`; inside, the left half
+/// bright and the right half dark, two pixels from the edges and the middle,
+/// where the filter blends.
 fn assert_halves(pixels: &[u32], window: (i32, i32), place: ffi::picture_place, what: &str) {
     for y in 0..window.1 {
         for x in 0..window.0 {
@@ -160,56 +159,10 @@ fn assert_halves(pixels: &[u32], window: (i32, i32), place: ffi::picture_place, 
     }
 }
 
-fn shown_size() -> (i32, i32) {
-    let (mut width, mut height) = (0, 0);
-    // SAFETY: place.c writes the two integers.
-    assert_eq!(
-        unsafe { crate::network::picture_shown_size(&mut width, &mut height) },
-        1
-    );
-    (width, height)
-}
-
-/// A decoded YUV 4:2:0 frame whose left half is bright and right half dark,
-/// in every row, and whose row padding is white: rows read at the wrong
-/// length would slant the edge, and padding drawn would show.
+/// The decoder's frame of a surface: its visible size and colour.
 struct Frame(*mut ffi::AVFrame);
 
 impl Frame {
-    fn halves(width: i32, height: i32) -> Self {
-        // SAFETY: libavutil's own calls; the frame is freed on drop.
-        unsafe {
-            let frame = ffi::av_frame_alloc();
-            assert!(!frame.is_null());
-            (*frame).format = ffi::AVPixelFormat_AV_PIX_FMT_YUV420P;
-            (*frame).width = width;
-            (*frame).height = height;
-            assert_eq!(ffi::av_frame_get_buffer(frame, 64), 0);
-            let line = (*frame).linesize[0] as usize;
-            let luma = std::slice::from_raw_parts_mut((*frame).data[0], line * height as usize);
-            for (at, value) in luma.iter_mut().enumerate() {
-                let x = (at % line) as i32;
-                *value = if x < width / 2 {
-                    235
-                } else if x < width {
-                    40
-                } else {
-                    255
-                };
-            }
-            for plane in 1..3 {
-                let size = (*frame).linesize[plane] as usize * (height as usize).div_ceil(2);
-                std::ptr::write_bytes((*frame).data[plane], 128, size);
-            }
-            Self(frame)
-        }
-    }
-
-    fn padded(&self) -> bool {
-        // SAFETY: a live frame.
-        unsafe { (*self.0).linesize[0] > (*self.0).width }
-    }
-
     fn size(&self) -> (i32, i32) {
         // SAFETY: a live frame.
         unsafe { ((*self.0).width, (*self.0).height) }
@@ -228,70 +181,16 @@ fn fit(picture: (i32, i32), window: (i32, i32)) -> ffi::picture_place {
     unsafe { ffi::picture_fit(picture.0, picture.1, window.0, window.1) }
 }
 
-/// The software picture's frames through `egl_init`, `egl_draw` and
-/// `egl_destroy`, as x11.c calls them: the window's pixels after each.
-fn software_pixels(kind: Kind, x11: &X11, window: (i32, i32), frames: &[Frame]) -> Vec<Vec<u32>> {
-    select(kind);
-    // SAFETY: the calls x11.c makes, on one thread, with a live window and
-    // live frames.
-    unsafe {
-        chosen::egl_init(x11.native(), x11.window, window.0, window.1);
-        let shown = frames
-            .iter()
-            .map(|frame| {
-                chosen::egl_draw(frame.0, fit(frame.size(), window));
-                let pixels = x11.pixels(window.0 as u32, window.1 as u32);
-                assert_eq!(shown_size(), frame.size(), "{kind:?}: place.c's shown size");
-                pixels
-            })
-            .collect();
-        chosen::egl_destroy();
-        shown
-    }
-}
-
-#[test]
-fn the_rust_software_picture_draws_the_carried_cs_pixels() {
-    let _picture = exclusive();
-    let window = (128, 72);
-    let x11 = X11::open(window.0 as u32, window.1 as u32);
-    // The stream's own shape fills the window; then the stream turns
-    // portrait, and back; then it takes a size that is not the start's
-    // (#476). Padded rows, as a decoder gives them.
-    let frames = [
-        Frame::halves(128, 72),
-        Frame::halves(72, 128),
-        Frame::halves(128, 72),
-        Frame::halves(96, 54),
-    ];
-    assert!(frames[1].padded() && frames[3].padded());
-    let carried = software_pixels(Kind::Carried, &x11, window, &frames);
-    let rust = software_pixels(Kind::Rust, &x11, window, &frames);
-    for ((frame, carried), rust) in frames.iter().zip(&carried).zip(&rust) {
-        let what = format!("{:?}", frame.size());
-        assert_halves(
-            carried,
-            window,
-            fit(frame.size(), window),
-            &format!("C {what}"),
-        );
-        assert!(
-            rust == carried,
-            "{what}: the Rust picture's pixels differ from the C's"
-        );
-    }
-    assert!(!super::failed());
-}
-
 /// `DRM_FORMAT_NV12`.
 const DRM_NV12: u32 = 0x3231_564e;
 /// `DRM_FORMAT_MOD_INVALID` and `DRM_FORMAT_MOD_LINEAR`.
 const MODIFIER_INVALID: u64 = 0x00ff_ffff_ffff_ffff;
 const MODIFIER_LINEAR: u64 = 0;
 
-/// A decoded NV12 surface of `coded` size in a memfd, its visible part the
-/// halves of `Frame::halves` and its padding white luma and pink chroma,
-/// and the composed export that `vaExportSurfaceHandle` would give.
+/// A decoded NV12 surface of `coded` size in a memfd, its visible part's
+/// left half bright and right half dark in every row, its padding white luma
+/// and pink chroma, and the composed export that `vaExportSurfaceHandle`
+/// would give. Padding drawn would show.
 struct Surface {
     file: File,
     descriptor: ffi::VADRMPRIMESurfaceDescriptor,
@@ -345,7 +244,7 @@ impl Surface {
     }
 }
 
-/// The decoder's frame for a surface: its visible size and colour.
+/// The decoder's frame for a surface.
 fn colour_frame(visible: (u32, u32), space: u32, range: u32) -> Frame {
     // SAFETY: libavutil's own call; only the fields below are read.
     unsafe {

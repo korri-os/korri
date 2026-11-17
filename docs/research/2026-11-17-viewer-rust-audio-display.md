@@ -20,7 +20,7 @@ All verified, in `clients/viewer` unless the path says otherwise.
 | X11 window and presenter thread hand-off | `picture/video/x11.c:119-131` (display, VA probe), `:133-200` (window, fullscreen, decoder), `:88-117` (present the newest frame) | Xlib window; pipe-woken presenter |
 | VA-API presenter | `picture/video/ffmpeg_vaapi.c:117-160` (VA display on X11), `:233-289` (`vaPutSurface` at `:268`, EGL fallback) | Present a decoded VA surface |
 | VA-API to EGL (Intel, #477) | `picture/video/vaapi_egl.c:55-116` (EGL setup), `:118-168` (dmabuf import), `:170-202` (draw, swap) | Zero-copy present where `vaPutSurface` fails under Xwayland |
-| EGL software presenter | `picture/video/egl.c:90-185` (init), `:186-228` (draw) | YUV shader for a software-decoded frame in the X11 window |
+| EGL software presenter | `picture/video/egl.c:90-185` (init), `:186-228` (draw) | YUV shader for a software-decoded frame in the X11 window. Unreachable: removed later on 2026-11-17 by the owner's decision (`clients/viewer/README.md`, "EGL presenter in Rust") |
 | SDL window and presenter | `picture/sdl.c:58-90` (window, renderer, texture), `:92-152` (event loop, `SDL_RenderPresent` at `:141`) | The software fallback's window, vsync and present |
 | SDL decode hand-off | `picture/video/sdl.c:38-90` | Decode, then an SDL event to the presenter |
 | Placement | `picture/place.c:8-66` | Letterbox and the shown size (#476) |

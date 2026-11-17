@@ -14,7 +14,7 @@ nightjar = ["dep:nightjar-core", "dep:rubylight-protocol"]
 # chosen with `-audiooutput rust` (#391 step F, slice F1). Linux only. Off by
 # default: the carried C plays the sound.
 rust-audio-output = ["dep:alsa", "dep:libpulse-binding", "dep:libpulse-simple-binding"]
-# The Rust ports of the carried C EGL presenters (src/egl_presenter/),
+# The Rust port of the carried C VA-API EGL presenter (src/egl_presenter/),
 # chosen with `-eglpresenter rust` (#391 step F, slice F3). Linux only. Off
 # by default: the carried C presents.
 rust-egl-presenter = ["dep:khronos-egl", "dep:glow"]
@@ -38,7 +38,7 @@ uuid = { version = "1", features = ["v4"] }
 alsa = { version = "0.12", optional = true }
 libpulse-binding = { version = "2.30", optional = true }
 libpulse-simple-binding = { version = "2.29", optional = true }
-# The Rust EGL presenters: EGL through the libEGL that the carried C links,
+# The Rust EGL presenter: EGL through the libEGL that the carried C links,
 # and OpenGL ES through its entry points.
 khronos-egl = { version = "6", features = ["static"], optional = true }
 glow = { version = "0.18", optional = true }

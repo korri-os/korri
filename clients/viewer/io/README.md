@@ -49,8 +49,7 @@ initialization failed". A failure in the descriptor loop makes `picture_poll`
 return -1, and Rust stops the core and reports "picture or input event loop
 failed". Both reach the lifecycle failure report and socket removal. In
 `picture/`, `loop_add_fd` and `util.c` still abort when they cannot allocate,
-and `sdl.c` and `video/egl.c` still call `exit()` on setup failures; those
-bypass both.
+and `sdl.c` still calls `exit()` on setup failures; those bypass both.
 The bridge duplicates `SDL_GAMECONTROLLERCONFIG` before Moonlight's tokenizing
 parser, so the process
 environment is not modified. It caps the launch mask at the protocol's existing

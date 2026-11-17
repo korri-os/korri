@@ -29,8 +29,8 @@ impl PlayerIo {
         if o.platform == "v4l2request" {
             return Self::request(o, mapping, audio_device);
         }
-        // The X11 presenters' EGL code for this stream (#391 step F): the
-        // decoder's setup calls it, after this.
+        // The X11 VA-API presenter's EGL code for this stream (#391 step F):
+        // its first frame calls it, after this.
         #[cfg(feature = "rust-egl-presenter")]
         crate::egl_presenter::select(o.egl_presenter);
         // SAFETY: called under stream's connection lock, on its event thread.
@@ -176,14 +176,7 @@ impl PlayerIo {
     /// One turn of the presenter's or the input's event loop: 0 to go on, a
     /// positive value when the window asks to quit, negative on failure.
     pub(crate) fn poll(&self, timeout_ms: i32) -> i32 {
-        let event = unsafe { ffi::picture_poll(timeout_ms) };
-        // The Rust software presenter could not start: egl.c would have
-        // called exit(), and this ends the stream through its teardown.
-        #[cfg(feature = "rust-egl-presenter")]
-        if event == 0 && crate::egl_presenter::failed() {
-            return -1;
-        }
-        event
+        unsafe { ffi::picture_poll(timeout_ms) }
     }
 }
 impl Drop for PlayerIo {
