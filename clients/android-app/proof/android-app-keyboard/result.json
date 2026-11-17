@@ -1,0 +1,2939 @@
+{
+  "stream_host": "192.168.1.117",
+  "checks": {
+    "sender_sunshine_has_certificate_control": true,
+    "apk_has_no_dex": true,
+    "apk_has_code_false": true,
+    "library_carries_the_viewer": true,
+    "the_emulators_display_has_a_camera_cutout": true,
+    "systemui_lives_with_the_cutout": true,
+    "identity_seeded_as_the_apps_own_files": true,
+    "sender_runs_korris_sunshine": true,
+    "sender_offers_korri_stream": true,
+    "sender_has_certificate_control": true,
+    "sender_answers_at_the_holders_moonlight_address": true,
+    "holder_runs_unprivileged": true,
+    "velvet_lists_the_holders_game": true,
+    "the_tap_makes_korrid_start_the_viewer": true,
+    "korrid_provisioned_the_certificate": true,
+    "viewer_reports_running": true,
+    "start_replied_ok": true,
+    "korrids_status_reads_running": true,
+    "the_start_timeline_reaches_the_first_frame": true,
+    "frame_ids_rise_in_screenshots": true,
+    "the_window_turned_before_the_bars_were_read": true,
+    "the_backdrop_shows_with_the_first_picture": true,
+    "the_bars_are_black_beside_the_picture": true,
+    "guide_opens_the_overlay_and_holds_the_input": true,
+    "the_shell_takes_the_overlay_layers_surface": true,
+    "korrid_hears_that_the_person_left": true,
+    "the_shell_draws_korris_overlay_into_the_layer": true,
+    "the_display_has_a_cutout_first": true,
+    "the_layer_stands_in_the_window_less_the_cutouts_insets_first": true,
+    "it_shows_exactly_there_with_buffers_of_that_size_first": true,
+    "it_meets_none_of_the_cutouts_rectangles_first": true,
+    "the_app_placed_it_so_for_these_insets_first": true,
+    "the_video_and_the_backdrop_reach_the_windows_edges_first": true,
+    "the_display_has_a_cutout_turned": true,
+    "the_layer_stands_in_the_window_less_the_cutouts_insets_turned": true,
+    "it_shows_exactly_there_with_buffers_of_that_size_turned": true,
+    "it_meets_none_of_the_cutouts_rectangles_turned": true,
+    "the_app_placed_it_so_for_these_insets_turned": true,
+    "the_video_and_the_backdrop_reach_the_windows_edges_turned": true,
+    "the_display_has_a_cutout_back": true,
+    "the_layer_stands_in_the_window_less_the_cutouts_insets_back": true,
+    "it_shows_exactly_there_with_buffers_of_that_size_back": true,
+    "it_meets_none_of_the_cutouts_rectangles_back": true,
+    "the_app_placed_it_so_for_these_insets_back": true,
+    "the_video_and_the_backdrop_reach_the_windows_edges_back": true,
+    "a_half_turn_takes_the_cutout_and_the_overlay_to_the_other_side": true,
+    "turned_back_the_overlay_is_where_it_was": true,
+    "the_bars_are_black_beside_the_overlay_in_both_turns": true,
+    "the_picture_moves_under_the_overlay": true,
+    "the_overlay_is_korris_gameplay_overlay": true,
+    "the_overlay_shows_the_streams_controls": true,
+    "crop_to_fill_chosen_in_the_overlay_reaches_the_viewer_through_korrid": true,
+    "the_video_layer_fills_the_window": true,
+    "surfaceflinger_crops_the_stream_under_the_overlay": true,
+    "nothing_but_the_picture_shows_with_crop_to_fill_under_the_overlay": true,
+    "the_picture_changes_under_the_overlay": true,
+    "the_overlay_stays_open_after_the_control": true,
+    "chosen_again_it_fits_the_picture_again": true,
+    "the_bars_are_black_beside_and_under_the_open_overlay": true,
+    "the_sender_receives_no_input_while_the_overlay_is_open": true,
+    "back_closes_the_overlay_through_korrids_resume": true,
+    "the_layer_hides_and_the_shell_lets_its_surface_go_before_the_input_goes_on": true,
+    "the_picture_goes_on_after_the_overlay": true,
+    "the_bars_are_black_after_the_overlay_closed": true,
+    "keys_reach_the_sender": true,
+    "a_touch_reaches_the_sender": true,
+    "the_fixture_apk_carries_the_proof_trigger": true,
+    "korrids_snapshot_lists_the_controls": true,
+    "korrids_snapshot_shows_the_streams_health": true,
+    "korrids_snapshot_shows_the_battery": true,
+    "korrid_itself_reads_the_controls_through_the_treaty": true,
+    "the_backdrop_covers_the_shells_window_under_the_video": true,
+    "korrids_apply_turns_crop_to_fill_on": true,
+    "the_apply_went_through_the_treaty": true,
+    "the_app_moved_the_video_layer_to_fill": true,
+    "surfaceflinger_crops_the_stream_to_fill": true,
+    "the_picture_reaches_the_windows_edge": true,
+    "nothing_but_the_picture_shows_with_crop_to_fill": true,
+    "korrids_snapshot_shows_crop_to_fill_on": true,
+    "korrid_itself_reads_crop_to_fill_on": true,
+    "a_control_of_another_runtime_is_refused": true,
+    "crop_to_fill_off_fits_the_picture_again": true,
+    "the_bars_are_black_before_and_after_crop_to_fill": true,
+    "korrids_snapshot_shows_crop_to_fill_off": true,
+    "korrid_offers_toggle_keyboard_on_a_touch_screen": true,
+    "korrids_apply_runs_toggle_keyboard_through_the_treaty": true,
+    "the_streams_view_takes_the_focus_and_the_keyboard_toggles": true,
+    "each_toggle_turns_the_keyboard_over_for_the_streams_view": true,
+    "a_letter_of_the_soft_keyboard_reaches_the_sender": false,
+    "toggled_again_the_keyboard_hides": true,
+    "toggle_keyboard_changes_no_value": true,
+    "home_stops_the_runtime": true,
+    "viewer_reports_stopped": true,
+    "the_runtime_ends_and_its_layers_go": true,
+    "korrids_status_reads_stopped": true,
+    "the_streams_end_hides_the_keyboard_and_gives_the_focus_back": true,
+    "home_shows_the_launcher": true,
+    "returning_resumes_the_stream": true,
+    "the_bars_are_black_when_the_stream_starts_again": true,
+    "no_crash_panic_or_anr": true,
+    "the_emulator_played_the_streams_tone": true,
+    "holder_joined_its_discovery": true,
+    "the_holder_refused_no_launch_helper": true,
+    "the_holder_took_its_seats_for_the_launch": true,
+    "sunshine_holds_one_client_that_korrid_provisioned": true
+  },
+  "steps": {
+    "display_cutout": {
+      "name": "pixel_5",
+      "listed": [
+        "com.android.internal.display.cutout.emulation.corner",
+        "com.android.internal.display.cutout.emulation.double",
+        "com.android.internal.emulation.pixel_4a",
+        "com.android.internal.display.cutout.emulation.hole",
+        "com.android.internal.display.cutout.emulation.tall",
+        "com.android.internal.emulation.pixel_4",
+        "com.android.internal.emulation.pixel_5",
+        "com.android.internal.display.cutout.emulation.emu01",
+        "com.android.internal.display.cutout.emulation.waterfall",
+        "com.android.internal.emulation.pixel_2_xl",
+        "com.android.internal.emulation.pixel_3_xl",
+        "com.android.internal.emulation.pixel_4_xl",
+        "com.android.systemui.emulation.pixel_2_xl",
+        "com.android.systemui.emulation.pixel_3_xl",
+        "com.android.systemui.emulation.pixel_4_xl",
+        "com.android.systemui.emulation.pixel_3",
+        "com.android.systemui.emulation.pixel_4",
+        "com.android.systemui.emulation.pixel_5",
+        "com.android.systemui.emulation.pixel_3a_xl",
+        "com.android.systemui.emulation.pixel_3a",
+        "com.android.systemui.emulation.pixel_4a"
+      ],
+      "overlays": [
+        "com.android.internal.emulation.pixel_5",
+        "com.android.systemui.emulation.pixel_5"
+      ],
+      "enable": [
+        "",
+        ""
+      ],
+      "display": {
+        "file": "display-cutout-enabled.txt",
+        "rotation": 0,
+        "cutout": [
+          0,
+          136,
+          0,
+          0
+        ],
+        "cutout_rects": [
+          [
+            0,
+            0,
+            136,
+            136
+          ]
+        ]
+      },
+      "systemui_crashes": 0
+    },
+    "holder_process_uid": 59034,
+    "seconds_to_the_game": 61.6,
+    "confirm_presses": 2,
+    "tile": {
+      "x": 304,
+      "y": 836,
+      "box": [
+        56,
+        480,
+        556,
+        1192
+      ]
+    },
+    "tile_taps": 1,
+    "play": {
+      "x": 536,
+      "y": 1128,
+      "box": [
+        56,
+        1080,
+        1020,
+        1180
+      ],
+      "area": 95248
+    },
+    "play_taps": 1,
+    "seconds_from_tap_to_start": 1.6,
+    "seconds_from_tap_to_running": 7.2,
+    "start_timeline": {
+      "tapped": "11-17 10:32:21.060832",
+      "steps": [
+        {
+          "step": "korrid starts the viewer",
+          "ms_after_tap": 159.2
+        },
+        {
+          "step": "video layers asked",
+          "ms_after_tap": 167.4
+        },
+        {
+          "step": "window turn asked",
+          "ms_after_tap": 167.5
+        },
+        {
+          "step": "client certificate read",
+          "ms_after_tap": 174.2
+        },
+        {
+          "step": "video layers made",
+          "ms_after_tap": 215.5
+        },
+        {
+          "step": "server certificate provisioned",
+          "ms_after_tap": 1226.6
+        },
+        {
+          "step": "Start",
+          "ms_after_tap": 1260.3
+        },
+        {
+          "step": "window now 2400x1080",
+          "ms_after_tap": 1282.0
+        },
+        {
+          "step": "http serverinfo answered",
+          "ms_after_tap": 2126.2,
+          "detail": "connected 348.8 ms, first byte 851.9 ms, total 852.0 ms"
+        },
+        {
+          "step": "https serverinfo answered",
+          "ms_after_tap": 3138.9,
+          "detail": "connected 499.6 ms, TLS done 1008.1 ms, first byte 1012.3 ms, total 1012.6 ms"
+        },
+        {
+          "step": "paired",
+          "ms_after_tap": 3139.3
+        },
+        {
+          "step": "https applist answered",
+          "ms_after_tap": 3651.1,
+          "detail": "connected 18.7 ms, TLS done 510.5 ms, first byte 511.6 ms, total 511.8 ms"
+        },
+        {
+          "step": "picture and input ready",
+          "ms_after_tap": 3651.7
+        },
+        {
+          "step": "decoders listed",
+          "ms_after_tap": 3680.4
+        },
+        {
+          "step": "decoder made",
+          "ms_after_tap": 3910.8
+        },
+        {
+          "step": "https launch answered",
+          "ms_after_tap": 4798.3,
+          "detail": "connected 4.8 ms, TLS done 513.5 ms, first byte 1145.8 ms, total 1146.4 ms"
+        },
+        {
+          "step": "core platform init begins",
+          "ms_after_tap": 4799.6
+        },
+        {
+          "step": "core platform init done",
+          "ms_after_tap": 4799.9
+        },
+        {
+          "step": "core name resolution begins",
+          "ms_after_tap": 4799.9
+        },
+        {
+          "step": "core name resolution done",
+          "ms_after_tap": 4799.9
+        },
+        {
+          "step": "core audio stream init begins",
+          "ms_after_tap": 4799.9
+        },
+        {
+          "step": "core audio stream init done",
+          "ms_after_tap": 4800.0
+        },
+        {
+          "step": "core RTSP handshake begins",
+          "ms_after_tap": 4800.1
+        },
+        {
+          "step": "RTSP DESCRIBE answered",
+          "ms_after_tap": 5741.0
+        },
+        {
+          "step": "RTSP SETUP audio answered",
+          "ms_after_tap": 6267.2
+        },
+        {
+          "step": "RTSP SETUP video answered",
+          "ms_after_tap": 6303.7
+        },
+        {
+          "step": "RTSP SETUP control answered",
+          "ms_after_tap": 6358.5
+        },
+        {
+          "step": "core RTSP handshake done",
+          "ms_after_tap": 6720.7
+        },
+        {
+          "step": "core control stream init begins",
+          "ms_after_tap": 6720.7
+        },
+        {
+          "step": "core control stream init done",
+          "ms_after_tap": 6720.7
+        },
+        {
+          "step": "core video stream init begins",
+          "ms_after_tap": 6720.7
+        },
+        {
+          "step": "core video stream init done",
+          "ms_after_tap": 6720.8
+        },
+        {
+          "step": "core input stream init begins",
+          "ms_after_tap": 6720.8
+        },
+        {
+          "step": "core input stream init done",
+          "ms_after_tap": 6720.9
+        },
+        {
+          "step": "core control stream start begins",
+          "ms_after_tap": 6720.9
+        },
+        {
+          "step": "core control stream start done",
+          "ms_after_tap": 6775.5
+        },
+        {
+          "step": "core video stream start begins",
+          "ms_after_tap": 6775.6
+        },
+        {
+          "step": "decoder taken",
+          "ms_after_tap": 6775.7
+        },
+        {
+          "step": "core video stream start done",
+          "ms_after_tap": 6775.8
+        },
+        {
+          "step": "core audio stream start begins",
+          "ms_after_tap": 6775.8
+        },
+        {
+          "step": "first video packet",
+          "ms_after_tap": 6840.8
+        },
+        {
+          "step": "first frame shown",
+          "ms_after_tap": 6981.8
+        }
+      ],
+      "ms_from_tap_to_first_frame": 6981.8
+    },
+    "emulator_tcp_from_tap_to_first_frame": {
+      "active_opens": 33,
+      "retransmitted_segments": 0,
+      "syn_retransmits": 0
+    },
+    "first_bar": {
+      "file": "stream-first.png",
+      "tries": 1,
+      "id": 5075
+    },
+    "picture": [
+      {
+        "file": "stream-1.png",
+        "host_s": 660710.75,
+        "id": 5118
+      },
+      {
+        "file": "stream-2.png",
+        "host_s": 660712.537,
+        "id": 5217
+      },
+      {
+        "file": "stream-3.png",
+        "host_s": 660714.27,
+        "id": 5318
+      },
+      {
+        "file": "stream-4.png",
+        "host_s": 660716.25,
+        "id": 5418
+      }
+    ],
+    "placed_in_windows": [
+      [
+        1080,
+        2400
+      ],
+      [
+        2400,
+        1080
+      ]
+    ],
+    "bars_stream": [
+      {
+        "file": "stream-1.png",
+        "placement": "fit",
+        "overlay_open": false,
+        "strips": {
+          "left": {
+            "box": [
+              0,
+              100,
+              238,
+              1080
+            ],
+            "rule": "black",
+            "pixels": 233240,
+            "black_share": 1.0,
+            "brightest": 0,
+            "pass": true
+          },
+          "right": {
+            "box": [
+              2162,
+              100,
+              2400,
+              1080
+            ],
+            "rule": "black",
+            "pixels": 233240,
+            "black_share": 1.0,
+            "brightest": 0,
+            "pass": true
+          }
+        },
+        "pass": true
+      },
+      {
+        "file": "stream-2.png",
+        "placement": "fit",
+        "overlay_open": false,
+        "strips": {
+          "left": {
+            "box": [
+              0,
+              100,
+              238,
+              1080
+            ],
+            "rule": "black",
+            "pixels": 233240,
+            "black_share": 1.0,
+            "brightest": 0,
+            "pass": true
+          },
+          "right": {
+            "box": [
+              2162,
+              100,
+              2400,
+              1080
+            ],
+            "rule": "black",
+            "pixels": 233240,
+            "black_share": 1.0,
+            "brightest": 0,
+            "pass": true
+          }
+        },
+        "pass": true
+      },
+      {
+        "file": "stream-3.png",
+        "placement": "fit",
+        "overlay_open": false,
+        "strips": {
+          "left": {
+            "box": [
+              0,
+              100,
+              238,
+              1080
+            ],
+            "rule": "black",
+            "pixels": 233240,
+            "black_share": 1.0,
+            "brightest": 0,
+            "pass": true
+          },
+          "right": {
+            "box": [
+              2162,
+              100,
+              2400,
+              1080
+            ],
+            "rule": "black",
+            "pixels": 233240,
+            "black_share": 1.0,
+            "brightest": 0,
+            "pass": true
+          }
+        },
+        "pass": true
+      },
+      {
+        "file": "stream-4.png",
+        "placement": "fit",
+        "overlay_open": false,
+        "strips": {
+          "left": {
+            "box": [
+              0,
+              100,
+              238,
+              1080
+            ],
+            "rule": "black",
+            "pixels": 233240,
+            "black_share": 1.0,
+            "brightest": 0,
+            "pass": true
+          },
+          "right": {
+            "box": [
+              2162,
+              100,
+              2400,
+              1080
+            ],
+            "rule": "black",
+            "pixels": 233240,
+            "black_share": 1.0,
+            "brightest": 0,
+            "pass": true
+          }
+        },
+        "pass": true
+      }
+    ],
+    "gameplay_overlay": {
+      "cutout": {
+        "first": {
+          "place": [
+            136,
+            0,
+            2400,
+            1080
+          ],
+          "cutout": [
+            136,
+            0,
+            0,
+            0
+          ],
+          "cutout_rects": [
+            [
+              0,
+              944,
+              136,
+              1080
+            ]
+          ],
+          "rotation": 90,
+          "layer_pos": [
+            136,
+            0
+          ],
+          "layer_crop": [
+            0,
+            0,
+            2264,
+            1080
+          ],
+          "layer_hidden": false,
+          "buffers_visible": [
+            [
+              136,
+              0,
+              2400,
+              1080
+            ]
+          ],
+          "buffers_size": [
+            2264,
+            1080
+          ],
+          "buffer": [
+            2264,
+            1080
+          ],
+          "logged": [
+            136,
+            0,
+            2400,
+            1080,
+            2400,
+            1080,
+            136,
+            0,
+            0,
+            0
+          ],
+          "meets": [],
+          "checks": {
+            "the_display_has_a_cutout": true,
+            "the_layer_stands_in_the_window_less_the_cutouts_insets": true,
+            "it_shows_exactly_there_with_buffers_of_that_size": true,
+            "it_meets_none_of_the_cutouts_rectangles": true,
+            "the_app_placed_it_so_for_these_insets": true,
+            "the_video_and_the_backdrop_reach_the_windows_edges": true
+          }
+        },
+        "turn_turned": {
+          "to": 270,
+          "acceleration": "-9.81:0:0",
+          "answer": "OK",
+          "turned": true,
+          "seconds": 0.6
+        },
+        "turned": {
+          "place": [
+            0,
+            0,
+            2264,
+            1080
+          ],
+          "cutout": [
+            0,
+            0,
+            136,
+            0
+          ],
+          "cutout_rects": [
+            [
+              2264,
+              0,
+              2400,
+              136
+            ]
+          ],
+          "rotation": 270,
+          "layer_pos": [
+            0,
+            0
+          ],
+          "layer_crop": [
+            0,
+            0,
+            2264,
+            1080
+          ],
+          "layer_hidden": false,
+          "buffers_visible": [
+            [
+              0,
+              0,
+              2264,
+              1080
+            ]
+          ],
+          "buffers_size": [
+            2264,
+            1080
+          ],
+          "buffer": [
+            2264,
+            1080
+          ],
+          "logged": [
+            0,
+            0,
+            2264,
+            1080,
+            2400,
+            1080,
+            0,
+            0,
+            136,
+            0
+          ],
+          "meets": [],
+          "checks": {
+            "the_display_has_a_cutout": true,
+            "the_layer_stands_in_the_window_less_the_cutouts_insets": true,
+            "it_shows_exactly_there_with_buffers_of_that_size": true,
+            "it_meets_none_of_the_cutouts_rectangles": true,
+            "the_app_placed_it_so_for_these_insets": true,
+            "the_video_and_the_backdrop_reach_the_windows_edges": true
+          },
+          "moved_in_the_log": true
+        },
+        "turn_back": {
+          "to": 90,
+          "acceleration": "9.81:0:0",
+          "answer": "OK",
+          "turned": true,
+          "seconds": 1.2
+        },
+        "back": {
+          "place": [
+            136,
+            0,
+            2400,
+            1080
+          ],
+          "cutout": [
+            136,
+            0,
+            0,
+            0
+          ],
+          "cutout_rects": [
+            [
+              0,
+              944,
+              136,
+              1080
+            ]
+          ],
+          "rotation": 90,
+          "layer_pos": [
+            136,
+            0
+          ],
+          "layer_crop": [
+            0,
+            0,
+            2264,
+            1080
+          ],
+          "layer_hidden": false,
+          "buffers_visible": [
+            [
+              136,
+              0,
+              2400,
+              1080
+            ]
+          ],
+          "buffers_size": [
+            2264,
+            1080
+          ],
+          "buffer": [
+            2264,
+            1080
+          ],
+          "logged": [
+            136,
+            0,
+            2400,
+            1080,
+            2400,
+            1080,
+            136,
+            0,
+            0,
+            0
+          ],
+          "meets": [],
+          "checks": {
+            "the_display_has_a_cutout": true,
+            "the_layer_stands_in_the_window_less_the_cutouts_insets": true,
+            "it_shows_exactly_there_with_buffers_of_that_size": true,
+            "it_meets_none_of_the_cutouts_rectangles": true,
+            "the_app_placed_it_so_for_these_insets": true,
+            "the_video_and_the_backdrop_reach_the_windows_edges": true
+          },
+          "moved_in_the_log": true
+        },
+        "bars": [
+          {
+            "file": "overlay-cutout-turned.png",
+            "placement": "fit",
+            "overlay_open": true,
+            "strips": {
+              "left": {
+                "box": [
+                  0,
+                  100,
+                  238,
+                  1080
+                ],
+                "rule": "panel over black",
+                "pixels": 173644,
+                "colour": [
+                  13,
+                  13,
+                  17
+                ],
+                "share_of_that_colour": 1.0,
+                "pass": true
+              },
+              "right": {
+                "box": [
+                  2162,
+                  100,
+                  2262,
+                  1080
+                ],
+                "rule": "black",
+                "pixels": 98000,
+                "black_share": 1.0,
+                "brightest": 0,
+                "pass": true
+              },
+              "right_beside_the_overlay": {
+                "box": [
+                  2266,
+                  100,
+                  2400,
+                  1080
+                ],
+                "rule": "black",
+                "pixels": 131320,
+                "black_share": 1.0,
+                "brightest": 0,
+                "pass": true
+              }
+            },
+            "pass": true
+          },
+          {
+            "file": "overlay-cutout-back.png",
+            "placement": "fit",
+            "overlay_open": true,
+            "strips": {
+              "left": {
+                "box": [
+                  138,
+                  100,
+                  238,
+                  1080
+                ],
+                "rule": "panel over black",
+                "pixels": 91916,
+                "colour": [
+                  13,
+                  13,
+                  17
+                ],
+                "share_of_that_colour": 1.0,
+                "pass": true
+              },
+              "right": {
+                "box": [
+                  2162,
+                  100,
+                  2400,
+                  1080
+                ],
+                "rule": "black",
+                "pixels": 233240,
+                "black_share": 1.0,
+                "brightest": 0,
+                "pass": true
+              },
+              "left_beside_the_overlay": {
+                "box": [
+                  0,
+                  100,
+                  134,
+                  1080
+                ],
+                "rule": "black",
+                "pixels": 131320,
+                "black_share": 1.0,
+                "brightest": 0,
+                "pass": true
+              }
+            },
+            "pass": true
+          }
+        ]
+      },
+      "overlay": [
+        {
+          "file": "overlay-1.png",
+          "host_s": 660730.712,
+          "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+        },
+        {
+          "file": "overlay-2.png",
+          "host_s": 660732.755,
+          "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+        },
+        {
+          "file": "overlay-3.png",
+          "host_s": 660734.95,
+          "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+        }
+      ],
+      "overlay_motion": [
+        40.5,
+        14.5
+      ],
+      "tesseract": true,
+      "overlay_lines": [
+        "10:3 o4",
+        "NCCEPTANCE-GANIE 1052w",
+        "100% 13 ms",
+        "Battery Latency",
+        "7.3 Mbit/s 12",
+        "Stream Frames dropped",
+        "Disconnect",
+        "Open Korri",
+        "10: \\ P |",
+        "\"ACCEPTANCE-GAME 1052aw",
+        "100% 13 ms",
+        "Battery Latency",
+        "7.3 Mbit/s 12",
+        "Stream Frames dropped",
+        "Disconnect",
+        "Open Korri"
+      ],
+      "resume_read": false,
+      "overlay_controls_lines": [
+        "10:3 o4",
+        "ACCEPTANCE-GANIE 1052w",
+        "100% 1ms",
+        "Battery Latency",
+        "7.3 Mbit/s 0",
+        "Stream Frames dropped",
+        "Stream controls",
+        "Toggle keyboard",
+        "Crop tofill Off",
+        "Flip A/B and X/Y Off",
+        "10:3 o4",
+        "ACCEPTANCE-GANIE 1052w",
+        "100% 1ms",
+        "Battery Latency",
+        "7.3 Mbit/s 0 l I I I I",
+        "Stream Frames dropped",
+        "Stream controls",
+        "Toggle keyboard",
+        "Crop tofill Off",
+        "Flip A/B and X/Y Off"
+      ],
+      "crop_to_fill_row": {
+        "x": 284,
+        "y": 879,
+        "box": [
+          246,
+          862,
+          322,
+          897
+        ]
+      },
+      "chosen_by": "touch",
+      "toggle_keyboard_row": {
+        "x": 301,
+        "y": 780,
+        "box": [
+          245,
+          762,
+          357,
+          799
+        ]
+      },
+      "layer_fit": {
+        "file": "surfaceflinger-overlay-fit.txt",
+        "found": true,
+        "crop": [
+          0,
+          0,
+          1280,
+          720
+        ],
+        "z": 1,
+        "flags": 0,
+        "opaque": false,
+        "parent": "com.simonwjackson.korri.app/android.app.NativeActivity#0",
+        "visible": [],
+        "entry": [
+          "+ BufferStateLayer (korri-viewer-video#0) uid=10145",
+          "  Region TransparentRegion (this=0 count=0)",
+          "  Region VisibleRegion (this=0 count=0)",
+          "  Region SurfaceDamageRegion (this=0 count=0)",
+          "      layerStack=   0, z=        1, pos=(240,0), size=(  -1,  -1), crop=[  0,   0, 1280, 720], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000000, tr=[1.50, 0.00][0.00, 1.50]",
+          "      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0",
+          "      zOrderRelativeOf=none",
+          "      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+        ],
+        "video_buffers": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            -1,
+            -1
+          ],
+          "z": 0,
+          "flags": 256,
+          "opaque": true,
+          "parent": "korri-viewer-video#0",
+          "visible": [
+            [
+              240,
+              0,
+              2160,
+              1080
+            ]
+          ],
+          "entry": [
+            "+ BufferStateLayer (bbq-wrapper#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=1)",
+            "    [240,   0, 2160, 1080]",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(240,0), size=(1280, 720), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=BT601_525 SMPTE_170M Limited range, defaultPixelFormat=Unknown 0x000023, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000100, tr=[1.50, 0.00][0.00, 1.50]",
+            "      parent=korri-viewer-video#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[1280x 720:1280,Unknown 0x000023], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:158396174605}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        },
+        "backdrop": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            1080,
+            2400
+          ],
+          "z": 0,
+          "flags": 2,
+          "opaque": false,
+          "parent": "com.simonwjackson.korri.app/android.app.NativeActivity#0",
+          "visible": [],
+          "entry": [
+            "+ BufferStateLayer (korri-viewer-backdrop#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=0)",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,0), size=(  -1,  -1), crop=[  0,   0, 1080, 2400], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000002, tr=[2.22, 0.00][0.00, 0.45]",
+            "      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        },
+        "backdrop_buffers": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            -1,
+            -1
+          ],
+          "z": 0,
+          "flags": 258,
+          "opaque": true,
+          "parent": "korri-viewer-backdrop#0",
+          "visible": [
+            [
+              0,
+              0,
+              240,
+              1080
+            ],
+            [
+              2160,
+              0,
+              2400,
+              1080
+            ]
+          ],
+          "entry": [
+            "+ BufferStateLayer (bbq-wrapper#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=2)",
+            "    [  0,   0, 240, 1080]",
+            "    [2160,   0, 2400, 1080]",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,0), size=(1080,2400), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000102, tr=[2.22, 0.00][0.00, 0.45]",
+            "      parent=korri-viewer-backdrop#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[1080x2400:1080,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:118350381445}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        },
+        "window": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            -1,
+            -1
+          ],
+          "z": 0,
+          "flags": 258,
+          "opaque": true,
+          "parent": "9c6bf34 com.simonwjackson.korri.app/android.app.NativeActivity#0",
+          "visible": [],
+          "entry": [
+            "+ BufferStateLayer (com.simonwjackson.korri.app/android.app.NativeActivity#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=0)",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,0), size=(2400,1080), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000102, tr=[0.00, 0.00][0.00, 0.00]",
+            "      parent=9c6bf34 com.simonwjackson.korri.app/android.app.NativeActivity#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[2400x1080:2400,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={windowType:1, dequeueTime:158392043972, ownerUID:10145, ownerPID:4845}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        }
+      },
+      "layer_fill": {
+        "file": "surfaceflinger-overlay-fill.txt",
+        "found": true,
+        "crop": [
+          0,
+          72,
+          1280,
+          648
+        ],
+        "z": 1,
+        "flags": 0,
+        "opaque": false,
+        "parent": "com.simonwjackson.korri.app/android.app.NativeActivity#0",
+        "visible": [],
+        "entry": [
+          "+ BufferStateLayer (korri-viewer-video#0) uid=10145",
+          "  Region TransparentRegion (this=0 count=0)",
+          "  Region VisibleRegion (this=0 count=0)",
+          "  Region SurfaceDamageRegion (this=0 count=0)",
+          "      layerStack=   0, z=        1, pos=(0,-135), size=(  -1,  -1), crop=[  0,  72, 1280, 648], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000000, tr=[1.88, 0.00][0.00, 1.88]",
+          "      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0",
+          "      zOrderRelativeOf=none",
+          "      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+        ],
+        "video_buffers": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            -1,
+            -1
+          ],
+          "z": 0,
+          "flags": 256,
+          "opaque": true,
+          "parent": "korri-viewer-video#0",
+          "visible": [
+            [
+              0,
+              0,
+              2400,
+              1080
+            ]
+          ],
+          "entry": [
+            "+ BufferStateLayer (bbq-wrapper#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=1)",
+            "    [  0,   0, 2400, 1080]",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,-135), size=(1280, 720), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=BT601_525 SMPTE_170M Limited range, defaultPixelFormat=Unknown 0x000023, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000100, tr=[1.88, 0.00][0.00, 1.88]",
+            "      parent=korri-viewer-video#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[1280x 720:1280,Unknown 0x000023], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:161456154769}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        },
+        "backdrop": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            1080,
+            2400
+          ],
+          "z": 0,
+          "flags": 2,
+          "opaque": false,
+          "parent": "com.simonwjackson.korri.app/android.app.NativeActivity#0",
+          "visible": [],
+          "entry": [
+            "+ BufferStateLayer (korri-viewer-backdrop#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=0)",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,0), size=(  -1,  -1), crop=[  0,   0, 1080, 2400], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000002, tr=[2.22, 0.00][0.00, 0.45]",
+            "      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        },
+        "backdrop_buffers": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            -1,
+            -1
+          ],
+          "z": 0,
+          "flags": 258,
+          "opaque": true,
+          "parent": "korri-viewer-backdrop#0",
+          "visible": [],
+          "entry": [
+            "+ BufferStateLayer (bbq-wrapper#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=0)",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,0), size=(1080,2400), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000102, tr=[2.22, 0.00][0.00, 0.45]",
+            "      parent=korri-viewer-backdrop#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[1080x2400:1080,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:118350381445}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        },
+        "window": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            -1,
+            -1
+          ],
+          "z": 0,
+          "flags": 258,
+          "opaque": true,
+          "parent": "9c6bf34 com.simonwjackson.korri.app/android.app.NativeActivity#0",
+          "visible": [],
+          "entry": [
+            "+ BufferStateLayer (com.simonwjackson.korri.app/android.app.NativeActivity#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=0)",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,0), size=(2400,1080), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000102, tr=[0.00, 0.00][0.00, 0.00]",
+            "      parent=9c6bf34 com.simonwjackson.korri.app/android.app.NativeActivity#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[2400x1080:2400,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={ownerPID:4845, ownerUID:10145, windowType:1, dequeueTime:159592494148}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        }
+      },
+      "picture_overlay_fill": {
+        "file": "surfaceflinger-overlay-fill.txt",
+        "bounds": [
+          0,
+          0,
+          2400,
+          1080
+        ],
+        "visible": [
+          [
+            0,
+            0,
+            2400,
+            1080
+          ]
+        ],
+        "backdrop_visible": [],
+        "window_visible": [],
+        "pass": true
+      },
+      "right_strip_change": 114.1,
+      "layer_fit_again": {
+        "file": "surfaceflinger-overlay-fit-again.txt",
+        "found": true,
+        "crop": [
+          0,
+          0,
+          1280,
+          720
+        ],
+        "z": 1,
+        "flags": 0,
+        "opaque": false,
+        "parent": "com.simonwjackson.korri.app/android.app.NativeActivity#0",
+        "visible": [],
+        "entry": [
+          "+ BufferStateLayer (korri-viewer-video#0) uid=10145",
+          "  Region TransparentRegion (this=0 count=0)",
+          "  Region VisibleRegion (this=0 count=0)",
+          "  Region SurfaceDamageRegion (this=0 count=0)",
+          "      layerStack=   0, z=        1, pos=(240,0), size=(  -1,  -1), crop=[  0,   0, 1280, 720], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000000, tr=[1.50, 0.00][0.00, 1.50]",
+          "      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0",
+          "      zOrderRelativeOf=none",
+          "      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+        ],
+        "video_buffers": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            -1,
+            -1
+          ],
+          "z": 0,
+          "flags": 256,
+          "opaque": true,
+          "parent": "korri-viewer-video#0",
+          "visible": [
+            [
+              240,
+              0,
+              2160,
+              1080
+            ]
+          ],
+          "entry": [
+            "+ BufferStateLayer (bbq-wrapper#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=1)",
+            "    [240,   0, 2160, 1080]",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(240,0), size=(1280, 720), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=BT601_525 SMPTE_170M Limited range, defaultPixelFormat=Unknown 0x000023, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000100, tr=[1.50, 0.00][0.00, 1.50]",
+            "      parent=korri-viewer-video#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[1280x 720:1280,Unknown 0x000023], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:165726898863}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        },
+        "backdrop": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            1080,
+            2400
+          ],
+          "z": 0,
+          "flags": 2,
+          "opaque": false,
+          "parent": "com.simonwjackson.korri.app/android.app.NativeActivity#0",
+          "visible": [],
+          "entry": [
+            "+ BufferStateLayer (korri-viewer-backdrop#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=0)",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,0), size=(  -1,  -1), crop=[  0,   0, 1080, 2400], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000002, tr=[2.22, 0.00][0.00, 0.45]",
+            "      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        },
+        "backdrop_buffers": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            -1,
+            -1
+          ],
+          "z": 0,
+          "flags": 258,
+          "opaque": true,
+          "parent": "korri-viewer-backdrop#0",
+          "visible": [
+            [
+              0,
+              0,
+              240,
+              1080
+            ],
+            [
+              2160,
+              0,
+              2400,
+              1080
+            ]
+          ],
+          "entry": [
+            "+ BufferStateLayer (bbq-wrapper#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=2)",
+            "    [  0,   0, 240, 1080]",
+            "    [2160,   0, 2400, 1080]",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,0), size=(1080,2400), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000102, tr=[2.22, 0.00][0.00, 0.45]",
+            "      parent=korri-viewer-backdrop#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[1080x2400:1080,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:118350381445}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        },
+        "window": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            -1,
+            -1
+          ],
+          "z": 0,
+          "flags": 258,
+          "opaque": true,
+          "parent": "9c6bf34 com.simonwjackson.korri.app/android.app.NativeActivity#0",
+          "visible": [],
+          "entry": [
+            "+ BufferStateLayer (com.simonwjackson.korri.app/android.app.NativeActivity#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=0)",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,0), size=(2400,1080), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000102, tr=[0.00, 0.00][0.00, 0.00]",
+            "      parent=9c6bf34 com.simonwjackson.korri.app/android.app.NativeActivity#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[2400x1080:2400,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={ownerUID:10145, ownerPID:4845, dequeueTime:163774965626, windowType:1}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        }
+      },
+      "bars_overlay_fit": [
+        {
+          "file": "overlay-1.png",
+          "placement": "fit",
+          "overlay_open": true,
+          "strips": {
+            "left": {
+              "box": [
+                138,
+                100,
+                238,
+                1080
+              ],
+              "rule": "panel over black",
+              "pixels": 91916,
+              "colour": [
+                13,
+                13,
+                17
+              ],
+              "share_of_that_colour": 1.0,
+              "pass": true
+            },
+            "right": {
+              "box": [
+                2162,
+                100,
+                2400,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 233240,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            },
+            "left_beside_the_overlay": {
+              "box": [
+                0,
+                100,
+                134,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 131320,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            }
+          },
+          "pass": true
+        },
+        {
+          "file": "overlay-2.png",
+          "placement": "fit",
+          "overlay_open": true,
+          "strips": {
+            "left": {
+              "box": [
+                138,
+                100,
+                238,
+                1080
+              ],
+              "rule": "panel over black",
+              "pixels": 91916,
+              "colour": [
+                13,
+                13,
+                17
+              ],
+              "share_of_that_colour": 1.0,
+              "pass": true
+            },
+            "right": {
+              "box": [
+                2162,
+                100,
+                2400,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 233240,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            },
+            "left_beside_the_overlay": {
+              "box": [
+                0,
+                100,
+                134,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 131320,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            }
+          },
+          "pass": true
+        },
+        {
+          "file": "overlay-3.png",
+          "placement": "fit",
+          "overlay_open": true,
+          "strips": {
+            "left": {
+              "box": [
+                138,
+                100,
+                238,
+                1080
+              ],
+              "rule": "panel over black",
+              "pixels": 91916,
+              "colour": [
+                13,
+                13,
+                17
+              ],
+              "share_of_that_colour": 1.0,
+              "pass": true
+            },
+            "right": {
+              "box": [
+                2162,
+                100,
+                2400,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 233240,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            },
+            "left_beside_the_overlay": {
+              "box": [
+                0,
+                100,
+                134,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 131320,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            }
+          },
+          "pass": true
+        },
+        {
+          "file": "overlay-controls.png",
+          "placement": "fit",
+          "overlay_open": true,
+          "strips": {
+            "left": {
+              "box": [
+                138,
+                100,
+                238,
+                1080
+              ],
+              "rule": "panel over black",
+              "pixels": 93172,
+              "colour": [
+                13,
+                13,
+                17
+              ],
+              "share_of_that_colour": 1.0,
+              "pass": true
+            },
+            "right": {
+              "box": [
+                2162,
+                100,
+                2400,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 233240,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            },
+            "left_beside_the_overlay": {
+              "box": [
+                0,
+                100,
+                134,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 131320,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            }
+          },
+          "pass": true
+        },
+        {
+          "file": "overlay-fit.png",
+          "placement": "fit",
+          "overlay_open": true,
+          "strips": {
+            "left": {
+              "box": [
+                138,
+                100,
+                238,
+                1080
+              ],
+              "rule": "panel over black",
+              "pixels": 93172,
+              "colour": [
+                13,
+                13,
+                17
+              ],
+              "share_of_that_colour": 1.0,
+              "pass": true
+            },
+            "right": {
+              "box": [
+                2162,
+                100,
+                2400,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 233240,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            },
+            "left_beside_the_overlay": {
+              "box": [
+                0,
+                100,
+                134,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 131320,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            }
+          },
+          "pass": true
+        },
+        {
+          "file": "overlay-fit-again.png",
+          "placement": "fit",
+          "overlay_open": true,
+          "strips": {
+            "left": {
+              "box": [
+                138,
+                100,
+                238,
+                1080
+              ],
+              "rule": "panel over black",
+              "pixels": 93157,
+              "colour": [
+                13,
+                13,
+                17
+              ],
+              "share_of_that_colour": 1.0,
+              "pass": true
+            },
+            "right": {
+              "box": [
+                2162,
+                100,
+                2400,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 233240,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            },
+            "left_beside_the_overlay": {
+              "box": [
+                0,
+                100,
+                134,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 131320,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            }
+          },
+          "pass": true
+        }
+      ],
+      "sender_packets_while_open": [],
+      "closed": {
+        "seconds_open": 34.8,
+        "keys": 9,
+        "motions": 4
+      },
+      "after_overlay": [
+        {
+          "file": "after-overlay-1.png",
+          "host_s": 660754.395,
+          "id": 7560
+        },
+        {
+          "file": "after-overlay-2.png",
+          "host_s": 660756.12,
+          "id": 7654
+        },
+        {
+          "file": "after-overlay-3.png",
+          "host_s": 660757.857,
+          "id": 7751
+        }
+      ],
+      "bars_after_overlay": [
+        {
+          "file": "after-overlay-1.png",
+          "placement": "fit",
+          "overlay_open": false,
+          "strips": {
+            "left": {
+              "box": [
+                0,
+                100,
+                238,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 233240,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            },
+            "right": {
+              "box": [
+                2162,
+                100,
+                2400,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 233240,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            }
+          },
+          "pass": true
+        },
+        {
+          "file": "after-overlay-2.png",
+          "placement": "fit",
+          "overlay_open": false,
+          "strips": {
+            "left": {
+              "box": [
+                0,
+                100,
+                238,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 233240,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            },
+            "right": {
+              "box": [
+                2162,
+                100,
+                2400,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 233240,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            }
+          },
+          "pass": true
+        },
+        {
+          "file": "after-overlay-3.png",
+          "placement": "fit",
+          "overlay_open": false,
+          "strips": {
+            "left": {
+              "box": [
+                0,
+                100,
+                238,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 233240,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            },
+            "right": {
+              "box": [
+                2162,
+                100,
+                2400,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 233240,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            }
+          },
+          "pass": true
+        }
+      ]
+    },
+    "input": {
+      "keyboard_codes_after_marker": [
+        77,
+        75,
+        75,
+        79,
+        79,
+        82,
+        82,
+        73,
+        73
+      ],
+      "kinds": [
+        "absolute mouse move",
+        "keyboard",
+        "mouse button"
+      ]
+    },
+    "controls": {
+      "snapshot": {
+        "connected": true,
+        "shape": {
+          "connection": "4845:125:215803840",
+          "screen": {
+            "width": 2400,
+            "height": 1080
+          },
+          "encoded": {
+            "width": 1280,
+            "height": 720
+          },
+          "ready": true
+        },
+        "sampledAtMs": 181782.0,
+        "batteryPercent": 100.0,
+        "streamHealth": {
+          "rttMs": 12.0,
+          "deliveredBitrateKbps": 7145.051792828685,
+          "framesDropped": 7.0
+        },
+        "controls": [
+          {
+            "id": "viewer:f89900b4f3a4e58ca63b1b45631ea58f:1:1:toggle-keyboard",
+            "label": "Toggle keyboard",
+            "enabled": true,
+            "destructive": false,
+            "dismissOnSuccess": true,
+            "interaction": {
+              "kind": "command"
+            }
+          },
+          {
+            "id": "viewer:f89900b4f3a4e58ca63b1b45631ea58f:1:1:set-fill-mode",
+            "label": "Crop to fill",
+            "enabled": true,
+            "destructive": false,
+            "dismissOnSuccess": false,
+            "interaction": {
+              "kind": "toggle",
+              "value": false,
+              "trueLabel": "On",
+              "falseLabel": "Off"
+            }
+          },
+          {
+            "id": "viewer:f89900b4f3a4e58ca63b1b45631ea58f:1:1:set-face-button-flip",
+            "label": "Flip A/B and X/Y",
+            "enabled": true,
+            "destructive": false,
+            "dismissOnSuccess": false,
+            "interaction": {
+              "kind": "toggle",
+              "value": false,
+              "trueLabel": "On",
+              "falseLabel": "Off"
+            }
+          }
+        ]
+      },
+      "listed": {
+        "toggle-keyboard": {
+          "id": "viewer:f89900b4f3a4e58ca63b1b45631ea58f:1:1:toggle-keyboard",
+          "label": "Toggle keyboard",
+          "kind": "command",
+          "value": null
+        },
+        "set-fill-mode": {
+          "id": "viewer:f89900b4f3a4e58ca63b1b45631ea58f:1:1:set-fill-mode",
+          "label": "Crop to fill",
+          "kind": "toggle",
+          "value": false
+        },
+        "set-face-button-flip": {
+          "id": "viewer:f89900b4f3a4e58ca63b1b45631ea58f:1:1:set-face-button-flip",
+          "label": "Flip A/B and X/Y",
+          "kind": "toggle",
+          "value": false
+        }
+      },
+      "expected": [
+        "set-face-button-flip",
+        "set-fill-mode",
+        "toggle-keyboard"
+      ],
+      "rumble_offered": false,
+      "korrids_own_read": {
+        "toggle-keyboard": {
+          "id": "viewer:f89900b4f3a4e58ca63b1b45631ea58f:1:1:toggle-keyboard",
+          "label": "Toggle keyboard",
+          "kind": "command",
+          "value": null
+        },
+        "set-fill-mode": {
+          "id": "viewer:f89900b4f3a4e58ca63b1b45631ea58f:1:1:set-fill-mode",
+          "label": "Crop to fill",
+          "kind": "toggle",
+          "value": false
+        },
+        "set-face-button-flip": {
+          "id": "viewer:f89900b4f3a4e58ca63b1b45631ea58f:1:1:set-face-button-flip",
+          "label": "Flip A/B and X/Y",
+          "kind": "toggle",
+          "value": false
+        }
+      },
+      "layer_fit": {
+        "file": "surfaceflinger-fit.txt",
+        "found": true,
+        "crop": [
+          0,
+          0,
+          1280,
+          720
+        ],
+        "z": 1,
+        "flags": 0,
+        "opaque": false,
+        "parent": "com.simonwjackson.korri.app/android.app.NativeActivity#0",
+        "visible": [],
+        "entry": [
+          "+ BufferStateLayer (korri-viewer-video#0) uid=10145",
+          "  Region TransparentRegion (this=0 count=0)",
+          "  Region VisibleRegion (this=0 count=0)",
+          "  Region SurfaceDamageRegion (this=0 count=0)",
+          "      layerStack=   0, z=        1, pos=(240,0), size=(  -1,  -1), crop=[  0,   0, 1280, 720], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000000, tr=[1.50, 0.00][0.00, 1.50]",
+          "      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0",
+          "      zOrderRelativeOf=none",
+          "      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+        ],
+        "video_buffers": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            -1,
+            -1
+          ],
+          "z": 0,
+          "flags": 256,
+          "opaque": true,
+          "parent": "korri-viewer-video#0",
+          "visible": [
+            [
+              240,
+              0,
+              2160,
+              1080
+            ]
+          ],
+          "entry": [
+            "+ BufferStateLayer (bbq-wrapper#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=1)",
+            "    [240,   0, 2160, 1080]",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(240,0), size=(1280, 720), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=BT601_525 SMPTE_170M Limited range, defaultPixelFormat=Unknown 0x000023, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000100, tr=[1.50, 0.00][0.00, 1.50]",
+            "      parent=korri-viewer-video#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[1280x 720:1280,Unknown 0x000023], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:182344129121}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        },
+        "backdrop": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            1080,
+            2400
+          ],
+          "z": 0,
+          "flags": 2,
+          "opaque": false,
+          "parent": "com.simonwjackson.korri.app/android.app.NativeActivity#0",
+          "visible": [],
+          "entry": [
+            "+ BufferStateLayer (korri-viewer-backdrop#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=0)",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,0), size=(  -1,  -1), crop=[  0,   0, 1080, 2400], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000002, tr=[2.22, 0.00][0.00, 0.45]",
+            "      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        },
+        "backdrop_buffers": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            -1,
+            -1
+          ],
+          "z": 0,
+          "flags": 258,
+          "opaque": true,
+          "parent": "korri-viewer-backdrop#0",
+          "visible": [
+            [
+              0,
+              0,
+              240,
+              1080
+            ],
+            [
+              2160,
+              0,
+              2400,
+              1080
+            ]
+          ],
+          "entry": [
+            "+ BufferStateLayer (bbq-wrapper#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=2)",
+            "    [  0,   0, 240, 1080]",
+            "    [2160,   0, 2400, 1080]",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,0), size=(1080,2400), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000102, tr=[2.22, 0.00][0.00, 0.45]",
+            "      parent=korri-viewer-backdrop#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[1080x2400:1080,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:118350381445}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        },
+        "window": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            -1,
+            -1
+          ],
+          "z": 0,
+          "flags": 258,
+          "opaque": true,
+          "parent": "9c6bf34 com.simonwjackson.korri.app/android.app.NativeActivity#0",
+          "visible": [],
+          "entry": [
+            "+ BufferStateLayer (com.simonwjackson.korri.app/android.app.NativeActivity#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=0)",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,0), size=(2400,1080), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000102, tr=[0.00, 0.00][0.00, 0.00]",
+            "      parent=9c6bf34 com.simonwjackson.korri.app/android.app.NativeActivity#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[2400x1080:2400,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={windowType:1, dequeueTime:182346534729, ownerUID:10145, ownerPID:4845}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        }
+      },
+      "apply_fill_on": "ok",
+      "layer_fill": {
+        "file": "surfaceflinger-fill.txt",
+        "found": true,
+        "crop": [
+          0,
+          72,
+          1280,
+          648
+        ],
+        "z": 1,
+        "flags": 0,
+        "opaque": false,
+        "parent": "com.simonwjackson.korri.app/android.app.NativeActivity#0",
+        "visible": [],
+        "entry": [
+          "+ BufferStateLayer (korri-viewer-video#0) uid=10145",
+          "  Region TransparentRegion (this=0 count=0)",
+          "  Region VisibleRegion (this=0 count=0)",
+          "  Region SurfaceDamageRegion (this=0 count=0)",
+          "      layerStack=   0, z=        1, pos=(0,-135), size=(  -1,  -1), crop=[  0,  72, 1280, 648], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000000, tr=[1.88, 0.00][0.00, 1.88]",
+          "      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0",
+          "      zOrderRelativeOf=none",
+          "      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+        ],
+        "video_buffers": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            -1,
+            -1
+          ],
+          "z": 0,
+          "flags": 256,
+          "opaque": true,
+          "parent": "korri-viewer-video#0",
+          "visible": [
+            [
+              0,
+              0,
+              2400,
+              1080
+            ]
+          ],
+          "entry": [
+            "+ BufferStateLayer (bbq-wrapper#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=1)",
+            "    [  0,   0, 2400, 1080]",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,-135), size=(1280, 720), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=BT601_525 SMPTE_170M Limited range, defaultPixelFormat=Unknown 0x000023, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000100, tr=[1.88, 0.00][0.00, 1.88]",
+            "      parent=korri-viewer-video#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[1280x 720:1280,Unknown 0x000023], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:184657625686}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        },
+        "backdrop": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            1080,
+            2400
+          ],
+          "z": 0,
+          "flags": 2,
+          "opaque": false,
+          "parent": "com.simonwjackson.korri.app/android.app.NativeActivity#0",
+          "visible": [],
+          "entry": [
+            "+ BufferStateLayer (korri-viewer-backdrop#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=0)",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,0), size=(  -1,  -1), crop=[  0,   0, 1080, 2400], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000002, tr=[2.22, 0.00][0.00, 0.45]",
+            "      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        },
+        "backdrop_buffers": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            -1,
+            -1
+          ],
+          "z": 0,
+          "flags": 258,
+          "opaque": true,
+          "parent": "korri-viewer-backdrop#0",
+          "visible": [],
+          "entry": [
+            "+ BufferStateLayer (bbq-wrapper#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=0)",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,0), size=(1080,2400), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000102, tr=[2.22, 0.00][0.00, 0.45]",
+            "      parent=korri-viewer-backdrop#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[1080x2400:1080,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:118350381445}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        },
+        "window": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            -1,
+            -1
+          ],
+          "z": 0,
+          "flags": 258,
+          "opaque": true,
+          "parent": "9c6bf34 com.simonwjackson.korri.app/android.app.NativeActivity#0",
+          "visible": [],
+          "entry": [
+            "+ BufferStateLayer (com.simonwjackson.korri.app/android.app.NativeActivity#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=0)",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,0), size=(2400,1080), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000102, tr=[0.00, 0.00][0.00, 0.00]",
+            "      parent=9c6bf34 com.simonwjackson.korri.app/android.app.NativeActivity#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[2400x1080:2400,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={windowType:1, dequeueTime:184636305902, ownerUID:10145, ownerPID:4845}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        }
+      },
+      "fill_bar": {
+        "id": 8347
+      },
+      "left_strip_change": 138.3,
+      "picture_fill": {
+        "file": "surfaceflinger-fill.txt",
+        "bounds": [
+          0,
+          0,
+          2400,
+          1080
+        ],
+        "visible": [
+          [
+            0,
+            0,
+            2400,
+            1080
+          ]
+        ],
+        "backdrop_visible": [],
+        "window_visible": [],
+        "pass": true
+      },
+      "snapshot_fill_on": {
+        "toggle-keyboard": {
+          "id": "viewer:f89900b4f3a4e58ca63b1b45631ea58f:1:1:toggle-keyboard",
+          "label": "Toggle keyboard",
+          "kind": "command",
+          "value": null
+        },
+        "set-fill-mode": {
+          "id": "viewer:f89900b4f3a4e58ca63b1b45631ea58f:1:1:set-fill-mode",
+          "label": "Crop to fill",
+          "kind": "toggle",
+          "value": true
+        },
+        "set-face-button-flip": {
+          "id": "viewer:f89900b4f3a4e58ca63b1b45631ea58f:1:1:set-face-button-flip",
+          "label": "Flip A/B and X/Y",
+          "kind": "toggle",
+          "value": false
+        }
+      },
+      "apply_stale": "failed: Unknown or stale stream control",
+      "apply_fill_off": "ok",
+      "layer_fit_again": {
+        "file": "surfaceflinger-fit-again.txt",
+        "found": true,
+        "crop": [
+          0,
+          0,
+          1280,
+          720
+        ],
+        "z": 1,
+        "flags": 0,
+        "opaque": false,
+        "parent": "com.simonwjackson.korri.app/android.app.NativeActivity#0",
+        "visible": [],
+        "entry": [
+          "+ BufferStateLayer (korri-viewer-video#0) uid=10145",
+          "  Region TransparentRegion (this=0 count=0)",
+          "  Region VisibleRegion (this=0 count=0)",
+          "  Region SurfaceDamageRegion (this=0 count=0)",
+          "      layerStack=   0, z=        1, pos=(240,0), size=(  -1,  -1), crop=[  0,   0, 1280, 720], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000000, tr=[1.50, 0.00][0.00, 1.50]",
+          "      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0",
+          "      zOrderRelativeOf=none",
+          "      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+        ],
+        "video_buffers": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            -1,
+            -1
+          ],
+          "z": 0,
+          "flags": 256,
+          "opaque": true,
+          "parent": "korri-viewer-video#0",
+          "visible": [
+            [
+              240,
+              0,
+              2160,
+              1080
+            ]
+          ],
+          "entry": [
+            "+ BufferStateLayer (bbq-wrapper#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=1)",
+            "    [240,   0, 2160, 1080]",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(240,0), size=(1280, 720), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=BT601_525 SMPTE_170M Limited range, defaultPixelFormat=Unknown 0x000023, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000100, tr=[1.50, 0.00][0.00, 1.50]",
+            "      parent=korri-viewer-video#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[1280x 720:1280,Unknown 0x000023], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:188165990123}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        },
+        "backdrop": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            1080,
+            2400
+          ],
+          "z": 0,
+          "flags": 2,
+          "opaque": false,
+          "parent": "com.simonwjackson.korri.app/android.app.NativeActivity#0",
+          "visible": [],
+          "entry": [
+            "+ BufferStateLayer (korri-viewer-backdrop#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=0)",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,0), size=(  -1,  -1), crop=[  0,   0, 1080, 2400], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=0, invalidate=0, dataspace=Default, defaultPixelFormat=Unknown/None, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000002, tr=[2.22, 0.00][0.00, 0.45]",
+            "      parent=com.simonwjackson.korri.app/android.app.NativeActivity#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[   0x   0:   0,Unknown/None], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        },
+        "backdrop_buffers": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            -1,
+            -1
+          ],
+          "z": 0,
+          "flags": 258,
+          "opaque": true,
+          "parent": "korri-viewer-backdrop#0",
+          "visible": [
+            [
+              0,
+              0,
+              240,
+              1080
+            ],
+            [
+              2160,
+              0,
+              2400,
+              1080
+            ]
+          ],
+          "entry": [
+            "+ BufferStateLayer (bbq-wrapper#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=2)",
+            "    [  0,   0, 240, 1080]",
+            "    [2160,   0, 2400, 1080]",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,0), size=(1080,2400), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000102, tr=[2.22, 0.00][0.00, 0.45]",
+            "      parent=korri-viewer-backdrop#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[1080x2400:1080,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={dequeueTime:118350381445}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        },
+        "window": {
+          "found": true,
+          "crop": [
+            0,
+            0,
+            -1,
+            -1
+          ],
+          "z": 0,
+          "flags": 258,
+          "opaque": true,
+          "parent": "9c6bf34 com.simonwjackson.korri.app/android.app.NativeActivity#0",
+          "visible": [],
+          "entry": [
+            "+ BufferStateLayer (com.simonwjackson.korri.app/android.app.NativeActivity#0) uid=10145",
+            "  Region TransparentRegion (this=0 count=0)",
+            "  Region VisibleRegion (this=0 count=0)",
+            "  Region SurfaceDamageRegion (this=0 count=0)",
+            "      layerStack=   0, z=        0, pos=(0,0), size=(2400,1080), crop=[  0,   0,  -1,  -1], cornerRadius=0.000000, isProtected=0, isTrustedOverlay=0, isOpaque=1, invalidate=0, dataspace=Default, defaultPixelFormat=RGBA_8888, backgroundBlurRadius=0, color=(0.000,0.000,0.000,1.000), flags=0x00000102, tr=[0.00, 0.00][0.00, 0.00]",
+            "      parent=9c6bf34 com.simonwjackson.korri.app/android.app.NativeActivity#0",
+            "      zOrderRelativeOf=none",
+            "      activeBuffer=[2400x1080:2400,RGBA_8888], tr=[0.00, 0.00][0.00, 0.00] queued-frames=0, mRefreshPending=0, metadata={windowType:1, dequeueTime:188131137372, ownerUID:10145, ownerPID:4845}, cornerRadiusCrop=[0.00, 0.00, 0.00, 0.00],  shadowRadius=0.000, "
+          ]
+        }
+      },
+      "bars_fit": [
+        {
+          "file": "controls-fit.png",
+          "placement": "fit",
+          "overlay_open": false,
+          "strips": {
+            "left": {
+              "box": [
+                0,
+                100,
+                238,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 233240,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            },
+            "right": {
+              "box": [
+                2162,
+                100,
+                2400,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 233240,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            }
+          },
+          "pass": true
+        },
+        {
+          "file": "controls-fit-again.png",
+          "placement": "fit",
+          "overlay_open": false,
+          "strips": {
+            "left": {
+              "box": [
+                0,
+                100,
+                238,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 233240,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            },
+            "right": {
+              "box": [
+                2162,
+                100,
+                2400,
+                1080
+              ],
+              "rule": "black",
+              "pixels": 233240,
+              "black_share": 1.0,
+              "brightest": 0,
+              "pass": true
+            }
+          },
+          "pass": true
+        }
+      ],
+      "snapshot_fill_off": {
+        "toggle-keyboard": {
+          "id": "viewer:f89900b4f3a4e58ca63b1b45631ea58f:1:1:toggle-keyboard",
+          "label": "Toggle keyboard",
+          "kind": "command",
+          "value": null
+        },
+        "set-fill-mode": {
+          "id": "viewer:f89900b4f3a4e58ca63b1b45631ea58f:1:1:set-fill-mode",
+          "label": "Crop to fill",
+          "kind": "toggle",
+          "value": false
+        },
+        "set-face-button-flip": {
+          "id": "viewer:f89900b4f3a4e58ca63b1b45631ea58f:1:1:set-face-button-flip",
+          "label": "Flip A/B and X/Y",
+          "kind": "toggle",
+          "value": false
+        }
+      }
+    },
+    "keyboard": {
+      "setting_before": "1",
+      "keyboard_keys": [
+        136,
+        520,
+        2400,
+        1080
+      ],
+      "key_taps": [
+        [
+          1268,
+          744
+        ],
+        [
+          1268,
+          744
+        ],
+        [
+          1268,
+          744
+        ]
+      ],
+      "typed_codes": [],
+      "states": [
+        {
+          "shown": true,
+          "served": "SlintInputView{ca47e3e"
+        },
+        {
+          "shown": false,
+          "served": "android.app.NativeActivity$NativeContentView{9d6a26d"
+        },
+        {
+          "shown": true,
+          "served": "android.app.NativeActivity$NativeContentView{9d6a26d"
+        },
+        {
+          "shown": false,
+          "served": "android.app.NativeActivity$NativeContentView{9d6a26d"
+        }
+      ],
+      "applies": [
+        "ok",
+        "ok",
+        "ok"
+      ],
+      "snapshot_after": {
+        "toggle-keyboard": {
+          "id": "viewer:f89900b4f3a4e58ca63b1b45631ea58f:1:1:toggle-keyboard",
+          "label": "Toggle keyboard",
+          "kind": "command",
+          "value": null
+        },
+        "set-fill-mode": {
+          "id": "viewer:f89900b4f3a4e58ca63b1b45631ea58f:1:1:set-fill-mode",
+          "label": "Crop to fill",
+          "kind": "toggle",
+          "value": false
+        },
+        "set-face-button-flip": {
+          "id": "viewer:f89900b4f3a4e58ca63b1b45631ea58f:1:1:set-face-button-flip",
+          "label": "Flip A/B and X/Y",
+          "kind": "toggle",
+          "value": false
+        }
+      }
+    },
+    "after_home": "com.google.android.apps.nexuslauncher/.NexusLauncherActivity",
+    "again_running": true,
+    "again_first_bar": {
+      "file": "again-first.png",
+      "tries": 1,
+      "id": 11623
+    },
+    "again_picture": [
+      {
+        "file": "again-1.png",
+        "host_s": 660827.672,
+        "id": 11666
+      },
+      {
+        "file": "again-2.png",
+        "host_s": 660829.405,
+        "id": 11766
+      },
+      {
+        "file": "again-3.png",
+        "host_s": 660831.08,
+        "id": 11858
+      }
+    ],
+    "bars_again": [
+      {
+        "file": "again-1.png",
+        "placement": "fit",
+        "overlay_open": false,
+        "strips": {
+          "left": {
+            "box": [
+              0,
+              100,
+              238,
+              1080
+            ],
+            "rule": "black",
+            "pixels": 233240,
+            "black_share": 1.0,
+            "brightest": 0,
+            "pass": true
+          },
+          "right": {
+            "box": [
+              2162,
+              100,
+              2400,
+              1080
+            ],
+            "rule": "black",
+            "pixels": 233240,
+            "black_share": 1.0,
+            "brightest": 0,
+            "pass": true
+          }
+        },
+        "pass": true
+      },
+      {
+        "file": "again-2.png",
+        "placement": "fit",
+        "overlay_open": false,
+        "strips": {
+          "left": {
+            "box": [
+              0,
+              100,
+              238,
+              1080
+            ],
+            "rule": "black",
+            "pixels": 233240,
+            "black_share": 1.0,
+            "brightest": 0,
+            "pass": true
+          },
+          "right": {
+            "box": [
+              2162,
+              100,
+              2400,
+              1080
+            ],
+            "rule": "black",
+            "pixels": 233240,
+            "black_share": 1.0,
+            "brightest": 0,
+            "pass": true
+          }
+        },
+        "pass": true
+      },
+      {
+        "file": "again-3.png",
+        "placement": "fit",
+        "overlay_open": false,
+        "strips": {
+          "left": {
+            "box": [
+              0,
+              100,
+              238,
+              1080
+            ],
+            "rule": "black",
+            "pixels": 233240,
+            "black_share": 1.0,
+            "brightest": 0,
+            "pass": true
+          },
+          "right": {
+            "box": [
+              2162,
+              100,
+              2400,
+              1080
+            ],
+            "rule": "black",
+            "pixels": 233240,
+            "black_share": 1.0,
+            "brightest": 0,
+            "pass": true
+          }
+        },
+        "pass": true
+      }
+    ],
+    "seat_requests": [
+      {
+        "coordinator": {
+          "operation": "hello"
+        }
+      },
+      {
+        "coordinator": {
+          "operation": "applyCount",
+          "count": 4
+        }
+      },
+      {
+        "coordinator": {
+          "operation": "route",
+          "launchId": null
+        }
+      },
+      {
+        "coordinator": {
+          "operation": "beginSession",
+          "launchId": "f89900b4f3a4e58ca63b1b45631ea58f",
+          "seatOrder": "firstPress"
+        }
+      },
+      {
+        "lease": "start",
+        "launchId": "f89900b4f3a4e58ca63b1b45631ea58f"
+      },
+      {
+        "coordinator": {
+          "operation": "route",
+          "launchId": null
+        }
+      }
+    ],
+    "sunshine_named_devices": 1
+  },
+  "holder_user": {
+    "uid": 59034,
+    "gid": 59034,
+    "account": null
+  },
+  "store": {
+    "apk": "/nix/store/qmavlhc6zcrc060pjxip3p4gzf552dyw-korri-android-app-fixture-apk-0.1.0/korri-android-app-unsigned.apk",
+    "federation_fixture": "/nix/store/6qjvdwf8mcy8yaianpdb8jm21ln411jj-korrid-federation-fixture-0.0.0/bin/federation_fixture",
+    "sunshine": "/nix/store/bvz43ydfridi8smy1gyqvzxk5v5xd3rg-sunshine-korri-2026.914.233613-korri"
+  },
+  "member_device": "303a935372244c0b6068b64b58a3f6669e68c03675c20b0ec04f0d28aa841a96",
+  "emulator": {
+    "release": "12",
+    "sdk": "31",
+    "abi": "x86_64"
+  },
+  "moonlight_address": "192.168.1.117:50295",
+  "holder": {
+    "port": 33673,
+    "device": "913a93746f147a5d11ae66edf6843175f1703d0f6e86cf3968b17ef38c474ba1",
+    "relay_port": 39647
+  },
+  "launch": "f89900b4f3a4e58ca63b1b45631ea58f",
+  "crashes": [],
+  "emulator_stop": {
+    "started": true,
+    "exit_code": 0,
+    "processes_left": []
+  },
+  "sound": {
+    "rate": 48000,
+    "channels": 2,
+    "seconds": 102.9,
+    "seconds_of_sound": 97.7,
+    "seconds_at_1000_hz": 97.7,
+    "median_rms_at_1000_hz": 264.2,
+    "seconds_at_440_hz": 0.0,
+    "median_rms_at_440_hz": null
+  },
+  "sender_restore": {
+    "live_games": [],
+    "product_units": {
+      "at_start": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 8317014
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 219956135598
+        },
+        "korri-clock-governor.service": {
+          "pid": 3896,
+          "started": 164324721
+        },
+        "korri-compositor.service": {
+          "pid": 748122,
+          "started": 87957282465
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 2569242,
+          "started": 219957620000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 164531729
+        },
+        "korri-limits.service": {
+          "pid": 4035,
+          "started": 164533214
+        },
+        "korri-local-signer.service": {
+          "pid": 2569201,
+          "started": 219956806525
+        },
+        "korri-plugin-admin.service": {
+          "pid": 748266,
+          "started": 87969764633
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 87893718128
+        },
+        "korri-portal-credentials.service": {
+          "pid": 0,
+          "started": 162355048
+        },
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 1158271,
+          "started": 617470040000
+        },
+        "korri-sunshine.service": {
+          "pid": 1158281,
+          "started": 617470079114
+        },
+        "korrid.service": {
+          "pid": 2083501,
+          "started": 426653099424
+        }
+      },
+      "at_end": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 8317014
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 219956135598
+        },
+        "korri-clock-governor.service": {
+          "pid": 3896,
+          "started": 164324721
+        },
+        "korri-compositor.service": {
+          "pid": 748122,
+          "started": 87957282465
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 2569242,
+          "started": 219957620000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 164531729
+        },
+        "korri-limits.service": {
+          "pid": 4035,
+          "started": 164533214
+        },
+        "korri-local-signer.service": {
+          "pid": 2569201,
+          "started": 219956806525
+        },
+        "korri-plugin-admin.service": {
+          "pid": 748266,
+          "started": 87969764633
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 87893718128
+        },
+        "korri-portal-credentials.service": {
+          "pid": 0,
+          "started": 162355048
+        },
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 1158271,
+          "started": 617470040000
+        },
+        "korri-sunshine.service": {
+          "pid": 1158281,
+          "started": 617470079114
+        },
+        "korrid.service": {
+          "pid": 2083501,
+          "started": 426653099424
+        }
+      },
+      "changed": []
+    },
+    "pass": true,
+    "pids_unchanged": {},
+    "run_folder": "/tmp/korri-stream-cadence-sender-d4czrl1d",
+    "run_folder_bytes": 35452511,
+    "run_folder_removed": true,
+    "stray_processes_killed": [],
+    "remaining_processes": [],
+    "other_processes": [],
+    "new_input_devices": [],
+    "gone_input_devices": [],
+    "input_rule": "record",
+    "errors": []
+  },
+  "pass": false
+}

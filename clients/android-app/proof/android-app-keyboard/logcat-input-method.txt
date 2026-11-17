@@ -1,0 +1,51 @@
+11-17 10:31:03.914  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onFinishInput():3420 
+11-17 10:31:03.916  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():2002 
+11-17 10:31:04.070  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onTrimMemory():4623 onTrimMemory(): 5
+11-17 10:31:04.848  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onTrimMemory():4623 onTrimMemory(): 5
+11-17 10:31:08.265  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onTrimMemory():4623 onTrimMemory(): 5
+11-17 10:32:07.872  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onFinishInput():3420 
+11-17 10:32:07.873  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():2002 
+11-17 10:32:07.876  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.refreshDefaultThemePhenotypeFlags():2466 default theme may be changed.
+11-17 10:32:07.880  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.initializeKeyboardTheme():1399 Apply keyboard theme: theme_border_bottom4dp_keyboard4dp_stylesheet_googleblue_materiallight_builtin_google_blue_light.binarypb_port
+11-17 10:32:21.463  1327  1327 W GoogleInputMethodService: GoogleInputMethodService.onConfigurationChanged():1661 onConfigurationChanged() : NewConfig = {1.0 310mcc260mnc [en_US] ldltr sw411dp w862dp h383dp 420dpi nrml long land finger qwerty/v/v dpad/v winConfig={ mBounds=Rect(0, 0 - 2400, 1080) mAppBounds=Rect(136, 0 - 2400, 1080) mMaxBounds=Rect(0, 0 - 2400, 1080) mWindowingMode=fullscreen mDisplayWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=ROTATION_90} as.2 s.116 fontWeightAdjustment=0}
+11-17 10:32:21.477  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.initializeKeyboardTheme():1399 Apply keyboard theme: theme_border_stylesheet_googleblue_materiallight_builtin_google_blue_light.binarypb_land
+11-17 10:32:21.615  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():2002 
+11-17 10:32:21.621  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.lambda$setDecorViewApplyWindowInsetsListener$9():1105 update screenHeightWithoutNaviBar to: 1080
+11-17 10:32:21.621  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.lambda$setDecorViewApplyWindowInsetsListener$9():1112 update max height when insets changes
+11-17 10:33:18.723  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onStartInputView():2148 
+11-17 10:33:18.870  1327  1327 I AndroidIME: AbstractIme.onActivate():86 LatinIme.onActivate() : EditorInfo = inputType=Text imeActionName=UNSPECIFIED dump=[inputType=0x1 imeOptions=0x10000000 privateImeOptions=null actionLabel=null actionId=0 initialSelStart=0 initialSelEnd=0 initialCapsMode=0x0 hintText=null label=null packageName=com.simonwjackson.korri.app autofillId=1073741824 fieldId=-1 fieldName=null extras=null hintLocales=null contentMimeTypes=null ], IncognitoMode = false, DeviceLocked = false
+11-17 10:33:20.403  4845  4845 D InsetsController: show(ime(), fromIme=true)
+11-17 10:33:32.651  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():2002 
+11-17 10:33:32.661  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onStartInputView():2148 
+11-17 10:33:32.671  1327  1327 I AndroidIME: AbstractIme.onDeactivate():207 LatinIme.onDeactivate()
+11-17 10:33:32.672  1327  1327 I AndroidIME: AbstractIme.onActivate():86 LatinIme.onActivate() : EditorInfo = inputType=Text imeActionName=UNSPECIFIED dump=[inputType=0x1 imeOptions=0x10000000 privateImeOptions=null actionLabel=null actionId=0 initialSelStart=0 initialSelEnd=0 initialCapsMode=0x0 hintText=null label=null packageName=com.simonwjackson.korri.app autofillId=1073741824 fieldId=-1 fieldName=null extras=null hintLocales=null contentMimeTypes=null ], IncognitoMode = false, DeviceLocked = false
+11-17 10:33:33.769  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onFinishInputView():2365 
+11-17 10:33:33.771  1327  1327 I AndroidIME: AbstractIme.onDeactivate():207 LatinIme.onDeactivate()
+11-17 10:33:33.778  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onFinishInput():3420 
+11-17 10:33:33.778  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():2002 
+11-17 10:33:33.787  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onStartInputView():2148 
+11-17 10:33:33.808  1327  1327 I AndroidIME: AbstractIme.onActivate():86 PasswordIme.onActivate() : EditorInfo = inputType=Text imeActionName=UNSPECIFIED dump=[inputType=0x0 imeOptions=0x0 privateImeOptions=null actionLabel=null actionId=0 initialSelStart=-1 initialSelEnd=-1 initialCapsMode=0x0 hintText=null label=null packageName=com.simonwjackson.korri.app autofillId=1073741825 fieldId=-1 fieldName=null extras=null hintLocales=null contentMimeTypes=null ], IncognitoMode = false, DeviceLocked = false
+11-17 10:33:33.890  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onFinishInputView():2365 
+11-17 10:33:33.891  1327  1327 I AndroidIME: AbstractIme.onDeactivate():207 PasswordIme.onDeactivate()
+11-17 10:33:33.909  4845  4845 D InsetsController: show(ime(), fromIme=true)
+11-17 10:33:36.859  4845  4845 D InputMethodManager: showSoftInput() view=android.app.NativeActivity$NativeContentView{9d6a26d VFED..... .F....ID 0,0-2400,1080 aid=1073741825} flags=0 reason=SHOW_TOGGLE_SOFT_INPUT
+11-17 10:33:36.894  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onStartInputView():2148 
+11-17 10:33:36.909  1327  1327 I AndroidIME: AbstractIme.onActivate():86 PasswordIme.onActivate() : EditorInfo = inputType=Text imeActionName=UNSPECIFIED dump=[inputType=0x0 imeOptions=0x0 privateImeOptions=null actionLabel=null actionId=0 initialSelStart=-1 initialSelEnd=-1 initialCapsMode=0x0 hintText=null label=null packageName=com.simonwjackson.korri.app autofillId=1073741825 fieldId=-1 fieldName=null extras=null hintLocales=null contentMimeTypes=null ], IncognitoMode = false, DeviceLocked = false
+11-17 10:33:36.999  4845  4845 D InsetsController: show(ime(), fromIme=true)
+11-17 10:34:06.900  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onFinishInputView():2365 
+11-17 10:34:06.902  1327  1327 I AndroidIME: AbstractIme.onDeactivate():207 PasswordIme.onDeactivate()
+11-17 10:34:10.805  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onFinishInput():3420 
+11-17 10:34:10.805  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():2002 
+11-17 10:34:11.291  1327  1327 W GoogleInputMethodService: GoogleInputMethodService.onConfigurationChanged():1661 onConfigurationChanged() : NewConfig = {1.0 310mcc260mnc [en_US] ldltr sw411dp w411dp h859dp 420dpi nrml long port finger qwerty/v/v dpad/v winConfig={ mBounds=Rect(0, 0 - 1080, 2400) mAppBounds=Rect(0, 136 - 1080, 2400) mMaxBounds=Rect(0, 0 - 1080, 2400) mWindowingMode=fullscreen mDisplayWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=ROTATION_0} as.2 s.216 fontWeightAdjustment=0}
+11-17 10:34:11.305  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.initializeKeyboardTheme():1399 Apply keyboard theme: theme_border_bottom4dp_keyboard4dp_stylesheet_googleblue_materiallight_builtin_google_blue_light.binarypb_port
+11-17 10:34:11.350  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():2002 
+11-17 10:34:11.358  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.lambda$setDecorViewApplyWindowInsetsListener$9():1105 update screenHeightWithoutNaviBar to: 2400
+11-17 10:34:11.358  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.lambda$setDecorViewApplyWindowInsetsListener$9():1112 update max height when insets changes
+11-17 10:34:14.237  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onFinishInput():3420 
+11-17 10:34:14.237  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():2002 
+11-17 10:34:14.503  1327  1327 W GoogleInputMethodService: GoogleInputMethodService.onConfigurationChanged():1661 onConfigurationChanged() : NewConfig = {1.0 310mcc260mnc [en_US] ldltr sw411dp w862dp h383dp 420dpi nrml long land finger qwerty/v/v dpad/v winConfig={ mBounds=Rect(0, 0 - 2400, 1080) mAppBounds=Rect(136, 0 - 2400, 1080) mMaxBounds=Rect(0, 0 - 2400, 1080) mWindowingMode=fullscreen mDisplayWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=ROTATION_90} as.2 s.249 fontWeightAdjustment=0}
+11-17 10:34:14.505  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.initializeKeyboardTheme():1399 Apply keyboard theme: theme_border_stylesheet_googleblue_materiallight_builtin_google_blue_light.binarypb_land
+11-17 10:34:14.524   759   789 W Looper  : Slow delivery took 37ms wmshell.main h=android.os.Handler c=com.android.wm.shell.common.DisplayImeController$PerDisplay$DisplayWindowInsetsControllerImpl$$ExternalSyntheticLambda2@2f4b7e2 m=0
+11-17 10:34:14.525  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():2002 
+11-17 10:34:14.532  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.lambda$setDecorViewApplyWindowInsetsListener$9():1105 update screenHeightWithoutNaviBar to: 1080
+11-17 10:34:14.533  1327  1327 I GoogleInputMethodService: GoogleInputMethodService.lambda$setDecorViewApplyWindowInsetsListener$9():1112 update max height when insets changes

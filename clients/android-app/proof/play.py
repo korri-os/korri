@@ -920,20 +920,30 @@ def keyboard(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
         codes: list[int] = []
         keys = None
         if states[-1]["shown"] is True:
-            time.sleep(1)
-            viewer_proof.screenshot(emulator, out / "keyboard.png")
             keys = keyboard_keys(emulator, out)
+            # The record of the shown keyboard: its layers and the insets that the window manager controls.
+            (out / "surfaceflinger-keyboard.txt").write_text(
+                emulator.shell("dumpsys SurfaceFlinger", check=False).stdout)
+            (out / "window-insets-keyboard.txt").write_text(emulator.shell("dumpsys window", check=False).stdout)
         steps["keyboard_keys"] = keys
+        steps["key_taps"] = []
         if keys is not None:
             left, top, right, bottom = keys
             before = len(sender_packets(sender))
-            # The middle of the keyboard's second row of letters.
+            # The middle of the keyboard's second row of letters. The emulator's input method draws a
+            # frame in seconds (its `app_time_stats`), so each tap waits for a drawn keyboard, and there
+            # are at most three.
             x, y = (left + right) // 2, top + (bottom - top) * 2 // 5
-            steps["key_tap"] = [x, y]
-            emulator.shell(f"input tap {x} {y}")
-            time.sleep(3)
-            codes = [int(p["fields"].get("keyCode", "0"), 16) & 0xFF
-                     for p in sender_packets(sender)[before:] if p["kind"] == "keyboard"]
+            for attempt in range(3):
+                time.sleep(5)
+                viewer_proof.screenshot(emulator, out / f"keyboard-{attempt}.png")
+                steps["key_taps"].append([x, y])
+                emulator.shell(f"input tap {x} {y}")
+                time.sleep(3)
+                codes = [int(p["fields"].get("keyCode", "0"), 16) & 0xFF
+                         for p in sender_packets(sender)[before:] if p["kind"] == "keyboard"]
+                if codes:
+                    break
         steps["typed_codes"] = codes
         toggle("last")
         steps["states"], steps["applies"] = states, applies

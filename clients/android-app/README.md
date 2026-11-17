@@ -527,13 +527,17 @@ crop, a screenshot) and korrid reads it On; a stale control is refused; Off
 fits the picture again. Records: `proof/android-app-d11/`.
 
 Toggle keyboard (toward D7′) runs next in the same proof, through the same
-trigger (`apply LAUNCH CONTROL none`): korrid's apply shows Android's soft
-keyboard, which `dumpsys input_method` must show served to NativeActivity's
-view; a tap in the middle of its letters must reach the sender's Sunshine
-as a letter key; a second apply hides it; and after Home the app logs that
-the view gave the focus back. On the emulator's touch screen the snapshot
-lists it first, so the overlay step's D-pad path takes one more step down to
-Crop to fill. Not yet run: no record.
+trigger (`apply LAUNCH CONTROL none`): each apply must turn the input
+method's keyboard over, served to NativeActivity's view (`dumpsys
+input_method`); with it shown, a tap in the middle of its letters must reach
+the sender's Sunshine as a letter key; the last apply hides it; and after
+Home the app logs that the view gave the focus back. On the emulator's touch
+screen the snapshot lists it first, so the overlay step's D-pad path takes
+one more step down to Crop to fill. Records: `proof/android-app-keyboard/`,
+104 of 105 checks: everything up to the input method's state passes, and
+**the keyboard is never drawn**, so no letter reaches the sender. The IME's
+insets leash, which the app's window controls, stays hidden in
+SurfaceFlinger; it does the same for Slint's text view. Cause not known.
 
 ## korrid's resize request (#476 Route C, slices 2 and 3)
 
