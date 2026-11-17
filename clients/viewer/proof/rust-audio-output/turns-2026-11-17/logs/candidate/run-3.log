@@ -1,0 +1,81 @@
+start: Start at 675175077.720 ms
+start: http serverinfo answered at 675175079.072 ms (connected 0.1 ms, first byte 0.2 ms, total 0.2 ms)
+start: https serverinfo answered at 675175081.354 ms (connected 0.0 ms, TLS done 1.9 ms, first byte 2.3 ms, total 2.3 ms)
+start: paired at 675175081.365 ms
+start: https applist answered at 675175082.961 ms (connected 0.0 ms, TLS done 1.3 ms, first byte 1.5 ms, total 1.6 ms)
+libva info: VA-API version 1.24.0
+libva info: Trying to open /run/opengl-driver/lib/dri/radeonsi_drv_video.so
+libva info: Found init function __vaDriverInit_1_24
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.24.0
+libva info: Trying to open /run/opengl-driver/lib/dri/radeonsi_drv_video.so
+libva info: Found init function __vaDriverInit_1_24
+libva info: va_openDriver() returns 0
+start: picture and input ready at 675175156.283 ms
+start: https resume answered at 675175182.802 ms (connected 0.1 ms, TLS done 1.7 ms, first byte 26.3 ms, total 26.4 ms)
+sound: the Rust audio output chose ALSA
+Platform X Window System (VAAPI)
+RTSP port: 32804
+Initializing platform...start: core platform init begins at 675175183.918 ms
+start: core platform init done at 675175183.927 ms
+done
+Resolving host name...start: core name resolution begins at 675175183.930 ms
+start: core name resolution done at 675175183.958 ms
+done
+Packet size capped at 1024 bytes for remote IPv4 streaming
+Initializing audio stream...start: core audio stream init begins at 675175183.962 ms
+start: core audio stream init done at 675175184.061 ms
+done
+Starting RTSP handshake...start: core RTSP handshake begins at 675175184.065 ms
+Reference frame invalidation is not supported by this host
+start: RTSP DESCRIBE answered at 675175184.252 ms
+Audio port: 32794
+start: RTSP SETUP audio answered at 675175184.309 ms
+Video port: 32792
+start: RTSP SETUP video answered at 675175184.415 ms
+Control port: 32793
+start: RTSP SETUP control answered at 675175184.481 ms
+start: core RTSP handshake done at 675175184.890 ms
+done
+Initializing control stream...start: core control stream init begins at 675175184.899 ms
+start: core control stream init done at 675175184.902 ms
+done
+Initializing video stream...start: core video stream init begins at 675175184.907 ms
+start: core video stream init done at 675175184.999 ms
+done
+Initializing input stream...start: core input stream init begins at 675175185.009 ms
+start: core input stream init done at 675175185.011 ms
+done
+Starting control stream...start: core control stream start begins at 675175185.016 ms
+start: core control stream start done at 675175185.190 ms
+done
+Starting video stream...start: core video stream start begins at 675175185.196 ms
+start: core video stream start done at 675175187.225 ms
+Using FFmpeg decoder: h264
+done
+Starting audio stream...start: core audio stream start begins at 675175187.231 ms
+sound: ALSA sysdefault: 2 channels at 48000 Hz, period 960 frames, buffer 2880 asked
+start: core audio stream start done at 675175187.386 ms
+done
+Starting input stream...start: core input stream start begins at 675175187.391 ms
+start: core input stream start done at 675175187.412 ms
+done
+Received first video packet after 0 ms
+start: first video packet at 675175204.831 ms
+start: first frame shown at 675175215.433 ms
+picture: the picture shown is 1920x1080
+Received first audio packet after 1700 ms
+start: first audio packet at 675177050.969 ms
+Initial audio resync period: 500 milliseconds
+Stopping input stream...done
+Stopping audio stream...done
+Stopping video stream...ENet wait interrupted
+Control stream connection failed: 4
+done
+Stopping control stream...ENet peer acknowledged disconnection
+done
+Cleaning up input stream...done
+Cleaning up video stream...done
+Cleaning up control stream...done
+Cleaning up audio stream...done
+Cleaning up platform...done
