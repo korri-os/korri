@@ -54,7 +54,7 @@ use std::{
     ptr::{NonNull, null_mut},
     sync::{
         Arc, Mutex, MutexGuard, PoisonError,
-        atomic::{AtomicPtr, Ordering},
+        atomic::{AtomicPtr, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -90,6 +90,11 @@ struct Stream {
 
 static STREAM: Mutex<Option<Stream>> = Mutex::new(None);
 
+/// The newest decoded size of this stream's picture, width in the high half
+/// and height in the low; 0 before the first. The decoder's output thread
+/// writes it, the stream's thread reads it (#476).
+static DECODED: AtomicU64 = AtomicU64::new(0);
+
 /// The stream's state. A panic that a callback caught leaves it usable.
 fn stream() -> MutexGuard<'static, Option<Stream>> {
     STREAM.lock().unwrap_or_else(PoisonError::into_inner)
@@ -120,13 +125,31 @@ pub(crate) fn open(picture: Picture) -> Result<()> {
         .transpose()?;
     let mut stream = stream();
     anyhow::ensure!(stream.is_none(), "a picture is already open");
+    DECODED.store(0, Ordering::Release);
+    let app = picture.resized;
+    let resized: Resized = Arc::new(move |(width, height)| {
+        if width > 0 && height > 0 {
+            DECODED.store(
+                (u64::from(width as u32) << 32) | u64::from(height as u32),
+                Ordering::Release,
+            );
+        }
+        app((width, height));
+    });
     *stream = Some(Stream {
         surface: picture.surface,
         records: Arc::new(Records { times, recording }),
-        resized: picture.resized,
+        resized,
         decoder: None,
     });
     Ok(())
+}
+
+/// The newest decoded size of the stream's picture; none before the first.
+/// The app's video layer takes each one (`Picture::resized`).
+pub(crate) fn decoded_size() -> Option<(u32, u32)> {
+    let size = DECODED.load(Ordering::Acquire);
+    (size != 0).then_some(((size >> 32) as u32, size as u32))
 }
 
 /// After the core has stopped: write the record's last rows, report whether

@@ -310,7 +310,10 @@ impl Lifecycle {
     }
 
     /// Called only from the native connectionStarted callback, like patch 0023.
-    pub fn connected(&self, display: ViewerDisplay) -> Result<()> {
+    /// `display` is the size that the stream was asked for. `follows_new_sizes`:
+    /// the picture follows a new stream size in the middle of the stream, so
+    /// korrid may ask the holder for one (`ready`, #476).
+    pub fn connected(&self, display: ViewerDisplay, follows_new_sizes: bool) -> Result<()> {
         ensure!(
             display.width > 0 && display.height > 0,
             "invalid connected dimensions"
@@ -328,7 +331,7 @@ impl Lifecycle {
                 connection: format!("{}:{}:{}", std::process::id(), now.tv_sec, now.tv_nsec),
                 screen,
                 encoded: display,
-                ready: false,
+                ready: follows_new_sizes,
             }),
             ..Default::default()
         };
@@ -338,6 +341,30 @@ impl Lifecycle {
         self.0.emit(&mut state, E::Snapshot(snapshot));
         self.0.changed.notify_all();
         Ok(())
+    }
+
+    /// The picture now shown has this size: the stream's encoded size, which
+    /// the sender can change in the middle of the stream (#476). A new size
+    /// goes to the controller as a Snapshot event; the same size again, or a
+    /// size outside a connected stream, changes nothing.
+    pub fn resized(&self, encoded: ViewerDisplay) {
+        if encoded.width == 0 || encoded.height == 0 {
+            return;
+        }
+        let mut state = self.0.state.lock().unwrap();
+        if state.snapshot.connected != Some(true) {
+            return;
+        }
+        let Some(shape) = state.snapshot.shape.as_mut() else {
+            return;
+        };
+        if shape.encoded == encoded {
+            return;
+        }
+        shape.encoded = encoded;
+        let snapshot = state.snapshot.clone();
+        self.0.emit(&mut state, E::Snapshot(snapshot));
+        self.0.changed.notify_all();
     }
 
     pub fn disconnected(&self) {
@@ -695,10 +722,13 @@ mod tests {
 
     fn connect(lifecycle: &Lifecycle) {
         lifecycle
-            .connected(ViewerDisplay {
-                width: 1280,
-                height: 720,
-            })
+            .connected(
+                ViewerDisplay {
+                    width: 1280,
+                    height: 720,
+                },
+                true,
+            )
             .unwrap();
     }
 

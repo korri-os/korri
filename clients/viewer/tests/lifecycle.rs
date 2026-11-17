@@ -56,10 +56,13 @@ fn exact_launch_connected_events_and_confirmed_stop_over_real_socket() {
         let start = runtime.wait_start().unwrap().expect("Start came first");
         assert_eq!(start.address, "127.0.0.1");
         runtime
-            .connected(ViewerDisplay {
-                width: 1280,
-                height: 720,
-            })
+            .connected(
+                ViewerDisplay {
+                    width: 1280,
+                    height: 720,
+                },
+                false,
+            )
             .unwrap();
         while !runtime.stop_requested() {
             std::thread::sleep(Duration::from_millis(1));
@@ -81,7 +84,7 @@ fn exact_launch_connected_events_and_confirmed_stop_over_real_socket() {
         R::Ok
     ));
     assert!(
-        matches!(request(&mut socket, "launch-a", C::Snapshot), R::Snapshot { snapshot: Some(s) } if s.connected == Some(true) && s.shape.as_ref().unwrap().encoded.width == 1280)
+        matches!(request(&mut socket, "launch-a", C::Snapshot), R::Snapshot { snapshot: Some(s) } if s.connected == Some(true) && s.shape.as_ref().unwrap().encoded.width == 1280 && !s.shape.as_ref().unwrap().ready)
     );
     assert!(matches!(
         request(&mut socket, "launch-a", C::Background),
@@ -915,10 +918,13 @@ fn in_process_controller_gets_the_socket_replies_and_events_without_a_socket() {
         let start = runtime.wait_start().unwrap().expect("Start came first");
         assert_eq!(start.address, "127.0.0.1:47989");
         runtime
-            .connected(ViewerDisplay {
-                width: 1280,
-                height: 720,
-            })
+            .connected(
+                ViewerDisplay {
+                    width: 1280,
+                    height: 720,
+                },
+                false,
+            )
             .unwrap();
         while !runtime.stop_requested() {
             std::thread::sleep(Duration::from_millis(1));
@@ -970,6 +976,104 @@ fn in_process_controller_gets_the_socket_replies_and_events_without_a_socket() {
         matches!(after.last(), Some(E::Status(ViewerStatus::Stopped))),
         "Stop must not reply before the runtime reports Stopped: {after:?}"
     );
+    running.join().unwrap();
+}
+
+fn display(width: u32, height: u32) -> ViewerDisplay {
+    ViewerDisplay { width, height }
+}
+
+/// The next event within 2 s, as a snapshot's shape: its encoded size, whether
+/// it is ready, and its connection.
+fn next_shape(events: &mpsc::Receiver<E>) -> (ViewerDisplay, bool, String) {
+    loop {
+        if let E::Snapshot(snapshot) = events.recv_timeout(Duration::from_secs(2)).unwrap() {
+            let shape = snapshot.shape.expect("a shape");
+            return (shape.encoded, shape.ready, shape.connection);
+        }
+    }
+}
+
+// #476: a picture that follows a new stream size reports `ready`, so that
+// korrid may ask the holder for one, and each new encoded size reaches the
+// controller in the same connection. The same size again sends nothing.
+#[test]
+fn a_picture_that_follows_new_sizes_is_ready_and_reports_each_new_encoded_size() {
+    let (lifecycle, events) = in_process("launch-a");
+    let runtime = lifecycle.clone();
+    let running = std::thread::spawn(move || {
+        runtime.wait_start().unwrap().expect("Start came first");
+        runtime.connected(display(1280, 720), true).unwrap();
+        while !runtime.stop_requested() {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        runtime.stopped();
+    });
+    assert!(matches!(
+        ask(
+            &lifecycle,
+            "launch-a",
+            C::Start {
+                address: "127.0.0.1:47989".into(),
+                display: Some(display(1280, 720)),
+            }
+        ),
+        R::Ok
+    ));
+    let (encoded, ready, connection) = next_shape(&events);
+    assert_eq!((encoded, ready), (display(1280, 720), true));
+
+    lifecycle.resized(display(720, 1280));
+    assert_eq!(
+        next_shape(&events),
+        (display(720, 1280), true, connection.clone())
+    );
+    assert!(matches!(
+        ask(&lifecycle, "launch-a", C::Snapshot),
+        R::Snapshot { snapshot: Some(s) } if s.shape.as_ref().unwrap().encoded == display(720, 1280)
+    ));
+    lifecycle.resized(display(720, 1280));
+    lifecycle.resized(display(0, 1280));
+    assert!(events.try_recv().is_err(), "no new size, no event");
+    lifecycle.resized(display(1280, 720));
+    assert_eq!(next_shape(&events), (display(1280, 720), true, connection));
+
+    assert!(matches!(ask(&lifecycle, "launch-a", C::Stop), R::Ok));
+    running.join().unwrap();
+    let _: Vec<_> = events.try_iter().collect();
+    // A stopped stream has no shape to change.
+    lifecycle.resized(display(720, 1280));
+    assert!(events.try_recv().is_err());
+}
+
+// A picture that keeps the size it started with (the handheld path) is not
+// ready: korrid never asks the holder for a new size for it.
+#[test]
+fn a_picture_that_cannot_follow_a_new_size_is_not_ready() {
+    let (lifecycle, events) = in_process("launch-a");
+    let runtime = lifecycle.clone();
+    let running = std::thread::spawn(move || {
+        runtime.wait_start().unwrap().expect("Start came first");
+        runtime.connected(display(1280, 720), false).unwrap();
+        while !runtime.stop_requested() {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        runtime.stopped();
+    });
+    assert!(matches!(
+        ask(
+            &lifecycle,
+            "launch-a",
+            C::Start {
+                address: "127.0.0.1:47989".into(),
+                display: Some(display(1280, 720)),
+            }
+        ),
+        R::Ok
+    ));
+    let (encoded, ready, _) = next_shape(&events);
+    assert_eq!((encoded, ready), (display(1280, 720), false));
+    assert!(matches!(ask(&lifecycle, "launch-a", C::Stop), R::Ok));
     running.join().unwrap();
 }
 

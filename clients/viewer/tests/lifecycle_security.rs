@@ -322,10 +322,13 @@ fn credential_process() {
             std::io::stdout().flush().unwrap();
             runtime.wait_start().unwrap().expect("Start came first");
             runtime
-                .connected(ViewerDisplay {
-                    width: 640,
-                    height: 480,
-                })
+                .connected(
+                    ViewerDisplay {
+                        width: 640,
+                        height: 480,
+                    },
+                    false,
+                )
                 .unwrap();
             let until = std::time::Instant::now() + Duration::from_secs(5);
             while !runtime.stop_requested() {

@@ -14,6 +14,8 @@ pub(crate) struct PlayerIo {
     _mapping: Option<CString>,
     audio_device: Option<CString>,
     vaapi: bool,
+    /// Moonlight's `-platform v4l2request`, the handheld path.
+    request: bool,
     #[cfg(v4l2request)]
     _inputs: Vec<CString>,
 }
@@ -38,6 +40,7 @@ impl PlayerIo {
             _mapping: mapping,
             audio_device,
             vaapi,
+            request: false,
             #[cfg(v4l2request)]
             _inputs: Vec::new(),
         };
@@ -83,6 +86,7 @@ impl PlayerIo {
             _mapping: mapping,
             audio_device,
             vaapi: false,
+            request: true,
             _inputs: inputs,
         };
         let mapping = io
@@ -104,6 +108,23 @@ impl PlayerIo {
         };
         ensure!(result == 0, "input initialization failed");
         Ok(io)
+    }
+    /// Whether the picture follows a new stream size in the middle of the
+    /// stream (#476): X11 VA-API and the SDL fallback fit each new size in
+    /// their window. The handheld path keeps the size it started with.
+    pub(crate) fn follows_new_sizes(&self) -> bool {
+        !self.request
+    }
+    /// The size of the picture that the presenter showed last; none before
+    /// the first. The presenters run on the stream's thread, inside `poll`.
+    pub(crate) fn shown_size(&self) -> Option<korri_viewer_treaty::ViewerDisplay> {
+        let (mut width, mut height) = (0, 0);
+        // SAFETY: C writes the two integers only.
+        let shown = unsafe { ffi::picture_shown_size(&mut width, &mut height) } != 0;
+        (shown && width > 0 && height > 0).then_some(korri_viewer_treaty::ViewerDisplay {
+            width: width as u32,
+            height: height as u32,
+        })
     }
     pub(crate) fn gamepad_mask(&self) -> i32 {
         unsafe { ffi::viewer_input_gamepad_mask() }

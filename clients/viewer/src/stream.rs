@@ -18,16 +18,19 @@ use std::{
     time::Duration,
 };
 
+/// The stream's lifecycle, the size it asked for, and whether its picture
+/// follows a new stream size (#476), for the core's callbacks.
 static LIFECYCLE: Mutex<
     Option<(
         crate::lifecycle::Lifecycle,
         korri_viewer_treaty::ViewerDisplay,
+        bool,
     )>,
 > = Mutex::new(None);
 unsafe extern "C" fn connection_started() {
     crate::callback::guarded("connection started", (), || {
-        if let Some((lifecycle, display)) = &*LIFECYCLE.lock().unwrap()
-            && lifecycle.connected(display.clone()).is_err()
+        if let Some((lifecycle, display, follows)) = &*LIFECYCLE.lock().unwrap()
+            && lifecycle.connected(display.clone(), *follows).is_err()
         {
             STOP.store(true, Ordering::Relaxed);
         }
@@ -48,7 +51,7 @@ extern "C" fn signal_stop(_: libc::c_int) {
 }
 unsafe extern "C" fn terminated(code: i32) {
     crate::callback::guarded("connection terminated", (), || {
-        if let Some((lifecycle, _)) = &*LIFECYCLE.lock().unwrap() {
+        if let Some((lifecycle, _, _)) = &*LIFECYCLE.lock().unwrap() {
             lifecycle.disconnected();
         }
     });
@@ -270,6 +273,7 @@ pub(crate) fn run_with_lifecycle(
                 width: o.width as u32,
                 height: o.height as u32,
             },
+            io.follows_new_sizes(),
         )
     });
     let _lifecycle_guard = LifecycleGuard;
@@ -319,6 +323,7 @@ pub(crate) fn run_with_lifecycle(
     #[cfg(target_os = "android")]
     crate::input::CORE_GATE.open();
     let mut poll_error = false;
+    let mut shown = None;
     unsafe {
         io.start();
         while !STOP.load(Ordering::Relaxed) && !lifecycle.is_some_and(|l| l.stop_requested()) {
@@ -326,6 +331,18 @@ pub(crate) fn run_with_lifecycle(
             if event != 0 {
                 poll_error = event < 0;
                 break;
+            }
+            // The sender can change the stream's size in the middle of the
+            // stream (#476): the controller hears each new size shown.
+            if let Some(size) = io.shown_size().filter(|size| shown.as_ref() != Some(size)) {
+                crate::log::line(&format!(
+                    "picture: the picture shown is {}x{}",
+                    size.width, size.height
+                ));
+                if let Some(lifecycle) = lifecycle {
+                    lifecycle.resized(size.clone());
+                }
+                shown = Some(size);
             }
         }
         io.stop();

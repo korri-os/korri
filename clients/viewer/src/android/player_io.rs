@@ -58,6 +58,21 @@ impl PlayerIo {
             feedback,
         })
     }
+    /// Whether the picture follows a new stream size in the middle of the
+    /// stream: the app's decoder and video layer do (#476, slice 4). The
+    /// session tests have no picture.
+    pub(crate) fn follows_new_sizes(&self) -> bool {
+        self.picture
+    }
+    /// The newest decoded size of the picture; none before the first, and
+    /// none without a picture. The app's video layer places each one.
+    pub(crate) fn shown_size(&self) -> Option<korri_viewer_treaty::ViewerDisplay> {
+        if !self.picture {
+            return None;
+        }
+        picture::decoded_size()
+            .map(|(width, height)| korri_viewer_treaty::ViewerDisplay { width, height })
+    }
     /// `remoteControllersBitmap` and `gcmap` of the launch, as Artemis sends
     /// its attached controllers.
     pub(crate) fn gamepad_mask(&self) -> i32 {
