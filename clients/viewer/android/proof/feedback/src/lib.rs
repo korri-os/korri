@@ -23,8 +23,10 @@ use android_activity::AndroidApp;
 use anyhow::{Context, Result};
 use korri_viewer::{
     devices::{AndroidDevices, now_ms},
+    events,
     feedback::{self, STOP_WAIT},
     feedback_jni,
+    gestures::GestureConfig,
     input::{Devices, Input, KeyAction, KeyEvent, Settings, core_sink, source},
     placement::Rect,
 };
@@ -104,7 +106,7 @@ fn core_steps() {
     });
 }
 
-fn probe() -> Result<()> {
+fn probe(gestures: GestureConfig) -> Result<()> {
     let mut devices = AndroidDevices::new()?;
     let pad = dualshock(&mut devices)?;
     log(&format!("pad {pad}"));
@@ -112,6 +114,7 @@ fn probe() -> Result<()> {
     let mut input = Input::new(
         Settings {
             mouse_emulation: false,
+            gestures,
         },
         0,
         Rect {
@@ -143,7 +146,8 @@ fn android_main(app: AndroidApp) {
     log("started");
     // The probe runs beside the activity's events, which this thread
     // answers so that Android's main thread never waits for it.
-    let probe = thread::spawn(probe);
+    let gestures = events::gesture_config(&app);
+    let probe = thread::spawn(move || probe(gestures));
     while !probe.is_finished() {
         app.poll_events(Some(Duration::from_millis(100)), |_| {});
     }
