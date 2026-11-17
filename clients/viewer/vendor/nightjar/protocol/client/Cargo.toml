@@ -1,0 +1,60 @@
+[package]
+name = "nightjar-core"
+description = "Nightjar's client streaming engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rubylight-protocol = { path = "../core" }
+aes = "0.8"
+aes-gcm = "0.10"
+cbc = { version = "0.1", features = ["alloc"] }
+# moonlight-common-c's ENet changes (vendor/rusty_enet): the smoothed round trip time rounds
+# up, and a datagram from another address than the peer's still counts. By path rather than
+# a workspace patch, so the Rubylight host's interop tests build this fork beside the host's
+# own rusty_enet.
+rusty_enet = { version = "0.4", path = "../vendor/rusty_enet" }
+# Host HTTP, pairing and encrypted RTSP. Pure Rust plus ring, so the same code builds for
+# Android, Windows and Linux without OpenSSL.
+rand_core = { version = "0.6", features = ["getrandom"] }
+# Log redaction (report/redact.rs). No Unicode tables: the patterns use Java's ASCII classes.
+regex = { version = "1", default-features = false, features = ["std", "perf"] }
+ring = "0.17"
+rsa = { version = "0.9", default-features = false, features = ["std"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+# Rubylight native API v1 types (library, session, Radeon, errors). Dependency-light on purpose:
+# butterpollo-core stays a dev-dependency.
+rubylight-native-api = { git = "https://github.com/RamazanKara/Rubylight", rev = "17fc45bb7ab4c7528d4f533916f4ea79eb9653a3", package = "rubylight-native-api" }
+serde = "1"
+serde_json = "1"
+# Internet play: the rendezvous, hole punching and the tunnel, shared with the host.
+rubylight-traverse = { path = "../traverse" }
+# Receive buffer sizes on the media sockets.
+socket2 = "0.5"
+
+# SO_PRIORITY on the media sockets and nice values on the stream threads; poll on the control
+# socket.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# priority.rs: the desktop portal's and RealtimeKit's thread raise when setpriority is refused;
+# the features the desktop's zbus already has.
+# UDP receive coalescing on the video socket (session/net.rs): WSARecvMsg and its options. The
+# windows-sys the workspace already locks.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Networking_WinSock", "Win32_System_IO"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { version = "5.19", default-features = false, features = ["tokio", "blocking-api"] }
+
+[lints.rust]
+# Set in protocol/.cargo/config.toml for aarch64 and checked in src/crypto.rs.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(aes_armv8)', 'cfg(polyval_armv8)'] }
+
+[dev-dependencies]
+# The Rubylight host's protocol code, for interop tests (control, input, SDP, DESCRIBE, pairing).
+butterpollo-core = { version = "3.0.0-alpha.1", git = "https://github.com/RamazanKara/Rubylight", rev = "682aa119bc181d94652b65009f471eb5015e3c8a", package = "butterpollo-core" }
+# Property tests over the host replies, control stream and USB/IP server (fuzz_tests.rs).
+proptest = { version = "1", default-features = false, features = ["std"] }

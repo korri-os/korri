@@ -1,0 +1,94 @@
+{
+  "cases": [
+    {
+      "name": "IPv4",
+      "input": "Connection to 192.168.1.12 failed",
+      "expect": "Connection to [address] failed"
+    },
+    {
+      "name": "IPv4 with port",
+      "input": "Connection to 192.168.1.12:47989 failed",
+      "expect": "Connection to [address] failed"
+    },
+    {
+      "name": "IPv6 with zone",
+      "input": "Connection to fe80::1234%wlan0 failed",
+      "expect": "Connection to [address] failed"
+    },
+    {
+      "name": "IPv4-mapped IPv6",
+      "input": "Connection to ::ffff:192.168.1.2 failed",
+      "expect": "Connection to [address][address] failed"
+    },
+    {
+      "name": "MAC",
+      "input": "Wake AA:BB:CC:DD:EE:FF sent",
+      "expect": "Wake [address] sent"
+    },
+    {
+      "name": "MAC with dashes",
+      "input": "Wake AA-BB-CC-DD-EE-FF and 0a-1b-2c-3d-4e-5f sent",
+      "expect": "Wake [address] and [address] sent"
+    },
+    {
+      "name": "dates, UUIDs and versions are no dashed MAC",
+      "input": "Built 2026-11-08, 4.8.0-rc.1, id 01234567-89ab-cdef-0123-456789abcdef, 10-12-14-16-18 ok",
+      "expect": "Built 2026-11-08, 4.8.0-rc.1, id [id], 10-12-14-16-18 ok"
+    },
+    {
+      "name": "full IPv6",
+      "input": "Connection to 2001:db8:85a3:0:0:8a2e:370:7334 failed",
+      "expect": "Connection to [address] failed"
+    },
+    {
+      "name": "IPv6 with a gap in the middle",
+      "input": "Connection to 2001:db8::8a2e:370:7334 and ::1 failed",
+      "expect": "Connection to [address] and [address] failed"
+    },
+    {
+      "name": "chroma formats are no address",
+      "input": "H.264 4:4:4 is not offered, 4:2:0 is",
+      "expect": "H.264 4:4:4 is not offered, 4:2:0 is"
+    },
+    {
+      "name": "times are no address",
+      "input": "Took 00:01:23 to start",
+      "expect": "Took 00:01:23 to start"
+    },
+    {
+      "name": "URL with credentials",
+      "input": "Connection to https://user:secret@host/pair?pin=0123 failed",
+      "expect": "Connection to [url] failed"
+    },
+    {
+      "name": "e-mail",
+      "input": "Mail someone.else+nj@example.co.uk now",
+      "expect": "Mail [email] now"
+    },
+    {
+      "name": "e-mail with letters past ASCII",
+      "input": "Signed in as jörg.müller@bücher.de, ok",
+      "expect": "Signed in as [email], ok"
+    },
+    {
+      "name": "e-mail in another script",
+      "input": "メール 山田@例え.jp",
+      "expect": "メール [email]"
+    },
+    {
+      "name": "Android path",
+      "input": "Saved /sdcard/a.txt",
+      "expect": "Saved [path]"
+    },
+    {
+      "name": "a long path is data first",
+      "input": "Saved /storage/emulated/0/Download/report.txt",
+      "expect": "Saved [data].txt"
+    },
+    {
+      "name": "content URI",
+      "input": "Opened content://com.android.providers/doc/12",
+      "expect": "Opened [url]"
+    }
+  ]
+}

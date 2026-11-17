@@ -1,0 +1,718 @@
+use super::*;
+use crate::fec::ReedSolomon;
+
+const PACKET_SIZE: usize = 1024;
+
+/// A single-block host packetizer: 8-byte frame header, then the payload in
+/// `PACKET_SIZE - 16` byte shards, with parity over the whole RTP packets.
+pub(crate) struct Host {
+    seq: u16,
+    spi: u32,
+    frame: u32,
+    fec_percent: usize,
+    packet_size: usize,
+}
+
+impl Host {
+    pub(crate) fn new() -> Self {
+        Self::with_packet_size(1024)
+    }
+
+    /// A host packetizer for a stream whose `StreamConfig.packetSize` is `packet_size`.
+    pub(crate) fn with_packet_size(packet_size: usize) -> Self {
+        Self {
+            seq: 100,
+            spi: 0,
+            frame: 1,
+            fec_percent: 20,
+            packet_size,
+        }
+    }
+
+    pub(crate) fn frame(&mut self, payload: &[u8], kind: u8) -> Vec<Vec<u8>> {
+        let slice = self.packet_size - 16;
+        let mut data = vec![1, 0, 0, kind];
+        let total = payload.len() + 8;
+        let last = if total % slice == 0 {
+            slice
+        } else {
+            total % slice
+        };
+        data.extend_from_slice(&(last as u16).to_le_bytes());
+        data.extend_from_slice(&[0, 0]);
+        data.extend_from_slice(payload);
+        let count = total.div_ceil(slice);
+        let parity = (count * self.fec_percent).div_ceil(100);
+        let mut shards: Vec<Vec<u8>> = (0..count + parity)
+            .map(|i| {
+                let mut s = vec![0u8; self.packet_size + 16];
+                if i < count {
+                    s[16..20].copy_from_slice(&((self.spi + i as u32) << 8).to_le_bytes());
+                    s[24] = 1 | if i == 0 { 4 } else { 0 } | if i == count - 1 { 2 } else { 0 };
+                    s[26] = 0x10;
+                    let chunk =
+                        &data[(i * slice).min(data.len())..((i + 1) * slice).min(data.len())];
+                    s[32..32 + chunk.len()].copy_from_slice(chunk);
+                }
+                s
+            })
+            .collect();
+        if parity > 0 {
+            let rs = ReedSolomon::new(count, parity).unwrap();
+            let mut refs: Vec<&mut [u8]> = shards.iter_mut().map(|s| &mut s[..]).collect();
+            rs.encode(&mut refs, self.packet_size + 16).unwrap();
+        }
+        // Like the host: RTP and FEC fields are written after parity.
+        for (i, s) in shards.iter_mut().enumerate() {
+            s[0] = 0x90;
+            s[2..4].copy_from_slice(&self.seq.wrapping_add(i as u16).to_be_bytes());
+            s[4..8].copy_from_slice(&(self.frame * 1500).to_be_bytes());
+            s[20..24].copy_from_slice(&self.frame.to_le_bytes());
+            let info =
+                ((i as u32) << 12) | ((count as u32) << 22) | ((self.fec_percent as u32) << 4);
+            s[28..32].copy_from_slice(&info.to_le_bytes());
+        }
+        self.seq = self.seq.wrapping_add((count + parity) as u16);
+        self.spi += count as u32;
+        self.frame += 1;
+        shards
+    }
+}
+
+pub(crate) fn config(format: u32) -> VideoConfig {
+    VideoConfig {
+        format,
+        packet_size: PACKET_SIZE,
+        app_version: [7, 1, 431, -1],
+        rfi: false,
+        pyrowave_records: false,
+        early_chunks: false,
+        colorspace: COLORSPACE_REC_709,
+        encryption_key: None,
+    }
+}
+
+pub(crate) fn h264_idr() -> Vec<u8> {
+    let mut f = vec![
+        0, 0, 0, 1, 0x67, 0x42, 0x00, 0x1f, 0, 0, 0, 1, 0x68, 0xce, 0x3c, 0x80,
+    ];
+    f.extend_from_slice(&[0, 0, 0, 1, 0x65]);
+    f.extend((0..3000u32).map(|i| (i % 251) as u8 | 1));
+    f
+}
+
+pub(crate) fn h264_p(len: usize) -> Vec<u8> {
+    let mut f = vec![0, 0, 0, 1, 0x41];
+    f.extend((0..len as u32).map(|i| (i % 249) as u8 | 1));
+    f
+}
+
+fn frames(events: &[VideoEvent]) -> Vec<&Frame> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            VideoEvent::Frame(f) => Some(f),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn h264_frames_in_order() {
+    let mut host = Host::new();
+    let mut rx = VideoReceiver::new(config(0x1));
+    let mut events = Vec::new();
+    let idr = h264_idr();
+    let p = h264_p(5000);
+    for packet in host.frame(&idr, 2).into_iter().chain(host.frame(&p, 1)) {
+        rx.receive(&packet, 1_000_000, &mut events);
+    }
+    let frames = frames(&events);
+    assert_eq!(frames.len(), 2);
+    assert_eq!(frames[0].frame_type, FrameType::Idr);
+    let kinds: Vec<_> = frames[0].buffers().iter().map(|b| b.kind).collect();
+    assert_eq!(
+        kinds[..3],
+        [BufferType::Sps, BufferType::Pps, BufferType::PicData]
+    );
+    assert!(kinds[3..].iter().all(|&k| k == BufferType::PicData));
+    assert_eq!(&frames[0].data()[..idr.len()], &idr[..]);
+    assert_eq!(frames[1].frame_type, FrameType::P);
+    // H.264 keeps the zero padding of the last shard.
+    assert_eq!(&frames[1].data()[..p.len()], &p[..]);
+    assert!(frames[1].data()[p.len()..].iter().all(|&b| b == 0));
+}
+
+#[test]
+fn recovers_lost_data_from_parity() {
+    let mut host = Host::new();
+    let mut rx = VideoReceiver::new(config(0x1000));
+    let mut events = Vec::new();
+    let payload: Vec<u8> = (0..9000u32).map(|i| (i * 7) as u8).collect();
+    let packets = host.frame(&payload, 2);
+    for (i, packet) in packets.iter().enumerate() {
+        if i != 0 && i != 3 {
+            rx.receive(packet, 5, &mut events);
+        }
+    }
+    let frames = frames(&events);
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].data(), &payload[..]);
+    assert_eq!(rx.stats().packets_recovered, 2);
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, VideoEvent::Signal(VideoSignal::FecStatus(_)))));
+}
+
+fn fec_blocks(events: &[VideoEvent]) -> Vec<FecBlock> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            VideoEvent::Signal(VideoSignal::FecBlock(block)) => Some(*block),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn arrival_feedback_counts_every_datagram_once_enabled() {
+    use rubylight_protocol::transport_feedback::{TransportFeedback, NOT_RECEIVED};
+    let reports = |events: &[VideoEvent]| -> Vec<TransportFeedback> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                VideoEvent::Signal(VideoSignal::TransportFeedback(report)) => Some(report.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    let payload: Vec<u8> = (0..9000u32).map(|i| (i * 7) as u8).collect();
+    for enabled in [false, true] {
+        let mut host = Host::new();
+        let mut rx = VideoReceiver::new(config(0x1000));
+        if enabled {
+            rx.enable_transport_feedback();
+        }
+        let mut events = Vec::new();
+        let first = host.frame(&payload, 2);
+        for (i, packet) in first.iter().enumerate() {
+            if i != 3 {
+                rx.receive(packet, 1_000 + i as u64 * 100, &mut events);
+            }
+        }
+        // The next frame, 60 ms later, sends the report on.
+        for packet in host.frame(&payload, 2) {
+            rx.receive(&packet, 61_000, &mut events);
+        }
+        let reports = reports(&events);
+        if !enabled {
+            assert!(reports.is_empty());
+            continue;
+        }
+        assert_eq!(reports.len(), 1, "{reports:?}");
+        let report = &reports[0];
+        assert_eq!(report.stride, 1);
+        assert_eq!(report.base_arrival_us, 1_000);
+        assert!(report.entries.len() > first.len(), "{report:?}");
+        assert_eq!(report.entries[3], NOT_RECEIVED);
+        // The parity after the frame was rebuilt arrived too, though the queue dropped it.
+        for (i, &entry) in report.entries[..first.len()].iter().enumerate() {
+            if i != 3 {
+                assert_eq!(u64::from(entry) * 4, i as u64 * 100, "{i}");
+            }
+        }
+    }
+}
+
+#[test]
+fn finished_blocks_are_counted_for_the_fec_report() {
+    let mut host = Host::new();
+    let mut rx = VideoReceiver::new(config(0x1000));
+    let mut events = Vec::new();
+    let payload: Vec<u8> = (0..9000u32).map(|i| (i * 7) as u8).collect();
+    // Nine data shards and two parity: two lost and recovered.
+    for (i, packet) in host.frame(&payload, 2).iter().enumerate() {
+        if i != 0 && i != 3 {
+            rx.receive(packet, 5, &mut events);
+        }
+    }
+    let recovered = FecBlock {
+        frame: 1,
+        block_index: 0,
+        block_count: 1,
+        data_shards: 9,
+        parity_shards: 2,
+        arrived_shards: 9,
+        missing_shards: 2,
+        unrecovered: false,
+    };
+    assert_eq!(fec_blocks(&events), [recovered]);
+
+    // Three lost are past the parity: the block ends unrecovered when the next one begins.
+    events.clear();
+    for (i, packet) in host.frame(&payload, 1).iter().enumerate() {
+        if ![1, 4, 6].contains(&i) {
+            rx.receive(packet, 6, &mut events);
+        }
+    }
+    assert!(fec_blocks(&events).is_empty(), "still waiting for shards");
+    for packet in host.frame(&payload, 1) {
+        rx.receive(&packet, 7, &mut events);
+    }
+    let lost = FecBlock {
+        frame: 2,
+        arrived_shards: 8,
+        missing_shards: 3,
+        unrecovered: true,
+        ..recovered
+    };
+    assert_eq!(fec_blocks(&events)[0], lost);
+
+    // Complete with parity still on the way: only the shards up to the last arrival count.
+    events.clear();
+    let packets = host.frame(&payload, 1);
+    for packet in &packets[..9] {
+        rx.receive(packet, 8, &mut events);
+    }
+    let early = FecBlock {
+        frame: 4,
+        arrived_shards: 9,
+        missing_shards: 0,
+        unrecovered: false,
+        ..recovered
+    };
+    assert_eq!(fec_blocks(&events), [early]);
+}
+
+#[test]
+fn lost_frame_requests_idr_without_rfi() {
+    let mut host = Host::new();
+    let mut rx = VideoReceiver::new(config(0x1));
+    let mut events = Vec::new();
+    for packet in host.frame(&h264_idr(), 2) {
+        rx.receive(&packet, 1, &mut events);
+    }
+    rx.frame_decoded(FrameType::Idr);
+    let _lost = host.frame(&h264_p(100), 1);
+    for packet in host.frame(&h264_p(100), 1) {
+        rx.receive(&packet, 2, &mut events);
+    }
+    assert_eq!(frames(&events).len(), 1);
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, VideoEvent::Signal(VideoSignal::RequestIdr))));
+}
+
+/// A stream that negotiated RFI whose decoder was replaced mid-stream by one that never asked
+/// for it (a refused hardware decoder's fallback) recovers from a loss with a key frame, not an
+/// invalidation the new decoder may not survive.
+#[test]
+fn a_lost_frame_after_rfi_is_given_up_requests_idr_not_an_invalidation() {
+    let lose_one = |give_up: bool| {
+        let mut host = Host::new();
+        let mut rx = VideoReceiver::new(VideoConfig {
+            rfi: true,
+            ..config(0x1)
+        });
+        let mut events = Vec::new();
+        for packet in host.frame(&h264_idr(), 2) {
+            rx.receive(&packet, 1, &mut events);
+        }
+        rx.frame_decoded(FrameType::Idr);
+        if give_up {
+            rx.recover_with_idr_only();
+        }
+        let _lost = host.frame(&h264_p(100), 1);
+        for packet in host.frame(&h264_p(100), 1) {
+            rx.receive(&packet, 2, &mut events);
+        }
+        let invalidated = events
+            .iter()
+            .any(|e| matches!(e, VideoEvent::Signal(VideoSignal::InvalidateFrames { .. })));
+        let idr = events
+            .iter()
+            .any(|e| matches!(e, VideoEvent::Signal(VideoSignal::RequestIdr)));
+        (invalidated, idr, frames(&events).len())
+    };
+    assert!(lose_one(false).0, "with RFI a loss is invalidated");
+    let (invalidated, idr, frames) = lose_one(true);
+    assert!(
+        !invalidated && idr,
+        "after RFI is given up a loss asks for a key frame"
+    );
+    assert_eq!(frames, 1, "and waits for it");
+}
+
+#[test]
+fn a_late_packet_in_a_block_without_parity_is_not_a_lost_frame() {
+    // Retroid on Wi-Fi, November 1: with statistical FEC at 0 % a packet overtaken by the next
+    // one was reported lost at once (missing=0 in the FEC report), and the frame was dropped.
+    let mut host = Host::new();
+    let mut rx = VideoReceiver::new(VideoConfig {
+        rfi: true,
+        ..config(0x1)
+    });
+    let mut events = Vec::new();
+    for packet in host.frame(&h264_idr(), 2) {
+        rx.receive(&packet, 1, &mut events);
+    }
+    rx.frame_decoded(FrameType::Idr);
+    host.fec_percent = 0;
+    let mut late = host.frame(&h264_p(5000), 1);
+    assert_eq!(late.len(), 5);
+    late.swap(1, 2);
+    for packet in &late {
+        rx.receive(packet, 2, &mut events);
+    }
+    let lost = |events: &[VideoEvent]| {
+        events.iter().any(|e| {
+            matches!(
+                e,
+                VideoEvent::Signal(VideoSignal::InvalidateFrames { .. } | VideoSignal::RequestIdr)
+            )
+        })
+    };
+    assert!(!lost(&events), "a late packet is not a loss");
+    assert_eq!(frames(&events).len(), 2);
+    assert!(fec_blocks(&events)
+        .iter()
+        .all(|b| b.missing_shards == 0 && !b.unrecovered));
+
+    // A packet that never comes is still reported, when the next frame begins.
+    events.clear();
+    let gone = host.frame(&h264_p(5000), 1);
+    for (i, packet) in gone.iter().enumerate() {
+        if i != 1 {
+            rx.receive(packet, 3, &mut events);
+        }
+    }
+    assert!(!lost(&events), "no guess without parity");
+    for packet in host.frame(&h264_p(5000), 1) {
+        rx.receive(&packet, 4, &mut events);
+    }
+    assert!(lost(&events));
+    assert!(fec_blocks(&events)[0].unrecovered);
+
+    // With parity, a block missing more than it can rebuild is still reported at once (on a
+    // fresh receiver: the late packet above stops guesses for a while).
+    let mut host = Host::new();
+    let mut rx = VideoReceiver::new(VideoConfig {
+        rfi: true,
+        ..config(0x1)
+    });
+    events.clear();
+    for packet in host.frame(&h264_idr(), 2) {
+        rx.receive(&packet, 1, &mut events);
+    }
+    rx.frame_decoded(FrameType::Idr);
+    let short = host.frame(&h264_p(5000), 1);
+    assert_eq!(short.len(), 6);
+    for (i, packet) in short.iter().enumerate() {
+        if i != 1 && i != 2 {
+            rx.receive(packet, 5, &mut events);
+        }
+    }
+    assert!(lost(&events), "speculative loss with parity");
+}
+
+#[test]
+fn encrypted_packets_decrypt() {
+    use aes_gcm::aead::generic_array::GenericArray;
+    use aes_gcm::aead::{AeadInPlace, KeyInit};
+    let key = [7u8; 16];
+    let cipher = aes_gcm::Aes128Gcm::new(GenericArray::from_slice(&key));
+    let mut host = Host::new();
+    let mut cfg = config(0x1000);
+    cfg.encryption_key = Some(key);
+    let mut rx = VideoReceiver::new(cfg);
+    let mut events = Vec::new();
+    let payload = vec![0x5a; 2000];
+    for (n, mut packet) in host.frame(&payload, 2).into_iter().enumerate() {
+        let mut iv = [0u8; 12];
+        iv[..8].copy_from_slice(&(n as u64).to_le_bytes());
+        let tag = cipher
+            .encrypt_in_place_detached(GenericArray::from_slice(&iv), &[], &mut packet)
+            .unwrap();
+        let mut datagram = iv.to_vec();
+        datagram.extend_from_slice(&1u32.to_le_bytes());
+        datagram.extend_from_slice(&tag);
+        datagram.extend_from_slice(&packet);
+        if n == 1 {
+            let mut forged = datagram.clone();
+            forged[40] ^= 1;
+            rx.receive(&forged, 1, &mut events);
+        }
+        rx.receive(&datagram, 1, &mut events);
+    }
+    assert_eq!(frames(&events)[0].data(), &payload[..]);
+    assert_eq!(rx.stats().decrypt_failures, 1);
+}
+
+#[test]
+fn pyrowave_records_build_an_envelope() {
+    let mut host = Host::new();
+    let mut cfg = config(0x01_0000);
+    cfg.pyrowave_records = true;
+    let mut rx = VideoReceiver::new(cfg);
+    let mut events = Vec::new();
+    let payload = vec![3u8; 2500];
+    let packets = host.frame(&payload, 2);
+    let count = packets.len();
+    for packet in &packets {
+        rx.receive(packet, 9, &mut events);
+    }
+    let frames = frames(&events);
+    assert_eq!(frames.len(), 1);
+    let data = frames[0].data();
+    assert_eq!(&data[..4], &[0, 0, 0, 0]);
+    let first_len = u32::from_le_bytes(data[4..8].try_into().unwrap()) as usize;
+    let first_flags = u32::from_le_bytes(data[8..12].try_into().unwrap());
+    assert_eq!(first_len, PACKET_SIZE - 16);
+    assert_eq!(first_flags, depacketizer::PYRO_PACKET_FRAME_START);
+    assert!(count >= 3);
+}
+
+#[test]
+fn jumbo_pyrowave_packets_build_a_frame() {
+    let mut host = Host::with_packet_size(8192);
+    let mut cfg = config(0x01_0000);
+    cfg.packet_size = 8192;
+    cfg.pyrowave_records = true;
+    // 212 data shards plus 20 % parity stay within one FEC block. The 6 MB frame above stock's
+    // cap is covered by pyrowave::tests and by the frame cap below.
+    let max_frame = depacketizer::Depacketizer::new(&cfg).max_frame_bytes();
+    assert_eq!(max_frame, 4092 * 8192, "4092 packets of the negotiated size");
+    let mut rx = VideoReceiver::new(cfg);
+    let mut events = Vec::new();
+    let payload: Vec<u8> = (0..1_700_000u32).map(|i| (i % 251) as u8).collect();
+    let packets = host.frame(&payload, 2);
+    for packet in &packets {
+        rx.receive(packet, 9, &mut events);
+    }
+    let frames = frames(&events);
+    assert_eq!(frames.len(), 1);
+    let data = frames[0].data();
+    let first_len = u32::from_le_bytes(data[4..8].try_into().unwrap()) as usize;
+    assert_eq!(first_len, 8192 - 16);
+    assert_eq!(rx.stats().frame_drops, 0);
+}
+
+#[test]
+fn receive_buffer_size() {
+    assert_eq!(recv_buffer_size(20_000, 1392), 2048 * 1408);
+    assert_eq!(recv_buffer_size(2_000_000, 1392), 15_000_000);
+    assert_eq!(recv_buffer_size(u32::MAX, 1392), 64 * 1024 * 1024);
+    // A jumbo 8192-byte stream asks for 8160 bytes a packet after encryption: about 16.7 MB.
+    assert_eq!(recv_buffer_size(20_000, 8160), 2048 * 8176);
+    assert_eq!(recv_buffer_size(2_000_000, 8160), 2048 * 8176);
+    assert_eq!(recv_buffer_size(u32::MAX, 8160), 64 * 1024 * 1024);
+}
+
+#[test]
+fn fec_status_wire_format() {
+    let status = FecStatus {
+        frame_index: 0x01020304,
+        highest_received_sequence: 0x0506,
+        block_count: 3,
+        ..FecStatus::default()
+    };
+    let bytes = status.to_bytes();
+    assert_eq!(&bytes[..6], &[1, 2, 3, 4, 5, 6]);
+    assert_eq!(bytes[20], 3);
+}
+
+/// A decode queue that hands frames back while `full`.
+#[derive(Default)]
+struct BoundedSink {
+    full: bool,
+    events: Vec<VideoEvent>,
+}
+
+impl VideoSink for BoundedSink {
+    fn frame(&mut self, frame: Frame) -> Result<(), Frame> {
+        if self.full {
+            return Err(frame);
+        }
+        self.events.push(VideoEvent::Frame(frame));
+        Ok(())
+    }
+
+    fn flush_frames(&mut self) -> usize {
+        self.events.flush_frames()
+    }
+
+    fn signal(&mut self, signal: VideoSignal) {
+        self.events.signal(signal);
+    }
+}
+
+/// A decoder that falls behind overflows the queue; that frame, the queued frames flushed with
+/// it and the P-frames dropped until the key frame it asked for are decoder drops, not network
+/// loss, and the host still gets the key frame request.
+#[test]
+fn decode_queue_overflow_counts_decoder_drops_not_network_loss() {
+    const P_FRAMES: u64 = 4;
+    let mut host = Host::new();
+    let mut rx = VideoReceiver::new(config(0x1));
+    let mut sink = BoundedSink::default();
+    for packet in host.frame(&h264_idr(), 2) {
+        rx.receive(&packet, 1, &mut sink);
+    }
+    rx.frame_decoded(FrameType::Idr);
+
+    sink.full = true;
+    for packet in host.frame(&h264_p(100), 1) {
+        rx.receive(&packet, 2, &mut sink);
+    }
+    assert!(sink
+        .events
+        .iter()
+        .any(|e| matches!(e, VideoEvent::Signal(VideoSignal::RequestIdr))));
+    sink.full = false;
+    for _ in 0..P_FRAMES {
+        for packet in host.frame(&h264_p(100), 1) {
+            rx.receive(&packet, 3, &mut sink);
+        }
+    }
+    for packet in host.frame(&h264_idr(), 2) {
+        rx.receive(&packet, 4, &mut sink);
+    }
+
+    let stats = rx.stats();
+    assert_eq!(stats.frame_drops, 0);
+    assert_eq!(stats.decoder_drops, P_FRAMES + 2);
+    let delivered = frames(&sink.events);
+    assert_eq!(delivered.len(), 1, "the queue flush leaves only the key frame");
+    assert_eq!(delivered[0].frame_type, FrameType::Idr);
+
+    // A later network loss is network loss again.
+    let _lost = host.frame(&h264_p(100), 1);
+    for packet in host.frame(&h264_p(100), 1) {
+        rx.receive(&packet, 5, &mut sink);
+    }
+    assert!(rx.stats().frame_drops >= 1);
+    assert_eq!(rx.stats().decoder_drops, P_FRAMES + 2);
+}
+
+/// Network loss while waiting for the key frame after an overflow stays network loss
+/// (nightjar#80 review): a Wi-Fi burst that keeps losing frames must still read as loss so the
+/// automatic bitrate comes down.
+#[test]
+fn a_frame_lost_after_a_decode_queue_overflow_is_network_loss() {
+    const P_FRAMES: u64 = 3;
+    let mut host = Host::new();
+    let mut rx = VideoReceiver::new(config(0x1));
+    let mut sink = BoundedSink::default();
+    for packet in host.frame(&h264_idr(), 2) {
+        rx.receive(&packet, 1, &mut sink);
+    }
+    rx.frame_decoded(FrameType::Idr);
+
+    sink.full = true;
+    for packet in host.frame(&h264_p(100), 1) {
+        rx.receive(&packet, 2, &mut sink);
+    }
+    sink.full = false;
+    // The overflowing frame and the flushed key frame.
+    assert_eq!(rx.stats().decoder_drops, 2);
+    assert_eq!(rx.stats().frame_drops, 0);
+
+    let _lost = host.frame(&h264_p(100), 1);
+    for _ in 0..P_FRAMES {
+        for packet in host.frame(&h264_p(100), 1) {
+            rx.receive(&packet, 3, &mut sink);
+        }
+    }
+
+    let stats = rx.stats();
+    assert_eq!(stats.decoder_drops, 2, "nothing after the loss is the decoder's");
+    assert!(stats.frame_drops > P_FRAMES, "the lost frame and the wait after it are loss");
+}
+
+/// Takes the one frame `packets` complete.
+fn one_frame(rx: &mut VideoReceiver, packets: Vec<Vec<u8>>) -> Frame {
+    let mut events = Vec::new();
+    for packet in packets {
+        rx.receive(&packet, 1, &mut events);
+    }
+    let mut frames = events.into_iter().filter_map(|e| match e {
+        VideoEvent::Frame(f) => Some(f),
+        _ => None,
+    });
+    let frame = frames.next().expect("a frame");
+    assert!(frames.next().is_none());
+    frame
+}
+
+/// Every completed frame carries FFmpeg's padding of zero bytes after its data, inside the same
+/// allocation, so a decoder can take the bytes by reference without copying them out.
+#[test]
+fn completed_frames_carry_zeroed_padding_after_their_data() {
+    let mut host = Host::new();
+    let mut rx = VideoReceiver::new(config(0x1));
+    let idr = h264_idr();
+    let frame = one_frame(&mut rx, host.frame(&idr, 2));
+    let shared = frame.shared_data();
+    assert_eq!(shared.as_slice(), frame.data());
+    let padded = shared.padded();
+    assert_eq!(padded.len(), frame.data().len() + FRAME_PADDING);
+    assert_eq!(&padded[..frame.data().len()], frame.data());
+    assert!(padded[frame.data().len()..].iter().all(|&b| b == 0));
+    assert_eq!(padded.as_ptr(), frame.data().as_ptr(), "the same bytes, not a copy");
+    // A recycled storage written with a longer frame and then a shorter one is padded again:
+    // the shorter frame's padding overwrites the longer frame's bytes.
+    drop(shared);
+    rx.recycle(frame);
+    let long = one_frame(&mut rx, host.frame(&h264_p(5000), 1));
+    rx.recycle(long);
+    let short = one_frame(&mut rx, host.frame(&h264_p(10), 1));
+    let shared = short.shared_data();
+    assert!(shared.padded()[short.data().len()..].iter().all(|&b| b == 0));
+    assert!(Frame::default().shared_data().padded().iter().all(|&b| b == 0), "an empty frame too");
+}
+
+/// A frame's bytes a decoder still holds when the frame is recycled stay intact for it, and are
+/// not handed to the next frame; storage nobody holds is reused.
+#[test]
+fn bytes_held_past_recycling_are_never_reused() {
+    let mut host = Host::new();
+    let mut rx = VideoReceiver::new(config(0x1));
+    let idr = h264_idr();
+    let frame = one_frame(&mut rx, host.frame(&idr, 2));
+    let held = frame.shared_data();
+    assert!(!held.unshared());
+    let address = held.as_slice().as_ptr();
+    rx.recycle(frame);
+    assert!(held.unshared(), "the receiver let go of its reference");
+    for _ in 0..3 {
+        let next = one_frame(&mut rx, host.frame(&h264_p(3000), 1));
+        assert_ne!(next.data().as_ptr(), address, "held bytes are not reused");
+        rx.recycle(next);
+    }
+    assert_eq!(&held.as_slice()[..idr.len()], &idr[..], "and stay as they were");
+
+    // Through a raw reference, as an FFmpeg free callback holds it.
+    let frame = one_frame(&mut rx, host.frame(&h264_p(2000), 1));
+    let raw = frame.shared_data().into_raw();
+    rx.recycle(frame);
+    // SAFETY: from into_raw above, given back once.
+    let back = unsafe { FrameBytes::from_raw(raw) };
+    assert!(back.unshared());
+    drop(back);
+
+    // Storage nobody holds goes back to the pool and is reused.
+    let frame = one_frame(&mut rx, host.frame(&h264_p(2000), 1));
+    let address = frame.data().as_ptr();
+    rx.recycle(frame);
+    let next = one_frame(&mut rx, host.frame(&h264_p(2000), 1));
+    let reused = next.data().as_ptr() == address;
+    rx.recycle(next);
+    let after = one_frame(&mut rx, host.frame(&h264_p(2000), 1));
+    assert!(reused || after.data().as_ptr() == address, "unheld storage comes back");
+}
+
+mod dolby_vision;
+pub(crate) mod early_chunks;
+mod multi_block;
+mod sei;
+mod slice_delivery;

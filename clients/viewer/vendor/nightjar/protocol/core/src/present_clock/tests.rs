@@ -1,0 +1,559 @@
+use super::*;
+use alloc::vec::Vec;
+
+/// Deterministic noise in `0..range`.
+struct Lcg(u64);
+
+impl Lcg {
+    fn next(&mut self, range: i64) -> i64 {
+        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((self.0 >> 33) % range as u64) as i64
+    }
+}
+
+fn rtp(host_us: i64) -> u32 {
+    (host_us * 9 / 100) as u64 as u32
+}
+
+/// Runs `frames` game presents through the clock; returns (host present, client present,
+/// late) per frame. `game` gives each frame interval, `jitter` each frame's lateness
+/// beyond the fixed 20 ms path, `drift_ppm` how much faster the client's clock runs.
+fn run(
+    clock: &mut PresentClock,
+    frames: usize,
+    mut game: impl FnMut(usize) -> i64,
+    mut jitter: impl FnMut(usize) -> i64,
+    drift_ppm: i64,
+) -> Vec<(i64, i64, bool)> {
+    let offset = 987_654_321;
+    let mut host = 0;
+    (0..frames)
+        .map(|i| {
+            host += game(i);
+            let host_ready = host + 20_000 + jitter(i);
+            let ready = host_ready + offset + host_ready * drift_ppm / 1_000_000;
+            let s = clock.schedule(rtp(host), ready as u64);
+            assert!(s.present_us as i64 >= ready, "never before the frame is ready");
+            (host, s.present_us as i64, s.late)
+        })
+        .collect()
+}
+
+fn intervals(shown: &[(i64, i64, bool)]) -> impl Iterator<Item = (i64, i64)> + '_ {
+    shown
+        .windows(2)
+        .filter(|w| !w[0].2 && !w[1].2)
+        .map(|w| (w[1].0 - w[0].0, w[1].1 - w[0].1))
+}
+
+#[test]
+fn an_even_game_is_shown_evenly_through_jitter() {
+    let mut clock = PresentClock::default();
+    let mut noise = Lcg(1);
+    let shown = run(&mut clock, 3000, |_| 11_111, |_| noise.next(8_000), 0);
+    let settled = &shown[200..];
+    let late = settled.iter().filter(|s| s.2).count();
+    assert!(late * 100 <= settled.len() * 4, "{late} of {} late", settled.len());
+    // Off only by the delay's own steps: at most 25 us falling, and rarely rising.
+    let errors: Vec<i64> = intervals(settled).map(|(game, screen)| (screen - game).abs()).collect();
+    let close = errors.iter().filter(|e| **e <= 40).count();
+    assert!(close * 100 >= errors.len() * 95, "{close} of {}", errors.len());
+    assert!(errors.iter().all(|e| *e < 2_000), "{:?}", errors.iter().max());
+    // Presenting on arrival would have shown these intervals.
+    let mut noise = Lcg(1);
+    let arrival: Vec<i64> = (0..3000).map(|i| i * 11_111 + noise.next(8_000)).collect();
+    let spread = arrival.windows(2).map(|w| w[1] - w[0]).max().unwrap()
+        - arrival.windows(2).map(|w| w[1] - w[0]).min().unwrap();
+    assert!(spread > 10_000, "the test's jitter is real: {spread}");
+}
+
+#[test]
+fn uneven_game_frame_times_are_kept() {
+    let mut clock = PresentClock::default();
+    let mut noise = Lcg(2);
+    let mut pattern = Lcg(3);
+    let shown = run(
+        &mut clock,
+        2000,
+        |_| 7_000 + pattern.next(9_000),
+        |_| noise.next(5_000),
+        0,
+    );
+    let kept = intervals(&shown[200..])
+        .filter(|(game, screen)| (screen - game).abs() <= 25)
+        .count();
+    assert!(kept * 100 >= 1800 * 90, "{kept} intervals kept");
+}
+
+#[test]
+fn delay_tracks_the_jitter_percentile_and_falls_slowly() {
+    let mut clock = PresentClock::default();
+    let mut noise = Lcg(4);
+    run(&mut clock, 300, |_| 10_000, |i| if i < 250 { noise.next(12_000) } else { noise.next(2_000) }, 0);
+    // Rose to cover ~12 ms of jitter; once the window has no more of it, it falls.
+    let high = clock.delay_us().unwrap();
+    run(&mut clock, 200, |_| 10_000, |_| noise.next(2_000), 0);
+    let lower = clock.delay_us().unwrap();
+    assert!(lower < high);
+    // The gap to the percentile closes by dt / 500 ms, never slower than 25 us a frame.
+    assert!(high - lower >= 200 * 25 - 1);
+    run(&mut clock, 2000, |_| 10_000, |_| noise.next(2_000), 0);
+    let settled = clock.delay_us().unwrap();
+    // Steady state: the ~97th percentile of 0..2 ms plus the margin (the clocks' offset
+    // and the fixed path are in the delay too).
+    let base = 987_654_321 + 20_000;
+    assert!((base + 1_800..=base + 2_600).contains(&settled), "{}", settled - base);
+}
+
+#[test]
+fn a_lone_spike_is_shown_late_but_a_slower_path_raises_the_delay() {
+    let mut clock = PresentClock::default();
+    let shown = run(&mut clock, 300, |_| 10_000, |i| if i == 200 { 15_000 } else { 1_000 }, 0);
+    assert!(shown[200].2, "the spike itself is late");
+    assert!(!shown[201].2);
+    let before = shown[199].1 - shown[199].0;
+    let after = shown[250].1 - shown[250].0;
+    assert!((after - before).abs() <= 25, "one spike does not hold every frame");
+
+    let mut clock = PresentClock::default();
+    let shown = run(&mut clock, 400, |_| 10_000, |i| if i < 200 { 1_000 } else { 15_000 }, 0);
+    let late = shown[200..].iter().filter(|s| s.2).count();
+    assert!(late <= 6, "{late} late before the delay covered the slower path");
+    assert!(!shown[210..].iter().any(|s| s.2));
+}
+
+#[test]
+fn a_late_burst_at_the_start_does_not_hold_the_stream() {
+    // The first pictures wait for the decoder and the GPU: 90 ms late and falling, then an
+    // even 20 ms path with 1 ms of jitter. Measured on a real stream, the delay seeded from the
+    // first picture held every frame for the longest hold for about a minute.
+    let mut clock = PresentClock::default();
+    let mut noise = Lcg(6);
+    let shown = run(&mut clock, 700, |_| 16_667, |i| if i < 8 { 90_000 - i as i64 * 11_000 } else { noise.next(1_000) }, 0);
+    let hold = |i: usize| shown[i].1 - (shown[i].0 + 987_654_321 + 20_000);
+    for i in [30, 100, 300, 699] {
+        assert!((0..=3_000).contains(&hold(i)), "frame {i} held {} us", hold(i));
+    }
+    assert!(clock.delay_us().unwrap() < 987_654_321 + 20_000 + 3_000);
+    assert!(shown[..8].iter().all(|s| !s.2), "the burst itself is shown as it comes");
+    // A restarted video clock warms up again.
+    let late_again = clock.schedule(rtp(1_000), (shown[699].1 + 80_000) as u64);
+    assert_eq!(late_again.hold_us, clock.settings.margin_us);
+}
+
+// Regression (nightjar#80): a decoder behind the stream made frames late by its queue, the clock
+// learnt that lateness and held every frame up to the longest hold.
+#[test]
+fn a_frame_behind_in_the_decode_queue_is_shown_at_once_and_not_learnt() {
+    let mut clock = PresentClock::default();
+    let mut noise = Lcg(9);
+    let shown = run(&mut clock, 300, |_| 10_000, |_| noise.next(1_000), 0);
+    let (window, len, next, delay) = (clock.window, clock.len, clock.next, clock.delay_us());
+    let host = shown[299].0;
+    let mut behind = Vec::new();
+    for i in 1..=20 {
+        // 30 ms behind and more, as a queue that fills.
+        let ready = host + i * 10_000 + 987_654_321 + 20_000 + 30_000 + i * 3_000;
+        behind.push(clock.schedule_behind(rtp(host + i * 10_000), ready as u64));
+    }
+    assert!(behind.iter().all(|s| s.hold_us == 0), "{behind:?}");
+    assert!(behind.iter().all(|s| s.late), "still counted late");
+    assert_eq!((clock.window, clock.len, clock.next, clock.delay_us()), (window, len, next, delay), "the window is unchanged");
+
+    // Caught up (once the queue drained, a second later): the next frame is held as before the
+    // backlog, not by its lateness.
+    let host = host + 120 * 10_000;
+    let next = clock.schedule(rtp(host), (host + 987_654_321 + 20_000) as u64);
+    assert!(next.hold_us <= 2_000, "held {} us", next.hold_us);
+}
+
+// Review of nightjar#80: Wi-Fi hands over a few frames at once, leaving the decode queue briefly
+// non-empty. Those frames are what host-time pacing spreads out; only a queue that stays
+// non-empty is a decoder behind the stream.
+#[test]
+fn a_network_burst_keeps_normal_scheduling_and_a_sustained_backlog_switches() {
+    let mut clock = PresentClock::default();
+    let mut noise = Lcg(11);
+    let shown = run(&mut clock, 300, |_| 10_000, |_| noise.next(1_000), 0);
+    let mut host = shown[299].0;
+
+    // Three frames in one burst: two still queued, then one, then none. Paced and learnt as usual.
+    for queued in [2, 1, 0] {
+        host += 10_000;
+        let ready = (987_654_321 + 20_000 + 30_000 + host - 10_000 * queued as i64) as u64;
+        let mut normal = clock.clone();
+        let expected = normal.schedule(rtp(host), ready);
+        assert_eq!(clock.schedule_queued(rtp(host), ready, queued), expected, "a burst is paced as usual");
+        assert_eq!((clock.len, clock.next, clock.delay_us()), (normal.len, normal.next, normal.delay_us()));
+    }
+
+    // A decoder that cannot keep up: the queue stays non-empty. The first frames are still
+    // learnt; from the BEHIND_AFTER_FRAMES-th on they are shown at once and not learnt.
+    for i in 1..=20u32 {
+        host += 10_000;
+        let ready = (987_654_321 + 20_000 + 30_000 + host + i64::from(i) * 3_000) as u64;
+        let learnt = clock.next;
+        let got = clock.schedule_queued(rtp(host), ready, 3);
+        if i < BEHIND_AFTER_FRAMES {
+            assert_ne!(clock.next, learnt, "frame {i} is learnt before the switch");
+        } else {
+            assert_eq!(clock.next, learnt, "frame {i} is not learnt after the switch");
+            assert_eq!(got.hold_us, 0, "frame {i} is shown at once");
+        }
+    }
+
+    // The queue empties: normal scheduling again.
+    host += 10_000;
+    let ready = (987_654_321 + 20_000 + host) as u64;
+    let learnt = clock.next;
+    let expected = clock.clone().schedule(rtp(host), ready);
+    assert_eq!(clock.schedule_queued(rtp(host), ready, 0), expected);
+    assert_ne!(clock.next, learnt, "learnt again once the queue empties");
+}
+
+/// The fixed part of a frame's ready time: the clocks' offset and the 20 ms path.
+const BASE_US: i64 = 987_654_321 + 20_000;
+
+/// Runs `frames` frames at `fps` through the clock. `extra(i, interval)` is the frame's
+/// lateness on top of the path (a 1 ms noise is added). Returns the shown frames.
+fn run_fps(
+    fps: i64,
+    frames: usize,
+    seed: u64,
+    mut extra: impl FnMut(usize, i64) -> i64,
+) -> Vec<(i64, i64, bool)> {
+    let interval = 1_000_000 / fps;
+    let mut clock = PresentClock::default();
+    let mut noise = Lcg(seed);
+    run(&mut clock, frames, |_| interval, |i| extra(i, interval) + noise.next(1_000), 0)
+}
+
+fn holds(shown: &[(i64, i64, bool)]) -> impl Iterator<Item = i64> + '_ {
+    shown.iter().map(|s| s.1 - (s.0 + BASE_US))
+}
+
+#[test]
+fn a_stall_in_mid_stream_does_not_hold_the_stream_for_long() {
+    // The stall holds the frames back and delivers them at once: the first is `stall` late,
+    // each next one an interval less. The delay rises to cover it, then has to come back.
+    for fps in [30, 60, 144] {
+        for stall in [100_000, 200_000] {
+            let at = 1000;
+            let shown = run_fps(fps, 1000 + 128 + 3 * fps as usize + 50, 7, |i, interval| {
+                if i >= at { (stall - (i - at) as i64 * interval).max(0) } else { 0 }
+            });
+            let back = at + 128 + 2 * fps as usize;
+            for (i, hold) in holds(&shown).enumerate().skip(back) {
+                assert!((0..=3_000).contains(&hold), "{fps} fps, {stall} us: frame {i} held {hold} us");
+            }
+            let over = at + (stall / (1_000_000 / fps)) as usize + 2;
+            let longest = holds(&shown).skip(over).max().unwrap();
+            assert!(longest <= 50_000 + 1_500, "{fps} fps, {stall} us: held {longest} us");
+        }
+    }
+}
+
+#[test]
+fn a_stall_of_a_fixed_size_every_64_frames_is_late_only_the_first_time() {
+    for fps in [30, 60, 144] {
+        let shown = run_fps(fps, 64 * 20, 8, |i, _| if i >= 200 && (i - 200) % 64 < 8 { 20_000 } else { 0 });
+        let first = shown.iter().position(|s| s.2).expect("the first burst is late");
+        assert!(first >= 200, "{fps} fps: frame {first}");
+        let again = shown[200 + 64..].iter().filter(|s| s.2).count();
+        assert_eq!(again, 0, "{fps} fps: late again");
+        assert!(holds(&shown).all(|h| h <= 50_000));
+    }
+}
+
+#[test]
+fn a_300_ms_start_burst_at_144_fps_is_shown_as_it_comes_and_then_released() {
+    // 36 frames fit in the first 250 ms of host time; the rest of the burst, 50 ms late and
+    // falling, goes into the window.
+    let shown = run_fps(144, 1000, 9, |i, interval| (300_000 - i as i64 * interval).max(0));
+    assert!(shown[..36].iter().all(|s| !s.2), "the warm-up frames are shown as they come");
+    let holds: Vec<i64> = holds(&shown).collect();
+    assert!(holds[44..].iter().all(|h| (0..=51_500).contains(h)));
+    for (i, hold) in holds.iter().enumerate().skip(44 + 128 + 2 * 144) {
+        assert!((0..=3_000).contains(hold), "frame {i} held {hold} us");
+    }
+}
+
+#[test]
+fn client_clock_drift_is_followed() {
+    for drift in [-200, 200] {
+        let mut clock = PresentClock::default();
+        let mut noise = Lcg(5);
+        let shown = run(&mut clock, 20_000, |_| 8_333, |_| noise.next(3_000), drift);
+        let late = shown[1000..].iter().filter(|s| s.2).count();
+        assert!(late * 100 <= 19_000 * 5, "drift {drift}: {late} late");
+        let hold = shown[19_999].1 - shown[19_999].0;
+        assert!(hold < 987_654_321 + 20_000 + 3_000 + 40_000, "hold did not run away");
+    }
+}
+
+#[test]
+fn rtp_wrap_and_a_restarted_clock() {
+    let mut clock = PresentClock::default();
+    // Just below the 32-bit wrap, at 13.25 hours.
+    let start = (u32::MAX as i64 - 450_000) * 100 / 9;
+    let mut host = start;
+    let mut last = None;
+    for _ in 0..1000 {
+        host += 10_000;
+        let s = clock.schedule(rtp(host), (host + 5_000) as u64);
+        if let Some(previous) = last {
+            assert_eq!(s.present_us as i64 - previous, 10_000, "smooth across the wrap");
+        }
+        last = Some(s.present_us as i64);
+    }
+    // The host restarted its video clock at 0: no hour-long hold, back to normal.
+    let s = clock.schedule(rtp(10_000), (host + 15_000) as u64);
+    assert!(s.hold_us < 1_000);
+    let next = clock.schedule(rtp(20_000), (host + 25_000) as u64);
+    assert_eq!(next.present_us - s.present_us, 10_000);
+}
+
+#[test]
+fn presents_respect_the_display_maximum_and_hold_limit() {
+    let mut clock = PresentClock::new(Settings {
+        min_interval_us: 6_944, // 144 Hz
+        max_hold_us: 30_000,
+        ..Settings::default()
+    });
+    let mut host = 0;
+    let mut previous = None;
+    for i in 0..100 {
+        host += if i % 2 == 0 { 2_000 } else { 12_000 };
+        let s = clock.schedule(rtp(host), (host + 3_000) as u64);
+        if let Some(p) = previous {
+            assert!(s.present_us as i64 - p >= 6_944);
+        }
+        assert!(s.hold_us <= 30_000);
+        previous = Some(s.present_us as i64);
+    }
+}
+
+#[test]
+fn clock_offset_from_jittery_exchanges() {
+    let mut offset = ClockOffset::default();
+    let mut noise = Lcg(6);
+    let true_offset = 5_000_000_000i64;
+    for i in 0..40 {
+        let client_send = 1_000_000 + i * 250_000;
+        let up = 300 + noise.next(4_000);
+        let down = 300 + noise.next(4_000);
+        let host_receive = client_send + up - true_offset;
+        let host_send = host_receive + 50;
+        let reply = ClockSyncReply {
+            sequence: i as u32,
+            client_us: client_send as u64,
+            host_receive_us: host_receive as u64,
+            host_send_us: host_send as u64,
+        };
+        offset.add(&reply, (host_send + true_offset + down) as u64).unwrap();
+    }
+    let estimate = offset.offset_at(11_000_000).unwrap();
+    assert!((estimate - true_offset).abs() <= offset.rtt_us().unwrap() / 2 + 1);
+    assert!((estimate - true_offset).abs() < 1_000, "{}", estimate - true_offset);
+    // A reply received before it was sent is nonsense.
+    let bad = ClockSyncReply { client_us: 2_000_000, host_receive_us: 0, host_send_us: 0, sequence: 0 };
+    assert_eq!(offset.add(&bad, 1_000_000), None);
+}
+
+#[test]
+fn clock_offset_follows_drift_and_restarts() {
+    let mut offset = ClockOffset::default();
+    // The client's clock runs 100 ppm fast; the exchanges are clean.
+    let at = |client: i64| client - client / 10_000;
+    for i in 0..32 {
+        let client = 1_000_000 + i * 250_000;
+        let host = at(client) as u64;
+        let reply = ClockSyncReply { sequence: 0, client_us: client as u64, host_receive_us: host, host_send_us: host };
+        offset.add(&reply, client as u64).unwrap();
+    }
+    let later = 30_000_000;
+    let predicted = offset.offset_at(later).unwrap();
+    assert!((predicted - (later - at(later))).abs() <= 50, "{predicted}");
+    // A new video clock on the host: a second-plus jump drops the old samples.
+    let reply = ClockSyncReply { sequence: 0, client_us: 40_000_000, host_receive_us: 1_000, host_send_us: 1_000 };
+    offset.add(&reply, 40_000_000).unwrap();
+    assert_eq!(offset.offset_at(40_000_000), Some(40_000_000 - 1_000));
+}
+
+#[test]
+fn latency_is_reported_with_clock_sync() {
+    let mut clock = PresentClock::default();
+    let reply = ClockSyncReply { sequence: 0, client_us: 1_000, host_receive_us: 500, host_send_us: 500 };
+    clock.offset.add(&reply, 1_000).unwrap(); // client = host + 500
+    let s = clock.schedule(rtp(100_000), 100_000 + 500 + 7_000);
+    assert_eq!(s.latency_us, Some(7_000 + 500));
+}
+
+#[test]
+fn content_as_fast_as_the_display_does_not_build_up_a_hold() {
+    // A 60 fps stream on a VRR display whose top rate is 59.97 Hz: the floor used to push each
+    // frame past the one before until every frame was held for `max_hold_us`.
+    let interval = 16_675;
+    let mut clock = PresentClock::new(Settings { min_interval_us: interval, ..Settings::default() });
+    let mut noise = Lcg(4);
+    let mut previous = None;
+    let mut holds = Vec::new();
+    for i in 0..6_000i64 {
+        let host = (i + 1) * 16_667 + noise.next(2_000) - 1_000;
+        let s = clock.schedule(rtp(host), (host + 20_000 + noise.next(6_000)) as u64);
+        if let Some(p) = previous {
+            assert!(s.present_us >= p, "presents stay in order");
+        }
+        previous = Some(s.present_us);
+        if i >= 1_200 {
+            holds.push(s.hold_us);
+        }
+    }
+    holds.sort_unstable();
+    let p99 = holds[holds.len() * 99 / 100];
+    assert!(p99 <= interval + 8_000, "99th percentile hold {p99} us");
+}
+
+/// Lateness with a long tail, as on Wi-Fi: most frames within 1 ms, one in ten 8 to 12 ms later.
+fn tail(noise: &mut Lcg, i: usize) -> i64 {
+    if i % 10 == 3 { 8_000 + noise.next(4_000) } else { noise.next(1_000) }
+}
+
+/// Median of host present to client present after the start, beyond the fixed path and offset.
+fn median_delay(shown: &[(i64, i64, bool)]) -> i64 {
+    let mut delays: Vec<i64> = shown[300..].iter().map(|s| s.1 - s.0 - (987_654_321 + 20_000)).collect();
+    delays.sort_unstable();
+    delays[delays.len() / 2]
+}
+
+/// A clock for a display that refreshes when a frame comes.
+fn adaptive() -> PresentClock {
+    PresentClock::new(Settings::adaptive(0))
+}
+
+/// How far each shown interval is from the game's, in microseconds, late frames included.
+fn interval_errors(shown: &[(i64, i64, bool)]) -> Vec<i64> {
+    shown.windows(2).map(|w| (w[1].1 - w[0].1) - (w[1].0 - w[0].0)).collect()
+}
+
+#[test]
+fn a_long_tail_is_shown_late_instead_of_every_frame_waiting_for_it() {
+    let mut noise = Lcg(5);
+    let unbounded = run(&mut PresentClock::default(), 3000, |_| 11_111, |i| tail(&mut noise, i), 0);
+    let mut noise = Lcg(5);
+    let followed = run(&mut adaptive(), 3000, |_| 11_111, |i| tail(&mut noise, i), 0);
+    // The percentile rule waits for the tail: every frame about 12 ms after its host time.
+    assert!(median_delay(&unbounded) > 10_000, "{}", median_delay(&unbounded));
+    // Following the link: never more than the ceiling above the typical frame (about 0.5 ms)
+    // and the margin, and well below it between two late frames.
+    let delays: Vec<i64> = holds(&followed[300..]).zip(&followed[300..]).filter(|(_, s)| !s.2).map(|(d, _)| d).collect();
+    assert!(delays.iter().all(|d| *d <= 500 + ADAPTIVE_SPREAD_US + 500 + 100), "{:?}", delays.iter().max());
+    assert!(median_delay(&followed) <= 5_500, "{}", median_delay(&followed));
+    // The tail (270 of the 2700 frames) is shown late, as it comes, and nothing else is.
+    let late = followed[300..].iter().filter(|s| s.2).count();
+    assert!((250..=300).contains(&late), "{late} late");
+}
+
+#[test]
+fn a_clean_link_is_held_no_longer_than_the_percentile_rule_holds_it() {
+    let mut noise = Lcg(6);
+    let unbounded = run(&mut PresentClock::default(), 2000, |_| 8_333, |_| noise.next(1_200), 0);
+    let mut noise = Lcg(6);
+    let followed = run(&mut adaptive(), 2000, |_| 8_333, |_| noise.next(1_200), 0);
+    assert!(median_delay(&followed) <= median_delay(&unbounded), "{} against {}", median_delay(&followed), median_delay(&unbounded));
+    assert_eq!(followed[300..].iter().filter(|s| s.2).count(), 0, "the margin covers what the knee leaves");
+    let errors = interval_errors(&followed[300..]);
+    assert!(errors.iter().all(|e| e.abs() <= 300), "{:?}", errors.iter().map(|e| e.abs()).max());
+}
+
+// Lateness spread evenly over 6 ms has no tail to leave out: a fixed 2 ms above the median left
+// one frame in six late.
+#[test]
+fn jitter_without_a_tail_is_covered_whole() {
+    let mut noise = Lcg(7);
+    let shown = run(&mut adaptive(), 3000, |_| 11_111, |_| noise.next(6_000), 0);
+    let settled = &shown[300..];
+    let late = settled.iter().filter(|s| s.2).count();
+    assert!(late * 100 <= settled.len() * 2, "{late} of {} late", settled.len());
+    assert!(median_delay(&shown) <= 6_600, "{}", median_delay(&shown));
+    let errors = interval_errors(settled);
+    let even = errors.iter().filter(|e| e.abs() <= 1_000).count();
+    assert!(even * 1000 >= errors.len() * 995, "{even} of {}", errors.len());
+}
+
+// Late frames come in bursts. The first one is shown when it is ready; the ones behind it keep
+// their intervals to it, where returning to the old delay showed the next frame a lateness early.
+#[test]
+fn a_late_burst_moves_one_interval_and_the_delay_falls_back_after_it() {
+    let mut noise = Lcg(8);
+    let burst = |i: usize| (i >= 400 && i % 200 < 5) as i64 * 4_000;
+    let shown = run(&mut adaptive(), 2000, |_| 10_000, |i| burst(i) + noise.next(300), 0);
+    let delays: Vec<i64> = holds(&shown).collect();
+    let errors = interval_errors(&shown);
+    for start in (400..2000).step_by(200) {
+        assert!(shown[start].2, "the burst's first frame is late");
+        assert!((3_000..=4_500).contains(&errors[start - 1]), "one long interval: {}", errors[start - 1]);
+        for (i, error) in errors.iter().enumerate().take(start + 60).skip(start) {
+            // The burst's other frames are a little late again as the delay starts to fall.
+            assert!(i + 1 < start + 5 || !shown[i + 1].2, "frame {} after the burst is not late", i + 1 - start);
+            assert!(error.abs() <= 700, "interval {} after the burst began is off by {error}", i - start);
+        }
+        // Half a second on, the delay is back where it was before the burst.
+        assert!((delays[start + 60] - delays[start - 1]).abs() <= 150, "{} against {}", delays[start + 60], delays[start - 1]);
+    }
+}
+
+#[test]
+fn a_stall_raises_the_delay_no_further_than_the_ceiling_and_is_forgotten_in_half_a_second() {
+    let mut noise = Lcg(9);
+    let shown = run(&mut adaptive(), 1200, |_| 8_333, |i| (i == 600) as i64 * 30_000 + noise.next(300), 0);
+    let delays: Vec<i64> = holds(&shown).collect();
+    assert!(shown[600].2);
+    // The frames that came during the stall are shown behind it, in order; then the ceiling holds.
+    assert!(delays[605..].iter().all(|d| *d <= 150 + ADAPTIVE_SPREAD_US + 500 + 100), "{:?}", delays[605..].iter().max());
+    assert!((delays[661] - delays[599]).abs() <= 150, "{} against {}", delays[661], delays[599]);
+    assert_eq!(shown[605..].iter().filter(|s| s.2).count(), 0);
+}
+
+#[test]
+fn the_knee_covers_a_spread_and_leaves_a_tail() {
+    let sorted = |mut values: Vec<i64>| {
+        values.sort_unstable();
+        values
+    };
+    assert_eq!(knee(&[4_200]), 4_200);
+    assert_eq!(knee(&[700; 128]), 700);
+    // Even over 6 ms: all but the last few frames.
+    let even = sorted((0..128).map(|i| i * 6_000 / 128).collect());
+    assert!(knee(&even) >= 5_400, "{}", knee(&even));
+    // Nine frames in ten within 1 ms, the others 9 to 12 ms later: the knee stays with the many.
+    let tailed = sorted((0..128).map(|i| if i % 10 == 0 { 9_000 + i * 20 } else { i * 7 }).collect());
+    assert!(knee(&tailed) < 1_000, "{}", knee(&tailed));
+    // A second group further away than the reach is a tail too, however large.
+    let apart = sorted((0..128).map(|i| if i % 5 == 0 { 3_000 + i } else { i }).collect());
+    assert!(knee(&apart) < 200, "{}", knee(&apart));
+    // Within reach it is part of the spread.
+    let near = sorted((0..128).map(|i| if i % 5 == 0 { 1_500 + i } else { i }).collect());
+    assert!(knee(&near) >= 1_500, "{}", knee(&near));
+    // Frames further apart than the reach are a tail from the median on.
+    let wide = sorted((0..128).map(|i| i * 1_000).collect());
+    assert_eq!(knee(&wide), wide[63]);
+    // A few frames have no share to speak of: never past the 97th percentile.
+    assert_eq!(knee(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]), 8);
+}
+
+// On a vsync grid the percentile rule stays, with the spread as a plain bound.
+#[test]
+fn a_vsync_grid_keeps_the_percentile_rule() {
+    let grid = Grid { anchor_us: 0, interval_us: 8_333, lead_us: 2_000, slack_us: 0 };
+    let mut noise = Lcg(10);
+    let mut on_grid = adaptive();
+    let mut plain = PresentClock::default();
+    for i in 0..600i64 {
+        let host = i * 11_111;
+        let ready = (host + 987_654_321 + 20_000 + noise.next(1_500)) as u64;
+        on_grid.schedule_on_grid(rtp(host), ready, grid);
+        plain.schedule_on_grid(rtp(host), ready, grid);
+    }
+    assert_eq!(on_grid.delay_us(), plain.delay_us());
+}

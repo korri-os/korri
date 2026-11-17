@@ -1,0 +1,33 @@
+[workspace]
+members = ["core", "client", "ffi", "difftest", "cli", "android", "desktop", "policy", "traverse"]
+# The desktop client needs SDL3 and FFmpeg; plain `cargo test` here stays the engine's.
+default-members = ["core", "client", "ffi", "difftest", "cli", "android", "policy", "traverse"]
+exclude = ["vendor/sdl3-src"]
+resolver = "2"
+
+# SDL 3.4.20 with the Vulkan interop patch PyroWave GPU decoding shares the renderer's device
+# through (vendor/sdl3-src/README.md). Only the Linux desktop client builds SDL from source.
+[patch.crates-io]
+sdl3-src = { path = "vendor/sdl3-src" }
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+rust-version = "1.80"
+
+# The Android library has no unwinder; a panic aborts like a C assert would.
+[profile.release]
+panic = "abort"
+opt-level = 3
+lto = true
+codegen-units = 1
+
+[profile.dev]
+panic = "abort"
+
+# RSA key generation (client identities, test hosts) takes minutes unoptimized.
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+[profile.dev.package.rsa]
+opt-level = 3

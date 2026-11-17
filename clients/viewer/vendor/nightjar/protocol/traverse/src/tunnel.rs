@@ -1,0 +1,1117 @@
+//! One punched path between a device and its host, and what runs over it.
+//!
+//! On the device ([`Bridge::Device`]) the tunnel binds the host's own TCP ports (HTTP, HTTPS,
+//! RTSP) and media ports (video, audio, control, microphone) on a loopback address. The client
+//! talks to that address as if it were the host: each TCP connection becomes a stream of the
+//! reliable layer, each media datagram goes through sealed as it came.
+//!
+//! On the host ([`Bridge::Host`]) each stream becomes a TCP connection to the host's own port,
+//! and each media channel a UDP socket that sends to the host's media port. Both connect from a
+//! loopback address of the device's own, so the host tells tunnelled devices apart the way it
+//! tells devices apart on the network: by address.
+
+use crate::{
+    node::{self, Node},
+    peers,
+    punch::{self, Puncher},
+    record::{PathKeys, Ports, Role},
+    stream::{Event, Reliable, StreamId},
+    wire::{self, Kind, Opener, Sealer, CHANNELS},
+    Millis,
+};
+use std::{
+    collections::HashMap,
+    io::{self, Read, Write},
+    net::{IpAddr, Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        mpsc, Arc, Condvar, Mutex, RwLock,
+    },
+    thread,
+    time::Duration,
+};
+
+/// The stream targets: which TCP port of the host a stream reaches.
+pub const TARGET_HTTP: u8 = 0;
+pub const TARGET_HTTPS: u8 = 1;
+pub const TARGET_RTSP: u8 = 2;
+
+/// A connected path sends a keepalive when it has sent nothing for this long: NATs drop idle
+/// UDP mappings after 30 s or more.
+const KEEPALIVE: Millis = 10_000;
+/// A path that hears nothing for this long is gone.
+const IDLE: Millis = 45_000;
+/// The device closes a path that carried no connection and no media for this long: the host
+/// list's polls and streams keep it up, and a later connect punches again.
+const UNUSED: Millis = 120_000;
+/// The path thread sleeps until its next deadline (a punch, a retransmission, a keepalive, a
+/// timeout), or until something earlier is due, but never longer than this.
+const LONGEST_SLEEP: Millis = KEEPALIVE;
+
+fn tcp_port(ports: &Ports, target: u8) -> Option<u16> {
+    match target {
+        TARGET_HTTP => Some(ports.http),
+        TARGET_HTTPS => Some(ports.https),
+        TARGET_RTSP => Some(ports.rtsp),
+        _ => None,
+    }
+}
+
+fn media_port(ports: &Ports, channel: u8) -> Option<u16> {
+    match channel {
+        wire::CHANNEL_VIDEO => Some(ports.video),
+        wire::CHANNEL_AUDIO => Some(ports.audio),
+        wire::CHANNEL_CONTROL => Some(ports.control),
+        wire::CHANNEL_MIC => Some(ports.mic),
+        _ => None,
+    }
+}
+
+/// What the tunnel connects to on its side.
+#[derive(Clone, Debug)]
+pub enum Bridge {
+    /// The device: bind the host's ports at `local`, a loopback address.
+    Device { local: IpAddr, ports: Ports },
+    /// The host: reach the host's ports at `service` from `source`, the device's loopback
+    /// address on this PC. Every socket it opens is registered in [`crate::peers`] under
+    /// `device` before it sends, so the host never trusts it as a local peer.
+    Host {
+        service: IpAddr,
+        source: IpAddr,
+        ports: Ports,
+        device: String,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum State {
+    Punching,
+    Connected(SocketAddr),
+    /// Gone, and why.
+    Closed(String),
+}
+
+enum Outgoing {
+    Data(Vec<u8>),
+    Finish,
+    Reset,
+}
+
+struct Connection {
+    writer: mpsc::Sender<Outgoing>,
+    /// The peer finished its side, and so did ours.
+    finished_in: bool,
+    finished_out: bool,
+}
+
+struct Inner {
+    puncher: Puncher,
+    reliable: Reliable,
+    peer: Option<SocketAddr>,
+    last_sent: Millis,
+    connections: HashMap<StreamId, Connection>,
+    closed: Option<String>,
+}
+
+struct Shared {
+    node: Node,
+    role: Role,
+    bridge: Bridge,
+    sealer: Sealer,
+    /// Apart from `inner`, so decrypting a datagram never waits on the reliable layer.
+    opener: Mutex<Opener>,
+    inner: Mutex<Inner>,
+    /// The peer while the path is connected and open, else None: `inner`'s state, kept here so
+    /// media needs no `inner` lock. Written only with `inner` held ([`Tunnel::publish`]).
+    connected: RwLock<Option<SocketAddr>>,
+    /// When an authenticated datagram last came in.
+    last_heard: AtomicU64,
+    /// When the path last carried media or a stream segment, or a connection opened.
+    last_used: AtomicU64,
+    capacity: Condvar,
+    /// Wakes the path thread ([`Tunnel::wake_by`]); `woken` says it was woken.
+    wake: Condvar,
+    woken: Mutex<bool>,
+    /// What the path thread sleeps until, u64::MAX while it is awake.
+    sleeping_until: AtomicU64,
+    /// How often the path thread went round.
+    #[cfg(test)]
+    rounds: AtomicU64,
+    stopped: AtomicBool,
+    /// The device's media sockets, and where its client last sent from on each.
+    media: Vec<Option<MediaEnd>>,
+    listeners: Mutex<Vec<SocketAddr>>,
+}
+
+struct MediaEnd {
+    socket: UdpSocket,
+    client: RwLock<Option<SocketAddr>>,
+    /// The host side's registration of this socket as a tunnelled peer.
+    _mark: Option<peers::Mark>,
+}
+
+#[derive(Clone)]
+pub struct Tunnel {
+    shared: Arc<Shared>,
+}
+
+impl Tunnel {
+    /// Starts a path: binds the bridge's sockets, then punches `candidates` while the node's
+    /// handler feeds it datagrams ([`Tunnel::receive`]). `session` is the device's session nonce.
+    pub fn start(
+        node: Node,
+        role: Role,
+        keys: PathKeys,
+        session: [u8; 16],
+        candidates: Vec<SocketAddr>,
+        bridge: Bridge,
+    ) -> io::Result<Self> {
+        let (send_key, receive_key) = match role {
+            Role::Host => (keys.host_to_client, keys.client_to_host),
+            Role::Client => (keys.client_to_host, keys.host_to_client),
+        };
+        let now = node.now();
+        let mut media = Vec::with_capacity(CHANNELS);
+        for channel in 0..CHANNELS as u8 {
+            media.push(match &bridge {
+                Bridge::Device { local, ports } => {
+                    match media_port(ports, channel).filter(|port| *port != 0) {
+                        Some(port) => Some(MediaEnd {
+                            socket: node::bind_udp(SocketAddr::new(*local, port))?,
+                            client: RwLock::new(None),
+                            _mark: None,
+                        }),
+                        None => None,
+                    }
+                }
+                Bridge::Host { source, device, .. } => {
+                    let socket = node::bind_udp(SocketAddr::new(*source, 0))?;
+                    // Registered before the first datagram reaches the host's media ports.
+                    let mark = peers::register(socket.local_addr()?, device);
+                    Some(MediaEnd {
+                        socket,
+                        client: RwLock::new(None),
+                        _mark: Some(mark),
+                    })
+                }
+            });
+        }
+        for end in media.iter().flatten() {
+            end.socket
+                .set_read_timeout(Some(Duration::from_millis(500)))?;
+        }
+        let shared = Arc::new(Shared {
+            role,
+            bridge: bridge.clone(),
+            sealer: Sealer::new(&send_key, keys.tag, session),
+            opener: Mutex::new(Opener::new(&receive_key, keys.tag)),
+            inner: Mutex::new(Inner {
+                puncher: Puncher::new(candidates, now),
+                reliable: Reliable::new(role == Role::Client),
+                peer: None,
+                last_sent: now,
+                connections: HashMap::new(),
+                closed: None,
+            }),
+            connected: RwLock::new(None),
+            last_heard: AtomicU64::new(now),
+            last_used: AtomicU64::new(now),
+            node,
+            capacity: Condvar::new(),
+            wake: Condvar::new(),
+            woken: Mutex::new(false),
+            sleeping_until: AtomicU64::new(u64::MAX),
+            #[cfg(test)]
+            rounds: AtomicU64::new(0),
+            stopped: AtomicBool::new(false),
+            media,
+            listeners: Mutex::new(Vec::new()),
+        });
+        let tunnel = Self { shared };
+        if let Bridge::Device { local, ports } = &bridge {
+            // Every port is bound before an accept thread starts, so a port in use leaves no
+            // thread behind holding the others.
+            let mut listeners = Vec::new();
+            for target in [TARGET_HTTP, TARGET_HTTPS, TARGET_RTSP] {
+                let Some(port) = tcp_port(ports, target).filter(|port| *port != 0) else {
+                    continue;
+                };
+                listeners.push((TcpListener::bind((*local, port))?, target));
+            }
+            for (listener, target) in listeners {
+                tunnel
+                    .shared
+                    .listeners
+                    .lock()
+                    .unwrap()
+                    .push(listener.local_addr()?);
+                let accepting = tunnel.clone();
+                thread::Builder::new()
+                    .name("internet play accept".into())
+                    .spawn(move || accepting.accept(listener, target))?;
+            }
+        }
+        for channel in 0..CHANNELS as u8 {
+            if tunnel.shared.media[channel as usize].is_some() {
+                let forwarding = tunnel.clone();
+                thread::Builder::new()
+                    .name("internet play media".into())
+                    .spawn(move || forwarding.forward_media(channel))?;
+            }
+        }
+        let ticking = tunnel.clone();
+        thread::Builder::new()
+            .name("internet play path".into())
+            .spawn(move || ticking.run())?;
+        Ok(tunnel)
+    }
+
+    pub fn state(&self) -> State {
+        let inner = self.shared.inner.lock().unwrap();
+        if let Some(reason) = &inner.closed {
+            return State::Closed(reason.clone());
+        }
+        match inner.puncher.state() {
+            punch::State::Connected(_) => {
+                State::Connected(inner.peer.expect("a connected path has a peer"))
+            }
+            _ => State::Punching,
+        }
+    }
+
+    /// More addresses for the peer, learned after the start.
+    pub fn add_candidates(&self, more: &[SocketAddr]) {
+        let mut inner = self.shared.inner.lock().unwrap();
+        inner.puncher.add(more);
+        self.publish(&inner);
+        drop(inner);
+        self.wake_by(0);
+    }
+
+    /// Blocks until the path is closed.
+    pub fn wait_closed(&self) {
+        let mut inner = self.shared.inner.lock().unwrap();
+        while inner.closed.is_none() {
+            inner = self.shared.capacity.wait(inner).unwrap();
+        }
+    }
+
+    /// Wakes the path thread when `at` (the node's clock) comes before what it sleeps until.
+    /// Called after the change that makes `at` due, so a thread about to sleep sees either the
+    /// change or the wake.
+    fn wake_by(&self, at: Millis) {
+        if at < self.shared.sleeping_until.load(Ordering::SeqCst) {
+            *self.shared.woken.lock().unwrap() = true;
+            self.shared.wake.notify_one();
+        }
+    }
+
+    /// Punches on at least until `deadline` (the node's clock): the peer finds this side's
+    /// record later.
+    pub fn hold_punching_until(&self, deadline: Millis) {
+        self.shared
+            .inner
+            .lock()
+            .unwrap()
+            .puncher
+            .hold_until(deadline);
+    }
+
+    /// Mirrors `inner`'s connected peer into `connected`; called with `inner` held after any
+    /// change to its peer, punch state or closing, so the two never disagree for long.
+    fn publish(&self, inner: &Inner) {
+        let peer = match inner.puncher.state() {
+            punch::State::Connected(_) if inner.closed.is_none() => inner.peer,
+            _ => None,
+        };
+        // Written only when it changes: the media threads read it for every datagram.
+        if *self.shared.connected.read().unwrap() != peer {
+            *self.shared.connected.write().unwrap() = peer;
+        }
+    }
+
+    /// Ends the path and tells the peer.
+    pub fn close(&self, reason: &str) {
+        let peer = {
+            let mut inner = self.shared.inner.lock().unwrap();
+            if inner.closed.is_none() {
+                inner.closed = Some(reason.to_owned());
+            }
+            self.publish(&inner);
+            for (_, connection) in inner.connections.drain() {
+                let _ = connection.writer.send(Outgoing::Reset);
+            }
+            inner.peer
+        };
+        if let Some(peer) = peer {
+            self.shared
+                .node
+                .send(peer, &self.shared.sealer.seal(Kind::Close, 0, &[]));
+        }
+        if !self.shared.stopped.swap(true, Ordering::AcqRel) {
+            // Wake the accept threads, which block in accept.
+            for address in self.shared.listeners.lock().unwrap().iter() {
+                let _ = TcpStream::connect_timeout(address, Duration::from_millis(200));
+            }
+            self.shared.capacity.notify_all();
+            self.wake_by(0);
+        }
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.shared.stopped.load(Ordering::Acquire)
+    }
+
+    /// Takes a datagram the node received for this path's tag, and decrypts it in place.
+    pub fn receive(&self, datagram: &mut [u8], from: SocketAddr) {
+        let now = self.shared.node.now();
+        if self.is_closed() {
+            return;
+        }
+        let opened = self.shared.opener.lock().unwrap().open_in_place(datagram);
+        let Some((kind, channel, payload)) = opened else {
+            return;
+        };
+        let payload = &datagram[payload];
+        self.shared.last_heard.fetch_max(now, Ordering::Relaxed);
+        if matches!(kind, Kind::Media | Kind::Stream) {
+            self.shared.last_used.fetch_max(now, Ordering::Relaxed);
+        }
+        // Media from the connected peer's address changes nothing in `inner`: it skips the
+        // reliable layer's lock entirely.
+        if kind == Kind::Media && *self.shared.connected.read().unwrap() == Some(from) {
+            self.media_in(channel, payload);
+            return;
+        }
+        let mut inner = self.shared.inner.lock().unwrap();
+        if inner.closed.is_some() {
+            return;
+        }
+        // Any authenticated datagram moves the path to where it came from: a NAT that changed
+        // the peer's port keeps working.
+        inner.peer = Some(from);
+        match kind {
+            Kind::Punch => {
+                inner.puncher.on_punch(from);
+                self.publish(&inner);
+                drop(inner);
+                self.send_to(from, Kind::PunchAck, 0, &[]);
+                return;
+            }
+            Kind::PunchAck => inner.puncher.on_ack(from),
+            Kind::Stream => {
+                if !matches!(inner.puncher.state(), punch::State::Connected(_)) {
+                    inner.puncher.on_ack(from);
+                }
+                inner.reliable.handle(payload, now);
+            }
+            Kind::Media => {
+                self.publish(&inner);
+                drop(inner);
+                self.media_in(channel, payload);
+                return;
+            }
+            Kind::Close => {
+                inner.closed = Some("the other side ended the connection".into());
+                self.publish(&inner);
+                drop(inner);
+                self.close("the other side ended the connection");
+                return;
+            }
+            Kind::Keepalive => {}
+        }
+        self.publish(&inner);
+        drop(inner);
+        self.dispatch();
+        self.flush();
+    }
+
+    fn send_to(&self, to: SocketAddr, kind: Kind, channel: u8, payload: &[u8]) {
+        self.shared
+            .node
+            .send(to, &self.shared.sealer.seal(kind, channel, payload));
+        self.shared.inner.lock().unwrap().last_sent = self.shared.node.now();
+    }
+
+    /// Sends what the reliable layer has ready.
+    fn flush(&self) {
+        // A retransmission due earlier than the path thread planned, or a dead stream layer,
+        // is the path thread's.
+        if let Some(due) = self.transmit() {
+            self.wake_by(due);
+        }
+    }
+
+    /// [`Tunnel::flush`] without waking the path thread, for the path thread itself (its next
+    /// sleep reckons with the stream layer anyway): when the stream layer next needs it, 0 when
+    /// it died.
+    fn transmit(&self) -> Option<Millis> {
+        let now = self.shared.node.now();
+        let mut inner = self.shared.inner.lock().unwrap();
+        let peer = inner.peer?;
+        if !matches!(inner.puncher.state(), punch::State::Connected(_)) {
+            return None;
+        }
+        let mut sent = false;
+        let mut sealed = Vec::new();
+        while let Some(segment) = inner.reliable.poll_transmit(now) {
+            self.shared
+                .sealer
+                .seal_into(Kind::Stream, 0, &segment, &mut sealed);
+            self.shared.node.send(peer, &sealed);
+            sent = true;
+        }
+        if sent {
+            inner.last_sent = now;
+        }
+        if inner.reliable.is_dead() {
+            Some(0)
+        } else {
+            inner.reliable.next_timeout()
+        }
+    }
+
+    /// Hands the reliable layer's events to the connections.
+    fn dispatch(&self) {
+        loop {
+            let event = {
+                let mut inner = self.shared.inner.lock().unwrap();
+                match inner.reliable.poll_event() {
+                    Some(event) => event,
+                    None => break,
+                }
+            };
+            match event {
+                Event::Opened { stream, target } => self.opened(stream, target),
+                Event::Data { stream, data } => self.to_connection(stream, Outgoing::Data(data)),
+                Event::Finished { stream } => {
+                    self.to_connection(stream, Outgoing::Finish);
+                    let mut inner = self.shared.inner.lock().unwrap();
+                    if let Some(connection) = inner.connections.get_mut(&stream) {
+                        connection.finished_in = true;
+                        if connection.finished_out {
+                            inner.connections.remove(&stream);
+                        }
+                    }
+                }
+                Event::Reset { stream } => {
+                    self.to_connection(stream, Outgoing::Reset);
+                    self.shared
+                        .inner
+                        .lock()
+                        .unwrap()
+                        .connections
+                        .remove(&stream);
+                }
+                Event::Dead => {
+                    self.close("the other side stopped answering");
+                }
+            }
+        }
+        self.shared.capacity.notify_all();
+    }
+
+    fn to_connection(&self, stream: StreamId, write: Outgoing) {
+        let inner = self.shared.inner.lock().unwrap();
+        if let Some(connection) = inner.connections.get(&stream) {
+            let _ = connection.writer.send(write);
+        }
+    }
+
+    /// The host side: a stream opened, so connect to the host's port it names.
+    fn opened(&self, stream: StreamId, target: u8) {
+        let Bridge::Host {
+            service,
+            source,
+            ports,
+            device,
+        } = &self.shared.bridge
+        else {
+            // A host never opens streams towards a device.
+            self.shared.inner.lock().unwrap().reliable.reset(stream);
+            return;
+        };
+        let Some(port) = tcp_port(ports, target) else {
+            self.shared.inner.lock().unwrap().reliable.reset(stream);
+            return;
+        };
+        let (writer, writes) = mpsc::channel();
+        self.shared.inner.lock().unwrap().connections.insert(
+            stream,
+            Connection {
+                writer,
+                finished_in: false,
+                finished_out: false,
+            },
+        );
+        let (service, source) = (SocketAddr::new(*service, port), *source);
+        let device = device.clone();
+        let tunnel = self.clone();
+        let spawned = thread::Builder::new()
+            .name("internet play connect".into())
+            .spawn(move || match connect_from(source, service, &device) {
+                Ok((tcp, mark)) => {
+                    tunnel.bridge_connection(stream, tcp, writes, Some(Arc::new(mark)))
+                }
+                Err(_) => {
+                    let mut inner = tunnel.shared.inner.lock().unwrap();
+                    inner.connections.remove(&stream);
+                    inner.reliable.reset(stream);
+                    drop(inner);
+                    tunnel.flush();
+                }
+            });
+        if spawned.is_err() {
+            self.shared.inner.lock().unwrap().reliable.reset(stream);
+        }
+    }
+
+    /// The device side: a local client connected to one of the host's ports.
+    fn accept(&self, listener: TcpListener, target: u8) {
+        for incoming in listener.incoming() {
+            if self.is_closed() {
+                return;
+            }
+            let Ok(tcp) = incoming else { continue };
+            self.shared
+                .last_used
+                .fetch_max(self.shared.node.now(), Ordering::Relaxed);
+            if !matches!(self.state(), State::Connected(_)) {
+                // Not through yet: the client sees a refused connection, as from a host that
+                // is not there, and tries again.
+                let _ = tcp.shutdown(Shutdown::Both);
+                continue;
+            }
+            let (writer, writes) = mpsc::channel();
+            let stream = {
+                let mut inner = self.shared.inner.lock().unwrap();
+                let stream = inner.reliable.open(target);
+                inner.connections.insert(
+                    stream,
+                    Connection {
+                        writer,
+                        finished_in: false,
+                        finished_out: false,
+                    },
+                );
+                stream
+            };
+            self.flush();
+            let tunnel = self.clone();
+            let _ = thread::Builder::new()
+                .name("internet play connection".into())
+                .spawn(move || tunnel.bridge_connection(stream, tcp, writes, None));
+        }
+    }
+
+    /// Runs a TCP connection's two directions: a thread reads it into the stream, this one
+    /// writes what the stream brings.
+    /// `mark`, on the host side, registers the connection as tunnelled; both directions hold
+    /// it, so it stays registered while either still uses the socket. The device side has
+    /// nothing to register: its connections come from the device's own programs.
+    fn bridge_connection(
+        &self,
+        stream: StreamId,
+        tcp: TcpStream,
+        writes: mpsc::Receiver<Outgoing>,
+        mark: Option<Arc<peers::Mark>>,
+    ) {
+        let _ = tcp.set_nodelay(true);
+        if let Ok(reading) = tcp.try_clone() {
+            let tunnel = self.clone();
+            let held = mark.clone();
+            let _ = thread::Builder::new()
+                .name("internet play read".into())
+                .spawn(move || {
+                    tunnel.read_connection(stream, reading);
+                    drop(held);
+                });
+        } else {
+            self.shared.inner.lock().unwrap().reliable.reset(stream);
+            self.flush();
+            return;
+        }
+        let mut tcp = tcp;
+        for write in writes {
+            match write {
+                Outgoing::Data(data) => {
+                    if tcp.write_all(&data).is_err() {
+                        let _ = tcp.shutdown(Shutdown::Both);
+                        let mut inner = self.shared.inner.lock().unwrap();
+                        inner.reliable.reset(stream);
+                        inner.connections.remove(&stream);
+                        drop(inner);
+                        self.flush();
+                        return;
+                    }
+                }
+                Outgoing::Finish => {
+                    let _ = tcp.shutdown(Shutdown::Write);
+                }
+                Outgoing::Reset => {
+                    let _ = tcp.shutdown(Shutdown::Both);
+                    return;
+                }
+            }
+        }
+    }
+
+    fn read_connection(&self, stream: StreamId, mut tcp: TcpStream) {
+        let mut buffer = vec![0u8; 16 * 1024];
+        loop {
+            let length = match tcp.read(&mut buffer) {
+                Ok(0) => {
+                    let mut inner = self.shared.inner.lock().unwrap();
+                    inner.reliable.finish(stream);
+                    if let Some(connection) = inner.connections.get_mut(&stream) {
+                        connection.finished_out = true;
+                        if connection.finished_in {
+                            inner.connections.remove(&stream);
+                        }
+                    }
+                    drop(inner);
+                    self.flush();
+                    return;
+                }
+                Ok(length) => length,
+                Err(_) => {
+                    let mut inner = self.shared.inner.lock().unwrap();
+                    if inner.connections.remove(&stream).is_some() {
+                        inner.reliable.reset(stream);
+                    }
+                    drop(inner);
+                    self.flush();
+                    return;
+                }
+            };
+            let mut at = 0;
+            while at < length {
+                let mut inner = self.shared.inner.lock().unwrap();
+                if inner.closed.is_some() || inner.reliable.is_dead() {
+                    let _ = tcp.shutdown(Shutdown::Both);
+                    return;
+                }
+                let taken = inner.reliable.write(stream, &buffer[at..length]);
+                at += taken;
+                if taken == 0 {
+                    // The send buffer is full: wait for acknowledgements to free it.
+                    let _ = self
+                        .shared
+                        .capacity
+                        .wait_timeout(inner, Duration::from_millis(100));
+                } else {
+                    drop(inner);
+                }
+                self.flush();
+            }
+        }
+    }
+
+    /// Media from this side's local sockets goes out to the peer.
+    fn forward_media(&self, channel: u8) {
+        let Some(end) = &self.shared.media[channel as usize] else {
+            return;
+        };
+        let mut buffer = vec![0u8; 4096];
+        // Kept for every datagram, so sealing allocates nothing.
+        let mut sealed = Vec::with_capacity(buffer.len() + wire::OVERHEAD);
+        while !self.is_closed() {
+            let Ok((length, from)) = end.socket.recv_from(&mut buffer) else {
+                continue;
+            };
+            if let Bridge::Device { .. } = self.shared.bridge {
+                // Replies go back to wherever the client last sent from.
+                if *end.client.read().unwrap() != Some(from) {
+                    *end.client.write().unwrap() = Some(from);
+                }
+                self.shared
+                    .last_used
+                    .fetch_max(self.shared.node.now(), Ordering::Relaxed);
+            }
+            let peer = *self.shared.connected.read().unwrap();
+            if let Some(peer) = peer {
+                self.shared
+                    .sealer
+                    .seal_into(Kind::Media, channel, &buffer[..length], &mut sealed);
+                self.shared.node.send(peer, &sealed);
+            }
+        }
+    }
+
+    /// Media from the peer goes to this side's local end.
+    fn media_in(&self, channel: u8, payload: &[u8]) {
+        let Some(Some(end)) = self.shared.media.get(channel as usize) else {
+            return;
+        };
+        let to = match &self.shared.bridge {
+            Bridge::Device { .. } => *end.client.read().unwrap(),
+            Bridge::Host { service, ports, .. } => {
+                media_port(ports, channel).map(|port| SocketAddr::new(*service, port))
+            }
+        };
+        if let Some(to) = to {
+            let _ = end.socket.send_to(payload, to);
+        }
+    }
+
+    /// Punches, keepalives, retransmissions and the timeouts. Sleeps until the next of them is
+    /// due, so an idle path costs a wake every few seconds, not 50 a second.
+    fn run(&self) {
+        while !self.is_closed() {
+            #[cfg(test)]
+            self.shared.rounds.fetch_add(1, Ordering::Relaxed);
+            let now = self.shared.node.now();
+            let mut inner = self.shared.inner.lock().unwrap();
+            let punches = inner.puncher.poll(now);
+            self.publish(&inner);
+            let failed = inner.puncher.state() == punch::State::Failed;
+            let connected = matches!(inner.puncher.state(), punch::State::Connected(_));
+            let idle = now.saturating_sub(self.shared.last_heard.load(Ordering::Relaxed)) > IDLE;
+            let keepalive = connected && now.saturating_sub(inner.last_sent) > KEEPALIVE;
+            // An open connection is use: the unused time counts from its end (give or take the
+            // longest sleep).
+            if !inner.connections.is_empty() {
+                self.shared.last_used.fetch_max(now, Ordering::Relaxed);
+            }
+            let unused = self
+                .unused_since(&inner, connected)
+                .is_some_and(|since| now.saturating_sub(since) > UNUSED);
+            let peer = inner.peer;
+            drop(inner);
+            for to in punches {
+                self.send_to(to, Kind::Punch, 0, &[]);
+            }
+            if failed {
+                self.close("no punch got through");
+                return;
+            }
+            if connected && idle {
+                self.close("the other side stopped answering");
+                return;
+            }
+            if unused {
+                self.close("the device no longer used the connection");
+                return;
+            }
+            if let (true, Some(peer)) = (keepalive, peer) {
+                self.send_to(peer, Kind::Keepalive, 0, &[]);
+            }
+            self.dispatch();
+            if self.transmit() == Some(0) {
+                // The stream layer died: its event closes the path.
+                self.dispatch();
+            }
+            self.sleep();
+        }
+    }
+
+    /// Since when a device's connected path has carried nothing, while no connection is open
+    /// on it: the device closes it [`UNUSED`] later. None on the host, whose device closes it.
+    fn unused_since(&self, inner: &Inner, connected: bool) -> Option<Millis> {
+        let device = matches!(self.shared.bridge, Bridge::Device { .. });
+        (device && connected && inner.connections.is_empty())
+            .then(|| self.shared.last_used.load(Ordering::Relaxed))
+    }
+
+    /// Sleeps until the next deadline, or until [`Tunnel::wake_by`] wakes it.
+    fn sleep(&self) {
+        let now = self.shared.node.now();
+        let next = {
+            let inner = self.shared.inner.lock().unwrap();
+            let connected = matches!(inner.puncher.state(), punch::State::Connected(_));
+            let mut next = now + LONGEST_SLEEP;
+            if let Some(at) = inner.puncher.next_wakeup() {
+                next = next.min(at);
+            }
+            if let Some(at) = inner.reliable.next_timeout() {
+                next = next.min(at);
+            }
+            if connected {
+                next = next.min(inner.last_sent + KEEPALIVE + 1);
+                next = next.min(self.shared.last_heard.load(Ordering::Relaxed) + IDLE + 1);
+            }
+            if let Some(since) = self.unused_since(&inner, connected) {
+                next = next.min(since + UNUSED + 1);
+            }
+            next
+        };
+        let mut woken = self.shared.woken.lock().unwrap();
+        if !*woken && next > now && !self.is_closed() {
+            self.shared.sleeping_until.store(next, Ordering::SeqCst);
+            woken = self
+                .shared
+                .wake
+                .wait_timeout(woken, Duration::from_millis(next - now))
+                .unwrap()
+                .0;
+        }
+        self.shared.sleeping_until.store(u64::MAX, Ordering::SeqCst);
+        *woken = false;
+    }
+
+    pub fn role(&self) -> Role {
+        self.shared.role
+    }
+}
+
+/// A TCP connection to `to` from `source`, any port, registered as `device`'s tunnelled peer
+/// before it connects, so the host's server finds the registration from its first byte. A source
+/// that can't be bound exactly (unspecified, or another family) is refused: the host would see a
+/// peer address nobody registered, and might trust it.
+fn connect_from(
+    source: IpAddr,
+    to: SocketAddr,
+    device: &str,
+) -> io::Result<(TcpStream, peers::Mark)> {
+    use socket2::{Domain, Protocol, SockAddr, Socket, Type};
+    if source.is_ipv4() != to.is_ipv4() || source.is_unspecified() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "a tunnelled connection needs a source address of its own",
+        ));
+    }
+    let socket = Socket::new(Domain::for_address(to), Type::STREAM, Some(Protocol::TCP))?;
+    socket.bind(&SockAddr::from(SocketAddr::new(source, 0)))?;
+    let bound = socket
+        .local_addr()?
+        .as_socket()
+        .ok_or_else(|| io::Error::other("no local address"))?;
+    let mark = peers::register(bound, device);
+    socket.connect_timeout(&SockAddr::from(to), Duration::from_secs(3))?;
+    Ok((socket.into(), mark))
+}
+
+/// A loopback address of its own for each name: 127.`base`.x.y from a hash of `name`. Every
+/// address in 127.0.0.0/8 is loopback on Windows, Linux and Android; macOS answers only
+/// 127.0.0.1, which [`bindable_loopback`] falls back to.
+pub fn loopback_for(base: u8, name: &str) -> IpAddr {
+    let hash = crate::crypto::sha1(&[name.as_bytes()]);
+    // x.y never 0.0 or 255.255, which some stacks treat apart.
+    let (x, y) = (hash[0], hash[1].clamp(1, 254));
+    IpAddr::V4(std::net::Ipv4Addr::new(127, base, x, y))
+}
+
+/// `wanted` if a socket can bind it here, else 127.0.0.1.
+pub fn bindable_loopback(wanted: IpAddr) -> IpAddr {
+    if UdpSocket::bind((wanted, 0)).is_ok() {
+        wanted
+    } else {
+        IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::record::Keys;
+
+    /// A device and a host tunnel on loopback, punching each other through real sockets: an HTTP
+    /// exchange and a media datagram go through both ways.
+    #[test]
+    fn a_device_reaches_the_hosts_tcp_and_media_ports_through_the_tunnel() {
+        // The "host's" services: an echo server on TCP and a UDP echo for video.
+        let service = TcpListener::bind("127.0.0.1:0").unwrap();
+        let video = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let ports = Ports {
+            http: service.local_addr().unwrap().port(),
+            video: video.local_addr().unwrap().port(),
+            ..Ports::default()
+        };
+        // The services answer only a peer registered as tunnelled: the tunnel connects from
+        // 127.0.0.1 here, as a host bound to one address connects from that address, and must
+        // still never look like a program on this PC.
+        thread::spawn(move || {
+            for connection in service.incoming() {
+                let mut connection = connection.unwrap();
+                let tunnelled = crate::peers::is_tunnelled(connection.peer_addr().unwrap());
+                let mut request = [0u8; 4];
+                connection.read_exact(&mut request).unwrap();
+                connection
+                    .write_all(if tunnelled { b"pong" } else { b"locl" })
+                    .unwrap();
+            }
+        });
+        thread::spawn(move || {
+            let mut buffer = [0u8; 64];
+            let (length, from) = video.recv_from(&mut buffer).unwrap();
+            if crate::peers::is_tunnelled(from) {
+                video.send_to(&buffer[..length], from).unwrap();
+            } else {
+                video.send_to(b"local", from).unwrap();
+            }
+        });
+
+        let keys = Keys::new([5; 32]).path(&[1; 16], &[2; 16]);
+        let host_node = Node::bind("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+        let device_node = Node::bind("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+        let host = Tunnel::start(
+            host_node.clone(),
+            Role::Host,
+            keys,
+            [2; 16],
+            vec![device_node.local_addr().unwrap()],
+            Bridge::Host {
+                service: "127.0.0.1".parse().unwrap(),
+                source: "127.0.0.1".parse().unwrap(),
+                ports,
+                device: "test device".into(),
+            },
+        )
+        .unwrap();
+        // The device binds the host's ports on its own loopback address; the test's services
+        // hold them on 127.0.0.1, so it takes another.
+        let local = bindable_loopback("127.0.0.2".parse().unwrap());
+        if local == IpAddr::from([127, 0, 0, 1]) {
+            return; // A system without 127/8 (macOS): nothing to test here.
+        }
+        let device = Tunnel::start(
+            device_node.clone(),
+            Role::Client,
+            keys,
+            [2; 16],
+            vec![host_node.local_addr().unwrap()],
+            Bridge::Device { local, ports },
+        )
+        .unwrap();
+        let (h, d) = (host.clone(), device.clone());
+        host_node.set_handler(Box::new(move |datagram, from| h.receive(datagram, from)));
+        device_node.set_handler(Box::new(move |datagram, from| d.receive(datagram, from)));
+        for _ in 0..100 {
+            if matches!(device.state(), State::Connected(_))
+                && matches!(host.state(), State::Connected(_))
+            {
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            matches!(device.state(), State::Connected(_)),
+            "{:?}",
+            device.state()
+        );
+
+        let mut tcp = TcpStream::connect((local, ports.http)).unwrap();
+        tcp.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        tcp.write_all(b"ping").unwrap();
+        let mut reply = [0u8; 4];
+        tcp.read_exact(&mut reply).unwrap();
+        assert_eq!(&reply, b"pong");
+
+        let client = UdpSocket::bind((local, 0)).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        client.send_to(b"frame", (local, ports.video)).unwrap();
+        let mut buffer = [0u8; 64];
+        let (length, _) = client.recv_from(&mut buffer).unwrap();
+        assert_eq!(&buffer[..length], b"frame");
+
+        device.close("test over");
+        for _ in 0..50 {
+            if host.is_closed() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(host.is_closed());
+        host_node.stop();
+        device_node.stop();
+    }
+
+    /// A connected path with nothing to send sleeps until its keepalive, instead of going
+    /// round 50 times a second.
+    #[test]
+    fn an_idle_path_sleeps_until_its_next_deadline() {
+        let keys = Keys::new([6; 32]).path(&[1; 16], &[2; 16]);
+        let host_node = Node::bind("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+        let device_node = Node::bind("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+        let start = |node: &Node, role, peer: &Node, bridge| {
+            let peer = vec![peer.local_addr().unwrap()];
+            Tunnel::start(node.clone(), role, keys, [2; 16], peer, bridge).unwrap()
+        };
+        let host = start(
+            &host_node,
+            Role::Host,
+            &device_node,
+            Bridge::Host {
+                service: "127.0.0.1".parse().unwrap(),
+                source: "127.0.0.1".parse().unwrap(),
+                ports: Ports::default(),
+                device: "idle test".into(),
+            },
+        );
+        // No ports: the device side binds nothing.
+        let device = start(
+            &device_node,
+            Role::Client,
+            &host_node,
+            Bridge::Device {
+                local: "127.0.0.1".parse().unwrap(),
+                ports: Ports::default(),
+            },
+        );
+        let (h, d) = (host.clone(), device.clone());
+        host_node.set_handler(Box::new(move |datagram, from| h.receive(datagram, from)));
+        device_node.set_handler(Box::new(move |datagram, from| d.receive(datagram, from)));
+        for _ in 0..100 {
+            if matches!(device.state(), State::Connected(_))
+                && matches!(host.state(), State::Connected(_))
+            {
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(matches!(device.state(), State::Connected(_)));
+        // Let the last punches and answers settle, then count a second of rounds.
+        thread::sleep(Duration::from_millis(300));
+        let before = device.shared.rounds.load(Ordering::Relaxed);
+        thread::sleep(Duration::from_secs(1));
+        let rounds = device.shared.rounds.load(Ordering::Relaxed) - before;
+        assert!(rounds <= 3, "{rounds} rounds in a second");
+        assert!(!device.is_closed());
+
+        // A stream segment waiting for its acknowledgement (the host hears nothing for now)
+        // makes it sleep until the retransmission is due, not spin.
+        host_node.set_handler(Box::new(|_, _| {}));
+        let before = device.shared.rounds.load(Ordering::Relaxed);
+        device
+            .shared
+            .inner
+            .lock()
+            .unwrap()
+            .reliable
+            .open(TARGET_HTTP);
+        device.flush();
+        thread::sleep(Duration::from_millis(500));
+        let rounds = device.shared.rounds.load(Ordering::Relaxed) - before;
+        assert!(
+            rounds <= 5,
+            "{rounds} rounds in half a second with a segment in flight"
+        );
+        let h = host.clone();
+        host_node.set_handler(Box::new(move |datagram, from| h.receive(datagram, from)));
+
+        // A close wakes it at once.
+        device.close("test over");
+        for _ in 0..50 {
+            if host.is_closed() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(host.is_closed());
+        host_node.stop();
+        device_node.stop();
+    }
+
+    #[test]
+    fn loopback_addresses_are_stable_and_spread() {
+        assert_eq!(loopback_for(78, "host-a"), loopback_for(78, "host-a"));
+        assert_ne!(loopback_for(78, "host-a"), loopback_for(78, "host-b"));
+        let IpAddr::V4(ip) = loopback_for(77, "x") else {
+            panic!()
+        };
+        assert_eq!(ip.octets()[..2], [127, 77]);
+        assert!(ip.is_loopback());
+    }
+}
