@@ -7,9 +7,11 @@
 //! One core runs a stream. `select` chooses it before the connection
 //! starts, and every input packet and reading goes to that core
 //! (`active`): the picture, sound and input code of a platform never names
-//! a core. Moonlight's C core (`moonlight_common_c.rs`) is the default.
-//! `nightjar.rs` is nightjar-core, built with the `nightjar` feature, on
-//! Linux and Android.
+//! a core. `nightjar.rs` is nightjar-core, built with the `nightjar`
+//! feature, on Linux and Android. On Linux it is the default where it is
+//! built (ADR 0062: it measured equal); Moonlight's C core
+//! (`moonlight_common_c.rs`) is the default elsewhere and the fallback by
+//! option.
 //!
 //! The platform's video and audio code stays behind the C core's callback
 //! tables (`DECODER_RENDERER_CALLBACKS`, `AUDIO_RENDERER_CALLBACKS`) and its
@@ -27,15 +29,27 @@ use crate::network as ffi;
 use anyhow::{Result, bail};
 use std::{ffi::c_void, sync::RwLock};
 
-/// Which network core streams. `-networkcore` names it; the C core when
+/// Which network core streams. `-networkcore` names it; the default when
 /// nothing does.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     /// Moonlight's `moonlight-common-c`, through Korri's binding.
-    #[default]
     MoonlightCommonC,
     /// nightjar-core, vendored in `vendor/nightjar`.
     Nightjar,
+}
+
+impl Default for Kind {
+    /// nightjar-core on Linux where the build has it (#391 step E: it
+    /// measured equal, ADR 0062); the C core on Android until its own proof
+    /// passes, and in a build without it.
+    fn default() -> Self {
+        if cfg!(all(feature = "nightjar", not(target_os = "android"))) {
+            Self::Nightjar
+        } else {
+            Self::MoonlightCommonC
+        }
+    }
 }
 
 impl Kind {
@@ -283,9 +297,20 @@ pub(crate) mod tests {
         Installed(turn)
     }
 
+    // ADR 0062: nightjar-core measured equal (#391 step E), so a Linux build
+    // with it streams with it; `-networkcore c` keeps the C core. Android
+    // keeps the C core until its own proof passes.
     #[test]
-    fn the_c_core_streams_unless_another_is_named() {
-        assert_eq!(Kind::default(), Kind::MoonlightCommonC);
+    fn nightjar_streams_where_linux_builds_it_unless_c_is_named() {
+        let built = cfg!(all(feature = "nightjar", not(target_os = "android")));
+        assert_eq!(
+            Kind::default(),
+            if built {
+                Kind::Nightjar
+            } else {
+                Kind::MoonlightCommonC
+            }
+        );
         assert_eq!(Kind::parse("c").unwrap(), Kind::MoonlightCommonC);
         assert!(Kind::parse("moonlight-common-rust").is_err());
         assert!(Kind::parse("").is_err());

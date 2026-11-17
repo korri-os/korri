@@ -43,8 +43,10 @@ pub struct Options {
     /// (`-filledpicture`, #391 step F).
     pub filled_picture: crate::egl_presenter::Filled,
     /// The code that makes X11's window and reads its keys and mouse
-    /// (`-x11window`, #391 step F).
-    pub x11_window: crate::x11_window::Kind,
+    /// (`-x11window`, #391 step F); none named, the build's default
+    /// (`x11_window::Kind::default`), which a picture that is not X11
+    /// VA-API's leaves unused.
+    pub x11_window: Option<crate::x11_window::Kind>,
 }
 
 /// Moonlight's `MAX_INPUTS` (config.h).
@@ -125,7 +127,7 @@ impl Options {
             audio_output: Default::default(),
             egl_presenter: Default::default(),
             filled_picture: Default::default(),
-            x11_window: Default::default(),
+            x11_window: None,
         };
         while let Some(arg) = args.next() {
             if !arg.starts_with('-') {
@@ -201,7 +203,7 @@ impl Options {
                         "eglpresenter" => {
                             o.egl_presenter = crate::egl_presenter::Kind::parse(&value)?
                         }
-                        "x11window" => o.x11_window = crate::x11_window::Kind::parse(&value)?,
+                        "x11window" => o.x11_window = Some(crate::x11_window::Kind::parse(&value)?),
                         "filledpicture" => {
                             o.filled_picture = crate::egl_presenter::Filled::parse(&value)?
                         }
@@ -327,17 +329,18 @@ mod tests {
         assert!(Options::for_lifecycle(PathBuf::new(), None).is_err());
     }
 
-    // #391 step E: the C core streams unless -networkcore names another,
-    // anywhere among the arguments, as a wrapper may append it.
+    // #391 step E: the build's default core streams (nightjar-core where a
+    // Linux build has it, `network_core::Kind::default`) unless -networkcore
+    // names one, anywhere among the arguments, as a wrapper may append it.
     #[test]
-    fn the_network_core_is_c_unless_named() {
+    fn the_network_core_is_the_builds_default_unless_named() {
         use crate::network_core::Kind;
         let parse = |extra: &[&str]| {
             let mut args = vec!["stream", "-keydir", "/k", "host"];
             args.extend_from_slice(extra);
             Options::parse(args.into_iter().map(str::to_owned))
         };
-        assert_eq!(parse(&[]).unwrap().network_core, Kind::MoonlightCommonC);
+        assert_eq!(parse(&[]).unwrap().network_core, Kind::default());
         assert_eq!(
             parse(&["-networkcore", "c"]).unwrap().network_core,
             Kind::MoonlightCommonC
@@ -378,17 +381,17 @@ mod tests {
         assert_eq!(o.audio_device.as_deref(), Some("sysdefault"));
     }
 
-    // #391 step F3: the carried C draws through EGL unless -eglpresenter
-    // names the Rust port.
+    // #391 step F3: the build's default draws through EGL (the Rust port
+    // where it is built) unless -eglpresenter names one.
     #[test]
-    fn the_egl_presenter_is_the_carried_c_unless_named() {
+    fn the_egl_presenter_is_the_builds_default_unless_named() {
         use crate::egl_presenter::Kind;
         let parse = |extra: &[&str]| {
             let mut args = vec!["stream", "-keydir", "/k", "host"];
             args.extend_from_slice(extra);
             Options::parse(args.into_iter().map(str::to_owned))
         };
-        assert_eq!(parse(&[]).unwrap().egl_presenter, Kind::Carried);
+        assert_eq!(parse(&[]).unwrap().egl_presenter, Kind::default());
         assert_eq!(
             parse(&["-eglpresenter", "c"]).unwrap().egl_presenter,
             Kind::Carried
@@ -401,20 +404,20 @@ mod tests {
         assert!(parse(&["-eglpresenter"]).is_err());
     }
 
-    // #391 step F4: the carried C makes the X11 window unless -x11window
-    // names the Rust port.
+    // #391 step F4: the build's default makes the X11 window (the Rust
+    // port where it is built) unless -x11window names one.
     #[test]
-    fn the_x11_window_is_the_carried_cs_unless_named() {
+    fn the_x11_window_is_the_builds_default_unless_named() {
         use crate::x11_window::Kind;
         let parse = |extra: &[&str]| {
             let mut args = vec!["stream", "-keydir", "/k", "host"];
             args.extend_from_slice(extra);
             Options::parse(args.into_iter().map(str::to_owned))
         };
-        assert_eq!(parse(&[]).unwrap().x11_window, Kind::Carried);
+        assert_eq!(parse(&[]).unwrap().x11_window, None);
         assert_eq!(
             parse(&["-x11window", "c"]).unwrap().x11_window,
-            Kind::Carried
+            Some(Kind::Carried)
         );
         assert_eq!(
             parse(&["-x11window", "rust"]).is_ok(),

@@ -513,7 +513,10 @@ name. `korri-viewer-rust-audio-output` is the viewer with the feature; its
 `bin/moonlight` appends `-audiooutput rust`, so that the stage-0 tool runs
 it as the candidate beside `korri-viewer`, as `korri-viewer-nightjar` does.
 Its turns need sound: `view --tone 1000` (`nix/stream-cadence/README.md`,
-"The stream's sound").
+"The stream's sound"). Its four sets on aka (`proof/rust-audio-output/`)
+were equal on every number in three and one frame later at startup in one,
+all with other work running, so the carried C stays the default until a
+set on a quiet aka is equal (ADR 0062).
 
 Only the language changes, so that the measure judges one cause:
 
@@ -569,10 +572,13 @@ same libEGL) and `glow` 0.18.0 (MIT, Apache-2.0 or Zlib); `build.rs` binds
 the picture's types and the EGL and OpenGL ES extension constants from the
 headers that the C includes. The window stays Xlib (`video/x11.c`), the
 place comes from `place.c` (#476), and the frame record's call stays in
-the caller (`video/ffmpeg_vaapi.c`). The carried C stays the default. The
-cargo feature `rust-egl-presenter` builds the port, and `-eglpresenter
-rust` chooses it; `korri-viewer-rust-egl-presenter`'s `bin/moonlight`
-appends that option.
+the caller (`video/ffmpeg_vaapi.c`). The port measured equal to the
+carried C on every number in turns (`proof/rust-egl-presenter/`), so it is
+the default where the cargo feature `rust-egl-presenter` builds it (ADR
+0062). The PC package, `korri-viewer`, builds it; `-eglpresenter c`
+chooses the carried C. `korri-viewer-rust-egl-presenter` is the port with
+no other Rust part, the turns' candidate; its `bin/moonlight` appends
+`-eglpresenter rust`.
 
 With the feature, Rust owns the two names that the caller uses
 (`vaapi_egl_present`, `vaapi_egl_cleanup`) and chooses at run time;
@@ -646,11 +652,15 @@ number.
 window and its keyboard and mouse: `picture/video/x11_window.c` (the window
 part of Moonlight's `x11_setup`) and `io/input/x11.c`, with
 `io/input/keyboard.h`'s key table in `keyboard.rs`. It uses `x11rb` 0.14.0
-(MIT or Apache-2.0), the X11 protocol in Rust. The carried C stays the
-default. The cargo feature `rust-x11-window` builds the port, and
-`-x11window rust` chooses it; `korri-viewer-rust-x11-window`'s
-`bin/moonlight` appends that option. On the SDL platform and on
-`v4l2request` the option is refused: neither has this window.
+(MIT or Apache-2.0), the X11 protocol in Rust. The port measured equal to
+the carried C on every number in turns (`proof/rust-x11-window/`), so it is
+the default where the cargo feature `rust-x11-window` builds it (ADR 0062).
+The PC package, `korri-viewer`, builds it; `-x11window c` chooses the
+carried C. `korri-viewer-rust-x11-window` is the port with no other Rust
+part, the turns' candidate; its `bin/moonlight` appends `-x11window rust`.
+The SDL platform (`-platform x11`, or a VA-API start that failed) and
+`v4l2request` have no such window: there a named `-x11window rust` is
+refused, and the default goes unused.
 
 The window's lines of `x11_setup` are moved, unchanged, into their own
 file, `picture/video/x11_window.c`, as `x11_window_open` (GPL-3 §5a:
@@ -735,8 +745,9 @@ default, keeps `vaPutSurface`. On the SDL platform and on `v4l2request`
 `korri-viewer-rust-egl-filled-picture`'s `bin/moonlight` appends
 `-eglpresenter rust -filledpicture egl` to the binary of
 `korri-viewer-rust-egl-presenter`, whose `bin/moonlight` appends
-`-eglpresenter rust` alone. Its turns beside that package judge this
-choice alone.
+`-eglpresenter rust` alone. Its turns beside that package judged this
+choice alone: worse on numbers 1 and 3 (`proof/rust-egl-filled-picture/`),
+so `putsurface` stays the default and `egl` an option.
 
 This is a change of policy, not a port: no code moves into Rust. It
 changes how each frame reaches the screen on AMD, so it can move numbers 1
@@ -1967,15 +1978,17 @@ Notice (Artemis shows a toast) and Resize (#476) stay unavailable.
 
 ## Network cores (#391 step E)
 
-The C core (`moonlight-common-c`) is the default. With the cargo feature
-`nightjar` the viewer also carries nightjar-core, a Rust port of
-moonlight-common-c (`vendor/README.md`: the pin, the licence and Korri's
-edits), and `-networkcore nightjar` streams with it:
+With the cargo feature `nightjar` the viewer carries nightjar-core, a Rust
+port of moonlight-common-c (`vendor/README.md`: the pin, the licence and
+Korri's edits), beside the C core (`moonlight-common-c`). nightjar-core
+measured equal to the C core in turns (`proof/nightjar/README.md`), so on
+Linux it is the default core where the build has it (ADR 0062), and
+`-networkcore c` streams with the C core:
 
-- Linux: `nix build .#korri-viewer-nightjar`. Its `bin/moonlight` appends
-  the option, so the stage-0 tool runs it as a candidate beside
-  `korri-viewer`; `bin/korri-viewer` still streams with the C core unless
-  asked.
+- Linux: the PC package, `korri-viewer`, builds it (x86_64; the aarch64
+  package does not, below). `korri-viewer-nightjar` is nightjar-core with
+  no other Rust part, the turns' candidate; its `bin/moonlight` appends
+  `-networkcore nightjar`.
 - Android: `nix build .#korri-viewer-android-nightjar-apk` (the viewer's
   own app, both ABIs) and `.#checks.x86_64-linux.korri-viewer-android-nightjar`
   (the session part and its tests, both ABIs). The app's crate has the same
@@ -1989,8 +2002,9 @@ edits), and `-networkcore nightjar` streams with it:
   instructions (cpufeatures reads Android's `getauxval`). nightjar-core
   refuses an aarch64 build without them (`crypto.rs:10`), so that no phone
   decrypts video in software by mistake. The check proves both modules are
-  in the arm64 library. The Korri app (`clients/android-app`) keeps the C
-  core only.
+  in the arm64 library. On Android the C core stays the default until the
+  emulator proof with nightjar-core passes. The Korri app
+  (`clients/android-app`) keeps the C core only.
 
 `src/network_core/nightjar.rs` puts nightjar-core's `Session` behind
 `NetworkCore`. The platform's picture, sound and input code does not
@@ -2023,9 +2037,10 @@ The proof on aka, with Korri's patched Sunshine, picture, sound and input,
 and the turns of the measure against the C core:
 `proof/nightjar/README.md`.
 
-Not done: the Korri app with nightjar-core, Linux aarch64 (`korri-viewer-nightjar`
-is x86_64 only; it would need the same two cfgs), an emulator or phone run
-on Android, and a korrid setting to choose the core.
+Not done: the Korri app with nightjar-core, Linux aarch64 (the handhelds'
+package builds none of the Rust parts; nightjar-core would need the same
+two cfgs, and no handheld measured it), a phone run on Android, and a
+korrid setting to choose the core.
 
 ## Next slices
 

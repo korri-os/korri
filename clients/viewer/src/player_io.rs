@@ -36,7 +36,7 @@ impl PlayerIo {
         // The X11 VA-API window's code for this stream (#391 step F): the
         // decoder's setup calls it, after this.
         #[cfg(feature = "rust-x11-window")]
-        crate::x11_window::select(o.x11_window);
+        crate::x11_window::select(o.x11_window.unwrap_or_default());
         // What shows a picture that fills the window, for this stream (#391
         // step F5): vaPutSurface, or EGL as for one with bars.
         // SAFETY: a flag that ffmpeg_vaapi.c reads at each frame, set before
@@ -69,7 +69,7 @@ impl PlayerIo {
             "You can't select an audio device for SDL"
         );
         ensure!(
-            vaapi || o.x11_window == crate::x11_window::Kind::Carried,
+            x11_window_fits(o.x11_window, vaapi),
             "the Rust X11 window serves X11 VA-API, and this stream's picture is SDL's"
         );
         ensure!(
@@ -103,7 +103,7 @@ impl PlayerIo {
         audio_device: Option<CString>,
     ) -> Result<Self> {
         ensure!(
-            o.x11_window == crate::x11_window::Kind::Carried,
+            x11_window_fits(o.x11_window, false),
             "the Rust X11 window serves X11 VA-API, and v4l2request makes its own window"
         );
         ensure!(
@@ -215,6 +215,15 @@ impl PlayerIo {
         unsafe { ffi::picture_poll(timeout_ms) }
     }
 }
+/// Whether the X11 window that `-x11window` names fits a stream whose
+/// picture is X11 VA-API's (`vaapi`) or not: SDL's (`-platform x11`, or a
+/// VA-API start that failed) and v4l2request's make no X11 window, so only a
+/// named `-x11window rust` is refused there. The build's default, the Rust
+/// window where it is built (#391 step F4), goes unused.
+fn x11_window_fits(named: Option<crate::x11_window::Kind>, vaapi: bool) -> bool {
+    vaapi || named != Some(crate::x11_window::Kind::Rust)
+}
+
 impl Drop for PlayerIo {
     fn drop(&mut self) {
         // The caller stops and joins the core before dropping the session's I/O.
@@ -228,5 +237,21 @@ impl Drop for PlayerIo {
         unsafe {
             ffi::picture_destroy();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::x11_window_fits;
+    use crate::x11_window::Kind;
+
+    #[test]
+    fn a_picture_that_is_not_x11_vaapis_refuses_only_a_named_rust_window() {
+        for named in [None, Some(Kind::Carried), Some(Kind::Rust)] {
+            assert!(x11_window_fits(named, true), "{named:?}");
+        }
+        assert!(x11_window_fits(None, false));
+        assert!(x11_window_fits(Some(Kind::Carried), false));
+        assert!(!x11_window_fits(Some(Kind::Rust), false));
     }
 }

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! nightjar-core (`vendor/nightjar`, GPL-3.0-only), a Rust port of
 //! moonlight-common-c, behind the seam (#391 step E). Built with the
-//! `nightjar` feature, on Linux and Android; `-networkcore nightjar` selects
+//! `nightjar` feature, on Linux and Android; on Linux it is then the default
+//! core (`Kind::default`), and on Android `-networkcore nightjar` selects
 //! it. Android's picture, sound and feedback are Rust behind the same C
 //! callback tables as Linux's C code, so the adapter is one for both.
 //!

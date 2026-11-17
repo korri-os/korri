@@ -2,10 +2,11 @@
 //! Which code makes the X11 VA-API platform's window and reads its keyboard
 //! and mouse (#391 step F, slice F4).
 //!
-//! The carried C is the default: `picture/video/x11_window.c`, the window
-//! part of Moonlight's `x11_setup`, and `io/input/x11.c`, its input. Their
-//! Rust port (`window.rs`) is built with the `rust-x11-window` feature and
-//! chosen with `-x11window rust`. Then Rust owns `x11_window_open`, and the C
+//! The carried C is `picture/video/x11_window.c`, the window part of
+//! Moonlight's `x11_setup`, and `io/input/x11.c`, its input. Their Rust port
+//! (`window.rs`) is built with the `rust-x11-window` feature, and is then the
+//! default (ADR 0062: it measured equal); `-x11window c` chooses the carried
+//! C. With the Rust port, Rust owns `x11_window_open`, and the C
 //! keeps it as `carried_x11_window_open` (`build.rs`); the caller,
 //! `video/x11.c`, does not change. It keeps its Xlib display for VA-API and
 //! for the presenter; the Rust window has an X11 connection of its own,
@@ -19,14 +20,25 @@ mod window;
 
 use anyhow::{Result, bail};
 
-/// `-x11window`'s value: `c`, the default, or `rust`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// `-x11window`'s value: `c` or `rust`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     /// The carried C (`picture/video/x11_window.c`, `io/input/x11.c`).
-    #[default]
     Carried,
     /// Its Rust port, over the `x11rb` crate.
     Rust,
+}
+
+impl Default for Kind {
+    /// The Rust port where the build has it (#391 step F4: it measured
+    /// equal, ADR 0062); else the carried C.
+    fn default() -> Self {
+        if cfg!(all(feature = "rust-x11-window", not(target_os = "android"))) {
+            Self::Rust
+        } else {
+            Self::Carried
+        }
+    }
 }
 
 impl Kind {
@@ -123,9 +135,15 @@ mod chosen {
 mod tests {
     use super::Kind;
 
+    // ADR 0062: the Rust port measured equal (#391 step F4), so a build
+    // with it makes the window with it; `-x11window c` keeps the carried C.
     #[test]
-    fn the_carried_c_makes_the_window_unless_rust_is_named() {
-        assert_eq!(Kind::default(), Kind::Carried);
+    fn the_rust_port_makes_the_window_where_built_unless_c_is_named() {
+        let built = cfg!(all(feature = "rust-x11-window", not(target_os = "android")));
+        assert_eq!(
+            Kind::default(),
+            if built { Kind::Rust } else { Kind::Carried }
+        );
         assert_eq!(Kind::parse("c").unwrap(), Kind::Carried);
         assert!(Kind::parse("winit").is_err());
         assert_eq!(

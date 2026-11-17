@@ -99,6 +99,7 @@ fn main() {
     }
     let handheld: &[&str] = if request { &["libdrm"] } else { &[] };
     let mut includes = Vec::new();
+    let mut linked = Vec::new();
     for lib in [
         "libavcodec",
         "libavutil",
@@ -121,6 +122,7 @@ fn main() {
             c.include(&path);
             includes.push(path);
         }
+        linked.extend(library.libs);
     }
     // The Rust audio output (#391 step F, src/audio_output/) calls libopus
     // and SDL's audio itself: bind the functions it uses from the headers of
@@ -268,6 +270,16 @@ fn main() {
     c.flag_if_supported("-Wno-unused-parameter")
         .opt_level(2)
         .compile("korri_picture");
+    // The C archives call these libraries, and the linker resolves an
+    // archive's calls only from the libraries after it: with --as-needed it
+    // drops one that nothing before it used. pkg-config named them before
+    // the archives existed, so they come again here. A test binary that
+    // takes `video/x11.c` from the archive (the Rust X11 window's tests)
+    // with the Rust EGL presenter's own FFmpeg calls failed to link without
+    // this: libva was dropped before `ffmpeg_vaapi.c` asked for vaErrorStr.
+    for name in &linked {
+        println!("cargo:rustc-link-lib={name}");
+    }
     println!("cargo:rustc-link-search=native={lib}");
     println!("cargo:rustc-link-lib=moonlight-common-c");
     println!("cargo:rustc-link-lib=pthread");

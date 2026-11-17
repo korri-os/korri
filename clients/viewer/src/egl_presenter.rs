@@ -2,10 +2,11 @@
 //! Which code draws the X11 VA-API platform's pictures through EGL (#391
 //! step F, slice F3).
 //!
-//! The carried C is the default: `picture/video/vaapi_egl.c`, for the VA-API
-//! surface that `vaPutSurface` cannot show (Intel under Xwayland, #477) or
-//! that has bars (#476). Its Rust port (`vaapi.rs`) is built with the
-//! `rust-egl-presenter` feature and chosen with `-eglpresenter rust`. Then
+//! The carried C, `picture/video/vaapi_egl.c`, presents the VA-API surface
+//! that `vaPutSurface` cannot show (Intel under Xwayland, #477) or that has
+//! bars (#476). Its Rust port (`vaapi.rs`) is built with the
+//! `rust-egl-presenter` feature, and is then the default (ADR 0062: it
+//! measured equal); `-eglpresenter c` chooses the carried C. With the Rust port,
 //! Rust owns the two C names (`vaapi_egl_present`, `vaapi_egl_cleanup`), and
 //! the C keeps its code under `carried_` names (`build.rs`); the caller,
 //! `video/ffmpeg_vaapi.c`, does not change. The window stays Xlib
@@ -21,14 +22,28 @@ mod vaapi;
 
 use anyhow::{Result, bail};
 
-/// `-eglpresenter`'s value: `c`, the default, or `rust`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// `-eglpresenter`'s value: `c` or `rust`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     /// The carried C presenter (`picture/video/vaapi_egl.c`).
-    #[default]
     Carried,
     /// Its Rust port, over the `khronos-egl` and `glow` crates.
     Rust,
+}
+
+impl Default for Kind {
+    /// The Rust port where the build has it (#391 step F3: it measured
+    /// equal, ADR 0062); else the carried C.
+    fn default() -> Self {
+        if cfg!(all(
+            feature = "rust-egl-presenter",
+            not(target_os = "android")
+        )) {
+            Self::Rust
+        } else {
+            Self::Carried
+        }
+    }
 }
 
 impl Kind {
@@ -151,9 +166,18 @@ mod chosen {
 mod tests {
     use super::Kind;
 
+    // ADR 0062: the Rust port measured equal (#391 step F3), so a build
+    // with it presents with it; `-eglpresenter c` keeps the carried C.
     #[test]
-    fn the_carried_c_presents_unless_rust_is_named() {
-        assert_eq!(Kind::default(), Kind::Carried);
+    fn the_rust_port_presents_where_built_unless_c_is_named() {
+        let built = cfg!(all(
+            feature = "rust-egl-presenter",
+            not(target_os = "android")
+        ));
+        assert_eq!(
+            Kind::default(),
+            if built { Kind::Rust } else { Kind::Carried }
+        );
         assert_eq!(Kind::parse("c").unwrap(), Kind::Carried);
         assert!(Kind::parse("glutin").is_err());
         assert_eq!(

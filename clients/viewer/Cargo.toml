@@ -7,21 +7,25 @@ edition = "2024"
 license = "GPL-3.0-or-later AND GPL-3.0-only AND Zlib AND Apache-2.0"
 
 [features]
-# nightjar-core (vendor/nightjar, GPL-3.0-only) as a second network core,
-# chosen with `-networkcore nightjar` (#391 step E), on Linux and Android.
-# Off by default: the C core streams.
+# nightjar-core (vendor/nightjar, GPL-3.0-only) as a second network core
+# (#391 step E), on Linux and Android. Where Linux builds it, it is the
+# default core (ADR 0062; the PC package builds it) and `-networkcore c`
+# chooses the C core; on Android `-networkcore nightjar` chooses it. Off
+# in cargo's own defaults.
 nightjar = ["dep:nightjar-core", "dep:rubylight-protocol"]
 # The Rust port of the carried C audio renderers (src/audio_output/),
 # chosen with `-audiooutput rust` (#391 step F, slice F1). Linux only. Off by
 # default: the carried C plays the sound.
 rust-audio-output = ["dep:alsa", "dep:libpulse-binding", "dep:libpulse-simple-binding"]
-# The Rust port of the carried C VA-API EGL presenter (src/egl_presenter/),
-# chosen with `-eglpresenter rust` (#391 step F, slice F3). Linux only. Off
-# by default: the carried C presents.
+# The Rust port of the carried C VA-API EGL presenter (src/egl_presenter/,
+# #391 step F, slice F3). Linux only. Where it is built, it is the default
+# presenter (ADR 0062; the PC package builds it) and `-eglpresenter c`
+# chooses the carried C. Off in cargo's own defaults.
 rust-egl-presenter = ["dep:khronos-egl", "dep:glow"]
 # The Rust port of the carried C X11 window and its keyboard and mouse
-# (src/x11_window/), chosen with `-x11window rust` (#391 step F, slice F4).
-# Linux only. Off by default: the carried C makes the window.
+# (src/x11_window/, #391 step F, slice F4). Linux only. Where it is built,
+# it is the default window (ADR 0062; the PC package builds it) and
+# `-x11window c` chooses the carried C. Off in cargo's own defaults.
 rust-x11-window = ["dep:x11rb"]
 
 [dependencies]

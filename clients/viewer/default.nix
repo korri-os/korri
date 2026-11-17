@@ -65,6 +65,23 @@ let
     clang
     rustPlatform.bindgenHook
   ];
+  # The parts that took over from the carried C by ADR 0062 (#391 steps E
+  # and F): nightjar-core, the Rust EGL presenter and the Rust X11 window
+  # measured equal on aka, so the PC package builds them, and each is then
+  # its kind's default; `-networkcore c`, `-eglpresenter c` and `-x11window
+  # c` keep the C. The aarch64 package (the handhelds' v4l2request path)
+  # builds none: nightjar-core needs its two ARMv8 cfgs there
+  # (vendor/README.md), no handheld measured these parts, and the other two
+  # serve X11 VA-API only.
+  pc = pkgs.stdenv.hostPlatform.isx86_64;
+  defaultFeatures = pkgs.lib.optionals pc [
+    "nightjar"
+    "rust-egl-presenter"
+    "rust-x11-window"
+  ];
+  featureFlag = pkgs.lib.optionalString (
+    defaultFeatures != [ ]
+  ) " --features ${pkgs.lib.concatStringsSep "," defaultFeatures}";
   environment = {
     MOONLIGHT_COMMON_INCLUDE = "${network}/include";
     MOONLIGHT_COMMON_LIB = "${network}/lib";
@@ -101,8 +118,12 @@ let
       src = repositorySource;
       sourceRoot = "source/clients/viewer";
       cargoLock.lockFile = ./Cargo.lock;
+      buildFeatures = defaultFeatures;
+      checkFeatures = defaultFeatures;
       nativeBuildInputs = native;
       buildInputs = libraries ++ [ network ];
+      # The Rust X11 window's tests run both windows on private Xvfb servers.
+      nativeCheckInputs = pkgs.lib.optional pc pkgs.xvfb;
       preCheck = ''
         export XDG_RUNTIME_DIR="$TMPDIR/viewer-runtime"
         mkdir -m 700 "$XDG_RUNTIME_DIR"
@@ -116,6 +137,11 @@ let
             pkgs.mesa
           ]
         }
+      ''
+      # The Rust EGL presenter's tests draw through Mesa's software EGL.
+      + pkgs.lib.optionalString pc ''
+        export __EGL_VENDOR_LIBRARY_FILENAMES=${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json
+        export EGL_PLATFORM=x11
       '';
       postInstall = ''
         # The unchanged stage-0 tool asks every candidate package for this name.
@@ -139,7 +165,18 @@ let
       # The FFmpeg the viewer links, for the aarch64 check.
       passthru = { inherit ffmpeg; };
       meta = {
-        license = pkgs.lib.licenses.gpl3Plus;
+        # With nightjar-core, which with rubylight-native-api is
+        # GPL-3.0-only, the binary is; Nightjar's rusty_enet is MIT
+        # (vendor/README.md).
+        license =
+          if pc then
+            with pkgs.lib.licenses;
+            [
+              gpl3Only
+              mit
+            ]
+          else
+            pkgs.lib.licenses.gpl3Plus;
         mainProgram = "korri-viewer";
         platforms = [
           "x86_64-linux"
@@ -275,11 +312,11 @@ let
           xvfb-run -a -s '-screen 0 640x480x24 -nolisten tcp' ./check-sdl frames.h264 portrait.h264
         touch "$out"
       '';
-  # The same viewer with nightjar-core as a second network core (#391 step
-  # E, `vendor/README.md`). `bin/korri-viewer` still streams with the C core
-  # unless `-networkcore nightjar` is given; `bin/moonlight` gives it, so
-  # that the stage-0 tool runs this package as a candidate beside `package`.
-  # The binary wrapper execs the viewer, which keeps the process the tool
+  # The viewer with nightjar-core (#391 step E, `vendor/README.md`) and no
+  # other Rust part: the turns' candidate against the C core. With the
+  # feature, nightjar-core is the default core, as in `package`;
+  # `bin/moonlight` also names it, as the stage-0 tool's candidate. The
+  # binary wrapper execs the viewer, which keeps the process the tool
   # measures.
   nightjarPackage = package.overrideAttrs (old: {
     pname = "korri-viewer-nightjar";
@@ -325,12 +362,12 @@ let
       platforms = [ "x86_64-linux" ];
     };
   });
-  # The same viewer with the Rust port of the carried C VA-API EGL presenter
-  # (#391 step F, slice F3, src/egl_presenter/). `bin/korri-viewer` still
-  # draws through the carried C unless `-eglpresenter rust` is given;
-  # `bin/moonlight` gives it, as `nightjarPackage` does. Its tests draw with
-  # both presenters into an Xvfb window with Mesa's software EGL and compare
-  # the pixels.
+  # The viewer with the Rust port of the carried C VA-API EGL presenter
+  # (#391 step F, slice F3, src/egl_presenter/) and no other Rust part: the
+  # turns' candidate. With the feature, the port is the default presenter,
+  # as in `package`; `bin/moonlight` also names it, as `nightjarPackage`
+  # does. Its tests draw with both presenters into an Xvfb window with
+  # Mesa's software EGL and compare the pixels.
   rustEglPresenterPackage = package.overrideAttrs (old: {
     pname = "korri-viewer-rust-egl-presenter";
     cargoBuildFeatures = [ "rust-egl-presenter" ];
@@ -371,10 +408,10 @@ let
         makeBinaryWrapper ${rustEglPresenterPackage}/bin/korri-viewer $out/bin/moonlight \
           --append-flags "-eglpresenter rust -filledpicture egl"
       '';
-  # The same viewer with the Rust port of the carried C X11 window and its
-  # keyboard and mouse (#391 step F, slice F4, src/x11_window/).
-  # `bin/korri-viewer` still makes its window with the carried C unless
-  # `-x11window rust` is given; `bin/moonlight` gives it, as
+  # The viewer with the Rust port of the carried C X11 window and its
+  # keyboard and mouse (#391 step F, slice F4, src/x11_window/) and no other
+  # Rust part: the turns' candidate. With the feature, the port is the
+  # default window, as in `package`; `bin/moonlight` also names it, as
   # `nightjarPackage` does. Its tests run both windows, each on a private
   # Xvfb with a screen of its own, so the check has Xvfb.
   rustX11WindowPackage = package.overrideAttrs (old: {
@@ -418,11 +455,16 @@ let
         # The vendor directory links each crate; the archive holds their files.
         cp -rL ${package.cargoDeps}/. $root/vendor/
         cat > $root/BUILDING.txt <<'EOF'
-        korri-viewer ${package.version}, GPL-3.0-or-later.
+        korri-viewer ${package.version}, GPL-3.0-or-later. On x86_64 it also links
+        nightjar-core, which is GPL-3.0-only, so that binary is GPL-3.0-only.
 
         korri/                The Korri repository files that build the viewer.
                               clients/viewer/default.nix is the Nix recipe.
-        moonlight-common-c/   The network core at b126e481a195fdc7152d211def17190e3434bcce,
+                              clients/viewer/vendor/nightjar is nightjar-core,
+                              the default network core on x86_64, with
+                              Nightjar's rusty_enet (MIT); vendor/README.md
+                              there gives its pin and Korri's edits.
+        moonlight-common-c/   The C network core at b126e481a195fdc7152d211def17190e3434bcce,
                               with its ENet, from Moonlight Embedded
                               775444287305849ebdf4736c75298ad0713e2d5d.
         vendor/               The Rust crates of korri/clients/viewer/Cargo.lock.
@@ -430,10 +472,10 @@ let
         On aarch64 the viewer links nixpkgs FFmpeg with
         korri/clients/viewer/ffmpeg/0001-v4l2-request.patch, as default.nix says.
 
-        Build the network core with CMake, then run cargo build --release
-        --offline in korri/clients/viewer with MOONLIGHT_COMMON_INCLUDE and
-        MOONLIGHT_COMMON_LIB set to its headers and shared library, and
-        vendor/ configured as the crates.io source.
+        Build the C network core with CMake, then run cargo build --release
+        --offline${featureFlag} in korri/clients/viewer with
+        MOONLIGHT_COMMON_INCLUDE and MOONLIGHT_COMMON_LIB set to its headers
+        and shared library, and vendor/ configured as the crates.io source.
         EOF
         mkdir -p $out/share/korri-viewer
         tar --sort=name --mtime=@1 --owner=0 --group=0 --numeric-owner \
@@ -446,8 +488,15 @@ let
   };
 in
 {
+  # buildRustPackage reads a package's features from `buildFeatures` and
+  # `checkFeatures` only. A list under another name is dropped without a
+  # word, and the PC package then streams with the C parts (#391): it was,
+  # until a smoke stream showed the C core.
+  package =
+    assert package.cargoBuildFeatures == defaultFeatures;
+    assert package.cargoCheckFeatures == defaultFeatures;
+    package;
   inherit
-    package
     nightjarPackage
     rustAudioOutputPackage
     rustEglPresenterPackage
