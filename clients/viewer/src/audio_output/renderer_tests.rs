@@ -493,27 +493,49 @@ fn child_plays_into_pulseaudio() {
     assert_eq!(play(table, &config, None, &packets, PACKET, linger), 0);
 }
 
+/// The channel count that the SDL child plays, from its parent.
+const SDL_CHANNELS: &str = "KORRI_TEST_SDL_CHANNELS";
+
 #[test]
 fn on_the_sdl_platform_the_rust_output_plays_through_sdl_audio() {
     let directory = tempfile::tempdir().unwrap();
-    let file = directory.path().join("sdl.raw");
-    child(
-        "child_plays_through_sdl_audio",
-        &[
-            ("SDL_AUDIODRIVER", OsStr::new("disk")),
-            ("SDL_DISKAUDIOFILE", file.as_os_str()),
-        ],
-    );
-    let pcm = samples(&fs::read(file).unwrap());
-    // sdl.c gives the decoder the core's own order.
-    assert_tones(sounded(&pcm, 2), 2, config(2).mapping, "SDL audio");
+    for channels in [2, 6, 8] {
+        let file = directory.path().join(format!("sdl-{channels}.raw"));
+        let count = channels.to_string();
+        child(
+            "child_plays_through_sdl_audio",
+            &[
+                ("SDL_AUDIODRIVER", OsStr::new("disk")),
+                ("SDL_DISKAUDIOFILE", file.as_os_str()),
+                (SDL_CHANNELS, OsStr::new(&count)),
+            ],
+        );
+        let pcm = samples(&fs::read(file).unwrap());
+        // sdl.c gives the decoder the core's own order, which is SDL's for
+        // 5.1 and 7.1. ALSA's would put the back channels' tones at
+        // positions 2 and 3, and this case would fail.
+        assert_eq!(
+            alsa_order(config(channels).mapping, channels) != config(channels).mapping,
+            channels >= 6
+        );
+        assert_tones(
+            sounded(&pcm, channels as usize),
+            channels as usize,
+            config(channels).mapping,
+            &format!("SDL audio, {channels} channels"),
+        );
+    }
 }
 
 #[test]
 #[ignore = "on_the_sdl_platform_the_rust_output_plays_through_sdl_audio runs it"]
 fn child_plays_through_sdl_audio() {
     assert_eq!(choose(false, None), Output::Sdl);
-    let config = config(2);
+    let channels = std::env::var(SDL_CHANNELS)
+        .ok()
+        .and_then(|count| count.parse().ok())
+        .unwrap_or(2);
+    let config = config(channels);
     let packets = packets(&config, 200);
     // The device's 4096 frames (85 ms) play out before the cleanup closes it.
     let linger = Duration::from_millis(400);
