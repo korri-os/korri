@@ -31,14 +31,11 @@ device, a stolen device can do only what any owned device can do (ADRs 0069,
   recovery words or scans their QR code.
 - The person must confirm the words at setup. Setup cannot end before that.
 - After setup, a device holds the person key only while the person uses the
-  recovery words, and then erases it. korrid still never holds it.
+  recovery words, and then erases it. The local signer holds it; korrid never
+  stores it.
 - korrid carries the recovery words between the person and the local signer
   in memory only and never stores them, so a compromised korrid could capture
   the words while they are in use (owner decision, 2026-11-16).
-- Today the local signer keeps the automatic person key and can export it with
-  a password (`local_signer.rs`), and an identity switch signs with the
-  current person key (`identity_switch/coordinator.rs`). That code must
-  change.
 - A device that has its own automatic identity joins another person key
   (ADR 0023) only after the person enters that identity's recovery words. The
   old key then signs a removal of the device, as an identity switch does
