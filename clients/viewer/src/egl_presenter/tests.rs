@@ -196,19 +196,36 @@ struct Surface {
     descriptor: ffi::VADRMPRIMESurfaceDescriptor,
 }
 
+/// What a surface's visible part shows: its left half bright and its right
+/// half dark, the other way round, or mid grey all over.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Pattern {
+    BrightLeft,
+    BrightRight,
+    Grey,
+}
+
 impl Surface {
     fn nv12(coded: (u32, u32), visible: (u32, u32), modifier: u64) -> Self {
+        Self::painted(coded, visible, modifier, Pattern::BrightLeft)
+    }
+
+    fn painted(coded: (u32, u32), visible: (u32, u32), modifier: u64, pattern: Pattern) -> Self {
         let (pitch, rows) = (coded.0 as usize, coded.1 as usize);
         let mut bytes = vec![0u8; pitch * rows * 3 / 2];
         let (luma, chroma) = bytes.split_at_mut(pitch * rows);
         for (at, value) in luma.iter_mut().enumerate() {
             let (x, y) = ((at % pitch) as u32, (at / pitch) as u32);
+            let left = x < visible.0 / 2;
             *value = if x >= visible.0 || y >= visible.1 {
                 255
-            } else if x < visible.0 / 2 {
-                235
             } else {
-                40
+                match pattern {
+                    Pattern::BrightLeft if left => 235,
+                    Pattern::BrightRight if !left => 235,
+                    Pattern::Grey => 128,
+                    _ => 40,
+                }
             };
         }
         for (at, value) in chroma.iter_mut().enumerate() {
@@ -274,6 +291,24 @@ impl Case {
         }
     }
 
+    /// A picture painted with `pattern` in `window`, BT.601 narrow range.
+    fn painted(
+        coded: (u32, u32),
+        visible: (u32, u32),
+        pattern: Pattern,
+        window: (i32, i32),
+    ) -> Self {
+        Self {
+            surface: Surface::painted(coded, visible, MODIFIER_INVALID, pattern),
+            frame: colour_frame(
+                visible,
+                ffi::AVColorSpace_AVCOL_SPC_UNSPECIFIED,
+                ffi::AVColorRange_AVCOL_RANGE_MPEG,
+            ),
+            window,
+        }
+    }
+
     fn place(&self) -> ffi::picture_place {
         fit(self.frame.size(), self.window)
     }
@@ -334,6 +369,94 @@ fn the_rust_vaapi_picture_draws_the_carried_cs_pixels() {
         assert!(carried.0, "{what}: the C showed it");
         assert!(rust.0, "{what}: the Rust showed it");
         assert_halves(&carried.1, case.window, case.place(), &format!("C {what}"));
+        assert!(
+            rust.1 == carried.1,
+            "{what}: the Rust picture's pixels differ from the C's"
+        );
+    }
+}
+
+/// A picture that fills the window, seen whole: no pixel is black (no bar,
+/// no clear showing), and each half, or the whole, has the pattern's
+/// brightness, two pixels from the edges and the middle, where the filter
+/// blends.
+fn assert_whole(pixels: &[u32], window: (i32, i32), pattern: Pattern, what: &str) {
+    for y in 0..window.1 {
+        for x in 0..window.0 {
+            let value = pixels[(y * window.0 + x) as usize];
+            assert_ne!(value, 0, "{what}: ({x}, {y}) is black");
+            if x < 2
+                || x >= window.0 - 2
+                || (2 * x - window.0).abs() < 4
+                || y < 2
+                || y >= window.1 - 2
+            {
+                continue;
+            }
+            let left = 2 * x < window.0;
+            let bright = red(value);
+            let fits = match pattern {
+                Pattern::Grey => (100..=160).contains(&bright),
+                Pattern::BrightLeft if left => bright >= 200,
+                Pattern::BrightRight if !left => bright >= 200,
+                _ => bright <= 80,
+            };
+            assert!(
+                fits,
+                "{what}: ({x}, {y}) has brightness {bright} for {pattern:?}"
+            );
+        }
+    }
+}
+
+/// #391 step F5: with `-filledpicture egl`, the presenter shows the
+/// pictures that fill the window too, where `vaPutSurface` showed them, at
+/// the same place: the whole window, which is `vaPutSurface`'s destination
+/// rectangle (`place`). Each picture differs from the one before it
+/// everywhere, so a stale frame would show; a picture with bars between
+/// them shows that neither side keeps the other's pixels.
+#[test]
+fn a_picture_that_fills_the_window_shows_whole_and_replaces_the_last() {
+    let _picture = exclusive();
+    let window = (400, 225);
+    let x11 = X11::open(window.0 as u32, window.1 as u32);
+    let landscape = (416, 240);
+    let cases = [
+        Case::painted(landscape, (400, 225), Pattern::BrightLeft, window),
+        Case::painted(landscape, (400, 225), Pattern::BrightRight, window),
+        // A portrait picture: bars at the sides, where the last picture was.
+        Case::painted((240, 416), (224, 400), Pattern::BrightLeft, window),
+        Case::painted(landscape, (400, 225), Pattern::Grey, window),
+        // Bars of 2 pixels, under 1% of the window: it fills the window
+        // (place.c), as after korrid's rounding of a size to 8 pixels.
+        Case::painted(landscape, (398, 225), Pattern::BrightLeft, window),
+    ];
+    // The pattern of each picture that fills the window; None for bars.
+    let whole = [
+        Some(Pattern::BrightLeft),
+        Some(Pattern::BrightRight),
+        None,
+        Some(Pattern::Grey),
+        Some(Pattern::BrightLeft),
+    ];
+    for (case, whole) in cases.iter().zip(whole) {
+        let place = case.place();
+        let fills = (place.x, place.y, place.width, place.height) == (0, 0, window.0, window.1);
+        assert_eq!(fills, whole.is_some(), "{:?}: {place:?}", case.frame.size());
+    }
+    let carried = vaapi_pixels(Kind::Carried, &x11, &cases);
+    let rust = vaapi_pixels(Kind::Rust, &x11, &cases);
+    for (at, (case, whole)) in cases.iter().zip(whole).enumerate() {
+        let what = format!("picture {at}, {:?}", case.frame.size());
+        let (carried, rust) = (&carried[at], &rust[at]);
+        assert!(carried.0, "{what}: the C showed it");
+        assert!(rust.0, "{what}: the Rust showed it");
+        for (who, pixels) in [("C", &carried.1), ("Rust", &rust.1)] {
+            match whole {
+                Some(pattern) => assert_whole(pixels, window, pattern, &format!("{who} {what}")),
+                None => assert_halves(pixels, window, case.place(), &format!("{who} {what}")),
+            }
+        }
         assert!(
             rust.1 == carried.1,
             "{what}: the Rust picture's pixels differ from the C's"

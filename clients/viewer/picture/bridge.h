@@ -8,6 +8,10 @@ int picture_poll(int timeout);
 // One turn of the descriptor loop alone (`loop.h`), whatever the platform:
 // 0 to go on, 1 when a handler asks to quit, -1 on failure.
 int picture_poll_descriptors(int timeout);
+// X11 VA-API (video/ffmpeg_vaapi.c): a picture that fills its window goes
+// through the EGL presenter too (1), or through vaPutSurface (0, the
+// default) (#391 step F5). Before each stream's first frame.
+void picture_vaapi_egl_for_filled(int on);
 void picture_destroy(void);
 // The opt-in frame record (frame_times.c). Each descriptor may be -1; both
 // belong to C from here on. Open before the connection; close after it stops.

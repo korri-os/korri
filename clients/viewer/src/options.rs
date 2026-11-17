@@ -39,6 +39,9 @@ pub struct Options {
     /// The code that draws X11's pictures through EGL (`-eglpresenter`,
     /// #391 step F).
     pub egl_presenter: crate::egl_presenter::Kind,
+    /// What shows an X11 VA-API picture that fills its window
+    /// (`-filledpicture`, #391 step F).
+    pub filled_picture: crate::egl_presenter::Filled,
     /// The code that makes X11's window and reads its keys and mouse
     /// (`-x11window`, #391 step F).
     pub x11_window: crate::x11_window::Kind,
@@ -121,6 +124,7 @@ impl Options {
             network_core: Default::default(),
             audio_output: Default::default(),
             egl_presenter: Default::default(),
+            filled_picture: Default::default(),
             x11_window: Default::default(),
         };
         while let Some(arg) = args.next() {
@@ -155,7 +159,8 @@ impl Options {
                 }
                 "keydir" | "app" | "platform" | "width" | "height" | "fps" | "bitrate"
                 | "packetsize" | "codec" | "port" | "mapping" | "audio" | "remote" | "surround"
-                | "rotate" | "networkcore" | "audiooutput" | "eglpresenter" | "x11window" => {
+                | "rotate" | "networkcore" | "audiooutput" | "eglpresenter" | "x11window"
+                | "filledpicture" => {
                     let value = args
                         .next()
                         .ok_or_else(|| anyhow::anyhow!("missing value for {arg}"))?;
@@ -197,6 +202,9 @@ impl Options {
                             o.egl_presenter = crate::egl_presenter::Kind::parse(&value)?
                         }
                         "x11window" => o.x11_window = crate::x11_window::Kind::parse(&value)?,
+                        "filledpicture" => {
+                            o.filled_picture = crate::egl_presenter::Filled::parse(&value)?
+                        }
                         "audio" => o.audio_device = Some(value),
                         _ => unreachable!(),
                     }
@@ -414,6 +422,36 @@ mod tests {
         );
         assert!(parse(&["-x11window", "winit"]).is_err());
         assert!(parse(&["-x11window"]).is_err());
+    }
+
+    // #391 step F5: vaPutSurface shows a picture that fills its window
+    // unless -filledpicture names EGL, with either EGL presenter.
+    #[test]
+    fn a_filled_picture_goes_through_vaputsurface_unless_named() {
+        use crate::egl_presenter::Filled;
+        let parse = |extra: &[&str]| {
+            let mut args = vec!["stream", "-keydir", "/k", "host"];
+            args.extend_from_slice(extra);
+            Options::parse(args.into_iter().map(str::to_owned))
+        };
+        assert_eq!(parse(&[]).unwrap().filled_picture, Filled::PutSurface);
+        assert_eq!(
+            parse(&["-filledpicture", "putsurface"])
+                .unwrap()
+                .filled_picture,
+            Filled::PutSurface
+        );
+        assert_eq!(
+            parse(&["-filledpicture", "egl"]).unwrap().filled_picture,
+            Filled::Egl
+        );
+        let o = parse(&["-eglpresenter", "c", "-filledpicture", "egl"]).unwrap();
+        assert_eq!(
+            (o.egl_presenter, o.filled_picture),
+            (crate::egl_presenter::Kind::Carried, Filled::Egl)
+        );
+        assert!(parse(&["-filledpicture", "vaapi"]).is_err());
+        assert!(parse(&["-filledpicture"]).is_err());
     }
 
     #[test]

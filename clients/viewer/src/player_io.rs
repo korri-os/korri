@@ -37,6 +37,15 @@ impl PlayerIo {
         // decoder's setup calls it, after this.
         #[cfg(feature = "rust-x11-window")]
         crate::x11_window::select(o.x11_window);
+        // What shows a picture that fills the window, for this stream (#391
+        // step F5): vaPutSurface, or EGL as for one with bars.
+        // SAFETY: a flag that ffmpeg_vaapi.c reads at each frame, set before
+        // the first.
+        unsafe {
+            ffi::picture_vaapi_egl_for_filled(i32::from(
+                o.filled_picture == crate::egl_presenter::Filled::Egl,
+            ))
+        };
         // SAFETY: called under stream's connection lock, on its event thread.
         let vaapi = unsafe {
             ffi::picture_init(
@@ -62,6 +71,10 @@ impl PlayerIo {
         ensure!(
             vaapi || o.x11_window == crate::x11_window::Kind::Carried,
             "the Rust X11 window serves X11 VA-API, and this stream's picture is SDL's"
+        );
+        ensure!(
+            vaapi || o.filled_picture == crate::egl_presenter::Filled::PutSurface,
+            "-filledpicture egl serves X11 VA-API, and this stream's picture is SDL's"
         );
         let mapping = io
             ._mapping
@@ -92,6 +105,10 @@ impl PlayerIo {
         ensure!(
             o.x11_window == crate::x11_window::Kind::Carried,
             "the Rust X11 window serves X11 VA-API, and v4l2request makes its own window"
+        );
+        ensure!(
+            o.filled_picture == crate::egl_presenter::Filled::PutSurface,
+            "-filledpicture egl serves X11 VA-API, and v4l2request shows its own pictures"
         );
         let inputs = o
             .inputs

@@ -350,6 +350,27 @@ let
       platforms = [ "x86_64-linux" ];
     };
   });
+  # The Rust EGL presenter's package with `-filledpicture egl` too (#391
+  # step F, slice F5): on X11 VA-API, a picture that fills its window goes
+  # through the Rust EGL presenter instead of vaPutSurface. Its
+  # `bin/moonlight` appends both options to the same binary, so that its turns
+  # beside `rustEglPresenterPackage` judge that choice alone. The binary's
+  # tests ran in that package.
+  rustEglFilledPicturePackage =
+    pkgs.runCommand "korri-viewer-rust-egl-filled-picture-${package.version}"
+      {
+        nativeBuildInputs = [ pkgs.makeBinaryWrapper ];
+        meta = rustEglPresenterPackage.meta // {
+          mainProgram = "korri-viewer";
+        };
+      }
+      ''
+        mkdir -p $out/bin
+        ln -s ${rustEglPresenterPackage}/share $out/share
+        ln -s ${rustEglPresenterPackage}/bin/korri-viewer $out/bin/korri-viewer
+        makeBinaryWrapper ${rustEglPresenterPackage}/bin/korri-viewer $out/bin/moonlight \
+          --append-flags "-eglpresenter rust -filledpicture egl"
+      '';
   # The same viewer with the Rust port of the carried C X11 window and its
   # keyboard and mouse (#391 step F, slice F4, src/x11_window/).
   # `bin/korri-viewer` still makes its window with the carried C unless
@@ -430,6 +451,7 @@ in
     nightjarPackage
     rustAudioOutputPackage
     rustEglPresenterPackage
+    rustEglFilledPicturePackage
     rustX11WindowPackage
     network
     pictureCheck

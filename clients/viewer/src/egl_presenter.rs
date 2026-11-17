@@ -10,7 +10,8 @@
 //! the C keeps its code under `carried_` names (`build.rs`); the caller,
 //! `video/ffmpeg_vaapi.c`, does not change. The window stays Xlib
 //! (`video/x11.c`), the place comes from `place.c`, and the frame record's
-//! calls stay in the caller.
+//! calls stay in the caller. `Filled` (slice F5) chooses whether the
+//! presenter shows the pictures that fill the window too.
 #[cfg(all(feature = "rust-egl-presenter", not(target_os = "android")))]
 mod egl;
 #[cfg(all(feature = "rust-egl-presenter", not(target_os = "android")))]
@@ -41,6 +42,32 @@ impl Kind {
                 "this build has no Rust EGL presenter (cargo feature rust-egl-presenter, Linux only)"
             ),
             _ => bail!("unknown EGL presenter {name}: c or rust"),
+        }
+    }
+}
+
+/// `-filledpicture`'s value (#391 step F, slice F5): what shows an X11
+/// VA-API picture that fills its window. A picture with bars goes through
+/// the EGL presenter either way (#476), and so does every picture where
+/// `vaPutSurface` cannot show one (#477).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Filled {
+    /// `vaPutSurface`, as before (`video/ffmpeg_vaapi.c`).
+    #[default]
+    PutSurface,
+    /// The EGL presenter that `-eglpresenter` chooses, as for a picture
+    /// with bars.
+    Egl,
+}
+
+impl Filled {
+    pub fn parse(name: &str) -> Result<Self> {
+        match name {
+            "putsurface" => Ok(Self::PutSurface),
+            "egl" => Ok(Self::Egl),
+            _ => bail!(
+                "unknown presenter {name} for a picture that fills its window: putsurface or egl"
+            ),
         }
     }
 }

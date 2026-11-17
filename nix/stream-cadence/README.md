@@ -1745,7 +1745,10 @@ picture fills it. Korri's X11 VA-API viewer then shows each frame with
 picture with bars (#476), or every picture where `vaPutSurface` cannot
 present (Intel under Xwayland, #477). Step F of #391 replaces that
 presenter (`clients/viewer/README.md`, "EGL presenter in Rust"), so a
-measure of it on aka needs bars.
+measure of it on aka needs bars. A measure of slice F5, every picture
+through that presenter, needs no bars: its candidate is
+`korri-viewer-rust-egl-filled-picture` beside
+`korri-viewer-rust-egl-presenter`.
 
 ```sh
 nix run .#stream-cadence -- view --sender root@aka --sender-fixture \

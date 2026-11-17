@@ -28,6 +28,7 @@
 #include <libavutil/hwcontext_vaapi.h>
 #include <X11/Xlib.h>
 
+#include "../bridge.h"
 #include "../frame_times.h"
 #include "../place.h"
 #include "vaapi_egl.h"
@@ -48,6 +49,20 @@ static bool put_surface_shown;
 static bool present_through_egl;
 // EGL could not present a picture with bars: vaPutSurface shows it (#476).
 static bool egl_unusable;
+// Korri (#391 step F, slice F5), 2026-11-17: a picture that fills its
+// window goes through EGL too when the viewer asks for it (-filledpicture
+// egl). Off by default: vaPutSurface shows it, as before. The viewer sets it
+// before each stream; the session's cleanup leaves it.
+static bool egl_for_filled;
+
+void picture_vaapi_egl_for_filled(int on) {
+  egl_for_filled = on;
+}
+
+bool vaapi_presents_through_egl(struct picture_place place) {
+  return present_through_egl ||
+      ((egl_for_filled || !picture_fills_window(place)) && !egl_unusable);
+}
 
 static VADisplay device_display(AVBufferRef* ref) {
   AVHWDeviceContext* device = (AVHWDeviceContext*)ref->data;
@@ -235,14 +250,15 @@ void vaapi_queue(AVFrame* dec_frame, Window win, struct picture_place place) {
   // vaPutSurface draws its destination rectangle only. Mesa leaves the rest
   // of its back buffer as an earlier frame left it, so bars would show an
   // old picture. A picture with bars goes through EGL, which clears the
-  // whole window first (#476); one that fills the window stays here.
-  if (present_through_egl || (!picture_fills_window(place) && !egl_unusable)) {
+  // whole window first (#476); one that fills the window stays here, unless
+  // the viewer asked for EGL (#391 step F5).
+  if (vaapi_presents_through_egl(place)) {
     status = present_egl(dec_frame, win, place);
     if (status == VA_STATUS_SUCCESS)
       return;
     if (present_through_egl)
       goto error;
-    fprintf(stderr, "EGL cannot present here (%s); a picture with bars goes through vaPutSurface\n",
+    fprintf(stderr, "EGL cannot present here (%s); vaPutSurface shows every picture\n",
         vaErrorStr(status));
     egl_unusable = true;
   }

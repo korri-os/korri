@@ -202,6 +202,8 @@
             korri-viewer-rust-audio-output = viewer.rustAudioOutputPackage;
             # The viewer with the Rust port of its C VA-API EGL presenter (#391 step F).
             korri-viewer-rust-egl-presenter = viewer.rustEglPresenterPackage;
+            # That viewer with -filledpicture egl: EGL shows every VA-API picture (#391 step F).
+            korri-viewer-rust-egl-filled-picture = viewer.rustEglFilledPicturePackage;
             # The viewer with the Rust port of its C X11 window and input (#391 step F).
             korri-viewer-rust-x11-window = viewer.rustX11WindowPackage;
             korri-shell = shell.package;

@@ -21,6 +21,9 @@ nix build .#korri-viewer-rust-egl-presenter
 # The Rust X11 window and its input (#391 step F, below): its package runs
 # both windows on private Xvfb servers and compares what they do.
 nix build .#korri-viewer-rust-x11-window
+# Every VA-API picture through the Rust EGL presenter (#391 step F, below):
+# the Rust EGL presenter's binary with -filledpicture egl.
+nix build .#korri-viewer-rust-egl-filled-picture
 # Handheld path: aarch64 builds on aarch64 builders (here fuji or yari), never
 # on a device. The x86_64 check then starts that build under qemu-aarch64.
 nix build .#packages.aarch64-linux.korri-viewer
@@ -616,7 +619,8 @@ A changed `visible` uniform or a missing clear makes the pixel test fail
 (checked by hand on aka, 2026-11-17).
 
 **Where it runs.** `vaapi_egl.c` runs on Intel under Xwayland for every
-frame, and on AMD only for a picture with bars. The private pair's viewer
+frame, and on AMD only for a picture with bars, or for every picture with
+`-filledpicture egl` (slice F5, below). The private pair's viewer
 output has the stream's size, so a turn on aka uses `vaPutSurface` on
 both sides unless the output's shape differs: `view --viewer-output
 1920x1200` (`nix/stream-cadence/README.md`, "Bars around the picture").
@@ -718,6 +722,53 @@ Not proven: the window under a real compositor (sway, Xwayland) and its
 focus by korrid, a key from a real keyboard through XTEST, and any number.
 Number 5 of ADR 0062 (a key on the viewer's window to its packet) and
 number 4 (startup) are the ones this slice can move.
+
+## Every VA-API picture through EGL (#391 step F, slice F5)
+
+On X11 VA-API, `video/ffmpeg_vaapi.c` shows a picture that fills its window
+with `vaPutSurface`, and one with bars through the EGL presenter (#476).
+With `-filledpicture egl`, the EGL presenter shows the pictures that fill
+the window too; `vaPutSurface` then shows none on AMD. The presenter is
+the one that `-eglpresenter` chooses. `-filledpicture putsurface`, the
+default, keeps `vaPutSurface`. On the SDL platform and on `v4l2request`
+`egl` is refused: neither shows pictures through this code.
+`korri-viewer-rust-egl-filled-picture`'s `bin/moonlight` appends
+`-eglpresenter rust -filledpicture egl` to the binary of
+`korri-viewer-rust-egl-presenter`, whose `bin/moonlight` appends
+`-eglpresenter rust` alone. Its turns beside that package judge this
+choice alone.
+
+This is a change of policy, not a port: no code moves into Rust. It
+changes how each frame reaches the screen on AMD, so it can move numbers 1
+to 3 of ADR 0062 (packet to frame on the display; frames late, twice or
+dropped; CPU on the viewing device), not only startup or input. `ffmpeg_vaapi.c` (GPL-3 §5a: modified by Korri on
+2026-11-17) gains `picture_vaapi_egl_for_filled`, which the viewer calls
+before each stream, and names its rule `vaapi_presents_through_egl`. The
+rest stays: a refusal by `vaPutSurface` still sends every frame of the
+session to EGL (#477), and an EGL failure still sends every later frame of
+the session to `vaPutSurface`, with one log line (`EGL cannot present here
+(...); vaPutSurface shows every picture`).
+
+Tests:
+
+- The rule (`tests/test-vaapi.c`, in `korri-viewer-picture`): by default
+  a picture that fills its window goes to `vaPutSurface` and one with
+  bars to EGL; after `picture_vaapi_egl_for_filled(1)` both go to EGL, and
+  the session's cleanup leaves that choice.
+- The pixels (`src/egl_presenter/tests.rs`, with both presenters, as in
+  slice F3): five pictures in one 400x225 window, each different from the
+  one before it everywhere. Four fill the window, one with bars of 2
+  pixels that `place.c` counts as none; one in the middle is portrait,
+  with bars. Each picture that fills the window is at the place that
+  `vaPutSurface` is given, the whole window, and shows whole: no black
+  pixel and its own pattern, so no part of an earlier picture stays. The
+  portrait one is black outside its place. The Rust presenter's pixels
+  equal the C's.
+- The option: `putsurface` by default, `egl` with either presenter.
+
+Not proven: a real VA-API surface (the sandbox has no GPU), radeonsi's
+pacing of an EGL swap against `vaPutSurface`'s, tearing (the presenter's
+swap interval is 0, as in slice F3), and any number.
 
 ## Android session part (#391 step D, slice D0)
 

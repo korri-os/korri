@@ -27,3 +27,9 @@ void vaapi_cleanup_lib(void);
 int vaapi_init(AVCodecContext* decoder_ctx);
 // Korri: the picture goes at `place` in the window (#476).
 void vaapi_queue(AVFrame* dec_frame, Window win, struct picture_place place);
+// Korri: whether vaapi_queue gives this picture to EGL before it tries
+// vaPutSurface. A picture with bars goes to EGL (#476); one that fills its
+// window does only after picture_vaapi_egl_for_filled(1) (#391 step F5), or
+// when vaPutSurface has refused this session (#477). Neither, once EGL has
+// failed this session.
+bool vaapi_presents_through_egl(struct picture_place place);
