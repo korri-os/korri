@@ -57,13 +57,19 @@ mod frames;
 
 /// moonlight-common-c's `LI_ERR_UNSUPPORTED`.
 const UNSUPPORTED: i32 = -5501;
+/// moonlight-common-c's `LBQ_BOUND_EXCEEDED`: an `LiSend*` call's answer
+/// when its input queue is full (`InputStream.c`, `LinkedBlockingQueue.h`).
+const LBQ_BOUND_EXCEEDED: i32 = 2;
+/// The C core's line for a full input queue (`InputStream.c`).
+const QUEUE_FULL: &str = "Input queue reached maximum size limit";
 
 pub(crate) struct Nightjar {
     session: Mutex<Option<Session>>,
     /// The running stream's platform tables, which `stop` stops first.
     tables: Mutex<Option<Arc<Tables>>>,
-    /// The running session's input queue, for every thread that sends.
-    input: RwLock<Option<InputHandle>>,
+    /// The running session's input queue, for every thread that sends, and
+    /// its listener, whose log has a full queue's line.
+    input: RwLock<Option<(InputHandle, Arc<Callbacks>)>>,
     /// The start under way, for `interrupt`.
     interrupt: Mutex<Option<Interrupt>>,
 }
@@ -109,6 +115,7 @@ impl NetworkCore for Nightjar {
             video.map_or(0, |t| t.capabilities),
             audio.map_or(0, |t| t.capabilities),
         );
+        let input_listener = listener.clone();
         let result = Session::start(
             &host,
             config,
@@ -131,7 +138,7 @@ impl NetworkCore for Nightjar {
         match result {
             Ok(session) => {
                 *self.input.write().unwrap_or_else(PoisonError::into_inner) =
-                    Some(session.input_handle());
+                    Some((session.input_handle(), input_listener));
                 *self.tables.lock().unwrap_or_else(PoisonError::into_inner) = Some(tables);
                 *self.session.lock().unwrap_or_else(PoisonError::into_inner) = Some(session);
                 0
@@ -177,7 +184,11 @@ impl NetworkCore for Nightjar {
 
     fn send(&self, packet: Packet) -> i32 {
         match &*self.input.read().unwrap_or_else(PoisonError::into_inner) {
-            Some(input) => code(input.input(|queue| queue_packet(queue, packet))),
+            Some((input, listener)) => {
+                answer(input.input(|queue| queue_packet(queue, packet)), |line| {
+                    listener.log(line)
+                })
+            }
             // The C core's answer with no stream.
             None => -2,
         }
@@ -381,8 +392,18 @@ fn code(result: Result<(), InputError>) -> i32 {
         Err(InputError::Stopped) => -2,
         Err(InputError::Invalid) => -3,
         Err(InputError::Unsupported) => UNSUPPORTED,
-        Err(InputError::QueueFull) => -1,
+        Err(InputError::QueueFull) => LBQ_BOUND_EXCEEDED,
     }
+}
+
+/// The C core's answer to one `LiSend*` call. A full queue dropped the new
+/// packet and kept the ones queued, as the C core's does; its line goes to
+/// `log`, as the C core logs it.
+fn answer(result: Result<(), InputError>, log: impl FnOnce(&str)) -> i32 {
+    if matches!(result, Err(InputError::QueueFull)) {
+        log(QUEUE_FULL);
+    }
+    code(result)
 }
 
 /// The platform's video and audio tables of one stream, shared by the
@@ -1010,6 +1031,55 @@ mod tests {
         }
         assert_eq!(code(Err(InputError::Unsupported)), -5501);
         assert_eq!(code(Err(InputError::Stopped)), -2);
+    }
+
+    /// A full queue answers as the C core's `LiSend*` does (`InputStream.c`
+    /// at the pin): the new packet is dropped, the packets already queued
+    /// stay, the core's log has "Input queue reached maximum size limit",
+    /// and the answer is `LBQ_BOUND_EXCEEDED`. Both queues hold 150 packets
+    /// (`MAX_QUEUED_INPUT_PACKETS`, nightjar-core's `MAX_QUEUED`). A touch
+    /// move is the packet that the Android proof's swipe sends hundreds of
+    /// in 100 ms; neither core batches them.
+    #[test]
+    fn a_full_queue_drops_the_new_packet_logs_and_answers_as_the_c_core() {
+        assert_eq!(nightjar_core::input::queue::MAX_QUEUED, 150);
+        let caps = HostCapabilities {
+            app_version: [7, 1, 431, -1],
+            feature_flags: 0xff,
+            encryption_enabled: 0,
+            control_messages: Vec::new(),
+            client_roaming: false,
+        };
+        let mut queue = InputQueue::new(&caps);
+        // The haptics enable that a 7.1 host's queue starts with goes first.
+        let mut out = Vec::new();
+        queue.drain(Instant::now() + Duration::from_secs(1), false, &mut out);
+        assert_eq!(queue.len(), 0);
+        let touch = |x: f32| Packet::Touch {
+            kind: 0x03,
+            pointer: 0,
+            x,
+            y: 0.5,
+            pressure: 1.0,
+            contact_major: 0.0,
+            contact_minor: 0.0,
+            rotation: 0xffff,
+        };
+        let logged = std::cell::RefCell::new(Vec::new());
+        let log = |line: &str| logged.borrow_mut().push(line.to_owned());
+        for at in 0..150 {
+            let x = at as f32 / 1000.0;
+            assert_eq!(answer(queue_packet(&mut queue, touch(x)), log), 0, "{at}");
+        }
+        assert!(logged.borrow().is_empty());
+        assert_eq!(answer(queue_packet(&mut queue, touch(0.9)), log), 2);
+        assert_eq!(*logged.borrow(), ["Input queue reached maximum size limit"]);
+        out.clear();
+        queue.drain(Instant::now() + Duration::from_secs(1), false, &mut out);
+        assert_eq!(out.len(), 150, "the queued packets stay, the new one goes");
+        // The other answers do not log.
+        assert_eq!(answer(Err(InputError::Stopped), log), -2);
+        assert_eq!(logged.borrow().len(), 1);
     }
 
     /// The stop line's recovery counts (Korri's edit to the vendored
