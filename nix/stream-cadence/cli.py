@@ -663,6 +663,7 @@ def pc_fixture_namespace(*, product: bool, fixture: bool, private_pair: bool, sa
 
 NET_OPTION = "--net"
 ENCRYPTION_OPTION = "--require-encryption"
+TONE_OPTION = "--tone"
 
 
 def net_refusal(net: dict | None, private_x: bool) -> str | None:
@@ -1635,6 +1636,8 @@ def view_case(
                 net=args.net_condition["netem"] if args.net_condition else None,
                 iproute2=paths.get("iproute2"),
                 encryption_required=args.require_encryption,
+                # The stream's sound (--tone): the sender's private sound server.
+                **({"pulseaudio": paths["pulseaudio"], "tone_hz": args.tone} if args.tone else {}),
             )
             if session is not None:
                 session["sender"] = built
@@ -2207,7 +2210,11 @@ def view(args: argparse.Namespace) -> int:
     if args.candidate_package and not (args.viewer_package and args.sender_fixture):
         raise Refusal("--candidate-package requires --viewer-package and --sender-fixture.")
     # Before any device is asked. Both change only the private pair.
-    for option, given in ((NET_OPTION, args.net), (ENCRYPTION_OPTION, args.require_encryption)):
+    for option, given in (
+        (NET_OPTION, args.net),
+        (ENCRYPTION_OPTION, args.require_encryption),
+        (TONE_OPTION, args.tone),
+    ):
         if given and not args.sender_fixture:
             raise Refusal(
                 f"{option} is accepted only with --sender-fixture: it changes the private pair alone, "
@@ -2267,6 +2274,8 @@ def view(args: argparse.Namespace) -> int:
         sender_parts += ("sway",) if patched else ("sway", "sunshine")
         if args.net_condition:
             sender_parts += ("iproute2",)
+        if args.tone:
+            sender_parts += ("pulseaudio",)
     sender_agent, sender_paths = built(sender_target, sender_options, sender_parts)
     if patched:
         if sender_target is not None:
@@ -2307,6 +2316,7 @@ def view(args: argparse.Namespace) -> int:
         "press": part(seat_paths, "-stream-cadence-press-", "/bin/stream-cadence-press"),
         "viewer": part(seat_paths, "-moonlight-embedded-"),
         "iproute2": part(sender_paths, "-iproute2-"),
+        "pulseaudio": part(sender_paths, "-pulseaudio-", "/bin/pulseaudio"),
     }
 
     def agent(target: str | None, options: list[str], command: str, log: Path) -> Remote:
@@ -2596,6 +2606,14 @@ def nonnegative_integer(value: str) -> int:
     return result
 
 
+def tone_hz(value: str) -> int:
+    result = int(value)
+    # The sender fixture's own range (sender.py, prepare).
+    if not 20 <= result <= 20000:
+        raise argparse.ArgumentTypeError("a tone lies between 20 and 20000 Hz")
+    return result
+
+
 def resolution(value: str) -> tuple[int, int]:
     match = re.fullmatch(r"(\d+)x(\d+)", value)
     if not match or min(map(int, match.groups())) <= 0:
@@ -2735,6 +2753,12 @@ def parser() -> argparse.ArgumentParser:
         ENCRYPTION_OPTION,
         action="store_true",
         help="the sender fixture's Sunshine requires encryption of video and audio from the viewer. verdict keeps it apart from Sunshine's default, which encrypts no video on a LAN",
+    )
+    watch.add_argument(
+        TONE_OPTION,
+        type=tone_hz,
+        metavar="HZ",
+        help="the sender fixture's Sunshine sends a sine at HZ (20 to 20000) as the stream's sound, from its private sound server; without it the stream has no sound. The viewer decodes it and plays it into its null output, so its cost counts in number 3. Only with --sender-fixture; verdict keeps a result with a tone apart from one without",
     )
     # The checked words of --net; view() sets them before any device is asked.
     watch.set_defaults(net_condition=None)

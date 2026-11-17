@@ -9,8 +9,12 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import cli  # noqa: E402
+from cli import Refusal, parser  # noqa: E402
 import sender  # noqa: E402
 import test_private_sender  # noqa: E402
+from test_net import run  # noqa: E402
+from verdict import conditions, judge  # noqa: E402
 
 TESTS = Path(__file__).resolve().parent
 
@@ -109,6 +113,55 @@ class Tone(test_private_sender.Machine):
         with self.assertRaisesRegex(ValueError, "between 20 and 20000 Hz"):
             self.prepare_with_tone(session, tone_hz=5)
         self.assertIsNone(session.root)
+
+
+def toned(hz: int | None) -> dict:
+    record = run()
+    record["discovered"]["tone"] = None if hz is None else {"hz": hz, "sink": sender.TONE_SINK}
+    return record
+
+
+class ViewTone(unittest.TestCase):
+    """view --tone: the stream's sound in a measure of the private pair (#391 step F)."""
+
+    def test_the_option_names_a_tone_in_hearing(self):
+        base = ["view", "--sender", "a", "--viewer", "b"]
+        self.assertEqual(parser().parse_args([*base, "--tone", "1000"]).tone, 1000)
+        self.assertIsNone(parser().parse_args(base).tone)
+        for refused in ("10", "20001", "loud"):
+            with self.assertRaises(SystemExit):
+                parser().parse_args([*base, "--tone", refused])
+
+    def test_view_refuses_a_tone_without_the_sender_fixture_before_any_device(self):
+        asked: list = []
+
+        def no_device(*command, **options):
+            asked.append(command)
+            raise AssertionError("a device was asked")
+
+        for name in ("execute", "tools"):
+            previous = getattr(cli, name)
+            setattr(cli, name, no_device)
+            self.addCleanup(setattr, cli, name, previous)
+        previous_run = cli.subprocess.run
+        cli.subprocess.run = no_device
+        self.addCleanup(setattr, cli.subprocess, "run", previous_run)
+        args = parser().parse_args(["view", "--sender", "root@aka", "--viewer", "root@aka", "--tone", "1000"])
+        with self.assertRaisesRegex(Refusal, "--tone.*--sender-fixture"):
+            cli.view(args)
+        self.assertEqual(asked, [])
+
+    def test_a_tone_keeps_two_results_apart(self):
+        # A result from before the tone, or with none, streamed no sound.
+        self.assertIsNone(conditions(run())["tone"])
+        self.assertIsNone(conditions(toned(None))["tone"])
+        self.assertEqual(conditions(toned(1000))["tone"], 1000)
+        with self.assertRaisesRegex(ValueError, "tone") as refused:
+            judge([run() for _ in range(5)], [toned(1000) for _ in range(5)], 5)
+        self.assertIn("1000 Hz; no sound", str(refused.exception))
+        with self.assertRaisesRegex(ValueError, "tone"):
+            judge([toned(440) for _ in range(5)], [toned(1000) for _ in range(5)], 5)
+        self.assertEqual(len(judge([toned(1000) for _ in range(5)], [toned(1000) for _ in range(5)], 5)), 16)
 
 
 if __name__ == "__main__":

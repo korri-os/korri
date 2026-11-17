@@ -159,6 +159,9 @@ def conditions(record: dict) -> dict:
     # audio (--require-encryption). Without it Sunshine's defaults decide: on a
     # LAN, and loopback is one, they encrypt no video.
     values["encryption"] = bool((facts.get("encryption") or {}).get("required"))
+    # The frequency of the sender fixture's tone, the stream's sound (--tone).
+    # None: no sound, as in a result from before the tone existed.
+    values["tone"] = (facts.get("tone") or {}).get("hz")
     return values
 
 
@@ -404,7 +407,7 @@ def conditions_that_differ(old: list[dict], new: list[dict]) -> str | None:
         and len({json.dumps(row[name], sort_keys=True) for row in every if row[name] is not None}) == 1
     ]
     # These have their own words. The measure also sets the rate and the mode.
-    named = {"beside_a_game", "viewer_place", "viewer_renderer", "frame_record", "net", "encryption", "sunshine_patch_set"}
+    named = {"beside_a_game", "viewer_place", "viewer_renderer", "frame_record", "net", "encryption", "tone", "sunshine_patch_set"}
     if "measure" in changed:
         named |= {"measure", "requested_fps", "display"}
     differ = [name for name in changed if name not in absent and name not in named]
@@ -435,6 +438,13 @@ def conditions_that_differ(old: list[dict], new: list[dict]) -> str | None:
             "Some runs had a sender fixture that required encryption of video and audio "
             "(--require-encryption) and others had Sunshine's default, which encrypts no video "
             "on a LAN. Decryption costs the viewer CPU; record both results with the same setting."
+        )
+    if "tone" in changed:
+        found = sorted({"no sound" if row["tone"] is None else f"{row['tone']} Hz" for row in every})
+        advice.append(
+            "Some runs streamed with the sender fixture's tone as their sound (--tone) and "
+            "others with another tone or none: " + "; ".join(found) + ". Decoding and playing "
+            "the sound costs the viewer CPU; record both results with the same sound."
         )
     if "sunshine_patch_set" in changed:
         advice.append(

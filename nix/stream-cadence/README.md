@@ -1035,9 +1035,10 @@ app's play proof (`clients/android-app/proof/play.py`, #434 D10) does.
 sound server and sends no sound ("Unable to initialize audio capture" in
 its log). An agent request can ask for a tone instead: `prepare` with
 `pulseaudio` (the path of nixpkgs' `pulseaudio`, `runtime.pulseaudio`) and
-`tone_hz` (20 to 20000, default 1000). No tool command asks for it today;
-the Android viewer's proof (`clients/viewer/android/proof/run.py`, slice
-D3) does. The agent then starts a private PulseAudio as the fixture's user,
+`tone_hz` (20 to 20000, default 1000). `view --tone HZ` asks for it (below,
+"The stream's sound: `--tone`"); so do the Android viewer's proof
+(`clients/viewer/android/proof/run.py`, slice D3) and the Linux network
+core proof (`clients/viewer/proof/nightjar/run.py`). The agent then starts a private PulseAudio as the fixture's user,
 before Sunshine, with this configuration and nothing else
 (`sender.tone_script`):
 
@@ -1221,6 +1222,8 @@ configuration with autospawn off. PipeWire uses the run's runtime directory
 and a nonexistent remote name. The result records `viewer_fixture.audio`
 as `null` (a string). This keeps X11 VA-API from opening the host's sound or
 exiting because its default ALSA card is absent. This does not measure audio.
+With `--tone` the viewer decodes the sender's tone and writes it into this
+null output: ALSA's `null` PCM takes every write at once, with no clock.
 
 **What the fixture does not prove.** It is not the product's sender. It does
 not use the product's KMS capture, its encoder settings, its pacing or its
@@ -1707,6 +1710,31 @@ Open points of the press:
 - No controller button and no compositor are in the path (above).
 - The baselines in `baselines/aka` were recorded before this measure and
   have no `input_ms`.
+
+### The stream's sound: `--tone`
+
+By default the sender fixture sends no sound, so a viewer's sound path
+decodes nothing and plays nothing in a run. Step F of #391 replaces that
+path (`clients/viewer/README.md`, "Sound in Rust"), so a measure of it
+must carry sound.
+
+```sh
+nix run .#stream-cadence -- view --sender root@aka --sender-fixture \
+  --viewer root@aka --viewer-package /nix/store/…-korri-viewer-0.1.0 \
+  --candidate-package /nix/store/…-korri-viewer-rust-audio-output-0.1.0 \
+  --runs 5 --tone 1000
+```
+
+**`--tone HZ`** (20 to 20000) asks the sender fixture for its tone ("A
+known tone, on request", above): its private sound server plays a sine at
+HZ, and Sunshine sends it as the stream's sound. The viewer decodes each
+packet and plays it into its null output ("Viewer sound is null"), so the
+sound's work counts in number 3. No number measures the sound itself: not
+its delay, gaps or level. Without `--sender-fixture` the option is
+refused before any device is asked. The result keeps the sender's
+`discovered.tone` (`{"hz", "sink"}`, or `null`). `verdict` keeps a result
+with a tone apart from one without, and two tones apart; a result from
+before the option streamed no sound.
 
 ### Network conditions and encryption: `--net`, `--require-encryption`
 
