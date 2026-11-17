@@ -26,6 +26,11 @@
 //! layers and the input belong to that thread. The loop thread never waits:
 //! it asks Android's main thread for the layers and reads the answer at its
 //! next tick, and the treaty's blocking requests run on threads of their own.
+//! The launch goes before korrid's broker has provisioned its server
+//! certificate, which follows over a channel of its own: the layers are made
+//! and the window turns meanwhile, and the runtime starts once the loop
+//! thread has both (#391, `rules::making`). A launch refused before that
+//! lets its layers go and turns the window back.
 //!
 //! The certificates, as korrid provisions them for its Linux viewers:
 //!
@@ -86,6 +91,7 @@ use korrid::{
     launcher::plugin_launch::PluginDisplay,
     linux_viewer::{LinuxStreamViewer, LinuxViewerError, LinuxViewerStatus, ViewerSnapshot},
 };
+use rules::Part;
 use slint::android::{
     android_activity::{input::InputEvent, MainEvent},
     AndroidApp,
@@ -124,7 +130,9 @@ struct Show {
     launch: String,
     address: String,
     options: Options,
-    pin: Pin,
+    /// The pinned server certificate, once korrid's broker has provisioned
+    /// it, or why it was not.
+    certificate: oneshot::Receiver<Result<Pin, String>>,
     lifecycle: Lifecycle,
     /// Start's reply: korrid's `start` waits for it.
     started: oneshot::Sender<Result<(), String>>,
@@ -244,6 +252,30 @@ pub fn korrids_adapter() -> Option<Arc<Adapter>> {
 
 pub struct Adapter(Arc<Shared>);
 
+impl Adapter {
+    /// The client certificate of the key directory, then the server
+    /// certificate that korrid's broker provisions for it, pinned in a file
+    /// of this launch.
+    async fn provision(
+        &self,
+        launch: &str,
+        address: &str,
+        keydir: PathBuf,
+    ) -> Result<Pin, LinuxViewerError> {
+        let client = tokio::task::spawn_blocking(move || client_certificate(&keydir))
+            .await
+            .map_err(|_| error("viewer worker failed"))??;
+        marks::mark("client certificate read");
+        let server = korrid::android_app::provision_moonlight_certificate(address, &client).await?;
+        logcat::info(&format!(
+            "korri-app: viewer certificate provisioned through korrid's broker for {address}"
+        ));
+        marks::mark("server certificate provisioned");
+        Pin::new(&self.0.pins, launch, &server)
+            .map_err(|cause| error(format!("the server certificate has no place: {cause}")))
+    }
+}
+
 fn error(message: impl ToString) -> LinuxViewerError {
     LinuxViewerError::new(message.to_string())
 }
@@ -331,23 +363,8 @@ impl LinuxStreamViewer for Adapter {
                 ));
             }
             let keydir = self.0.keydir.clone();
-            let client = {
-                let keydir = keydir.clone();
-                tokio::task::spawn_blocking(move || client_certificate(&keydir))
-                    .await
-                    .map_err(|_| error("viewer worker failed"))??
-            };
-            marks::mark("client certificate read");
-            let server =
-                korrid::android_app::provision_moonlight_certificate(address, &client).await?;
-            logcat::info(&format!(
-                "korri-app: viewer certificate provisioned through korrid's broker for {address}"
-            ));
-            marks::mark("server certificate provisioned");
-            let pin = Pin::new(&self.0.pins, launch, &server)
-                .map_err(|cause| error(format!("the server certificate has no place: {cause}")))?;
             let options = Options::for_lifecycle(
-                keydir,
+                keydir.clone(),
                 display.map(|display| (display.width, display.height)),
             )
             .map_err(|cause| error(format!("{cause:#}")))?;
@@ -357,16 +374,16 @@ impl LinuxStreamViewer for Adapter {
                 changed.notify_one();
             })
             .map_err(|cause| error(format!("{cause:#}")))?;
-            *lock(&self.0.current) = Some(Current {
-                launch: launch.to_owned(),
-                lifecycle: lifecycle.clone(),
-            });
+            // The loop thread asks for the layers and turns the window while
+            // korrid's broker provisions the server certificate (#391); the
+            // runtime starts once it has both (`rules::making`).
+            let (certificate, provisioned) = oneshot::channel();
             let (started, answer) = oneshot::channel();
             let show = Show {
                 launch: launch.to_owned(),
                 address: address.to_owned(),
                 options,
-                pin,
+                certificate: provisioned,
                 lifecycle: lifecycle.clone(),
                 started,
             };
@@ -377,6 +394,24 @@ impl LinuxStreamViewer for Adapter {
             if !sent {
                 lifecycle.failed("the app has no activity to show the stream in".into());
                 return Err(error("the app has no activity to show the stream in"));
+            }
+            match self.provision(launch, address, keydir).await {
+                Ok(pin) => {
+                    *lock(&self.0.current) = Some(Current {
+                        launch: launch.to_owned(),
+                        lifecycle,
+                    });
+                    // A launch that the loop thread refused meanwhile drops
+                    // its pin here; the answer says why.
+                    let _ = certificate.send(Ok(pin));
+                }
+                Err(cause) => {
+                    let _ = certificate.send(Err(cause.to_string()));
+                    // The loop thread lets the layers go and refuses the
+                    // launch before another start can come.
+                    let _ = answer.await;
+                    return Err(cause);
+                }
             }
             match answer.await {
                 Ok(Ok(())) => Ok(()),
@@ -597,9 +632,13 @@ enum Phase {
     Playing(Box<Playing>),
 }
 
+/// A launch whose layers and server certificate are made side by side.
 struct Making {
     show: Show,
-    pending: Pending,
+    /// The layers while Android's main thread makes them.
+    pending: Option<Pending>,
+    layers: Option<Layers>,
+    pin: Option<Pin>,
 }
 
 struct Playing {
@@ -799,7 +838,16 @@ impl Stream {
         ) {
             Ok(pending) => {
                 marks::mark("video layers asked");
-                self.phase = Phase::Making(Box::new(Making { show, pending }))
+                // The window turns to the stream's shape now, while the
+                // layers and the server certificate are made (#391).
+                self.orient(Some(show.options.width >= show.options.height));
+                marks::mark("window turn asked");
+                self.phase = Phase::Making(Box::new(Making {
+                    show,
+                    pending: Some(pending),
+                    layers: None,
+                    pin: None,
+                }))
             }
             Err(cause) => refuse(
                 show,
@@ -827,36 +875,84 @@ impl Stream {
         perform(&self.app, playing, steps);
     }
 
+    /// The layers from Android's main thread and the server certificate from
+    /// korrid's broker, side by side: the runtime starts with both
+    /// (`rules::making`).
     fn make(&mut self, mut making: Making) -> Phase {
-        if making.show.lifecycle.stop_requested() {
-            logcat::info("korri-app: viewer stopped while its layers were made; nothing started");
-            making.show.lifecycle.stopped();
-            let _ = making
-                .show
-                .started
-                .send(Err("the viewer stopped before the stream started".into()));
-            return Phase::Idle;
+        let mut layers = Part::Waiting;
+        if making.layers.is_some() {
+            layers = Part::Ready;
+        } else if let Some(pending) = making.pending.as_mut() {
+            match pending.poll() {
+                None => {}
+                Some(Ok(made)) => {
+                    marks::mark("video layers made");
+                    making.pending = None;
+                    making.layers = Some(made);
+                    layers = Part::Ready;
+                }
+                Some(Err(cause)) => layers = Part::Failed(format!("{cause:#}")),
+            }
         }
-        if !self.shared.window.load(Ordering::Acquire) {
-            refuse(
-                making.show,
-                "the app's window went while the layers were made",
-            );
-            return Phase::Idle;
-        }
-        match making.pending.poll() {
-            None => Phase::Making(Box::new(making)),
-            Some(Err(cause)) => {
-                refuse(making.show, &format!("no video layer: {cause:#}"));
+        let certificate = if making.pin.is_some() {
+            Part::Ready
+        } else {
+            match making.show.certificate.try_recv() {
+                Ok(None) => Part::Waiting,
+                Ok(Some(Ok(pin))) => {
+                    making.pin = Some(pin);
+                    Part::Ready
+                }
+                Ok(Some(Err(why))) => Part::Failed(why),
+                Err(_) => Part::Failed("the server certificate was not provisioned".into()),
+            }
+        };
+        match rules::making(
+            making.show.lifecycle.stop_requested(),
+            self.shared.window.load(Ordering::Acquire),
+            &layers,
+            &certificate,
+        ) {
+            rules::Making::Wait => Phase::Making(Box::new(making)),
+            rules::Making::Start => match (making.layers.take(), making.pin.take()) {
+                (Some(layers), Some(pin)) => self.start(making.show, layers, pin),
+                _ => unreachable!("rules::making starts only with both parts"),
+            },
+            rules::Making::Stopped => {
+                logcat::info(
+                    "korri-app: viewer stopped while its layers were made; nothing started",
+                );
+                self.unmake(&mut making);
+                self.orient(None);
+                making.show.lifecycle.stopped();
+                let _ = making
+                    .show
+                    .started
+                    .send(Err("the viewer stopped before the stream started".into()));
                 Phase::Idle
             }
-            Some(Ok(layers)) => self.start(making.show, layers),
+            rules::Making::Refuse(why) => {
+                self.unmake(&mut making);
+                self.orient(None);
+                refuse(making.show, &why);
+                Phase::Idle
+            }
         }
     }
 
-    /// The layers exist: the runtime starts, and Start goes to it.
-    fn start(&mut self, show: Show, layers: Layers) -> Phase {
-        marks::mark("video layers made");
+    /// A launch that does not start: its layers go, made ones here, and
+    /// ones still being made on the main thread once it has made them
+    /// (`Layers::request`).
+    fn unmake(&self, making: &mut Making) {
+        making.pending = None;
+        if let Some(layers) = making.layers.take() {
+            layers.release(&self.app);
+        }
+    }
+
+    /// The layers and the server certificate exist: the runtime starts, and
+    /// Start goes to it.
+    fn start(&mut self, show: Show, layers: Layers, pin: Pin) -> Phase {
         let placed = layers.placed;
         // The viewer's screen, with which it reports its shape to korrid's
         // live-shape (#476): it follows a new stream size since slice 4.
@@ -902,14 +998,13 @@ impl Stream {
             launch,
             address,
             options,
-            pin,
+            certificate: _,
             lifecycle,
             started,
         } = show;
         let settings = Settings {
             mouse_emulation: options.mouse_emulation,
         };
-        let landscape = options.width >= options.height;
         let decoded = Decoded::default();
         let picture = Picture {
             surface: layers.surface(),
@@ -966,8 +1061,6 @@ impl Stream {
             logcat::error(&format!("korri-app: viewer Start was not sent: {cause}"));
         }
         events::unbuffered(&self.app);
-        self.orient(Some(landscape));
-        marks::mark("window turn asked");
         // The stream's controls and status, for korrid's snapshot and
         // Apply; this activity is their lease.
         let changes = lifecycle.controls(self.id, status::readings);
@@ -1149,7 +1242,9 @@ impl Stream {
     fn leave(&mut self, why: &str) {
         match std::mem::replace(&mut self.phase, Phase::Idle) {
             Phase::Idle => {}
-            Phase::Making(making) => {
+            Phase::Making(mut making) => {
+                self.unmake(&mut making);
+                self.orient(None);
                 refuse(making.show, &format!("{why} before the stream started"))
             }
             Phase::Playing(mut playing) => {
@@ -1221,7 +1316,10 @@ impl Drop for Stream {
         );
         match std::mem::replace(&mut self.phase, Phase::Idle) {
             Phase::Idle => {}
-            Phase::Making(making) => refuse(making.show, "the activity ended"),
+            Phase::Making(mut making) => {
+                self.unmake(&mut making);
+                refuse(making.show, "the activity ended")
+            }
             Phase::Playing(playing) => {
                 let Playing {
                     launch,

@@ -318,6 +318,25 @@ Back, so the proof opens the overlay before it sends letters.
 
 Records: `proof/android-app-d10/`.
 
+### From the tap to the first frame (#391)
+
+korrid's `viewer.start` hands the launch to the loop thread before korrid's
+broker has provisioned the server certificate. The loop thread asks
+Android's main thread for the layers and turns the window to the stream's
+shape at once; the pinned certificate follows over a channel of its own,
+and the runtime starts once the loop thread has both (`rules::making`,
+host-tested). A stop, a window that goes, or a part that fails ends the
+launch without waiting for the other part: the layers go, made ones at once
+and ones still being made once the main thread has made them, and the
+window turns back. Until #391 the layers were asked only after the
+certificate, and the window turned only after Start.
+
+The viewer's steps and the app's write `start:` lines with their
+monotonic times (`clients/viewer`, "The start's timeline"). The play proof
+reads them from the tap to the first frame into `result.json`
+(`steps.start_timeline`), with the emulator's TCP counters over the same
+time (`steps.emulator_tcp_from_tap_to_first_frame`).
+
 ### The bars beside the picture (#495)
 
 The shell draws its library into the activity's window, and goes on drawing

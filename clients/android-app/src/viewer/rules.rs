@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! The stream's rules that need no Android: the launches queued for an
-//! activity when it ends, the end of the runtime's thread, the keys that go
-//! on to Android, the files of the pinned server certificates, the blocking
-//! calls from korrid's async code, and the screen that the viewer reports. The
+//! activity when it ends, a launch's start while its layers and its server
+//! certificate are made side by side, the end of the runtime's thread, the
+//! keys that go on to Android, the files of the pinned server certificates,
+//! the blocking calls from korrid's async code, and the screen that the
+//! viewer reports. The
 //! library builds for Android only, so the build machine runs these tests
 //! through `tests/host.rs` (`cargo test --test host`).
 use std::{
@@ -36,6 +38,51 @@ pub(crate) fn close<T>(
     drop(shows);
     while let Ok(launch) = queue.try_recv() {
         refuse(launch);
+    }
+}
+
+/// Where one of a launch's two parts is while the loop thread waits: its
+/// layers, which Android's main thread makes, and its server certificate,
+/// which korrid's broker provisions meanwhile (#391).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Part {
+    Waiting,
+    Ready,
+    /// It failed, with why.
+    Failed(String),
+}
+
+/// What the loop thread does with a launch whose parts are made side by
+/// side, at one of its ticks.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Making {
+    /// A part is still on its way.
+    Wait,
+    /// Both parts are there: the runtime starts, and Start goes to it.
+    Start,
+    /// korrid asked for Stop meanwhile: nothing started, and the launch
+    /// stopped as asked.
+    Stopped,
+    /// The launch is refused, with why: what was made goes, and korrid's
+    /// start hears why.
+    Refuse(String),
+}
+
+/// The next step of a launch whose layers and server certificate are made
+/// side by side. A stop goes first, then a window that went, then a part
+/// that failed: none waits for the other part.
+pub(crate) fn making(stop: bool, window: bool, layers: &Part, certificate: &Part) -> Making {
+    if stop {
+        return Making::Stopped;
+    }
+    if !window {
+        return Making::Refuse("the app's window went while the layers were made".into());
+    }
+    match (layers, certificate) {
+        (Part::Failed(why), _) => Making::Refuse(format!("no video layer: {why}")),
+        (_, Part::Failed(why)) => Making::Refuse(why.clone()),
+        (Part::Ready, Part::Ready) => Making::Start,
+        _ => Making::Wait,
     }
 }
 
@@ -185,6 +232,55 @@ mod tests {
         );
         assert!(started.is_ok());
         assert_eq!(answers.recv_timeout(Duration::from_secs(5)), Ok((8, true)));
+    }
+
+    // #391: the layers and the server certificate are made side by side.
+    #[test]
+    fn a_launch_starts_once_its_layers_and_its_certificate_are_both_there() {
+        use Part::{Ready, Waiting};
+        assert_eq!(making(false, true, &Waiting, &Waiting), Making::Wait);
+        assert_eq!(making(false, true, &Ready, &Waiting), Making::Wait);
+        assert_eq!(making(false, true, &Waiting, &Ready), Making::Wait);
+        assert_eq!(making(false, true, &Ready, &Ready), Making::Start);
+    }
+
+    #[test]
+    fn a_part_that_fails_refuses_the_launch_without_waiting_for_the_other() {
+        use Part::{Failed, Ready, Waiting};
+        assert_eq!(
+            making(
+                false,
+                true,
+                &Waiting,
+                &Failed("refused by the holder".into())
+            ),
+            Making::Refuse("refused by the holder".into())
+        );
+        assert_eq!(
+            making(false, true, &Failed("5 s".into()), &Waiting),
+            Making::Refuse("no video layer: 5 s".into())
+        );
+        assert_eq!(
+            making(false, true, &Failed("5 s".into()), &Ready),
+            Making::Refuse("no video layer: 5 s".into())
+        );
+    }
+
+    #[test]
+    fn a_stop_or_a_window_that_went_ends_the_launch_before_anything_else() {
+        use Part::{Failed, Ready, Waiting};
+        for (layers, certificate) in [
+            (Waiting, Waiting),
+            (Ready, Ready),
+            (Failed("x".into()), Waiting),
+        ] {
+            assert_eq!(making(true, true, &layers, &certificate), Making::Stopped);
+            assert_eq!(making(true, false, &layers, &certificate), Making::Stopped);
+            assert_eq!(
+                making(false, false, &layers, &certificate),
+                Making::Refuse("the app's window went while the layers were made".into())
+            );
+        }
     }
 
     #[test]
