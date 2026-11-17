@@ -1,0 +1,48 @@
+start: Start at 677534872.318 ms
+start: http serverinfo answered at 677534993.955 ms (connected 60.2 ms, first byte 120.4 ms, total 120.4 ms)
+start: https serverinfo answered at 677535177.698 ms (connected 60.1 ms, TLS done 122.9 ms, first byte 183.6 ms, total 183.7 ms)
+start: paired at 677535177.731 ms
+start: https applist answered at 677535360.338 ms (connected 60.1 ms, TLS done 122.0 ms, first byte 182.5 ms, total 182.6 ms)
+libva info: VA-API version 1.24.0
+libva info: Trying to open /run/opengl-driver/lib/dri/radeonsi_drv_video.so
+libva info: Found init function __vaDriverInit_1_24
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.24.0
+libva info: Trying to open /run/opengl-driver/lib/dri/radeonsi_drv_video.so
+libva info: Found init function __vaDriverInit_1_24
+libva info: va_openDriver() returns 0
+start: picture and input ready at 677535422.964 ms
+start: https resume answered at 677535606.004 ms (connected 60.2 ms, TLS done 122.4 ms, first byte 182.9 ms, total 183.0 ms)
+start: core platform init begins at 677535607.523 ms
+start: core platform init done at 677535607.526 ms
+start: core name resolution begins at 677535607.527 ms
+start: core name resolution done at 677535607.555 ms
+start: core audio stream init begins at 677535607.557 ms
+start: core audio stream init done at 677535607.558 ms
+start: core RTSP handshake begins at 677535607.559 ms
+start: core RTSP handshake done at 677536449.744 ms
+start: core control stream init begins at 677536449.760 ms
+start: core control stream init done at 677536449.767 ms
+start: core video stream init begins at 677536449.769 ms
+start: core video stream init done at 677536449.778 ms
+start: core input stream init begins at 677536449.780 ms
+start: core input stream init done at 677536449.782 ms
+start: core control stream start begins at 677536449.784 ms
+start: core control stream start done at 677536510.090 ms
+start: core video stream start begins at 677536510.098 ms
+Platform X Window System (VAAPI)
+Using FFmpeg decoder: h264
+Video receive buffer: 2080 KiB, as asked
+start: core video stream start done at 677536512.403 ms
+start: core audio stream start begins at 677536512.408 ms
+Video receive takes up to 32 queued datagrams per call
+Video receive UDP_GRO is on: coalesced reads are split per datagram
+start: core audio stream start done at 677536512.676 ms
+start: core input stream start begins at 677536512.678 ms
+start: core input stream start done at 677536512.680 ms
+Received first video packet after 0 ms
+start: first video packet at 677536597.886 ms
+start: first frame shown at 677536609.165 ms
+picture: the picture shown is 1920x1080
+nightjar: at the stop: SessionStats { rtt: Some((60ms, 0ns)), video: VideoStats { packet_count_video: 83501, packet_count_fec: 19539, packets_received: 103040, packets_recovered: 0, decrypt_failures: 0, frames_completed: 5346, frame_drops: 0, decoder_drops: 0 }, audio: AudioStats { packet_count_audio: 0, packet_count_fec: 0, packet_count_fec_recovered: 0, packet_count_fec_failed: 0, packet_count_oos: 0, packet_count_invalid: 0, packet_count_fec_invalid: 0, decrypt_failures: 0 }, frames_submitted: 5346, frames_need_idr: 0, decode_queue_overflows: 0, early_chunks_dropped: 0, frames_skipped: 0, chunks_skipped: 0, decode_queue_len: 0, audio_packets: 0, audio_queue_len: 0, audio_queue_overflows: 0, connection_status: Some(Okay), input_contact_lost: false }
+nightjar: recovery requests sent: 0 IDR, 0 reference frame invalidations

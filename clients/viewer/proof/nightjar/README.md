@@ -250,5 +250,36 @@ the condition (netem on a namespace's loopback, nightjar-core's control
 client, a plain ENet host): 20 keys arrived a median of 5.16 ms and at most
 9.65 ms beyond the delay. With the vendored edit in `../../vendor/README.md`
 (on Unix the wake also goes through a local socket pair), medians of
-0.15 and 0.21 ms and maximums of 0.25 and 0.33 ms in two runs. On a real network the loopback has no delay, so this cost is
-mostly the test pair's (inferred).
+0.15 and 0.21 ms and maximums of 0.25 and 0.33 ms in two runs. On a real
+network the loopback has no delay, so this cost is mostly the test pair's
+(inferred).
+
+**The set again, with the edit.** Same condition and options, 2026-11-17
+15:07 to 15:24 UTC. Both packages built on aka from one tree,
+`origin/main` `7bbafe964` with the test and the edit above, so the two
+sides differ only in the `nightjar` feature:
+
+- A: `/nix/store/sy7shkb4d5hamwk4l891vvwzlih6jpbr-korri-viewer-0.1.0`.
+- B: `/nix/store/symzr107bn6qyal5m305hfh6mffqqgm2-korri-viewer-nightjar-0.1.0`.
+
+All 10 runs valid, and equal on every number. Other work started after the
+quiet gate and took 1.0 to 17.1 % of all CPUs (more than 5 % in nine of the
+ten runs), so the ranges are wider than in the first set. Record:
+`net-2026-11-17/delay-30ms-wake/`.
+
+| ADR 0062 number | Field | C core | nightjar-core | Verdict |
+| --- | --- | --- | --- | --- |
+| 1 (the gate) Sender presentation to display | `latency_p50_ms` | 42.030 to 43.222 | 42.030 to 43.254 | equal |
+| | `latency_p95_ms` | 49.266 to 50.526 | 49.139 to 50.570 | equal |
+| 2 Late, repeated, dropped | `dropped_frames` | 0 | 0 | equal |
+| | `repeated_frames`, `late_frames` | 228 to 239 | 229 to 237 | equal |
+| 3 CPU | `cpu_seconds_per_second` | 0.011 to 0.021 | 0.013 to 0.022 | equal |
+| 4 Startup | `startup_ms` | 1755.9 to 1792.2 | 1756.6 to 1776.8 | equal |
+| 5 Input | `input_ms` | 30.054 to 30.099 | 30.057 to 30.083 | equal |
+| | `input_missed` | 0 to 1 | 0 to 2 | equal |
+| 6 Stability | `stream_stalls`, `viewer_exits` | 0 | 0 | equal |
+
+nightjar-core's key presses now arrive at a median of 30.06 to 30.08 ms
+(was 34.35 to 35.84) and its releases at 30.04 to 30.08 ms (was 40.02).
+The missed presses (1 for C, 2 for nightjar-core) are in the same turn,
+run 4, with 16.7 and 14.8 % other work.
