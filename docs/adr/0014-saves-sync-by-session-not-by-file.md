@@ -126,6 +126,9 @@ can record what each session started from.
   owner's folder; no compatibility path stays.
 - Steam games are left to Steam Cloud, and Korri says so for those games. korrid
   keeps no access to Steam saves (`steam-session.sh` ACLs).
+  Exception (ADR 0083): games on `@korri:steam/engine` are not left
+  to Steam Cloud. Korri snapshots their saves, and a Steam Cloud conflict is a
+  split.
   Deployment limitation (2026-10-21): named korrid sharing applies only under
   each person's `saves/`. The former account's runtime-group defaults remain
   unchanged for AccountRoot prepared games such as Fallout CE. As before this

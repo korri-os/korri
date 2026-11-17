@@ -115,6 +115,14 @@ _Avoid_: abort, kill, quit
 A plugin that changes how another plugin's game launch runs, without being the game's runner. Gamescope is one.
 _Avoid_: wrapper, launch companion
 
+**Steam engine**:
+Valve's library that signs in to Steam, installs games and answers a running game's Steam requests, with no Steam client or Steam UI.
+_Avoid_: headless Steam, Steam backend
+
+**Steam client**:
+Valve's full Steam program, with its window, store and web UI, which also contains the Steam engine.
+_Avoid_: Steam, Steam app
+
 **Seat reservation**:
 A controller's claim to its seat during a live session, including while it is disconnected or the person leaves the session.
 _Avoid_: connected controller
