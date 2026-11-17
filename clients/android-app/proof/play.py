@@ -66,7 +66,12 @@ The steps:
    on one of its letters reaches the sender's Sunshine as a key; the last
    apply hides it. Mouse mode, then: korrid's apply of the gaming track pad
    (3) makes a swipe a relative mouse move at the sender, disabled (4) makes
-   a tap send nothing, and multi-touch (0) makes it a touch again.
+   a tap send nothing, and multi-touch (0) makes it a touch again. Pan &
+   zoom, last: korrid's apply turns it on; a pinch of two fingers, made with
+   `sendevent` on the emulator's touch screen, zooms the video layer (the
+   app's log, SurfaceFlinger's crop), and a drag moves it, with nothing at
+   the sender; turned off, the zoom stays and a tap reaches the sender at the
+   point of the picture under it; a new mouse mode turns it off.
 9. Home leaves the app: the runtime stops and korrid reads Stopped, and the
    keyboard's focus goes back. Starting the app again lets korrid's
    recovery start the stream again.
@@ -139,6 +144,11 @@ FLIP = "set-face-button-flip"
 RUMBLE = "set-rumble"
 KEYBOARD = "toggle-keyboard"
 MOUSE = "set-mouse-mode"
+ZOOM = "set-zoom-mode"
+# The app's placement line, with its zoom (src/viewer.rs, `log_placement`).
+PLACED_LINE = re.compile(
+    r"korri-app: viewer video layer \d+x\d+ placed at \((-?\d+), (-?\d+)\)-\((-?\d+), (-?\d+)\) "
+    r"in the window (\d+)x(\d+)(?:, cropped to fill)?(?:, zoomed ([\d.]+) times)?")
 # `R.array.mouse_mode_names`, by index.
 MOUSE_MODES = ["Multi touch", "Absolute touch", "Track pad(Natural/Double tap to drag)",
                "Track pad(Gaming/Long press to drag)", "Disabled", "Absolute touch (left/right click swapped)"]
@@ -821,9 +831,9 @@ def controls(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
     steps["listed"] = listed
     prefix = f"viewer:{launch}:"
     # No controller that can rumble takes part, so Rumble is not offered. On a
-    # touch screen Toggle keyboard is, a command first in Artemis's order, and
-    # Mouse mode, a choice after Crop to fill.
-    expected = {KEYBOARD, FILL, MOUSE, FLIP} if touchscreen(emulator) else {FILL, FLIP}
+    # touch screen Toggle keyboard is, a command first in Artemis's order, then
+    # after Crop to fill Pan & zoom, a toggle, and Mouse mode, a choice.
+    expected = {KEYBOARD, FILL, ZOOM, MOUSE, FLIP} if touchscreen(emulator) else {FILL, FLIP}
     steps["expected"] = sorted(expected)
     checks["korrids_snapshot_lists_the_controls"] = (
         set(listed) == expected
@@ -1040,6 +1050,171 @@ def mouse_mode(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_pro
     return steps, checks
 
 
+def touch_device(emulator: "d8.Emulator", out: Path) -> "dict | None":
+    """The emulator's touch screen in `getevent -p`: its device and its axes' largest values. The
+    emulator makes a multi-touch device for each display it can have; the first display's is
+    `virtio_input_multi_touch_1`."""
+    text = emulator.shell("getevent -p", check=False).stdout
+    (out / "getevent.txt").write_text(text)
+    found = []
+    for block in re.split(r"(?m)^add device \d+: ", text)[1:]:
+        path = block.split()[0]
+        name = re.search(r'name:\s*"([^"]*)"', block)
+        # ABS_MT_POSITION_X (0035) and ABS_MT_POSITION_Y (0036), in hex.
+        x = re.search(r"\b0035\s*:\s*value \d+, min (-?\d+), max (\d+)", block)
+        y = re.search(r"\b0036\s*:\s*value \d+, min (-?\d+), max (\d+)", block)
+        if x and y:
+            # ABS_MT_PRESSURE (003a) and ABS_MT_TOUCH_MAJOR (0030): with a pressure axis, Android
+            # takes a finger of no pressure for a hover.
+            pressure = re.search(r"\b003a\s*:\s*value \d+, min (-?\d+), max (\d+)", block)
+            major = re.search(r"\b0030\s*:\s*value \d+, min (-?\d+), max (\d+)", block)
+            found.append({"path": path, "name": name.group(1) if name else "",
+                          "max": (int(x.group(2)), int(y.group(2))),
+                          "pressure": int(pressure.group(2)) if pressure else None,
+                          "major": int(major.group(2)) if major else None,
+                          "btn_touch": re.search(r"\b014a\b", block) is not None})
+    first = [d for d in found if d["name"] == "virtio_input_multi_touch_1"]
+    return (first or found or [None])[0]
+
+
+def pinch(emulator: "d8.Emulator", device: dict, start: int, end: int, steps: int = 10) -> dict:
+    """Two fingers about the screen's middle, `start` then `end` window pixels apart, through the
+    touch screen's own events (evdev's multi-touch protocol B, `sendevent`). The panel's axes are its
+    natural, portrait, ones: x across its short side, which the landscape window shows as its height,
+    1080 pixels. A pinch about the middle is the same pinch in either turn. Android's policy lets the
+    shell read the input devices, not write them, so the events go as root (`su`, which this
+    userdebug image has); the answer says how that went."""
+    path, (max_x, max_y) = device["path"], device["max"]
+    cx, cy = max_x // 2, max_y // 2
+    raw = lambda pixels: round(pixels / 2 / 1080 * max_x)  # noqa: E731
+    lines = []
+
+    def send(kind: int, code: int, value: int) -> None:
+        lines.append(f"sendevent {path} {kind} {code} {value}")
+
+    def fingers(half: int, first: bool) -> None:
+        for slot, x in ((0, cx - half), (1, cx + half)):
+            send(3, 47, slot)
+            if first:
+                send(3, 57, 100 + slot)
+                if device.get("pressure"):
+                    send(3, 58, max(1, device["pressure"] // 2))
+                if device.get("major"):
+                    send(3, 48, max(1, device["major"] // 50))
+            send(3, 53, x)
+            send(3, 54, cy)
+        if first and device["btn_touch"]:
+            send(1, 330, 1)
+        send(0, 0, 0)
+
+    fingers(raw(start), True)
+    for step in range(1, steps + 1):
+        fingers(raw(start + (end - start) * step / steps), False)
+    for slot in (0, 1):
+        send(3, 47, slot)
+        send(3, 57, -1)
+    if device["btn_touch"]:
+        send(1, 330, 0)
+    send(0, 0, 0)
+    sent = emulator.shell(f"su 0 sh -c {shlex.quote('; '.join(lines))}", check=False, timeout=60)
+    return {"script": "\n".join(lines), "exit": sent.returncode, "output": (sent.stdout + sent.stderr)[-2000:]}
+
+
+def video_placed(logcat: "d8.Logcat", since: int) -> "dict | None":
+    """The app's newest placement line since `since`: the picture's rectangle and its zoom."""
+    found = None
+    for line in logcat.lines()[since:]:
+        match = PLACED_LINE.search(line)
+        if match:
+            found = match
+    if found is None:
+        return None
+    left, top, right, bottom = (int(found.group(i)) for i in range(1, 5))
+    return {"rect": [left, top, right, bottom], "zoom": float(found.group(7) or 1.0)}
+
+
+def pan_zoom(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.Remote", out: Path,
+             launch: str, listed: dict) -> tuple[dict, dict]:
+    """Pan & zoom (#434, toward D7′): with korrid's apply of the toggle on, a pinch zooms the video layer and
+    a drag moves it, and the sender hears nothing of them; off, the zoom stays and a tap reaches the sender
+    at the point of the picture under the finger; a new mouse mode turns the toggle off."""
+    steps: dict = {}
+    checks: dict = {}
+    sender.request("clock")
+    control = listed.get(ZOOM)
+    checks["korrid_offers_pan_and_zoom_on_a_touch_screen"] = control is not None \
+        and control["kind"] == "toggle" and control["value"] is False and control["label"] == "Pan & zoom"
+    if control is None:
+        return steps, checks
+
+    def toggle(value: bool) -> bool:
+        mark = logcat.mark()
+        answer = proof_apply(emulator, logcat, launch, control["id"], f"toggle {str(value).lower()}")
+        return answer == "ok" and logcat.wait_for(
+            f"korri-app: viewer control {ZOOM} is {str(value).lower()}", mark, 5) is not None
+
+    checks["korrids_apply_turns_pan_and_zoom_on"] = toggle(True)
+    before_packets = len(sender_packets(sender))
+    steps["layer_before"] = video_layer(emulator, out, "zoom-before")
+    device = touch_device(emulator, out)
+    steps["touch_device"] = device
+    mark = logcat.mark()
+    if device is not None:
+        sent = pinch(emulator, device, 600, 1000)
+        (out / "pinch.sh").write_text(sent.pop("script") + "\n")
+        steps["pinch_sent"] = sent
+    time.sleep(2)
+    steps["pinched"] = video_placed(logcat, mark)
+    checks["a_pinch_zooms_the_picture"] = (steps["pinched"] or {}).get("zoom", 1.0) > 1.3
+    steps["layer_zoomed"] = video_layer(emulator, out, "zoom-pinched")
+    crop, before_crop = steps["layer_zoomed"].get("crop"), steps["layer_before"].get("crop")
+    # The layer shows a smaller part of the stream, over the same window.
+    checks["surfaceflinger_shows_a_smaller_part_of_the_stream"] = bool(crop) and bool(before_crop) \
+        and (crop[2] - crop[0]) < (before_crop[2] - before_crop[0]) and (crop[3] - crop[1]) < (before_crop[3] - before_crop[1])
+    viewer_proof.screenshot(emulator, out / "zoom-pinched.png")
+    mark = logcat.mark()
+    emulator.shell("input swipe 1200 540 900 540 400")
+    time.sleep(2)
+    steps["panned"] = video_placed(logcat, mark)
+    checks["a_drag_moves_the_zoomed_picture"] = steps["panned"] is not None and steps["pinched"] is not None \
+        and steps["panned"]["rect"][0] < steps["pinched"]["rect"][0] and steps["panned"]["zoom"] == steps["pinched"]["zoom"]
+    viewer_proof.screenshot(emulator, out / "zoom-panned.png")
+    steps["sender_packets_while_zooming"] = [p["kind"] for p in sender_packets(sender)[before_packets:]]
+    checks["the_sender_hears_nothing_of_the_gestures"] = not steps["sender_packets_while_zooming"]
+
+    checks["korrids_apply_turns_pan_and_zoom_off"] = toggle(False)
+    shown = toggles(proof_snapshot(emulator, logcat, launch))
+    checks["korrids_snapshot_shows_pan_and_zoom_off"] = shown.get(ZOOM, {}).get("value") is False
+    # The zoom stays; a tap at the window's middle reaches the picture's point under it. This
+    # Sunshine takes no touch, so the tap is Artemis's absolute mouse: x of width (one less).
+    before = len(sender_packets(sender))
+    emulator.shell("input tap 1200 540")
+    time.sleep(3)
+    moves = [p for p in sender_packets(sender)[before:] if p["kind"] == "absolute mouse move"]
+    steps["tap_moves"] = [p["fields"] for p in moves][:4]
+    placed = (steps["panned"] or steps["pinched"] or {}).get("rect")
+    if moves and placed:
+        fields = moves[0]["fields"]
+        got = (int(fields["x"]) / (int(fields["width"]) + 1), int(fields["y"]) / (int(fields["height"]) + 1))
+        want = ((1200 - placed[0]) / (placed[2] - placed[0]), (540 - placed[1]) / (placed[3] - placed[1]))
+        steps["tap_in_picture"] = {"got": got, "want": want}
+        checks["a_tap_on_the_zoomed_picture_reaches_the_point_under_it"] = \
+            abs(got[0] - want[0]) < 0.01 and abs(got[1] - want[1]) < 0.01 and abs(want[0] - 0.5) > 0.05
+    else:
+        checks["a_tap_on_the_zoomed_picture_reaches_the_point_under_it"] = False
+
+    # `applyMouseMode`: "Always exit zoom mode if mouse mode has changed".
+    toggle(True)
+    mouse = listed.get(MOUSE, {}).get("id")
+    if mouse:
+        steps["apply_mouse_1"] = proof_apply(emulator, logcat, launch, mouse, "choice 1")
+        shown = toggles(proof_snapshot(emulator, logcat, launch))
+        checks["a_new_mouse_mode_turns_pan_and_zoom_off"] = steps["apply_mouse_1"] == "ok" \
+            and shown.get(ZOOM, {}).get("value") is False and shown.get(MOUSE, {}).get("value") == "1"
+        steps["apply_mouse_0"] = proof_apply(emulator, logcat, launch, mouse, "choice 0")
+    return steps, checks
+
+
 def tesseract(png: Path, read: int = 0) -> list[dict]:
     """The words that tesseract reads in one image, with their boxes; `read` tells reads apart."""
     done = subprocess.run(["tesseract", str(png), "stdout", "tsv"], capture_output=True, text=True, timeout=120)
@@ -1183,12 +1358,12 @@ def overlay(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.
         found = words(out / "overlay-controls.png")
         steps["overlay_controls_lines"] = lines(found)
         crop = phrase(found, "Crop to fill")
-    # On a touch screen Toggle keyboard is the first stream control, above Crop to fill, and Mouse mode
-    # follows it, which takes Flip A/B and X/Y below the overlay's last row.
+    # On a touch screen Toggle keyboard is the first stream control, above Crop to fill, and Pan & zoom
+    # follows it, which takes Mouse mode and Flip A/B and X/Y below the overlay's last row.
     touch = touchscreen(emulator)
     steps["toggle_keyboard_row"] = phrase(found, "Toggle keyboard")
     checks["the_overlay_shows_the_streams_controls"] = crop is not None and (
-        steps["toggle_keyboard_row"] is not None and phrase(found, "Mouse mode") is not None if touch
+        steps["toggle_keyboard_row"] is not None and phrase(found, "Pan") is not None if touch
         else phrase(found, "Flip") is not None)
     steps["crop_to_fill_row"] = crop
     steps["chosen_by"] = "touch" if crop is not None else "keys"
@@ -1516,6 +1691,11 @@ def main() -> int:
         steps["mouse_mode"], mouse_checks = mouse_mode(
             emulator, logcat, sender, out, launch, steps["controls"].get("snapshot"))
         checks.update(mouse_checks)
+
+        log("Pan & zoom: a pinch and a drag move the picture; a tap reaches the point under it")
+        steps["pan_zoom"], zoom_checks = pan_zoom(
+            emulator, logcat, sender, out, launch, steps["controls"].get("listed") or {})
+        checks.update(zoom_checks)
 
         log("Home: leaving the app ends the stream")
         home_mark = logcat.mark()
