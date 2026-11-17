@@ -36,6 +36,17 @@ nix run .#viewer-android-recovery-proof -- --build-store auto --stream-host AKA_
   application selection, launch/resume, PIN pairing for the private fixture,
   connection start, termination and stop. SIGINT, SIGTERM, SIGHUP and SIGQUIT
   disconnect. Disconnect does not cancel the remote application.
+- `src/network_core.rs` is the seam to the network core (#391 step E): the
+  trait `NetworkCore` holds the connection's start, interrupt and stop, the
+  input packets, the core's clock, its round trip and its pending sound.
+  The platform's video, audio and listener callback tables go to the core
+  at the start, as `LiStartConnection` takes them. `stream.rs` selects the
+  core (`-networkcore`, `c` by default) before it starts, and the input and
+  readings of Android's Rust code and of Linux's carried C code reach that
+  core (`network_core::active`). The carried C code keeps Moonlight's
+  `LiSend*` names: `build.rs` force-includes `src/network_core/c_calls.h`,
+  which renames them to `src/network_core/c_calls.rs`. The C core
+  (`src/network_core/moonlight_common_c.rs`) makes the same calls as before.
 - `src/network.rs` is private. `build.rs` generates the small FFI from the
   pinned core's own `Limelight.h`, through bindgen. No `moonlight-common-sys`.
   Nix builds the unmodified core and its pinned ENet once, with CMake;

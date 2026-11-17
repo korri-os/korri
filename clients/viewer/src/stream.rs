@@ -3,6 +3,7 @@
 use crate::frame_times::FrameTimes;
 use crate::{
     network as ffi,
+    network_core::{self, Connection, NetworkCore},
     options::Options,
     pair::hex,
     player_io::{Platform, PlayerIo},
@@ -10,7 +11,7 @@ use crate::{
 };
 use anyhow::{Result, ensure};
 use std::{
-    ffi::{CStr, CString},
+    ffi::CString,
     sync::{
         Mutex,
         atomic::{AtomicBool, AtomicI32, Ordering},
@@ -63,15 +64,19 @@ unsafe extern "C" fn stage_failed(stage: i32, error: i32) {
         eprintln!("connection stage {stage} failed: {error}");
     });
 }
-/// LiStartConnection blocks for its whole handshake. Interrupted, the core
+/// A core's start blocks for its whole handshake. Interrupted, the C core
 /// ends it at its own points: before each RTSP exchange, between RTSP connect
 /// retries, and in its ENet waits. One TCP connect or RTSP exchange can still
 /// take its full timeout.
-fn interrupt_start_on_stop(lifecycle: &crate::lifecycle::Lifecycle, returned: &AtomicBool) {
+fn interrupt_start_on_stop(
+    core: &dyn NetworkCore,
+    lifecycle: &crate::lifecycle::Lifecycle,
+    returned: &AtomicBool,
+) {
     while !returned.load(Ordering::Relaxed) {
         if lifecycle.stop_requested() {
-            // LiStartConnection clears the flag as it begins: repeat it.
-            unsafe { ffi::LiInterruptConnection() };
+            // The C core clears the flag as its start begins: repeat it.
+            core.interrupt();
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -97,6 +102,8 @@ pub(crate) fn run_with_lifecycle(
         .map_err(|_| anyhow::anyhow!("a stream connection is already active"))?;
     STOP.store(false, Ordering::Relaxed);
     TERMINATED.store(0, Ordering::Relaxed);
+    // From here every input packet and reading goes to this stream's core.
+    let core = network_core::select(o.network_core);
     // Between the connection steps: a stop since Start ends the launch here.
     let running = || lifecycle.map_or(Ok(()), crate::lifecycle::Lifecycle::ensure_running);
     running()?;
@@ -204,8 +211,7 @@ pub(crate) fn run_with_lifecycle(
         .parse()?;
     let busy = required(&info, "state")?.contains("_SERVER_BUSY") && current != 0;
     let endpoint = if busy { "resume" } else { "launch" };
-    // SAFETY: this returns a process-lifetime immutable string, owned by C.
-    let extra = unsafe { CStr::from_ptr(ffi::LiGetLaunchUrlQueryParameters()) }.to_str()?;
+    let extra = core.launch_parameters()?;
     let mut params = vec![
         ("appid", app.to_string()),
         ("mode", format!("{}x{}x{}", o.width, o.height, o.fps)),
@@ -250,7 +256,7 @@ pub(crate) fn run_with_lifecycle(
     let rtsp = CString::new(required(&launched, "sessionUrl0")?)?;
     let mut server = ffi::SERVER_INFORMATION::default();
     // SAFETY: every CString and callback/configuration object below remains
-    // live until LiStopConnection joins all the core's threads.
+    // live until the core's stop joins all its threads.
     unsafe {
         ffi::LiInitializeServerInformation(&mut server);
     }
@@ -289,27 +295,23 @@ pub(crate) fn run_with_lifecycle(
     let returned = AtomicBool::new(false);
     let result = std::thread::scope(|scope| {
         if let Some(lifecycle) = lifecycle {
-            scope.spawn(|| interrupt_start_on_stop(lifecycle, &returned));
+            scope.spawn(|| interrupt_start_on_stop(core, lifecycle, &returned));
         }
-        let result = unsafe {
-            ffi::LiStartConnection(
-                &mut server,
-                &mut config,
-                &mut callbacks,
-                io.decoder_callbacks(),
-                io.audio_callbacks(),
-                std::ptr::null_mut(),
-                i32::from(o.fullscreen)
-                    | match o.rotation {
-                        90 => 8,
-                        180 => 16,
-                        270 => 24,
-                        _ => 0,
-                    },
-                io.audio_context(),
-                0,
-            )
-        };
+        let result = core.start(Connection {
+            server: &mut server,
+            stream: &mut config,
+            listener: &mut callbacks,
+            video: io.decoder_callbacks(),
+            audio: io.audio_callbacks(),
+            video_flags: i32::from(o.fullscreen)
+                | match o.rotation {
+                    90 => 8,
+                    180 => 16,
+                    270 => 24,
+                    _ => 0,
+                },
+            audio_context: io.audio_context(),
+        });
         returned.store(true, Ordering::Relaxed);
         result
     });
@@ -324,40 +326,38 @@ pub(crate) fn run_with_lifecycle(
     crate::input::CORE_GATE.open();
     let mut poll_error = false;
     let mut shown = None;
-    unsafe {
-        io.start();
-        while !STOP.load(Ordering::Relaxed) && !lifecycle.is_some_and(|l| l.stop_requested()) {
-            let event = io.poll(100);
-            if event != 0 {
-                poll_error = event < 0;
-                break;
-            }
-            // The sender can change the stream's size in the middle of the
-            // stream (#476): the controller hears each new size shown.
-            if let Some(size) = io.shown_size().filter(|size| shown.as_ref() != Some(size)) {
-                crate::log::line(&format!(
-                    "picture: the picture shown is {}x{}",
-                    size.width, size.height
-                ));
-                if let Some(lifecycle) = lifecycle {
-                    lifecycle.resized(size.clone());
-                }
-                shown = Some(size);
-            }
+    io.start();
+    while !STOP.load(Ordering::Relaxed) && !lifecycle.is_some_and(|l| l.stop_requested()) {
+        let event = io.poll(100);
+        if event != 0 {
+            poll_error = event < 0;
+            break;
         }
-        io.stop();
-        // No send is inside the core when it stops, and none enters after:
-        // its stop destroys what a send uses. Then the controllers'
-        // vibration and lights stop, before the stream ends, as Artemis
-        // stops its controller handler before the connection.
-        #[cfg(target_os = "android")]
-        {
-            crate::input::CORE_GATE.close();
-            crate::log::line("input: the core takes no more input");
-            io.stop_feedback();
+        // The sender can change the stream's size in the middle of the
+        // stream (#476): the controller hears each new size shown.
+        if let Some(size) = io.shown_size().filter(|size| shown.as_ref() != Some(size)) {
+            crate::log::line(&format!(
+                "picture: the picture shown is {}x{}",
+                size.width, size.height
+            ));
+            if let Some(lifecycle) = lifecycle {
+                lifecycle.resized(size.clone());
+            }
+            shown = Some(size);
         }
-        ffi::LiStopConnection();
     }
+    io.stop();
+    // No send is inside the core when it stops, and none enters after:
+    // its stop destroys what a send uses. Then the controllers'
+    // vibration and lights stop, before the stream ends, as Artemis
+    // stops its controller handler before the connection.
+    #[cfg(target_os = "android")]
+    {
+        crate::input::CORE_GATE.close();
+        crate::log::line("input: the core takes no more input");
+        io.stop_feedback();
+    }
+    core.stop();
     #[cfg(not(target_os = "android"))]
     let recorded = frame_times.close();
     #[cfg(target_os = "android")]

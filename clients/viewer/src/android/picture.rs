@@ -194,11 +194,7 @@ pub(crate) fn health() -> Option<(crate::video_stats::Sample, Option<u32>)> {
     let stream = stream();
     let decoder = stream.as_ref()?.decoder.as_ref()?;
     let sample = decoder.sample(decoder::monotonic_ns() / 1_000_000)?;
-    let mut rtt = 0;
-    // SAFETY: the core reads its peer under its own lock and writes only
-    // the one estimate asked for.
-    let known = unsafe { ffi::LiGetEstimatedRttInfo(&mut rtt, null_mut()) };
-    Some((sample, known.then_some(rtt)))
+    Some((sample, crate::network_core::active().rtt_ms()))
 }
 
 /// The core's decoder callbacks for this picture.
@@ -401,8 +397,7 @@ fn current() -> Option<Arc<Decoder<NdkCodec>>> {
 /// time is later than the core's clock.
 fn enqueue_ns(enqueue_us: u64) -> (u64, bool) {
     let before = decoder::monotonic_ns();
-    // SAFETY: no preconditions.
-    let native_us = unsafe { ffi::LiGetMicroseconds() };
+    let native_us = crate::network_core::active().now_us();
     let after = decoder::monotonic_ns();
     let ns =
         (before + (after - before) / 2).saturating_sub(native_us.saturating_sub(enqueue_us) * 1000);

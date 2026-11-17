@@ -9,6 +9,7 @@ mod frame_times;
 pub mod launch;
 mod log;
 mod network;
+pub mod network_core;
 pub mod options;
 pub mod pair;
 #[cfg(not(target_os = "android"))]

@@ -124,8 +124,7 @@ unsafe extern "C" fn decode_and_play(data: *mut c_char, length: c_int) {
             // SAFETY: the core's packet of `length` bytes, live for this call.
             unsafe { std::slice::from_raw_parts(data.cast::<u8>(), length as usize) }
         });
-        // SAFETY: no preconditions.
-        let pending = unsafe { ffi::LiGetPendingAudioDuration() };
+        let pending = crate::network_core::active().pending_audio_ms();
         if let Some(player) = player().as_mut() {
             player.play(packet, pending, Instant::now());
         }

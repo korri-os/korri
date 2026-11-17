@@ -32,6 +32,8 @@ pub struct Options {
     pub auto_window_resize: bool,
     /// Explicit evdev nodes, only with `-platform v4l2request`.
     pub inputs: Vec<String>,
+    /// The network core that streams (`-networkcore`, #391 step E).
+    pub network_core: crate::network_core::Kind,
 }
 
 /// Moonlight's `MAX_INPUTS` (config.h).
@@ -108,6 +110,7 @@ impl Options {
             verbose: false,
             auto_window_resize: false,
             inputs: Vec::new(),
+            network_core: Default::default(),
         };
         while let Some(arg) = args.next() {
             if !arg.starts_with('-') {
@@ -141,7 +144,7 @@ impl Options {
                 }
                 "keydir" | "app" | "platform" | "width" | "height" | "fps" | "bitrate"
                 | "packetsize" | "codec" | "port" | "mapping" | "audio" | "remote" | "surround"
-                | "rotate" => {
+                | "rotate" | "networkcore" => {
                     let value = args
                         .next()
                         .ok_or_else(|| anyhow::anyhow!("missing value for {arg}"))?;
@@ -177,6 +180,7 @@ impl Options {
                             }
                         }
                         "mapping" => o.mapping = Some(value),
+                        "networkcore" => o.network_core = crate::network_core::Kind::parse(&value)?,
                         "audio" => o.audio_device = Some(value),
                         _ => unreachable!(),
                     }
@@ -297,6 +301,31 @@ mod tests {
             assert!(Options::for_lifecycle(keys.clone(), Some(refused)).is_err());
         }
         assert!(Options::for_lifecycle(PathBuf::new(), None).is_err());
+    }
+
+    // #391 step E: the C core streams unless -networkcore names another,
+    // anywhere among the arguments, as a wrapper may append it.
+    #[test]
+    fn the_network_core_is_c_unless_named() {
+        use crate::network_core::Kind;
+        let parse = |extra: &[&str]| {
+            let mut args = vec!["stream", "-keydir", "/k", "host"];
+            args.extend_from_slice(extra);
+            Options::parse(args.into_iter().map(str::to_owned))
+        };
+        assert_eq!(parse(&[]).unwrap().network_core, Kind::MoonlightCommonC);
+        assert_eq!(
+            parse(&["-networkcore", "c"]).unwrap().network_core,
+            Kind::MoonlightCommonC
+        );
+        assert!(parse(&["-networkcore", "rust"]).is_err());
+        assert!(parse(&["-networkcore"]).is_err());
+        assert!(
+            Options::parse(
+                ["pair", "-keydir", "/k", "host", "-networkcore", "c"].map(str::to_owned)
+            )
+            .is_ok()
+        );
     }
 
     #[test]

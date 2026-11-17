@@ -28,6 +28,7 @@ changes these three audio backends.
 | `input/{udev.c,udev.h}` | `udev_init` returns -1 instead of calling `exit()` when `udev_new` fails, and -1 when `evdev_create` fails during discovery. `udev_handle` returns -1 when `evdev_create` fails for a new device. |
 | `input/{evdev.h,sdl.h}` | Declare those teardown functions and the `int` result of `evdev_create`. |
 | `bridge.{c,h}` | New narrow C boundary. Extract the PC branches of `main.c` input setup, controller count and rumble callbacks, and `platform.c` audio selection. Keep all session/launch/stop decisions in Rust. |
+| All `.c` files, with `picture/frame_times.c` (2026-11-16, #391 step E) | No source change. `build.rs` compiles them with `-include src/network_core/c_calls.h`, which renames each `LiSend*` call and `LiGetMicroseconds` to Korri's network core seam (`src/network_core/c_calls.rs`). The seam gives each call to the core that streams; with the C core, the same `LiSend*` call of the C core follows. The `korri-viewer-io` and `korri-viewer-picture` checks compile the files without it, against the C core's functions. |
 | `bridge.{c,h}` (aarch64) | `viewer_input_init_evdev` is `main.c`'s embedded branch for `-platform v4l2request`: `evdev_create` for each `-input` node, then `udev_init` without autoload when a node was given. It shares the PC evdev setup, so a failure of either returns -1 after it closes the opened devices. Compiled only with `HAVE_V4L2M2M`. |
 
 The boundary checks `viewonly` before either input initializer, where

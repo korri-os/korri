@@ -252,74 +252,9 @@ impl MotionEvent {
     }
 }
 
-/// The state of one controller as the stream carries it.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ControllerState {
-    pub number: u16,
-    pub active_mask: u16,
-    pub buttons: u32,
-    pub left_trigger: u8,
-    pub right_trigger: u8,
-    pub left_stick_x: i16,
-    pub left_stick_y: i16,
-    pub right_stick_x: i16,
-    pub right_stick_y: i16,
-}
-
-/// One input packet: one `LiSend*` call of the core.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Packet {
-    /// `LiSendKeyboardEvent2`.
-    Keyboard {
-        code: i16,
-        down: bool,
-        modifiers: u8,
-        flags: u8,
-    },
-    /// `LiSendMultiControllerEvent`.
-    Controller(ControllerState),
-    /// `LiSendControllerArrivalEvent`.
-    Arrival {
-        number: u8,
-        active_mask: u16,
-        kind: u8,
-        buttons: u32,
-        capabilities: u16,
-    },
-    /// `LiSendMouseMoveEvent`.
-    MouseMove { dx: i16, dy: i16 },
-    /// `LiSendMousePositionEvent`.
-    MousePosition {
-        x: i16,
-        y: i16,
-        width: i16,
-        height: i16,
-    },
-    /// `LiSendMouseButtonEvent`.
-    MouseButton { pressed: bool, button: u8 },
-    /// `LiSendHighResScrollEvent`.
-    Scroll { amount: i16 },
-    /// `LiSendHighResHScrollEvent`.
-    HScroll { amount: i16 },
-    /// `LiSendTouchEvent`.
-    Touch {
-        kind: u8,
-        pointer: u32,
-        x: f32,
-        y: f32,
-        pressure: f32,
-        contact_major: f32,
-        contact_minor: f32,
-        rotation: u16,
-    },
-    /// `LiSendControllerBatteryEvent`, from the feedback thread
-    /// (`feedback.rs`).
-    Battery {
-        number: u8,
-        state: u8,
-        percentage: u8,
-    },
-}
+// One input packet and a controller's state: the network core seam's
+// (`network_core.rs`), which every core takes.
+pub use crate::network_core::{ControllerState, Packet};
 
 /// Where packets go. The result is the core's: 0 when sent,
 /// `LI_ERR_UNSUPPORTED` (-5501) when the host does not take that kind.
@@ -858,100 +793,16 @@ pub fn core_sink() -> CoreSink {
     })
 }
 
-/// The core itself: each packet is one `LiSend*` call, which queues it for
-/// the core's input thread. Only through the gate.
+/// The core itself: each packet goes to the stream's network core
+/// (`network_core::active`), which queues it for its input thread. Only
+/// through the gate.
 #[cfg(target_os = "android")]
 pub(crate) struct Core;
 
 #[cfg(target_os = "android")]
 impl Sink for Core {
     fn send(&mut self, packet: Packet) -> i32 {
-        use crate::network as ffi;
-        // SAFETY: each call copies its arguments into the core's queue.
-        unsafe {
-            match packet {
-                Packet::Keyboard {
-                    code,
-                    down,
-                    modifiers,
-                    flags,
-                } => ffi::LiSendKeyboardEvent2(
-                    code,
-                    if down {
-                        ffi::KEY_ACTION_DOWN
-                    } else {
-                        ffi::KEY_ACTION_UP
-                    } as _,
-                    modifiers as _,
-                    flags as _,
-                ),
-                Packet::Controller(state) => ffi::LiSendMultiControllerEvent(
-                    state.number as i16,
-                    state.active_mask as i16,
-                    state.buttons as i32,
-                    state.left_trigger,
-                    state.right_trigger,
-                    state.left_stick_x,
-                    state.left_stick_y,
-                    state.right_stick_x,
-                    state.right_stick_y,
-                ),
-                Packet::Arrival {
-                    number,
-                    active_mask,
-                    kind,
-                    buttons,
-                    capabilities,
-                } => ffi::LiSendControllerArrivalEvent(
-                    number,
-                    active_mask,
-                    kind,
-                    buttons,
-                    capabilities,
-                ),
-                Packet::MouseMove { dx, dy } => ffi::LiSendMouseMoveEvent(dx, dy),
-                Packet::MousePosition {
-                    x,
-                    y,
-                    width,
-                    height,
-                } => ffi::LiSendMousePositionEvent(x, y, width, height),
-                Packet::MouseButton { pressed, button } => ffi::LiSendMouseButtonEvent(
-                    if pressed {
-                        ffi::BUTTON_ACTION_PRESS
-                    } else {
-                        ffi::BUTTON_ACTION_RELEASE
-                    } as _,
-                    i32::from(button),
-                ),
-                Packet::Scroll { amount } => ffi::LiSendHighResScrollEvent(amount),
-                Packet::HScroll { amount } => ffi::LiSendHighResHScrollEvent(amount),
-                Packet::Touch {
-                    kind,
-                    pointer,
-                    x,
-                    y,
-                    pressure,
-                    contact_major,
-                    contact_minor,
-                    rotation,
-                } => ffi::LiSendTouchEvent(
-                    kind,
-                    pointer,
-                    x,
-                    y,
-                    pressure,
-                    contact_major,
-                    contact_minor,
-                    rotation,
-                ),
-                Packet::Battery {
-                    number,
-                    state,
-                    percentage,
-                } => ffi::LiSendControllerBatteryEvent(number, state, percentage),
-            }
-        }
+        crate::network_core::active().send(packet)
     }
 }
 

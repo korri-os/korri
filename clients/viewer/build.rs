@@ -31,9 +31,10 @@ fn main() {
         .clang_arg(format!("-I{include}"))
         // GetEstimatedRttInfo: Android's stream health (src/android/status.rs).
         .allowlist_function("Li(Initialize(ServerInformation|StreamConfiguration|ConnectionCallbacks)|StartConnection|StopConnection|InterruptConnection|GetLaunchUrlQueryParameters|GetMicroseconds|GetPendingAudioDuration|GetEstimatedRttInfo)")
-        // Android's input (src/android/input.rs) sends with the core's own
-        // calls.
-        .allowlist_function("LiSend(KeyboardEvent2|MultiControllerEvent|ControllerArrivalEvent|MouseMoveEvent|MousePositionEvent|MouseButtonEvent|HighResScrollEvent|HighResHScrollEvent|TouchEvent)")
+        // The C core's input calls (src/network_core/moonlight_common_c.rs):
+        // Android's input and Linux's carried C input reach them through
+        // the network core seam.
+        .allowlist_function("LiSend(KeyboardEvent2|MultiControllerEvent|ControllerArrivalEvent|MouseMoveEvent|MousePositionEvent|MouseButtonEvent|HighResScrollEvent|HighResHScrollEvent|TouchEvent|ControllerTouchEvent|ControllerMotionEvent)")
         // Its feedback (src/android/feedback.rs) reports each controller's
         // battery.
         .allowlist_function("LiSendControllerBatteryEvent")
@@ -67,6 +68,13 @@ fn main() {
         return;
     }
     let mut c = cc::Build::new();
+    // The carried code's calls into the network core go through the seam
+    // (src/network_core/c_calls.rs): this header renames them.
+    let seam =
+        PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("src/network_core/c_calls.h");
+    println!("cargo:rerun-if-changed={}", seam.display());
+    c.flag("-include")
+        .flag(seam.to_str().expect("a UTF-8 source path"));
     c.include("picture")
         .include(include)
         .define("HAVE_X11", None)
