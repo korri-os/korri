@@ -1,12 +1,19 @@
 # Korri viewer — stage 1
 
-A Linux process owned by Korri, under GPL-3.0-or-later (ADR 0059).
+A Linux process owned by Korri. Its code is under GPL-3.0-or-later (ADR
+0059). The x86_64 package links nightjar-core, which is GPL-3.0-only
+(`vendor/README.md`), so that binary is GPL-3.0-only; the aarch64 package
+does not, and its binary stays GPL-3.0-or-later. `--help` names the
+binary's licence.
 The code belongs in Korri, not the plugin repository (ADR 0061). It is in
 `clients/viewer` because the viewer belongs to a device's client part
 (`CONTEXT.md`). It is not in korrid or the shell (ADR 0060).
 
 ```sh
 nix build .#korri-viewer
+# The viewer with no Rust part, all C: the baseline for one part's turns
+# (#391 steps E and F, below).
+nix build .#korri-viewer-c
 nix develop .#viewer --command xvfb-run -a env SDL_RENDER_DRIVER=software cargo test --manifest-path clients/viewer/Cargo.toml
 nix develop .#viewer --command cargo clippy --manifest-path clients/viewer/Cargo.toml --all-targets -- -D warnings
 nix build .#checks.x86_64-linux.korri-viewer-picture
@@ -511,12 +518,15 @@ and `-audiooutput rust` chooses it (`-audiooutput c`, the default, keeps
 the C). Without the feature, `-audiooutput rust` fails with the feature's
 name. `korri-viewer-rust-audio-output` is the viewer with the feature; its
 `bin/moonlight` appends `-audiooutput rust`, so that the stage-0 tool runs
-it as the candidate beside `korri-viewer`, as `korri-viewer-nightjar` does.
+it as the candidate beside `korri-viewer-c`, the viewer with no Rust part.
+`korri-viewer` is no baseline for it since ADR 0062's switch: it carries
+nightjar-core and the Rust presenter and window, which the candidate does
+not.
 Its turns need sound: `view --tone 1000` (`nix/stream-cadence/README.md`,
 "The stream's sound"). Its four sets on aka (`proof/rust-audio-output/`)
 were equal on every number in three and one frame later at startup in one,
 all with other work running, so the carried C stays the default until a
-set on a quiet aka is equal (ADR 0062).
+set on a quiet aka, against `korri-viewer-c`, is equal (ADR 0062).
 
 Only the language changes, so that the measure judges one cause:
 
@@ -2002,8 +2012,9 @@ Linux it is the default core where the build has it (ADR 0062), and
   instructions (cpufeatures reads Android's `getauxval`). nightjar-core
   refuses an aarch64 build without them (`crypto.rs:10`), so that no phone
   decrypts video in software by mistake. The check proves both modules are
-  in the arm64 library. On Android the C core stays the default until the
-  emulator proof with nightjar-core passes. The Korri app
+  in the arm64 library. On Android the C core stays the default for now;
+  the app's emulator proof with nightjar-core is `proof/android-nightjar/`.
+  The Korri app
   (`clients/android-app`) keeps the C core only.
 
 `src/network_core/nightjar.rs` puts nightjar-core's `Session` behind

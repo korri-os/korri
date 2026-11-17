@@ -312,6 +312,21 @@ let
           xvfb-run -a -s '-screen 0 640x480x24 -nolisten tcp' ./check-sdl frames.h264 portrait.h264
         touch "$out"
       '';
+  # The viewer with none of the Rust parts: the C network core, presenter,
+  # window and sound, as `package` was before ADR 0062's switch (#391). A
+  # one-part candidate below measures against it, since `package` now
+  # carries three Rust parts. The same source as `package`; only the
+  # features differ.
+  cPackage = package.overrideAttrs (old: {
+    pname = "korri-viewer-c";
+    cargoBuildFeatures = [ ];
+    cargoCheckFeatures = [ ];
+    meta = old.meta // {
+      license = pkgs.lib.licenses.gpl3Plus;
+      # The aarch64 `package` builds no Rust part already.
+      platforms = [ "x86_64-linux" ];
+    };
+  });
   # The viewer with nightjar-core (#391 step E, `vendor/README.md`) and no
   # other Rust part: the turns' candidate against the C core. With the
   # feature, nightjar-core is the default core, as in `package`;
@@ -497,6 +512,7 @@ in
     assert package.cargoCheckFeatures == defaultFeatures;
     package;
   inherit
+    cPackage
     nightjarPackage
     rustAudioOutputPackage
     rustEglPresenterPackage

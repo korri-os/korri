@@ -196,6 +196,8 @@
             rpminiv2-inputplumber-data = rpminiv2.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             h700-inputplumber-data = h700.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             korri-viewer = viewer.package;
+            # The viewer with no Rust part, the baseline for one part's turns (#391).
+            korri-viewer-c = viewer.cPackage;
             # The viewer with nightjar-core as its network core (#391 step E).
             korri-viewer-nightjar = viewer.nightjarPackage;
             # The viewer with the Rust port of its C audio output (#391 step F).

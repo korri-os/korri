@@ -99,3 +99,26 @@ fn accepts_rendered_pc_settings_without_connecting_without_a_pin() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+// The binary's licence, as --help names it (ADR 0059). With nightjar-core,
+// which is GPL-3.0-only (vendor/README.md), the binary is GPL-3.0-only: the
+// PC package builds it (#391). Without it the first line stays
+// "korri-viewer 0.1.0 (GPL-3.0-or-later)", which the aarch64 check reads.
+#[test]
+fn help_names_the_binarys_licence() {
+    let output = Command::new(env!("CARGO_BIN_EXE_korri-viewer"))
+        .arg("--help")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let help = String::from_utf8(output.stdout).unwrap();
+    let first = help.lines().next().unwrap();
+    if cfg!(feature = "nightjar") {
+        assert_eq!(
+            first,
+            "korri-viewer 0.1.0 (GPL-3.0-only: GPL-3.0-or-later code with nightjar-core, which is GPL-3.0-only)"
+        );
+    } else {
+        assert_eq!(first, "korri-viewer 0.1.0 (GPL-3.0-or-later)");
+    }
+}

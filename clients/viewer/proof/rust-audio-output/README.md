@@ -86,4 +86,7 @@ run at 128 ms and five at 144 ms, and B two at 128, three at 144 and one at
 those quiet runs both used 0.014 CPU seconds per second.
 
 The Rust audio output stays an option, not the default, until a set on a
-quiet aka is equal.
+quiet aka is equal. These sets' A was all C, as `korri-viewer` was then.
+Since ADR 0062's switch `korri-viewer` carries nightjar-core and the Rust
+EGL presenter and X11 window, so the next set's A is `korri-viewer-c`, the
+viewer with no Rust part.
