@@ -582,6 +582,8 @@ impl Context for Finger {
             button(sink, false, self.secondary());
         } else if self.tap {
             button(sink, false, self.primary());
+            // The tap's own release went with it.
+            self.left_up_ms = None;
         }
     }
 

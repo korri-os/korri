@@ -2285,6 +2285,37 @@ pub(crate) mod tests {
         assert_eq!(sink.take(), [clicked(false, MOUSE_RIGHT)]);
     }
 
+    // Review P2: a tap's button goes up 100 ms (relative mouse) or 230 ms
+    // (touch pad) after it went down, by a timer of its context. A new mouse
+    // mode inside that time replaced the context and its timer, and the
+    // button stayed down on the host. Each context's cancel now lets it go.
+    #[test]
+    fn a_new_mouse_mode_lets_go_of_a_pending_tap_click() {
+        for (mode, release_ms) in [
+            (MouseMode::TrackpadGaming, 100),
+            (MouseMode::TrackpadNatural, 230),
+        ] {
+            let (mut input, mut sink) = (input(), Recorded::default());
+            input.set_mouse_mode(mode, &mut sink);
+            gesture(
+                &mut input,
+                &mut sink,
+                &[
+                    (action::DOWN, 0, &[(100.0, 300.0)], 1000),
+                    (action::UP, 0, &[(100.0, 300.0)], 1050),
+                ],
+            );
+            assert_eq!(sink.take(), [clicked(true, MOUSE_LEFT)], "{mode:?}");
+            assert_eq!(input.next_deadline(), Some(1050 + release_ms), "{mode:?}");
+            input.set_mouse_mode(MouseMode::MultiTouch, &mut sink);
+            assert_eq!(sink.take(), [clicked(false, MOUSE_LEFT)], "{mode:?}");
+            // Once: nothing is left to let go later.
+            assert_eq!(input.next_deadline(), None, "{mode:?}");
+            input.tick(1050 + release_ms, &mut sink);
+            assert!(sink.take().is_empty(), "{mode:?}");
+        }
+    }
+
     // `applyMouseMode` cancels each context first: a drag lets go, and the
     // new mode's touches follow.
     #[test]

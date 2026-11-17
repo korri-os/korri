@@ -226,6 +226,13 @@ impl Context for Relative {
         if self.confirmed_drag {
             button(sink, false, self.button());
         }
+        // A tap's button that waits for its release lets go now: a new mouse
+        // mode drops this context and its timers (review P2).
+        for (slot, due) in self.button_up_at.iter_mut().enumerate() {
+            if due.take().is_some() {
+                button(sink, false, slot as u8 + 1);
+            }
+        }
     }
 
     fn cancelled(&self) -> bool {

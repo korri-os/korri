@@ -400,6 +400,16 @@ impl Context for Trackpad {
 
     fn cancel(&mut self, sink: &mut dyn Sink) {
         self.cancelled = true;
+        // A tap's button that waits for its release lets go now, as the
+        // release would: a new mouse mode drops this context and its timers
+        // (review P2).
+        if let Some((_, pressed)) = self.click_release.take() {
+            if self.click_pending {
+                button(sink, false, pressed);
+                self.click_pending = false;
+            }
+            self.double_click_pending = false;
+        }
         if self.flicking {
             self.flicking = false;
             self.clear_timers();
