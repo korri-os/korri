@@ -60,11 +60,11 @@ The steps:
    screenshot), and off again; a control of another runtime is refused.
    On a touch screen korrid's snapshot also lists Toggle keyboard, a
    command that closes the overlay.
-8. Toggle keyboard (#434, toward D7′), through the same trigger: korrid's
-   apply shows Android's soft keyboard over the stream, served to
-   NativeActivity's own view (`dumpsys input_method`); a tap on one of its
-   letters reaches the sender's Sunshine as a key; the second apply hides
-   it.
+8. Toggle keyboard (#434, toward D7′), through the same trigger: each of
+   korrid's applies turns Android's soft keyboard over, served to
+   NativeActivity's own view (`dumpsys input_method`); with it shown, a tap
+   on one of its letters reaches the sender's Sunshine as a key; the last
+   apply hides it.
 9. Home leaves the app: the runtime stops and korrid reads Stopped, and the
    keyboard's focus goes back. Starting the app again lets korrid's
    recovery start the stream again.
@@ -427,20 +427,22 @@ def input_method(emulator: "d8.Emulator", out: Path, name: str) -> dict:
     text = emulator.shell("dumpsys input_method", check=False).stdout
     (out / f"input-method-{name}.txt").write_text(text)
     shown = re.search(r"\bmInputShown=(true|false)", text)
-    served = re.search(r"\bmServedView=(\S+)", text)
+    # The client's own line; an input connection's dump nests another `mServedView=`.
+    served = re.search(r"^\s*mServedView=(\S+)", text, re.M)
     return {"shown": None if shown is None else shown.group(1) == "true",
             "served": None if served is None else served.group(1)}
 
 
-def keyboard_frame(emulator: "d8.Emulator", out: Path) -> "list[int] | None":
-    """The input method window's frame on the display (left, top, right, bottom), from the window manager."""
+def keyboard_keys(emulator: "d8.Emulator", out: Path) -> "list[int] | None":
+    """Where the input method's keyboard takes touches on the display (left, top, right, bottom): its window's
+    touchable region in the window manager. The window itself fills the display."""
     text = emulator.shell("dumpsys window windows", check=False).stdout
     (out / "window-keyboard.txt").write_text(text)
     for section in re.split(r"\n(?=\s*Window #)", text):
         first = section.strip().splitlines()[0] if section.strip() else ""
         if "InputMethod}" not in first:
             continue
-        found = re.search(r"\b(?:mFrame|frame)=\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]", section)
+        found = re.search(r"touchable region=SkRegion\(\((-?\d+),(-?\d+),(-?\d+),(-?\d+)\)", section)
         if found:
             return [int(v) for v in found.groups()]
     return None
@@ -875,9 +877,14 @@ def controls(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
 
 def keyboard(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.Remote", out: Path,
              launch: str, listed: dict) -> tuple[dict, dict]:
-    """Toggle keyboard (#434, toward D7′): korrid's apply shows Android's soft keyboard over the stream,
-    served to NativeActivity's own view; a tap on one of its letters reaches the sender as a key; the
-    second apply hides it."""
+    """Toggle keyboard (#434, toward D7′): each korrid apply toggles Android's soft keyboard, as
+    `toggleSoftInput` does, served to NativeActivity's own view; with it shown, a tap on one of its letters
+    reaches the sender as a key; the last apply hides it.
+
+    The emulator has a hardware keyboard, and Android's input method then draws no soft keyboard unless
+    `show_ime_with_hard_keyboard` is on: the step turns it on, and back to what it was. A letter key of
+    an earlier step can leave the input method shown for Slint's text view, so the step reads the state
+    before each toggle and checks that each toggle turns it over."""
     steps: dict = {}
     checks: dict = {}
     sender.request("clock")
@@ -886,42 +893,60 @@ def keyboard(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
         and control["kind"] == "command" and control["label"] == "Toggle keyboard"
     if control is None:
         return steps, checks
-    steps["before"] = input_method(emulator, out, "before")
-    mark = logcat.mark()
-    steps["apply_on"] = proof_apply(emulator, logcat, launch, control["id"], "none")
-    # A command's Apply carries no value.
-    request = logcat.wait_for(re.compile(
-        r'korri-app: viewer request \{"launchId":"' + launch + r'","command":\{"kind":"Apply","value":\{"control":"'
-        + re.escape(control["id"]) + r'"\}\}\}'), mark, 5)
-    checks["korrids_apply_runs_toggle_keyboard_through_the_treaty"] = \
-        steps["apply_on"] == "ok" and request is not None and logcat.wait_for(KEYBOARD_RAN, mark, 5) is not None
-    checks["the_streams_view_takes_the_focus_and_the_keyboard_toggles"] = \
-        logcat.wait_for(KEYBOARD_TOGGLED, mark, 5) is not None
-    time.sleep(2)
-    steps["shown"] = input_method(emulator, out, "shown")
-    checks["the_keyboard_shows_for_the_streams_view"] = \
-        steps["shown"]["shown"] is True and NATIVE_VIEW in (steps["shown"]["served"] or "")
-    viewer_proof.screenshot(emulator, out / "keyboard.png")
-    frame = keyboard_frame(emulator, out)
-    steps["keyboard_frame"] = frame
-    codes: list[int] = []
-    if frame is not None:
-        left, top, right, bottom = frame
-        before = len(sender_packets(sender))
-        # The middle of the keyboard's second row of letters.
-        x, y = (left + right) // 2, top + (bottom - top) * 2 // 5
-        steps["key_tap"] = [x, y]
-        emulator.shell(f"input tap {x} {y}")
-        time.sleep(3)
-        codes = [int(p["fields"].get("keyCode", "0"), 16) & 0xFF
-                 for p in sender_packets(sender)[before:] if p["kind"] == "keyboard"]
-    steps["typed_codes"] = codes
-    # Windows virtual keys of the letters, A to Z.
-    checks["a_letter_of_the_soft_keyboard_reaches_the_sender"] = any(0x41 <= code <= 0x5A for code in codes)
-    steps["apply_off"] = proof_apply(emulator, logcat, launch, control["id"], "none")
-    time.sleep(2)
-    steps["hidden"] = input_method(emulator, out, "hidden")
-    checks["toggled_again_the_keyboard_hides"] = steps["apply_off"] == "ok" and steps["hidden"]["shown"] is False
+    setting = "show_ime_with_hard_keyboard"
+    steps["setting_before"] = emulator.shell(f"settings get secure {setting}", check=False).stdout.strip()
+    emulator.shell(f"settings put secure {setting} 1", check=False)
+    try:
+        states = [input_method(emulator, out, "before")]
+        applies = []
+        mark = logcat.mark()
+
+        def toggle(name: str) -> None:
+            applies.append(proof_apply(emulator, logcat, launch, control["id"], "none"))
+            time.sleep(2)
+            states.append(input_method(emulator, out, name))
+
+        toggle("first")
+        # A command's Apply carries no value.
+        request = logcat.wait_for(re.compile(
+            r'korri-app: viewer request \{"launchId":"' + launch + r'","command":\{"kind":"Apply","value":\{"control":"'
+            + re.escape(control["id"]) + r'"\}\}\}'), mark, 5)
+        checks["korrids_apply_runs_toggle_keyboard_through_the_treaty"] = \
+            applies[0] == "ok" and request is not None and logcat.wait_for(KEYBOARD_RAN, mark, 5) is not None
+        checks["the_streams_view_takes_the_focus_and_the_keyboard_toggles"] = \
+            logcat.wait_for(KEYBOARD_TOGGLED, mark, 5) is not None
+        if states[-1]["shown"] is False:
+            toggle("second")
+        codes: list[int] = []
+        keys = None
+        if states[-1]["shown"] is True:
+            time.sleep(1)
+            viewer_proof.screenshot(emulator, out / "keyboard.png")
+            keys = keyboard_keys(emulator, out)
+        steps["keyboard_keys"] = keys
+        if keys is not None:
+            left, top, right, bottom = keys
+            before = len(sender_packets(sender))
+            # The middle of the keyboard's second row of letters.
+            x, y = (left + right) // 2, top + (bottom - top) * 2 // 5
+            steps["key_tap"] = [x, y]
+            emulator.shell(f"input tap {x} {y}")
+            time.sleep(3)
+            codes = [int(p["fields"].get("keyCode", "0"), 16) & 0xFF
+                     for p in sender_packets(sender)[before:] if p["kind"] == "keyboard"]
+        steps["typed_codes"] = codes
+        toggle("last")
+        steps["states"], steps["applies"] = states, applies
+        checks["each_toggle_turns_the_keyboard_over_for_the_streams_view"] = (
+            all(answer == "ok" for answer in applies)
+            and all(a["shown"] is not None and b["shown"] is (not a["shown"]) for a, b in zip(states, states[1:]))
+            and all(NATIVE_VIEW in (state["served"] or "") for state in states[1:]))
+        # Windows virtual keys of the letters, A to Z.
+        checks["a_letter_of_the_soft_keyboard_reaches_the_sender"] = any(0x41 <= code <= 0x5A for code in codes)
+        checks["toggled_again_the_keyboard_hides"] = states[-1]["shown"] is False
+    finally:
+        restored = steps["setting_before"] if steps["setting_before"] not in ("", "null") else "0"
+        emulator.shell(f"settings put secure {setting} {restored}", check=False)
     after = toggles(proof_snapshot(emulator, logcat, launch))
     steps["snapshot_after"] = after
     checks["toggle_keyboard_changes_no_value"] = after.get(KEYBOARD, {}).get("kind") == "command" \
@@ -980,14 +1005,15 @@ def lines(found: list[dict]) -> list[str]:
 
 def phrase(found: list[dict], text: str) -> "dict | None":
     """Where a phrase starts on a line of words, as its first word's box and centre."""
-    wanted = text.lower()
+    # Without spaces: tesseract can read "Crop to fill" as "Crop tofill".
+    wanted = text.lower().replace(" ", "")
     for at, word in enumerate(found):
         run: list[str] = []
         for following in found[at:]:
             if following["line"] != word["line"]:
                 break
             run.append(following["text"].lower().strip(".,:;|"))
-            joined = " ".join(run)
+            joined = "".join(run)
             if joined.startswith(wanted):
                 return {"x": word["left"] + word["width"] // 2, "y": word["top"] + word["height"] // 2,
                         "box": [word["left"], word["top"], word["left"] + word["width"],
@@ -1398,7 +1424,7 @@ def main() -> int:
         checks["the_runtime_ends_and_its_layers_go"] = logcat.wait_for(ENDED, home_mark, 30) is not None
         checks["korrids_status_reads_stopped"] = logcat.wait_for(
             re.compile(rf"korri-app: viewer status for korrid: {launch} Stopped"), home_mark, 20) is not None
-        if "apply_on" in steps["keyboard"]:
+        if steps["keyboard"].get("applies"):
             checks["the_streams_end_hides_the_keyboard_and_gives_the_focus_back"] = \
                 logcat.wait_for(KEYBOARD_GIVEN_BACK, home_mark, 30) is not None
         time.sleep(2)
