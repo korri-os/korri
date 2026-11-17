@@ -1869,6 +1869,10 @@ def main() -> int:
             "decode_unit_queue_overflows": sum("Video decode unit queue overflow" in l for l in app),
             "frames_the_network_dropped": sum(int(m.group(1)) for l in app if (m := re.search(r"Network dropped (\d+) frames", l))),
         }
+        # Not a check: input packets that a full queue dropped. Each core
+        # logs this line for each (#391 step E); a failed send in the input
+        # report without it failed for another reason.
+        result["input_queue_full_lines"] = sum("Input queue reached maximum size limit" in l for l in app)
 
         # The frame record, and the startup it shows: the system's START of
         # the activity to the first frame handed to the display.
