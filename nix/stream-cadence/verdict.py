@@ -203,10 +203,15 @@ def viewer_of(record: dict) -> dict:
     }
 
 
+# What `discovered.viewer_ran` says about one start of the viewer, not about
+# which viewer it was. A result from before `egl_gave_up` has none.
+RUN_FACTS = ("decode", "requested_platform", "egl_gave_up")
+
+
 def one_viewer(records: list[dict], name: str) -> dict:
     """The one viewer of a result; a result with more than one viewer is no result of a viewer."""
     found = {
-        json.dumps({key: value for key, value in viewer_of(record).items() if key not in ("decode", "requested_platform")}, sort_keys=True)
+        json.dumps({key: value for key, value in viewer_of(record).items() if key not in RUN_FACTS}, sort_keys=True)
         for record in records
     }
     if len(found) != 1:

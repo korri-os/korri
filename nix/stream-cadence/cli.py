@@ -48,7 +48,7 @@ from score import (
     score,
     stamps,
 )
-from viewer import FRAME_TIMES, RECORDING, decode_path
+from viewer import FRAME_TIMES, RECORDING, decode_path, egl_gave_up
 from sender import PROVENANCE, patch_stack, steady_refresh_mhz
 from verdict import (
     BASE,
@@ -650,6 +650,22 @@ def isolation_record(samples: list[dict]) -> dict:
             failed = True
         seen |= bool(row["pass"])
     return {"pass": seen and not failed, "samples": rows}
+
+
+def require_own_presenter(ran: dict) -> None:
+    """Refuse a run whose viewer's EGL presenter gave up (`viewer.egl_gave_up`).
+
+    vaPutSurface then showed the pictures that the presenter should have
+    shown, so the run measured another picture path than its viewer's own.
+    In turns this ends the batch at the first such run: every later run of
+    that viewer would measure the same.
+    """
+    if ran.get("egl_gave_up"):
+        raise Refusal(
+            "The viewer's EGL presenter gave up, and vaPutSurface showed the pictures that it should have shown ("
+            + ran["egl_gave_up"]
+            + "). The run did not measure the viewer's own picture path; read viewer.log."
+        )
 
 
 def pc_fixture_namespace(*, product: bool, fixture: bool, private_pair: bool, same_device: bool, platform: str) -> bool:
@@ -1915,6 +1931,9 @@ def view_case(
         facts["viewer_ran"]["decode"] = decode_path(
             finished["log"], facts["viewer_ran"]["requested_platform"], facts["viewer_ran"]["render_nodes"]
         )
+        # Whether the viewer's EGL presenter gave up in the measured start:
+        # its line, or None. Then vaPutSurface showed its pictures.
+        facts["viewer_ran"]["egl_gave_up"] = egl_gave_up(finished["log"])
         if private_x:
             facts["viewer_isolation"] = isolation_record(
                 [row for row in samples if row["device_ns"] >= started["start_ns"]]
@@ -1925,6 +1944,7 @@ def view_case(
             raise Refusal(
                 "The viewer's log does not show that hardware decode started. A software fallback is not the product's picture path; read viewer.log."
             )
+        require_own_presenter(facts["viewer_ran"])
         if args.sender_fixture and not (facts.get("encoder") and facts.get("capture_backend")):
             raise Refusal(
                 "The fixture Sunshine's log names no encoder or capture backend for this stream; a verdict could not tell its conditions."
@@ -2101,6 +2121,7 @@ def view_case(
                     ran = facts["viewer_ran"]
                     ran["render_nodes"] = viewer_render_nodes(samples)
                     ran["decode"] = decode_path(shown["viewer_log"], ran.get("requested_platform", ""), ran["render_nodes"])
+                    ran["egl_gave_up"] = egl_gave_up(shown["viewer_log"])
                 for name in ("viewer_log", "viewer_earlier_log", "capture_log", "fixture_log"):
                     (directory / name.replace("_", ".")).write_text(shown[name])
             except Exception:

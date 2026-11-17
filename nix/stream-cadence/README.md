@@ -1748,7 +1748,9 @@ presenter (`clients/viewer/README.md`, "EGL presenter in Rust"), so a
 measure of it on aka needs bars. A measure of slice F5, every picture
 through that presenter, needs no bars: its candidate is
 `korri-viewer-rust-egl-filled-picture` beside
-`korri-viewer-rust-egl-presenter`.
+`korri-viewer-rust-egl-presenter`. A run whose presenter gave up and
+left its pictures to `vaPutSurface` is refused ("An EGL presenter that gave
+up", below).
 
 ```sh
 nix run .#stream-cadence -- view --sender root@aka --sender-fixture \
@@ -2383,6 +2385,7 @@ acceptance runs also check product Xwayland clients and namespace leftovers.
 | `requested_platform` | korrid's request for a product viewer; `sdl` for the stand-in |
 | `decode` | `software`, `vaapi`, or `unknown`, from the measured start's log and render-node evidence |
 | `render_nodes` | The nodes held open during that start; OpenGL can open one even with software decode |
+| `egl_gave_up` | The viewer's own line when its EGL presenter gave up in that start (`EGL cannot present here (...)`), else `null`. Absent in a result from before the fact |
 
 `No VA display found` followed by `Using FFmpeg decoder: h264` proves the
 current software fallback. The ordinary codec name alone is ambiguous:
@@ -2399,6 +2402,20 @@ in decode within or between the two results. Even
 fixed, the next result can say `vaapi`; it will not compare silently with
 today's software baseline. The stand-in's SDL-on-Wayland path remains a
 different presentation path, even when both results decode in software.
+
+**An EGL presenter that gave up.** Korri's X11 VA-API viewer prints `EGL
+cannot present here (...)` once when its EGL presenter fails
+(`clients/viewer/picture/video/ffmpeg_vaapi.c`), and `vaPutSurface` then
+shows every picture of that start: those with bars (`--viewer-output`) and,
+with `-filledpicture egl` (#391 step F5), those that fill the window. The
+viewer streams on, so no number shows it. A run whose measured start has the
+line is refused, with the line, and in turns that ends the batch: every
+later run would measure `vaPutSurface` in place of the presenter under
+test. The line of #477, `vaPutSurface cannot present here`, is the other
+way round (EGL shows every picture, that viewer's own path) and is no
+refusal.
+`egl_gave_up` says how one start went, not which viewer ran, so `verdict`
+takes runs from before the fact and runs with it as one viewer.
 
 
 The [2026-11-12 PC acceptance](acceptance-pc-2026-11-12.md) records the short

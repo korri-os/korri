@@ -141,6 +141,21 @@ def decode_path(log: str, requested_platform: str, render_nodes: list[str] | Non
     return "software" if ordinary and software else "unknown"
 
 
+def egl_gave_up(log: str) -> str | None:
+    """The viewer's own line that its EGL presenter gave up, or None.
+
+    Korri's X11 VA-API viewer (`clients/viewer/picture/video/ffmpeg_vaapi.c`)
+    prints it once, when EGL fails to show a picture. From then on
+    `vaPutSurface` shows every picture of that session: those with bars
+    (#476), and with `-filledpicture egl` (#391 step F5) those that fill the
+    window. The viewer streams on, so nothing else in a run shows it. The
+    line of #477, `vaPutSurface cannot present here`, is the other way round:
+    EGL then shows every picture, which is that viewer's own path.
+    """
+    found = re.search(r"EGL cannot present here \([^\n]*", log)
+    return found.group(0) if found else None
+
+
 def ticks(pid: int) -> int | None:
     try:
         fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
