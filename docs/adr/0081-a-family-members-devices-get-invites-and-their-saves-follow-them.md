@@ -13,7 +13,7 @@ the family TV and later gets a handheld keeps their progress.
 
 ## Considered options
 
-- **Family members also join a stream with a code.** One flow for everyone
+- **Family members also need a code to play on a stream.** One flow for everyone
   who is not the owner. Rejected: a partner would type a code every evening.
 - **Family saves stay on the owner's devices.** Simpler. Rejected: progress
   would be stuck there.

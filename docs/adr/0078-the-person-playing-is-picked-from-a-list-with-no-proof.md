@@ -3,12 +3,13 @@
 **Owner decision, 2026-11-17.** Issue #178.
 
 On a shared device, the person who plays is not always the device owner. A
-family member says "it is me playing now" by picking their name from a list on the
-device. Korri asks for no code and no confirmation on another device.
+family member says "it is me playing now" by picking their name from a list
+on the device. Korri asks for no code and no confirmation on another device.
 
 These are entertainment devices, and the owner wants this to be next to
-invisible. If a child plays as a parent, the parent's save history gets a
-split. The split keeps both versions, so no progress is lost.
+invisible. If a child plays as a parent from the parent's last save, the
+parent's save history gets a split. The split keeps both versions, so no
+progress is lost.
 
 The person a session uses is the **lead**. When a device wakes, it shows its
 list of people with the last lead already selected, so one press starts.
@@ -24,9 +25,9 @@ decisions, 2026-11-17).
   Rejected: the next person can start a game as the wrong lead.
 - **List only the family members who have played on that device.** Rejected:
   the owner wants every family member everywhere, with nothing to add.
-
-- **Pick the name, then confirm on a device the family member owns.** Proof of who
-  plays. Rejected: the family member would need their own device in hand every time.
+- **Pick the name, then confirm on a device the family member owns.** Proof
+  of who plays. Rejected: the family member would need their own device in
+  hand every time.
 - **Each controller belongs to a person.** Invisible when it works. Rejected:
   people swap controllers all the time.
 
@@ -34,7 +35,10 @@ decisions, 2026-11-17).
 
 - Anyone at the device can play as any family member, and as the owner.
 - Every wake costs one press, even on a handheld only the owner uses.
-- The person playing and the device owner are now separate ideas on a device.
-- In couch co-op, the saves go to the person the device plays as when the
-  game starts. That matches stream play and netplay, where the holder's
-  saves count. Player 2's progress never enters player 2's own history.
+- The lead and the device owner are now separate ideas on a device. Only the
+  owner changes device settings and admits people (ADR 0077). Whether those
+  actions follow the lead, or stay open to anyone at an owned device, is not
+  decided.
+- When two people play together on one device, the saves go to the lead.
+  That matches stream play and netplay, where the holder's saves count. The
+  second person's progress never enters their own history.

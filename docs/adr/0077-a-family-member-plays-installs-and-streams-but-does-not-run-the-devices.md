@@ -9,14 +9,14 @@ least formal clear word. A close friend can be family too.
 
 On the owner's devices a family member can:
 
-- play the installed games with their own save history;
-- keep their own profiles and launch settings for a game;
+- play the installed games with their own save history.
+- keep their own profiles and launch settings for a game.
 - play on a stream and start games on the owner's devices from their own
-  devices, near or far;
+  devices, near or far.
 - install and remove games and plugins.
 
-Only the owner changes device settings, such as Wi-Fi, displays and library
-folders, and only the owner admits other people (ADR 0075).
+Only the owner changes device settings, such as Wi-Fi and displays, and only
+the owner admits other people (ADR 0075).
 
 A family member keeps their place until any of the owner's devices removes
 them, or until they leave by themselves. There is no end date. After a
@@ -37,15 +37,24 @@ with their own recovery words (ADR 0079).
 - **Two tiers with fixed rights and a separate duration.** Rejected: a short
   visit is a guest, so family needs no end date of its own.
 - **Names considered for the tier:** member, household, regular, resident,
-  crew, local, housemate, friend. The owner found them too formal, too
-  generic, or already used for something else.
+  crew, local, housemate, friend. The owner found them too formal or too
+  generic.
 
 ## Consequences
 
 - A family member can bring code onto the owner's devices. Plugin signature
-  and permission checks still apply to every install.
+  and permission checks still apply to every install. Who approves a plugin
+  or a publisher that a family member installs is not decided.
 - Korri needs a way to make a person key on a device for someone who owns no
   device.
+- The removal of a family member is not a device removal (CONTEXT.md,
+  Removal). Whether the person key can undo it is not decided. How a device
+  that was offline learns of it is not decided.
+- Launch settings have no place for a person today, and only a device of the
+  same owner can change a streamed game's settings (ADR 0066). Where a family
+  member's own launch settings live is not decided.
+- "Family" already means a runner family. Write "runner family" for runners
+  and "family member" for people.
 - The code's `household` pass tier is the old name for this tier.
 - A family member sees the owner's whole library. Limits per person, for
   example for a child, are a later design (owner decision, 2026-11-17).
