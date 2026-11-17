@@ -1736,6 +1736,34 @@ refused before any device is asked. The result keeps the sender's
 with a tone apart from one without, and two tones apart; a result from
 before the option streamed no sound.
 
+### Bars around the picture: `--viewer-output`
+
+By default the viewer fixture's output has the stream's size, so the
+picture fills it. Korri's X11 VA-API viewer then shows each frame with
+`vaPutSurface` on an AMD GPU, and its EGL presenter
+(`clients/viewer/picture/video/vaapi_egl.c`) never runs: it draws only a
+picture with bars (#476), or every picture where `vaPutSurface` cannot
+present (Intel under Xwayland, #477). Step F of #391 replaces that
+presenter (`clients/viewer/README.md`, "EGL presenters in Rust"), so a
+measure of it on aka needs bars.
+
+```sh
+nix run .#stream-cadence -- view --sender root@aka --sender-fixture \
+  --viewer root@aka --viewer-package /nix/store/…-korri-viewer-0.1.0 \
+  --candidate-package /nix/store/…-korri-viewer-rust-egl-presenter-0.1.0 \
+  --runs 5 --viewer-output 1920x1200
+```
+
+**`--viewer-output WIDTHxHEIGHT`** gives the viewer fixture's headless
+output that size, at the same refresh. The stream keeps its own size
+(`--resolution`, or 1920x1080 in the fixture), and the viewer, fullscreen,
+fits it between bars. The capture finds the ID bar wherever the picture
+puts it. Without `--sender-fixture` the option is refused before any
+device is asked, and a run that shows the stream on the device's own
+display refuses it too. The result keeps `discovered.viewer_fixture.output`
+(`{"width", "height"}`). `verdict` keeps two output sizes apart; a result
+from before the fact had the stream's size.
+
 ### Network conditions and encryption: `--net`, `--require-encryption`
 
 A private pair streams over a loopback: no packet is lost or late, so the

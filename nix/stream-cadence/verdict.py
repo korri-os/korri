@@ -162,6 +162,14 @@ def conditions(record: dict) -> dict:
     # The frequency of the sender fixture's tone, the stream's sound (--tone).
     # None: no sound, as in a result from before the tone existed.
     values["tone"] = (facts.get("tone") or {}).get("hz")
+    # The viewer fixture's output size (--viewer-output). A result from before
+    # the fact had the stream's size. The device's own display has none here:
+    # its mode is the display condition.
+    values["viewer_output"] = (
+        (facts.get("viewer_fixture") or {}).get("output") or facts.get("requested_resolution")
+        if values["viewer_place"] == FIXTURE
+        else None
+    )
     return values
 
 
@@ -407,7 +415,7 @@ def conditions_that_differ(old: list[dict], new: list[dict]) -> str | None:
         and len({json.dumps(row[name], sort_keys=True) for row in every if row[name] is not None}) == 1
     ]
     # These have their own words. The measure also sets the rate and the mode.
-    named = {"beside_a_game", "viewer_place", "viewer_renderer", "frame_record", "net", "encryption", "tone", "sunshine_patch_set"}
+    named = {"beside_a_game", "viewer_place", "viewer_renderer", "frame_record", "net", "encryption", "tone", "viewer_output", "sunshine_patch_set"}
     if "measure" in changed:
         named |= {"measure", "requested_fps", "display"}
     differ = [name for name in changed if name not in absent and name not in named]
@@ -445,6 +453,20 @@ def conditions_that_differ(old: list[dict], new: list[dict]) -> str | None:
             "Some runs streamed with the sender fixture's tone as their sound (--tone) and "
             "others with another tone or none: " + "; ".join(found) + ". Decoding and playing "
             "the sound costs the viewer CPU; record both results with the same sound."
+        )
+    if "viewer_output" in changed:
+        found = sorted(
+            {
+                "none" if row["viewer_output"] is None
+                else f"{row['viewer_output']['width']}x{row['viewer_output']['height']}"
+                for row in every
+            }
+        )
+        advice.append(
+            "Some runs had another viewer fixture output size (--viewer-output): "
+            + "; ".join(found) + ". An output of another shape than the stream puts bars "
+            "around the picture, and the X11 VA-API viewer then draws through EGL, not "
+            "vaPutSurface; record both results with the same output."
         )
     if "sunshine_patch_set" in changed:
         advice.append(

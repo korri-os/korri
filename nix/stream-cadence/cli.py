@@ -664,6 +664,7 @@ def pc_fixture_namespace(*, product: bool, fixture: bool, private_pair: bool, sa
 NET_OPTION = "--net"
 ENCRYPTION_OPTION = "--require-encryption"
 TONE_OPTION = "--tone"
+VIEWER_OUTPUT_OPTION = "--viewer-output"
 
 
 def net_refusal(net: dict | None, private_x: bool) -> str | None:
@@ -1695,6 +1696,13 @@ def view_case(
             sender_host=host,
             loopback=loopback,
         )
+        if args.viewer_output and on_display:
+            raise Refusal(
+                f"{VIEWER_OUTPUT_OPTION} sizes the viewer fixture's output, and this run shows the stream on the device's own display."
+            )
+        # The fixture's output: the stream's size, or another (--viewer-output),
+        # so that the picture has bars around it.
+        output = args.viewer_output or (width, height)
         prepared = (session or {}).get("viewer") or viewer.request(
             "prepare",
             fixture=not on_display,
@@ -1703,8 +1711,8 @@ def view_case(
             viewer_package=copied["package"] if copied else None,
             # None: the agent's default, gles2. The device's own display has none.
             renderer=args.viewer_renderer,
-            width=width,
-            height=height,
+            width=output[0],
+            height=output[1],
             refresh_hz=viewer_refresh,
             certificate=certificate,
             key=key,
@@ -1726,7 +1734,12 @@ def view_case(
         facts["live_game"]["viewer_at_start"] = prepared.get("live_games", [])
         if not on_display:
             # What draws the fixture's output; verdict keeps two renderers apart.
-            facts["viewer_fixture"] = {"renderer": prepared.get("renderer"), "private_x_namespace": private_x, "audio": prepared["viewer_audio"]}
+            facts["viewer_fixture"] = {
+                "renderer": prepared.get("renderer"),
+                "private_x_namespace": private_x,
+                "audio": prepared["viewer_audio"],
+                "output": {"width": output[0], "height": output[1]},
+            }
         # Which viewer this run measures, and where it shows the stream.
         facts["viewer_ran"] = viewer_ran(
             plugin, paths["viewer"], DISPLAY if on_display else FIXTURE, copied=copied
@@ -2214,6 +2227,7 @@ def view(args: argparse.Namespace) -> int:
         (NET_OPTION, args.net),
         (ENCRYPTION_OPTION, args.require_encryption),
         (TONE_OPTION, args.tone),
+        (VIEWER_OUTPUT_OPTION, args.viewer_output),
     ):
         if given and not args.sender_fixture:
             raise Refusal(
@@ -2753,6 +2767,12 @@ def parser() -> argparse.ArgumentParser:
         ENCRYPTION_OPTION,
         action="store_true",
         help="the sender fixture's Sunshine requires encryption of video and audio from the viewer. verdict keeps it apart from Sunshine's default, which encrypts no video on a LAN",
+    )
+    watch.add_argument(
+        VIEWER_OUTPUT_OPTION,
+        type=resolution,
+        metavar="WIDTHxHEIGHT",
+        help="the viewer fixture's output size, when it is not the stream's: a picture of another shape gets bars around it, which the X11 VA-API viewer draws through EGL. Only with --sender-fixture; verdict keeps two output sizes apart",
     )
     watch.add_argument(
         TONE_OPTION,
