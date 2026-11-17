@@ -159,6 +159,20 @@ class SenderToolsAreStreamCadencesTools(unittest.TestCase):
         self.assertIsNone(asked[0][4])
 
 
+class TheStreamsNetworkCore(unittest.TestCase):
+    """#391 step E: the C core unless --network-core names nightjar-core,
+    whose APK and tests carry the `nightjar` feature."""
+
+    def test_the_c_core_needs_no_argument(self):
+        self.assertEqual(run.viewer_app("c"),
+                         ("korri-viewer-android-apk", "checks.x86_64-linux.korri-viewer-android", []))
+
+    def test_nightjar_has_its_build_and_its_argument(self):
+        self.assertEqual(run.viewer_app("nightjar"),
+                         ("korri-viewer-android-nightjar-apk", "checks.x86_64-linux.korri-viewer-android-nightjar",
+                          ["-networkcore", "nightjar"]))
+
+
 class TheProofsHandTheirBuildStoreToEveryBuild(unittest.TestCase):
     """run.py's and recovery.py's --build-store reaches each nix_build and sender_tools."""
 
@@ -194,6 +208,13 @@ class TheProofsHandTheirBuildStoreToEveryBuild(unittest.TestCase):
                 built, tools = self.main(run, ["--sender", run.LOCAL, "--stream-host", "192.0.2.1", *given])
                 self.assertEqual(built, [(name, store) for name in names])
                 self.assertEqual(tools, [(run.LOCAL, False, store)])
+
+    def test_run_with_the_nightjar_core(self):
+        built, _ = self.main(run, ["--sender", run.LOCAL, "--stream-host", "192.0.2.1", "--network-core", "nightjar"])
+        self.assertEqual([name for name, _ in built],
+                         ["korri-viewer-android-nightjar-apk", "korri-viewer-android-refusal-probe",
+                          "korri-viewer-android-feedback-probe", "korri-viewer",
+                          "checks.x86_64-linux.korri-viewer-android-nightjar"])
 
     def test_recovery(self):
         for given, store in (([], None), (["--build-store", BUILD_STORE], BUILD_STORE)):

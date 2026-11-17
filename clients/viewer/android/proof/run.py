@@ -116,6 +116,16 @@ import sender  # noqa: E402
 import cli  # noqa: E402
 
 
+def viewer_app(network_core: str) -> tuple[str, str, list[str]]:
+    """The APK, the Android tests and the stream's extra arguments for a
+    network core (#391 step E): nightjar-core's builds carry the `nightjar`
+    feature, and the stream asks for it by name; the C core is the default."""
+    if network_core == "nightjar":
+        return ("korri-viewer-android-nightjar-apk", "checks.x86_64-linux.korri-viewer-android-nightjar",
+                ["-networkcore", "nightjar"])
+    return "korri-viewer-android-apk", "checks.x86_64-linux.korri-viewer-android", []
+
+
 def log(text: str) -> None:
     print(f"[{datetime.datetime.now():%H:%M:%S}] {text}", flush=True)
 
@@ -1420,6 +1430,8 @@ def main() -> int:
     parser.add_argument("--out", type=Path, help="the record's directory; default: a new one under /tmp")
     parser.add_argument("--stock-sunshine", action="store_true",
                         help="the sender's stock Sunshine, and no size change in the middle of the stream (#476)")
+    parser.add_argument("--network-core", choices=("c", "nightjar"), default="c",
+                        help="the stream's network core (#391 step E); nightjar builds the APK with nightjar-core")
     parser.add_argument(cli.BUILD_STORE_OPTION, metavar="STORE", help=cli.BUILD_STORE_HELP)
     args = parser.parse_args()
     root = Path(os.environ["KORRI_ROOT"])
@@ -1439,11 +1451,13 @@ def main() -> int:
     checks = result["checks"]
 
     build_store = args.build_store
-    apk = nix_build(root, "korri-viewer-android-apk", build_store) + "/korri-viewer-unsigned.apk"
+    app, android_tests, core_arguments = viewer_app(args.network_core)
+    result["network_core"] = args.network_core
+    apk = nix_build(root, app, build_store) + "/korri-viewer-unsigned.apk"
     probe_apk = nix_build(root, "korri-viewer-android-refusal-probe", build_store) + "/korri-viewer-refusal-probe-unsigned.apk"
     feedback_apk = nix_build(root, "korri-viewer-android-feedback-probe", build_store) + "/korri-viewer-feedback-probe-unsigned.apk"
     viewer = nix_build(root, "korri-viewer", build_store)
-    tests = nix_build(root, "checks.x86_64-linux.korri-viewer-android", build_store) + "/x86_64/tests"
+    tests = nix_build(root, android_tests, build_store) + "/x86_64/tests"
     result["store"] = {"apk": apk, "refusal_probe": probe_apk, "feedback_probe": feedback_apk, "viewer": viewer, "tests": tests}
 
     signed = sign(build_tools, apk, out / "korri-viewer-debug.apk")
@@ -1526,7 +1540,7 @@ def main() -> int:
         fixture.request("clock")
         logcat = Logcat(emulator, out / "logcat-all.txt")
         moonlight = ["stream", "-app", APPLICATION, "-width", str(STREAM_SIZE[0]), "-height", str(STREAM_SIZE[1]),
-                     "-fps", "60", "-keydir", f"{FILES}/keys", host]
+                     "-fps", "60", "-keydir", f"{FILES}/keys", *core_arguments, host]
         start = ["am", "start", "-W", "-n", ACTIVITY,
                  "--es", "launch_id", "d2-proof",
                  "--es", "address", f"{host}:{port}",
