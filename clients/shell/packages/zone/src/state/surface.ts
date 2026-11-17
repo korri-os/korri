@@ -229,7 +229,7 @@ function route(steps: Steps, message: ZoneSurfaceMessage, korri: SurfaceModel): 
       return
     case "SaveData":
       steps.put("identity", updateIdentity(state.identity, message.message, korri.identityManagement))
-      if (message.message._tag === "FocusedSaveCard") {
+      if (message.message._tag === "FocusedSaveCard" || message.message._tag === "FocusedSecret") {
         steps.put("nav", updateNav(steps.state.nav, { _tag: "FocusedPage" }, korri))
       }
       return
@@ -370,7 +370,7 @@ function back(steps: Steps, korri: SurfaceModel): void {
 function identityHolds(identity: IdentityModel, korri: SurfaceModel): boolean {
   const status = korri.identityManagement?.status._tag
   return status === "Problem" || status === "Switched"
-    || identity.flow._tag !== "idle"
+    || (identity.flow._tag !== "idle" && identity.flow._tag !== "showSecret")
 }
 
 function menu(steps: Steps, korri: SurfaceModel): void {

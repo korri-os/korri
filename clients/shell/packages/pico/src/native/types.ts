@@ -16,7 +16,7 @@ import type { Target } from "./focus"
 /** A field of a form that Pico's web build typed into a DOM input. Natively
  * it opens Pico's own keyboard; OK hands the text to the program. */
 export interface Typing {
-  readonly field: "identity:bunkerUri"
+  readonly field: "identity:password" | "identity:secret" | "identity:bunkerUri" | "backup:password"
   readonly label: string
   readonly draft: PicoTextDraft
   readonly secret: boolean

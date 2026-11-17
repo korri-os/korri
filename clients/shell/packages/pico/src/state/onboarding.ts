@@ -8,12 +8,14 @@
  * the player opened, and whether the player chose to go on offline. None of
  * it is stored; a restart begins at Hello.
  *
- * A Wi-Fi password typed here sits in the model only while its editor is
- * open. It goes when its editor closes and when a connect is sent. Nothing
- * may log this value or a message that carries one.
+ * Secrets typed here (a Wi-Fi password, a backup's password) sit in the
+ * model only while their editor or form is open. A password goes when its
+ * editor closes and when a connect is sent. Nothing may log this value or a
+ * message that carries one.
  */
 import type { SurfaceWifiAttempt, SurfaceWifiNetwork } from "../model"
 import type { PicoTextDraft } from "../pico-text-draft"
+import type { IdentityQr } from "./navigation"
 import type { PicoReply } from "./requests"
 import type { WifiEntry } from "./wifi"
 
@@ -73,9 +75,14 @@ export interface NameStep {
   readonly saving: "No" | "Sent" | "Seen"
 }
 
-/** `created`: this device makes its own person key when setup ends (ADR
- * 0022). `signer`: a signer keeps the key. */
-export type IdentityOrigin = "created" | "signer"
+export type IdentityOrigin = "created" | "restored" | "signer"
+
+/** One field of the restore form open on the keyboard. */
+export interface RestoreField {
+  readonly field: "backup" | "password"
+  readonly draft: PicoTextDraft
+  readonly shown: boolean
+}
 
 export type IdentityStep =
   | { readonly _tag: "Choose" }
@@ -84,12 +91,26 @@ export type IdentityStep =
    * same one Settings asks. Pico never answers it. `sent`: Korri was asked
    * to switch, and its status now speaks for it. */
   | {
+      readonly _tag: "Restore"
+      readonly backup: string
+      readonly password: string
+      readonly editing: RestoreField | undefined
+      readonly confirmed: boolean
+      readonly sent: boolean
+    }
+  | {
       readonly _tag: "Signer"
       readonly uri: string
       readonly editing: PicoTextDraft | undefined
       readonly confirmed: boolean
       readonly sent: boolean
     }
+
+/** The backup dialog, over the identity step. */
+export interface BackupDialog {
+  readonly password: string
+  readonly qr: IdentityQr | undefined
+}
 
 export interface OnboardingNav {
   readonly step: OnboardingStep
@@ -101,6 +122,7 @@ export interface OnboardingNav {
   /** The person name, typed the way the device's name is. */
   readonly person: NameStep
   readonly identity: IdentityStep
+  readonly backup: BackupDialog | undefined
   /** GO TO GAMES was pressed. Home appears once Korri drops `onboarding`. */
   readonly finishing: boolean
 }
@@ -114,6 +136,7 @@ export const initialOnboarding = (): OnboardingNav => ({
   name: { draft: undefined, saving: "No" },
   person: { draft: undefined, saving: "No" },
   identity: { _tag: "Choose" },
+  backup: undefined,
   finishing: false,
 })
 
@@ -157,10 +180,14 @@ export type OnboardingMessage =
   | { readonly _tag: "DismissedSettingsProblem" }
   // Identity
   | { readonly _tag: "ChoseIdentity"; readonly how: IdentityOrigin }
-  | { readonly _tag: "EditedIdentityField"; readonly field: "uri" }
-  /** The trust-loss statement on the signer form, turned on or off. */
+  | { readonly _tag: "EditedIdentityField"; readonly field: "backup" | "password" | "uri" }
+  /** The trust-loss statement on the restore or signer form, turned on or off. */
   | { readonly _tag: "ToggledTrustLoss" }
   | { readonly _tag: "SubmittedIdentity" }
+  | { readonly _tag: "OpenedBackup" }
+  | { readonly _tag: "EditedBackupPassword"; readonly password: string }
+  | { readonly _tag: "SubmittedBackup" }
+  | { readonly _tag: "ClosedBackup" }
   // Pads
   | { readonly _tag: "ChangedSetting"; readonly settingId: string; readonly value: string }
   // Games

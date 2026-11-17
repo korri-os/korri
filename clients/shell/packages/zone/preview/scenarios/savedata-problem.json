@@ -150,9 +150,11 @@
     }
    },
    "identityManagement": {
+    "localBackupAvailable": false,
+    "retiredPublicKeys": [],
     "status": {
      "_tag": "Problem",
-     "message": "The signer did not answer. Check its relays and try again."
+     "message": "The password does not open this backup. Check it and try again."
     }
    }
   }

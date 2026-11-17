@@ -13,6 +13,11 @@ export component Problem inherits ZonePreview {
     ZoneStatusLayer { x: 0; y: 0; width: parent.width; height: parent.height; dialog: { shown: true, headline: "Couldn't start", korri: true, lines: ["The emulator exited before the game loaded."], title: "Spelunky", buttons: [{ label: "Dismiss", focused: true }, { label: "Retry" }] }; }
 }
 
+// A reason longer than the dialog holds: the plan's window of its lines, more above and below.
+export component ProblemLongReason inherits ZonePreview {
+    ZoneStatusLayer { x: 0; y: 0; width: parent.width; height: parent.height; dialog: { shown: true, headline: "Catalog problem", korri: true, lines: ["has no installed Linux runner · local\ngames: LocalRouteUnavailable: game\neggshell-66c0dfbd9ceda85a76e3e25b"], breaks: 2, above: true, below: true, buttons: [{ label: "Dismiss", focused: true }, { label: "Retry" }] }; }
+}
+
 export component Running inherits ZonePreview {
     ZoneStatusLayer { x: 0; y: 0; width: parent.width; height: parent.height; hud: { shown: true, kicker: "Playing on zao", title: "The Legend of Zelda: Oracle of Seasons" }; }
 }

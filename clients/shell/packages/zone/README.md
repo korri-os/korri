@@ -15,7 +15,7 @@ fixtures' words and look are Zone's.
 | `logic.ts` → `logic.js` | The adapter around Zone's own program (`src/state/`, `src/plan/`, ported to the generated treaty types). `bun run zone:build` in `clients/shell`, with the flake's bun (`nix shell --inputs-from . nixpkgs#bun`): `zone-check` rebuilds it and fails on any difference. |
 | `src/press.ts` | Focus in the model: each press becomes the fact Zone's page reported in the browser. |
 | `src/view.ts`, `src/rows.ts` | The view. |
-| `src/keys.ts` | The keyboard's grid. |
+| `src/keys.ts`, `src/qr.ts` | The keyboard's grid; the backup's QR code (own encoder, held equal to `qrcode` by test). |
 | `fonts/` | Zone Caps, Jersey 10 (converted from Zone's woff2), Anton; their licences; `fonts/source/` the Zone Caps grid and the font build scripts. |
 | `art/` | The veil's checker, one tile per art pixel size. |
 | `test/` | The gates and plan tests (`bun test packages/zone/test` in `clients/shell`), and `bite.sh`, which plants a defect for each gate and shows it fail. |
@@ -93,7 +93,7 @@ preview states from the views `logic.ts` makes of them.
 
 ```sh
 cd clients/shell
-bun test packages/zone/test            # gates, plans, contrast, launch settings
+bun test packages/zone/test            # gates, plans, contrast, QR, launch settings
 bun run zone:typecheck
 bash packages/zone/test/bite.sh        # each gate fails on a planted defect
 cargo test --release --features fixture --test zone_package   # previews at five sizes; focus in view

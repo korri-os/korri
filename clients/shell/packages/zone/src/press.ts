@@ -24,7 +24,7 @@ import { storeRows } from "./rows"
 import { launchChoices, playtime, type ZoneFindKey } from "./state/games"
 import { dayOf, hoursAndMinutes, launchLabel, shownDialog } from "./view"
 import { dialogKey, dialogWords, lastFirst } from "./plan/dialog-words"
-import { identityCardCount } from "./state/identity"
+import { identityCardCount, retiredKeyAt } from "./state/identity"
 import { bandGames, cardCount, topLayer, ZONE_TABS, type ZoneNavMessage } from "./state/navigation"
 import { onboardingTargets, TARGET } from "./state/onboarding"
 import { optionsLayer } from "./state/options"
@@ -241,6 +241,10 @@ function tabs(state: ZoneSurfaceState, button: Direction | "confirm", korri: Sur
   const inside = tabStep(ZONE_TABS.indexOf(nav.tab), at, button)
   if (inside !== undefined) return send({ _tag: "Games", message: { _tag: "FocusedTab", tab: ZONE_TABS[inside]! } })
   if (button !== "down") return
+  // SAVE DATA with Korri's backup shown: the slab under the tabs.
+  if (nav.tab === "savedata" && korri.identityManagement?.status._tag === "BackupReady") {
+    return send({ _tag: "SaveData", message: { _tag: "FocusedSecret" } })
+  }
   switch (nav.tab) {
     case "games":
       return send({ _tag: "Games", message: { _tag: "FocusedCard", index: nav.card } })
@@ -641,6 +645,8 @@ function saveData(state: ZoneSurfaceState, button: Direction | "confirm", korri:
   }
   if (status === "Working") return
   switch (flow._tag) {
+    case "password":
+    case "secret":
     case "bunker": {
       const draft = flow.draft
       return keyboard(draft.layer, draft.focusedKey, undefined, button, key => message({ _tag: "FocusedKey", key }), key => {
@@ -662,6 +668,8 @@ function saveData(state: ZoneSurfaceState, button: Direction | "confirm", korri:
     }
     case "disposition":
     case "trust":
+    case "confirmDelete":
+    case "confirmBackedUp":
       if (isDirection(button)) {
         const next = dialogStep(flow._tag === "disposition" ? ["Transfer", "Delete"] : ["No", "Yes"], flow.focus, button)
         if (next !== undefined) message({ _tag: "FocusedChoice", index: next === 0 ? 0 : 1 })
@@ -671,8 +679,25 @@ function saveData(state: ZoneSurfaceState, button: Direction | "confirm", korri:
       if (button !== "confirm") return
       if (flow._tag === "disposition") return message({ _tag: "ChoseDisposition", disposition: flow.focus === 0 ? "transfer" : "delete" })
       return message({ _tag: "Answered", yes: flow.focus === 1 })
+    case "retired":
+      if (isDirection(button)) {
+        const next = rowStep(["Back up", "Delete"], SCREEN.width, flow.action === "backup" ? 0 : 1, button)
+        if (next !== undefined) return message({ _tag: "FocusedRetiredAction", action: next === 0 ? "backup" : "delete" })
+        if (button === "up") return message({ _tag: "FocusedSaveCard", index: model.card })
+        return
+      }
+      if (button === "confirm") message({ _tag: "ChoseRetiredAction", action: flow.action })
+      return
+    case "showSecret":
     case "idle":
       break
+  }
+  const backup = status === "BackupReady"
+  // Korri's backup takes the band's room: the slab, then B brings the cards back.
+  if (backup) {
+    if (button === "up") return send({ _tag: "Games", message: { _tag: "FocusedTab", tab: state.nav.tab } })
+    if (flow._tag !== "showSecret" || !flow.onSlab) message({ _tag: "FocusedSecret" })
+    return
   }
   const count = identityCardCount(identity)
   if (button === "left" || button === "right") {
@@ -681,7 +706,10 @@ function saveData(state: ZoneSurfaceState, button: Direction | "confirm", korri:
     return
   }
   if (button === "up") return send({ _tag: "Games", message: { _tag: "FocusedTab", tab: state.nav.tab } })
-  if (button === "down") return
+  if (button === "down") {
+    if (retiredKeyAt(identity, model.card) !== undefined) message({ _tag: "FocusedRetiredAction", action: "backup" })
+    return
+  }
   message({ _tag: "ChoseSaveCard", index: model.card })
 }
 
@@ -790,6 +818,12 @@ export function focusOn(state: ZoneSurfaceState, id: string, korri: SurfaceModel
       return send({ _tag: "Paused", message: { _tag: "FocusedControl", controlId: rest } })
     case "save":
       return send({ _tag: "SaveData", message: { _tag: "FocusedSaveCard", index } })
+    case "retired":
+      // Off the tabs first: the retired key's buttons stand under its card.
+      if (nav.zone === "tabs") send({ _tag: "SaveData", message: { _tag: "FocusedSaveCard", index: state.identity.card } })
+      return send({ _tag: "SaveData", message: { _tag: "FocusedRetiredAction", action: rest === "delete" ? "delete" : "backup" } })
+    case "secret":
+      return send({ _tag: "SaveData", message: { _tag: "FocusedSecret" } })
     case "target":
       return send({ _tag: "Onboarding", message: { _tag: "FocusedTarget", target: rest } })
     case "key":
@@ -871,7 +905,7 @@ function focusDialog(state: ZoneSurfaceState, index: number, korri: SurfaceModel
       return send({ _tag: "Store", message: { _tag: "FocusedDialogButton", index } })
     case "savedata": {
       const flow = state.identity.flow._tag
-      if (flow === "disposition" || flow === "trust") {
+      if (flow === "disposition" || flow === "trust" || flow === "confirmDelete" || flow === "confirmBackedUp") {
         return send({ _tag: "SaveData", message: { _tag: "FocusedChoice", index: answer } })
       }
       return
@@ -910,7 +944,7 @@ export function scrollOn(state: ZoneSurfaceState, scroll: ZoneScroll, region: st
   }
   if (region === "saves") {
     const flow = state.identity.flow._tag
-    if (page !== "savedata" || flow !== "idle") return undefined
+    if (page !== "savedata" || (flow !== "idle" && flow !== "retired") || korri.identityManagement?.status._tag === "BackupReady") return undefined
     return { ...scroll, saves: clampTo(scroll.saves ?? state.identity.card, identityCardCount(korri.identityManagement)) }
   }
   return undefined

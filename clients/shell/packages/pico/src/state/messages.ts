@@ -110,7 +110,7 @@ export type PicoMessage =
   | { readonly _tag: "DismissedSettingsProblem" }
   // The identity dialog. The form is in the model; a submission sends what it holds.
   | { readonly _tag: "ClosedIdentity" }
-  | { readonly _tag: "EditedIdentity"; readonly field: "bunkerUri"; readonly value: string }
+  | { readonly _tag: "EditedIdentity"; readonly field: "password" | "secret" | "bunkerUri"; readonly value: string }
   | { readonly _tag: "ChoseIdentityDisposition"; readonly disposition: SurfaceIdentityDisposition }
   | { readonly _tag: "CheckedIdentityConfirmation"; readonly confirmed: boolean }
   | { readonly _tag: "SubmittedIdentity" }

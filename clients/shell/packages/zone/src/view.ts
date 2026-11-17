@@ -13,8 +13,10 @@ import { formatZoneBytes, zoneProgressShare } from "./plan/bytes"
 import { entryHeading, optionsPlan } from "./plan/options"
 import { launchHead } from "./plan/launch-settings"
 import { zoneTallyRows, zoneTallyValue } from "./plan/tally"
+import { qrDataUrl } from "./qr"
 import { actionButtons, barsOf, btn, launchRows, optionRows, row, runWithRows, storeRows, tag, type Btn, type Row, type Tag } from "./rows"
 import { launchChoices, playtime, ZONE_FIND_MAX, type ZoneFindLayer, type ZoneLaunchChoice } from "./state/games"
+import { IDENTITY_FIXED_CARDS, identityCardCount } from "./state/identity"
 import { bandGames, topLayer, ZONE_TABS, type ZoneTab } from "./state/navigation"
 import { deviceNameSetting, onboardingTargets, seatTarget, TARGET, ZONE_ONBOARDING_STEPS } from "./state/onboarding"
 import { overlayControls, overlayViewerFacts, shownRangeValue } from "./state/overlay"
@@ -663,9 +665,16 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneS
     keep,
     well,
     // SAVE DATA
-    saveCards: save.cards.map((entry, index) => ({ ...entry, focusId: `save:${index}`, focused: save.marked && index === save.focus })),
+    saveCards: save.cards.map((entry, index) => ({ ...entry, focusId: `save:${index}`, focused: save.marked && index === save.focus && state.identity.flow._tag !== "retired" })),
     saveFocus: touch.saveAt ?? save.focus,
     saveMarked: save.marked,
+    // The cursor is on a retired key's buttons: its card stays marked.
+    saveLit: save.marked && state.identity.flow._tag === "retired",
+    retired: save.retired,
+    qrShown: save.qr !== undefined,
+    ...(save.qr === undefined ? {} : { qr: { $image: save.qr } }),
+    secret: save.secret,
+    slab: btn(save.qr === undefined ? "" : "secret", { focusId: "secret", focused: save.slab && nav.zone !== "tabs" }),
     // First boot
     seats: boarding.seats,
     seatName: boarding.seatName,
@@ -692,14 +701,30 @@ function saveView(state: ZoneSurfaceState, korri: SurfaceModel, shown: boolean) 
   const model = state.identity
   const flow = model.flow
   const statusTag = identity?.status._tag
-  const marked = shown && state.nav.zone !== "tabs" && flow._tag === "idle"
+  const marked = shown && state.nav.zone !== "tabs" && (flow._tag === "idle" || flow._tag === "retired" || (flow._tag === "showSecret" && !flow.onSlab))
   const cards = identity === undefined
     ? [{ header: "Identity", word: "Not available", emblem: "retired", foot: "", footKind: "" }]
-    : [{ header: "Switch", word: "Bunker", emblem: "link", foot: "", footKind: "" }]
+    : [
+        { header: "Back up", word: "This key", emblem: "key", foot: identity.localBackupAvailable ? "Backed up" : "New", footKind: identity.localBackupAvailable ? "saved" : "open" },
+        { header: "Switch", word: "From backup", emblem: "restore", foot: "", footKind: "" },
+        { header: "Switch", word: "Bunker", emblem: "link", foot: "", footKind: "" },
+        ...identity.retiredPublicKeys.map(key => ({ header: "Retired", word: shortKey(key), emblem: "retired", foot: "", footKind: "" })),
+      ]
+  const retired = flow._tag === "retired"
+    ? [btn("Back up", { focused: flow.action === "backup", lit: true, focusId: "retired:backup" }), btn("Delete", { focused: flow.action === "delete", danger: true, focusId: "retired:delete" })]
+    : model.card >= IDENTITY_FIXED_CARDS && identity !== undefined && model.card < identityCardCount(identity)
+      ? [btn("Back up", { lit: true, focusId: "retired:backup" }), btn("Delete", { focusId: "retired:delete" })]
+      : []
   let keyboard: ReturnType<typeof keyboardView> | undefined
   let dialog: ReturnType<typeof dialogView> | undefined
   let busy: typeof EMPTY_BUSY | undefined
   switch (flow._tag) {
+    case "password":
+      keyboard = keyboardView({ title: "Password", draft: flow.draft.text, caret: flow.draft.caret, secret: true, layer: flow.draft.layer, focused: flow.draft.focusedKey })
+      break
+    case "secret":
+      keyboard = keyboardView({ title: "Backup", draft: flow.draft.text, caret: flow.draft.caret, secret: false, layer: flow.draft.layer, focused: flow.draft.focusedKey })
+      break
     case "bunker":
       keyboard = keyboardView({ title: "Bunker", draft: flow.draft.text, caret: flow.draft.caret, secret: false, layer: flow.draft.layer, focused: flow.draft.focusedKey })
       break
@@ -711,19 +736,34 @@ function saveView(state: ZoneSurfaceState, korri: SurfaceModel, shown: boolean) 
       dialog = dialogView("Switch key?", false, ["Other devices will stop trusting this key"], "",
         [btn("No", { focused: flow.focus === 0 }), btn("Yes", { focused: flow.focus === 1 })])
       break
+    case "confirmDelete":
+      dialog = dialogView("Delete this key?", false, ["Back it up first."], shortKey(flow.publicKey),
+        [btn("No", { focused: flow.focus === 0 }), btn("Yes", { focused: flow.focus === 1 })])
+      break
+    case "confirmBackedUp":
+      dialog = dialogView("Is it backed up?", false, [], shortKey(flow.publicKey),
+        [btn("No", { focused: flow.focus === 0 }), btn("Yes", { focused: flow.focus === 1 })])
+      break
     case "idle":
+    case "retired":
+    case "showSecret":
       break
   }
   if (identity?.status._tag === "Problem") dialog = dialogView("Identity", false, [identity.status.message], "", [btn("Dismiss", { focused: true })])
   if (identity?.status._tag === "Switched") dialog = dialogView("Switched", false, [], shortKey(identity.status.ownerPublicKey), [btn("OK", { focused: true })])
   if (identity?.status._tag === "Working") busy = { ...EMPTY_BUSY, shown: true, kicker: identity.status.operation }
+  const backup = identity?.status._tag === "BackupReady" ? identity.status.encryptedSecret : undefined
   return {
     cards,
     focus: model.card,
     marked,
+    retired,
     keyboard,
     dialog,
     busy,
+    qr: backup === undefined || !shown ? undefined : qrDataUrl(backup),
+    secret: backup === undefined ? "" : (backup.match(/.{1,4}/g) ?? []).join(" "),
+    slab: flow._tag === "showSecret" && flow.onSlab,
     status: statusTag ?? "",
   }
 }
@@ -817,7 +857,7 @@ export function overlayView(state: ZoneSurfaceState, korri: SurfaceModel, screen
   // controls step down-left like stairs, so each control is its own region:
   // up and down go to the control above and below, left and right step its
   // value or stay.
-  const planned = focusView({ actions: [], dialog, busy: raw.busy, rows: [], optsRows: [], tabs: [] }, state, korri, screen, true)
+  const planned = focusView({ actions: [], retired: [], dialog, busy: raw.busy, rows: [], optsRows: [], tabs: [] }, state, korri, screen, true)
   const rows = targetRows(raw.rows as unknown as Record<string, unknown>[])
   const controls = rows.flatMap((entry, index) => ("focused" in entry ? [index] : []))
   const region = (index: number) => `control-${controls.indexOf(index)}`
