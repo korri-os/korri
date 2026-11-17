@@ -32,7 +32,7 @@ The key that identifies one person to Korri, made from that person's recovery wo
 _Avoid_: account, user key, login, npub
 
 **Recovery words**:
-The 12 words, with a QR code of them, from which a person key is made. After setup they are the only copy of the person key, kept on paper. They are needed to undo a removal or an admission, when every owned device is lost, or, for a family member made on another person's device, to set up their first own device.
+The 12 words, with a QR code of them, from which a person key is made. After setup they are the only copy of the person key, kept on paper. The person needs them to undo a removal or an admission, when every owned device is lost, or, for a family member made on another person's device, to set up their first own device.
 _Avoid_: seed, backup phrase, mnemonic
 
 **Person name**:

@@ -7,7 +7,7 @@ and their QR code (ADR 0072). The person confirms the words, and then the
 device erases the person key. After setup, no device holds it. The paper is
 the only copy.
 
-The reason: a thief who held the person key could also undo the person's
+The reason: a thief who held the person key could undo the person's
 undo, so the person could not take back their devices. With no copy on any
 device, a stolen device can do only what any owned device can do (ADRs 0069,
 0071 and 0075), and the person key can still overrule it.
