@@ -54,3 +54,36 @@ The viewer's CPU follows the other work, run by run:
 
 In the quiet runs (other work below 5 %) A's CPU is 0.014 to 0.016 and B's
 0.015 (one run).
+
+## The set again, 2026-11-17 15:44 to 18:05 UTC
+
+The same set three times, to make the verdict firm: both packages built on
+aka from `origin/main` `ee18c0d8a`
+(A `/nix/store/09z53gmqbyh3k6rjkx7c8lpgfwdjgzwp-korri-viewer-0.1.0`, B
+`/nix/store/h5b2vrq3hhbmbihih35xjvzpbahpa0fj-korri-viewer-rust-audio-output-0.1.0`),
+the same options, the quiet gate and the lock before each attempt. Each
+attempt in which other work took more than 5 % of all CPUs in a run was to
+run again, up to three times. Other sessions' proofs and builds started
+after the gate in all three, so none is quiet, and **the verdict is still
+not firm**. All 30 runs valid; every B run's log says "sound: the Rust
+audio output chose ALSA".
+
+| Attempt | Runs with other work above 5 % | Verdict |
+| --- | --- | --- |
+| 1, 15:44 to 16:00 | 6 of 10 (up to 19.4 %) | equal on every number (`verdict-attempt-1.txt`) |
+| 2, 17:30 to 17:47 | 3 of 10 (5.2, 12.4 and 18.2 %) | equal on every number (`verdict.txt`) |
+| 3, 17:49 to 18:05 | 8 of 10 (up to 16.4 %) | equal, except number 4: `startup_ms` 128.5 to 144.7 against 144.8 to 161.0, **worse** (`verdict-attempt-3.txt`) |
+
+Record: `rerun-2026-11-17/`, attempt 2, the least disturbed (`baseline.json`,
+`candidate.json`, `verdict.txt` unedited, each run's `viewer.log`), and the
+verdicts of attempts 1 and 3.
+
+`startup_ms` takes only three values in these 30 runs, 128.5 to 128.8,
+144.5 to 145.1 and 160.5 to 161.2 ms, one frame apart. A had one run at
+160 ms in 15, B five. In the runs with other work below 2 %, A had one
+run at 128 ms and five at 144 ms, and B two at 128, three at 144 and one at
+160. So B may start a frame later under load (inferred, not shown). In
+those quiet runs both used 0.014 CPU seconds per second.
+
+The Rust audio output stays an option, not the default, until a set on a
+quiet aka is equal.
