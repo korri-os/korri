@@ -42,10 +42,10 @@ Crate facts are from crates.io's API on 2026-11-17 (verified); judgements are la
 
 | Candidate | Licence | Maintenance | What it lacks for Korri |
 | --- | --- | --- | --- |
-| `alsa` 0.12.1 | Apache-2.0 or MIT | Released 2026-07-31; the binding cpal uses | Still alsa-lib (allowed). Nothing else for the C's policy |
-| `libpulse-simple-binding` 2.29.0 (+ `libpulse-binding` 2.30.1) | MIT or Apache-2.0 | Last releases 2025-03 and 2025-04; slow | Still libpulse (allowed) |
+| `alsa` 0.12.1 | Apache-2.0 or MIT | Released 2026-07-31. cpal 0.18.2 depends on `alsa` ^0.11, not 0.12 (crates.io dependency list): a later cpal slice would link a second `alsa` release or move F1 to 0.11 | Still alsa-lib (allowed). Nothing else for the C's policy |
+| `libpulse-simple-binding` 2.29.0 (+ `libpulse-binding` 2.30.1) | MIT or Apache-2.0 | Last releases 2025-03 and 2025-04; slow (opinion: no release in about 19 months) | Still libpulse (allowed) |
 | `cpal` 0.18.2 | Apache-2.0 | Released 2026-08-16; active | A pull model (callback thread). On the fixture's ALSA `null` PCM it would loop with no wait: alsa-lib's null plugin reports a full buffer and a `/dev/null` poll descriptor (`pcm_null.c`), and cpal's ALSA worker polls, then fills what is free (`src/host/alsa/mod.rs`, `output_stream_worker`) — verified in both sources, not run. It also changes the buffering policy |
-| `pulseaudio` 0.3.2 (cpal's optional Pulse backend) | MIT | Released 2026-10-16 | A native-protocol client with no libpulse; young; a second Pulse implementation to prove |
+| `pulseaudio` 0.3.2 (cpal's optional Pulse backend) | MIT | Released 2026-10-16 | A native-protocol client with no libpulse; young (opinion: still 0.x, 7 releases since 2023-12-29); a second Pulse implementation to prove |
 | SDL2 audio through `sdl2-sys` 0.38.0 | MIT and Zlib | 2025-07-12 | The crate carries 89 MB of SDL source (8.4 MB packed) into the vendored sources and the GPL source archive. Bindgen from `SDL.h` gives the same calls |
 
 ### Audio decode (Opus)
@@ -59,7 +59,7 @@ Crate facts are from crates.io's API on 2026-11-17 (verified); judgements are la
 | `opuscule` 0.2.2 | MPL-2.0 | 2026-06-23 to 2026-10-20 | Decoder only, `no_std`; README claims bit-exact; not checked |
 | `opus-decoder` 0.1.1, `ropus` 0.12.18, `opus-rs` 0.1.42 | MIT/Apache, BSD-3, BSD-3 | 2026 | One or two releases (`opus-decoder`), or no update since May (`ropus`) |
 
-All the pure-Rust decoders are less than a year old and mostly have one author (verified from crates.io dates). Opinion: pick by a measure, not by a README: their output against libopus's on Korri's packets, and number 3.
+All the pure-Rust decoders had their first release in 2026 (verified from crates.io dates). How many authors each has was not checked. Opinion: pick by a measure, not by a README: their output against libopus's on Korri's packets, and number 3.
 
 ### Display
 
@@ -80,7 +80,7 @@ Each slice has the carried C as default and the Rust part behind a cargo feature
 | Slice | What moves | Numbers it can move | Turns need | Risk |
 | --- | --- | --- | --- | --- |
 | F1 | The carried audio renderers and their choice (`io/audio/*`, `io/bridge.c:21-25`), same policy, over `alsa`, `libpulse-simple-binding`, bindgen of `SDL.h` and `opus_multistream.h` | 3, 4, 6 | `view --tone 1000`: without it no sound is decoded | Lowest: no window, no picture, no input; a byte-equal test against the C |
-| F2 | libopus to a pure-Rust Opus decoder, inside F1's renderer | 3, 6 | `--tone`; plus a comparison of decoded PCM with libopus's | The decoders are young |
+| F2 | libopus to a pure-Rust Opus decoder, inside F1's renderer | 3, 6 | `--tone`; plus a comparison of decoded PCM with libopus's | The decoders are young (opinion, from their 2026 release dates) |
 | F3 | The EGL presenters (`vaapi_egl.c`, `egl.c`) to Rust (glutin or khronos-egl, glow; bindgen of three `va.h` calls); the window stays Xlib | 1, 2, 3 | `--frame-record` runs of their own; ibuki for the Intel path (#477) | GPU state and dmabuf import; the AMD `vaPutSurface` path is untouched |
 | F4 | The X11 window and its key and mouse forwarding (`video/x11.c` window, `io/input/x11.c`) to winit, or x11rb with an Xlib handle for VA and EGL | 4, 5, 2 | The press of number 5 | Key codes; the window manager's fullscreen; focus under Xwayland |
 | F5 | `vaPutSurface` (AMD) to the EGL path of F3, so one presenter remains | 1, 2, 3 | aka (AMD) | A policy change, not only a language change: measure it alone |
