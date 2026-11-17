@@ -215,6 +215,23 @@ impl Play {
             .is_some()
     }
 
+    /// The stream's control "Pan & zoom": the touch screen pans and zooms
+    /// the picture from now on, or reaches the host again. False when the
+    /// input has ended.
+    pub fn set_zoom_mode(&mut self, on: bool) -> bool {
+        self.input
+            .run("pan and zoom", |input| input.set_zoom_mode(on))
+            .is_some()
+    }
+
+    /// What pan and zoom's gestures reported since the last call: the app
+    /// moves the picture by them (`Layers::zoom`).
+    pub fn take_gestures(&mut self) -> Vec<crate::gestures::Gesture> {
+        self.input
+            .run("gestures", Input::take_gestures)
+            .unwrap_or_default()
+    }
+
     /// The stream's control "Flip A/B and X/Y" (slice D11). False when the
     /// input has ended.
     pub fn set_flip_face_buttons(&mut self, flip: bool) -> bool {

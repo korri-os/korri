@@ -21,12 +21,13 @@
 //! | --- | --- | --- |
 //! | `toggle-keyboard` | Toggle keyboard | command (`Game.toggleKeyboard`); listed only on a device with a touch screen, as Artemis lists its touch controls (`touchOnly`); closes the overlay |
 //! | `set-fill-mode` | Crop to fill | toggle (`Game.toggleFillMode`: fit or fill) |
+//! | `set-zoom-mode` | Pan & zoom | toggle (`Game.setZoomMode`), listed only on a touch screen; closes the overlay; a new mouse mode turns it off |
 //! | `set-mouse-mode` | Mouse mode | choice of Artemis's six modes (`Game.applyMouseMode`, `getMouseModeLabels`), listed only on a touch screen |
 //! | `set-face-button-flip` | Flip A/B and X/Y | toggle (`ControllerHandler.handleFlipFaceButtons`) |
 //! | `set-rumble` | Rumble | toggle (`Game.setRumble`), listed only while a controller that can rumble is in the stream (`ControllerHandler.hasRumble`) |
 //!
 //! The others need what this viewer does not have: Artemis's on-screen
-//! full keyboard and controller, its pan and zoom, its touch sensitivity, its
+//! full keyboard and controller, its touch sensitivity, its
 //! pointer capture (the local cursor), its GL renderer (SGSR) and
 //! picture-in-picture (`clients/viewer/README.md`, slice D11).
 use anyhow::{Result, anyhow, bail};
@@ -43,6 +44,9 @@ pub enum Control {
     ToggleKeyboard,
     /// `SET_FILL_MODE`: crop the picture to fill the window, or fit it.
     Fill,
+    /// `SET_ZOOM_MODE`: the touch screen pans and zooms the picture, or
+    /// reaches the host.
+    Zoom,
     /// `SET_MOUSE_MODE`: how the touch screen reaches the host.
     MouseMode,
     /// `SET_FACE_BUTTON_FLIP`: a controller's A is B and X is Y, and back.
@@ -53,9 +57,10 @@ pub enum Control {
 
 impl Control {
     /// In Artemis's order (`Effect.values()`).
-    pub const ALL: [Control; 5] = [
+    pub const ALL: [Control; 6] = [
         Control::ToggleKeyboard,
         Control::Fill,
+        Control::Zoom,
         Control::MouseMode,
         Control::FlipFaceButtons,
         Control::Rumble,
@@ -66,6 +71,7 @@ impl Control {
         match self {
             Control::ToggleKeyboard => "toggle-keyboard",
             Control::Fill => "set-fill-mode",
+            Control::Zoom => "set-zoom-mode",
             Control::MouseMode => "set-mouse-mode",
             Control::FlipFaceButtons => "set-face-button-flip",
             Control::Rumble => "set-rumble",
@@ -77,16 +83,18 @@ impl Control {
         match self {
             Control::ToggleKeyboard => "Toggle keyboard",
             Control::Fill => "Crop to fill",
+            Control::Zoom => "Pan & zoom",
             Control::MouseMode => "Mouse mode",
             Control::FlipFaceButtons => "Flip A/B and X/Y",
             Control::Rumble => "Rumble",
         }
     }
 
-    /// `KorriViewerControls.dismiss`: Toggle keyboard closes the overlay,
-    /// so that the keyboard shows over the stream.
+    /// `KorriViewerControls.dismiss`: Toggle keyboard and Pan & zoom close
+    /// the overlay, so that the keyboard shows, or the fingers reach the
+    /// picture.
     pub fn dismiss(self) -> bool {
-        matches!(self, Control::ToggleKeyboard)
+        matches!(self, Control::ToggleKeyboard | Control::Zoom)
     }
 
     /// `KorriViewerControls.supported`: whether the stream can perform it
@@ -94,7 +102,7 @@ impl Control {
     fn offered(self, offer: Offer) -> bool {
         match self {
             // Artemis's touch controls (`touchOnly`).
-            Control::ToggleKeyboard | Control::MouseMode => offer.touch,
+            Control::ToggleKeyboard | Control::Zoom | Control::MouseMode => offer.touch,
             Control::Fill | Control::FlipFaceButtons => true,
             Control::Rumble => offer.rumble,
         }
@@ -112,6 +120,7 @@ impl Control {
         match self {
             Control::ToggleKeyboard => Interaction::Command,
             Control::Fill => toggle(values.fill),
+            Control::Zoom => toggle(values.zoom),
             // The value is the mode's index, each option a mode's label.
             Control::MouseMode => Interaction::Choice {
                 value: values.mouse_mode.value().into(),
@@ -142,6 +151,7 @@ impl Control {
                 Some(_) => bail!("{} takes no value", self.label()),
             },
             Control::Fill => toggle(Change::Fill),
+            Control::Zoom => toggle(Change::Zoom),
             Control::MouseMode => match value {
                 Some(Value::Choice { value }) => MouseMode::ALL
                     .into_iter()
@@ -219,14 +229,15 @@ impl MouseMode {
 
 /// The stream's control values. The defaults are Artemis's: the picture
 /// fits (`ScaleMode.FIT`), the face buttons are not flipped, rumble is on
-/// (`checkbox_enable_rumble`), and the touch screen is multi-touch
-/// (`mouse_mode_list` "0"). A command has no value.
+/// (`checkbox_enable_rumble`), the touch screen is multi-touch
+/// (`mouse_mode_list` "0"), and pan and zoom is off. A command has no value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Values {
     pub fill: bool,
     pub flip_face_buttons: bool,
     pub rumble: bool,
     pub mouse_mode: MouseMode,
+    pub zoom: bool,
 }
 
 impl Default for Values {
@@ -236,6 +247,7 @@ impl Default for Values {
             flip_face_buttons: false,
             rumble: true,
             mouse_mode: MouseMode::default(),
+            zoom: false,
         }
     }
 }
@@ -247,7 +259,12 @@ impl Values {
             Change::Fill(value) => self.fill = value,
             Change::FlipFaceButtons(value) => self.flip_face_buttons = value,
             Change::Rumble(value) => self.rumble = value,
-            Change::MouseMode(mode) => self.mouse_mode = mode,
+            Change::Zoom(value) => self.zoom = value,
+            // A new mouse mode ends pan and zoom (`applyMouseMode`).
+            Change::MouseMode(mode) => {
+                self.mouse_mode = mode;
+                self.zoom = false;
+            }
             // The keyboard's visibility belongs to Android's window
             // (`KorriViewerControls.apply` remembers nothing for it).
             Change::ToggleKeyboard => {}
@@ -262,6 +279,7 @@ impl Values {
 pub enum Change {
     ToggleKeyboard,
     Fill(bool),
+    Zoom(bool),
     MouseMode(MouseMode),
     FlipFaceButtons(bool),
     Rumble(bool),
@@ -272,6 +290,7 @@ impl Change {
         match self {
             Change::ToggleKeyboard => Control::ToggleKeyboard,
             Change::Fill(_) => Control::Fill,
+            Change::Zoom(_) => Control::Zoom,
             Change::MouseMode(_) => Control::MouseMode,
             Change::FlipFaceButtons(_) => Control::FlipFaceButtons,
             Change::Rumble(_) => Control::Rumble,
@@ -391,6 +410,7 @@ mod tests {
                 flip_face_buttons: false,
                 rumble: true,
                 mouse_mode: MouseMode::TrackpadGaming,
+                zoom: true,
             },
             Offer {
                 rumble: true,
@@ -399,9 +419,9 @@ mod tests {
         );
         // KorriViewerControls.snapshot's object for each, in its key order,
         // and in Artemis's order (`Effect.values()`): TOGGLE_KEYBOARD comes
-        // before SET_FILL_MODE, and SET_MOUSE_MODE after it. Mouse mode's
-        // choices are `getMouseModeLabels()`, `R.array.mouse_mode_names`,
-        // with their indexes as values.
+        // before SET_FILL_MODE, then SET_ZOOM_MODE and SET_MOUSE_MODE. Mouse
+        // mode's choices are `getMouseModeLabels()`,
+        // `R.array.mouse_mode_names`, with their indexes as values.
         assert_eq!(
             json(&listed),
             format!(
@@ -411,6 +431,9 @@ mod tests {
                     r#""interaction":{{"kind":"command"}}}},"#,
                     r#"{{"id":"{0}set-fill-mode","label":"Crop to fill","enabled":true,"#,
                     r#""destructive":false,"dismissOnSuccess":false,"#,
+                    r#""interaction":{{"kind":"toggle","value":true,"trueLabel":"On","falseLabel":"Off"}}}},"#,
+                    r#"{{"id":"{0}set-zoom-mode","label":"Pan & zoom","enabled":true,"#,
+                    r#""destructive":false,"dismissOnSuccess":true,"#,
                     r#""interaction":{{"kind":"toggle","value":true,"trueLabel":"On","falseLabel":"Off"}}}},"#,
                     r#"{{"id":"{0}set-mouse-mode","label":"Mouse mode","enabled":true,"#,
                     r#""destructive":false,"dismissOnSuccess":false,"#,
@@ -466,6 +489,7 @@ mod tests {
             [
                 "toggle-keyboard",
                 "set-fill-mode",
+                "set-zoom-mode",
                 "set-mouse-mode",
                 "set-face-button-flip"
             ]
@@ -508,6 +532,7 @@ mod tests {
             flip_face_buttons: true,
             rumble: false,
             mouse_mode: MouseMode::Disabled,
+            zoom: true,
         };
         assert_eq!(changed.with(Change::ToggleKeyboard), changed);
         assert_eq!(Change::ToggleKeyboard.control(), Control::ToggleKeyboard);
@@ -525,6 +550,7 @@ mod tests {
         };
         for (wire, change) in [
             ("set-fill-mode", Change::Fill as fn(bool) -> Change),
+            ("set-zoom-mode", Change::Zoom),
             ("set-face-button-flip", Change::FlipFaceButtons),
             ("set-rumble", Change::Rumble),
         ] {
@@ -549,8 +575,33 @@ mod tests {
                 flip_face_buttons: true,
                 rumble: true,
                 mouse_mode: MouseMode::MultiTouch,
+                zoom: false,
             }
         );
+    }
+
+    // SET_ZOOM_MODE: a touch toggle that closes the overlay
+    // (KorriViewerControls.dismiss), off at the start (`isPanZoomMode`).
+    // `applyMouseMode` turns it off: "Always exit zoom mode if mouse mode has
+    // changed", which KorriViewerControls.apply remembers.
+    #[test]
+    fn pan_and_zoom_is_a_touch_toggle_that_a_new_mouse_mode_turns_off() {
+        let prefix = prefix(LAUNCH, 1, 1);
+        let id = format!("{prefix}set-zoom-mode");
+        let on = Value::Toggle { value: true };
+        assert!(parse(&prefix, &id, Some(&on), RUMBLE).is_err());
+        assert_eq!(
+            parse(&prefix, &id, Some(&on), TOUCH).unwrap(),
+            Change::Zoom(true)
+        );
+        assert!(parse(&prefix, &id, None, TOUCH).is_err());
+        assert!(Control::Zoom.dismiss());
+        assert_eq!(Change::Zoom(true).control(), Control::Zoom);
+        assert!(!Values::default().zoom);
+        let zooming = Values::default().with(Change::Zoom(true));
+        assert!(zooming.zoom);
+        let moused = zooming.with(Change::MouseMode(MouseMode::TrackpadGaming));
+        assert!(!moused.zoom && moused.mouse_mode == MouseMode::TrackpadGaming);
     }
 
     // KorriViewerControls.included: SET_MOUSE_MODE is a touch control, and

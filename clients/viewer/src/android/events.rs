@@ -4,12 +4,18 @@
 //! and the app's thread hands them over. The mapping itself, Artemis's, is
 //! in `input.rs`. Both the viewer's own app and the Korri app (whose events
 //! come through the shell's input filter) use these.
-use crate::input::{self as stream, HistorySample, Pointer, axis};
+use crate::{
+    gestures::GestureConfig,
+    input::{self as stream, HistorySample, Pointer, axis},
+};
 use android_activity::{
     AndroidApp,
     input::{Axis, KeyAction, KeyEvent, MotionEvent},
 };
-use jni::{JavaVM, objects::JObject};
+use jni::{
+    JNIEnv, JavaVM,
+    objects::{JObject, JValue},
+};
 
 /// android-activity's times are `System.nanoTime()`'s; the input's are
 /// milliseconds of the same clock.
@@ -89,6 +95,82 @@ pub fn motion(event: &MotionEvent) -> stream::MotionEvent {
         pointers,
         history,
         axes,
+    }
+}
+
+/// The device's `ViewConfiguration` for pan and zoom's gestures, through
+/// JNI on this thread; Android's defaults at the display's density when it
+/// cannot be read.
+pub fn gesture_config(app: &AndroidApp) -> GestureConfig {
+    let read = (|| -> anyhow::Result<GestureConfig> {
+        // SAFETY: android-activity's VM, alive for the process, and its
+        // global reference to the activity, valid on this thread until it
+        // handles Destroy.
+        let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr() as *mut jni::sys::JavaVM) }?;
+        let mut env = vm.attach_current_thread()?;
+        let activity = unsafe { JObject::from_raw(app.activity_as_ptr() as jni::sys::jobject) };
+        let config = env.with_local_frame(8, |env| -> jni::errors::Result<GestureConfig> {
+            let view = env
+                .call_static_method(
+                    "android/view/ViewConfiguration",
+                    "get",
+                    "(Landroid/content/Context;)Landroid/view/ViewConfiguration;",
+                    &[JValue::Object(&activity)],
+                )?
+                .l()?;
+            let int = |env: &mut JNIEnv, name: &str| -> jni::errors::Result<i32> {
+                env.call_method(&view, name, "()I", &[])?.i()
+            };
+            let touch_slop = int(env, "getScaledTouchSlop")?;
+            let double_tap_slop = int(env, "getScaledDoubleTapSlop")?;
+            let min_span = int(env, "getScaledMinimumScalingSpan")?;
+            let long_press_ms = env
+                .call_static_method(
+                    "android/view/ViewConfiguration",
+                    "getLongPressTimeout",
+                    "()I",
+                    &[],
+                )?
+                .i()?;
+            let double_tap_ms = env
+                .call_static_method(
+                    "android/view/ViewConfiguration",
+                    "getDoubleTapTimeout",
+                    "()I",
+                    &[],
+                )?
+                .i()?;
+            Ok(GestureConfig {
+                touch_slop,
+                double_tap_slop,
+                min_span,
+                long_press_ms: long_press_ms.into(),
+                double_tap_ms: double_tap_ms.into(),
+            })
+        });
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_clear();
+        }
+        Ok(config?)
+    })();
+    match read {
+        Ok(config) => {
+            crate::log::line(&format!("input: the gestures of pan and zoom: {config:?}"));
+            config
+        }
+        Err(error) => {
+            crate::log::line(&format!(
+                "input: no ViewConfiguration ({error:#}); pan and zoom takes Android's defaults at 160 dpi"
+            ));
+            // 8 dp, 100 dp and 27 mm at 160 dpi.
+            GestureConfig {
+                touch_slop: 8,
+                double_tap_slop: 100,
+                min_span: 170,
+                long_press_ms: 400,
+                double_tap_ms: 300,
+            }
+        }
     }
 }
 

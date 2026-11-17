@@ -68,7 +68,9 @@
 //! (`answer.rs`, #497).
 use crate::{
     answer::{self, Answer},
+    gestures::Gesture,
     overlay::Presenter,
+    pan_zoom::PanZoom,
     placement::{Fill, Insets, Rect, geometry, keep_out_of_cutout, letterbox, place},
 };
 use android_activity::{AndroidApp, MainEvent, PollEvent};
@@ -140,10 +142,13 @@ pub struct Layers {
     /// The window's size that the placement follows.
     pub window: (i32, i32),
     /// Where the whole picture goes, as the newest transaction places it;
-    /// when it fills the window, it reaches past it on two sides.
+    /// when it fills the window, it reaches past it on two sides, and when
+    /// it is zoomed, it is larger than its fitted or filled place.
     pub placed: Rect,
     /// "Crop to fill": applied by Android's main thread, or on its way.
     fill: Fill,
+    /// "Pan & zoom": the picture's zoom in its fitted or filled place.
+    pan_zoom: PanZoom,
 }
 
 /// What Android's main thread sends back: the video layer, and the backdrop
@@ -239,6 +244,7 @@ impl Pending {
                     window: self.window,
                     placed: self.placed,
                     fill: Fill::default(),
+                    pan_zoom: PanZoom::default(),
                 }
             },
         ))
@@ -379,7 +385,7 @@ impl Layers {
             return false;
         }
         self.window = size;
-        self.placed = place(self.stream, size, self.fill.placing());
+        self.placed = self.zoomed(self.fill.placing());
         let vm = app.vm_as_ptr() as usize;
         let (video, stream, placed) = (self.video.control.clone(), self.stream, self.placed);
         let backdrop = self
@@ -476,7 +482,7 @@ impl Layers {
             return false;
         }
         self.stream = stream;
-        self.placed = place(stream, self.window, self.fill.placing());
+        self.placed = self.zoomed(self.fill.placing());
         let vm = app.vm_as_ptr() as usize;
         let (video, placed, window) = (self.video.control.clone(), self.placed, self.window);
         app.run_on_java_main_thread(Box::new(move || {
@@ -540,7 +546,7 @@ impl Layers {
     /// placement does not change: the fill counts at once.
     pub fn set_fill(&mut self, app: &AndroidApp, fill: bool) -> Option<mpsc::Receiver<Result<()>>> {
         self.fill.ask(fill);
-        let placed = place(self.stream, self.window, fill);
+        let placed = self.zoomed(fill);
         if placed == self.placed {
             self.fill.answered(true);
             return None;
@@ -553,7 +559,7 @@ impl Layers {
     /// without waiting.
     pub fn fill_answered(&mut self, app: &AndroidApp, applied: bool) {
         let fill = self.fill.answered(applied);
-        let placed = place(self.stream, self.window, fill);
+        let placed = self.zoomed(fill);
         if placed != self.placed {
             let _ = self.place_video(app, placed);
         }
@@ -562,6 +568,33 @@ impl Layers {
     /// The fill that Android's main thread has applied.
     pub fn fill(&self) -> bool {
         self.fill.applied()
+    }
+
+    /// The picture's place for `fill` with its zoom: the fitted or filled
+    /// place is the zoom's container, which keeps its zoom when its size
+    /// changes (`PanZoomHandler.handleSurfaceChange`).
+    fn zoomed(&mut self, fill: bool) -> Rect {
+        let container = place(self.stream, self.window, fill);
+        self.pan_zoom.resized(container);
+        self.pan_zoom.rect(container)
+    }
+
+    /// One gesture of "Pan & zoom": the video moves to its new place, one
+    /// `setGeometry` posted to the main thread without waiting. True when
+    /// it moved: the input then maps touches into the new place.
+    pub fn zoom(&mut self, app: &AndroidApp, gesture: Gesture) -> bool {
+        let container = place(self.stream, self.window, self.fill.placing());
+        if !self.pan_zoom.gesture(gesture, container) {
+            return false;
+        }
+        let placed = self.pan_zoom.rect(container);
+        let _ = self.place_video(app, placed);
+        true
+    }
+
+    /// The picture's zoom: 1 when it is not zoomed.
+    pub fn zoom_scale(&self) -> f32 {
+        self.pan_zoom.scale()
     }
 
     /// One `setGeometry` of the video to `placed`, posted to the main

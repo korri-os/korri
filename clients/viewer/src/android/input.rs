@@ -28,6 +28,7 @@
 use super::{
     feedback::{Phone, Seats, Vibration},
     gamepad::{self, Controllers, Key},
+    gestures::{Gesture, GestureConfig, PanZoomGestures},
     keyboard::{self, Keyboard, Special, code},
     touch::{Mouse, Touch},
 };
@@ -347,6 +348,8 @@ pub struct Settings {
     /// Start held for 750 ms turns a controller into a mouse
     /// (`-nomouseemulation` turns it off, as in Moonlight).
     pub mouse_emulation: bool,
+    /// The device's `ViewConfiguration`, for the gestures of pan and zoom.
+    pub gestures: GestureConfig,
 }
 
 /// Everything the stream's input holds, on the app's thread.
@@ -359,6 +362,11 @@ pub struct Input {
     video: Rect,
     hold: Hold,
     counts: Counts,
+    gesture_config: GestureConfig,
+    /// "Pan & zoom" is on: the touch screen's fingers go to its gestures.
+    zoom: Option<PanZoomGestures>,
+    /// What the gestures reported, for the picture's zoom.
+    gestures: Vec<Gesture>,
 }
 
 /// Artemis's input hold (`NvConnection.setInputHeld`): one gate below every
@@ -530,6 +538,9 @@ impl Input {
             video,
             hold: Hold::default(),
             counts: Counts::default(),
+            gesture_config: settings.gestures,
+            zoom: None,
+            gestures: Vec::new(),
         }
     }
 
@@ -586,6 +597,28 @@ impl Input {
             counts: &mut self.counts,
         };
         self.touch.set_mode(mode, sink);
+        // "Always exit zoom mode if mouse mode has changed."
+        self.zoom = None;
+    }
+
+    /// The stream's control "Pan & zoom" (`Game.setZoomMode`): from the next
+    /// event, the touch screen's fingers pan and zoom the picture, or go to
+    /// the host again. The zoom itself stays (`take_gestures`).
+    pub fn set_zoom_mode(&mut self, on: bool) {
+        if on != self.zoom.is_some() {
+            self.zoom = on.then(|| PanZoomGestures::new(self.gesture_config));
+        }
+    }
+
+    /// Whether "Pan & zoom" is on.
+    pub fn zoom_mode(&self) -> bool {
+        self.zoom.is_some()
+    }
+
+    /// What the gestures of pan and zoom reported since the last call, in
+    /// their order.
+    pub fn take_gestures(&mut self) -> Vec<Gesture> {
+        std::mem::take(&mut self.gestures)
     }
 
     /// The stream's control "Flip A/B and X/Y" (slice D11).
@@ -700,6 +733,16 @@ impl Input {
             // A touchpad's own gestures (Artemis's TrackpadContext) are not
             // carried.
             return false;
+        }
+        // Fingers, while pan and zoom is on: they move the picture, and the
+        // host hears nothing of them (`panZoomHandler.handleTouchEvent`).
+        let finger = !event
+            .pointers
+            .first()
+            .is_some_and(|p| matches!(p.tool_type, tool::STYLUS | tool::ERASER));
+        if let Some(zoom) = self.zoom.as_mut().filter(|_| finger) {
+            self.gestures.extend(zoom.event(event));
+            return true;
         }
         let device = devices.describe(event.device);
         self.touch
@@ -821,6 +864,7 @@ impl Sink for Core {
 pub(crate) mod tests {
     use super::*;
     use crate::controls::MouseMode;
+    use crate::gestures::{Gesture, GestureConfig};
     use crate::{
         feedback::{Owner, Phone, Rumble, Seat, Seats, Vibration, Vibrators},
         gamepad::{
@@ -1008,10 +1052,20 @@ pub(crate) mod tests {
         bottom: 818,
     };
 
+    /// The emulator's Pixel 5 at 420 dpi (`ViewConfiguration`).
+    pub(crate) const GESTURES: GestureConfig = GestureConfig {
+        touch_slop: 21,
+        double_tap_slop: 263,
+        min_span: 446,
+        long_press_ms: 400,
+        double_tap_ms: 300,
+    };
+
     fn input() -> Input {
         Input::new(
             Settings {
                 mouse_emulation: true,
+                gestures: GESTURES,
             },
             0,
             VIDEO,
@@ -1295,6 +1349,7 @@ pub(crate) mod tests {
             Input::new(
                 Settings {
                     mouse_emulation: true,
+                    gestures: GESTURES,
                 },
                 0b11,
                 VIDEO,
@@ -1547,6 +1602,7 @@ pub(crate) mod tests {
         let mut input = Input::new(
             Settings {
                 mouse_emulation: true,
+                gestures: GESTURES,
             },
             0,
             VIDEO,
@@ -1843,6 +1899,7 @@ pub(crate) mod tests {
         let mut input = Input::new(
             Settings {
                 mouse_emulation: false,
+                gestures: GESTURES,
             },
             0,
             VIDEO,
@@ -2344,6 +2401,92 @@ pub(crate) mod tests {
                 ..
             }]
         ));
+    }
+
+    // "Pan & zoom" (`Game.handleMotionEvent`: `isPanZoomMode`): the touch
+    // screen's fingers go to its gestures, and none reaches the host.
+    #[test]
+    fn pan_and_zoom_takes_the_touch_screen_from_the_host() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        input.set_zoom_mode(true);
+        assert!(input.zoom_mode());
+        gesture(
+            &mut input,
+            &mut sink,
+            &[
+                (action::DOWN, 0, &[(540.0, 514.0)], 1000),
+                (action::MOVE, 0, &[(600.0, 514.0)], 1020),
+                (action::UP, 0, &[(600.0, 514.0)], 1040),
+            ],
+        );
+        assert!(sink.take().is_empty());
+        assert_eq!(
+            input.take_gestures(),
+            [Gesture::Scroll {
+                distance: (-60.0, 0.0)
+            }]
+        );
+        assert!(input.take_gestures().is_empty());
+        input.set_zoom_mode(false);
+        gesture(
+            &mut input,
+            &mut sink,
+            &[(action::DOWN, 0, &[(540.0, 514.0)], 2000)],
+        );
+        assert!(matches!(
+            sink.take()[..],
+            [Packet::Touch {
+                kind: kind::DOWN,
+                ..
+            }]
+        ));
+        assert!(input.take_gestures().is_empty());
+    }
+
+    // `applyMouseMode`: "Always exit zoom mode if mouse mode has changed".
+    #[test]
+    fn a_new_mouse_mode_turns_pan_and_zoom_off() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        input.set_zoom_mode(true);
+        input.set_mouse_mode(MouseMode::Absolute, &mut sink);
+        assert!(!input.zoom_mode());
+        gesture(
+            &mut input,
+            &mut sink,
+            &[
+                (action::DOWN, 0, &[(540.0, 514.0)], 1000),
+                (action::UP, 0, &[(540.0, 514.0)], 1040),
+            ],
+        );
+        assert_eq!(sink.take()[1], clicked(true, MOUSE_LEFT));
+        assert!(input.take_gestures().is_empty());
+    }
+
+    // The zoomed picture's place maps a touch to the point under the finger:
+    // twice the size about the middle, a quarter of the way in is three
+    // eighths of the picture.
+    #[test]
+    fn a_touch_on_the_zoomed_picture_reaches_the_point_under_it() {
+        let (mut input, mut sink) = (input(), Recorded::default());
+        input.place(Rect {
+            left: -540,
+            top: -94,
+            right: 1620,
+            bottom: 1122,
+        });
+        gesture(
+            &mut input,
+            &mut sink,
+            &[(action::DOWN, 0, &[(270.0, 362.0)], 1000)],
+        );
+        let packets = sink.take();
+        let Packet::Touch { x, y, .. } = packets[0] else {
+            panic!("{packets:?}")
+        };
+        assert!(
+            (x - 0.375).abs() < 1e-6 && (y - 0.375).abs() < 1e-6,
+            "{x} {y}"
+        );
     }
 
     #[test]
@@ -2857,6 +3000,7 @@ pub(crate) mod tests {
         let mut input = Input::new(
             Settings {
                 mouse_emulation: true,
+                gestures: GESTURES,
             },
             0,
             VIDEO,
@@ -3039,6 +3183,7 @@ pub(crate) mod tests {
         let mut input = Input::new(
             Settings {
                 mouse_emulation: true,
+                gestures: GESTURES,
             },
             0,
             VIDEO,

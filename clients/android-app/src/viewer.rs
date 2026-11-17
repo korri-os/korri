@@ -19,11 +19,13 @@
 //! shows or hides Android's soft keyboard over the stream (confirmed once
 //! Android's main thread has made the call, `soft_keyboard`), "Crop to fill"
 //! moves the video layer (confirmed once Android's main thread has applied
-//! the transaction), "Mouse mode" changes the touch screen's mapping, "Flip
-//! A/B and X/Y" the controllers', and "Rumble" goes to the controllers'
-//! feedback thread (slice D4b's). The loop thread offers Rumble while a
-//! controller that can rumble is in the stream, and Toggle keyboard and
-//! Mouse mode on a device with a touch screen.
+//! the transaction), "Pan & zoom" gives the touch screen's gestures to the
+//! picture's zoom, which moves the video layer, "Mouse mode" changes the
+//! touch screen's mapping, "Flip A/B and X/Y" the controllers', and
+//! "Rumble" goes to the controllers' feedback thread (slice D4b's). The
+//! loop thread offers Rumble while a controller that can rumble is in the
+//! stream, and Toggle keyboard, Pan & zoom and Mouse mode on a device with
+//! a touch screen.
 //!
 //! The adapter hands a launch to the loop thread over a channel, because the
 //! layers and the input belong to that thread. The loop thread never waits:
@@ -688,6 +690,9 @@ struct Playing {
     /// A change that waits for Android's main thread: "Crop to fill" for
     /// the layer to move, "Toggle keyboard" for the input method's call.
     answering: Option<(ControlChange, mpsc::Receiver<anyhow::Result<()>>)>,
+    /// Pan and zoom moved the picture since its place was last logged: it
+    /// is logged once the gestures stop.
+    zoom_moved: bool,
     /// The shell's gameplay overlay over this stream (slice D5b).
     hosted: Hosted,
     /// Where each opening's leave thread answers, with the opening's
@@ -1084,6 +1089,7 @@ impl Stream {
         } = show;
         let settings = Settings {
             mouse_emulation: options.mouse_emulation,
+            gestures: events::gesture_config(&self.app),
         };
         let decoded = Decoded::default();
         let picture = Picture {
@@ -1170,6 +1176,7 @@ impl Stream {
             rumble,
             touch,
             answering: None,
+            zoom_moved: false,
             hosted: Hosted::default(),
             answers,
             left,
@@ -1210,6 +1217,19 @@ impl Stream {
             return Phase::Playing(playing);
         }
         playing.play.tick();
+        // Pan and zoom's gestures move the picture; touches then map into
+        // its new place.
+        let gestures = playing.play.take_gestures();
+        let mut moved = false;
+        for gesture in &gestures {
+            moved |= playing.layers.zoom(&self.app, *gesture);
+        }
+        if moved {
+            playing.play.place(playing.layers.placed);
+            playing.zoom_moved = true;
+        } else if gestures.is_empty() && std::mem::take(&mut playing.zoom_moved) {
+            log_placement(&playing.layers);
+        }
         let window = self
             .app
             .native_window()
@@ -1253,6 +1273,7 @@ impl Stream {
             let failed = match change.change {
                 Change::ToggleKeyboard => "the soft keyboard did not toggle",
                 Change::Fill(_)
+                | Change::Zoom(_)
                 | Change::MouseMode(_)
                 | Change::FlipFaceButtons(_)
                 | Change::Rumble(_) => "the video layer did not move",
@@ -1292,6 +1313,17 @@ impl Stream {
                     // The window has the stream's shape: nothing moves.
                     None => done(change, Ok(())),
                 },
+                // korrid has closed the overlay first (the control
+                // dismisses it): the next touch pans and zooms, or reaches
+                // the host again. The zoom stays.
+                Change::Zoom(on) => {
+                    let result = if playing.play.set_zoom_mode(on) {
+                        Ok(())
+                    } else {
+                        Err("the stream's input has ended".to_owned())
+                    };
+                    done(change, result);
+                }
                 // In effect for the next touch; what the old mode held
                 // lets go now.
                 Change::MouseMode(mode) => {
@@ -1453,6 +1485,7 @@ impl Drop for Stream {
                     rumble: _,
                     touch: _,
                     answering: _,
+                    zoom_moved: _,
                     hosted: _,
                     answers: _,
                     left: _,
@@ -1655,8 +1688,13 @@ fn refuse_resumes(resumes: Vec<oneshot::Sender<Result<(), String>>>, why: &str) 
 /// new stream size, and after "Crop to fill".
 fn log_placement(layers: &Layers) {
     let (placed, stream, size) = (layers.placed, layers.stream, layers.window);
+    let fill = if layers.fill() {
+        ", cropped to fill"
+    } else {
+        ""
+    };
     logcat::info(&format!(
-        "korri-app: viewer video layer {}x{} placed at ({}, {})-({}, {}) in the window {}x{}{}",
+        "korri-app: viewer video layer {}x{} placed at ({}, {})-({}, {}) in the window {}x{}{fill}{}",
         stream.0,
         stream.1,
         placed.left,
@@ -1665,12 +1703,17 @@ fn log_placement(layers: &Layers) {
         placed.bottom,
         size.0,
         size.1,
-        if layers.fill() {
-            ", cropped to fill"
-        } else {
-            ""
-        }
+        zoomed(layers.zoom_scale())
     ));
+}
+
+/// The log's word for a zoomed picture: none at no zoom.
+fn zoomed(scale: f32) -> String {
+    if scale > 1.0 {
+        format!(", zoomed {scale:.2} times")
+    } else {
+        String::new()
+    }
 }
 
 /// A control change has taken effect, or could not: korrid's Apply answers.
@@ -1691,11 +1734,18 @@ fn done(change: ControlChange, result: Result<(), String>) {
             "korri-app: viewer control {wire} not set to {}: {why}",
             mode.value()
         )),
-        (Change::Fill(value) | Change::FlipFaceButtons(value) | Change::Rumble(value), Ok(())) => {
-            logcat::info(&format!("korri-app: viewer control {wire} is {value}"))
-        }
         (
-            Change::Fill(value) | Change::FlipFaceButtons(value) | Change::Rumble(value),
+            Change::Fill(value)
+            | Change::Zoom(value)
+            | Change::FlipFaceButtons(value)
+            | Change::Rumble(value),
+            Ok(()),
+        ) => logcat::info(&format!("korri-app: viewer control {wire} is {value}")),
+        (
+            Change::Fill(value)
+            | Change::Zoom(value)
+            | Change::FlipFaceButtons(value)
+            | Change::Rumble(value),
             Err(why),
         ) => logcat::error(&format!(
             "korri-app: viewer control {wire} not set to {value}: {why}"

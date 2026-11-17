@@ -292,6 +292,7 @@ fn stream(
     ));
     let settings = Settings {
         mouse_emulation: options.mouse_emulation,
+        gestures: events::gesture_config(app),
     };
     // The controllers' rumble, light and battery reports, on their own
     // thread for the whole run: the input tells it which controller is

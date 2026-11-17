@@ -66,6 +66,11 @@ pub mod feedback_jni;
 #[cfg(any(test, target_os = "android"))]
 #[path = "android/gamepad.rs"]
 mod gamepad;
+// Artemis's pan and zoom (#434, D7′): Android's gesture detectors, and the
+// zoom of the picture.
+#[cfg(any(test, target_os = "android"))]
+#[path = "android/gestures.rs"]
+pub mod gestures;
 #[cfg(any(test, target_os = "android"))]
 #[path = "android/input.rs"]
 pub mod input;
@@ -78,6 +83,9 @@ pub mod layer;
 #[cfg(any(test, target_os = "android"))]
 #[path = "android/overlay.rs"]
 pub mod overlay;
+#[cfg(any(test, target_os = "android"))]
+#[path = "android/pan_zoom.rs"]
+pub mod pan_zoom;
 #[cfg(target_os = "android")]
 #[path = "android/picture.rs"]
 pub mod picture;
