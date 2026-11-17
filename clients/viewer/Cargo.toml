@@ -7,8 +7,8 @@ license = "GPL-3.0-or-later AND GPL-3.0-only AND Zlib"
 
 [features]
 # nightjar-core (vendor/nightjar, GPL-3.0-only) as a second network core,
-# chosen with `-networkcore nightjar` (#391 step E). Linux only for now. Off
-# by default: the C core streams.
+# chosen with `-networkcore nightjar` (#391 step E), on Linux and Android.
+# Off by default: the C core streams.
 nightjar = ["dep:nightjar-core", "dep:rubylight-protocol"]
 # The Rust port of the carried C audio renderers (src/audio_output/),
 # chosen with `-audiooutput rust` (#391 step F, slice F1). Linux only. Off by

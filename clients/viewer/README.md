@@ -1735,7 +1735,12 @@ packet is `decodeAndPlaySample(NULL, 0)`; stages, the start, the
 termination, the log, rumble, trigger rumble, motion, LED, HDR and the
 connection status go to the listener callbacks that are set. Input packets
 go to nightjar-core's input queue, and its errors become the C core's
-codes.
+codes. The stream's end keeps the C core's order: each started table's
+`stop`, audio then video, before nightjar-core's teardown joins the threads
+that call into the tables (`Tables` in `nightjar.rs`). nightjar-core itself
+joins first and stops after, and Android's decoder waits in `submit` until
+its `stop`; a failed start stops its tables when nightjar-core reports the
+stage, just before its teardown.
 
 What differs from the C core, by choice (each a guess, for the measure to
 judge):

@@ -157,6 +157,7 @@ impl ControlSession {
             events: Vec::new(),
             idr_requested: false,
             reference_frames: VecDeque::new(),
+            // Korri: none sent yet.
             idr_requests_sent: 0,
             rfi_requests_sent: 0,
             fec_statuses: VecDeque::new(),
@@ -537,6 +538,7 @@ impl ControlSession {
         if self.idr_requested {
             self.idr_requested = false;
             self.reference_frames.clear();
+            // Korri: counted once it is queued; upstream ignores the result.
             if self.queue(&ClientMessage::RequestIdrFrame) {
                 self.idr_requests_sent += 1;
             }
@@ -556,6 +558,7 @@ impl ControlSession {
                 }
             }
             if let Some((first, last)) = range {
+                // Korri: counted once it is queued; upstream ignores the result.
                 if self.queue(&ClientMessage::InvalidateReferenceFrames { first, last }) {
                     self.rfi_requests_sent += 1;
                 }

@@ -44,14 +44,23 @@ use nightjar_core::{
 use std::{
     ffi::{CStr, CString, c_char, c_int, c_void},
     ptr::null_mut,
-    sync::{Arc, Mutex, PoisonError, RwLock},
+    sync::{
+        Arc, Mutex, PoisonError, RwLock,
+        atomic::{AtomicU8, Ordering},
+    },
 };
+
+// A key frame from nightjar-core's own receiver, for the tests.
+#[cfg(test)]
+mod frames;
 
 /// moonlight-common-c's `LI_ERR_UNSUPPORTED`.
 const UNSUPPORTED: i32 = -5501;
 
 pub(crate) struct Nightjar {
     session: Mutex<Option<Session>>,
+    /// The running stream's platform tables, which `stop` stops first.
+    tables: Mutex<Option<Arc<Tables>>>,
     /// The running session's input queue, for every thread that sends.
     input: RwLock<Option<InputHandle>>,
     /// The start under way, for `interrupt`.
@@ -62,6 +71,7 @@ impl Nightjar {
     pub(crate) const fn new() -> Self {
         Self {
             session: Mutex::new(None),
+            tables: Mutex::new(None),
             input: RwLock::new(None),
             interrupt: Mutex::new(None),
         }
@@ -82,7 +92,8 @@ impl NetworkCore for Nightjar {
         // SAFETY: the caller keeps each table alive until `stop` returns.
         let video = unsafe { c.video.as_ref() }.copied();
         let audio = unsafe { c.audio.as_ref() }.copied();
-        let listener = Arc::new(Callbacks(*c.listener));
+        let tables = Arc::new(Tables::new(video, audio));
+        let listener = Arc::new(Callbacks(*c.listener, tables.clone()));
         // SAFETY: the server's strings are live C strings or null.
         let host = match unsafe { host_info(c.server) } {
             Ok(host) => host,
@@ -101,12 +112,12 @@ impl NetworkCore for Nightjar {
             &host,
             config,
             Box::new(Decoder {
-                table: video,
+                tables: tables.clone(),
                 flags: c.video_flags,
                 entries: Vec::new(),
             }),
             Box::new(Audio {
-                table: audio,
+                tables: tables.clone(),
                 context: Context(c.audio_context),
             }),
             listener,
@@ -120,6 +131,7 @@ impl NetworkCore for Nightjar {
             Ok(session) => {
                 *self.input.write().unwrap_or_else(PoisonError::into_inner) =
                     Some(session.input_handle());
+                *self.tables.lock().unwrap_or_else(PoisonError::into_inner) = Some(tables);
                 *self.session.lock().unwrap_or_else(PoisonError::into_inner) = Some(session);
                 0
             }
@@ -142,18 +154,23 @@ impl NetworkCore for Nightjar {
     fn stop(&self) {
         // No input enters the queue after this; a send under way ends first.
         *self.input.write().unwrap_or_else(PoisonError::into_inner) = None;
+        let tables = self
+            .tables
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
         let session = self
             .session
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
-        if let Some(session) = session {
+        if let (Some(tables), Some(session)) = (tables, session) {
             crate::log::line(&format!("nightjar: at the stop: {:?}", session.stats()));
             let (idr, rfi) = session.with_control(|control| recovery_requests(control));
             crate::log::line(&format!(
                 "nightjar: recovery requests sent: {idr} IDR, {rfi} reference frame invalidations"
             ));
-            session.stop();
+            end_stream(&tables, || session.stop());
         }
     }
 
@@ -367,22 +384,116 @@ fn code(result: Result<(), InputError>) -> i32 {
     }
 }
 
+/// The platform's video and audio tables of one stream, shared by the
+/// decoder, the audio renderer, the listener and `Nightjar::stop`.
+///
+/// The C core calls a table's `stop` before it joins the threads that call
+/// into the table (`VideoStream.c:283`, `AudioStream.c:407` at the pin), and
+/// a platform's `stop` is what ends a call that waits: Android's decoder
+/// waits for an input buffer until its `stop` (`src/android/decoder.rs`,
+/// `queue_buffer`). nightjar-core's teardown joins first and calls `stop`
+/// after (`session/mod.rs`, `Parts::teardown`), so a decoder that waited in
+/// `submit` would hold the stream's stop for ever. The adapter stops each
+/// table itself before nightjar-core's teardown: `Nightjar::stop` before
+/// `Session::stop`, and the listener's `stage_failed`, which nightjar-core
+/// calls just before a failed start's teardown (`session/mod.rs:751`). Each
+/// table's `stop` runs once, and only after its `start`, as in the C core;
+/// nightjar-core's own `stop` afterwards does nothing more.
+struct Tables {
+    video: Option<ffi::DECODER_RENDERER_CALLBACKS>,
+    audio: Option<ffi::AUDIO_RENDERER_CALLBACKS>,
+    video_state: AtomicU8,
+    audio_state: AtomicU8,
+}
+
+/// A table's state: not started, `start` called, `stop` called.
+const IDLE: u8 = 0;
+const STARTED: u8 = 1;
+const STOPPED: u8 = 2;
+
+impl Tables {
+    fn new(
+        video: Option<ffi::DECODER_RENDERER_CALLBACKS>,
+        audio: Option<ffi::AUDIO_RENDERER_CALLBACKS>,
+    ) -> Self {
+        Self {
+            video,
+            audio,
+            video_state: AtomicU8::new(IDLE),
+            audio_state: AtomicU8::new(IDLE),
+        }
+    }
+
+    fn start_video(&self) {
+        self.video_state.store(STARTED, Ordering::SeqCst);
+        if let Some(start) = self.video.and_then(|t| t.start) {
+            // SAFETY: after a setup that succeeded, as the C core calls it.
+            unsafe { start() }
+        }
+    }
+
+    fn stop_video(&self) {
+        let started =
+            self.video_state
+                .compare_exchange(STARTED, STOPPED, Ordering::SeqCst, Ordering::SeqCst);
+        if let (Ok(_), Some(stop)) = (started, self.video.and_then(|t| t.stop)) {
+            // SAFETY: once, after `start`; the C core calls it while its
+            // threads may still be in the table.
+            unsafe { stop() }
+        }
+    }
+
+    fn start_audio(&self) {
+        self.audio_state.store(STARTED, Ordering::SeqCst);
+        if let Some(start) = self.audio.and_then(|t| t.start) {
+            // SAFETY: after a successful init.
+            unsafe { start() }
+        }
+    }
+
+    fn stop_audio(&self) {
+        let started =
+            self.audio_state
+                .compare_exchange(STARTED, STOPPED, Ordering::SeqCst, Ordering::SeqCst);
+        if let (Ok(_), Some(stop)) = (started, self.audio.and_then(|t| t.stop)) {
+            // SAFETY: once, after `start`, as the C core calls it.
+            unsafe { stop() }
+        }
+    }
+
+    /// Each started table's `stop`, in `LiStopConnection`'s order: the
+    /// audio stream stops before the video stream (`Connection.c` at the
+    /// pin).
+    fn stop_before_join(&self) {
+        self.stop_audio();
+        self.stop_video();
+    }
+}
+
+/// Ends a started stream in the C core's order: each platform table's
+/// `stop`, then `join`, nightjar-core's `Session::stop`, which joins the
+/// stream's threads and calls `cleanup`.
+fn end_stream(tables: &Tables, join: impl FnOnce()) {
+    tables.stop_before_join();
+    join();
+}
+
 /// The platform's decoder table, as nightjar-core's decoder.
 struct Decoder {
-    table: Option<ffi::DECODER_RENDERER_CALLBACKS>,
+    tables: Arc<Tables>,
     flags: c_int,
     /// One `LENTRY` for each buffer of the frame being submitted.
     entries: Vec<ffi::LENTRY>,
 }
 
-// SAFETY: the table holds C function pointers, which any thread may call as
+// SAFETY: the tables hold C function pointers, which any thread may call as
 // the C core's threads do; `entries` points into a frame only during
 // `submit`, and is rebuilt for each frame.
 unsafe impl Send for Decoder {}
 
 impl VideoDecoder for Decoder {
     fn setup(&mut self, s: &VideoSetup) -> Result<(), i32> {
-        let Some(setup) = self.table.and_then(|t| t.setup) else {
+        let Some(setup) = self.tables.video.and_then(|t| t.setup) else {
             return Ok(());
         };
         // SAFETY: the C core's call, with its render context (none here).
@@ -402,14 +513,11 @@ impl VideoDecoder for Decoder {
     }
 
     fn start(&mut self) {
-        if let Some(start) = self.table.and_then(|t| t.start) {
-            // SAFETY: after a setup that succeeded, as the C core calls it.
-            unsafe { start() }
-        }
+        self.tables.start_video();
     }
 
     fn submit(&mut self, frame: &Frame) -> DecodeStatus {
-        let Some(submit) = self.table.and_then(|t| t.submitDecodeUnit) else {
+        let Some(submit) = self.tables.video.and_then(|t| t.submitDecodeUnit) else {
             return DecodeStatus::Ok;
         };
         let Some(mut unit) = decode_unit(frame, &mut self.entries) else {
@@ -424,15 +532,14 @@ impl VideoDecoder for Decoder {
         }
     }
 
+    /// After nightjar-core joined the stream's threads: the table's `stop`
+    /// ran already, unless nothing stopped the stream first.
     fn stop(&mut self) {
-        if let Some(stop) = self.table.and_then(|t| t.stop) {
-            // SAFETY: after the receive and decode threads ended.
-            unsafe { stop() }
-        }
+        self.tables.stop_video();
     }
 
     fn cleanup(&mut self) {
-        if let Some(cleanup) = self.table.and_then(|t| t.cleanup) {
+        if let Some(cleanup) = self.tables.video.and_then(|t| t.cleanup) {
             // SAFETY: last, as the C core calls it.
             unsafe { cleanup() }
         }
@@ -494,7 +601,7 @@ unsafe impl Send for Context {}
 
 /// The platform's audio table, as nightjar-core's audio renderer.
 struct Audio {
-    table: Option<ffi::AUDIO_RENDERER_CALLBACKS>,
+    tables: Arc<Tables>,
     context: Context,
 }
 
@@ -504,7 +611,7 @@ impl AudioRenderer for Audio {
         if setup.codec != rubylight_protocol::audio_ext::CODEC_OPUS {
             return Err(-1);
         }
-        let Some(init) = self.table.and_then(|t| t.init) else {
+        let Some(init) = self.tables.audio.and_then(|t| t.init) else {
             return Ok(());
         };
         let mut opus = opus_config(setup);
@@ -523,14 +630,11 @@ impl AudioRenderer for Audio {
     }
 
     fn start(&mut self) {
-        if let Some(start) = self.table.and_then(|t| t.start) {
-            // SAFETY: after a successful init.
-            unsafe { start() }
-        }
+        self.tables.start_audio();
     }
 
     fn play(&mut self, packet: Option<&[u8]>) {
-        let Some(play) = self.table.and_then(|t| t.decodeAndPlaySample) else {
+        let Some(play) = self.tables.audio.and_then(|t| t.decodeAndPlaySample) else {
             return;
         };
         let (data, length) = match packet {
@@ -542,23 +646,23 @@ impl AudioRenderer for Audio {
         unsafe { play(data, length) }
     }
 
+    /// After nightjar-core joined the audio threads: the table's `stop`
+    /// ran already, unless nothing stopped the stream first.
     fn stop(&mut self) {
-        if let Some(stop) = self.table.and_then(|t| t.stop) {
-            // SAFETY: after the audio threads ended.
-            unsafe { stop() }
-        }
+        self.tables.stop_audio();
     }
 
     fn cleanup(&mut self) {
-        if let Some(cleanup) = self.table.and_then(|t| t.cleanup) {
+        if let Some(cleanup) = self.tables.audio.and_then(|t| t.cleanup) {
             // SAFETY: last.
             unsafe { cleanup() }
         }
     }
 }
 
-/// The platform's listener table, as nightjar-core's listener.
-struct Callbacks(ffi::CONNECTION_LISTENER_CALLBACKS);
+/// The platform's listener table, as nightjar-core's listener, with the
+/// stream's video and audio tables for a failed start.
+struct Callbacks(ffi::CONNECTION_LISTENER_CALLBACKS, Arc<Tables>);
 
 impl Listener for Callbacks {
     fn stage_starting(&self, stage: Stage) {
@@ -575,11 +679,15 @@ impl Listener for Callbacks {
         }
     }
 
+    /// nightjar-core calls this just before a failed start's teardown
+    /// joins the stream's threads (`session/mod.rs:751`): the tables that
+    /// started stop first, as `Tables` says.
     fn stage_failed(&self, stage: Stage, error: i32) {
         if let Some(f) = self.0.stageFailed {
             // SAFETY: the C core's call.
             unsafe { f(stage as c_int, error) }
         }
+        self.1.stop_before_join();
     }
 
     fn connection_started(&self) {
@@ -1021,14 +1129,17 @@ mod tests {
         let _turn = PLATFORM_TURN.lock().unwrap_or_else(|p| p.into_inner());
         PLATFORM.lock().unwrap().clear();
         let mut decoder = Decoder {
-            table: Some(ffi::DECODER_RENDERER_CALLBACKS {
-                setup: Some(video_setup),
-                start: Some(video_start),
-                stop: Some(video_stop),
-                cleanup: Some(video_cleanup),
-                submitDecodeUnit: None,
-                capabilities: 0,
-            }),
+            tables: Arc::new(Tables::new(
+                Some(ffi::DECODER_RENDERER_CALLBACKS {
+                    setup: Some(video_setup),
+                    start: Some(video_start),
+                    stop: Some(video_stop),
+                    cleanup: Some(video_cleanup),
+                    submitDecodeUnit: None,
+                    capabilities: 0,
+                }),
+                None,
+            )),
             flags: 8,
             entries: Vec::new(),
         };
@@ -1068,7 +1179,7 @@ mod tests {
         );
         // The session tests' null table: nothing to call, nothing fails.
         let mut none = Decoder {
-            table: None,
+            tables: Arc::new(Tables::new(None, None)),
             flags: 0,
             entries: Vec::new(),
         };
@@ -1083,14 +1194,17 @@ mod tests {
         let _turn = PLATFORM_TURN.lock().unwrap_or_else(|p| p.into_inner());
         PLATFORM.lock().unwrap().clear();
         let mut audio = Audio {
-            table: Some(ffi::AUDIO_RENDERER_CALLBACKS {
-                init: Some(audio_init),
-                start: Some(audio_start),
-                stop: Some(audio_stop),
-                cleanup: Some(audio_cleanup),
-                decodeAndPlaySample: Some(audio_play),
-                capabilities: ffi::CAPABILITY_SUPPORTS_ARBITRARY_AUDIO_DURATION as c_int,
-            }),
+            tables: Arc::new(Tables::new(
+                None,
+                Some(ffi::AUDIO_RENDERER_CALLBACKS {
+                    init: Some(audio_init),
+                    start: Some(audio_start),
+                    stop: Some(audio_stop),
+                    cleanup: Some(audio_cleanup),
+                    decodeAndPlaySample: Some(audio_play),
+                    capabilities: ffi::CAPABILITY_SUPPORTS_ARBITRARY_AUDIO_DURATION as c_int,
+                }),
+            )),
             context: Context(0x1234 as *mut c_void),
         };
         let mut setup = AudioSetup {
@@ -1128,6 +1242,169 @@ mod tests {
         );
     }
 
+    // A platform whose decoder waits in `submit`, and whose sound waits in
+    // `play`, until their table's `stop`: Android's decoder waits so for an
+    // input buffer when its codec stalls or its output thread failed.
+    static WAITS_FOR_STOP: StdMutex<Vec<String>> = StdMutex::new(Vec::new());
+    static VIDEO_STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    static AUDIO_STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    /// Waits for `stopped`; gives up after 30 s so that a failed test
+    /// leaves no thread behind for ever.
+    fn wait_for(stopped: &std::sync::atomic::AtomicBool) {
+        let until = Instant::now() + Duration::from_secs(30);
+        while !stopped.load(Ordering::SeqCst) && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+    unsafe extern "C" fn submit_waits(unit: *mut ffi::DECODE_UNIT) -> c_int {
+        let mut types = Vec::new();
+        // SAFETY: the adapter's unit and chain, live for this call.
+        let mut entry = unsafe { (*unit).bufferList };
+        while !entry.is_null() {
+            // SAFETY: as above.
+            let e = unsafe { &*entry };
+            types.push(e.bufferType);
+            entry = e.next;
+        }
+        WAITS_FOR_STOP
+            .lock()
+            .unwrap()
+            .push(format!("submit {types:?}"));
+        wait_for(&VIDEO_STOPPED);
+        ffi::DR_OK as c_int
+    }
+    unsafe extern "C" fn video_stop_releases() {
+        WAITS_FOR_STOP.lock().unwrap().push("video stop".into());
+        VIDEO_STOPPED.store(true, Ordering::SeqCst);
+    }
+    unsafe extern "C" fn video_cleanup_after() {
+        WAITS_FOR_STOP.lock().unwrap().push("video cleanup".into());
+    }
+    unsafe extern "C" fn play_waits(_: *mut c_char, _: c_int) {
+        WAITS_FOR_STOP.lock().unwrap().push("play".into());
+        wait_for(&AUDIO_STOPPED);
+    }
+    unsafe extern "C" fn audio_stop_releases() {
+        WAITS_FOR_STOP.lock().unwrap().push("audio stop".into());
+        AUDIO_STOPPED.store(true, Ordering::SeqCst);
+    }
+    unsafe extern "C" fn audio_cleanup_after() {
+        WAITS_FOR_STOP.lock().unwrap().push("audio cleanup".into());
+    }
+
+    /// The review's P0: nightjar-core joins its decode thread before it
+    /// calls the decoder's `stop`, and Android's decoder waits in `submit`
+    /// until its `stop`. The stream's end must stop each table first, as the
+    /// C core does, or it never returns. `end_stream` is `Nightjar::stop`'s
+    /// end; the join here is nightjar-core's teardown (`Parts::teardown`):
+    /// the audio threads, the renderer's `stop` and `cleanup`, then the
+    /// video threads, the decoder's `stop` and `cleanup`.
+    #[test]
+    fn the_end_of_a_stream_stops_each_table_before_it_joins_their_threads() {
+        WAITS_FOR_STOP.lock().unwrap().clear();
+        let tables = Arc::new(Tables::new(
+            Some(ffi::DECODER_RENDERER_CALLBACKS {
+                setup: None,
+                start: None,
+                stop: Some(video_stop_releases),
+                cleanup: Some(video_cleanup_after),
+                submitDecodeUnit: Some(submit_waits),
+                capabilities: 0,
+            }),
+            Some(ffi::AUDIO_RENDERER_CALLBACKS {
+                init: None,
+                start: None,
+                stop: Some(audio_stop_releases),
+                cleanup: Some(audio_cleanup_after),
+                decodeAndPlaySample: Some(play_waits),
+                capabilities: 0,
+            }),
+        ));
+        let mut decoder = Decoder {
+            tables: tables.clone(),
+            flags: 0,
+            entries: Vec::new(),
+        };
+        let mut audio = Audio {
+            tables: tables.clone(),
+            context: Context(null_mut()),
+        };
+        decoder.start();
+        audio.start();
+        let frame = frames::an_h264_key_frame();
+        // nightjar-core's VideoDec and AudioDec threads, each in the table.
+        let video_thread = std::thread::spawn(move || {
+            decoder.submit(&frame);
+            decoder
+        });
+        let audio_thread = std::thread::spawn(move || {
+            audio.play(Some(&[1, 2, 3]));
+            audio
+        });
+        while WAITS_FOR_STOP.lock().unwrap().len() < 2 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let (ended, end) = std::sync::mpsc::channel();
+        let stopping = tables.clone();
+        std::thread::spawn(move || {
+            end_stream(&stopping, || {
+                let mut audio = audio_thread.join().unwrap();
+                audio.stop();
+                audio.cleanup();
+                let mut decoder = video_thread.join().unwrap();
+                decoder.stop();
+                decoder.cleanup();
+            });
+            let _ = ended.send(());
+        });
+        assert!(
+            end.recv_timeout(Duration::from_secs(5)).is_ok(),
+            "the stream's end waits for ever: {:?}",
+            WAITS_FOR_STOP.lock().unwrap()
+        );
+        let mut calls = WAITS_FOR_STOP.lock().unwrap().clone();
+        // The two threads enter their tables in either order. The key frame
+        // reaches the table as its SPS, its PPS, then its picture.
+        calls[..2].sort();
+        assert_eq!(calls[0], "play");
+        assert!(calls[1].starts_with("submit [1, 2, 0"), "{calls:?}");
+        assert_eq!(
+            calls[2..],
+            ["audio stop", "video stop", "audio cleanup", "video cleanup"]
+        );
+    }
+
+    /// A start that fails after the streams started: nightjar-core reports
+    /// the stage, then tears the streams down; the tables stop at the report.
+    #[test]
+    fn a_failed_start_stops_the_tables_that_started_when_it_reports_the_stage() {
+        let _turn = PLATFORM_TURN.lock().unwrap_or_else(|p| p.into_inner());
+        PLATFORM.lock().unwrap().clear();
+        let tables = Arc::new(Tables::new(
+            Some(ffi::DECODER_RENDERER_CALLBACKS {
+                stop: Some(video_stop),
+                ..Default::default()
+            }),
+            Some(ffi::AUDIO_RENDERER_CALLBACKS {
+                stop: Some(audio_stop),
+                ..Default::default()
+            }),
+        ));
+        let callbacks = Callbacks(
+            ffi::CONNECTION_LISTENER_CALLBACKS::default(),
+            tables.clone(),
+        );
+        // Neither table started: a failed start stops nothing.
+        callbacks.stage_failed(Stage::RtspHandshake, -1);
+        assert!(PLATFORM.lock().unwrap().is_empty());
+        tables.start_video();
+        callbacks.stage_failed(Stage::AudioStreamStart, -1);
+        // The video table stops once, however often its stop is asked for.
+        tables.stop_video();
+        assert_eq!(*PLATFORM.lock().unwrap(), ["video stop"]);
+    }
+
     static EVENTS: StdMutex<Vec<String>> = StdMutex::new(Vec::new());
 
     unsafe extern "C" fn rumble(controller: u16, low: u16, high: u16) {
@@ -1157,14 +1434,17 @@ mod tests {
 
     #[test]
     fn the_hosts_events_reach_the_platforms_callbacks_that_are_set() {
-        let callbacks = Callbacks(ffi::CONNECTION_LISTENER_CALLBACKS {
-            rumble: Some(rumble),
-            setControllerLED: Some(led),
-            connectionStatusUpdate: Some(status),
-            connectionTerminated: Some(terminated),
-            stageFailed: Some(failed),
-            ..Default::default()
-        });
+        let callbacks = Callbacks(
+            ffi::CONNECTION_LISTENER_CALLBACKS {
+                rumble: Some(rumble),
+                setControllerLED: Some(led),
+                connectionStatusUpdate: Some(status),
+                connectionTerminated: Some(terminated),
+                stageFailed: Some(failed),
+                ..Default::default()
+            },
+            Arc::new(Tables::new(None, None)),
+        );
         EVENTS.lock().unwrap().clear();
         callbacks.control_event(ControlEvent::Rumble {
             controller: 1,
