@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! nightjar-core (`vendor/nightjar`, GPL-3.0-only), a Rust port of
 //! moonlight-common-c, behind the seam (#391 step E). Built with the
-//! `nightjar` feature, on Linux; `-networkcore nightjar` selects it.
+//! `nightjar` feature, on Linux and Android; `-networkcore nightjar` selects
+//! it. Android's picture, sound and feedback are Rust behind the same C
+//! callback tables as Linux's C code, so the adapter is one for both.
 //!
 //! nightjar-core's `Session` is `LiStartConnection` and `LiStopConnection`
 //! in shape: it owns its sockets and threads and calls a `VideoDecoder`, an
@@ -23,7 +25,9 @@
 //! datagrams grouped by the kernel (`receive_coalescing`) and
 //! `receive_decode_priority`, which changes nothing without "prioritize
 //! stream traffic" (`network_priority`), left off as the C core raises no
-//! thread either.
+//! thread either. A decoder table without direct submit, as Android's, gets
+//! nightjar-core's own decode thread, which nightjar-core always raises on
+//! Linux and Android (`priority.rs:447`; on Android with `setpriority` only).
 use super::{Connection, NetworkCore, Packet};
 use crate::network as ffi;
 use anyhow::Result;
@@ -715,7 +719,8 @@ mod tests {
         for (i, b) in s.remoteInputAesKey.iter_mut().enumerate() {
             *b = (0xf0 + i as u8) as c_char;
         }
-        s.remoteInputAesIv[..4].copy_from_slice(&[1, 2, 3, -4]);
+        // c_char is unsigned on aarch64 Android: the byte, not -4.
+        s.remoteInputAesIv[..4].copy_from_slice(&[1, 2, 3, 0xfc_u8 as c_char]);
         let config = session_config(&s, 0x0300_0003, 0x5);
         let stream = &config.stream;
         assert_eq!((stream.width, stream.height, stream.fps), (1920, 1080, 60));
@@ -934,6 +939,193 @@ mod tests {
         // Nothing waits: no request goes.
         control.poll(now);
         assert_eq!(recovery_requests(&control), (1, 1));
+    }
+
+    // The platform's tables as Android's are made: Rust `extern "C"`
+    // functions behind the C core's callback tables (src/android/picture.rs,
+    // sound.rs). Each records its call.
+    static PLATFORM: StdMutex<Vec<String>> = StdMutex::new(Vec::new());
+    /// The platform tests take turns: they share `PLATFORM`.
+    static PLATFORM_TURN: StdMutex<()> = StdMutex::new(());
+
+    fn platform(call: String) {
+        PLATFORM.lock().unwrap().push(call);
+    }
+    unsafe extern "C" fn video_setup(
+        format: c_int,
+        width: c_int,
+        height: c_int,
+        fps: c_int,
+        context: *mut c_void,
+        flags: c_int,
+    ) -> c_int {
+        platform(format!(
+            "setup {format:#x} {width}x{height}@{fps} context {} flags {flags}",
+            context.is_null()
+        ));
+        if width == 0 { -7 } else { 0 }
+    }
+    unsafe extern "C" fn video_start() {
+        platform("video start".into());
+    }
+    unsafe extern "C" fn video_stop() {
+        platform("video stop".into());
+    }
+    unsafe extern "C" fn video_cleanup() {
+        platform("video cleanup".into());
+    }
+    unsafe extern "C" fn audio_init(
+        configuration: c_int,
+        opus: *mut ffi::OPUS_MULTISTREAM_CONFIGURATION,
+        context: *mut c_void,
+        flags: c_int,
+    ) -> c_int {
+        // SAFETY: the adapter's configuration, live for this call.
+        let opus = unsafe { &*opus };
+        platform(format!(
+            "init {configuration:#x} {} Hz {} channels {}/{} streams {} samples {:?} context {} flags {flags}",
+            opus.sampleRate,
+            opus.channelCount,
+            opus.coupledStreams,
+            opus.streams,
+            opus.samplesPerFrame,
+            opus.mapping,
+            context as usize
+        ));
+        0
+    }
+    unsafe extern "C" fn audio_start() {
+        platform("audio start".into());
+    }
+    unsafe extern "C" fn audio_play(data: *mut c_char, length: c_int) {
+        let bytes = if data.is_null() {
+            None
+        } else {
+            // SAFETY: the packet of `length` bytes, live for this call.
+            Some(unsafe { std::slice::from_raw_parts(data.cast::<u8>(), length as usize) }.to_vec())
+        };
+        platform(format!("play {bytes:?} {length}"));
+    }
+    unsafe extern "C" fn audio_stop() {
+        platform("audio stop".into());
+    }
+    unsafe extern "C" fn audio_cleanup() {
+        platform("audio cleanup".into());
+    }
+
+    /// A decoder table like Android's: no direct submit, so nightjar-core
+    /// runs its own decode thread, and the table's calls come in the C
+    /// core's order.
+    #[test]
+    fn the_platforms_decoder_table_is_called_as_the_c_core_calls_it() {
+        let _turn = PLATFORM_TURN.lock().unwrap_or_else(|p| p.into_inner());
+        PLATFORM.lock().unwrap().clear();
+        let mut decoder = Decoder {
+            table: Some(ffi::DECODER_RENDERER_CALLBACKS {
+                setup: Some(video_setup),
+                start: Some(video_start),
+                stop: Some(video_stop),
+                cleanup: Some(video_cleanup),
+                submitDecodeUnit: None,
+                capabilities: 0,
+            }),
+            flags: 8,
+            entries: Vec::new(),
+        };
+        let mut setup = VideoSetup {
+            format: ffi::VIDEO_FORMAT_H264,
+            width: 1280,
+            height: 720,
+            fps: 60,
+            chroma_packing: 0,
+            logical_width: 1280,
+            logical_height: 720,
+            color_space: 1,
+            color_range: 0,
+        };
+        assert_eq!(decoder.setup(&setup), Ok(()));
+        decoder.start();
+        // A table without its submit takes every frame, as the C core's
+        // empty decoder does.
+        assert_eq!(decoder.submit(&Frame::default()), DecodeStatus::Ok);
+        decoder.stop();
+        decoder.cleanup();
+        setup.width = 0;
+        assert_eq!(
+            decoder.setup(&setup),
+            Err(-7),
+            "the platform's error is the stage's"
+        );
+        assert_eq!(
+            *PLATFORM.lock().unwrap(),
+            [
+                "setup 0x1 1280x720@60 context true flags 8",
+                "video start",
+                "video stop",
+                "video cleanup",
+                "setup 0x1 0x720@60 context true flags 8",
+            ]
+        );
+        // The session tests' null table: nothing to call, nothing fails.
+        let mut none = Decoder {
+            table: None,
+            flags: 0,
+            entries: Vec::new(),
+        };
+        assert_eq!(none.setup(&setup), Ok(()));
+        assert_eq!(none.submit(&Frame::default()), DecodeStatus::Ok);
+    }
+
+    /// An audio table like Android's sound: init with the Opus setup and
+    /// the context, each packet in order, and a lost one as no data.
+    #[test]
+    fn the_platforms_audio_table_gets_each_packet_and_each_loss() {
+        let _turn = PLATFORM_TURN.lock().unwrap_or_else(|p| p.into_inner());
+        PLATFORM.lock().unwrap().clear();
+        let mut audio = Audio {
+            table: Some(ffi::AUDIO_RENDERER_CALLBACKS {
+                init: Some(audio_init),
+                start: Some(audio_start),
+                stop: Some(audio_stop),
+                cleanup: Some(audio_cleanup),
+                decodeAndPlaySample: Some(audio_play),
+                capabilities: ffi::CAPABILITY_SUPPORTS_ARBITRARY_AUDIO_DURATION as c_int,
+            }),
+            context: Context(0x1234 as *mut c_void),
+        };
+        let mut setup = AudioSetup {
+            configuration: AudioConfiguration::STEREO,
+            opus: nightjar_core::rtsp::OpusConfig {
+                sample_rate: 48_000,
+                channel_count: 2,
+                streams: 1,
+                coupled_streams: 1,
+                mapping: [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            },
+            codec: rubylight_protocol::audio_ext::CODEC_OPUS,
+            packet_duration_ms: 5,
+            samples_per_frame: 240,
+        };
+        assert_eq!(audio.init(&setup), Ok(()));
+        audio.start();
+        audio.play(Some(&[1, 2, 3]));
+        audio.play(None);
+        audio.stop();
+        audio.cleanup();
+        // Only Opus reaches a platform that decodes Opus.
+        setup.codec = rubylight_protocol::audio_ext::CODEC_PCM;
+        assert!(audio.init(&setup).is_err());
+        assert_eq!(
+            *PLATFORM.lock().unwrap(),
+            [
+                "init 0x302ca 48000 Hz 2 channels 1/1 streams 240 samples [0, 1, 0, 0, 0, 0, 0, 0] context 4660 flags 0",
+                "audio start",
+                "play Some([1, 2, 3]) 3",
+                "play None 0",
+                "audio stop",
+                "audio cleanup",
+            ]
+        );
     }
 
     static EVENTS: StdMutex<Vec<String>> = StdMutex::new(Vec::new());

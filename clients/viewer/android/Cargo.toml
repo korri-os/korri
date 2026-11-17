@@ -10,6 +10,11 @@ publish = false
 crate-type = ["cdylib"]
 path = "src/lib.rs"
 
+[features]
+# nightjar-core as a second network core (#391 step E): the intent's
+# `-networkcore nightjar` picks it. Off by default: the C core streams.
+nightjar = ["korri-viewer/nightjar"]
+
 [dependencies]
 korri-viewer = { path = ".." }
 korri-viewer-treaty = { path = "../../../contracts/viewer" }
