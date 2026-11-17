@@ -115,7 +115,7 @@ Identity switches wait for korrid's NIP-46 deadline instead of the ordinary
 (currently 120 seconds), plus 30 seconds per exchange for relay publication,
 transport and storage. A local-backup switch allows one remote exchange for the
 old owner's revocation (150 seconds). A NIP-46 switch allows three serial
-exchanges: connect, new binding, old-owner revocation (450 seconds). Person-name
+exchanges: connect, which waits `remote_signer::CONNECT_TIMEOUT` (300 seconds), then the new binding and the old-owner revocation (570 seconds). Person-name
 writes also allow one exchange. Other non-plugin requests keep the 30-second
 default; plugin waits follow the root host contract below.
 The cost is a longer wait for a stalled signer; Ctrl-C can still interrupt the

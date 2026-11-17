@@ -1,5 +1,9 @@
 use crate::error::CliError;
-use korrid::{cli::ForwardRequest, remote_signer::REQUEST_TIMEOUT, RpcRequest, RpcResponse};
+use korrid::{
+    cli::ForwardRequest,
+    remote_signer::{CONNECT_TIMEOUT, REQUEST_TIMEOUT},
+    RpcRequest, RpcResponse,
+};
 use std::{io::Read, path::Path, time::Duration};
 
 const RESPONSE_LIMIT: u64 = 8 * 1024 * 1024;
@@ -9,18 +13,24 @@ fn request_wait(request: &RpcRequest, default: Duration) -> Option<Duration> {
     if korrid::plugin_repositories::is_admin_request(request) {
         return None;
     }
-    let requests = match request {
+    // send_request's deadline starts AFTER publishing. Keep the existing 30 s
+    // transport/storage allowance for each exchange as well as that wait.
+    match request {
         // coordinator::switch signs the old owner's revocation. That owner
         // may use NIP-46 even when the replacement is a local backup.
-        RpcRequest::IdentityLocalSwitch(_) => 1,
-        // connect + sign the new binding + revoke the old binding are serial.
-        RpcRequest::IdentityNip46Switch(_) => 3,
-        RpcRequest::SettingsUpdate(request) if request.setting_id == "person-name" => 1,
-        _ => return Some(default),
-    };
-    // send_request's 120 s deadline starts AFTER publishing. Keep the existing
-    // 30 s transport/storage allowance for each exchange as well as that wait.
-    Some((REQUEST_TIMEOUT + DEFAULT_TIMEOUT) * requests)
+        RpcRequest::IdentityLocalSwitch(_) => Some(REQUEST_TIMEOUT + DEFAULT_TIMEOUT),
+        // connect (300 s) + sign the new binding + revoke the old binding are
+        // serial.
+        RpcRequest::IdentityNip46Switch(_) => Some(nip46_switch_wait()),
+        RpcRequest::SettingsUpdate(request) if request.setting_id == "person-name" => {
+            Some(REQUEST_TIMEOUT + DEFAULT_TIMEOUT)
+        }
+        _ => Some(default),
+    }
+}
+
+fn nip46_switch_wait() -> Duration {
+    CONNECT_TIMEOUT + REQUEST_TIMEOUT * 2 + DEFAULT_TIMEOUT * 3
 }
 
 pub struct Client {
@@ -296,13 +306,14 @@ with socketserver.UnixStreamServer(socket_path, Handler) as server:
                 RpcResponse::IdentityNip46Switch(IdentitySwitchOutcome::Err(signer_failure())),
             ),
         ];
-        for ((request, expected), exchanges) in requests.into_iter().zip([1, 3]) {
-            assert_eq!(
-                request_wait(&request, DEFAULT_TIMEOUT),
-                Some(
-                    (korrid::remote_signer::REQUEST_TIMEOUT + Duration::from_secs(30)) * exchanges
-                )
-            );
+        let waits = [
+            korrid::remote_signer::REQUEST_TIMEOUT + Duration::from_secs(30),
+            korrid::remote_signer::CONNECT_TIMEOUT
+                + korrid::remote_signer::REQUEST_TIMEOUT * 2
+                + Duration::from_secs(90),
+        ];
+        for ((request, expected), wait) in requests.into_iter().zip(waits) {
+            assert_eq!(request_wait(&request, DEFAULT_TIMEOUT), Some(wait));
             let server = DelayedServer::start(&expected);
             let actual = server.client.request(&request).unwrap();
             assert_eq!(

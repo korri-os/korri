@@ -343,10 +343,12 @@ where
     /// NIP-46 `connect` only. The person key is learned from the first signed
     /// owner statement, so the signer needs no `get_public_key` permission.
     ///
-    /// The reply may come from another key than the `bunker://` one (NIP-46:
-    /// the remote-signer key may differ). Amber 6.6.9 answers from a new key
-    /// when the person picks "Create new connection". That key becomes the
-    /// remote signer of every later request.
+    /// The reply may come from another key than the `bunker://` one. NIP-46
+    /// does not allow that in the bunker flow, but Amber 6.6.9 answers from a
+    /// new key when the person picks "Create new connection". korrid finds
+    /// the signer key as NIP-46's `nostrconnect://` flow does, from the reply
+    /// author, with the random request id in place of the secret. That key
+    /// becomes the remote signer of every later request.
     pub async fn establish(
         &self,
         now: u64,
@@ -474,7 +476,8 @@ where
         if !self.coordinator.publish(&event.json).await.accepted() {
             return Err(RemoteSignerError::Request);
         }
-        let deadline = Instant::now() + wait;
+        let started = Instant::now();
+        let deadline = started + wait;
         timeout(wait, async {
             loop {
                 let packets = self
@@ -490,7 +493,10 @@ where
                     if packet.len() > MAX_RESPONSE_BYTES {
                         continue;
                     }
-                    let (answered_by, response) = match self.decode_response(&packet, now, sender) {
+                    // The future-time bound moves with the wait, so a long
+                    // connect keeps its clock margin to the end.
+                    let read_at = now.saturating_add(started.elapsed().as_secs());
+                    let (answered_by, response) = match self.decode_response(&packet, read_at, sender) {
                         Ok((answered_by, response)) if response.id == request.id => {
                             (answered_by, response)
                         }
