@@ -304,7 +304,9 @@ After `Stop`, korrid also stops the unit and waits until systemd confirms it,
 also when the socket was lost; that wait outlasts the unit's own stop timeout
 and SIGKILL. Live resize,
 apply and notice return typed unavailable errors, as the existing Linux trait
-defaults do. On Linux, snapshots have no battery, health or controls until a
+defaults do: korrid asks the holder for a new stream size itself (#476, Route
+C), and the viewer follows the size that arrives (below, "A new stream size in
+the middle of the stream"). On Linux, snapshots have no battery, health or controls until a
 real producer supplies them; on Android the app supplies them (slice D11,
 below).
 
@@ -507,8 +509,9 @@ decoder and video layer following a size change that the sender makes in
 the middle of a stream, is below ("A new picture size in the middle of the
 stream"). Slices 2 and 3, the request, are in korrid and Sunshine patch 0046
 (`clients/android-app/README.md`, "korrid's resize request"). korrid makes
-the request only for a viewer that reports `ready`, and this viewer reports
-`ready: false`, so `Resize` is still not called.
+the request only for a viewer that reports `ready`. This viewer reports
+`ready: true` since it follows a new size (below), and `Resize` stays
+unavailable: korrid asks the holder, never the viewer.
 
 ## Android app (#391 step D, slice D1)
 
@@ -1366,8 +1369,9 @@ stream's size, with a new SPS after an IDR frame, and the viewer follows it.
 The request for a new size is not in this slice: Route C carries it
 (korrid to korrid, then a local entry into Sunshine's resize channel,
 slices 2 and 3). korrid asks for a size only when the viewer reports
-`ready`, which this viewer does not yet; `Resize` stays "Live resolution is
-unavailable".
+`ready`; this viewer does with an app's picture (below, "A new stream size in
+the middle of the stream"). `Resize` stays "Live resolution is unavailable":
+korrid asks the holder, never the viewer.
 
 - **Noticing it.** `decoder.rs` reads each SPS's picture size (`sps.rs`:
   the coded size less the frame cropping, ITU-T H.264 7.4.2.1.1) and
@@ -1463,6 +1467,84 @@ with no size change; the frame record must then keep one size.
   differ in their adaptive playback and their output format's crop (step
   H, the Galaxy Z Fold 8). The size change that a fold or a rotation asks
   for needs the request (Route C).
+
+## A new stream size in the middle of the stream (#476, both viewers)
+
+The holder's Sunshine can change the stream's encode size in the middle of
+the stream (korrid's request, patch 0046). Both viewers follow it, and say
+so in the treaty's snapshot (`ViewerShape`), which korrid's live-shape reads
+(`services/korrid/src/upstreams/live_shape.rs`):
+
+- `ready` is true exactly when the picture follows a new size
+  (`PlayerIo::follows_new_sizes`): on Linux with X11 VA-API and the SDL
+  fallback, on Android with the app's picture. The handheld `v4l2request`
+  path keeps the size it started with and reports false, as does a stream
+  with no picture (the session tests). With `ready`, korrid offers the
+  holder the viewer's screen and asks for a new size when its shape
+  changes; Portrait is enabled.
+- `encoded` follows each new size, in the same connection. After each turn
+  of its loop the stream's thread reads the size of the picture now shown
+  (Linux: the last picture that a presenter handed to the display,
+  `picture/place.c`; Android: the newest decoded size) and gives a new one
+  to the lifecycle (`Lifecycle::resized`), which sends a Snapshot event. The
+  log says `picture: the picture shown is WxH`.
+- A shape needs a screen: Start's display. korrid's Linux adapter gives the
+  local screen. The Korri app gives its window, longer side first, as the
+  Artemis app gives its screen (`clients/android-app/README.md`).
+
+**Linux: an aspect fit.** Every PC picture path fits the picture in its
+window with the picture's own shape, centred, with black bars above and
+below or at the sides; it is never cut, and stretched only within the
+rounding below. One rule (`picture_fit`, `picture/place.c`) is Android's
+video-layer rule (`placement.rs`, `letterbox`), and each presenter takes the
+window's size for each picture, so a new stream size and a new window size
+are the same case:
+
+| Path | Before | Now |
+| --- | --- | --- |
+| X11 VA-API, `vaPutSurface` (Mesa on AMD) | Stretched to the window | A picture that fills its window: as before. A picture with bars: the EGL path of the next row. Mesa 26.2's `vlVaPutSurface` writes only its destination rectangle and presents its whole back buffer, so bars kept an old frame (the proof's first run on aka) |
+| X11 VA-API through EGL (#477, Intel; and AMD for a picture with bars) | Stretched to the window | Clear to black, then the fitted viewport |
+| SDL fallback | A texture of the start's size, stretched to the window | The texture takes each new size; clear to black, then the fitted rectangle |
+| X11 software (`video/egl.c`) | Textures of the start's size; rows read at the frame's width | Textures take each new size and row length; the shader reads the visible part of each padded row; clear to black, then the fitted viewport. No platform selects this path today (`picture_callbacks`) |
+
+One difference from Android's rule: bars of less than one percent of the
+window are not drawn, and the picture fills the window. Such bars come from
+the rounding of stream sizes (korrid rounds them to 8 pixels), not from a
+shape; the picture is then stretched by less than one percent, as before
+#476, and stays on `vaPutSurface`. A stream of another shape than the window
+now shows with bars from its first picture, where it was stretched before.
+korrid asks for the local screen's size, so a stream normally has the
+window's shape.
+
+The carried files change as the table says (GPL-3 §5a: modified by Korri on
+2026-11-16): `video/x11.c` asks for the place of each picture and passes it
+on, `video/ffmpeg_vaapi.c` takes a place instead of a window size and sends
+a picture with bars to EGL, `video/vaapi_egl.c` takes a place, `sdl.c`
+remakes its texture and fits its rectangle, `video/egl.c` as above. Each
+presenter reports the size it showed (`picture_shown`) where it reports the
+hand-off to the frame record.
+
+Checks: `tests/test-place.c` (the rule, with Android's cases, and the
+rounding),
+`tests/test-x11-vaapi-size.c` (the place that the X11 presenter gives VA-API,
+for a portrait picture in a landscape window and back), `tests/test-sdl.c`
+(a real H.264 stream that turns from 128x72 to 72x128: the rendered window
+has black columns at both sides and the picture between them; it failed
+before this change), `tests/test-egl.c` (the X11 software path on Xvfb with
+Mesa's software EGL: padded rows, three sizes, black outside the picture),
+and the lifecycle tests (`ready`, and one Snapshot event for each new size).
+
+**Proof** (`nix run .#viewer-linux-resize-proof -- --sunshine PACKAGE
+--build-store auto`, on aka as root; `proof/linux_resize.py`): stream-cadence's
+private pair with Korri's Sunshine and this `korri-viewer` on X11 VA-API.
+korrid's resize request (the holder's last step, through the federation
+fixture's `resize`) turns the stream to 720x1280 and back. Screenshots of
+the fixture's output and the viewer's frame record show the picture fitted
+with no stretch at each size, black around the portrait picture, and the
+bar rising. Record: `proof/linux-resize/` (24 of 24 checks). Not proven: a
+client korrid on Linux, the lifecycle report there (the fixture starts the
+viewer without a socket), and what the EGL path costs on AMD for a picture
+with bars.
 
 ## In the Korri app (#434, slice D10)
 

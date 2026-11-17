@@ -1,0 +1,694 @@
+{
+  "checks": {
+    "sender_sunshine_has_certificate_control": true,
+    "sender_sunshine_has_korrids_resize": true,
+    "the_viewer_takes_pc_va_api": true,
+    "sender_runs_korris_sunshine": true,
+    "the_frame_record_was_asked": true,
+    "stream_the_picture_fills_the_window": true,
+    "stream_the_picture_moves": true,
+    "portrait_korrid_request_applied": true,
+    "portrait_sunshine_took_korrids_request": true,
+    "portrait_sunshine_swapped_its_encoder": true,
+    "portrait_screenshots_read_the_bar": true,
+    "portrait_the_picture_fits_with_no_stretch": true,
+    "portrait_the_picture_moves": true,
+    "landscape_korrid_request_applied": true,
+    "landscape_sunshine_took_korrids_request": true,
+    "landscape_sunshine_swapped_its_encoder": true,
+    "landscape_screenshots_read_the_bar": true,
+    "landscape_the_picture_fits_with_no_stretch": true,
+    "landscape_the_picture_moves": true,
+    "the_viewer_presented_through_va_api": true,
+    "the_viewer_reports_each_size_it_shows": true,
+    "the_frame_record_is_whole": true,
+    "frames_were_shown_at_each_size_in_turn": true,
+    "ids_never_go_back_within_a_size": true
+  },
+  "steps": {
+    "stream": {
+      "screenshots": [
+        {
+          "file": "stream-1.png",
+          "expected": {
+            "picture": [
+              0,
+              0,
+              1280,
+              720
+            ],
+            "cell": 32.0,
+            "x": 64.0,
+            "y": 180.0
+          },
+          "brightest_outside_picture": 0,
+          "read": "search",
+          "id": 490,
+          "x": 64.0,
+          "y": 180.0,
+          "cell": 32.0,
+          "in_place": true
+        },
+        {
+          "file": "stream-2.png",
+          "expected": {
+            "picture": [
+              0,
+              0,
+              1280,
+              720
+            ],
+            "cell": 32.0,
+            "x": 64.0,
+            "y": 180.0
+          },
+          "brightest_outside_picture": 0,
+          "read": "search",
+          "id": 553,
+          "x": 64.0,
+          "y": 180.0,
+          "cell": 32.0,
+          "in_place": true
+        },
+        {
+          "file": "stream-3.png",
+          "expected": {
+            "picture": [
+              0,
+              0,
+              1280,
+              720
+            ],
+            "cell": 32.0,
+            "x": 64.0,
+            "y": 180.0
+          },
+          "brightest_outside_picture": 0,
+          "read": "search",
+          "id": 615,
+          "x": 64.0,
+          "y": 180.0,
+          "cell": 32.0,
+          "in_place": true
+        },
+        {
+          "file": "stream-4.png",
+          "expected": {
+            "picture": [
+              0,
+              0,
+              1280,
+              720
+            ],
+            "cell": 32.0,
+            "x": 64.0,
+            "y": 180.0
+          },
+          "brightest_outside_picture": 0,
+          "read": "search",
+          "id": 677,
+          "x": 64.0,
+          "y": 180.0,
+          "cell": 32.0,
+          "in_place": true
+        }
+      ]
+    },
+    "portrait": {
+      "size": [
+        720,
+        1280
+      ],
+      "answer": "Applied",
+      "seconds_to_answer": 0.04,
+      "screenshots": [
+        {
+          "file": "portrait-1.png",
+          "expected": {
+            "picture": [
+              438,
+              0,
+              405,
+              720
+            ],
+            "cell": 10.12,
+            "x": 457.8,
+            "y": 303.0
+          },
+          "brightest_outside_picture": 0,
+          "read": "at the fitted place",
+          "id": 917,
+          "x": 457.8,
+          "y": 313.12,
+          "cell": 10.12,
+          "in_place": true
+        },
+        {
+          "file": "portrait-2.png",
+          "expected": {
+            "picture": [
+              438,
+              0,
+              405,
+              720
+            ],
+            "cell": 10.12,
+            "x": 457.8,
+            "y": 303.0
+          },
+          "brightest_outside_picture": 0,
+          "read": "at the fitted place",
+          "id": 979,
+          "x": 457.8,
+          "y": 313.12,
+          "cell": 10.12,
+          "in_place": true
+        },
+        {
+          "file": "portrait-3.png",
+          "expected": {
+            "picture": [
+              438,
+              0,
+              405,
+              720
+            ],
+            "cell": 10.12,
+            "x": 457.8,
+            "y": 303.0
+          },
+          "brightest_outside_picture": 0,
+          "read": "at the fitted place",
+          "id": 1041,
+          "x": 457.8,
+          "y": 313.12,
+          "cell": 10.12,
+          "in_place": true
+        },
+        {
+          "file": "portrait-4.png",
+          "expected": {
+            "picture": [
+              438,
+              0,
+              405,
+              720
+            ],
+            "cell": 10.12,
+            "x": 457.8,
+            "y": 303.0
+          },
+          "brightest_outside_picture": 0,
+          "read": "at the fitted place",
+          "id": 1103,
+          "x": 457.8,
+          "y": 313.12,
+          "cell": 10.12,
+          "in_place": true
+        }
+      ],
+      "sunshine_lines": [
+        "[2026-11-17 02:07:30.496]: Info: Runtime resolution applied: 720x1280",
+        "[2026-11-17 02:07:30.496]: Info: Korri certificate control: resize to 720x1280 applied"
+      ]
+    },
+    "landscape": {
+      "size": [
+        1280,
+        720
+      ],
+      "answer": "Applied",
+      "seconds_to_answer": 0.03,
+      "screenshots": [
+        {
+          "file": "landscape-1.png",
+          "expected": {
+            "picture": [
+              0,
+              0,
+              1280,
+              720
+            ],
+            "cell": 32.0,
+            "x": 64.0,
+            "y": 180.0
+          },
+          "brightest_outside_picture": 0,
+          "read": "search",
+          "id": 1342,
+          "x": 64.0,
+          "y": 180.0,
+          "cell": 32.0,
+          "in_place": true
+        },
+        {
+          "file": "landscape-2.png",
+          "expected": {
+            "picture": [
+              0,
+              0,
+              1280,
+              720
+            ],
+            "cell": 32.0,
+            "x": 64.0,
+            "y": 180.0
+          },
+          "brightest_outside_picture": 0,
+          "read": "search",
+          "id": 1404,
+          "x": 64.0,
+          "y": 180.0,
+          "cell": 32.0,
+          "in_place": true
+        },
+        {
+          "file": "landscape-3.png",
+          "expected": {
+            "picture": [
+              0,
+              0,
+              1280,
+              720
+            ],
+            "cell": 32.0,
+            "x": 64.0,
+            "y": 180.0
+          },
+          "brightest_outside_picture": 0,
+          "read": "search",
+          "id": 1467,
+          "x": 64.0,
+          "y": 180.0,
+          "cell": 32.0,
+          "in_place": true
+        },
+        {
+          "file": "landscape-4.png",
+          "expected": {
+            "picture": [
+              0,
+              0,
+              1280,
+              720
+            ],
+            "cell": 32.0,
+            "x": 64.0,
+            "y": 180.0
+          },
+          "brightest_outside_picture": 0,
+          "read": "search",
+          "id": 1530,
+          "x": 64.0,
+          "y": 180.0,
+          "cell": 32.0,
+          "in_place": true
+        }
+      ],
+      "sunshine_lines": [
+        "[2026-11-17 02:07:37.781]: Info: Runtime resolution applied: 1280x720",
+        "[2026-11-17 02:07:37.781]: Info: Korri certificate control: resize to 1280x720 applied"
+      ]
+    }
+  },
+  "store": {
+    "viewer": "/nix/store/4lw3f4zn3kh3wkim1lzxkncg4ylxfhkb-korri-viewer-0.1.0",
+    "federation_fixture": "/nix/store/524p0cslbrhzc9h7bsg8psqsvagsy1dh-korrid-federation-fixture-0.0.0/bin/federation_fixture",
+    "sunshine": "/nix/store/ap898nhjj347ysnaf3jpp4ynzndh88a6-sunshine-korri-2026.914.233613-korri"
+  },
+  "viewer_platform": "x11_vaapi",
+  "viewer_command": [
+    "/nix/store/4lw3f4zn3kh3wkim1lzxkncg4ylxfhkb-korri-viewer-0.1.0/bin/moonlight",
+    "stream",
+    "-app",
+    "Desktop",
+    "-platform",
+    "x11_vaapi",
+    "-mapping",
+    "/nix/store/4lw3f4zn3kh3wkim1lzxkncg4ylxfhkb-korri-viewer-0.1.0/share/moonlight/korri-inputplumber-gamecontrollerdb.txt",
+    "-keydir",
+    "/tmp/korri-stream-cadence-view-qqje12n2/home/keys",
+    "-windowed",
+    "-autowindowresize",
+    "-viewonly",
+    "-verbose",
+    "-width",
+    "1280",
+    "-height",
+    "720",
+    "-fps",
+    "60",
+    "-codec",
+    "h264",
+    "-port",
+    "50217",
+    "127.0.0.1"
+  ],
+  "sizes_shown": [
+    "1280x720",
+    "720x1280",
+    "1280x720"
+  ],
+  "frame_record": {
+    "header": "index,frame_number,enqueue_ns,decoded_ns,display_ns",
+    "rows": 1535,
+    "in_order": true,
+    "decoded": 1535,
+    "handed_off": 1533,
+    "recording_units": 1535,
+    "handed_off_readable_ids": 1533,
+    "handed_off_distinct_ids": 1533,
+    "first_handed_off_id": 59,
+    "last_handed_off_id": 1592,
+    "first_handoff_ns": 630399481110201,
+    "sizes": [
+      {
+        "size": [
+          1280,
+          720
+        ],
+        "first_handoff_ns": 630399481110201,
+        "handed_off": 683,
+        "readable_ids": 683,
+        "distinct_ids": 683,
+        "ids_never_go_back": true,
+        "repeated": [],
+        "went_back": [],
+        "first_id": 59,
+        "last_id": 741
+      },
+      {
+        "size": [
+          720,
+          1280
+        ],
+        "first_handoff_ns": 630411205795962,
+        "handed_off": 424,
+        "readable_ids": 424,
+        "distinct_ids": 424,
+        "ids_never_go_back": true,
+        "repeated": [],
+        "went_back": [],
+        "first_id": 742,
+        "last_id": 1166
+      },
+      {
+        "size": [
+          1280,
+          720
+        ],
+        "first_handoff_ns": 630418458489167,
+        "handed_off": 426,
+        "readable_ids": 426,
+        "distinct_ids": 426,
+        "ids_never_go_back": true,
+        "repeated": [],
+        "went_back": [],
+        "first_id": 1167,
+        "last_id": 1592
+      }
+    ],
+    "handed_off_ids_never_go_back": true
+  },
+  "viewer_restore": {
+    "live_games": [],
+    "product_units": {
+      "at_start": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 8317014
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 219956135598
+        },
+        "korri-clock-governor.service": {
+          "pid": 3896,
+          "started": 164324721
+        },
+        "korri-compositor.service": {
+          "pid": 748122,
+          "started": 87957282465
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 2569242,
+          "started": 219957620000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 164531729
+        },
+        "korri-limits.service": {
+          "pid": 4035,
+          "started": 164533214
+        },
+        "korri-local-signer.service": {
+          "pid": 2569201,
+          "started": 219956806525
+        },
+        "korri-plugin-admin.service": {
+          "pid": 748266,
+          "started": 87969764633
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 87893718128
+        },
+        "korri-portal-credentials.service": {
+          "pid": 0,
+          "started": 162355048
+        },
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 1158271,
+          "started": 617470040000
+        },
+        "korri-sunshine.service": {
+          "pid": 1158281,
+          "started": 617470079114
+        },
+        "korrid.service": {
+          "pid": 2083501,
+          "started": 426653099424
+        }
+      },
+      "at_end": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 8317014
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 219956135598
+        },
+        "korri-clock-governor.service": {
+          "pid": 3896,
+          "started": 164324721
+        },
+        "korri-compositor.service": {
+          "pid": 748122,
+          "started": 87957282465
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 2569242,
+          "started": 219957620000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 164531729
+        },
+        "korri-limits.service": {
+          "pid": 4035,
+          "started": 164533214
+        },
+        "korri-local-signer.service": {
+          "pid": 2569201,
+          "started": 219956806525
+        },
+        "korri-plugin-admin.service": {
+          "pid": 748266,
+          "started": 87969764633
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 87893718128
+        },
+        "korri-portal-credentials.service": {
+          "pid": 0,
+          "started": 162355048
+        },
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 1158271,
+          "started": 617470040000
+        },
+        "korri-sunshine.service": {
+          "pid": 1158281,
+          "started": 617470079114
+        },
+        "korrid.service": {
+          "pid": 2083501,
+          "started": 426653099424
+        }
+      },
+      "changed": []
+    },
+    "pass": true,
+    "pids_unchanged": {
+      "compositor": true
+    },
+    "run_folder": "/tmp/korri-stream-cadence-view-qqje12n2",
+    "run_folder_removed": true,
+    "remaining_processes": [],
+    "errors": []
+  },
+  "sender_restore": {
+    "live_games": [],
+    "product_units": {
+      "at_start": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 8317014
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 219956135598
+        },
+        "korri-clock-governor.service": {
+          "pid": 3896,
+          "started": 164324721
+        },
+        "korri-compositor.service": {
+          "pid": 748122,
+          "started": 87957282465
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 2569242,
+          "started": 219957620000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 164531729
+        },
+        "korri-limits.service": {
+          "pid": 4035,
+          "started": 164533214
+        },
+        "korri-local-signer.service": {
+          "pid": 2569201,
+          "started": 219956806525
+        },
+        "korri-plugin-admin.service": {
+          "pid": 748266,
+          "started": 87969764633
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 87893718128
+        },
+        "korri-portal-credentials.service": {
+          "pid": 0,
+          "started": 162355048
+        },
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 1158271,
+          "started": 617470040000
+        },
+        "korri-sunshine.service": {
+          "pid": 1158281,
+          "started": 617470079114
+        },
+        "korrid.service": {
+          "pid": 2083501,
+          "started": 426653099424
+        }
+      },
+      "at_end": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 8317014
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 219956135598
+        },
+        "korri-clock-governor.service": {
+          "pid": 3896,
+          "started": 164324721
+        },
+        "korri-compositor.service": {
+          "pid": 748122,
+          "started": 87957282465
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 2569242,
+          "started": 219957620000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 164531729
+        },
+        "korri-limits.service": {
+          "pid": 4035,
+          "started": 164533214
+        },
+        "korri-local-signer.service": {
+          "pid": 2569201,
+          "started": 219956806525
+        },
+        "korri-plugin-admin.service": {
+          "pid": 748266,
+          "started": 87969764633
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 87893718128
+        },
+        "korri-portal-credentials.service": {
+          "pid": 0,
+          "started": 162355048
+        },
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 1158271,
+          "started": 617470040000
+        },
+        "korri-sunshine.service": {
+          "pid": 1158281,
+          "started": 617470079114
+        },
+        "korrid.service": {
+          "pid": 2083501,
+          "started": 426653099424
+        }
+      },
+      "changed": []
+    },
+    "pass": true,
+    "pids_unchanged": {},
+    "run_folder": "/tmp/korri-stream-cadence-sender-0tdlsd3g",
+    "run_folder_bytes": 2622972,
+    "run_folder_removed": true,
+    "stray_processes_killed": [],
+    "remaining_processes": [],
+    "other_processes": [],
+    "new_input_devices": [],
+    "gone_input_devices": [],
+    "input_rule": "record",
+    "errors": []
+  },
+  "pass": true
+}
