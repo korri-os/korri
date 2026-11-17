@@ -1400,6 +1400,9 @@ mod tests {
         assert!(PLATFORM.lock().unwrap().is_empty());
         tables.start_video();
         callbacks.stage_failed(Stage::AudioStreamStart, -1);
+        // The report itself stops the started table, before nightjar-core's
+        // teardown would join the thread that waits in it.
+        assert_eq!(*PLATFORM.lock().unwrap(), ["video stop"]);
         // The video table stops once, however often its stop is asked for.
         tables.stop_video();
         assert_eq!(*PLATFORM.lock().unwrap(), ["video stop"]);
