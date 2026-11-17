@@ -15,6 +15,12 @@
 //! - `member DIRECTORY`: a new private state root for another device, bound to
 //!   the same owner by the same producer as the holder's own. The Android
 //!   app's proof seeds its korrid with it. Prints the device's public key.
+//! - `resize HOST_UUID CERTIFICATE WIDTH HEIGHT`: the holder's patch 0046
+//!   request for the stream of the client certificate in the file
+//!   `CERTIFICATE`, on the certificate-control socket that korrid's
+//!   environment names (#476). The Linux viewer's proof asks it for a viewer
+//!   that paired by PIN. Prints Sunshine's answer: Applied, Refused or
+//!   Unavailable.
 use korrid::{
     federation::coordinator::{Discovery, DiscoveryInputs, DiscoveryTiming, FederationResources},
     identity::{DeviceIdentity, OwnerStatementStatus},
@@ -49,6 +55,12 @@ enum Command {
     Member {
         directory: PathBuf,
     },
+    Resize {
+        host_uuid: String,
+        certificate: PathBuf,
+        width: u32,
+        height: u32,
+    },
 }
 
 fn parse(args: &[String]) -> Result<Command, Failure> {
@@ -67,6 +79,14 @@ fn parse(args: &[String]) -> Result<Command, Failure> {
             }
             Ok(Command::Member { directory })
         }
+        [command, host_uuid, certificate, width, height] if command == "resize" => {
+            Ok(Command::Resize {
+                host_uuid: host_uuid.clone(),
+                certificate: absolute(certificate)?,
+                width: width.parse()?,
+                height: height.parse()?,
+            })
+        }
         [root, port, relays, moonlight @ ..] if moonlight.len() <= 1 => {
             let relays = RelayList::configured(serde_json::from_str(relays)?)?;
             Ok(Command::Holder {
@@ -76,7 +96,7 @@ fn parse(args: &[String]) -> Result<Command, Failure> {
                 moonlight_address: moonlight.first().map_or(NO_VIDEO, String::as_str).to_owned(),
             })
         }
-        _ => Err("fixture requires root, port, relay JSON and an optional Moonlight address, or member and a directory".into()),
+        _ => Err("fixture requires root, port, relay JSON and an optional Moonlight address, member and a directory, or resize, a host UUID, a certificate file and a size".into()),
     }
 }
 
@@ -124,6 +144,22 @@ async fn main() -> Result<(), Failure> {
         Command::Member { directory } => {
             println!("{}", bind_to_fixture_owner(&directory)?);
             Ok(())
+        }
+        Command::Resize {
+            host_uuid,
+            certificate,
+            width,
+            height,
+        } => {
+            let certificate = fs::read_to_string(certificate)?;
+            let display = korrid::launcher::plugin_launch::PluginDisplay { width, height };
+            match korrid::fixture_resize_stream(&host_uuid, &certificate, display) {
+                Ok(answer) => {
+                    println!("{answer:?}");
+                    Ok(())
+                }
+                Err(failure) => Err(format!("{}: {}", failure.code, failure.message).into()),
+            }
         }
         Command::Holder {
             root,
@@ -250,6 +286,33 @@ mod tests {
             // An existing directory is another device's state.
             args(&["member", scratch.path().to_str().unwrap()]),
             args(&["member", "/tmp/a", "/tmp/b"]),
+        ] {
+            assert!(parse(&refused).is_err(), "{refused:?}");
+        }
+    }
+
+    #[test]
+    fn resize_takes_a_host_an_absolute_certificate_file_and_a_size() {
+        assert_eq!(
+            parse(&args(&[
+                "resize",
+                "host-uuid",
+                "/tmp/client.pem",
+                "720",
+                "1280"
+            ]))
+            .unwrap(),
+            Command::Resize {
+                host_uuid: "host-uuid".into(),
+                certificate: PathBuf::from("/tmp/client.pem"),
+                width: 720,
+                height: 1280,
+            }
+        );
+        for refused in [
+            args(&["resize", "host-uuid", "client.pem", "720", "1280"]),
+            args(&["resize", "host-uuid", "/tmp/client.pem", "720", "tall"]),
+            args(&["resize", "host-uuid", "/tmp/client.pem", "720"]),
         ] {
             assert!(parse(&refused).is_err(), "{refused:?}");
         }

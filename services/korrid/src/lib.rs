@@ -5868,6 +5868,26 @@ pub fn fixture_host_routers_with_federation(
     (lan, local, cli, runtime)
 }
 
+/// The last step of the holder's `app.session.viewer.resize` (#476): the
+/// patch 0046 request on Sunshine's certificate-control socket, through
+/// korrid's own adapter, configured from the environment as a holder's is.
+/// The holder reads the client certificate from the caller's grant; the
+/// federation fixture takes it from a viewer that paired by PIN (feature
+/// `fixture`). Never in a shipped korrid.
+#[cfg(feature = "fixture")]
+pub fn fixture_resize_stream(
+    host_uuid: &str,
+    client_certificate: &str,
+    display: launcher::plugin_launch::PluginDisplay,
+) -> Result<live_display::ViewerResize, RpcFailure> {
+    use host::moonlight_certificate::MoonlightCertificateAdapter as _;
+    host::moonlight_certificate::production_adapter().resize(
+        host_uuid,
+        client_certificate,
+        &display,
+    )
+}
+
 #[cfg(test)]
 fn host_routers_with_in_memory_units(config_path: impl AsRef<Path>) -> (Router, Router) {
     let private = tempfile::tempdir().expect("private host state").keep();

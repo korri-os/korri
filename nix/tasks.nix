@@ -215,6 +215,27 @@ let
           exec python3 "$KORRI_ROOT/clients/android/proof/live_resize.py" "$@"
         '';
       };
+    viewer-linux-resize-proof = {
+      description = "Prove on aka, as root, that the Linux viewer fits a new stream size from korrid's resize request, with no stretch, in stream-cadence's private pair (#476).";
+      usageSuffix = " -- --sunshine /nix/store/...-sunshine-korri-... [--build-store STORE] [--caller-uid N] [--out DIRECTORY]";
+      runtimeInputs = [
+        # numpy and FFmpeg: stream-cadence's frame-ID bar decoder (bar.py)
+        # reads the screenshots and the frame record's recording.
+        (pkgs.python3.withPackages (p: [ p.numpy ]))
+        pkgs.ffmpeg
+        pkgs.nix
+        # A build store over ssh-ng:// (--build-store).
+        pkgs.openssh
+        pkgs.procps
+      ];
+      env = {
+        # stream-cadence builds the pair's parts from this nixpkgs.
+        CADENCE_NIXPKGS = "${pkgs.path}";
+      };
+      script = ''
+        exec python3 "$KORRI_ROOT/clients/viewer/proof/linux_resize.py" "$@"
+      '';
+    };
     viewer-android-recovery-proof =
       let
         emulator = import ../clients/viewer/android/emulator.nix { inherit pkgs; };
