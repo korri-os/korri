@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! One session's carried presenters, audio callbacks and input discovery.
-use crate::{network as ffi, options::Options};
+use crate::{audio_output, network as ffi, options::Options};
 use anyhow::{Result, ensure};
 use std::ffi::CString;
 
@@ -16,6 +16,8 @@ pub(crate) struct PlayerIo {
     vaapi: bool,
     /// Moonlight's `-platform v4l2request`, the handheld path.
     request: bool,
+    /// The carried C audio renderers, or their Rust port (#391 step F).
+    audio_output: audio_output::Kind,
     #[cfg(v4l2request)]
     _inputs: Vec<CString>,
 }
@@ -41,6 +43,7 @@ impl PlayerIo {
             audio_device,
             vaapi,
             request: false,
+            audio_output: o.audio_output,
             #[cfg(v4l2request)]
             _inputs: Vec::new(),
         };
@@ -87,6 +90,7 @@ impl PlayerIo {
             audio_device,
             vaapi: false,
             request: true,
+            audio_output: o.audio_output,
             _inputs: inputs,
         };
         let mapping = io
@@ -132,8 +136,23 @@ impl PlayerIo {
     pub(crate) fn decoder_callbacks(&self) -> *mut ffi::DECODER_RENDERER_CALLBACKS {
         unsafe { ffi::picture_callbacks() }
     }
+    /// The audio renderer table, chosen as Moonlight's `platform.c` chooses:
+    /// SDL audio unless the platform is X11 VA-API, then PulseAudio when a
+    /// probe stream opens, else ALSA. The Rust port chooses the same way.
     pub(crate) fn audio_callbacks(&self) -> *mut ffi::AUDIO_RENDERER_CALLBACKS {
-        unsafe { ffi::viewer_audio_callbacks(i32::from(self.vaapi), self.audio_context().cast()) }
+        match self.audio_output {
+            audio_output::Kind::Carried => unsafe {
+                ffi::viewer_audio_callbacks(i32::from(self.vaapi), self.audio_context().cast())
+            },
+            #[cfg(feature = "rust-audio-output")]
+            audio_output::Kind::Rust => {
+                audio_output::renderer::callbacks(self.vaapi, self.audio_device.as_deref())
+            }
+            #[cfg(not(feature = "rust-audio-output"))]
+            audio_output::Kind::Rust => {
+                unreachable!("audio_output::Kind::parse refuses rust in this build")
+            }
+        }
     }
     pub(crate) fn audio_context(&self) -> *mut std::ffi::c_void {
         self.audio_device

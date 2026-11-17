@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The frame record and the player's picture, sound and input are platform
 // parts. Linux carries Moonlight's C code for them; Android's are Rust.
+// Linux's sound also has a Rust port of its C (#391 step F, behind a feature).
+pub mod audio_output;
 mod callback;
 pub mod controls;
 mod frame_record;

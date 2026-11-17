@@ -19,7 +19,7 @@ changes these three audio backends.
 
 | Files | Difference from that patched source |
 | --- | --- |
-| `audio/{audio.h,alsa.c,pulse.c,sdl.c}` | None. Opus decoder, channel reorder, PCM buffering, recovery and output are unchanged. |
+| `audio/{audio.h,alsa.c,pulse.c,sdl.c}` | None. Opus decoder, channel reorder, PCM buffering, recovery and output are unchanged. They stay the default; `src/audio_output/renderer.rs` is their Rust port, chosen with `-audiooutput rust` in a build with the `rust-audio-output` feature (#391 step F). |
 | `input/{keyboard.h,x11.h}` | None. |
 | `input/{evdev.c,udev.c,x11.c}` | Include `../../picture/loop.h` instead of `../loop.h`; use the existing Rust-polled descriptor registry, not Moonlight's session loop. |
 | `input/sdl.c` | Include `../../picture/sdl.h` instead of `../sdl.h`. Add `sdlinput_destroy` to close controllers after the core joins its threads. |

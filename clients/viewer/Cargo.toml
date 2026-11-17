@@ -10,6 +10,10 @@ license = "GPL-3.0-or-later AND GPL-3.0-only AND Zlib"
 # chosen with `-networkcore nightjar` (#391 step E). Linux only for now. Off
 # by default: the C core streams.
 nightjar = ["dep:nightjar-core", "dep:rubylight-protocol"]
+# The Rust port of the carried C audio renderers (src/audio_output/),
+# chosen with `-audiooutput rust` (#391 step F, slice F1). Linux only. Off by
+# default: the carried C plays the sound.
+rust-audio-output = ["dep:alsa", "dep:libpulse-binding", "dep:libpulse-simple-binding"]
 
 [dependencies]
 korri-viewer-treaty = { path = "../../contracts/viewer" }
@@ -23,6 +27,13 @@ roxmltree = "0.21"
 libc = "0.2"
 url = "2.5"
 uuid = { version = "1", features = ["v4"] }
+
+# The Rust audio output's ALSA and PulseAudio: safe bindings to the alsa-lib
+# and libpulse-simple that the carried C already links.
+[target.'cfg(target_os = "linux")'.dependencies]
+alsa = { version = "0.12", optional = true }
+libpulse-binding = { version = "2.30", optional = true }
+libpulse-simple-binding = { version = "2.29", optional = true }
 
 # Android has no libcurl. Build the crate's own copy of curl, the release that
 # nixpkgs gives Linux, against the OpenSSL that android.nix supplies.

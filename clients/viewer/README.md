@@ -11,6 +11,9 @@ nix develop .#viewer --command xvfb-run -a env SDL_RENDER_DRIVER=software cargo 
 nix develop .#viewer --command cargo clippy --manifest-path clients/viewer/Cargo.toml --all-targets -- -D warnings
 nix build .#checks.x86_64-linux.korri-viewer-picture
 nix build .#checks.x86_64-linux.korri-viewer-io
+# The Rust audio output (#391 step F, below): its package runs its tests.
+nix build .#korri-viewer-rust-audio-output
+nix develop .#viewer --command xvfb-run -a cargo test --manifest-path clients/viewer/Cargo.toml --features rust-audio-output audio_output
 # Handheld path: aarch64 builds on aarch64 builders (here fuji or yari), never
 # on a device. The x86_64 check then starts that build under qemu-aarch64.
 nix build .#packages.aarch64-linux.korri-viewer
@@ -60,7 +63,8 @@ nix run .#viewer-android-recovery-proof -- --build-store auto --stream-host AKA_
 - Sound follows Moonlight's platform selection: SDL audio on the software
   fallback and on `v4l2request`; on X11 VA-API, probe Pulse first, then use
   ALSA. The fixture's
-  isolated null ALSA configuration works without a sound server.
+  isolated null ALSA configuration works without a sound server. The Rust
+  port of that code chooses the same way ("Sound in Rust", below).
 - The unchanged stage-0 tool needs `bin/moonlight` and the mapping path
   `share/moonlight/korri-inputplumber-gamecontrollerdb.txt`. The binary name
   is a package-entry symlink, not a second implementation. The mapping is
@@ -452,6 +456,63 @@ network-core boundary; it does not measure button-to-packet delay. In
 view-only mode both PC platform branches forward a window key, and a strace
 of them proves no `/dev/input` open is attempted.
 The aka comparison and isolation records are in `proof/`.
+
+## Sound in Rust (#391 step F, slice F1)
+
+`src/audio_output/renderer.rs` is the Rust port of the carried C sound:
+`io/audio/{alsa,pulse,sdl}.c` and the choice in `io/bridge.c`. The carried
+C stays the default. The cargo feature `rust-audio-output` builds the port,
+and `-audiooutput rust` chooses it (`-audiooutput c`, the default, keeps
+the C). Without the feature, `-audiooutput rust` fails with the feature's
+name. `korri-viewer-rust-audio-output` is the viewer with the feature; its
+`bin/moonlight` appends `-audiooutput rust`, so that the stage-0 tool runs
+it as the candidate beside `korri-viewer`, as `korri-viewer-nightjar` does.
+Its turns need sound: `view --tone 1000` (`nix/stream-cadence/README.md`,
+"The stream's sound").
+
+Only the language changes, so that the measure judges one cause:
+
+| | Carried C | Rust port |
+| --- | --- | --- |
+| Choice | `viewer_audio_callbacks`: SDL unless X11 VA-API; then Pulse when a 48 kHz stereo probe stream opens on the device, else ALSA | The same, with the same probe (`choose`) |
+| Decode | libopus on the core's thread (`CAPABILITY_DIRECT_SUBMIT`); NULL for a lost packet | The same libopus calls, bound by `build.rs` from `opus_multistream.h` |
+| ALSA | alsa-lib: the device or `sysdefault`, non-blocking, S16_LE, 20 ms period, 60 ms buffer, start and wake at the granted period, one `snd_pcm_recover` and one retry of a failed write, drain then close | The same calls, through the `alsa` crate 0.12 (Apache-2.0 or MIT) |
+| PulseAudio | libpulse-simple: names "Moonlight Embedded" and "Streaming", the default buffer, ALSA's channel map, blocking writes, free without a drain | The same calls, through `libpulse-simple-binding` 2.29 (MIT or Apache-2.0) |
+| SDL | SDL2's default device, 4096 frames, `SDL_QueueAudio`, the subsystem left open | The same calls, bound by `build.rs` from `SDL.h` (no `sdl2-sys`: it carries 89 MB of SDL source) |
+| Channel order | ALSA's (FL FR RL RR C LFE SL SR) for ALSA and Pulse, the core's for SDL | The same |
+
+What differs: the port checks the core's Opus configuration (at most 8
+channels; a frame of at most 120 ms), and a decoder that libopus refuses
+fails the start; the C went on with none. Its log lines start with
+`sound:`, go to standard error, and name the output that it chose and
+opened (`sound: the Rust audio output chose ALSA`, then the device and
+its period). A callback that panics gives the core its fallback
+(`callback::guarded`).
+
+Tests (`renderer_tests.rs`, real libopus packets with a tone of its own on
+each channel):
+
+- ALSA: the port and the carried C play the same packets, with a lost one,
+  into alsa-lib's own `file` PCM; the two files are equal, byte for byte,
+  for stereo, 5.1 and 7.1, and each position holds the tone of the
+  channel that ALSA's order puts there.
+- PulseAudio: a private `pulseaudio` with one null sink in ALSA's 5.1
+  order (as stream-cadence's tone server), `PULSE_SERVER` in a child
+  process; the probe chooses Pulse, and the sink's monitor holds each
+  channel's tone in its place.
+- SDL: SDL's disk driver in a child process; the file holds the tone.
+- A device that does not open fails the start, as in C (-1); a
+  configuration of 9 channels is refused.
+
+The product's sound server is PipeWire's Pulse server
+(`services/inputd/nix/korri-linux-host-core.nix`); the test runs
+PulseAudio's own. Neither the C nor the port sets a buffer size for
+Pulse, so the server's default decides the delay; not measured here.
+
+Not proven: a stream through the port (no stream ran in this slice), a
+real sound card, and anything about delay or gaps: no number of ADR 0062
+measures sound. The turns judge its CPU, start, picture and stability with
+the tone playing.
 
 ## Android session part (#391 step D, slice D0)
 

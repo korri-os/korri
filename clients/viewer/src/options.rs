@@ -34,6 +34,8 @@ pub struct Options {
     pub inputs: Vec<String>,
     /// The network core that streams (`-networkcore`, #391 step E).
     pub network_core: crate::network_core::Kind,
+    /// The audio output that plays the sound (`-audiooutput`, #391 step F).
+    pub audio_output: crate::audio_output::Kind,
 }
 
 /// Moonlight's `MAX_INPUTS` (config.h).
@@ -111,6 +113,7 @@ impl Options {
             auto_window_resize: false,
             inputs: Vec::new(),
             network_core: Default::default(),
+            audio_output: Default::default(),
         };
         while let Some(arg) = args.next() {
             if !arg.starts_with('-') {
@@ -144,7 +147,7 @@ impl Options {
                 }
                 "keydir" | "app" | "platform" | "width" | "height" | "fps" | "bitrate"
                 | "packetsize" | "codec" | "port" | "mapping" | "audio" | "remote" | "surround"
-                | "rotate" | "networkcore" => {
+                | "rotate" | "networkcore" | "audiooutput" => {
                     let value = args
                         .next()
                         .ok_or_else(|| anyhow::anyhow!("missing value for {arg}"))?;
@@ -181,6 +184,7 @@ impl Options {
                         }
                         "mapping" => o.mapping = Some(value),
                         "networkcore" => o.network_core = crate::network_core::Kind::parse(&value)?,
+                        "audiooutput" => o.audio_output = crate::audio_output::Kind::parse(&value)?,
                         "audio" => o.audio_device = Some(value),
                         _ => unreachable!(),
                     }
@@ -326,6 +330,32 @@ mod tests {
             )
             .is_ok()
         );
+    }
+
+    // #391 step F: the carried C plays the sound unless -audiooutput names
+    // the Rust port, anywhere among the arguments, as a wrapper may append it.
+    #[test]
+    fn the_audio_output_is_the_carried_c_unless_named() {
+        use crate::audio_output::Kind;
+        let parse = |extra: &[&str]| {
+            let mut args = vec!["stream", "-keydir", "/k", "host"];
+            args.extend_from_slice(extra);
+            Options::parse(args.into_iter().map(str::to_owned))
+        };
+        assert_eq!(parse(&[]).unwrap().audio_output, Kind::Carried);
+        assert_eq!(
+            parse(&["-audiooutput", "c"]).unwrap().audio_output,
+            Kind::Carried
+        );
+        assert_eq!(
+            parse(&["-audiooutput", "rust"]).is_ok(),
+            cfg!(feature = "rust-audio-output")
+        );
+        assert!(parse(&["-audiooutput", "cpal"]).is_err());
+        assert!(parse(&["-audiooutput"]).is_err());
+        // Moonlight's own -audio still names the device.
+        let o = parse(&["-audio", "sysdefault", "-audiooutput", "c"]).unwrap();
+        assert_eq!(o.audio_device.as_deref(), Some("sysdefault"));
     }
 
     #[test]

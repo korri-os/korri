@@ -316,6 +316,28 @@ let
       platforms = [ "x86_64-linux" ];
     };
   });
+  # The same viewer with the Rust port of the carried C audio renderers
+  # (#391 step F, slice F1, src/audio_output/). `bin/korri-viewer` still
+  # plays through the carried C unless `-audiooutput rust` is given;
+  # `bin/moonlight` gives it, so that the stage-0 tool runs this package as a
+  # candidate beside `package`, as `nightjarPackage` does. Its tests play
+  # into a private PulseAudio server, so the check has pulseaudio and parec.
+  rustAudioOutputPackage = package.overrideAttrs (old: {
+    pname = "korri-viewer-rust-audio-output";
+    cargoBuildFeatures = [ "rust-audio-output" ];
+    cargoCheckFeatures = [ "rust-audio-output" ];
+    nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.makeBinaryWrapper ];
+    nativeCheckInputs = (old.nativeCheckInputs or [ ]) ++ [ pkgs.pulseaudio ];
+    postInstall = old.postInstall + ''
+      rm $out/bin/moonlight
+      makeBinaryWrapper $out/bin/korri-viewer $out/bin/moonlight \
+        --append-flags "-audiooutput rust"
+    '';
+    meta = old.meta // {
+      # A candidate for the measure on aka; no handheld runs it yet.
+      platforms = [ "x86_64-linux" ];
+    };
+  });
   # GPL-3 corresponding source of `package` (ADR 0059): this package's Rust,
   # C and recipe, the network core with its ENet, and the vendored crates.
   # The plugin carries it beside the binary. nixpkgs' shared libraries are
@@ -372,6 +394,7 @@ in
   inherit
     package
     nightjarPackage
+    rustAudioOutputPackage
     network
     pictureCheck
     ioCheck
@@ -389,6 +412,8 @@ in
           rustfmt
           clippy
           xvfb-run
+          # The Rust audio output's tests (cargo feature rust-audio-output).
+          pulseaudio
         ]);
       buildInputs = libraries;
       LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [

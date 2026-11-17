@@ -198,6 +198,8 @@
             korri-viewer = viewer.package;
             # The viewer with nightjar-core as its network core (#391 step E).
             korri-viewer-nightjar = viewer.nightjarPackage;
+            # The viewer with the Rust port of its C audio output (#391 step F).
+            korri-viewer-rust-audio-output = viewer.rustAudioOutputPackage;
             korri-shell = shell.package;
             korri-shell-surfaces = shell.surfaces;
             korri-plymouth-theme = pkgs.callPackage ./brand/plymouth/package.nix { };

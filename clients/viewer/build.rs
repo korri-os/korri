@@ -87,6 +87,7 @@ fn main() {
         c.define("HAVE_V4L2M2M", None);
     }
     let handheld: &[&str] = if request { &["libdrm"] } else { &[] };
+    let mut includes = Vec::new();
     for lib in [
         "libavcodec",
         "libavutil",
@@ -106,8 +107,32 @@ fn main() {
     {
         let library = pkg_config::Config::new().probe(lib).unwrap();
         for path in library.include_paths {
-            c.include(path);
+            c.include(&path);
+            includes.push(path);
         }
+    }
+    // The Rust audio output (#391 step F, src/audio_output/) calls libopus
+    // and SDL's audio itself: bind the functions it uses from the headers of
+    // the libraries linked above. pkg-config already links both.
+    if env::var_os("CARGO_FEATURE_RUST_AUDIO_OUTPUT").is_some() {
+        includes
+            .iter()
+            .fold(
+                bindgen::Builder::default()
+                    .header_contents("audio.h", "#include <opus_multistream.h>\n#include <SDL.h>\n"),
+                |builder, path| builder.clang_arg(format!("-I{}", path.display())),
+            )
+            .allowlist_function("opus_multistream_(decoder_create|decode|decoder_destroy)")
+            .allowlist_function("SDL_(InitSubSystem|OpenAudioDevice|PauseAudioDevice|QueueAudio|CloseAudioDevice|GetError)")
+            .allowlist_type("SDL_AudioSpec")
+            .allowlist_var("AUDIO_S16LSB|SDL_INIT_AUDIO|OPUS_OK|OPUS_APPLICATION_AUDIO")
+            // SDL's comments hold indented examples that rustdoc would run.
+            .generate_comments(false)
+            .derive_default(true)
+            .generate()
+            .expect("generate the audio binding from the linked libraries' headers")
+            .write_to_file(PathBuf::from(env::var("OUT_DIR").unwrap()).join("audio.rs"))
+            .unwrap();
     }
     for file in [
         "bridge.c",
