@@ -5,12 +5,42 @@ use crate::{
     identity::{DeviceIdentity, OwnerStatementStatus, OWNER_EVENT_KIND},
     relay::{CoordinatedRelays, InProcessRelayNetwork, RelayCoordinator},
 };
+use crate::{
+    identity_switch::IdentitySwitchCoordinator,
+    local_signer::{serve_connection, LocalSigner},
+    recovery_words::RecoveryWords,
+};
 use nostr::{
     event::{EventBuilder, FinalizeEvent, Kind, Tag},
     key::Keys,
     types::Timestamp,
 };
 use std::sync::atomic::AtomicBool;
+
+/// Bind a device to a person key with a statement that key signed.
+fn bind(root: &std::path::Path, person: &Keys) -> String {
+    let mut identity = DeviceIdentity::load_or_create(root).unwrap();
+    let key = identity.device_public_key().unwrap().to_owned();
+    identity
+        .apply_owner_statement(&statement(person, &key))
+        .unwrap();
+    key
+}
+
+struct AutomaticDevice {
+    device: Device,
+    /// The person key of the device's automatic identity.
+    person: String,
+    signer: Arc<LocalSigner>,
+    _sockets: tempfile::TempDir,
+    server: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for AutomaticDevice {
+    fn drop(&mut self) {
+        self.server.abort();
+    }
+}
 
 const START: u64 = 1_800_000_000;
 
@@ -64,13 +94,57 @@ impl Network {
 
     fn device(&self, owned: bool) -> Device {
         let root = tempfile::tempdir().unwrap();
-        let mut identity = DeviceIdentity::load_or_create(root.path()).unwrap();
-        let key = identity.device_public_key().unwrap().to_owned();
         if owned {
-            identity
-                .apply_owner_statement(&statement(&self.person, &key))
-                .unwrap();
+            bind(root.path(), &self.person);
         }
+        self.joining(root, None)
+    }
+
+    /// A device owned by its automatic identity: the person key of `words`
+    /// signed its statement. Its local signer runs on a socket and erases
+    /// what it signs with, as in production.
+    fn automatic_device(&self, words: &str) -> AutomaticDevice {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        // The federation store and the identity switch accept only a
+        // private state root.
+        std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        let person = RecoveryWords::parse(words).unwrap().person_keys().unwrap();
+        let key = bind(root.path(), &person);
+        let sockets = tempfile::tempdir().unwrap();
+        let socket = sockets.path().join("signer.sock");
+        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let signer = Arc::new(LocalSigner::new(&key).unwrap());
+        let server = {
+            let signer = signer.clone();
+            tokio::spawn(async move {
+                loop {
+                    let (stream, _) = listener.accept().await.unwrap();
+                    let _ = serve_connection(stream, signer.clone()).await;
+                }
+            })
+        };
+        let switch = Arc::new(IdentitySwitchCoordinator::new(
+            root.path().into(),
+            socket,
+            crate::FederationResources::open(root.path()).unwrap(),
+        ));
+        AutomaticDevice {
+            device: self.joining(root, Some(switch)),
+            person: person.public_key().to_hex(),
+            signer,
+            _sockets: sockets,
+            server,
+        }
+    }
+
+    fn joining(
+        &self,
+        root: tempfile::TempDir,
+        switch: Option<Arc<IdentitySwitchCoordinator>>,
+    ) -> Device {
+        let identity = DeviceIdentity::load_or_create(root.path()).unwrap();
+        let key = identity.device_public_key().unwrap().to_owned();
         let joined = Arc::new(AtomicBool::new(false));
         let flag = joined.clone();
         let clock = self.clock.clone();
@@ -89,6 +163,7 @@ impl Network {
                 poll: Duration::from_millis(5),
             },
             joined: Arc::new(move || flag.store(true, Ordering::SeqCst)),
+            switch,
         });
         Device {
             root,
@@ -146,7 +221,10 @@ async fn a_matching_code_and_one_accept_make_the_new_device_owned() {
     assert!(!code.wrong_code_tried);
     assert_eq!(code.expires_at, START + 300);
     assert!(matches!(
-        new.join.enter(&code.code, facts()).unwrap(),
+        new.join
+            .enter(&code.code, None, false, facts())
+            .await
+            .unwrap(),
         JoinStatus::Matching
     ));
     let JoinStatus::AwaitingAccept(seen) = until(
@@ -253,7 +331,10 @@ async fn a_wrong_code_ends_that_code_and_the_next_code_says_so() {
     let network = Network::new();
     let (owned, new) = (network.device(true), network.device(false));
     let first = shown(owned.join.start().await.unwrap());
-    new.join.enter(&wrong(&first.code), facts()).unwrap();
+    new.join
+        .enter(&wrong(&first.code), None, false, facts())
+        .await
+        .unwrap();
     let JoinStatus::Failed(failure) = until(
         &new,
         |status| matches!(status, JoinStatus::Failed(_)),
@@ -289,7 +370,11 @@ async fn after_one_wrong_guess_the_right_digits_of_that_code_no_longer_join() {
         network.device(false),
     );
     let first = shown(owned.join.start().await.unwrap());
-    guesser.join.enter(&wrong(&first.code), facts()).unwrap();
+    guesser
+        .join
+        .enter(&wrong(&first.code), None, false, facts())
+        .await
+        .unwrap();
     until(
         &owned,
         |status| matches!(status, JoinStatus::ShowingCode(code) if code.wrong_code_tried),
@@ -300,7 +385,11 @@ async fn after_one_wrong_guess_the_right_digits_of_that_code_no_longer_join() {
     // digits. Neither gets an answer, and the guesser does not take the
     // messages of its earlier attempt.
     for device in [&guesser, &late] {
-        device.join.enter(&first.code, facts()).unwrap();
+        device
+            .join
+            .enter(&first.code, None, false, facts())
+            .await
+            .unwrap();
     }
     tokio::time::sleep(Duration::from_millis(200)).await;
     for device in [&guesser, &late] {
@@ -349,7 +438,10 @@ async fn a_refused_device_stays_unowned() {
     let network = Network::new();
     let (owned, new) = (network.device(true), network.device(false));
     let code = shown(owned.join.start().await.unwrap());
-    new.join.enter(&code.code, facts()).unwrap();
+    new.join
+        .enter(&code.code, None, false, facts())
+        .await
+        .unwrap();
     until(
         &owned,
         |status| matches!(status, JoinStatus::AwaitingAccept(_)),
@@ -396,11 +488,11 @@ async fn each_side_needs_its_own_identity_state_and_a_valid_code() {
     let failure = |result: Result<JoinStatus, RpcFailure>| result.unwrap_err().code;
     assert_eq!(failure(new.join.start().await), "JoinNeedsOwner");
     assert_eq!(
-        failure(owned.join.enter("1234561234", facts())),
-        "JoinNeedsNewDevice"
+        failure(owned.join.enter("1234561234", None, false, facts()).await),
+        "JoinNeedsWords"
     );
     assert_eq!(
-        failure(new.join.enter("1234567", facts())),
+        failure(new.join.enter("1234567", None, false, facts()).await),
         "JoinCodeInvalid"
     );
     assert_eq!(
@@ -412,7 +504,7 @@ async fn each_side_needs_its_own_identity_state_and_a_valid_code() {
         ..facts()
     };
     assert_eq!(
-        failure(new.join.enter("1234561234", unnamed)),
+        failure(new.join.enter("1234561234", None, false, unnamed).await),
         "JoinUnavailable"
     );
 }
@@ -548,7 +640,10 @@ async fn the_vouch_names_the_owned_devices_statement_at_accept_time() {
     let network = Network::new();
     let (owned, new) = (network.device(true), network.device(false));
     let code = shown(owned.join.start().await.unwrap());
-    new.join.enter(&code.code, facts()).unwrap();
+    new.join
+        .enter(&code.code, None, false, facts())
+        .await
+        .unwrap();
     until(
         &owned,
         |status| matches!(status, JoinStatus::AwaitingAccept(_)),
@@ -599,7 +694,10 @@ async fn setup_cannot_finish_while_the_device_is_joining() {
     assert!(!new.join.joining());
     let code = shown(owned.join.start().await.unwrap());
     assert!(!owned.join.joining());
-    new.join.enter(&code.code, facts()).unwrap();
+    new.join
+        .enter(&code.code, None, false, facts())
+        .await
+        .unwrap();
     assert!(new.join.joining());
     until(
         &new,
@@ -618,35 +716,43 @@ async fn setup_cannot_finish_while_the_device_is_joining() {
     assert!(!new.join.joining());
 }
 
-/// A new device, a vouch for it, and the local signer that setup's end
-/// would bind it to.
+/// A new device, a vouch for it, and the local signer that holds the words
+/// setup's end confirms.
 struct SetupRace {
-    _signer_root: tempfile::TempDir,
     owned: Device,
     new: Device,
     vouch: String,
-    signer: crate::local_signer::LocalPersonSigner,
+    signer: crate::local_signer::LocalSigner,
+    answers: Vec<String>,
     person: String,
 }
 
 impl SetupRace {
-    fn new(network: &Network) -> Self {
+    async fn new(network: &Network) -> Self {
         let (owned, new) = (network.device(true), network.device(false));
         let vouch = owned
             .identity()
             .vouch_for(&new.key, START)
             .unwrap()
             .owner_statement;
-        let signer_root = tempfile::tempdir().unwrap();
-        let signer =
-            crate::local_signer::LocalPersonSigner::load_or_create(signer_root.path(), &new.key)
-                .unwrap();
+        let signer = crate::local_signer::LocalSigner::new(&new.key).unwrap();
+        let crate::onboarding::RecoveryWordsOutcome::Ok(shown) =
+            crate::onboarding::recovery_words(new.root.path(), &signer).await
+        else {
+            panic!("the new device made no recovery words")
+        };
+        let words: Vec<&str> = shown.words.split(' ').collect();
+        let answers = shown
+            .confirm_positions
+            .iter()
+            .map(|position| words[usize::from(*position) - 1].to_owned())
+            .collect();
         Self {
-            _signer_root: signer_root,
             owned,
             new,
             vouch,
             signer,
+            answers,
             person: network.person.public_key().to_hex(),
         }
     }
@@ -654,24 +760,32 @@ impl SetupRace {
     async fn store_vouch(&self) -> JoinStatus {
         session::store_vouch(
             &self.new.join.0.context,
-            &self.new.key,
-            &self.owned.key,
-            &self.vouch,
+            &session::Vouched {
+                own: self.new.key.clone(),
+                peer: self.owned.key.clone(),
+                owner_statement: self.vouch.clone(),
+            },
         )
         .await
     }
 
+    /// The person confirms the words. True when that bound the automatic
+    /// identity; false when the device had joined first.
     async fn finish_setup(&self) -> bool {
-        let (outcome, bound) = crate::onboarding::finish_with_automatic_owner(
+        let (outcome, bound) = crate::onboarding::confirm_words(
             self.new.root.path(),
             &self.signer,
+            &self.answers,
             START,
         )
         .await;
-        assert!(matches!(
-            outcome,
-            crate::onboarding::OnboardingStatusOutcome::Ok(_)
-        ));
+        match &outcome {
+            crate::onboarding::OnboardingStatusOutcome::Ok(_) => assert!(bound),
+            crate::onboarding::OnboardingStatusOutcome::Err(failure) => {
+                assert!(!bound);
+                assert_eq!(failure.code, "RecoveryWordsNotNeeded");
+            }
+        }
         bound
     }
 
@@ -688,7 +802,7 @@ impl SetupRace {
 #[tokio::test]
 async fn setup_that_ends_after_a_stored_vouch_keeps_the_vouch() {
     let network = Network::new();
-    let race = SetupRace::new(&network);
+    let race = SetupRace::new(&network).await;
     assert!(matches!(race.store_vouch().await, JoinStatus::Joined(_)));
     assert!(!race.finish_setup().await);
     assert_eq!(race.owner(), race.person);
@@ -697,7 +811,7 @@ async fn setup_that_ends_after_a_stored_vouch_keeps_the_vouch() {
 #[tokio::test]
 async fn a_vouch_that_arrives_after_setup_ended_is_refused() {
     let network = Network::new();
-    let race = SetupRace::new(&network);
+    let race = SetupRace::new(&network).await;
     assert!(race.finish_setup().await);
     let JoinStatus::Failed(failure) = race.store_vouch().await else {
         panic!("the vouch replaced the automatic owner")
@@ -710,7 +824,7 @@ async fn a_vouch_that_arrives_after_setup_ended_is_refused() {
 async fn a_vouch_and_setup_end_at_once_leave_exactly_one_owner() {
     let network = Network::new();
     for _ in 0..8 {
-        let race = Arc::new(SetupRace::new(&network));
+        let race = Arc::new(SetupRace::new(&network).await);
         let (stored, bound) = tokio::join!(
             {
                 let race = race.clone();
@@ -760,4 +874,137 @@ async fn the_roster_keeps_a_person_signed_statement_over_a_newer_vouch_chain() {
         .unwrap();
     assert!(entry.latest.statement.vouchers.is_empty());
     assert_eq!(entry.latest.event_json, person_signed);
+}
+
+/// NIP-06's 12-word test vector, and other words.
+const AUTOMATIC_WORDS: &str =
+    "leader monkey parrot ring guide accident before fence cannon height naive bean";
+const OTHER_WORDS: &str =
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+#[tokio::test]
+async fn an_automatic_identity_joins_only_with_its_own_words() {
+    let network = Network::new();
+    let automatic = network.automatic_device(AUTOMATIC_WORDS);
+    let device = &automatic.device;
+    let failure = |result: Result<JoinStatus, RpcFailure>| result.unwrap_err();
+    let code = "1234561234";
+    assert_eq!(
+        failure(device.join.enter(code, None, true, facts()).await).code,
+        "JoinNeedsWords"
+    );
+    assert_eq!(
+        failure(
+            device
+                .join
+                .enter(code, Some(AUTOMATIC_WORDS), false, facts())
+                .await
+        )
+        .code,
+        "JoinNeedsConfirmation"
+    );
+    let refused = failure(
+        device
+            .join
+            .enter(code, Some(OTHER_WORDS), true, facts())
+            .await,
+    );
+    assert_eq!(refused.code, "JoinWordsRefused");
+    assert_eq!(
+        refused.message,
+        "These are not the recovery words of this device's person key"
+    );
+    let not_words = failure(
+        device
+            .join
+            .enter(code, Some("leader monkey"), true, facts())
+            .await,
+    );
+    assert_eq!(not_words.code, "JoinWordsRefused");
+    assert!(!not_words.message.contains("leader"));
+    // Nothing changed, and nothing waits on disk.
+    assert!(matches!(
+        device.identity().state(),
+        IdentityState::Owned { ref owner_public_key, .. } if *owner_public_key == automatic.person
+    ));
+    assert!(!device
+        .root
+        .path()
+        .join("identity-switch/next-root")
+        .exists());
+    assert!(matches!(device.join.status(), JoinStatus::Idle));
+}
+
+#[tokio::test]
+async fn an_automatic_identity_moves_to_the_person_key_it_joins() {
+    let network = Network::new();
+    let owned = network.device(true);
+    let automatic = network.automatic_device(AUTOMATIC_WORDS);
+    let device = &automatic.device;
+    let old_key = device.key.clone();
+
+    let code = shown(owned.join.start().await.unwrap());
+    assert!(matches!(
+        device
+            .join
+            .enter(&code.code, Some(AUTOMATIC_WORDS), true, facts())
+            .await
+            .unwrap(),
+        JoinStatus::Matching
+    ));
+    // The old person key signed the removal and is gone from memory.
+    assert!(!automatic.signer.holds_words());
+    until(
+        &owned,
+        |status| matches!(status, JoinStatus::AwaitingAccept(_)),
+        "owned device asks for Accept",
+    )
+    .await;
+    owned.join.decide(true).await.unwrap();
+    let JoinStatus::Joined(joined) = until(
+        device,
+        |status| matches!(status, JoinStatus::Joined(_) | JoinStatus::Failed(_)),
+        "the automatic device joins",
+    )
+    .await
+    else {
+        panic!("the join failed: {:?}", device.join.status())
+    };
+    let person = network.person.public_key().to_hex();
+    assert_eq!(joined.owner_public_key, person);
+    assert_ne!(
+        joined.device_public_key, old_key,
+        "a switch makes a new device key"
+    );
+
+    // The device now holds the new device key, owned through the vouch.
+    let identity = device.identity();
+    let IdentityState::Owned {
+        device_public_key,
+        owner_public_key,
+        ..
+    } = identity.state()
+    else {
+        panic!("the device has no owner: {:?}", identity.state())
+    };
+    assert_eq!(*device_public_key, joined.device_public_key);
+    assert_eq!(*owner_public_key, person);
+    let statement = DeviceIdentity::verify_owner_statement(
+        &identity.owner_statement_json().unwrap(),
+        device_public_key,
+    )
+    .unwrap();
+    assert_eq!(statement.vouchers, vec![owned.key.clone()]);
+    // The switch finished: no journal and no staged identity are left.
+    let switch = device.root.path().join("identity-switch");
+    assert!(!switch.join("journal.json").exists());
+    assert!(!switch.join("next-root").exists());
+    for _ in 0..4000 {
+        if device.joined.load(Ordering::SeqCst) {
+            return;
+        }
+        device.join.status();
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+    panic!("the device did not restart with its new owner");
 }

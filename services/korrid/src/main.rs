@@ -344,17 +344,6 @@ fn private_state_root() -> PathBuf {
     )
 }
 
-fn owner_uses_local_signer(
-    state: &korrid::identity::IdentityState,
-    signer_public_key: &str,
-) -> bool {
-    matches!(
-        state,
-        korrid::identity::IdentityState::Owned { owner_public_key, .. }
-            if owner_public_key == signer_public_key
-    )
-}
-
 fn brain_router(
     resources: korrid::federation::coordinator::FederationResources,
     wake: Option<korrid::federation::coordinator::DiscoveryControl>,
@@ -709,44 +698,14 @@ async fn main() {
         std::process::exit(2);
     }
     let private_state_root = private_state_root();
-    let signer_socket = std::env::var_os("KORRID_LOCAL_SIGNER_SOCKET")
-        .map(PathBuf::from)
-        .expect("KORRID_LOCAL_SIGNER_SOCKET must be set");
-    korrid::identity_switch::recover_pending_identity_switch(
-        &private_state_root,
-        signer_socket.clone(),
-    )
-    .await
-    .unwrap_or_else(|error| panic!("recover identity switch: {error}"));
-    let signer = korrid::local_signer::UnixPersonSigner::new(signer_socket);
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    // The local signer makes recovery words and signs with them (ADR 0082).
+    // korrid reaches it through this socket; it holds no person key.
+    std::env::var_os("KORRID_LOCAL_SIGNER_SOCKET").expect("KORRID_LOCAL_SIGNER_SOCKET must be set");
+    korrid::identity_switch::recover_pending_identity_switch(&private_state_root)
+        .await
+        .unwrap_or_else(|error| panic!("recover identity switch: {error}"));
     let mode_value = std::env::var("KORRID_MODE").ok();
     let mode = Mode::parse(mode_value.as_deref()).unwrap_or_else(|error| panic!("{error}"));
-    // ADR 0022: a host device in setup stays unowned, so it can join; its
-    // setup's end binds the automatic owner. Brain mode on Linux (tests and
-    // development) has no setup that binds an owner, so it binds at start.
-    let identity_state = match mode {
-        Mode::Host => {
-            korrid::identity::bind_automatic_owner_after_setup(&private_state_root, &signer, now)
-                .await
-        }
-        Mode::Brain => {
-            korrid::identity::bind_automatic_owner(&private_state_root, &signer, now).await
-        }
-    }
-    .unwrap_or_else(|error| panic!("bind automatic identity: {error}"));
-    let signer_public_key_path = std::env::var_os("KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE")
-        .map(PathBuf::from)
-        .expect("KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE must be set");
-    let signer_public_key =
-        korrid::local_signer::read_published_public_key_if_present(&signer_public_key_path)
-            .unwrap_or_else(|error| panic!("read local signer public key: {error}"));
-    let local_only_owner = signer_public_key
-        .as_deref()
-        .is_some_and(|public_key| owner_uses_local_signer(&identity_state, public_key));
 
     use korrid::federation::coordinator::{
         Discovery, DiscoveryInputs, DiscoveryTiming, FederationResources,
@@ -765,9 +724,7 @@ async fn main() {
         resolve_address(mode, configured_address.as_deref()).expect("valid KORRID_ADDRESS");
     let lan_listener = korrid::peer_listener::bind(address).expect("bind korrid server");
     let address = lan_listener.local_addr().expect("bound korrid address");
-    let discovery = if local_only_owner {
-        None
-    } else {
+    let discovery = {
         let relays = korrid::relay::RelayList::from_linux_environment(
             std::env::var("KORRID_RELAYS").ok().as_deref(),
         )
@@ -783,33 +740,31 @@ async fn main() {
             .expect("valid advertised endpoints and metadata");
         let config = korrid::config::snapshot::ConfigSnapshotCoordinator::new(config_root);
         let interface_warning = std::sync::Once::new();
-        Some(
-            Discovery::new(
-                resources.directory.clone(),
-                resources.credentials.clone(),
-                Arc::new(move || {
-                    DiscoveryInputs::linux(
-                        &config,
-                        &initial_inputs,
-                        korrid::federation::interfaces::endpoints_or_query_only(
-                            korrid::federation::interfaces::endpoints(address),
-                            &interface_warning,
-                        ),
-                    )
-                }),
-                Arc::new(korrid::relay::WebSocketRelayTransport::new()),
-                DiscoveryTiming::default(),
-                Arc::new(|| {
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs()
-                }),
-            )
-            .start(),
+        Discovery::new(
+            resources.directory.clone(),
+            resources.credentials.clone(),
+            Arc::new(move || {
+                DiscoveryInputs::linux(
+                    &config,
+                    &initial_inputs,
+                    korrid::federation::interfaces::endpoints_or_query_only(
+                        korrid::federation::interfaces::endpoints(address),
+                        &interface_warning,
+                    ),
+                )
+            }),
+            Arc::new(korrid::relay::WebSocketRelayTransport::new()),
+            DiscoveryTiming::default(),
+            Arc::new(|| {
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+            }),
         )
+        .start()
     };
-    let wake = discovery.as_ref().map(|(control, _)| control.clone());
+    let wake = Some(discovery.0.clone());
     // The nearby link reads federation snapshots. NM owns crash restoration.
     let (stop_nearby, nearby_stopped) = tokio::sync::oneshot::channel();
     let nearby = tokio::spawn(korrid::network::nearby::run(
@@ -894,26 +849,20 @@ async fn main() {
             _ = interrupt.recv() => {},
         }
     };
-    let result = if let Some((wake, discovery)) = discovery {
-        let monitor = korrid::federation::interfaces::watch_endpoints(
-            wake.clone(),
-            move || korrid::federation::interfaces::endpoints(address),
-            korrid::federation::interfaces::ADDRESS_POLL,
-        );
-        let discovery = async move {
-            tokio::pin!(discovery);
-            tokio::pin!(monitor);
-            // Observe addresses before the first publication can read them.
-            // Otherwise a change between those reads could miss its wake.
-            tokio::select! { biased; _ = &mut monitor => {}, _ = &mut discovery => {} }
-        };
-        serve_with_discovery(serving, shutdown, wake, discovery).await
-    } else {
-        tokio::select! {
-            _ = shutdown => None,
-            result = serving => Some(result),
-        }
+    let (wake, discovery) = discovery;
+    let monitor = korrid::federation::interfaces::watch_endpoints(
+        wake.clone(),
+        move || korrid::federation::interfaces::endpoints(address),
+        korrid::federation::interfaces::ADDRESS_POLL,
+    );
+    let discovery = async move {
+        tokio::pin!(discovery);
+        tokio::pin!(monitor);
+        // Observe addresses before the first publication can read them.
+        // Otherwise a change between those reads could miss its wake.
+        tokio::select! { biased; _ = &mut monitor => {}, _ = &mut discovery => {} }
     };
+    let result = serve_with_discovery(serving, shutdown, wake, discovery).await;
     let _ = stop_nearby.send(());
     nearby.await.expect("stop nearby link");
     if let Some(runtime) = host_runtime {
@@ -1119,24 +1068,6 @@ mod tests {
             // A detached directory owner would keep the private-root writer lease.
             FederationResources::open(root.path()).unwrap();
         }
-    }
-
-    #[test]
-    fn only_the_runtime_local_signer_owner_is_local_only() {
-        let state = korrid::identity::IdentityState::Owned {
-            device_public_key: "device".into(),
-            owner_public_key: "local".into(),
-            event_id: "event".into(),
-            created_at: 1,
-        };
-        assert!(owner_uses_local_signer(&state, "local"));
-        assert!(!owner_uses_local_signer(&state, "another-owner"));
-        assert!(!owner_uses_local_signer(
-            &korrid::identity::IdentityState::Unowned {
-                device_public_key: "device".into(),
-            },
-            "local",
-        ));
     }
 
     #[test]

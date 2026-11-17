@@ -1,12 +1,8 @@
-use std::{
-    os::fd::FromRawFd,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+//! The local signer service (`local_signer.rs`). It keeps no state on disk:
+//! a person key lives only in its memory, so it also turns off core dumps.
+use std::{os::fd::FromRawFd, path::PathBuf, sync::Arc};
 
-use korrid::local_signer::{
-    publish_public_key, serve_connection, LocalSignerKeyring, LocalSignerKeyringStatus,
-};
+use korrid::local_signer::{serve_connection, LocalSigner};
 
 fn required_unprivileged_id(name: &str) -> Result<u32, String> {
     let value = std::env::var(name).map_err(|_| format!("{name} must be set"))?;
@@ -54,30 +50,29 @@ fn expected_device_public_key() -> Result<String, String> {
         .map_err(|_| "expected device public key credential is unreadable".to_owned())
 }
 
+fn disable_core_dumps() -> Result<(), String> {
+    let no_core = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: a valid resource and a live plain rlimit struct for this process.
+    if unsafe { libc::setrlimit(libc::RLIMIT_CORE, &no_core) } != 0 {
+        return Err("local signer could not turn off core dumps".into());
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
-    let root = std::env::var_os("KORRI_LOCAL_SIGNER_PRIVATE_STATE_ROOT")
-        .map(PathBuf::from)
-        .expect("KORRI_LOCAL_SIGNER_PRIVATE_STATE_ROOT must be set");
+    disable_core_dumps().unwrap_or_else(|error| panic!("{error}"));
     let expected_uid = required_unprivileged_id("KORRI_LOCAL_SIGNER_PEER_UID")
         .unwrap_or_else(|error| panic!("{error}"));
     let expected_gid = required_unprivileged_id("KORRI_LOCAL_SIGNER_PEER_GID")
         .unwrap_or_else(|error| panic!("{error}"));
-    let expected_device_public_key =
-        expected_device_public_key().unwrap_or_else(|error| panic!("{error}"));
-    let keyring = LocalSignerKeyring::open_or_initialize(&root)
-        .unwrap_or_else(|error| panic!("could not open local signer: {error}"));
-    let public_key_path = std::env::var_os("KORRI_LOCAL_SIGNER_PUBLIC_KEY_FILE")
-        .map(PathBuf::from)
-        .expect("KORRI_LOCAL_SIGNER_PUBLIC_KEY_FILE must be set");
-    if let LocalSignerKeyringStatus::Active { public_key } = keyring
-        .status()
-        .unwrap_or_else(|error| panic!("could not read local signer status: {error}"))
-    {
-        publish_public_key(&public_key_path, &public_key)
-            .unwrap_or_else(|error| panic!("could not publish local signer public key: {error}"));
-    }
-    let expected_device_public_key = Arc::new(Mutex::new(expected_device_public_key.trim().into()));
+    let signer = Arc::new(
+        LocalSigner::new(&expected_device_public_key().unwrap_or_else(|error| panic!("{error}")))
+            .unwrap_or_else(|error| panic!("expected device public key: {error}")),
+    );
     let listener = tokio::net::UnixListener::from_std(
         inherited_listener().unwrap_or_else(|error| panic!("{error}")),
     )
@@ -97,17 +92,9 @@ async fn main() {
                     credentials.uid() == expected_uid && credentials.gid() == expected_gid
                 });
                 if authorized {
-                    let root = root.clone();
-                    let expected_device_public_key = Arc::clone(&expected_device_public_key);
-                    let public_key_path = public_key_path.clone();
+                    let signer = Arc::clone(&signer);
                     tokio::spawn(async move {
-                        let _ = serve_connection(
-                            stream,
-                            root,
-                            expected_device_public_key,
-                            public_key_path,
-                        )
-                        .await;
+                        let _ = serve_connection(stream, signer).await;
                     });
                 }
             }

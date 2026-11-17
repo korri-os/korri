@@ -2,7 +2,6 @@
 use super::*;
 use crate::{
     identity::{DeviceIdentity, IdentityState},
-    local_signer::{UnixLocalSignerAdmin, UnixPersonSigner},
     relay::{CoordinatedRelays, RelayList, WebSocketRelayTransport},
     remote_signer::{Nip46PersonSigner, PersonSigner, PersonSignerRequest, PersonSignerState},
     *,
@@ -45,20 +44,11 @@ fn relays(identity: &DeviceIdentity, transport: Arc<WebSocketRelayTransport>) ->
     CoordinatedRelays::new(relays, identity.clone(), transport).ok()
 }
 
+/// The owner's NIP-46 signer, when this device is connected to it. No device
+/// keeps a person key (ADR 0082), so a device owned by its automatic
+/// identity has no signer here.
 async fn signer(state: &AppState, identity: &DeviceIdentity) -> Option<Arc<dyn PersonSigner>> {
     let owner = owner(identity)?;
-    if let Some(socket) = std::env::var_os("KORRID_LOCAL_SIGNER_SOCKET").map(PathBuf::from) {
-        if let Ok(Ok(status)) = tokio::time::timeout(
-            Duration::from_secs(1),
-            UnixLocalSignerAdmin::new(socket.clone()).status(),
-        )
-        .await
-        {
-            if status.0.as_deref() == Some(owner) {
-                return Some(Arc::new(UnixPersonSigner::new(socket)));
-            }
-        }
-    }
     let relay_list =
         crate::remote_signer::persisted_relay_list(state.private_state_root()).ok()??;
     let relays = Arc::new(

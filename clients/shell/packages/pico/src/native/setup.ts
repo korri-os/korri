@@ -12,14 +12,12 @@ import {
   type PicoOnboardingScreen,
 } from "../pico-onboarding-view"
 import type { PicoNetworkView } from "../pico-wifi-view"
-import { PICO_IDENTITY_BACKUP_ACTION } from "../pico-settings-view"
-import { IDENTITY_FORM } from "../state/navigation"
 import type { OnboardingMessage } from "../state/onboarding"
 import type { Target } from "./focus"
 import { frame } from "./frame"
 import { A, B, button, type ButtonView, cartView, type CartView, mark, NO_CARD, type HintView } from "./kit"
-import { editorParts, identityScreen, type RowView, rowView, stacked, typingScreen } from "./panel"
-import { type Act, type Ctx, local, type Screen, setup } from "./types"
+import { editorParts, type RowView, rowView, stacked, typingScreen } from "./panel"
+import { type Act, type Ctx, type Screen, setup } from "./types"
 
 interface Answer {
   readonly id: string
@@ -72,25 +70,10 @@ export function setupScreen(ctx: Ctx): Screen {
   const place = picoSetupPlace(s.setup.step, screen)
   const base = (hints: readonly HintView[]) => frame({ place: "SETUP", label: place, hints, track })
 
-  // The backup dialog over the identity step, and the keyboard over a field.
+  // The keyboard over a field.
   if (s.typing !== undefined) {
     const shown = typingScreen(ctx, s.typing, "SETUP")
     return { ...shown, view: { ...shown.view, layer: "setup", frame: { ...(shown.view["frame"] as object), track } } }
-  }
-  if (screen._tag === "Identity" && screen.backup !== undefined) {
-    const backup = screen.backup
-    const shown = identityScreen(
-      { ...ctx, model: { ...model, ...(backup.identity === undefined ? {} : { identityManagement: backup.identity }) } },
-      { _tag: "Identity", actionId: PICO_IDENTITY_BACKUP_ACTION, form: { ...IDENTITY_FORM, password: backup.password }, qr: undefined },
-    )
-    // The dialog's answers are setup's: the password field, CREATE, CLOSE.
-    const targets = shown.targets.map(target =>
-      target.id === "identity:password"
-        ? { ...target, act: [local(state => ({ ...state, typing: { field: "backup:password" as const, label: "Password", draft: { text: backup.password, capitals: false, symbols: false }, secret: true } }))] }
-        : target.id === "submit" ? { ...target, act: [setup({ _tag: "SubmittedBackup" })] }
-        : target.id === "close" || target.id === "done" ? { ...target, act: [setup({ _tag: "ClosedBackup" })] }
-        : target)
-    return { ...shown, targets, view: { ...shown.view, layer: "setup", frame: base(SELECT_BACK) } }
   }
   if (screen._tag === "Entry") {
     const entry = screen.entry
@@ -313,7 +296,7 @@ function describe(screen: Exclude<PicoOnboardingScreen, { _tag: "Entry" }>): Des
         case "OfflineWarning":
           return card({
             title: "Continue offline?",
-            message: "With no connection, this device cannot restore an identity from a backup or connect a signer. Games on this device still play.",
+            message: "With no connection, this device cannot connect a signer. Games on this device still play.",
             answers: [
               { id: "offline", label: "Continue offline", message: { _tag: "ConfirmedOffline" } },
               { id: "back", label: "Back to Wi-Fi", message: { _tag: "ReturnedToWifi" } },
@@ -327,7 +310,7 @@ function describe(screen: Exclude<PicoOnboardingScreen, { _tag: "Entry" }>): Des
       const view = screen.view
       const none = view._tag === "Working" || view._tag === "Approving"
       const hints = none ? [] : SELECT_BACK
-      const field = (id: "backup" | "password" | "uri", label: string, value: string): Answer => ({
+      const field = (id: "uri", label: string, value: string): Answer => ({
         id: `field:${id}`,
         label,
         detail: value === "" ? "EMPTY" : value,
@@ -347,7 +330,6 @@ function describe(screen: Exclude<PicoOnboardingScreen, { _tag: "Entry" }>): Des
               : "Your identity is the key that ties your Korri devices together.",
             answers: [
               { id: "new", label: "New identity", message: { _tag: "ChoseIdentity", how: "created" } },
-              { id: "restore", label: "Restore from backup", detail: view.restore.note, disabled: !view.restore.enabled, message: { _tag: "ChoseIdentity", how: "restored" } },
               { id: "signer", label: "Connect a signer", detail: view.signer.note, disabled: !view.signer.enabled, message: { _tag: "ChoseIdentity", how: "signer" } },
             ],
             hints,
@@ -357,27 +339,11 @@ function describe(screen: Exclude<PicoOnboardingScreen, { _tag: "Entry" }>): Des
         case "Ready":
           return card({
             tone: "tell",
-            title: view.origin === "created" ? "Identity created" : view.origin === "restored" ? "Identity restored" : "Signer connected",
+            title: view.origin === "created" ? "New identity" : "Signer connected",
             message: view.origin === "created"
-              ? `Korri made a key for you on this device. ${view.canBackUp ? "Korri cannot recover a lost key. Back it up now, or later from Settings." : "Korri cannot recover a lost key. Back it up later from Settings."}`
-              : view.origin === "restored" ? "This device uses the identity from your backup."
+              ? "This device makes its own person key when setup ends. For now, setup ends at a terminal: run korri setup finish on this device. It shows 12 recovery words to write down."
               : "Your signer keeps the key. Korri asks it each time it needs to sign.",
-            answers: [
-              { id: "next", label: "NEXT", message: { _tag: "Continued" } },
-              ...(view.canBackUp ? [{ id: "backup", label: "Back up now", detail: "▶", message: { _tag: "OpenedBackup" } as const }] : []),
-            ],
-            hints,
-          })
-        case "Restore":
-          return card({
-            title: "Restore from backup",
-            message: [view.problem, "Type the encrypted backup and the password it was made with."].filter(part => part !== undefined).join(" "),
-            answers: [
-              field("backup", "Backup", view.backup.length > 16 ? `${view.backup.slice(0, 16)}…` : view.backup),
-              field("password", "Password", "•".repeat(view.passwordLength)),
-              { ...statement, detail: view.confirmed ? "ON" : "OFF" },
-              { id: "submit", label: "RESTORE", disabled: !view.ready, message: { _tag: "SubmittedIdentity" } },
-            ],
+            answers: [{ id: "next", label: "NEXT", message: { _tag: "Continued" } }],
             hints,
           })
         case "Signer":

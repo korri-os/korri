@@ -116,8 +116,6 @@ async fn respond(state: RpcState, device: Option<String>, request: RpcRequest) -
                     event_id: "33".repeat(32),
                     created_at: 1,
                 },
-                local_backup_available: false,
-                retired_public_keys: vec![],
             }))
         }
         RpcRequest::SessionStatus(_) => {

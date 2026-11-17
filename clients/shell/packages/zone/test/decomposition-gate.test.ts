@@ -3,7 +3,8 @@
  *
  * Every component of surfaces/zone/src/ui and src/pages (as it stood at
  * the cut, listed below) is one Slint component at the same layer, in its
- * own file, unless it is merged into another for the reason given. Every
+ * own file, unless it is merged into another or removed, for the reason
+ * given. Every
  * component has its preview file beside it, `<Name>.<layer>.preview.slint`,
  * the Caliper part's role: named preview components with fixture data that
  * import and render the component. The previews render through the shell's
@@ -25,7 +26,7 @@ const REACT: Readonly<Record<string, string>> = {
   ZoneEmblem: "ui/atoms/ZoneEmblem.slint",
   ZoneKeycap: "ui/atoms/ZoneKeycap.slint",
   ZonePanel: "ui/atoms/ZonePanel.slint",
-  ZoneQrWell: "ui/atoms/ZoneQrWell.slint",
+  ZoneQrWell: "removed with the identity backup (ADR 0082): no device keeps a person key to show",
   ZoneSignal: "ui/atoms/ZoneSignal.slint",
   ZoneSlab: "merged into ui/atoms/ZonePanel.slint: a slab was a panel that takes no room, kept apart in CSS only to stop a ResizeObserver loop; Slint panels never measure themselves",
   ZoneTab: "ui/atoms/ZoneTab.slint",
@@ -60,7 +61,7 @@ const REACT: Readonly<Record<string, string>> = {
   ZoneRunWithRoute: "ui/organisms/ZoneRunWithRoute.slint",
   ZoneSaveBand: "ui/organisms/ZoneSaveBand.slint",
   ZoneSaveEntry: "merged into ui/organisms/ZoneOptionsEntry.slint: both raise the one keyboard over a veiled page; what it types and for what comes from the view",
-  ZoneSecretSlab: "ui/organisms/ZoneSecretSlab.slint",
+  ZoneSecretSlab: "removed with the identity backup (ADR 0082): no device keeps a person key to show",
   ZoneStatusLayer: "ui/organisms/ZoneStatusLayer.slint",
   ZoneStepStrip: "ui/organisms/ZoneStepStrip.slint",
   ZoneTally: "ui/organisms/ZoneTally.slint",
@@ -97,14 +98,16 @@ const files = slintFiles()
 const components = files.filter(file => layerOf(file) !== undefined && !isPreview(file))
 
 describe("decomposition", () => {
-  test("every React component of Zone has its Slint component, or a merge with its reason", () => {
-    const missing = Object.entries(REACT).filter(([, target]) => !target.startsWith("merged") && !existsSync(join(PACKAGE, target)))
+  const kept = (target: string) => !target.startsWith("merged") && !target.startsWith("removed")
+
+  test("every React component of Zone has its Slint component, or a merge or removal with its reason", () => {
+    const missing = Object.entries(REACT).filter(([, target]) => kept(target) && !existsSync(join(PACKAGE, target)))
     expect(missing.map(([name, target]) => `${name} → ${target}`)).toEqual([])
   })
 
   test("each Slint component is named for its file and stands at its React component's layer", () => {
     const wrong = Object.entries(REACT).filter(([name, target]) => {
-      if (target.startsWith("merged") || !existsSync(join(PACKAGE, target))) return false
+      if (!kept(target) || !existsSync(join(PACKAGE, target))) return false
       return !componentsIn(read(target)).includes(name)
     })
     expect(wrong.map(([name]) => name)).toEqual([])

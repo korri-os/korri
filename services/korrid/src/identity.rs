@@ -4,7 +4,6 @@
 //! NIP-01 supplies event signatures. NIP-44 v2 supplies encrypted payloads.
 //! NIP-78 supplies the addressable event shape for owner state.
 
-use crate::remote_signer::{PersonSigner, PersonSignerRequest, PersonSignerState};
 use nostr::{
     event::{Event, EventBuilder, FinalizeEvent, FinalizeUnsignedEvent, Kind, Tag},
     key::{Keys, PublicKey},
@@ -883,69 +882,6 @@ pub(crate) async fn owner_write() -> tokio::sync::MutexGuard<'static, ()> {
         .get_or_init(|| tokio::sync::Mutex::new(()))
         .lock()
         .await
-}
-
-/// Bind the automatic owner at start, but only after setup ended (ADR 0022).
-/// A device still in setup keeps the state it has, so a new device stays
-/// unowned and can join; setup's end binds it
-/// (`onboarding::finish_with_automatic_owner`).
-pub async fn bind_automatic_owner_after_setup<S>(
-    private_state_root: &Path,
-    signer: &S,
-    created_at: u64,
-) -> Result<IdentityState, IdentityError>
-where
-    S: PersonSigner + ?Sized,
-{
-    if !crate::onboarding::setup_finished(private_state_root) {
-        return Ok(DeviceIdentity::load_or_create(private_state_root)?
-            .state()
-            .clone());
-    }
-    bind_automatic_owner(private_state_root, signer, created_at).await
-}
-
-/// Bind the first automatic person identity through the existing external-signer path.
-///
-/// An existing owned identity is returned unchanged. Any signer or verification
-/// failure leaves the persisted device identity unowned.
-pub async fn bind_automatic_owner<S>(
-    private_state_root: &Path,
-    signer: &S,
-    created_at: u64,
-) -> Result<IdentityState, IdentityError>
-where
-    S: PersonSigner + ?Sized,
-{
-    let mut identity = DeviceIdentity::load_or_create(private_state_root)?;
-    match identity.state() {
-        IdentityState::Owned { .. } => return Ok(identity.state().clone()),
-        IdentityState::Unowned { .. } => {}
-        IdentityState::Revoked { .. } | IdentityState::Invalid { .. } => {
-            return Err(IdentityError::Invalid(
-                "the current identity state cannot accept an automatic owner".into(),
-            ))
-        }
-    }
-    let template = identity.owner_statement_template(OwnerStatementStatus::Owned, created_at)?;
-    let state = signer
-        .request(PersonSignerRequest {
-            unsigned_event_template: template.clone(),
-        })
-        .await;
-    let PersonSignerState::Approved {
-        owner_public_key,
-        unsigned_event_template,
-        signed_event_json,
-    } = state
-    else {
-        return Err(IdentityError::Signer);
-    };
-    if unsigned_event_template != template {
-        return Err(IdentityError::Signer);
-    }
-    identity.apply_signed_owner_binding(&template, &owner_public_key, &signed_event_json)?;
-    Ok(identity.state().clone())
 }
 
 impl Nip46ConnectionIdentity {

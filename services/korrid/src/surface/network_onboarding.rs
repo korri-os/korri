@@ -364,6 +364,12 @@ impl NetworkOnboarding {
                     state.onboarding_needed = Some(status.needed);
                     state.problem = None;
                 }
+                // ADR 0082: setup on a device without an owner ends only
+                // when the person confirms its recovery words. No surface
+                // shows them yet, so Korri says where setup ends instead.
+                OnboardingStatusOutcome::Err(refused) if refused.code == "RecoveryWordsNeeded" => {
+                    state.problem = Some(refused.message.clone())
+                }
                 OnboardingStatusOutcome::Err(_) => state.problem = Some(failure.into()),
             });
             this.lock().finishing = false;

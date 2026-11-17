@@ -6,7 +6,7 @@
  *
  *   sheets   the house menu, a set's sort and filter, a game's actions
  *   pages    settings, Wi-Fi, getting games (providers, a search, an entry),
- *            invites, identity and backup
+ *            invites, identity
  *   Korri's  first boot, the runner choice, launch settings, a game's saves:
  *            shown while Korri publishes them, closed by Korri's own action
  *   overlay  the gameplay overlay's controls
@@ -55,7 +55,7 @@ function menuSheet(model: Model): PanelSpec {
   if (invites.length > 0) rows.push({ id: "m:invites", kind: "row", label: "Invites", value: String(invites.length), mark: "more", press: seq(CLOSE, { t: "open", page: { p: "invites" } }) })
   rows.push({ id: "m:settings", kind: "row", label: "Settings", mark: "more", press: seq(CLOSE, { t: "open", page: { p: "settings" } }) })
   if (model.network !== undefined) rows.push({ id: "m:wifi", kind: "row", label: "Wi-Fi", value: connectionWords(model.network.connection), mark: "more", press: seq(CLOSE, { t: "open", page: { p: "wifi" } }) })
-  if (model.identityManagement !== undefined) rows.push({ id: "m:identity", kind: "row", label: "Identity and backup", mark: "more", press: seq(CLOSE, { t: "open", page: { p: "identity" } }) })
+  if (model.identityManagement !== undefined) rows.push({ id: "m:identity", kind: "row", label: "Identity", mark: "more", press: seq(CLOSE, { t: "open", page: { p: "identity" } }) })
   if (model.actions.length > 0) rows.push(head("m:device", "This device"), ...actionRows("m:a:", model.actions, CLOSE))
   return { key: "sheet:menu", title: "Menu", rows, buttons: [], back: CLOSE, menu: CLOSE }
 }
@@ -108,7 +108,7 @@ function settingsPage(state: State, model: Model): PanelSpec {
   })
   const places: RowSpec[] = []
   if (model.network !== undefined) places.push({ id: "v:wifi", kind: "row", label: "Wi-Fi", value: connectionWords(model.network.connection), mark: "more", press: { t: "open", page: { p: "wifi" } } })
-  if (model.identityManagement !== undefined) places.push({ id: "v:identity", kind: "row", label: "Identity and backup", mark: "more", press: { t: "open", page: { p: "identity" } } })
+  if (model.identityManagement !== undefined) places.push({ id: "v:identity", kind: "row", label: "Identity", mark: "more", press: { t: "open", page: { p: "identity" } } })
   if (places.length > 0) rows.push(head("v:head:places", "More"), ...places)
   rows.push(head("v:head:velvet", "Velvet"))
   rows.push({
@@ -231,36 +231,12 @@ export const shortKey = (key: string): string => (key.length <= 20 ? key : `${ke
 function identityPage(state: State, model: Model): PanelSpec {
   const identity = model.identityManagement
   const back: ButtonSpec = { id: "b:back", label: "Back", press: CLOSE }
-  if (identity === undefined) return { key: "page:identity", title: "Identity and backup", sub: "This device cannot manage its identity.", rows: [], buttons: [back], back: CLOSE }
-  const status = identity.status
-  const busy = status._tag === "Working"
-  // A finished backup is still shown: starting something else puts it away first.
-  const start = (act: Act): Act => (busy ? NONE : status._tag === "BackupReady" ? seq(send({ _tag: "DismissIdentityStatus" }), act) : act)
+  if (identity === undefined) return { key: "page:identity", title: "Identity", sub: "This device cannot manage its identity.", rows: [], buttons: [back], back: CLOSE }
+  const busy = identity.status._tag === "Working"
   const rows: RowSpec[] = [
-    identity.localBackupAvailable
-      ? { id: "d:backup", kind: "row", label: "Back up this identity", note: "Makes a copy locked with a password you choose.", mark: "more", press: start({ t: "type", entry: { e: "backupPassword" } }) }
-      : { id: "d:backup", kind: "row", label: "Back up this identity", note: "This identity's key is not on this device, so it cannot be backed up here.", dim: true, rests: true },
-    { id: "d:switch", kind: "row", label: "Switch to a backup", note: "Brings an identity in from its backup and its password.", mark: "more", press: start({ t: "type", entry: { e: "switchSecret" } }) },
-    { id: "d:bunker", kind: "row", label: "Switch to a bunker", note: "Signs with a remote signer, by its bunker address.", mark: "more", press: start({ t: "type", entry: { e: "bunker" }, draft: "bunker://" }) },
+    { id: "d:bunker", kind: "row", label: "Switch to a bunker", note: "Signs with a remote signer, by its bunker address.", mark: "more", press: busy ? NONE : { t: "type", entry: { e: "bunker" }, draft: "bunker://" } },
   ]
-  if (identity.retiredPublicKeys.length > 0) rows.push(head("d:retired", "Retired identities"))
-  for (const key of identity.retiredPublicKeys) {
-    const remove: Act = { t: "ask", ask: question("Delete this retired identity?", [shortKey(key)], "Delete", { t: "ask", ask: question("Is it backed up?", ["Without a backup this identity is gone for good."], "Yes, delete it", send({ _tag: "DeleteRetiredIdentity", publicKey: key, backupConfirmed: true })) }) }
-    rows.push({
-      id: `d:r:${key}`, kind: "row", label: shortKey(key), mark: "more",
-      press: start({
-        t: "ask", ask: {
-          title: "Retired identity", lines: [shortKey(key), "It was used on this device before."],
-          buttons: [{ label: "Cancel", act: NONE }, { label: "Back it up", act: { t: "type", entry: { e: "backupPassword", retiredPublicKey: key } } }, { label: "Delete", danger: true, act: remove }],
-        },
-      }),
-    })
-  }
-  const base = { key: "page:identity", title: "Identity and backup", sub: "Your identity is the key your devices trust each other by.", rows, buttons: [], back: status._tag === "BackupReady" ? seq(send({ _tag: "DismissIdentityStatus" }), { t: "identity", flow: { f: "idle" } }, CLOSE) : seq({ t: "identity", flow: { f: "idle" } }, CLOSE) }
-  if (status._tag === "BackupReady") {
-    return { ...base, side: { kind: "qr", title: "Your backup", lines: ["Scan it or write it down. With your password it brings this identity to another device.", status.encryptedSecret], qr: status.encryptedSecret } }
-  }
-  return base
+  return { key: "page:identity", title: "Identity", sub: "Your identity is the key your devices trust each other by.", rows, buttons: [], back: seq({ t: "identity", flow: { f: "idle" } }, CLOSE) }
 }
 
 export function pagePanel(page: PageRef, state: State, model: Model): PanelSpec {
@@ -339,7 +315,7 @@ function onboardingPanel(state: State, model: Model): PanelSpec {
     }
     case "finish":
       return {
-        ...base, title: "The house is ready", sub: "This device starts with an identity of its own. You can bring another one in later, under Identity and backup.", rows: [],
+        ...base, title: "The house is ready", sub: "This device makes its own person key when setup ends. For now, setup ends at a terminal: run korri setup finish on this device. It shows 12 recovery words to write down.", rows: [],
         buttons: [{ id: "b:finish", label: state.onboarding.finishing ? "Finishing" : "Finish", ...(state.onboarding.finishing ? { dim: true } : {}), press: state.onboarding.finishing ? NONE : seq({ t: "onboarding", step: at, finishing: true }, send({ _tag: "FinishOnboarding" })) }],
         first: "b:finish",
       }
@@ -595,12 +571,6 @@ export function entryHeading(entry: Entry): EntryHeading {
       return { title: "Password", name: entry.ssid, secret: true, maxLength: WIFI_PASSWORD_MAX, note: "Leave it empty for an open network." }
     case "storeSearch":
       return { title: "Search", name: entry.provider, secret: false, maxLength: STORE_QUERY_MAX, placeholder: "A game's name" }
-    case "backupPassword":
-      return { title: "Password for the backup", secret: true, maxLength: 128, note: "You need this password to use the backup. Korri cannot recover it." }
-    case "switchSecret":
-      return { title: "The backup", secret: false, maxLength: 512, placeholder: "ncryptsec1…", note: "The long text of the backup, as it was shown." }
-    case "switchPassword":
-      return { title: "The backup's password", secret: true, maxLength: 128 }
     case "bunker":
       return { title: "Bunker address", secret: false, maxLength: 512 }
   }
@@ -629,15 +599,6 @@ export function commitEntry(entry: Entry, draft: string): Act | undefined {
       return send(draft === "" ? { _tag: "ConnectHiddenWifi", ssid: entry.ssid } : { _tag: "ConnectHiddenWifi", ssid: entry.ssid, password: draft })
     case "storeSearch":
       return send({ _tag: "SearchStore", providerId: entry.providerId, query: draft.trim() })
-    case "backupPassword":
-      return draft === "" ? undefined : seq(send({ _tag: "ExportIdentityBackup", password: draft, ...(entry.retiredPublicKey === undefined ? {} : { retiredPublicKey: entry.retiredPublicKey }) }), { t: "identity", flow: { f: "backup" } })
-    case "switchSecret": {
-      // A backup's secret is bech32: whitespace in it is a typing slip, never part of it.
-      const secret = draft.replace(/\s+/g, "")
-      return secret === "" ? undefined : { t: "type", entry: { e: "switchPassword", encryptedSecret: secret } }
-    }
-    case "switchPassword":
-      return draft === "" ? undefined : { t: "identity", flow: { f: "disposition", source: { kind: "backup", encryptedSecret: entry.encryptedSecret, password: draft } } }
     case "bunker": {
       const uri = draft.trim()
       return uri === "" || uri === "bunker://" ? undefined : { t: "identity", flow: { f: "disposition", source: { kind: "bunker", bunkerUri: uri } } }

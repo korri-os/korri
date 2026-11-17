@@ -16,9 +16,13 @@ fn request_wait(request: &RpcRequest, default: Duration) -> Option<Duration> {
     // send_request's deadline starts AFTER publishing. Keep the existing 30 s
     // transport/storage allowance for each exchange as well as that wait.
     match request {
-        // coordinator::switch signs the old owner's revocation. That owner
-        // may use NIP-46 even when the replacement is a local backup.
-        RpcRequest::IdentityLocalSwitch(_) => Some(REQUEST_TIMEOUT + DEFAULT_TIMEOUT),
+        // coordinator::switch signs the old owner's revocation with the
+        // owner's NIP-46 signer, then the new binding from the words. A
+        // bunker URI for the current owner adds its connect (300 s).
+        RpcRequest::IdentityWordsSwitch(request) => Some(match request.current_owner_bunker_uri {
+            Some(_) => CONNECT_TIMEOUT + REQUEST_TIMEOUT + DEFAULT_TIMEOUT * 2,
+            None => REQUEST_TIMEOUT + DEFAULT_TIMEOUT,
+        }),
         // connect (300 s) + sign the new binding + revoke the old binding are
         // serial.
         RpcRequest::IdentityNip46Switch(_) => Some(nip46_switch_wait()),
@@ -289,13 +293,22 @@ with socketserver.UnixStreamServer(socket_path, Handler) as server:
     fn identity_switch_waits_past_the_http_default_for_the_daemons_result() {
         let requests = [
             (
-                RpcRequest::IdentityLocalSwitch(IdentityLocalSwitchRequest {
-                    encrypted_secret: "encrypted-backup".into(),
-                    password: "password".into(),
+                RpcRequest::IdentityWordsSwitch(IdentityWordsSwitchRequest {
+                    words: "recovery words".into(),
+                    current_owner_bunker_uri: None,
                     data_disposition: IdentityDataDisposition::Transfer,
                     trust_loss_confirmed: true,
                 }),
-                RpcResponse::IdentityLocalSwitch(IdentitySwitchOutcome::Err(signer_failure())),
+                RpcResponse::IdentityWordsSwitch(IdentitySwitchOutcome::Err(signer_failure())),
+            ),
+            (
+                RpcRequest::IdentityWordsSwitch(IdentityWordsSwitchRequest {
+                    words: "recovery words".into(),
+                    current_owner_bunker_uri: Some("bunker://owner".into()),
+                    data_disposition: IdentityDataDisposition::Transfer,
+                    trust_loss_confirmed: true,
+                }),
+                RpcResponse::IdentityWordsSwitch(IdentitySwitchOutcome::Err(signer_failure())),
             ),
             (
                 RpcRequest::IdentityNip46Switch(IdentityNip46SwitchRequest {
@@ -308,6 +321,9 @@ with socketserver.UnixStreamServer(socket_path, Handler) as server:
         ];
         let waits = [
             korrid::remote_signer::REQUEST_TIMEOUT + Duration::from_secs(30),
+            korrid::remote_signer::CONNECT_TIMEOUT
+                + korrid::remote_signer::REQUEST_TIMEOUT
+                + Duration::from_secs(60),
             korrid::remote_signer::CONNECT_TIMEOUT
                 + korrid::remote_signer::REQUEST_TIMEOUT * 2
                 + Duration::from_secs(90),

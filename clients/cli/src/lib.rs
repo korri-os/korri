@@ -17,6 +17,7 @@ pub mod plugins;
 mod private_terminal;
 pub mod prompt;
 pub mod recovery_qr;
+mod recovery_terminal;
 pub mod saves;
 mod settings_input;
 pub mod setup;

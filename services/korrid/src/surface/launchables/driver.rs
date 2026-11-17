@@ -31,12 +31,11 @@ use crate::{
         settings_model::{DeviceFacts, SETUP_RESTART_ACTION_ID},
         Notify,
     },
-    ActiveSession, Game, HealthOutcome, IdentityBackupOutcome, IdentityDataDisposition,
-    IdentityRetiredDeleteOutcome, IdentityStatusOutcome, IdentitySwitchOutcome,
-    LibraryFoldersSnapshot, LibraryFoldersSnapshotOutcome, LibraryFoldersState,
-    LocalGamesListOutcome, PeerListOutcome, RpcFailure, SensitiveSettingOutcome, SessionEndOutcome,
-    SessionEndPhase, SessionReserveOutcome, SessionStatus, SessionStatusOutcome,
-    SettingsSnapshotOutcome, SettingsUpdateOutcome,
+    ActiveSession, Game, HealthOutcome, IdentityDataDisposition, IdentityStatusOutcome,
+    IdentitySwitchOutcome, LibraryFoldersSnapshot, LibraryFoldersSnapshotOutcome,
+    LibraryFoldersState, LocalGamesListOutcome, PeerListOutcome, RpcFailure,
+    SensitiveSettingOutcome, SessionEndOutcome, SessionEndPhase, SessionReserveOutcome,
+    SessionStatus, SessionStatusOutcome, SettingsSnapshotOutcome, SettingsUpdateOutcome,
 };
 
 /// A slow or hung status query must not hold the whole list hostage.
@@ -463,8 +462,6 @@ impl Launchables {
                         .as_ref()
                         .map(|current| current.status.clone());
                     inner.identity_management = Some(SurfaceIdentityManagement {
-                        local_backup_available: status.local_backup_available,
-                        retired_public_keys: status.retired_public_keys.clone(),
                         status: previous.unwrap_or(SurfaceIdentityStatus::Idle),
                     });
                 }
@@ -923,31 +920,6 @@ impl Launchables {
         self.set_identity_status(SurfaceIdentityStatus::Problem { message });
     }
 
-    pub fn export_identity_backup(
-        self: &Arc<Self>,
-        password: String,
-        retired_public_key: Option<String>,
-    ) {
-        self.set_identity_status(SurfaceIdentityStatus::Working {
-            operation: "Encrypting backup".into(),
-        });
-        let this = Arc::clone(self);
-        tokio::spawn(async move {
-            match this
-                .korrid
-                .export_identity_backup(password, retired_public_key)
-                .await
-            {
-                IdentityBackupOutcome::Err(failure) => this.identity_problem(failure.message),
-                IdentityBackupOutcome::Ok(backup) => {
-                    this.set_identity_status(SurfaceIdentityStatus::BackupReady {
-                        encrypted_secret: backup.encrypted_secret,
-                    })
-                }
-            }
-        });
-    }
-
     fn switched(&self, outcome: IdentitySwitchOutcome) {
         match outcome {
             IdentitySwitchOutcome::Err(failure) => self.identity_problem(failure.message),
@@ -957,31 +929,6 @@ impl Launchables {
                 })
             }
         }
-    }
-
-    pub fn switch_identity_from_backup(
-        self: &Arc<Self>,
-        encrypted_secret: String,
-        password: String,
-        disposition: SurfaceIdentityDisposition,
-        trust_loss_confirmed: bool,
-    ) {
-        self.set_identity_status(SurfaceIdentityStatus::Working {
-            operation: "Switching identity".into(),
-        });
-        let this = Arc::clone(self);
-        tokio::spawn(async move {
-            let outcome = this
-                .korrid
-                .switch_identity_from_backup(
-                    encrypted_secret,
-                    password,
-                    data_disposition(disposition),
-                    trust_loss_confirmed,
-                )
-                .await;
-            this.switched(outcome);
-        });
     }
 
     pub fn switch_identity_to_nip46(
@@ -1004,32 +951,6 @@ impl Launchables {
                 )
                 .await;
             this.switched(outcome);
-        });
-    }
-
-    pub fn delete_retired_identity(self: &Arc<Self>, public_key: String, backup_confirmed: bool) {
-        self.set_identity_status(SurfaceIdentityStatus::Working {
-            operation: "Deleting retired key".into(),
-        });
-        let this = Arc::clone(self);
-        tokio::spawn(async move {
-            match this
-                .korrid
-                .delete_retired_identity(public_key, backup_confirmed)
-                .await
-            {
-                IdentityRetiredDeleteOutcome::Err(failure) => {
-                    this.identity_problem(failure.message)
-                }
-                IdentityRetiredDeleteOutcome::Ok(status) => {
-                    this.lock().identity_management = Some(SurfaceIdentityManagement {
-                        local_backup_available: status.local_backup_available,
-                        retired_public_keys: status.retired_public_keys,
-                        status: SurfaceIdentityStatus::Idle,
-                    });
-                    this.changed();
-                }
-            }
         });
     }
 

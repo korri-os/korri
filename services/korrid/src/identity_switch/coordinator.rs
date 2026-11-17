@@ -1,12 +1,10 @@
-use super::{
-    DataDisposition, IdentitySwitchJournal, IdentitySwitchStorage, JournalPhase, ReplacementSigner,
-};
+use super::{DataDisposition, IdentitySwitchJournal, IdentitySwitchStorage, JournalPhase};
 use crate::{
     authorization::Authorization,
     federation::FederationDirectory,
     host::play_log::PlayLogStore,
     identity::{DeviceIdentity, IdentityState, OwnerStatementStatus, VerifiedOwnerStatement},
-    local_signer::{UnixLocalSignerAdmin, UnixPersonSigner},
+    local_signer::UnixLocalSigner,
     peer_rpc::unix_time,
     relay::{CoordinatedRelays, RelayCoordinator, RelayList, WebSocketRelayTransport},
     remote_signer::{
@@ -19,24 +17,63 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+use zeroize::Zeroizing;
 
-#[derive(Clone, Debug)]
+/// The person key a switch moves the device to.
+#[derive(Clone)]
 pub enum ReplacementIdentity {
-    LocalBackup {
-        encrypted_secret: String,
-        password: String,
+    /// The person key that these recovery words make (ADR 0073). The local
+    /// signer signs the new owner statement with it, then erases it.
+    Words {
+        words: Zeroizing<String>,
     },
     Nip46 {
         bunker_uri: String,
     },
 }
 
+impl std::fmt::Debug for ReplacementIdentity {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Words { .. } => formatter.write_str("Words"),
+            Self::Nip46 { .. } => formatter.write_str("Nip46"),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct IdentitySwitchCoordinator {
     private_state_root: PathBuf,
-    signer_socket: PathBuf,
-    signer: UnixLocalSignerAdmin,
+    signer: UnixLocalSigner,
     federation: FederationResources,
+    /// One identity change at a time: a switch, or a join that moves an owned
+    /// device to another person key. Both use the one staging root.
+    busy: Arc<tokio::sync::Mutex<()>>,
+}
+
+/// A switch that is ready for its new owner statement: the old identity,
+/// its signed revocation, and the staged identity with a new device key.
+/// Nothing in it is durable until `commit`. Dropping it leaves a staging
+/// root without a journal, which the next switch or start removes.
+pub struct PreparedSwitch {
+    storage: IdentitySwitchStorage,
+    old_statement: VerifiedOwnerStatement,
+    old_owner_event: String,
+    old_owner_was_published: bool,
+    new_identity: DeviceIdentity,
+    revocation: String,
+    _busy: tokio::sync::OwnedMutexGuard<()>,
+}
+
+impl PreparedSwitch {
+    /// The staged identity. Its new device key joins in place of the old.
+    pub fn staged_identity(&self) -> &DeviceIdentity {
+        &self.new_identity
+    }
+
+    pub fn old_owner_public_key(&self) -> &str {
+        &self.old_statement.owner_public_key
+    }
 }
 
 impl IdentitySwitchCoordinator {
@@ -47,80 +84,140 @@ impl IdentitySwitchCoordinator {
     ) -> Self {
         Self {
             private_state_root,
-            signer: UnixLocalSignerAdmin::new(signer_socket.clone()),
-            signer_socket,
+            signer: UnixLocalSigner::new(signer_socket),
             federation,
+            busy: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
-    /// The local signer that holds the automatic identity, which setup's
-    /// end binds (ADR 0022).
-    pub fn automatic_owner_signer(&self) -> crate::local_signer::UnixPersonSigner {
-        crate::local_signer::UnixPersonSigner::new(self.signer_socket.clone())
+    /// The local signer: it makes recovery words and signs with them.
+    pub fn local_signer(&self) -> UnixLocalSigner {
+        self.signer.clone()
     }
 
-    pub async fn export_active_backup(&self, password: String) -> Result<String, String> {
-        let (available, _) = self.signer_status().await?;
-        if !available {
-            return Err("The current identity is not held by the local signer".into());
-        }
-        self.signer.export_active(password).await
-    }
-
-    pub async fn export_retired_backup(
-        &self,
-        public_key: String,
-        password: String,
-    ) -> Result<String, String> {
-        self.signer.export_retired(public_key, password).await
-    }
-
-    pub async fn delete_retired_key(&self, public_key: String) -> Result<(), String> {
-        self.signer.delete_retired(public_key).await
-    }
-
-    pub async fn signer_status(&self) -> Result<(bool, Vec<String>), String> {
-        self.status_snapshot()
-            .await
-            .map(|(_, active, retired)| (active, retired))
-    }
-
-    pub async fn status_snapshot(&self) -> Result<(IdentityState, bool, Vec<String>), String> {
-        let unavailable = || "Device identity is unavailable. Try again.".to_owned();
+    pub fn status_snapshot(&self) -> Result<IdentityState, String> {
         let identity = self
             .federation
             .directory
             .identity_state()
-            .map_err(|_| unavailable())?;
-        let identity = status_identity(identity)?;
-        let (active, retired) = self.signer.status().await?;
-        if self
-            .federation
-            .directory
-            .identity_state()
-            .map_err(|_| unavailable())?
-            != identity
-        {
-            return Err(unavailable());
-        }
-        let available = match &identity {
-            IdentityState::Owned {
-                owner_public_key, ..
-            } => active.as_deref() == Some(owner_public_key),
-            _ => false,
-        };
-        Ok((identity, available, retired))
+            .map_err(|_| "Device identity is unavailable. Try again.".to_owned())?;
+        status_identity(identity)
     }
 
+    /// Switch to `replacement`. The current owner signs the revocation of
+    /// the old statement through NIP-46: on `current_owner_bunker`, or on
+    /// the connection this device keeps.
     pub async fn switch(
         &self,
         replacement: ReplacementIdentity,
+        current_owner_bunker: Option<&str>,
         disposition: DataDisposition,
         trust_loss_confirmed: bool,
     ) -> Result<String, String> {
         if !trust_loss_confirmed {
             return Err("Identity switch requires explicit confirmation that pairings and stream trust will be lost".into());
         }
+        let old_identity = DeviceIdentity::load_or_create(&self.private_state_root)
+            .map_err(|error| error.to_string())?;
+        let old_statement = owned_statement(&old_identity)?;
+        let current = match current_owner_bunker {
+            Some(bunker_uri) => CurrentOwner::Bunker(bunker_uri),
+            None => CurrentOwner::Nip46,
+        };
+        let revocation = self
+            .sign_revocation_with(&old_identity, &old_statement, current)
+            .await?;
+        let mut prepared = self.prepare(revocation).await?;
+        let new_device = prepared
+            .new_identity
+            .device_public_key()
+            .ok_or_else(|| "The staged device identity is unavailable".to_owned())?
+            .to_owned();
+        let created_at = unix_time().max(prepared.old_statement.created_at.saturating_add(1));
+        let new_template = prepared
+            .new_identity
+            .owner_statement_template(OwnerStatementStatus::Owned, created_at)
+            .map_err(|error| error.to_string())?;
+        let request = PersonSignerRequest {
+            unsigned_event_template: new_template.clone(),
+        };
+        let (owner_public_key, owner_event_json) = match replacement {
+            ReplacementIdentity::Words { words } => approved_owner_event(
+                self.signer
+                    .sign_with_words(&words, &new_device, request)
+                    .await?,
+                &new_template,
+            )?,
+            ReplacementIdentity::Nip46 { bunker_uri } => {
+                // NIP-46 talks to the signer on the relays its URI names.
+                let relays = coordinated(
+                    &old_identity,
+                    bunker_relay_list(&bunker_uri).map_err(|error| error.to_string())?,
+                )?;
+                let staged_root = prepared.storage.staged_private_root();
+                let signer =
+                    Nip46PersonSigner::connect_from_bunker(&staged_root, relays, &bunker_uri)
+                        .map_err(|error| error.to_string())?;
+                signer
+                    .establish(unix_time(), &new_device)
+                    .await
+                    .map_err(|error| error.to_string())?;
+                // The signed owner statement names the person key.
+                approved_owner_event(signer.request(request).await, &new_template)?
+            }
+        };
+        if owner_public_key == prepared.old_statement.owner_public_key {
+            return Err("The replacement identity must use a different person key".into());
+        }
+        prepared
+            .new_identity
+            .apply_signed_owner_binding(&new_template, &owner_public_key, &owner_event_json)
+            .map_err(|error| error.to_string())?;
+        self.commit(prepared, disposition).await
+    }
+
+    /// Begin moving this owned device to another person key by a join (ADRs
+    /// 0023 and 0082). The words must be the current person key's words: it
+    /// signs the old statement's revocation now, and the signer erases it.
+    pub async fn begin_join(&self, current_words: &str) -> Result<PreparedSwitch, String> {
+        let old_identity = DeviceIdentity::load_or_create(&self.private_state_root)
+            .map_err(|error| error.to_string())?;
+        let old_statement = owned_statement(&old_identity)?;
+        let revocation = self
+            .sign_revocation_with(
+                &old_identity,
+                &old_statement,
+                CurrentOwner::Words(current_words),
+            )
+            .await?;
+        self.prepare(revocation).await
+    }
+
+    /// Finish a join that moves this device: store the vouch chain for the
+    /// staged device key, then switch to it, keeping this device's data.
+    pub async fn finish_join(
+        &self,
+        mut prepared: PreparedSwitch,
+        owner_statement: &str,
+    ) -> Result<String, String> {
+        prepared
+            .new_identity
+            .apply_owner_statement(owner_statement)
+            .map_err(|error| error.to_string())?;
+        if owned_statement(&prepared.new_identity)?.owner_public_key
+            == prepared.old_statement.owner_public_key
+        {
+            return Err("This device already belongs to that person key".into());
+        }
+        self.commit(prepared, DataDisposition::Transfer).await
+    }
+
+    /// The staged identity with a new device key, ready for a new owner.
+    /// The old owner's revocation is signed before anything is staged.
+    async fn prepare(&self, revocation: String) -> Result<PreparedSwitch, String> {
+        let busy = Arc::clone(&self.busy)
+            .try_lock_owned()
+            .map_err(|_| "Another identity change is in progress on this device".to_owned())?;
         let storage = IdentitySwitchStorage::open(&self.private_state_root)
             .map_err(|error| error.to_string())?;
         storage
@@ -133,123 +230,49 @@ impl IdentitySwitchCoordinator {
         {
             return Err("An identity switch is already pending recovery".into());
         }
-
         let old_identity = DeviceIdentity::load_or_create(&self.private_state_root)
             .map_err(|error| error.to_string())?;
         let old_statement = owned_statement(&old_identity)?;
         let old_owner_event = old_identity
             .owner_statement_json()
             .ok_or_else(|| "The current device has no owner statement".to_owned())?;
+        revokes(&revocation, &old_statement)?;
         let old_owner_was_published = owner_was_published(&old_identity, &old_owner_event).await?;
         let staged_root = storage
             .prepare_staging_root()
             .map_err(|error| error.to_string())?;
-        let mut new_identity =
+        let new_identity =
             DeviceIdentity::load_or_create(&staged_root).map_err(|error| error.to_string())?;
-        let new_device = new_identity
-            .device_public_key()
-            .ok_or_else(|| "The staged device identity is unavailable".to_owned())?
-            .to_owned();
-        let created_at = unix_time().max(old_statement.created_at.saturating_add(1));
-        let new_template = new_identity
-            .owner_statement_template(OwnerStatementStatus::Owned, created_at)
-            .map_err(|error| error.to_string())?;
+        Ok(PreparedSwitch {
+            storage,
+            old_statement,
+            old_owner_event,
+            old_owner_was_published,
+            new_identity,
+            revocation,
+            _busy: busy,
+        })
+    }
 
-        let prepared = match replacement {
-            ReplacementIdentity::LocalBackup {
-                encrypted_secret,
-                password,
-            } => {
-                let public_key = self
-                    .signer
-                    .stage_import(encrypted_secret, password, new_device.clone())
-                    .await?;
-                let state = self
-                    .signer
-                    .sign_inactive(
-                        public_key.clone(),
-                        new_device.clone(),
-                        PersonSignerRequest {
-                            unsigned_event_template: new_template.clone(),
-                        },
-                    )
-                    .await?;
-                let event = approved_event(state, &new_template, &public_key)?;
-                PreparedReplacement {
-                    kind: ReplacementSigner::Local,
-                    owner_public_key: public_key,
-                    owner_event_json: event,
-                }
-            }
-            ReplacementIdentity::Nip46 { bunker_uri } => {
-                // NIP-46 talks to the signer on the relays its URI names.
-                let relays = coordinated(
-                    &old_identity,
-                    bunker_relay_list(&bunker_uri).map_err(|error| error.to_string())?,
-                )?;
-                let signer =
-                    Nip46PersonSigner::connect_from_bunker(&staged_root, relays, &bunker_uri)
-                        .map_err(|error| error.to_string())?;
-                signer
-                    .establish(unix_time(), &new_device)
-                    .await
-                    .map_err(|error| error.to_string())?;
-                // The signed owner statement names the person key.
-                let (owner_public_key, event) = approved_owner_event(
-                    signer
-                        .request(PersonSignerRequest {
-                            unsigned_event_template: new_template.clone(),
-                        })
-                        .await,
-                    &new_template,
-                )?;
-                PreparedReplacement {
-                    kind: ReplacementSigner::Nip46,
-                    owner_public_key,
-                    owner_event_json: event,
-                }
-            }
-        };
-        if prepared.owner_public_key == old_statement.owner_public_key {
-            if prepared.kind == ReplacementSigner::Local {
-                let _ = self
-                    .signer
-                    .rollback_inactive(prepared.owner_public_key.clone())
-                    .await;
-            }
-            let _ = storage.cleanup_abandoned_without_journal();
-            return Err("The replacement identity must use a different person key".into());
-        }
-        new_identity
-            .apply_signed_owner_binding(
-                &new_template,
-                &prepared.owner_public_key,
-                &prepared.owner_event_json,
-            )
-            .map_err(|error| error.to_string())?;
-
-        let revocation_created_at = unix_time().max(old_statement.created_at.saturating_add(1));
-        let revocation_template = old_identity
-            .owner_statement_template(OwnerStatementStatus::Revoked, revocation_created_at)
-            .map_err(|error| error.to_string())?;
-        let revocation = self
-            .sign_current_owner(&old_identity, &old_statement, revocation_template.clone())
-            .await?;
-        verify_revocation(
-            &revocation,
-            &old_statement.device_public_key,
-            &old_statement.owner_public_key,
-            revocation_created_at,
-        )?;
-
+    /// Make the switch durable and complete it (`journal.rs`).
+    async fn commit(
+        &self,
+        prepared: PreparedSwitch,
+        disposition: DataDisposition,
+    ) -> Result<String, String> {
+        let new_owner_event = prepared
+            .new_identity
+            .owner_statement_json()
+            .ok_or_else(|| "The staged identity has no owner".to_owned())?;
+        let new_owner = owned_statement(&prepared.new_identity)?.owner_public_key;
         let preparing = IdentitySwitchJournal::new(
             JournalPhase::Preparing,
             disposition,
-            prepared.kind,
-            revocation,
-            old_owner_was_published,
+            prepared.revocation.clone(),
+            prepared.old_owner_was_published,
         )
         .map_err(|error| error.to_string())?;
+        let storage = &prepared.storage;
         storage
             .write_preparing(&preparing)
             .map_err(|error| error.to_string())?;
@@ -258,62 +281,97 @@ impl IdentitySwitchCoordinator {
             .write_commit(&commit)
             .map_err(|error| error.to_string())?;
         storage
-            .exchange_identity_directories(&old_owner_event, &prepared.owner_event_json)
+            .exchange_identity_directories(&prepared.old_owner_event, &new_owner_event)
             .map_err(|error| error.to_string())?;
-
-        complete_commit(&storage, &commit, &self.signer, Some(&self.federation)).await?;
-        Ok(prepared.owner_public_key)
+        complete_commit(storage, &commit, Some(&self.federation)).await?;
+        Ok(new_owner)
     }
 
-    async fn sign_current_owner(
+    /// Sign the revocation of this device's current owner statement with
+    /// the current person key.
+    async fn sign_revocation_with(
         &self,
         identity: &DeviceIdentity,
         statement: &VerifiedOwnerStatement,
-        template: String,
+        current: CurrentOwner<'_>,
     ) -> Result<String, String> {
-        let (active, _) = self.signer.status().await?;
-        if active.as_deref() == Some(statement.owner_public_key.as_str()) {
-            return approved_event(
-                UnixPersonSigner::new(signer_socket_from_environment()?)
-                    .request(PersonSignerRequest {
-                        unsigned_event_template: template.clone(),
-                    })
-                    .await,
-                &template,
-                &statement.owner_public_key,
-            );
-        }
-        let relays = coordinated(
-            identity,
-            persisted_relay_list(&self.private_state_root)
-                .map_err(|error| error.to_string())?
-                .ok_or_else(|| "The current owner signer is unavailable".to_owned())?,
-        )?;
-        let signer = Nip46PersonSigner::load(&self.private_state_root, relays)
-            .map_err(|error| error.to_string())?
-            .ok_or_else(|| "The current owner signer is unavailable".to_owned())?;
-        approved_event(
-            signer
-                .request(PersonSignerRequest {
-                    unsigned_event_template: template.clone(),
-                })
-                .await,
-            &template,
+        let created_at = unix_time().max(statement.created_at.saturating_add(1));
+        let template = identity
+            .owner_statement_template(OwnerStatementStatus::Revoked, created_at)
+            .map_err(|error| error.to_string())?;
+        let request = PersonSignerRequest {
+            unsigned_event_template: template.clone(),
+        };
+        let state = match current {
+            CurrentOwner::Words(words) => {
+                let state = self
+                    .signer
+                    .sign_with_words(words, &statement.device_public_key, request)
+                    .await?;
+                if matches!(&state, PersonSignerState::Approved { owner_public_key, .. }
+                    if *owner_public_key != statement.owner_public_key)
+                {
+                    return Err(
+                        "These are not the recovery words of this device's person key".into(),
+                    );
+                }
+                state
+            }
+            CurrentOwner::Bunker(bunker_uri) => {
+                // A connection for this one signature. Its client key and the
+                // URI live in a temporary directory that is removed after it.
+                let relays = coordinated(
+                    identity,
+                    bunker_relay_list(bunker_uri).map_err(|error| error.to_string())?,
+                )?;
+                let scratch = tempfile::Builder::new()
+                    .prefix("korri-current-owner-")
+                    .tempdir()
+                    .map_err(|_| "Could not prepare the current owner's signer".to_owned())?;
+                let signer =
+                    Nip46PersonSigner::connect_from_bunker(scratch.path(), relays, bunker_uri)
+                        .map_err(|error| error.to_string())?;
+                signer
+                    .establish(unix_time(), &statement.device_public_key)
+                    .await
+                    .map_err(|error| error.to_string())?;
+                signer.request(request).await
+            }
+            CurrentOwner::Nip46 => {
+                let relays = coordinated(
+                    identity,
+                    persisted_relay_list(&self.private_state_root)
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "The current owner signer is unavailable".to_owned())?,
+                )?;
+                let signer = Nip46PersonSigner::load(&self.private_state_root, relays)
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| "The current owner signer is unavailable".to_owned())?;
+                signer.request(request).await
+            }
+        };
+        let revocation = approved_event(state, &template, &statement.owner_public_key)?;
+        verify_revocation(
+            &revocation,
+            &statement.device_public_key,
             &statement.owner_public_key,
-        )
+            created_at,
+        )?;
+        Ok(revocation)
     }
 }
 
-struct PreparedReplacement {
-    kind: ReplacementSigner,
-    owner_public_key: String,
-    owner_event_json: String,
+/// Who signs for the current person key.
+enum CurrentOwner<'a> {
+    /// The owner's NIP-46 signer that this device is connected to.
+    Nip46,
+    /// The owner's NIP-46 signer at this bunker URI, for one signature.
+    Bunker(&'a str),
+    /// The current person key's recovery words, in the local signer.
+    Words(&'a str),
 }
 
-pub async fn recover_pending_identity_switch(
-    private_state_root: &Path,
-    signer_socket: PathBuf,
-) -> Result<(), String> {
+pub async fn recover_pending_identity_switch(private_state_root: &Path) -> Result<(), String> {
     let storage =
         IdentitySwitchStorage::open(private_state_root).map_err(|error| error.to_string())?;
     storage
@@ -322,21 +380,13 @@ pub async fn recover_pending_identity_switch(
     let Some(journal) = storage.load_journal().map_err(|error| error.to_string())? else {
         return Ok(());
     };
-    let signer = UnixLocalSignerAdmin::new(signer_socket);
     if journal.phase() == JournalPhase::Preparing {
-        if journal.replacement_signer() == ReplacementSigner::Local {
-            if let Ok(identity) = DeviceIdentity::load_or_create(&storage.staged_private_root()) {
-                if let Ok(statement) = owned_statement(&identity) {
-                    signer.rollback_inactive(statement.owner_public_key).await?;
-                }
-            }
-        }
         storage
             .abort_preparing()
             .map_err(|error| error.to_string())?;
         return Ok(());
     }
-    complete_commit(&storage, &journal, &signer, None).await
+    complete_commit(&storage, &journal, None).await
 }
 
 /// What the person chose for their data on this device: the play log, and
@@ -375,7 +425,6 @@ pub(super) fn apply_data_disposition(
 async fn complete_commit(
     storage: &IdentitySwitchStorage,
     journal: &IdentitySwitchJournal,
-    signer: &UnixLocalSignerAdmin,
     live_resources: Option<&FederationResources>,
 ) -> Result<(), String> {
     let old_revocation = DeviceIdentity::derive_owner_statement(journal.old_owner_revocation())
@@ -385,8 +434,7 @@ async fn complete_commit(
     let staged_identity = DeviceIdentity::load_or_create(&storage.staged_private_root())
         .map_err(|error| error.to_string())?;
     let live_device = live_identity.device_public_key().unwrap_or_default();
-    let (old_identity, new_identity, new_event) = if live_device == old_revocation.device_public_key
-    {
+    let (old_identity, new_identity) = if live_device == old_revocation.device_public_key {
         let old = DeviceIdentity::load_or_create(&storage.live_private_root())
             .map_err(|error| error.to_string())?;
         let new = DeviceIdentity::load_or_create(&storage.staged_private_root())
@@ -400,13 +448,10 @@ async fn complete_commit(
         storage
             .exchange_identity_directories(&old_event, &new_event)
             .map_err(|error| error.to_string())?;
-        (old, new, new_event)
+        (old, new)
     } else if staged_identity.device_public_key() == Some(old_revocation.device_public_key.as_str())
     {
-        let new_event = live_identity
-            .owner_statement_json()
-            .ok_or_else(|| "New owner evidence is unavailable".to_owned())?;
-        (staged_identity, live_identity, new_event)
+        (staged_identity, live_identity)
     } else {
         return Err("Identity-switch storage does not match the committed journal".into());
     };
@@ -418,23 +463,20 @@ async fn complete_commit(
         &old_statement.owner_public_key,
         &new_statement.owner_public_key,
     )?;
-    let (active_local_key, _) = signer.status().await?;
-    signer
-        .activate(
-            active_local_key.filter(|key| key == &old_statement.owner_public_key),
-            (journal.replacement_signer() == ReplacementSigner::Local)
-                .then(|| new_statement.owner_public_key.clone()),
-            new_statement.device_public_key.clone(),
-            new_event.clone(),
-        )
-        .await?;
-
+    // The old identity's stream grants live in its identity directory, so
+    // they moved with it to the staging root. Sunshine stops trusting each
+    // of them there, before `finish_commit` removes the staging root.
+    let old_authorization =
+        Authorization::load(&storage.staged_private_root()).map_err(|error| error.to_string())?;
+    revoke_stream_client_trust(
+        old_authorization,
+        crate::host::moonlight_certificate::production_adapter(),
+    )
+    .await?;
+    // The new identity starts with empty authorization directories.
+    let new_authorization =
+        Authorization::load(&storage.live_private_root()).map_err(|error| error.to_string())?;
     if let Some(resources) = live_resources {
-        revoke_stream_client_trust(
-            resources.authorization.clone(),
-            crate::host::moonlight_certificate::production_adapter(),
-        )
-        .await?;
         resources
             .authorization
             .reset_after_identity_switch()
@@ -447,14 +489,7 @@ async fn complete_commit(
             )
             .map_err(|error| error.to_string())?;
     } else {
-        let authorization =
-            Authorization::load(&storage.live_private_root()).map_err(|error| error.to_string())?;
-        revoke_stream_client_trust(
-            authorization.clone(),
-            crate::host::moonlight_certificate::production_adapter(),
-        )
-        .await?;
-        authorization
+        new_authorization
             .reset_after_identity_switch()
             .map_err(|error| error.to_string())?;
         FederationDirectory::reset_persisted_after_identity_switch(&storage.live_private_root())
@@ -592,6 +627,21 @@ fn verify_revocation(
     Ok(())
 }
 
+/// Whether a signed revocation revokes exactly this current statement's
+/// device and person key: the identity must not change between the
+/// signature and the switch.
+fn revokes(revocation: &str, current: &VerifiedOwnerStatement) -> Result<(), String> {
+    let statement = DeviceIdentity::verify_owner_statement(revocation, &current.device_public_key)
+        .map_err(|error| error.to_string())?;
+    if statement.status != OwnerStatementStatus::Revoked
+        || statement.owner_public_key != current.owner_public_key
+        || statement.created_at <= current.created_at
+    {
+        return Err("The device's owner changed during the switch. Try again.".into());
+    }
+    Ok(())
+}
+
 async fn owner_was_published(identity: &DeviceIdentity, event_json: &str) -> Result<bool, String> {
     let Some(relays) = relays_for(identity)? else {
         return Ok(false);
@@ -623,12 +673,6 @@ fn coordinated(
     )
     .map(Arc::new)
     .map_err(|error| error.to_string())
-}
-
-fn signer_socket_from_environment() -> Result<PathBuf, String> {
-    std::env::var_os("KORRID_LOCAL_SIGNER_SOCKET")
-        .map(PathBuf::from)
-        .ok_or_else(|| "KORRID_LOCAL_SIGNER_SOCKET must be set".to_owned())
 }
 
 fn status_identity(identity: IdentityState) -> Result<IdentityState, String> {

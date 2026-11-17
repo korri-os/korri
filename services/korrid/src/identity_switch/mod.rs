@@ -10,11 +10,9 @@ mod storage;
 #[cfg(test)]
 pub(crate) use coordinator::revoke_stream_client_trust;
 pub use coordinator::{
-    recover_pending_identity_switch, IdentitySwitchCoordinator, ReplacementIdentity,
+    recover_pending_identity_switch, IdentitySwitchCoordinator, PreparedSwitch, ReplacementIdentity,
 };
-pub use journal::{
-    DataDisposition, IdentitySwitchJournal, JournalError, JournalPhase, ReplacementSigner,
-};
+pub use journal::{DataDisposition, IdentitySwitchJournal, JournalError, JournalPhase};
 pub use storage::{
     ExchangePosition, IdentityInspection, IdentitySwitchStorage, IdentitySwitchStorageError,
 };

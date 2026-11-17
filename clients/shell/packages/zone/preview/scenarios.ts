@@ -19,7 +19,7 @@ import {
   controllerPad, controllersFour, networkOnline, onboardingModel, overlayDestructive, overlayGroups, overlayDefault, statusBusyDetail,
   statusConfirm, statusProblem, statusProgressKnown, statusRunning,
 } from "../../../../../surfaces/zone/src/fixtures/fixture-layers"
-import { fixtureEncryptedSecret, fixtureIdentity, fixtureRetiredKeys } from "../../../../../surfaces/zone/src/fixtures/fixture-save-data"
+import { fixtureIdentity } from "../../../../../surfaces/zone/src/fixtures/fixture-save-data"
 import { fixtureStore, fixtureStoreDetails, fixtureStoreFresh, fixtureStoreGets } from "../../../../../surfaces/zone/src/fixtures/fixture-store"
 import { launchSettingsFixtures, withLaunchSettings } from "../../../../../surfaces/zone/src/fixtures/fixture-launch-settings"
 
@@ -81,12 +81,8 @@ const scenarios: Scenario[] = [
   { name: "options-wifi", ref: ["ZoneOptions", "WifiList"], models: [{ ...options, network: fixtureNetworkMany }], steps: ["system", "down", "down", "down", "down", "down", "down", "down", "down"] },
   // SAVE DATA
   { name: "savedata", ref: ["ZoneSaveData", "default"], models: [identity()], steps: [...toSave, "down"] },
-  { name: "savedata-password", ref: ["ZoneSaveData", "Password"], models: [identity()], steps: [...toSave, "down", "confirm"] },
-  { name: "savedata-backup", ref: ["ZoneSaveData", "BackupReady"], models: [identity({ _tag: "BackupReady", encryptedSecret: fixtureEncryptedSecret })], steps: [...toSave, "down"] },
-  { name: "savedata-retired", ref: ["ZoneSaveData", "RetiredActions"], models: [identity({ _tag: "Idle" }, { retiredPublicKeys: fixtureRetiredKeys })], steps: [...toSave, "down", "right", "right", "right", "confirm"] },
-  { name: "savedata-delete", ref: ["ZoneSaveData", "ConfirmDelete"], models: [identity({ _tag: "Idle" }, { retiredPublicKeys: fixtureRetiredKeys })], steps: [...toSave, "down", "right", "right", "right", "confirm", "right", "confirm"] },
-  { name: "savedata-working", ref: ["ZoneSaveData", "Working"], models: [identity({ _tag: "Working", operation: "Making a backup" })], steps: [...toSave] },
-  { name: "savedata-problem", ref: ["ZoneSaveData", "Problem"], models: [identity({ _tag: "Problem", message: "The password does not open this backup. Check it and try again." })], steps: [...toSave] },
+  { name: "savedata-working", ref: ["ZoneSaveData", "Working"], models: [identity({ _tag: "Working", operation: "Connecting signer" })], steps: [...toSave] },
+  { name: "savedata-problem", ref: ["ZoneSaveData", "Problem"], models: [identity({ _tag: "Problem", message: "The signer did not answer. Check its relays and try again." })], steps: [...toSave] },
   { name: "savedata-none", ref: ["ZoneSaveData", "NotAvailable"], models: [ready], steps: [...toSave, "down"] },
   // PAUSED (the Overlay)
   { name: "paused", ref: ["ZonePaused", "default"], models: [{ ...ready, presentation: overlayDefault }], steps: [] },

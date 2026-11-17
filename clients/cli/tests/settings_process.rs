@@ -296,7 +296,7 @@ const EARLY_REJECTIONS: &[(&[&str], &str)] = &[
         MISSING_INPUT,
     ),
     (
-        &["identity", "switch", "local", "--yes", "--json"],
+        &["identity", "switch", "words", "--yes", "--json"],
         MISSING_INPUT,
     ),
 ];
@@ -635,26 +635,26 @@ fn settings_plugin_install_passes_exact_reviewed_digest_and_keeps_host_refusals(
 
 #[test]
 fn settings_identity_switch_preserves_coordinator_disposition_preconditions() {
-    let request = IdentityLocalSwitchRequest {
-        encrypted_secret: "private-ciphertext".into(),
-        password: "private-password".into(),
+    let request = IdentityWordsSwitchRequest {
+        words: "private-words".into(),
+        current_owner_bunker_uri: None,
         data_disposition: IdentityDataDisposition::Delete,
         trust_loss_confirmed: false,
     };
     let input = serde_json::to_string(&request).unwrap();
-    let response = RpcResponse::IdentityLocalSwitch(IdentitySwitchOutcome::Err(RpcFailure {
+    let response = RpcResponse::IdentityWordsSwitch(IdentitySwitchOutcome::Err(RpcFailure {
         code: "IdentitySwitchFailed".into(),
         message: "Confirm trust loss first.".into(),
     }));
     let server = RpcServer::start(vec![exchange(
-        RpcRequest::IdentityLocalSwitch(request),
+        RpcRequest::IdentityWordsSwitch(request),
         response.clone(),
     )]);
     let output = server.run(
         &[
             "identity",
             "switch",
-            "local",
+            "words",
             "--private-stdin",
             "--yes",
             "--json",
@@ -663,28 +663,6 @@ fn settings_identity_switch_preserves_coordinator_disposition_preconditions() {
     );
     assert_json(&output, &response, 1);
     assert!(!String::from_utf8_lossy(&output.stdout).contains("private-"));
-    server.done();
-}
-
-#[test]
-fn settings_identity_backup_delivers_only_requested_ciphertext() {
-    let response = RpcResponse::IdentityBackupExport(IdentityBackupOutcome::Ok(IdentityBackup {
-        encrypted_secret: "ncryptsec-encrypted-output".into(),
-    }));
-    let server = RpcServer::start(vec![exchange(
-        RpcRequest::IdentityBackupExport(IdentityBackupExportRequest {
-            password: "private-password".into(),
-        }),
-        response.clone(),
-    )]);
-    assert_json(
-        &server.run(
-            &["identity", "backup", "--password-stdin", "--json"],
-            "private-password\n",
-        ),
-        &response,
-        0,
-    );
     server.done();
 }
 
@@ -937,12 +915,10 @@ fn identity_status() -> IdentityStatus {
             event_id: "event".into(),
             created_at: 1,
         },
-        local_backup_available: true,
-        retired_public_keys: vec!["retired-person-key".into()],
     }
 }
 #[test]
-fn settings_identity_show_nip46_and_retired_operations_preserve_live_coordinator_contracts() {
+fn settings_identity_show_and_nip46_preserve_live_coordinator_contracts() {
     let server = RpcServer::start(vec![exchange(
         RpcRequest::IdentityStatus(IdentityStatusRequest {}),
         RpcResponse::IdentityStatus(IdentityStatusOutcome::Ok(identity_status())),
@@ -950,14 +926,10 @@ fn settings_identity_show_nip46_and_retired_operations_preserve_live_coordinator
     let output = server.run(&["identity", "show"], "");
     assert!(output.status.success());
     let human = String::from_utf8(output.stdout).unwrap();
-    for value in [
-        "device-key",
-        "person-key",
-        "retired-person-key",
-        "available",
-    ] {
+    for value in ["device-key", "person-key"] {
         assert!(human.contains(value));
     }
+    assert!(!human.to_lowercase().contains("backup"));
     server.done();
 
     let request = IdentityNip46SwitchRequest {
@@ -988,81 +960,6 @@ fn settings_identity_show_nip46_and_retired_operations_preserve_live_coordinator
     assert_json(&output, &response, 0);
     assert!(!String::from_utf8_lossy(&output.stdout).contains("private-connection"));
     server.done();
-
-    let response = RpcResponse::IdentityRetiredExport(IdentityBackupOutcome::Ok(IdentityBackup {
-        encrypted_secret: "ncryptsec-retired".into(),
-    }));
-    let server = RpcServer::start(vec![exchange(
-        RpcRequest::IdentityRetiredExport(IdentityRetiredExportRequest {
-            public_key: "retired-person-key".into(),
-            password: "private-password".into(),
-        }),
-        response.clone(),
-    )]);
-    assert_json(
-        &server.run(
-            &[
-                "identity",
-                "backup",
-                "--retired",
-                "retired-person-key",
-                "--password-stdin",
-                "--json",
-            ],
-            "private-password\n",
-        ),
-        &response,
-        0,
-    );
-    server.done();
-
-    let response =
-        RpcResponse::IdentityRetiredDelete(IdentityRetiredDeleteOutcome::Ok(identity_status()));
-    let server = RpcServer::start(vec![exchange(
-        RpcRequest::IdentityRetiredDelete(IdentityRetiredDeleteRequest {
-            public_key: "retired-person-key".into(),
-            backup_confirmed: true,
-        }),
-        response.clone(),
-    )]);
-    assert_json(
-        &server.run(
-            &[
-                "identity",
-                "retired",
-                "delete",
-                "retired-person-key",
-                "--backup-confirmed",
-                "--yes",
-                "--json",
-            ],
-            "",
-        ),
-        &response,
-        0,
-    );
-    server.done();
-}
-
-#[test]
-fn settings_identity_delete_requires_backup_and_destruction_acknowledgements_separately() {
-    let server = RpcServer::start(vec![]);
-    for args in [
-        vec!["identity", "retired", "delete", "key", "--yes", "--json"],
-        vec![
-            "identity",
-            "retired",
-            "delete",
-            "key",
-            "--backup-confirmed",
-            "--json",
-        ],
-    ] {
-        let output = server.run(&args, "");
-        assert_eq!(output.status.code(), Some(2));
-        assert!(output.stdout.is_empty());
-    }
-    assert!(server.service.calls.lock().unwrap().is_empty());
 }
 
 #[test]
@@ -1072,7 +969,7 @@ fn settings_invalid_private_input_and_rejected_secret_arguments_are_never_echoed
         vec![
             "identity",
             "switch",
-            "local",
+            "words",
             "--private-stdin",
             "--yes",
             "--json",
@@ -1110,9 +1007,10 @@ fn settings_invalid_private_input_and_rejected_secret_arguments_are_never_echoed
         ],
         vec![
             "identity",
-            "backup",
-            "--password",
-            "private-password",
+            "switch",
+            "words",
+            "--words",
+            "private-words",
             "--json",
         ],
     ] {

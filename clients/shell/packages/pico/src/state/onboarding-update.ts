@@ -64,12 +64,6 @@ function step(nav: OnboardingNav, message: OnboardingMessage, korri: SurfaceMode
     case "KorriPublished":
     case "Waited":
       return stay(nav)
-    case "RenderedQr": {
-      const backup = nav.backup
-      return backup?.qr?.text === message.text
-        ? stay({ ...nav, backup: { ...backup, qr: { text: message.text, dataUrl: message.dataUrl } } })
-        : stay(nav)
-    }
     case "PressedBack":
       return back(nav, korri)
     case "Started":
@@ -137,19 +131,6 @@ function step(nav: OnboardingNav, message: OnboardingMessage, korri: SurfaceMode
       return toggleTrustLoss(nav)
     case "SubmittedIdentity":
       return submitIdentity(nav, korri)
-    case "OpenedBackup":
-      return nav.step === "you" && nav.identity._tag === "Ready"
-        ? ask({ ...nav, backup: { password: "", qr: undefined } }, { _tag: "DismissIdentityStatus" })
-        : stay(nav)
-    case "EditedBackupPassword":
-      return nav.backup === undefined ? stay(nav) : stay({ ...nav, backup: { ...nav.backup, password: message.password } })
-    case "SubmittedBackup":
-      return nav.backup === undefined || nav.backup.password.trim() === ""
-        || korri.identityManagement?.status._tag === "Working"
-        ? stay(nav)
-        : ask(nav, { _tag: "ExportIdentityBackup", password: nav.backup.password })
-    case "ClosedBackup":
-      return closeBackup(nav)
 
     // Pads
     case "ChangedSetting":
@@ -203,7 +184,7 @@ function continued(nav: OnboardingNav, korri: SurfaceModel): PicoStep<Onboarding
       return stay(enterName({ ...nav, continuedOffline: nav.continuedOffline || isOffline(korri) }, korri))
     }
     case "you":
-      return nav.identity._tag === "Ready" && nav.backup === undefined ? stay(afterIdentity(nav, korri)) : stay(nav)
+      return nav.identity._tag === "Ready" ? stay(afterIdentity(nav, korri)) : stay(nav)
     case "pads":
       return padsView(korri).ready ? stay(at(nav, "games")) : stay(nav)
     case "games":
@@ -266,10 +247,8 @@ function backInWifi(nav: OnboardingNav, korri: SurfaceModel): OnboardingNav {
 }
 
 function backInIdentity(nav: OnboardingNav, korri: SurfaceModel): PicoStep<OnboardingNav> {
-  if (nav.backup !== undefined) return closeBackup(nav)
   const identity = nav.identity
   switch (identity._tag) {
-    case "Restore":
     case "Signer":
       if (identity.editing !== undefined) return stay(withIdentity(nav, { ...identity, editing: undefined }))
       // Korri is switching: there is no way to stop it, so Back waits.
@@ -357,9 +336,6 @@ function editText(
     }
     case "you": {
       const identity = nav.identity
-      if (identity._tag === "Restore" && identity.editing !== undefined) {
-        return withIdentity(nav, { ...identity, editing: { ...identity.editing, draft: change(identity.editing.draft, undefined) } })
-      }
       if (identity._tag === "Signer" && identity.editing !== undefined) {
         return withIdentity(nav, { ...identity, editing: change(identity.editing, undefined) })
       }
@@ -377,10 +353,6 @@ function toggleSecret(nav: OnboardingNav): OnboardingNav {
   if (nav.step === "wifi" && nav.wifi.question._tag === "Entry") {
     return withWifi(nav, { question: { _tag: "Entry", entry: toggleShown(nav.wifi.question.entry) } })
   }
-  const identity = nav.identity
-  if (nav.step === "you" && identity._tag === "Restore" && identity.editing?.field === "password") {
-    return withIdentity(nav, { ...identity, editing: { ...identity.editing, shown: !identity.editing.shown } })
-  }
   return nav
 }
 
@@ -396,12 +368,6 @@ function submitText(nav: OnboardingNav, korri: SurfaceModel): PicoStep<Onboardin
       return submitPerson(nav, korri)
     case "you": {
       const identity = nav.identity
-      if (identity._tag === "Restore" && identity.editing !== undefined) {
-        const { field, draft } = identity.editing
-        return stay(withIdentity(nav, field === "backup"
-          ? { ...identity, backup: draft.text.trim(), editing: undefined }
-          : { ...identity, password: draft.text, editing: undefined }))
-      }
       if (identity._tag === "Signer" && identity.editing !== undefined) {
         return stay(withIdentity(nav, { ...identity, uri: identity.editing.text.trim(), editing: undefined }))
       }
@@ -446,33 +412,24 @@ function submitPerson(nav: OnboardingNav, korri: SurfaceModel): PicoStep<Onboard
 const withIdentity = (nav: OnboardingNav, identity: IdentityStep): OnboardingNav => ({ ...nav, identity })
 
 /**
- * A new identity is the one this device already has: Korri made it, so
- * nothing is asked. Restoring and a signer need Korri's identity commands
- * and a connection; each opens its form with Korri's last status cleared.
+ * A new identity asks nothing here: the device makes its own person key
+ * when setup ends (ADR 0022). A signer needs Korri's identity commands and
+ * a connection; it opens its form with Korri's last status cleared.
  */
-function chooseIdentity(nav: OnboardingNav, korri: SurfaceModel, how: "created" | "restored" | "signer"): PicoStep<OnboardingNav> {
+function chooseIdentity(nav: OnboardingNav, korri: SurfaceModel, how: "created" | "signer"): PicoStep<OnboardingNav> {
   if (nav.step !== "you" || nav.identity._tag !== "Choose") return stay(nav)
   if (how === "created") return stay(withIdentity(nav, { _tag: "Ready", origin: "created" }))
   if (korri.identityManagement === undefined || isOffline(korri)) return stay(nav)
   return ask(
-    withIdentity(nav, how === "restored"
-      ? { _tag: "Restore", backup: "", password: "", editing: undefined, confirmed: false, sent: false }
-      : { _tag: "Signer", uri: "", editing: undefined, confirmed: false, sent: false }),
+    withIdentity(nav, { _tag: "Signer", uri: "", editing: undefined, confirmed: false, sent: false }),
     { _tag: "DismissIdentityStatus" },
   )
 }
 
 /** Open a field on the keyboard. Editing after a refusal clears it. */
-function editIdentityField(nav: OnboardingNav, field: "backup" | "password" | "uri"): PicoStep<OnboardingNav> {
+function editIdentityField(nav: OnboardingNav, field: "uri"): PicoStep<OnboardingNav> {
   const identity = nav.identity
   const cleared: PicoRequest[] = "sent" in identity && identity.sent ? [{ _tag: "DismissIdentityStatus" }] : []
-  if (identity._tag === "Restore" && (field === "backup" || field === "password")) {
-    return ask(withIdentity(nav, {
-      ...identity,
-      sent: false,
-      editing: { field, draft: picoTextDraft(identity[field]), shown: false },
-    }), ...cleared)
-  }
   if (identity._tag === "Signer" && field === "uri") {
     return ask(withIdentity(nav, { ...identity, sent: false, editing: picoTextDraft(identity.uri) }), ...cleared)
   }
@@ -486,29 +443,18 @@ function editIdentityField(nav: OnboardingNav, field: "backup" | "password" | "u
  */
 function toggleTrustLoss(nav: OnboardingNav): PicoStep<OnboardingNav> {
   const identity = nav.identity
-  if (nav.step !== "you" || (identity._tag !== "Restore" && identity._tag !== "Signer")
+  if (nav.step !== "you" || identity._tag !== "Signer"
     || identity.editing !== undefined || identity.sent) return stay(nav)
   return stay(withIdentity(nav, { ...identity, confirmed: !identity.confirmed }))
 }
 
 /**
- * RESTORE or CONNECT, as Settings sends them: only once the player has
- * confirmed the trust loss, and with that answer. Local records transfer.
- * The password goes with the request and leaves the form.
+ * CONNECT, as Settings sends it: only once the player has confirmed the
+ * trust loss, and with that answer. Local records transfer.
  */
 function submitIdentity(nav: OnboardingNav, korri: SurfaceModel): PicoStep<OnboardingNav> {
   const identity = nav.identity
   if (korri.identityManagement === undefined || korri.identityManagement.status._tag === "Working") return stay(nav)
-  if (identity._tag === "Restore" && identity.editing === undefined && identity.confirmed
-    && identity.backup.trim() !== "" && identity.password !== "") {
-    return ask(withIdentity(nav, { ...identity, password: "", sent: true }), {
-      _tag: "SwitchIdentityFromBackup",
-      encryptedSecret: identity.backup.trim(),
-      password: identity.password,
-      disposition: "transfer",
-      trustLossConfirmed: identity.confirmed,
-    })
-  }
   if (identity._tag === "Signer" && identity.editing === undefined && identity.confirmed && identity.uri !== "") {
     return ask(withIdentity(nav, { ...identity, sent: true }), {
       _tag: "SwitchIdentityToNip46",
@@ -520,16 +466,12 @@ function submitIdentity(nav: OnboardingNav, korri: SurfaceModel): PicoStep<Onboa
   return stay(nav)
 }
 
-const closeBackup = (nav: OnboardingNav): PicoStep<OnboardingNav> =>
-  nav.backup === undefined ? stay(nav) : ask({ ...nav, backup: undefined }, { _tag: "DismissIdentityStatus" })
-
 /* ---- What Korri's model settles ---- */
 
 /**
  * After every message: a scan or a connect Korri has answered stops being
  * pending; a saved name moves on; a switch Korri finished makes the identity
- * ready; a backup Korri made is drawn as a QR code; a host that stops
- * publishing its network leaves the Wi-Fi step.
+ * ready; a host that stops publishing its network leaves the Wi-Fi step.
  */
 function settle(nav: OnboardingNav, korri: SurfaceModel): PicoStep<OnboardingNav> {
   let next = settlePending(nav, korri)
@@ -537,7 +479,7 @@ function settle(nav: OnboardingNav, korri: SurfaceModel): PicoStep<OnboardingNav
   next = settlePerson(next, korri)
   next = settleIdentity(next, korri)
   if (next.step === "wifi" && korri.network === undefined) next = enterName(next, korri)
-  return settleBackup(next, korri)
+  return stay(next)
 }
 
 function settlePending(nav: OnboardingNav, korri: SurfaceModel): OnboardingNav {
@@ -591,17 +533,7 @@ function settlePerson(nav: OnboardingNav, korri: SurfaceModel): OnboardingNav {
 
 function settleIdentity(nav: OnboardingNav, korri: SurfaceModel): OnboardingNav {
   const identity = nav.identity
-  if ((identity._tag !== "Restore" && identity._tag !== "Signer") || !identity.sent) return nav
+  if (identity._tag !== "Signer" || !identity.sent) return nav
   if (korri.identityManagement?.status._tag !== "Switched") return nav
-  return withIdentity(nav, { _tag: "Ready", origin: identity._tag === "Restore" ? "restored" : "signer" })
-}
-
-function settleBackup(nav: OnboardingNav, korri: SurfaceModel): PicoStep<OnboardingNav> {
-  const backup = nav.backup
-  if (backup === undefined) return stay(nav)
-  const status = korri.identityManagement?.status
-  const text = status?._tag === "BackupReady" ? status.encryptedSecret : undefined
-  if (text === backup.qr?.text) return stay(nav)
-  if (text === undefined) return stay({ ...nav, backup: { ...backup, qr: undefined } })
-  return ask({ ...nav, backup: { ...backup, qr: { text, dataUrl: undefined } } }, { _tag: "RenderQr", text })
+  return withIdentity(nav, { _tag: "Ready", origin: "signer" })
 }

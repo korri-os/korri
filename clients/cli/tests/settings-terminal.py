@@ -18,7 +18,7 @@ master, slave = pty.openpty()
 original = termios.tcgetattr(slave)
 args = [binary, "plugins", "credential", "set", "@korri:steamgriddb", "--socket", socket, "--json"]
 if mode == "switch-sigterm":
-    args = [binary, "identity", "switch", "local", "--yes", "--socket", socket, "--json"]
+    args = [binary, "identity", "switch", "words", "--yes", "--socket", socket, "--json"]
 # Even explicit private stdin must not read echoed input from a terminal whose
 # stdout is redirected. Neither half-terminal case may prompt.
 if mode == "stdout-pipe":
@@ -58,15 +58,12 @@ try:
             assert child.poll() is None, transcript.decode(errors="replace")
 
     if mode == "switch-sigterm":
-        # Reuse the native guard for consecutive secrets in the same process.
+        # Visible choices first, then the words with echo off.
         wait_for_prompt(b"Existing person data: transfer or delete")
         os.write(master, b"transfer\n")
         wait_for_prompt(b"Type confirm to acknowledge")
         os.write(master, b"confirm\n")
-        wait_for_prompt(b"Encrypted person-key backup:")
-        assert not termios.tcgetattr(slave)[3] & termios.ECHO
-        os.write(master, b"private-encrypted\n")
-        wait_for_prompt(b"Backup password:")
+        wait_for_prompt(b"The 12 recovery words of the new person key:")
 
     deadline = time.monotonic() + 10
     while termios.tcgetattr(slave)[3] & termios.ECHO:
@@ -107,7 +104,6 @@ try:
             break
         transcript.extend(data)
     assert b"private-token" not in transcript, "private input was echoed"
-    assert b"private-encrypted" not in transcript, "a previous private input was echoed"
     if mode != "hidden":
         assert child.returncode == 1, transcript.decode(errors="replace")
         failure_start = transcript.index(b'{"code"')

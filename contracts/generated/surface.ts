@@ -44,7 +44,7 @@ export type SurfaceGameplayControlValue = { kind: "toggle"; value: boolean } | {
 
 export type SurfaceIdentityDisposition = "transfer" | "delete";
 
-export type SurfaceIdentityStatus = { _tag: "Idle" } | { _tag: "Working"; operation: string } | { _tag: "BackupReady"; encryptedSecret: string } | { _tag: "Problem"; message: string } | { _tag: "Switched"; ownerPublicKey: string };
+export type SurfaceIdentityStatus = { _tag: "Idle" } | { _tag: "Working"; operation: string } | { _tag: "Problem"; message: string } | { _tag: "Switched"; ownerPublicKey: string };
 
 /**
  * The launch settings editor for one game, opened from a game action and
@@ -120,7 +120,7 @@ export type SurfacePresentation = SurfaceCatalogPresentation | SurfaceGameplayOv
  * hands them to korrid. Each is fire-and-forget: the consequence arrives as
  * a new model.
  */
-export type SurfaceRequest = { _tag: "LaunchGame"; gameId: string; launchLocationId?: string } | { _tag: "RunAction"; actionId: string } | { _tag: "ChangeSetting"; settingId: string; value: string } | { _tag: "DismissSettingsProblem" } | { _tag: "ExportIdentityBackup"; password: string; retiredPublicKey?: string } | { _tag: "SwitchIdentityFromBackup"; encryptedSecret: string; password: string; disposition: SurfaceIdentityDisposition; trustLossConfirmed: boolean } | { _tag: "SwitchIdentityToNip46"; bunkerUri: string; disposition: SurfaceIdentityDisposition; trustLossConfirmed: boolean } | { _tag: "DeleteRetiredIdentity"; publicKey: string; backupConfirmed: boolean } | { _tag: "DismissIdentityStatus" } | { _tag: "RunGameAction"; gameId: string; actionId: string } | { _tag: "InvokeGameplayControl"; controlId: string; value?: SurfaceGameplayControlValue } | { _tag: "DismissGameplayOverlay" } | { _tag: "Retry" } | { _tag: "Dismiss" } | { _tag: "Reload" } | { _tag: "ScanWifi" } | { _tag: "ConnectWifi"; networkId: string; password?: string } | { _tag: "ConnectHiddenWifi"; ssid: string; password?: string } | { _tag: "FinishOnboarding" } | { _tag: "OpenStore" } | { _tag: "SearchStore"; providerId: string; query: string } | { _tag: "OpenStoreEntry"; entryId: string } | { _tag: "FocusGame"; gameId?: string } | { _tag: "RememberPreference"; key: string; value: string } | { _tag: "MoveCatalog"; query: CatalogQuery; from: CatalogFrom; count: number };
+export type SurfaceRequest = { _tag: "LaunchGame"; gameId: string; launchLocationId?: string } | { _tag: "RunAction"; actionId: string } | { _tag: "ChangeSetting"; settingId: string; value: string } | { _tag: "DismissSettingsProblem" } | { _tag: "SwitchIdentityToNip46"; bunkerUri: string; disposition: SurfaceIdentityDisposition; trustLossConfirmed: boolean } | { _tag: "DismissIdentityStatus" } | { _tag: "RunGameAction"; gameId: string; actionId: string } | { _tag: "InvokeGameplayControl"; controlId: string; value?: SurfaceGameplayControlValue } | { _tag: "DismissGameplayOverlay" } | { _tag: "Retry" } | { _tag: "Dismiss" } | { _tag: "Reload" } | { _tag: "ScanWifi" } | { _tag: "ConnectWifi"; networkId: string; password?: string } | { _tag: "ConnectHiddenWifi"; ssid: string; password?: string } | { _tag: "FinishOnboarding" } | { _tag: "OpenStore" } | { _tag: "SearchStore"; providerId: string; query: string } | { _tag: "OpenStoreEntry"; entryId: string } | { _tag: "FocusGame"; gameId?: string } | { _tag: "RememberPreference"; key: string; value: string } | { _tag: "MoveCatalog"; query: CatalogQuery; from: CatalogFrom; count: number };
 
 export type SurfaceRunnerChoice = { _tag: "Closed" } | ({ _tag: "Loading" | "Ready" | "Stale" | "Conflict" | "Error" | "Busy" | "Warnings" } & SurfaceRunnerChoiceContent);
 
@@ -505,8 +505,6 @@ export interface SurfaceGameplayOverlayPresentation {
 }
 
 export interface SurfaceIdentityManagement {
-	localBackupAvailable: boolean;
-	retiredPublicKeys: string[];
 	status: SurfaceIdentityStatus;
 }
 

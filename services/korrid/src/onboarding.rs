@@ -1,7 +1,8 @@
 use crate::{
     config::settings::ONBOARDING_FINISHED_FILE_NAME,
-    identity::{bind_automatic_owner, DeviceIdentity, IdentityState},
-    remote_signer::PersonSigner,
+    identity::{DeviceIdentity, IdentityState, OwnerStatementStatus},
+    local_signer::{ConfirmedWords, SetupWords},
+    remote_signer::{PersonSignerRequest, PersonSignerState},
     RpcFailure,
 };
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,7 @@ use std::{
     path::Path,
 };
 use typeshare::typeshare;
+use zeroize::Zeroize;
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -21,6 +23,69 @@ pub struct OnboardingFinishRequest {}
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OnboardingRestartRequest {}
+
+/// Make new recovery words for a device in setup (ADRs 0072 and 0082).
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OnboardingRecoveryWordsRequest {}
+
+/// The words a device in setup shows, and the places of the words the
+/// person types back. korrid carries them in memory only; Debug never shows
+/// the words.
+#[typeshare]
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RecoveryWordsShown {
+    /// The 12 words, lowercase, one space between words. The recovery QR
+    /// code holds exactly this text.
+    pub words: String,
+    /// The places, from 1 to 12, of the 3 words to type back.
+    pub confirm_positions: Vec<u8>,
+}
+impl std::fmt::Debug for RecoveryWordsShown {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RecoveryWordsShown")
+            .field("confirm_positions", &self.confirm_positions)
+            .finish_non_exhaustive()
+    }
+}
+impl Drop for RecoveryWordsShown {
+    fn drop(&mut self) {
+        self.words.zeroize();
+    }
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum RecoveryWordsOutcome {
+    Ok(RecoveryWordsShown),
+    Err(RpcFailure),
+}
+
+/// The person's answers: the words at the places that
+/// `RecoveryWordsShown.confirmPositions` names, in that order. When they
+/// match, the device gets its automatic identity and setup ends.
+#[typeshare]
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OnboardingConfirmWordsRequest {
+    pub words: Vec<String>,
+}
+impl std::fmt::Debug for OnboardingConfirmWordsRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("OnboardingConfirmWordsRequest")
+            .finish_non_exhaustive()
+    }
+}
+impl Drop for OnboardingConfirmWordsRequest {
+    fn drop(&mut self) {
+        self.words.iter_mut().for_each(Zeroize::zeroize);
+    }
+}
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -103,34 +168,142 @@ pub fn setup_finished(root: &Path) -> bool {
     )
 }
 
-/// End setup (ADR 0022). A device that did not join during setup gets its
-/// automatic identity now; a device that joined keeps its owner. The second
-/// value says whether an owner was bound, so the caller can restart korrid
-/// with it, as it starts after setup.
-pub async fn finish_with_automatic_owner<S>(
+fn fail(code: &str, message: &str) -> RpcFailure {
+    RpcFailure {
+        code: code.into(),
+        message: message.into(),
+    }
+}
+
+fn identity_state(root: &Path) -> Result<IdentityState, RpcFailure> {
+    DeviceIdentity::load_or_create(root)
+        .map(|identity| identity.state().clone())
+        .map_err(|_| fail("IdentityUnavailable", "Device identity is unavailable."))
+}
+
+/// End setup on a device that has an owner: it joined during setup (ADR
+/// 0022). A device without an owner ends setup only when the person
+/// confirms its recovery words (ADR 0082, `confirm_words`). Any words that
+/// still wait in the local signer are erased.
+pub async fn finish_with_owner<S>(root: &Path, signer: &S) -> OnboardingStatusOutcome
+where
+    S: SetupWords + ?Sized,
+{
+    let _owner_write = crate::identity::owner_write().await;
+    match identity_state(root) {
+        Ok(IdentityState::Owned { .. }) => {
+            let _ = signer.forget_words().await;
+            finish(root)
+        }
+        Ok(IdentityState::Unowned { .. }) => OnboardingStatusOutcome::Err(fail(
+            "RecoveryWordsNeeded",
+            "Setup ends when the person confirms this device's recovery words. Run korri setup finish on this device.",
+        )),
+        Ok(_) => OnboardingStatusOutcome::Err(fail(
+            "IdentityUnavailable",
+            "This device's identity cannot end setup.",
+        )),
+        Err(failure) => OnboardingStatusOutcome::Err(failure),
+    }
+}
+
+/// New recovery words for a device in setup that has no owner. They wait
+/// in the local signer until the person confirms them; new words replace
+/// them.
+pub async fn recovery_words<S>(root: &Path, signer: &S) -> RecoveryWordsOutcome
+where
+    S: SetupWords + ?Sized,
+{
+    let state = match identity_state(root) {
+        Ok(state) => state,
+        Err(failure) => return RecoveryWordsOutcome::Err(failure),
+    };
+    if setup_finished(root) || !matches!(state, IdentityState::Unowned { .. }) {
+        return RecoveryWordsOutcome::Err(fail(
+            "RecoveryWordsNotNeeded",
+            "This device already has an owner. It needs no new recovery words.",
+        ));
+    }
+    match signer.make_words().await {
+        Ok(shown) => RecoveryWordsOutcome::Ok(RecoveryWordsShown {
+            words: shown.words.as_str().to_owned(),
+            confirm_positions: shown
+                .positions
+                .iter()
+                .map(|position| *position as u8)
+                .collect(),
+        }),
+        Err(_) => RecoveryWordsOutcome::Err(fail(
+            "RecoveryWordsUnavailable",
+            "Korri could not make recovery words. Try again.",
+        )),
+    }
+}
+
+/// Check the person's answers in the local signer. When they match, the
+/// signer signs this device's owner statement with the words' person key
+/// and erases the words. The device stores the statement, so it has its
+/// automatic identity, and setup ends (ADRs 0022 and 0082). The second value
+/// says whether an owner was bound, so the caller restarts korrid with it.
+pub async fn confirm_words<S>(
     root: &Path,
     signer: &S,
+    answers: &[String],
     now: u64,
 ) -> (OnboardingStatusOutcome, bool)
 where
-    S: PersonSigner + ?Sized,
+    S: SetupWords + ?Sized,
 {
+    let failed = |code, message| (OnboardingStatusOutcome::Err(fail(code, message)), false);
     // A join may be storing its vouch: read the identity under the same lock.
     let _owner_write = crate::identity::owner_write().await;
-    let unowned = matches!(
-        DeviceIdentity::load_or_create(root).map(|identity| identity.state().clone()),
-        Ok(IdentityState::Unowned { .. })
-    );
-    if unowned && bind_automatic_owner(root, signer, now).await.is_err() {
-        return (
-            OnboardingStatusOutcome::Err(RpcFailure {
-                code: "AutomaticIdentityFailed".into(),
-                message: "Korri could not create this device's identity. Try again.".into(),
-            }),
-            false,
+    let mut identity = match DeviceIdentity::load_or_create(root) {
+        Ok(identity) => identity,
+        Err(_) => return failed("IdentityUnavailable", "Device identity is unavailable."),
+    };
+    if setup_finished(root) || !matches!(identity.state(), IdentityState::Unowned { .. }) {
+        let _ = signer.forget_words().await;
+        return failed(
+            "RecoveryWordsNotNeeded",
+            "This device got an owner during setup. Throw away these words: they belong to no device.",
         );
     }
-    (finish(root), unowned)
+    let Ok(template) = identity.owner_statement_template(OwnerStatementStatus::Owned, now) else {
+        return failed("IdentityUnavailable", "Device identity is unavailable.");
+    };
+    let request = PersonSignerRequest {
+        unsigned_event_template: template.clone(),
+    };
+    let identity_failed = || {
+        failed(
+            "AutomaticIdentityFailed",
+            "Korri could not create this device's identity. Throw away these words and finish setup again.",
+        )
+    };
+    match signer.confirm_words(answers, request).await {
+        Ok(ConfirmedWords::Mismatch { message }) => (
+            OnboardingStatusOutcome::Err(fail("RecoveryWordsMismatch", &message)),
+            false,
+        ),
+        Ok(ConfirmedWords::Signed(PersonSignerState::Approved {
+            owner_public_key,
+            unsigned_event_template,
+            signed_event_json,
+        })) if unsigned_event_template == template => {
+            if identity
+                .apply_signed_owner_binding(&template, &owner_public_key, &signed_event_json)
+                .is_err()
+            {
+                return identity_failed();
+            }
+            (finish(root), true)
+        }
+        Ok(ConfirmedWords::Signed(_)) => identity_failed(),
+        Err(_) => failed(
+            "RecoveryWordsUnavailable",
+            "No recovery words wait for confirmation. Show new words and write them down.",
+        ),
+    }
 }
 
 #[cfg(test)]

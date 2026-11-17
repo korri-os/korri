@@ -162,19 +162,17 @@ fn remote_runtime_process() {
                 use std::io::Write;
                 writeln!(fs::OpenOptions::new().append(true).create(true).open(&hook_audit).unwrap(), "before").unwrap();
             }));
-            // IdentityStatus uses the production local-signer socket too. The
-            // fixture has no person secret: status reports a remote-only signer.
+            // The host composes the identity coordinator only with the
+            // production local-signer socket. It holds no person key.
             let signer_socket = root.join("signer.sock");
             let listener = tokio::net::UnixListener::bind(&signer_socket).unwrap();
             std::env::set_var("KORRID_LOCAL_SIGNER_SOCKET", &signer_socket);
-            let signer_root = root.join("signer");
-            let signer_public = root.join("person.pub");
-            let device = Arc::new(std::sync::Mutex::new(resources.credentials.public_key().unwrap()));
+            let signer = Arc::new(local_signer::LocalSigner::new(&resources.credentials.public_key().unwrap()).unwrap());
             tokio::spawn(async move {
                 loop {
                     let (stream, _) = listener.accept().await.unwrap();
-                    let (root, public, device) = (signer_root.clone(), signer_public.clone(), device.clone());
-                    tokio::spawn(async move { local_signer::serve_connection(stream, root, device, public).await.unwrap(); });
+                    let signer = signer.clone();
+                    tokio::spawn(async move { local_signer::serve_connection(stream, signer).await.unwrap(); });
                 }
             });
             let runtime =

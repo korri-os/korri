@@ -3,8 +3,6 @@ import type {
   SurfaceGameplayOverlayPresentation,
   SurfaceInvite,
   SurfaceGame,
-  SurfaceIdentityManagement,
-  SurfaceIdentityStatus,
   SurfaceModel,
   SurfaceStatus,
 } from "../../src/model"
@@ -85,13 +83,6 @@ export function fixtureSettingsConfirmation() {
 export const retryProblem = {
   _tag: "Problem", kicker: "STREAM DROPPED", reason: "zao stopped answering.", canRetry: true,
 } satisfies SurfaceStatus
-
-// Deliberately inert display values, never credentials or a usable backup.
-export const retiredPublicKey = "preview-retired-public-key"
-export const backupText = "PREVIEW ONLY — not an identity backup"
-export function identityFixture(status: SurfaceIdentityStatus): SurfaceIdentityManagement {
-  return { localBackupAvailable: true, retiredPublicKeys: [retiredPublicKey], status }
-}
 
 /* ---- Stream play ---- */
 

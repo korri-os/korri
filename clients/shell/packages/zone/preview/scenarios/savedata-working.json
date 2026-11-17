@@ -150,11 +150,9 @@
     }
    },
    "identityManagement": {
-    "localBackupAvailable": false,
-    "retiredPublicKeys": [],
     "status": {
      "_tag": "Working",
-     "operation": "Making a backup"
+     "operation": "Connecting signer"
     }
    }
   }

@@ -133,7 +133,9 @@ fn authenticated_setup_uses_the_current_native_effect_and_signature_validation()
             .unwrap();
         assert_eq!(status["outcome"]["payload"]["identity"]["_tag"], "Owned");
         assert_eq!(status["outcome"]["payload"]["canSwitchIdentity"], false);
-        assert_eq!(status["outcome"]["payload"]["localBackupAvailable"], false);
+        assert!(status["outcome"]["payload"]
+            .get("localBackupAvailable")
+            .is_none());
         let after: serde_json::Value = client
             .post(&url)
             .bearer_auth(&capability)

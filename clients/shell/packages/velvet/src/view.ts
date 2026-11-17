@@ -23,7 +23,6 @@ import { keyGrid } from "./keys"
 import { gameById, homeOf } from "./lists"
 import { entryHeading, screenPanel, sheetPanel, shown } from "./pages"
 import { plan, type Plan } from "./plan"
-import { qrDataUrl } from "./qr"
 import type { PanelSpec, RowSpec, State } from "./types"
 import { emptyAt, emptyButtons, panelFocus, panelStacks, takesFocus, topLayer } from "./update"
 import { caps } from "./words"
@@ -81,7 +80,6 @@ function pageView(asked: Pictures, panel: PanelSpec, state: State, p: Plan, live
       stack: panelStacks(p),
       panel: side?.kind ?? "none",
       panelTitle: side?.title ?? "",
-      qr: side?.qr === undefined ? NO_IMAGE : { $image: qrDataUrl(side.qr) },
     },
     rows: panel.rows.map(row => rowView(row, "rows", focus, live)),
     // Down from the rows lands on the first button that can be pressed (a dimmed Next waits
@@ -97,7 +95,7 @@ function pageView(asked: Pictures, panel: PanelSpec, state: State, p: Plan, live
   }
 }
 
-/** A long word with no break (a backup's secret) in groups, so it wraps where a person can keep their place. */
+/** A long word with no break in groups, so it wraps where a person can keep their place. */
 function chunk(text: string, size: number): string {
   const parts: string[] = []
   for (let i = 0; i < text.length; i += size) parts.push(text.slice(i, i + size))

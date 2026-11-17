@@ -738,20 +738,21 @@ pkgs.testers.runNixOSTest {
     machine.succeed("rm /var/lib/korri-plugin-host/image-owner-check/selection.json /nix/var/nix/gcroots/korri-plugin-host/image-owner-check/active /tmp/korri-plugin-image-nofollow")
     machine.succeed("rmdir /var/lib/korri-plugin-host/image-owner-check /nix/var/nix/gcroots/korri-plugin-host/image-owner-check")
 
-    # Real first boot: the automatic owner is local, silent, and held by a
-    # distinct service identity. No relay connection means there was no owner
+    # Real first boot (ADRs 0022 and 0082): brain mode binds no owner at
+    # start, and the local signer, a distinct service identity, keeps no
+    # person key on disk. No relay connection means there was no owner
     # publication, roster import, endpoint read, or federation join.
     assert machine.succeed("id -u korrid").strip() == "976"
     assert machine.succeed("id -u korri-local-signer").strip() == "978"
     assert machine.succeed("id -u plugin-user").strip() == "1000"
     signer_pid = machine.succeed("systemctl show korri-local-signer.service -p MainPID --value").strip()
     korrid_pid = machine.succeed("systemctl show korrid.service -p MainPID --value").strip()
-    machine.succeed("nsenter -t " + signer_pid + " -m -- runuser -u korri-local-signer -- test -r /var/lib/korri-local-signer/identity/active/person.key")
+    machine.fail("test -e /var/lib/korri-local-signer")
+    machine.fail("test -e /run/korri-local-signer/public")
     machine.fail("nsenter -t " + signer_pid + " -m -- runuser -u korri-local-signer -- test -r /var/lib/korrid/identity/device.key")
     machine.fail("nsenter -t " + signer_pid + " -m -- runuser -u korri-local-signer -- test -r /var/lib/korri-brain-smoke/device.yaml")
     machine.succeed("nsenter -t " + korrid_pid + " -m -- runuser -u korrid -- test -r /var/lib/korrid/identity/device.key")
-    machine.fail("nsenter -t " + korrid_pid + " -m -- runuser -u korrid -- test -r /var/lib/korri-local-signer/identity/active/person.key")
-    machine.fail("runuser -u plugin-user -- test -r /var/lib/korri-local-signer/identity/active/person.key")
+    assert machine.succeed("cat /proc/" + signer_pid + "/limits | grep 'Max core file size'").split()[4:6] == ["0", "0"]
     socket_denial = machine.fail(
         "runuser -u plugin-user -- ${pkgs.python3}/bin/python -c "
         + shlex.quote("import socket; socket.socket(socket.AF_UNIX).connect('/run/korri-local-signer/signer.sock')")
@@ -762,24 +763,20 @@ pkgs.testers.runNixOSTest {
     requires = machine.succeed("systemctl show korrid.service -p Requires --value").split()
     assert "korri-local-signer.service" in after, after
     assert "korri-local-signer.service" in requires, requires
-    owner_before = json.loads(machine.succeed("KORRID_PRIVATE_STATE_ROOT=/var/lib/korrid korrid identity status"))
-    assert owner_before["_tag"] == "Owned", owner_before
-    assert machine.succeed("cat /run/korri-local-signer/public/person.pub").strip() == owner_before["ownerPublicKey"]
-    assert machine.succeed("cat /run/korri-local-signer/expected-device-public-key").strip() == owner_before["devicePublicKey"]
-    assert machine.succeed("stat -c '%U:%G:%a' /var/lib/korri-local-signer/identity /var/lib/korri-local-signer/identity/active /var/lib/korri-local-signer/identity/active/person.key").splitlines() == ["korri-local-signer:korri-local-signer:700", "korri-local-signer:korri-local-signer:700", "korri-local-signer:korri-local-signer:600"]
-    assert machine.succeed("stat -c '%U:%G:%a' /run/korri-local-signer/expected-device-public-key /run/korri-local-signer/public/person.pub").splitlines() == ["root:root:400", "korri-local-signer:korrid:640"]
+    identity_before = json.loads(machine.succeed("KORRID_PRIVATE_STATE_ROOT=/var/lib/korrid korrid identity status"))
+    assert identity_before["_tag"] == "Unowned", identity_before
+    assert machine.succeed("cat /run/korri-local-signer/expected-device-public-key").strip() == identity_before["devicePublicKey"]
+    assert machine.succeed("stat -c '%U:%G:%a' /run/korri-local-signer/expected-device-public-key").splitlines() == ["root:root:400"]
+    machine.fail("test -e /var/lib/korrid/identity/owner.event.json")
     machine.fail("test -e /var/lib/korrid/identity/nip46-client.key")
     machine.fail("test -e /var/lib/korrid/identity/nip46.connection.json")
-    person_before = machine.succeed("sha256sum /var/lib/korri-local-signer/identity/active/person.key").split()[0]
-    binding_before = machine.succeed("sha256sum /var/lib/korrid/identity/owner.event.json").split()[0]
     machine.succeed("systemctl restart korri-local-signer.service")
     machine.wait_for_unit("korri-local-signer.service")
     machine.succeed("systemctl restart korrid.service")
     machine.wait_for_unit("korrid.service")
     machine.wait_for_open_port(49117)
-    assert machine.succeed("sha256sum /var/lib/korri-local-signer/identity/active/person.key").split()[0] == person_before
-    assert machine.succeed("sha256sum /var/lib/korrid/identity/owner.event.json").split()[0] == binding_before
-    assert json.loads(machine.succeed("KORRID_PRIVATE_STATE_ROOT=/var/lib/korrid korrid identity status")) == owner_before
+    machine.fail("test -e /var/lib/korri-local-signer")
+    assert json.loads(machine.succeed("KORRID_PRIVATE_STATE_ROOT=/var/lib/korrid korrid identity status")) == identity_before
     machine.succeed("sleep 1")
     machine.fail("test -e /run/korri-relay-tripwire-connections")
 

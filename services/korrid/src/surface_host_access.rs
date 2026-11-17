@@ -97,11 +97,11 @@ impl SurfaceHostPermission {
             | RpcRequest::LibraryFoldersRescan(_)
             | RpcRequest::SettingsUpdate(_)
             | RpcRequest::OwnerBindingStart(_)
-            | RpcRequest::IdentityBackupExport(_)
-            | RpcRequest::IdentityLocalSwitch(_)
+            | RpcRequest::IdentityWordsSwitch(_)
             | RpcRequest::IdentityNip46Switch(_)
-            | RpcRequest::IdentityRetiredExport(_)
-            | RpcRequest::IdentityRetiredDelete(_)
+            // Recovery words: no surface shows them yet.
+            | RpcRequest::OnboardingRecoveryWords(_)
+            | RpcRequest::OnboardingConfirmWords(_)
             // A join shows a secret code, binds this device or vouches.
             | RpcRequest::JoinStart(_)
             | RpcRequest::JoinEnter(_)

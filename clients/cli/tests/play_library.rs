@@ -1419,8 +1419,6 @@ fn play_library_remote_folder_selection_requires_ssh_and_never_issues_receipt() 
             identity: identity::IdentityState::Unowned {
                 device_public_key: "11".repeat(32),
             },
-            local_backup_available: false,
-            retired_public_keys: vec![],
         })),
         RpcResponse::SettingsSnapshot(SettingsSnapshotOutcome::Ok(SettingsSnapshot {
             revision: "revision".into(),
@@ -1603,8 +1601,6 @@ fn target_responses() -> Vec<RpcResponse> {
             identity: identity::IdentityState::Unowned {
                 device_public_key: "11".repeat(32),
             },
-            local_backup_available: false,
-            retired_public_keys: vec![],
         })),
         RpcResponse::SettingsSnapshot(SettingsSnapshotOutcome::Ok(SettingsSnapshot {
             revision: "revision".into(),

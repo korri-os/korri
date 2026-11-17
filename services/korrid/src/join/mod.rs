@@ -7,6 +7,12 @@
 //! then signs a vouch for the new device. The new device stores the vouch
 //! chain as its owner statement and becomes owned.
 //!
+//! A device that already has an owner joins only after the person enters
+//! the recovery words of its person key (ADR 0082). That key signs the
+//! removal of the device's old owner statement, and the join becomes an
+//! identity switch to a new device key that keeps the device's data (ADR
+//! 0023).
+//!
 //! One join runs on a device at a time. The coordinator holds its status;
 //! the session tasks in `session.rs` do the work.
 
@@ -20,6 +26,7 @@ mod tests;
 use crate::{
     federation::FederationDirectory,
     identity::IdentityState,
+    identity_switch::IdentitySwitchCoordinator,
     network::NetworkConnection,
     peer_rpc::PeerCredentials,
     relay::{RelayList, RelayTransport},
@@ -45,10 +52,18 @@ pub struct JoinStartRequest {}
 
 #[typeshare]
 #[derive(Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JoinEnterRequest {
     /// The 10 digits of the join confirmation code.
     pub code: String,
+    /// Only on a device that has an owner: the 12 recovery words of its
+    /// person key, which signs the device's removal (ADR 0082).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_words: Option<String>,
+    /// Only on a device that has an owner: the person accepted that the
+    /// join resets Korri's own device trust (ADR 0023).
+    #[serde(default)]
+    pub trust_loss_confirmed: bool,
 }
 impl std::fmt::Debug for JoinEnterRequest {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -60,6 +75,9 @@ impl std::fmt::Debug for JoinEnterRequest {
 impl Drop for JoinEnterRequest {
     fn drop(&mut self) {
         self.code.zeroize();
+        if let Some(words) = &mut self.current_words {
+            words.zeroize();
+        }
     }
 }
 
@@ -217,6 +235,9 @@ pub struct JoinContext {
     /// Runs after the new device stored its vouch and its status was read,
     /// so the device restarts with its owner.
     pub joined: Arc<dyn Fn() + Send + Sync>,
+    /// Moves an owned device to the person key it joins (ADR 0023). A
+    /// device without it joins only when it has no owner.
+    pub switch: Option<Arc<IdentitySwitchCoordinator>>,
 }
 
 #[derive(Clone)]
@@ -319,27 +340,79 @@ impl JoinCoordinator {
         Ok(self.status())
     }
 
-    /// Enter a code on this new device and join the device that shows it.
-    pub fn enter(&self, code: &str, device: JoiningDevice) -> Result<JoinStatus, RpcFailure> {
+    /// Enter a code on this device and join the device that shows it. A
+    /// device without an owner joins as it is. A device with an owner needs
+    /// its person key's recovery words and the person's acceptance that its
+    /// device trust resets; it then joins with a new device key.
+    pub async fn enter(
+        &self,
+        code: &str,
+        current_words: Option<&str>,
+        trust_loss_confirmed: bool,
+        device: JoiningDevice,
+    ) -> Result<JoinStatus, RpcFailure> {
         let code = code::JoinCode::parse(code)
             .map_err(|error| failure("JoinCodeInvalid", &error.to_string()))?;
-        let identity = self.identity()?;
-        let IdentityState::Unowned { .. } = identity.state() else {
-            return Err(failure(
-                "JoinNeedsNewDevice",
-                "This device already has an owner. Only a device without an owner can join.",
-            ));
-        };
         let device = device
             .checked()
             .ok_or_else(|| failure("JoinUnavailable", "This device cannot describe itself."))?;
+        let identity = self.identity()?;
+        let (identity, prepared) = match (identity.state(), current_words) {
+            (IdentityState::Unowned { .. }, None) => (identity, None),
+            (IdentityState::Unowned { .. }, Some(_)) => {
+                return Err(failure(
+                    "JoinWordsNotNeeded",
+                    "This device has no owner. It joins without recovery words.",
+                ))
+            }
+            (IdentityState::Owned { .. }, None) => {
+                return Err(failure(
+                    "JoinNeedsWords",
+                    "This device has its own person key. Enter that key's 12 recovery words to join another person's devices.",
+                ))
+            }
+            (IdentityState::Owned { .. }, Some(_)) if !trust_loss_confirmed => {
+                return Err(failure(
+                    "JoinNeedsConfirmation",
+                    "Joining resets Korri's own device trust on this device. Accept that to join.",
+                ))
+            }
+            (IdentityState::Owned { .. }, Some(words)) => {
+                let switch = self.0.context.switch.as_ref().ok_or_else(|| {
+                    failure(
+                        "JoinUnavailable",
+                        "This device cannot change its person key.",
+                    )
+                })?;
+                let prepared = switch
+                    .begin_join(words)
+                    .await
+                    .map_err(|message| failure("JoinWordsRefused", &message))?;
+                (prepared.staged_identity().clone(), Some(prepared))
+            }
+            _ => {
+                return Err(failure(
+                    "JoinNeedsNewDevice",
+                    "This device's identity cannot join another device.",
+                ))
+            }
+        };
         let rendezvous = self.rendezvous(identity)?;
         let (reporter, _) = self.begin(JoinStatus::Matching);
         let generation = reporter.generation;
         let shared = Arc::clone(&self.0);
         let task = tokio::spawn(async move {
             let status =
-                session::joining(&shared.context, &rendezvous, &reporter, code, device).await;
+                match session::joining(&shared.context, &rendezvous, &reporter, code, device).await
+                {
+                    Err(status) => status,
+                    Ok(vouched) => match prepared {
+                        None => session::store_vouch(&shared.context, &vouched).await,
+                        Some(prepared) => {
+                            session::switch_to_vouch(&shared.context, prepared, &vouched).await
+                        }
+                    },
+                };
             let joined = matches!(status, JoinStatus::Joined(_));
             reporter.set(status);
             let reads = shared.reads.load(Ordering::SeqCst);

@@ -150,8 +150,6 @@
     }
    },
    "identityManagement": {
-    "localBackupAvailable": false,
-    "retiredPublicKeys": [],
     "status": {
      "_tag": "Idle"
     }

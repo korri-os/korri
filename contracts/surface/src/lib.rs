@@ -470,7 +470,6 @@ pub enum SurfaceIdentityDisposition {
 pub enum SurfaceIdentityStatus {
     Idle,
     Working { operation: String },
-    BackupReady { encrypted_secret: String },
     Problem { message: String },
     Switched { owner_public_key: String },
 }
@@ -479,8 +478,6 @@ pub enum SurfaceIdentityStatus {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SurfaceIdentityManagement {
-    pub local_backup_available: bool,
-    pub retired_public_keys: Vec<String>,
     pub status: SurfaceIdentityStatus,
 }
 
@@ -1570,25 +1567,10 @@ pub enum SurfaceRequest {
     },
     /// Dismiss the current settings failure without changing its value.
     DismissSettingsProblem,
-    ExportIdentityBackup {
-        password: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        retired_public_key: Option<String>,
-    },
-    SwitchIdentityFromBackup {
-        encrypted_secret: String,
-        password: String,
-        disposition: SurfaceIdentityDisposition,
-        trust_loss_confirmed: bool,
-    },
     SwitchIdentityToNip46 {
         bunker_uri: String,
         disposition: SurfaceIdentityDisposition,
         trust_loss_confirmed: bool,
-    },
-    DeleteRetiredIdentity {
-        public_key: String,
-        backup_confirmed: bool,
     },
     DismissIdentityStatus,
     RunGameAction {
@@ -1674,10 +1656,7 @@ impl SurfaceRequest {
             Self::RunAction { .. } => "RunAction",
             Self::ChangeSetting { .. } => "ChangeSetting",
             Self::DismissSettingsProblem => "DismissSettingsProblem",
-            Self::ExportIdentityBackup { .. } => "ExportIdentityBackup",
-            Self::SwitchIdentityFromBackup { .. } => "SwitchIdentityFromBackup",
             Self::SwitchIdentityToNip46 { .. } => "SwitchIdentityToNip46",
-            Self::DeleteRetiredIdentity { .. } => "DeleteRetiredIdentity",
             Self::DismissIdentityStatus => "DismissIdentityStatus",
             Self::RunGameAction { .. } => "RunGameAction",
             Self::InvokeGameplayControl { .. } => "InvokeGameplayControl",

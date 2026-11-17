@@ -523,24 +523,9 @@ export interface Health {
 export interface HealthRequest {
 }
 
-export interface IdentityBackup {
-	encryptedSecret: string;
-}
-
-export interface IdentityBackupExportRequest {
-	password: string;
-}
-
 export enum IdentityDataDisposition {
 	Transfer = "transfer",
 	Delete = "delete",
-}
-
-export interface IdentityLocalSwitchRequest {
-	encryptedSecret: string;
-	password: string;
-	dataDisposition: IdentityDataDisposition;
-	trustLossConfirmed: boolean;
 }
 
 export interface IdentityNip46SwitchRequest {
@@ -549,21 +534,9 @@ export interface IdentityNip46SwitchRequest {
 	trustLossConfirmed: boolean;
 }
 
-export interface IdentityRetiredDeleteRequest {
-	publicKey: string;
-	backupConfirmed: boolean;
-}
-
-export interface IdentityRetiredExportRequest {
-	publicKey: string;
-	password: string;
-}
-
 export interface IdentityStatus {
 	identity: IdentityState;
 	canSwitchIdentity: boolean;
-	localBackupAvailable: boolean;
-	retiredPublicKeys: string[];
 }
 
 export interface IdentityStatusRequest {
@@ -571,6 +544,26 @@ export interface IdentityStatusRequest {
 
 export interface IdentitySwitchCompleted {
 	ownerPublicKey: string;
+}
+
+/**
+ * Switch this device to the person key that recovery words make (ADR
+ * 0073). The new key signs the device's new owner statement in the local
+ * signer, which then erases it. The current owner signs the old
+ * statement's revocation as before. korrid carries the words in memory only
+ * and Debug never shows them.
+ */
+export interface IdentityWordsSwitchRequest {
+	/** The 12 recovery words of the new person key. */
+	words: string;
+	/**
+	 * The current owner's NIP-46 bunker URI, for a device that keeps no
+	 * connection to its owner's signer. korrid uses it for the one
+	 * revocation and keeps nothing of it after the switch.
+	 */
+	currentOwnerBunkerUri?: string;
+	dataDisposition: IdentityDataDisposition;
+	trustLossConfirmed: boolean;
 }
 
 /**
@@ -629,6 +622,16 @@ export interface JoinCodeShown {
 export interface JoinEnterRequest {
 	/** The 10 digits of the join confirmation code. */
 	code: string;
+	/**
+	 * Only on a device that has an owner: the 12 recovery words of its
+	 * person key, which signs the device's removal (ADR 0082).
+	 */
+	currentWords?: string;
+	/**
+	 * Only on a device that has an owner: the person accepted that the
+	 * join resets Korri's own device trust (ADR 0023).
+	 */
+	trustLossConfirmed?: boolean;
 }
 
 export interface JoinStartRequest {
@@ -1250,7 +1253,20 @@ export interface NonFinalDownload {
 	choices?: DownloadChoice[];
 }
 
+/**
+ * The person's answers: the words at the places that
+ * `RecoveryWordsShown.confirmPositions` names, in that order. When they
+ * match, the device gets its automatic identity and setup ends.
+ */
+export interface OnboardingConfirmWordsRequest {
+	words: string[];
+}
+
 export interface OnboardingFinishRequest {
+}
+
+/** Make new recovery words for a device in setup (ADRs 0072 and 0082). */
+export interface OnboardingRecoveryWordsRequest {
 }
 
 export interface OnboardingRestartRequest {
@@ -1788,6 +1804,21 @@ export interface ProviderRefReleaseObservation {
 	launch: ProviderReleaseLaunch;
 }
 
+/**
+ * The words a device in setup shows, and the places of the words the
+ * person types back. korrid carries them in memory only; Debug never shows
+ * the words.
+ */
+export interface RecoveryWordsShown {
+	/**
+	 * The 12 words, lowercase, one space between words. The recovery QR
+	 * code holds exactly this text.
+	 */
+	words: string;
+	/** The places, from 1 to 12, of the 3 words to type back. */
+	confirmPositions: number[];
+}
+
 export interface ReleaseDiscoveryFile {
 	relativePath: string;
 	text: string;
@@ -2318,14 +2349,6 @@ export type HealthOutcome =
 	| { _tag: "Ok", payload: Health }
 	| { _tag: "Err", payload: RpcFailure };
 
-export type IdentityBackupOutcome =
-	| { _tag: "Ok", payload: IdentityBackup }
-	| { _tag: "Err", payload: RpcFailure };
-
-export type IdentityRetiredDeleteOutcome =
-	| { _tag: "Ok", payload: IdentityStatus }
-	| { _tag: "Err", payload: RpcFailure };
-
 export type IdentityStatusOutcome =
 	| { _tag: "Ok", payload: IdentityStatus }
 	| { _tag: "Err", payload: RpcFailure };
@@ -2456,6 +2479,10 @@ export enum PluginRepositoryRemoveResult {
 	NotFound = "NotFound",
 }
 
+export type RecoveryWordsOutcome =
+	| { _tag: "Ok", payload: RecoveryWordsShown }
+	| { _tag: "Err", payload: RpcFailure };
+
 export type RpcRequest =
 	| { _tag: "app.displays.idle", payload: DisplayIdleRequest }
 	| { _tag: "app.displays.wake", payload: DisplayWakeRequest }
@@ -2487,6 +2514,8 @@ export type RpcRequest =
 	| { _tag: "app.acquisition.acquire-status", payload: AcquireStatusRequest }
 	| { _tag: "app.acquisition.acquire-cancel", payload: AcquireCancelRequest }
 	| { _tag: "system.onboarding.finish", payload: OnboardingFinishRequest }
+	| { _tag: "system.onboarding.recovery-words", payload: OnboardingRecoveryWordsRequest }
+	| { _tag: "system.onboarding.confirm-words", payload: OnboardingConfirmWordsRequest }
 	| { _tag: "system.onboarding.status", payload: OnboardingStatusRequest }
 	| { _tag: "system.wifi.connectHidden", payload: WifiConnectHiddenRequest }
 	| { _tag: "system.wifi.connect", payload: WifiConnectRequest }
@@ -2536,11 +2565,8 @@ export type RpcRequest =
 	| { _tag: "system.identity.status", payload: IdentityStatusRequest }
 	| { _tag: "system.identity.owner-binding.snapshot", payload: OwnerBindingRequest }
 	| { _tag: "system.identity.owner-binding.start", payload: OwnerBindingRequest }
-	| { _tag: "system.identity.backup.export", payload: IdentityBackupExportRequest }
-	| { _tag: "system.identity.switch.local", payload: IdentityLocalSwitchRequest }
+	| { _tag: "system.identity.switch.words", payload: IdentityWordsSwitchRequest }
 	| { _tag: "system.identity.switch.nip46", payload: IdentityNip46SwitchRequest }
-	| { _tag: "system.identity.retired.export", payload: IdentityRetiredExportRequest }
-	| { _tag: "system.identity.retired.delete", payload: IdentityRetiredDeleteRequest }
 	| { _tag: "system.identity.join.start", payload: JoinStartRequest }
 	| { _tag: "system.identity.join.enter", payload: JoinEnterRequest }
 	| { _tag: "system.identity.join.status", payload: JoinStatusRequest }
@@ -2592,6 +2618,8 @@ export type RpcResponse =
 	| { _tag: "app.acquisition.acquire-status", outcome: AcquireJobOutcome }
 	| { _tag: "app.acquisition.acquire-cancel", outcome: AcquireJobOutcome }
 	| { _tag: "system.onboarding.finish", outcome: OnboardingStatusOutcome }
+	| { _tag: "system.onboarding.recovery-words", outcome: RecoveryWordsOutcome }
+	| { _tag: "system.onboarding.confirm-words", outcome: OnboardingStatusOutcome }
 	| { _tag: "system.onboarding.status", outcome: OnboardingStatusOutcome }
 	| { _tag: "system.wifi.connectHidden", outcome: NetworkStatusOutcome }
 	| { _tag: "system.wifi.connect", outcome: NetworkStatusOutcome }
@@ -2641,11 +2669,8 @@ export type RpcResponse =
 	| { _tag: "system.identity.status", outcome: IdentityStatusOutcome }
 	| { _tag: "system.identity.owner-binding.snapshot", outcome: OwnerBindingOutcome }
 	| { _tag: "system.identity.owner-binding.start", outcome: OwnerBindingOutcome }
-	| { _tag: "system.identity.backup.export", outcome: IdentityBackupOutcome }
-	| { _tag: "system.identity.switch.local", outcome: IdentitySwitchOutcome }
+	| { _tag: "system.identity.switch.words", outcome: IdentitySwitchOutcome }
 	| { _tag: "system.identity.switch.nip46", outcome: IdentitySwitchOutcome }
-	| { _tag: "system.identity.retired.export", outcome: IdentityBackupOutcome }
-	| { _tag: "system.identity.retired.delete", outcome: IdentityRetiredDeleteOutcome }
 	| { _tag: "system.identity.join.start", outcome: JoinOutcome }
 	| { _tag: "system.identity.join.enter", outcome: JoinOutcome }
 	| { _tag: "system.identity.join.status", outcome: JoinOutcome }

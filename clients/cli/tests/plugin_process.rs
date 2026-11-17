@@ -73,7 +73,7 @@ fn target() -> Vec<Exchange> {
             json!({}),
             ok(
                 "system.identity.status",
-                json!({"canSwitchIdentity":true,"identity":{"_tag":"Unowned","devicePublicKey":"11".repeat(32)},"localBackupAvailable":false,"retiredPublicKeys":[]}),
+                json!({"canSwitchIdentity":true,"identity":{"_tag":"Unowned","devicePublicKey":"11".repeat(32)}}),
             ),
         ),
         exchange(

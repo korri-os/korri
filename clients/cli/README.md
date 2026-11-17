@@ -89,7 +89,34 @@ an otherwise successful status or scan is not a failed observation.
 Prompts require both stdin and stdout to be terminals; piped use needs complete
 inputs and explicit destructive `--yes`. Secrets use private stdin or hidden
 terminal input, never arguments. `--yes` does not approve plugin permissions,
-choose identity data disposition, acknowledge trust loss or confirm a backup.
+choose identity data disposition or acknowledge trust loss.
+
+### Recovery words
+
+A person key is made from 12 recovery words (ADRs 0072, 0073 and 0082). The
+words never go to stdout, into a JSON response or into an argument.
+
+`korri setup finish` on a device without an owner shows new words and their
+QR code on the terminal's other screen, so they do not stay in its
+scrollback. Press Enter once the words are on paper. Then type the 3 words it
+asks for, with the terminal's echo off. When they match, the device gets its
+automatic identity, setup ends and korrid restarts. A wrong word shows the
+words again, up to 3 times. The words need a terminal: stdin, stdout and
+stderr. A device that joined during setup finishes without words.
+
+`korri identity switch words` moves this device to the person key that 12
+words make. It reads the words with echo off (or the existing
+`IdentityWordsSwitchRequest` JSON with `--private-stdin`). The local signer
+signs the new owner statement with the words' key and erases it. The current
+owner's NIP-46 signer signs the old statement's revocation. A device that
+keeps no connection to that signer takes `--current-owner-bunker`: the CLI
+asks for the owner's bunker URI with echo off, and korrid uses it for the one
+revocation and keeps nothing of it.
+
+`korri join enter` on a device that has its own person key asks for that
+key's 12 words and for the person's acceptance that Korri's own device trust
+resets. The words' key signs the removal of the device's old statement, and
+the device joins with a new device key that keeps its data (ADR 0023).
 Plugin installation requires the exact current digest from `plugins review`.
 
 ### Identity name
@@ -116,11 +143,12 @@ wrong code was tried. When a device enters the right code, it shows the
 device's name, kind and network, and asks for one Accept. On Accept, korrid
 signs a vouch for the device (ADR 0069).
 
-`korri join enter` runs on a device without an owner, such as a device that
-is still in setup (ADR 0022). Type the code at the prompt. A `CODE` argument
-exists for scripts; other users of the device can see it. When the other
-device accepts, this device stores the vouch and korrid restarts with its new
-owner. Setup cannot finish while the device is joining.
+`korri join enter` runs on the joining device, such as a device that is still
+in setup (ADR 0022). Type the code at the prompt. A `CODE` argument exists for
+scripts; other users of the device can see it. When the other device accepts,
+this device stores the vouch and korrid restarts with its new owner. Setup
+cannot finish while the device is joining. A device that already has its own
+person key first asks for that key's recovery words (see Recovery words).
 
 Both commands end with one response on stdout. Ctrl-C stops following the
 join; an owned device ends a join that no one follows after 60 seconds.
@@ -134,8 +162,8 @@ enable the feature.
 Identity switches wait for korrid's NIP-46 deadline instead of the ordinary
 30-second HTTP deadline. The wait derives from `remote_signer::REQUEST_TIMEOUT`
 (currently 120 seconds), plus 30 seconds per exchange for relay publication,
-transport and storage. A local-backup switch allows one remote exchange for the
-old owner's revocation (150 seconds). A NIP-46 switch allows three serial
+transport and storage. A switch to recovery words allows one remote exchange
+for the old owner's revocation (150 seconds). A NIP-46 switch allows three serial
 exchanges: connect, which waits `remote_signer::CONNECT_TIMEOUT` (300 seconds), then the new binding and the old-owner revocation (570 seconds). Person-name
 writes also allow one exchange. Other non-plugin requests keep the 30-second
 default; plugin waits follow the root host contract below.
@@ -191,9 +219,9 @@ retirement of the hidden reset remain unresolved.
 `DeviceIdentity::reset` removes the whole `identity` directory, including the
 device key, owner binding, NIP-46 connection credentials, person-name record and
 identity-local authorization evidence. It creates a new unowned device key.
-It does not reset the separate local person signer or reconcile an existing
-`identity-switch` journal. Boot refreshes the signer's device credential from
-`identity status`; automatic owner binding may then use the local signer.
+It does not reconcile an existing `identity-switch` journal. Boot refreshes
+the local signer's device credential from `identity status`; the device stays
+without an owner until setup ends with its recovery words or a join.
 A pending switch journal can instead reject the replacement identity as
 inconsistent. A configured `ownerBindingFile` still binds the old device key;
 boot's import rejects it after a raw reset. A raw reset is therefore not a

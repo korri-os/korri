@@ -5,8 +5,8 @@ import { PicoRow } from "../atoms/PicoRow.slint";
 import { PicoCard } from "../molecules/PicoCard.slint";
 import { PicoSetupHeading, SetupView } from "../molecules/PicoSetupHeading.slint";
 
-// Setup's YOU step: a new identity, one from a backup, or a signer; the
-// backup's fields open the keyboard.
+// Setup's YOU step: a new identity or a signer; the signer's address opens
+// the keyboard.
 export component PicoIdentitySetup {
     callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);

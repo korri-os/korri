@@ -84,7 +84,7 @@ export type SettingsQuestion =
   /** A Korri choice with nothing chosen yet (Add setting), its list open. */
   | { readonly _tag: "PickingChoice"; readonly settingId: string }
   /** The identity dialog, opened by an `identity:` action. */
-  | { readonly _tag: "Identity"; readonly actionId: string; readonly form: IdentityForm; readonly qr: IdentityQr | undefined }
+  | { readonly _tag: "Identity"; readonly actionId: string; readonly form: IdentityForm }
   /** A Wi-Fi network being joined on the keyboard. A password lives here
    * only while the editor is open (src/state/wifi.ts). */
   | { readonly _tag: "Wifi"; readonly entry: WifiEntry }
@@ -99,20 +99,12 @@ export interface TextEditor {
 
 /** The identity dialog's form. A new action starts a new, empty form. */
 export interface IdentityForm {
-  readonly password: string
-  readonly secret: string
   readonly bunkerUri: string
   readonly disposition: SurfaceIdentityDisposition
   readonly confirmed: boolean
 }
 
-export const IDENTITY_FORM: IdentityForm = { password: "", secret: "", bunkerUri: "", disposition: "transfer", confirmed: false }
-
-/** The QR code of a backup Korri made: the text it encodes, and the image once drawn. */
-export interface IdentityQr {
-  readonly text: string
-  readonly dataUrl: string | undefined
-}
+export const IDENTITY_FORM: IdentityForm = { bunkerUri: "", disposition: "transfer", confirmed: false }
 
 export interface Settings {
   readonly question: SettingsQuestion
