@@ -1729,7 +1729,7 @@ judge):
 | Video datagrams | One `recvfrom` each | `recvmmsg` batches with UDP GRO (`receive_coalescing`, nightjar-cli's and its apps' setting) |
 | Thread priorities | None | None while the decoder takes frames on the receive thread (`CAPABILITY_DIRECT_SUBMIT`, which every Linux decoder here sets): with "prioritize stream traffic" (`network_priority`) off, nightjar-core raises no thread and asks no D-Bus service. A decoder without direct submit would get nightjar-core's `VideoDec` thread, which it always raises on Linux (nice -8, else -4, then the desktop portal or RealtimeKit; `vendor/nightjar/protocol/client/src/priority.rs:447`) |
 | A controller touch | No touchpad index | The controller's first touchpad |
-| Its log | The C core's lines | nightjar-core's lines, and its statistics at the stop (`nightjar: at the stop: …`) |
+| Its log | The C core's lines, among them one for each unrecoverable frame, IDR request and reference frame invalidation | nightjar-core's lines, which name no loss or request; at the stop its statistics (`nightjar: at the stop: …`: FEC repairs, frames dropped, decrypt failures) and the IDR requests and invalidations it sent (`nightjar: recovery requests sent: …`) |
 
 The proof on aka, with Korri's patched Sunshine, picture, sound and input,
 and the turns of the measure against the C core:

@@ -114,6 +114,9 @@ pub struct ControlSession {
 
     idr_requested: bool,
     reference_frames: VecDeque<ReferenceFrameControl>,
+    // Korri: what `poll` sent of them, for the viewer's log (clients/viewer/vendor/README.md).
+    idr_requests_sent: u64,
+    rfi_requests_sent: u64,
     fec_statuses: VecDeque<FrameFecStatus>,
     fec_reports: FecReports,
     fec_summaries: FecSummaries,
@@ -154,6 +157,8 @@ impl ControlSession {
             events: Vec::new(),
             idr_requested: false,
             reference_frames: VecDeque::new(),
+            idr_requests_sent: 0,
+            rfi_requests_sent: 0,
             fec_statuses: VecDeque::new(),
             fec_reports: FecReports::default(),
             fec_summaries: FecSummaries::default(),
@@ -492,6 +497,16 @@ impl ControlSession {
         }
     }
 
+    /// Korri: the IDR requests `poll` has queued for the host.
+    pub fn idr_requests_sent(&self) -> u64 {
+        self.idr_requests_sent
+    }
+
+    /// Korri: the reference frame invalidations `poll` has queued for the host.
+    pub fn rfi_requests_sent(&self) -> u64 {
+        self.rfi_requests_sent
+    }
+
     pub fn connection_status(&self) -> ConnectionStatus {
         self.connection_status
     }
@@ -522,7 +537,9 @@ impl ControlSession {
         if self.idr_requested {
             self.idr_requested = false;
             self.reference_frames.clear();
-            self.queue(&ClientMessage::RequestIdrFrame);
+            if self.queue(&ClientMessage::RequestIdrFrame) {
+                self.idr_requests_sent += 1;
+            }
         } else if !self.reference_frames.is_empty() {
             let mut range: Option<(u32, u32)> = None;
             while let Some(control) = self.reference_frames.pop_front() {
@@ -539,7 +556,9 @@ impl ControlSession {
                 }
             }
             if let Some((first, last)) = range {
-                self.queue(&ClientMessage::InvalidateReferenceFrames { first, last });
+                if self.queue(&ClientMessage::InvalidateReferenceFrames { first, last }) {
+                    self.rfi_requests_sent += 1;
+                }
             }
         }
         let next_ping = self.next_ping.get_or_insert(now);

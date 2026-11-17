@@ -145,6 +145,10 @@ impl NetworkCore for Nightjar {
             .take();
         if let Some(session) = session {
             crate::log::line(&format!("nightjar: at the stop: {:?}", session.stats()));
+            let (idr, rfi) = session.with_control(|control| recovery_requests(control));
+            crate::log::line(&format!(
+                "nightjar: recovery requests sent: {idr} IDR, {rfi} reference frame invalidations"
+            ));
             session.stop();
         }
     }
@@ -173,6 +177,13 @@ impl NetworkCore for Nightjar {
             .as_ref()
             .map_or(0, |s| s.pending_audio_ms().min(i32::MAX as u32) as i32)
     }
+}
+
+/// The IDR requests and reference frame invalidations that the control
+/// session has sent to the host: the C core's "IDR frame request sent" and
+/// "Invalidate reference frame request sent" lines, as counts.
+fn recovery_requests(control: &nightjar_core::control::ControlSession) -> (u64, u64) {
+    (control.idr_requests_sent(), control.rfi_requests_sent())
 }
 
 /// `SERVER_INFORMATION` as nightjar-core's `HostInfo`.
@@ -885,6 +896,44 @@ mod tests {
         }
         assert_eq!(code(Err(InputError::Unsupported)), -5501);
         assert_eq!(code(Err(InputError::Stopped)), -2);
+    }
+
+    /// The stop line's recovery counts (Korri's edit to the vendored
+    /// control session, vendor/README.md): one for each IDR request and
+    /// each reference frame invalidation that goes to the host, as the C
+    /// core logs one line for each ("IDR frame request sent", "Invalidate
+    /// reference frame request sent").
+    #[test]
+    fn each_idr_request_and_invalidation_sent_is_counted_once() {
+        use nightjar_core::control::{ControlSession, SessionOptions, negotiation::encryption};
+        let caps = HostCapabilities {
+            app_version: [7, 1, 431, -1],
+            feature_flags: 0,
+            encryption_enabled: encryption::CONTROL_V2,
+            control_messages: Vec::new(),
+            client_roaming: false,
+        };
+        let options = SessionOptions {
+            reference_frame_invalidation: true,
+            ..Default::default()
+        };
+        let mut control = ControlSession::new(caps, b"0011223344556677", options);
+        let now = Instant::now();
+        control.start(now);
+        control.poll(now);
+        assert_eq!(recovery_requests(&control), (0, 0));
+        // Two losses before the next poll go as one invalidation.
+        control.frame_loss(10, 12);
+        control.frame_loss(13, 13);
+        control.poll(now);
+        assert_eq!(recovery_requests(&control), (0, 1));
+        control.request_idr_frame();
+        control.request_idr_frame();
+        control.poll(now);
+        assert_eq!(recovery_requests(&control), (1, 1));
+        // Nothing waits: no request goes.
+        control.poll(now);
+        assert_eq!(recovery_requests(&control), (1, 1));
     }
 
     static EVENTS: StdMutex<Vec<String>> = StdMutex::new(Vec::new());

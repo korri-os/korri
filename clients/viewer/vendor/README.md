@@ -29,6 +29,7 @@ edits come after it, and each is listed here:
 | File | Edit | Why |
 | --- | --- | --- |
 | `nightjar/protocol/client/Cargo.toml` | `rubylight-native-api` comes from `../../../rubylight-native-api/rust/core/native-api` instead of Rubylight's git repository at the same revision | Nix builds offline from `Cargo.lock`. A git dependency would need its own fixed hash in each of the viewer's Nix builds, Android's too, and cargo fetches Rubylight with its submodules to resolve it even under a `[patch]` |
+| `nightjar/protocol/client/src/control/session.rs` | `ControlSession` counts the IDR requests and the reference frame invalidations that `poll` queues for the host (`idr_requests_sent`, `rfi_requests_sent`). Each change is marked `Korri` | The C core logs a line for each ("IDR frame request sent", "Invalidate reference frame request sent"), which stream-cadence counts under `--net`; nightjar-core logs neither. The viewer logs both counts when the stream stops (`src/network_core/nightjar.rs`) |
 
 The workspace root `nightjar/protocol/Cargo.toml` still names members that
 are not copied. Cargo reads it only for the members' inherited fields
