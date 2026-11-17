@@ -21,8 +21,9 @@ folders, and only the owner admits other people (ADR 0075).
 A family member keeps their place until any of the owner's devices removes
 them, or until they leave by themselves. There is no end date. After a
 removal, the family member's save history stays on the owner's devices until
-the owner deletes it, so a removal by mistake loses nothing (owner decisions,
-2026-11-17).
+the owner deletes it, so a removal by mistake loses nothing. A removal takes
+effect at once: a removed family member who plays on the owner's stream
+loses their seat (owner decisions, 2026-11-17).
 
 A family member does not need a Korri device. An owned device can create one,
 with their own recovery words (ADR 0079).
@@ -46,3 +47,5 @@ with their own recovery words (ADR 0079).
 - Korri needs a way to make a person key on a device for someone who owns no
   device.
 - The code's `household` pass tier is the old name for this tier.
+- A family member sees the owner's whole library. Limits per person, for
+  example for a child, are a later design (owner decision, 2026-11-17).
