@@ -52,7 +52,7 @@ The person key a local signer creates when setup ends without a join. It is a re
 _Avoid_: guest account, default user
 
 **Join**:
-Binding a device that has no owner to an existing person key. A device the person already owns vouches for it, after the person confirms the same join confirmation code on both devices. The device receives no copy of the person key.
+Binding a device that has no owner to an existing person key. A device the person already owns vouches for it, after the person enters that device's join confirmation code on the new one. The device receives no copy of the person key.
 _Avoid_: pair, link, sign in, adopt
 
 **Key holder**:
@@ -72,7 +72,7 @@ An owned device's signed approval of a join. It makes the new device owned, as a
 _Avoid_: delegation, invite
 
 **Join confirmation code**:
-The short code that both devices show during a join, which the person compares before tapping Accept on each. A device with no screen shows none; the person types the other device's code into it. It works once.
+The short code an owned device shows during a join, which the person enters on the new device, with controller buttons or as digits. It works once.
 _Avoid_: PIN, pairing code, password, join code
 
 **Identity switch**:

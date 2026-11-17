@@ -1,7 +1,6 @@
 # The person key is a Korri-only key made from recovery words
 
-**Owner decision, 2026-11-16.** Design in progress: how existing devices move
-to the new key is not decided.
+**Owner decision, 2026-11-16.**
 
 A person key is used only for Korri. It is made from the person's 12 recovery
 words (ADR 0072). It is not the person's social Nostr identity, and Korri
