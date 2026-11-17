@@ -1,0 +1,25 @@
+baseline viewer: copied product package (/nix/store/k497w9l1wb5q0vcjwwh2zx1gm448y73m-korri-viewer-0.1.0/bin/moonlight, copied from aka, signed by no key), in the fixture, OpenGL on /dev/dri/renderD129
+candidate viewer: copied product package (/nix/store/rf1ra8ncy4vvj7fsap46z13fhk45d0i3-korri-viewer-nightjar-0.1.0/bin/moonlight, copied from aka, signed by no key), in the fixture, OpenGL on /dev/dri/renderD129
+The two results ran different viewers; every verdict below compares these two.
+baseline picture: requested_platform=x11_vaapi, decode=vaapi
+candidate picture: requested_platform=x11_vaapi, decode=vaapi
+what else ran on the machine, share of all CPUs: baseline: sender device 0.9%..1.0%, viewer device 0.9%..1.0%; candidate: sender device 0.9%..1.2%, viewer device 0.9%..1.2%
+baseline network: loss gemodel 1.3158% 25% on the pair's own loopback; in the measured start netem dropped 5714..6120 and passed 110434..114827 packets; the viewer's core logged unrecoverable frames 463..516, network-dropped frames 469..517, RFI requests 0..0, IDR requests 385..418
+candidate network: loss gemodel 1.3158% 25% on the pair's own loopback; in the measured start netem dropped 5955..6264 and passed 114200..115118 packets; the viewer's core logged unrecoverable frames 0..0, network-dropped frames 0..0, RFI requests 0..0, IDR requests 0..0
+number | metric | baseline runs | candidate runs | verdict
+1 packet arrival to display | packet_to_display_ms | not measured | not measured | not measured
+1 sender presentation to display | latency_p50_ms | 12.166..12.492 | 12.152..12.387 | equal
+1 sender presentation to display | latency_p95_ms | 19.273..19.563 | 19.406..19.556 | equal
+2 smoothness | dropped_frames | 527.000..591.000 | 550.000..603.000 | equal
+2 smoothness | repeated_frames | 762.000..824.000 | 784.000..840.000 | equal
+2 smoothness | late_frames | 379.000..403.000 | 373.000..407.000 | equal
+2 smoothness | torn_frames | 0.000..0.000 | 0.000..0.000 | equal
+2 smoothness | unreadable_frames | 0.000..0.000 | 0.000..0.000 | equal
+2 smoothness | output_repeats | 0.000..0.000 | 0.000..0.000 | equal
+3 CPU and battery | cpu_seconds_per_second | 0.011..0.011 | 0.010..0.011 | equal
+3 CPU and battery | battery_mw | not measured | not measured | not measured
+4 startup | startup_ms | 138.151..3840.380 | 137.941..298.533 | equal
+5 input | input_ms | 0.051..0.056 | 0.055..0.069 | equal
+5 input | input_missed | 0.000..0.000 | 0.000..0.000 | equal
+6 stability | stream_stalls | 0.000..0.000 | 0.000..0.000 | equal
+6 stability | viewer_exits | 0.000..0.000 | 0.000..0.000 | equal

@@ -130,3 +130,87 @@ and the timers under delay did not run for either core. Encryption did
 Why nightjar-core starts faster is not known: the measure's startup ends at
 the first displayed frame, and this set does not show where the C core
 spends its extra 15 to 130 ms (run against run).
+
+## 4. Turns under loss and delay (#470)
+
+The private pair's own loopback with stream-cadence's `--net` (its README,
+"Network conditions and encryption"), so that FEC, the IDR recovery and
+the timers run. Same pair as part 3: aka, five runs of each side in the
+order A B A B, at the defaults, Korri's patched Sunshine (`--sender-sunshine
+/nix/store/ap898nhjj347ysnaf3jpp4ynzndh88a6-sunshine-korri-2026.914.233613-korri`),
+`--build-store auto`. Each set started only after three checks a minute
+apart found aka quiet (1-minute load below 1.5, k10temp Tctl below 78 °C, no
+Nix build, no game and no other session's proof), and held
+`/var/tmp/korri-turns.lock` on aka while it ran, which the other workers
+wait for.
+
+- A: `korri-viewer`, the C core:
+  `/nix/store/k497w9l1wb5q0vcjwwh2zx1gm448y73m-korri-viewer-0.1.0`.
+- B: `korri-viewer-nightjar`:
+  `/nix/store/rf1ra8ncy4vvj7fsap46z13fhk45d0i3-korri-viewer-nightjar-0.1.0`.
+- Both built on aka from `origin/main` `124e06840`. Both `x11_vaapi`,
+  `decode=vaapi`.
+
+**The counters of each core.** stream-cadence counts the C core's own log
+lines in the measured start (`discovered.net.core_log`: unrecoverable
+frames, network-dropped frames, RFI and IDR requests). nightjar-core logs
+none of those lines, so the tool reads 0 for it; its counters are the two
+lines that the viewer logs when that start stops (`logs/nightjar/run-*.log`,
+`nightjar: at the stop` and `nightjar: recovery requests sent`). The C core
+logs no FEC repair (its "Recovered" line needs `FEC_VERBOSE`); nightjar-core
+counts the packets that it rebuilt from parity (`packets_recovered`). Its
+`frame_drops` counts each frame that its depacketizer gave up, lost or
+skipped while it waited for a key frame, so it is not the C core's
+unrecoverable frames.
+
+### 5 % burst loss, encryption required
+
+`--require-encryption --net 'loss gemodel 1.3158% 25%'` (mean loss 5 %,
+mean burst 4 packets, UDP only), 2026-11-17 10:39 to 10:55 UTC. All 10 runs
+valid; other work on aka 0.9 to 1.2 % of all CPUs; Tctl 58.5 to 83.5 °C.
+Two earlier attempts of this set, at 08:09 and 09:01 UTC, ended early and
+are not kept: other sessions' builds and tests heated aka to 96 °C, so the
+tool's heat guard ended one after its second turn, and one run of the
+other had two capture gaps. Record: `net-2026-11-17/loss-burst-5/`
+(`c.json`, `nightjar.json`, `verdict.txt` unedited, each run's `viewer.log`).
+
+| ADR 0062 number | Field | C core | nightjar-core | Verdict |
+| --- | --- | --- | --- | --- |
+| 1 Packet arrival to display | `packet_to_display_ms` | not measured | not measured | not measured (no `--frame-record`) |
+| 1 (the gate) Sender presentation to display | `latency_p50_ms` | 12.166 to 12.492 | 12.152 to 12.387 | equal |
+| | `latency_p95_ms` | 19.273 to 19.563 | 19.406 to 19.556 | equal |
+| 2 Late, repeated, dropped | `dropped_frames` | 527 to 591 | 550 to 603 | equal |
+| | `repeated_frames` | 762 to 824 | 784 to 840 | equal |
+| | `late_frames` | 379 to 403 | 373 to 407 | equal |
+| | `torn_frames`, `unreadable_frames`, `output_repeats` | 0 | 0 | equal |
+| 3 CPU | `cpu_seconds_per_second` | 0.011 | 0.010 to 0.011 | equal |
+| 3 Battery | `battery_mw` | not measured | not measured | not measured |
+| 4 Startup | `startup_ms` | 138.2 to 3840.4 | 137.9 to 298.5 | equal |
+| 5 Input | `input_ms` | 0.051 to 0.056 | 0.055 to 0.069 | equal |
+| | `input_missed` | 0 | 0 | equal |
+| 6 Stability | `stream_stalls`, `viewer_exits` | 0 | 0 | equal |
+
+The C core's one slow start (run 3, 3840 ms) is in its range; with loss on
+UDP only, a lost early datagram of the handshake or the first frames is a
+likely cause (inferred, not shown).
+
+Each core's recovery in the measured start of each run:
+
+| Run | netem dropped (C / nightjar) | C: unrecoverable frames | C: IDR requests | nightjar: FEC-rebuilt packets | nightjar: frames given up | nightjar: IDR requests |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 5897 / 5955 | 506 | 418 | 1485 | 1783 | 424 |
+| 2 | 5771 / 6230 | 463 | 385 | 1524 | 1840 | 432 |
+| 3 | 5714 / 6050 | 487 | 395 | 1547 | 1682 | 400 |
+| 4 | 6120 / 6080 | 516 | 408 | 1585 | 1706 | 408 |
+| 5 | 5970 / 6264 | 485 | 404 | 1651 | 1825 | 432 |
+
+Neither core sent a reference frame invalidation: aka's VA-API H.264
+encoder offers none ("Reference frame invalidation is not supported by
+this host"), so both recover with IDR frames, 385 to 432 in a measured start
+(its warm-up, 60 scored seconds and the input presses). nightjar-core rebuilt 1485 to 1651 packets from parity in each run;
+the C core does not log its own. Neither decoder asked for a key frame
+itself (nightjar's `frames_need_idr` 0), and no decrypt failed.
+
+### 30 ms delay
+
+Not run yet.

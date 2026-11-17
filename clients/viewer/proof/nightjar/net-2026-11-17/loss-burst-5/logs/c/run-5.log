@@ -1,0 +1,2167 @@
+start: Start at 661896670.872 ms
+start: http serverinfo answered at 661896672.228 ms (connected 0.1 ms, first byte 0.2 ms, total 0.2 ms)
+start: https serverinfo answered at 661896674.564 ms (connected 0.0 ms, TLS done 1.9 ms, first byte 2.3 ms, total 2.3 ms)
+start: paired at 661896674.574 ms
+start: https applist answered at 661896676.182 ms (connected 0.0 ms, TLS done 1.3 ms, first byte 1.5 ms, total 1.6 ms)
+libva info: VA-API version 1.24.0
+libva info: Trying to open /run/opengl-driver/lib/dri/radeonsi_drv_video.so
+libva info: Found init function __vaDriverInit_1_24
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.24.0
+libva info: Trying to open /run/opengl-driver/lib/dri/radeonsi_drv_video.so
+libva info: Found init function __vaDriverInit_1_24
+libva info: va_openDriver() returns 0
+start: picture and input ready at 661896734.237 ms
+start: https resume answered at 661896863.422 ms (connected 0.1 ms, TLS done 1.6 ms, first byte 129.0 ms, total 129.1 ms)
+Platform X Window System (VAAPI)
+RTSP port: 58822
+Initializing platform...start: core platform init begins at 661896864.663 ms
+start: core platform init done at 661896864.674 ms
+done
+Resolving host name...start: core name resolution begins at 661896864.678 ms
+start: core name resolution done at 661896864.711 ms
+done
+Packet size capped at 1024 bytes for remote IPv4 streaming
+Initializing audio stream...start: core audio stream init begins at 661896864.715 ms
+start: core audio stream init done at 661896864.806 ms
+done
+Starting RTSP handshake...start: core RTSP handshake begins at 661896864.809 ms
+Reference frame invalidation is not supported by this host
+start: RTSP DESCRIBE answered at 661896865.053 ms
+Audio port: 58812
+start: RTSP SETUP audio answered at 661896865.117 ms
+Video port: 58810
+start: RTSP SETUP video answered at 661896865.258 ms
+Control port: 58811
+start: RTSP SETUP control answered at 661896865.319 ms
+start: core RTSP handshake done at 661896865.726 ms
+done
+Initializing control stream...start: core control stream init begins at 661896865.733 ms
+start: core control stream init done at 661896865.736 ms
+done
+Initializing video stream...start: core video stream init begins at 661896865.739 ms
+start: core video stream init done at 661896865.788 ms
+done
+Initializing input stream...start: core input stream init begins at 661896865.791 ms
+start: core input stream init done at 661896865.793 ms
+done
+Starting control stream...start: core control stream start begins at 661896865.796 ms
+start: core control stream start done at 661896865.947 ms
+done
+Starting video stream...start: core video stream start begins at 661896865.951 ms
+start: core video stream start done at 661896867.873 ms
+Using FFmpeg decoder: h264
+done
+Starting audio stream...start: core audio stream start begins at 661896867.880 ms
+start: core audio stream start done at 661896868.072 ms
+done
+Starting input stream...start: core input stream start begins at 661896868.076 ms
+start: core input stream start done at 661896868.098 ms
+done
+Received first video packet after 0 ms
+start: first video packet at 661896886.989 ms
+start: first frame shown at 661896896.669 ms
+picture: the picture shown is 1920x1080
+Unrecoverable frame 12: 16+0=16 received < 17 needed
+Network dropped 1 frame (frame 12)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 15: 6+1=7 received < 18 needed
+Network dropped 1 frame (frame 15)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 32: 8+4=12 received < 16 needed
+Network dropped 1 frame (frame 32)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 38: 12+4=16 received < 17 needed
+Network dropped 1 frame (frame 38)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 50: 1+0=1 received < 11 needed
+Network dropped 1 frame (frame 50)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 54: 6+3=9 received < 11 needed
+Network dropped 1 frame (frame 54)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 71: 15+0=15 received < 17 needed
+Network dropped 1 frame (frame 71)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 73: 9+0=9 received < 11 needed
+Unrecoverable frame 74: 2+3=5 received < 11 needed
+Network dropped 2 frames (frames 73 to 74)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 110: 4+4=8 received < 17 needed
+Network dropped 1 frame (frame 110)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 119: 9+4=13 received < 17 needed
+Network dropped 1 frame (frame 119)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 130: 12+4=16 received < 17 needed
+Network dropped 1 frame (frame 130)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 134: 10+0=10 received < 17 needed
+Network dropped 1 frame (frame 134)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 136: 11+0=11 received < 17 needed
+Unrecoverable frame 137: 4+4=8 received < 18 needed
+Network dropped 2 frames (frames 136 to 137)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 148: 16+0=16 received < 17 needed
+Network dropped 1 frame (frame 148)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 175: 6+1=7 received < 17 needed
+Network dropped 1 frame (frame 175)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 180: 7+4=11 received < 16 needed
+Network dropped 1 frame (frame 180)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 190: 13+0=13 received < 17 needed
+Unrecoverable frame 191: 6+3=9 received < 11 needed
+Network dropped 2 frames (frames 190 to 191)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 197: 11+4=15 received < 16 needed
+Network dropped 1 frame (frame 197)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 200: 8+4=12 received < 18 needed
+Network dropped 1 frame (frame 200)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 245: 10+0=10 received < 13 needed
+Unrecoverable frame 246: 11+4=15 received < 18 needed
+Network dropped 2 frames (frames 245 to 246)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 265: 13+3=16 received < 18 needed
+Network dropped 1 frame (frame 265)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 272: 13+2=15 received < 18 needed
+Network dropped 1 frame (frame 272)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 275: 9+2=11 received < 16 needed
+Network dropped 1 frame (frame 275)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 280: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 280)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 284: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 284)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 296: 11+1=12 received < 13 needed
+Network dropped 1 frame (frame 296)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 303: 8+3=11 received < 13 needed
+Network dropped 1 frame (frame 303)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 308: 13+4=17 received < 19 needed
+Network dropped 1 frame (frame 308)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 316: 9+4=13 received < 16 needed
+Network dropped 1 frame (frame 316)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 332: 11+4=15 received < 17 needed
+Network dropped 1 frame (frame 332)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 347: 8+4=12 received < 18 needed
+Network dropped 1 frame (frame 347)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 353: 7+3=10 received < 13 needed
+Network dropped 1 frame (frame 353)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 360: 7+3=10 received < 13 needed
+Network dropped 1 frame (frame 360)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 367: 4+1=5 received < 13 needed
+Network dropped 1 frame (frame 367)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 376: 9+1=10 received < 17 needed
+Network dropped 1 frame (frame 376)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 379: 13+2=15 received < 18 needed
+Network dropped 1 frame (frame 379)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 395: 12+4=16 received < 18 needed
+Unrecoverable frame 396: 14+0=14 received < 17 needed
+Unrecoverable frame 398: 12+4=16 received < 19 needed
+Network dropped 4 frames (frames 395 to 398)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 403: 11+4=15 received < 16 needed
+Network dropped 1 frame (frame 403)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 409: 17+0=17 received < 19 needed
+Unrecoverable frame 410: 16+0=16 received < 17 needed
+Network dropped 2 frames (frames 409 to 410)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 416: 14+1=15 received < 18 needed
+Network dropped 1 frame (frame 416)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 418: 8+3=11 received < 13 needed
+Network dropped 1 frame (frame 418)
+Unrecoverable frame 430: 11+4=15 received < 16 needed
+Network dropped 1 frame (frame 430)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 452: 11+3=14 received < 17 needed
+Network dropped 1 frame (frame 452)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 458: 13+1=14 received < 18 needed
+Network dropped 1 frame (frame 458)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 467: 8+3=11 received < 13 needed
+Network dropped 1 frame (frame 467)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 476: 13+0=13 received < 16 needed
+Network dropped 1 frame (frame 476)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 483: 10+4=14 received < 16 needed
+Unrecoverable frame 484: 5+0=5 received < 14 needed
+Unrecoverable frame 485: 14+4=18 received < 19 needed
+Unrecoverable frame 486: 10+4=14 received < 16 needed
+Network dropped 4 frames (frames 483 to 486)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 498: 14+3=17 received < 18 needed
+Network dropped 1 frame (frame 498)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 504: 7+3=10 received < 12 needed
+Network dropped 1 frame (frame 504)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 509: 13+4=17 received < 18 needed
+Unrecoverable frame 510: 14+2=16 received < 17 needed
+Network dropped 2 frames (frames 509 to 510)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 543: 10+4=14 received < 19 needed
+Network dropped 1 frame (frame 543)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 591: 10+0=10 received < 13 needed
+Network dropped 1 frame (frame 591)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 612: 11+0=11 received < 17 needed
+Network dropped 1 frame (frame 612)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 644: 8+3=11 received < 13 needed
+Network dropped 1 frame (frame 644)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 675: 7+3=10 received < 13 needed
+Unrecoverable frame 676: 13+4=17 received < 19 needed
+Network dropped 2 frames (frames 675 to 676)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 711: 9+2=11 received < 17 needed
+Network dropped 1 frame (frame 711)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 713: 14+4=18 received < 19 needed
+Unrecoverable frame 714: 13+4=17 received < 18 needed
+Network dropped 2 frames (frames 713 to 714)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 737: 7+4=11 received < 17 needed
+Network dropped 1 frame (frame 737)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 751: 6+3=9 received < 13 needed
+Network dropped 1 frame (frame 751)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 757: 9+4=13 received < 17 needed
+Network dropped 1 frame (frame 757)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 759: 9+4=13 received < 18 needed
+Network dropped 1 frame (frame 759)
+Unrecoverable frame 761: 11+4=15 received < 16 needed
+Network dropped 1 frame (frame 761)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 789: 6+3=9 received < 16 needed
+Network dropped 1 frame (frame 789)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 799: 9+0=9 received < 17 needed
+Network dropped 1 frame (frame 799)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 815: 11+4=15 received < 16 needed
+Network dropped 1 frame (frame 815)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 837: 13+3=16 received < 17 needed
+Network dropped 1 frame (frame 837)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 840: 13+4=17 received < 18 needed
+Network dropped 1 frame (frame 840)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 845: 14+1=15 received < 17 needed
+Network dropped 1 frame (frame 845)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 874: 7+0=7 received < 13 needed
+Unrecoverable frame 875: 7+4=11 received < 19 needed
+Network dropped 2 frames (frames 874 to 875)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 922: 11+4=15 received < 16 needed
+Unrecoverable frame 923: 5+3=8 received < 13 needed
+Network dropped 2 frames (frames 922 to 923)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 926: 12+1=13 received < 17 needed
+Network dropped 1 frame (frame 926)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 943: 8+3=11 received < 13 needed
+Network dropped 1 frame (frame 943)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 950: 7+3=10 received < 13 needed
+Network dropped 1 frame (frame 950)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 956: 1+4=5 received < 17 needed
+Network dropped 1 frame (frame 956)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 978: 9+4=13 received < 17 needed
+Network dropped 1 frame (frame 978)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 991: 7+4=11 received < 17 needed
+Network dropped 1 frame (frame 991)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 993: 10+4=14 received < 19 needed
+Network dropped 1 frame (frame 993)
+Unrecoverable frame 1002: 9+3=12 received < 13 needed
+Network dropped 1 frame (frame 1002)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1031: 16+2=18 received < 19 needed
+Unrecoverable frame 1032: 12+3=15 received < 16 needed
+Network dropped 2 frames (frames 1031 to 1032)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1036: 14+1=15 received < 16 needed
+Network dropped 1 frame (frame 1036)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1071: 8+3=11 received < 13 needed
+Network dropped 1 frame (frame 1071)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1094: 11+4=15 received < 19 needed
+Network dropped 1 frame (frame 1094)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1097: 7+4=11 received < 16 needed
+Network dropped 1 frame (frame 1097)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1120: 5+4=9 received < 19 needed
+Network dropped 1 frame (frame 1120)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1124: 13+4=17 received < 19 needed
+Network dropped 1 frame (frame 1124)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1141: 12+4=16 received < 17 needed
+Network dropped 1 frame (frame 1141)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1149: 5+2=7 received < 13 needed
+Network dropped 1 frame (frame 1149)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1157: 13+4=17 received < 19 needed
+Network dropped 1 frame (frame 1157)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1176: 13+4=17 received < 19 needed
+Network dropped 1 frame (frame 1176)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1192: 13+4=17 received < 19 needed
+Network dropped 1 frame (frame 1192)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1209: 7+4=11 received < 17 needed
+Network dropped 1 frame (frame 1209)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1213: 12+4=16 received < 17 needed
+Network dropped 1 frame (frame 1213)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1218: 5+3=8 received < 11 needed
+Network dropped 1 frame (frame 1218)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1243: 9+3=12 received < 13 needed
+Network dropped 1 frame (frame 1243)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1262: 6+3=9 received < 13 needed
+Network dropped 1 frame (frame 1262)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1302: 8+3=11 received < 13 needed
+Network dropped 1 frame (frame 1302)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1341: 12+4=16 received < 17 needed
+Network dropped 1 frame (frame 1341)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1347: 17+0=17 received < 19 needed
+Network dropped 1 frame (frame 1347)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1357: 9+4=13 received < 19 needed
+Network dropped 1 frame (frame 1357)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1367: 16+1=17 received < 19 needed
+Network dropped 1 frame (frame 1367)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1372: 12+4=16 received < 17 needed
+Network dropped 1 frame (frame 1372)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 1374: 12+4=16 received < 18 needed
+Network dropped 1 frame (frame 1374)
+Unrecoverable frame 1376: 15+0=15 received < 17 needed
+Network dropped 1 frame (frame 1376)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1409: 13+4=17 received < 19 needed
+Network dropped 1 frame (frame 1409)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1414: 12+4=16 received < 17 needed
+Network dropped 1 frame (frame 1414)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1432: 12+4=16 received < 19 needed
+Network dropped 1 frame (frame 1432)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1439: 11+4=15 received < 19 needed
+Network dropped 1 frame (frame 1439)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1442: 11+4=15 received < 16 needed
+Network dropped 1 frame (frame 1442)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1453: 10+4=14 received < 19 needed
+Unrecoverable frame 1454: 12+3=15 received < 17 needed
+Network dropped 2 frames (frames 1453 to 1454)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1461: 7+4=11 received < 17 needed
+Network dropped 1 frame (frame 1461)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1472: 8+3=11 received < 13 needed
+Network dropped 1 frame (frame 1472)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1482: 8+0=8 received < 13 needed
+Network dropped 1 frame (frame 1482)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1491: 12+4=16 received < 17 needed
+Network dropped 1 frame (frame 1491)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1498: 10+0=10 received < 17 needed
+Network dropped 1 frame (frame 1498)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1533: 6+3=9 received < 13 needed
+Network dropped 1 frame (frame 1533)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Network dropped 1 frame (frame 1537)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1553: 9+0=9 received < 13 needed
+Unrecoverable frame 1554: 12+0=12 received < 19 needed
+Network dropped 2 frames (frames 1553 to 1554)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1565: 14+1=15 received < 17 needed
+Network dropped 1 frame (frame 1565)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1587: 14+1=15 received < 16 needed
+Unrecoverable frame 1588: 9+3=12 received < 13 needed
+Network dropped 2 frames (frames 1587 to 1588)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1611: 13+3=16 received < 19 needed
+Network dropped 1 frame (frame 1611)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1618: 15+0=15 received < 19 needed
+Network dropped 1 frame (frame 1618)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1637: 11+4=15 received < 19 needed
+Network dropped 1 frame (frame 1637)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1651: 11+4=15 received < 16 needed
+Unrecoverable frame 1652: 8+2=10 received < 13 needed
+Network dropped 2 frames (frames 1651 to 1652)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1671: 9+3=12 received < 13 needed
+Network dropped 1 frame (frame 1671)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1676: 18+0=18 received < 19 needed
+Network dropped 1 frame (frame 1676)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1692: 12+2=14 received < 19 needed
+Network dropped 1 frame (frame 1692)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1698: 9+2=11 received < 12 needed
+Network dropped 1 frame (frame 1698)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1733: 8+4=12 received < 19 needed
+Network dropped 1 frame (frame 1733)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1754: 6+3=9 received < 13 needed
+Network dropped 1 frame (frame 1754)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1768: 13+4=17 received < 19 needed
+Unrecoverable frame 1769: 16+0=16 received < 17 needed
+Network dropped 2 frames (frames 1768 to 1769)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1772: 11+4=15 received < 18 needed
+Network dropped 1 frame (frame 1772)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1794: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 1794)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1798: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 1798)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1816: 9+3=12 received < 13 needed
+Network dropped 1 frame (frame 1816)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1850: 9+2=11 received < 13 needed
+Network dropped 1 frame (frame 1850)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1862: 7+4=11 received < 16 needed
+Network dropped 1 frame (frame 1862)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1893: 11+4=15 received < 16 needed
+Network dropped 1 frame (frame 1893)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1902: 8+4=12 received < 19 needed
+Unrecoverable frame 1903: 12+4=16 received < 17 needed
+Network dropped 2 frames (frames 1902 to 1903)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1923: 7+3=10 received < 13 needed
+Network dropped 1 frame (frame 1923)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 1925: 9+1=10 received < 17 needed
+Network dropped 1 frame (frame 1925)
+Unrecoverable frame 1930: 11+0=11 received < 13 needed
+Unrecoverable frame 1931: 11+4=15 received < 19 needed
+Network dropped 2 frames (frames 1930 to 1931)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1937: 7+0=7 received < 12 needed
+Network dropped 1 frame (frame 1937)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 1939: 6+1=7 received < 17 needed
+Network dropped 1 frame (frame 1939)
+Unrecoverable frame 1950: 12+0=12 received < 13 needed
+Unrecoverable frame 1951: 7+4=11 received < 19 needed
+Network dropped 2 frames (frames 1950 to 1951)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1976: 6+2=8 received < 18 needed
+Network dropped 1 frame (frame 1976)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1987: 15+0=15 received < 17 needed
+Unrecoverable frame 1988: 9+3=12 received < 13 needed
+Network dropped 2 frames (frames 1987 to 1988)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 1998: 8+0=8 received < 13 needed
+Network dropped 1 frame (frame 1998)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2022: 11+2=13 received < 16 needed
+Unrecoverable frame 2023: 9+0=9 received < 13 needed
+Network dropped 2 frames (frames 2022 to 2023)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2034: 8+4=12 received < 19 needed
+Unrecoverable frame 2035: 12+4=16 received < 17 needed
+Network dropped 2 frames (frames 2034 to 2035)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2057: 12+2=14 received < 17 needed
+Network dropped 1 frame (frame 2057)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2060: 6+2=8 received < 18 needed
+Network dropped 1 frame (frame 2060)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2081: 8+3=11 received < 13 needed
+Network dropped 1 frame (frame 2081)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2094: 7+3=10 received < 13 needed
+Unrecoverable frame 2095: 11+0=11 received < 18 needed
+Network dropped 2 frames (frames 2094 to 2095)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2113: 9+2=11 received < 13 needed
+Network dropped 1 frame (frame 2113)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2118: 13+4=17 received < 19 needed
+Network dropped 1 frame (frame 2118)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2121: 10+0=10 received < 16 needed
+Network dropped 1 frame (frame 2121)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2173: 5+3=8 received < 13 needed
+Network dropped 1 frame (frame 2173)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2179: 9+1=10 received < 17 needed
+Network dropped 1 frame (frame 2179)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2194: 12+4=16 received < 18 needed
+Network dropped 1 frame (frame 2194)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2203: 9+3=12 received < 13 needed
+Unrecoverable frame 2204: 13+4=17 received < 19 needed
+Network dropped 2 frames (frames 2203 to 2204)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2225: 7+3=10 received < 13 needed
+Network dropped 1 frame (frame 2225)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2243: 12+4=16 received < 17 needed
+Network dropped 1 frame (frame 2243)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2264: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 2264)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2274: 9+4=13 received < 18 needed
+Network dropped 1 frame (frame 2274)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2288: 9+4=13 received < 17 needed
+Network dropped 1 frame (frame 2288)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2308: 9+3=12 received < 13 needed
+Network dropped 1 frame (frame 2308)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2314: 10+4=14 received < 17 needed
+Network dropped 1 frame (frame 2314)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2339: 8+4=12 received < 17 needed
+Network dropped 1 frame (frame 2339)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2342: 7+4=11 received < 18 needed
+Network dropped 1 frame (frame 2342)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2345: 6+3=9 received < 16 needed
+Network dropped 1 frame (frame 2345)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2352: 5+3=8 received < 13 needed
+Network dropped 1 frame (frame 2352)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2355: 11+4=15 received < 17 needed
+Network dropped 1 frame (frame 2355)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2371: 10+4=14 received < 17 needed
+Network dropped 1 frame (frame 2371)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 2373: 16+0=16 received < 18 needed
+Network dropped 1 frame (frame 2373)
+Unrecoverable frame 2375: 10+4=14 received < 17 needed
+Network dropped 1 frame (frame 2375)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2383: 9+3=12 received < 13 needed
+Network dropped 1 frame (frame 2383)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2401: 10+4=14 received < 17 needed
+Network dropped 1 frame (frame 2401)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2431: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 2431)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2435: 14+0=14 received < 19 needed
+Unrecoverable frame 2436: 11+4=15 received < 17 needed
+Network dropped 2 frames (frames 2435 to 2436)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2443: 15+0=15 received < 17 needed
+Network dropped 1 frame (frame 2443)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2456: 12+4=16 received < 17 needed
+Network dropped 1 frame (frame 2456)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2459: 13+4=17 received < 18 needed
+Network dropped 1 frame (frame 2459)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2518: 7+4=11 received < 17 needed
+Network dropped 1 frame (frame 2518)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2526: 8+3=11 received < 13 needed
+Network dropped 1 frame (frame 2526)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2531: 10+4=14 received < 19 needed
+Network dropped 1 frame (frame 2531)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2542: 10+4=14 received < 17 needed
+Network dropped 1 frame (frame 2542)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2553: 7+3=10 received < 13 needed
+Network dropped 1 frame (frame 2553)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2569: 8+3=11 received < 13 needed
+Network dropped 1 frame (frame 2569)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2586: 15+2=17 received < 19 needed
+Network dropped 1 frame (frame 2586)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2595: 5+3=8 received < 13 needed
+Network dropped 1 frame (frame 2595)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2598: 10+0=10 received < 17 needed
+Network dropped 1 frame (frame 2598)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2609: 10+0=10 received < 13 needed
+Network dropped 1 frame (frame 2609)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 2611: 9+1=10 received < 17 needed
+Unrecoverable frame 2612: 15+0=15 received < 17 needed
+Network dropped 2 frames (frames 2611 to 2612)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 2614: 9+4=13 received < 19 needed
+Network dropped 1 frame (frame 2614)
+Unrecoverable frame 2616: 9+3=12 received < 17 needed
+Network dropped 1 frame (frame 2616)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 2618: 10+0=10 received < 19 needed
+Network dropped 1 frame (frame 2618)
+Unrecoverable frame 2627: 3+3=6 received < 13 needed
+Network dropped 1 frame (frame 2627)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2640: 7+0=7 received < 13 needed
+Network dropped 1 frame (frame 2640)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 2642: 11+0=11 received < 17 needed
+Network dropped 1 frame (frame 2642)
+Unrecoverable frame 2645: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 2645)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2676: 11+4=15 received < 18 needed
+Network dropped 1 frame (frame 2676)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2749: 13+4=17 received < 19 needed
+Network dropped 1 frame (frame 2749)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2759: 8+4=12 received < 19 needed
+Network dropped 1 frame (frame 2759)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2763: 10+4=14 received < 20 needed
+Network dropped 1 frame (frame 2763)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 2765: 8+3=11 received < 12 needed
+Network dropped 1 frame (frame 2765)
+Unrecoverable frame 2770: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 2770)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2795: 6+0=6 received < 19 needed
+Network dropped 1 frame (frame 2795)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2805: 15+2=17 received < 19 needed
+Unrecoverable frame 2806: 11+4=15 received < 17 needed
+Network dropped 2 frames (frames 2805 to 2806)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2812: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 2812)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2815: 11+4=15 received < 16 needed
+Network dropped 1 frame (frame 2815)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2818: 15+1=16 received < 17 needed
+Network dropped 1 frame (frame 2818)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2850: 9+3=12 received < 13 needed
+Network dropped 1 frame (frame 2850)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2859: 9+0=9 received < 17 needed
+Unrecoverable frame 2860: 6+3=9 received < 13 needed
+Network dropped 2 frames (frames 2859 to 2860)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 2862: 6+4=10 received < 17 needed
+Network dropped 1 frame (frame 2862)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 2864: 10+4=14 received < 16 needed
+Network dropped 1 frame (frame 2864)
+Unrecoverable frame 2893: 13+3=16 received < 19 needed
+Network dropped 1 frame (frame 2893)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2899: 5+3=8 received < 12 needed
+Network dropped 1 frame (frame 2899)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2904: 17+1=18 received < 19 needed
+Network dropped 1 frame (frame 2904)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2913: 3+2=5 received < 13 needed
+Network dropped 1 frame (frame 2913)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2921: 11+4=15 received < 19 needed
+Network dropped 1 frame (frame 2921)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2939: 7+3=10 received < 13 needed
+Network dropped 1 frame (frame 2939)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2964: 1+0=1 received < 13 needed
+Network dropped 1 frame (frame 2964)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2985: 12+4=16 received < 17 needed
+Network dropped 1 frame (frame 2985)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2990: 10+0=10 received < 11 needed
+Unrecoverable frame 2991: 11+3=14 received < 19 needed
+Network dropped 2 frames (frames 2990 to 2991)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 2997: 8+3=11 received < 12 needed
+Network dropped 1 frame (frame 2997)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3013: 9+3=12 received < 13 needed
+Network dropped 1 frame (frame 3013)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3021: 15+3=18 received < 19 needed
+Unrecoverable frame 3022: 8+4=12 received < 17 needed
+Network dropped 2 frames (frames 3021 to 3022)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3033: 11+1=12 received < 13 needed
+Network dropped 1 frame (frame 3033)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3045: 11+4=15 received < 17 needed
+Network dropped 1 frame (frame 3045)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 3047: 10+4=14 received < 19 needed
+Network dropped 1 frame (frame 3047)
+Unrecoverable frame 3065: 8+3=11 received < 13 needed
+Network dropped 1 frame (frame 3065)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3069: 8+3=11 received < 12 needed
+Network dropped 1 frame (frame 3069)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3072: 10+0=10 received < 13 needed
+Network dropped 1 frame (frame 3072)
+Unrecoverable frame 3082: 9+3=12 received < 13 needed
+Network dropped 1 frame (frame 3082)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3087: 13+4=17 received < 19 needed
+Network dropped 1 frame (frame 3087)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3103: 17+0=17 received < 19 needed
+Unrecoverable frame 3104: 11+4=15 received < 17 needed
+Network dropped 2 frames (frames 3103 to 3104)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3127: 2+3=5 received < 13 needed
+Network dropped 1 frame (frame 3127)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3134: 8+3=11 received < 13 needed
+Network dropped 1 frame (frame 3134)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3152: 2+3=5 received < 17 needed
+Network dropped 1 frame (frame 3152)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3164: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 3164)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 3166: 0+1=1 received < 13 needed
+Network dropped 1 frame (frame 3166)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 3216: 8+2=10 received < 13 needed
+Network dropped 1 frame (frame 3216)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3223: 9+3=12 received < 13 needed
+Network dropped 1 frame (frame 3223)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3235: 15+0=15 received < 16 needed
+Network dropped 1 frame (frame 3235)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3248: 8+2=10 received < 17 needed
+Network dropped 1 frame (frame 3248)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3268: 11+0=11 received < 13 needed
+Unrecoverable frame 3269: 8+4=12 received < 19 needed
+Network dropped 2 frames (frames 3268 to 3269)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3343: 11+4=15 received < 17 needed
+Network dropped 1 frame (frame 3343)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3358: 4+4=8 received < 18 needed
+Network dropped 1 frame (frame 3358)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3378: 10+0=10 received < 17 needed
+Network dropped 1 frame (frame 3378)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3399: 11+1=12 received < 19 needed
+Network dropped 1 frame (frame 3399)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3415: 10+4=14 received < 19 needed
+Network dropped 1 frame (frame 3415)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3422: 15+0=15 received < 19 needed
+Network dropped 1 frame (frame 3422)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 3424: 9+3=12 received < 13 needed
+Unrecoverable frame 3425: 9+0=9 received < 16 needed
+Unrecoverable frame 3426: 12+4=16 received < 19 needed
+Network dropped 3 frames (frames 3424 to 3426)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3443: 5+3=8 received < 17 needed
+Network dropped 1 frame (frame 3443)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3450: 7+4=11 received < 17 needed
+Network dropped 1 frame (frame 3450)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3485: 7+3=10 received < 13 needed
+Network dropped 1 frame (frame 3485)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Waiting for IDR frame
+Unrecoverable frame 3493: 17+0=17 received < 19 needed
+Network dropped 1 frame (frame 3493)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3514: 0+1=1 received < 13 needed
+Network dropped 1 frame (frame 3514)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3522: 11+4=15 received < 19 needed
+Network dropped 1 frame (frame 3522)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3527: 10+4=14 received < 17 needed
+Network dropped 1 frame (frame 3527)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3541: 9+0=9 received < 13 needed
+Network dropped 1 frame (frame 3541)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3574: 7+4=11 received < 17 needed
+Network dropped 1 frame (frame 3574)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3577: 4+4=8 received < 18 needed
+Network dropped 1 frame (frame 3577)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3591: 11+4=15 received < 17 needed
+Unrecoverable frame 3592: 11+0=11 received < 13 needed
+Network dropped 2 frames (frames 3591 to 3592)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Network dropped 1 frame (frame 3614)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 3616: 10+4=14 received < 17 needed
+Network dropped 1 frame (frame 3616)
+Unrecoverable frame 3666: 9+3=12 received < 13 needed
+Network dropped 1 frame (frame 3666)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3682: 8+3=11 received < 13 needed
+Unrecoverable frame 3683: 5+2=7 received < 19 needed
+Network dropped 2 frames (frames 3682 to 3683)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3720: 14+2=16 received < 19 needed
+Network dropped 1 frame (frame 3720)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3727: 10+4=14 received < 19 needed
+Network dropped 1 frame (frame 3727)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3735: 11+4=15 received < 17 needed
+Network dropped 1 frame (frame 3735)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3763: 10+3=13 received < 17 needed
+Network dropped 1 frame (frame 3763)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3781: 15+1=16 received < 18 needed
+Network dropped 1 frame (frame 3781)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3788: 13+4=17 received < 18 needed
+Network dropped 1 frame (frame 3788)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3828: 10+4=14 received < 18 needed
+Network dropped 1 frame (frame 3828)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3835: 12+4=16 received < 18 needed
+Network dropped 1 frame (frame 3835)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 3837: 8+0=8 received < 13 needed
+Unrecoverable frame 3838: 11+4=15 received < 16 needed
+Network dropped 2 frames (frames 3837 to 3838)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3852: 12+4=16 received < 19 needed
+Network dropped 1 frame (frame 3852)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3856: 13+4=17 received < 19 needed
+Network dropped 1 frame (frame 3856)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3872: 4+0=4 received < 19 needed
+Network dropped 1 frame (frame 3872)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3877: 10+4=14 received < 17 needed
+Network dropped 1 frame (frame 3877)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3902: 10+2=12 received < 17 needed
+Network dropped 1 frame (frame 3902)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3913: 12+0=12 received < 13 needed
+Network dropped 1 frame (frame 3913)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3949: 11+4=15 received < 17 needed
+Network dropped 1 frame (frame 3949)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3963: 5+3=8 received < 13 needed
+Network dropped 1 frame (frame 3963)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3977: 18+0=18 received < 19 needed
+Network dropped 1 frame (frame 3977)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3987: 9+4=13 received < 19 needed
+Network dropped 1 frame (frame 3987)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 3998: 11+0=11 received < 17 needed
+Network dropped 1 frame (frame 3998)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4003: 6+3=9 received < 11 needed
+Network dropped 1 frame (frame 4003)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 4005: 12+0=12 received < 17 needed
+Unrecoverable frame 4006: 4+2=6 received < 17 needed
+Network dropped 3 frames (frames 4005 to 4007)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4018: 11+4=15 received < 18 needed
+Network dropped 1 frame (frame 4018)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4040: 16+0=16 received < 19 needed
+Network dropped 1 frame (frame 4040)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4045: 11+4=15 received < 17 needed
+Network dropped 1 frame (frame 4045)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4057: 15+0=15 received < 18 needed
+Unrecoverable frame 4058: 11+4=15 received < 16 needed
+Network dropped 2 frames (frames 4057 to 4058)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4067: 12+4=16 received < 19 needed
+Network dropped 1 frame (frame 4067)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4084: 10+4=14 received < 16 needed
+Network dropped 1 frame (frame 4084)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 4086: 10+4=14 received < 19 needed
+Network dropped 1 frame (frame 4086)
+Unrecoverable frame 4088: 1+2=3 received < 17 needed
+Network dropped 1 frame (frame 4088)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4100: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 4100)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4117: 11+3=14 received < 16 needed
+Unrecoverable frame 4118: 8+3=11 received < 13 needed
+Network dropped 2 frames (frames 4117 to 4118)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4127: 10+4=14 received < 17 needed
+Network dropped 1 frame (frame 4127)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4133: 18+0=18 received < 19 needed
+Network dropped 1 frame (frame 4133)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4139: 8+0=8 received < 12 needed
+Network dropped 1 frame (frame 4139)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Network dropped 1 frame (frame 4158)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4163: 13+4=17 received < 19 needed
+Network dropped 1 frame (frame 4163)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4167: 11+4=15 received < 19 needed
+Network dropped 1 frame (frame 4167)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4171: 12+3=15 received < 19 needed
+Network dropped 1 frame (frame 4171)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4215: 6+4=10 received < 17 needed
+Network dropped 1 frame (frame 4215)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4226: 9+2=11 received < 13 needed
+Network dropped 1 frame (frame 4226)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4243: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 4243)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4250: 15+3=18 received < 19 needed
+Network dropped 1 frame (frame 4250)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4270: 12+0=12 received < 16 needed
+Network dropped 1 frame (frame 4270)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4333: 17+0=17 received < 18 needed
+Network dropped 1 frame (frame 4333)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4348: 11+0=11 received < 13 needed
+Network dropped 1 frame (frame 4348)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4353: 15+1=16 received < 19 needed
+Unrecoverable frame 4354: 11+4=15 received < 17 needed
+Network dropped 2 frames (frames 4353 to 4354)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4374: 9+3=12 received < 13 needed
+Network dropped 1 frame (frame 4374)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4394: 17+0=17 received < 19 needed
+Network dropped 1 frame (frame 4394)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4417: 10+4=14 received < 17 needed
+Unrecoverable frame 4418: 5+3=8 received < 13 needed
+Network dropped 2 frames (frames 4417 to 4418)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4431: 8+3=11 received < 13 needed
+Network dropped 1 frame (frame 4431)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4442: 10+4=14 received < 19 needed
+Network dropped 1 frame (frame 4442)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 4444: 9+3=12 received < 13 needed
+Network dropped 1 frame (frame 4444)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 4449: 0+3=3 received < 11 needed
+Network dropped 1 frame (frame 4449)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4460: 9+4=13 received < 19 needed
+Network dropped 1 frame (frame 4460)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4487: 10+2=12 received < 13 needed
+Network dropped 1 frame (frame 4487)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4492: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 4492)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4499: 16+2=18 received < 19 needed
+Network dropped 1 frame (frame 4499)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4526: 7+0=7 received < 13 needed
+Network dropped 1 frame (frame 4526)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4549: 16+0=16 received < 19 needed
+Network dropped 1 frame (frame 4549)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4564: 11+1=12 received < 13 needed
+Network dropped 1 frame (frame 4564)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4583: 6+2=8 received < 13 needed
+Network dropped 1 frame (frame 4583)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4587: 8+1=9 received < 12 needed
+Network dropped 1 frame (frame 4587)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4593: 12+0=12 received < 17 needed
+Unrecoverable frame 4594: 7+3=10 received < 13 needed
+Unrecoverable frame 4595: 13+1=14 received < 19 needed
+Network dropped 3 frames (frames 4593 to 4595)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4632: 17+0=17 received < 18 needed
+Network dropped 1 frame (frame 4632)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4642: 15+3=18 received < 19 needed
+Unrecoverable frame 4643: 7+2=9 received < 17 needed
+Network dropped 2 frames (frames 4642 to 4643)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4657: 8+3=11 received < 13 needed
+Network dropped 1 frame (frame 4657)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4660: 11+4=15 received < 17 needed
+Network dropped 1 frame (frame 4660)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4671: 5+3=8 received < 13 needed
+Network dropped 1 frame (frame 4671)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4674: 9+4=13 received < 17 needed
+Network dropped 1 frame (frame 4674)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4681: 12+4=16 received < 17 needed
+Network dropped 1 frame (frame 4681)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4686: 7+3=10 received < 11 needed
+Network dropped 1 frame (frame 4686)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4689: 12+4=16 received < 17 needed
+Network dropped 1 frame (frame 4689)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4704: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 4704)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4726: 3+0=3 received < 19 needed
+Network dropped 1 frame (frame 4726)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4742: 10+4=14 received < 18 needed
+Network dropped 1 frame (frame 4742)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4768: 12+4=16 received < 17 needed
+Network dropped 1 frame (frame 4768)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 4770: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 4770)
+Unrecoverable frame 4772: 7+4=11 received < 17 needed
+Network dropped 1 frame (frame 4772)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4793: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 4793)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4802: 2+1=3 received < 13 needed
+Network dropped 1 frame (frame 4802)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 4804: 14+2=16 received < 17 needed
+Network dropped 1 frame (frame 4804)
+Unrecoverable frame 4806: 6+3=9 received < 12 needed
+Network dropped 1 frame (frame 4806)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4823: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 4823)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4835: 11+0=11 received < 13 needed
+Network dropped 1 frame (frame 4835)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4875: 5+3=8 received < 13 needed
+Network dropped 1 frame (frame 4875)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4887: 10+4=14 received < 17 needed
+Network dropped 1 frame (frame 4887)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4904: 8+3=11 received < 13 needed
+Network dropped 1 frame (frame 4904)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4915: 9+4=13 received < 19 needed
+Network dropped 1 frame (frame 4915)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 4917: 8+1=9 received < 13 needed
+Network dropped 1 frame (frame 4917)
+Unrecoverable frame 4920: 16+0=16 received < 17 needed
+Network dropped 1 frame (frame 4920)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 4922: 12+3=15 received < 19 needed
+Network dropped 1 frame (frame 4922)
+Unrecoverable frame 4926: 9+0=9 received < 19 needed
+Unrecoverable frame 4927: 11+4=15 received < 17 needed
+Unrecoverable frame 4928: 3+1=4 received < 13 needed
+Network dropped 3 frames (frames 4926 to 4928)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4933: 13+4=17 received < 19 needed
+Unrecoverable frame 4934: 11+3=14 received < 17 needed
+Network dropped 2 frames (frames 4933 to 4934)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4946: 12+4=16 received < 19 needed
+Network dropped 1 frame (frame 4946)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4964: 9+3=12 received < 13 needed
+Network dropped 1 frame (frame 4964)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 4986: 9+0=9 received < 13 needed
+Network dropped 1 frame (frame 4986)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5000: 13+4=17 received < 19 needed
+Network dropped 1 frame (frame 5000)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5004: 15+4=19 received < 20 needed
+Network dropped 1 frame (frame 5004)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5012: 14+2=16 received < 17 needed
+Network dropped 1 frame (frame 5012)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5022: 13+2=15 received < 17 needed
+Network dropped 1 frame (frame 5022)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5028: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 5028)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5033: 11+4=15 received < 17 needed
+Network dropped 1 frame (frame 5033)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5059: 7+3=10 received < 13 needed
+Unrecoverable frame 5060: 11+4=15 received < 19 needed
+Network dropped 2 frames (frames 5059 to 5060)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5070: 8+4=12 received < 19 needed
+Network dropped 1 frame (frame 5070)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5076: 8+0=8 received < 12 needed
+Network dropped 1 frame (frame 5076)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5098: 8+1=9 received < 13 needed
+Network dropped 1 frame (frame 5098)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 5100: 13+3=16 received < 17 needed
+Network dropped 1 frame (frame 5100)
+Unrecoverable frame 5120: 8+3=11 received < 13 needed
+Network dropped 1 frame (frame 5120)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5158: 11+4=15 received < 19 needed
+Network dropped 1 frame (frame 5158)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5162: 14+3=17 received < 19 needed
+Network dropped 1 frame (frame 5162)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5168: 9+0=9 received < 12 needed
+Unrecoverable frame 5169: 10+4=14 received < 19 needed
+Network dropped 2 frames (frames 5168 to 5169)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5177: 11+4=15 received < 17 needed
+Network dropped 1 frame (frame 5177)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 5179: 13+3=16 received < 19 needed
+Network dropped 1 frame (frame 5179)
+Unrecoverable frame 5186: 18+0=18 received < 19 needed
+Unrecoverable frame 5187: 2+4=6 received < 17 needed
+Network dropped 2 frames (frames 5186 to 5187)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5237: 3+3=6 received < 13 needed
+Network dropped 1 frame (frame 5237)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5256: 8+3=11 received < 13 needed
+Network dropped 1 frame (frame 5256)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5277: 12+4=16 received < 17 needed
+Network dropped 1 frame (frame 5277)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5284: 12+4=16 received < 17 needed
+Network dropped 1 frame (frame 5284)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5295: 7+3=10 received < 13 needed
+Network dropped 1 frame (frame 5295)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 5297: 7+4=11 received < 17 needed
+Network dropped 1 frame (frame 5297)
+Unrecoverable frame 5302: 7+3=10 received < 13 needed
+Network dropped 1 frame (frame 5302)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5309: 12+0=12 received < 13 needed
+Network dropped 1 frame (frame 5309)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5323: 13+4=17 received < 19 needed
+Network dropped 1 frame (frame 5323)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5332: 6+3=9 received < 13 needed
+Network dropped 1 frame (frame 5332)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5335: 8+0=8 received < 17 needed
+Network dropped 1 frame (frame 5335)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 5337: 4+4=8 received < 19 needed
+Network dropped 1 frame (frame 5337)
+Unrecoverable frame 5348: 8+4=12 received < 17 needed
+Network dropped 1 frame (frame 5348)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5355: 11+4=15 received < 17 needed
+Network dropped 1 frame (frame 5355)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5359: 9+4=13 received < 17 needed
+Network dropped 1 frame (frame 5359)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5362: 11+4=15 received < 18 needed
+Network dropped 1 frame (frame 5362)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5379: 16+0=16 received < 17 needed
+Network dropped 1 frame (frame 5379)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5390: 8+2=10 received < 13 needed
+Network dropped 1 frame (frame 5390)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5403: 6+3=9 received < 13 needed
+Network dropped 1 frame (frame 5403)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5418: 9+0=9 received < 17 needed
+Network dropped 1 frame (frame 5418)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5435: 9+3=12 received < 13 needed
+Network dropped 1 frame (frame 5435)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5440: 12+4=16 received < 19 needed
+Network dropped 1 frame (frame 5440)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5483: 12+4=16 received < 19 needed
+Network dropped 1 frame (frame 5483)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5488: 7+4=11 received < 17 needed
+Network dropped 1 frame (frame 5488)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5494: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 5494)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5508: 12+4=16 received < 17 needed
+Network dropped 1 frame (frame 5508)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5530: 11+4=15 received < 17 needed
+Network dropped 1 frame (frame 5530)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5556: 8+3=11 received < 13 needed
+Network dropped 1 frame (frame 5556)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5581: 9+3=12 received < 13 needed
+Network dropped 1 frame (frame 5581)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5589: 12+0=12 received < 19 needed
+Network dropped 1 frame (frame 5589)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 5591: 6+3=9 received < 13 needed
+Network dropped 1 frame (frame 5591)
+Unrecoverable frame 5636: 10+4=14 received < 17 needed
+Network dropped 1 frame (frame 5636)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5643: 8+3=11 received < 17 needed
+Network dropped 1 frame (frame 5643)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5680: 9+4=13 received < 17 needed
+Network dropped 1 frame (frame 5680)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5693: 13+0=13 received < 17 needed
+Unrecoverable frame 5694: 3+3=6 received < 13 needed
+Network dropped 2 frames (frames 5693 to 5694)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5707: 9+3=12 received < 13 needed
+Network dropped 1 frame (frame 5707)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5712: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 5712)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5742: 9+3=12 received < 13 needed
+Network dropped 1 frame (frame 5742)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5750: 15+0=15 received < 19 needed
+Network dropped 1 frame (frame 5750)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5753: 8+4=12 received < 16 needed
+Network dropped 1 frame (frame 5753)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5772: 5+0=5 received < 13 needed
+Unrecoverable frame 5773: 0+4=4 received < 19 needed
+Network dropped 2 frames (frames 5772 to 5773)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5783: 14+4=18 received < 19 needed
+Network dropped 1 frame (frame 5783)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5787: 15+4=19 received < 20 needed
+Network dropped 1 frame (frame 5787)
+Waiting for IDR frame
+IDR frame request sent
+Unrecoverable frame 5789: 7+1=8 received < 12 needed
+Unrecoverable frame 5790: 9+4=13 received < 16 needed
+Network dropped 2 frames (frames 5789 to 5790)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5822: 13+4=17 received < 19 needed
+Network dropped 1 frame (frame 5822)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Unrecoverable frame 5855: 6+3=9 received < 13 needed
+Network dropped 1 frame (frame 5855)
+Waiting for IDR frame
+IDR frame request sent
+Stopping input stream...done
+Stopping audio stream...No audio traffic was ever received from the host!
+ENet wait interrupted
+Control stream connection failed: 4
+Waiting for IDR frame
+done
+Stopping video stream...done
+Stopping control stream...ENet peer acknowledged disconnection
+done
+Cleaning up input stream...done
+Cleaning up video stream...done
+Cleaning up control stream...done
+Cleaning up audio stream...done
+Cleaning up platform...done
