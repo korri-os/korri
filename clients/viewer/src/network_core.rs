@@ -8,7 +8,8 @@
 //! starts, and every input packet and reading goes to that core
 //! (`active`): the picture, sound and input code of a platform never names
 //! a core. Moonlight's C core (`moonlight_common_c.rs`) is the default, and
-//! the only core on Android.
+//! the only core on Android. `nightjar.rs` is nightjar-core, built with the
+//! `nightjar` feature, on Linux only for now.
 //!
 //! The platform's video and audio code stays behind the C core's callback
 //! tables (`DECODER_RENDERER_CALLBACKS`, `AUDIO_RENDERER_CALLBACKS`) and its
@@ -16,6 +17,8 @@
 //! code and Android's Rust code both implement those tables today, and a
 //! core that is not the C core calls them as the C core does.
 mod moonlight_common_c;
+#[cfg(all(feature = "nightjar", not(target_os = "android")))]
+mod nightjar;
 // The carried C picture and input code's calls into the core.
 #[cfg(not(target_os = "android"))]
 mod c_calls;
@@ -31,14 +34,20 @@ pub enum Kind {
     /// Moonlight's `moonlight-common-c`, through Korri's binding.
     #[default]
     MoonlightCommonC,
+    /// nightjar-core, vendored in `vendor/nightjar`.
+    Nightjar,
 }
 
 impl Kind {
-    /// `-networkcore`'s value: `c`.
+    /// `-networkcore`'s value: `c` or `nightjar`.
     pub fn parse(name: &str) -> Result<Self> {
         match name {
             "c" => Ok(Self::MoonlightCommonC),
-            _ => bail!("unknown network core {name}: c"),
+            #[cfg(all(feature = "nightjar", not(target_os = "android")))]
+            "nightjar" => Ok(Self::Nightjar),
+            #[cfg(not(all(feature = "nightjar", not(target_os = "android"))))]
+            "nightjar" => bail!("this build has no nightjar network core (cargo feature nightjar)"),
+            _ => bail!("unknown network core {name}: c or nightjar"),
         }
     }
 }
@@ -190,6 +199,8 @@ pub(crate) trait NetworkCore: Sync {
 
 static MOONLIGHT_COMMON_C: moonlight_common_c::MoonlightCommonC =
     moonlight_common_c::MoonlightCommonC;
+#[cfg(all(feature = "nightjar", not(target_os = "android")))]
+static NIGHTJAR: nightjar::Nightjar = nightjar::Nightjar::new();
 
 static ACTIVE: RwLock<&'static dyn NetworkCore> = RwLock::new(&MOONLIGHT_COMMON_C);
 
@@ -199,6 +210,10 @@ static ACTIVE: RwLock<&'static dyn NetworkCore> = RwLock::new(&MOONLIGHT_COMMON_
 pub(crate) fn select(kind: Kind) -> &'static dyn NetworkCore {
     let core: &'static dyn NetworkCore = match kind {
         Kind::MoonlightCommonC => &MOONLIGHT_COMMON_C,
+        #[cfg(all(feature = "nightjar", not(target_os = "android")))]
+        Kind::Nightjar => &NIGHTJAR,
+        #[cfg(not(all(feature = "nightjar", not(target_os = "android"))))]
+        Kind::Nightjar => unreachable!("Kind::parse refuses nightjar in this build"),
     };
     install(core);
     core
@@ -274,6 +289,19 @@ pub(crate) mod tests {
         assert_eq!(Kind::parse("c").unwrap(), Kind::MoonlightCommonC);
         assert!(Kind::parse("moonlight-common-rust").is_err());
         assert!(Kind::parse("").is_err());
+    }
+
+    #[cfg(not(all(feature = "nightjar", not(target_os = "android"))))]
+    #[test]
+    fn a_build_without_nightjar_refuses_it_by_name() {
+        let error = Kind::parse("nightjar").unwrap_err().to_string();
+        assert!(error.contains("feature nightjar"), "{error}");
+    }
+
+    #[cfg(all(feature = "nightjar", not(target_os = "android")))]
+    #[test]
+    fn a_nightjar_build_takes_it_by_name() {
+        assert_eq!(Kind::parse("nightjar").unwrap(), Kind::Nightjar);
     }
 
     #[test]

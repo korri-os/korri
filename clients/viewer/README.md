@@ -1637,6 +1637,48 @@ Not carried, each because this viewer lacks the feature, not the control:
 
 Notice (Artemis shows a toast) and Resize (#476) stay unavailable.
 
+## Network cores (#391 step E)
+
+The C core (`moonlight-common-c`) is the default and the only core on
+Android. With the cargo feature `nightjar` (Linux, `nix build
+.#korri-viewer-nightjar`) the viewer also carries nightjar-core, a Rust
+port of moonlight-common-c (`vendor/README.md`: the pin, the licence and
+Korri's one edit), and `-networkcore nightjar` streams with it. In that
+package `bin/moonlight` appends the option, so the stage-0 tool runs it as
+a candidate beside `korri-viewer`; `bin/korri-viewer` still streams with
+the C core unless asked.
+
+`src/network_core/nightjar.rs` puts nightjar-core's `Session` behind
+`NetworkCore`. The platform's picture, sound and input code does not
+change: a frame becomes the C core's `DECODE_UNIT` (one `LENTRY` for each
+of its buffers, with its receive, enqueue and presentation times on
+nightjar-core's clock, which the frame record also reads); the audio
+stream's Opus setup becomes `OPUS_MULTISTREAM_CONFIGURATION`, and a lost
+packet is `decodeAndPlaySample(NULL, 0)`; stages, the start, the
+termination, the log, rumble, trigger rumble, motion, LED, HDR and the
+connection status go to the listener callbacks that are set. Input packets
+go to nightjar-core's input queue, and its errors become the C core's
+codes.
+
+What differs from the C core, by choice (each a guess, for the measure to
+judge):
+
+| | C core | nightjar-core here |
+| --- | --- | --- |
+| Video datagrams | One `recvfrom` each | `recvmmsg` batches with UDP GRO (`receive_coalescing`, nightjar-cli's and its apps' setting) |
+| Thread priorities | None | None: "prioritize stream traffic" (`network_priority`) is off, so no thread is raised and no D-Bus service is asked |
+| A controller touch | No touchpad index | The controller's first touchpad |
+| Its log | The C core's lines | nightjar-core's lines, and its statistics at the stop (`nightjar: at the stop: …`) |
+
+The proof on aka, with Korri's patched Sunshine, picture, sound and input,
+and the turns of the measure against the C core:
+`proof/nightjar/README.md`.
+
+Not done: Android (the seam would carry nightjar-core there too; this slice
+builds it for Linux only), aarch64 (nightjar-core refuses to build for aarch64
+without `--cfg aes_armv8 --cfg polyval_armv8`, `vendor/README.md`), and a
+korrid setting to choose the core.
+
 ## Next slices
 
 The bench proof of the handheld `v4l2request` path. No device installs

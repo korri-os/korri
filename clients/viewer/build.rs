@@ -42,7 +42,8 @@ fn main() {
         .allowlist_type("(STREAM_CONFIGURATION|SERVER_INFORMATION|CONNECTION_LISTENER_CALLBACKS|DECODER_RENDERER_CALLBACKS|AUDIO_RENDERER_CALLBACKS|OPUS_MULTISTREAM_CONFIGURATION|DECODE_UNIT|LENTRY)")
         // Android's decoder (src/android/picture.rs) reads decode units; its
         // sound (src/android/sound.rs) names its capabilities.
-        .allowlist_var("(VIDEO_FORMAT_.*|STREAM_CFG_.*|ENCFLG_.*|BUFFER_TYPE_.*|FRAME_TYPE_.*|DR_.*|CAPABILITY_.*|KEY_ACTION_.*|BUTTON_ACTION_.*)")
+        // nightjar-core's connection status (src/network_core/nightjar.rs).
+        .allowlist_var("(VIDEO_FORMAT_.*|STREAM_CFG_.*|ENCFLG_.*|BUFFER_TYPE_.*|FRAME_TYPE_.*|DR_.*|CAPABILITY_.*|KEY_ACTION_.*|BUTTON_ACTION_.*|CONN_STATUS_.*)")
         .derive_default(true)
         .generate().expect("generate binding from the pinned core's actual header");
     bindings

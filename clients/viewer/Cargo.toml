@@ -5,8 +5,17 @@ edition = "2024"
 # Zlib: the controller lists of Valve and SDL (src/android/controller_list.rs).
 license = "GPL-3.0-or-later AND GPL-3.0-only AND Zlib"
 
+[features]
+# nightjar-core (vendor/nightjar, GPL-3.0-only) as a second network core,
+# chosen with `-networkcore nightjar` (#391 step E). Linux only for now. Off
+# by default: the C core streams.
+nightjar = ["dep:nightjar-core", "dep:rubylight-protocol"]
+
 [dependencies]
 korri-viewer-treaty = { path = "../../contracts/viewer" }
+nightjar-core = { path = "vendor/nightjar/protocol/client", optional = true }
+# nightjar-core's wire constants (its audio codec bits).
+rubylight-protocol = { path = "vendor/nightjar/protocol/core", optional = true }
 anyhow = "1"
 curl = "0.4"
 openssl = "0.10"

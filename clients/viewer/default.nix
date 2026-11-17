@@ -78,6 +78,9 @@ let
     ./picture
     ./io
     ./tests
+    # nightjar-core, the second network core (#391 step E). Cargo reads its
+    # manifests to resolve the optional dependency in every build.
+    ./vendor
     ../../contracts/viewer/Cargo.toml
     ../../contracts/viewer/src
     ../../contracts/surface/Cargo.toml
@@ -285,6 +288,23 @@ let
           xvfb-run -a -s '-screen 0 640x480x24 -nolisten tcp' ./check-sdl frames.h264 portrait.h264
         touch "$out"
       '';
+  # The same viewer with nightjar-core as a second network core (#391 step
+  # E, `vendor/README.md`). `bin/korri-viewer` still streams with the C core
+  # unless `-networkcore nightjar` is given; `bin/moonlight` gives it, so
+  # that the stage-0 tool runs this package as a candidate beside `package`.
+  # The binary wrapper execs the viewer, which keeps the process the tool
+  # measures.
+  nightjarPackage = package.overrideAttrs (old: {
+    pname = "korri-viewer-nightjar";
+    cargoBuildFeatures = [ "nightjar" ];
+    cargoCheckFeatures = [ "nightjar" ];
+    nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.makeBinaryWrapper ];
+    postInstall = old.postInstall + ''
+      rm $out/bin/moonlight
+      makeBinaryWrapper $out/bin/korri-viewer $out/bin/moonlight \
+        --append-flags "-networkcore nightjar"
+    '';
+  });
   # GPL-3 corresponding source of `package` (ADR 0059): this package's Rust,
   # C and recipe, the network core with its ENet, and the vendored crates.
   # The plugin carries it beside the binary. nixpkgs' shared libraries are
@@ -340,6 +360,7 @@ in
 {
   inherit
     package
+    nightjarPackage
     network
     pictureCheck
     ioCheck
