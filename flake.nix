@@ -200,6 +200,8 @@
             korri-viewer-nightjar = viewer.nightjarPackage;
             # The viewer with the Rust port of its C audio output (#391 step F).
             korri-viewer-rust-audio-output = viewer.rustAudioOutputPackage;
+            # The viewer with the Rust ports of its C EGL presenters (#391 step F).
+            korri-viewer-rust-egl-presenter = viewer.rustEglPresenterPackage;
             korri-shell = shell.package;
             korri-shell-surfaces = shell.surfaces;
             korri-plymouth-theme = pkgs.callPackage ./brand/plymouth/package.nix { };

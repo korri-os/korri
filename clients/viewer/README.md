@@ -14,6 +14,9 @@ nix build .#checks.x86_64-linux.korri-viewer-io
 # The Rust audio output (#391 step F, below): its package runs its tests.
 nix build .#korri-viewer-rust-audio-output
 nix develop .#viewer --command xvfb-run -a cargo test --manifest-path clients/viewer/Cargo.toml --features rust-audio-output audio_output
+# The Rust EGL presenters (#391 step F, below): its package draws both
+# presenters with Mesa's software EGL and compares the pixels.
+nix build .#korri-viewer-rust-egl-presenter
 # Handheld path: aarch64 builds on aarch64 builders (here fuji or yari), never
 # on a device. The x86_64 check then starts that build under qemu-aarch64.
 nix build .#packages.aarch64-linux.korri-viewer
@@ -513,6 +516,86 @@ Not proven: a stream through the port (no stream ran in this slice), a
 real sound card, and anything about delay or gaps: no number of ADR 0062
 measures sound. The turns judge its CPU, start, picture and stability with
 the tone playing.
+
+## EGL presenters in Rust (#391 step F, slice F3)
+
+`src/egl_presenter/` holds the Rust ports of the two carried C EGL
+presenters: `software.rs` of `picture/video/egl.c`, and `vaapi.rs` of
+`picture/video/vaapi_egl.c`. They use `khronos-egl` 6.0.0 (MIT or
+Apache-2.0, linked to the same libEGL) and `glow` 0.18.0 (MIT, Apache-2.0
+or Zlib); `build.rs` binds the picture's types and the EGL and OpenGL ES
+extension constants from the headers that the C includes. The window
+stays Xlib (`video/x11.c`), the place comes from `place.c` (#476), and the
+frame record's calls stay in the callers. The carried C stays the
+default. The cargo feature `rust-egl-presenter` builds the ports, and
+`-eglpresenter rust` chooses them; `korri-viewer-rust-egl-presenter`'s
+`bin/moonlight` appends that option.
+
+With the feature, Rust owns the five names that the callers use
+(`egl_init`, `egl_draw`, `egl_destroy`, `vaapi_egl_present`,
+`vaapi_egl_cleanup`) and chooses at run time; `build.rs` compiles the two
+C files with `-D` renames to `carried_*`. Without the feature, the build is
+as before. The callers do not change.
+
+What stays as in C: the configs, contexts, extension checks, shaders,
+textures, uniforms, viewport, clear and draw calls, in the same order; the
+import of a composed dmabuf export with its colour hints and modifiers;
+no swap interval for the software picture and 0 for VA-API; the same log
+lines of the VA-API presenter (`VAAPI EGL presentation: ...`). What
+differs:
+
+- The VA-API presenter's corners are in a buffer object: glow takes no
+  client-side array. The pixels are the same (below).
+- `position` is bound before the link. `egl.c` binds it after, where the
+  call has no effect and the linker gives the only attribute 0.
+- `egl.c`'s `glEnable(GL_TEXTURE_2D)`, an invalid call in OpenGL ES 2, is
+  not made.
+- A failed software setup ends the stream through its teardown
+  (`PlayerIo::poll` returns -1): `egl.c` calls `exit()`.
+- A failed VA-API setup releases its EGL display at once; the C keeps it
+  until its cleanup. Both then show no frame and say why once.
+- The Rust presenters log one line when they start (`picture: the Rust EGL
+  presenter ...`), so a run shows which code drew.
+
+Tests (`src/egl_presenter/tests.rs`), on Xvfb with Mesa's software EGL
+(llvmpipe), as the picture check's `test-egl.c` runs:
+
+- Software: `test-egl.c`'s four frames (the window's shape, portrait,
+  back, smaller; padded rows) through `egl_init`, `egl_draw` and
+  `egl_destroy`, once with the carried C and once with the port. The
+  window's pixels, read from the X server, are equal for each frame, the
+  C's pass `test-egl.c`'s checks (black bars, both halves), and place.c's
+  shown size follows each frame.
+- VA-API: no VA driver runs in the sandbox, but Mesa imports a memfd as a
+  dmabuf. Each case is an NV12 surface written by hand, with a coded size
+  larger than its visible one and white padding: the window's shape,
+  BT.601 narrow range; a portrait picture with bars at the sides, BT.709;
+  a smaller picture, full range, with a linear modifier. Through
+  `vaapi_egl_present` and `vaapi_egl_cleanup`, both show each case, the
+  pixels are equal, and the C's pass the same checks.
+- An export of two layers, or one that names a missing object: neither
+  shows it.
+- The import's attributes, plane by plane, with and without modifiers;
+  the colour hints from the frame's matrix and range.
+
+A changed clamp, a changed `visible` uniform, or a missing clear makes
+the pixel tests fail (checked by hand on aka, 2026-11-17).
+
+**Where each presenter runs.** `egl.c` is reached only through
+`decoder_callbacks_x11`, and `picture_callbacks` never returns it:
+`x11_vaapi` always decodes through VA-API (`ffmpeg_decoder == VAAPI`), and
+the other PC platform is SDL. So the software presenter does not run in
+the shipped viewer, C or Rust; only its tests run it. `vaapi_egl.c` runs on
+Intel under Xwayland for every frame, and on AMD only for a picture with
+bars. The private pair's viewer output has the stream's size, so a turn on
+aka uses `vaPutSurface` on both sides unless the output's shape differs:
+`view --viewer-output 1920x1200` (`nix/stream-cadence/README.md`, "Bars
+around the picture").
+
+Not proven: a real VA-API surface through the port (the sandbox has no
+GPU; Mesa's software import is not radeonsi's or iHD's), Intel, and any
+number. The software path's frame record has no `display_ns` in C or in
+Rust: `video/x11.c` calls no `frame_times_displayed` after `egl_draw`.
 
 ## Android session part (#391 step D, slice D0)
 

@@ -36,6 +36,9 @@ pub struct Options {
     pub network_core: crate::network_core::Kind,
     /// The audio output that plays the sound (`-audiooutput`, #391 step F).
     pub audio_output: crate::audio_output::Kind,
+    /// The code that draws X11's pictures through EGL (`-eglpresenter`,
+    /// #391 step F).
+    pub egl_presenter: crate::egl_presenter::Kind,
 }
 
 /// Moonlight's `MAX_INPUTS` (config.h).
@@ -114,6 +117,7 @@ impl Options {
             inputs: Vec::new(),
             network_core: Default::default(),
             audio_output: Default::default(),
+            egl_presenter: Default::default(),
         };
         while let Some(arg) = args.next() {
             if !arg.starts_with('-') {
@@ -147,7 +151,7 @@ impl Options {
                 }
                 "keydir" | "app" | "platform" | "width" | "height" | "fps" | "bitrate"
                 | "packetsize" | "codec" | "port" | "mapping" | "audio" | "remote" | "surround"
-                | "rotate" | "networkcore" | "audiooutput" => {
+                | "rotate" | "networkcore" | "audiooutput" | "eglpresenter" => {
                     let value = args
                         .next()
                         .ok_or_else(|| anyhow::anyhow!("missing value for {arg}"))?;
@@ -185,6 +189,9 @@ impl Options {
                         "mapping" => o.mapping = Some(value),
                         "networkcore" => o.network_core = crate::network_core::Kind::parse(&value)?,
                         "audiooutput" => o.audio_output = crate::audio_output::Kind::parse(&value)?,
+                        "eglpresenter" => {
+                            o.egl_presenter = crate::egl_presenter::Kind::parse(&value)?
+                        }
                         "audio" => o.audio_device = Some(value),
                         _ => unreachable!(),
                     }
@@ -356,6 +363,29 @@ mod tests {
         // Moonlight's own -audio still names the device.
         let o = parse(&["-audio", "sysdefault", "-audiooutput", "c"]).unwrap();
         assert_eq!(o.audio_device.as_deref(), Some("sysdefault"));
+    }
+
+    // #391 step F3: the carried C draws through EGL unless -eglpresenter
+    // names the Rust port.
+    #[test]
+    fn the_egl_presenter_is_the_carried_c_unless_named() {
+        use crate::egl_presenter::Kind;
+        let parse = |extra: &[&str]| {
+            let mut args = vec!["stream", "-keydir", "/k", "host"];
+            args.extend_from_slice(extra);
+            Options::parse(args.into_iter().map(str::to_owned))
+        };
+        assert_eq!(parse(&[]).unwrap().egl_presenter, Kind::Carried);
+        assert_eq!(
+            parse(&["-eglpresenter", "c"]).unwrap().egl_presenter,
+            Kind::Carried
+        );
+        assert_eq!(
+            parse(&["-eglpresenter", "rust"]).is_ok(),
+            cfg!(feature = "rust-egl-presenter")
+        );
+        assert!(parse(&["-eglpresenter", "wgpu"]).is_err());
+        assert!(parse(&["-eglpresenter"]).is_err());
     }
 
     #[test]

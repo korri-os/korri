@@ -338,6 +338,31 @@ let
       platforms = [ "x86_64-linux" ];
     };
   });
+  # The same viewer with the Rust ports of the carried C EGL presenters
+  # (#391 step F, slice F3, src/egl_presenter/). `bin/korri-viewer` still
+  # draws through the carried C unless `-eglpresenter rust` is given;
+  # `bin/moonlight` gives it, as `nightjarPackage` does. Its tests draw both
+  # presenters into an Xvfb window with Mesa's software EGL and compare the
+  # pixels.
+  rustEglPresenterPackage = package.overrideAttrs (old: {
+    pname = "korri-viewer-rust-egl-presenter";
+    cargoBuildFeatures = [ "rust-egl-presenter" ];
+    cargoCheckFeatures = [ "rust-egl-presenter" ];
+    nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.makeBinaryWrapper ];
+    preCheck = old.preCheck + ''
+      export __EGL_VENDOR_LIBRARY_FILENAMES=${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json
+      export EGL_PLATFORM=x11
+    '';
+    postInstall = old.postInstall + ''
+      rm $out/bin/moonlight
+      makeBinaryWrapper $out/bin/korri-viewer $out/bin/moonlight \
+        --append-flags "-eglpresenter rust"
+    '';
+    meta = old.meta // {
+      # A candidate for the measure on aka; no handheld runs it.
+      platforms = [ "x86_64-linux" ];
+    };
+  });
   # GPL-3 corresponding source of `package` (ADR 0059): this package's Rust,
   # C and recipe, the network core with its ENet, and the vendored crates.
   # The plugin carries it beside the binary. nixpkgs' shared libraries are
@@ -395,6 +420,7 @@ in
     package
     nightjarPackage
     rustAudioOutputPackage
+    rustEglPresenterPackage
     network
     pictureCheck
     ioCheck
