@@ -922,6 +922,7 @@ dependencies = [
  "pkg-config",
  "roxmltree",
  "rubylight-protocol",
+ "rusty_enet",
  "tempfile",
  "url",
  "uuid",

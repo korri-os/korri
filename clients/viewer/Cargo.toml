@@ -76,3 +76,6 @@ pkg-config = "0.3"
 
 [dev-dependencies]
 tempfile = "3"
+# A plain ENet host for nightjar-core's input test (tests/nightjar_input_wake.rs):
+# nightjar's own patched copy, already in the lock.
+rusty_enet = { path = "vendor/nightjar/protocol/vendor/rusty_enet" }
