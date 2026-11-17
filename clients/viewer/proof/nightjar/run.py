@@ -20,8 +20,9 @@ source draws stream-cadence's frame-ID bar. The steps:
    the bar in screenshots of the X server: it must read and rise. Then press
    keys and click the mouse on the viewer's window with XTEST (`xdotool`),
    keys that name the core, and stop the viewer with SIGINT.
-3. Read the fixture's Sunshine log: each core's keys and clicks must have
-   arrived. Find the tone in each core's PCM, and read each frame record.
+3. Read the fixture's Sunshine log: each core's keys and its click must
+   have arrived, each core's packets counted from its first key to the next
+   core's (`by_core`). Find the tone in each core's PCM, and read each frame record.
 
 `-viewonly` is set, as the measure sets it: the viewer opens no input
 device of aka; its window's own keyboard and mouse still forward.
@@ -119,6 +120,29 @@ def frame_record(times: Path) -> dict:
             shown.append((int(display) - int(enqueue)) / 1e6)
     return {"units": len(rows), "shown": len(shown),
             "enqueue_to_display_ms_p50": round(statistics.median(shown), 2) if shown else None}
+
+
+def by_core(packets: list[dict]) -> dict[str, list[dict]]:
+    """Each core's input packets at the sender: from its first key to the next
+    core's first key. The cores stream one after the other, and each presses
+    its own key before it clicks."""
+    starts: dict[str, int] = {}
+    for at, packet in enumerate(packets):
+        if packet["kind"] != "keyboard":
+            continue
+        code = int(packet["fields"].get("keyCode", "0"), 16) & 0xFF
+        for core, key in KEYS.items():
+            if code == ord(key.upper()):
+                starts.setdefault(core, at)
+    found: dict[str, list[dict]] = {}
+    order = list(KEYS)
+    for place, core in enumerate(order):
+        if core not in starts:
+            found[core] = []
+            continue
+        end = min((starts[later] for later in order[place + 1:] if later in starts), default=len(packets))
+        found[core] = packets[starts[core]:end]
+    return found
 
 
 def stream(core: str, viewer: str, keys: Path, pin: Path, port: int, out: Path, seconds: int) -> dict:
@@ -228,17 +252,17 @@ def main() -> int:
         packets, kept = sender.input_packets(journal)
         (out / "sunshine.log").write_text(kept)
         (out / "sunshine-input.json").write_text(json.dumps(packets, indent=1) + "\n")
-        for core, key in KEYS.items():
-            code = ord(key.upper())
-            pressed = [p for p in packets if p["kind"] == "keyboard"
+        for core, part in by_core(packets).items():
+            code = ord(KEYS[core].upper())
+            pressed = [p for p in part if p["kind"] == "keyboard"
                        and int(p["fields"].get("keyCode", "0"), 16) & 0xFF == code]
+            clicks = [p for p in part if p["kind"] == "mouse button"]
             result[core]["keyboard_packets_at_the_sender"] = len(pressed)
+            result[core]["mouse_button_packets_at_the_sender"] = len(clicks)
             # Five presses: a key down and a key up each.
             checks[f"{core}_keys_reached_the_sender"] = len(pressed) == 10
-        clicks = [p for p in packets if "mouse button" in p["kind"]]
-        result["mouse_button_packets_at_the_sender"] = len(clicks)
-        # One click for each core: a press and a release each.
-        checks["clicks_reached_the_sender"] = len(clicks) == 4
+            # One click: a press and a release.
+            checks[f"{core}_click_reached_the_sender"] = len(clicks) == 2
         checks["nightjar_reported_its_session"] = bool(result["nightjar"]["stats_at_the_stop"])
     except Exception as error:
         result["error"] = f"{type(error).__name__}: {error}"

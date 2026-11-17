@@ -304,6 +304,17 @@ let
       makeBinaryWrapper $out/bin/korri-viewer $out/bin/moonlight \
         --append-flags "-networkcore nightjar"
     '';
+    meta = old.meta // {
+      # nightjar-core and rubylight-native-api are GPL-3.0-only, so the
+      # binary is; Nightjar's rusty_enet is MIT (vendor/README.md).
+      license = with pkgs.lib.licenses; [
+        gpl3Only
+        mit
+      ];
+      # nightjar-core refuses aarch64 without its two --cfg flags, which
+      # this build does not give (vendor/README.md).
+      platforms = [ "x86_64-linux" ];
+    };
   });
   # GPL-3 corresponding source of `package` (ADR 0059): this package's Rust,
   # C and recipe, the network core with its ENet, and the vendored crates.
