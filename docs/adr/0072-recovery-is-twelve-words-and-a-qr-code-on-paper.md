@@ -3,11 +3,14 @@
 **Owner decision, 2026-11-16.**
 
 At setup, Korri shows the person key as 12 recovery words (BIP39, as Nostr's
-NIP-06 uses them) and a QR code of them, for the person to keep on paper. The QR code holds the 12 words as plain text,
-so any phone camera shows them. The
-person needs them only when every owned device is lost. While any one device
-survives, it vouches for new devices and removes lost ones (ADRs 0069 and
-0071), so no recovery is needed.
+NIP-06 uses them) and a QR code of them, for the person to keep on paper. The
+QR code holds the 12 words as plain text, so any phone camera shows them. The
+words have no extra passphrase, and after setup they are the only copy of the
+person key (ADR 0082).
+
+The person needs them to undo a removal (ADR 0071) and when every owned
+device is lost. For everything else, any one surviving device vouches for new
+devices and removes lost ones (ADRs 0069 and 0071).
 
 ## Considered options
 

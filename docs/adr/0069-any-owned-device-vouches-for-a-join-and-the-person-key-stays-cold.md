@@ -1,8 +1,8 @@
 # Any owned device vouches for a join, and the person key stays cold
 
 **Owner decision, 2026-11-16.** Supersedes ADR 0021. Design in progress: the
-form of a vouch is not decided. Not decided either: whether the device that
-makes the person key keeps it after setup.
+form of a vouch is not decided. No device keeps the person key after setup
+(ADR 0082).
 
 Any device the person already owns can approve a join. It vouches for the new
 device with its own device key. The person key no longer signs each join. It

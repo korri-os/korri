@@ -22,8 +22,10 @@ The two devices run a key exchange built on the code (a PAKE). A relay, or
 anyone who reads the relay, cannot get between the two devices without the
 code. Each code allows one guess.
 
-When the code matches, the owned device asks for one Accept and names the
-joining device. The person can refuse a device they did not expect.
+When the code matches, the owned device asks for one Accept. It shows the
+joining device's name, what kind of device it is, and how it connects. A name
+can be faked, so the name alone is not enough (owner decision, 2026-11-16).
+The person can refuse a device they did not expect.
 
 Korri never trusts a network. A home network, an airport Wi-Fi and a tailnet
 are the same to a join: a nearby path only helps the devices find each other
