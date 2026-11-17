@@ -192,6 +192,11 @@ impl Transport {
         // Removal also ends a request that an interruption left running.
         let easy = self.easy.insert(self.multi.remove2(request)?);
         performed?.with_context(|| format!("{endpoint} request failed"))?;
+        let scheme = if https { "https" } else { "http" };
+        crate::marks::mark_with(
+            &format!("{scheme} {endpoint} answered"),
+            &request_times(easy),
+        );
         let xml = String::from_utf8(std::mem::take(&mut easy.get_mut().0))?;
         let doc = roxmltree::Document::parse(&xml)?;
         let root = doc.root_element();
@@ -229,6 +234,17 @@ impl Transport {
         }
         Ok(())
     }
+}
+
+/// libcurl's own times of the request that just ended, for its mark.
+fn request_times(easy: &Easy2<Response>) -> String {
+    let time = |time: Result<Duration, curl::Error>| time.unwrap_or_default();
+    crate::marks::request_detail(
+        time(easy.connect_time()),
+        time(easy.appconnect_time()),
+        time(easy.starttransfer_time()),
+        time(easy.total_time()),
+    )
 }
 
 /// The curl crate's own libcurl (Android) gets the CA directory that the

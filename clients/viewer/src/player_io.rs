@@ -164,7 +164,7 @@ impl PlayerIo {
             .map_or(std::ptr::null_mut(), |s| s.as_ptr().cast_mut().cast())
     }
     pub(crate) fn connection_callbacks(&self, callbacks: &mut ffi::CONNECTION_LISTENER_CALLBACKS) {
-        callbacks.logMessage = Some(ffi::picture_log);
+        callbacks.logMessage = Some(crate::log::viewer_core_log);
         unsafe { ffi::viewer_input_callbacks(callbacks) };
     }
     pub(crate) fn start(&self) {

@@ -47,6 +47,8 @@ static int64_t written;  // every lower index has its row
 static struct slot slots[SLOTS];
 // Set by any thread; the recording's writer reads it without the lock.
 static atomic_bool failed;
+// The first frame reached the display: its start mark is written (#391).
+static atomic_bool shown;
 
 static uint64_t monotonic_ns(void) {
   struct timespec now;
@@ -137,8 +139,13 @@ void frame_times_decoded(int64_t pts) {
 }
 
 void frame_times_displayed(int64_t pts) {
-  if (!times || pts == AV_NOPTS_VALUE) return;
   uint64_t now = monotonic_ns();
+  // The start's last mark, in the form of the viewer's own (src/marks.rs),
+  // with or without a record. A Linux viewer's process runs one stream, so
+  // its first frame is the first after Start.
+  if (!atomic_exchange(&shown, true))
+    fprintf(stderr, "start: first frame shown at %.3f ms\n", (double)now / 1e6);
+  if (!times || pts == AV_NOPTS_VALUE) return;
   pthread_mutex_lock(&lock);
   // Frames reach the display in stream order, so no older unit can follow.
   if (pts >= written && pts < received) {

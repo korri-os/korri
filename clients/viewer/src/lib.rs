@@ -12,6 +12,8 @@ mod frame_record;
 mod frame_times;
 pub mod launch;
 mod log;
+// The start's timeline (#391); the Android app marks its own steps with it.
+pub mod marks;
 mod network;
 pub mod network_core;
 pub mod options;

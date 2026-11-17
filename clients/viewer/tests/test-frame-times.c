@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 static int64_t arrive(int frame_number, const char* bytes) {
@@ -19,6 +20,12 @@ static int64_t arrive(int frame_number, const char* bytes) {
                       .fullLength = entry.length, .enqueueTimeUs = LiGetMicroseconds()};
   usleep(1000);
   return frame_times_unit(&unit, bytes, entry.length);
+}
+
+static double monotonic_ms(void) {
+  struct timespec now;
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  return (double)now.tv_sec * 1e3 + (double)now.tv_nsec / 1e6;
 }
 
 static char* contents(const char* path) {
@@ -39,12 +46,33 @@ int main(void) {
   int times_fd = mkstemp(times), recording_fd = mkstemp(recording);
   assert(times_fd >= 0 && recording_fd >= 0);
 
-  // Off: no record, and the decoder gets no pts.
+  // Off: no record, and the decoder gets no pts. The first frame on the
+  // display still writes the start's last mark (#391), once, in the form of
+  // the viewer's own marks (src/marks.rs), on CLOCK_MONOTONIC.
+  char marks[4096];
+  snprintf(marks, sizeof marks, "%s/frame-marks-XXXXXX", directory);
+  int marks_fd = mkstemp(marks), saved = dup(2);
+  assert(marks_fd >= 0 && saved >= 0 && dup2(marks_fd, 2) == 2);
   LENTRY entry = {.data = "x", .length = 1};
   DECODE_UNIT unit = {.bufferList = &entry, .fullLength = 1};
   assert(frame_times_unit(&unit, "x", 1) == AV_NOPTS_VALUE);
+  double before = monotonic_ms();
+  frame_times_displayed(AV_NOPTS_VALUE);
+  double after = monotonic_ms();
   frame_times_displayed(AV_NOPTS_VALUE);
   assert(picture_frame_times_close() == 0);
+  fflush(stderr);
+  assert(dup2(saved, 2) == 2);
+  close(saved);
+  close(marks_fd);
+  double shown = 0;
+  int read = 0;
+  const char* mark = contents(marks);
+  assert(sscanf(mark, "start: first frame shown at %lf ms\n%n", &shown, &read) == 1);
+  assert(read > 0 && mark[read] == 0);
+  // The line rounds to the microsecond.
+  assert(before - 0.001 <= shown && shown <= after + 0.001);
+  unlink(marks);
 
   assert(picture_frame_times_open(times_fd, recording_fd) == 0);
   assert(arrive(7, "aa") == 0);
@@ -96,5 +124,5 @@ int main(void) {
   assert(picture_frame_times_close() == 0);
   unlink(times);
   unlink(recording);
-  puts("frame record: rows in index order, hand-offs only for shown frames, recording intact");
+  puts("frame record: rows in index order, hand-offs only for shown frames, recording intact, the first frame's start mark once");
 }

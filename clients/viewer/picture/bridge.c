@@ -9,7 +9,6 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
 
 static int using_vaapi;
 #ifdef HAVE_V4L2M2M
@@ -94,12 +93,4 @@ void picture_destroy(void) {
   fds = NULL;
   handlers = NULL;
   count = 0;
-}
-// Rust cannot define a C-variadic function. No session logic belongs here.
-void picture_log(const char* format, ...) {
-  va_list args;
-  va_start(args, format);
-  vprintf(format, args);
-  va_end(args);
-  fflush(stdout);
 }

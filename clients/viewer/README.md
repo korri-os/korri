@@ -121,9 +121,10 @@ The adaptations do not change decode, queue or presentation policy:
   loop becomes a single timed poll, so Rust owns the lifetime. Texture
   updates, two-frame skip rule, renderer, vsync and rendering calls stay the
   same. Teardown also releases its SDL texture, renderer and mutex.
-- `bridge.c` supplies the descriptor loop used by X11 and the C-variadic log
-  callback. Rust polls either presenter, then stops and joins the network
-  core before destroying the presenter. No connection logic lives in C.
+- `bridge.c` supplies the descriptor loop used by X11. The core's C-variadic
+  log callback is `src/core_log.c`, on both platforms. Rust polls either
+  presenter, then stops and joins the network core before destroying the
+  presenter. No connection logic lives in C.
 - The frame record (below) adds calls and no policy. `video/ffmpeg.c` gives
   each packet a pts, so that the frame that the decoder returns names its
   decode unit. `video/x11.c` and `video/sdl.c` report each unit and its
@@ -450,6 +451,27 @@ Only the PC presenters and Android report so far. The handheld `v4l2request` pat
 record; with the variables set it writes a header and an empty recording,
 and the tool then gives number 1 no value.
 
+## The start's timeline (#391)
+
+Every start writes one line for each step from Start to the first frame,
+on both platforms, with or without a record (`src/marks.rs`):
+`start: <step> at <time> ms`, `<time>` on CLOCK_MONOTONIC, the clock of
+stream-cadence's start and display times and of the frame record. The
+steps: Start (or the command's own start without a lifecycle); each HTTP
+request with libcurl's connect, TLS, first byte and total times; the pair
+check; the picture and input; every stage of the network core
+(`stageStarting`, `stageComplete`); the RTSP answers that the core names in
+its log (DESCRIBE, the three SETUPs) and its first video and audio packet
+(`marks::core_step`, through `src/core_log.c`); on Android the decoder
+(`decoders listed`, `decoder made`); the first frame that reached the
+display. The core logs nothing after OPTIONS or ANNOUNCE, so
+those answers have no mark of their own. On Linux the first frame's line
+comes from `picture/frame_times.c`, at the presenter's hand-off; on Android
+from the decoder's output thread, at the first frame released to the
+Surface. The Korri app adds its own steps before Start (korrid's start, the
+certificates, the layers, the window's turn), and its play proof reads them
+all into `result.json` (`start_timeline`).
+
 ## Sound and input provenance and checks
 
 See `io/README.md` for every C adaptation and its source. The I/O check
@@ -609,7 +631,7 @@ of `clients/android/sdk.nix`: `aarch64-linux-android` for phones and
   the input itself runs on the app's thread.
   Without the app's picture, as in the session tests, the core runs its own
   empty decoder and audio callbacks. The core's log goes to logcat, tag
-  `korri-viewer`, through `src/android/log.c`: the callback is C-variadic,
+  `korri-viewer`, through `src/core_log.c`: the callback is C-variadic,
   which Rust cannot define. The signal handlers in `stream.rs` are Linux
   only: on Android the app owns its process's signals. The `v4l2request`
   cfg stays off.

@@ -12,16 +12,7 @@
 //! goes to logcat.
 use crate::{feedback, network as ffi, options::Options, picture, sound};
 use anyhow::Result;
-use std::{
-    ffi::{c_char, c_void},
-    ptr::null_mut,
-    time::Duration,
-};
-
-unsafe extern "C" {
-    /// `log.c`: the core's log line, to logcat.
-    fn viewer_android_log(format: *const c_char, ...);
-}
+use std::{ffi::c_void, ptr::null_mut, time::Duration};
 
 /// What the app gives one stream; none in the session tests.
 pub(crate) type Platform = Option<App>;
@@ -99,7 +90,7 @@ impl PlayerIo {
         null_mut()
     }
     pub(crate) fn connection_callbacks(&self, callbacks: &mut ffi::CONNECTION_LISTENER_CALLBACKS) {
-        callbacks.logMessage = Some(viewer_android_log);
+        callbacks.logMessage = Some(crate::log::viewer_core_log);
         // Without the app, as in the session tests, the core's own empty
         // callbacks take rumble and light.
         if let Some(worker) = &self.feedback {

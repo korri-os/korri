@@ -63,6 +63,8 @@ fn run_on(
             };
             start.configure(&mut options)?;
         }
+        // The start's timeline opens: at Start, or as the command starts.
+        crate::marks::TIMELINE.begin();
         let pin = pin.context("KORRI_MOONLIGHT_SERVER_CERTIFICATE is required")?;
         let identity = if options.action == "pair" {
             Identity::load_or_generate(&options.keydir)?

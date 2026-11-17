@@ -825,7 +825,10 @@ impl<C: Codec + 'static> Decoder<C> {
                 let released = codec.release_output(index, Some(monotonic_ns() as i64));
                 let handed = monotonic_ns();
                 match released {
-                    Ok(()) => self.displayed(record, handed),
+                    Ok(()) => {
+                        self.displayed(record, handed);
+                        crate::marks::TIMELINE.frame_shown();
+                    }
                     Err(status) => error = error.or(Some(("frame not released", status))),
                 }
             }

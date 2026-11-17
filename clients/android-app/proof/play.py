@@ -76,6 +76,7 @@ only when every check passed.
 """
 
 import argparse
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -140,6 +141,12 @@ STATUS_BAR_ROWS = 100
 EDGE = 2
 BLACK = 8
 BACKDROP_SHOWN = "picture: the black backdrop shows under the video, with its first picture"
+# #391: the start's timeline, the viewer's and the app's marks (clients/viewer/src/marks.rs), each at
+# the emulator's CLOCK_MONOTONIC in milliseconds; logcat's wall clock (threadtime) heads each line.
+MARK = re.compile(r"start: (?P<step>.+?) at (?P<at>\d+\.\d{3}) ms(?: \((?P<detail>.*)\))?\s*$")
+FIRST_FRAME = "first frame shown"
+# The emulator's wall clock as logcat prints it, to the microsecond: MM-DD HH:MM:SS.ffffff.
+WALL = "%m-%d %H:%M:%S.%f"
 # The video layer's placement in the window that the layers were made in, before the turn.
 PLACED_IN = re.compile(r"korri-app: viewer video layer \d+x\d+ placed at .* in the window (\d+)x(\d+)")
 # #494: Android's emulated display cutouts and phones are overlays of the system image (`cmd overlay`):
@@ -283,6 +290,53 @@ def first_bar(emulator: "d8.Emulator", out: Path, name: str, seconds: float) -> 
 
 def tap(emulator: "d8.Emulator", target: dict) -> None:
     emulator.shell(f"input tap {target['x']} {target['y']}")
+
+
+def timed_tap(emulator: "d8.Emulator", target: dict) -> str:
+    """A tap, and the emulator's wall clock just before `input` starts, as logcat prints it (WALL)."""
+    shown = emulator.shell(f"date +'%m-%d %H:%M:%S.%N' && input tap {target['x']} {target['y']}").stdout
+    return shown.strip().splitlines()[0][:21]
+
+
+def wall_seconds(stamp: str) -> float:
+    """Seconds into a leap year of a wall-clock stamp without its year (logcat's, WALL): for differences."""
+    return (datetime.strptime("2000-" + stamp, "%Y-" + WALL) - datetime(2000, 1, 1)).total_seconds()
+
+
+def start_timeline(lines: "list[str]", tapped: str) -> dict:
+    """One start's marks in logcat (threadtime), from the tap at `tapped` (WALL) to the first frame:
+    each step's milliseconds after the tap, and its own times. The first mark's logcat time anchors the
+    marks to the tap's wall clock, to the millisecond; the steps' differences are monotonic."""
+    steps: list = []
+    anchor = None
+    for line in lines:
+        found = MARK.search(line)
+        if not found:
+            continue
+        at = float(found["at"])
+        if anchor is None:
+            anchor = at - (wall_seconds(line[:18]) - wall_seconds(tapped)) * 1e3
+        step = {"step": found["step"], "ms_after_tap": round(at - anchor, 1)}
+        if found["detail"]:
+            step["detail"] = found["detail"]
+        steps.append(step)
+        if found["step"] == FIRST_FRAME:
+            break
+    first = next((step["ms_after_tap"] for step in steps if step["step"] == FIRST_FRAME), None)
+    return {"tapped": tapped, "steps": steps, "ms_from_tap_to_first_frame": first}
+
+
+def tcp_counters(text: str) -> dict:
+    """The emulator's TCP counters (/proc/net/snmp and /proc/net/netstat): connections opened,
+    segments sent again, SYNs sent again."""
+    tables: dict = {}
+    rows = [line.split() for line in text.splitlines() if ":" in line]
+    for names, values in zip(rows, rows[1:]):
+        if names[0] == values[0] and not names[1].lstrip("-").isdigit():
+            tables.setdefault(names[0].rstrip(":"), {}).update(zip(names[1:], map(int, values[1:])))
+    tcp, extended = tables.get("Tcp", {}), tables.get("TcpExt", {})
+    return {"active_opens": tcp.get("ActiveOpens"), "retransmitted_segments": tcp.get("RetransSegs"),
+            "syn_retransmits": extended.get("TCPSynRetrans")}
 
 
 def waiting(logcat: "d8.Logcat", sender: "viewer_proof.Remote", pattern, since: int, timeout: float):
@@ -1145,11 +1199,12 @@ def main() -> int:
         if play is None:
             raise RuntimeError("no Play in detail.png")
         launch_mark = logcat.mark()
+        tcp_before = emulator.shell("cat /proc/net/snmp /proc/net/netstat", check=False).stdout
         tapped = time.monotonic()
         steps["play_taps"] = 0
         asked = None
         while steps["play_taps"] < 3 and asked is None:
-            tap(emulator, play)
+            tapped_wall = timed_tap(emulator, play)
             steps["play_taps"] += 1
             asked = waiting(logcat, sender, LAUNCH, launch_mark, 60)
         checks["the_tap_makes_korrid_start_the_viewer"] = asked is not None
@@ -1167,6 +1222,16 @@ def main() -> int:
         checks["korrids_status_reads_running"] = korrid_read is not None
         if running is None:
             raise RuntimeError("the viewer did not report Running")
+        # #391: every step from the tap to the first frame, and the emulator's TCP until then.
+        logcat.wait_for(f"start: {FIRST_FRAME}", launch_mark, 10)
+        tcp_after = emulator.shell("cat /proc/net/snmp /proc/net/netstat", check=False).stdout
+        steps["start_timeline"] = start_timeline(logcat.lines()[launch_mark:], tapped_wall)
+        before, after = tcp_counters(tcp_before), tcp_counters(tcp_after)
+        steps["emulator_tcp_from_tap_to_first_frame"] = {
+            name: None if before[name] is None or after[name] is None else after[name] - before[name]
+            for name in before}
+        checks["the_start_timeline_reaches_the_first_frame"] = \
+            steps["start_timeline"]["ms_from_tap_to_first_frame"] is not None
 
         log("the picture: the frame-ID bar")
         steps["first_bar"] = first_bar(emulator, out, "stream-first", 30)

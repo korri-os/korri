@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The viewer's own record of each frame, for the outside measure (#435).
 // Off unless Rust opened it (picture_frame_times_open); then every call is a
-// no-op. A decode unit's record index travels through FFmpeg as the packet's
-// and the frame's pts.
+// no-op, except that the first displayed frame still writes its start mark
+// (#391). A decode unit's record index travels through FFmpeg as the
+// packet's and the frame's pts.
 #ifndef FRAME_TIMES_H
 #define FRAME_TIMES_H
 #include <Limelight.h>

@@ -14,4 +14,3 @@ int picture_frame_times_close(void);
 // size, or 0 before the first. The stream's thread reads it after each poll
 // and reports a new size as the encoded size (#476).
 int picture_shown_size(int* width, int* height);
-void picture_log(const char* format, ...);

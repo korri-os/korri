@@ -288,7 +288,7 @@ let
             # curl, OpenSSL and the core are inside the executable. The crate's
             # curl hides its symbols, so they are local (t), not global.
             "${toolchain}/bin/llvm-nm" --defined-only "$https" > symbols.txt
-            for symbol in LiStartConnection LiStopConnection curl_multi_perform SSL_CTX_new EVP_aes_128_gcm viewer_android_log opus_multistream_decode; do
+            for symbol in LiStartConnection LiStopConnection curl_multi_perform SSL_CTX_new EVP_aes_128_gcm viewer_core_log opus_multistream_decode; do
               grep -Eq " [Tt] $symbol$" symbols.txt || { echo "missing $symbol" >&2; exit 1; }
               echo "$symbol" >> $out/${part.name}/symbols.txt
             done

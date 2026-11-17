@@ -73,6 +73,7 @@ use korri_viewer::{
     launch,
     layer::{may_move_the_cutout, Layers, Pending},
     lifecycle::{ControlChange, ControlChanges, Lifecycle},
+    marks,
     options::Options,
     overlay::{is_system_key, Presenter},
     picture::{FrameRecord, Picture},
@@ -310,6 +311,8 @@ impl LinuxStreamViewer for Adapter {
         Box::pin(async move {
             let _operation = self.0.operation.lock().await;
             exact(launch)?;
+            // The app's steps of the start's timeline (#391), before Start.
+            marks::mark("korrid starts the viewer");
             if let Some(current) = lock(&self.0.current).as_ref() {
                 if let ViewerReply::Status(status) = current.lifecycle.request(ViewerRequest {
                     launch_id: current.launch.clone(),
@@ -334,11 +337,13 @@ impl LinuxStreamViewer for Adapter {
                     .await
                     .map_err(|_| error("viewer worker failed"))??
             };
+            marks::mark("client certificate read");
             let server =
                 korrid::android_app::provision_moonlight_certificate(address, &client).await?;
             logcat::info(&format!(
                 "korri-app: viewer certificate provisioned through korrid's broker for {address}"
             ));
+            marks::mark("server certificate provisioned");
             let pin = Pin::new(&self.0.pins, launch, &server)
                 .map_err(|cause| error(format!("the server certificate has no place: {cause}")))?;
             let options = Options::for_lifecycle(
@@ -792,7 +797,10 @@ impl Stream {
             (show.options.width, show.options.height),
             Presenter::Shell,
         ) {
-            Ok(pending) => self.phase = Phase::Making(Box::new(Making { show, pending })),
+            Ok(pending) => {
+                marks::mark("video layers asked");
+                self.phase = Phase::Making(Box::new(Making { show, pending }))
+            }
             Err(cause) => refuse(
                 show,
                 &format!("the video layer was not asked for: {cause:#}"),
@@ -848,6 +856,7 @@ impl Stream {
 
     /// The layers exist: the runtime starts, and Start goes to it.
     fn start(&mut self, show: Show, layers: Layers) -> Phase {
+        marks::mark("video layers made");
         let placed = layers.placed;
         // The viewer's screen, with which it reports its shape to korrid's
         // live-shape (#476): it follows a new stream size since slice 4.
@@ -958,6 +967,7 @@ impl Stream {
         }
         events::unbuffered(&self.app);
         self.orient(Some(landscape));
+        marks::mark("window turn asked");
         // The stream's controls and status, for korrid's snapshot and
         // Apply; this activity is their lease.
         let changes = lifecycle.controls(self.id, status::readings);
@@ -1036,6 +1046,10 @@ impl Stream {
             .decoded
             .take()
             .is_some_and(|size| playing.layers.restream(&self.app, size));
+        if window {
+            let (width, height) = playing.layers.window;
+            marks::mark(&format!("window now {width}x{height}"));
+        }
         if window || stream {
             log_placement(&playing.layers);
             playing.play.place(playing.layers.placed);

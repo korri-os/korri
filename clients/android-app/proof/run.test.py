@@ -189,5 +189,42 @@ class CropToFillReadsWhereThePictureShows(unittest.TestCase):
         self.assertFalse(play.fills_the_window({"file": "none", **play.app_layers("")})["pass"])
 
 
+class TheStartTimelineReadsTheMarks(unittest.TestCase):
+    """play.py's start_timeline (#391): the viewer's and the app's marks in logcat, from the tap to the
+    first frame, on the marks' monotonic clock, anchored to the tap by the first mark's logcat time."""
+
+    LINES = [
+        "11-16 04:19:29.915  2910  2956 I korri   : korrid: viewer display sent with prepare: none",
+        "11-16 04:19:29.916  2910  2956 I korri-viewer: start: korrid starts the viewer at 1000.500 ms",
+        "11-16 04:19:30.900  2910  6232 I korri-viewer: start: Start at 1984.000 ms",
+        "11-16 04:19:31.903  2910  6232 I korri-viewer: start: http serverinfo answered at 2987.300 ms "
+        "(connected 1001.0 ms, first byte 1002.0 ms, total 1003.0 ms)",
+        "11-16 04:19:42.046  2910  6259 I korri-viewer: start: first frame shown at 13130.000 ms",
+        # The start after Home: not this start's.
+        "11-16 04:20:55.000  2910  7000 I korri-viewer: start: Start at 86084.000 ms",
+    ]
+
+    def test_each_step_is_its_time_after_the_tap_until_the_first_frame(self):
+        timeline = play.start_timeline(self.LINES, "11-16 04:19:29.216000")
+        self.assertEqual([step["step"] for step in timeline["steps"]],
+                         ["korrid starts the viewer", "Start", "http serverinfo answered", "first frame shown"])
+        self.assertEqual([step["ms_after_tap"] for step in timeline["steps"]], [700.0, 1683.5, 2686.8, 12829.5])
+        self.assertEqual(timeline["steps"][2]["detail"], "connected 1001.0 ms, first byte 1002.0 ms, total 1003.0 ms")
+        self.assertEqual(timeline["ms_from_tap_to_first_frame"], 12829.5)
+
+    def test_without_a_first_frame_the_timeline_has_no_end(self):
+        self.assertIsNone(play.start_timeline(self.LINES[:3], "11-16 04:19:29.216000")["ms_from_tap_to_first_frame"])
+
+    def test_the_tcp_counters_come_from_snmp_and_netstat(self):
+        text = ("Tcp: RtoAlgorithm RtoMin RtoMax MaxConn ActiveOpens PassiveOpens RetransSegs\n"
+                "Tcp: 1 200 120000 -1 41 3 17\n"
+                "Udp: InDatagrams NoPorts\nUdp: 5 0\n"
+                "TcpExt: SyncookiesSent TCPSynRetrans\nTcpExt: 0 9\n")
+        self.assertEqual(play.tcp_counters(text),
+                         {"active_opens": 41, "retransmitted_segments": 17, "syn_retransmits": 9})
+        self.assertEqual(play.tcp_counters("cat: /proc/net/snmp: Permission denied"),
+                         {"active_opens": None, "retransmitted_segments": None, "syn_retransmits": None})
+
+
 if __name__ == "__main__":
     unittest.main()

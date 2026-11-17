@@ -112,10 +112,12 @@ pub(crate) fn run_with_lifecycle(
         required(&info, "PairStatus")? == "1",
         "client is not paired"
     );
+    crate::marks::mark("paired");
     let app = app_id(&t.get(true, "applist", &[])?, &o.app)?;
     running()?;
     #[cfg_attr(not(target_os = "android"), allow(unused_mut))]
     let mut io = PlayerIo::new(o, platform)?;
+    crate::marks::mark("picture and input ready");
     // Before the launch: a record that cannot be created stops nothing that ran.
     #[cfg(not(target_os = "android"))]
     let frame_times = FrameTimes::from_environment()?;
@@ -272,6 +274,8 @@ pub(crate) fn run_with_lifecycle(
     callbacks.connectionStarted = Some(connection_started);
     callbacks.connectionTerminated = Some(terminated);
     callbacks.stageFailed = Some(stage_failed);
+    callbacks.stageStarting = Some(crate::marks::stage_starting);
+    callbacks.stageComplete = Some(crate::marks::stage_complete);
     *LIFECYCLE.lock().unwrap() = lifecycle.map(|l| {
         (
             l.clone(),
@@ -284,6 +288,7 @@ pub(crate) fn run_with_lifecycle(
     });
     let _lifecycle_guard = LifecycleGuard;
     io.connection_callbacks(&mut callbacks);
+    crate::log::mark_core_lines();
     // With a lifecycle socket these signals stay blocked from before its
     // creation; lifecycle's receiver requests the stop instead. On Android
     // the viewer is inside the app, and the app owns its process's signals.

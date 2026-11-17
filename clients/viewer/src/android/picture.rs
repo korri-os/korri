@@ -249,6 +249,7 @@ fn make_decoder(format: c_int, width: c_int, height: c_int, fps: c_int) -> Resul
         bail!("the stream is not H.264 (format {format:#x}); this slice decodes H.264 only");
     }
     let decoders = decoder_list()?;
+    crate::marks::mark("decoders listed");
     log::line(&format!(
         "picture: decoders for {MIME}: {}",
         decoders
@@ -337,6 +338,7 @@ fn make_decoder(format: c_int, width: c_int, height: c_int, fps: c_int) -> Resul
     );
     decoder.start_output()?;
     stream.decoder = Some(decoder);
+    crate::marks::mark("decoder made");
     Ok(())
 }
 
