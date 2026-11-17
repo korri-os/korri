@@ -18,7 +18,7 @@ pub struct Setup;
 impl Module for Setup {
     fn command(&self) -> Command {
         Command::new("setup").about("Start or rerun setup using the shell's network, settings and completion calls; keep the current identity unless explicitly switched")
-            .after_help("Physical controller testing remains in the shell. The optional existing starter-pack offer is available as: korri plugins on @korri:starter-pack, then korri library folders rescan. No new identity is claimed during setup.")
+            .after_help("Physical controller testing remains in the shell. The optional existing starter-pack offer is available as: korri plugins on @korri:starter-pack, then korri library folders rescan. A device without an owner stays without one during setup, so it can join; finishing setup gives it its automatic identity.")
             .args_conflicts_with_subcommands(true)
             .arg(Arg::new("seats").long("seats").value_name("COUNT").help("Configured seat count, not physical controller assignment"))
             .arg(Arg::new("name").long("name").value_name("DEVICE_NAME"))
@@ -27,7 +27,7 @@ impl Module for Setup {
             .arg(Arg::new("password-stdin").long("password-stdin").action(ArgAction::SetTrue).requires("network"))
             .subcommand(Command::new("status").about("Show setup, seats, name and network without changing them"))
             .subcommand(Command::new("restart").about("Confirm and rerun setup; retain settings, identity, games and saves"))
-            .subcommand(Command::new("finish").about("Finish setup, keeping the existing identity; no new identity is claimed"))
+            .subcommand(Command::new("finish").about("Finish setup; an owned device keeps its owner, a device without one gets its automatic identity"))
     }
     fn run(&self, args: &ArgMatches, context: &Context) -> Result<Output, CliError> {
         if context.device.is_some() {

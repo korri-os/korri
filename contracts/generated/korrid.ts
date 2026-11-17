@@ -613,6 +613,57 @@ export interface InvitesList {
 export interface InvitesListRequest {
 }
 
+export interface JoinAcceptRequest {
+	/** True accepts the joining device; false refuses it. */
+	accept: boolean;
+}
+
+export interface JoinCodeShown {
+	/** The nameplate, a space, then the secret. */
+	code: string;
+	expiresAt: number;
+	/** The code before this one ended because a wrong code was tried. */
+	wrongCodeTried: boolean;
+}
+
+export interface JoinEnterRequest {
+	/** The 10 digits of the join confirmation code. */
+	code: string;
+}
+
+export interface JoinStartRequest {
+}
+
+export interface JoinStatusRequest {
+}
+
+export interface JoinedDevice {
+	devicePublicKey: string;
+	ownerPublicKey: string;
+}
+
+export type NetworkConnection =
+	| { _tag: "Offline", payload?: undefined }
+	| { _tag: "Wired", payload?: undefined }
+	| { _tag: "Wifi", payload: {
+	ssid: string;
+	strengthPercent?: number;
+}};
+
+/**
+ * What the owned device shows the person before Accept (ADR 0070). The
+ * joining device supplies these facts, so they can be false. Only the code
+ * proves which device joins.
+ */
+export interface JoiningDevice {
+	/** The device's label, from the producer that endpoint publication uses. */
+	name?: string;
+	/** The device's operating system and processor architecture. */
+	kind: string;
+	/** The device's network connection, as NetworkManager reports it. */
+	connection?: NetworkConnection;
+}
+
 export interface LaunchArgs {
 	prepend?: string[];
 	append?: string[];
@@ -1174,14 +1225,6 @@ export interface NetplayStatus {
 	gameTitle?: string;
 	phase: NetplayPhase;
 }
-
-export type NetworkConnection =
-	| { _tag: "Offline", payload?: undefined }
-	| { _tag: "Wired", payload?: undefined }
-	| { _tag: "Wifi", payload: {
-	ssid: string;
-	strengthPercent?: number;
-}};
 
 export type Wifi =
 	| { _tag: "NoAdapter", payload?: undefined }
@@ -2299,6 +2342,30 @@ export type InvitesListOutcome =
 	| { _tag: "Ok", payload: InvitesList }
 	| { _tag: "Err", payload: RpcFailure };
 
+export type JoinOutcome =
+	| { _tag: "Ok", payload: JoinStatus }
+	| { _tag: "Err", payload: RpcFailure };
+
+/**
+ * The one join on this device. The owned device moves through
+ * `ShowingCode` and `AwaitingAccept`; the new device through `Matching`
+ * and `WaitingForAccept`. Both end in `Joined`, `Refused` or `Failed`.
+ */
+export type JoinStatus =
+	| { _tag: "Idle", payload?: undefined }
+	/** The owned device is choosing a nameplate. */
+	| { _tag: "Starting", payload?: undefined }
+	| { _tag: "ShowingCode", payload: JoinCodeShown }
+	/** The new device is checking the code with the owned device. */
+	| { _tag: "Matching", payload?: undefined }
+	/** The code matched. The person must accept or refuse this device. */
+	| { _tag: "AwaitingAccept", payload: JoiningDevice }
+	/** The code matched. The person must accept on the owned device. */
+	| { _tag: "WaitingForAccept", payload?: undefined }
+	| { _tag: "Joined", payload: JoinedDevice }
+	| { _tag: "Refused", payload?: undefined }
+	| { _tag: "Failed", payload: RpcFailure };
+
 export type LaunchSettingsSnapshotOutcome =
 	| { _tag: "Ok", payload: LaunchSnapshot }
 	| { _tag: "Err", payload: RpcFailure };
@@ -2474,6 +2541,10 @@ export type RpcRequest =
 	| { _tag: "system.identity.switch.nip46", payload: IdentityNip46SwitchRequest }
 	| { _tag: "system.identity.retired.export", payload: IdentityRetiredExportRequest }
 	| { _tag: "system.identity.retired.delete", payload: IdentityRetiredDeleteRequest }
+	| { _tag: "system.identity.join.start", payload: JoinStartRequest }
+	| { _tag: "system.identity.join.enter", payload: JoinEnterRequest }
+	| { _tag: "system.identity.join.status", payload: JoinStatusRequest }
+	| { _tag: "system.identity.join.accept", payload: JoinAcceptRequest }
 	| { _tag: "system.plugins.publishers", payload: PluginPublishersRequest }
 	| { _tag: "system.plugins.publisher.trust", payload: PluginTrustPublisherRequest }
 	| { _tag: "system.plugins.publisher.revoke", payload: PluginRevokePublisherRequest }
@@ -2575,6 +2646,10 @@ export type RpcResponse =
 	| { _tag: "system.identity.switch.nip46", outcome: IdentitySwitchOutcome }
 	| { _tag: "system.identity.retired.export", outcome: IdentityBackupOutcome }
 	| { _tag: "system.identity.retired.delete", outcome: IdentityRetiredDeleteOutcome }
+	| { _tag: "system.identity.join.start", outcome: JoinOutcome }
+	| { _tag: "system.identity.join.enter", outcome: JoinOutcome }
+	| { _tag: "system.identity.join.status", outcome: JoinOutcome }
+	| { _tag: "system.identity.join.accept", outcome: JoinOutcome }
 	| { _tag: "system.plugins.publishers", outcome: PluginPublishersOutcome }
 	| { _tag: "system.plugins.publisher.trust", outcome: PluginChangeOutcome }
 	| { _tag: "system.plugins.publisher.revoke", outcome: PluginChangeOutcome }

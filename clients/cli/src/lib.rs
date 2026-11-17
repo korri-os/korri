@@ -4,6 +4,7 @@ pub mod controllers;
 pub mod devices;
 pub mod error;
 pub mod identity;
+pub mod join;
 mod keep_launch;
 pub mod launch_settings;
 pub mod library;
@@ -43,6 +44,7 @@ pub static MODULES: &[&dyn Module] = &[
     &wifi::Wifi,
     &saves::Saves,
     &identity::Identity,
+    &join::Join,
     &setup::Setup,
 ];
 

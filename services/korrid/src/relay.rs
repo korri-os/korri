@@ -30,7 +30,7 @@ const MAX_RELAY_URL_BYTES: usize = 2_048;
 const MAX_ENDPOINT_CANDIDATES: usize = 8;
 const MAX_EVENT_BYTES: usize = 64 * 1024;
 const MAX_STORED_EVENTS_PER_RELAY: usize = 256;
-const MAX_READ_EVENTS: usize = 128;
+pub(crate) const MAX_READ_EVENTS: usize = 128;
 const MAX_RESPONSE_BYTES: usize = 256 * 1024;
 const MAX_ENDPOINT_LIFETIME_SECONDS: u64 = 7 * 24 * 60 * 60;
 const MAX_CLOCK_FUTURE_SECONDS: u64 = 5 * 60;
@@ -324,6 +324,8 @@ pub struct RelayFilter {
     pub author_public_key: Option<String>,
     pub since: Option<u64>,
     pub limit: usize,
+    /// Addressable event identifiers (`#d`); empty asks for any.
+    pub identifiers: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -427,7 +429,7 @@ pub enum RelayError {
 }
 
 #[derive(Clone)]
-struct DeviceAuthSigner(Arc<DeviceIdentity>);
+pub(crate) struct DeviceAuthSigner(pub(crate) Arc<DeviceIdentity>);
 
 impl RelayAuthSigner for DeviceAuthSigner {
     fn sign_auth(
@@ -713,6 +715,7 @@ where
             author_public_key: author_public_key.map(str::to_owned),
             since: Some(since),
             limit: MAX_READ_EVENTS,
+            identifiers: Vec::new(),
         };
         let mut seen = BTreeSet::new();
         let mut packets = Vec::new();
@@ -737,6 +740,7 @@ where
             author_public_key: Some(person.into()),
             since: None,
             limit: MAX_READ_EVENTS,
+            identifiers: Vec::new(),
         };
         Ok(self
             .read_all(&filter)
@@ -794,12 +798,16 @@ where
 {
     fn publish_owner_statement(&self) -> BoxFuture<'_, Result<PublishState, RelayError>> {
         Box::pin(async move {
-            let event_json = self
-                .identity
-                .owner_statement_json()
-                .ok_or(RelayError::Identity)?;
-            // EVENT remains person-authored; publish_json supplies device NIP-42 auth.
-            Ok(self.publish_json(&event_json).await)
+            let events = self.identity.owner_statement_events();
+            let (own, chain) = events.split_first().ok_or(RelayError::Identity)?;
+            // EVENT keeps its signer; publish_json supplies device NIP-42 auth.
+            let state = self.publish_json(own).await;
+            // A vouched device also keeps its voucher's chain on the relays,
+            // so peers can follow it. Its result does not change the state.
+            for event in chain {
+                self.publish_json(event).await;
+            }
+            Ok(state)
         })
     }
 
@@ -872,6 +880,7 @@ where
                 author_public_key: Some(owner),
                 since: Some(created_at),
                 limit: MAX_READ_EVENTS,
+                identifiers: Vec::new(),
             };
             let (events, failures) = self.read_all(&filter).await;
             if failures == self.relays.as_slice().len() {
@@ -916,16 +925,41 @@ where
                 author_public_key: Some(owner.into()),
                 since: None,
                 limit: MAX_READ_EVENTS,
+                identifiers: Vec::new(),
             };
+            // Vouches are signed by devices and name the person key in `p`
+            // (ADR 0069), so they need their own read.
+            let vouch_filter = RelayFilter {
+                author_public_key: None,
+                recipient_public_key: Some(owner.into()),
+                ..filter.clone()
+            };
+            // One read at a time: discovery cancels a blocked read as a whole.
             let (events, failures) = self.read_all(&filter).await;
             if failures == self.relays.as_slice().len() {
                 return Err(RelayError::Unavailable(
                     "all owner roster reads failed".into(),
                 ));
             }
+            let (vouches, _) = self.read_all(&vouch_filter).await;
+            let known: BTreeMap<String, (String, String)> = events
+                .iter()
+                .chain(&vouches)
+                .filter_map(|delivered| {
+                    let event = DeviceIdentity::verify_event(&delivered.event_json).ok()?;
+                    Some((event.id, (event.author, delivered.event_json.clone())))
+                })
+                .collect();
+            let chains = vouches
+                .iter()
+                .filter_map(|delivered| owner_chain(&delivered.event_json, &known, owner))
+                .map(|event_json| RelayEvent {
+                    relay: String::new(),
+                    event_json,
+                });
             let mut seen = BTreeSet::new();
             let mut devices: BTreeMap<String, OwnerRosterEntry> = BTreeMap::new();
-            for delivered in events {
+            for delivered in events.into_iter().chain(chains) {
                 let statement = match DeviceIdentity::derive_owner_statement(&delivered.event_json)
                 {
                     Ok(statement)
@@ -1065,6 +1099,7 @@ impl<'a> CoordinationDecoder<'a> {
             author_public_key: None,
             since: None,
             limit: MAX_READ_EVENTS,
+            identifiers: Vec::new(),
         }
     }
     fn decode(
@@ -1135,6 +1170,32 @@ impl<'a> CoordinationDecoder<'a> {
             rejected_events: rejected,
         }
     }
+}
+
+/// Follow one vouch through the roster's own events to a statement that the
+/// person key signed. The result is a vouched device's owner statement; the
+/// caller still verifies it in full.
+fn owner_chain(
+    vouch_json: &str,
+    known: &BTreeMap<String, (String, String)>,
+    owner: &str,
+) -> Option<String> {
+    let mut chain = vec![vouch_json.to_owned()];
+    let mut current = DeviceIdentity::verify_event(vouch_json).ok()?;
+    while chain.len() < crate::identity::MAX_OWNER_CHAIN {
+        let next_id = current
+            .tags
+            .iter()
+            .find(|tag| tag.len() == 2 && tag[0] == "e")
+            .map(|tag| tag[1].clone())?;
+        let (author, json) = known.get(&next_id)?;
+        chain.push(json.clone());
+        if author == owner {
+            return Some(format!("[{}]", chain.join(",")));
+        }
+        current = DeviceIdentity::verify_event(json).ok()?;
+    }
+    None
 }
 
 pub(crate) fn decode_endpoint(
@@ -1592,6 +1653,11 @@ impl RelayTransport for InProcessRelayNetwork {
                             .as_ref()
                             .map(|recipient| has_tag(&event.tags, "p", recipient))
                             .unwrap_or(true)
+                        && (filter.identifiers.is_empty()
+                            || filter
+                                .identifiers
+                                .iter()
+                                .any(|identifier| has_tag(&event.tags, "d", identifier)))
                 })
                 .collect();
             matched.sort_by(|left, right| {
@@ -2296,6 +2362,7 @@ async fn coordination_read(
         subscription.filter.kinds != filter.kinds
             || subscription.filter.recipient_public_key != filter.recipient_public_key
             || subscription.filter.author_public_key != filter.author_public_key
+            || subscription.filter.identifiers != filter.identifiers
             || subscription.filter.limit != filter.limit
     });
     if replace {
@@ -2424,6 +2491,9 @@ fn relay_request(subscription: &str, filter: &RelayFilter) -> String {
     wire.insert("kinds".into(), serde_json::json!(filter.kinds));
     if let Some(recipient) = &filter.recipient_public_key {
         wire.insert("#p".into(), serde_json::json!([recipient]));
+    }
+    if !filter.identifiers.is_empty() {
+        wire.insert("#d".into(), serde_json::json!(filter.identifiers));
     }
     wire.insert("limit".into(), serde_json::json!(filter.limit));
     if let Some(author) = &filter.author_public_key {
@@ -2950,6 +3020,7 @@ mod tests {
             author_public_key: Some(owner.public_key().to_hex()),
             since: None,
             limit: MAX_READ_EVENTS,
+            identifiers: Vec::new(),
         };
         let public: serde_json::Value =
             serde_json::from_str(&relay_request("roster", &filter)).unwrap();

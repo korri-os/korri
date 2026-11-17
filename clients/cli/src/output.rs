@@ -102,6 +102,12 @@ pub fn failure(response: &RpcResponse) -> Option<RpcFailure> {
                     _ => None,
                 });
         }
+        RpcResponse::JoinStart(join::JoinOutcome::Ok(join::JoinStatus::Failed(failure)))
+        | RpcResponse::JoinEnter(join::JoinOutcome::Ok(join::JoinStatus::Failed(failure)))
+        | RpcResponse::JoinStatus(join::JoinOutcome::Ok(join::JoinStatus::Failed(failure)))
+        | RpcResponse::JoinAccept(join::JoinOutcome::Ok(join::JoinStatus::Failed(failure))) => {
+            return Some(failure.clone())
+        }
         RpcResponse::WifiConnect(korrid::network::NetworkStatusOutcome::Ok(snapshot))
         | RpcResponse::WifiConnectHidden(korrid::network::NetworkStatusOutcome::Ok(snapshot)) => {
             if let korrid::network::Wifi::Available {

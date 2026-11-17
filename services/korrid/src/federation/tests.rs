@@ -546,3 +546,61 @@ fn optional_endpoint_metadata_is_bounded_and_empty_endpoints_are_invalid() {
 
 #[path = "stream_play_label_tests.rs"]
 mod stream_play_labels;
+
+#[test]
+fn a_device_that_a_peer_vouched_for_joins_the_roster_until_the_voucher_is_revoked() {
+    let f = Fixture::new();
+    let d = f.directory().unwrap();
+    let joined_root = tempfile::tempdir().unwrap();
+    let joined = DeviceIdentity::load_or_create(joined_root.path()).unwrap();
+    let joined_key = joined.device_public_key().unwrap().to_owned();
+    let vouch = f.peer.vouch_for(&joined_key, 20).unwrap();
+    d.apply_membership(
+        &d.begin_work().unwrap(),
+        std::slice::from_ref(&vouch.owner_statement),
+    )
+    .unwrap();
+    let peers = d.snapshot().unwrap();
+    assert_eq!(peers.len(), 1);
+    assert_eq!(peers[0].device_public_key, joined_key);
+    assert_eq!(
+        peers[0].membership.owner_public_key,
+        f.owner.public_key().to_hex()
+    );
+    assert_eq!(peers[0].membership.vouchers, vec![f.key()]);
+    // The remembered chain is checked again when the directory opens.
+    drop(d);
+    let d = f.directory().unwrap();
+    assert_eq!(d.snapshot().unwrap().len(), 1);
+    d.apply_membership(
+        &d.begin_work().unwrap(),
+        &[binding(&f.owner, &f.key(), "revoked", 30)],
+    )
+    .unwrap();
+    assert!(d.snapshot().unwrap().is_empty());
+}
+
+#[test]
+fn a_vouch_chain_to_another_person_key_is_not_a_roster_member() {
+    let f = Fixture::new();
+    let d = f.directory().unwrap();
+    let other = Keys::generate();
+    let voucher_root = tempfile::tempdir().unwrap();
+    let mut voucher = DeviceIdentity::load_or_create(voucher_root.path()).unwrap();
+    voucher
+        .apply_owner_statement(&binding(
+            &other,
+            voucher.device_public_key().unwrap(),
+            "owned",
+            10,
+        ))
+        .unwrap();
+    let vouch = voucher
+        .vouch_for(&Keys::generate().public_key().to_hex(), 20)
+        .unwrap();
+    assert!(matches!(
+        d.apply_membership(&d.begin_work().unwrap(), &[vouch.owner_statement]),
+        Err(FederationError::Identity)
+    ));
+    assert!(d.snapshot().unwrap().is_empty());
+}

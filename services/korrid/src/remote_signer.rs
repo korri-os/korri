@@ -777,6 +777,7 @@ mod tests {
                         author_public_key: None,
                         since: None,
                         limit: 10,
+                        identifiers: Vec::new(),
                     };
                     struct NoAuth;
                     impl crate::relay::RelayAuthSigner for NoAuth {
@@ -1004,6 +1005,7 @@ mod tests {
                         author_public_key: None,
                         since: None,
                         limit: 10,
+                        identifiers: Vec::new(),
                     };
                     let deliveries = network
                         .read(&inbox, &filter, Arc::new(NoRelayAuth))

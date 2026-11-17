@@ -60,6 +60,9 @@ KORRID_PRIVATE_STATE_ROOT="$root/private" "$binary" identity status \
   | "$jq_bin" -er 'select(._tag == "Unowned" or ._tag == "Owned" or ._tag == "Revoked") | .devicePublicKey | select(test("^[0-9a-f]{64}$"))' \
   > "$root/signer-credentials/expected-device-public-key"
 chmod 0400 "$root/signer-credentials/expected-device-public-key"
+# Setup has ended on this device (ADR 0022), so korrid binds its automatic
+# owner at start. A host device in setup stays unowned, so that it can join.
+install -m 0600 /dev/null "$root/private/onboarding-finished"
 "$socket_activate" --now \
   -E "CREDENTIALS_DIRECTORY=$root/signer-credentials" \
   -E "KORRI_LOCAL_SIGNER_PRIVATE_STATE_ROOT=$root/signer-private" \

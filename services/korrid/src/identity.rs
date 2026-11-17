@@ -30,6 +30,8 @@ mod automatic_tests;
 pub(crate) mod iroh;
 mod nearby;
 pub(crate) mod offline;
+#[cfg(test)]
+mod vouch_tests;
 
 pub(crate) const IDENTITY_DIRECTORY: &str = "identity";
 const DEVICE_KEY_FILE: &str = "device.key";
@@ -38,6 +40,9 @@ const NIP46_CLIENT_KEY_FILE: &str = "nip46-client.key";
 const NIP46_CONNECTION_FILE: &str = "nip46.connection.json";
 pub(crate) const OWNER_EVENT_KIND: u16 = 30_078;
 const OWNER_EVENT_PREFIX: &str = "org.korri.device-owner:";
+/// The most events one owner chain holds: the device's own vouch, each
+/// voucher's vouch, and the statement the person key signed.
+pub(crate) const MAX_OWNER_CHAIN: usize = 16;
 const MAX_EVENT_BYTES: usize = 64 * 1024;
 const MAX_ENCRYPTED_PLAINTEXT_BYTES: usize = 4 * 1024 * 1024;
 pub(crate) const MAX_ENCRYPTED_PAYLOAD_BYTES: usize = 6 * 1024 * 1024;
@@ -137,11 +142,17 @@ pub enum OwnerStatementStatus {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedOwnerStatement {
+    /// The device's own statement or vouch.
     pub event_id: String,
+    /// The person key: the author of a statement, or the person key that a
+    /// vouch chain ends in (ADR 0069).
     pub owner_public_key: String,
     pub device_public_key: String,
     pub status: OwnerStatementStatus,
     pub created_at: u64,
+    /// The devices whose vouches lead from this device to the person key,
+    /// nearest first. Empty when the person key signed the statement.
+    pub vouchers: Vec<String>,
 }
 
 impl VerifiedOwnerStatement {
@@ -186,7 +197,16 @@ pub struct DeviceIdentity {
     directory: PathBuf,
     keys: Option<Keys>,
     state: IdentityState,
-    owner_event: Option<Event>,
+    owner: Option<ParsedOwnerStatement>,
+}
+
+/// A vouch an owned device signed for another device (ADR 0069).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Vouch {
+    /// The vouch event alone, as relays hold it.
+    pub event_json: String,
+    /// The vouch with the voucher's chain: the new device's owner statement.
+    pub owner_statement: String,
 }
 
 impl std::fmt::Debug for DeviceIdentity {
@@ -243,15 +263,15 @@ impl DeviceIdentity {
                     state: IdentityState::Invalid {
                         reason: error.to_string(),
                     },
-                    owner_event: None,
+                    owner: None,
                 })
             }
         };
         let device_public_key = keys.public_key().to_hex();
         let owner_path = directory.join(OWNER_EVENT_FILE);
-        let owner_event = match read_bounded_optional(&owner_path, MAX_EVENT_BYTES) {
+        let owner = match read_bounded_optional(&owner_path, MAX_EVENT_BYTES) {
             Ok(Some(bytes)) => match parse_owner_statement(&bytes, &device_public_key) {
-                Ok(statement) => Some(statement.event),
+                Ok(statement) => Some(statement),
                 Err(error) => {
                     return Ok(Self {
                         directory,
@@ -259,7 +279,7 @@ impl DeviceIdentity {
                         state: IdentityState::Invalid {
                             reason: error.to_string(),
                         },
-                        owner_event: None,
+                        owner: None,
                     })
                 }
             },
@@ -271,13 +291,13 @@ impl DeviceIdentity {
                     state: IdentityState::Invalid {
                         reason: error.to_string(),
                     },
-                    owner_event: None,
+                    owner: None,
                 })
             }
         };
-        let state = owner_event
+        let state = owner
             .as_ref()
-            .map(|event| state_from_owner_event(event, &device_public_key))
+            .map(|statement| state_from_owner_statement(statement, &device_public_key))
             .unwrap_or_else(|| IdentityState::Unowned {
                 device_public_key: device_public_key.clone(),
             });
@@ -285,7 +305,7 @@ impl DeviceIdentity {
             directory,
             keys: Some(keys),
             state,
-            owner_event,
+            owner,
         })
     }
 
@@ -307,8 +327,60 @@ impl DeviceIdentity {
     }
 
     /// Return the verified owner statement without exposing the device key.
+    /// For a vouched device it is the vouch chain, a JSON array of events.
     pub fn owner_statement_json(&self) -> Option<String> {
-        self.owner_event.as_ref().map(Event::as_json)
+        self.owner.as_ref().map(ParsedOwnerStatement::json)
+    }
+
+    /// Each signed event of the owner statement, as relays hold them: the
+    /// device's own statement or vouch first, then the voucher's chain.
+    pub fn owner_statement_events(&self) -> Vec<String> {
+        self.owner
+            .as_ref()
+            .map(|statement| statement.events().map(Event::as_json).collect())
+            .unwrap_or_default()
+    }
+
+    /// Sign a vouch for another device with this owned device's key (ADR
+    /// 0069). It names the person key and this device's own statement or
+    /// vouch, and carries this device's chain so peers can follow it.
+    pub fn vouch_for(
+        &self,
+        device_public_key: &str,
+        created_at: u64,
+    ) -> Result<Vouch, IdentityError> {
+        let (IdentityState::Owned { .. }, Some(own)) = (&self.state, &self.owner) else {
+            return Err(IdentityError::Invalid(
+                "only an owned device can vouch for another device".into(),
+            ));
+        };
+        parse_public_key(device_public_key)?
+            .xonly()
+            .map_err(|_| IdentityError::InvalidEvent("public key is invalid".into()))?;
+        if Some(device_public_key) == self.device_public_key() {
+            return Err(IdentityError::InvalidEvent(
+                "a device cannot vouch for itself".into(),
+            ));
+        }
+        let vouch = self.sign_event(
+            OWNER_EVENT_KIND,
+            vouch_tags(device_public_key, &own.owner, &own.event.id.to_hex()),
+            String::new(),
+            created_at,
+        )?;
+        let owner_statement = format!(
+            "[{}]",
+            std::iter::once(vouch.json.clone())
+                .chain(own.events().map(Event::as_json))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        // The new device checks this again; never hand out a chain it rejects.
+        Self::verify_owner_statement(&owner_statement, device_public_key)?;
+        Ok(Vouch {
+            event_json: vouch.json,
+            owner_statement,
+        })
     }
 
     /// Build the unsigned NIP-78 event that an external person signer signs.
@@ -452,20 +524,20 @@ impl DeviceIdentity {
                     owner_public_key, ..
                 },
                 _,
-            ) if owner_public_key != &statement.event.pubkey.to_hex() => {
+            ) if owner_public_key != &statement.owner => {
                 return Err(IdentityError::InvalidEvent(
                     "owner statement uses a different owner".into(),
                 ))
             }
             (IdentityState::Owned { .. }, _) => {
-                let current = self.owner_event.as_ref().ok_or_else(|| {
+                let current = self.owner.as_ref().ok_or_else(|| {
                     IdentityError::Invalid("owned identity has no owner event".into())
                 })?;
                 if !event_is_newer(
                     statement.event.created_at.as_secs(),
                     &statement.event.id.to_hex(),
-                    current.created_at.as_secs(),
-                    &current.id.to_hex(),
+                    current.event.created_at.as_secs(),
+                    &current.event.id.to_hex(),
                 ) {
                     return Err(IdentityError::InvalidEvent(
                         "owner statement is not newer".into(),
@@ -474,10 +546,10 @@ impl DeviceIdentity {
             }
             _ => unreachable!("invalid and revoked states returned above"),
         }
-        let bytes = statement.event.as_json().into_bytes();
+        let bytes = statement.json().into_bytes();
         write_private_atomically(&self.directory.join(OWNER_EVENT_FILE), &bytes)?;
-        self.state = state_from_owner_event(&statement.event, &device_public_key);
-        self.owner_event = Some(statement.event);
+        self.state = state_from_owner_statement(&statement, &device_public_key);
+        self.owner = Some(statement);
         Ok(())
     }
 
@@ -524,10 +596,11 @@ impl DeviceIdentity {
         let statement = parse_owner_statement(event_json.as_bytes(), expected_device_public_key)?;
         let verified = VerifiedOwnerStatement {
             event_id: statement.event.id.to_hex(),
-            owner_public_key: statement.event.pubkey.to_hex(),
+            owner_public_key: statement.owner.clone(),
             device_public_key: expected_device_public_key.into(),
             status: statement.status,
             created_at: statement.event.created_at.as_secs(),
+            vouchers: statement.vouchers(),
         };
         if let Ok(mut memo) = VERIFIED_OWNER_STATEMENTS.lock() {
             if memo.len() >= MAX_VERIFIED_OWNER_STATEMENTS {
@@ -547,8 +620,14 @@ impl DeviceIdentity {
                 "owner statement is too large".into(),
             ));
         }
-        let event = Event::from_json(event_json)
-            .map_err(|_| IdentityError::InvalidEvent("owner statement JSON is malformed".into()))?;
+        // A vouch chain names its device in its first event.
+        let event = match serde_json::from_str::<Vec<serde_json::Value>>(event_json) {
+            Ok(chain) => chain
+                .first()
+                .and_then(|first| Event::from_json(first.to_string()).ok()),
+            Err(_) => Event::from_json(event_json).ok(),
+        }
+        .ok_or_else(|| IdentityError::InvalidEvent("owner statement JSON is malformed".into()))?;
         let device_tag = event.tags.get(1).ok_or_else(|| {
             IdentityError::InvalidEvent("owner statement has no device tag".into())
         })?;
@@ -745,12 +824,57 @@ impl DeviceIdentity {
             .map_err(|_| IdentityError::Decryption)
     }
 
+    /// Verify one bounded event from one exact author, then open its NIP-44
+    /// v2 content. It needs no recipient tag: the join's messages carry none,
+    /// so they never reach the coordination reader of either device.
+    pub fn decrypt_event_from(
+        &self,
+        event_json: &str,
+        author: &str,
+    ) -> Result<VerifiedEvent, IdentityError> {
+        if event_json.len() > MAX_EVENT_BYTES {
+            return Err(IdentityError::Decryption);
+        }
+        let author = parse_public_key(author).map_err(|_| IdentityError::Decryption)?;
+        let event = Event::from_json(event_json).map_err(|_| IdentityError::Decryption)?;
+        event.verify().map_err(|_| IdentityError::Decryption)?;
+        if event.pubkey != author {
+            return Err(IdentityError::Decryption);
+        }
+        let keys = self.keys.as_ref().ok_or(IdentityError::NoDeviceKey)?;
+        let content = nip44::decrypt(keys.secret_key(), &author, event.content.as_bytes())
+            .map_err(|_| IdentityError::Decryption)?;
+        let mut verified = verified_event(event);
+        verified.content = content;
+        Ok(verified)
+    }
+
     fn public_key(&self) -> Result<PublicKey, IdentityError> {
         self.keys
             .as_ref()
             .map(Keys::public_key)
             .ok_or(IdentityError::NoDeviceKey)
     }
+}
+
+/// Bind the automatic owner at start, but only after setup ended (ADR 0022).
+/// A device still in setup keeps the state it has, so a new device stays
+/// unowned and can join; setup's end binds it
+/// (`onboarding::finish_with_automatic_owner`).
+pub async fn bind_automatic_owner_after_setup<S>(
+    private_state_root: &Path,
+    signer: &S,
+    created_at: u64,
+) -> Result<IdentityState, IdentityError>
+where
+    S: PersonSigner + ?Sized,
+{
+    if !crate::onboarding::setup_finished(private_state_root) {
+        return Ok(DeviceIdentity::load_or_create(private_state_root)?
+            .state()
+            .clone());
+    }
+    bind_automatic_owner(private_state_root, signer, created_at).await
 }
 
 /// Bind the first automatic person identity through the existing external-signer path.
@@ -987,9 +1111,48 @@ fn validate_owner_statement_template(
     })
 }
 
+#[derive(Clone)]
 struct ParsedOwnerStatement {
+    /// The device's own statement or vouch.
     event: Event,
     status: OwnerStatementStatus,
+    /// The person key: the author of a statement, or the person key that
+    /// every vouch of a chain names.
+    owner: String,
+    /// The events after the device's own in a vouch chain, up to the
+    /// statement the person key signed. Empty for a person-signed statement.
+    chain: Vec<Event>,
+}
+
+impl ParsedOwnerStatement {
+    fn events(&self) -> impl Iterator<Item = &Event> {
+        std::iter::once(&self.event).chain(&self.chain)
+    }
+
+    /// One event alone, or a vouch chain as one JSON array of its events.
+    fn json(&self) -> String {
+        if self.chain.is_empty() {
+            self.event.as_json()
+        } else {
+            format!(
+                "[{}]",
+                self.events()
+                    .map(Event::as_json)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        }
+    }
+
+    fn vouchers(&self) -> Vec<String> {
+        match self.chain.split_last() {
+            Some((_, between)) => std::iter::once(&self.event)
+                .chain(between)
+                .map(|event| event.pubkey.to_hex())
+                .collect(),
+            None => Vec::new(),
+        }
+    }
 }
 
 fn owner_tags(device_public_key: &str, status: OwnerStatementStatus) -> Vec<Vec<String>> {
@@ -1001,6 +1164,21 @@ fn owner_tags(device_public_key: &str, status: OwnerStatementStatus) -> Vec<Vec<
         vec!["device".into(), device_public_key.into()],
         vec!["status".into(), status.as_str().into()],
     ]
+}
+
+/// A vouch is today's owner statement with two more tags (ADR 0069): `p`
+/// names the person key, and `e` names the voucher's own statement or vouch.
+/// Both are single letters, so relays index them and a device can ask for
+/// every vouch of one person key.
+fn vouch_tags(
+    device_public_key: &str,
+    person_public_key: &str,
+    voucher_statement_id: &str,
+) -> Vec<Vec<String>> {
+    let mut tags = owner_tags(device_public_key, OwnerStatementStatus::Owned);
+    tags.push(vec!["p".into(), person_public_key.into()]);
+    tags.push(vec!["e".into(), voucher_statement_id.into()]);
+    tags
 }
 
 /// Owner statements that passed verification, by exact bytes and device.
@@ -1023,21 +1201,11 @@ fn parse_owner_statement(
             "owner statement is too large".into(),
         ));
     }
-    let event = Event::from_json(bytes)
-        .map_err(|_| IdentityError::InvalidEvent("owner statement JSON is malformed".into()))?;
-    event
-        .verify()
-        .map_err(|_| IdentityError::InvalidEvent("owner signature is invalid".into()))?;
-    if event.kind != Kind::Custom(OWNER_EVENT_KIND) || !event.content.is_empty() {
-        return Err(IdentityError::InvalidEvent(
-            "owner statement has the wrong event shape".into(),
-        ));
+    if bytes.trim_ascii_start().starts_with(b"[") {
+        return parse_owner_chain(bytes, expected_device_public_key);
     }
-    let tags: Vec<Vec<String>> = event
-        .tags
-        .iter()
-        .map(|tag| tag.as_slice().to_vec())
-        .collect();
+    let event = parse_owner_event(bytes)?;
+    let tags = event_tags(&event);
     if tags.len() != 3 {
         return Err(IdentityError::InvalidEvent(
             "owner statement has unexpected tags".into(),
@@ -1054,38 +1222,102 @@ fn parse_owner_statement(
         ));
     }
     let status = OwnerStatementStatus::parse(&tags[2][1])?;
-    Ok(ParsedOwnerStatement { event, status })
+    Ok(ParsedOwnerStatement {
+        owner: event.pubkey.to_hex(),
+        event,
+        status,
+        chain: Vec::new(),
+    })
 }
 
-fn state_from_owner_event(event: &Event, device_public_key: &str) -> IdentityState {
-    let status = event
+fn parse_owner_event(bytes: &[u8]) -> Result<Event, IdentityError> {
+    let event = Event::from_json(bytes)
+        .map_err(|_| IdentityError::InvalidEvent("owner statement JSON is malformed".into()))?;
+    event
+        .verify()
+        .map_err(|_| IdentityError::InvalidEvent("owner signature is invalid".into()))?;
+    if event.kind != Kind::Custom(OWNER_EVENT_KIND) || !event.content.is_empty() {
+        return Err(IdentityError::InvalidEvent(
+            "owner statement has the wrong event shape".into(),
+        ));
+    }
+    Ok(event)
+}
+
+fn event_tags(event: &Event) -> Vec<Vec<String>> {
+    event
         .tags
         .iter()
-        .find_map(|tag| {
-            let values = tag.as_slice();
-            (values.len() == 2 && values[0] == "status").then(|| values[1].as_str())
-        })
-        .expect("validated owner statement has a status");
+        .map(|tag| tag.as_slice().to_vec())
+        .collect()
+}
+
+/// A vouch chain (ADR 0069): the device's own vouch, then each voucher's
+/// vouch, then the statement the person key signed for the last voucher.
+/// Each vouch names that person key and, by id, the next event. A chain
+/// binds only an owned device; a removal is not a vouch.
+fn parse_owner_chain(
+    bytes: &[u8],
+    expected_device_public_key: &str,
+) -> Result<ParsedOwnerStatement, IdentityError> {
+    let broken = |reason: &str| IdentityError::InvalidEvent(format!("owner chain {reason}"));
+    let values: Vec<serde_json::Value> =
+        serde_json::from_slice(bytes).map_err(|_| broken("JSON is malformed"))?;
+    if values.len() < 2 || values.len() > MAX_OWNER_CHAIN {
+        return Err(broken("has the wrong length"));
+    }
+    let events = values
+        .iter()
+        .map(|value| parse_owner_event(value.to_string().as_bytes()))
+        .collect::<Result<Vec<_>, _>>()?;
+    let (root, vouches) = events.split_last().expect("chain length checked");
+    let person = root.pubkey.to_hex();
+    let mut subject = expected_device_public_key.to_owned();
+    for (index, vouch) in vouches.iter().enumerate() {
+        let voucher = vouch.pubkey.to_hex();
+        let next = &events[index + 1];
+        if voucher == person || voucher == subject {
+            return Err(broken("has a vouch that is not signed by another device"));
+        }
+        if event_tags(vouch) != vouch_tags(&subject, &person, &next.id.to_hex()) {
+            return Err(broken("is broken or names a different person key"));
+        }
+        subject = voucher;
+    }
+    if event_tags(root) != owner_tags(&subject, OwnerStatementStatus::Owned) {
+        return Err(broken("does not end in the person key's statement"));
+    }
+    Ok(ParsedOwnerStatement {
+        event: events[0].clone(),
+        status: OwnerStatementStatus::Owned,
+        owner: person,
+        chain: events[1..].to_vec(),
+    })
+}
+
+fn state_from_owner_statement(
+    statement: &ParsedOwnerStatement,
+    device_public_key: &str,
+) -> IdentityState {
     let common = (
         device_public_key.to_owned(),
-        event.pubkey.to_hex(),
-        event.id.to_hex(),
-        event.created_at.as_secs(),
+        statement.owner.clone(),
+        statement.event.id.to_hex(),
+        statement.event.created_at.as_secs(),
     );
-    match status {
-        "owned" => IdentityState::Owned {
+    match statement.status {
+        OwnerStatementStatus::Owned => IdentityState::Owned {
             device_public_key: common.0,
             owner_public_key: common.1,
             event_id: common.2,
             created_at: common.3,
         },
-        "revoked" => IdentityState::Revoked {
+        OwnerStatementStatus::Revoked => IdentityState::Revoked {
             device_public_key: common.0,
             owner_public_key: common.1,
             event_id: common.2,
             created_at: common.3,
         },
-        _ => unreachable!("validated owner statement has a supported status"),
     }
 }
 

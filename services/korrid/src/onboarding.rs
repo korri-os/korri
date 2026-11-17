@@ -1,4 +1,9 @@
-use crate::{config::settings::ONBOARDING_FINISHED_FILE_NAME, RpcFailure};
+use crate::{
+    config::settings::ONBOARDING_FINISHED_FILE_NAME,
+    identity::{bind_automatic_owner, DeviceIdentity, IdentityState},
+    remote_signer::PersonSigner,
+    RpcFailure,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
@@ -88,6 +93,44 @@ pub fn restart(root: &Path) -> OnboardingStatusOutcome {
     }
     status(root)
 }
+
+/// Whether setup has ended on this device. A marker Korri cannot read
+/// counts as setup still running.
+pub fn setup_finished(root: &Path) -> bool {
+    matches!(
+        status(root),
+        OnboardingStatusOutcome::Ok(OnboardingStatus { needed: false })
+    )
+}
+
+/// End setup (ADR 0022). A device that did not join during setup gets its
+/// automatic identity now; a device that joined keeps its owner. The second
+/// value says whether an owner was bound, so the caller can restart korrid
+/// with it, as it starts after setup.
+pub async fn finish_with_automatic_owner<S>(
+    root: &Path,
+    signer: &S,
+    now: u64,
+) -> (OnboardingStatusOutcome, bool)
+where
+    S: PersonSigner + ?Sized,
+{
+    let unowned = matches!(
+        DeviceIdentity::load_or_create(root).map(|identity| identity.state().clone()),
+        Ok(IdentityState::Unowned { .. })
+    );
+    if unowned && bind_automatic_owner(root, signer, now).await.is_err() {
+        return (
+            OnboardingStatusOutcome::Err(RpcFailure {
+                code: "AutomaticIdentityFailed".into(),
+                message: "Korri could not create this device's identity. Try again.".into(),
+            }),
+            false,
+        );
+    }
+    (finish(root), unowned)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

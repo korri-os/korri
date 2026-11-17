@@ -59,6 +59,10 @@ korri-surface-treaty = { path = "../../contracts/surface" }
 # Cost: log-facade debug/trace diagnostics are unavailable across this build.
 log = { version = "0.4", features = ["max_level_info", "release_max_level_info"] }
 nostr = { version = "0.45.4", default-features = false, features = ["std", "os-rng", "nip44", "nip49", "nip59"] }
+# ADR 0070: 1Password's audited CPace for the join's key exchange, copied
+# unchanged from https://github.com/1Password/cpace at commit
+# 7e2e42c7d359969f4356292c2bd2cf3ff6eeeecc. Only src/join/cpace.rs uses it.
+pake-cpace = { path = "vendor/pake-cpace" }
 serde = { version = "1", features = ["derive"] }
 # Declared release order (ADR 0013) depends on insertion order. toon-format
 # already enables this feature; naming it keeps the dependency explicit.

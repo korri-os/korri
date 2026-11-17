@@ -33,7 +33,7 @@ variable; its default is the same `korrid-cli/cli.sock` path as the Rust client.
 
 Run `korri --help` or `korri <area> --help` for exact arguments. Product areas
 are `devices`, `library`, `launch-settings`, `downloads`, `controllers`,
-`plugins`, `wifi`, `saves`, `identity` and `setup`. Session actions
+`plugins`, `wifi`, `saves`, `identity`, `join` and `setup`. Session actions
 are `play`, `leave`, `resume` and `end`. Provider acquisition is `get`.
 [Play and library details](PLAY-LIBRARY.md) include launch-setting constraints.
 [Settings parity audit](PARITY.md) maps the actual shell settings and actions,
@@ -107,6 +107,24 @@ conflicts and signer failures stop without retry. Invalid names longer than the
 producer's 64-character limit fail before RPC. Names, including spaces, are not
 trimmed. `--json` preserves the final existing response, and identity operations
 remain local. This command changes no person key or device ownership.
+
+### Join
+
+`korri join start` runs on a device that has an owner. It shows a 10-digit
+join confirmation code on stderr and a new code when one expires or when a
+wrong code was tried. When a device enters the right code, it shows the
+device's name, kind and network, and asks for one Accept. On Accept, korrid
+signs a vouch for the device (ADR 0069).
+
+`korri join enter [CODE]` runs on a device without an owner, such as a device
+that is still in setup (ADR 0022). Omit `CODE` to type it at the prompt. When
+the other device accepts, this device stores the vouch and korrid restarts
+with its new owner.
+
+Both commands end with one response on stdout. Ctrl-C stops following the
+join; an owned device ends a join that no one follows after 60 seconds.
+The hidden flag `--proof-accept-without-asking` accepts the matched device
+with no person in the loop. It exists only for automated proofs.
 
 ### Remote signer waits
 

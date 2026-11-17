@@ -1,0 +1,22 @@
+[package]
+categories = ["algorithms", "cryptography", "no-std"]
+description = "A simple implementation of CPace, a balanced PAKE."
+edition = "2018"
+exclude = ["assets/"]
+keywords = ["cpace", "crypto", "pake"]
+license = "MIT OR Apache-2.0"
+name = "pake-cpace"
+repository = "https://github.com/1password/cpace"
+version = "0.1.0"
+
+[dependencies]
+curve25519-dalek = { version = "4.0.0", default-features = false, features = [
+  "precomputed-tables",
+  "zeroize",
+] }
+getrandom = { version = "0.2", default-features = false }
+hmac-sha512 = "1.0"
+subtle = "2.4"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }

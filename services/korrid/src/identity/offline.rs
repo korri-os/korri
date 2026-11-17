@@ -2,9 +2,9 @@
 //! The caller must already hold exclusive authority over every identity user.
 //! The directory lock coordinates this command only; it cannot stop a daemon.
 use super::{
-    parse_named_keys, parse_owner_statement, state_from_owner_event, DeviceIdentity, IdentityError,
-    IdentityState, OwnerStatementStatus, DEVICE_KEY_FILE, IDENTITY_DIRECTORY, MAX_EVENT_BYTES,
-    OWNER_EVENT_FILE,
+    parse_named_keys, parse_owner_statement, state_from_owner_statement, DeviceIdentity,
+    IdentityError, IdentityState, OwnerStatementStatus, DEVICE_KEY_FILE, IDENTITY_DIRECTORY,
+    MAX_EVENT_BYTES, OWNER_EVENT_FILE,
 };
 use std::{
     ffi::{CStr, CString, OsStr},
@@ -157,7 +157,7 @@ fn replace(root: &Path, replacement: Replacement<'_>) -> Result<IdentityState, I
     recheck_directory(root, &root_directory, &directory)?;
     key.require_unchanged(&directory.read(DEVICE_KEY_FILE, 128)?)?;
     staged.require_unchanged(&directory.read(OWNER_EVENT_FILE, MAX_EVENT_BYTES)?)?;
-    Ok(state_from_owner_event(&new.event, &device))
+    Ok(state_from_owner_statement(&new, &device))
 }
 
 /// Holds the same offline-writer lock as owner replacement. It never creates
@@ -191,7 +191,7 @@ impl<'a> VerifiedPrivateOwner<'a> {
         let device = keys.public_key().to_hex();
         let owner = directory.read(OWNER_EVENT_FILE, MAX_EVENT_BYTES)?;
         let statement = parse_owner_statement(&owner.bytes, &device)?;
-        let state = state_from_owner_event(&statement.event, &device);
+        let state = state_from_owner_statement(&statement, &device);
         if !matches!(&state, IdentityState::Owned { device_public_key, owner_public_key, event_id, .. }
             if device_public_key == expected_device && owner_public_key == expected_owner && event_id == expected_event)
         {

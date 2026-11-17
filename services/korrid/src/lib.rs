@@ -51,6 +51,7 @@ pub mod game_routes;
 pub mod identity;
 pub mod identity_cli;
 pub mod identity_switch;
+pub mod join;
 pub mod linux_viewer;
 pub mod live_display;
 pub mod local_signer;
@@ -1723,6 +1724,14 @@ pub enum RpcRequest {
     IdentityRetiredExport(IdentityRetiredExportRequest),
     #[serde(rename = "system.identity.retired.delete")]
     IdentityRetiredDelete(IdentityRetiredDeleteRequest),
+    #[serde(rename = "system.identity.join.start")]
+    JoinStart(join::JoinStartRequest),
+    #[serde(rename = "system.identity.join.enter")]
+    JoinEnter(join::JoinEnterRequest),
+    #[serde(rename = "system.identity.join.status")]
+    JoinStatus(join::JoinStatusRequest),
+    #[serde(rename = "system.identity.join.accept")]
+    JoinAccept(join::JoinAcceptRequest),
     #[serde(rename = "system.plugins.publishers")]
     PluginPublishers(plugin_admin::PluginPublishersRequest),
     #[serde(rename = "system.plugins.publisher.trust")]
@@ -1940,6 +1949,14 @@ pub enum RpcResponse {
     IdentityRetiredExport(IdentityBackupOutcome),
     #[serde(rename = "system.identity.retired.delete")]
     IdentityRetiredDelete(IdentityRetiredDeleteOutcome),
+    #[serde(rename = "system.identity.join.start")]
+    JoinStart(join::JoinOutcome),
+    #[serde(rename = "system.identity.join.enter")]
+    JoinEnter(join::JoinOutcome),
+    #[serde(rename = "system.identity.join.status")]
+    JoinStatus(join::JoinOutcome),
+    #[serde(rename = "system.identity.join.accept")]
+    JoinAccept(join::JoinOutcome),
     #[serde(rename = "system.plugins.publishers")]
     PluginPublishers(PluginPublishersOutcome),
     #[serde(rename = "system.plugins.publisher.trust")]
@@ -2034,6 +2051,8 @@ struct AppState {
     federation_wake: Option<DiscoveryControl>,
     identity_switch: Option<Arc<identity_switch::IdentitySwitchCoordinator>>,
     owner_binding: Option<owner_binding::OwnerBindingCoordinator>,
+    /// The one join on this device (ADRs 0069 and 0070), when it can join.
+    join: Option<join::JoinCoordinator>,
     /// korrid's only route to the root plugin host, when this device has one.
     plugin_admin: Option<plugin_repositories::PluginAdminSocket>,
     mode: ServerMode,
@@ -3225,7 +3244,24 @@ async fn dispatch(
             RpcResponse::OnboardingStatus(onboarding::status(state.private_state_root()))
         }
         RpcRequest::OnboardingFinish(_) => {
-            RpcResponse::OnboardingFinish(onboarding::finish(state.private_state_root()))
+            RpcResponse::OnboardingFinish(match &state.identity_switch {
+                // ADR 0022: setup's end binds the automatic identity of a device
+                // that did not join. korrid then restarts with it, as it starts
+                // after setup.
+                Some(coordinator) => {
+                    let (outcome, bound) = onboarding::finish_with_automatic_owner(
+                        state.private_state_root(),
+                        &coordinator.automatic_owner_signer(),
+                        peer_rpc::unix_time(),
+                    )
+                    .await;
+                    if bound {
+                        schedule_identity_restart();
+                    }
+                    outcome
+                }
+                None => onboarding::finish(state.private_state_root()),
+            })
         }
         RpcRequest::OnboardingRestart(_) => {
             RpcResponse::OnboardingRestart(onboarding::restart(state.private_state_root()))
@@ -4640,6 +4676,22 @@ async fn dispatch(
             };
             RpcResponse::IdentityRetiredDelete(outcome)
         }
+        RpcRequest::JoinStart(_) => RpcResponse::JoinStart(match &state.join {
+            Some(join) => join_outcome(join.start().await),
+            None => join::JoinOutcome::Err(identity_unavailable()),
+        }),
+        RpcRequest::JoinEnter(request) => RpcResponse::JoinEnter(match &state.join {
+            Some(join) => join_outcome(join.enter(&request.code, joining_device(state).await)),
+            None => join::JoinOutcome::Err(identity_unavailable()),
+        }),
+        RpcRequest::JoinStatus(_) => RpcResponse::JoinStatus(match &state.join {
+            Some(join) => join::JoinOutcome::Ok(join.status()),
+            None => join::JoinOutcome::Err(identity_unavailable()),
+        }),
+        RpcRequest::JoinAccept(request) => RpcResponse::JoinAccept(match &state.join {
+            Some(join) => join_outcome(join.decide(request.accept).await),
+            None => join::JoinOutcome::Err(identity_unavailable()),
+        }),
         RpcRequest::PluginPublishers(request) => RpcResponse::PluginPublishers(
             (plugin_admin_call(
                 state,
@@ -5253,6 +5305,27 @@ fn identity_unavailable() -> RpcFailure {
     }
 }
 
+fn join_outcome(result: Result<join::JoinStatus, RpcFailure>) -> join::JoinOutcome {
+    result
+        .map(join::JoinOutcome::Ok)
+        .unwrap_or_else(join::JoinOutcome::Err)
+}
+
+/// What this device tells an owned device about itself during a join
+/// (ADR 0070), from facts korrid already has: the label endpoint
+/// publication uses, the build's operating system and processor, and the
+/// network connection NetworkManager reports.
+async fn joining_device(state: &AppState) -> join::JoiningDevice {
+    join::JoiningDevice {
+        name: stream_play::registration::caller_label(state).ok(),
+        kind: format!("{} {}", std::env::consts::OS, std::env::consts::ARCH),
+        connection: match state.network.status().await {
+            network::NetworkStatusOutcome::Ok(snapshot) => Some(snapshot.connection),
+            network::NetworkStatusOutcome::Err(_) => None,
+        },
+    }
+}
+
 fn schedule_identity_restart() {
     #[cfg(not(test))]
     tokio::spawn(async {
@@ -5640,6 +5713,7 @@ fn brain_app_state(
         federation_wake,
         identity_switch: None,
         owner_binding: None,
+        join: None,
         plugin_admin: plugin_repositories::PluginAdminSocket::from_env(),
         mode: ServerMode::Brain(BrainRuntime {
             upstream,
@@ -5950,6 +6024,7 @@ fn app_states_with(
         federation_wake: None,
         identity_switch: None,
         owner_binding: None,
+        join: None,
         plugin_admin: plugin_repositories::PluginAdminSocket::from_env(),
         mode: ServerMode::Host(runtime.clone()),
         surface_host_access: None,
@@ -5971,6 +6046,7 @@ fn app_states_with(
         federation_wake: None,
         identity_switch: None,
         owner_binding: None,
+        join: None,
         plugin_admin: plugin_repositories::PluginAdminSocket::from_env(),
         mode: ServerMode::Host(runtime),
         surface_host_access: None,
@@ -6087,6 +6163,22 @@ fn secure_host_routers_with_federation(
     });
     lan.federation = Some(resources.directory.clone());
     local.federation = Some(resources.directory.clone());
+    let join = join::JoinCoordinator::new(join::JoinContext {
+        credentials: resources.credentials.clone(),
+        directory: Some(resources.directory.clone()),
+        private_state_root: private_state_root.to_owned(),
+        relays: relay::RelayList::from_linux_environment(
+            std::env::var("KORRID_RELAYS").ok().as_deref(),
+        )
+        .ok()
+        .flatten(),
+        transport: Arc::new(relay::WebSocketRelayTransport::new()),
+        clock: Arc::new(peer_rpc::unix_time),
+        timing: join::JoinTiming::default(),
+        joined: Arc::new(schedule_identity_restart),
+    });
+    lan.join = Some(join.clone());
+    local.join = Some(join);
     invites::device::spawn_watch(lan.clone());
     stream_play::person_name::device::spawn_publish(lan.clone());
     lan.identity_switch = identity_switch.clone();

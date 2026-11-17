@@ -723,9 +723,21 @@ async fn main() {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let identity_state = korrid::identity::bind_automatic_owner(&private_state_root, &signer, now)
-        .await
-        .unwrap_or_else(|error| panic!("bind automatic identity: {error}"));
+    let mode_value = std::env::var("KORRID_MODE").ok();
+    let mode = Mode::parse(mode_value.as_deref()).unwrap_or_else(|error| panic!("{error}"));
+    // ADR 0022: a host device in setup stays unowned, so it can join; its
+    // setup's end binds the automatic owner. Brain mode on Linux (tests and
+    // development) has no setup that binds an owner, so it binds at start.
+    let identity_state = match mode {
+        Mode::Host => {
+            korrid::identity::bind_automatic_owner_after_setup(&private_state_root, &signer, now)
+                .await
+        }
+        Mode::Brain => {
+            korrid::identity::bind_automatic_owner(&private_state_root, &signer, now).await
+        }
+    }
+    .unwrap_or_else(|error| panic!("bind automatic identity: {error}"));
     let signer_public_key_path = std::env::var_os("KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE")
         .map(PathBuf::from)
         .expect("KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE must be set");
@@ -742,8 +754,6 @@ async fn main() {
     use std::sync::Arc;
     let resources =
         FederationResources::open(&private_state_root).expect("open federation authority");
-    let mode_value = std::env::var("KORRID_MODE").ok();
-    let mode = Mode::parse(mode_value.as_deref()).unwrap_or_else(|error| panic!("{error}"));
     let config_root = match mode {
         Mode::Host => host_storage_root(),
         Mode::Brain => std::env::var_os("KORRI_LOCAL_STORAGE_ROOT")

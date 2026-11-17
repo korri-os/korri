@@ -66,8 +66,9 @@ pub enum Principal {
     OwnerDevice {
         device_public_key: String,
         owner_statement: String,
-        /// The verified author of `owner_statement`. It equals the local
-        /// owner key by construction.
+        /// The verified person key of `owner_statement`: its author, or the
+        /// person key its vouch chain ends in. It equals the local owner key
+        /// by construction.
         owner_public_key: String,
     },
     Household {
@@ -305,6 +306,12 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::IdentityNip46Switch(_)
         | RpcRequest::IdentityRetiredExport(_)
         | RpcRequest::IdentityRetiredDelete(_) => PeerPolicy::LocalOnly,
+        // A join binds this device or vouches for another (ADR 0069). The
+        // person does it at the device; no peer may start or answer it.
+        RpcRequest::JoinStart(_)
+        | RpcRequest::JoinEnter(_)
+        | RpcRequest::JoinStatus(_)
+        | RpcRequest::JoinAccept(_) => PeerPolicy::LocalOnly,
         // ADR 0031: root plugin administration also accepts verified owner
         // devices. The root host still owns signatures and exact approvals.
         RpcRequest::PluginRepositories(_)
@@ -397,6 +404,9 @@ pub fn is_security_mutation(request: &RpcRequest) -> bool {
             | RpcRequest::IdentityNip46Switch(_)
             | RpcRequest::IdentityRetiredExport(_)
             | RpcRequest::IdentityRetiredDelete(_)
+            | RpcRequest::JoinStart(_)
+            | RpcRequest::JoinEnter(_)
+            | RpcRequest::JoinAccept(_)
             | RpcRequest::PluginRepositoryAdd(_)
             | RpcRequest::PluginRepositoryRemove(_)
             | RpcRequest::PluginInspect(_)
@@ -939,12 +949,15 @@ fn principal_for(
     else {
         return unknown();
     };
+    // A removed voucher leaves its vouches without support (ADR 0071). A
+    // removal that lists the devices it keeps is a later slice; until then a
+    // revoked voucher ends every chain that passes through it.
     if owner_statement.status != OwnerStatementStatus::Owned
-        || is_owner_device_revoked(
-            revocations,
-            &owner_statement.owner_public_key,
-            sender_device_public_key,
-        )
+        || std::iter::once(sender_device_public_key)
+            .chain(owner_statement.vouchers.iter().map(String::as_str))
+            .any(|device| {
+                is_owner_device_revoked(revocations, &owner_statement.owner_public_key, device)
+            })
     {
         return unknown();
     }
@@ -1603,8 +1616,28 @@ mod tests {
                 ),
                 Local,
             ),
+            (
+                request(serde_json::json!({"_tag":"system.identity.join.start","payload":{}})),
+                Local,
+            ),
+            (
+                request(
+                    serde_json::json!({"_tag":"system.identity.join.enter","payload":{"code":"1234561234"}}),
+                ),
+                Local,
+            ),
+            (
+                request(serde_json::json!({"_tag":"system.identity.join.status","payload":{}})),
+                Local,
+            ),
+            (
+                request(
+                    serde_json::json!({"_tag":"system.identity.join.accept","payload":{"accept":true}}),
+                ),
+                Local,
+            ),
         ];
-        assert_eq!(cases.len(), 31);
+        assert_eq!(cases.len(), 35);
         for (request, expected) in cases {
             assert_eq!(policy_for(&request), expected);
             assert_eq!(
@@ -1671,6 +1704,80 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_vouched_device_is_an_owner_device_until_its_voucher_is_revoked() {
+        let root = tempfile::tempdir().unwrap();
+        let authority = Authorization::load(root.path()).unwrap();
+        let owner = Keys::parse(OWNER).unwrap();
+        let voucher_root = tempfile::tempdir().unwrap();
+        let mut voucher = DeviceIdentity::load_or_create(voucher_root.path()).unwrap();
+        let voucher_key = voucher.device_public_key().unwrap().to_owned();
+        voucher
+            .apply_owner_statement(&owner_statement(&owner, &voucher_key, "owned", NOW - 10))
+            .unwrap();
+        let joined = Keys::generate().public_key().to_hex();
+        let vouch = voucher.vouch_for(&joined, NOW - 5).unwrap();
+        let attempt = |device: &str, revocations: &[String]| {
+            authority
+                .attempt(
+                    &local(),
+                    device,
+                    Some(&vouch.owner_statement),
+                    None,
+                    revocations,
+                    NOW,
+                )
+                .unwrap()
+        };
+        let allowed = attempt(&joined, &[]);
+        assert!(matches!(
+            allowed.context(),
+            AuthorizationContext::Peer(Principal::OwnerDevice { owner_public_key, owner_statement, .. })
+                if *owner_public_key == owner.public_key().to_hex()
+                    && *owner_statement == vouch.owner_statement
+        ));
+        let health = request(serde_json::json!({"_tag":"system.health","payload":{}}));
+        assert!(authorize(allowed.context(), &health).is_ok());
+        // The chain binds one device only.
+        assert!(matches!(
+            attempt(&voucher_key, &[]).context(),
+            AuthorizationContext::Peer(Principal::Unknown { .. })
+        ));
+        // A revoked voucher leaves its vouch without support.
+        let revoked = owner_statement(&owner, &voucher_key, "revoked", NOW - 1);
+        assert!(matches!(
+            attempt(&joined, &[revoked]).context(),
+            AuthorizationContext::Peer(Principal::Unknown { .. })
+        ));
+        // A chain to another person key is not this owner's device.
+        let other_root = tempfile::tempdir().unwrap();
+        let mut other_voucher = DeviceIdentity::load_or_create(other_root.path()).unwrap();
+        let other_key = other_voucher.device_public_key().unwrap().to_owned();
+        other_voucher
+            .apply_owner_statement(&owner_statement(
+                &Keys::parse(OTHER_OWNER).unwrap(),
+                &other_key,
+                "owned",
+                NOW - 10,
+            ))
+            .unwrap();
+        let foreign = other_voucher.vouch_for(&joined, NOW - 5).unwrap();
+        let attempt = authority
+            .attempt(
+                &local(),
+                &joined,
+                Some(&foreign.owner_statement),
+                None,
+                &[],
+                NOW,
+            )
+            .unwrap();
+        assert!(matches!(
+            attempt.context(),
+            AuthorizationContext::Peer(Principal::Unknown { .. })
+        ));
     }
 
     #[test]

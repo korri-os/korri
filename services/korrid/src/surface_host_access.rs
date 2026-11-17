@@ -102,6 +102,11 @@ impl SurfaceHostPermission {
             | RpcRequest::IdentityNip46Switch(_)
             | RpcRequest::IdentityRetiredExport(_)
             | RpcRequest::IdentityRetiredDelete(_)
+            // A join shows a secret code, binds this device or vouches.
+            | RpcRequest::JoinStart(_)
+            | RpcRequest::JoinEnter(_)
+            | RpcRequest::JoinStatus(_)
+            | RpcRequest::JoinAccept(_)
             // Catalog and inspect fetch over the network and import into the
             // store as root; they need the full shell permission.
             | RpcRequest::PluginRepositoryAdd(_)

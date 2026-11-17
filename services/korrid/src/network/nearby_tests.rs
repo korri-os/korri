@@ -50,6 +50,7 @@ fn snapshot(state: PeerState) -> PeerSnapshot {
             device_public_key: "test-peer".into(),
             status: OwnerStatementStatus::Owned,
             created_at: 1,
+            vouchers: Vec::new(),
         },
         current_endpoint: None,
         remembered_endpoint: None,

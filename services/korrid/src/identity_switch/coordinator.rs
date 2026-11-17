@@ -34,6 +34,7 @@ pub enum ReplacementIdentity {
 #[derive(Clone)]
 pub struct IdentitySwitchCoordinator {
     private_state_root: PathBuf,
+    signer_socket: PathBuf,
     signer: UnixLocalSignerAdmin,
     federation: FederationResources,
 }
@@ -46,9 +47,16 @@ impl IdentitySwitchCoordinator {
     ) -> Self {
         Self {
             private_state_root,
-            signer: UnixLocalSignerAdmin::new(signer_socket),
+            signer: UnixLocalSignerAdmin::new(signer_socket.clone()),
+            signer_socket,
             federation,
         }
+    }
+
+    /// The local signer that holds the automatic identity, which setup's
+    /// end binds (ADR 0022).
+    pub fn automatic_owner_signer(&self) -> crate::local_signer::UnixPersonSigner {
+        crate::local_signer::UnixPersonSigner::new(self.signer_socket.clone())
     }
 
     pub async fn export_active_backup(&self, password: String) -> Result<String, String> {

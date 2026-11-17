@@ -91,7 +91,7 @@ a representative game or release.
 | `save-sync.ts`: inspect history / choose split / restore | `saves status`; `saves history GAME`; `saves choose GAME SNAPSHOT --yes`; `saves restore GAME SNAPSHOT --yes` | Local; keeps other history; restores explicitly overwrite |
 | `network-onboarding.ts`: scan / connect saved or open Wi-Fi | `wifi scan`; `wifi connect ID` | Exact network ID |
 | `network-onboarding.ts`: connect hidden Wi-Fi / supply password | `wifi connect SSID --hidden --password-stdin` | Same existing network schema; private input |
-| `network-onboarding.ts`: finish / restart setup | `setup finish`; `setup restart` | Same onboarding marker; no new identity |
+| `network-onboarding.ts`: finish / restart setup | `setup finish`; `setup restart` | Same onboarding marker; finish gives a device without an owner its automatic identity (ADR 0022) |
 | Setup surfaces: configure device name and seats | `setup --name NAME --seats COUNT`; `devices rename NAME`; `controllers seats COUNT` | Same settings revisions |
 | Setup surfaces: physical controller testing | **Recorded portal-only exception** | Requires physical semantic input; configured seat count is not a test |
 | `starter-pack-onboarding.ts`: accept / skip optional starter pack | `plugins on @korri:starter-pack`; `library folders rescan`; or omit both | Existing effects; no separate starter-pack schema |

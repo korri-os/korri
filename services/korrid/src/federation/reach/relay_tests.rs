@@ -145,3 +145,33 @@ fn reach_relay_addresses_are_bounded_and_never_loopback_or_tailscale() {
         ]
     );
 }
+
+#[test]
+fn reach_relay_admits_a_device_that_a_member_vouched_for() {
+    let devices = Devices::new();
+    let local = iroh::SecretKey::generate().public();
+    let joined_endpoint = iroh::SecretKey::generate().public();
+    let joined_root = tempfile::tempdir().unwrap();
+    let joined = crate::identity::DeviceIdentity::load_or_create(joined_root.path()).unwrap();
+    let joined_key = joined.device_public_key().unwrap().to_owned();
+    let access = relay::Membership {
+        directory: devices.da.clone(),
+        bindings: Arc::new(RwLock::new(BTreeMap::from([(
+            joined_endpoint,
+            joined_key.clone(),
+        )]))),
+        local,
+    };
+    assert!(!access.allows(joined_endpoint));
+    let vouch = devices
+        .cb
+        .identity_snapshot()
+        .unwrap()
+        .vouch_for(&joined_key, unix_time())
+        .unwrap();
+    devices
+        .da
+        .apply_membership(&devices.da.begin_work().unwrap(), &[vouch.owner_statement])
+        .unwrap();
+    assert!(access.allows(joined_endpoint));
+}
