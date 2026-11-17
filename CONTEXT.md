@@ -76,7 +76,7 @@ A person who uses another person's devices for one visit and keeps nothing after
 _Avoid_: anonymous user, visitor, guest account
 
 **Visit**:
-The time a guest spends at a device or on its stream. A guest's saves last until the visit ends.
+The time a guest spends at a device or on its stream. Anyone at a device can start one. It ends when someone picks another person on the device, when the device sleeps or shuts down, or, on a stream, when the session ends or the guest disconnects. A guest's saves last until the visit ends.
 _Avoid_: guest session, stay
 
 **Client part**:

@@ -28,7 +28,7 @@ when the device sleeps or shuts down (owner decisions, 2026-11-17).
   progress.
 - **End a visit only when someone picks "End visit".** No surprises.
   Rejected: people forget, and guest saves pile up.
-- **Only an owner or member can start a visit.** Rejected: it does not work
+- **Only an owner or a family member can start a visit.** Rejected: it does not work
   for a device in a public place with nobody there.
 - **Anyone with a key whom the owner lets in gets a lasting place.** Fewer
   kinds of person. Rejected: one stream invite would then give lasting access.
