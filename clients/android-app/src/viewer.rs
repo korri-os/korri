@@ -33,7 +33,8 @@
 //! lets its layers go and turns the window back. A launch that arrives
 //! while the stream in front ends waits for it (`rules::arriving`): korrid
 //! starts again as soon as it reads Stopped, which can be before the loop
-//! thread's next tick lets the old stream go.
+//! thread's next tick lets the old stream go. It waits at most the
+//! lifecycle's stop deadline, then is refused (`rules::Waiting`).
 //!
 //! The certificates, as korrid provisions them for its Linux viewers:
 //!
@@ -108,7 +109,7 @@ use std::{
         mpsc, Arc, Mutex, OnceLock, PoisonError,
     },
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 /// How long korrid's Resume waits for the overlay to close: Artemis's wait
@@ -741,8 +742,9 @@ pub struct Stream {
     orders: mpsc::Receiver<Order>,
     phase: Phase,
     /// A launch that waits for the stream in front to end
-    /// (`rules::arriving`); it begins once the phase is idle.
-    waiting: Option<Show>,
+    /// (`rules::arriving`): it begins once the phase is idle, or is refused
+    /// after the lifecycle's stop deadline.
+    waiting: rules::Waiting<Show>,
     /// A main event said that the display cutout may have moved in the
     /// window (`layer::may_move_the_cutout`): the next tick of a stream
     /// places its overlay out of the cutout again.
@@ -770,7 +772,7 @@ impl Stream {
             id,
             orders,
             phase: Phase::Idle,
-            waiting: None,
+            waiting: rules::Waiting::new(korri_viewer::lifecycle::STOP_DEADLINE),
             cutout_may_move: false,
         })
     }
@@ -789,10 +791,12 @@ impl Stream {
             Phase::Making(making) => self.make(*making),
             Phase::Playing(playing) => self.play(playing),
         };
-        if matches!(self.phase, Phase::Idle) {
-            if let Some(show) = self.waiting.take() {
-                self.begin(show);
-            }
+        let idle = matches!(self.phase, Phase::Idle);
+        if let Some(show) = self
+            .waiting
+            .tick(idle, Instant::now(), |show, why| refuse(show, &why))
+        {
+            self.begin(show);
         }
     }
 
@@ -885,10 +889,8 @@ impl Stream {
                     "korri-app: viewer {} waits for the stream in front to end",
                     show.launch
                 ));
-                // korrid retries a start that it gave up: the newer waits.
-                if let Some(older) = self.waiting.replace(show) {
-                    refuse(older, "a newer launch came while it waited");
-                }
+                self.waiting
+                    .hold(show, Instant::now(), |older, why| refuse(older, &why));
                 return;
             }
             rules::Arriving::Refuse(why) => return refuse(show, why),
@@ -1313,9 +1315,10 @@ impl Stream {
     /// The person leaves the stream: its runtime stops. Stop waits for the
     /// runtime, so it runs on a thread of its own.
     fn leave(&mut self, why: &str) {
-        if let Some(show) = self.waiting.take() {
-            refuse(show, &format!("{why} before the stream started"));
-        }
+        self.waiting
+            .close(&format!("{why} before the stream started"), |show, why| {
+                refuse(show, &why)
+            });
         match std::mem::replace(&mut self.phase, Phase::Idle) {
             Phase::Idle => {}
             Phase::Making(mut making) => {
@@ -1390,9 +1393,8 @@ impl Drop for Stream {
                 Order::Resume(resume) => refuse_resumes(vec![resume.closed], "the activity ended"),
             },
         );
-        if let Some(show) = self.waiting.take() {
-            refuse(show, "the activity ended");
-        }
+        self.waiting
+            .close("the activity ended", |show, why| refuse(show, &why));
         match std::mem::replace(&mut self.phase, Phase::Idle) {
             Phase::Idle => {}
             Phase::Making(mut making) => {

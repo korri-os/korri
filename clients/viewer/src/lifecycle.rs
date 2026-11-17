@@ -33,6 +33,9 @@ use std::{
 };
 
 const DEADLINE: Duration = Duration::from_secs(30);
+/// How long Stop waits for the runtime to confirm its end. The Android app
+/// lets a launch wait no longer for the stream in front to end (#391).
+pub const STOP_DEADLINE: Duration = DEADLINE;
 /// How long Apply waits for the stream's thread: Artemis waits 5 s for its
 /// UI thread (`KorriStreamViewer.withGame`). The tests wait less.
 #[cfg(not(test))]
@@ -558,7 +561,7 @@ fn handle(inner: &Inner, command: C) -> Result<R> {
             inner.changed.notify_all();
             let (state, timed) = inner
                 .changed
-                .wait_timeout_while(state, DEADLINE, |s| !s.finished)
+                .wait_timeout_while(state, STOP_DEADLINE, |s| !s.finished)
                 .unwrap();
             ensure!(
                 !timed.timed_out() && state.finished,

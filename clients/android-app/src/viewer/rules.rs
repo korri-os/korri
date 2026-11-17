@@ -13,6 +13,7 @@ use std::{
     path::Path,
     sync::{mpsc, Mutex, PoisonError},
     thread,
+    time::{Duration, Instant},
 };
 
 /// Where the adapter hands launches to the activity in front: that
@@ -75,6 +76,67 @@ pub(crate) fn arriving(front: Front) -> Arriving {
         Front::Ending => Arriving::Wait,
         Front::Playing => Arriving::Refuse("another launch is in front"),
         Front::Starting => Arriving::Refuse("another launch is starting"),
+    }
+}
+
+/// The loop thread's one launch that waits for the stream in front to end
+/// (`Arriving::Wait`), and since when. A refused launch goes to `refuse`
+/// with why, so that its lifecycle fails and korrid's start hears it, as
+/// [`close`] refuses a queue's launches.
+pub(crate) struct Waiting<T> {
+    limit: Duration,
+    held: Option<(T, Instant)>,
+}
+
+impl<T> Waiting<T> {
+    /// A slot whose launch waits at most `limit`.
+    pub(crate) fn new(limit: Duration) -> Self {
+        Self { limit, held: None }
+    }
+
+    /// `launch` waits from `now`. One that waited already is refused:
+    /// korrid gave up its start and asked again, so the newer one waits.
+    pub(crate) fn hold(&mut self, launch: T, now: Instant, mut refuse: impl FnMut(T, String)) {
+        if let Some((older, _)) = self.held.replace((launch, now)) {
+            refuse(older, "a newer launch came while it waited".into());
+        }
+    }
+
+    /// One tick, after the stream in front had its turn: the launch to
+    /// begin once the loop is `idle`. One that has waited `limit` while the
+    /// stream in front still ends is refused: a stream that never ends must
+    /// not hold korrid's start, and the adapter's one start or stop at a
+    /// time, for ever.
+    pub(crate) fn tick(
+        &mut self,
+        idle: bool,
+        now: Instant,
+        mut refuse: impl FnMut(T, String),
+    ) -> Option<T> {
+        let (launch, since) = self.held.take()?;
+        if idle {
+            return Some(launch);
+        }
+        if now.saturating_duration_since(since) >= self.limit {
+            refuse(
+                launch,
+                format!(
+                    "the stream in front did not end within {} s",
+                    self.limit.as_secs()
+                ),
+            );
+        } else {
+            self.held = Some((launch, since));
+        }
+        None
+    }
+
+    /// The window or the activity went: the waiting launch is refused with
+    /// `why`.
+    pub(crate) fn close(&mut self, why: &str, mut refuse: impl FnMut(T, String)) {
+        if let Some((launch, _)) = self.held.take() {
+            refuse(launch, why.to_owned());
+        }
     }
 }
 
@@ -246,8 +308,105 @@ mod tests {
         fs,
         os::unix::fs::symlink,
         path::PathBuf,
-        time::{Duration, SystemTime, UNIX_EPOCH},
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     };
+
+    /// The launches that a slot refused, with why.
+    fn refused<'a>(
+        into: &'a mut Vec<(&'static str, String)>,
+    ) -> impl FnMut(&'static str, String) + 'a {
+        |launch, why| into.push((launch, why))
+    }
+
+    // Review of #391: the slot of a launch that waits behind a stream that
+    // ends, as the loop thread keeps it.
+    #[test]
+    fn a_waiting_launch_begins_once_the_loop_is_idle() {
+        let (mut slot, mut out) = (Waiting::new(Duration::from_secs(30)), Vec::new());
+        let now = Instant::now();
+        assert_eq!(
+            slot.tick(true, now, refused(&mut out)),
+            None,
+            "nothing waits"
+        );
+        slot.hold("first", now, refused(&mut out));
+        assert_eq!(
+            slot.tick(false, now + Duration::from_secs(1), refused(&mut out)),
+            None
+        );
+        assert_eq!(
+            slot.tick(true, now + Duration::from_secs(2), refused(&mut out)),
+            Some("first")
+        );
+        assert_eq!(
+            slot.tick(true, now + Duration::from_secs(3), refused(&mut out)),
+            None
+        );
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn a_newer_launch_takes_the_slot_and_the_older_is_refused() {
+        let (mut slot, mut out) = (Waiting::new(Duration::from_secs(30)), Vec::new());
+        let now = Instant::now();
+        slot.hold("older", now, refused(&mut out));
+        slot.hold("newer", now + Duration::from_secs(1), refused(&mut out));
+        assert_eq!(
+            out,
+            [("older", "a newer launch came while it waited".to_owned())]
+        );
+        assert_eq!(
+            slot.tick(true, now + Duration::from_secs(2), refused(&mut out)),
+            Some("newer")
+        );
+    }
+
+    #[test]
+    fn a_launch_that_waits_too_long_is_refused_so_korrids_start_ends() {
+        let limit = Duration::from_secs(30);
+        let (mut slot, mut out) = (Waiting::new(limit), Vec::new());
+        let now = Instant::now();
+        slot.hold("waits", now, refused(&mut out));
+        let almost = now + limit - Duration::from_millis(1);
+        assert_eq!(slot.tick(false, almost, refused(&mut out)), None);
+        assert!(out.is_empty());
+        assert_eq!(slot.tick(false, now + limit, refused(&mut out)), None);
+        assert_eq!(
+            out,
+            [(
+                "waits",
+                "the stream in front did not end within 30 s".to_owned()
+            )]
+        );
+        assert_eq!(slot.tick(true, now + limit, refused(&mut out)), None);
+    }
+
+    #[test]
+    fn the_wait_of_a_newer_launch_starts_when_it_arrives() {
+        let limit = Duration::from_secs(30);
+        let (mut slot, mut out) = (Waiting::new(limit), Vec::new());
+        let now = Instant::now();
+        slot.hold("older", now, refused(&mut out));
+        slot.hold("newer", now + Duration::from_secs(20), refused(&mut out));
+        assert_eq!(slot.tick(false, now + limit, refused(&mut out)), None);
+        assert_eq!(out.len(), 1, "only the older, replaced: {out:?}");
+        assert_eq!(
+            slot.tick(true, now + Duration::from_secs(49), refused(&mut out)),
+            Some("newer")
+        );
+    }
+
+    #[test]
+    fn a_window_or_an_activity_that_goes_refuses_the_waiting_launch() {
+        let (mut slot, mut out) = (Waiting::new(Duration::from_secs(30)), Vec::new());
+        let now = Instant::now();
+        slot.close("the activity ended", refused(&mut out));
+        assert!(out.is_empty(), "nothing waits");
+        slot.hold("waits", now, refused(&mut out));
+        slot.close("the activity ended", refused(&mut out));
+        assert_eq!(out, [("waits", "the activity ended".to_owned())]);
+        assert_eq!(slot.tick(true, now, refused(&mut out)), None);
+    }
 
     // D11 review: Snapshot ran the lifecycle's request, with the viewer's
     // battery read through JNI, on korrid's async worker. On a runtime with
