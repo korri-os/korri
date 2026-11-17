@@ -442,12 +442,20 @@ static CORE: LazyLock<Recording> = LazyLock::new(|| Recording {
 });
 
 /// The descriptor loop until it has been quiet for 60 ms: each turn's
-/// result other than 0, and the packets that reached the core.
+/// result other than 0, and the packets that reached the core. A loop that
+/// never goes quiet within 10 s fails the test instead of spinning.
 fn pump() -> (Vec<c_int>, Vec<Packet>) {
+    let deadline = Instant::now() + Duration::from_secs(10);
     let mut results = Vec::new();
     let mut quiet = 0;
     let mut seen = CORE.packets.lock().unwrap().len();
     while quiet < 3 {
+        assert!(
+            Instant::now() < deadline,
+            "the descriptor loop did not go quiet in 10 s: {} results, {} packets",
+            results.len(),
+            seen
+        );
         // SAFETY: the descriptor loop's own call, on this thread.
         let result = unsafe { ffi::picture_poll_descriptors(20) };
         let now = CORE.packets.lock().unwrap().len();
