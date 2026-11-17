@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! The stream's rules that need no Android: the launches queued for an
 //! activity when it ends, the end of the runtime's thread, the keys that go
-//! on to Android, the files of the pinned server certificates, and the
-//! blocking calls from korrid's async code. The
+//! on to Android, the files of the pinned server certificates, the blocking
+//! calls from korrid's async code, and the screen that the viewer reports. The
 //! library builds for Android only, so the build machine runs these tests
 //! through `tests/host.rs` (`cargo test --test host`).
 use std::{
@@ -119,6 +119,16 @@ pub(crate) fn spawn_answering<T: Send + 'static>(
     .inspect_err(|_| {
         let _ = answer.send(refused);
     })
+}
+
+/// The viewer's screen in its Start (#476): the window's size, its longer
+/// side first, as the Artemis app reports its screen
+/// (`KorriStreamViewer.screenStreamSize`), because Portrait is a stream
+/// control and not the way the phone is held. With it the viewer reports its
+/// shape, which korrid's live-shape reads. None while the window has no size.
+pub(crate) fn screen(window: (i32, i32)) -> Option<(u32, u32)> {
+    let (width, height) = window;
+    (width > 0 && height > 0).then(|| (width.max(height) as u32, width.min(height) as u32))
 }
 
 #[cfg(test)]
@@ -247,6 +257,15 @@ mod tests {
         ));
         fs::create_dir(&path).unwrap();
         path
+    }
+
+    #[test]
+    fn the_screen_is_the_window_with_its_longer_side_first() {
+        assert_eq!(screen((2400, 1080)), Some((2400, 1080)));
+        assert_eq!(screen((1080, 2400)), Some((2400, 1080)));
+        assert_eq!(screen((1840, 2208)), Some((2208, 1840)));
+        assert_eq!(screen((0, 0)), None);
+        assert_eq!(screen((1080, 0)), None);
     }
 
     #[test]

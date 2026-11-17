@@ -849,6 +849,10 @@ impl Stream {
     /// The layers exist: the runtime starts, and Start goes to it.
     fn start(&mut self, show: Show, layers: Layers) -> Phase {
         let placed = layers.placed;
+        // The viewer's screen, with which it reports its shape to korrid's
+        // live-shape (#476): it follows a new stream size since slice 4.
+        let screen = rules::screen(layers.window)
+            .map(|(width, height)| korri_viewer_treaty::ViewerDisplay { width, height });
         log_placement(&layers);
         let mut devices = match AndroidDevices::new() {
             Ok(devices) => devices,
@@ -933,7 +937,7 @@ impl Stream {
             launch_id: launch.clone(),
             command: ViewerCommand::Start {
                 address,
-                display: None,
+                display: screen,
             },
         };
         logcat::info(&format!("korri-app: viewer request {}", json(&request)));
