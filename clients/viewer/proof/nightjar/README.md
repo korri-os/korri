@@ -213,4 +213,42 @@ itself (nightjar's `frames_need_idr` 0), and no decrypt failed.
 
 ### 30 ms delay
 
-Not run yet.
+`--net 'delay 30ms'` (every packet in both directions, so a 60 ms round
+trip), 2026-11-17 11:05 to 11:21 UTC. All 10 runs valid; other work on aka
+0.8 to 0.9 % of all CPUs; Tctl at each run's cool-down end 61.5 to
+75.9 °C. Record: `net-2026-11-17/delay-30ms/` (`c.json`, `nightjar.json`,
+`verdict.txt` unedited, each run's `viewer.log`).
+
+| ADR 0062 number | Field | C core | nightjar-core | Verdict |
+| --- | --- | --- | --- | --- |
+| 1 Packet arrival to display | `packet_to_display_ms` | not measured | not measured | not measured (no `--frame-record`) |
+| 1 (the gate) Sender presentation to display | `latency_p50_ms` | 42.016 to 42.069 | 41.967 to 42.071 | equal |
+| | `latency_p95_ms` | 49.206 to 49.287 | 49.190 to 49.293 | equal |
+| 2 Late, repeated, dropped | `dropped_frames` | 0 | 0 | equal |
+| | `repeated_frames` | 231 to 235 | 232 to 235 | equal |
+| | `late_frames` | 231 to 235 | 232 to 235 | equal |
+| | `torn_frames`, `unreadable_frames`, `output_repeats` | 0 | 0 | equal |
+| 3 CPU | `cpu_seconds_per_second` | 0.011 | 0.011 | equal |
+| 3 Battery | `battery_mw` | not measured | not measured | not measured |
+| 4 Startup | `startup_ms` | 1759.1 to 1792.0 | 1774.4 to 1775.8 | equal |
+| 5 Input | `input_ms` | 30.052 to 30.058 | 34.351 to 35.839 | **worse** |
+| | `input_missed` | 0 | 0 | equal |
+| 6 Stability | `stream_stalls`, `viewer_exits` | 0 | 0 | equal |
+
+In each run nightjar-core's key presses arrived at a median of 34.35 to
+35.84 ms (C: 30.05 to 30.06) and its releases at 40.02 ms (C: 30.04 to
+30.05).
+
+**The cause.** nightjar-core's `ControlHandle` wakes its control thread
+with a UDP datagram to the control socket's own address
+(`vendor/nightjar/protocol/client/src/control/driver.rs`, `Waker`). That
+datagram crosses the pair's loopback, so `--net` delays it 30 ms too. A key
+then waited for the thread's next idle tick (`MAX_IDLE_WAIT`, 10 ms): 0 to
+10 ms more. The C core's input thread waits on an in-process queue
+(`InputStream.c`) and sends at once. `tests/nightjar_input_wake.rs` plays
+the condition (netem on a namespace's loopback, nightjar-core's control
+client, a plain ENet host): 20 keys arrived a median of 5.16 ms and at most
+9.65 ms beyond the delay. With the vendored edit in `../../vendor/README.md`
+(on Unix the wake also goes through a local socket pair), medians of
+0.15 and 0.21 ms and maximums of 0.25 and 0.33 ms in two runs. On a real network the loopback has no delay, so this cost is
+mostly the test pair's (inferred).
