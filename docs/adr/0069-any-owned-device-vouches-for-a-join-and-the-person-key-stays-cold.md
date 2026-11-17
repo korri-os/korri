@@ -1,13 +1,18 @@
 # Any owned device vouches for a join, and the person key stays cold
 
-**Owner decision, 2026-11-16.** Supersedes ADR 0021. Design in progress: the
-form of a vouch is not decided. No device keeps the person key after setup
+**Owner decision, 2026-11-16.** Supersedes ADR 0021. No device keeps the person key after setup
 (ADR 0082).
 
 Any device the person already owns can approve a join. It vouches for the new
 device with its own device key. The person key no longer signs each join. It
 stays cold, and the person uses it only for recovery (ADR 0072) and to undo
 removals (ADR 0071).
+
+A vouch is the owner statement that a person key signs today (kind 30078,
+with the device and its status), signed instead by the vouching device's key.
+It adds two things: the person key it belongs to, and the id of the voucher's
+own owner statement or vouch. A peer follows that chain back to a statement
+that the person key signed (owner decision, 2026-11-16).
 
 The owner's reason: "If you and I, as the developer and product owner, are
 having trouble with this scenario, the standard user is going to face problems
@@ -39,5 +44,9 @@ This design covers one person's own devices. Household members and guests
 - A stolen owned device can admit more devices until the person removes it.
   Devices it vouched for stay owned when it is removed (ADR 0071).
 - Peers must accept a device whose ownership comes from a vouch, not only from
-  a statement that the person key signed.
+  a statement that the person key signed. Every membership check today
+  expects the person key as the author, so each one changes.
+- **Considered:** a separate vouch record next to the owner statement. It
+  would leave today's checks alone, but give two record kinds and two ways to
+  be a member. Rejected by the owner.
 - Joins no longer need a phone signer.

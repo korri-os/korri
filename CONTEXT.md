@@ -64,7 +64,7 @@ An owned device's signed approval of a join. It makes the new device owned, as a
 _Avoid_: delegation, invite
 
 **Join confirmation code**:
-The short code an owned device shows during a join, which the person enters on the new device, with controller buttons or as digits. It works once.
+The 10-symbol code an owned device shows during a join: a public nameplate, then a secret. The person enters it on the new device, with controller buttons or as digits, and it works once.
 _Avoid_: PIN, pairing code, password, join code
 
 **Identity switch**:

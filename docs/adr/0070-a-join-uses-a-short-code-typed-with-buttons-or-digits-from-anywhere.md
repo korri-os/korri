@@ -7,11 +7,18 @@ An owned device shows a join confirmation code. The person enters it on the
 new device. The two devices can be on any networks, near or far. They find
 each other through public Nostr relays (ADR 0026).
 
-The code is 7 symbols. Each symbol is a digit from 1 to 6, and each digit has
-one button: Up, Right, Down, Left, confirm and back. The screen shows every
-symbol as both its digit and its button. A person with a controller presses
-the buttons. A person with a keyboard, or at a terminal, types the digits.
-That gives 279,936 codes.
+The code is 10 symbols. Each symbol is a digit from 1 to 6, and each digit
+has one button: Up, Right, Down, Left, confirm and back. The screen shows
+every symbol as both its digit and its button. A person with a controller
+presses the buttons. A person with a keyboard, or at a terminal, types the
+digits.
+
+The first 3 symbols are a public nameplate. They tell the new device where on
+the relays the owned device waits. The owned device picks a nameplate that no
+other join uses at that moment. The last 7 symbols are the secret: 279,936
+possible values. The meeting place never comes from the secret, because a
+relay could try every value at once and learn it (owner decision,
+2026-11-16).
 
 Every Korri controller has a D-pad and two face buttons, and nothing more is
 certain. Start and Select often open a system menu, so the code does not use

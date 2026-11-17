@@ -13,7 +13,7 @@ has only the device in their hand. Needing the cold person key whenever
 someone becomes family would make the feature unused.
 
 A person with their own Korri device becomes family with the same code and
-Accept as a join (ADR 0070). Their device enters a 7-symbol code that the
+Accept as a join (ADR 0070). Their device enters a 10-symbol code that the
 owner's device shows. The owner then accepts them as family. A person with no
 device is created on the owner's device (ADR 0079).
 

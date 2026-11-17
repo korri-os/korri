@@ -4,7 +4,7 @@
 
 A friend's own Korri device is not one of the owner's devices and is not a
 family member's, so it gets no invite to the owner's stream. To play, the
-friend enters a 7-symbol code that the device holding the session shows.
+friend enters a 10-symbol code that the device holding the session shows.
 Then the person at that device presses Accept once. The friend's device
 holds a controller seat as a guest (ADR 0076). It holds it until the session
 ends or the friend disconnects (owner decision, 2026-11-17).
