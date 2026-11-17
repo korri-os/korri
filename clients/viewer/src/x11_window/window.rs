@@ -93,6 +93,16 @@ pub(super) fn failed() -> bool {
     FAILED.load(Ordering::Relaxed)
 }
 
+/// No window opened, for whatever reason, a panic included: the stream ends
+/// (`PlayerIo::poll`).
+pub(super) fn not_opened() {
+    FAILED.store(true, Ordering::Relaxed);
+}
+
+/// A test's fault: the next open panics.
+#[cfg(test)]
+pub(super) static PANIC_IN_OPEN: AtomicBool = AtomicBool::new(false);
+
 /// `x11_window_open`: the window's XID, or 0 when it did not open.
 ///
 /// # Safety
@@ -103,6 +113,10 @@ pub(super) unsafe fn open(
     height: c_int,
     flags: c_int,
 ) -> c_ulong {
+    #[cfg(test)]
+    if PANIC_IN_OPEN.swap(false, Ordering::Relaxed) {
+        panic!("a test's fault in the open");
+    }
     // SAFETY: Xlib's name of the caller's display, a C string it owns.
     let name = unsafe { CStr::from_ptr(xlib::XDisplayString(display.cast())) }
         .to_string_lossy()
@@ -132,7 +146,7 @@ pub(super) unsafe fn open(
             log::line(&format!(
                 "picture: the Rust X11 window did not open on {name}: {error}; the stream ends"
             ));
-            FAILED.store(true, Ordering::Relaxed);
+            not_opened();
             0
         }
     }
@@ -147,12 +161,18 @@ pub(super) fn close() {
 }
 
 /// io/input/x11.c's `x11_handler`, in the descriptor loop: `LOOP_RETURN`
-/// to quit, -1 when the connection is lost.
-unsafe extern "C" fn handle(_: c_int) -> c_int {
-    crate::callback::guarded("input: X11", -1, || {
-        window()
-            .as_mut()
-            .map_or(ffi::LOOP_OK as c_int, Window::handle)
+/// to quit, -1 when the connection is lost. The descriptor is in the loop
+/// only while its window is open, so a call with none is a descriptor that
+/// `close` left behind: -1 too.
+unsafe extern "C" fn handle(fd: c_int) -> c_int {
+    crate::callback::guarded("input: X11", -1, || match window().as_mut() {
+        Some(window) => window.handle(),
+        None => {
+            log::line(&format!(
+                "input: the loop still holds X11 descriptor {fd}, and no window is open"
+            ));
+            -1
+        }
     })
 }
 

@@ -103,9 +103,15 @@ mod chosen {
     ) -> c_ulong {
         if rust() {
             // SAFETY: x11.c's live display.
-            guarded("picture: X11 window", 0, || unsafe {
+            let window = guarded("picture: X11 window", 0, || unsafe {
                 window::open(display, width, height, flags)
-            })
+            });
+            // 0 also when the open panicked: then too the stream ends
+            // through its teardown, before x11.c shows a frame on window 0.
+            if window == 0 {
+                window::not_opened();
+            }
+            window
         } else {
             // SAFETY: the same call as x11.c makes without the feature.
             unsafe { carried_x11_window_open(display, width, height, flags) }

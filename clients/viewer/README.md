@@ -681,8 +681,11 @@ What differs:
 - An X11 error is logged; Xlib's default handler ends the process. A lost
   connection ends the stream through its teardown (the loop's -1); Xlib
   ends the process.
-- A window that cannot open ends the stream through its teardown
-  (`PlayerIo::poll` returns -1 before any frame); the C has no such case.
+- A window that cannot open, or an open that panics, ends the stream
+  through its teardown (`PlayerIo::poll` returns -1 before any frame); the
+  C has no such case.
+- A call of the handler while no window is open fails the loop (-1): only
+  a descriptor left in the loop after its window closed can cause it.
 - The window goes when the stream's I/O drops, a moment after the core
   stops; the C's goes with the display in the decoder's cleanup.
 - The port logs one line when it opens (`picture: the Rust X11 window
@@ -703,8 +706,13 @@ Tests (`src/x11_window/tests.rs`), each window on a private Xvfb with a
   the same real pointer position from both. With the button reset for each
   event, or with no warp, the test fails (checked by hand on aka).
 - The key table equals `io/input/keyboard.h`'s, read from the file.
-- A closed window is gone, and the loop has nothing left; a window that
-  cannot open makes `failed()` true until the next stream.
+- A closed window is gone, and its descriptor has left the loop: a turn
+  of the loop then calls no handler. The handler fails the loop (-1) when
+  no window is open, so a descriptor that the close left behind (closed,
+  so poll marks it invalid) fails the test; with the close's
+  `loop_remove_fd` removed, it does (checked by hand on aka).
+- A window that cannot open, or an open that panics, makes `failed()` true
+  until the next stream.
 
 Not proven: the window under a real compositor (sway, Xwayland) and its
 focus by korrid, a key from a real keyboard through XTEST, and any number.

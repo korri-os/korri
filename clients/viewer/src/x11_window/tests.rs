@@ -96,7 +96,18 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
-        let _ = self.child.kill();
+        // SIGTERM: Xvfb removes its socket and lock file as it ends, so that
+        // runs outside a build sandbox leave no display number taken.
+        // SAFETY: a signal to our own child.
+        unsafe { libc::kill(self.child.id() as libc::pid_t, libc::SIGTERM) };
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while self.child.try_wait().ok().flatten().is_none() {
+            if Instant::now() > deadline {
+                let _ = self.child.kill();
+                break;
+            }
+            sleep(Duration::from_millis(10));
+        }
         let _ = self.child.wait();
     }
 }
@@ -565,9 +576,30 @@ fn a_closed_rust_window_is_gone_and_leaves_the_loop() {
         client.get_geometry(window).unwrap().reply().is_err(),
         "the window went with its connection"
     );
-    // The loop has nothing left to wait for.
+    // The window's descriptor left the loop. Were it still there, closed,
+    // poll would mark it invalid and call its handler, which, with no
+    // window open, fails the loop (-1).
     // SAFETY: the descriptor loop's own call, on this thread.
     assert_eq!(unsafe { ffi::picture_poll_descriptors(0) }, 0);
+}
+
+#[test]
+fn a_panic_in_the_open_ends_the_stream() {
+    let _turn = exclusive();
+    let server = Server::start();
+    select(Kind::Rust);
+    super::window::PANIC_IN_OPEN.store(true, std::sync::atomic::Ordering::Relaxed);
+    let name = CString::new(server.name.as_str()).unwrap();
+    // SAFETY: Xlib's own calls; then the call x11.c makes.
+    unsafe {
+        let display = xlib::XOpenDisplay(name.as_ptr());
+        assert!(!display.is_null());
+        let window: c_ulong = chosen::x11_window_open(display.cast(), 1280, 720, 0);
+        assert_eq!(window, 0);
+        assert!(super::failed(), "PlayerIo::poll ends the stream");
+        xlib::XCloseDisplay(display);
+    }
+    select(Kind::Rust);
 }
 
 #[test]
