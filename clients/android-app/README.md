@@ -31,7 +31,7 @@ nix run .#android-app-resize-proof -- --build-store auto --sunshine PACKAGE  # #
 | O1 | The new app installs side by side with the Artemis app, under its own package name. | Package `com.simonwjackson.korri.app`, label "Korri (native)". It is a separate federation device with its own korrid state. It does not answer the HOME intent; the Artemis app keeps that. |
 | O2 | korrid runs only while the app is open, with no foreground service yet. | korrid starts once per process and lives as long as the process. No service keeps the process alive in the background: Android can freeze or end it there, and nothing restarts korrid until a person opens the app (the Artemis app's `START_REDELIVER_INTENT` has no equivalent). |
 | O3 | Local Android games stay, with androidx `FileProvider` bundled unchanged. | Not in D8. Slice D13 (below) brings them; `FileProvider` then needs a third-party dex and `hasCode="true"`. |
-| O4 | The stream controls come in D11: carry every control and status item that the Artemis app reports to korrid. | D11 (below) carries 3 of Artemis's 13 controls (Crop to fill, Flip A/B and X/Y, Rumble), the battery and the health; Toggle keyboard, Mouse mode and Pan & zoom came after it. The other 7 are missing, because the Rust viewer lacks what each needs (`clients/viewer/README.md`, slice D11): Full keyboard, Touch sensitivity, Keyboard as controller, Toggle local cursor, SGSR sharpness, SGSR edge threshold, Picture-in-picture. They gate D7′. |
+| O4 | The stream controls come in D11: carry every control and status item that the Artemis app reports to korrid. | D11 (below) carries 3 of Artemis's 13 controls (Crop to fill, Flip A/B and X/Y, Rumble), the battery and the health; Toggle keyboard, Mouse mode, Pan & zoom and Toggle local cursor came after it. The other 6 are missing, because the Rust viewer lacks what each needs (`clients/viewer/README.md`, slice D11): Full keyboard, Touch sensitivity, Keyboard as controller, SGSR sharpness, SGSR edge threshold, Picture-in-picture. They gate D7′. |
 
 ## What runs
 
@@ -574,6 +574,15 @@ sender; off, the zoom stays and a tap must reach the sender at the point of
 the picture under the finger; a new mouse mode must turn it off. Records:
 `proof/android-app-pan-zoom/`, 125 of 125 checks.
 
+Toggle local cursor follows (`apply LAUNCH CONTROL none`), with the
+emulator's PS/2 mouse: the stream must have asked for the pointer capture at
+its start, and Android's dispatcher must give the app's window the capture
+(`dumpsys input`); the mouse's own moves and click, sent with `sendevent`,
+must reach the sender as relative moves and buttons; korrid's apply must
+let the capture go, and the same moves then reach the sender as absolute
+moves; applied again, the mouse must be captured again; Home must let it
+go. Records: `proof/android-app-local-cursor/`, 138 of 138 checks.
+
 ## korrid's resize request (#476 Route C, slices 2 and 3)
 
 korrid, not the viewer, asks for a stream's new encode size. The viewer's
@@ -1084,7 +1093,7 @@ connect.
 | D9 | Done: the holder proof above, and the TLS verifier's classes |
 | D10 | Done: the Rust viewer, driven by korrid, on the shell's loop (above) |
 | D5b | Done: Korri's gameplay overlay through `Overlay` (above), proven on the emulator (`proof/android-app-d5b/`). "Open Korri" (Background) is not carried yet; the camera cutout came with #494 |
-| D11 | Done in part: 6 of Artemis's 13 stream controls (Toggle keyboard, Crop to fill, Pan & zoom, Mouse mode, Flip A/B and X/Y, Rumble), the battery and the health, through the treaty (above); shown and applied in the gameplay overlay since D5b. Missing, and gating D7′: Full keyboard, Touch sensitivity, Keyboard as controller, Toggle local cursor, SGSR sharpness, SGSR edge threshold, Picture-in-picture |
+| D11 | Done in part: 7 of Artemis's 13 stream controls (Toggle keyboard, Crop to fill, Pan & zoom, Mouse mode, Toggle local cursor, Flip A/B and X/Y, Rumble), the battery and the health, through the treaty (above); shown and applied in the gameplay overlay since D5b. Missing, and gating D7′: Full keyboard, Touch sensitivity, Keyboard as controller, SGSR sharpness, SGSR edge threshold, Picture-in-picture |
 | D12 prep | Done in part: the release APK, its key and signing step, its notices (below). Not done: an owner binding that a release build can make (below) |
 | D13 (new) | Local Android games (O3): korrid's launcher through JNI, usage polling on a Rust thread, androidx `FileProvider` bundled unchanged (`hasCode="true"`), and the Guide service, which Android allows only as a Java `AccessibilityService` subclass: one Korri Java file on #434's list, or no Guide over other apps. Gates D7′ |
 | D12 | On the Galaxy Z Fold 8 |

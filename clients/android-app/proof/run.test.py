@@ -205,6 +205,73 @@ class TheStreamsNetworkCore(unittest.TestCase):
                 self.assertEqual([name for name, _ in built], ["korri-android-app-fixture-apk", "korrid.federationFixture"])
 
 
+class TheMousesPointerCapture(unittest.TestCase):
+    """Toggle local cursor (#434, toward D7′): the proof finds the emulator's
+    mouse, moves it and clicks it with its own events, and reads whether the
+    app's window has the pointer capture, from Android's dump and from the
+    viewer's own log."""
+
+    # The emulator's devices in `getevent -p`, as the Pan & zoom record has them.
+    GETEVENT = (HERE / "android-app-pan-zoom/getevent.txt").read_text()
+
+    def test_the_emulators_mouse_is_its_ps2_mouse(self):
+        self.assertEqual(play.mouse_device_in(self.GETEVENT),
+                         {"path": "/dev/input/event14", "name": "ImExPS/2 Generic Explorer Mouse"})
+
+    def test_touch_screens_and_keyboards_are_no_mouse(self):
+        blocks = re.split(r"(?m)^(?=add device \d+: )", self.GETEVENT)
+        without = "".join(b for b in blocks if "Explorer Mouse" not in b)
+        self.assertIn("virtio_input_multi_touch_1", without)
+        self.assertIsNone(play.mouse_device_in(without))
+
+    def test_the_window_with_the_capture_is_read_from_androids_dump(self):
+        captured = ("  FocusedWindowRequestedPointerCapture: true\n"
+                    "  CurrentWindowWithPointerCapture: 4f1c2d0 com.simonwjackson.korri.app/android.app.NativeActivity\n")
+        self.assertEqual(play.window_with_pointer_capture(captured),
+                         "4f1c2d0 com.simonwjackson.korri.app/android.app.NativeActivity")
+        released = "  FocusedWindowRequestedPointerCapture: false\n  CurrentWindowWithPointerCapture: None\n"
+        self.assertIsNone(play.window_with_pointer_capture(released))
+        # A dump without the line says nothing.
+        self.assertIsNone(play.window_with_pointer_capture("Input Dispatcher State:\n"))
+
+    def test_the_viewers_calls_on_its_view_come_from_its_log(self):
+        lines = [
+            "11-17 14:00:01.000  4791  4791 I korri-viewer: pointer: [HideIcon, Request] on the stream's view, "
+            "which had pointer capture: false",
+            "11-17 14:00:02.000  4791  4814 I korri-app: viewer control set-local-cursor ran",
+            "11-17 14:00:02.010  4791  4791 I korri-viewer: pointer: [ShowIcon, Release] on the stream's view, "
+            "which had pointer capture: true",
+            "11-17 14:00:03.000  4791  4791 I korri-viewer: pointer: [Follow { compatible: true }] on the stream's "
+            "view, which had pointer capture: false",
+        ]
+        self.assertEqual(play.pointer_calls(lines), [
+            (["HideIcon", "Request"], False),
+            (["ShowIcon", "Release"], True),
+            (["Follow { compatible: true }"], False),
+        ])
+
+    def test_a_move_and_a_click_are_the_mouses_own_events_in_one_call_as_root(self):
+        script = play.mouse_script("/dev/input/event14", [(8, 0), (0, -6)], click=True)
+        self.assertEqual(script, [
+            "sendevent /dev/input/event14 2 0 8", "sendevent /dev/input/event14 0 0 0",
+            "sendevent /dev/input/event14 2 1 -6", "sendevent /dev/input/event14 0 0 0",
+            "sendevent /dev/input/event14 1 272 1", "sendevent /dev/input/event14 0 0 0",
+            "sendevent /dev/input/event14 1 272 0", "sendevent /dev/input/event14 0 0 0",
+        ])
+
+    def test_the_moves_at_the_sender_are_summed_by_kind(self):
+        packets = [
+            {"kind": "relative mouse move", "fields": {"deltaX": "8", "deltaY": "0"}},
+            {"kind": "relative mouse move", "fields": {"deltaX": "-3", "deltaY": "5"}},
+            {"kind": "mouse button", "fields": {"action": "00000008", "button": "01"}},
+            {"kind": "mouse button", "fields": {"action": "00000009", "button": "01"}},
+            {"kind": "absolute mouse move", "fields": {"x": "960", "y": "360", "width": "1919", "height": "1079"}},
+        ]
+        self.assertEqual(play.mouse_at_the_sender(packets), {
+            "relative": 2, "moved": [5, 5], "absolute": 1, "buttons": 2,
+            "kinds": ["absolute mouse move", "mouse button", "relative mouse move"]})
+
+
 class TheSendersClientsReadOnlyOnceItWasPrepared(unittest.TestCase):
     """A run that ends before the sender was prepared (its cooldown refused
     it) has no Sunshine state to read: no check, and no error of its own."""

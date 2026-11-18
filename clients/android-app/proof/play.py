@@ -74,9 +74,15 @@ The steps:
    `sendevent` on the emulator's touch screen, zooms the video layer (the
    app's log, SurfaceFlinger's crop), and a drag moves it, with nothing at
    the sender; turned off, the zoom stays and a tap reaches the sender at the
-   point of the picture under it; a new mouse mode turns it off.
-9. Home leaves the app: the runtime stops and korrid reads Stopped, and the
-   keyboard's focus goes back. Starting the app again lets korrid's
+   point of the picture under it; a new mouse mode turns it off. Toggle
+   local cursor, with the emulator's PS/2 mouse: the stream asked for the
+   pointer capture at its start, and Android's dispatcher gives the app's
+   window the capture (`dumpsys input`); the mouse's own moves and click
+   (`sendevent`) reach the sender as relative moves and buttons; korrid's
+   apply lets the capture go, and the same moves reach it as absolute moves;
+   applied again, the mouse is captured again.
+9. Home leaves the app: the runtime stops and korrid reads Stopped, the
+   keyboard's focus goes back, and the stream's view lets the mouse go. Starting the app again lets korrid's
    recovery start the stream again.
 10. Stop the emulator, its adb server, the holder and the sender.
 
@@ -148,6 +154,15 @@ RUMBLE = "set-rumble"
 KEYBOARD = "toggle-keyboard"
 MOUSE = "set-mouse-mode"
 ZOOM = "set-zoom-mode"
+LOCAL = "set-local-cursor"
+# Toggle local cursor: the app's lines (src/viewer.rs), and the viewer library's when Android's main
+# thread made the input's calls on the stream's view (pointer_capture.rs), with whether the view had
+# the pointer capture before them.
+LOCAL_RAN = "korri-app: viewer control set-local-cursor ran"
+LOCAL_SHOWS = "korri-app: viewer local cursor shows; the mouse points"
+LOCAL_HIDES = "korri-app: viewer local cursor hides; the mouse is captured"
+POINTER_CALLS = re.compile(
+    r"korri-viewer: pointer: \[(.*)\] on the stream's view, which had pointer capture: (true|false)")
 # The app's placement line, with its zoom (src/viewer.rs, `log_placement`).
 PLACED_LINE = re.compile(
     r"korri-app: viewer video layer \d+x\d+ placed at \((-?\d+), (-?\d+)\)-\((-?\d+), (-?\d+)\) "
@@ -835,14 +850,19 @@ def controls(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof
     prefix = f"viewer:{launch}:"
     # No controller that can rumble takes part, so Rumble is not offered. On a
     # touch screen Toggle keyboard is, a command first in Artemis's order, then
-    # after Crop to fill Pan & zoom, a toggle, and Mouse mode, a choice.
+    # after Crop to fill Pan & zoom, a toggle, and Mouse mode, a choice. With a
+    # mouse, Toggle local cursor is, a command.
     expected = {KEYBOARD, FILL, ZOOM, MOUSE, FLIP} if touchscreen(emulator) else {FILL, FLIP}
+    if mouse_device_in(emulator.shell("getevent -p", check=False).stdout) is not None:
+        expected.add(LOCAL)
     steps["expected"] = sorted(expected)
     checks["korrids_snapshot_lists_the_controls"] = (
         set(listed) == expected
         and all(c["id"].startswith(prefix) for c in listed.values())
         and all(c["kind"] == "toggle" and c["value"] is False for name, c in listed.items()
-                if name not in (KEYBOARD, MOUSE))
+                if name not in (KEYBOARD, MOUSE, LOCAL))
+        and (LOCAL not in listed or (listed[LOCAL]["kind"] == "command"
+                                     and listed[LOCAL]["label"] == "Toggle local cursor"))
         and (MOUSE not in listed or (listed[MOUSE]["kind"] == "choice" and listed[MOUSE]["value"] == "0"
                                      and listed[MOUSE]["label"] == "Mouse mode"))
         and (KEYBOARD not in listed
@@ -1285,6 +1305,153 @@ def phrase(found: list[dict], text: str) -> "dict | None":
             if not wanted.startswith(joined):
                 break
     return None
+
+
+def mouse_device_in(getevent: str) -> "dict | None":
+    """The mouse in `getevent -p`: a device with relative X and Y (REL 0000 and 0001) and a left button
+    (BTN_LEFT, 0110), and no touch axes. The emulator has a PS/2 mouse, which Android takes for a mouse
+    (`SOURCE_MOUSE`), so the app offers Toggle local cursor and captures it."""
+    for block in re.split(r"(?m)^add device \d+: ", getevent)[1:]:
+        path = block.split()[0]
+        name = re.search(r'name:\s*"([^"]*)"', block)
+        rel = re.search(r"REL \(0002\):((?:\s+[0-9a-f]{4})+)", block)
+        key = re.search(r"KEY \(0001\):((?:\s+[0-9a-f]{4})+)", block)
+        if rel and key and {"0000", "0001"} <= set(rel.group(1).split()) and "0110" in key.group(1).split() \
+                and re.search(r"\b0035\b", block) is None:
+            return {"path": path, "name": name.group(1) if name else ""}
+    return None
+
+
+def window_with_pointer_capture(dump: str) -> "str | None":
+    """The window that has the pointer capture, in `dumpsys input` (Android 12's InputDispatcher,
+    `CurrentWindowWithPointerCapture`), or None."""
+    found = re.search(r"CurrentWindowWithPointerCapture:\s*(.*?)\s*$", dump, re.M)
+    if found is None or found.group(1) == "None":
+        return None
+    return found.group(1)
+
+
+def pointer_calls(lines: list[str]) -> list[tuple[list[str], bool]]:
+    """The viewer's calls on the stream's view, in order (pointer_capture.rs's log), each with whether
+    the view had the pointer capture before them."""
+    found = []
+    for line in lines:
+        match = POINTER_CALLS.search(line)
+        if match:
+            found.append((re.findall(r"\w+(?: \{[^}]*\})?", match.group(1)), match.group(2) == "true"))
+    return found
+
+
+def mouse_script(path: str, moves: list[tuple[int, int]], click: bool) -> list[str]:
+    """The mouse's own events (`sendevent`): each move as REL_X and REL_Y, then a left click (BTN_LEFT,
+    272), each with its sync."""
+    lines = []
+
+    def send(kind: int, code: int, value: int) -> None:
+        lines.append(f"sendevent {path} {kind} {code} {value}")
+
+    for dx, dy in moves:
+        if dx:
+            send(2, 0, dx)
+        if dy:
+            send(2, 1, dy)
+        send(0, 0, 0)
+    if click:
+        for value in (1, 0):
+            send(1, 272, value)
+            send(0, 0, 0)
+    return lines
+
+
+def mouse_at_the_sender(packets: list[dict]) -> dict:
+    """The mouse's packets at the sender: how many relative moves and their sum, absolute moves and
+    buttons, and every kind."""
+    relative = [p for p in packets if p["kind"] == "relative mouse move"]
+    return {
+        "relative": len(relative),
+        "moved": [sum(int(p["fields"].get(axis, "0")) for p in relative) for axis in ("deltaX", "deltaY")],
+        "absolute": sum(p["kind"] == "absolute mouse move" for p in packets),
+        "buttons": sum(p["kind"] == "mouse button" for p in packets),
+        "kinds": sorted({p["kind"] for p in packets}),
+    }
+
+
+def local_cursor(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.Remote", out: Path,
+                 launch: str, listed: dict) -> tuple[dict, dict]:
+    """Toggle local cursor (#434, toward D7′): with a mouse attached, korrid offers the command. The
+    stream hid the pointer and asked for the capture at its start, and Android gave the app's window the
+    capture; the mouse's own moves and click (`sendevent` on the emulator's PS/2 mouse, as root) reach
+    the sender as relative moves and buttons. korrid's apply shows the local cursor and lets the capture
+    go: the same moves reach the sender as absolute moves. Applied again, the pointer hides and the mouse
+    is captured again."""
+    steps: dict = {}
+    checks: dict = {}
+    sender.request("clock")
+    mouse = mouse_device_in(emulator.shell("getevent -p", check=False).stdout)
+    steps["mouse"] = mouse
+    control = listed.get(LOCAL)
+    checks["korrid_offers_toggle_local_cursor_with_a_mouse"] = mouse is not None and control is not None \
+        and control["kind"] == "command" and control["label"] == "Toggle local cursor"
+    calls = pointer_calls(logcat.lines())
+    steps["calls_at_the_start"] = calls[:1]
+    checks["the_stream_hides_the_pointer_and_asks_for_the_capture_at_its_start"] = \
+        calls[:1] == [(["HideIcon", "Request"], False)]
+    if control is None or mouse is None:
+        return steps, checks
+
+    def captured(name: str) -> "str | None":
+        dump = emulator.shell("dumpsys input", check=False).stdout
+        lines = [line.strip() for line in dump.splitlines() if "PointerCapture" in line]
+        (out / f"pointer-capture-{name}.txt").write_text("\n".join(lines) + "\n")
+        steps[f"dispatcher_{name}"] = lines
+        return window_with_pointer_capture(dump)
+
+    def mouse_moves(name: str) -> dict:
+        before = len(sender_packets(sender))
+        script = mouse_script(mouse["path"], [(8, 0)] * 5 + [(0, 6)] * 5, click=True)
+        (out / "mouse.sh").write_text("\n".join(script) + "\n")
+        sent = emulator.shell(f"su 0 sh -c {shlex.quote('; '.join(script))}", check=False, timeout=60)
+        time.sleep(3)
+        got = mouse_at_the_sender(sender_packets(sender)[before:])
+        got["sent"] = {"exit": sent.returncode, "output": (sent.stdout + sent.stderr)[-500:]}
+        steps[f"mouse_{name}"] = got
+        return got
+
+    def toggle(name: str, line: str) -> tuple[bool, list]:
+        mark = logcat.mark()
+        answer = proof_apply(emulator, logcat, launch, control["id"], "none")
+        ran = logcat.wait_for(LOCAL_RAN, mark, 5) is not None and logcat.wait_for(line, mark, 5) is not None
+        logcat.wait_for(POINTER_CALLS, mark, 5)
+        time.sleep(1)
+        made = pointer_calls(logcat.lines()[mark:])
+        steps.setdefault("applies", []).append(answer)
+        steps[f"calls_{name}"] = made
+        return answer == "ok" and ran, made
+
+    window = captured("start")
+    checks["android_gives_the_apps_window_the_pointer_capture"] = window is not None and PACKAGE in window
+    first = mouse_moves("captured")
+    checks["a_captured_mouse_moves_the_host_mouse_relatively"] = \
+        first["relative"] > 0 and first["moved"] != [0, 0] and first["absolute"] == 0
+    checks["a_captured_mouses_click_reaches_the_sender"] = first["buttons"] == 2
+
+    ran, made = toggle("shown", LOCAL_SHOWS)
+    checks["korrids_apply_shows_the_local_cursor_and_lets_the_capture_go"] = \
+        ran and made[:1] == [(["ShowIcon", "Release"], True)] and captured("shown") is None
+    second = mouse_moves("shown")
+    checks["with_the_local_cursor_the_mouse_points_into_the_picture"] = \
+        second["absolute"] > 0 and second["relative"] == 0 and second["buttons"] == 2
+
+    ran, made = toggle("hidden", LOCAL_HIDES)
+    window = captured("hidden")
+    checks["applied_again_the_pointer_hides_and_the_mouse_is_captured"] = \
+        ran and made[:1] == [(["HideIcon", "Request"], False)] and window is not None and PACKAGE in window
+    third = mouse_moves("captured-again")
+    checks["captured_again_the_mouse_moves_relatively"] = third["relative"] > 0 and third["absolute"] == 0
+    after = toggles(proof_snapshot(emulator, logcat, launch))
+    steps["snapshot_after"] = after
+    checks["toggle_local_cursor_stays_a_command"] = after.get(LOCAL, {}).get("kind") == "command"
+    return steps, checks
 
 
 def sender_packets(sender: "viewer_proof.Remote") -> list[dict]:
@@ -1744,6 +1911,11 @@ def main() -> int:
             emulator, logcat, sender, out, launch, steps["controls"].get("listed") or {})
         checks.update(zoom_checks)
 
+        log("Toggle local cursor: the mouse captured, then pointing, then captured again")
+        steps["local_cursor"], cursor_checks = local_cursor(
+            emulator, logcat, sender, out, launch, steps["controls"].get("listed") or {})
+        checks.update(cursor_checks)
+
         log("Home: leaving the app ends the stream")
         home_mark = logcat.mark()
         emulator.shell("input keyevent KEYCODE_HOME")
@@ -1757,6 +1929,12 @@ def main() -> int:
         if steps["keyboard"].get("applies"):
             checks["the_streams_end_hides_the_keyboard_and_gives_the_focus_back"] = \
                 logcat.wait_for(KEYBOARD_GIVEN_BACK, home_mark, 30) is not None
+        if steps["local_cursor"].get("applies"):
+            # `setInputGrabState(false)`: the stream's end shows the pointer and lets the capture go.
+            logcat.wait_for(POINTER_CALLS, home_mark, 30)
+            steps["local_cursor"]["calls_at_the_end"] = pointer_calls(logcat.lines()[home_mark:])
+            checks["the_streams_end_lets_the_mouse_go"] = \
+                ["ShowIcon", "Release"] in [calls for calls, _ in steps["local_cursor"]["calls_at_the_end"]]
         time.sleep(2)
         d8.screenshot(emulator, out / "home.png")
         steps["after_home"] = d8.focused(emulator)

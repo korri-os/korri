@@ -1,0 +1,3 @@
+FocusedWindowRequestedPointerCapture: false
+CurrentWindowWithPointerCapture: None
+PointerCaptureChangedEvent(pointerCaptureEnabled=false), age=1360ms
