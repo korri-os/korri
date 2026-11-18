@@ -337,6 +337,37 @@ class ACapturedTouchpad(unittest.TestCase):
         self.assertEqual(play.buttons_at_the_sender(packets), [["left", "down"], ["left", "up"], ["right", "down"]])
 
 
+class TheMouseInTheOverlay(unittest.TestCase):
+    """Review P0 of Toggle local cursor: the overlay lets a captured mouse go,
+    and the proof points it at a row of the overlay. The pointer is
+    SurfaceFlinger's `Sprite` layer (frameworks/base SpriteController)."""
+
+    DUMP = (
+        "+ BufferStateLayer (korri-viewer-video#0) uid=10145\n"
+        "      layerStack=   0, z=        1, pos=(240,0), size=(  -1,  -1), flags=0x00000000\n"
+        "+ BufferStateLayer (Sprite#57) uid=1000\n"
+        "  Region VisibleRegion (this=0 count=1)\n"
+        "    [ 761,  845,  806,  905]\n"
+        "      layerStack=   0, z=2147483647, pos=(761.5,845), size=(  -1,  -1), crop=[  0,   0,  -1,  -1], "
+        "flags=0x00000000, tr=[1.00, 0.00][0.00, 1.00]\n"
+        "      parent=none\n")
+
+    def test_the_pointer_is_the_sprite_layer_where_it_shows(self):
+        self.assertEqual(play.sprite_in(self.DUMP), {"pos": [761.5, 845.0], "hidden": False})
+
+    def test_a_hidden_sprite_or_none_is_no_pointer_that_shows(self):
+        self.assertEqual(play.sprite_in(self.DUMP.replace("flags=0x00000000, tr", "flags=0x00000001, tr")),
+                         {"pos": [761.5, 845.0], "hidden": True})
+        self.assertIsNone(play.sprite_in(self.DUMP.split("+ BufferStateLayer (Sprite")[0]))
+
+    def test_the_pointer_is_at_a_place_when_its_sprite_is_near(self):
+        sprite = play.sprite_in(self.DUMP)
+        self.assertTrue(play.pointer_at(sprite, (770, 850)))
+        self.assertFalse(play.pointer_at(sprite, (900, 850)))
+        self.assertFalse(play.pointer_at({"pos": [761.5, 845.0], "hidden": True}, (770, 850)))
+        self.assertFalse(play.pointer_at(None, (770, 850)))
+
+
 class TheSendersClientsReadOnlyOnceItWasPrepared(unittest.TestCase):
     """A run that ends before the sender was prepared (its cooldown refused
     it) has no Sunshine state to read: no check, and no error of its own."""

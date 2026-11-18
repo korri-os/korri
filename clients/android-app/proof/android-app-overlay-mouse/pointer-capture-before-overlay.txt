@@ -1,0 +1,2 @@
+FocusedWindowRequestedPointerCapture: true
+CurrentWindowWithPointerCapture: cf1c375 com.simonwjackson.korri.app/android.app.NativeActivity

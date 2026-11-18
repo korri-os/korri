@@ -84,7 +84,11 @@ The steps:
    `uinput` command makes for a few seconds, then: while the view has the
    capture, its finger's move must reach the sender as relative moves, a tap
    and its button with one finger as left clicks, and its button with two
-   fingers as a right click.
+   fingers as a right click. Last, Guide opens the overlay with the mouse
+   captured: the overlay must let the capture go, the mouse's pointer must
+   show on the row Crop to fill, two clicks there must turn it on and off
+   through korrid with nothing at the sender, and Back must close the
+   overlay and capture the mouse again.
 9. Home leaves the app: the runtime stops and korrid reads Stopped, the
    keyboard's focus goes back, and the stream's view lets the mouse go. Starting the app again lets korrid's
    recovery start the stream again.
@@ -1480,6 +1484,131 @@ def buttons_at_the_sender(packets: list[dict]) -> list[list[str]]:
             for p in packets if p["kind"] == "mouse button"]
 
 
+def sprite_in(dump: str) -> "dict | None":
+    """The mouse pointer in SurfaceFlinger's dump: the `Sprite` layer (SpriteController), its place
+    (the pointer's, less the icon's hot spot) and whether it is hidden; None when there is none."""
+    blocks = re.split(r"\n(?=\+ )", dump)
+    block = next((b for b in blocks if re.match(r"\+ \w+ \(Sprite#\d+\)", b)), "")
+    pos = re.search(r"\bpos=\((-?[\d.]+),\s*(-?[\d.]+)\)", block)
+    flags = re.search(r"\bflags=(0x[0-9a-f]+)", block)
+    if pos is None:
+        return None
+    return {"pos": [float(pos.group(1)), float(pos.group(2))],
+            "hidden": flags is not None and int(flags.group(1), 16) & 0x1 != 0}
+
+
+def pointer_at(sprite: "dict | None", place: tuple[int, int], within: int = 40) -> bool:
+    """Whether the pointer shows at `place`: its sprite is not hidden and its corner lies just above
+    and left of the place, by at most `within` pixels (the icon's hot spot)."""
+    if sprite is None or sprite["hidden"]:
+        return False
+    x, y = sprite["pos"]
+    return 0 <= place[0] - x <= within and 0 <= place[1] - y <= within
+
+
+def mouse_in_overlay(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.Remote", out: Path,
+                     launch: str) -> tuple[dict, dict]:
+    """Review P0 of Toggle local cursor, unlike Artemis: Guide opens the overlay while the mouse is
+    captured, and the overlay lets it go, so that it points. The step homes the pointer in the top left
+    corner and moves it onto the overlay's row "Crop to fill", each with one move of the emulator's
+    PS/2 mouse more than 500 ms after the last, which Android's pointer acceleration leaves as it is
+    (VelocityControl's STOP_TIME); SurfaceFlinger's pointer layer must show there. Two clicks there turn
+    Crop to fill on and off through korrid, and the sender hears nothing. Back closes the overlay, and
+    the mouse is captured again: its moves reach the sender relatively."""
+    steps: dict = {}
+    checks: dict = {}
+    sender.request("clock")
+    mouse = mouse_device_in(emulator.shell("getevent -p", check=False).stdout)
+    steps["mouse"] = mouse
+    if mouse is None:
+        checks["the_overlay_lets_the_captured_mouse_go"] = False
+        return steps, checks
+
+    def mouse_events(moves: list[tuple[int, int]], click: bool) -> int:
+        script = mouse_script(mouse["path"], moves, click)
+        return emulator.shell(f"su 0 sh -c {shlex.quote('; '.join(script))}", check=False, timeout=60).returncode
+
+    def window_with_capture(name: str) -> "str | None":
+        dump = emulator.shell("dumpsys input", check=False).stdout
+        lines = [line.strip() for line in dump.splitlines() if "PointerCapture" in line]
+        (out / f"pointer-capture-{name}.txt").write_text("\n".join(lines) + "\n")
+        steps[f"dispatcher_{name}"] = lines
+        return window_with_pointer_capture(dump)
+
+    before = window_with_capture("before-overlay")
+    checks["the_mouse_is_captured_before_the_overlay"] = before is not None and PACKAGE in before
+    mark = logcat.mark()
+    emulator.shell("input keyevent KEYCODE_BUTTON_MODE")
+    opened = waiting(logcat, sender, OVERLAY_OPEN, mark, 20)
+    drew = waiting(logcat, sender, SHELL_DREW, mark, 30)
+    held_from = len(sender_packets(sender))
+    logcat.wait_for(POINTER_CALLS, mark, 5)
+    time.sleep(1)
+    steps["calls_at_open"] = pointer_calls(logcat.lines()[mark:])
+    checks["the_overlay_lets_the_captured_mouse_go"] = opened is not None and drew is not None \
+        and steps["calls_at_open"][:1] == [(["ShowIcon", "Release"], True)] \
+        and window_with_capture("overlay-open") is None
+    if opened is None:
+        return steps, checks
+    # korrid's overlay lists the stream's controls; the focus takes the list down to them.
+    time.sleep(3)
+    for _ in range(4):
+        emulator.shell("input keyevent KEYCODE_DPAD_DOWN")
+        time.sleep(0.5)
+    time.sleep(1)
+
+    def point_and_click(name: str, value: str) -> None:
+        """Find the row, home the pointer and move it there, and click it if it shows there. Each click
+        moves the overlay's focus to the row, which can scroll the list: each looks again."""
+        shot = out / f"overlay-mouse-{name}.png"
+        viewer_proof.screenshot(emulator, shot)
+        row = phrase(words(shot), "Crop to fill")
+        steps[f"row_{name}"] = row
+        if row is None:
+            checks[f"the_pointer_shows_on_the_row_{name}"] = False
+            return
+        target = (row["x"], row["y"])
+        steps[f"home_{name}"] = mouse_events([(-5000, -5000)], False)
+        time.sleep(0.8)
+        steps[f"move_{name}"] = mouse_events([target], False)
+        time.sleep(0.8)
+        steps[f"sprite_{name}"] = sprite_in(emulator.shell("dumpsys SurfaceFlinger", check=False, timeout=60).stdout)
+        viewer_proof.screenshot(emulator, out / f"overlay-mouse-{name}-pointer.png")
+        checks[f"the_pointer_shows_on_the_row_{name}"] = pointer_at(steps[f"sprite_{name}"], target)
+        if not checks[f"the_pointer_shows_on_the_row_{name}"]:
+            return
+        click_mark = logcat.mark()
+        steps[f"click_{name}"] = mouse_events([], True)
+        checks[f"a_mouse_click_on_the_row_sets_crop_to_fill_{value}"] = logcat.wait_for(
+            f"korri-app: viewer control set-fill-mode is {value}", click_mark, 10) is not None
+        time.sleep(1.5)
+
+    point_and_click("first", "true")
+    point_and_click("second", "false")
+    checks["the_overlay_stays_open_through_the_clicks"] = logcat.wait_for(OVERLAY_CLOSED, mark, 0.5) is None
+    time.sleep(1)
+    while_open = sender_packets(sender)[held_from:]
+    steps["sender_packets_while_open"] = [p["kind"] for p in while_open][:20]
+    checks["the_mouse_in_the_overlay_sends_nothing_to_the_sender"] = not while_open
+
+    mark = logcat.mark()
+    emulator.shell("input keyevent KEYCODE_BACK")
+    closed = waiting(logcat, sender, OVERLAY_CLOSED, mark, 30)
+    logcat.wait_for(POINTER_CALLS, mark, 5)
+    time.sleep(1)
+    steps["calls_at_close"] = pointer_calls(logcat.lines()[mark:])
+    after = window_with_capture("overlay-closed")
+    checks["the_overlays_close_captures_the_mouse_again"] = closed is not None \
+        and (["HideIcon", "Request"], False) in steps["calls_at_close"] and after is not None and PACKAGE in after
+    before = len(sender_packets(sender))
+    mouse_events([(8, 0)] * 5, False)
+    time.sleep(3)
+    steps["mouse_after"] = mouse_at_the_sender(sender_packets(sender)[before:])
+    checks["after_the_overlay_the_mouse_moves_relatively_again"] = \
+        steps["mouse_after"]["relative"] > 0 and steps["mouse_after"]["absolute"] == 0
+    return steps, checks
+
+
 def captured_touchpad(emulator: "d8.Emulator", sender: "viewer_proof.Remote", out: Path) -> tuple[dict, dict]:
     """A captured touch pad (#434, toward D7′). The emulator has none, so Android's `uinput` command makes
     one for a few seconds (`touchpad_commands`, as root). While the stream's view has the pointer capture,
@@ -2066,6 +2195,10 @@ def main() -> int:
         log("A captured touch pad: its fingers and its button reach the sender")
         steps["touchpad"], touchpad_checks = captured_touchpad(emulator, sender, out)
         checks.update(touchpad_checks)
+
+        log("The overlay with the mouse captured: it points, and clicks Crop to fill")
+        steps["mouse_in_overlay"], overlay_mouse_checks = mouse_in_overlay(emulator, logcat, sender, out, launch)
+        checks.update(overlay_mouse_checks)
 
         log("Home: leaving the app ends the stream")
         home_mark = logcat.mark()

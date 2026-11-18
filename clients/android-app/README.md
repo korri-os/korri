@@ -586,7 +586,12 @@ captured touch pad follows: Android's `uinput` command makes one for a few
 seconds, and while the view has the capture, its finger's move must reach
 the sender as relative moves, a tap and its button with one finger as left
 clicks, and its button with two fingers as a right click. Records:
-`proof/android-app-touchpad/`, 141 of 141 checks.
+`proof/android-app-touchpad/`, 141 of 141 checks. Last, Guide opens the
+overlay with the mouse captured: the overlay must let the capture go, the
+pointer must show on the row Crop to fill, two clicks there must turn it on
+and off through korrid with nothing at the sender, and Back must close the
+overlay and capture the mouse again (`proof/android-app-overlay-mouse/`,
+151 of 151 checks, with the touch pad again).
 
 ## korrid's resize request (#476 Route C, slices 2 and 3)
 

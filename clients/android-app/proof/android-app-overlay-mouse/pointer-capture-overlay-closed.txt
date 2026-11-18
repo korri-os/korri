@@ -1,0 +1,3 @@
+FocusedWindowRequestedPointerCapture: true
+CurrentWindowWithPointerCapture: cf1c375 com.simonwjackson.korri.app/android.app.NativeActivity
+PointerCaptureChangedEvent(pointerCaptureEnabled=true), age=1396ms

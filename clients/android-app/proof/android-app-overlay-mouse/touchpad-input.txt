@@ -1,0 +1,91 @@
+Device 16: Korri test touchpad
+EventHub Devices: [ 16 ]
+Generation: 67
+IsExternal: true
+AssociatedDisplayPort: <none>
+AssociatedDisplayUniqueId: <none>
+HasMic:     false
+Sources: 0x00100008
+KeyboardType: 0
+ControllerNum: 0
+Motion Ranges:
+X: source=0x00100008, min=0.000, max=1000.000, flat=0.000, fuzz=0.000, resolution=0.000
+Y: source=0x00100008, min=0.000, max=1000.000, flat=0.000, fuzz=0.000, resolution=0.000
+PRESSURE: source=0x00100008, min=0.000, max=1.000, flat=0.000, fuzz=0.000, resolution=0.000
+RELATIVE_X: source=0x00100008, min=-1000.000, max=1000.000, flat=0.000, fuzz=0.000, resolution=0.000
+RELATIVE_Y: source=0x00100008, min=-1000.000, max=1000.000, flat=0.000, fuzz=0.000, resolution=0.000
+Touch Input Mapper (mode - UNSCALED):
+Parameters:
+GestureMode: MULTI_TOUCH
+DeviceType: POINTER
+AssociatedDisplay: hasAssociatedDisplay=true, isExternal=false, displayId=''
+OrientationAware: false
+Raw Touch Axes:
+X: min=0, max=1000, flat=0, fuzz=0, resolution=0
+Y: min=0, max=1000, flat=0, fuzz=0, resolution=0
+Pressure: unknown range
+TouchMajor: unknown range
+TouchMinor: unknown range
+ToolMajor: unknown range
+ToolMinor: unknown range
+Orientation: unknown range
+Distance: unknown range
+TiltX: unknown range
+TiltY: unknown range
+TrackingId: min=0, max=65535, flat=0, fuzz=0, resolution=0
+Slot: min=0, max=1, flat=0, fuzz=0, resolution=0
+Calibration:
+touch.size.calibration: none
+touch.pressure.calibration: none
+touch.orientation.calibration: none
+touch.distance.calibration: none
+touch.coverage.calibration: none
+Affine Transformation:
+X scale: 1.000
+X ymix: 0.000
+X offset: 0.000
+Y xmix: 0.000
+Y scale: 1.000
+Y offset: 0.000
+Viewport INTERNAL: displayId=-1, uniqueId=, port=<none>, orientation=0, logicalFrame=[0, 0, 1001, 1001], physicalFrame=[0, 0, 1001, 1001], deviceSize=[1001, 1001], isActive=[1]
+RawSurfaceWidth: 1001px
+RawSurfaceHeight: 1001px
+SurfaceLeft: 0
+SurfaceTop: 0
+SurfaceRight: 0
+SurfaceBottom: 0
+PhysicalWidth: 1001px
+PhysicalHeight: 1001px
+PhysicalLeft: 0
+PhysicalTop: 0
+SurfaceOrientation: 0
+Translation and Scaling Factors:
+XTranslate: 0.000
+YTranslate: 0.000
+XScale: 1.000
+YScale: 1.000
+XPrecision: 1.000
+YPrecision: 1.000
+GeometricScale: 1.000
+PressureScale: 0.000
+SizeScale: 0.000
+OrientationScale: 0.000
+DistanceScale: 0.000
+HaveTilt: false
+TiltXCenter: 0.000
+TiltXScale: 0.000
+TiltYCenter: 0.000
+TiltYScale: 0.000
+Last Raw Button State: 0x00000000
+Last Raw Touch: pointerCount=0
+Last Cooked Button State: 0x00000000
+Last Cooked Touch: pointerCount=0
+Stylus Fusion:
+ExternalStylusConnected: false
+External Stylus ID: -1
+External Stylus Data Timeout: 9223372036854775807
+External Stylus State:
+When: 9223372036854775807
+Pressure: 0.000000
+Button State: 0x00000000
+Tool Type: 0
