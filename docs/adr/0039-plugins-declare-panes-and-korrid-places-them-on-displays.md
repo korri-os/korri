@@ -128,3 +128,9 @@ idle period before retry after a missed transition; no unbounded retry loop runs
 Holder registrations last until the game session ends, not until a network
 viewer disconnects. This does not repair Sunshine that already exited at boot,
 Moonlight's retry address, or Moonlight's shutdown when an output disappears.
+
+## Amended 2026-11-18 — per-display surfaces
+
+ADR 0086 gives the per-display surface design that the 2026-10-27 amendment
+left for later. Surfaces declare panes and korrid places them, as it places a
+game's panes. `displays: all` and `SurfaceModel.displays` are removed.
