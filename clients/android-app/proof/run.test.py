@@ -162,6 +162,49 @@ class TheProofsHandTheirBuildStoreToEveryBuild(unittest.TestCase):
                 self.assertEqual(tools, [(holder.viewer_proof.LOCAL, True, store)])
 
 
+class TheStreamsNetworkCore(unittest.TestCase):
+    """#391 step E: the app's viewer streams with nightjar-core by default;
+    the fixture APK takes the C core from <cache>/proof-network-core
+    (src/proof.rs). Each core's first stop line names it."""
+
+    NIGHTJAR = "122.386  4147  4244 I korri-viewer: nightjar: at the stop: SessionStats { rtt: Some((7ms, 4ms)) }"
+    C = "116.168  4781  4824 I korri-viewer: Stopping input stream..."
+
+    class Emulator:
+        def __init__(self):
+            self.commands: list[str] = []
+
+        def shell(self, command, check=True):
+            self.commands.append(command)
+            return subprocess.CompletedProcess(command, 0, stdout="")
+
+    def test_the_c_core_is_asked_for_in_the_apps_cache(self):
+        emulator = self.Emulator()
+        play.choose_network_core(emulator, "c")
+        self.assertEqual(emulator.commands,
+                         ["run-as com.simonwjackson.korri.app sh -c 'echo c > cache/proof-network-core'"])
+
+    def test_nightjar_is_the_default_and_leaves_no_file(self):
+        emulator = self.Emulator()
+        play.choose_network_core(emulator, "nightjar")
+        self.assertEqual(emulator.commands,
+                         ["run-as com.simonwjackson.korri.app rm -f cache/proof-network-core"])
+
+    def test_each_core_is_read_from_its_own_stop_line(self):
+        self.assertTrue(play.the_stream_used(["x", self.NIGHTJAR], "nightjar"))
+        self.assertFalse(play.the_stream_used([self.C], "nightjar"))
+        self.assertTrue(play.the_stream_used([self.C], "c"))
+        self.assertFalse(play.the_stream_used([self.C, self.NIGHTJAR], "c"))
+        self.assertFalse(play.the_stream_used([], "c"))
+
+    def test_play_takes_the_core(self):
+        main = TheProofsHandTheirBuildStoreToEveryBuild.main
+        for core in ("nightjar", "c"):
+            with self.subTest(core=core):
+                built, _ = main(self, play, ["--sunshine", "SUNSHINE", "--stream-host", "192.0.2.1", "--network-core", core])
+                self.assertEqual([name for name, _ in built], ["korri-android-app-fixture-apk", "korrid.federationFixture"])
+
+
 class CropToFillReadsWhereThePictureShows(unittest.TestCase):
     """play.py's fills_the_window reads the picture's real bounds in SurfaceFlinger's dump (#497): here
     in the dumps that the #495 proof recorded (android-app-495/surfaceflinger-layers.txt)."""
