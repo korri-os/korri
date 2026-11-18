@@ -73,3 +73,57 @@ else ran on aka, so the cause is unknown.
 
 The Korri app (`clients/android-app`) cannot choose the core, so no D10
 play proof ran with nightjar-core.
+
+## The Android switch's proof under load, 2026-11-18
+
+The proof ran with the default core after the Android switch commit, which
+also makes a full input queue answer and log as the C core's ("Input
+queue reached maximum size limit"), and with the proof counting those lines
+(`input_queue_full_lines`). From that commit's tree on aka, under the lock
+but not after the quiet gate: another session's game tests and builds held
+aka busy for hours. The run started in a pause below 82 °C (the sender
+fixture's heat guard refuses a start at 85 °C), 01:17 to 01:21 UTC; aka's
+load and Tctl before and after are in `host-before.txt` and
+`host-after.txt` (69 °C at the start, 92 °C at the end). **104 of 104
+checks passed.**
+
+| Store path | |
+| --- | --- |
+| APK (unsigned) | `/nix/store/2i0h3v7h9sr9w9crgphdxh5prc784qnx-korri-viewer-android-apk-0.1.0` |
+| Android tests (x86_64) | `/nix/store/dp9nc58133ckmkhisr2n97qd2sdk3hv1-korri-viewer-android-check` |
+
+The input report: `14 keys, 104 controller states, 3 arrivals, 2 mouse, 118
+touches sent; 25 held; 0 unsupported, 0 outside the stream, 0 failed`, and
+no "Input queue reached maximum size limit" line. This run's swipe sent 118
+touches, against 1900 in the run above and 2322 in a run of the first
+build of the switch (2026-11-17 20:41, record not kept here), so it did not
+test the queue's bound. The emulator decides how many move events one swipe gives:
+the C core's runs gave 123 to 1041 for the same steps.
+
+Record: `switch-2026-11-18/run-load1/`: every file the proof wrote except
+the APKs, the WAV file, the screenshots, `pair.txt` and the agent's log,
+with the full logcat (`logcat-all.txt.xz`), Sunshine's log and its input
+packets (`sunshine-input.json.xz`), and the proof's own output
+(`proof.log.txt`).
+
+### Can the proof's swipe fill the input queue?
+
+Yes, when the sending thread stalls. At the sender, the swipe's touch moves
+came at up to 680 in one 100 ms window with nightjar-core (`../android-nightjar/sunshine-input.json`) and up to 329 with the C core
+(`../android-d4b/`). Neither core batches touch: the C core's input thread
+batches mouse, pen and motion only (`InputStream.c`), and nightjar-core's
+queue batches mouse, pen and text. Both queues hold 150 packets
+(`MAX_QUEUED_INPUT_PACKETS`, nightjar-core's `MAX_QUEUED`), about 22 ms of
+that swipe at 680 per 100 ms. nightjar-core's window hold
+(`INPUT_HOLD_LIMIT`, 75) holds input only while fewer than 75 wait, so it
+cannot fill the queue alone; a control thread that does not run for about
+20 ms or more can. The C core's input thread sends each touch move at once,
+unreliable, and does not wait on ENet's window for it; under the same
+stall its queue fills the same way.
+
+Both cores then drop the new packet and keep the queued ones. The C core
+logs "Input queue reached maximum size limit" and answers
+`LBQ_BOUND_EXCEEDED` (2). The adapter (`src/network_core/nightjar.rs`,
+`answer`) now does the same: before, it answered -1 and logged nothing, so
+the 24 failed sends of attempt 2 above cannot be told apart from another
+failure. The policy is the C core's, through the adapter; no vendored edit.
