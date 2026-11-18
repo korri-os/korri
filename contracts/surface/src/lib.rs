@@ -1402,6 +1402,68 @@ pub struct SurfaceDisplay {
 }
 
 // ---------------------------------------------------------------------------
+// Steam account (ADR 0083)
+// ---------------------------------------------------------------------------
+
+/// A QR code for the surface to draw. `modules` holds `size` rows of `size`
+/// characters each, row by row from the top, `1` for a dark module and `0`
+/// for a light one, with no quiet zone. The surface draws it at any scale,
+/// with a light border of at least four modules.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceQrCode {
+    pub size: u32,
+    pub modules: String,
+}
+
+/// The current person's Steam sign-in on this device. Every string is
+/// finished, user-facing copy and every action runs through `RunAction`
+/// unchanged; a surface infers nothing from a label.
+///
+/// - `SignedOut`: no Steam account is linked; `actions` holds Sign in.
+/// - `Code`: the person approves `qr` in the Steam mobile app. `forGame` is
+///   the title of the game whose launch asked for the sign-in, absent when
+///   the person asked from setup or settings. `actions` holds Cancel.
+/// - `Working`: approved, or starting; Korri is signing in. `actions` may
+///   hold Cancel.
+/// - `SignedIn`: `accountName` is the Steam account name. `actions` holds
+///   Sign out.
+/// - `Problem`: sign-in did not finish; `actions` holds Retry when one helps.
+#[typeshare(serialized_as = "SurfaceSteamAccountWire")]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "_tag", rename_all_fields = "camelCase")]
+pub enum SurfaceSteamAccount {
+    SignedOut {
+        actions: Vec<SurfaceAction>,
+    },
+    Code {
+        qr: SurfaceQrCode,
+        kicker: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        for_game: Option<String>,
+        actions: Vec<SurfaceAction>,
+    },
+    Working {
+        kicker: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        for_game: Option<String>,
+        actions: Vec<SurfaceAction>,
+    },
+    SignedIn {
+        account_name: String,
+        actions: Vec<SurfaceAction>,
+    },
+    Problem {
+        kicker: String,
+        reason: String,
+        actions: Vec<SurfaceAction>,
+    },
+}
+
+// ---------------------------------------------------------------------------
 // Model
 // ---------------------------------------------------------------------------
 
@@ -1465,6 +1527,10 @@ pub struct SurfaceModel {
     /// a live clock. Absent when Korri has no trustworthy time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub published_at: Option<f64>,
+    /// The current person's Steam sign-in. Absent when no Steam engine runner
+    /// is installed on this device.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steam_account: Option<SurfaceSteamAccount>,
 }
 
 // ---------------------------------------------------------------------------
