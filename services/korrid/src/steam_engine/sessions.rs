@@ -453,7 +453,7 @@ done"#,
         SessionContext {
             person: PERSON.into(),
             game_id: "half-life".into(),
-            runner_id: crate::steam_engine::RUNNER_ID.into(),
+            runner_id: "@korri:steam/engine".into(),
             release_id: None,
             device: "a".repeat(64),
             save_folder: root.join("saves/half-life/steam-cloud"),

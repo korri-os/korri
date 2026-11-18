@@ -56,9 +56,9 @@ fn store_url(app: AppId) -> String {
 /// An engine install as a download the person can remove: one Ready file of
 /// the game's own release in its download facts, so the game's existing
 /// Remove download action is offered, and runs `uninstall`. Saves stay.
-pub fn installed_status(app: AppId) -> crate::acquisition::ArtifactStatus {
+pub fn installed_status(plugin: &str, app: AppId) -> crate::acquisition::ArtifactStatus {
     crate::acquisition::ArtifactStatus {
-        id: format!("{}/installed-{app}", super::PLUGIN_ID),
+        id: format!("{plugin}/installed-{app}"),
         title: "Steam game files".into(),
         version: String::new(),
         bytes_total: None,
@@ -129,6 +129,7 @@ impl SteamStore {
 
     pub async fn search(
         &self,
+        provider: &str,
         plan: HostPlan,
         runner: JobRunner,
         query: &str,
@@ -140,7 +141,7 @@ impl SteamStore {
                 .into_iter()
                 .map(|entry| ProviderClaim {
                     tag: ProviderClaimTag::ProviderClaim,
-                    provider_id: super::provider::PROVIDER_ID.into(),
+                    provider_id: provider.into(),
                     url: store_url(appid(&entry.id).unwrap_or_default()),
                     id: entry.id,
                     title: entry.title,
@@ -155,6 +156,7 @@ impl SteamStore {
 
     pub async fn details(
         &self,
+        provider: &str,
         plan: HostPlan,
         runner: JobRunner,
         id: &str,
@@ -168,7 +170,7 @@ impl SteamStore {
             .ok_or_else(|| failure("UnknownClaim", "This game is not in your Steam library."))?;
         Ok(ProviderClaimDetails {
             tag: ProviderClaimDetailsTag::ProviderClaimDetails,
-            provider_id: super::provider::PROVIDER_ID.into(),
+            provider_id: provider.into(),
             id: id.into(),
             title: found.name.clone(),
             url: store_url(app),
@@ -182,6 +184,7 @@ impl SteamStore {
     /// Get: queue `install <appid>` and return the job at once.
     pub fn acquire(
         self: &Arc<Self>,
+        provider: &str,
         plan: HostPlan,
         runner: JobRunner,
         id: &str,
@@ -192,7 +195,7 @@ impl SteamStore {
         let job_id = format!("{:032x}", rand::random::<u128>());
         let status = AcquireJobStatus {
             job_id: job_id.clone(),
-            provider_id: super::provider::PROVIDER_ID.into(),
+            provider_id: provider.into(),
             id: id.into(),
             file_name: None,
             system: Some("steam".into()),
@@ -261,6 +264,7 @@ impl SteamStore {
     /// are in Steam Cloud and in Korri's history, never in this job's way.
     pub async fn uninstall(
         &self,
+        provider: &str,
         plan: HostPlan,
         runner: JobRunner,
         app: AppId,
@@ -270,7 +274,7 @@ impl SteamStore {
         let job = Arc::new(StoreJob {
             status: Mutex::new(AcquireJobStatus {
                 job_id: String::new(),
-                provider_id: super::provider::PROVIDER_ID.into(),
+                provider_id: provider.into(),
                 id: app.to_string(),
                 file_name: None,
                 system: None,
@@ -433,19 +437,20 @@ done"#;
         let (plan, runner) = setup(temp.path());
         let store = Arc::new(SteamStore::default());
         let found = store
-            .search(plan.clone(), runner.clone(), "bejeweled")
+            .search("@korri:steam", plan.clone(), runner.clone(), "bejeweled")
             .await
             .unwrap();
         assert_eq!(found.claims.len(), 1);
         assert_eq!(found.claims[0].id, "78000");
         assert_eq!(found.claims[0].provider_id, "@korri:steam");
         let details = store
-            .details(plan.clone(), runner.clone(), "440")
+            .details("@korri:steam", plan.clone(), runner.clone(), "440")
             .await
             .unwrap();
         assert_eq!(details.title, "Team Fortress 2");
         let job = store
             .acquire(
+                "@korri:steam",
                 plan.clone(),
                 runner.clone(),
                 "78000",
@@ -470,7 +475,10 @@ done"#;
         })
         .await;
         assert!(matches!(done, AcquireJobState::Imported { game_id } if game_id == "game-78000"));
-        store.uninstall(plan, runner, 78000).await.unwrap();
+        store
+            .uninstall("@korri:steam", plan, runner, 78000)
+            .await
+            .unwrap();
         assert_eq!(
             std::fs::read_dir(temp.path().join("launches"))
                 .unwrap()
@@ -485,7 +493,7 @@ done"#;
         let (plan, runner) = setup(temp.path());
         let store = Arc::new(SteamStore::default());
         let job = store
-            .acquire(plan, runner, "440", Arc::new(|_| None))
+            .acquire("@korri:steam", plan, runner, "440", Arc::new(|_| None))
             .unwrap();
         until(&store, &job.job_id, |s| {
             matches!(s, AcquireJobState::Downloading { .. })
@@ -506,6 +514,7 @@ done"#;
         }
         assert!(store
             .acquire(
+                "@korri:steam",
                 setup(temp.path()).0,
                 setup(temp.path()).1,
                 "../1",

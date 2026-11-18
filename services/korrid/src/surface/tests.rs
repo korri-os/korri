@@ -5817,6 +5817,9 @@ impl super::steam_account::SteamEngineAccess for ConflictAccess {
     fn presence(&self) -> String {
         String::new()
     }
+    fn engine_artifacts(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// ADR 0083: the shim refused the launch because its sync found a Steam

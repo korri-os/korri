@@ -37,12 +37,6 @@ use rquickjs::{function::This, Context, Filter, Function, Object, Runtime, Type,
 
 /// The operation that turns a selected runner and target into a launch plan.
 /// Native runners may omit this handler for the default program/content launch.
-/// ADR 0083: the one acquisition provider admitted with no claims handlers,
-/// because korrid serves its search and installs through the Steam engine
-/// host. Here, not in `steam_engine`, because the plugin host builds this
-/// file too; `steam_engine::provider::PROVIDER_ID` is this constant.
-pub const ENGINE_PROVIDER_ID: &str = "@korri:steam";
-
 pub const LAUNCH_PREPARE: &str = "launch.prepare";
 /// The artwork operation (ADR 0032): a plugin that carries this handler
 /// finds images for a game. Admission looks for it and never calls it.
@@ -380,7 +374,10 @@ fn evaluate_module(
             let engine_provider = declaration.get("name").and_then(serde_json::Value::as_str)
                 == Some("steam")
                 && providers.len() == 1
-                && providers.contains_key(ENGINE_PROVIDER_ID);
+                // The Steam plugin's provider is its own id, `@<namespace>:steam`.
+                && providers
+                    .keys()
+                    .all(|id| crate::plugin_discovery::is_steam_plugin(id));
             for operation in [
                 "claims.search",
                 "claims.details",

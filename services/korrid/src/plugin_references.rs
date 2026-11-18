@@ -14,7 +14,8 @@ struct RunnerReference {
 
 #[derive(Deserialize)]
 struct ArtifactReference {
-    id: String,
+    /// ADR 0045: optional; derived from the owner and the key when absent.
+    #[serde(default)]
     unpack: Option<String>,
 }
 
@@ -31,12 +32,11 @@ pub fn validate_files(
     files: &BTreeMap<String, std::path::PathBuf>,
 ) -> Result<(), String> {
     let references: References = serde_json::from_value(declaration).map_err(|e| e.to_string())?;
-    for artifact in references.artifacts.values() {
-        if let Some(key) = &artifact.unpack {
+    for (artifact, reference) in &references.artifacts {
+        if let Some(key) = &reference.unpack {
             if key.contains(['/', '@']) || !files.contains_key(key) {
                 return Err(format!(
-                    "artifact {} requires unpack file in its own package",
-                    artifact.id
+                    "artifact {artifact} requires unpack file in its own package"
                 ));
             }
         }

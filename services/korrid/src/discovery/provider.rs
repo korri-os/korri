@@ -23,7 +23,6 @@ use crate::{
     script::{self, source::SourceSnapshot},
 };
 
-use crate::plugin_discovery::STEAM_INSTALLED_APPS;
 const MAX_FILES: usize = 4096;
 const MAX_FILE_BYTES: usize = 64 * 1024;
 const MAX_DIRECTORY_ENTRIES: usize = 10_000;
@@ -32,6 +31,10 @@ const MAX_DIRECTORY_ENTRIES: usize = 10_000;
 #[derive(Debug, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReleaseDiscoveryInput {
+    /// The discovering plugin's own id `P` (ADR 0045): a handler derives its
+    /// provider `P` and runner `P/<key>` from it, in any namespace.
+    #[serde(rename = "pluginId")]
+    pub plugin_id: String,
     pub files: Vec<ReleaseDiscoveryFile>,
 }
 
@@ -257,12 +260,36 @@ fn location_diagnostic(
     }
 }
 
-pub fn scan(
+pub fn scan<'a>(
     accounts: &[AccountRoot],
     registry: &PluginRegistry,
+    known: impl IntoIterator<Item = &'a String>,
     diagnostics: &mut Vec<DiscoveryDiagnostic>,
 ) -> Vec<ProviderScan> {
-    scan_location(STEAM_INSTALLED_APPS, accounts, registry, diagnostics)
+    // ADR 0083: the Steam plugin in any namespace `P`, by its `P/installed-apps`.
+    let active: std::collections::BTreeSet<String> = registry
+        .discovery_providers()
+        .filter(|provider| {
+            crate::plugin_discovery::steam_installed_apps_plugin(&provider.id).is_some()
+        })
+        .map(|provider| provider.id.clone())
+        .collect();
+    let mut scans: Vec<ProviderScan> = active
+        .iter()
+        .flat_map(|location| scan_location(location, accounts, registry, diagnostics))
+        .collect();
+    // A disabled or removed Steam plugin withdraws only the locations its
+    // discovery owned: an empty scan for every such scanner korrid knows.
+    let mut withdrawn: std::collections::BTreeSet<&String> = known
+        .into_iter()
+        .filter(|id| crate::plugin_discovery::steam_installed_apps_plugin(id).is_some())
+        .collect();
+    withdrawn.retain(|id| !active.contains(*id));
+    scans.extend(withdrawn.into_iter().map(|id| ProviderScan {
+        id: id.clone(),
+        ..Default::default()
+    }));
+    scans
 }
 
 /// One first-party discovery provider over each of its manifest folders. The
@@ -282,6 +309,9 @@ fn scan_location(
     let mut result = ProviderScan {
         id: location.into(),
         ..Default::default()
+    };
+    let Some(plugin) = crate::plugin_discovery::steam_installed_apps_plugin(location) else {
+        return vec![result];
     };
     if !registry.discovery_providers().any(|p| p.id == location) {
         // A disabled/removed plugin withdraws only its discovery-owned locations.
@@ -304,7 +334,7 @@ fn scan_location(
     let mut seen = BTreeSet::new();
     let globs = crate::plugin_discovery::LOCATIONS
         .iter()
-        .filter(|(id, _)| *id == location)
+        .filter(|(key, _)| *key == crate::plugin_discovery::INSTALLED_APPS_KEY)
         .map(|(_, glob)| *glob);
     for (account, glob) in accounts
         .iter()
@@ -353,6 +383,7 @@ fn scan_location(
             // existing 512 KiB callback input limit. No readText callback is exposed.
             match discover(
                 &source,
+                plugin,
                 ReleaseDiscoveryFile {
                     relative_path: relative_path.clone(),
                     text,
@@ -361,7 +392,7 @@ fn scan_location(
                 Ok(observations) => {
                     for mut observation in observations {
                         if engine {
-                            observation.launch.runner = crate::steam_engine::RUNNER_ID.into();
+                            observation.launch.runner = crate::steam_engine::engine_runner(plugin);
                         }
                         if seen.insert(observation.target.provider_ref.clone()) {
                             result.observations.push(observation);
@@ -381,6 +412,7 @@ fn scan_location(
 
 fn discover(
     source: &SourceSnapshot,
+    plugin: &str,
     file: ReleaseDiscoveryFile,
 ) -> Result<Vec<ProviderRefReleaseObservation>, String> {
     let expected_path = file.relative_path.clone();
@@ -391,21 +423,25 @@ fn discover(
     )
     .ok_or("invalid manifest path")?
     .to_owned();
-    let input = serde_json::to_string(&ReleaseDiscoveryInput { files: vec![file] })
-        .map_err(|e| e.to_string())?;
+    let input = serde_json::to_string(&ReleaseDiscoveryInput {
+        plugin_id: plugin.into(),
+        files: vec![file],
+    })
+    .map_err(|e| e.to_string())?;
+    let client_runner = crate::steam_engine::client_runner(plugin);
     let output = script::call_plugin_operation_snapshot(source, "discovery.discover", &input)
         .map_err(|e| e.to_string())?;
     let observations: Vec<ProviderRefReleaseObservation> =
         serde_json::from_str(&output).map_err(|e| format!("invalid provider observations: {e}"))?;
     if observations.len() > 1
         || observations.iter().any(|o| {
-            o.target.provider != "@korri:steam"
+            o.target.provider != plugin
                 || o.target.provider_ref != expected_ref
                 || !o.target.provider_ref.bytes().all(|b| b.is_ascii_digit())
                 || o.release.title.trim().is_empty()
                 || o.release.id != "steam"
                 || o.release.system != "steam"
-                || o.launch.runner != "@korri:steam/steam"
+                || o.launch.runner != client_runner
                 || o.source.relative_path != expected_path
         })
     {

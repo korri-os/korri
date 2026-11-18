@@ -210,13 +210,56 @@ pub fn installed_with_art(root: &Path, art: EnabledPackage) -> PluginRegistry {
 
 /// The installed Steam declaration and its real interpreter callback.
 pub fn steam(root: &Path) -> PluginRegistry {
-    let package = root.join("plugin-steam");
-    fs::create_dir_all(&package).unwrap();
-    fs::write(
-        package.join("plugin.ts"),
+    steam_in(
+        root,
+        "@korri",
         include_str!("../tests/fixtures/first-party/steam/plugin.ts"),
     )
-    .unwrap();
+}
+
+/// ADR 0083 and ADR 0045: a Steam plugin in its derived-id shape, as the
+/// plugin publishes it: no `providers` export, its engine artifact with no
+/// `id`, its discovery and its runner's artifact named by local key, and a
+/// discovery handler that builds `P` and `P/steam` from `input.pluginId`.
+pub const DERIVED_STEAM_PLUGIN: &str = r#"
+export const name = "steam"
+export const title = "Steam"
+export const discovery = [{ id: "installed-apps", title: "Steam installed apps" }]
+export const systems = { steam: { title: "Steam" } }
+export const artifacts = {
+  "engine-package": {
+    version: "1792618285",
+    files: [{ url: "https://client-update.steamstatic.com/bins_sdk_linuxarm64_linuxarm64.zip.vz.1424aaa3", sha256: "sha256:e043d05b4e7bcc43e22cc2be3e8872ed1132e79e989cbbe181eb3a5d3f849df7", bytes: 10044409 }],
+  },
+}
+export const runners = {
+  steam: { program: "steam-session", systems: ["steam"] },
+  engine: { program: "steam-engine-session", systems: ["steam"], artifacts: ["engine-package"] },
+}
+function discover(input) {
+  const out = []
+  for (const file of input.files) {
+    const m = /^steamapps\/appmanifest_(\d+)\.acf$/.exec(file.relativePath)
+    const name = /"name"\s+"([^"]+)"/.exec(file.text)
+    if (!m || !name) continue
+    out.push({
+      kind: "provider-ref-release", confidence: "high",
+      source: { relativePath: file.relativePath },
+      target: { provider: input.pluginId, ref: m[1] },
+      release: { id: "steam", title: name[1], system: "steam" },
+      launch: { use: `${input.pluginId}/steam` },
+    })
+  }
+  return out
+}
+export const handlers = { "discovery.discover": discover }
+"#;
+
+/// The Steam fixture under `namespace`, with this `plugin.ts`.
+pub fn steam_in(root: &Path, namespace: &str, source: &str) -> PluginRegistry {
+    let package = root.join("plugin-steam");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(package.join("plugin.ts"), source).unwrap();
     let mut dependencies = Vec::new();
     for (name, source, keys) in [
         (
@@ -252,9 +295,15 @@ pub fn steam(root: &Path) -> PluginRegistry {
         .map(|package| package.package.clone())
         .collect();
     dependencies.push(EnabledPackage {
-        id: "@korri:steam".into(),
+        id: format!("{namespace}:steam"),
         package: package.clone(),
-        files: BTreeMap::from([("steam-session".into(), package.join("steam-session"))]),
+        files: BTreeMap::from([
+            ("steam-session".into(), package.join("steam-session")),
+            (
+                "steam-engine-session".into(),
+                package.join("steam-engine-session"),
+            ),
+        ]),
         entry: "plugin.ts".into(),
         sources: vec!["plugin.ts".into()],
         requires,

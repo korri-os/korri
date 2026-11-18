@@ -317,7 +317,7 @@ impl HostRuntime {
         }) = routes
         {
             if crate::config::resolver::resolve_linux_route(root, snapshot, registry, game, None)
-                .is_ok_and(|route| route.runner_id == "@korri:steam/steam")
+                .is_ok_and(|route| crate::steam_engine::is_client_runner(&route.runner_id))
             {
                 return Some(SaveMark::SyncedBySteam);
             }
@@ -330,7 +330,7 @@ impl HostRuntime {
             return Some(SaveMark::NotSynced);
         }
         match self.save_declaration_in(routes, game, None) {
-            Ok(Some((input, _))) if input.runner_id == "@korri:steam/steam" => {
+            Ok(Some((input, _))) if crate::steam_engine::is_client_runner(&input.runner_id) => {
                 return Some(SaveMark::SyncedBySteam)
             }
             Ok(Some((_, prepared))) if prepared.plan.save_locations.is_empty() => {
@@ -895,7 +895,7 @@ impl HostRuntime {
                             return Ok(());
                         }
                         if let Some((input, prepared)) = host.save_declaration(game, None)? {
-                            if input.runner_id == "@korri:steam/steam"
+                            if crate::steam_engine::is_client_runner(&input.runner_id)
                                 || prepared.plan.save_locations.is_empty()
                             {
                                 return Ok(());

@@ -350,8 +350,12 @@ impl DiscoveryCoordinator {
                 max_sortable_entries: options.max_sortable_entries,
             },
         );
-        scan.providers =
-            crate::discovery::provider::scan(&accounts, &registry, &mut scan.diagnostics);
+        scan.providers = crate::discovery::provider::scan(
+            &accounts,
+            &registry,
+            private.ownership.origins.values().flatten(),
+            &mut scan.diagnostics,
+        );
         // ADR 0054: apps on the Android device. A failed scan adds nothing,
         // which keeps prior locations as a failed Steam scan does.
         scan.providers

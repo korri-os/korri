@@ -38,7 +38,7 @@ pub const LOCATION: &str = "steam-cloud";
 /// exports and the existing session capture snapshots it. The runner never
 /// reads it; the game's files stay in the Steam folder.
 pub fn declare(runner_id: &str, save_root: &str, locations: &mut Vec<SaveLocation>) {
-    if runner_id == super::RUNNER_ID && !locations.iter().any(|l| l.key == LOCATION) {
+    if super::is_engine_runner(runner_id) && !locations.iter().any(|l| l.key == LOCATION) {
         locations.push(SaveLocation {
             key: LOCATION.into(),
             kind: SaveKind::Save,
@@ -115,7 +115,7 @@ pub fn record_boundary(
 /// The cloud side of a Steam Cloud conflict: an engine-runner record whose
 /// one location has no files. It names Steam's copy and holds nothing here.
 pub fn in_steam_cloud(record: &SnapshotRecord) -> bool {
-    record.runner_id == super::RUNNER_ID
+    super::is_engine_runner(&record.runner_id)
         && matches!(record.locations.as_slice(), [location] if location.key == LOCATION && location.files.is_empty())
         && record.duration_seconds == 0
 }

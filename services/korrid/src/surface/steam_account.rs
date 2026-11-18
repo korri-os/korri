@@ -46,6 +46,9 @@ pub trait SteamEngineAccess: Send + Sync {
     fn use_client_runner(
         &self,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + '_>>;
+    /// Blocking: the engine runner's artifacts (its engine package, Proton,
+    /// FEX), to queue before a first sign-in.
+    fn engine_artifacts(&self) -> Vec<String>;
     /// True once after the launch sync of this game (korrid's id) found a
     /// Steam Cloud conflict and korrid wrote the split.
     fn take_conflict(&self, game_id: &str) -> bool;
@@ -285,12 +288,13 @@ impl SteamAccount {
                 facts,
                 Ok(SteamFacts::Unavailable(Unavailable::PackageNotDownloaded))
             ) {
-                let _ = korrid
-                    .acquisition_start(vec![
-                        crate::steam_engine::ENGINE_ARTIFACT.into(),
-                        crate::steam_engine::PROTON_ARTIFACT.into(),
-                    ])
-                    .await;
+                let wanted = {
+                    let access = Arc::clone(&access);
+                    tokio::task::spawn_blocking(move || access.engine_artifacts())
+                        .await
+                        .unwrap_or_default()
+                };
+                let _ = korrid.acquisition_start(wanted).await;
                 let deadline = Instant::now() + PACKAGE_LIMIT;
                 while matches!(
                     facts,
@@ -479,6 +483,9 @@ mod tests {
         }
         fn take_conflict(&self, _: &str) -> bool {
             false
+        }
+        fn engine_artifacts(&self) -> Vec<String> {
+            Vec::new()
         }
     }
 

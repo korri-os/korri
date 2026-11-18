@@ -1,4 +1,4 @@
-//! `@korri:steam` as a provider (ADR 0083, contract "Provider and installs").
+//! The Steam plugin `P` as a provider (ADR 0083, contract "Provider and installs").
 //!
 //! The list is the host's `list-apps` output for the current person: one
 //! `app {appid, name, source}` per app, then `apps_done`. korrid serves
@@ -9,9 +9,6 @@
 use super::protocol::{AppId, AppSource, Event};
 use korri_surface_treaty::{SurfaceProgress, SurfaceStoreEntry};
 use std::collections::BTreeMap;
-
-/// The provider id the store shows.
-pub const PROVIDER_ID: &str = crate::script::ENGINE_PROVIDER_ID;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SteamApp {

@@ -2934,9 +2934,11 @@ async fn acquisition_remove(
     }
     // ADR 0083: Remove download of a game on the Steam engine runner is the
     // engine's uninstall; discovery then drops it, and its saves stay.
-    if let Some(app) = steam_engine_app(state, game_id) {
+    if let Some((plugin, app)) = steam_engine_app(state, game_id) {
         let (plan, runner) = SteamEngineFacts::ready(state)?;
-        steam_engine::store().uninstall(plan, runner, app).await?;
+        steam_engine::store()
+            .uninstall(&plugin, plan, runner, app)
+            .await?;
         if let Some(library) = state.local_library() {
             library.discovery.rescan();
         }
@@ -3108,10 +3110,10 @@ async fn dispatch(
                             request.runner_id.as_deref(),
                         )?;
                         let mut snapshot = state.acquisition.game_status(root, &registry, &game)?;
-                        if let Some(app) = steam_engine_app(state, id) {
+                        if let Some((plugin, app)) = steam_engine_app(state, id) {
                             snapshot
                                 .artifacts
-                                .push(steam_engine::store::installed_status(app));
+                                .push(steam_engine::store::installed_status(&plugin, app));
                         }
                         Ok(snapshot)
                     }
@@ -3185,13 +3187,14 @@ async fn dispatch(
             })
         }
         RpcRequest::AcquisitionSearch(request)
-            if request.provider_ids == [steam_engine::provider::PROVIDER_ID] =>
+            if request.provider_ids.len() == 1
+                && steam_engine::is_steam_plugin(&request.provider_ids[0]) =>
         {
             RpcResponse::AcquisitionSearch(
                 match SteamEngineFacts::ready(state) {
                     Ok((plan, runner)) => {
                         steam_engine::store()
-                            .search(plan, runner, &request.query)
+                            .search(&request.provider_ids[0], plan, runner, &request.query)
                             .await
                     }
                     Err(error) => Err(error),
@@ -3201,13 +3204,13 @@ async fn dispatch(
             )
         }
         RpcRequest::AcquisitionDetails(request)
-            if request.provider_id == steam_engine::provider::PROVIDER_ID =>
+            if steam_engine::is_steam_plugin(&request.provider_id) =>
         {
             RpcResponse::AcquisitionDetails(
                 match SteamEngineFacts::ready(state) {
                     Ok((plan, runner)) => {
                         steam_engine::store()
-                            .details(plan, runner, &request.id)
+                            .details(&request.provider_id, plan, runner, &request.id)
                             .await
                     }
                     Err(error) => Err(error),
@@ -3217,15 +3220,16 @@ async fn dispatch(
             )
         }
         RpcRequest::AcquisitionAcquire(request)
-            if request.provider_id == steam_engine::provider::PROVIDER_ID =>
+            if steam_engine::is_steam_plugin(&request.provider_id) =>
         {
             RpcResponse::AcquisitionAcquire(job_outcome(
                 match (state.game_context(), SteamEngineFacts::ready(state)) {
                     (Ok(context), Ok((plan, runner))) => steam_engine::store().acquire(
+                        &request.provider_id,
                         plan,
                         runner,
                         &request.id,
-                        steam_imported(context),
+                        steam_imported(context, request.provider_id.clone()),
                     ),
                     (Err(error), _) | (_, Err(error)) => Err(error),
                 },
@@ -5445,16 +5449,15 @@ impl SteamEngineFacts {
 }
 
 /// After a Steam install: rescan, then find the game by its provider link.
-fn steam_imported(context: acquisition::GameContext) -> steam_engine::store::Imported {
+fn steam_imported(
+    context: acquisition::GameContext,
+    provider: String,
+) -> steam_engine::store::Imported {
     Arc::new(move |app| {
         context.discovery.rescan();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
         loop {
-            if let Some(game) = acquisition::linked_game(
-                &context,
-                steam_engine::provider::PROVIDER_ID,
-                &app.to_string(),
-            ) {
+            if let Some(game) = acquisition::linked_game(&context, &provider, &app.to_string()) {
                 return Some(game);
             }
             if std::time::Instant::now() >= deadline {
@@ -5468,7 +5471,10 @@ fn steam_imported(context: acquisition::GameContext) -> steam_engine::store::Imp
 /// The Steam app id of a library game that the engine installed in the
 /// person's engine folder (its appmanifest is there), whichever runner is
 /// chosen for it now.
-fn steam_engine_app(state: &AppState, game_id: &str) -> Option<steam_engine::protocol::AppId> {
+fn steam_engine_app(
+    state: &AppState,
+    game_id: &str,
+) -> Option<(String, steam_engine::protocol::AppId)> {
     let ServerMode::Host(host) = &state.mode else {
         return None;
     };
@@ -5477,7 +5483,7 @@ fn steam_engine_app(state: &AppState, game_id: &str) -> Option<steam_engine::pro
     let route =
         config::resolver::resolve_linux_route(root, &snapshot, &registry, game_id, None).ok()?;
     let target = route.provider_target?;
-    if target.provider != steam_engine::provider::PROVIDER_ID {
+    if !steam_engine::is_steam_plugin(&target.provider) {
         return None;
     }
     let app = steam_engine::provider::appid(&target.provider_ref)?;
@@ -5486,7 +5492,7 @@ fn steam_engine_app(state: &AppState, game_id: &str) -> Option<steam_engine::pro
         .join(steam_engine::folder::NAME)
         .join(format!("steam/steamapps/appmanifest_{app}.acf"))
         .is_file()
-        .then_some(app)
+        .then_some((target.provider, app))
 }
 
 impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
@@ -5498,7 +5504,11 @@ impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
         let Ok((root, registry)) = self.state.acquisition_context() else {
             return SteamFacts::Absent;
         };
-        if registry.native_runner(steam_engine::RUNNER_ID).is_err() {
+        let Some(plugin) = steam_engine::steam_plugin(&registry) else {
+            return SteamFacts::Absent;
+        };
+        let runner_id = steam_engine::engine_runner(&plugin);
+        if registry.native_runner(&runner_id).is_err() {
             return SteamFacts::Absent;
         }
         if let Some(reason) = steam_engine::unavailable()
@@ -5514,13 +5524,12 @@ impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
         let Ok(account_root) = saves::account_root(root, &person) else {
             return SteamFacts::Absent;
         };
-        let Ok(artifacts) = acquisition::launch_artifacts(root, &registry, steam_engine::RUNNER_ID)
-        else {
+        let Ok(artifacts) = acquisition::launch_artifacts(root, &registry, &runner_id) else {
             return SteamFacts::Unavailable(
                 steam_engine::availability::Unavailable::PackageNotDownloaded,
             );
         };
-        match steam_engine::launch_plan(&registry, &artifacts, &account_root) {
+        match steam_engine::launch_plan(&registry, &runner_id, &artifacts, &account_root) {
             Ok(plan) => SteamFacts::Ready {
                 plan,
                 runner: host::SystemdLaunchUnitBackend::steam_engine_jobs(),
@@ -5547,7 +5556,7 @@ impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
             .and_then(|packages| {
                 packages
                     .into_iter()
-                    .find(|package| package.id == steam_engine::PLUGIN_ID)
+                    .find(|package| steam_engine::is_steam_plugin(&package.id))
             })
             .map(|package| {
                 format!(
@@ -5570,14 +5579,17 @@ impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
                 .state
                 .acquisition_context()
                 .map_err(|failure| failure.message)?;
+            let plugin = steam_engine::steam_plugin(&registry)
+                .ok_or("no Steam plugin with an engine runner is enabled")?;
+            let client = steam_engine::client_runner(&plugin);
             // The client runner is the same plugin's: enabled with it. What it
             // needs to run is queued now; Valve's client itself comes on its
             // first start, as it always does.
             registry
-                .native_runner(steam_engine::CLIENT_RUNNER_ID)
+                .native_runner(&client)
                 .map_err(|error| error.to_string())?;
             let missing: Vec<String> = registry
-                .artifacts_for_runner(steam_engine::CLIENT_RUNNER_ID)
+                .artifacts_for_runner(&client)
                 .map_err(|error| error.to_string())?
                 .into_iter()
                 .filter(|artifact| !acquisition::placement::is_ready_artifact(root, artifact))
@@ -5598,9 +5610,7 @@ impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
                     scope: launch_settings::LaunchRunnerScope::Any,
                 },
                 path: launch_settings::LaunchPath::Runner,
-                value: Some(serde_json::Value::String(
-                    steam_engine::CLIENT_RUNNER_ID.into(),
-                )),
+                value: Some(serde_json::Value::String(client)),
                 clear: false,
                 expected_revision: revisions.device,
                 holder: None,
@@ -5619,7 +5629,21 @@ impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
             return false;
         };
         config::resolver::resolve_linux_route(root, &snapshot, &registry, game_id, runner_id)
-            .is_ok_and(|route| route.runner_id == steam_engine::RUNNER_ID)
+            .is_ok_and(|route| steam_engine::is_engine_runner(&route.runner_id))
+    }
+
+    fn engine_artifacts(&self) -> Vec<String> {
+        let Ok((_, registry)) = self.state.acquisition_context() else {
+            return Vec::new();
+        };
+        steam_engine::steam_plugin(&registry)
+            .and_then(|plugin| {
+                registry
+                    .artifacts_for_runner(&steam_engine::engine_runner(&plugin))
+                    .ok()
+                    .map(|artifacts| artifacts.into_iter().map(|a| a.id.clone()).collect())
+            })
+            .unwrap_or_default()
     }
 }
 

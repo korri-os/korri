@@ -1825,6 +1825,11 @@ export interface ReleaseDiscoveryFile {
 }
 
 export interface ReleaseDiscoveryInput {
+	/**
+	 * The discovering plugin's own id `P` (ADR 0045): a handler derives its
+	 * provider `P` and runner `P/<key>` from it, in any namespace.
+	 */
+	pluginId: string;
 	files: ReleaseDiscoveryFile[];
 }
 

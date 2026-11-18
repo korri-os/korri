@@ -1821,7 +1821,7 @@ impl HostSessionControl {
                 // A session whose launch sync hit a Steam Cloud conflict wrote
                 // the split's two sides then; it adds no third head.
                 let save_snapshot = save_snapshot.filter(|snapshot| {
-                    snapshot.runner_id != crate::steam_engine::RUNNER_ID
+                    !crate::steam_engine::is_engine_runner(&snapshot.runner_id)
                         || (!crate::steam_engine::conflicts(
                             self.identity_root.parent().expect("private state root"),
                         )

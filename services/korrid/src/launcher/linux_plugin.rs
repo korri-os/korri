@@ -415,10 +415,15 @@ fn inspect_route(
         }),
         android_package: None,
     };
-    if route.runner_id == crate::steam_engine::RUNNER_ID {
+    if crate::steam_engine::is_engine_runner(&route.runner_id) {
         composition.steam_engine = Some(
-            crate::steam_engine::launch_plan(registry, &input.artifacts, &account_root)
-                .map_err(error)?,
+            crate::steam_engine::launch_plan(
+                registry,
+                &route.runner_id,
+                &input.artifacts,
+                &account_root,
+            )
+            .map_err(error)?,
         );
     }
     // Ask the runner whether it can start this target. A runner whose runtime is

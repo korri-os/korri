@@ -238,7 +238,10 @@ pub struct ArtifactRecord {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct ArtifactDeclaration {
-    id: String,
+    /// ADR 0045: derived as `<pluginId>/<key>` when omitted; when given, it
+    /// must be exactly that.
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    id: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     version: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
@@ -1255,6 +1258,18 @@ fn normalize_plugin(
         );
     }
 
+    // ADR 0083: the Steam plugin, in any namespace, is the provider whose
+    // listing and installs korrid serves through its engine host. It needs no
+    // `providers` export: its own id is admitted when it declares the engine
+    // runner.
+    if crate::plugin_discovery::is_steam_plugin(&id)
+        && declaration
+            .runners
+            .contains_key(crate::steam_engine::ENGINE_KEY)
+    {
+        acquisition_providers.insert(id.clone());
+    }
+
     match providers.get_mut(&id) {
         Some(own_provider) => {
             if own_provider.title.is_none() {
@@ -1357,7 +1372,13 @@ fn normalize_plugin(
     let mut skipped_artifacts = BTreeSet::new();
     for (key, artifact) in std::mem::take(&mut declaration.artifacts) {
         let invalid = |reason| invalid_contribution("artifact", &key, reason);
-        if !is_provider_segment(&key) || artifact.id != plugin_record_id(&id, &key) {
+        let derived = plugin_record_id(&id, &key);
+        if !is_provider_segment(&key)
+            || artifact
+                .id
+                .as_ref()
+                .is_some_and(|declared| *declared != derived)
+        {
             return Err(invalid("artifact id must match its owner and local key"));
         }
         if artifact
@@ -1429,7 +1450,7 @@ fn normalize_plugin(
                 artifacts.insert(
                     key,
                     ArtifactRecord {
-                        id: artifact.id,
+                        id: derived,
                         version,
                         files,
                         unpack: artifact.unpack,
@@ -1438,7 +1459,7 @@ fn normalize_plugin(
                 );
             }
             None => {
-                skipped_artifacts.insert(artifact.id);
+                skipped_artifacts.insert(derived);
             }
         }
     }
@@ -1448,6 +1469,16 @@ fn normalize_plugin(
             return Err(PluginError::EmptyContributionId { kind: "runner" });
         }
         runner.id = plugin_record_id(&id, local_id);
+        // ADR 0045: a runner names its own plugin's artifact by its bare key,
+        // when the plugin declares an artifact with that key. Full ids stay.
+        for artifact in &mut runner.artifacts {
+            let own = plugin_record_id(&id, artifact);
+            if is_provider_segment(artifact)
+                && (artifacts.contains_key(artifact.as_str()) || skipped_artifacts.contains(&own))
+            {
+                *artifact = own;
+            }
+        }
         if let Some(steps) = &runner.steps {
             let mut keys = BTreeSet::new();
             if steps.len() > 8
@@ -1732,6 +1763,12 @@ fn normalize_plugin(
         );
     }
 
+    // ADR 0045: a discovery entry may name its local key; korrid prefixes `P/`.
+    for provider in &mut declaration.discovery {
+        if is_provider_segment(&provider.id) {
+            provider.id = plugin_record_id(&id, &provider.id);
+        }
+    }
     crate::plugin_discovery::validate(&id, &declaration.discovery)
         .map_err(|reason| invalid_contribution("discovery", &id, &reason))?;
     // ADR 0054: every runner is validated, then a device keeps only the
@@ -3053,5 +3090,130 @@ mod runner_platform_tests {
         let android = decode_plugin_declaration_on("@test", json, "aarch64-android");
         let plugin = android.expect("a Linux-only plugin still loads on Android");
         assert!(plugin.runners.is_empty() && plugin.session_controls.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod derived_steam_tests {
+    use super::*;
+    use crate::plugin_test_fixtures::DERIVED_STEAM_PLUGIN;
+
+    const OLD_STEAM: &str = include_str!("../tests/fixtures/first-party/steam/plugin.ts");
+
+    /// ADR 0083 and ADR 0045: the Steam plugin's derived-id shape loads in
+    /// any namespace, with every id derived from its own id.
+    #[test]
+    fn the_derived_steam_shape_loads_in_any_namespace() {
+        for namespace in ["@korri", "@other"] {
+            let plugin = load_plugin_source(namespace, DERIVED_STEAM_PLUGIN).unwrap();
+            let p = format!("{namespace}:steam");
+            assert_eq!(
+                plugin.artifacts["engine-package"].id,
+                format!("{p}/engine-package")
+            );
+            assert_eq!(
+                plugin.runners["engine"].artifacts,
+                [format!("{p}/engine-package")]
+            );
+            assert_eq!(plugin.runners["engine"].id, format!("{p}/engine"));
+            assert_eq!(plugin.discovery[0].id, format!("{p}/installed-apps"));
+            // No `providers` export: korrid admits the engine-backed provider `P`.
+            assert!(plugin.acquisition_providers.contains(&p), "{namespace}");
+            assert!(plugin.providers.contains_key(&p));
+        }
+    }
+
+    /// A runner's bare key names its own plugin's artifact only when the
+    /// plugin declares an artifact with that key; full ids stay as they are.
+    #[test]
+    fn a_runner_artifact_bare_key_resolves_to_its_own_artifact() {
+        let source = DERIVED_STEAM_PLUGIN.replace(
+            "artifacts: [\"engine-package\"]",
+            "artifacts: [\"@korri:fex/rootfs\", \"engine-package\", \"rootfs\"]",
+        );
+        assert_ne!(source, DERIVED_STEAM_PLUGIN);
+        let plugin = load_plugin_source("@other", &source).unwrap();
+        assert_eq!(
+            plugin.runners["engine"].artifacts,
+            ["@korri:fex/rootfs", "@other:steam/engine-package", "rootfs"],
+            "a key the plugin does not declare is left for the registry to refuse"
+        );
+        assert!(PluginRegistry::new(vec![plugin], vec!["@other:steam".into()]).is_err());
+    }
+
+    /// The shapes plugins publish today keep loading as they did.
+    #[test]
+    fn the_old_shapes_load_unchanged() {
+        let old = load_plugin_source("@korri", OLD_STEAM).unwrap();
+        assert_eq!(old.discovery[0].id, "@korri:steam/installed-apps");
+        // The client-only plugin has no engine runner and so no provider.
+        assert!(old.acquisition_providers.is_empty());
+        // An artifact that names its id, and a runner that names a full id.
+        let named = DERIVED_STEAM_PLUGIN
+            .replace(
+                "\"engine-package\": {\n    version",
+                "\"engine-package\": {\n    id: \"@korri:steam/engine-package\",\n    version",
+            )
+            .replace(
+                "artifacts: [\"engine-package\"]",
+                "artifacts: [\"@korri:steam/engine-package\"]",
+            )
+            .replace(
+                "{ id: \"installed-apps\"",
+                "{ id: \"@korri:steam/installed-apps\"",
+            );
+        assert_ne!(named, DERIVED_STEAM_PLUGIN);
+        let plugin = load_plugin_source("@korri", &named).unwrap();
+        assert_eq!(
+            plugin.artifacts["engine-package"].id,
+            "@korri:steam/engine-package"
+        );
+        assert_eq!(
+            plugin.runners["engine"].artifacts,
+            ["@korri:steam/engine-package"]
+        );
+        assert_eq!(plugin.discovery[0].id, "@korri:steam/installed-apps");
+        // A named id must still be its owner's and its key's.
+        assert!(load_plugin_source("@other", &named).is_err());
+        let wrong = DERIVED_STEAM_PLUGIN.replace(
+            "\"engine-package\": {\n    version",
+            "\"engine-package\": {\n    id: \"@other:steam/other\",\n    version",
+        );
+        assert!(load_plugin_source("@other", &wrong).is_err());
+    }
+
+    /// Only a plugin named `steam` that declares the engine runner is the
+    /// engine-backed provider.
+    #[test]
+    fn only_the_steam_plugin_with_an_engine_runner_is_a_provider_without_handlers() {
+        let not_steam = DERIVED_STEAM_PLUGIN
+            .replace(
+                "export const name = \"steam\"",
+                "export const name = \"steamy\"",
+            )
+            .replace(
+                "{ id: \"installed-apps\", title: \"Steam installed apps\" }",
+                "",
+            );
+        let plugin = load_plugin_source("@other", &not_steam).unwrap();
+        assert!(plugin.acquisition_providers.is_empty());
+        let no_engine = DERIVED_STEAM_PLUGIN.replace(
+            "  engine: { program: \"steam-engine-session\", systems: [\"steam\"], artifacts: [\"engine-package\"] },\n",
+            "",
+        );
+        assert_ne!(no_engine, DERIVED_STEAM_PLUGIN);
+        assert!(load_plugin_source("@other", &no_engine)
+            .unwrap()
+            .acquisition_providers
+            .is_empty());
+        // The Steam discovery is the Steam plugin's alone, local id or full.
+        assert!(load_plugin_source(
+            "@other",
+            &not_steam.replace(
+                "export const discovery = []",
+                "export const discovery = [{ id: \"installed-apps\", title: \"x\" }]"
+            )
+        )
+        .is_err());
     }
 }

@@ -606,7 +606,10 @@ mod steam_engine_tests {
             release: None,
         };
         inner.absorb(
-            &[proton, crate::steam_engine::store::installed_status(78000)],
+            &[
+                proton,
+                crate::steam_engine::store::installed_status("@korri:steam", 78000),
+            ],
             Some("bejeweled"),
         );
         let members = inner.membership["bejeweled"].clone();
