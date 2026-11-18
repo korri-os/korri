@@ -79,6 +79,9 @@ let
     "rust-egl-presenter"
     "rust-x11-window"
   ];
+  # nightjar-core's fec.rs ports nanors (MIT): its licence ships with every
+  # build that links nightjar-core (vendor/nanors-licence.nix).
+  nanorsLicence = import ./vendor/nanors-licence.nix { inherit pkgs; };
   featureFlag = pkgs.lib.optionalString (
     defaultFeatures != [ ]
   ) " --features ${pkgs.lib.concatStringsSep "," defaultFeatures}";
@@ -158,6 +161,17 @@ let
           >> "$korriInputplumberMapping"
         mkdir -p $out/share/licenses/korri-viewer
         cp LICENSE $out/share/licenses/korri-viewer/
+        # With nightjar-core the binary also holds code under the MIT
+        # License: the Reed-Solomon code that nightjar-core ports from nanors,
+        # and Nightjar's rusty_enet (vendor/README.md). Their notices ship
+        # beside the licence.
+        case " $cargoBuildFeatures " in
+          *" nightjar "*)
+            install -m0444 ${nanorsLicence} $out/share/licenses/korri-viewer/nanors-LICENSE
+            install -m0444 vendor/nightjar/protocol/vendor/rusty_enet/LICENSE \
+              $out/share/licenses/korri-viewer/rusty_enet-LICENSE
+            ;;
+        esac
         # The wire contract this binary speaks, as Typeshare generated it. The
         # plugin declares it as files.treaty; korrid compares the bytes.
         install -Dm0444 ../../contracts/generated/viewer.ts $out/share/korri-viewer/viewer.ts
@@ -459,7 +473,8 @@ let
       }
       ''
         root=korri-viewer-source
-        mkdir -p $root/korri $root/moonlight-common-c $root/vendor
+        mkdir -p $root/korri $root/moonlight-common-c $root/vendor $root/licenses
+        cp ${nanorsLicence} $root/licenses/nanors-LICENSE
         cp -r ${repositorySource}/. $root/korri/
         chmod -R u+w $root/korri
         cp ${./default.nix} $root/korri/clients/viewer/default.nix
@@ -483,6 +498,11 @@ let
                               with its ENet, from Moonlight Embedded
                               775444287305849ebdf4736c75298ad0713e2d5d.
         vendor/               The Rust crates of korri/clients/viewer/Cargo.lock.
+        licenses/nanors-LICENSE
+                              The MIT licence of nanors (Joseph Calderon),
+                              whose Reed-Solomon code nightjar-core ports
+                              (korri/clients/viewer/vendor/nightjar/protocol/
+                              client/src/fec.rs).
 
         On aarch64 the viewer links nixpkgs FFmpeg with
         korri/clients/viewer/ffmpeg/0001-v4l2-request.patch, as default.nix says.

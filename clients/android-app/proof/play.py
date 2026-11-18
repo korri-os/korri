@@ -1458,6 +1458,16 @@ def the_stream_used(lines: list[str], core: str) -> bool:
     return used == {core}
 
 
+def provisioned_clients(prepared: "dict | None") -> "int | None":
+    """How many clients the sender's Sunshine holds (its state file), or
+    None when the run ended before the sender was prepared."""
+    if prepared is None:
+        return None
+    run_folder = Path(prepared["facts"]["sender_fixture"]["run_folder"])
+    state = json.loads((run_folder / "home" / "state.json").read_text())
+    return len(state.get("root", {}).get("named_devices", []))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--sunshine", required=True,
@@ -1520,6 +1530,8 @@ def main() -> int:
     sender = viewer_proof.Remote(command, out / "sender-agent.log")
     emulator = d8.Emulator(sdk, state, args.port, out, sound=out / "emulator-sound.wav")
     holder: "d9.Holder | None" = None
+    # The sender's answer to prepare; none until its cooldown let it start.
+    prepared: "dict | None" = None
     receiver: "seats.SeatReceiver | None" = None
     logcat = None
     member = scratch / "member"
@@ -1813,11 +1825,10 @@ def main() -> int:
                  and r["coordinator"].get("launchId") == launch)
                 or (r.get("lease") == "start" and r.get("launchId") == launch) for r in asked_seats)
         try:
-            run_folder = Path(prepared["facts"]["sender_fixture"]["run_folder"])  # noqa: F821
-            sunshine_state = json.loads((run_folder / "home" / "state.json").read_text())
-            named = sunshine_state.get("root", {}).get("named_devices", [])
-            steps["sunshine_named_devices"] = len(named)
-            checks["sunshine_holds_one_client_that_korrid_provisioned"] = len(named) == 1
+            named = provisioned_clients(prepared)
+            if named is not None:
+                steps["sunshine_named_devices"] = named
+                checks["sunshine_holds_one_client_that_korrid_provisioned"] = named == 1
         except Exception as error:
             steps["sunshine_state_error"] = f"{type(error).__name__}: {error}"
         try:

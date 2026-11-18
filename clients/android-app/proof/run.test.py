@@ -205,6 +205,21 @@ class TheStreamsNetworkCore(unittest.TestCase):
                 self.assertEqual([name for name, _ in built], ["korri-android-app-fixture-apk", "korrid.federationFixture"])
 
 
+class TheSendersClientsReadOnlyOnceItWasPrepared(unittest.TestCase):
+    """A run that ends before the sender was prepared (its cooldown refused
+    it) has no Sunshine state to read: no check, and no error of its own."""
+
+    def test_before_the_sender_was_prepared_there_is_nothing_to_read(self):
+        self.assertIsNone(play.provisioned_clients(None))
+
+    def test_the_clients_come_from_sunshines_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "home").mkdir()
+            Path(directory, "home/state.json").write_text('{"root": {"named_devices": [{"name": "korri"}]}}')
+            prepared = {"facts": {"sender_fixture": {"run_folder": directory}}}
+            self.assertEqual(play.provisioned_clients(prepared), 1)
+
+
 class CropToFillReadsWhereThePictureShows(unittest.TestCase):
     """play.py's fills_the_window reads the picture's real bounds in SurfaceFlinger's dump (#497): here
     in the dumps that the #495 proof recorded (android-app-495/surfaceflinger-layers.txt)."""
