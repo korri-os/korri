@@ -799,12 +799,17 @@ async fn runner_rows(app: &Router) -> Vec<(String, String, bool, bool)> {
         .collect()
 }
 
+/// The engine health is one per korrid process: the Steam route tests take
+/// turns with it.
+static STEAM_HEALTH: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 const STEAM_CLIENT: &str = "@korri:steam/steam";
 const STEAM_ENGINE: &str = "@korri:steam/engine";
 
 /// Device proof 6: both Steam runners showed as "Steam".
 #[tokio::test]
 async fn the_steam_runners_carry_their_own_titles() {
+    let _turn = STEAM_HEALTH.lock().await;
     let root = tempfile::tempdir().unwrap();
     let app = steam_library(root.path());
     save_runner(root.path(), STEAM_ENGINE);
@@ -821,6 +826,7 @@ async fn the_steam_runners_carry_their_own_titles() {
 /// choice, and play of a game set to it falls back to the client runner.
 #[tokio::test]
 async fn an_unavailable_steam_engine_runner_falls_back_to_the_client_runner() {
+    let _turn = STEAM_HEALTH.lock().await;
     let root = tempfile::tempdir().unwrap();
     let app = steam_library(root.path());
     save_runner(root.path(), STEAM_ENGINE);
