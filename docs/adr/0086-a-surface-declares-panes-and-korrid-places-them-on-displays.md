@@ -32,6 +32,26 @@ model for game panes to surfaces.
   as it does today.
 - The first device is the AYN Thor, with its top and bottom displays. The RG
   DS is permanently offline.
+- korrid places a surface's panes by ADR 0039's rule. The first pane goes on
+  the main display. The panes split across displays only when the display
+  arrangement matches how they relate; otherwise they all go on the main
+  display. On the Thor, the Stage is on the top display and the Floor is on
+  the bottom display. With two displays side by side, both Velvet panes stay
+  on the main display.
+- On the Thor, the AYN key turns the bottom display on and off. The Floor
+  moves between the bottom and the top display at once.
+- When the Floor holds a page with no game, such as Settings, the Stage shows
+  that page's own side content if the page has some (for example the backup
+  QR code). Otherwise the Stage shows the last lit game under a veil.
+- When a game's detail opens, focus moves to Play on the Stage. The Floor
+  keeps its row or set visible, without focus. Back returns focus to the same
+  tile.
+- The stage light reaches the Floor's display too, but dimmer, so the two
+  displays read as one room.
+- During play, ADR 0039 applies for now: the bottom display is off, and the
+  gameplay overlay appears there after Home. The owner's direction is a
+  companion on the bottom display during play. That is not designed yet. The
+  work under this ADR must keep a clean path to it (see Consequences).
 
 ## Considered options
 
@@ -58,4 +78,12 @@ model for game panes to surfaces.
   surface state and the model. Focus belongs to the state, not to a window. No
   pane may assume that another pane is visible.
 - Placing the Thor's bottom display requires the device image to light it and
-  to map its touch input. The first Thor image turns that display off.
+  to map its touch input. The first Thor image turns that display off. That
+  device work is its own issue, and it lands before korrid's placement work.
+- The clean path to a companion during play: "off during play" is korrid's
+  placement policy and nothing else. The shell and the surface do not assume
+  it. A companion would be another surface view that korrid places on a free
+  display while a game runs, as it already places the gameplay overlay. Still
+  open: where touch on the companion's display goes while the game holds the
+  controller, and how the companion respects ADR 0053, which says the overlay
+  never freezes the game.
