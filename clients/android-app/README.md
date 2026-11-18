@@ -581,7 +581,12 @@ its start, and Android's dispatcher must give the app's window the capture
 must reach the sender as relative moves and buttons; korrid's apply must
 let the capture go, and the same moves then reach the sender as absolute
 moves; applied again, the mouse must be captured again; Home must let it
-go. Records: `proof/android-app-local-cursor/`, 138 of 138 checks.
+go. Records: `proof/android-app-local-cursor/`, 138 of 138 checks. A
+captured touch pad follows: Android's `uinput` command makes one for a few
+seconds, and while the view has the capture, its finger's move must reach
+the sender as relative moves, a tap and its button with one finger as left
+clicks, and its button with two fingers as a right click. Records:
+`proof/android-app-touchpad/`, 141 of 141 checks.
 
 ## korrid's resize request (#476 Route C, slices 2 and 3)
 

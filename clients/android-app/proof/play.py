@@ -80,7 +80,11 @@ The steps:
    window the capture (`dumpsys input`); the mouse's own moves and click
    (`sendevent`) reach the sender as relative moves and buttons; korrid's
    apply lets the capture go, and the same moves reach it as absolute moves;
-   applied again, the mouse is captured again.
+   applied again, the mouse is captured again. A touch pad, which Android's
+   `uinput` command makes for a few seconds, then: while the view has the
+   capture, its finger's move must reach the sender as relative moves, a tap
+   and its button with one finger as left clicks, and its button with two
+   fingers as a right click.
 9. Home leaves the app: the runtime stops and korrid reads Stopped, the
    keyboard's focus goes back, and the stream's view lets the mouse go. Starting the app again lets korrid's
    recovery start the stream again.
@@ -161,6 +165,13 @@ LOCAL = "set-local-cursor"
 LOCAL_RAN = "korri-app: viewer control set-local-cursor ran"
 LOCAL_SHOWS = "korri-app: viewer local cursor shows; the mouse points"
 LOCAL_HIDES = "korri-app: viewer local cursor hides; the mouse is captured"
+# The touch pad that the proof makes with Android's `uinput` command (frameworks/base/cmds/uinput), and
+# where its commands go on the emulator.
+TOUCHPAD = "Korri test touchpad"
+TOUCHPAD_FILE = "/data/local/tmp/korri-touchpad.uinput"
+# Sunshine's mouse button packets: moonlight-common-c's buttons and its GEN5 magic for down and up.
+MOUSE_BUTTONS = {"01": "left", "02": "middle", "03": "right", "04": "x1", "05": "x2"}
+BUTTON_ACTIONS = {"00000008": "down", "00000009": "up"}
 POINTER_CALLS = re.compile(
     r"korri-viewer: pointer: \[(.*)\] on the stream's view, which had pointer capture: (true|false)")
 # The app's placement line, with its zoom (src/viewer.rs, `log_placement`).
@@ -1376,6 +1387,142 @@ def mouse_at_the_sender(packets: list[dict]) -> dict:
     }
 
 
+def touchpad_commands() -> list[dict]:
+    """`uinput`'s commands for a touch pad: Linux's multi-touch protocol B with a button under the pad
+    (INPUT_PROP_POINTER and INPUT_PROP_BUTTONPAD, no INPUT_PROP_DIRECT), which Android makes a pointing
+    device (`touch.deviceType` pointer): a mouse until a view captures it, then `SOURCE_TOUCHPAD`. Then
+    its gestures, after 3 s for Android and the app to see it: one finger moving right, 20 units at a
+    time, still before it lifts (no flick); a tap; a click of the pad's button with one finger, and with
+    two. The second finger lifts first, so that no finger becomes the first again (which Artemis takes
+    for a two-finger tap). Each gesture waits 700 ms after the last, past a tap's 230 ms release."""
+    axis = lambda code, top: {"code": code, "info": {  # noqa: E731
+        "value": 0, "minimum": 0, "maximum": top, "fuzz": 0, "flat": 0, "resolution": 0}}
+    commands: list[dict] = [{
+        "id": 1, "command": "register", "name": TOUCHPAD, "vid": 6353, "pid": 32513, "bus": "usb",
+        "configuration": [
+            {"type": 100, "data": [1, 3]},
+            {"type": 101, "data": [272, 325, 330, 333]},
+            {"type": 103, "data": [0, 1, 47, 53, 54, 57]},
+            {"type": 110, "data": [0, 2]},
+        ],
+        "abs_info": [axis(0, 1000), axis(1, 1000), axis(47, 1), axis(53, 1000), axis(54, 1000), axis(57, 65535)],
+    }]
+
+    def inject(*events: int) -> None:
+        commands.append({"id": 1, "command": "inject", "events": list(events)})
+
+    def delay(ms: int) -> None:
+        commands.append({"id": 1, "command": "delay", "duration": ms})
+
+    def down(tracking: int, x: int, y: int) -> None:
+        inject(3, 47, 0, 3, 57, tracking, 3, 53, x, 3, 54, y, 3, 0, x, 3, 1, y, 1, 330, 1, 1, 325, 1, 0, 0, 0)
+
+    def lift() -> None:
+        inject(3, 47, 0, 3, 57, -1, 1, 330, 0, 1, 325, 0, 0, 0, 0)
+
+    def click() -> None:
+        delay(400)
+        inject(1, 272, 1, 0, 0, 0)
+        delay(100)
+        inject(1, 272, 0, 0, 0, 0)
+        delay(100)
+
+    delay(3000)
+    down(1, 300, 300)
+    delay(20)
+    for step in range(1, 11):
+        inject(3, 53, 300 + 20 * step, 3, 0, 300 + 20 * step, 0, 0, 0)
+        delay(10)
+    delay(150)
+    lift()
+    delay(700)
+    down(2, 500, 500)
+    delay(50)
+    lift()
+    delay(700)
+    down(3, 500, 500)
+    click()
+    lift()
+    delay(700)
+    inject(3, 47, 0, 3, 57, 4, 3, 53, 400, 3, 54, 500, 3, 47, 1, 3, 57, 5, 3, 53, 600, 3, 54, 500,
+           3, 0, 400, 3, 1, 500, 1, 330, 1, 1, 333, 1, 0, 0, 0)
+    click()
+    inject(3, 47, 1, 3, 57, -1, 1, 333, 0, 1, 325, 1, 0, 0, 0)
+    delay(50)
+    lift()
+    delay(1000)
+    return commands
+
+
+def uinput_text(commands: list[dict]) -> str:
+    """The commands as `uinput` reads them: one JSON object after another."""
+    return "\n".join(json.dumps(command) for command in commands) + "\n"
+
+
+def device_in_dump(dump: str, name: str) -> list[str]:
+    """The InputReader's block for the device called `name` in `dumpsys input`, its lines stripped."""
+    lines = dump.splitlines()
+    for at, line in enumerate(lines):
+        if re.match(rf"^  Device -?\d+: {re.escape(name)}$", line):
+            block = [line.strip()]
+            for more in lines[at + 1:]:
+                if not more.startswith("    "):
+                    break
+                block.append(more.strip())
+            return block
+    return []
+
+
+def buttons_at_the_sender(packets: list[dict]) -> list[list[str]]:
+    """Each mouse button packet at the sender, in order: its button and whether it went down or up."""
+    return [[MOUSE_BUTTONS.get(p["fields"].get("button", ""), p["fields"].get("button", "")),
+             BUTTON_ACTIONS.get(p["fields"].get("action", ""), p["fields"].get("action", ""))]
+            for p in packets if p["kind"] == "mouse button"]
+
+
+def captured_touchpad(emulator: "d8.Emulator", sender: "viewer_proof.Remote", out: Path) -> tuple[dict, dict]:
+    """A captured touch pad (#434, toward D7′). The emulator has none, so Android's `uinput` command makes
+    one for a few seconds (`touchpad_commands`, as root). While the stream's view has the pointer capture,
+    Android sends its events as `SOURCE_TOUCHPAD`: its fingers must reach the sender as Artemis's
+    `TrackpadContext` makes them (a move as relative moves, a tap as a click), and its own button as the
+    left button, or with two fingers on the pad the right one."""
+    steps: dict = {}
+    checks: dict = {}
+    sender.request("clock")
+    (out / "touchpad.uinput").write_text(uinput_text(touchpad_commands()))
+    pushed = emulator.adb("push", str(out / "touchpad.uinput"), TOUCHPAD_FILE, check=False)
+    steps["pushed"] = pushed.returncode
+    before = len(sender_packets(sender))
+    made = subprocess.Popen(
+        [f"{emulator.sdk}/platform-tools/adb", "-s", emulator.serial, "shell", "su", "0", "uinput", TOUCHPAD_FILE],
+        env=emulator.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    # Registered, before its gestures begin at 3 s.
+    time.sleep(2)
+    dump = emulator.shell("dumpsys input", check=False).stdout
+    described = device_in_dump(dump, TOUCHPAD)
+    (out / "touchpad-input.txt").write_text("\n".join(described) + "\n")
+    steps["android_describes"] = described
+    try:
+        output, _ = made.communicate(timeout=60)
+    except subprocess.TimeoutExpired:
+        made.kill()
+        output, _ = made.communicate()
+    steps["uinput"] = {"exit": made.returncode, "output": output[-1000:]}
+    time.sleep(2)
+    packets = sender_packets(sender)[before:]
+    steps["at_the_sender"] = mouse_at_the_sender(packets)
+    steps["buttons"] = buttons_at_the_sender(packets)
+    checks["android_makes_the_uinput_pad_a_captured_touchpad"] = \
+        "Sources: 0x00100008" in described and "DeviceType: POINTER" in described
+    moved = steps["at_the_sender"]
+    checks["a_captured_touchpads_finger_moves_the_host_mouse_relatively"] = \
+        moved["relative"] > 0 and moved["moved"][0] > 0 and moved["moved"][1] == 0 and moved["absolute"] == 0
+    checks["a_tap_and_the_pads_button_click_left_and_two_fingers_right"] = steps["buttons"] == [
+        ["left", "down"], ["left", "up"], ["left", "down"], ["left", "up"], ["right", "down"], ["right", "up"]]
+    emulator.shell(f"rm -f {TOUCHPAD_FILE}", check=False)
+    return steps, checks
+
+
 def local_cursor(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.Remote", out: Path,
                  launch: str, listed: dict) -> tuple[dict, dict]:
     """Toggle local cursor (#434, toward D7′): with a mouse attached, korrid offers the command. The
@@ -1915,6 +2062,10 @@ def main() -> int:
         steps["local_cursor"], cursor_checks = local_cursor(
             emulator, logcat, sender, out, launch, steps["controls"].get("listed") or {})
         checks.update(cursor_checks)
+
+        log("A captured touch pad: its fingers and its button reach the sender")
+        steps["touchpad"], touchpad_checks = captured_touchpad(emulator, sender, out)
+        checks.update(touchpad_checks)
 
         log("Home: leaving the app ends the stream")
         home_mark = logcat.mark()

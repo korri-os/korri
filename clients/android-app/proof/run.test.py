@@ -272,6 +272,71 @@ class TheMousesPointerCapture(unittest.TestCase):
             "kinds": ["absolute mouse move", "mouse button", "relative mouse move"]})
 
 
+class ACapturedTouchpad(unittest.TestCase):
+    """The touch pad that the proof makes with Android's `uinput` command, its
+    gestures, and what it reads back: Android's own description of the pad,
+    and the buttons at the sender."""
+
+    def test_the_pad_is_a_pointing_device_with_a_button_and_two_fingers(self):
+        register = play.touchpad_commands()[0]
+        self.assertEqual((register["command"], register["name"], register["bus"]),
+                         ("register", play.TOUCHPAD, "usb"))
+        configuration = {c["type"]: c["data"] for c in register["configuration"]}
+        # UI_SET_EVBIT: EV_KEY and EV_ABS; UI_SET_KEYBIT: BTN_LEFT, BTN_TOOL_FINGER, BTN_TOUCH,
+        # BTN_TOOL_DOUBLETAP; UI_SET_ABSBIT: X, Y and the multi-touch slot, place and tracking id;
+        # UI_SET_PROPBIT: INPUT_PROP_POINTER and INPUT_PROP_BUTTONPAD, and not INPUT_PROP_DIRECT.
+        self.assertEqual(configuration, {100: [1, 3], 101: [272, 325, 330, 333], 103: [0, 1, 47, 53, 54, 57],
+                                         110: [0, 2]})
+        self.assertEqual(sorted(a["code"] for a in register["abs_info"]), [0, 1, 47, 53, 54, 57])
+
+    def test_the_gestures_are_a_move_a_tap_a_click_and_a_two_finger_click(self):
+        injected = [c["events"] for c in play.touchpad_commands() if c["command"] == "inject"]
+        events = [tuple(e[i:i + 3]) for e in injected for i in range(0, len(e), 3)]
+        # Five fingers go down and lift: the move's, the tap's, the click's, and the two of the
+        # two-finger click.
+        self.assertEqual([v for t, c, v in events if (t, c) == (3, 57) and v >= 0], [1, 2, 3, 4, 5])
+        self.assertEqual(sum(1 for t, c, v in events if (t, c, v) == (3, 57, -1)), 5)
+        self.assertEqual([v for t, c, v in events if (t, c) == (1, 272)], [1, 0, 1, 0])
+        self.assertIn((1, 333, 1), events)
+        # The move goes right only, 20 units at a time.
+        moves = [v for t, c, v in events if (t, c) == (3, 53)]
+        self.assertEqual(moves[:11], list(range(300, 520, 20)))
+
+    def test_the_commands_are_one_json_object_after_another(self):
+        text = play.uinput_text(play.touchpad_commands())
+        decoder, at, count = __import__("json").JSONDecoder(), 0, 0
+        while at < len(text.rstrip()):
+            _, at = decoder.raw_decode(text, at)
+            while at < len(text) and text[at].isspace():
+                at += 1
+            count += 1
+        self.assertEqual(count, len(play.touchpad_commands()))
+
+    def test_androids_description_of_the_pad_is_read_from_its_dump(self):
+        dump = ("Input Reader State (Nums of device: 3):\n"
+                "  Device 4: Korri test touchpad\n"
+                "    EventHub Devices: [ 13 ] \n"
+                "    Sources: 0x00100008\n"
+                "    Touch Input Mapper (mode UNSCALED):\n"
+                "      DeviceType: POINTER\n"
+                "  Device 5: qwerty2\n"
+                "    Sources: 0x00000101\n")
+        block = play.device_in_dump(dump, play.TOUCHPAD)
+        self.assertEqual(block[0], "Device 4: Korri test touchpad")
+        self.assertIn("Sources: 0x00100008", block)
+        self.assertNotIn("Sources: 0x00000101", block)
+        self.assertEqual(play.device_in_dump(dump, "none such"), [])
+
+    def test_the_buttons_at_the_sender_are_read_in_order(self):
+        packets = [
+            {"kind": "mouse button", "fields": {"action": "00000008", "button": "01"}},
+            {"kind": "relative mouse move", "fields": {"deltaX": "8", "deltaY": "0"}},
+            {"kind": "mouse button", "fields": {"action": "00000009", "button": "01"}},
+            {"kind": "mouse button", "fields": {"action": "00000008", "button": "03"}},
+        ]
+        self.assertEqual(play.buttons_at_the_sender(packets), [["left", "down"], ["left", "up"], ["right", "down"]])
+
+
 class TheSendersClientsReadOnlyOnceItWasPrepared(unittest.TestCase):
     """A run that ends before the sender was prepared (its cooldown refused
     it) has no Sunshine state to read: no check, and no error of its own."""
