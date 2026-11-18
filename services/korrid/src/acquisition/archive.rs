@@ -33,12 +33,14 @@ use std::{
     },
 };
 
-/// The legacy `ARTIFACT_MAGIC` rows for the three formats in scope.
+/// The legacy `ARTIFACT_MAGIC` rows for the three formats in scope, plus
+/// Valve's `VZa` package (ADR 0083): an LZMA1 stream that holds one zip.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Format {
     Zip,
     SevenZ,
     Rar,
+    Vz,
 }
 
 /// The format of a download, from its first bytes. The name alone is not
@@ -53,9 +55,18 @@ pub(super) fn format(lead: &[u8]) -> Option<Format> {
         Some(Format::SevenZ)
     } else if lead.starts_with(b"Rar!\x1a\x07") {
         Some(Format::Rar)
+    } else if lead.starts_with(VZ_HEAD) {
+        Some(Format::Vz)
     } else {
         None
     }
+}
+
+/// True when `file` starts with Valve's VZ magic (ADR 0083).
+pub(super) fn is_vz(file: &Path) -> Result<bool, Failure> {
+    let mut lead = [0u8; 3];
+    let read = File::open(file)?.read(&mut lead)?;
+    Ok(format(&lead[..read]) == Some(Format::Vz))
 }
 
 /// True when a name ends in an archive extension that the store accepts
@@ -183,6 +194,21 @@ pub fn run(arguments: &[OsString]) -> Result<(), String> {
     run_with(Path::new(work), Path::new(file), &limits)
 }
 
+/// ADR 0083: the engine host's save export, read with every rule of the
+/// store reader into an empty folder korrid made. It runs in korrid itself:
+/// the archive holds a game's Steam Cloud files, a few megabytes at most,
+/// and korrid writes them only into its own scratch folder.
+pub(crate) fn extract_save_export(archive: &Path, work: &Path) -> Result<(), String> {
+    // korrid's own service hides /proc/meminfo (`launch_memory`).
+    let limits = Limits {
+        budget: TraversalBudget::default(),
+        memory: launch_memory().map_err(|stop| stop.reason)?,
+        space: None,
+        cancel: None,
+    };
+    extract(archive, work, &limits).map_err(|stop| format!("{:?}: {}", stop.failure, stop.reason))
+}
+
 /// The file beside the work folder where the reader leaves its outcome when
 /// it exits 1: `<work-dir>.result`. It sits in the provider cache, the unit's
 /// writable path, outside the work folder, so no archive entry can write it;
@@ -224,9 +250,169 @@ pub(super) fn extract(archive: &Path, work: &Path, limits: &Limits) -> Result<()
         Format::Zip => zip_archive(archive, work, limits, &output),
         Format::SevenZ => seven_z(archive, work, limits, &output),
         Format::Rar => rar(archive, work, limits, &output),
+        Format::Vz => vz(archive, work, limits, &output),
     }?;
     // The file system itself, after the last entry (review P2-1).
     output.borrow().floor.check()?;
+    Ok(())
+}
+
+const VZ_HEAD: &[u8] = b"VZa";
+const VZ_TAIL: &[u8] = b"zv";
+/// `VZa`, a 4-byte timestamp, then 5 bytes of LZMA properties.
+const VZ_HEADER_BYTES: u64 = 3 + 4 + 5;
+/// CRC32, the unpacked size, then `zv`.
+const VZ_FOOTER_BYTES: u64 = 4 + 4 + 2;
+
+/// The zip that a VZ package holds, decoded next to the work folder, in the
+/// same writable provider folder as the result marker, and never inside it.
+fn vz_zip(work: &Path) -> PathBuf {
+    let mut name = work.file_name().unwrap_or_default().to_os_string();
+    name.push(".vz.zip");
+    work.with_file_name(name)
+}
+
+/// The VZ footer: the CRC32 and the size of the zip the stream decodes to.
+fn vz_footer(file: &mut File, length: u64) -> Result<(u32, u64), Stop> {
+    use std::io::{Seek, SeekFrom};
+    if length < VZ_HEADER_BYTES + VZ_FOOTER_BYTES {
+        return Err(Stop::unpack("vz: file is too short".into()));
+    }
+    let mut footer = [0u8; VZ_FOOTER_BYTES as usize];
+    file.seek(SeekFrom::Start(length - VZ_FOOTER_BYTES))?;
+    file.read_exact(&mut footer)?;
+    if &footer[8..] != VZ_TAIL {
+        return Err(Stop::unpack("vz: no zv trailer".into()));
+    }
+    let crc = u32::from_le_bytes(footer[..4].try_into().expect("four bytes"));
+    let size = u32::from_le_bytes(footer[4..8].try_into().expect("four bytes"));
+    Ok((crc, u64::from(size)))
+}
+
+/// Counts and checks every byte the LZMA decoder writes: the floor, the
+/// declared size, the CRC32 and cancel.
+struct VzOutput {
+    file: File,
+    shared: Rc<RefCell<Shared>>,
+    crc: crc32fast::Hasher,
+    declared: u64,
+    written: u64,
+}
+
+impl Write for VzOutput {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        let chunk = &buffer[..buffer.len().min(WRITE_CHUNK)];
+        let mut shared = self.shared.borrow_mut();
+        if shared
+            .cancel
+            .as_ref()
+            .is_some_and(|cancel| cancel.load(Ordering::SeqCst))
+        {
+            shared.failure.get_or_insert(Stop::from(Failure::Cancelled));
+            return Err(io::Error::other("cancelled"));
+        }
+        if self.written + chunk.len() as u64 > self.declared {
+            let stop = Stop::unpack("vz: stream is longer than its declared size".into());
+            shared.failure.get_or_insert(stop);
+            return Err(io::Error::other("vz overrun"));
+        }
+        if let Err(failure) = shared.floor.reserve(chunk.len() as u64) {
+            shared.failure.get_or_insert(Stop::from(failure));
+            return Err(io::Error::other("no space"));
+        }
+        drop(shared);
+        let written = self.file.write(chunk)?;
+        self.crc.update(&chunk[..written]);
+        self.written += written as u64;
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.file.flush()
+    }
+}
+
+/// ADR 0083: Valve's `.zip.vz` package (reference: the spike's
+/// `scripts/aka/vz-extract.py`). The LZMA1 stream decodes to a zip beside the
+/// work folder, its size and CRC32 are checked against the footer, and the
+/// zip is then read with every rule of `zip_archive`. The decoded zip is
+/// removed whatever the outcome.
+fn vz(
+    archive: &Path,
+    work: &Path,
+    limits: &Limits,
+    shared: &Rc<RefCell<Shared>>,
+) -> Result<(), Stop> {
+    let zip = vz_zip(work);
+    let result = (|| {
+        decode_vz(archive, &zip, limits, shared)?;
+        zip_archive(&zip, work, limits, shared)
+    })();
+    match fs::remove_file(&zip) {
+        Err(error) if error.kind() != io::ErrorKind::NotFound && result.is_ok() => {
+            return Err(error.into())
+        }
+        _ => (),
+    }
+    result
+}
+
+fn decode_vz(
+    archive: &Path,
+    zip: &Path,
+    limits: &Limits,
+    shared: &Rc<RefCell<Shared>>,
+) -> Result<(), Stop> {
+    use std::io::{Seek, SeekFrom};
+    let mut file = File::open(archive)?;
+    let length = file.metadata()?.len();
+    let (crc, size) = vz_footer(&mut file, length)?;
+    file.seek(SeekFrom::Start(7))?;
+    let mut properties = [0u8; 5];
+    file.read_exact(&mut properties)?;
+    let dictionary = u64::from(u32::from_le_bytes(
+        properties[1..].try_into().expect("four bytes"),
+    ));
+    if dictionary > limits.memory {
+        return Err(Stop::unpack(format!(
+            "vz: dictionary of {dictionary} bytes exceeds MemAvailable"
+        )));
+    }
+    file.seek(SeekFrom::Start(7))?;
+    let stream = Read::take(file, length - 7 - VZ_FOOTER_BYTES);
+    let output = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(zip)?;
+    let mut output = VzOutput {
+        file: output,
+        shared: shared.clone(),
+        crc: crc32fast::Hasher::new(),
+        declared: size,
+        written: 0,
+    };
+    let options = lzma_rs::decompress::Options {
+        unpacked_size: lzma_rs::decompress::UnpackedSize::UseProvided(Some(size)),
+        memlimit: usize::try_from(limits.memory).ok(),
+        allow_incomplete: false,
+    };
+    let decoded =
+        lzma_rs::lzma_decompress_with_options(&mut BufReader::new(stream), &mut output, &options);
+    if let Some(stop) = shared.borrow_mut().failure.take() {
+        return Err(stop);
+    }
+    decoded.map_err(|error| Stop::unpack(format!("vz: {error}")))?;
+    if output.written != size || output.crc.clone().finalize() != crc {
+        return Err(Stop::unpack(format!(
+            "vz: decoded {} of {size} bytes or the CRC32 does not match",
+            output.written
+        )));
+    }
+    // The decoded zip stays counted: it is on disk while its entries are
+    // written, so both count against the floor.
+    output.file.sync_all()?;
     Ok(())
 }
 

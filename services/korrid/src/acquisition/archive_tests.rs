@@ -768,3 +768,128 @@ fn the_reader_command_marks_no_space_next_to_the_work_folder() {
         assert_eq!(written.as_deref(), marker);
     }
 }
+
+/// A Valve `.zip.vz` package around `zip`, built the way the spike's
+/// `vz-extract.py` reads one: `VZa`, a timestamp, the LZMA properties, the
+/// LZMA1 stream, CRC32, size, `zv`.
+fn vz_package(zip: &[u8]) -> Vec<u8> {
+    let mut lzma = Vec::new();
+    lzma_rs::lzma_compress_with_options(
+        &mut Cursor::new(zip),
+        &mut lzma,
+        &lzma_rs::compress::Options {
+            unpacked_size: lzma_rs::compress::UnpackedSize::WriteToHeader(Some(zip.len() as u64)),
+        },
+    )
+    .unwrap();
+    let mut out = b"VZa".to_vec();
+    out.extend_from_slice(&0x6553_f100u32.to_le_bytes());
+    out.extend_from_slice(&lzma[..5]);
+    out.extend_from_slice(&lzma[13..]);
+    out.extend_from_slice(&crc32fast::hash(zip).to_le_bytes());
+    out.extend_from_slice(&(zip.len() as u32).to_le_bytes());
+    out.extend_from_slice(b"zv");
+    out
+}
+
+#[test]
+fn a_valve_vz_package_unpacks_its_zip_with_the_zip_rules() {
+    assert_eq!(format(b"VZa\x00\x01\x02\x03\x5d"), Some(Format::Vz));
+    let zip = deflated_zip(&[
+        ("linuxarm64/", b""),
+        ("linuxarm64/steamclient.so", b"\x7fELF engine bytes"),
+        ("steamerrorreporter", b"other"),
+    ]);
+    let run = unpack(&vz_package(&zip));
+    run.result.as_ref().unwrap();
+    assert_eq!(
+        tree(&run.work),
+        [
+            ("linuxarm64".to_string(), 0o755),
+            ("linuxarm64/steamclient.so".to_string(), 0o644),
+            ("steamerrorreporter".to_string(), 0o644),
+        ]
+    );
+    assert_eq!(
+        fs::read(run.work.join("linuxarm64/steamclient.so")).unwrap(),
+        b"\x7fELF engine bytes"
+    );
+    // The decoded zip is removed; only the work folder holds output.
+    assert!(!run.work.with_file_name("work.vz.zip").exists());
+}
+
+#[test]
+fn a_vz_package_with_a_bad_footer_size_or_crc_is_refused() {
+    let zip = deflated_zip(&[("steamclient.so", b"engine")]);
+    let good = vz_package(&zip);
+
+    let mut no_trailer = good.clone();
+    let end = no_trailer.len();
+    no_trailer[end - 1] = b'x';
+    refused(unpack(&no_trailer), Failure::Unpack, "no zv trailer");
+
+    let mut crc = good.clone();
+    let at = crc.len() - 10;
+    crc[at] ^= 0xff;
+    refused(unpack(&crc), Failure::Unpack, "CRC32");
+
+    let mut short = good.clone();
+    let at = short.len() - 6;
+    short[at..at + 4].copy_from_slice(&((zip.len() - 3) as u32).to_le_bytes());
+    let run = unpack(&short);
+    assert!(run.result.is_err());
+    assert!(tree(&run.work).is_empty());
+
+    refused(unpack(b"VZa\x00\x00"), Failure::Unpack, "too short");
+
+    // A zip inside a VZ package gets every zip rule: here, a traversal.
+    let hostile = vz_package(&raw_zip(&[raw("../escape", b"x")]));
+    refused(unpack(&hostile), Failure::Unpack, "unsafe path segment");
+}
+
+#[test]
+fn a_vz_dictionary_larger_than_mem_available_is_refused_before_decoding() {
+    let mut small = limits();
+    small.memory = 1024;
+    let zip = deflated_zip(&[("steamclient.so", b"engine")]);
+    refused(
+        unpack_with(&vz_package(&zip), &small),
+        Failure::Unpack,
+        "exceeds MemAvailable",
+    );
+}
+
+/// ADR 0083: an artifact with no unpack program whose one file is a VZ
+/// package publishes the package's files, not the package.
+#[test]
+fn an_artifact_that_is_a_vz_package_publishes_its_unpacked_files() {
+    let folder = tempfile::tempdir().unwrap();
+    let base = folder.path().join("cache/steam/engine");
+    fs::create_dir_all(base.join(".downloads")).unwrap();
+    let private = folder.path().join("private");
+    fs::create_dir(&private).unwrap();
+    let download = folder
+        .path()
+        .join("bins_sdk_linuxarm64_linuxarm64.zip.vz.1424aaa3");
+    let zip = deflated_zip(&[("linuxarm64/steamclient.so", b"engine")]);
+    fs::write(&download, vz_package(&zip)).unwrap();
+    let artifact = crate::plugin::ArtifactRecord {
+        id: "@korri:steam/engine".into(),
+        version: "1792618285".into(),
+        files: vec![crate::plugin::ArtifactFile {
+            url: "https://client-update.steamstatic.com/bins_sdk_linuxarm64_linuxarm64.zip.vz.1424aaa3".into(),
+            sha256: format!("sha256:{}", "0".repeat(64)),
+            bytes: None,
+        }],
+        unpack: None,
+        title: None,
+    };
+    super::super::placement::publish(&base, &private, &artifact, None, &[download]).unwrap();
+    assert_eq!(
+        fs::read(base.join("1792618285/linuxarm64/steamclient.so")).unwrap(),
+        b"engine"
+    );
+    assert!(!base
+        .join("1792618285/bins_sdk_linuxarm64_linuxarm64.zip.vz.1424aaa3")
+        .exists());
+}

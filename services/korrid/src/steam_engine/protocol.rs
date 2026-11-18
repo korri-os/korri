@@ -1,0 +1,302 @@
+//! The engine host's line protocol (ADR 0083, contract "Commands and events").
+//!
+//! Grounding: the spike's host v8 (`korri-steam-spike/host/main.rs`) writes
+//! one JSON object per line with an `event` name; its commands are one word
+//! and an optional app id per line. The QR, list, save and engine-state
+//! events are the contract's additions; `engine_map_missing`,
+//! `engine_mismatch` and `engine_refused` are the names the parent fixed on
+//! 2026-11-18. korrid reads only the fields below and ignores every other
+//! event and field, so a host may report more than korrid uses.
+use serde::Deserialize;
+
+/// A Steam app id. The engine's `AppId_t` is a `uint32`.
+pub type AppId = u32;
+
+/// One command line korrid writes to the host's FIFO.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Command {
+    Launched(AppId),
+    Exited(AppId),
+    Sync(AppId),
+    Install(AppId),
+    Uninstall(AppId),
+    Shutdown,
+    SignInQr,
+    SignOut,
+    ListApps,
+    Resolve(AppId, Side),
+}
+
+/// The side a person keeps in a Steam Cloud conflict.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Side {
+    Local,
+    Cloud,
+}
+
+impl Command {
+    /// The line, with its newline. No command carries a value korrid did not
+    /// make itself, so no line can carry a second command.
+    pub fn line(self) -> String {
+        match self {
+            Self::Launched(app) => format!("launched {app}\n"),
+            Self::Exited(app) => format!("exited {app}\n"),
+            Self::Sync(app) => format!("sync {app}\n"),
+            Self::Install(app) => format!("install {app}\n"),
+            Self::Uninstall(app) => format!("uninstall {app}\n"),
+            Self::Shutdown => "shutdown\n".into(),
+            Self::SignInQr => "signin-qr\n".into(),
+            Self::SignOut => "signout\n".into(),
+            Self::ListApps => "list-apps\n".into(),
+            Self::Resolve(app, Side::Local) => format!("resolve {app} local\n"),
+            Self::Resolve(app, Side::Cloud) => format!("resolve {app} cloud\n"),
+        }
+    }
+}
+
+/// Where an app in the person's list comes from.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd)]
+#[serde(rename_all = "lowercase")]
+pub enum AppSource {
+    Owned,
+    Free,
+    Family,
+}
+
+/// The events korrid acts on. Everything else is `Other`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum Event {
+    /// The host's map is the public empty one (contract "Engine map").
+    EngineMapMissing {},
+    /// The engine file is not the build the map was made for.
+    EngineMismatch {},
+    /// Steam refused the pinned engine at sign-in.
+    EngineRefused {
+        eresult: i64,
+    },
+    LogonState {
+        logged_on: bool,
+        #[serde(default)]
+        offline: bool,
+    },
+    QrCode {
+        challenge_url: String,
+    },
+    QrRefreshed {
+        challenge_url: String,
+    },
+    SignedIn {
+        account_name: String,
+    },
+    SigninFailed {
+        reason: String,
+    },
+    SignedOut {},
+    App {
+        appid: AppId,
+        name: String,
+        source: AppSource,
+    },
+    AppsDone {},
+    AppJobStarted {
+        appid: AppId,
+        kind: String,
+    },
+    AppProgress {
+        appid: AppId,
+        bytes_downloaded: u64,
+        bytes_to_download: u64,
+        #[serde(default)]
+        bytes_staged: u64,
+        #[serde(default)]
+        bytes_to_stage: u64,
+    },
+    AppJobFinished {
+        appid: AppId,
+        kind: String,
+        result: String,
+    },
+    SyncFinished {
+        appid: AppId,
+        kind: String,
+        result: String,
+    },
+    SyncConflict {
+        appid: AppId,
+        #[serde(default)]
+        local_time: u64,
+        #[serde(default)]
+        remote_time: u64,
+    },
+    SaveExport {
+        appid: AppId,
+        archive: String,
+    },
+    Phase {
+        phase: String,
+    },
+    #[serde(other)]
+    Other,
+}
+
+/// One output line, or `None` when it is not a JSON event. A host line is
+/// never logged or echoed: it may name a path in the person's folder.
+pub fn parse(line: &str) -> Option<Event> {
+    serde_json::from_str(line.trim()).ok()
+}
+
+/// Results of `app_job_finished` that mean the job did what it was asked.
+pub fn app_job_succeeded(result: &str) -> bool {
+    matches!(
+        result,
+        "installed" | "already_installed" | "uninstalled" | "not_installed"
+    )
+}
+
+/// Results of `sync_finished` that let a launch go on. A conflict stops it
+/// until the person picks a side; `offline` is the contract's offline start.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SyncOutcome {
+    Ready,
+    Offline,
+    Conflict,
+    /// The pass did not finish. The launch still goes on, as Valve's client
+    /// does after a failed cloud pass; the next session syncs again.
+    Incomplete,
+}
+
+pub fn sync_outcome(result: &str) -> SyncOutcome {
+    match result {
+        "downloaded" | "synchronized" | "local_changes" | "cloud_disabled" | "no_sync_state" => {
+            SyncOutcome::Ready
+        }
+        "offline" => SyncOutcome::Offline,
+        "conflict" | "conflict_not_resolved" => SyncOutcome::Conflict,
+        _ => SyncOutcome::Incomplete,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn commands_are_one_line_each() {
+        assert_eq!(Command::Launched(584400).line(), "launched 584400\n");
+        assert_eq!(Command::Exited(7).line(), "exited 7\n");
+        assert_eq!(Command::Sync(7).line(), "sync 7\n");
+        assert_eq!(Command::Install(78000).line(), "install 78000\n");
+        assert_eq!(Command::Uninstall(78000).line(), "uninstall 78000\n");
+        assert_eq!(Command::Shutdown.line(), "shutdown\n");
+        assert_eq!(Command::SignInQr.line(), "signin-qr\n");
+        assert_eq!(Command::SignOut.line(), "signout\n");
+        assert_eq!(Command::ListApps.line(), "list-apps\n");
+        assert_eq!(Command::Resolve(1, Side::Local).line(), "resolve 1 local\n");
+        assert_eq!(Command::Resolve(1, Side::Cloud).line(), "resolve 1 cloud\n");
+    }
+
+    /// Lines copied from the spike host's output (FINDINGS sections 7, 8,
+    /// 11) and the contract's new events.
+    #[test]
+    fn spike_and_contract_events_parse_and_others_are_ignored() {
+        assert_eq!(
+            parse(
+                r#"{"event":"app_progress","appid":78000,"kind":"install","state":1026,"names":["Update Required","Update Started"],"up_to_date":false,"update_info":true,"bytes_downloaded":81160832,"bytes_to_download":81160832,"bytes_staged":97849494,"bytes_to_stage":97849494,"update_result":0,"update_result_name":"No Error","downloading_appid":78000,"queue":1,"seconds":5}"#
+            ),
+            Some(Event::AppProgress {
+                appid: 78000,
+                bytes_downloaded: 81_160_832,
+                bytes_to_download: 81_160_832,
+                bytes_staged: 97_849_494,
+                bytes_to_stage: 97_849_494,
+            })
+        );
+        assert_eq!(
+            parse(
+                r#"{"event":"sync_finished","appid":584400,"kind":"launch","result":"offline","state":0,"seconds":0}"#
+            ),
+            Some(Event::SyncFinished {
+                appid: 584400,
+                kind: "launch".into(),
+                result: "offline".into()
+            })
+        );
+        assert_eq!(
+            parse(
+                r#"{"event":"sync_conflict","appid":2379780,"found":true,"local_time":1763300000,"remote_time":1763390000}"#
+            ),
+            Some(Event::SyncConflict {
+                appid: 2379780,
+                local_time: 1_763_300_000,
+                remote_time: 1_763_390_000
+            })
+        );
+        assert_eq!(
+            parse(
+                r#"{"event":"logon_state","state":4,"logged_on":true,"connected":true,"offline":false}"#
+            ),
+            Some(Event::LogonState {
+                logged_on: true,
+                offline: false
+            })
+        );
+        assert_eq!(
+            parse(r#"{"event":"qr_code","challenge_url":"https://s.team/q/1/2"}"#),
+            Some(Event::QrCode {
+                challenge_url: "https://s.team/q/1/2".into()
+            })
+        );
+        assert_eq!(
+            parse(r#"{"event":"app","appid":70,"name":"Half-Life","source":"family"}"#),
+            Some(Event::App {
+                appid: 70,
+                name: "Half-Life".into(),
+                source: AppSource::Family
+            })
+        );
+        assert_eq!(
+            parse(r#"{"event":"engine_map_missing"}"#),
+            Some(Event::EngineMapMissing {})
+        );
+        assert_eq!(
+            parse(r#"{"event":"engine_mismatch","expected":"aa","found":"bb"}"#),
+            Some(Event::EngineMismatch {})
+        );
+        assert_eq!(
+            parse(r#"{"event":"engine_refused","eresult":120}"#),
+            Some(Event::EngineRefused { eresult: 120 })
+        );
+        assert_eq!(
+            parse(r#"{"event":"callback","id":101}"#),
+            Some(Event::Other)
+        );
+        assert_eq!(parse("korri-steam-host: error"), None);
+        assert_eq!(
+            parse(r#"{"event":"app","appid":-1,"name":"x","source":"owned"}"#),
+            None
+        );
+        assert_eq!(
+            parse(r#"{"event":"app","appid":1,"name":"x","source":"stolen"}"#),
+            None
+        );
+    }
+
+    #[test]
+    fn sync_and_app_results_map_to_what_korrid_does_next() {
+        for ready in [
+            "downloaded",
+            "synchronized",
+            "local_changes",
+            "cloud_disabled",
+            "no_sync_state",
+        ] {
+            assert_eq!(sync_outcome(ready), SyncOutcome::Ready);
+        }
+        assert_eq!(sync_outcome("offline"), SyncOutcome::Offline);
+        assert_eq!(sync_outcome("conflict"), SyncOutcome::Conflict);
+        assert_eq!(sync_outcome("timeout"), SyncOutcome::Incomplete);
+        assert!(app_job_succeeded("installed") && app_job_succeeded("uninstalled"));
+        assert!(!app_job_succeeded("install_failed") && !app_job_succeeded("timeout"));
+    }
+}

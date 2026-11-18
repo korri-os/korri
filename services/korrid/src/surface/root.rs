@@ -1222,6 +1222,7 @@ impl Root {
             focused_game: None,
             systems: None,
             published_at: clock.published_at,
+            steam_account: None,
         };
         Facts { base, games, state }
     }

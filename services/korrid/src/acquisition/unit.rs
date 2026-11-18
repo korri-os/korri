@@ -101,6 +101,10 @@ pub(super) fn stop_launched(programs: &Programs, unit: &str, launch: &Launch) {
 
 /// `korri-acquire-<plugin short>-<key>.service`, from the two segments of the
 /// artifact's cache path `cache/<plugin short>/<key>`.
+pub(super) fn artifact_unit(artifact: &ArtifactRecord) -> String {
+    name(artifact)
+}
+
 fn name(artifact: &ArtifactRecord) -> String {
     let (plugin, key) = artifact.id.split_once('/').expect("validated artifact id");
     let (_, plugin) = plugin.split_once(':').expect("validated plugin id");
@@ -158,9 +162,8 @@ fn active(systemctl: &Path, unit: &str) -> Result<bool, Failure> {
 }
 
 pub(super) fn reclaim(artifact: &ArtifactRecord) -> Result<(), Failure> {
-    if artifact.unpack.is_none() {
-        return Ok(());
-    }
+    // Every artifact may own this unit: an unpack program, or korrid's own
+    // reader for a VZ package (ADR 0083), which has no unpack program.
     #[cfg(test)]
     let _ = artifact;
     #[cfg(not(test))]

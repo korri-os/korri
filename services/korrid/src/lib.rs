@@ -73,6 +73,7 @@ pub mod relay;
 pub mod remote_signer;
 mod rename;
 pub mod saves;
+pub mod steam_engine;
 pub mod surface;
 pub mod surface_host_access;
 pub mod surface_host_input;

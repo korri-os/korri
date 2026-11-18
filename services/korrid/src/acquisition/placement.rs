@@ -147,6 +147,23 @@ pub(super) fn publish(
         } else {
             let mut names = std::collections::BTreeSet::new();
             for (declaration, file) in artifact.files.iter().zip(files) {
+                // ADR 0083: Valve's `.zip.vz` engine package needs no plugin
+                // unpack program; korrid's own reader opens it (ADR 0030),
+                // in the same sandbox unit, into the work folder.
+                if super::archive::is_vz(file)? {
+                    if artifact.files.len() != 1 {
+                        return Err(Failure::Unpack);
+                    }
+                    super::unit::unpack_archive(
+                        base,
+                        private_root,
+                        &super::unit::artifact_unit(artifact),
+                        &work,
+                        file,
+                        &super::unit::Launch::default(),
+                    )?;
+                    break;
+                }
                 let name = policy::basename(&declaration.url)?;
                 if !names.insert(name.clone()) {
                     return Err(Failure::UnsafePath);

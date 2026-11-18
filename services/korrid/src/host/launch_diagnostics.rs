@@ -49,7 +49,7 @@ fn private_acl(owner: u16, user: u32, permission: u16) -> Vec<u8> {
     }
     bytes
 }
-fn grant_user(file: &File, owner: u16, user: u32, permission: u16) -> io::Result<()> {
+pub(crate) fn grant_user(file: &File, owner: u16, user: u32, permission: u16) -> io::Result<()> {
     let acl = private_acl(owner, user, permission);
     let result = unsafe {
         libc::fsetxattr(

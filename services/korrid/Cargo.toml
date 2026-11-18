@@ -97,6 +97,9 @@ zbus = { version = "5", default-features = false, features = ["tokio"] }
 zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["bzip2", "ppmd"] }
 rars = { version = "0.11.0", default-features = false }
+# ADR 0083: korrid turns the Steam sign-in challenge into the surface's QR
+# module grid; no image or SVG output.
+qrcode = { version = "0.14", default-features = false }
 
 rquickjs = { version = "0.14", features = ["macro", "bindgen", "loader", "allocator"] }
 oxc = { version = "0.142.0", features = ["transformer", "codegen", "semantic"] }
