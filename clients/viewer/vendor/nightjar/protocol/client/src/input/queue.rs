@@ -270,6 +270,20 @@ impl InputQueue {
         self.entries.len()
     }
 
+    /// Korri: whether an unreliable packet waits here: a touch, pen, controller touch or
+    /// touchpad move, or a motion reading. moonlight-common-c's input thread holds none of them
+    /// (`InputStream.c`), so the control thread must not hold them behind waiting reliable data
+    /// (clients/viewer/vendor/README.md).
+    pub fn holds_unreliable(&self) -> bool {
+        self.entries.iter().any(|entry| {
+            // Korri: a motion reading leaves unreliable unless it parks the gyro at zero.
+            matches!(
+                entry,
+                Entry::Event(Pending { delivery: Delivery::Unreliable, .. }) | Entry::Motion { .. }
+            )
+        })
+    }
+
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty() && !self.holding
     }

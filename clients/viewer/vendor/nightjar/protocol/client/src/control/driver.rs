@@ -1090,7 +1090,14 @@ impl ControlClient {
             if drain_input {
                 queue.drain(now, contact_lost, &mut self.input);
                 None
-            } else if window_full && !contact_lost && queue.len() < INPUT_HOLD_LIMIT {
+            } else if window_full
+                && !contact_lost
+                && queue.len() < INPUT_HOLD_LIMIT
+                // Korri: unreliable input is never held, as moonlight-common-c's input thread
+                // holds none: a held touch move took a queue slot that the C core keeps free,
+                // and a burst found a full queue (clients/viewer/vendor/README.md).
+                && !queue.holds_unreliable()
+            {
                 // The acknowledgement that opens the window wakes the loop (see `run`).
                 self.input_waits_for_window = !queue.is_empty();
                 None
