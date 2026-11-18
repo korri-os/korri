@@ -6,23 +6,25 @@ raw-cache fallback, receipt migration, or outside repository is in this lane.
 
 ## Published input
 
-- Plugins source: `1f0543c4cfac359d523d90d197a8b8e1f49ba2a7`.
-- Immutable tag: `build-1f0543c4cfac-viewer-rust-default`.
-- Publication dry run: `44229547212`; live publication: `44244197372`.
-- Catalog: <https://github.com/korri-os/plugins/releases/download/build-1f0543c4cfac-viewer-rust-default/catalog.json>.
-- Actual catalog SHA-256: `9eb844d40b69c647c3748ef0752ca6580cf276f99c6dca409ea79d93110daaec`.
-- SRI: `sha256-nrhE1AtpxkfDdI7wdSymWAzydvmcbcpAnqedkxENquw=`.
+- Plugins source: `ba9f46af31ea3938f88af3aee00236439f8b8bf6`.
+- Immutable tag: `build-ba9f46af31ea-viewer-notices`.
+- Publication dry run: `44381400569`; live publication: `44403044631`.
+- Catalog: <https://github.com/korri-os/plugins/releases/download/build-ba9f46af31ea-viewer-notices/catalog.json>.
+- Actual catalog SHA-256: `d4ee84503cb84971a3cf6e4431d0ad1be93a0ab6e774239acd37c754ad66f787`.
+- SRI: `sha256-1O6EUDy4SXGjz25EMdCtG+k6CrbndCOazTfHVK1m94c=`.
 - 34 plugin IDs, 64 records: 34 for x86_64 and 33 for aarch64, because
   `@korri:viewer` exists for x86_64 only. Homebrew Hub, PICO-8 and RetroBrews
   use `any`.
 - Bound key remains
   `korri-plugins-1:qlK5Mgb3dYhF76WC4jGhrvL+CHsU93De7GpBFtrXb98=`.
 
-The selection is the previous pin's, `build-b036fa5e3160-sunshine-0046`,
-plus `@korri:viewer` (x86_64): the Korri viewer at Korri `12ba1ed78`, which
-streams with nightjar-core and its Rust parts by default (#391). The other 33
-plugins keep their store paths and archive bytes. No product image selects the
-viewer; a device installs it from the official catalog.
+The selection is the same as the previous pin,
+`build-1f0543c4cfac-viewer-rust-default`. Against it, only `@korri:viewer`
+(x86_64) changed: the Korri viewer at Korri `07b0221b7`, whose PC package
+ships `NOTICES.txt` for what its recipe builds in (#521), with two nightjar
+input fixes. The other 33 plugins keep their store paths and archive bytes.
+No product image selects the viewer; a device installs it from the official
+catalog.
 
 These identify the actual live bytes. Publication verifies the dry-run artifact
 digests and requires its catalog byte for byte before uploading those artifacts.
