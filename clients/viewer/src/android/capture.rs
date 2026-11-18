@@ -261,9 +261,13 @@ impl Capture {
     }
 
     /// `showCursor`: the icon shows; the listener goes before the capture,
-    /// whose release can change a device.
+    /// whose release can change a device. A capture that a regained focus
+    /// still waits to ask for is not asked for: the pointer shows now, for
+    /// the overlay (`disableCapture`) or the local cursor. Artemis's
+    /// delayed request asks anyway.
     fn show(&mut self) {
         self.cursor_shown = true;
+        self.recapture_at = None;
         self.calls.push(Call::ShowIcon);
         self.listening = false;
         self.calls.push(Call::Release);

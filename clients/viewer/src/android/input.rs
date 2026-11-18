@@ -3666,6 +3666,32 @@ pub(crate) mod tests {
         assert_eq!(input.next_deadline(), None);
     }
 
+    // Review P2: a regained focus asks for the capture 500 ms later. Guide
+    // or Back inside that time let the mouse go for the overlay, and the
+    // late request took it again while the overlay was open. A pointer
+    // that shows, for the overlay or the local cursor, ends the request.
+    #[test]
+    fn a_late_recapture_never_takes_the_mouse_from_the_overlay_or_the_local_cursor() {
+        let mut input = ungrabbed(true, false, 0);
+        let mut devices = Known::with([mouse_device(7)]);
+        let mut sink = Recorded::default();
+        input.grab(true, &mut devices);
+        input.take_capture();
+        input.focus(true, 1000);
+        input.hold(&mut sink);
+        assert_eq!(input.take_capture(), [Call::ShowIcon, Call::Release]);
+        assert_eq!(input.next_deadline(), None);
+        input.tick(1500, &mut sink);
+        assert_eq!(input.take_capture(), []);
+        input.release(&mut sink);
+        assert_eq!(input.take_capture(), [Call::HideIcon, Call::Request]);
+        input.focus(true, 2000);
+        input.toggle_local_cursor(&mut devices);
+        assert_eq!(input.take_capture(), [Call::ShowIcon, Call::Release]);
+        input.tick(2500, &mut sink);
+        assert_eq!(input.take_capture(), []);
+    }
+
     // `onInputDeviceAdded`, `onInputDeviceRemoved` and
     // `onInputDeviceChanged`, which `hideCursor` listens for and
     // `showCursor` stops: a device that comes or goes makes the view take
