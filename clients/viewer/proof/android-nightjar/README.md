@@ -196,3 +196,53 @@ no pause between them. stream-cadence's `view` waits for the sender's
 `heat` between runs; the proof did not. It now waits the same way, every
 10 s for at most 600 s, and keeps the wait in `result.json`
 (`sender_cooldown`: 0.1 s in five runs, 10.1 s in run 2).
+
+## The hold, shown and changed, and five runs again, 2026-11-18
+
+**All six runs passed 104 of 104 checks**, five with the default core and
+one with `-networkcore c`: no failed send, and no "Input queue reached
+maximum size limit" line.
+
+`tests/nightjar_input_hold.rs` showed the hold of run 1's section above,
+on aka, three times: with keys waiting in a full reliable window (the host
+acknowledged nothing), 60 touch moves sent one by one stayed in the queue
+behind one held key (61 packets), and a burst of 100 under one lock lost
+11 to the full queue. moonlight-common-c holds no unreliable packet
+(`InputStream.c`), so its queue would have had all 150 slots free. A
+minimal vendored edit (`../../vendor/README.md`) makes nightjar-core's
+control thread hold input only while the queue holds no unreliable packet;
+with it no packet stayed queued and the burst lost none, three times on
+aka and once in the package's own build. nightjar-core's own tests still
+pass (672 of its lib, and 16 of `control_loopback`, among them the one
+where controller states merge in a full window).
+
+Whether run 1's window was full when its 2 moves were lost is not shown:
+the proof records no ENet state, and the emulator's round trip is a few
+milliseconds (inferred: a full window is rare there). These five runs
+sent 1561 to 2367 touch moves, as many as run 1's 2060, and lost none.
+
+From the tree of the commit "nightjar-core holds no unreliable input
+behind waiting reliable data", on aka, after three checks a minute apart
+found aka quiet, holding `/var/tmp/korri-turns.lock` from 07:46 to 08:06
+UTC. No other session's process was among the busiest before or after any
+run (`host-before.txt`, `host-after.txt`); Tctl stayed 57.9 to 62.9 °C,
+and no run had to wait for the sender to cool.
+
+| Store path | |
+| --- | --- |
+| APK (unsigned) | `/nix/store/qzs0nakbf2pkpig90md0bnz2ns9k9ia1-korri-viewer-android-apk-0.1.0` |
+| Android tests (x86_64) | `/nix/store/qaxb7a5srld6nf7lr6ywkx32axmqdx3d-korri-viewer-android-check` |
+
+| Run | Core | Checks | Touch sends: in the app / at the sender | Failed sends | Queue-full lines |
+| --- | --- | --- | --- | --- | --- |
+| 1 | nightjar | 104 of 104 | 1906 / 1453 | 0 | 0 |
+| 2 | nightjar | 104 of 104 | 1692 / 1389 | 0 | 0 |
+| 3 | nightjar | 104 of 104 | 1561 / 1272 | 0 | 0 |
+| 4 | nightjar | 104 of 104 | 1974 / 1518 | 0 | 0 |
+| 5 | nightjar | 104 of 104 | 2367 / 1640 | 0 | 0 |
+| c | C | 104 of 104 | 2144 / 1581 | 0 | 0 |
+
+Each nightjar run logged `nightjar: at the stop` in both streams; the C
+run logged none. Every second stream ran in the process of its first, and
+its bar rose. Records: `hold-fix-2026-11-18/run-{1,2,3,4,5,c}/`, the same
+files as the runs above.

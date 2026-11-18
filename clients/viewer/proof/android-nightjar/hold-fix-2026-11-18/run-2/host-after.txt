@@ -1,0 +1,6 @@
+2026-11-18T07:53:39Z
+3.66 4.24 3.43 1/521 1912035
+tctl_mC=62500
+10.4 root     .emulator-wrapp
+ 2.9 korrid   korrid
+ 0.8 root     .tailscaled-wra

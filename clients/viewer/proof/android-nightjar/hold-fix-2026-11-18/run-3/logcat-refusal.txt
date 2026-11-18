@@ -1,0 +1,36 @@
+   150.692   533  4574 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.simonwjackson.korri.viewer.refusal/android.app.NativeActivity} from uid 2000
+   150.929   533  1456 I ActivityTaskManager: START u0 {cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity} from uid 10148
+   150.929   533  1456 W ActivityTaskManager: Permission Denial: starting Intent { cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity } from ProcessRecord{74da160 5172:com.simonwjackson.korri.viewer.refusal/u0a148} (pid=5172, uid=10148) requires android.permission.DUMP
+   150.932  5172  5172 I korri-refusal: refused: java.lang.SecurityException: Permission Denial: starting Intent { cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity } from ProcessRecord{74da160 5172:com.simonwjackson.korri.viewer.refusal/u0a148} (pid=5172, uid=10148) requires android.permission.DUMP
+   151.483   533   753 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.simonwjackson.korri.viewer.refusal/android.app.NativeActivity} from uid 2000
+   151.507   533  2126 I ActivityTaskManager: START u0 {cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity} from uid 10148
+   151.510  5172  5172 I korri-refusal: started
+   151.528  4136  5260 E korri-viewer: viewer failed: no intent extra args
+   159.757   533  1105 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.simonwjackson.korri.viewer.feedback/android.app.NativeActivity} from uid 2000
+   159.865  5358  5378 I korri-feedback-probe: started
+   159.865  5358  5378 I korri-viewer: input: the gestures of pan and zoom: GestureConfig { touch_slop: 21, double_tap_slop: 263, min_span: 446, long_press_ms: 400, double_tap_ms: 300 }
+   159.918  5358  5379 I korri-feedback-probe: pad 19
+   159.918  5358  5379 I korri-feedback-probe: step seat
+   159.919  5358  5379 I korri-viewer: input: the phone: Phone { api_level: 31, vibration: Vibration { manager: Vibrators { count: 1, amplitude: true }, vibrator: Vibrator { present: true, amplitude: true } } }
+   159.919  5358  5379 I korri-viewer: input: controller Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (19) vendor 054c product 05c4 external true
+   159.919  5358  5379 I korri-viewer: input: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad sticks Some((0, 1)) Some((11, 14)) triggers Some((17, 18)) hat true deadzones 0.05 0.05 0.13
+   159.919  5358  5379 I korri-viewer: input: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (19) is controller 0
+   159.919  5358  5379 I korri-viewer: input: arrival Arrival { number: 0, active_mask: 1, kind: 2, buttons: 63487, capabilities: 195 }
+   159.919  5358  5380 I korri-viewer: feedback: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (19) is controller 0: rumble Dual(Device), RGB light true
+   159.920  5358  5380 I korri-viewer: feedback: battery of Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (19): status 3 capacity 0.6 sent to controller 0 as state 2 percentage 60: -2
+   162.295   533   562 W BroadcastQueue: Permission Denial: broadcasting Intent { act=com.android.voicemailomtp.sms.REQUEST_SENT flg=0x10 pkg=com.android.dialer } from com.android.dialer (pid=-1, uid=10097) requires com.android.dialer.permission.DIALER_ORIGIN due to registered receiver BroadcastFilter{9acd8be 10097/u0 ReceiverList{ded9379 3701 com.android.dialer/10097/u0 remote:203e840}}
+   162.945  5358  5384 I korri-feedback-probe: step rumble low c000 high 4000
+   162.945  5358  5380 I korri-viewer: feedback: rumble controller 0 low c000 high 4000: [Combined { target: Device(19), amplitudes: [64, 192] }]
+   165.945  5358  5384 I korri-feedback-probe: step light 446688
+   165.945  5358  5380 I korri-viewer: feedback: light controller 0 ff446688: [Light { device: 19, argb: 4282672776 }]
+   168.945  5358  5384 I korri-feedback-probe: step trigger rumble ffff ffff
+   168.945  5358  5380 I korri-viewer: feedback: trigger rumble controller 0 left ffff right ffff: no call: it has no trigger vibrators (four vibrators rumble the triggers)
+   171.945  5358  5384 I korri-feedback-probe: step rumble off
+   171.945  5358  5380 I korri-viewer: feedback: rumble controller 0 low 0000 high 0000: [CancelManager { target: Device(19) }]
+   174.945  5358  5384 I korri-feedback-probe: step rumble low 4000 high c000
+   174.945  5358  5380 I korri-viewer: feedback: rumble controller 0 low 4000 high c000: [Combined { target: Device(19), amplitudes: [192, 64] }]
+   177.945  5358  5379 I korri-feedback-probe: step stop
+   177.946  5358  5380 I korri-viewer: feedback: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (19) stopped
+   177.946  5358  5380 I korri-viewer: feedback: ended: 3 rumbles, 1 trigger rumbles, 1 lights, 7 calls to Android; 1 battery reads, 0 battery reports sent, 1 outside the stream; 0 failed
+   177.947  5358  5379 I korri-feedback-probe: stopped true
+   180.962  5358  5378 I korri-feedback-probe: ended

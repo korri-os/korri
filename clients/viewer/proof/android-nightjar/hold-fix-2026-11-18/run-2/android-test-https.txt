@@ -1,0 +1,11 @@
+
+running 6 tests
+test each_answer_closes_its_connection_and_the_next_request_opens_another ... ok
+test each_https_connection_performs_fresh_client_authentication ... ok
+test https_accepts_only_the_authorized_certificate ... ok
+test malformed_pin_fails_without_a_network_request ... ok
+test rust_launch_chain_uses_authenticated_serverinfo_and_the_selected_app ... ok
+test two_callers_at_once_make_one_client_key ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.39s
+

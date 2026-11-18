@@ -1,0 +1,90 @@
+Root#0
+WindowedMagnification:0:31#0
+HideDisplayCutout:0:16#0
+OneHandedBackgroundPanel:0:1#0
+OneHanded:0:1#0
+FullscreenMagnification:0:1#0
+Leaf:0:1#0
+WallpaperWindowToken{b9f9064 token=android.os.Binder@2ae39ff}#0
+15d5bfa com.android.systemui.ImageWallpaper#0
+com.android.systemui.ImageWallpaper#0
+Wallpaper BBQ wrapper#0
+OneHanded:2:16#0
+FullscreenMagnification:2:14#0
+DefaultTaskDisplayArea#0
+Task=1#0
+Task=8#0
+3b31d40 ActivityRecordInputSink com.google.android.apps.nexuslauncher/.NexusLauncherActivity#0
+ActivityRecord{5ad2479 u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity#0
+6775b67 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity#0
+57aba45 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity#0
+homeAnimationLayer#0
+animationLayer#0
+Task=7#0
+Dim layer#0
+Task=6#0
+Dim layer#0
+Task=5#0
+Task=4#0
+Secondary Divider Dim#0
+Task=3#0
+Primary Divider Dim#0
+splitScreenDividerAnchor#0
+Task=10#0
+3e3b1e1 ActivityRecordInputSink com.simonwjackson.korri.viewer/android.app.NativeActivity#0
+ActivityRecord{b2bd551 u0 com.simonwjackson.korri.viewer/android.app.NativeActivity#0
+64708b9 com.simonwjackson.korri.viewer/android.app.NativeActivity#0
+com.simonwjackson.korri.viewer/android.app.NativeActivity#0
+korri-viewer-backdrop#0
+bbq-wrapper#0
+korri-viewer-video#0
+bbq-wrapper#0
+korri-viewer-overlay#0
+bbq-wrapper#1
+ImeContainer#0
+WindowToken{96e2d04 android.os.Binder@8261517}#0
+Surface(name=f070d3e InputMethod)/@0x8f3d0ec - animation-leash of insets_animation#0
+f070d3e InputMethod#0
+boostedAnimationLayer#0
+Leaf:3:14#0
+WindowToken{c7233d4 android.os.BinderProxy@52ec936}#0
+e99ebe6 ShellDropTarget#0
+ImePlaceholder:15:16#0
+OneHanded:17:17#0
+FullscreenMagnification:17:17#0
+Leaf:17:17#0
+WindowToken{a009ef1 android.os.BinderProxy@ce6987b}#0
+Surface(name=2174ad6 StatusBar)/@0x6b33b29 - animation-leash of insets_animation#0
+2174ad6 StatusBar#0
+StatusBar#0
+HideDisplayCutout:18:18#0
+OneHanded:18:18#0
+FullscreenMagnification:18:18#0
+Leaf:18:18#0
+OneHanded:19:19#0
+FullscreenMagnification:19:19#0
+Leaf:19:19#0
+WindowToken{2686bac android.os.BinderProxy@9eff9fe}#0
+a4c7075 NotificationShade#0
+HideDisplayCutout:20:23#0
+OneHanded:20:23#0
+FullscreenMagnification:20:23#0
+Leaf:20:23#0
+Leaf:24:25#0
+WindowToken{9510877 android.os.BinderProxy@c343a76}#0
+b1f0ce4 pip-dismiss-overlay#0
+HideDisplayCutout:26:31#0
+OneHanded:26:31#0
+FullscreenMagnification:26:27#0
+Leaf:26:27#0
+Leaf:28:28#0
+FullscreenMagnification:29:31#0
+Leaf:29:31#0
+HideDisplayCutout:32:35#0
+OneHanded:32:35#0
+Leaf:32:32#0
+FullscreenMagnification:33:35#0
+Leaf:33:35#0
+Leaf:36:36#0
+Display Overlays#0
+Input Consumer recents_animation_input_consumer#0

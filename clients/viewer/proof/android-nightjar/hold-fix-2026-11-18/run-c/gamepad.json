@@ -1,0 +1,28 @@
+{"id": 1, "command": "register", "name": "Korri test gamepad", "vid": 1118, "pid": 32343, "bus": "usb", "descriptor": [5, 1, 9, 5, 161, 1, 133, 1, 5, 9, 25, 1, 41, 16, 21, 0, 37, 1, 117, 1, 149, 16, 129, 2, 5, 1, 9, 57, 21, 0, 37, 7, 53, 0, 70, 59, 1, 101, 20, 117, 4, 149, 1, 129, 66, 101, 0, 117, 4, 149, 1, 129, 3, 9, 48, 9, 49, 9, 50, 9, 53, 21, 0, 38, 255, 0, 117, 8, 149, 4, 129, 2, 5, 2, 9, 197, 9, 196, 21, 0, 38, 255, 0, 117, 8, 149, 2, 129, 2, 192]}
+{"id": 1, "command": "delay", "duration": 2000}
+{"id": 1, "command": "report", "report": [1, 0, 0, 8, 128, 128, 128, 128, 0, 0]}
+{"id": 1, "command": "delay", "duration": 200}
+{"id": 1, "command": "report", "report": [1, 1, 0, 8, 128, 128, 128, 128, 0, 0]}
+{"id": 1, "command": "delay", "duration": 150}
+{"id": 1, "command": "report", "report": [1, 0, 0, 8, 128, 128, 128, 128, 0, 0]}
+{"id": 1, "command": "delay", "duration": 200}
+{"id": 1, "command": "report", "report": [1, 0, 0, 8, 255, 128, 128, 128, 0, 0]}
+{"id": 1, "command": "delay", "duration": 300}
+{"id": 1, "command": "report", "report": [1, 0, 0, 8, 128, 128, 128, 128, 0, 0]}
+{"id": 1, "command": "delay", "duration": 200}
+{"id": 1, "command": "report", "report": [1, 0, 0, 8, 128, 128, 128, 128, 0, 255]}
+{"id": 1, "command": "delay", "duration": 200}
+{"id": 1, "command": "report", "report": [1, 0, 0, 8, 128, 128, 128, 128, 0, 0]}
+{"id": 1, "command": "delay", "duration": 200}
+{"id": 1, "command": "report", "report": [1, 0, 0, 6, 128, 128, 128, 128, 0, 0]}
+{"id": 1, "command": "delay", "duration": 150}
+{"id": 1, "command": "report", "report": [1, 0, 0, 8, 128, 128, 128, 128, 0, 0]}
+{"id": 1, "command": "delay", "duration": 200}
+{"id": 1, "command": "report", "report": [1, 2, 0, 8, 128, 128, 128, 128, 0, 0]}
+{"id": 1, "command": "delay", "duration": 150}
+{"id": 1, "command": "report", "report": [1, 0, 0, 8, 128, 128, 128, 128, 0, 0]}
+{"id": 1, "command": "delay", "duration": 200}
+{"id": 1, "command": "report", "report": [1, 8, 0, 8, 128, 128, 128, 128, 0, 0]}
+{"id": 1, "command": "delay", "duration": 1000}
+{"id": 1, "command": "report", "report": [1, 0, 0, 8, 128, 128, 128, 128, 0, 0]}
+{"id": 1, "command": "delay", "duration": 500}
