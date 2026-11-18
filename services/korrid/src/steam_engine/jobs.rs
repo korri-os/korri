@@ -329,7 +329,11 @@ done"#,
         );
         assert_eq!(host.grace(), SHUTDOWN_GRACE);
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while !host.poll().iter().any(|e| matches!(e, Event::SignedIn { .. })) {
+        while !host
+            .poll()
+            .iter()
+            .any(|e| matches!(e, Event::SignedIn { .. }))
+        {
             assert!(std::time::Instant::now() < deadline);
             std::thread::sleep(Duration::from_millis(20));
         }
