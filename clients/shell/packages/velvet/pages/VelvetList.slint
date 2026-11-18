@@ -1,6 +1,6 @@
 // VelvetList: a list page takes the screen: settings, Wi-Fi, getting games,
-// invites, identity and backup, a game's saves, its runner, its launch
-// settings, first boot. The stage stays behind it with the house lights up.
+// invites, identity and backup, the Steam sign-in, a game's saves, its
+// runner, its launch settings, first boot. The stage stays behind it with the house lights up.
 
 import { Tokens } from "../ui/tokens.slint";
 import { Page, Row, Pill, Tile } from "../ui/types.slint";
@@ -13,6 +13,8 @@ export component VelvetList inherits Rectangle {
     in property <[Pill]> buttons;
     in property <[string]> panel-lines;
     in property <[Tile]> tiles;
+    in property <string> qr;
+    in property <int> qr-size;
     in property <bool> inert;
     VelvetProgramme {
         width: parent.width;
@@ -22,6 +24,8 @@ export component VelvetList inherits Rectangle {
         buttons: root.buttons;
         panel-lines: root.panel-lines;
         tiles: root.tiles;
+        qr: root.qr;
+        qr-size: root.qr-size;
         inert: root.inert;
         activated(target, at, released) => { root.activated(target, at, released); }
     }

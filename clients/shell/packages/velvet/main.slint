@@ -81,6 +81,8 @@ export component Surface inherits Window {
     in property <[Pill]> list-buttons;
     in property <[string]> list-panel-lines;
     in property <[Tile]> list-tiles;
+    in property <string> list-qr;
+    in property <int> list-qr-size;
     in property <Sheet> sheet;
     in property <[Row]> sheet-rows;
     in property <Keyboard> keyboard;
@@ -192,6 +194,8 @@ export component Surface inherits Window {
         buttons: root.list-buttons;
         panel-lines: root.list-panel-lines;
         tiles: root.list-tiles;
+        qr: root.list-qr;
+        qr-size: root.list-qr-size;
         inert: root.layer != "screen";
         activated(target, at, released) => { root.activated(target, at, released); }
     }

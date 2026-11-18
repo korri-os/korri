@@ -17,6 +17,7 @@ import type {
   SurfaceGame,
   SurfaceGameplayControlValue,
   SurfaceIdentityDisposition,
+  SurfaceQrCode,
   SurfaceRequest,
   SurfaceWifiAttempt,
 } from "../../../../../contracts/generated/surface"
@@ -198,10 +199,12 @@ export interface ButtonSpec {
 }
 
 export interface PanelSide {
-  readonly kind: "text" | "tile"
+  readonly kind: "text" | "tile" | "qr"
   readonly title?: string
   readonly lines?: readonly string[]
   readonly game?: Game
+  /** A QR code Korri encoded (ADR 0083): the view draws its modules. */
+  readonly qr?: SurfaceQrCode
 }
 
 export interface PanelSpec {
@@ -238,6 +241,7 @@ export type PageRef =
   | { readonly p: "entry" }
   | { readonly p: "invites" }
   | { readonly p: "identity" }
+  | { readonly p: "steam" }
 
 export type SheetKind = "menu" | "sort" | "actions"
 

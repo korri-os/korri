@@ -202,9 +202,9 @@ const one = (component: string, props: string) => `${component} { ${props} }`
   const programme = (component: string, layer: Layer) => (name: string, scene: string) => {
     const v = view(scene)
     const ll = lit(layer)
-    return { name, body: one(component, `${FILL} page: ${ll(v.list)}; rows: ${ll(v.listRows)}; buttons: ${ll(v.listButtons)}; panel-lines: ${ll(v.listPanelLines)}; tiles: ${ll(v.listTiles)};`) }
+    return { name, body: one(component, `${FILL} page: ${ll(v.list)}; rows: ${ll(v.listRows)}; buttons: ${ll(v.listButtons)}; panel-lines: ${ll(v.listPanelLines)}; tiles: ${ll(v.listTiles)};${v.listQr === "" ? "" : ` qr: ${JSON.stringify(v.listQr)}; qr-size: ${v.listQrSize};`}`) }
   }
-  add("organisms", "VelvetProgramme", [["Settings", "settings"], ["Wifi", "wifi"], ["Store", "store-results"], ["Offer", "store-offer"], ["FirstBoot", "first-boot"]].map(([name, scene]) => programme("VelvetProgramme", "organisms")(name!, scene!)))
+  add("organisms", "VelvetProgramme", [["Settings", "settings"], ["Wifi", "wifi"], ["Store", "store-results"], ["Offer", "store-offer"], ["FirstBoot", "first-boot"], ["SteamCode", "steam-code"]].map(([name, scene]) => programme("VelvetProgramme", "organisms")(name!, scene!)))
   add("organisms", "VelvetRows", [
     { name: "Settings", body: one("VelvetRows", `x: Tokens.screen.pad-x * ${U}; y: Tokens.screen.pad-y * ${U}; width: Tokens.screen.page-w * ${U}; height: parent.height - 2 * self.y; rows: ${l(view("settings").listRows)};`) },
     { name: "Launch", body: one("VelvetRows", `x: Tokens.screen.pad-x * ${U}; y: Tokens.screen.pad-y * ${U}; width: Tokens.screen.page-w * ${U}; height: parent.height - 2 * self.y; rows: ${l(view("launch-settings").listRows)};`) },
@@ -234,7 +234,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
     return { name, body: one("VelvetHouse", `${FILL} empty: ${p(v.empty)}; title: ${p(v.emptyTitle)}; lines: ${p(v.emptyLines)}; buttons: ${p(v.emptyButtons)};`) }
   }
   add("pages", "VelvetHouse", [house("Invitation", "empty"), house("Error", "error")])
-  add("pages", "VelvetList", [["Settings", "settings"], ["Wifi", "wifi"], ["Identity", "identity"], ["Saves", "saves"], ["Runner", "runner"], ["LaunchSettings", "launch-settings"], ["LaunchChanges", "launch-keep"], ["LaunchUnreachable", "launch-unreachable"], ["Invites", "invites"], ["Store", "store"]].map(([name, scene]) => programme("VelvetList", "pages")(name!, scene!)))
+  add("pages", "VelvetList", [["Settings", "settings"], ["Wifi", "wifi"], ["Identity", "identity"], ["Saves", "saves"], ["Runner", "runner"], ["LaunchSettings", "launch-settings"], ["LaunchChanges", "launch-keep"], ["LaunchUnreachable", "launch-unreachable"], ["Invites", "invites"], ["Store", "store"], ["SteamSignedOut", "steam-signed-out"], ["SteamCode", "steam-code"], ["SteamForGame", "steam-for-game"], ["SteamWorking", "steam-working"], ["SteamSignedIn", "steam-signed-in"], ["SteamProblem", "steam-problem"], ["SteamRefused", "steam-refused"], ["FirstBootSteam", "first-boot-steam"], ["FirstBootSteamCode", "first-boot-steam-code"]].map(([name, scene]) => programme("VelvetList", "pages")(name!, scene!)))
   add("pages", "VelvetPaused", [pause("VelvetPaused", "pages")("Plain", "overlay"), pause("VelvetPaused", "pages")("Stream", "overlay-stream")])
   const set = (name: string, scene: string) => {
     const v = view(scene)

@@ -22,6 +22,7 @@ import { breakLines, fitCaps } from "./fit"
 import { keyGrid } from "./keys"
 import { gameById, homeOf } from "./lists"
 import { entryHeading, screenPanel, sheetPanel, shown } from "./pages"
+import { QUIET, qrPath } from "./steam"
 import { plan, type Plan } from "./plan"
 import type { PanelSpec, RowSpec, State } from "./types"
 import { emptyAt, emptyButtons, panelFocus, panelStacks, takesFocus, topLayer } from "./update"
@@ -92,6 +93,8 @@ function pageView(asked: Pictures, panel: PanelSpec, state: State, p: Plan, live
     } as PillView)),
     panelLines: (side?.lines ?? []).flatMap(line => breakLines(line.length > 60 && !line.includes(" ") ? chunk(line, 28) : line, p.fact, p.panelW)),
     tiles: game === undefined ? [] : [gameCard(asked, game)],
+    qr: side?.kind === "qr" && side.qr !== undefined ? qrPath(side.qr) : "",
+    qrSize: side?.kind === "qr" && side.qr !== undefined ? side.qr.size + 2 * QUIET : 0,
   }
 }
 
@@ -279,6 +282,9 @@ export function view(state: State, model: Model) {
     listButtons: list?.buttons ?? NONE,
     listPanelLines: list?.panelLines ?? NONE,
     listTiles: list?.tiles ?? NONE,
+    // The code changes about every 20 s; top-level, so the shell sets it only then.
+    listQr: list?.qr ?? "",
+    listQrSize: list?.qrSize ?? 0,
     sheet: sheet === undefined ? NO_SHEET : { shown: true, title: sheet.title },
     sheetRows: sheet === undefined ? NONE : sheetRows(sheet, state, top === "sheet"),
     keyboard: keyboard.keyboard,

@@ -125,6 +125,7 @@ const withActions = (model: object) => ({ ...model, focusedGame: { gameId: "", a
 const identity = (state: object) => ({ ...ready, identityManagement: state })
 const store = (state: object) => ({ ...ready, store: state })
 const overlay = (presentation: object, more: object = {}) => ({ ...ready, presentation, ...more })
+const steam = (account: object, model: object = ready) => ({ ...model, steamAccount: account })
 const firstBoot = (more: object = {}) => ({ ...ready, catalog: { _tag: "Empty" }, settings: korri.onboarding.settings, network: korri.onboarding.network, onboarding: korri.onboarding.onboarding, ...more })
 
 const invites = [{
@@ -158,6 +159,9 @@ const busyProgress = { ...korri.status.progress, gameId: "tide-pool" }
 const failedSetting = { _tag: "Problem", settingId: "device-name", message: "That name is already used by another device." }
 const wifiFailed = { ...korri.networkFailed, wifi: { ...korri.networkFailed.wifi, attempt: { _tag: "Failed", ssid: "Attic 5G", message: "The password was not accepted.", passwordRejected: false } } }
 
+/** Presses from the first row of Settings to its Steam row. */
+const STEAM_ROW_DOWNS = 10
+
 interface Scenario {
   readonly name: string
   readonly models: readonly unknown[]
@@ -169,6 +173,9 @@ const toSettings = ["menu", "down", "confirm"]
 const toWifi = ["menu", "down", "down", "confirm"]
 const toIdentity = ["menu", "down", "down", "down", "confirm"]
 const toStore = ["menu", "confirm"]
+/** Settings, down to the Steam row under More (after Wi-Fi and Identity). */
+const toSteamRow = [...toSettings, ...Array.from({ length: STEAM_ROW_DOWNS }, () => "down")]
+const toSteam = [...toSteamRow, "confirm"]
 /** First boot: past the controllers, and past Wi-Fi with "Skip for now". */
 const pastWifi = ["confirm", "down", "down", "down", "down", "down", "confirm"]
 const toLobby = ["down", "down"]
@@ -276,6 +283,18 @@ const scenarios: Scenario[] = [
   { name: "first-boot-names", models: [firstBoot()], steps: [...pastWifi] },
   { name: "first-boot-ready", models: [firstBoot()], steps: [...pastWifi, "down", "confirm"] },
   { name: "first-boot-starter", models: [firstBoot({ onboarding: { ...korri.onboarding.onboarding, starterPack: { _tag: "Offered", actions: [{ id: "starter-pack:install", label: "Get the Starter pack", enabled: true }] } } })], steps: [...pastWifi, "down", "confirm"] },
+  // The Steam sign-in (ADR 0083): Settings, the page, first boot, and a launch that waits for it.
+  { name: "steam-row", models: [steam(korri.steam.signedIn)], steps: toSteamRow },
+  { name: "steam-signed-out", models: [steam(korri.steam.signedOut)], steps: toSteam },
+  { name: "steam-code", models: [steam(korri.steam.code)], steps: toSteam },
+  { name: "steam-signed-in", models: [steam(korri.steam.signedIn)], steps: toSteam },
+  { name: "steam-problem", models: [steam(korri.steam.problem)], steps: toSteam },
+  { name: "steam-refused", models: [steam(korri.steam.refused)], steps: toSteam },
+  { name: "steam-for-game", models: [steam(korri.steam.codeForGame)], steps: [] },
+  { name: "steam-working", models: [steam(korri.steam.working)], steps: [] },
+  { name: "first-boot-steam", models: [firstBoot({ steamAccount: korri.steam.signedOut })], steps: [...pastWifi, "down", "confirm"] },
+  { name: "first-boot-steam-code", models: [firstBoot({ steamAccount: korri.steam.code })], steps: [...pastWifi, "down", "confirm"] },
+  { name: "first-boot-steam-done", models: [firstBoot({ steamAccount: korri.steam.signedIn })], steps: [...pastWifi, "down", "confirm"] },
   // The gameplay overlay.
   { name: "overlay", models: [overlay(korri.overlay.plain)], steps: [] },
   { name: "overlay-groups", models: [overlay(korri.overlay.groups)], steps: ["down", "down"] },

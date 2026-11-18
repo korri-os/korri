@@ -78,6 +78,7 @@ shell, `VELVET_FRAMES` (below) through the test harness.
 | Identity | `identity`, `identity-bunker`, `identity-working`, `identity-problem`, `identity-switched` | `VelvetList.Identity` |
 | The store and its search | `store`, `store-none`, `store-search`, `store-results`, `store-offer`, `store-confirm`, `store-downloading` | `VelvetList.Store`, `VelvetProgramme.Store`, `.Offer` |
 | Invites | `invites`, `invite-notice` | `VelvetList.Invites`, `VelvetNotice` |
+| The Steam sign-in (ADR 0083) | `steam-row`, `steam-signed-out`, `steam-code`, `steam-signed-in`, `steam-problem`, `steam-refused`, `steam-for-game`, `steam-working`, `first-boot-steam`, `first-boot-steam-code`, `first-boot-steam-done` | `VelvetList.Steam*`, `.FirstBootSteam*`, `VelvetProgramme.SteamCode` |
 | Saves, the runner, launch settings | `saves`, `saves-empty`, `saves-restore`, `runner`, `launch-settings`, `launch-changes`, `launch-keep`, `launch-streamed`, `launch-unreachable`, `launch-conflict`, `launch-loading`, `launch-empty` | `VelvetList.Saves`, `.Runner`, `.LaunchSettings` |
 | The gameplay overlay | `overlay`, `overlay-groups`, `overlay-stream`, `overlay-asking` | `pages/VelvetPaused`, `VelvetPause` |
 
@@ -159,6 +160,15 @@ shell, `VELVET_FRAMES` (below) through the test harness.
   drawn under every picture, so there is never a hole. Only the detail cuts
   the hero to fill; everywhere else it keeps its shape, as a band across the
   top that falls off into the dark.
+- `steamAccount` (ADR 0083): Settings › More › Steam, a first-boot step
+  before the end (Sign in, or Skip for now; Next leads once signed in), and a
+  page that takes the screen while a launch waits for the sign-in (`Code` or
+  `Working` with `forGame`), where Back is Korri's Cancel. Korri sends the
+  QR code's module grid; `src/steam.ts` draws its dark modules as one path
+  (a rectangle per run in a row) on a House light plate with a quiet zone of
+  four modules. Beside the rows it takes the panel's width; over them, three
+  quarters of the height left and half the width. Every action is a
+  `RunAction` with Korri's id; Velvet reads no meaning from one.
 - A plugin's secret (`plugin-credential:<id>`, `sensitiveText`) is a Settings
   row: Configured or Not configured, edited on the keyboard with its text
   hidden, with "Clear key".

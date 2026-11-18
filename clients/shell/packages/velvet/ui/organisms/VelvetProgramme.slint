@@ -4,9 +4,12 @@
 // identity, saves, a runner, launch settings and first boot are all this one
 // page with other rows.
 //
-// A page may hold a panel: the backup's QR code and its text. Beside the
-// rows while the window is wide for its height (the plan decides), else over
-// them. First boot shows where it stands among its steps.
+// A page may hold a panel: a game's card, or a QR code Korri encoded (the
+// Steam sign-in, ADR 0083), and its text. Beside the rows while the window
+// is wide for its height (the plan decides), else over them. A code stands
+// on a light plate with its quiet zone, as large as the panel allows: over
+// the rows it takes three quarters of the height left and half the width.
+// First boot shows where it stands among its steps.
 
 import { Tokens } from "../tokens.slint";
 import { Page, Row, Pill, Tile } from "../types.slint";
@@ -23,6 +26,9 @@ export component VelvetProgramme inherits Rectangle {
     in property <[Pill]> buttons;
     in property <[string]> panel-lines;
     in property <[Tile]> tiles;
+    // The code's dark modules as path commands, in a viewbox `qr-size` modules square.
+    in property <string> qr;
+    in property <int> qr-size;
     in property <bool> inert;
     property <length> u: Tokens.unit;
     property <length> pad-x: Tokens.screen.pad-x * u;
@@ -30,13 +36,16 @@ export component VelvetProgramme inherits Rectangle {
     property <length> body: Tokens.screen.body * u;
     property <length> fact: Tokens.screen.fact * u;
     property <bool> beside: Tokens.screen.panel-beside;
-    property <bool> panelled: page.panel == "text" || page.panel == "tile";
+    property <bool> coded: page.panel == "qr" && qr != "" && qr-size > 0;
+    property <bool> panelled: page.panel == "text" || page.panel == "tile" || coded;
     property <length> page-w: panelled || beside ? Tokens.screen.page-w * u : Math.min(self.width - 2 * pad-x, Tokens.page-most);
     property <length> head-foot: (Tokens.screen.head-y + Tokens.screen.head-h) * u;
     property <length> sub-h: page.sub == "" ? 0px : sub.preferred-height + fact * 0.4;
     property <length> body-top: head-foot + sub-h + fact * 1.1;
     // The panel over the rows takes at most two fifths of what is left.
-    property <length> panel-h: !panelled ? 0px : beside ? self.height - body-top - pad-y : Math.min((self.height - body-top - pad-y) * 0.4, self.width - 2 * pad-x);
+    property <length> panel-h: !panelled ? 0px : beside ? self.height - body-top - pad-y
+        : coded ? Math.max(0px, Math.min((self.height - body-top - pad-y - buttons-h) * 0.75, (self.width - 2 * pad-x) * 0.5))
+        : Math.min((self.height - body-top - pad-y) * 0.4, self.width - 2 * pad-x);
     property <length> rows-y: body-top + (panelled && !beside ? panel-h + fact : 0px);
     property <length> buttons-h: buttons.length == 0 ? 0px : pills.block + body * 0.9;
     property <length> rows-h: Math.max(0px, self.height - rows-y - pad-y - buttons-h);
@@ -93,7 +102,23 @@ export component VelvetProgramme inherits Rectangle {
         y: root.body-top;
         width: root.beside ? Tokens.screen.panel-w * root.u : parent.width - 2 * root.pad-x;
         height: root.panel-h;
-        property <length> art: Math.min(self.height * (root.beside ? 0.56 : 1), root.beside ? self.width : self.width * 0.42);
+        property <length> art: root.coded ? (root.beside ? Math.min(self.height * 0.62, self.width) : self.height)
+            : Math.min(self.height * (root.beside ? 0.56 : 1), root.beside ? self.width : self.width * 0.42);
+        if root.coded: Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.art;
+            height: parent.art;
+            background: Tokens.house-light;
+            Path {
+                width: parent.width;
+                height: parent.height;
+                viewbox-width: root.qr-size;
+                viewbox-height: root.qr-size;
+                commands: root.qr;
+                fill: Tokens.ink;
+            }
+        }
         for tile in root.tiles: VelvetTile {
             x: 0;
             y: 0;

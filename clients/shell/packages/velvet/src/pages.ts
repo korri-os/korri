@@ -28,6 +28,7 @@ import { onForget } from "./memo"
 import { actionRow, connectionLine, connectionWords, question, settingRows, wifiRows, WIFI_PASSWORD_MAX, WIFI_SSID_MAX, numberFits } from "./settings"
 import { NONE, send, seq, type Act, type ButtonSpec, type Entry, type GameplayValue, type PageRef, type PanelSpec, type RowSpec, type SheetKind, type State } from "./types"
 import { bytes, duration, saved } from "./words"
+import { steamContent, steamTakesScreen, steamValue } from "./steam"
 
 const run = (actionId: string): Act => send({ _tag: "RunAction", actionId })
 const head = (id: string, label: string): RowSpec => ({ id, kind: "head", label })
@@ -109,6 +110,8 @@ function settingsPage(state: State, model: Model): PanelSpec {
   const places: RowSpec[] = []
   if (model.network !== undefined) places.push({ id: "v:wifi", kind: "row", label: "Wi-Fi", value: connectionWords(model.network.connection), mark: "more", press: { t: "open", page: { p: "wifi" } } })
   if (model.identityManagement !== undefined) places.push({ id: "v:identity", kind: "row", label: "Identity", mark: "more", press: { t: "open", page: { p: "identity" } } })
+  // ADR 0083: the person's Steam sign-in, while a Steam engine runner is installed.
+  if (model.steamAccount !== undefined) places.push({ id: "v:steam", kind: "row", label: "Steam", value: steamValue(model.steamAccount), mark: "more", press: { t: "open", page: { p: "steam" } } })
   if (places.length > 0) rows.push(head("v:head:places", "More"), ...places)
   rows.push(head("v:head:velvet", "Velvet"))
   rows.push({
@@ -239,6 +242,20 @@ function identityPage(state: State, model: Model): PanelSpec {
   return { key: "page:identity", title: "Identity", sub: "Your identity is the key your devices trust each other by.", rows, buttons: [], back: seq({ t: "identity", flow: { f: "idle" } }, CLOSE) }
 }
 
+/** The person's Steam sign-in: from Settings, or by itself while a launch waits for it. */
+function steamPage(model: Model, back: Act): PanelSpec {
+  const account = model.steamAccount
+  if (account === undefined) return { key: "page:steam", title: "Steam", sub: "Steam is not installed on this device.", rows: [], buttons: [{ id: "b:back", label: "Back", press: back }], back }
+  const content = steamContent(account)
+  return {
+    key: "page:steam", title: "Steam", sub: content.sub, rows: content.rows, buttons: content.buttons,
+    ...(content.side === undefined ? {} : { side: content.side }),
+    // While a sign-in runs, Back is its Cancel, so leaving never leaves a sign-in behind.
+    back: content.cancel ?? back,
+    ...(content.buttons[0] === undefined ? {} : { first: content.buttons[0].id }),
+  }
+}
+
 export function pagePanel(page: PageRef, state: State, model: Model): PanelSpec {
   switch (page.p) {
     case "settings":
@@ -255,14 +272,22 @@ export function pagePanel(page: PageRef, state: State, model: Model): PanelSpec 
       return invitesPage(model)
     case "identity":
       return identityPage(state, model)
+    case "steam":
+      return steamPage(model, CLOSE)
   }
 }
 
 // ---- Korri's own pages ----
 
 /** The steps of first boot Korri gives reason for, in order. */
-export function onboardingSteps(model: Model): readonly ("controllers" | "wifi" | "name" | "starter" | "finish")[] {
-  return ["controllers", ...(model.network === undefined ? [] : ["wifi" as const]), "name", ...(model.onboarding?.starterPack === undefined ? [] : ["starter" as const]), "finish"]
+export function onboardingSteps(model: Model): readonly ("controllers" | "wifi" | "name" | "starter" | "steam" | "finish")[] {
+  return [
+    "controllers", ...(model.network === undefined ? [] : ["wifi" as const]), "name",
+    ...(model.onboarding?.starterPack === undefined ? [] : ["starter" as const]),
+    // ADR 0083: the Steam sign-in, after the existing steps, while a Steam engine runner is installed.
+    ...(model.steamAccount === undefined ? [] : ["steam" as const]),
+    "finish",
+  ]
 }
 
 const anyHeard = (model: Model): boolean => (model.onboarding?.controllers ?? []).some(controller => controller.heard)
@@ -312,6 +337,22 @@ function onboardingPanel(state: State, model: Model): PanelSpec {
         buttons = [...actionButtons("k:a:", pack.actions), next(true)]
       }
       return { ...base, title: "Starter pack", rows, buttons, first: buttons[0]!.id }
+    }
+    case "steam": {
+      const account = model.steamAccount
+      const content = account === undefined ? undefined : steamContent(account)
+      const done = account?._tag === "SignedIn"
+      // Signed in: Next leads, Korri's Sign out stays beside it. Else Korri's actions lead and
+      // Skip waits beside them: the step can always be passed.
+      const own = content?.buttons ?? []
+      const buttons: ButtonSpec[] = done
+        ? [next(true), ...own.map(button => ({ ...button, quiet: true }))]
+        : [...own, { ...next(true, "Skip for now"), quiet: own.length > 0 }]
+      return {
+        ...base, title: "Steam", sub: content?.sub ?? "", rows: content?.rows ?? [], buttons,
+        ...(content?.side === undefined ? {} : { side: content.side }),
+        first: buttons[0]!.id,
+      }
     }
     case "finish":
       return {
@@ -486,7 +527,7 @@ export function overlayPanel(overlay: SurfaceGameplayOverlayPresentation, state:
 
 // ---- Which panel holds the screen ----
 
-export type Shown = "overlay" | "setup" | "runner" | "launch" | "saves" | "page" | "detail" | "set" | "home"
+export type Shown = "overlay" | "setup" | "steam" | "runner" | "launch" | "saves" | "page" | "detail" | "set" | "home"
 
 export const runnerOpen = (model: Model): boolean => model.runnerChoice !== undefined && model.runnerChoice._tag !== "Closed"
 export const launchOpen = (model: Model): boolean => model.launchSettings !== undefined && model.launchSettings._tag !== "Closed"
@@ -495,6 +536,8 @@ export const launchOpen = (model: Model): boolean => model.launchSettings !== un
 export function shown(state: State, model: Model): Shown {
   if (model.presentation.kind === "gameplay-overlay") return "overlay"
   if (model.onboarding !== undefined) return "setup"
+  // A launch waits for the person's Steam sign-in: the code takes the screen.
+  if (steamTakesScreen(model)) return "steam"
   if (runnerOpen(model)) return "runner"
   if (launchOpen(model)) return "launch"
   if (model.saveHistory !== undefined) return "saves"
@@ -520,6 +563,9 @@ export function screenPanel(state: State, model: Model): PanelSpec | undefined {
       break
     case "setup":
       panel = onboardingPanel(state, model)
+      break
+    case "steam":
+      panel = steamPage(model, NONE)
       break
     case "runner":
       panel = runnerPanel(model)
