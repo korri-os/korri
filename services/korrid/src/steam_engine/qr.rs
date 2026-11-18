@@ -31,7 +31,10 @@ mod tests {
     fn a_challenge_url_becomes_a_square_grid_with_finder_patterns() {
         let code = grid("https://s.team/q/1/1234567890123456789").unwrap();
         let size = code.size as usize;
-        assert!(size >= 21 && (size - 21).is_multiple_of(4), "QR sizes are 21 + 4k");
+        assert!(
+            size >= 21 && (size - 21).is_multiple_of(4),
+            "QR sizes are 21 + 4k"
+        );
         assert_eq!(code.modules.len(), size * size);
         assert!(code.modules.bytes().all(|b| b == b'0' || b == b'1'));
         let row = |y: usize| &code.modules[y * size..(y + 1) * size];

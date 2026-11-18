@@ -369,11 +369,20 @@ fn evaluate_module(
             .and_then(serde_json::Value::as_object)
             .filter(|providers| !providers.is_empty())
         {
+            // ADR 0083: the Steam provider's listing and installs are served by
+            // korrid through the engine host, so it has no handlers to call.
+            let engine_provider = declaration.get("name").and_then(serde_json::Value::as_str)
+                == Some("steam")
+                && providers.len() == 1
+                && providers.contains_key(crate::steam_engine::provider::PROVIDER_ID);
             for operation in [
                 "claims.search",
                 "claims.details",
                 "artifact.resolve-download",
             ] {
+                if engine_provider {
+                    break;
+                }
                 handler(&exports, operation).map_err(|_| {
                     format!("acquisition provider has no callable {operation} handler")
                 })?;

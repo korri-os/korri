@@ -2932,6 +2932,16 @@ async fn acquisition_remove(
             });
         }
     }
+    // ADR 0083: Remove download of a game on the Steam engine runner is the
+    // engine's uninstall; discovery then drops it, and its saves stay.
+    if let Some(app) = steam_engine_app(state, game_id) {
+        let (plan, runner) = SteamEngineFacts::ready(state)?;
+        steam_engine::store().uninstall(plan, runner, app).await?;
+        if let Some(library) = state.local_library() {
+            library.discovery.rescan();
+        }
+        return Ok(acquisition::AcquisitionSnapshot { artifacts: vec![] });
+    }
     let (root, registry) = state.acquisition_context()?;
     let game = acquisition::game_artifacts_for_removal(root, &registry, game_id)?;
     state
@@ -3167,6 +3177,77 @@ async fn dispatch(
                 ),
                 Err(error) => acquisition::PluginListOutcome::Err(error),
             })
+        }
+        RpcRequest::AcquisitionSearch(request)
+            if request.provider_ids == [steam_engine::provider::PROVIDER_ID] =>
+        {
+            RpcResponse::AcquisitionSearch(
+                match SteamEngineFacts::ready(state) {
+                    Ok((plan, runner)) => {
+                        steam_engine::store()
+                            .search(plan, runner, &request.query)
+                            .await
+                    }
+                    Err(error) => Err(error),
+                }
+                .map(acquisition::SearchOutcome::Ok)
+                .unwrap_or_else(acquisition::SearchOutcome::Err),
+            )
+        }
+        RpcRequest::AcquisitionDetails(request)
+            if request.provider_id == steam_engine::provider::PROVIDER_ID =>
+        {
+            RpcResponse::AcquisitionDetails(
+                match SteamEngineFacts::ready(state) {
+                    Ok((plan, runner)) => {
+                        steam_engine::store()
+                            .details(plan, runner, &request.id)
+                            .await
+                    }
+                    Err(error) => Err(error),
+                }
+                .map(acquisition::DetailsOutcome::Ok)
+                .unwrap_or_else(acquisition::DetailsOutcome::Err),
+            )
+        }
+        RpcRequest::AcquisitionAcquire(request)
+            if request.provider_id == steam_engine::provider::PROVIDER_ID =>
+        {
+            RpcResponse::AcquisitionAcquire(job_outcome(
+                match (state.game_context(), SteamEngineFacts::ready(state)) {
+                    (Ok(context), Ok((plan, runner))) => steam_engine::store().acquire(
+                        plan,
+                        runner,
+                        &request.id,
+                        steam_imported(context),
+                    ),
+                    (Err(error), _) | (_, Err(error)) => Err(error),
+                },
+            ))
+        }
+        RpcRequest::AcquisitionAcquireStatus(request)
+            if steam_engine::store().status(&request.job_id).is_some() =>
+        {
+            RpcResponse::AcquisitionAcquireStatus(job_outcome(
+                steam_engine::store()
+                    .status(&request.job_id)
+                    .ok_or_else(|| RpcFailure {
+                        code: "UnknownJob".into(),
+                        message: "This download is no longer known.".into(),
+                    }),
+            ))
+        }
+        RpcRequest::AcquisitionAcquireCancel(request)
+            if steam_engine::store().status(&request.job_id).is_some() =>
+        {
+            RpcResponse::AcquisitionAcquireCancel(job_outcome(
+                steam_engine::store()
+                    .cancel(&request.job_id)
+                    .ok_or_else(|| RpcFailure {
+                        code: "UnknownJob".into(),
+                        message: "This download is no longer known.".into(),
+                    }),
+            ))
         }
         RpcRequest::AcquisitionSearch(request) => {
             RpcResponse::AcquisitionSearch(match state.game_context() {
@@ -5331,6 +5412,66 @@ fn surface_accepted(result: Result<(), RpcFailure>) -> surface::SurfaceAcceptedO
 /// model, read in process from the route registry and the artifact cache.
 struct SteamEngineFacts {
     state: AppState,
+}
+
+impl SteamEngineFacts {
+    /// The host plan and job runner, or why the Steam provider cannot run.
+    fn ready(
+        state: &AppState,
+    ) -> Result<(steam_engine::host::HostPlan, steam_engine::jobs::JobRunner), RpcFailure> {
+        use surface::steam_account::{SteamEngineAccess, SteamFacts};
+        match (SteamEngineFacts {
+            state: state.clone(),
+        })
+        .facts()
+        {
+            SteamFacts::Ready { plan, runner } => Ok((plan, runner)),
+            SteamFacts::Unavailable(reason) => Err(RpcFailure {
+                code: steam_engine::availability::Unavailable::CODE.into(),
+                message: reason.reason().into(),
+            }),
+            SteamFacts::Absent => Err(RpcFailure {
+                code: "UnknownProvider".into(),
+                message: "Steam is not installed on this device.".into(),
+            }),
+        }
+    }
+}
+
+/// After a Steam install: rescan, then find the game by its provider link.
+fn steam_imported(context: acquisition::GameContext) -> steam_engine::store::Imported {
+    Arc::new(move |app| {
+        context.discovery.rescan();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        loop {
+            if let Some(game) = acquisition::linked_game(
+                &context,
+                steam_engine::provider::PROVIDER_ID,
+                &app.to_string(),
+            ) {
+                return Some(game);
+            }
+            if std::time::Instant::now() >= deadline {
+                return None;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+    })
+}
+
+/// The installed Steam app id of a library game on the engine runner.
+fn steam_engine_app(state: &AppState, game_id: &str) -> Option<steam_engine::protocol::AppId> {
+    let (root, registry) = state.acquisition_context().ok()?;
+    let (snapshot, _) = config::settings::runner_choice_snapshot(root).ok()?;
+    let route =
+        config::resolver::resolve_linux_route(root, &snapshot, &registry, game_id, None).ok()?;
+    if route.runner_id != steam_engine::RUNNER_ID {
+        return None;
+    }
+    let target = route.provider_target?;
+    (target.provider == steam_engine::provider::PROVIDER_ID)
+        .then(|| steam_engine::provider::appid(&target.provider_ref))
+        .flatten()
 }
 
 impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {

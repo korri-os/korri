@@ -108,6 +108,19 @@ fn link_key(provider: &str, claim_id: &str) -> String {
     format!("{provider}/{claim_id}")
 }
 
+/// The library game a provider link names, in the published snapshot.
+pub(crate) fn linked_game(context: &GameContext, provider: &str, claim_id: &str) -> Option<String> {
+    let snapshot = context.discovery.published().ok()?;
+    Some(
+        snapshot
+            .provider_links
+            .get(&link_key(provider, claim_id))?
+            .playable
+            .0
+            .clone(),
+    )
+}
+
 /// ADR 0016 Q3 and ADR 0030: the ready directory of one library release in
 /// the cache of a provider linked to its game:
 /// `cache/<plugin>/<provider>/<hex of the release key>/`, with a file of the

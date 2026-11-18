@@ -16,9 +16,9 @@ pub const RETRY: &str = "steam-account:retry";
 /// runner as a temporary fallback.
 pub const USE_CLIENT: &str = "steam-account:use-client-runner";
 
-/// Host sign-in failures that mean "nobody is signed in here", not a fault.
-/// The host reports these names when the engine has no saved login.
-const NO_LOGIN: [&str; 2] = ["no_cached_login", "signed_out"];
+/// `signin_failed` reasons that are not a failed sign-in: a QR session is
+/// already running, or the engine is signed in (its `signed_in` follows).
+const NOT_FAILED: [&str; 2] = ["in_progress", "already_signed_in"];
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Account {
@@ -87,19 +87,16 @@ impl Account {
             Event::SignedIn { account_name } => Self::SignedIn {
                 account_name: account_name.clone(),
             },
-            Event::SigninFailed { reason } if NO_LOGIN.contains(&reason.as_str()) => {
-                match self {
-                    // A QR session in progress is not undone by a status line.
-                    Self::Code { .. } | Self::Working { .. } | Self::Starting { .. } => {
-                        self.clone()
-                    }
-                    _ => Self::SignedOut,
-                }
-            }
+            Event::SigninFailed { reason } if NOT_FAILED.contains(&reason.as_str()) => self.clone(),
             Event::SigninFailed { .. } => Self::Problem {
                 problem: Problem::SignIn { for_game },
             },
-            Event::SignedOut {} => Self::SignedOut,
+            // At start a host with no saved login says `signed_out`: sign-in
+            // needed. A QR session already under way is not undone by it.
+            Event::SignedOut {} => match self {
+                Self::Code { .. } | Self::Working { .. } | Self::Starting { .. } => self.clone(),
+                _ => Self::SignedOut,
+            },
             Event::LogonState {
                 logged_on: true, ..
             } => match self {
@@ -207,9 +204,7 @@ mod tests {
     #[test]
     fn the_qr_flow_runs_from_signed_out_to_signed_in_with_its_actions() {
         let mut account = Account::Checking;
-        account = account.apply(&Event::SigninFailed {
-            reason: "no_cached_login".into(),
-        });
+        account = account.apply(&Event::SignedOut {});
         assert_eq!(account, Account::SignedOut);
         assert_eq!(ids(&account.surface().unwrap()), [SIGN_IN]);
 
@@ -272,18 +267,19 @@ mod tests {
             for_game: Some("Celeste".into()),
         }
         .apply(&Event::SigninFailed {
-            reason: "http_502".into(),
+            reason: "steam_unavailable".into(),
         });
         assert_eq!(account.for_game(), Some("Celeste"));
         assert_eq!(ids(&account.surface().unwrap()), [RETRY]);
-        // "no login" during a running QR session does not undo it.
+        // The start notice and a second request do not undo a QR session.
         let code = Account::Code {
             challenge_url: "u".into(),
             for_game: None,
         };
+        assert_eq!(code.apply(&Event::SignedOut {}), code);
         assert_eq!(
             code.apply(&Event::SigninFailed {
-                reason: "no_cached_login".into()
+                reason: "in_progress".into()
             }),
             code
         );

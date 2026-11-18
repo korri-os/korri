@@ -133,6 +133,10 @@ pub enum Event {
         appid: AppId,
         archive: String,
     },
+    /// The app's Steam Cloud set has no files now.
+    SaveExportEmpty {
+        appid: AppId,
+    },
     Phase {
         phase: String,
     },
@@ -271,6 +275,33 @@ mod tests {
             parse(r#"{"event":"callback","id":101}"#),
             Some(Event::Other)
         );
+        assert_eq!(
+            parse(
+                r#"{"event":"save_export","appid":70,"archive":"/run/korri-steam-host-x/channel/saves/70-exit-2.tar"}"#
+            ),
+            Some(Event::SaveExport {
+                appid: 70,
+                archive: "/run/korri-steam-host-x/channel/saves/70-exit-2.tar".into()
+            })
+        );
+        assert_eq!(
+            parse(r#"{"event":"save_export_empty","appid":70,"phase":"exit"}"#),
+            Some(Event::SaveExportEmpty { appid: 70 })
+        );
+        for other in [
+            "session_over",
+            "apps_skipped",
+            "mode",
+            "login_token_set",
+            "qr_failure",
+            "save_export_failed",
+        ] {
+            assert_eq!(
+                parse(&format!(r#"{{"event":"{other}"}}"#)),
+                Some(Event::Other),
+                "{other}"
+            );
+        }
         assert_eq!(parse("korri-steam-host: error"), None);
         assert_eq!(
             parse(r#"{"event":"app","appid":-1,"name":"x","source":"owned"}"#),

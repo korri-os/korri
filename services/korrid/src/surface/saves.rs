@@ -353,7 +353,11 @@ impl Inner {
             Phase::Choosing { sides, offline, .. } => SurfaceStatus::ChooseSave {
                 decline_action_id: Some(self.action("not-now", "Not now").id),
                 game_id: game_id.clone().unwrap_or_default(),
-                kicker: "Saves split between two devices".into(),
+                kicker: if sides.iter().any(|entry| crate::steam_engine::saves::in_steam_cloud(&entry.record)) {
+                    "Steam Cloud has different saves".into()
+                } else {
+                    "Saves split between two devices".into()
+                },
                 detail: offline.then(|| "No other device answered. Your pick syncs to them when they are next in reach.".into()),
                 // Exactly one action besides the sides, so Back always has a meaning.
                 actions: vec![self.action("not-now", "Not now")],
@@ -361,7 +365,11 @@ impl Inner {
                     .iter()
                     .map(|entry| SurfaceSaveSide {
                         action_id: self.action(&format!("pick:{}", entry.snapshot_id), "").id,
-                        device: self.device_name(&entry.record.device, local),
+                        device: if crate::steam_engine::saves::in_steam_cloud(&entry.record) {
+                            "In Steam Cloud".into()
+                        } else {
+                            self.device_name(&entry.record.device, local)
+                        },
                         ended_at: ended_millis(entry),
                         duration_seconds: entry.record.duration_seconds as f64,
                         image_url: None,
@@ -406,16 +414,23 @@ impl Inner {
                     .iter()
                     .map(|entry| {
                         let current = Some(&entry.snapshot_id) == history.current.as_ref();
+                        // ADR 0083: the cloud side of a Steam Cloud conflict
+                        // has no files here; it cannot be restored locally.
+                        let cloud = crate::steam_engine::saves::in_steam_cloud(&entry.record);
                         SurfaceSaveHistoryEntry {
                             snapshot_id: entry.snapshot_id.clone(),
-                            device: self.device_name(&entry.record.device, local),
+                            device: if cloud {
+                                "In Steam Cloud".into()
+                            } else {
+                                self.device_name(&entry.record.device, local)
+                            },
                             ended_at: ended_millis(entry),
                             duration_seconds: entry.record.duration_seconds as f64,
                             interrupted: entry.record.interrupted,
                             current,
                             // A restore replaces what the game plays from, so
                             // every surface asks first.
-                            restore: (!current).then(|| {
+                            restore: (!current && !cloud).then(|| {
                                 self.history_action(&format!("restore:{}", entry.snapshot_id), "Restore")
                                     .destructive()
                                     .with_description("Makes a new save from this one. The save you have now stays in the history.")

@@ -2341,7 +2341,6 @@ impl SystemdLaunchUnitBackend {
             identity: crate::steam_engine::host::Identity {
                 uid: self.runtime_uid,
                 gid: self.runtime_gid,
-                korrid: std::env::current_exe().unwrap_or_else(|_| "korrid".into()),
             },
             launches_root: self.diagnostics_root.clone(),
             // The host sees none of korrid's private state or controls.
@@ -2366,6 +2365,7 @@ impl SystemdLaunchUnitBackend {
             units: Arc::new(backend.steam_engine_units()),
             launches_root: backend.diagnostics_root.clone(),
             runtime_uid: backend.runtime_uid,
+            live: Arc::clone(crate::steam_engine::live_sessions()),
         }
     }
 
@@ -2377,6 +2377,7 @@ impl SystemdLaunchUnitBackend {
                 self.runtime_uid,
                 Arc::clone(crate::steam_engine::conflicts()),
                 Arc::clone(crate::steam_engine::unavailable()),
+                Arc::clone(crate::steam_engine::live_sessions()),
             )
         })
     }

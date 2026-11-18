@@ -16,6 +16,7 @@ pub mod provider;
 pub mod qr;
 pub mod saves;
 pub mod sessions;
+pub mod store;
 
 /// The plugin that declares the engine runner, its host and its package.
 pub const PLUGIN_ID: &str = "@korri:steam";
@@ -80,4 +81,19 @@ pub fn unavailable() -> &'static std::sync::Arc<std::sync::Mutex<Option<availabi
 /// The device's session hosts, made once with the launch backend's identity.
 pub fn sessions(make: impl FnOnce() -> sessions::Sessions) -> &'static sessions::Sessions {
     SESSIONS.get_or_init(make)
+}
+
+static STORE: std::sync::OnceLock<std::sync::Arc<store::SteamStore>> = std::sync::OnceLock::new();
+
+/// The Steam provider's listing cache and jobs on this device.
+pub fn store() -> &'static std::sync::Arc<store::SteamStore> {
+    STORE.get_or_init(Default::default)
+}
+
+static LIVE: std::sync::OnceLock<std::sync::Arc<std::sync::atomic::AtomicUsize>> =
+    std::sync::OnceLock::new();
+
+/// Session hosts running on this device now.
+pub fn live_sessions() -> &'static std::sync::Arc<std::sync::atomic::AtomicUsize> {
+    LIVE.get_or_init(Default::default)
 }

@@ -198,6 +198,8 @@ pub fn run(arguments: &[OsString]) -> Result<(), String> {
 /// store reader into an empty folder korrid made. It runs in korrid itself:
 /// the archive holds a game's Steam Cloud files, a few megabytes at most,
 /// and korrid writes them only into its own scratch folder.
+/// The host writes a plain tar (`saves/<appid>-<launch|exit>-<n>.tar`); any
+/// format the store reader knows is read too.
 pub(crate) fn extract_save_export(archive: &Path, work: &Path) -> Result<(), String> {
     // korrid's own service hides /proc/meminfo (`launch_memory`).
     let limits = Limits {
@@ -206,7 +208,92 @@ pub(crate) fn extract_save_export(archive: &Path, work: &Path) -> Result<(), Str
         space: None,
         cancel: None,
     };
-    extract(archive, work, &limits).map_err(|stop| format!("{:?}: {}", stop.failure, stop.reason))
+    let result = if is_tar(archive).map_err(|error| error.to_string())? {
+        extract_tar(archive, work, &limits)
+    } else {
+        extract(archive, work, &limits)
+    };
+    result.map_err(|stop| format!("{:?}: {}", stop.failure, stop.reason))
+}
+
+/// POSIX ustar or GNU tar: `ustar` at byte 257.
+fn is_tar(file: &Path) -> io::Result<bool> {
+    let mut header = [0u8; 263];
+    let mut read = 0;
+    let mut file = File::open(file)?;
+    while read < header.len() {
+        match file.read(&mut header[read..])? {
+            0 => break,
+            n => read += n,
+        }
+    }
+    Ok(read == header.len() && &header[257..262] == b"ustar")
+}
+
+/// A tar with the same rules as every other archive: only files and
+/// folders, safe names, no repeated path, within the budget and the floor.
+pub(super) fn extract_tar(archive: &Path, work: &Path, limits: &Limits) -> Result<(), Stop> {
+    let unreadable = |error: io::Error| Stop::unpack(format!("tar: {error}"));
+    if fs::read_dir(work)?.next().is_some() {
+        return Err(Stop::unpack("work folder is not empty".into()));
+    }
+    let mut entries = Vec::new();
+    let mut reader = tar::Archive::new(BufReader::new(File::open(archive)?));
+    for entry in reader.entries().map_err(unreadable)? {
+        if entries.len() >= limits.budget.max_entries {
+            return Err(Stop::unpack(
+                "archive exceeds discovery's traversal budget".into(),
+            ));
+        }
+        let entry = entry.map_err(unreadable)?;
+        let name = String::from_utf8(entry.path_bytes().into_owned())
+            .map_err(|_| Stop::unpack("tar: entry name is not UTF-8".into()))?;
+        let kind = entry.header().entry_type();
+        let folder = kind.is_dir();
+        if !(folder || kind.is_file()) {
+            return Err(Stop::refuse("link or special file", &name));
+        }
+        entries.push(Entry {
+            path: segments(&name, folder, false)?,
+            kind: if folder {
+                Kind::Folder
+            } else {
+                Kind::File { size: entry.size() }
+            },
+        });
+    }
+    let plan = plan(entries, &limits.budget)?;
+    let shared = Rc::new(RefCell::new(Shared {
+        floor: Floor::new(work, limits.space.clone())?,
+        failure: None,
+        cancel: limits.cancel.clone(),
+    }));
+    create_folders(work, &plan, &shared)?;
+    let mut reader = tar::Archive::new(BufReader::new(File::open(archive)?));
+    for entry in reader.entries().map_err(unreadable)? {
+        let mut entry = entry.map_err(unreadable)?;
+        if !entry.header().entry_type().is_file() {
+            continue;
+        }
+        let name = String::from_utf8(entry.path_bytes().into_owned())
+            .map_err(|_| Stop::unpack("tar: entry name is not UTF-8".into()))?;
+        let path = segments(&name, false, false)?;
+        let declared = *plan
+            .files
+            .get(&path)
+            .ok_or_else(|| Stop::refuse("entry changed between reads", &name))?;
+        let mut output = Output::create(work, &path, declared, &shared)?;
+        if let Err(error) = io::copy(&mut entry, &mut output) {
+            return Err(shared
+                .borrow_mut()
+                .failure
+                .take()
+                .unwrap_or_else(|| Stop::unpack(format!("tar: {error}"))));
+        }
+        output.finish()?;
+    }
+    shared.borrow().floor.check()?;
+    Ok(())
 }
 
 /// The file beside the work folder where the reader leaves its outcome when

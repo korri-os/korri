@@ -101,8 +101,9 @@ pub struct Channel {
 impl Channel {
     /// Make the channel for `runtime_uid`. The directory, the locks and the
     /// FIFO are korrid's, with a named-user ACL for the game user only, as
-    /// `launch_diagnostics` does for game stderr. The event file stays
-    /// korrid's alone: systemd opens it for the host's stdout.
+    /// `launch_diagnostics` does for game stderr. The event file is korrid's,
+    /// readable by the game user: systemd opens it for the host's stdout and
+    /// the shim reads it. The host writes save archives into `saves/`.
     pub fn create(dir: &Path, runtime_uid: u32) -> io::Result<Self> {
         if let Some(parent) = dir.parent() {
             fs::create_dir_all(parent)?;
@@ -136,11 +137,15 @@ impl Channel {
                 .open(dir.join(COMMANDS))?;
             crate::host::launch_diagnostics::grant_user(&file, 6, runtime_uid, 6)?;
         }
-        OpenOptions::new()
+        let events = OpenOptions::new()
             .write(true)
             .create_new(true)
             .mode(0o600)
             .open(dir.join(EVENTS))?;
+        if grant {
+            // The shim in the game unit reads the host's answers.
+            crate::host::launch_diagnostics::grant_user(&events, 6, runtime_uid, 4)?;
+        }
         Ok(Self {
             dir: dir.to_path_buf(),
         })
@@ -243,48 +248,50 @@ impl EventReader {
     }
 }
 
-/// The game user's ids and korrid's own program, for the host unit.
+/// The game user's ids, for the host unit.
 #[derive(Clone, Debug)]
 pub struct Identity {
     pub uid: u32,
     pub gid: u32,
-    /// korrid's binary: `korrid steam-engine-host` prepares the folder as the
-    /// game user and then runs the host.
-    pub korrid: PathBuf,
 }
 
-/// The host command inside the unit: korrid prepares the person's folder,
-/// then becomes the host with HOME set to the folder's `home`.
-pub fn command(plan: &HostPlan, mode: &Mode, identity: &Identity) -> Vec<String> {
-    let folder = EngineFolder::for_account(&plan.account_root);
+/// The host command inside the unit. The plugin's `korri-steam-host` is a
+/// start wrapper: it makes the person's engine folder (links, the engine
+/// file, the compat tool and the ACLs korrid's discovery needs), locks it
+/// (one engine per folder) and runs the host in the Steam FHS.
+pub fn command(plan: &HostPlan, mode: &Mode) -> Vec<String> {
     let channel = mode.host_channel();
     let mut command = vec![
-        identity.korrid.display().to_string(),
-        "steam-engine-host".into(),
-        "--folder".into(),
-        folder.root().display().to_string(),
-        "--engine".into(),
-        plan.engine.display().to_string(),
-    ];
-    if let Some(proton) = &plan.proton {
-        command.extend(["--proton".into(), proton.display().to_string()]);
-    }
-    command.extend([
-        "--".into(),
         plan.host_program.display().to_string(),
         "--commands".into(),
         channel.join(COMMANDS).display().to_string(),
         "--host-lock".into(),
         channel.join(HOST_LOCK).display().to_string(),
-    ]);
+    ];
     if matches!(mode, Mode::Session { .. }) {
         command.extend([
             "--session-lock".into(),
             channel.join(SESSION_LOCK).display().to_string(),
         ]);
     }
-    command.push(folder.engine().display().to_string());
+    command.push(plan.engine.display().to_string());
     command
+}
+
+/// The host's environment: HOME in the person's engine folder, and korrid's
+/// Proton, without which Windows games fail to install ("Invalid platform").
+pub fn environment(plan: &HostPlan) -> Vec<(String, String)> {
+    let mut environment = vec![(
+        "HOME".to_owned(),
+        EngineFolder::for_account(&plan.account_root)
+            .home()
+            .display()
+            .to_string(),
+    )];
+    if let Some(proton) = &plan.proton {
+        environment.push(("KORRI_PROTON_CACHYOS".into(), proton.display().to_string()));
+    }
+    environment
 }
 
 /// systemd-run's arguments for the host unit, then the command.
@@ -359,8 +366,11 @@ pub fn unit_arguments(
                 .join(" ")
         ));
     }
+    for (name, value) in environment(plan) {
+        arguments.push(format!("--setenv={name}={value}"));
+    }
     arguments.push("--".into());
-    arguments.extend(command(plan, mode, identity));
+    arguments.extend(command(plan, mode));
     Ok(arguments)
 }
 
@@ -433,51 +443,6 @@ impl HostUnits for SystemdHostUnits {
     }
 }
 
-/// Runs `korrid steam-engine-host` inside the unit: make the folder, then
-/// become the host. Arguments: `--folder DIR --engine FILE [--proton DIR] --
-/// HOST ARGS...`.
-pub fn run_inside(arguments: &[std::ffi::OsString]) -> Result<std::convert::Infallible, String> {
-    use std::os::unix::process::CommandExt;
-    let mut folder = None;
-    let mut engine = None;
-    let mut proton = None;
-    let mut rest = arguments.iter();
-    loop {
-        let Some(argument) = rest.next() else {
-            return Err("usage: korrid steam-engine-host --folder DIR --engine FILE [--proton DIR] -- HOST ARGS".into());
-        };
-        let mut value = || rest.next().map(PathBuf::from).ok_or("missing value");
-        match argument.to_str() {
-            Some("--folder") => folder = Some(value()?),
-            Some("--engine") => engine = Some(value()?),
-            Some("--proton") => proton = Some(value()?),
-            Some("--") => break,
-            _ => return Err("unknown steam-engine-host argument".into()),
-        }
-    }
-    let (Some(folder), Some(engine)) = (folder, engine) else {
-        return Err("steam-engine-host needs --folder and --engine".into());
-    };
-    let host: Vec<_> = rest.collect();
-    let Some((program, host_arguments)) = host.split_first() else {
-        return Err("steam-engine-host needs the host command".into());
-    };
-    let account = folder.parent().ok_or("engine folder has no account root")?;
-    let layout = EngineFolder::for_account(account);
-    if layout.root() != folder {
-        return Err("engine folder is not the account root's Steam engine folder".into());
-    }
-    layout
-        .prepare(&engine, proton.as_deref())
-        .map_err(|error| format!("cannot prepare the Steam engine folder: {error}"))?;
-    let error = Process::new(program)
-        .args(host_arguments)
-        .env("HOME", layout.home())
-        .current_dir(layout.home())
-        .exec();
-    Err(format!("cannot start the Steam engine host: {error}"))
-}
-
 #[cfg(test)]
 pub mod process_units {
     //! The same host command as a child of the test, stdout appended to the
@@ -518,6 +483,7 @@ pub mod process_units {
             }
             let child = command
                 .arg(&plan.engine)
+                .envs(environment(plan))
                 .stdin(std::process::Stdio::null())
                 .stdout(events)
                 .spawn()?;
@@ -562,7 +528,6 @@ pub(crate) mod tests {
         Identity {
             uid: 1000,
             gid: 100,
-            korrid: "/nix/store/k/bin/korrid".into(),
         }
     }
 
@@ -593,19 +558,15 @@ pub(crate) mod tests {
         }
         // Not in the game unit's slice member list: its own unit name.
         assert!(!arguments.iter().any(|a| a.contains("korri-game-")));
+        assert!(arguments
+            .contains(&"--setenv=HOME=/var/lib/korri/accounts/p1/steam-engine/home".to_string()));
+        assert!(arguments.contains(
+            &"--setenv=KORRI_PROTON_CACHYOS=/var/lib/korri/cache/proton/cachyos/11.0".to_string()
+        ));
         let command = &arguments[arguments.iter().position(|a| a == "--").unwrap() + 1..];
         assert_eq!(
             command,
             [
-                "/nix/store/k/bin/korrid",
-                "steam-engine-host",
-                "--folder",
-                "/var/lib/korri/accounts/p1/steam-engine",
-                "--engine",
-                "/var/lib/korri/cache/steam/engine-package/1792618285/linuxarm64/steamclient.so",
-                "--proton",
-                "/var/lib/korri/cache/proton/cachyos/11.0",
-                "--",
                 "/nix/store/x-steam/bin/korri-steam-host",
                 "--commands",
                 &format!("/run/korri-steam-host-{id}/channel/commands"),
@@ -613,7 +574,7 @@ pub(crate) mod tests {
                 &format!("/run/korri-steam-host-{id}/channel/host.lock"),
                 "--session-lock",
                 &format!("/run/korri-steam-host-{id}/channel/session.lock"),
-                "/var/lib/korri/accounts/p1/steam-engine/steam/linuxarm64/steamclient.so",
+                "/var/lib/korri/cache/steam/engine-package/1792618285/linuxarm64/steamclient.so",
             ]
         );
     }
@@ -627,7 +588,7 @@ pub(crate) mod tests {
             mode.channel(Path::new("/run/korrid/launches")),
             Path::new("/run/korrid/launches/steam-engine-job-fedcba9876543210fedcba9876543210")
         );
-        let command = command(&plan(), &mode, &identity());
+        let command = command(&plan(), &mode);
         assert!(!command.iter().any(|a| a == "--session-lock"));
         let mut unsafe_plan = plan();
         unsafe_plan.account_root = "/var/lib/korri/accounts/a b".into();

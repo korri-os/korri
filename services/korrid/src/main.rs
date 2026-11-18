@@ -667,16 +667,6 @@ async fn main() {
         }
         return;
     }
-    // ADR 0083: inside the Steam engine host unit, as the game user: make
-    // the person's engine folder, then become the host. Diagnostics on stderr.
-    if arguments
-        .first()
-        .is_some_and(|argument| argument == "steam-engine-host")
-    {
-        let Err(error) = korrid::steam_engine::host::run_inside(&arguments[1..]);
-        eprintln!("korrid steam-engine-host: {error}");
-        std::process::exit(1);
-    }
     if arguments
         .first()
         .is_some_and(|argument| argument == "catalog")

@@ -107,6 +107,14 @@ pub fn record_boundary(
     store.put_record(person, &record).map(Some)
 }
 
+/// The cloud side of a Steam Cloud conflict: an engine-runner record whose
+/// one location has no files. It names Steam's copy and holds nothing here.
+pub fn in_steam_cloud(record: &SnapshotRecord) -> bool {
+    record.runner_id == super::RUNNER_ID
+        && matches!(record.locations.as_slice(), [location] if location.key == LOCATION && location.files.is_empty())
+        && record.duration_seconds == 0
+}
+
 /// One open Steam Cloud conflict: the app and the cloud side's snapshot.
 /// The local side is the session's own snapshot, captured from the launch
 /// export when the refused session completes.
@@ -324,6 +332,8 @@ mod tests {
         assert_eq!(cloud_record.parents, [base_id]);
         assert_eq!(cloud_record.ended_at, "2025-11-17T14:33:20.000Z");
         assert!(cloud_record.locations[0].files.is_empty());
+        assert!(in_steam_cloud(cloud_record));
+        assert!(!in_steam_cloud(&session));
         assert_eq!(
             store.reconcile(&person, "g").unwrap(),
             crate::saves::types::SaveMark::Split

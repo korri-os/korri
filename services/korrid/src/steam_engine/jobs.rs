@@ -22,7 +22,13 @@ pub struct JobRunner {
     pub units: Arc<dyn HostUnits>,
     pub launches_root: PathBuf,
     pub runtime_uid: u32,
+    /// Session hosts running now: a job waits for them, because the plugin's
+    /// start wrapper allows one engine per person's folder.
+    pub live: Arc<std::sync::atomic::AtomicUsize>,
 }
+
+/// A job waits for a session at most this long.
+const SESSION_WAIT: Duration = Duration::from_secs(6 * 3600);
 
 pub struct JobHost {
     units: Arc<dyn HostUnits>,
@@ -32,7 +38,15 @@ pub struct JobHost {
 }
 
 impl JobRunner {
+    /// Start a job host, after any running session. Blocking.
     pub fn start(&self, plan: &HostPlan) -> Result<JobHost, String> {
+        let deadline = std::time::Instant::now() + SESSION_WAIT;
+        while self.live.load(std::sync::atomic::Ordering::SeqCst) > 0 {
+            if std::time::Instant::now() >= deadline {
+                return Err("a Steam game session is still running".into());
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
         let mode = Mode::Job {
             id: format!("{:032x}", rand::random::<u128>()),
         };
@@ -108,6 +122,7 @@ done"#,
             units: Arc::new(ProcessHostUnits::new(&launches)),
             launches_root: launches.clone(),
             runtime_uid: unsafe { libc::geteuid() },
+            live: Arc::default(),
         };
         let mut job = runner
             .start(&HostPlan {
@@ -138,5 +153,37 @@ done"#,
         job.stop();
         assert!(!channel.exists());
         assert_eq!(std::fs::read_dir(&launches).unwrap().count(), 0);
+    }
+}
+
+#[cfg(test)]
+mod wait_tests {
+    use super::*;
+    use crate::steam_engine::host::{process_units::ProcessHostUnits, tests::script_host};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// One engine per person's folder: a job waits while a session runs.
+    #[test]
+    fn a_job_waits_for_a_running_session() {
+        let temp = tempfile::tempdir().unwrap();
+        let launches = temp.path().join("launches");
+        let live = Arc::new(AtomicUsize::new(1));
+        let runner = JobRunner {
+            units: Arc::new(ProcessHostUnits::new(&launches)),
+            launches_root: launches.clone(),
+            runtime_uid: unsafe { libc::geteuid() },
+            live: Arc::clone(&live),
+        };
+        let plan = HostPlan {
+            host_program: script_host(temp.path(), "sleep 5"),
+            engine: temp.path().join("steamclient.so"),
+            proton: None,
+            account_root: temp.path().into(),
+        };
+        let started = std::thread::spawn(move || runner.start(&plan).map(JobHost::stop));
+        std::thread::sleep(Duration::from_millis(700));
+        assert!(!launches.exists(), "no job host while the session runs");
+        live.store(0, Ordering::SeqCst);
+        started.join().unwrap().unwrap();
     }
 }

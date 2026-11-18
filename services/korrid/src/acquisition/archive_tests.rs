@@ -893,3 +893,68 @@ fn an_artifact_that_is_a_vz_package_publishes_its_unpacked_files() {
         .join("1792618285/bins_sdk_linuxarm64_linuxarm64.zip.vz.1424aaa3")
         .exists());
 }
+
+/// ADR 0083: the engine host's save export is a plain tar.
+#[test]
+fn a_save_export_tar_unpacks_files_and_refuses_links_and_traversal() {
+    let tar_of = |entries: &[(&str, tar::EntryType, &[u8])]| {
+        let mut builder = tar::Builder::new(Vec::new());
+        for (path, kind, data) in entries {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_mode(0o600);
+            header.set_entry_type(*kind);
+            if *kind == tar::EntryType::Symlink {
+                header.set_link_name("/etc/passwd").unwrap();
+            }
+            // Set the raw name so a hostile path reaches korrid's checks.
+            header.as_old_mut().name[..path.len()].copy_from_slice(path.as_bytes());
+            header.set_cksum();
+            builder.append(&header, *data).unwrap();
+        }
+        builder.into_inner().unwrap()
+    };
+    let run = |bytes: Vec<u8>| {
+        let folder = tempfile::tempdir().unwrap();
+        let archive = folder.path().join("70-exit-2.tar");
+        fs::write(&archive, bytes).unwrap();
+        let work = folder.path().join("work");
+        fs::create_dir(&work).unwrap();
+        let result = extract_tar(&archive, &work, &limits());
+        Run {
+            _folder: folder,
+            work,
+            result,
+        }
+    };
+    let good = run(tar_of(&[
+        ("remote/", tar::EntryType::Directory, b""),
+        ("remote/SaveData.bin", tar::EntryType::Regular, b"save"),
+    ]));
+    good.result.as_ref().unwrap();
+    assert_eq!(
+        tree(&good.work),
+        [
+            ("remote".to_string(), 0o755),
+            ("remote/SaveData.bin".to_string(), 0o644)
+        ]
+    );
+    refused(
+        run(tar_of(&[("remote/link", tar::EntryType::Symlink, b"")])),
+        Failure::Unpack,
+        "link or special file",
+    );
+    refused(
+        run(tar_of(&[("../escape", tar::EntryType::Regular, b"x")])),
+        Failure::Unpack,
+        "unsafe path segment",
+    );
+    refused(
+        run(tar_of(&[
+            ("a", tar::EntryType::Regular, b"x"),
+            ("a", tar::EntryType::Regular, b"y"),
+        ])),
+        Failure::Unpack,
+        "repeated path",
+    );
+}

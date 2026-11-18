@@ -98,7 +98,7 @@ fn files_are_bounded_regular_and_confined_to_the_steam_root() {
     let root = tempfile::tempdir().unwrap();
     let steamapps = root.path().join("steam/steamapps");
     fs::create_dir_all(&steamapps).unwrap();
-    let directory = manifest_directory(root.path()).unwrap();
+    let directory = manifest_directory(root.path(), "steam/steamapps/appmanifest_*.acf").unwrap();
     fs::write(steamapps.join("appmanifest_401710.acf"), manifest("")).unwrap();
     assert!(read_manifest(&directory, "appmanifest_401710.acf").is_ok());
     let oversized = File::create(steamapps.join("appmanifest_2.acf")).unwrap();
@@ -130,7 +130,7 @@ fn files_are_bounded_regular_and_confined_to_the_steam_root() {
         root.path().join("steam"),
     )
     .unwrap();
-    assert!(manifest_directory(root.path()).is_err());
+    assert!(manifest_directory(root.path(), "steam/steamapps/appmanifest_*.acf").is_err());
 }
 
 #[test]
@@ -171,4 +171,46 @@ fn scan_skips_oversized_files_reports_caps_and_ignores_disabled_plugins() {
         .observations
         .is_empty());
     assert!(diagnostics.is_empty());
+}
+
+/// ADR 0083: an app the engine installed in the person's engine folder is
+/// the same Steam provider's release, launched with the engine runner.
+#[test]
+fn engine_folder_installs_are_found_and_run_on_the_engine_runner() {
+    let root = tempfile::tempdir().unwrap();
+    let package = tempfile::tempdir().unwrap();
+    let registry = crate::plugin_test_fixtures::steam(package.path());
+    let client = root.path().join("steam/steamapps");
+    let engine = root.path().join("steam-engine/steam/steamapps");
+    fs::create_dir_all(&client).unwrap();
+    fs::create_dir_all(&engine).unwrap();
+    fs::write(client.join("appmanifest_401710.acf"), manifest("")).unwrap();
+    fs::write(
+        engine.join("appmanifest_78000.acf"),
+        r#""AppState" { "appid" "78000" "StateFlags" "4" "name" "Bejeweled 3" }"#,
+    )
+    .unwrap();
+    let accounts = vec![AccountRoot {
+        user: "default".into(),
+        storage_id: "account-f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+            .into(),
+        root: root.path().into(),
+    }];
+    let mut diagnostics = Vec::new();
+    let scans = scan(&accounts, &registry, &mut diagnostics);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    assert_eq!(scans.len(), 1);
+    assert_eq!(scans[0].id, STEAM_INSTALLED_APPS);
+    let runner = |appid: &str| {
+        scans[0]
+            .observations
+            .iter()
+            .find(|o| o.target.provider_ref == appid)
+            .map(|o| o.launch.runner.clone())
+    };
+    assert_eq!(runner("401710").as_deref(), Some("@korri:steam/steam"));
+    assert_eq!(
+        runner("78000").as_deref(),
+        Some(crate::steam_engine::RUNNER_ID)
+    );
 }

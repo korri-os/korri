@@ -240,12 +240,17 @@ pub struct ProviderScan {
     pub observations: Vec<ProviderRefReleaseObservation>,
 }
 
-fn diagnostic(diagnostics: &mut Vec<DiscoveryDiagnostic>, path: Option<&str>, message: &str) {
+fn location_diagnostic(
+    id: &str,
+    diagnostics: &mut Vec<DiscoveryDiagnostic>,
+    path: Option<&str>,
+    message: &str,
+) {
     eprintln!("korrid discovery: {message}");
     if diagnostics.len() < 1000 {
         diagnostics.push(DiscoveryDiagnostic {
             code: DiscoveryDiagnosticCode::EntryUnavailable,
-            storage_id: Some(STEAM_INSTALLED_APPS.into()),
+            storage_id: Some(id.into()),
             path: path.map(str::to_owned),
             message: message.into(),
         });
@@ -257,20 +262,34 @@ pub fn scan(
     registry: &PluginRegistry,
     diagnostics: &mut Vec<DiscoveryDiagnostic>,
 ) -> Vec<ProviderScan> {
+    scan_location(STEAM_INSTALLED_APPS, accounts, registry, diagnostics)
+}
+
+/// One first-party discovery provider over each of its manifest folders. The
+/// engine runner's folder (ADR 0083, `steam-engine/steam/steamapps`) holds the
+/// same Steam appmanifests under the same provider; a game installed there
+/// runs on the engine runner, so korrid names that runner for it.
+fn scan_location(
+    location: &str,
+    accounts: &[AccountRoot],
+    registry: &PluginRegistry,
+    diagnostics: &mut Vec<DiscoveryDiagnostic>,
+) -> Vec<ProviderScan> {
+    let diagnostic =
+        |diagnostics: &mut Vec<DiscoveryDiagnostic>, path: Option<&str>, message: &str| {
+            location_diagnostic(location, diagnostics, path, message)
+        };
     let mut result = ProviderScan {
-        id: STEAM_INSTALLED_APPS.into(),
+        id: location.into(),
         ..Default::default()
     };
-    if !registry
-        .discovery_providers()
-        .any(|p| p.id == STEAM_INSTALLED_APPS)
-    {
+    if !registry.discovery_providers().any(|p| p.id == location) {
         // A disabled/removed plugin withdraws only its discovery-owned locations.
         return vec![result];
     }
     let source = (|| {
         let package = registry
-            .installed_package(STEAM_INSTALLED_APPS)
+            .installed_package(location)
             .map_err(|e| e.to_string())?;
         SourceSnapshot::package_plugin(&package.package, &package.entry, &package.sources)
     })();
@@ -283,8 +302,16 @@ pub fn scan(
     };
     let mut count = 0;
     let mut seen = BTreeSet::new();
-    for account in accounts {
-        let directory = match manifest_directory(&account.root) {
+    let globs = crate::plugin_discovery::LOCATIONS
+        .iter()
+        .filter(|(id, _)| *id == location)
+        .map(|(_, glob)| *glob);
+    for (account, glob) in accounts
+        .iter()
+        .flat_map(|account| globs.clone().map(move |glob| (account, glob)))
+    {
+        let engine = glob.starts_with(crate::steam_engine::folder::NAME);
+        let directory = match manifest_directory(&account.root, glob) {
             Ok(directory) => directory,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => {
@@ -332,7 +359,10 @@ pub fn scan(
                 },
             ) {
                 Ok(observations) => {
-                    for observation in observations {
+                    for mut observation in observations {
+                        if engine {
+                            observation.launch.runner = crate::steam_engine::RUNNER_ID.into();
+                        }
                         if seen.insert(observation.target.provider_ref.clone()) {
                             result.observations.push(observation);
                         }
@@ -403,15 +433,11 @@ fn child(parent: &File, name: &str, directory: bool) -> std::io::Result<File> {
     Ok(unsafe { File::from_raw_fd(fd) })
 }
 
-fn manifest_directory(account: &Path) -> std::io::Result<File> {
+fn manifest_directory(account: &Path, glob: &str) -> std::io::Result<File> {
     let account = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(account)?;
-    let (_, glob) = crate::plugin_discovery::LOCATIONS
-        .iter()
-        .find(|(id, _)| *id == STEAM_INSTALLED_APPS)
-        .expect("admitted first-party location");
     let (relative, _) = glob.rsplit_once('/').expect("first-party manifest glob");
     let mut directory = account;
     for part in relative.split('/') {

@@ -7,10 +7,16 @@ pub const STEAM_INSTALLED_APPS: &str = "@korri:steam/installed-apps";
 /// PackageManager produces, not files, so it has no location glob.
 pub const ANDROID_INSTALLED_APPS: &str = "@korri:android-app/installed-apps";
 
-/// Provider ID -> glob relative to the existing account root (ADR 0011).
+/// Provider ID -> glob relative to the existing account root (ADR 0011). One
+/// provider may have several folders; ADR 0083 adds the engine runner's.
 /// This is not plugin configuration or a general filesystem permission.
-pub const LOCATIONS: &[(&str, &str)] =
-    &[(STEAM_INSTALLED_APPS, "steam/steamapps/appmanifest_*.acf")];
+pub const LOCATIONS: &[(&str, &str)] = &[
+    (STEAM_INSTALLED_APPS, "steam/steamapps/appmanifest_*.acf"),
+    (
+        STEAM_INSTALLED_APPS,
+        "steam-engine/steam/steamapps/appmanifest_*.acf",
+    ),
+];
 
 /// Legacy ReleaseDiscoveryProvider data; executable code lives in handlers.
 #[derive(Clone, Debug, Deserialize, Serialize)]

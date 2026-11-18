@@ -60,6 +60,9 @@ pub struct Sessions {
     pub conflicts: Arc<Conflicts>,
     /// The last engine state a host reported, for the sign-in model.
     pub unavailable: Arc<Mutex<Option<Unavailable>>>,
+    /// Session hosts running now. The plugin's start wrapper allows one
+    /// engine per person's folder, so job hosts wait while this is not 0.
+    pub live: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl Sessions {
@@ -68,6 +71,7 @@ impl Sessions {
             units,
             launches_root,
             runtime_uid,
+            Arc::default(),
             Arc::default(),
             Arc::default(),
         )
@@ -81,6 +85,7 @@ impl Sessions {
         runtime_uid: u32,
         conflicts: Arc<Conflicts>,
         unavailable: Arc<Mutex<Option<Unavailable>>>,
+        live: Arc<std::sync::atomic::AtomicUsize>,
     ) -> Self {
         Self {
             units,
@@ -89,6 +94,7 @@ impl Sessions {
             running: Mutex::new(BTreeMap::new()),
             conflicts,
             unavailable,
+            live,
         }
     }
 
@@ -159,6 +165,7 @@ impl Sessions {
                 .spawn(move || watch.run(&stop))
                 .map_err(|error| error.to_string())?
         };
+        self.live.fetch_add(1, Ordering::SeqCst);
         self.running.lock().expect("sessions poisoned").insert(
             launch_id.into(),
             Running {
@@ -184,6 +191,7 @@ impl Sessions {
         else {
             return Ok(());
         };
+        let _live = Live(&self.live);
         let deadline = Instant::now() + bound;
         while !running.exit_synced.load(Ordering::SeqCst)
             && self.units.active(&running.mode).unwrap_or(false)
@@ -201,6 +209,14 @@ impl Sessions {
         Channel::open(&running.channel)
             .remove()
             .map_err(|error| format!("cannot remove the Steam engine channel: {error}"))
+    }
+}
+
+/// Counts a session down when its finish ends, however it ends.
+struct Live<'a>(&'a std::sync::atomic::AtomicUsize);
+impl Drop for Live<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -254,6 +270,13 @@ impl Watch {
             Event::SyncFinished { kind, .. } if kind == "exit" => {
                 self.exit_synced.store(true, Ordering::SeqCst)
             }
+            Event::SaveExportEmpty { .. } => {
+                if let Some(context) = &self.context {
+                    if let Err(error) = replace_folder(&context.save_folder, |_| Ok(())) {
+                        log::warn!("steam engine: empty save export not applied: {error}");
+                    }
+                }
+            }
             Event::SaveExport { archive, .. } => {
                 if let Err(error) = self.import(archive) {
                     log::warn!("steam engine: save export not imported: {error}");
@@ -281,10 +304,14 @@ impl Watch {
             .strip_prefix(&self.host_channel)
             .or_else(|_| reported.strip_prefix(&self.channel))
             .map_err(|_| "the export is outside the channel".to_string())?;
-        let mut parts = relative.components();
-        match (parts.next(), parts.next()) {
-            (Some(std::path::Component::Normal(name)), None) => Ok(self.channel.join(name)),
-            _ => Err("the export is not a file of the channel".into()),
+        // The host writes `saves/<appid>-<launch|exit>-<n>.tar`.
+        use std::path::Component::Normal;
+        let parts: Vec<_> = relative.components().collect();
+        match parts.as_slice() {
+            [Normal(saves), Normal(name)] if saves.to_str() == Some("saves") => {
+                Ok(self.channel.join("saves").join(name))
+            }
+            _ => Err("the export is not a file of the channel's saves".into()),
         }
     }
 
@@ -366,16 +393,17 @@ mod tests {
     const PERSON: &str = "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9";
     const LAUNCH: &str = "0123456789abcdef0123456789abcdef";
 
+    /// The host's export: a plain tar.
     fn zip(files: &[(&str, &[u8])]) -> Vec<u8> {
-        use std::io::Write;
-        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let mut builder = tar::Builder::new(Vec::new());
         for (path, data) in files {
-            writer
-                .start_file(*path, zip::write::SimpleFileOptions::default())
-                .unwrap();
-            writer.write_all(data).unwrap();
+            let mut header = tar::Header::new_ustar();
+            header.set_size(data.len() as u64);
+            header.set_mode(0o600);
+            header.set_entry_type(tar::EntryType::Regular);
+            builder.append_data(&mut header, path, *data).unwrap();
         }
-        writer.finish().unwrap().into_inner()
+        builder.into_inner().unwrap()
     }
 
     /// A host that, like the product host, exports before the launch sync
@@ -394,8 +422,8 @@ exec 3<>"$fifo"
 while read -r line <&3; do
   case "$line" in
     "resolve "*) echo "{{\"event\":\"resolved\",\"line\":\"$line\"}}"; echo "$line" > "$channel/resolved" ;;
-    "launched "*) cp '{export}' "$channel/launch.zip"; echo "{{\"event\":\"save_export\",\"appid\":70,\"archive\":\"$channel/launch.zip\"}}"; {conflict} ;;
-    "exited "*) cp '{export}' "$channel/exit.zip"; echo "{{\"event\":\"save_export\",\"appid\":70,\"archive\":\"$channel/exit.zip\"}}"; sleep 0.3; echo '{{"event":"sync_finished","appid":70,"kind":"exit","result":"synchronized"}}' ;;
+    "launched "*) mkdir -p "$channel/saves"; cp '{export}' "$channel/saves/70-launch-1.tar"; echo "{{\"event\":\"save_export\",\"appid\":70,\"archive\":\"$channel/saves/70-launch-1.tar\"}}"; {conflict} ;;
+    "exited "*) mkdir -p "$channel/saves"; cp '{export}' "$channel/saves/70-exit-2.tar"; echo "{{\"event\":\"save_export\",\"appid\":70,\"archive\":\"$channel/saves/70-exit-2.tar\"}}"; sleep 0.3; echo '{{"event":"sync_finished","appid":70,"kind":"exit","result":"synchronized"}}' ;;
   esac
 done"#,
                 export = export.display()
@@ -538,14 +566,15 @@ done"#,
         };
         assert_eq!(
             watch
-                .archive("/run/korri-steam-host-x/channel/exit.zip")
+                .archive("/run/korri-steam-host-x/channel/saves/70-exit-2.tar")
                 .unwrap(),
-            temp.path().join("c/exit.zip")
+            temp.path().join("c/saves/70-exit-2.tar")
         );
         for bad in [
-            "/home/korri/steam-engine/steam/userdata/x.zip",
-            "/run/korri-steam-host-x/channel/../../etc/passwd",
-            "/run/korri-steam-host-x/channel/a/b.zip",
+            "/home/korri/steam-engine/steam/userdata/x.tar",
+            "/run/korri-steam-host-x/channel/saves/../../etc/passwd",
+            "/run/korri-steam-host-x/channel/a/b.tar",
+            "/run/korri-steam-host-x/channel/events.jsonl",
         ] {
             assert!(watch.archive(bad).is_err(), "{bad}");
         }

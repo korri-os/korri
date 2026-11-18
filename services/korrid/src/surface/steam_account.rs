@@ -426,6 +426,7 @@ mod tests {
                 units: Arc::new(ProcessHostUnits::new(&launches)),
                 launches_root: launches,
                 runtime_uid: unsafe { libc::geteuid() },
+                live: Arc::default(),
             },
             engine,
         };
@@ -444,8 +445,9 @@ mod tests {
         }
     }
 
-    /// A host with no saved login; `signin-qr` shows two codes, then signs in.
-    const QR_HOST: &str = r#"echo '{"event":"signin_failed","reason":"no_cached_login"}'
+    /// A host with no saved login (it says `signed_out` at start); `signin-qr`
+    /// shows two codes, then signs in.
+    const QR_HOST: &str = r#"echo '{"event":"signed_out"}'
 exec 3<>"$fifo"
 while read -r line <&3; do
   case "$line" in

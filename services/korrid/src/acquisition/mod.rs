@@ -20,8 +20,8 @@ use crate::{
 };
 use indexmap::IndexSet;
 
-pub(crate) use game::acquired_game_content;
 pub use game::GameContext;
+pub(crate) use game::{acquired_game_content, linked_game};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     path::{Path, PathBuf},
