@@ -525,6 +525,8 @@ assert !(lib.hasInfix "subject.system_unit" polkit);
 assert lib.hasInfix ''action.lookup("verb") == "restart"'' polkit;
 assert lib.hasInfix ''action.lookup("unit") == "korri-sunshine.service"'' polkit;
 assert lib.hasInfix ''/^korri-acquire-[a-z0-9][a-z0-9._-]*-[a-z0-9][a-z0-9._-]*\.service$/'' polkit;
+# ADR 0083: korrid starts the Steam engine host; host::Mode::unit names match.
+assert lib.hasInfix ''/^korri-steam-host-(job-)?[0-9a-f]{32}\.service$/'' polkit;
 assert lib.hasInfix ''/^korri-game-[0-9a-f]{32}\.service$/'' polkit;
 assert lib.hasInfix ''/^korri-hook-[0-9a-f]{32}-[0-9]{1,3}\.service$/'' polkit;
 assert !(lib.hasInfix ''/^korri-hook-[0-9a-f]{32}-[0-9]{1,3}\\.service$/'' polkit);

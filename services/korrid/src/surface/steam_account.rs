@@ -188,11 +188,11 @@ impl SteamAccount {
         }
         let outcome = (|| -> Result<(), ()> {
             let mut host: JobHost = runner.start(&plan).map_err(|error| {
-                log::warn!("steam account: {error}");
+                eprintln!("korrid steam account: job host did not start: {error}");
             })?;
             if let Some(command) = command {
                 host.send(command).map_err(|error| {
-                    log::warn!("steam account: {error}");
+                    eprintln!("korrid steam account: job host took no command: {error}");
                 })?;
             }
             let deadline = Instant::now() + limit;
@@ -222,6 +222,14 @@ impl SteamAccount {
                     return Ok(());
                 }
                 if Instant::now() >= deadline || !host.running() {
+                    eprintln!(
+                        "korrid steam account: job host {} before it answered",
+                        if host.running() {
+                            "ran out of time"
+                        } else {
+                            "ended"
+                        }
+                    );
                     host.stop();
                     return Err(());
                 }
@@ -325,6 +333,7 @@ impl SteamAccount {
                 |account| matches!(account, Account::SignedIn { .. } | Account::Problem { .. }),
             ),
             SteamFacts::Unavailable(reason) => {
+                eprintln!("korrid steam account: sign-in not started: {reason:?}");
                 this.set(Some(Account::Problem {
                     problem: account::Problem::Unavailable(reason),
                 }));
@@ -332,7 +341,10 @@ impl SteamAccount {
                     (pending.abandon)();
                 }
             }
-            SteamFacts::Absent => this.set(None),
+            SteamFacts::Absent => {
+                eprintln!("korrid steam account: sign-in not started: no Steam engine runner");
+                this.set(None)
+            }
         }
     }
 
@@ -434,7 +446,7 @@ impl SteamAccount {
                             problem: account::Problem::ClientChosen,
                         })),
                         Err(error) => {
-                            log::warn!("steam account: client runner not chosen: {error}")
+                            eprintln!("korrid steam account: client runner not chosen: {error}")
                         }
                     }
                 });

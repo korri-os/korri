@@ -2393,7 +2393,10 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         validate_launch_id(launch_id)?;
         self.steam_engine_sessions()
             .start(launch_id, plan, context)
-            .map_err(|message| LaunchUnitError::new(LaunchUnitErrorKind::Failed, message))
+            .map_err(|message| {
+                eprintln!("korrid steam engine: session host for {launch_id}: {message}");
+                LaunchUnitError::new(LaunchUnitErrorKind::Failed, message)
+            })
     }
 
     fn stop_launch_service(&self, launch_id: &str) -> Result<(), LaunchUnitError> {

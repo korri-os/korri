@@ -244,7 +244,7 @@ impl Watch {
                         self.handle(&event);
                     }
                 }
-                Err(error) => log::warn!("steam engine: cannot read host events: {error}"),
+                Err(error) => eprintln!("korrid steam engine: cannot read host events: {error}"),
             }
             if last {
                 return;
@@ -275,20 +275,20 @@ impl Watch {
             Event::SaveExportEmpty { .. } => {
                 if let Some(context) = &self.context {
                     if let Err(error) = replace_folder(&context.save_folder, |_| Ok(())) {
-                        log::warn!("steam engine: empty save export not applied: {error}");
+                        eprintln!("korrid steam engine: empty save export not applied: {error}");
                     }
                 }
             }
             Event::SaveExport { archive, .. } => {
                 if let Err(error) = self.import(archive) {
-                    log::warn!("steam engine: save export not imported: {error}");
+                    eprintln!("korrid steam engine: save export not imported: {error}");
                 }
             }
             Event::SyncConflict {
                 appid, remote_time, ..
             } => {
                 if let Err(error) = self.conflict(*appid, *remote_time) {
-                    log::warn!("steam engine: conflict not recorded: {error}");
+                    eprintln!("korrid steam engine: conflict not recorded: {error}");
                 }
             }
             _ => {}

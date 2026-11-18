@@ -5524,7 +5524,14 @@ impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
         let Ok(account_root) = saves::account_root(root, &person) else {
             return SteamFacts::Absent;
         };
-        let Ok(artifacts) = acquisition::launch_artifacts(root, &registry, &runner_id) else {
+        let artifacts = acquisition::launch_artifacts(root, &registry, &runner_id);
+        if let Err(failure) = &artifacts {
+            eprintln!(
+                "korrid steam engine: {runner_id} artifacts unreadable: {}",
+                failure.message
+            );
+        }
+        let Ok(artifacts) = artifacts else {
             return SteamFacts::Unavailable(
                 steam_engine::availability::Unavailable::PackageNotDownloaded,
             );
@@ -5534,9 +5541,12 @@ impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
                 plan,
                 runner: host::SystemdLaunchUnitBackend::steam_engine_jobs(),
             },
-            Err(_) => SteamFacts::Unavailable(
-                steam_engine::availability::Unavailable::PackageNotDownloaded,
-            ),
+            Err(reason) => {
+                eprintln!("korrid steam engine: {runner_id} cannot run here: {reason}");
+                SteamFacts::Unavailable(
+                    steam_engine::availability::Unavailable::PackageNotDownloaded,
+                )
+            }
         }
     }
 

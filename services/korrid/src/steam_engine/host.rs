@@ -401,13 +401,25 @@ impl HostUnits for SystemdHostUnits {
             &self.hidden,
         )
         .map_err(io::Error::other)?;
-        let output = Process::new(&self.systemd_run).args(arguments).output()?;
+        let output = Process::new(&self.systemd_run)
+            .args(arguments)
+            .output()
+            .map_err(|error| {
+                io::Error::other(format!(
+                    "cannot run {}: {error}",
+                    self.systemd_run.display()
+                ))
+            })?;
         if output.status.success() {
             Ok(())
         } else {
+            // systemd-run's own words (a polkit refusal, a bad property) say
+            // why; they name units and paths, never a token.
+            let said = String::from_utf8_lossy(&output.stderr);
             Err(io::Error::other(format!(
-                "systemd-run for the Steam engine host failed with {}",
-                output.status
+                "systemd-run failed with {}: {}",
+                output.status,
+                said.trim().chars().take(400).collect::<String>()
             )))
         }
     }
@@ -601,6 +613,18 @@ pub(crate) mod tests {
         )
         .is_err());
         assert!(valid_id("fedcba9876543210fedcba9876543210"));
+        // korrid's polkit rule (nixos-module.nix) grants exactly these names.
+        let granted =
+            regex::Regex::new(r"^korri-steam-host-(job-)?[0-9a-f]{32}\.service$").unwrap();
+        assert!(granted.is_match(&mode.unit()), "{}", mode.unit());
+        assert!(granted.is_match(
+            &Mode::Session {
+                launch_id: "0123456789abcdef0123456789abcdef".into()
+            }
+            .unit()
+        ));
+        let rule = include_str!("../../nixos-module.nix");
+        assert!(rule.contains(r"/^korri-steam-host-(job-)?[0-9a-f]{32}\.service$/"));
         assert!(!valid_id("../x") && !valid_id("FEDCBA9876543210FEDCBA9876543210"));
     }
 

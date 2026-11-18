@@ -50,11 +50,19 @@ impl JobRunner {
         let mode = Mode::Job {
             id: format!("{:032x}", rand::random::<u128>()),
         };
-        let channel = Channel::create(&mode.channel(&self.launches_root), self.runtime_uid)
-            .map_err(|error| format!("cannot prepare the Steam engine channel: {error}"))?;
+        let dir = mode.channel(&self.launches_root);
+        let channel = Channel::create(&dir, self.runtime_uid).map_err(|error| {
+            format!(
+                "cannot prepare the Steam engine channel {}: {error}",
+                dir.display()
+            )
+        })?;
         if let Err(error) = self.units.start(plan, &mode) {
             let _ = channel.remove();
-            return Err(format!("cannot start the Steam engine host: {error}"));
+            return Err(format!(
+                "cannot start the Steam engine host {}: {error}",
+                mode.unit()
+            ));
         }
         Ok(JobHost {
             units: Arc::clone(&self.units),

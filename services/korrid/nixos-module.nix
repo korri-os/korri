@@ -917,6 +917,17 @@ in
           return polkit.Result.YES;
         }
       });
+      // ADR 0083: the Steam engine host korrid starts beside a game (its
+      // launch id) or for one job (job-<id>). No freezer authority.
+      polkit.addRule(function(action, subject) {
+        var unit = action.lookup("unit");
+        if (action.id == "org.freedesktop.systemd1.manage-units" &&
+            subject.user == "korrid" &&
+            action.lookup("polkit.message") != "${freezerMessage}" &&
+            typeof unit == "string" && /^korri-steam-host-(job-)?[0-9a-f]{32}\.service$/.test(unit)) {
+          return polkit.Result.YES;
+        }
+      });
       polkit.addRule(function(action, subject) {
         var unit = action.lookup("unit");
         if (action.id == "org.freedesktop.systemd1.manage-units" &&

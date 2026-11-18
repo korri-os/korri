@@ -228,7 +228,7 @@ impl Conflicts {
         let result = change(&mut book);
         if let Some(path) = &self.path {
             if let Err(error) = write_book(path, &book) {
-                log::warn!("steam engine: conflicts not kept: {error}");
+                eprintln!("korrid steam engine: conflicts not kept: {error}");
             }
         }
         result
