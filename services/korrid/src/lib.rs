@@ -3109,7 +3109,9 @@ async fn dispatch(
                         )?;
                         let mut snapshot = state.acquisition.game_status(root, &registry, &game)?;
                         if let Some(app) = steam_engine_app(state, id) {
-                            snapshot.artifacts.push(steam_engine::store::installed_status(app));
+                            snapshot
+                                .artifacts
+                                .push(steam_engine::store::installed_status(app));
                         }
                         Ok(snapshot)
                     }
@@ -5472,7 +5474,8 @@ fn steam_engine_app(state: &AppState, game_id: &str) -> Option<steam_engine::pro
     };
     let (root, registry) = state.acquisition_context().ok()?;
     let (snapshot, _) = config::settings::runner_choice_snapshot(root).ok()?;
-    let route = config::resolver::resolve_linux_route(root, &snapshot, &registry, game_id, None).ok()?;
+    let route =
+        config::resolver::resolve_linux_route(root, &snapshot, &registry, game_id, None).ok()?;
     let target = route.provider_target?;
     if target.provider != steam_engine::provider::PROVIDER_ID {
         return None;
@@ -5485,7 +5488,6 @@ fn steam_engine_app(state: &AppState, game_id: &str) -> Option<steam_engine::pro
         .is_file()
         .then_some(app)
 }
-
 
 impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
     fn facts(&self) -> surface::steam_account::SteamFacts {
@@ -5578,9 +5580,7 @@ impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
                 .artifacts_for_runner(steam_engine::CLIENT_RUNNER_ID)
                 .map_err(|error| error.to_string())?
                 .into_iter()
-                .filter(|artifact| {
-                    !acquisition::placement::is_ready_artifact(root, artifact)
-                })
+                .filter(|artifact| !acquisition::placement::is_ready_artifact(root, artifact))
                 .map(|artifact| artifact.id.clone())
                 .collect();
             if !missing.is_empty() {

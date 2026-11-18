@@ -545,7 +545,11 @@ done"#,
         let store = NativeSaveStore::new(&context.private_root);
         use crate::saves::SaveRepository;
         let records = store.records(PERSON, "half-life").unwrap();
-        assert_eq!(records.len(), 2, "both sides, before the refused session ends");
+        assert_eq!(
+            records.len(),
+            2,
+            "both sides, before the refused session ends"
+        );
         let cloud = records
             .iter()
             .find(|record| crate::steam_engine::saves::in_steam_cloud(record))

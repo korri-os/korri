@@ -623,7 +623,11 @@ mod steam_engine_tests {
             ["remove-download"]
         );
         // Not while the game runs.
-        let live = super::super::model::GameDownloadContext { facts, live: true, enabled: true };
+        let live = super::super::model::GameDownloadContext {
+            facts,
+            live: true,
+            enabled: true,
+        };
         assert!(super::super::model::game_actions_for_entry(None, Some(&live)).is_empty());
     }
 }

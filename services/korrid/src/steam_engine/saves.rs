@@ -264,7 +264,13 @@ impl Conflicts {
     /// True once for a launch whose session hit a conflict: its completion
     /// takes no snapshot.
     pub fn take_launch(&self, launch_id: &str) -> bool {
-        if !self.book.lock().expect("conflicts poisoned").launches.contains(launch_id) {
+        if !self
+            .book
+            .lock()
+            .expect("conflicts poisoned")
+            .launches
+            .contains(launch_id)
+        {
             return false;
         }
         self.change(|book| book.launches.remove(launch_id))
@@ -320,7 +326,9 @@ impl Conflicts {
 
 fn write_book(path: &Path, book: &Book) -> std::io::Result<()> {
     use std::io::Write;
-    let parent = path.parent().ok_or_else(|| std::io::Error::other("no parent"))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| std::io::Error::other("no parent"))?;
     let temporary = parent.join(format!(".{FILE}.{:016x}.tmp", rand::random::<u64>()));
     let result = (|| {
         let mut file = std::fs::OpenOptions::new()
@@ -425,10 +433,13 @@ mod tests {
         fs::create_dir(temp.path().join("private")).unwrap();
         let private = temp.path().join("private");
         let store = NativeSaveStore::new(&private);
-        let person =
-            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9".to_string();
+        let person = "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9".to_string();
         let base = scratch(temp.path(), "base");
-        extract(&export(temp.path(), "a.zip", &[("remote/s", b"base")]), &base).unwrap();
+        extract(
+            &export(temp.path(), "a.zip", &[("remote/s", b"base")]),
+            &base,
+        )
+        .unwrap();
         let base_id = record_boundary(
             &store,
             &person,
@@ -438,7 +449,11 @@ mod tests {
         .unwrap();
         // The launch export, then the sync's conflict: both sides at once.
         let local = scratch(temp.path(), "local");
-        extract(&export(temp.path(), "b.zip", &[("remote/s", b"local edit")]), &local).unwrap();
+        extract(
+            &export(temp.path(), "b.zip", &[("remote/s", b"local edit")]),
+            &local,
+        )
+        .unwrap();
         let record = capture(&store, &person, &local, template("g")).unwrap();
         let conflict = split(&store, &person, 2379780, record, 1_763_390_000).unwrap();
         let records = store.records(&person, "g").unwrap();
@@ -471,12 +486,18 @@ mod tests {
         let again = Conflicts::at(&private);
         assert!(again.take_launch("launch-1"));
         assert!(!Conflicts::at(&private).take_launch("launch-1"));
-        assert_eq!(again.take_resolve(&person, "g"), Some((2379780, Side::Cloud)));
+        assert_eq!(
+            again.take_resolve(&person, "g"),
+            Some((2379780, Side::Cloud))
+        );
         assert_eq!(Conflicts::at(&private).take_resolve(&person, "g"), None);
         // An open conflict with no pick sends nothing.
         again.open(&person, "g", None, conflict.clone());
         assert_eq!(again.take_resolve(&person, "g"), None);
         assert_eq!(again.pick(&person, "g", &conflict.local), Some(Side::Local));
-        assert_eq!(again.take_resolve(&person, "g"), Some((2379780, Side::Local)));
+        assert_eq!(
+            again.take_resolve(&person, "g"),
+            Some((2379780, Side::Local))
+        );
     }
 }

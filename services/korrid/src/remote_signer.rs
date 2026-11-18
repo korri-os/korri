@@ -496,12 +496,13 @@ where
                     // The future-time bound moves with the wait, so a long
                     // connect keeps its clock margin to the end.
                     let read_at = now.saturating_add(started.elapsed().as_secs());
-                    let (answered_by, response) = match self.decode_response(&packet, read_at, sender) {
-                        Ok((answered_by, response)) if response.id == request.id => {
-                            (answered_by, response)
-                        }
-                        _ => continue,
-                    };
+                    let (answered_by, response) =
+                        match self.decode_response(&packet, read_at, sender) {
+                            Ok((answered_by, response)) if response.id == request.id => {
+                                (answered_by, response)
+                            }
+                            _ => continue,
+                        };
                     if response.result == "auth_url" {
                         continue;
                     }

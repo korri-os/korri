@@ -545,7 +545,10 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(300)).await;
         assert_eq!(account.snapshot(), None, "no engine runner, no Steam entry");
         *presence.lock().unwrap() = "steam|true".into();
-        until(&account, |s| matches!(s, Some(SurfaceSteamAccount::SignedOut { .. }))).await;
+        until(&account, |s| {
+            matches!(s, Some(SurfaceSteamAccount::SignedOut { .. }))
+        })
+        .await;
         *presence.lock().unwrap() = String::new();
         until(&account, Option::is_none).await;
     }

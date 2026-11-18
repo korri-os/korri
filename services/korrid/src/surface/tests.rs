@@ -5883,7 +5883,12 @@ async fn a_steam_cloud_conflict_on_launch_goes_to_the_split_choice() {
     )
     .unwrap();
     for _ in 0..400 {
-        if requests.lock().unwrap().iter().any(|r| r["_tag"] == "app.session.start") {
+        if requests
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|r| r["_tag"] == "app.session.start")
+        {
             break;
         }
         tokio::time::sleep(Duration::from_millis(5)).await;
