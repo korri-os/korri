@@ -6,7 +6,7 @@
 //! `uninstall <appid>`.
 use super::{
     host::HostPlan,
-    jobs::JobRunner,
+    jobs::{JobHost, JobRunner},
     protocol::{AppId, Command, Event},
     provider::{appid, AppList, Job},
 };
@@ -38,6 +38,22 @@ fn failure(code: &str, message: &str) -> RpcFailure {
         code: code.into(),
         message: message.into(),
     }
+}
+
+/// True when this job host has nobody signed in. Says so in the journal
+/// with the host's reason (no secret): Settings may still show the sign-in
+/// of an earlier job.
+fn signed_out(host: &JobHost, job: &str, event: &Event) -> bool {
+    let reason = match event {
+        Event::SignedOut { reason } => reason.as_deref().unwrap_or("no reason given"),
+        Event::SigninFailed { reason } => reason.as_str(),
+        _ => return false,
+    };
+    eprintln!(
+        "korrid steam store: {job} on {}: not signed in: {reason}",
+        host.unit()
+    );
+    true
 }
 
 fn unavailable() -> RpcFailure {
@@ -101,7 +117,7 @@ impl SteamStore {
             let deadline = Instant::now() + LIST_LIMIT;
             loop {
                 for event in host.poll() {
-                    if let Event::SigninFailed { .. } | Event::SignedOut { .. } = event {
+                    if signed_out(&host, "list", &event) {
                         return Err(failure(
                             "SteamSignInNeeded",
                             "Sign in to Steam in Settings to see your games.",
@@ -343,7 +359,7 @@ fn run_app_job(
     let deadline = Instant::now() + limit;
     loop {
         for event in host.poll() {
-            if let Event::SigninFailed { .. } | Event::SignedOut { .. } = event {
+            if signed_out(&host, "get", &event) {
                 return set(failed("Sign in to Steam in Settings first."));
             }
             state = state.apply(app, &event);
@@ -366,7 +382,7 @@ fn run_app_job(
             }
         }
         if job.stop.load(Ordering::SeqCst) {
-            // The host stops with SIGKILL; Steam keeps what it downloaded.
+            // The host is asked to shut down; Steam keeps what it downloaded.
             return;
         }
         if Instant::now() >= deadline || !host.running() {
@@ -431,6 +447,52 @@ done"#;
             assert!(Instant::now() < deadline, "{state:?}");
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
+    }
+
+    /// Device run on c2c1e9850: search said "Sign in" right after a QR
+    /// sign-in. Each search asks a job host; a refusal is never kept, so the
+    /// next search asks the engine again and lists once it is signed in.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn each_search_asks_a_host_and_no_refusal_is_kept() {
+        let temp = tempfile::tempdir().unwrap();
+        let (mut plan, runner) = setup(temp.path());
+        let starts = temp.path().join("starts");
+        let signed_in = temp.path().join("signed-in");
+        plan.host_program = script_host(
+            temp.path(),
+            &format!(
+                r#"echo start >> '{starts}'
+if [ ! -e '{signed_in}' ]; then echo '{{"event":"signed_out","reason":"no_saved_login"}}'; fi
+exec 3<>"$fifo"
+while read -r line <&3; do
+  case "$line" in
+    list-apps) echo '{{"event":"app","appid":440,"name":"Team Fortress 2","source":"free"}}'
+               echo '{{"event":"apps_done"}}' ;;
+    shutdown) exit 0 ;;
+  esac
+done"#,
+                starts = starts.display(),
+                signed_in = signed_in.display()
+            ),
+        );
+        let store = SteamStore::default();
+        let refused = store
+            .search("@korri:steam", plan.clone(), runner.clone(), "fortress")
+            .await
+            .unwrap_err();
+        assert_eq!(refused.code, "SteamSignInNeeded");
+        // The engine signs in (a QR job): the next search lists.
+        std::fs::write(&signed_in, "").unwrap();
+        let found = store
+            .search("@korri:steam", plan, runner, "fortress")
+            .await
+            .unwrap();
+        assert_eq!(found.claims[0].title, "Team Fortress 2");
+        assert_eq!(
+            std::fs::read_to_string(&starts).unwrap().lines().count(),
+            2,
+            "one host per search"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]

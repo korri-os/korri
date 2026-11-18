@@ -64,6 +64,10 @@ pub struct EngineHealth {
     state: std::sync::Mutex<Option<Recorded>>,
     /// Moves on every change, so a reader can tell the state changed.
     generation: std::sync::atomic::AtomicU64,
+    /// Whether the last host that said so had somebody signed in. A change
+    /// moves the generation, so the Settings card reads the account again
+    /// when a search or Get finds the sign-in gone (or back).
+    signed_in: std::sync::Mutex<Option<bool>>,
 }
 
 struct Recorded {
@@ -110,6 +114,19 @@ impl EngineHealth {
     /// Take one event of a host that ran this plan.
     pub fn observe(&self, plan: &super::host::HostPlan, event: &super::protocol::Event) {
         use super::protocol::Event;
+        let signed_in = match event {
+            Event::SignedIn { .. } => Some(true),
+            Event::SignedOut { .. } => Some(false),
+            _ => None,
+        };
+        if let Some(now) = signed_in {
+            let mut last = self.signed_in.lock().expect("engine health poisoned");
+            if last.replace(now) != Some(now) {
+                self.generation
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+            return;
+        }
         let reason = match event {
             Event::EngineMapMissing {} => Unavailable::MapMissing,
             Event::EngineMismatch {} => Unavailable::EngineMismatch,
@@ -227,6 +244,30 @@ mod tests {
             proton: None,
             account_root: dir.into(),
         }
+    }
+
+    /// A sign-in found gone by any job reads the account again, once.
+    #[test]
+    fn a_change_of_sign_in_moves_the_generation_once() {
+        use super::super::protocol::Event;
+        let temp = tempfile::tempdir().unwrap();
+        let plan = plan(temp.path());
+        let health = EngineHealth::default();
+        let out = Event::SignedOut { reason: None };
+        let start = health.generation();
+        health.observe(&plan, &out);
+        let first = health.generation();
+        assert_ne!(first, start);
+        health.observe(&plan, &out);
+        assert_eq!(health.generation(), first, "no loop on a repeated sign-out");
+        health.observe(
+            &plan,
+            &Event::SignedIn {
+                account_name: "p".into(),
+            },
+        );
+        assert_ne!(health.generation(), first);
+        assert_eq!(health.current(&plan), None, "no engine state");
     }
 
     /// Device proof 6: the state stayed until korrid restarted.
