@@ -38,8 +38,9 @@ in
   # its last known good build before 7.2. The Thor has no such history.
   specialisation = lib.mkForce { };
 
-  # The Thor runs the Portal kernel with its own DTB, built from the same
-  # patched source (./kernel).
+  # The Thor runs the Portal kernel plus ROCKNIX's DPU resource-cleanup
+  # series (./kernel/kernel.nix, passed in as odinKernel), and its own DTB,
+  # built from the Portal kernel's patched source (./kernel).
   hardware.deviceTree = {
     dtbSource = "${thorDtb}/dtbs";
     name = lib.mkForce "qcom/${thorDtb.dtbName}.dtb";

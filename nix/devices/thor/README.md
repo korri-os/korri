@@ -101,7 +101,7 @@ partition, changes the bootloader state, or writes EFI variables.
 
 | Piece | Source | Thor change |
 |---|---|---|
-| Kernel 7.2 + ROCKNIX SM8550 queue + `.config` | `../odin2portal/kernel` (cross-built) | none; the same derivation |
+| Kernel 7.2 + ROCKNIX SM8550 queue + `.config` | `../odin2portal/kernel` (cross-built) | plus ROCKNIX's fixed DPU resource-cleanup series (`./kernel/kernel.nix`) |
 | DTB | `./kernel`, built from the Odin kernel's `src`, `patches` and `configfile` | Thor DTS only |
 | Firmware | `../odin2portal/firmware` | `variant = "thor"` |
 | ROCKNIX SM8550 userspace (hwdb, PipeWire quantum) | `../odin2portal/rocknix` | none |
@@ -131,8 +131,10 @@ Every Thor DTB compatible has a driver in the shared config:
 | AYN key, lid | `gpio-keys` | `KEYBOARD_GPIO=y` |
 | shoulder LEDs | `heroic,htr3212`, `leds-group-multicolor` | `LEDS_HTR3212=y`, `LEDS_GROUP_MULTICOLOR=y` |
 
-Nothing is missing for the first slice. `0000-version-0010-msm-resource-cleanup.patch`
-stays disabled, as for the Portal.
+Nothing is missing for the first slice. The Portal leaves
+`0000-version-0010-msm-resource-cleanup.patch` out, because the pinned copy
+writes through an uninitialised pointer. The Thor kernel carries ROCKNIX's
+fixed copy (`./kernel/kernel.nix` records why and where it comes from).
 
 ## Hardware facts and where they come from
 
@@ -142,7 +144,9 @@ stays disabled, as for the Portal.
 | Top screen panel | icna3520, 1080x1920, DT `rotation = <90>` | pinned DTS |
 | Top screen mode | `1080x1920@120Hz` | first mode of `icna3520_modes`, kernel patch 0057; the 120 Hz link is unproven, see [Hardware results](#hardware-results-2026-11-18) |
 | Top screen transform | 90 | observed under ROCKNIX (same source as the connector); the shell showed on 7.2 with it |
-| Bottom screen | `DSI-1`, `ch13726a,thor` (command mode) on `ae94000`, 1080x1240 | connector and controller in the 2026-11-18 kernel log; pinned DTS and patch 0057 (panel, mode) |
+| Bottom screen | `DSI-1`, `ch13726a,thor` on `ae94000` (mdss_dsi0), 1080x1240, **video mode** | connector and controller in the 2026-11-18 kernel log; pinned DTS; patch 0057 sets `MIPI_DSI_MODE_VIDEO` |
+| Top screen interface | mdss_dsi1, **command mode** with DSC, TE from `mdp_vsync_s` | icna35xx driver (patch 0057) sets no `MIPI_DSI_MODE_VIDEO`; `msm_dsi_is_cmd_mode()`; DTS `qcom,te-source` |
+| DPU encoder ids | dsi0 (bottom) gets the lower id, dsi1 (top) the higher: enc35 = DSI-1, enc38 = DSI-2 | `_dpu_kms_initialize_dsi()` creates dsi0's encoder first; only enc38 can log `dpu_encoder_phys_cmd_*` (inferred from source) |
 | Touch input names | `top_touchscreen`, `bottom_touchscreen` | DT `label` + kernel patch 0015 (the DTS has no `input-name`); not observed |
 | Gamepad | `AYN Odin2 Gamepad`, `rsinput-gamepad/input0` | `gamepad-name` in the shared dtsi, not overridden for the Thor; not observed |
 | Volume keys | `gpio-keys` (up), `pmic_resin` (down) | shared dtsi; not observed on the Thor |
@@ -187,7 +191,24 @@ this image (commit f950545cc), Linux 7.2.
   `dpu_encoder_frame_done_timeout` on enc38, then
   `failed wait_for_idle ... ret:-110 pp:0`, and it garbled the **top**
   screen until DSI-1 was powered off again. The image keeps DSI-1 off.
-  **Never power DSI-1 on live** until a bottom-screen slice fixes this.
+  **Never power DSI-1 on live** on a kernel without the DPU cleanup series.
+- **Third boot (internal).** The compositor failed twice ("compositor
+  exited before it became ready"), then started. Sway logged "Could not find
+  config for output DSI-1" and 163 "Atomic commit failed: Device or resource
+  busy / Page-flip failed on output DSI-2". The kernel logged `enc35 frame
+  done timeout` from 11 s, then hundreds of
+  `dpu_encoder_phys_cmd_prepare_for_kickoff ... failed wait_for_idle: id:38
+  ret:-110 pp:0`. DRM state kept crtc-0 active on DSI-1 after Sway's power
+  off; a live `output DSI-1 disable` could not commit. The owner saw the tty1
+  console on the top screen instead of Velvet. Other boots of the same image
+  were clean.
+- **Reading of these faults (inferred).** enc38 is the top screen's
+  command-mode encoder, not the bottom's (see the facts table). The stalls
+  follow DSI-1's CRTC going on or off. Upstream 7.2 cleans up the mixers
+  assigned at disable time, not the ones the encoder used; ROCKNIX's
+  resource-cleanup series (3/7, 5/7, 6/7) fixes that, and every ROCKNIX
+  kernel that drove both Thor screens carries it. The Thor kernel now
+  carries the fixed copy. Not yet tested on hardware.
 - **First boot.** 50 SMMU faults on SID `0x1c00` at 0.75 s come from the
   bootloader splash handoff. One `WARNING: mm/shrinker.c:212` from udevadm
   at 165 s. The shell start race is listed under TODO.
@@ -228,9 +249,14 @@ this image (commit f950545cc), Linux 7.2.
   `/proc/asound/cards`; the UCM file must be `conf.d/sm8550/<longname>.conf`
   exactly, with no trailing dash.
 - **Bottom screen.** Never enable DSI-1 live (see the hardware results).
-  Enabling it needs a bottom-screen slice that fixes the DSI-1 command-mode
-  path first, then a design for two displays in Korri, its touch mapping, and
-  the AYN key toggle (legacy d152fb370).
+  First test the DPU cleanup kernel: boot several times and check
+  `journalctl -k` for `wait_for_idle` and `frame done timeout`; then try
+  `swaymsg output DSI-1 power on, output DSI-1 transform 90` live. ROCKNIX
+  does this once at start for the rotation (PR #3507). If both pass,
+  enabling the screen needs a design for two displays in Korri, its touch
+  mapping, and the AYN key toggle (legacy d152fb370). ROCKNIX's current
+  ch13726a driver also waits 120 ms after sleep-out before display-on
+  (024a558c31); the pinned driver does not.
 - **USB unplug.** Legacy once saw an unplug reset the USB controller and
   drop DRM master, leaving both panels black with
   `Atomic commit failed: Permission denied` (legacy work/task-001, task-002).

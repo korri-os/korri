@@ -7,7 +7,8 @@
 #
 # Shared with the Portal, by import rather than by copy:
 #   - the kernel package and its .config (../odin2portal/kernel), cross-built
-#     from x86_64 for the same memory reason as the Portal;
+#     from x86_64 for the same memory reason as the Portal, plus one DPU patch
+#     series the Portal leaves out (./kernel/kernel.nix);
 #   - the firmware package (../odin2portal/firmware), with variant = "thor";
 #   - the ROCKNIX SM8550 userspace harvest (../odin2portal/rocknix);
 #   - the SD image and platform policy (../odin2portal/sd-image.nix), with the
@@ -32,6 +33,8 @@ let
   pkgs = mkPkgs "aarch64-linux";
   crossPkgs = (mkPkgs "x86_64-linux").pkgsCross.aarch64-multiplatform;
 
+  kernel = pkgs.callPackage ./kernel/kernel.nix { odinKernel = odin.kernel; };
+  kernelCross = crossPkgs.callPackage ./kernel/kernel.nix { odinKernel = odin.kernelCross; };
   dtb = pkgs.callPackage ./kernel { odinKernel = odin.kernel; };
   dtbCross = crossPkgs.callPackage ./kernel { odinKernel = odin.kernelCross; };
   firmware = pkgs.callPackage ../odin2portal/firmware { variant = "thor"; };
@@ -44,7 +47,7 @@ let
     specialArgs = {
       inherit korri;
       # The Portal's sd-image.nix and platform-policy.nix take these names.
-      odinKernel = odin.kernelCross;
+      odinKernel = kernelCross;
       odinFirmware = firmwareCross;
       odinRocknix = odin.rocknix;
       thorDtb = dtbCross;
@@ -63,6 +66,8 @@ let
 in
 {
   inherit
+    kernel
+    kernelCross
     dtb
     dtbCross
     firmware

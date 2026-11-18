@@ -243,6 +243,7 @@
           odin2portal-mangohud = odin2portal.rocknix.mangohud;
           odin2portal-alsa-lib = odin2portal.rocknix.alsaLib;
           odin2portal-inputplumber-data = odin2portal.rocknix.inputplumberData;
+          thor-kernel = thor.kernel;
           thor-dtb = thor.dtb;
           thor-firmware = thor.firmware;
           thor-sd-image = thor.sdImage;
@@ -265,6 +266,7 @@
           odin2portal-kernel = odin2portal.kernelCross;
           odin2portal-rescue-kernel = odin2portal.rescueKernelCross;
           odin2portal-firmware = odin2portal.firmwareCross;
+          thor-kernel = thor.kernelCross;
           thor-dtb = thor.dtbCross;
           thor-firmware = thor.firmwareCross;
           # The aarch64 image, so `nix build .#thor-sd-image` works on an x86_64

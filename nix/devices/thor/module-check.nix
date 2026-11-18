@@ -18,6 +18,12 @@ assert c.nixpkgs.hostPlatform.system == "aarch64-linux";
 assert c.networking.hostName == "thor";
 assert c.boot.kernelPackages.kernel.version == "7.2";
 assert c.boot.kernelPackages.kernel.features.efiBootStub;
+# The Thor kernel carries ROCKNIX's fixed DPU resource-cleanup series.
+assert
+  c.boot.kernelPackages.kernel.dpuResourceCleanupPatch == "0000-version-0010-msm-resource-cleanup.patch";
+assert lib.any (
+  p: baseNameOf p == "0000-version-0010-msm-resource-cleanup.patch"
+) c.boot.kernelPackages.kernel.patches;
 assert c.hardware.deviceTree.enable;
 assert c.hardware.deviceTree.name == "qcom/qcs8550-ayn-thor.dtb";
 assert lib.hasInfix "thor-dtb" (toString c.hardware.deviceTree.package);
