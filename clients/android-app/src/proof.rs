@@ -24,13 +24,43 @@
 //! The resize answer is the holder's: `Applied`, `Refused` or `Unavailable`.
 //! It stands in for korrid's Portrait control, which asks the same request
 //! only once the viewer reports that it can present a new size.
+//!
+//! The viewer streams with its default network core, nightjar-core (#391
+//! step E). A file `<cache>/proof-network-core` that holds `c` makes the
+//! next streams use the C core, as `-networkcore c` does on Linux: the proof
+//! measures the fixture APK with each core (`network_core`). korrid's launch
+//! names no core, so the product has no such choice.
 use crate::{logcat, viewer};
 use korri_viewer_treaty::SurfaceGameplayControlValue as Value;
 use korrid::linux_viewer::LinuxStreamViewer;
 use std::{path::PathBuf, sync::Once, thread, time::Duration};
 
 const COMMAND: &str = "proof-command";
+const NETWORK_CORE: &str = "proof-network-core";
 const LOG: &str = "korri-app: proof:";
+
+/// The cache directory that `watch` was given.
+static CACHE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// The network core that `<cache>/proof-network-core` names for the next
+/// stream, or none for the viewer's default. A name that the viewer does not
+/// know is logged and left out.
+pub fn network_core() -> Option<korri_viewer::network_core::Kind> {
+    let name = std::fs::read_to_string(CACHE.get()?.join(NETWORK_CORE)).ok()?;
+    match korri_viewer::network_core::Kind::parse(name.trim()) {
+        Ok(kind) => {
+            logcat::info(&format!(
+                "{LOG} network core {} for this stream",
+                name.trim()
+            ));
+            Some(kind)
+        }
+        Err(cause) => {
+            logcat::error(&format!("{LOG} network core {}: {cause:#}", name.trim()));
+            None
+        }
+    }
+}
 
 /// The activity's app, for the input method's commands (DIAGNOSIS ONLY).
 static APP: std::sync::OnceLock<slint::android::AndroidApp> = std::sync::OnceLock::new();
@@ -38,6 +68,7 @@ static APP: std::sync::OnceLock<slint::android::AndroidApp> = std::sync::OnceLoc
 /// Watch for the proof's commands, once per process.
 pub fn watch(cache: PathBuf, app: &slint::android::AndroidApp) {
     let _ = APP.set(app.clone());
+    let _ = CACHE.set(cache.clone());
     static STARTED: Once = Once::new();
     STARTED.call_once(|| {
         let path = cache.join(COMMAND);

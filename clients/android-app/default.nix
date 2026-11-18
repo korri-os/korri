@@ -22,6 +22,8 @@
 # Since D10 the library links the Rust viewer too (clients/viewer), with the
 # network core, OpenSSL and libopus that clients/viewer/android.nix builds
 # for each ABI (`viewerParts`), exactly as the viewer's own APK links them.
+# Since #391 step E the viewer carries nightjar-core, its default network
+# core, with the arm64 cfgs that the viewer's APK gives it.
 {
   pkgs,
   proseql,
@@ -162,8 +164,14 @@ let
       export CXX_${target}=${cc}++
       export AR_${target}=${toolchain}/bin/llvm-ar
       export CARGO_TARGET_${cargoTarget}_LINKER=${cc}
-      # 16 KiB load segments, as clients/android/build.sh links its libraries.
-      export CARGO_TARGET_${cargoTarget}_RUSTFLAGS="-C link-arg=-Wl,-z,max-page-size=16384"
+      # 16 KiB load segments, as clients/android/build.sh links its libraries;
+      # on arm64 nightjar-core's ARMv8 AES and PMULL cfgs, as the viewer's
+      # APK builds it (clients/viewer/android.nix).
+      export CARGO_TARGET_${cargoTarget}_RUSTFLAGS="${
+        lib.concatStringsSep " " (
+          [ "-C link-arg=-Wl,-z,max-page-size=16384" ] ++ (viewer.nightjarRustflags or [ ])
+        )
+      }"
       export BINDGEN_EXTRA_CLANG_ARGS_${target}="--target=${abi.target}${api} --sysroot=${toolchain}/sysroot"
     '';
 
@@ -205,6 +213,8 @@ let
         ../viewer/Cargo.toml
         ../viewer/build.rs
         ../viewer/src
+        # nightjar-core and the Rubylight crates it needs (#391 step E).
+        ../viewer/vendor
         ../../services/korrid/Cargo.toml
         ../../services/korrid/src
         # The vendored CPace crate (the join's key exchange, ADR 0070).
@@ -297,6 +307,17 @@ let
           exit 1
         fi
         "${toolchain}/bin/llvm-nm" --defined-only --extern-only $built | grep -q ' T ANativeActivity_onCreate$'
+        # The viewer's network cores: the C core, and nightjar-core with, on
+        # arm64, its ARMv8 AES and POLYVAL (clients/viewer/android.nix).
+        "${toolchain}/bin/llvm-nm" --demangle --defined-only $built > symbols.txt
+        for symbol in LiStartConnection 'nightjar_core::session::start' ${
+          lib.optionalString (
+            viewerParts.${abi.name} ? nightjarRustflags
+          ) "'aes::armv8::' 'polyval::backend::pmull::'"
+        }; do
+          grep -qF "$symbol" symbols.txt || { echo "${library} has no $symbol" >&2; exit 1; }
+        done
+        rm symbols.txt
         # No library of this app carries the federation fixture's in-memory
         # launch units (korrid's feature `fixture`, #434 D10), as no shipped
         # korrid does (services/korrid/package.nix).
@@ -382,11 +403,12 @@ let
 
       This app is free software. Its library links Korri's stream viewer,
       whose Android parts port Artemis code under the GNU General Public
-      License version 3 only, and moonlight-common-c, which is under GPL
-      version 3 with no "or later" grant. So the app as a whole is
-      distributed under the GNU General Public License version 3 only
-      (GPL-3.0-only). The full text of that licence is at the end of this
-      file. This app comes with ABSOLUTELY NO WARRANTY, to the extent
+      License version 3 only, its network cores nightjar-core and
+      moonlight-common-c, and the Rubylight crates that nightjar-core uses,
+      which are all under GPL version 3 with no "or later" grant. So the app
+      as a whole is distributed under the GNU General Public License version
+      3 only (GPL-3.0-only). The full text of that licence is at the end of
+      this file. This app comes with ABSOLUTELY NO WARRANTY, to the extent
       permitted by law (sections 15 and 16 of the licence).
 
       Source code
@@ -404,9 +426,12 @@ let
       toolchains), moonlight-embedded (moonlight-common-c and ENet),
       proseql, the Rust crates on crates.io, and the Kotlin standard
       library and rustls-platform-verifier's Kotlin component on Maven
-      repositories. Skia is the prebuilt archive of rust-skia's release
-      ${skiaVersion}, built from https://github.com/rust-skia/rust-skia at
-      tag ${skiaVersion}. This command builds the same unsigned APK:
+      repositories. nightjar-core, the Rubylight crates and Nightjar's
+      rusty_enet are in the repository itself, in clients/viewer/vendor,
+      whose README names their upstream commits and Korri's changes. Skia
+      is the prebuilt archive of rust-skia's release ${skiaVersion}, built
+      from https://github.com/rust-skia/rust-skia at tag ${skiaVersion}.
+      This command builds the same unsigned APK:
 
         nix build github:korri-os/korri/${revision}#korri-android-app-release-apk
 

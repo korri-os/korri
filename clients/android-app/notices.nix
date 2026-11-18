@@ -151,6 +151,13 @@ pkgs.stdenv.mkDerivation {
       part 'Reed-Solomon forward error correction' \
         "The FEC code inside moonlight-common-c (reedsolomon/rs.c)." \
         reed-solomon.txt
+      # Both projects' own licence files must still be the GPL version 3.
+      for file in ../viewer/vendor/nightjar/LICENSE.txt ../viewer/vendor/rubylight-native-api/LICENSE; do
+        grep -q 'GNU GENERAL PUBLIC LICENSE' "$file" && grep -q 'Version 3, 29 June 2007' "$file" ||
+          { echo "notices: $file is not the GPL version 3" >&2; exit 1; }
+      done
+      part 'nightjar-core and the Rubylight crates' \
+        "The stream's default network core: nightjar-core and the crates rubylight-protocol and rubylight-traverse, from Nightjar (https://github.com/RamazanKara/nightjar), and rubylight-native-api, from Rubylight (https://github.com/RamazanKara/Rubylight), compiled into the library from Korri's copies in clients/viewer/vendor, whose README names their commits and Korri's changes. GNU General Public License version 3 only; the text is at the end of this file. Nightjar's changed copy of the crate rusty_enet is among the Rust crates below."
       # The notice of the data that Korri's viewer took from Valve and SDL,
       # inside its source file's head comment.
       sed -n '/^\/\/! ```text$/,/^\/\/! ```$/p' ../viewer/src/android/controller_list.rs |
@@ -244,7 +251,7 @@ pkgs.stdenv.mkDerivation {
       cat crates.txt
 
       printf '\n================================================================================\n'
-      printf 'GNU GENERAL PUBLIC LICENSE VERSION 3\n\nThe licence of the app as a whole, and of moonlight-common-c.\n'
+      printf 'GNU GENERAL PUBLIC LICENSE VERSION 3\n\nThe licence of the app as a whole, of moonlight-common-c, and of\nnightjar-core and the Rubylight crates.\n'
       licence ${moonlight}/LICENSE.txt
     } > NOTICES.txt
     runHook postBuild

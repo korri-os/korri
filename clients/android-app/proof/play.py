@@ -25,7 +25,10 @@ The steps:
 2. Start one headless Android 12 emulator (2 cores, its own adb server, its
    data wiped, its sound into a WAV file), give its display a camera cutout
    (`--cutout`: by default the image's emulated Pixel 5, a hole in the top
-   left corner), install the APK and seed the member's identity (D9).
+   left corner), install the APK and seed the member's identity (D9). The
+   viewer streams with nightjar-core, its default network core (#391 step
+   E); `--network-core c` writes the fixture's proof file that asks for the
+   C core (src/proof.rs), and Home checks the core by its stop line.
 3. Start the sender fixture with certificate control for the holder's user,
    and the frame-ID source; the seat receiver; the holder as that user, with
    both sockets' variables. Start the app and wait until Velvet lists the
@@ -1432,6 +1435,29 @@ def overlay(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.
     return steps, checks
 
 
+# The fixture APK's choice of the viewer's network core (src/proof.rs): the
+# app streams with nightjar-core unless this file in its cache names `c`.
+NETWORK_CORE_FILE = "cache/proof-network-core"
+# Each network core's first line when the stream stops: the nightjar
+# adapter's statistics, and moonlight-common-c's LiStopConnection.
+CORE_STOPPING = {"nightjar": "korri-viewer: nightjar: at the stop: ", "c": "korri-viewer: Stopping input stream"}
+
+
+def choose_network_core(emulator: "d8.Emulator", core: str) -> None:
+    """The next streams' network core (#391 step E): the C core by the
+    fixture's file, nightjar-core, the default, by none."""
+    if core == "c":
+        d9.run_as(emulator, "sh", "-c", f"echo c > {NETWORK_CORE_FILE}")
+    else:
+        d9.run_as(emulator, "rm", "-f", NETWORK_CORE_FILE)
+
+
+def the_stream_used(lines: list[str], core: str) -> bool:
+    """Whether the stream's stop lines are `core`'s, and no other core's."""
+    used = {name for name, line in CORE_STOPPING.items() if any(line in l for l in lines)}
+    return used == {core}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--sunshine", required=True,
@@ -1445,6 +1471,9 @@ def main() -> int:
     parser.add_argument("--out", type=Path, help="the record's directory; default: a new one under /tmp")
     parser.add_argument("--apk", help="a fixture APK already built from this tree (its unsigned file); default: build it")
     parser.add_argument(d8.cli.BUILD_STORE_OPTION, metavar="STORE", help=d8.cli.BUILD_STORE_HELP)
+    parser.add_argument("--network-core", choices=("nightjar", "c"), default="nightjar",
+                        help="the viewer's network core (#391 step E): nightjar-core, the app's default, "
+                             "or the C core through the fixture's proof file")
     parser.add_argument("--cutout", default="pixel_5",
                         help="the emulated camera cutout or phone of the display (#494): NAME of the overlays "
                              "com.android.{internal,systemui}[.display.cutout].emulation.NAME, or none")
@@ -1461,7 +1490,7 @@ def main() -> int:
     scratch = Path(tempfile.mkdtemp(prefix="korri-app-d10-run-"))
     state = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "korri/android-app"
     log(f"record: {out}")
-    result: dict = {"stream_host": host, "checks": {}, "steps": {}}
+    result: dict = {"stream_host": host, "network_core": args.network_core, "checks": {}, "steps": {}}
     checks, steps = result["checks"], result["steps"]
     holder_user = (args.holder_uid, args.holder_uid)
     unused_user(args.holder_uid)
@@ -1482,6 +1511,8 @@ def main() -> int:
     checks["apk_has_code_false"] = re.search(r"hasCode.*=false", manifest) is not None
     library = subprocess.run(["unzip", "-p", str(signed), f"lib/x86_64/{d8.LIBRARY}"], check=True, capture_output=True).stdout
     checks["library_carries_the_viewer"] = b"LiStartConnection" in library and b"AMediaCodec_createCodecByName" in library
+    # Its default network core too (#391 step E): the nightjar adapter's stop line.
+    checks["library_carries_nightjar_core"] = b"nightjar: at the stop: " in library
     del library
     device_relay = int(relays[0].rsplit(":", 1)[1])
 
@@ -1520,7 +1551,11 @@ def main() -> int:
         shutil.rmtree(member)
         listed = d9.run_as(emulator, "ls", "-l", d9.IDENTITY).stdout
         checks["identity_seeded_as_the_apps_own_files"] = listed.count("-rw-------") == 2
+        choose_network_core(emulator, args.network_core)
 
+        # The sender's agent refuses a start at its heat limit: wait for it to
+        # cool, as the viewer's proof does (viewer_proof.cool_sender).
+        steps["sender_cooldown"] = viewer_proof.cool_sender(sender.request)
         log("starting the sender fixture: Korri's Sunshine, Korri Stream, its tone, input log, certificate control")
         prepared = sender.request(
             "prepare", sway=f"{parts['sway']}/bin/sway", sunshine=str(sunshine),
@@ -1705,6 +1740,8 @@ def main() -> int:
         checks["the_runtime_ends_and_its_layers_go"] = logcat.wait_for(ENDED, home_mark, 30) is not None
         checks["korrids_status_reads_stopped"] = logcat.wait_for(
             re.compile(rf"korri-app: viewer status for korrid: {launch} Stopped"), home_mark, 20) is not None
+        # The stream ran on the core that the proof asked for (#391 step E).
+        checks["the_stream_used_its_network_core"] = the_stream_used(logcat.lines()[launch_mark:], args.network_core)
         if steps["keyboard"].get("applies"):
             checks["the_streams_end_hides_the_keyboard_and_gives_the_focus_back"] = \
                 logcat.wait_for(KEYBOARD_GIVEN_BACK, home_mark, 30) is not None

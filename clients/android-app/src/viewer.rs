@@ -393,11 +393,17 @@ impl LinuxStreamViewer for Adapter {
                 ));
             }
             let keydir = self.0.keydir.clone();
-            let options = Options::for_lifecycle(
+            #[allow(unused_mut)]
+            let mut options = Options::for_lifecycle(
                 keydir.clone(),
                 display.map(|display| (display.width, display.height)),
             )
             .map_err(|cause| error(format!("{cause:#}")))?;
+            // The emulator proof's choice of network core (fixture APK only).
+            #[cfg(feature = "proof")]
+            if let Some(kind) = crate::proof::network_core() {
+                options.network_core = kind;
+            }
             let changed = self.0.changed.clone();
             let lifecycle = Lifecycle::in_process(launch, move |event| {
                 logcat::info(&format!("korri-app: viewer event {}", json(event)));

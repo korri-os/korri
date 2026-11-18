@@ -6,7 +6,8 @@
 # target.
 targets = ["aarch64-linux-android"]
 # Korri's own crates (publish = false) are not third-party: the notices'
-# first paragraph covers them.
+# first paragraph covers them. So is Nightjar's rubylight-traverse, which is
+# third-party: notices.nix names it in its part for nightjar-core.
 private = { ignore = true }
 # Build scripts, proc macros' builds and tests put no code in the library.
 ignore-build-dependencies = true

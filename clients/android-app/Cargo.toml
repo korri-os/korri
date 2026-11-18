@@ -3,8 +3,10 @@ name = "korri-android-app"
 version = "0.1.0"
 edition = "2021"
 # The Rust viewer's Android parts port Artemis code under GPL-3.0-only
-# (clients/viewer/README.md), so the library is GPL-3.0-only. Zlib and
-# Apache-2.0: the viewer's parts under them (clients/viewer/Cargo.toml).
+# (clients/viewer/README.md), and its network core nightjar-core is
+# GPL-3.0-only (clients/viewer/vendor/README.md), so the library is
+# GPL-3.0-only. Zlib and Apache-2.0: the viewer's parts under them
+# (clients/viewer/Cargo.toml).
 license = "GPL-3.0-or-later AND GPL-3.0-only AND Zlib AND Apache-2.0"
 publish = false
 description = "The Korri Android app with no Korri Java: korrid, the native shell and the Rust viewer in one NativeActivity library"
@@ -35,8 +37,10 @@ slint = { version = "=1.18.1", default-features = false, features = ["backend-an
 jni = "0.21"
 anyhow = "1"
 # The Rust viewer in this process, korrid's stream viewer (src/viewer.rs,
-# #434 D10), and the treaty that korrid drives it through.
-korri-viewer = { path = "../viewer" }
+# #434 D10), and the treaty that korrid drives it through. With nightjar-core
+# (#391 step E), its default network core; the C core stays in the library,
+# and the emulator proof can ask for it (src/proof.rs, fixture APK only).
+korri-viewer = { path = "../viewer", features = ["nightjar"] }
 korri-viewer-treaty = { path = "../../contracts/viewer" }
 # korrid's LinuxStreamViewer is futures' BoxFuture over tokio; the releases
 # that korrid locks. Its timer bounds korrid's wait for the overlay to close.
