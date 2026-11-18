@@ -11,7 +11,7 @@ use korri_surface_treaty::{SurfaceProgress, SurfaceStoreEntry};
 use std::collections::BTreeMap;
 
 /// The provider id the store shows.
-pub const PROVIDER_ID: &str = "@korri:steam";
+pub const PROVIDER_ID: &str = crate::script::ENGINE_PROVIDER_ID;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SteamApp {
