@@ -1543,7 +1543,8 @@ impl Drop for Stream {
                     _pin,
                 } = *playing;
                 refuse_resumes(resumes, "the activity ended");
-                play.end();
+                // The mouse is let go on the view, as at every end.
+                end_play(&self.app, &mut play);
                 if !stopping {
                     stop_on_a_thread(&launch, lifecycle.clone());
                 }

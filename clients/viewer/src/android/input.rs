@@ -390,6 +390,9 @@ pub struct Input {
     pointers: Pointers,
     mouse_emulation: bool,
     chromeos: bool,
+    /// The overlay's hold let the captured mouse go; its release takes it
+    /// again.
+    overlay_let_go: bool,
 }
 
 /// Artemis's input hold (`NvConnection.setInputHeld`): one gate below every
@@ -569,6 +572,7 @@ impl Input {
             pointers: Pointers::default(),
             mouse_emulation: settings.mouse_emulation,
             chromeos: settings.chromeos,
+            overlay_let_go: false,
         }
     }
 
@@ -621,12 +625,19 @@ impl Input {
 
     /// The gameplay overlay opened (`Game.showSurfaceOverlay`): the host
     /// lets go of everything it holds down, and nothing more goes to it but
-    /// a controller's arrival until `release`. The mapping starts clean.
+    /// a controller's arrival until `release`. The mapping starts clean. A
+    /// captured mouse is let go (`setInputGrabState(false)`), so that it
+    /// points into the overlay; Artemis keeps the capture, and its overlay
+    /// then hears only the mouse's moves, which it cannot use.
     pub fn hold(&mut self, sink: &mut dyn Sink) {
         if self.hold.held {
             return;
         }
         self.hold.held = true;
+        if self.capture.grabbed() && !self.capture.cursor_visible() {
+            self.capture.grab(false, self.pointers.compatible);
+            self.overlay_let_go = true;
+        }
         let mut counted = Counting {
             sink,
             hold: &mut Hold::default(),
@@ -639,10 +650,14 @@ impl Input {
     }
 
     /// The gameplay overlay closed (`Game.hideSurfaceOverlay`): the mapping
-    /// starts clean again, then input goes to the stream. Nothing is sent.
+    /// starts clean again, then input goes to the stream, and a mouse that
+    /// the hold let go is captured again. Nothing is sent.
     pub fn release(&mut self, sink: &mut dyn Sink) {
         self.reset(sink);
         self.hold.held = false;
+        if std::mem::take(&mut self.overlay_let_go) {
+            self.capture.grab(true, self.pointers.compatible);
+        }
     }
 
     /// `resetStreamInputState`, while held: what it would send is held.
@@ -3873,5 +3888,76 @@ pub(crate) mod tests {
         press.event_time_ms = 2000;
         on_pad(&mut input, &mut sink, press);
         assert_eq!(sink.take(), [clicked(true, MOUSE_LEFT)]);
+    }
+
+    // Review P0, unlike Artemis, which keeps the capture under its overlay:
+    // a captured mouse sends only its moves, which the overlay cannot use.
+    // The overlay's hold lets the capture go (`setInputGrabState(false)`),
+    // and its release takes it again. With the local cursor shown the
+    // mouse already points: nothing changes.
+    #[test]
+    fn the_overlay_lets_a_captured_mouse_go_and_takes_it_back() {
+        let mut input = ungrabbed(true, false, 0);
+        let mut sink = Recorded::default();
+        let mut devices = Known::with([touchscreen(3), mouse_device(7)]);
+        input.grab(true, &mut devices);
+        assert_eq!(input.take_capture(), [Call::HideIcon, Call::Request]);
+        input.hold(&mut sink);
+        assert_eq!(input.take_capture(), [Call::ShowIcon, Call::Release]);
+        input.release(&mut sink);
+        assert_eq!(input.take_capture(), [Call::HideIcon, Call::Request]);
+        assert!(!input.local_cursor());
+        // The captured mouse is the stream's again.
+        let moved = mouse_motion(source::MOUSE_RELATIVE, action::MOVE, 5.0, 0.0, 0);
+        assert!(input.motion(&moved, 1000, &mut devices, &mut sink));
+        assert_eq!(sink.take(), [Packet::MouseMove { dx: 5, dy: 0 }]);
+        input.toggle_local_cursor(&mut devices);
+        input.take_capture();
+        input.hold(&mut sink);
+        input.release(&mut sink);
+        assert_eq!(input.take_capture(), []);
+        assert!(input.local_cursor());
+    }
+
+    // Review P1, as in Artemis's "Two finger click": a press with one
+    // finger and a release with two kept the left button down, because the
+    // two-finger branch keeps it as the host has it. A release lets go of
+    // whatever the press held, with any count of fingers.
+    #[test]
+    fn a_touchpads_button_lets_go_whatever_fingers_it_ends_with() {
+        let (mut input, mut sink) = (captured_touchpad(), Recorded::default());
+        let one = &[(500.0, 500.0)][..];
+        let two = &[(400.0, 500.0), (600.0, 500.0)][..];
+        // One finger presses; a second joins before the release.
+        on_pad(
+            &mut input,
+            &mut sink,
+            pad_event(action::BUTTON_PRESS, 0, one, 0x01, 1000),
+        );
+        on_pad(
+            &mut input,
+            &mut sink,
+            pad_event(action::BUTTON_RELEASE, 0, two, 0, 1100),
+        );
+        // Two fingers press; one lifts before the release.
+        on_pad(
+            &mut input,
+            &mut sink,
+            pad_event(action::BUTTON_PRESS, 0, two, 0x01, 2000),
+        );
+        on_pad(
+            &mut input,
+            &mut sink,
+            pad_event(action::BUTTON_RELEASE, 0, one, 0, 2100),
+        );
+        assert_eq!(
+            sink.take(),
+            [
+                clicked(true, MOUSE_LEFT),
+                clicked(false, MOUSE_LEFT),
+                clicked(true, MOUSE_RIGHT),
+                clicked(false, MOUSE_RIGHT)
+            ]
+        );
     }
 }

@@ -830,14 +830,18 @@ impl Mouse {
             && event.pointers.len() == 2
             && action_button == BUTTON_PRIMARY
         {
-            match event.action {
-                action::BUTTON_PRESS => state |= BUTTON_SECONDARY,
-                action::BUTTON_RELEASE => state &= !BUTTON_SECONDARY,
-                _ => {}
-            }
-            // The primary button stays as the host has it.
             state &= !BUTTON_PRIMARY;
-            state |= self.buttons & BUTTON_PRIMARY;
+            match event.action {
+                // The primary button stays as the host has it.
+                action::BUTTON_PRESS => {
+                    state |= BUTTON_SECONDARY | (self.buttons & BUTTON_PRIMARY);
+                }
+                // The pad has one button: its release lets go of the left
+                // button too, which a press with one finger held before a
+                // second finger came. Artemis keeps that one down.
+                action::BUTTON_RELEASE => state &= !BUTTON_SECONDARY,
+                _ => state |= self.buttons & BUTTON_PRIMARY,
+            }
         }
         let changed = state ^ self.buttons;
         if let Some((dx, dy)) = relative(event, captured) {
