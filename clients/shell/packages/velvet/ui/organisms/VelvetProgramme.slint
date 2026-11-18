@@ -43,7 +43,12 @@ export component VelvetProgramme inherits Rectangle {
     property <length> sub-h: page.sub == "" ? 0px : sub.preferred-height + fact * 0.4;
     property <length> body-top: head-foot + sub-h + fact * 1.1;
     // The panel over the rows takes at most two fifths of what is left.
+    // A narrow window stacks the code over its words, the code as wide as the page allows.
+    property <bool> qr-under: coded && !beside && page.stack;
+    property <length> qr-words: fact * 5;
+    property <length> qr-side: Math.max(0px, Math.min(self.width - 2 * pad-x, (self.height - body-top - pad-y - buttons-h - fact) * 0.75 - qr-words));
     property <length> panel-h: !panelled ? 0px : beside ? self.height - body-top - pad-y
+        : qr-under ? qr-side + fact + qr-words
         : coded ? Math.max(0px, Math.min((self.height - body-top - pad-y - buttons-h) * 0.75, (self.width - 2 * pad-x) * 0.5))
         : Math.min((self.height - body-top - pad-y) * 0.4, self.width - 2 * pad-x);
     property <length> rows-y: body-top + (panelled && !beside ? panel-h + fact : 0px);
@@ -102,7 +107,7 @@ export component VelvetProgramme inherits Rectangle {
         y: root.body-top;
         width: root.beside ? Tokens.screen.panel-w * root.u : parent.width - 2 * root.pad-x;
         height: root.panel-h;
-        property <length> art: root.coded ? (root.beside ? Math.min(self.height * 0.62, self.width) : self.height)
+        property <length> art: root.coded ? (root.beside ? Math.min(self.height * 0.62, self.width) : root.qr-under ? root.qr-side : self.height)
             : Math.min(self.height * (root.beside ? 0.56 : 1), root.beside ? self.width : self.width * 0.42);
         if root.coded: Rectangle {
             x: 0;
@@ -128,10 +133,11 @@ export component VelvetProgramme inherits Rectangle {
             fixed: true;
             inert: true;
         }
+        property <bool> under: root.beside || root.qr-under;
         VerticalLayout {
-            x: root.beside ? 0px : parent.art + root.fact;
-            y: root.beside ? parent.art + root.fact : 0px;
-            width: root.beside ? parent.width : parent.width - parent.art - root.fact;
+            x: parent.under ? 0px : parent.art + root.fact;
+            y: parent.under ? parent.art + root.fact : 0px;
+            width: parent.under ? parent.width : parent.width - parent.art - root.fact;
             height: Math.min(self.preferred-height, parent.height - self.y);
             spacing: root.fact * 0.2;
             alignment: start;
@@ -142,6 +148,7 @@ export component VelvetProgramme inherits Rectangle {
             }
             for line in root.panel-lines: VelvetWords {
                 text: line;
+                wraps: true;
             }
         }
     }

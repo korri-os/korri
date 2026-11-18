@@ -91,7 +91,8 @@ function pageView(asked: Pictures, panel: PanelSpec, state: State, p: Plan, live
       }),
       focusActive: button === (panel.buttons.find(candidate => candidate.dim !== true) ?? panel.buttons[0]),
     } as PillView)),
-    panelLines: (side?.lines ?? []).flatMap(line => breakLines(line.length > 60 && !line.includes(" ") ? chunk(line, 28) : line, p.fact, p.panelW)),
+    // A code's words stand beside it or under it, at a width the view decides: they wrap there.
+    panelLines: side?.kind === "qr" ? side.lines ?? [] : (side?.lines ?? []).flatMap(line => breakLines(line.length > 60 && !line.includes(" ") ? chunk(line, 28) : line, p.fact, p.panelW)),
     tiles: game === undefined ? [] : [gameCard(asked, game)],
     qr: side?.kind === "qr" && side.qr !== undefined ? qrPath(side.qr) : "",
     qrSize: side?.kind === "qr" && side.qr !== undefined ? side.qr.size + 2 * QUIET : 0,

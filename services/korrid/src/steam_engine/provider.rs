@@ -125,10 +125,22 @@ impl Job {
                 bytes_to_download,
                 bytes_staged,
                 bytes_to_stage,
-            } if *id == appid => Self::Moving {
-                done: bytes_downloaded.saturating_add(*bytes_staged),
-                total: bytes_to_download.saturating_add(*bytes_to_stage),
-            },
+            } if *id == appid => {
+                // Steam downloads, then stages (writes) the files. Each phase is
+                // shown in its own true bytes: the bar starts again for staging
+                // rather than counting the game twice.
+                if bytes_downloaded < bytes_to_download || *bytes_to_stage == 0 {
+                    Self::Moving {
+                        done: *bytes_downloaded,
+                        total: *bytes_to_download,
+                    }
+                } else {
+                    Self::Moving {
+                        done: *bytes_staged,
+                        total: *bytes_to_stage,
+                    }
+                }
+            }
             Event::AppJobFinished {
                 appid: id, result, ..
             } if *id == appid => Self::Finished {
@@ -139,7 +151,7 @@ impl Job {
         }
     }
 
-    /// Bytes downloaded and staged: Steam's own two phases as one bar.
+    /// Where the current phase stands, in that phase's bytes.
     pub fn progress(&self) -> Option<SurfaceProgress> {
         match self {
             Self::Moving { done, total } if *total > 0 => Some(SurfaceProgress {
@@ -206,7 +218,7 @@ mod tests {
     }
 
     #[test]
-    fn an_install_job_reports_both_phases_as_one_bar_and_its_result() {
+    fn an_install_job_reports_each_phase_in_its_own_bytes_and_its_result() {
         let mut job = Job::Starting;
         assert_eq!(job.progress(), None);
         job = job.apply(
@@ -222,8 +234,26 @@ mod tests {
         assert_eq!(
             job.progress(),
             Some(SurfaceProgress {
-                done: 50.0,
-                total: Some(180.0)
+                done: 40.0,
+                total: Some(80.0)
+            })
+        );
+        // Downloaded: the staging of the same game, in its own bytes.
+        let staging = job.apply(
+            78000,
+            &Event::AppProgress {
+                appid: 78000,
+                bytes_downloaded: 80,
+                bytes_to_download: 80,
+                bytes_staged: 25,
+                bytes_to_stage: 100,
+            },
+        );
+        assert_eq!(
+            staging.progress(),
+            Some(SurfaceProgress {
+                done: 25.0,
+                total: Some(100.0)
             })
         );
         // Another app's progress is not this job's.

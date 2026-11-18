@@ -121,7 +121,8 @@ export function steamContent(account: SurfaceSteamAccount): SteamContent {
     case "Working":
       return {
         sub: account.forGame === undefined ? "" : `${account.forGame} starts when you are signed in.`,
-        rows: [note("st:working", account.kicker)],
+        // A row that rests, with the busy mark: the page shows it is at work and has a focus.
+        rows: [{ id: "st:working", kind: "row", label: account.kicker, mark: "busy", rests: true }],
         buttons: buttons(account.actions),
         ...(cancel(account.actions) === undefined ? {} : { cancel: cancel(account.actions)! }),
       }

@@ -445,7 +445,7 @@ done"#;
             moving,
             AcquireJobState::Downloading {
                 bytes_done: 40,
-                bytes_total: Some(180),
+                bytes_total: Some(80),
                 ..
             }
         ));
