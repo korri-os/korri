@@ -42,6 +42,7 @@ fn linux_route_candidates_for_runner(
             // ADR 0054: an Android runner starts a package, not a program.
             (runner.program.is_some() || runner.is_android())
                 && chosen_runner.is_none_or(|id| runner.id == id)
+                && crate::steam_engine::held_back(&runner.id).is_none()
                 && match (&runner.releases, &runner.systems) {
                     (Some(releases), _) => releases.iter().any(|candidate| candidate.0 == key),
                     (None, Some(systems)) => systems.iter().any(|s| s == system_id),

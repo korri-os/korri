@@ -367,6 +367,8 @@ pub fn snapshot_for_person(
             .values()
             .filter(|v| {
                 v.program.is_some()
+                    // A Steam engine runner that cannot run here is no choice.
+                    && crate::steam_engine::held_back(&v.id).is_none()
                     && (game_id.is_none()
                         || !choosable(v)
                         || candidates.iter().any(|c| c.runner_id == v.id))

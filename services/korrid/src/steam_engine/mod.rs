@@ -64,6 +64,17 @@ pub fn is_engine_runner(id: &str) -> bool {
     steam_parts(id).is_some_and(|(_, key)| key == ENGINE_KEY)
 }
 
+/// Why the engine runner cannot play here now, from what its hosts
+/// reported while it still holds (contract "Pinned engine": games keep
+/// working on the client runner). None for every other runner. Routes leave
+/// such a runner out, so a selection of it falls back to the client runner.
+pub fn held_back(runner_id: &str) -> Option<availability::Unavailable> {
+    if !is_engine_runner(runner_id) {
+        return None;
+    }
+    health().any()
+}
+
 /// The title of a Steam plugin's runner in launch settings, where both
 /// runners otherwise carry the plugin's one title.
 pub fn runner_title(runner_id: &str) -> Option<&'static str> {

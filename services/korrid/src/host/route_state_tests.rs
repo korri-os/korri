@@ -816,3 +816,48 @@ async fn the_steam_runners_carry_their_own_titles() {
         ]
     );
 }
+
+/// Device proof 6 (ADR 0083): an engine runner a host found unusable is no
+/// choice, and play of a game set to it falls back to the client runner.
+#[tokio::test]
+async fn an_unavailable_steam_engine_runner_falls_back_to_the_client_runner() {
+    let root = tempfile::tempdir().unwrap();
+    let app = steam_library(root.path());
+    save_runner(root.path(), STEAM_ENGINE);
+    assert!(
+        runner_rows(&app).await[0].2,
+        "the engine runner is selected"
+    );
+
+    // A host reports that the engine file is not the pinned build.
+    let files = tempfile::tempdir().unwrap();
+    fs::write(files.path().join("korri-steam-host"), "host").unwrap();
+    fs::write(files.path().join("steamclient.so"), "not the engine").unwrap();
+    let plan = crate::steam_engine::host::HostPlan {
+        host_program: files.path().join("korri-steam-host"),
+        engine: files.path().join("steamclient.so"),
+        proton: None,
+        account_root: files.path().into(),
+    };
+    let health = crate::steam_engine::health();
+    health.observe(
+        &plan,
+        &crate::steam_engine::protocol::Event::EngineMismatch {},
+    );
+    let routes = rpc(&app, "app.local-games.routes", json!({"gameId": GAME})).await;
+    let rows = runner_rows(&app).await;
+    let launched = rpc(&app, "app.session.prepare", json!({"gameId": GAME})).await;
+    health.forget();
+
+    let selection = routes["payload"]["selection"].to_string();
+    assert!(
+        selection.contains(STEAM_CLIENT) && !selection.contains(STEAM_ENGINE),
+        "{routes}"
+    );
+    assert_eq!(
+        rows,
+        [(STEAM_CLIENT.into(), "Steam client".into(), true, true)]
+    );
+    assert_eq!(launched["_tag"], "Ok", "{launched}");
+    assert_eq!(launched["payload"]["session"]["gameId"], GAME, "{launched}");
+}
