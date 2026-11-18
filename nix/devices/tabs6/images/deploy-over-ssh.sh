@@ -93,7 +93,7 @@ rsync -a --delete --checksum -e "ssh ${ssh_opts[*]}" "$firmware/lib/firmware/" "
 
 if [ "$seed" = yes ]; then
 	echo "== installing the seeded plugin receipts"
-	on_tablet "test ! -e /var/lib/korri-plugin-host && tar -C / -xpf $plugin_seed/seed.tar --no-overwrite-dir --keep-old-files"
+	on_tablet "test ! -e /var/lib/korri-plugin-host && tar -C / -xpf $plugin_seed/seed.tar --keep-old-files"
 fi
 
 echo "== installing ($mode)"
