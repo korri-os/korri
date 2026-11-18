@@ -19,12 +19,15 @@ in
 {
   services.korriLinuxInput.provider.extraDataPackages = [ thorInputplumberData ];
 
-  # USB gadget identity. The next free /24; "THR" in ASCII after the shared
-  # 02:52 prefix. Unverified on hardware.
+  # USB gadget identity. 10.42.7.0/24 is taken by the Galaxy Tab S6 Korri
+  # gadget (serial tabs6-nixos), which shares the dock; on 2026-11-18 both
+  # gadgets gave zao two 10.42.7.0/24 routes. 10.42.0-7 are taken, so the
+  # Thor uses 10.42.8.1. The MACs are "THR" in ASCII after the shared 02:52
+  # prefix and do not derive from the subnet.
   services.korriProduct.usbGadget = {
     name = "thor";
     product = "Thor NixOS";
-    address = "10.42.7.1";
+    address = "10.42.8.1";
     hostMac = "02:52:54:48:52:01";
     deviceMac = "02:52:54:48:52:02";
   };

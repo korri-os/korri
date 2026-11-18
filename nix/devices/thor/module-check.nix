@@ -95,7 +95,7 @@ assert shell.serviceConfig.User == "korri-shell";
 assert shell.serviceConfig.LoadCredential == [ credential ];
 assert !(shell.environment ? KORRID_RPC_CAPABILITY);
 assert lib.elem "korrid.service" shell.requires;
-assert c.services.korriProduct.usbGadget.address == "10.42.7.1";
+assert c.services.korriProduct.usbGadget.address == "10.42.8.1";
 
 pkgs.runCommand "thor-module-check" { } ''
   touch "$out"

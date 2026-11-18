@@ -101,7 +101,7 @@ Wi-Fi board file to choose.
 |---|---|
 | Boot, top screen, Korri shell, korrid | in |
 | Controller input | in: InputPlumber composite for model `AYN Thor`, one `xb360` target, both volume keys through DBus |
-| Wi-Fi (ath12k WCN7850), SSH plugin, USB gadget `10.42.7.1` | in |
+| Wi-Fi (ath12k WCN7850), SSH plugin, USB gadget `10.42.8.1` | in |
 | Bottom screen | off: Sway `output DSI-1 power off` at start; its touch controller is ignored by libinput (`LIBINPUT_IGNORE_DEVICE`) |
 | AYN key (`KEY_F24`), Back (`KEY_BACK`) | unbound |
 | Fan | in (shared curve) |
