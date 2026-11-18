@@ -2755,6 +2755,22 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         } else {
             Self::parse_unit_state(&values)
         };
+        // ADR 0083: a Steam engine session whose game never started ends as
+        // a failure with the host's reason, even when the unit's main
+        // process (gamescope around the session program) exited with 0.
+        if matches!(state, Ok(LaunchUnitState::Completed)) {
+            if let Some(reason) = crate::steam_engine::started_sessions()
+                .and_then(|sessions| sessions.take_refusal(launch_id))
+            {
+                eprintln!(
+                    "korrid steam engine: session {launch_id} ended before its game: {reason}"
+                );
+                return Err(LaunchUnitError::new(
+                    LaunchUnitErrorKind::UnitFailed,
+                    format!("game unit ended before the game: plugin-launch: {reason}"),
+                ));
+            }
+        }
         let observed = match state {
             Err(error)
                 if error.kind == LaunchUnitErrorKind::UnitFailed

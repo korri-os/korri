@@ -7,7 +7,7 @@
 //! cloud side of a split, and the engine states become the runner's
 //! availability. The shim in the game unit sends the pre-game commands.
 use super::{
-    availability::EngineHealth,
+    availability::{EngineHealth, Unavailable},
     host::{Channel, EventReader, HostPlan, HostUnits, Mode},
     protocol::{Command, Event},
     saves::Conflicts,
@@ -49,6 +49,7 @@ struct Running {
     channel: PathBuf,
     stop: Arc<AtomicBool>,
     exit_synced: Arc<AtomicBool>,
+    refusal: Arc<Mutex<Option<String>>>,
     watcher: Option<JoinHandle<()>>,
 }
 
@@ -149,6 +150,7 @@ impl Sessions {
         }
         let stop = Arc::new(AtomicBool::new(false));
         let exit_synced = Arc::new(AtomicBool::new(false));
+        let refusal = Arc::new(Mutex::new(None));
         let watcher = {
             let watch = Watch {
                 launch_id: launch_id.into(),
@@ -160,6 +162,7 @@ impl Sessions {
                 health: Arc::clone(&self.health),
                 plan: plan.clone(),
                 exit_synced: Arc::clone(&exit_synced),
+                refusal: Arc::clone(&refusal),
             };
             let stop = Arc::clone(&stop);
             std::thread::Builder::new()
@@ -175,10 +178,22 @@ impl Sessions {
                 channel: dir,
                 stop,
                 exit_synced,
+                refusal,
                 watcher: Some(watcher),
             },
         );
         Ok(())
+    }
+
+    /// Why this session's game never started, once: the host's engine
+    /// state or a Steam Cloud conflict at the launch sync. The session
+    /// program refuses then, but a wrapper in the game unit (gamescope) may
+    /// end with 0 and the unit is collected with its status text, so korrid
+    /// says it from the host's own events.
+    pub fn take_refusal(&self, launch_id: &str) -> Option<String> {
+        let running = self.running.lock().expect("sessions poisoned");
+        let refusal = running.get(launch_id)?.refusal.lock().ok()?.take();
+        refusal
     }
 
     /// After the game unit is gone: wait for the exit sync (or the host's
@@ -232,6 +247,7 @@ struct Watch {
     health: Arc<EngineHealth>,
     plan: HostPlan,
     exit_synced: Arc<AtomicBool>,
+    refusal: Arc<Mutex<Option<String>>>,
 }
 
 impl Watch {
@@ -257,6 +273,24 @@ impl Watch {
 
     fn handle(&mut self, event: &Event) {
         self.health.observe(&self.plan, event);
+        let refusal = match event {
+            Event::EngineMapMissing {} => Some(Unavailable::MapMissing.reason().to_owned()),
+            Event::EngineMismatch {} => Some(Unavailable::EngineMismatch.reason().to_owned()),
+            Event::EngineRefused { eresult } => Some(
+                Unavailable::EngineRefused { eresult: *eresult }
+                    .reason()
+                    .to_owned(),
+            ),
+            Event::SyncFinished { kind, result, .. }
+                if kind == "launch" && result == "conflict" =>
+            {
+                Some(super::CONFLICT_REFUSAL.to_owned())
+            }
+            _ => None,
+        };
+        if let Some(refusal) = refusal {
+            *self.refusal.lock().expect("refusal poisoned") = Some(refusal);
+        }
         match event {
             Event::SyncFinished { kind, .. } if kind == "exit" => {
                 self.exit_synced.store(true, Ordering::SeqCst)
@@ -562,6 +596,43 @@ done"#,
         sessions.finish(next, Duration::from_millis(100)).unwrap();
     }
 
+    /// Device proof 6: gamescope ended 0 around the refusing session
+    /// program; korrid says why from the host's own events, once.
+    #[test]
+    fn a_host_that_refuses_the_engine_gives_the_session_its_reason() {
+        let temp = tempfile::tempdir().unwrap();
+        let launches = temp.path().join("launches");
+        let units = Arc::new(ProcessHostUnits::new(&launches));
+        let health = Arc::new(EngineHealth::default());
+        let sessions = Sessions::with_state(
+            units,
+            &launches,
+            unsafe { libc::geteuid() },
+            Arc::default(),
+            Arc::clone(&health),
+            Arc::default(),
+        );
+        let host = crate::steam_engine::host::tests::script_host(
+            temp.path(),
+            r#"echo '{"event":"engine_mismatch","expected":"aa","found":"bb"}'; exit 1"#,
+        );
+        let plan = plan(host, temp.path());
+        sessions.start(LAUNCH, &plan, None).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let reason = loop {
+            if let Some(reason) = sessions.take_refusal(LAUNCH) {
+                break reason;
+            }
+            assert!(Instant::now() < deadline, "no refusal");
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        assert_eq!(reason, Unavailable::EngineMismatch.reason());
+        assert_eq!(sessions.take_refusal(LAUNCH), None, "said once");
+        assert_eq!(health.current(&plan), Some(Unavailable::EngineMismatch));
+        sessions.finish(LAUNCH, Duration::from_millis(100)).unwrap();
+        assert_eq!(sessions.take_refusal(LAUNCH), None);
+    }
+
     #[test]
     fn an_export_outside_the_channel_is_refused() {
         let temp = tempfile::tempdir().unwrap();
@@ -575,6 +646,7 @@ done"#,
             health: Arc::default(),
             plan: plan(temp.path().join("host"), temp.path()),
             exit_synced: Arc::default(),
+            refusal: Arc::default(),
         };
         assert_eq!(
             watch

@@ -179,6 +179,11 @@ pub fn sessions(make: impl FnOnce() -> sessions::Sessions) -> &'static sessions:
     SESSIONS.get_or_init(make)
 }
 
+/// The device's session hosts, when any was ever started.
+pub fn started_sessions() -> Option<&'static sessions::Sessions> {
+    SESSIONS.get()
+}
+
 static STORE: std::sync::OnceLock<std::sync::Arc<store::SteamStore>> = std::sync::OnceLock::new();
 
 /// The Steam provider's listing cache and jobs on this device.
