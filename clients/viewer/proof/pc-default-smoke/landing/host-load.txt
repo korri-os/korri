@@ -1,0 +1,2 @@
+before 2026-11-18T00:21:48Z loadavg=1.78 5.94 5.98 tctl_mC=64125 nixbld=0 top= 3.0 korrid
+after 2026-11-18T00:23:30Z loadavg=5.31 5.97 5.98 tctl_mC=90125 nixbld=0 top= 522 longshot
