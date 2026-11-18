@@ -37,7 +37,7 @@ use super::{
     gamepad::{self, Controllers, Key},
     gestures::{Gesture, GestureConfig, PanZoomGestures},
     keyboard::{self, Keyboard, Special, code},
-    touch::{Mouse, Touch},
+    touch::{Mouse, Touch, Touchpad},
 };
 use crate::{controls::MouseMode, log, placement::Rect};
 use std::{
@@ -84,12 +84,15 @@ pub mod axis {
     pub const GAS: u32 = 22;
     pub const BRAKE: u32 = 23;
     pub const DISTANCE: u32 = 24;
+    /// A captured touch pad's move since its last event.
+    pub const RELATIVE_X: u32 = 27;
+    pub const RELATIVE_Y: u32 = 28;
     /// The joystick axes whose motion range a controller is asked for.
     pub const JOYSTICK: [u32; 13] = [
         X, Y, Z, RZ, RX, RY, LTRIGGER, RTRIGGER, BRAKE, GAS, THROTTLE, HAT_X, HAT_Y,
     ];
     /// One past the highest axis that an event carries here.
-    pub const COUNT: usize = 25;
+    pub const COUNT: usize = 29;
 }
 
 /// `InputDevice`'s sources and source classes.
@@ -235,6 +238,8 @@ pub struct Pointer {
 pub struct HistorySample {
     pub time_ms: i64,
     pub positions: Vec<(f32, f32)>,
+    /// The first pointer's `AXIS_RELATIVE_X` and `_Y` then.
+    pub relative: (f32, f32),
 }
 
 /// A motion event (`android.view.MotionEvent`).
@@ -368,6 +373,8 @@ pub struct Input {
     controllers: Controllers,
     touch: Touch,
     mouse: Mouse,
+    /// A captured touch pad's fingers (`trackpadContextMap`).
+    touchpad: Touchpad,
     /// Where the picture is in the window.
     video: Rect,
     hold: Hold,
@@ -551,6 +558,7 @@ impl Input {
             controllers: Controllers::new(attached, settings.mouse_emulation, seats),
             touch: Touch::default(),
             mouse: Mouse::default(),
+            touchpad: Touchpad::default(),
             video,
             hold: Hold::default(),
             counts: Counts::default(),
@@ -796,18 +804,23 @@ impl Input {
         {
             return false;
         }
-        if super::touch::is_mouse(event) {
+        // A touch pad's own button is a mouse's: an event with an action
+        // button, which only `BUTTON_PRESS` and `BUTTON_RELEASE` have.
+        let pad_button = class(source::CLASS_POSITION)
+            && matches!(event.action, action::BUTTON_PRESS | action::BUTTON_RELEASE);
+        if super::touch::is_mouse(event) || pad_button {
             // "Ignore mouse input if we're not capturing from our input
             // source"; eaten, so that Android makes no d-pad of it.
             if self.capture.capturing() {
-                self.mouse.event(event, self.video, sink);
+                let captured = self.capture.pointer_capture();
+                self.mouse.event(event, self.video, captured, sink);
             }
             return true;
         }
         if event.source == source::TOUCHPAD {
-            // A touchpad's own gestures (Artemis's TrackpadContext) are not
-            // carried.
-            return false;
+            // A captured touch pad's fingers, in its own units: Artemis's
+            // `handleTouchInput(event, trackpadContextMap, false)`.
+            return self.touchpad.event(event, self.video, now_ms, sink);
         }
         // Fingers, while pan and zoom is on: they move the picture, and the
         // host hears nothing of them (`panZoomHandler.handleTouchEvent`).
@@ -866,6 +879,7 @@ impl Input {
             counts: &mut self.counts,
         };
         self.touch.tick(now_ms, self.video, sink);
+        self.touchpad.tick(now_ms, self.video, sink);
         self.controllers.tick(now_ms, sink);
         self.capture.tick(now_ms, self.pointers.compatible);
     }
@@ -874,6 +888,7 @@ impl Input {
     pub fn next_deadline(&self) -> Option<i64> {
         [
             self.touch.next_deadline(),
+            self.touchpad.next_deadline(),
             self.controllers.next_deadline(),
             self.capture.next_deadline(),
         ]
@@ -3456,6 +3471,7 @@ pub(crate) mod tests {
         moved.history = vec![HistorySample {
             time_ms: 990,
             positions: vec![(3.0, 1.0)],
+            ..Default::default()
         }];
         assert!(input.motion(&moved, 1000, &mut devices, &mut sink));
         let pressed = mouse_motion(source::MOUSE_RELATIVE, action::BUTTON_PRESS, 0.0, 0.0, 0x01);
@@ -3659,5 +3675,203 @@ pub(crate) mod tests {
         devices = Known::with([touchscreen(3), mouse_device(7)]);
         input.check_devices(&mut devices, &mut sink);
         assert_eq!(input.take_capture(), []);
+    }
+
+    /// A laptop's touch pad: Android's mouse until the stream's view
+    /// captures it, then `SOURCE_TOUCHPAD` (`touch.deviceType` pointer).
+    fn touchpad_device(id: i32) -> Device {
+        Device {
+            id,
+            name: "Korri test touchpad".into(),
+            sources: source::MOUSE | source::TOUCHPAD,
+            ..Default::default()
+        }
+    }
+
+    /// The input with a touch pad attached, which the view captured at the
+    /// stream's start.
+    fn captured_touchpad() -> Input {
+        let mut input = ungrabbed(true, false, 0);
+        input.grab(true, &mut Known::with([touchscreen(3), touchpad_device(9)]));
+        assert_eq!(input.take_capture(), [Call::HideIcon, Call::Request]);
+        input
+    }
+
+    /// A captured touch pad's event: its fingers in the pad's own units.
+    fn pad_event(
+        action: u32,
+        index: usize,
+        points: &[(f32, f32)],
+        buttons: u32,
+        time_ms: i64,
+    ) -> MotionEvent {
+        MotionEvent {
+            device: 9,
+            source: source::TOUCHPAD,
+            action,
+            action_index: index,
+            button_state: buttons,
+            event_time_ms: time_ms,
+            pointers: points
+                .iter()
+                .enumerate()
+                .map(|(id, &(x, y))| Pointer {
+                    id: id as i32,
+                    tool_type: tool::FINGER,
+                    x,
+                    y,
+                    ..Default::default()
+                })
+                .collect(),
+            ..Default::default()
+        }
+    }
+
+    fn on_pad(input: &mut Input, sink: &mut Recorded, event: MotionEvent) {
+        let time_ms = event.event_time_ms;
+        let mut devices = Known::with([touchscreen(3), touchpad_device(9)]);
+        assert!(
+            input.motion(&event, time_ms, &mut devices, sink),
+            "{event:?}"
+        );
+    }
+
+    // The fingers of a captured touch pad (`handleMotionEvent`, "This case
+    // is for fingers": `handleTouchInput(event, trackpadContextMap, false)`):
+    // a `TrackpadContext` for each of the first two, in the pad's own units.
+    // A move of 20 units moves the host's mouse 27 (`precisionMultiplier`,
+    // the cube root of 20 / 8); a pause before the lift leaves no flick.
+    #[test]
+    fn a_captured_touchpads_finger_moves_the_host_mouse_relatively() {
+        let (mut input, mut sink) = (captured_touchpad(), Recorded::default());
+        on_pad(
+            &mut input,
+            &mut sink,
+            pad_event(action::DOWN, 0, &[(100.0, 100.0)], 0, 1000),
+        );
+        on_pad(
+            &mut input,
+            &mut sink,
+            pad_event(action::MOVE, 0, &[(120.0, 100.0)], 0, 1010),
+        );
+        on_pad(
+            &mut input,
+            &mut sink,
+            pad_event(action::MOVE, 0, &[(140.0, 100.0)], 0, 1020),
+        );
+        on_pad(
+            &mut input,
+            &mut sink,
+            pad_event(action::UP, 0, &[(140.0, 100.0)], 0, 1100),
+        );
+        input.tick(2000, &mut sink);
+        assert_eq!(
+            sink.take(),
+            [
+                Packet::MouseMove { dx: 27, dy: 0 },
+                Packet::MouseMove { dx: 27, dy: 0 }
+            ]
+        );
+    }
+
+    // `TrackpadContext.touchUpEvent`: a tap clicks, and lets go 230 ms
+    // later. The touch pad's fingers are never pan and zoom's: Artemis
+    // routes them before `isPanZoomMode`.
+    #[test]
+    fn a_captured_touchpads_tap_clicks_also_while_pan_and_zoom_is_on() {
+        let (mut input, mut sink) = (captured_touchpad(), Recorded::default());
+        input.set_zoom_mode(true);
+        on_pad(
+            &mut input,
+            &mut sink,
+            pad_event(action::DOWN, 0, &[(500.0, 500.0)], 0, 1000),
+        );
+        on_pad(
+            &mut input,
+            &mut sink,
+            pad_event(action::UP, 0, &[(500.0, 500.0)], 0, 1050),
+        );
+        assert_eq!(sink.take(), [clicked(true, MOUSE_LEFT)]);
+        assert_eq!(input.next_deadline(), Some(1280));
+        input.tick(1280, &mut sink);
+        assert_eq!(sink.take(), [clicked(false, MOUSE_LEFT)]);
+        assert!(input.take_gestures().is_empty());
+    }
+
+    // The touch pad's own button (`handleMotionEvent`'s mouse branch, for
+    // `SOURCE_CLASS_POSITION` with an action button): the left button, or
+    // with two fingers on the pad the right one ("Two finger click").
+    #[test]
+    fn a_touchpads_click_is_the_left_button_and_with_two_fingers_the_right() {
+        let (mut input, mut sink) = (captured_touchpad(), Recorded::default());
+        let one = &[(500.0, 500.0)][..];
+        let two = &[(400.0, 500.0), (600.0, 500.0)][..];
+        on_pad(
+            &mut input,
+            &mut sink,
+            pad_event(action::BUTTON_PRESS, 0, one, 0x01, 1000),
+        );
+        on_pad(
+            &mut input,
+            &mut sink,
+            pad_event(action::BUTTON_RELEASE, 0, one, 0, 1100),
+        );
+        on_pad(
+            &mut input,
+            &mut sink,
+            pad_event(action::BUTTON_PRESS, 0, two, 0x01, 2000),
+        );
+        on_pad(
+            &mut input,
+            &mut sink,
+            pad_event(action::BUTTON_RELEASE, 0, two, 0, 2100),
+        );
+        assert_eq!(
+            sink.take(),
+            [
+                clicked(true, MOUSE_LEFT),
+                clicked(false, MOUSE_LEFT),
+                clicked(true, MOUSE_RIGHT),
+                clicked(false, MOUSE_RIGHT)
+            ]
+        );
+    }
+
+    // `eventHasRelativeMouseAxes`: a touch pad's event while the view has
+    // the capture moves by `AXIS_RELATIVE_X` and `_Y`, with the batched
+    // ones (`getRelativeAxisX`). Without the capture it moves nothing:
+    // Artemis's place from the pad's ranges (`sendMousePosition`) is not
+    // carried, and its fingers' units are no place in the picture.
+    #[test]
+    fn a_touchpads_click_moves_by_its_relative_axes_only_while_captured() {
+        let (mut input, mut sink) = (captured_touchpad(), Recorded::default());
+        let mut press = pad_event(action::BUTTON_PRESS, 0, &[(500.0, 500.0)], 0x01, 1000);
+        press.axes[axis::RELATIVE_X as usize] = 3.0;
+        press.axes[axis::RELATIVE_Y as usize] = -2.0;
+        press.history = vec![HistorySample {
+            time_ms: 995,
+            positions: vec![(499.0, 501.0)],
+            relative: (1.0, 1.0),
+        }];
+        on_pad(&mut input, &mut sink, press.clone());
+        assert_eq!(
+            sink.take(),
+            [
+                Packet::MouseMove { dx: 4, dy: -1 },
+                clicked(true, MOUSE_LEFT)
+            ]
+        );
+        on_pad(
+            &mut input,
+            &mut sink,
+            pad_event(action::BUTTON_RELEASE, 0, &[(500.0, 500.0)], 0, 1100),
+        );
+        sink.take();
+        let mut devices = Known::with([touchscreen(3), touchpad_device(9)]);
+        input.toggle_local_cursor(&mut devices);
+        assert_eq!(input.take_capture(), [Call::ShowIcon, Call::Release]);
+        press.event_time_ms = 2000;
+        on_pad(&mut input, &mut sink, press);
+        assert_eq!(sink.take(), [clicked(true, MOUSE_LEFT)]);
     }
 }

@@ -12,7 +12,10 @@
 //! mode 4 takes the touches and sends nothing. A change of mode lets go of
 //! what the old one held, as Artemis's `cancelTouch` does. A mouse moves the
 //! host's pointer to the same place in the picture; a mouse that Android
-//! has captured for the stream (`capture.rs`) moves it by its own moves.
+//! has captured for the stream (`capture.rs`) moves it by its own moves. A
+//! captured touch pad's fingers are a laptop's touch pad (`Touchpad`, with
+//! `trackpad.rs`'s contexts), and its own button is the mouse's left
+//! button, or with two fingers on the pad the right one.
 //!
 //! Ported from Korri's copy of Artemis (`clients/android`, from
 //! `simonwjackson/artemis` at `cf12c432`, a fork of
@@ -217,7 +220,8 @@ impl Touch {
         self.contexts(event, video, now_ms, sink)
     }
 
-    /// `handleTouchInput` with the mode's contexts.
+    /// `handleTouchInput` with the mode's contexts, in the picture's
+    /// pixels (`isTouchScreen`).
     fn contexts(
         &mut self,
         event: &MotionEvent,
@@ -225,70 +229,13 @@ impl Touch {
         now_ms: i64,
         sink: &mut dyn Sink,
     ) -> bool {
-        let index = event.action_index;
-        let count = event.pointers.len();
-        let mut contexts = self.contexts.each();
-        if index >= contexts.len() {
-            return false;
-        }
         let place = |(x, y): (f32, f32)| {
             (
                 (x - video.left as f32) as i32,
                 (y - video.top as f32) as i32,
             )
         };
-        let at = |pointer: usize| {
-            event
-                .pointers
-                .get(pointer)
-                .map_or((0, 0), |p| place((p.x, p.y)))
-        };
-        match event.action {
-            action::MOVE => {
-                for sample in &event.history {
-                    for (finger, context) in contexts.iter_mut().enumerate() {
-                        if let Some(&point) =
-                            sample.positions.get(finger).filter(|_| finger < count)
-                        {
-                            context.moved(place(point), sample.time_ms, now_ms, video, sink);
-                        }
-                    }
-                }
-                for (finger, context) in contexts.iter_mut().enumerate() {
-                    if finger < count {
-                        context.moved(at(finger), event.event_time_ms, now_ms, video, sink);
-                    }
-                }
-            }
-            action::DOWN | action::POINTER_DOWN => {
-                for context in contexts.iter_mut() {
-                    context.pointers(count, now_ms, sink);
-                }
-                contexts[index].down(at(index), event.event_time_ms, now_ms, true, video, sink);
-            }
-            action::UP | action::POINTER_UP => {
-                if event.flags & FLAG_CANCELED != 0 {
-                    contexts[index].cancel(sink);
-                } else {
-                    contexts[index].up(at(index), event.event_time_ms, now_ms, video, sink);
-                }
-                for context in contexts.iter_mut() {
-                    context.pointers(count.saturating_sub(1), now_ms, sink);
-                }
-                if index == 0 && count > 1 && !contexts[0].cancelled() {
-                    // The second finger is now the first.
-                    contexts[0].down(at(1), event.event_time_ms, now_ms, false, video, sink);
-                }
-            }
-            action::CANCEL => {
-                for context in contexts.iter_mut() {
-                    context.cancel(sink);
-                    context.pointers(0, now_ms, sink);
-                }
-            }
-            _ => return false,
-        }
-        true
+        handle(self.contexts.each(), event, &place, video, now_ms, sink)
     }
 
     /// The contexts' callbacks that are due, in their order.
@@ -320,6 +267,136 @@ impl Touch {
         for context in self.contexts.each() {
             context.cancel(sink);
         }
+    }
+}
+
+/// `handleTouchInput`: each finger's event to its context, by its index in
+/// the gesture, at `place` of its point.
+fn handle(
+    mut contexts: Vec<&mut dyn Context>,
+    event: &MotionEvent,
+    place: &dyn Fn((f32, f32)) -> (i32, i32),
+    video: Rect,
+    now_ms: i64,
+    sink: &mut dyn Sink,
+) -> bool {
+    let index = event.action_index;
+    let count = event.pointers.len();
+    if index >= contexts.len() {
+        return false;
+    }
+    let at = |pointer: usize| {
+        event
+            .pointers
+            .get(pointer)
+            .map_or((0, 0), |p| place((p.x, p.y)))
+    };
+    match event.action {
+        action::MOVE => {
+            for sample in &event.history {
+                for (finger, context) in contexts.iter_mut().enumerate() {
+                    if let Some(&point) = sample.positions.get(finger).filter(|_| finger < count) {
+                        context.moved(place(point), sample.time_ms, now_ms, video, sink);
+                    }
+                }
+            }
+            for (finger, context) in contexts.iter_mut().enumerate() {
+                if finger < count {
+                    context.moved(at(finger), event.event_time_ms, now_ms, video, sink);
+                }
+            }
+        }
+        action::DOWN | action::POINTER_DOWN => {
+            for context in contexts.iter_mut() {
+                context.pointers(count, now_ms, sink);
+            }
+            contexts[index].down(at(index), event.event_time_ms, now_ms, true, video, sink);
+        }
+        action::UP | action::POINTER_UP => {
+            if event.flags & FLAG_CANCELED != 0 {
+                contexts[index].cancel(sink);
+            } else {
+                contexts[index].up(at(index), event.event_time_ms, now_ms, video, sink);
+            }
+            for context in contexts.iter_mut() {
+                context.pointers(count.saturating_sub(1), now_ms, sink);
+            }
+            if index == 0 && count > 1 && !contexts[0].cancelled() {
+                // The second finger is now the first.
+                contexts[0].down(at(1), event.event_time_ms, now_ms, false, video, sink);
+            }
+        }
+        action::CANCEL => {
+            for context in contexts.iter_mut() {
+                context.cancel(sink);
+                context.pointers(0, now_ms, sink);
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// A captured touch pad (`SOURCE_TOUCHPAD`): Artemis's `trackpadContextMap`,
+/// a `TrackpadContext` for each of its first two fingers, with its default
+/// settings (no swapped axes, sensitivity 100 %), which are mode 2's. Its
+/// fingers are in the pad's own units (`handleTouchInput` with
+/// `isTouchScreen` false). Neither a mouse mode nor the gameplay overlay
+/// cancels them, as in Artemis.
+#[derive(Debug)]
+pub(crate) struct Touchpad {
+    contexts: [Trackpad; 2],
+}
+
+impl Default for Touchpad {
+    fn default() -> Self {
+        Self {
+            contexts: [0, 1].map(Trackpad::new),
+        }
+    }
+}
+
+impl Touchpad {
+    pub(crate) fn event(
+        &mut self,
+        event: &MotionEvent,
+        video: Rect,
+        now_ms: i64,
+        sink: &mut dyn Sink,
+    ) -> bool {
+        let contexts = self
+            .contexts
+            .iter_mut()
+            .map(|c| c as &mut dyn Context)
+            .collect();
+        handle(
+            contexts,
+            event,
+            &|(x, y)| (x as i32, y as i32),
+            video,
+            now_ms,
+            sink,
+        )
+    }
+
+    /// The contexts' callbacks that are due, in their order.
+    pub(crate) fn tick(&mut self, now_ms: i64, video: Rect, sink: &mut dyn Sink) {
+        while let Some(first) = self
+            .contexts
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| c.deadline().filter(|&at| at <= now_ms).map(|at| (at, i)))
+            .min()
+            .map(|(_, i)| i)
+        {
+            if !self.contexts[first].fire(now_ms, video, sink) {
+                return;
+            }
+        }
+    }
+
+    pub(crate) fn next_deadline(&self) -> Option<i64> {
+        self.contexts.iter().flat_map(Context::deadline).min()
     }
 }
 
@@ -688,39 +765,92 @@ const BUTTON_TERTIARY: u32 = 0x04;
 const BUTTON_STYLUS_PRIMARY: u32 = 0x20;
 const BUTTON_STYLUS_SECONDARY: u32 = 0x40;
 
-/// A mouse: its move when Android has captured it, else its place in the
-/// picture; its buttons and its wheel (`handleMotionEvent`'s mouse branch).
+/// A mouse, or a touch pad's own button: its move when Android has
+/// captured it, else its place in the picture; its buttons and its wheel
+/// (`handleMotionEvent`'s mouse branch).
 #[derive(Debug, Default)]
 pub(crate) struct Mouse {
+    /// `lastButtonState`: the buttons as the host has them.
     buttons: u32,
+    /// The event's own button state last time, for its action button.
+    raw: u32,
 }
 
 /// `eventHasRelativeMouseAxes` with `getRelativeAxisX` and `getRelativeAxisY`:
-/// a captured mouse's move (`SOURCE_MOUSE_RELATIVE`), with the moves batched
-/// into the event before it, as Java's `(short)` makes it.
-fn relative(event: &MotionEvent) -> Option<(i16, i16)> {
+/// a captured mouse's move (`SOURCE_MOUSE_RELATIVE`: its X and Y), or a
+/// touch pad's while the view has the capture (`SOURCE_TOUCHPAD`: its
+/// `AXIS_RELATIVE_X` and `_Y`), with the moves batched into the event
+/// before it, as Java's `(short)` makes it.
+fn relative(event: &MotionEvent, captured: bool) -> Option<(i16, i16)> {
     let p = event.pointers.first()?;
-    if event.source != source::MOUSE_RELATIVE || p.tool_type != tool::MOUSE {
+    let (mut x, mut y) = if event.source == source::MOUSE_RELATIVE && p.tool_type == tool::MOUSE {
+        let (mut x, mut y) = (p.x, p.y);
+        for (dx, dy) in event.history.iter().filter_map(|s| s.positions.first()) {
+            x += dx;
+            y += dy;
+        }
+        (x, y)
+    } else if event.source == source::TOUCHPAD && captured {
+        (event.axis(axis::RELATIVE_X), event.axis(axis::RELATIVE_Y))
+    } else {
         return None;
-    }
-    let (mut x, mut y) = (p.x, p.y);
-    for (dx, dy) in event.history.iter().filter_map(|s| s.positions.first()) {
-        x += dx;
-        y += dy;
+    };
+    if event.source == source::TOUCHPAD {
+        for (dx, dy) in event.history.iter().map(|s| s.relative) {
+            x += dx;
+            y += dy;
+        }
     }
     Some((x as i32 as i16, y as i32 as i16))
 }
 
 impl Mouse {
-    pub(crate) fn event(&mut self, event: &MotionEvent, video: Rect, sink: &mut dyn Sink) {
-        let state = event.button_state;
+    /// `captured`: the stream's view has the pointer capture
+    /// (`hasPointerCapture`).
+    pub(crate) fn event(
+        &mut self,
+        event: &MotionEvent,
+        video: Rect,
+        captured: bool,
+        sink: &mut dyn Sink,
+    ) {
+        let raw = event.button_state;
+        // `getActionButton`, which the NDK has only from API 33: the button
+        // that this press or release changed.
+        let action_button = match event.action {
+            action::BUTTON_PRESS => raw & !self.raw,
+            action::BUTTON_RELEASE => self.raw & !raw,
+            _ => 0,
+        };
+        self.raw = raw;
+        let mut state = raw;
+        // "Two finger click": a touch pad's click with two fingers on it is
+        // the right button.
+        if event.source & source::CLASS_POSITION != 0
+            && event.pointers.len() == 2
+            && action_button == BUTTON_PRIMARY
+        {
+            match event.action {
+                action::BUTTON_PRESS => state |= BUTTON_SECONDARY,
+                action::BUTTON_RELEASE => state &= !BUTTON_SECONDARY,
+                _ => {}
+            }
+            // The primary button stays as the host has it.
+            state &= !BUTTON_PRIMARY;
+            state |= self.buttons & BUTTON_PRIMARY;
+        }
         let changed = state ^ self.buttons;
-        if let Some((dx, dy)) = relative(event) {
+        if let Some((dx, dy)) = relative(event, captured) {
             // `sendMouseMove`: Artemis's absolute mouse mode, which sends it
             // as a place, is off by default and not carried.
             if dx != 0 || dy != 0 {
                 sink.send(Packet::MouseMove { dx, dy });
             }
+        } else if event.source & source::CLASS_POSITION != 0 {
+            // A touch pad that the view has not captured: Artemis places the
+            // mouse by the pad's own ranges (`sendMousePosition`), which is
+            // not carried. Android makes such a pad a mouse until a view
+            // captures it.
         } else if let Some(p) = event.pointers.first() {
             // The place first: a pen without hover may have moved far.
             let (x, y) = in_picture(video, p.x, p.y);

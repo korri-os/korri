@@ -74,6 +74,10 @@ pub fn motion(event: &MotionEvent) -> stream::MotionEvent {
             .map(|sample| HistorySample {
                 time_ms: ms(sample.event_time()),
                 positions: Vec::new(),
+                relative: (
+                    sample.axis_value(Axis::RelativeX),
+                    sample.axis_value(Axis::RelativeY),
+                ),
             })
             .collect();
         for p in event.pointers() {

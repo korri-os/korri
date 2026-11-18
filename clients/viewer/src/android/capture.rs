@@ -126,6 +126,8 @@ pub(crate) struct Capture {
     cursor_shown: bool,
     /// The device listener is registered (`hideCursor` until `showCursor`).
     listening: bool,
+    /// The view was last asked to take the capture, not to let it go.
+    requested: bool,
     /// When focus regained asks for the capture again.
     recapture_at: Option<i64>,
     calls: Vec<Call>,
@@ -139,6 +141,7 @@ impl Default for Capture {
             capturing: false,
             cursor_shown: false,
             listening: false,
+            requested: false,
             recapture_at: None,
             calls: Vec::new(),
         }
@@ -189,7 +192,7 @@ impl Capture {
         if self.recapture_at.is_some_and(|at| now_ms >= at) {
             self.recapture_at = None;
             if compatible {
-                self.calls.push(Call::Request);
+                self.request();
             }
         }
     }
@@ -203,6 +206,7 @@ impl Capture {
     pub(crate) fn devices_changed(&mut self, compatible: bool) {
         if self.listening {
             self.calls.push(Call::Follow { compatible });
+            self.requested = compatible;
         }
     }
 
@@ -214,6 +218,13 @@ impl Capture {
     /// `isCapturingActive`: the mouse is the stream's.
     pub(crate) fn capturing(&self) -> bool {
         self.capturing
+    }
+
+    /// `targetView.hasPointerCapture()`, as the view was last asked
+    /// (`eventHasRelativeMouseAxes`): Android grants the capture, or ends it
+    /// with the window's focus, on its own.
+    pub(crate) fn pointer_capture(&self) -> bool {
+        self.requested
     }
 
     /// `Game.localCursor`.
@@ -245,7 +256,7 @@ impl Capture {
         self.calls.push(Call::HideIcon);
         self.listening = true;
         if compatible {
-            self.calls.push(Call::Request);
+            self.request();
         }
     }
 
@@ -256,5 +267,12 @@ impl Capture {
         self.calls.push(Call::ShowIcon);
         self.listening = false;
         self.calls.push(Call::Release);
+        self.requested = false;
+    }
+
+    /// `requestPointerCapture`.
+    fn request(&mut self) {
+        self.calls.push(Call::Request);
+        self.requested = true;
     }
 }
