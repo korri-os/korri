@@ -37,9 +37,8 @@ accepted = [
 # alone.
 workarounds = ["ring", "rustls"]
 
-# The viewer itself: its licence is the package's (LICENSE beside the
-# notices). Its Zlib part (src/android/controller_list.rs) and its
-# Apache-2.0 part (src/android/gestures.rs) are Android code, which the PC
-# binary does not compile.
-[korri-viewer]
-accepted = ["GPL-3.0-or-later"]
+# The viewer itself is not here: notices.nix adds its section for each
+# build, with the binary's licence (GPL-3.0-only with nightjar-core,
+# GPL-3.0-or-later without) and its LICENSE as the text. Its manifest also
+# names the Zlib of src/android/controller_list.rs and the Apache-2.0 of
+# src/android/gestures.rs, which the PC binary does not compile.

@@ -1,11 +1,62 @@
-# Every file in nightjar/ and rubylight-native-api/ that names a licence,
-# a copyright or a notice (check-licence-mentions.sh reads them), and what
-# covers it in the notices of what ships nightjar-core: the title of the
-# notices part that carries its licence, or `-` when the word names no
-# licence of the file's code. nightjar/protocol/vendor/rusty_enet/ is left
-# out: it is a crate, and cargo-about lists its licence. A new mention fails
-# the notices' build until a person reads it and adds its line here.
+# check-licence-mentions.sh reads every line with one of its words, in any
+# case, of every text file under nightjar/ and rubylight-native-api/ but
+# nightjar/LICENSE.txt and rubylight-native-api/LICENSE. This file records
+# each such line word for word, with its file and what covers it in the
+# notices of what ships nightjar-core. Its words:
+# - anywhere in the line: "licenc" and "licens", "copyright", "public
+#   domain" (also with "-", "_" or nothing between), "©", and "(c)" before a
+#   year;
+# - with no letter, digit or underscore just before: "GPL", "LGPL", "AGPL";
+# - as whole words, also with a version glued on: MIT, BSD, 0BSD, Apache,
+#   ISC, Zlib, MPL, CC0, CC-BY, BSL, Boost, EUPL, WTFPL, OFL, EPL, CDDL,
+#   Artistic, Unicode-DFS, "Unicode-" and a digit, SSLeay, and "(c)".
 #
-# FILE                                              PART
-nightjar/protocol/client/src/fec.rs                 nanors
-nightjar/protocol/client/src/http/power/tests.rs    -
+# The second field is what covers the line:
+# - a part title: the notices' part of that name (`nanors`, and `nightjar-core
+#   and the Rubylight crates` for the GPL-3.0 code that nightjar-core ports
+#   from the projects that part names);
+# - `crate:NAME`: cargo-about lists the crate NAME and its licence;
+# - `-`: the line names no licence of the code (a crate's name in a lock
+#   file, a field that defers to the workspace, a product feature, a word in
+#   prose).
+#
+# Both notices' builds fail on a line with one of the words that is not
+# recorded here, a new one in a listed file too; on a recorded line that its
+# file no longer has; and on a part or crate that the notices lack. A person
+# reads each new line and records it. The script's header lists what it does
+# not catch, so read the header of each new source file when the pin moves.
+#
+# Tab-separated: FILE<TAB>PART<TAB>LINE.
+nightjar/protocol/Cargo.lock	-	 "zlib-rs",
+nightjar/protocol/Cargo.lock	-	name = "zlib-rs"
+nightjar/protocol/Cargo.toml	nightjar-core and the Rubylight crates	license = "GPL-3.0-only"
+nightjar/protocol/client/Cargo.toml	-	license.workspace = true
+nightjar/protocol/client/src/audio/mod.rs	nightjar-core and the Rubylight crates	//! Ported from moonlight-common-c (GPL-3.0, Cameron Gutman and contributors):
+nightjar/protocol/client/src/control/clipboard_sync.rs	nightjar-core and the Rubylight crates	//! GPL-3.0), as the Rubylight host keeps them: every copy sent carries a fresh token, a frame
+nightjar/protocol/client/src/control/haptics.rs	nightjar-core and the Rubylight crates	//! (Nonary/moonlight-common-c 4ea115e8, GPL-3.0).
+nightjar/protocol/client/src/control/mod.rs	nightjar-core and the Rubylight crates	//! Ported from moonlight-common-c's `ControlStream.c` (GPL-3.0, Cameron Gutman and
+nightjar/protocol/client/src/crypto.rs	nightjar-core and the Rubylight crates	//! (GPL-3.0, Cameron Gutman and contributors).
+nightjar/protocol/client/src/fec.rs	nanors	//! Ported from nanors (MIT, Joseph Calderon) as vendored by moonlight-common-c (GPL-3.0,
+nightjar/protocol/client/src/http/mod.rs	nightjar-core and the Rubylight crates	//! HostCapabilities (GPL-3.0, Cameron Gutman and contributors, extended for Nightjar by
+nightjar/protocol/client/src/http/power/tests.rs	-	/// The document Vibepollo's Boost writer prints, and Rubylight's copy of it.
+nightjar/protocol/client/src/input/microphone.rs	nightjar-core and the Rubylight crates	//! moonlight-common-c `MicrophoneStream.c` 784fa1d0 (GPL-3.0), the client half of Apollo's
+nightjar/protocol/client/src/input/mod.rs	nightjar-core and the Rubylight crates	//! Ported from moonlight-common-c's `InputStream.c` and `Input.h` (GPL-3.0, Cameron Gutman
+nightjar/protocol/client/src/rtsp/mod.rs	nightjar-core and the Rubylight crates	//! (874ac954, GPL-3.0, Cameron Gutman and contributors) with Rubylight's PyroWave and control
+nightjar/protocol/client/src/rtsp/mod.rs	nightjar-core and the Rubylight crates	//! (784fa1d0, GPL-3.0). [`Handshake`] is the socket-free state machine;
+nightjar/protocol/client/src/sdp.rs	nightjar-core and the Rubylight crates	//! (874ac954, GPL-3.0, Cameron Gutman and contributors) with Rubylight's PyroWave
+nightjar/protocol/client/src/session/audio.rs	nightjar-core and the Rubylight crates	//! Ported from moonlight-common-c's `AudioStream.c` (GPL-3.0, Cameron Gutman and
+nightjar/protocol/client/src/session/mod.rs	nightjar-core and the Rubylight crates	//! Ported from moonlight-common-c (GPL-3.0, Cameron Gutman and contributors):
+nightjar/protocol/client/src/session/net.rs	nightjar-core and the Rubylight crates	//! Ported from moonlight-common-c (GPL-3.0, Cameron Gutman and contributors):
+nightjar/protocol/client/src/session/video.rs	nightjar-core and the Rubylight crates	//! `VideoDepacketizer.c` (GPL-3.0, Cameron Gutman and contributors).
+nightjar/protocol/client/src/video/mod.rs	nightjar-core and the Rubylight crates	//! Ported from moonlight-common-c (GPL-3.0, Cameron Gutman and contributors):
+nightjar/protocol/core/Cargo.toml	-	license.workspace = true
+nightjar/protocol/core/src/clipboard_sync.rs	nightjar-core and the Rubylight crates	//! in https://github.com/qiin2333/moonlight-vplus, GPL-3.0), so a V+ client works with this
+nightjar/protocol/traverse/Cargo.toml	-	license.workspace = true
+nightjar/protocol/vendor/rusty_enet/Cargo.toml	crate:rusty_enet	# rusty_enet 0.4.0 (MIT, https://github.com/jabuwu/rusty_enet), changed in these ways only. Used
+nightjar/protocol/vendor/rusty_enet/Cargo.toml	crate:rusty_enet	license = "MIT"
+nightjar/protocol/vendor/rusty_enet/LICENSE	crate:rusty_enet	Copyright (c) 2002-2020 Lee Salzman
+nightjar/protocol/vendor/rusty_enet/LICENSE	crate:rusty_enet	Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+nightjar/protocol/vendor/rusty_enet/LICENSE	crate:rusty_enet	The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+nightjar/protocol/vendor/rusty_enet/LICENSE	crate:rusty_enet	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+rubylight-native-api/rust/core/native-api/Cargo.toml	nightjar-core and the Rubylight crates	license = "GPL-3.0-only"
+rubylight-native-api/rust/core/native-api/src/session.rs	-	    /// A dialog the host cannot classify: a licence, a settings question, a dismissable

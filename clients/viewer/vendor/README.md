@@ -61,17 +61,51 @@ package's `share/licenses/korri-viewer/NOTICES.txt` and its corresponding
 source's `licenses/NOTICES.txt` (`../notices.nix`), and the Korri app's
 release notices (`../../android-app/notices.nix`).
 
-`licence-mentions.txt` lists every file of these trees that names a licence
-or a copyright (`check-licence-mentions.sh` has the words: SPDX names such
-as MIT, BSD, Apache, ISC, Zlib, MPL, CC0, BSL, LGPL and others, "Boost",
-"copyright", "(c)", "licensed under"), with the notices part that covers
-it, or `-` when the word names no licence of the file's code. Both notices'
-builds run the script: they fail when a file names such a word and is not
-listed, when a listed file no longer names one, and when a listed part is
-not in the notices. Two files name one today (2026-11-18): `fec.rs`
-(nanors) and a test of `http/power` ("Vibepollo's Boost writer", no
-licence). A port that names neither a licence nor a copyright is not
-caught: read the header of each new source file when the pin moves.
+`check-licence-mentions.sh` reads every line with one of its words, in any
+case, of every text file in these trees but `nightjar/LICENSE.txt` and
+`rubylight-native-api/LICENSE`. Its words:
+
+- anywhere in the line: "licenc" and "licens" (licence, license, sublicense,
+  relicensed, unlicensed, licensor, licensee, LicenseRef-, license_file),
+  "copyright" (copyrighted, copyrights), "public domain" (also with "-", "_"
+  or nothing between), "©", and "(c)" before a year;
+- with no letter, digit or underscore just before: "GPL", "LGPL" and "AGPL"
+  ("GPL v2", "GPL 2.0", "GNU GPL version 2", "GPL-3.0", "LGPLv2.1");
+- as whole words, also with a version glued on ("Apache2"): MIT, BSD, 0BSD,
+  Apache, ISC, Zlib, MPL, CC0, CC-BY, BSL, Boost, EUPL, WTFPL, OFL, EPL,
+  CDDL, Artistic, Unicode-DFS, "Unicode-" and a digit, SSLeay, and "(c)".
+
+`licence-mentions.txt` records each such line word for word, with its file
+and what covers it: a notices part (`nanors`, or `nightjar-core and the
+Rubylight crates` for the GPL-3.0 projects that nightjar-core ports from), a
+crate of the crate lists (`crate:rusty_enet`), or `-` when the line names no
+licence of the code. Both notices' builds run the script after its tests
+(`check-licence-mentions.test.sh`). They fail on a line that is not
+recorded, a new one in a listed file too; on a recorded line that is gone;
+and on a part or crate that the notices lack. 33 lines are recorded today
+(2026-11-18).
+
+The script does not catch:
+
+- a port or a licence on a line with none of the words, such as "Ported
+  from foo" alone, or a licence name that is not a word here ("X11", "NCSA",
+  "Python-2.0", "PostgreSQL") without "licence" or "copyright";
+- a whole word with a letter, digit or underscore just before it, or a
+  letter or underscore just after it ("BSDish", "zlib_rs"); "GPL", "LGPL" or
+  "AGPL" with a letter, digit or underscore just before it ("nonGPL"); "(c)"
+  with a letter, digit or underscore just before it and no year after it
+  ("Foo(c) Bar", "repr(C)");
+- a phrase or a word split across two lines ("public" and "domain", "licen-"
+  and "sed"), and a word in another language or spelled with other
+  characters ("Lizenz", "ⓒ", full-width letters);
+- binary files, which hold a NUL byte, and the names of files;
+- text added to `nightjar/LICENSE.txt` or `rubylight-native-api/LICENSE`:
+  the notices' builds check only that each is the GPL version 3;
+- files outside `nightjar/` and `rubylight-native-api/`;
+- a wrong part or crate: the script checks that it is in the notices, and a
+  person decides that it covers the line.
+
+So read the header of each new source file when the pin moves.
 Nightjar's own non-GPL parts that the viewer does not copy (its apps'
 shaders, fonts and renderers) are not in these trees.
 

@@ -39,6 +39,10 @@ let
   nanorsLicence = import ./vendor/nanors-licence.nix { inherit pkgs; };
   # The Rust that builds the binary, whose standard library the binary holds.
   rustc = pkgs.rustPlatform.rust.rustc;
+  # The viewer crate's own entry in the crate lists: the binary's licence.
+  # Its manifest also names the Zlib and Apache-2.0 of two Android-only
+  # files, which no PC binary holds.
+  selfLicence = if nightjar then "GPL-3.0-only" else "GPL-3.0-or-later";
 in
 pkgs.stdenv.mkDerivation {
   pname = "korri-viewer-notices${
@@ -55,9 +59,17 @@ pkgs.stdenv.mkDerivation {
   buildPhase = ''
     runHook preBuild
     export HOME=$TMPDIR
+    # about.toml, and the viewer crate's licence for this build, with its
+    # LICENSE (the GPL version 3) as the text.
+    grep -q 'Version 3, 29 June 2007' LICENSE
+    {
+      cat ${./about.toml}
+      printf '\n[korri-viewer]\naccepted = ["%s"]\nclarify = { license = "%s", files = [{ path = "LICENSE", checksum = "%s" }] }\n' \
+        ${selfLicence} ${selfLicence} "$(sha256sum LICENSE | cut -d ' ' -f 1)"
+    } > "$TMPDIR/about.toml"
     cargo about generate --frozen --fail --target ${target} \
       ${lib.optionalString (features != [ ]) "--features ${lib.concatStringsSep "," features}"} \
-      -c ${./about.toml} -o crates.txt ${./about.hbs}
+      -c "$TMPDIR/about.toml" -o crates.txt ${./about.hbs}
 
     # A licence file, which must be there and not be empty.
     licence() {
@@ -126,8 +138,24 @@ pkgs.stdenv.mkDerivation {
       cat crates.txt
     } > NOTICES.txt
 
-    # The vendored trees' licence mentions all have their part here.
-    ${lib.optionalString nightjar "bash vendor/check-licence-mentions.sh vendor NOTICES.txt"}
+    # vendor/check-licence-mentions.sh, after its own tests: it reads
+    # every line with one of its words, in any case, of every text file of
+    # vendor/nightjar and vendor/rubylight-native-api but their two GPL
+    # licence files, nightjar/LICENSE.txt and rubylight-native-api/LICENSE. It
+    # fails on such a line that vendor/licence-mentions.txt does not record,
+    # on a recorded line that its file no longer has, and on a recorded part
+    # or crate that is not here. Its words, in any case: "licenc", "licens",
+    # "copyright", "public domain" (also with "-", "_" or nothing between),
+    # "©" and "(c)" before a year, anywhere in the line; "GPL", "LGPL" and
+    # "AGPL" with no letter, digit or underscore just before; and, as whole
+    # words, also with a version glued on, MIT, BSD, 0BSD, Apache, ISC, Zlib,
+    # MPL, CC0, CC-BY, BSL, Boost, EUPL, WTFPL, OFL, EPL, CDDL, Artistic,
+    # Unicode-DFS, "Unicode-" and a digit, SSLeay and "(c)". The script's
+    # header says what it does not catch.
+    ${lib.optionalString nightjar ''
+      bash vendor/check-licence-mentions.test.sh
+      bash vendor/check-licence-mentions.sh vendor NOTICES.txt
+    ''}
     runHook postBuild
   '';
   installPhase = ''

@@ -365,8 +365,11 @@ the Rust that builds the binary; and the Rust crates of the binary, by
 `about.hbs`). `korri-viewer` on x86_64 lists the crates of
 `nightjar,rust-egl-presenter,rust-x11-window`, on aarch64 those of no
 feature, and each one-part package and `korri-viewer-c` its own. The
-corresponding source carries the default package's as
-`licenses/NOTICES.txt`, with the notices' recipe.
+viewer crate's own entry there has the binary's licence, GPL-3.0-only with
+nightjar-core and GPL-3.0-or-later without; the Zlib and Apache-2.0 that its
+manifest also names are those of Android-only files. The corresponding
+source carries the default package's as `licenses/NOTICES.txt`, with the
+notices' recipe.
 
 Not in it: the carried C of `picture/` and `io/` (Moonlight Embedded's and
 Korri's, under the package's licence), and the shared libraries from
@@ -377,7 +380,20 @@ releases' `COPYRIGHT-library.html`, which nixpkgs' build of Rust does not
 make. No lawyer has read the notices (ADR 0059).
 
 With nightjar-core, the notices' build also runs
-`vendor/check-licence-mentions.sh` (`vendor/README.md`).
+`vendor/check-licence-mentions.test.sh` and then
+`vendor/check-licence-mentions.sh`. The script reads
+every line with one of its words, in any case, of every text file of
+`vendor/nightjar` and `vendor/rubylight-native-api` but their two GPL licence
+files, `nightjar/LICENSE.txt` and `rubylight-native-api/LICENSE`. It fails on
+such a line that `vendor/licence-mentions.txt` does not record, on a recorded
+line that its file no longer has, and on a recorded part or crate that the
+notices lack. Its words, in any case: "licenc", "licens", "copyright", "public
+domain" (also with "-", "_" or nothing between), "©" and "(c)" before a year,
+anywhere in the line; "GPL", "LGPL" and "AGPL" with no letter, digit or
+underscore just before; and, as whole words, also with a version glued on,
+MIT, BSD, 0BSD, Apache, ISC, Zlib, MPL, CC0, CC-BY, BSL, Boost, EUPL, WTFPL,
+OFL, EPL, CDDL, Artistic, Unicode-DFS, "Unicode-" and a digit, SSLeay and
+"(c)". `vendor/README.md` says what the script does not catch.
 
 ## The `@korri:viewer` plugin and korrid (slice 3)
 

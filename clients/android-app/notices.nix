@@ -260,8 +260,21 @@ pkgs.stdenv.mkDerivation {
       licence ${moonlight}/LICENSE.txt
     } > NOTICES.txt
 
-    # Every vendored nightjar or Rubylight file that names a licence or a
-    # copyright is listed, and its part is here (#521).
+    # ../viewer/vendor/check-licence-mentions.sh, after its own tests (#521):
+    # it reads every line with one of its words, in any case, of every text
+    # file of the vendored nightjar and Rubylight trees but their two GPL
+    # licence files, nightjar/LICENSE.txt and rubylight-native-api/LICENSE. It
+    # fails on such a line that licence-mentions.txt beside it does not
+    # record, on a recorded line that its file no longer has, and on a
+    # recorded part or crate that is not here. Its words, in any case:
+    # "licenc", "licens", "copyright", "public domain" (also with "-", "_" or
+    # nothing between), "©" and "(c)" before a year, anywhere in the line;
+    # "GPL", "LGPL" and "AGPL" with no letter, digit or underscore just
+    # before; and, as whole words, also with a version glued on, MIT, BSD,
+    # 0BSD, Apache, ISC, Zlib, MPL, CC0, CC-BY, BSL, Boost, EUPL, WTFPL, OFL,
+    # EPL, CDDL, Artistic, Unicode-DFS, "Unicode-" and a digit, SSLeay and
+    # "(c)". The script's header says what it does not catch.
+    bash ../viewer/vendor/check-licence-mentions.test.sh
     bash ../viewer/vendor/check-licence-mentions.sh ../viewer/vendor NOTICES.txt
     runHook postBuild
   '';
