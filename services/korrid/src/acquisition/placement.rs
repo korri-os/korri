@@ -18,6 +18,11 @@ pub(crate) fn contribution(root: &Path, artifact: &ArtifactRecord) -> PathBuf {
 pub(crate) fn ready_path(root: &Path, artifact: &ArtifactRecord) -> PathBuf {
     contribution(root, artifact).join(&artifact.version)
 }
+/// This artifact's pinned version is published in the cache.
+pub(crate) fn is_ready_artifact(root: &Path, artifact: &ArtifactRecord) -> bool {
+    is_ready(&ready_path(root, artifact))
+}
+
 pub(super) fn is_ready(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_dir())
 }

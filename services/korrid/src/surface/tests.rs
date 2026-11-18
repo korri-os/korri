@@ -5786,3 +5786,136 @@ mod shared_play {
         let _ = Mutex::new(());
     }
 }
+
+/// korrid's Steam engine side for a hub test: no engine account, and a
+/// conflict korrid has just written for one game.
+struct ConflictAccess {
+    conflicted: std::sync::Mutex<Option<String>>,
+}
+
+impl super::steam_account::SteamEngineAccess for ConflictAccess {
+    fn facts(&self) -> super::steam_account::SteamFacts {
+        super::steam_account::SteamFacts::Absent
+    }
+    fn runs_on_engine(&self, _: &str, _: Option<&str>) -> bool {
+        false
+    }
+    fn use_client_runner(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + '_>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn take_conflict(&self, game_id: &str) -> bool {
+        let mut conflicted = self.conflicted.lock().unwrap();
+        if conflicted.as_deref() == Some(game_id) {
+            *conflicted = None;
+            true
+        } else {
+            false
+        }
+    }
+    fn presence(&self) -> String {
+        String::new()
+    }
+}
+
+/// ADR 0083: the shim refused the launch because its sync found a Steam
+/// Cloud conflict, and korrid wrote the split. On that same attempt the
+/// launch goes back through its save check, which finds the split and asks
+/// for the choice; the refused unit's failure is not shown.
+#[tokio::test]
+async fn a_steam_cloud_conflict_on_launch_goes_to_the_split_choice() {
+    let mut outcomes = idle_outcomes(2);
+    outcomes.insert(
+        "app.session.reserve".into(),
+        json!({ "_tag": "Ok", "payload": { "gameId": "g00001", "launchId": "exact" } }),
+    );
+    outcomes.insert(
+        "app.session.start".into(),
+        json!({ "_tag": "Ok", "payload": { "session": { "gameId": "g00001", "launchId": "exact" }, "warnings": [] } }),
+    );
+    let outcomes = Arc::new(std::sync::Mutex::new(outcomes));
+    let requests = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+    let access = Arc::new(ConflictAccess {
+        conflicted: std::sync::Mutex::new(None),
+    });
+    let base = in_memory_korrid(Arc::clone(&outcomes));
+    let korrid = Korrid::new(Arc::new({
+        let requests = Arc::clone(&requests);
+        move |request: RpcRequest| {
+            let base = base.clone();
+            let requests = Arc::clone(&requests);
+            Box::pin(async move {
+                requests
+                    .lock()
+                    .unwrap()
+                    .push(serde_json::to_value(&request).unwrap());
+                base.rpc(super::korrid::Mapping::Unreachable, request)
+                    .await
+                    .map_err(|failure| Refusal::Unreachable(failure.message))
+            })
+        }
+    }))
+    .with_steam_engine(Arc::clone(&access) as Arc<dyn super::steam_account::SteamEngineAccess>);
+    let directory = tempfile::tempdir().unwrap();
+    let intent = crate::overlay_intent::OverlayIntent::default();
+    let hub = SurfaceHub::new(
+        korrid,
+        directory.path().join("private"),
+        intent.subscribe(),
+        Arc::default(),
+    );
+    settled(&hub, "pico").await;
+    let checks = || {
+        requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|request| request["_tag"] == "app.saves.check")
+            .count()
+    };
+    hub.request(
+        "pico",
+        SurfaceRequest::LaunchGame {
+            game_id: "game:g00001".into(),
+            launch_location_id: None,
+        },
+    )
+    .unwrap();
+    for _ in 0..400 {
+        if requests.lock().unwrap().iter().any(|r| r["_tag"] == "app.session.start") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_eq!(checks(), 1, "the first attempt checked its saves once");
+    // The launch sync found a conflict: korrid wrote the split, and the
+    // refused unit fails.
+    outcomes.lock().unwrap().insert(
+        "app.saves.check".into(),
+        json!({ "_tag": "Ok", "payload": { "warnings": [], "status": "Split", "inUse": [] } }),
+    );
+    outcomes.lock().unwrap().insert(
+        "app.session.status".into(),
+        json!({ "_tag": "Err", "payload": { "code": "HostLaunchFailed", "message": "host launch exact failed: plugin-launch: steam-cloud-conflict" } }),
+    );
+    *access.conflicted.lock().unwrap() = Some("g00001".into());
+    for _ in 0..800 {
+        if checks() >= 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_eq!(
+        checks(),
+        2,
+        "the same attempt went back through the save check: {:?}",
+        hub.model("pico").unwrap().status
+    );
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let status = hub.model("pico").unwrap().status;
+    assert!(
+        !matches!(&status, SurfaceStatus::Problem { reason, .. } if reason.contains("steam-cloud-conflict")),
+        "{status:?}"
+    );
+}

@@ -10,7 +10,7 @@ use super::{
     availability::Unavailable,
     host::{Channel, EventReader, HostPlan, HostUnits, Mode},
     protocol::{Command, Event},
-    saves::{Conflict, Conflicts},
+    saves::Conflicts,
 };
 use crate::saves::{store::NativeSaveStore, types::SnapshotRecord};
 use std::{
@@ -151,6 +151,7 @@ impl Sessions {
         let exit_synced = Arc::new(AtomicBool::new(false));
         let watcher = {
             let watch = Watch {
+                launch_id: launch_id.into(),
                 reader: EventReader::new(&dir),
                 channel: dir.clone(),
                 host_channel: mode.host_channel(),
@@ -221,6 +222,7 @@ impl Drop for Live<'_> {
 }
 
 struct Watch {
+    launch_id: String,
     reader: EventReader,
     channel: PathBuf,
     host_channel: PathBuf,
@@ -327,32 +329,48 @@ impl Watch {
         Ok(())
     }
 
+    /// The launch sync reported a conflict: the files the host exported
+    /// before it (already in the save folder) and the cloud side become a
+    /// split now, so the shim's refusal of this same attempt can go straight
+    /// to the split choice. This session's completion adds no snapshot.
     fn conflict(&self, appid: u32, remote_time: u64) -> Result<(), String> {
         let Some(context) = &self.context else {
             return Ok(());
         };
         let store = NativeSaveStore::new(&context.private_root);
-        let cloud = super::saves::cloud_side(
+        let local = super::saves::capture(
             &store,
             &context.person,
+            &context.save_folder,
             SnapshotRecord {
                 parents: vec![],
                 game_id: context.game_id.clone(),
                 release_id: context.release_id.clone(),
                 runner_id: context.runner_id.clone(),
                 device: context.device.clone(),
-                ended_at: String::new(),
+                ended_at: rfc3339_now(),
                 duration_seconds: 0,
                 interrupted: false,
                 locations: vec![],
             },
-            remote_time,
         )
         .map_err(|error| error.to_string())?;
-        self.conflicts
-            .open(&context.person, &context.game_id, Conflict { appid, cloud });
+        let conflict = super::saves::split(&store, &context.person, appid, local, remote_time)
+            .map_err(|error| error.to_string())?;
+        self.conflicts.open(
+            &context.person,
+            &context.game_id,
+            Some(&self.launch_id),
+            conflict,
+        );
         Ok(())
     }
+}
+
+fn rfc3339_now() -> String {
+    chrono::Utc::now()
+        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string()
 }
 
 /// Fill a fresh folder beside `folder`, then put it in `folder`'s place.
@@ -527,12 +545,15 @@ done"#,
         let store = NativeSaveStore::new(&context.private_root);
         use crate::saves::SaveRepository;
         let records = store.records(PERSON, "half-life").unwrap();
-        assert_eq!(records.len(), 1, "the cloud side");
-        let cloud = crate::saves::record::snapshot_id(&records[0]).unwrap();
-        assert_eq!(
-            fs::read(context.save_folder.join("remote/s")).unwrap(),
-            b"local",
-            "the launch export is the local side the session capture takes"
+        assert_eq!(records.len(), 2, "both sides, before the refused session ends");
+        let cloud = records
+            .iter()
+            .find(|record| crate::steam_engine::saves::in_steam_cloud(record))
+            .map(|record| crate::saves::record::snapshot_id(record).unwrap())
+            .unwrap();
+        assert!(
+            sessions.conflicts.take_launch(LAUNCH),
+            "the refused session takes no snapshot of its own"
         );
         assert_eq!(
             sessions.conflicts.pick(PERSON, "half-life", &cloud),
@@ -556,6 +577,7 @@ done"#,
     fn an_export_outside_the_channel_is_refused() {
         let temp = tempfile::tempdir().unwrap();
         let watch = Watch {
+            launch_id: LAUNCH.into(),
             reader: EventReader::new(temp.path()),
             channel: temp.path().join("c"),
             host_channel: "/run/korri-steam-host-x/channel".into(),

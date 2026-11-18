@@ -2375,7 +2375,7 @@ impl SystemdLaunchUnitBackend {
                 Arc::new(self.steam_engine_units()),
                 &self.diagnostics_root,
                 self.runtime_uid,
-                Arc::clone(crate::steam_engine::conflicts()),
+                Arc::clone(crate::steam_engine::conflicts(&self.private_state_root)),
                 Arc::clone(crate::steam_engine::unavailable()),
                 Arc::clone(crate::steam_engine::live_sessions()),
             )

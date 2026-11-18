@@ -41,6 +41,18 @@ pub trait SteamEngineAccess: Send + Sync {
     fn facts(&self) -> SteamFacts;
     /// Blocking: whether this game's launch route is the engine runner.
     fn runs_on_engine(&self, game_id: &str, runner_id: Option<&str>) -> bool;
+    /// Make the client runner the selected runner of the system `steam`, with
+    /// Korri's runner selection at system scope, and queue whatever it needs.
+    fn use_client_runner(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + '_>>;
+    /// True once after the launch sync of this game (korrid's id) found a
+    /// Steam Cloud conflict and korrid wrote the split.
+    fn take_conflict(&self, game_id: &str) -> bool;
+    /// Cheap: what decides whether an engine runner is here (the enabled
+    /// Steam package and whether it carries the engine host). A change means
+    /// the account is read again.
+    fn presence(&self) -> String;
 }
 
 /// A QR session lasts at most this long; Steam rotates the code inside it.
@@ -48,6 +60,8 @@ const SIGN_IN_LIMIT: Duration = Duration::from_secs(15 * 60);
 /// The status job and sign-out wait at most this long for the host.
 const STATUS_LIMIT: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_millis(200);
+/// How often the Steam package's presence is read (one small file).
+const PRESENCE_POLL: Duration = Duration::from_secs(2);
 /// The engine package (48 MB) and Proton download before a first sign-in.
 const PACKAGE_LIMIT: Duration = Duration::from_secs(30 * 60);
 
@@ -97,12 +111,12 @@ impl SteamAccount {
 
     /// Read the facts and, when the runner can run, ask a job host who is
     /// signed in. Called at start and when plugins change.
-    pub fn refresh(self: &Arc<Self>) {
+    pub fn refresh(self: &Arc<Self>) -> bool {
         let Some(access) = self.access.clone() else {
-            return;
+            return true;
         };
         if self.lock().job.is_some() {
-            return;
+            return false;
         }
         let this = Arc::clone(self);
         tokio::task::spawn_blocking(move || match access.facts() {
@@ -117,6 +131,36 @@ impl SteamAccount {
                 this.run(plan, runner, None, STATUS_LIMIT, |account| {
                     !matches!(account, Account::Checking)
                 });
+            }
+        });
+        true
+    }
+
+    /// A launch of this game hit a Steam Cloud conflict just now.
+    pub fn take_conflict(&self, game_id: &str) -> bool {
+        self.access
+            .as_ref()
+            .is_some_and(|access| access.take_conflict(game_id))
+    }
+
+    /// Read the account now, and again whenever the Steam package or its
+    /// engine runner is installed, enabled or disabled (ADR 0083).
+    pub fn start(self: &Arc<Self>) {
+        let Some(access) = self.access.clone() else {
+            return;
+        };
+        let this = Arc::clone(self);
+        tokio::spawn(async move {
+            let mut seen: Option<String> = None;
+            loop {
+                let reader = Arc::clone(&access);
+                if let Ok(now) = tokio::task::spawn_blocking(move || reader.presence()).await {
+                    // A read waits while a sign-in job runs; it is tried again.
+                    if seen.as_ref() != Some(&now) && this.refresh() {
+                        seen = Some(now);
+                    }
+                }
+                tokio::time::sleep(PRESENCE_POLL).await;
             }
         });
     }
@@ -376,13 +420,20 @@ impl SteamAccount {
             }
             account::SIGN_OUT => self.sign_out(),
             account::USE_CLIENT => {
-                // Games keep working on the client runner, the default; the
-                // person picks it per game in the runner choice.
-                self.set(Some(Account::Problem {
-                    problem: account::Problem::Unavailable(Unavailable::EngineRefused {
-                        eresult: 0,
-                    }),
-                }));
+                let Some(access) = self.access.clone() else {
+                    return true;
+                };
+                let this = Arc::clone(self);
+                tokio::spawn(async move {
+                    match access.use_client_runner().await {
+                        Ok(()) => this.set(Some(Account::Problem {
+                            problem: account::Problem::ClientChosen,
+                        })),
+                        Err(error) => {
+                            log::warn!("steam account: client runner not chosen: {error}")
+                        }
+                    }
+                });
             }
             _ => return false,
         }
@@ -399,10 +450,15 @@ mod tests {
         plan: HostPlan,
         runner: JobRunner,
         engine: bool,
+        chosen: Arc<AtomicBool>,
+        presence: Arc<Mutex<String>>,
     }
 
     impl SteamEngineAccess for Access {
         fn facts(&self) -> SteamFacts {
+            if self.presence.lock().unwrap().is_empty() {
+                return SteamFacts::Absent;
+            }
             SteamFacts::Ready {
                 plan: self.plan.clone(),
                 runner: self.runner.clone(),
@@ -411,9 +467,30 @@ mod tests {
         fn runs_on_engine(&self, _: &str, _: Option<&str>) -> bool {
             self.engine
         }
+        fn use_client_runner(
+            &self,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + '_>>
+        {
+            self.chosen.store(true, Ordering::SeqCst);
+            Box::pin(async { Ok(()) })
+        }
+        fn presence(&self) -> String {
+            self.presence.lock().unwrap().clone()
+        }
+        fn take_conflict(&self, _: &str) -> bool {
+            false
+        }
     }
 
     fn account(temp: &std::path::Path, body: &str, engine: bool) -> Arc<SteamAccount> {
+        account_with(temp, body, engine).0
+    }
+
+    type Handles = (Arc<SteamAccount>, Arc<AtomicBool>, Arc<Mutex<String>>);
+
+    fn account_with(temp: &std::path::Path, body: &str, engine: bool) -> Handles {
+        let chosen: Arc<AtomicBool> = Arc::default();
+        let presence = Arc::new(Mutex::new(String::from("steam|true")));
         let launches = temp.join("launches");
         let access = Access {
             plan: HostPlan {
@@ -429,12 +506,48 @@ mod tests {
                 live: Arc::default(),
             },
             engine,
+            chosen: Arc::clone(&chosen),
+            presence: Arc::clone(&presence),
         };
         let korrid = super::super::korrid::Korrid::new(Arc::new(|_| {
             Box::pin(async { Err(super::super::korrid::Refusal::Unreachable("test".into())) })
         }))
         .with_steam_engine(Arc::new(access));
-        SteamAccount::new(korrid, Arc::new(|| {}))
+        (SteamAccount::new(korrid, Arc::new(|| {})), chosen, presence)
+    }
+
+    /// Steam refused the engine: the fallback chooses the client runner and
+    /// says so; nothing offers to switch back by itself.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_fallback_chooses_the_client_runner() {
+        let temp = tempfile::tempdir().unwrap();
+        let (account, chosen, _) = account_with(temp.path(), QR_HOST, true);
+        account.set(Some(Account::Problem {
+            problem: account::Problem::Unavailable(Unavailable::EngineRefused { eresult: 7 }),
+        }));
+        assert!(account.act(account::USE_CLIENT));
+        until(&account, |s| {
+            matches!(s, Some(SurfaceSteamAccount::Problem { kicker, actions, .. })
+                if kicker == "Steam games use the Steam client" && actions.is_empty())
+        })
+        .await;
+        assert!(chosen.load(Ordering::SeqCst));
+    }
+
+    /// The account is read again when the Steam package or its engine runner
+    /// comes or goes, not only at start.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn installing_or_disabling_the_engine_runner_reads_the_account_again() {
+        let temp = tempfile::tempdir().unwrap();
+        let (account, _, presence) = account_with(temp.path(), QR_HOST, true);
+        *presence.lock().unwrap() = String::new();
+        account.start();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(account.snapshot(), None, "no engine runner, no Steam entry");
+        *presence.lock().unwrap() = "steam|true".into();
+        until(&account, |s| matches!(s, Some(SurfaceSteamAccount::SignedOut { .. }))).await;
+        *presence.lock().unwrap() = String::new();
+        until(&account, Option::is_none).await;
     }
 
     async fn until(account: &SteamAccount, check: impl Fn(&Option<SurfaceSteamAccount>) -> bool) {

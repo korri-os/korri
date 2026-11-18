@@ -3107,7 +3107,11 @@ async fn dispatch(
                             id,
                             request.runner_id.as_deref(),
                         )?;
-                        state.acquisition.game_status(root, &registry, &game)
+                        let mut snapshot = state.acquisition.game_status(root, &registry, &game)?;
+                        if let Some(app) = steam_engine_app(state, id) {
+                            snapshot.artifacts.push(steam_engine::store::installed_status(app));
+                        }
+                        Ok(snapshot)
                     }
                     None => state.acquisition.status(root, &registry, None),
                 }
@@ -5459,20 +5463,29 @@ fn steam_imported(context: acquisition::GameContext) -> steam_engine::store::Imp
     })
 }
 
-/// The installed Steam app id of a library game on the engine runner.
+/// The Steam app id of a library game that the engine installed in the
+/// person's engine folder (its appmanifest is there), whichever runner is
+/// chosen for it now.
 fn steam_engine_app(state: &AppState, game_id: &str) -> Option<steam_engine::protocol::AppId> {
+    let ServerMode::Host(host) = &state.mode else {
+        return None;
+    };
     let (root, registry) = state.acquisition_context().ok()?;
     let (snapshot, _) = config::settings::runner_choice_snapshot(root).ok()?;
-    let route =
-        config::resolver::resolve_linux_route(root, &snapshot, &registry, game_id, None).ok()?;
-    if route.runner_id != steam_engine::RUNNER_ID {
+    let route = config::resolver::resolve_linux_route(root, &snapshot, &registry, game_id, None).ok()?;
+    let target = route.provider_target?;
+    if target.provider != steam_engine::provider::PROVIDER_ID {
         return None;
     }
-    let target = route.provider_target?;
-    (target.provider == steam_engine::provider::PROVIDER_ID)
-        .then(|| steam_engine::provider::appid(&target.provider_ref))
-        .flatten()
+    let app = steam_engine::provider::appid(&target.provider_ref)?;
+    let account = saves::account_root(root, &host.launch_person().ok()?).ok()?;
+    account
+        .join(steam_engine::folder::NAME)
+        .join(format!("steam/steamapps/appmanifest_{app}.acf"))
+        .is_file()
+        .then_some(app)
 }
+
 
 impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
     fn facts(&self) -> surface::steam_account::SteamFacts {
@@ -5514,6 +5527,88 @@ impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
                 steam_engine::availability::Unavailable::PackageNotDownloaded,
             ),
         }
+    }
+
+    fn take_conflict(&self, game_id: &str) -> bool {
+        let ServerMode::Host(host) = &self.state.mode else {
+            return false;
+        };
+        let Ok(person) = host.launch_person() else {
+            return false;
+        };
+        steam_engine::conflicts(self.state.private_state_root()).take_fresh(&person, game_id)
+    }
+
+    fn presence(&self) -> String {
+        plugin_installation::read()
+            .ok()
+            .and_then(|packages| {
+                packages
+                    .into_iter()
+                    .find(|package| package.id == steam_engine::PLUGIN_ID)
+            })
+            .map(|package| {
+                format!(
+                    "{}|{}",
+                    package.package.display(),
+                    package.files.contains_key(steam_engine::HOST_FILE)
+                )
+            })
+            .unwrap_or_default()
+    }
+
+    fn use_client_runner(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + '_>> {
+        Box::pin(async move {
+            let ServerMode::Host(host) = &self.state.mode else {
+                return Err("this device runs no games".into());
+            };
+            let (root, registry) = self
+                .state
+                .acquisition_context()
+                .map_err(|failure| failure.message)?;
+            // The client runner is the same plugin's: enabled with it. What it
+            // needs to run is queued now; Valve's client itself comes on its
+            // first start, as it always does.
+            registry
+                .native_runner(steam_engine::CLIENT_RUNNER_ID)
+                .map_err(|error| error.to_string())?;
+            let missing: Vec<String> = registry
+                .artifacts_for_runner(steam_engine::CLIENT_RUNNER_ID)
+                .map_err(|error| error.to_string())?
+                .into_iter()
+                .filter(|artifact| {
+                    !acquisition::placement::is_ready_artifact(root, artifact)
+                })
+                .map(|artifact| artifact.id.clone())
+                .collect();
+            if !missing.is_empty() {
+                self.state
+                    .acquisition
+                    .start(root, self.state.private_state_root(), &registry, &missing)
+                    .map_err(|failure| failure.message)?;
+            }
+            // Korri's runner selection at system scope: the system `steam`.
+            let revisions = config::settings::runner_choice_revisions(root)
+                .map_err(|error| error.to_string())?;
+            host.launch_settings_set(launch_settings::LaunchSetRequest {
+                place: launch_settings::LaunchPlace {
+                    layer: launch_settings::LaunchLayer::System(steam_engine::SYSTEM_ID.into()),
+                    scope: launch_settings::LaunchRunnerScope::Any,
+                },
+                path: launch_settings::LaunchPath::Runner,
+                value: Some(serde_json::Value::String(
+                    steam_engine::CLIENT_RUNNER_ID.into(),
+                )),
+                clear: false,
+                expected_revision: revisions.device,
+                holder: None,
+            })
+            .await
+            .map(|_| ())
+            .map_err(|failure| failure.message)
+        })
     }
 
     fn runs_on_engine(&self, game_id: &str, runner_id: Option<&str>) -> bool {

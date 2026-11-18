@@ -53,6 +53,22 @@ fn store_url(app: AppId) -> String {
     format!("https://store.steampowered.com/app/{app}/")
 }
 
+/// An engine install as a download the person can remove: one Ready file of
+/// the game's own release in its download facts, so the game's existing
+/// Remove download action is offered, and runs `uninstall`. Saves stay.
+pub fn installed_status(app: AppId) -> crate::acquisition::ArtifactStatus {
+    crate::acquisition::ArtifactStatus {
+        id: format!("{}/installed-{app}", super::PLUGIN_ID),
+        title: "Steam game files".into(),
+        version: String::new(),
+        bytes_total: None,
+        state: crate::acquisition::ArtifactState::Ready {
+            path: String::new(),
+        },
+        release: Some(true),
+    }
+}
+
 struct StoreJob {
     status: Mutex<AcquireJobStatus>,
     stop: AtomicBool,

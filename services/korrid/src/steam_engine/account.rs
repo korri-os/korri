@@ -51,6 +51,9 @@ pub enum Problem {
     SignIn { for_game: Option<String> },
     /// The engine runner cannot run on this device.
     Unavailable(Unavailable),
+    /// The person chose the client runner for Steam games while Steam
+    /// refused the engine. Nothing switches back by itself.
+    ClientChosen,
 }
 
 impl Account {
@@ -167,6 +170,13 @@ impl Account {
                 reason: "Steam did not answer, or the code ran out. Check the network and try again."
                     .into(),
                 actions: vec![action(RETRY, "Try again")],
+            },
+            Self::Problem {
+                problem: Problem::ClientChosen,
+            } => SurfaceSteamAccount::Problem {
+                kicker: "Steam games use the Steam client".into(),
+                reason: "Steam refused the engine version Korri uses, so your Steam games start with the Steam client now. When Korri updates, choose the engine again in a game's runners.".into(),
+                actions: vec![],
             },
             Self::Problem {
                 problem: Problem::Unavailable(reason),

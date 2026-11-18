@@ -28,7 +28,8 @@ pub enum Command {
 }
 
 /// The side a person keeps in a Steam Cloud conflict.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Side {
     Local,
     Cloud,

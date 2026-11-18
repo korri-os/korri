@@ -378,6 +378,9 @@ pub struct Root {
     pub owner_binding: Arc<OwnerBinding>,
     pub starter_pack: Arc<StarterPack>,
     pub steam: Arc<super::steam_account::SteamAccount>,
+    /// The last launch through the gate: a Steam Cloud conflict refused on
+    /// its sync goes back through the gate on that same attempt.
+    last_gated: std::sync::Mutex<Option<AcquisitionGameRef>>,
     pub downloads: Arc<GameDownloads>,
     pub acquisition: Arc<AcquisitionGate>,
     pub runner: Arc<RunnerChooser>,
@@ -621,6 +624,8 @@ impl Root {
                         // Installing or switching a plugin changes what can be played.
                         changed: Box::new(move || {
                             if let Some(root) = changed.upgrade() {
+                                // ADR 0083: the Steam engine runner may have come or gone.
+                                root.steam.refresh();
                                 tokio::spawn(async move { root.launchables.refresh().await });
                             }
                         }),
@@ -683,6 +688,7 @@ impl Root {
                 owner_binding,
                 starter_pack,
                 steam: super::steam_account::SteamAccount::new(korrid.clone(), notify.clone()),
+                last_gated: std::sync::Mutex::new(None),
                 downloads,
                 acquisition,
                 controllers,
@@ -968,7 +974,14 @@ impl Root {
     /// Start every poll the portal ran while mounted.
     pub fn start(self: &Arc<Self>, mut overlay_intent: tokio::sync::watch::Receiver<u64>) {
         self.saves.start();
-        self.steam.refresh();
+        self.steam.start();
+        let this = Arc::clone(self);
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                this.steam_conflict_again();
+            }
+        });
         self.shared.start();
         let launch = Arc::clone(&self.launch);
         tokio::spawn(async move { launch.refresh_device().await });
@@ -1674,6 +1687,7 @@ impl Root {
         });
         // ADR 0083: after the downloads, a launch on the Steam engine runner
         // with nobody signed in waits for the sign-in.
+        *self.last_gated.lock().expect("last gated poisoned") = Some(game.clone());
         let steam = Arc::clone(&self.steam);
         let (steam_game, steam_abandon, start) = (game.clone(), abandon.clone(), proceed);
         let proceed: super::acquisition_gate::Step = Arc::new(move || {
@@ -1686,6 +1700,32 @@ impl Root {
             )
         });
         self.acquisition.launch(game, proceed, abandon);
+    }
+
+    /// ADR 0083: the launch sync of the last launch found a Steam Cloud
+    /// conflict, the shim refused to start the game, and korrid wrote the
+    /// split. That same attempt goes back through the gate, whose save check
+    /// finds the split and asks for the choice, as korrid's `SavesSplit`
+    /// refusal does. The refused unit's failure is no news to the person.
+    fn steam_conflict_again(self: &Arc<Self>) {
+        let refused = matches!(
+            self.launchables.state().loaded().and_then(|loaded| loaded.content.notice.as_ref()),
+            Some(super::launchables::state::LaunchNotice::Launch { message, .. })
+                if message.contains(crate::steam_engine::CONFLICT_REFUSAL)
+        );
+        if refused {
+            self.launchables.dismiss_notice();
+        }
+        let game = self.last_gated.lock().expect("last gated poisoned").clone();
+        let Some(game) = game else {
+            return;
+        };
+        if !self.steam.take_conflict(&game.id) {
+            return;
+        }
+        self.last_gated.lock().expect("last gated poisoned").take();
+        self.end_plan();
+        drop(self.gated_start(game));
     }
 
     /// Perform one request with the portal host's rules. Requests about the

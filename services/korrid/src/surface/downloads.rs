@@ -587,3 +587,43 @@ impl GameDownloads {
         true
     }
 }
+
+#[cfg(test)]
+mod steam_engine_tests {
+    use super::*;
+
+    /// ADR 0083: an installed engine game offers the existing Remove
+    /// download, and nothing to download.
+    #[test]
+    fn an_engine_install_offers_remove_download() {
+        let mut inner = Inner::default();
+        let proton = ArtifactStatus {
+            id: "@korri:proton/cachyos".into(),
+            title: "Proton".into(),
+            version: "1".into(),
+            bytes_total: Some(1),
+            state: ArtifactState::Ready { path: "/p".into() },
+            release: None,
+        };
+        inner.absorb(
+            &[proton, crate::steam_engine::store::installed_status(78000)],
+            Some("bejeweled"),
+        );
+        let members = inner.membership["bejeweled"].clone();
+        let facts = inner.facts_for("bejeweled", &members, &[]);
+        assert!(facts.own_ready && !facts.needs && !facts.active);
+        let context = super::super::model::GameDownloadContext {
+            facts: facts.clone(),
+            live: false,
+            enabled: true,
+        };
+        let actions = super::super::model::game_actions_for_entry(None, Some(&context));
+        assert_eq!(
+            actions.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(),
+            ["remove-download"]
+        );
+        // Not while the game runs.
+        let live = super::super::model::GameDownloadContext { facts, live: true, enabled: true };
+        assert!(super::super::model::game_actions_for_entry(None, Some(&live)).is_empty());
+    }
+}

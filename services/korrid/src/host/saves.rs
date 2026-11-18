@@ -516,7 +516,7 @@ impl HostRuntime {
                     if !restore {
                         // ADR 0083: a pick in a Steam Cloud split is applied
                         // with ResolveSyncConflict before the next launch.
-                        crate::steam_engine::conflicts().pick(
+                        crate::steam_engine::conflicts(&host.private_state_root).pick(
                             person,
                             &request.game_id,
                             &request.snapshot_id,

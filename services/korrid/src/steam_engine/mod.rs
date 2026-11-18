@@ -23,6 +23,8 @@ pub const PLUGIN_ID: &str = "@korri:steam";
 /// The engine runner. The client runner `@korri:steam/steam` stays the
 /// default; this one is chosen per game or for the system.
 pub const RUNNER_ID: &str = "@korri:steam/engine";
+/// The system both Steam runners run.
+pub const SYSTEM_ID: &str = "steam";
 /// The client runner, the fallback.
 pub const CLIENT_RUNNER_ID: &str = "@korri:steam/steam";
 /// The `@korri:steam` package file key of the engine host program.
@@ -31,6 +33,10 @@ pub const HOST_FILE: &str = "korri-steam-host";
 pub const ENGINE_ARTIFACT: &str = "@korri:steam/engine-package";
 /// The one file of that package the runner uses.
 pub const ENGINE_FILE: &str = "linuxarm64/steamclient.so";
+/// The refusal the shim reports when the launch sync finds a Steam Cloud
+/// conflict (`STATUS=plugin-launch: steam-cloud-conflict`): no game ran,
+/// and korrid has written the split.
+pub const CONFLICT_REFUSAL: &str = "steam-cloud-conflict";
 /// korrid's Proton artifact, the engine's compat tool.
 pub const PROTON_ARTIFACT: &str = "@korri:proton/cachyos";
 
@@ -66,10 +72,11 @@ static UNAVAILABLE: std::sync::OnceLock<
 > = std::sync::OnceLock::new();
 static SESSIONS: std::sync::OnceLock<sessions::Sessions> = std::sync::OnceLock::new();
 
-/// Open Steam Cloud conflicts of this korrid, shared by the session watcher
-/// and the save pick.
-pub fn conflicts() -> &'static std::sync::Arc<saves::Conflicts> {
-    CONFLICTS.get_or_init(Default::default)
+/// Open Steam Cloud conflicts of this korrid, kept in its private state
+/// root and shared by the session watcher, the session's completion and the
+/// save pick. The first caller's root is the device's one root.
+pub fn conflicts(private_root: &std::path::Path) -> &'static std::sync::Arc<saves::Conflicts> {
+    CONFLICTS.get_or_init(|| std::sync::Arc::new(saves::Conflicts::at(private_root)))
 }
 
 /// The engine state the last host reported on this device.

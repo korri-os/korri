@@ -1818,10 +1818,16 @@ impl HostSessionControl {
                 };
                 // ADR 0083: a Steam engine game with no Steam Cloud set exports
                 // nothing and gets no snapshots, the same as before.
+                // A session whose launch sync hit a Steam Cloud conflict wrote
+                // the split's two sides then; it adds no third head.
                 let save_snapshot = save_snapshot.filter(|snapshot| {
                     snapshot.runner_id != crate::steam_engine::RUNNER_ID
-                        || !snapshot.parents.is_empty()
-                        || snapshot.locations.iter().any(|l| !l.files.is_empty())
+                        || (!crate::steam_engine::conflicts(
+                            self.identity_root.parent().expect("private state root"),
+                        )
+                        .take_launch(&launch_id)
+                            && (!snapshot.parents.is_empty()
+                                || snapshot.locations.iter().any(|l| !l.files.is_empty())))
                 });
                 replace_active(
                     &self.identity_root,
