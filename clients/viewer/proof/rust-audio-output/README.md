@@ -90,3 +90,13 @@ quiet aka is equal. These sets' A was all C, as `korri-viewer` was then.
 Since ADR 0062's switch `korri-viewer` carries nightjar-core and the Rust
 EGL presenter and X11 window, so the next set's A is `korri-viewer-c`, the
 viewer with no Rust part.
+
+## The owner's call, 2026-11-18
+
+The owner made the Rust audio output the PC default ahead of a quiet set:
+`korri-viewer` on x86_64 builds the feature, and `-audiooutput c` keeps
+the carried C (`../../README.md`, "Sound in Rust"). The four sets above,
+the first and the rerun's three attempts, stay as recorded: all disturbed,
+none firm. The quiet set, `korri-viewer-c` against
+`korri-viewer-rust-audio-output` with `--tone 1000`, comes at the end of
+#391 with the other final measurements.

@@ -1720,7 +1720,7 @@ must carry sound.
 
 ```sh
 nix run .#stream-cadence -- view --sender root@aka --sender-fixture \
-  --viewer root@aka --viewer-package /nix/store/…-korri-viewer-0.1.0 \
+  --viewer root@aka --viewer-package /nix/store/…-korri-viewer-c-0.1.0 \
   --candidate-package /nix/store/…-korri-viewer-rust-audio-output-0.1.0 \
   --runs 5 --tone 1000
 ```

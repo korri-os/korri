@@ -77,3 +77,63 @@ Tctl before and after. They prove function, not numbers.
 | `startup_ms` | 160.7 | 128.5 |
 | `input_ms`, `input_missed` | 0.089, 0 | 0.082, 0 |
 | `stream_stalls`, `viewer_exits` | 0, 0 | 0, 0 |
+
+## The Rust audio output by default
+
+One stream with `korri-viewer` after the owner's call of 2026-11-18 that
+makes the Rust audio output (F1) the PC default beside the three parts
+above. A smoke stream, not a measure: one run, no baseline.
+
+**It played the stream's sound through the Rust audio output, with the
+other three Rust parts**, and the run was valid.
+
+- Package: `/nix/store/8mmjpp03gwmic1pzp3g5m8piid3av2k9-korri-viewer-0.1.0`,
+  built on aka from the tree of the commit "the Rust audio output is the
+  PC default, on the owner's call" before its rebase. Its build ran 319 lib
+  tests with the four features, the audio output's among them. The
+  rebased commit's package,
+  `/nix/store/y6l6y3afis47y4yb4z9lxzlr9rd4crj3-korri-viewer-0.1.0`, has
+  the same `bin/korri-viewer`, byte for byte (SHA-256 `dbe7e2b9…`): the
+  rebase brought only Android code (#434), which the PC binary does not
+  compile. Its build ran 320 lib tests.
+- 2026-11-19 00:57 to 00:59 UTC, after three checks a minute apart found
+  aka quiet, holding `/var/tmp/korri-turns.lock` (`rust-audio-output/host-load.txt`).
+  Other work took 0.4 % of all CPUs; Tctl 60.4 to 73.8 °C.
+- A first try at 22:51 UTC was refused by the heat guard (Tctl 89 °C):
+  stream-cadence's own build ran between the gate and the run. It streamed
+  nothing.
+
+```sh
+nix run .#stream-cadence -- view --build-store auto --sender local --sender-fixture \
+  --viewer local --viewer-package /nix/store/8mmjpp03gwmic1pzp3g5m8piid3av2k9-korri-viewer-0.1.0 \
+  --sender-sunshine /nix/store/ap898nhjj347ysnaf3jpp4ynzndh88a6-sunshine-korri-2026.914.233613-korri \
+  --viewer-output 1920x1200 --tone 1000 --runs 1 --out /var/tmp/step-e-core/sets/f1-smoke
+```
+
+The viewer passed no `-networkcore`, `-audiooutput`, `-eglpresenter` or
+`-x11window` (`results.json`, `viewer_command`). The sender played its
+1000 Hz tone (`discovered.tone`: `{"hz": 1000, "sink": "korri-tone"}`).
+The log (`rust-audio-output/viewer.log`) names each part:
+
+```text
+sound: the Rust audio output chose ALSA
+picture: the Rust X11 window 0x800000, 1920x1080, on its own connection to :0
+sound: ALSA sysdefault: 2 channels at 48000 Hz, period 960 frames, buffer 2880 asked
+picture: the Rust EGL presenter shows VA-API surfaces
+Received first audio packet
+nightjar: at the stop: SessionStats { … }
+nightjar: recovery requests sent: 0 IDR, 0 reference frame invalidations
+```
+
+| Field | Value |
+| --- | --- |
+| Picture | `x11_vaapi`, `decode=vaapi` |
+| Latency p50, p95 | 13.68, 20.92 ms (the medians of the six windows' p50 and p95) |
+| `cpu_seconds_per_second` | 0.017 |
+| `startup_ms` | 160.6 |
+| `input_ms`, `input_missed` | 0.064, 0 |
+| `stream_stalls`, `viewer_exits`, `torn_frames` | 0, 0, 0 |
+
+Record: `rust-audio-output/results.json` and `rust-audio-output/viewer.log`,
+unedited. It proves that the default plays through the port; it measures
+nothing about the sound, and its numbers are not the quiet set's.

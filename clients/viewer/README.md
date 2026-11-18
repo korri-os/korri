@@ -363,8 +363,8 @@ projects that nightjar-core ports code from, and nanors (MIT,
 the Rust that builds the binary; and the Rust crates of the binary, by
 `cargo about generate --fail` for its target and features (`about.toml`,
 `about.hbs`). `korri-viewer` on x86_64 lists the crates of
-`nightjar,rust-egl-presenter,rust-x11-window`, on aarch64 those of no
-feature, and each one-part package and `korri-viewer-c` its own. The
+`nightjar,rust-audio-output,rust-egl-presenter,rust-x11-window`, on aarch64
+those of no feature, and each one-part package and `korri-viewer-c` its own. The
 viewer crate's own entry there has the binary's licence, GPL-3.0-only with
 nightjar-core and GPL-3.0-or-later without; the Zlib and Apache-2.0 that its
 manifest also names are those of Android-only files. The corresponding
@@ -556,21 +556,33 @@ The aka comparison and isolation records are in `proof/`.
 ## Sound in Rust (#391 step F, slice F1)
 
 `src/audio_output/renderer.rs` is the Rust port of the carried C sound:
-`io/audio/{alsa,pulse,sdl}.c` and the choice in `io/bridge.c`. The carried
-C stays the default. The cargo feature `rust-audio-output` builds the port,
-and `-audiooutput rust` chooses it (`-audiooutput c`, the default, keeps
-the C). Without the feature, `-audiooutput rust` fails with the feature's
-name. `korri-viewer-rust-audio-output` is the viewer with the feature; its
-`bin/moonlight` appends `-audiooutput rust`, so that the stage-0 tool runs
-it as the candidate beside `korri-viewer-c`, the viewer with no Rust part.
-`korri-viewer` is no baseline for it since ADR 0062's switch: it carries
-nightjar-core and the Rust presenter and window, which the candidate does
-not.
+`io/audio/{alsa,pulse,sdl}.c` and the choice in `io/bridge.c`. The cargo
+feature `rust-audio-output` builds the port, and where it is built the port
+is the default; `-audiooutput c` chooses the carried C. Without the
+feature the carried C plays, and `-audiooutput rust` fails with the
+feature's name. The PC package, `korri-viewer`, builds it.
+
+The port became the PC default on the owner's call of 2026-11-18, ahead of
+a quiet measurement. ADR 0062 makes a part the default when it measures
+equal or better, and the port's sets on aka (`proof/rust-audio-output/`)
+were all disturbed by other work: the first set (`turns-2026-11-17/`, other
+work above 5 % of all CPUs in four of the five candidate runs) and the
+three attempts of the rerun that was to make the verdict firm
+(`rerun-2026-11-17/`, 6, 3 and 8 runs of 10 above 5 %). Three of the four
+were equal on every number; the rerun's third attempt was one frame later
+at startup (`startup_ms`). The quiet set comes at the end of #391, with the
+other final measurements: `korri-viewer-c` against
+`korri-viewer-rust-audio-output`, with `--tone 1000`.
+
+`korri-viewer-rust-audio-output` is the viewer with the feature and no
+other Rust part; its `bin/moonlight` appends `-audiooutput rust`, so that
+the stage-0 tool runs it as the candidate beside `korri-viewer-c`, the
+viewer with no Rust part. `korri-viewer` is no baseline for it: it carries
+nightjar-core and the Rust presenter, window and sound.
 Its turns need sound: `view --tone 1000` (`nix/stream-cadence/README.md`,
-"The stream's sound"). Its four sets on aka (`proof/rust-audio-output/`)
-were equal on every number in three and one frame later at startup in one,
-all with other work running, so the carried C stays the default until a
-set on a quiet aka, against `korri-viewer-c`, is equal (ADR 0062).
+"The stream's sound"). One smoke stream with the switched package, which
+proves function and no number: `proof/pc-default-smoke/README.md`, "The
+Rust audio output by default".
 
 Only the language changes, so that the measure judges one cause:
 
@@ -611,10 +623,10 @@ The product's sound server is PipeWire's Pulse server
 PulseAudio's own. Neither the C nor the port sets a buffer size for
 Pulse, so the server's default decides the delay; not measured here.
 
-Not proven: a stream through the port (no stream ran in this slice), a
-real sound card, and anything about delay or gaps: no number of ADR 0062
-measures sound. The turns judge its CPU, start, picture and stability with
-the tone playing.
+Not proven: a real sound card, and anything about delay or gaps: no
+number of ADR 0062 measures sound, and the turns and the smoke stream
+played into ALSA's null output. The turns judge its CPU, start, picture and
+stability with the tone playing.
 
 ## EGL presenter in Rust (#391 step F, slice F3)
 

@@ -65,17 +65,21 @@ let
     clang
     rustPlatform.bindgenHook
   ];
-  # The parts that took over from the carried C by ADR 0062 (#391 steps E
-  # and F): nightjar-core, the Rust EGL presenter and the Rust X11 window
-  # measured equal on aka, so the PC package builds them, and each is then
-  # its kind's default; `-networkcore c`, `-eglpresenter c` and `-x11window
-  # c` keep the C. The aarch64 package (the handhelds' v4l2request path)
+  # The parts that took over from the carried C (#391 steps E and F):
+  # nightjar-core, the Rust EGL presenter and the Rust X11 window measured
+  # equal on aka (ADR 0062), and the Rust audio output (F1) took over on the
+  # owner's call of 2026-11-18, ahead of a quiet measurement, as its sets on
+  # a disturbed aka were not firm (README.md, "Sound in Rust"). The PC
+  # package builds them, and each is then its kind's default;
+  # `-networkcore c`, `-audiooutput c`, `-eglpresenter c` and `-x11window c`
+  # keep the C. The aarch64 package (the handhelds' v4l2request path)
   # builds none: nightjar-core needs its two ARMv8 cfgs there
-  # (vendor/README.md), no handheld measured these parts, and the other two
-  # serve X11 VA-API only.
+  # (vendor/README.md), no handheld measured these parts, and the presenter
+  # and window serve X11 VA-API only.
   pc = pkgs.stdenv.hostPlatform.isx86_64;
   defaultFeatures = pkgs.lib.optionals pc [
     "nightjar"
+    "rust-audio-output"
     "rust-egl-presenter"
     "rust-x11-window"
   ];
@@ -135,8 +139,12 @@ let
       checkFeatures = defaultFeatures;
       nativeBuildInputs = native;
       buildInputs = libraries ++ [ network ];
-      # The Rust X11 window's tests run both windows on private Xvfb servers.
-      nativeCheckInputs = pkgs.lib.optional pc pkgs.xvfb;
+      # The Rust X11 window's tests run both windows on private Xvfb servers,
+      # and the Rust audio output's play into a private PulseAudio server.
+      nativeCheckInputs = pkgs.lib.optionals pc [
+        pkgs.xvfb
+        pkgs.pulseaudio
+      ];
       preCheck = ''
         export XDG_RUNTIME_DIR="$TMPDIR/viewer-runtime"
         mkdir -m 700 "$XDG_RUNTIME_DIR"
@@ -331,8 +339,8 @@ let
   # The viewer with none of the Rust parts: the C network core, presenter,
   # window and sound, as `package` was before ADR 0062's switch (#391). A
   # one-part candidate below measures against it, since `package` now
-  # carries three Rust parts. The same source as `package`; only the
-  # features differ.
+  # carries four Rust parts; the Rust audio output's quiet set is one of
+  # them. The same source as `package`; only the features differ.
   cPackage = package.overrideAttrs (old: {
     pname = "korri-viewer-c";
     cargoBuildFeatures = [ ];
@@ -373,19 +381,18 @@ let
       platforms = [ "x86_64-linux" ];
     };
   });
-  # The same viewer with the Rust port of the carried C audio renderers
-  # (#391 step F, slice F1, src/audio_output/). `bin/korri-viewer` still
-  # plays through the carried C unless `-audiooutput rust` is given;
-  # `bin/moonlight` gives it, so that the stage-0 tool runs this package as a
-  # candidate beside `package`, as `nightjarPackage` does. Its tests play
-  # into a private PulseAudio server, so the check has pulseaudio and parec.
+  # The viewer with the Rust port of the carried C audio renderers (#391
+  # step F, slice F1, src/audio_output/) and no other Rust part: the
+  # candidate of the quiet set against `cPackage`. With the feature, the port
+  # is the default output, as in `package`; `bin/moonlight` also names it,
+  # as `nightjarPackage` does. Its tests play into a private PulseAudio
+  # server; `package`'s check has pulseaudio and parec.
   rustAudioOutputPackage = package.overrideAttrs (old: {
     pname = "korri-viewer-rust-audio-output";
     cargoBuildFeatures = [ "rust-audio-output" ];
     korriNotices = "${noticesFor [ "rust-audio-output" ]}/NOTICES.txt";
     cargoCheckFeatures = [ "rust-audio-output" ];
     nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.makeBinaryWrapper ];
-    nativeCheckInputs = (old.nativeCheckInputs or [ ]) ++ [ pkgs.pulseaudio ];
     postInstall = old.postInstall + ''
       rm $out/bin/moonlight
       makeBinaryWrapper $out/bin/korri-viewer $out/bin/moonlight \

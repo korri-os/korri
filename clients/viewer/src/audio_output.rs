@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Which audio output plays a Linux stream's sound (#391 step F, slice F1).
 //!
-//! The carried C (`io/audio/`, chosen by `io/bridge.c`) is the default. Its
-//! Rust port (`audio_output/renderer.rs`) is built with the
-//! `rust-audio-output` feature and chosen with `-audiooutput rust`. Both are
+//! The carried C is `io/audio/`, chosen by `io/bridge.c`. Its Rust port
+//! (`audio_output/renderer.rs`) is built with the `rust-audio-output`
+//! feature, and is then the default (the owner's call of 2026-11-18, ahead
+//! of a quiet measurement); `-audiooutput c` chooses the carried C. Both are
 //! the core's `AUDIO_RENDERER_CALLBACKS`: the same libopus decode, the same
 //! outputs (SDL audio on the SDL platform; on X11 VA-API, PulseAudio when a
 //! probe stream opens, else ALSA), the same buffering and channel order.
@@ -15,15 +16,29 @@ pub(crate) mod renderer;
 
 use anyhow::{Result, bail};
 
-/// `-audiooutput`'s value: `c`, the default, or `rust`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// `-audiooutput`'s value: `c` or `rust`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     /// The carried C renderers of Moonlight Embedded (`io/audio/`).
-    #[default]
     Carried,
     /// Their Rust port, over the `alsa` and `libpulse-simple-binding`
     /// crates and SDL's own header.
     Rust,
+}
+
+impl Default for Kind {
+    /// The Rust port where the build has it (#391 step F1: the owner's call
+    /// of 2026-11-18, ahead of a quiet measurement); else the carried C.
+    fn default() -> Self {
+        if cfg!(all(
+            feature = "rust-audio-output",
+            not(target_os = "android")
+        )) {
+            Self::Rust
+        } else {
+            Self::Carried
+        }
+    }
 }
 
 impl Kind {
@@ -45,9 +60,19 @@ impl Kind {
 mod tests {
     use super::Kind;
 
+    // The owner's call of 2026-11-18, ahead of a quiet measurement (#391
+    // step F1): a build with the port plays through it; `-audiooutput c`
+    // keeps the carried C.
     #[test]
-    fn the_carried_c_plays_unless_rust_is_named() {
-        assert_eq!(Kind::default(), Kind::Carried);
+    fn the_rust_port_plays_where_built_unless_c_is_named() {
+        let built = cfg!(all(
+            feature = "rust-audio-output",
+            not(target_os = "android")
+        ));
+        assert_eq!(
+            Kind::default(),
+            if built { Kind::Rust } else { Kind::Carried }
+        );
         assert_eq!(Kind::parse("c").unwrap(), Kind::Carried);
         assert!(Kind::parse("cpal").is_err());
         assert!(Kind::parse("").is_err());

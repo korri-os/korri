@@ -1,0 +1,11 @@
+# The quiet gate's last checks on aka (UTC), the lock, and /proc/loadavg before and after the stream.
+00:52:33 load=1.21 Tctl=62
+00:53:33 load=0.79 Tctl=63
+00:54:33 load=2.48 Tctl=84 NOT QUIET: load=2.48 Tctl=84
+00:55:33 load=1.42 Tctl=64
+00:56:33 load=0.91 Tctl=60
+00:57:33 load=0.41 Tctl=59
+LOCK held: 2355380 step-e-core f1-smoke at 2026-11-19T00:57:33Z
+0.41 1.55 3.09 1/553 3043656
+STREAM rc=0 at 2026-11-19T00:59:15Z
+0.35 1.16 2.78 1/566 3044447

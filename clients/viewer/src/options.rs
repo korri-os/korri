@@ -34,7 +34,8 @@ pub struct Options {
     pub inputs: Vec<String>,
     /// The network core that streams (`-networkcore`, #391 step E).
     pub network_core: crate::network_core::Kind,
-    /// The audio output that plays the sound (`-audiooutput`, #391 step F).
+    /// The audio output that plays the sound (`-audiooutput`, #391 step F);
+    /// none named, the build's default (`audio_output::Kind::default`).
     pub audio_output: crate::audio_output::Kind,
     /// The code that draws X11's pictures through EGL (`-eglpresenter`,
     /// #391 step F).
@@ -355,17 +356,25 @@ mod tests {
         );
     }
 
-    // #391 step F: the carried C plays the sound unless -audiooutput names
-    // the Rust port, anywhere among the arguments, as a wrapper may append it.
+    // #391 step F1: the build's default plays the sound (the Rust port where
+    // it is built) unless -audiooutput names one, anywhere among the
+    // arguments, as a wrapper may append it.
     #[test]
-    fn the_audio_output_is_the_carried_c_unless_named() {
+    fn the_audio_output_is_the_builds_default_unless_named() {
         use crate::audio_output::Kind;
         let parse = |extra: &[&str]| {
             let mut args = vec!["stream", "-keydir", "/k", "host"];
             args.extend_from_slice(extra);
             Options::parse(args.into_iter().map(str::to_owned))
         };
-        assert_eq!(parse(&[]).unwrap().audio_output, Kind::Carried);
+        let built = cfg!(all(
+            feature = "rust-audio-output",
+            not(target_os = "android")
+        ));
+        assert_eq!(
+            parse(&[]).unwrap().audio_output,
+            if built { Kind::Rust } else { Kind::Carried }
+        );
         assert_eq!(
             parse(&["-audiooutput", "c"]).unwrap().audio_output,
             Kind::Carried
