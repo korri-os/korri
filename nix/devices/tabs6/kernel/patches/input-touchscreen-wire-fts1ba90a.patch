@@ -1,0 +1,33 @@
+diff --git a/drivers/input/touchscreen/Kconfig b/drivers/input/touchscreen/Kconfig
+index 1ac26fc2e..80351afa5 100644
+--- a/drivers/input/touchscreen/Kconfig
++++ b/drivers/input/touchscreen/Kconfig
+@@ -1225,6 +1225,16 @@ config TOUCHSCREEN_STMFTS
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called stmfts.
+ 
++config TOUCHSCREEN_FTS1BA90A
++	tristate "STMicroelectronics FTS1BA90A touchscreen"
++	depends on I2C
++	help
++	  Say Y here if you want support for the STMicroelectronics
++	  FTS1BA90A touchscreen, as fitted to the Samsung Galaxy Tab S6.
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called fts1ba90a.
++
+ config TOUCHSCREEN_STMPE
+ 	tristate "STMicroelectronics STMPE touchscreens"
+ 	depends on MFD_STMPE
+diff --git a/drivers/input/touchscreen/Makefile b/drivers/input/touchscreen/Makefile
+index 82bc837ca..280799470 100644
+--- a/drivers/input/touchscreen/Makefile
++++ b/drivers/input/touchscreen/Makefile
+@@ -81,6 +81,7 @@ obj-$(CONFIG_TOUCHSCREEN_SILEAD)	+= silead.o
+ obj-$(CONFIG_TOUCHSCREEN_SIS_I2C)	+= sis_i2c.o
+ obj-$(CONFIG_TOUCHSCREEN_ST1232)	+= st1232.o
+ obj-$(CONFIG_TOUCHSCREEN_STMFTS)	+= stmfts.o
++obj-$(CONFIG_TOUCHSCREEN_FTS1BA90A)	+= fts1ba90a.o
+ obj-$(CONFIG_TOUCHSCREEN_STMPE)		+= stmpe-ts.o
+ obj-$(CONFIG_TOUCHSCREEN_SUN4I)		+= sun4i-ts.o
+ obj-$(CONFIG_TOUCHSCREEN_SUR40)		+= sur40.o

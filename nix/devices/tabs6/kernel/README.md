@@ -1,0 +1,133 @@
+# gts6lwifi kernel
+
+Mainline Linux 7.3 for the Galaxy Tab S6 Wi-Fi (SM-T860, SM8150), cross-compiled
+from x86_64. The board support is harvested from
+[Bentlybro/gts6l-mainline-linux](https://github.com/Bentlybro/gts6l-mainline-linux)
+(the "port"; `docs/*.md` names below are its documents), which booted Fedora
+on this tablet with a 6.12.0 kernel, and rebased onto 7.3.
+
+```sh
+nix build .#tabs6-kernel        # console: result/Image, result/dtbs/qcom/sm8150-samsung-gts6lwifi.dtb,
+                                # result/lib/modules/<version>, result/config, result/System.map
+nix build .#tabs6-korri-kernel  # product: the same plus config/korri.config
+```
+
+The kernel builds from the `tabs6-nixpkgs` flake input (the nixpkgs pin the
+tabs6 repository proved on the tablet), not from Korri's nixpkgs: Korri's pin
+has Linux 7.2.7, and these patches are rebased to 7.3.4. With that input the
+console kernel is the same derivation as the tabs6 repository's `kernel`.
+
+## Product delta
+
+`config/korri.config` is merged after `tabs6.config` for the Korri product
+only (`productFragment`), checked the same way: uinput and hidraw for
+InputPlumber and inputd, uhid for Bluetooth LE controllers, and the gamepad
+drivers (xpad, playstation, sony, nintendo, steam). The console kernel does
+not change.
+
+`Image` is uncompressed (the EFI stub needs it; about 45 MB). The `kernel` build fails unless `Image` is a PE ("MZ") arm64 EFI-stub image and the
+DTB carries the gts6lwifi compatible, the simple-framebuffer at `0x9c400000`,
+MDSS enabled with the ANA38401 panel under DSI0, and `wlan_mem` at
+`0xc0000000`, and unless the panel module is built.
+
+## From NixOS
+
+`kernel` is a `linuxManualConfig` derivation, so NixOS takes it directly
+(`../system/kernel.nix` does this):
+
+```nix
+boot.kernelPackages = pkgs.linuxPackagesFor tabs6Kernel;
+hardware.deviceTree.name = "qcom/sm8150-samsung-gts6lwifi.dtb";
+```
+
+nixpkgs normally puts modules in a separate `modules` output. Here they install
+into `out`, so one tree holds everything; NixOS reads modules with
+`lib.getOutput "modules"`, which falls back to `out`.
+
+It is cross-built (x86_64 build, aarch64 host). A NixOS system evaluated with the
+same `crossSystem` uses it as is. A natively evaluated aarch64 system must call
+`default.nix` with an aarch64 package set, or the store paths differ.
+
+The resolved config is parsed with import-from-derivation (`allowImportFromDerivation`),
+so `kernel.config.isYes` and NixOS's `system.requiredKernelConfig` see the real values.
+
+## Base
+
+nixpkgs `linux_latest` (7.3.4 at the pinned nixpkgs). The native display pipe
+needs it: bonded dual-DSI in command mode, which the panel uses, only works
+from 6.16 (docs/DISPLAY.md section 5 in the port). Until 2026-11-17 the base was
+`linux_6_12` (6.12.117); the patch table below records how each patch moved.
+A nixpkgs bump can move the version; a patch that stops applying fails the
+build.
+
+## Config
+
+`config/gts6lwifi_defconfig-full` is the port's 6.12.0 config, unchanged.
+`config/tabs6.config` is our fragment on top. `kernelConfig` merges them and runs
+`olddefconfig`; the build fails if any fragment line does not survive unchanged.
+On 7.3 two base symbols needed the fragment: `IPV6` is bool now (the port had
+it as a module), and the legacy iptables tables sit behind
+`NETFILTER_XTABLES_LEGACY`.
+
+The system boots without an initrd, so the root and lifeline path is built in:
+UFS (`ufshcd-qcom`, QMP UFS PHY), SCSI disk, GPT, ext4, vfat, loop, DWC3 with its
+HS and SS PHYs, and the configfs gadget (RNDIS, ACM). The SS PHY
+(`PHY_QCOM_QMP_COMBO`) and `TYPEC` were modules in the port; both are built in
+here so the gadget never waits for a module.
+
+## Native display
+
+The panel is driven natively: MDSS/DPU, DSI0 and DSI1 bonded in command mode
+with their 7nm PHYs, and the panel driver `drivers/panel-samsung-ana38401.c`
+(Samsung AMSA05RB06 with an Anapass ANA38401 T-CON, 2x 1280x1600, no DSC).
+The port ran simpledrm on the bootloader framebuffer instead; its
+docs/DISPLAY.md and the "display saga" in docs/DEVLOG.md record why.
+
+| Piece | Where | Source |
+| --- | --- | --- |
+| On/off commands, timings, reset, delays | panel driver | stock dtbo, `ss_dsi_panel_ANA38401_AMSA05RB06_WQXGA` (T860XXS5DWH1) |
+| Power sequence: VDD, LP11, reset 70 ms, wait T-CON ready (GPIO 140), HS commands, exit sleep (not in the vendor sequence; the panel stays black without it), display on >= 220 ms after exit sleep | panel driver | Samsung kernel source for T860XXS5DWH1 (`dsi-staging/dsi_panel.c`, `samsung,anapass-power-seq`) |
+| Commands to DSI0 only, one transfer each, vendor packet types | panel driver, no `qcom,sync-dual-dsi` | `samsung,cmds-unicast` |
+| Brightness: vendor AOR (0x90) and ELVSS table, neutral gamma | panel driver backlight, 46 levels | `ss_dsi_interpolation_ANA38401_AMSA05RB06.c` |
+| TE on GPIO 8 (`mdp_vsync`), DCS tear-on | DTS, panel driver | stock `qcom,platform-te-gpio` |
+| Byte clock RCGs latch only with a running parent | `clk-qcom-dispcc-sm8250-byte-clk-parent-enable` | port DEVLOG; 7.3 already does this for the pixel clocks |
+
+Handover: simpledrm keeps the bootloader picture until msm binds. msm's KMS
+init removes simpledrm (`aperture_remove_all_conflicting_devices`), then the
+first modeset resets and re-initialises the panel. `clk_ignore_unused` and
+`pd_ignore_unused` (needed for UFS anyway) keep the display clocks and GDSC
+alive until then, and Octa VDD stays always-on so a late msm never loses the
+bootloader picture to `regulator_late_cleanup`.
+
+What it does not do: the vendor computes per-panel gamma from MTP data
+(smart dimming), HBM, ACL, mDNIe and ESD recovery. None of these is ported, so
+colour at low brightness can differ from stock, and brightness 0 is the
+dimmest level, not off. DPMS is display-off plus reset; Octa VDD stays on.
+
+## Patches
+
+| Patch | Source | On 6.12.117 | On 7.3.4 |
+| --- | --- | --- | --- |
+| `msm-poweroff-release-ps-hold-early` | port | applied | applies unchanged |
+| `qcom-pon-ps-hold-shutdown-and-smpl` | port | applied | rebased: the driver renamed `pm8916_pon` to `qcom_pon`; same logic |
+| `mfd-qcom-spmi-pmic-tolerate-denied-revid` | port | `-p0` made `-p1` | applies unchanged |
+| `adc-battery-report-capacity-and-status` | port | rebased | applies unchanged |
+| `cs48l32-accept-cs48l33` | port | applied | applies unchanged |
+| `sm8250-sndcard-sm8150-secondary-tdm` | port | rebased | rebased: 7.3 dropped `hw_params` from the backend ops (added back for Secondary TDM only), already has a `QUINARY_MI2S_RX` case (replaced by ours, which also covers TX), and takes the driver name from match data (`sm8150-sndcard` keeps `sm8250`, the name the UCM `conf.d` uses) |
+| `clk-qcom-gcc-sm8150-branch-halt-skip` | ours | applied | applies unchanged |
+| `regulator-qcom-rpmh-no-reads` | ours | not needed | new: 7.3's rpmh-regulator reads each regulator's enable state, mode and voltage back from RPMh. Samsung's firmware never answers; each read times out after 10 s ("failed to read VOLTAGE ret = -110") and the first 7.3 boot stalled there. The patch removes the reads, which is 6.12's behaviour |
+| `drm-msm-a640-speedbin-fallback` | ours | part of `drm-msm-headless-a640-render-node` | still needed: no speed-bin cell, and every sm8150 GPU OPP is gated by `opp-supported-hw` |
+| `drm-simpledrm-64bit-dma-mask` | ours | part of `drm-msm-headless-a640-render-node` | moved to `drivers/gpu/drm/sysfb/simpledrm.c` |
+| `input-touchscreen-wire-fts1ba90a` | ours | applied | applies unchanged |
+| `power-supply-wire-sm5705-fuelgauge` | ours | applied | applies unchanged |
+| `arm64-dts-qcom-wire-gts6lwifi` | ours | applied | applies unchanged |
+| `clk-qcom-dispcc-sm8250-byte-clk-parent-enable` | ours | not carried | new: `CLK_OPS_PARENT_ENABLE` on the DSI byte clock sources (native display) |
+| `drm-panel-wire-samsung-ana38401` | ours | not carried | new: Kconfig/Makefile for `drivers/panel-samsung-ana38401.c` |
+| ~~`dwc3-allow-userspace-role-control`~~ | port | applied | dropped: upstream in 7.3 (`dwc3_setup_role_switch` sets `allow_userspace_control`) |
+| ~~`asoc-cs48l32-backport-from-6.18.63`~~ | ours | applied | dropped: CS48L32 is upstream since 6.18 |
+| ~~`drm-msm-headless-a640-render-node`~~ (headless master, forced MMU) | ours | applied | dropped: with MDSS enabled the GPU is a component of the display master, the normal upstream topology (the kernel-bump commit used msm's `separate_gpu_kms=1` instead) |
+| ~~`ufs-qcom-keep-phy-powered-across-clock-gating`~~ | ours | applied (6.12.y only) | dropped: it undoes a half-backport that exists only in 6.12.y; 7.3 has both halves of the upstream UFS PHY power change |
+
+The port's `fts1ba90a-per-command-echo-timeout` and
+`fts1ba90a-resume-drop-redundant-ready-wait` are not carried: the port's
+`fts1ba90a.c` already contains both.

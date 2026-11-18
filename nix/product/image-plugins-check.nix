@@ -21,6 +21,7 @@ let
     "thor"
     "rg35xxsp"
     "rg35xxpro"
+    "tabs6"
   ];
   exactImage =
     name:
@@ -71,6 +72,7 @@ assert lib.all
     "rpminiv2"
     "odin2portal"
     "thor"
+    "tabs6"
   ];
 assert recoveryWithoutDefaults;
 # Gamescope wraps every launch by default on product images, and only where
@@ -92,8 +94,10 @@ assert lib.all
   [
     "r36tmax"
     "rpminiv2"
+    "tabs6"
   ];
 assert !(lib.elem (toString published.korri-plugin-sunshine) (map toString selected.r36tmax));
+assert !(lib.elem (toString published.korri-plugin-sunshine) (map toString selected.tabs6));
 # Key-only SSH ships on every device (owner decision, 2026-09-30).
 assert lib.all
   (name: lib.elem (toString published.korri-plugin-ssh) (map toString selected.${name}))
@@ -106,6 +110,7 @@ assert lib.all
     "thor"
     "rg35xxsp"
     "rg35xxpro"
+    "tabs6"
   ];
 assert lib.all
   (name: lib.elem (toString published.korri-plugin-sunshine) (map toString selected.${name}))

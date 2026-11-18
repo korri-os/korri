@@ -1,0 +1,34 @@
+diff --git a/drivers/gpu/drm/panel/Kconfig b/drivers/gpu/drm/panel/Kconfig
+index cbdf7b8f7..0ec2a9115 100644
+--- a/drivers/gpu/drm/panel/Kconfig
++++ b/drivers/gpu/drm/panel/Kconfig
+@@ -920,6 +920,17 @@ config DRM_PANEL_SAMSUNG_S6E88A0_AMS452EF01
+ 	select DRM_MIPI_DSI
+ 	select VIDEOMODE_HELPERS
+ 
++config DRM_PANEL_SAMSUNG_ANA38401
++	tristate "Samsung AMSA05RB06 / Anapass ANA38401 dual-DSI panel"
++	depends on GPIOLIB
++	depends on OF
++	depends on DRM_MIPI_DSI
++	depends on BACKLIGHT_CLASS_DEVICE
++	help
++	  Say Y or M here to enable the Samsung AMSA05RB06 AMOLED panel with
++	  an Anapass ANA38401 T-CON: 2560x1600 over two bonded DSI links in
++	  command mode, as fitted to the Galaxy Tab S6 (SM-T860).
++
+ config DRM_PANEL_SAMSUNG_ATNA33XC20
+ 	tristate "Samsung ATNA33XC20 eDP panel"
+ 	depends on OF
+diff --git a/drivers/gpu/drm/panel/Makefile b/drivers/gpu/drm/panel/Makefile
+index 3b523cf37..839196552 100644
+--- a/drivers/gpu/drm/panel/Makefile
++++ b/drivers/gpu/drm/panel/Makefile
+@@ -88,6 +88,7 @@ obj-$(CONFIG_DRM_PANEL_RENESAS_R69328) += panel-renesas-r69328.o
+ obj-$(CONFIG_DRM_PANEL_RONBO_RB070D30) += panel-ronbo-rb070d30.o
+ obj-$(CONFIG_DRM_PANEL_SAMSUNG_AMS581VF01) += panel-samsung-ams581vf01.o
+ obj-$(CONFIG_DRM_PANEL_SAMSUNG_AMS639RQ08) += panel-samsung-ams639rq08.o
++obj-$(CONFIG_DRM_PANEL_SAMSUNG_ANA38401) += panel-samsung-ana38401.o
+ obj-$(CONFIG_DRM_PANEL_SAMSUNG_ATNA33XC20) += panel-samsung-atna33xc20.o
+ obj-$(CONFIG_DRM_PANEL_SAMSUNG_DB7430) += panel-samsung-db7430.o
+ obj-$(CONFIG_DRM_PANEL_SAMSUNG_LD9040) += panel-samsung-ld9040.o

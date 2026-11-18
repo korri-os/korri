@@ -1,0 +1,112 @@
+diff --git a/drivers/clk/qcom/gcc-sm8150.c b/drivers/clk/qcom/gcc-sm8150.c
+index cefceb780..1041814f9 100644
+--- a/drivers/clk/qcom/gcc-sm8150.c
++++ b/drivers/clk/qcom/gcc-sm8150.c
+@@ -1159,7 +1159,7 @@ static struct clk_branch gcc_aggre_ufs_card_axi_hw_ctl_clk = {
+ 
+ static struct clk_branch gcc_aggre_ufs_phy_axi_clk = {
+ 	.halt_reg = 0x770c0,
+-	.halt_check = BRANCH_HALT,
++	.halt_check = BRANCH_HALT_SKIP,
+ 	.hwcg_reg = 0x770c0,
+ 	.hwcg_bit = 1,
+ 	.clkr = {
+@@ -1197,7 +1197,7 @@ static struct clk_branch gcc_aggre_ufs_phy_axi_hw_ctl_clk = {
+ 
+ static struct clk_branch gcc_aggre_usb3_prim_axi_clk = {
+ 	.halt_reg = 0xf07c,
+-	.halt_check = BRANCH_HALT,
++	.halt_check = BRANCH_HALT_SKIP,
+ 	.clkr = {
+ 		.enable_reg = 0xf07c,
+ 		.enable_mask = BIT(0),
+@@ -1307,7 +1307,7 @@ static struct clk_branch gcc_camera_xo_clk = {
+ 
+ static struct clk_branch gcc_cfg_noc_usb3_prim_axi_clk = {
+ 	.halt_reg = 0xf078,
+-	.halt_check = BRANCH_HALT,
++	.halt_check = BRANCH_HALT_SKIP,
+ 	.clkr = {
+ 		.enable_reg = 0xf078,
+ 		.enable_mask = BIT(0),
+@@ -2922,7 +2922,7 @@ static struct clk_branch gcc_ufs_mem_clkref_clk = {
+ 
+ static struct clk_branch gcc_ufs_phy_ahb_clk = {
+ 	.halt_reg = 0x77014,
+-	.halt_check = BRANCH_HALT,
++	.halt_check = BRANCH_HALT_SKIP,
+ 	.hwcg_reg = 0x77014,
+ 	.hwcg_bit = 1,
+ 	.clkr = {
+@@ -2937,7 +2937,7 @@ static struct clk_branch gcc_ufs_phy_ahb_clk = {
+ 
+ static struct clk_branch gcc_ufs_phy_axi_clk = {
+ 	.halt_reg = 0x77010,
+-	.halt_check = BRANCH_HALT,
++	.halt_check = BRANCH_HALT_SKIP,
+ 	.hwcg_reg = 0x77010,
+ 	.hwcg_bit = 1,
+ 	.clkr = {
+@@ -2975,7 +2975,7 @@ static struct clk_branch gcc_ufs_phy_axi_hw_ctl_clk = {
+ 
+ static struct clk_branch gcc_ufs_phy_ice_core_clk = {
+ 	.halt_reg = 0x7705c,
+-	.halt_check = BRANCH_HALT,
++	.halt_check = BRANCH_HALT_SKIP,
+ 	.hwcg_reg = 0x7705c,
+ 	.hwcg_bit = 1,
+ 	.clkr = {
+@@ -3013,7 +3013,7 @@ static struct clk_branch gcc_ufs_phy_ice_core_hw_ctl_clk = {
+ 
+ static struct clk_branch gcc_ufs_phy_phy_aux_clk = {
+ 	.halt_reg = 0x77090,
+-	.halt_check = BRANCH_HALT,
++	.halt_check = BRANCH_HALT_SKIP,
+ 	.hwcg_reg = 0x77090,
+ 	.hwcg_bit = 1,
+ 	.clkr = {
+@@ -3090,7 +3090,7 @@ static struct clk_branch gcc_ufs_phy_tx_symbol_0_clk = {
+ 
+ static struct clk_branch gcc_ufs_phy_unipro_core_clk = {
+ 	.halt_reg = 0x77058,
+-	.halt_check = BRANCH_HALT,
++	.halt_check = BRANCH_HALT_SKIP,
+ 	.hwcg_reg = 0x77058,
+ 	.hwcg_bit = 1,
+ 	.clkr = {
+@@ -3128,7 +3128,7 @@ static struct clk_branch gcc_ufs_phy_unipro_core_hw_ctl_clk = {
+ 
+ static struct clk_branch gcc_usb30_prim_master_clk = {
+ 	.halt_reg = 0xf010,
+-	.halt_check = BRANCH_HALT,
++	.halt_check = BRANCH_HALT_SKIP,
+ 	.clkr = {
+ 		.enable_reg = 0xf010,
+ 		.enable_mask = BIT(0),
+@@ -3145,7 +3145,7 @@ static struct clk_branch gcc_usb30_prim_master_clk = {
+ 
+ static struct clk_branch gcc_usb30_prim_mock_utmi_clk = {
+ 	.halt_reg = 0xf018,
+-	.halt_check = BRANCH_HALT,
++	.halt_check = BRANCH_HALT_SKIP,
+ 	.clkr = {
+ 		.enable_reg = 0xf018,
+ 		.enable_mask = BIT(0),
+@@ -3235,7 +3235,7 @@ static struct clk_branch gcc_usb3_prim_clkref_clk = {
+ 
+ static struct clk_branch gcc_usb3_prim_phy_aux_clk = {
+ 	.halt_reg = 0xf050,
+-	.halt_check = BRANCH_HALT,
++	.halt_check = BRANCH_HALT_SKIP,
+ 	.clkr = {
+ 		.enable_reg = 0xf050,
+ 		.enable_mask = BIT(0),
+@@ -3252,7 +3252,7 @@ static struct clk_branch gcc_usb3_prim_phy_aux_clk = {
+ 
+ static struct clk_branch gcc_usb3_prim_phy_com_aux_clk = {
+ 	.halt_reg = 0xf054,
+-	.halt_check = BRANCH_HALT,
++	.halt_check = BRANCH_HALT_SKIP,
+ 	.clkr = {
+ 		.enable_reg = 0xf054,
+ 		.enable_mask = BIT(0),

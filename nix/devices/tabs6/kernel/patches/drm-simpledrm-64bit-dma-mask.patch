@@ -1,0 +1,27 @@
+diff --git a/drivers/gpu/drm/sysfb/simpledrm.c b/drivers/gpu/drm/sysfb/simpledrm.c
+index 21ddf4502..6e471b2ba 100644
+--- a/drivers/gpu/drm/sysfb/simpledrm.c
++++ b/drivers/gpu/drm/sysfb/simpledrm.c
+@@ -2,6 +2,7 @@
+ 
+ #include <linux/aperture.h>
+ #include <linux/clk.h>
++#include <linux/dma-mapping.h>
+ #include <linux/minmax.h>
+ #include <linux/of_address.h>
+ #include <linux/of_clk.h>
+@@ -927,6 +928,14 @@ static int simpledrm_probe(struct platform_device *pdev)
+ 	struct drm_device *dev;
+ 	int ret;
+ 
++	/*
++	 * Buffers imported from the GPU can live above 4 GiB. Without a
++	 * 64-bit mask they bounce through swiotlb.
++	 */
++	ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
++	if (ret)
++		return ret;
++
+ 	sdev = simpledrm_device_create(&simpledrm_driver, pdev);
+ 	if (IS_ERR(sdev))
+ 		return PTR_ERR(sdev);

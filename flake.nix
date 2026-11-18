@@ -4,6 +4,9 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     inputplumber-nixpkgs.url = "github:NixOS/nixpkgs/9a37a7b2ae651b6182ef08d0d446a964339bcdfe";
+    # The Galaxy Tab S6 kernel: Linux 7.3.4 and the cross toolchain it was
+    # proven with on the tablet (nix/devices/tabs6/kernel/README.md).
+    tabs6-nixpkgs.url = "github:NixOS/nixpkgs/d5cc6833999746cffdfe0598f7bc801a57b887a9";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
@@ -24,6 +27,7 @@
       self,
       nixpkgs,
       inputplumber-nixpkgs,
+      tabs6-nixpkgs,
       flake-utils,
       rust-overlay,
       crane,
@@ -67,6 +71,10 @@
         inherit nixpkgs;
         korri = self;
       };
+      tabs6 = import ./nix/devices/tabs6 {
+        inherit nixpkgs tabs6-nixpkgs;
+        korri = self;
+      };
       nixosModules = {
         korri-product = import ./nix/product/nixos-module.nix { korri = self; };
         # The server part alone, for a device that only serves peers (ADR 0051).
@@ -100,6 +108,7 @@
         thor = thor.configuration;
         rg35xxsp = rg35xxsp.configuration;
         rg35xxpro = rg35xxpro.configuration;
+        tabs6 = tabs6.configuration;
       };
     }
     // flake-utils.lib.eachDefaultSystem (
@@ -274,6 +283,11 @@
           thor-sd-image = thor.sdImage;
           h700-uboot = h700.ubootCross;
           h700-kernel = h700.kernelCross;
+        }
+        # The Tab S6 kernel cross-builds on x86_64; its firmware, images and
+        # deploy tool stay on that host (nix/devices/tabs6/README.md).
+        // tabs6.packages
+        // {
           # The NDK's compilers run on x86_64 Linux only.
           korri-viewer-android-apk = viewer.android.apk;
           # Test apps for the viewer's emulator proof, never shipped.
@@ -344,6 +358,7 @@
                   thor
                   rg35xxsp
                   rg35xxpro
+                  tabs6
                   ;
               };
             };
@@ -404,6 +419,8 @@
             rpminiv2-inputplumber = self.packages.${system}.rpminiv2-inputplumber-data;
             rpminiv2-initrd-modules = rpminiv2.initrdModulesCheck pkgs;
             rpminiv2-recovery-initrd-modules = rpminiv2.recoveryInitrdModulesCheck pkgs;
+            tabs6 = tabs6.moduleCheck pkgs;
+            tabs6-systemd-freezer = tabs6.systemdCheck pkgs;
             r36tmax = r36tmax.moduleCheck pkgs;
             r36tmax-registry = r36tmax.registryCheck pkgs;
             r36tmax-mpp-binding = r36tmax.mppBindingCheck pkgs;
@@ -443,6 +460,7 @@
             # The NDK's compilers run on x86_64 Linux only.
             korri-viewer-android = viewer.android.check;
           }
+          // pkgs.lib.optionalAttrs (system == "x86_64-linux") tabs6.checks
         );
       }
     );

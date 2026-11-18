@@ -80,4 +80,8 @@ in
   # sunshine-korri-rg35xxsp-v4l2m2m-2026-10-22.md).
   rg35xxsp = shared ++ streamingHost ++ ssh;
   rg35xxpro = shared ++ streamingHost ++ ssh;
+  # The Galaxy Tab S6 (SM8150, Adreno 640) takes the SM8250 handhelds' set
+  # without Steam (accepted on the Mini V2 only) and without the streaming
+  # host: no hardware encoder is enabled on this board yet.
+  tabs6 = shared ++ n64AndDreamcast ++ ds ++ ssh;
 }

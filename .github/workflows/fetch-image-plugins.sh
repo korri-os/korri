@@ -8,7 +8,7 @@ device=${1:?usage: fetch-image-plugins.sh DEVICE|--inputd|--all}
 case "$device" in
   --all) architectures=(aarch64-linux x86_64-linux) ;;
   --inputd) architectures=("$(nix eval --impure --raw --expr builtins.currentSystem)") ;;
-  rg353m|rgds|r36tmax|rpminiv2|odin2portal|rg35xxsp|rg35xxpro) architectures=(aarch64-linux) ;;
+  rg353m|rgds|r36tmax|rpminiv2|odin2portal|rg35xxsp|rg35xxpro|tabs6) architectures=(aarch64-linux) ;;
   *) echo "unsupported product image: $device" >&2; exit 2 ;;
 esac
 

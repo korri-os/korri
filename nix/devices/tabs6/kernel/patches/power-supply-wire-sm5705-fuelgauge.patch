@@ -1,0 +1,33 @@
+diff --git a/drivers/power/supply/Kconfig b/drivers/power/supply/Kconfig
+index bcfa63fb9..f627dc19a 100644
+--- a/drivers/power/supply/Kconfig
++++ b/drivers/power/supply/Kconfig
+@@ -801,6 +801,16 @@ config BATTERY_GOLDFISH
+ 	  driver. Originated in the Android Studio Emulator (goldfish) it is
+ 	  going to be used in other emulators.
+ 
++config BATTERY_SM5705
++	tristate "Silicon Mitus SM5705 fuel gauge"
++	depends on I2C
++	help
++	  Say Y here to enable support for the fuel gauge in the Silicon
++	  Mitus SM5705, as fitted to the Samsung Galaxy Tab S6.
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called sm5705_fuelgauge.
++
+ config BATTERY_RT5033
+ 	tristate "RT5033 fuel gauge support"
+ 	depends on I2C
+diff --git a/drivers/power/supply/Makefile b/drivers/power/supply/Makefile
+index 8dcb41545..5657a2eba 100644
+--- a/drivers/power/supply/Makefile
++++ b/drivers/power/supply/Makefile
+@@ -56,6 +56,7 @@ obj-$(CONFIG_BATTERY_MAX17042)	+= max17042_battery.o
+ obj-$(CONFIG_BATTERY_MAX1720X)	+= max1720x_battery.o
+ obj-$(CONFIG_BATTERY_MAX1721X)	+= max1721x_battery.o
+ obj-$(CONFIG_BATTERY_RT5033)	+= rt5033_battery.o
++obj-$(CONFIG_BATTERY_SM5705)	+= sm5705_fuelgauge.o
+ obj-$(CONFIG_CHARGER_RT5033)	+= rt5033_charger.o
+ obj-$(CONFIG_CHARGER_RT9455)	+= rt9455_charger.o
+ obj-$(CONFIG_CHARGER_RT9467)	+= rt9467-charger.o

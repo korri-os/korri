@@ -1,0 +1,22 @@
+diff --git a/drivers/clk/qcom/dispcc-sm8250.c b/drivers/clk/qcom/dispcc-sm8250.c
+index fdc07323f..d7bc6058f 100644
+--- a/drivers/clk/qcom/dispcc-sm8250.c
++++ b/drivers/clk/qcom/dispcc-sm8250.c
+@@ -236,7 +236,7 @@ static struct clk_rcg2 disp_cc_mdss_byte0_clk_src = {
+ 		.name = "disp_cc_mdss_byte0_clk_src",
+ 		.parent_data = disp_cc_parent_data_2,
+ 		.num_parents = ARRAY_SIZE(disp_cc_parent_data_2),
+-		.flags = CLK_SET_RATE_PARENT,
++		.flags = CLK_SET_RATE_PARENT | CLK_OPS_PARENT_ENABLE,
+ 		.ops = &clk_byte2_ops,
+ 	},
+ };
+@@ -250,7 +250,7 @@ static struct clk_rcg2 disp_cc_mdss_byte1_clk_src = {
+ 		.name = "disp_cc_mdss_byte1_clk_src",
+ 		.parent_data = disp_cc_parent_data_2,
+ 		.num_parents = ARRAY_SIZE(disp_cc_parent_data_2),
+-		.flags = CLK_SET_RATE_PARENT,
++		.flags = CLK_SET_RATE_PARENT | CLK_OPS_PARENT_ENABLE,
+ 		.ops = &clk_byte2_ops,
+ 	},
+ };

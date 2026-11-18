@@ -1,0 +1,19 @@
+diff --git a/drivers/gpu/drm/msm/adreno/a6xx_gpu.c b/drivers/gpu/drm/msm/adreno/a6xx_gpu.c
+index 081e79ea4..57c566e14 100644
+--- a/drivers/gpu/drm/msm/adreno/a6xx_gpu.c
++++ b/drivers/gpu/drm/msm/adreno/a6xx_gpu.c
+@@ -2631,7 +2631,13 @@ static int a6xx_set_supported_hw(struct device *dev, struct a6xx_gpu *a6xx_gpu,
+ 	 * fine
+ 	 */
+ 	if (ret == -ENOENT) {
+-		return 0;
++		/*
++		 * gts6lwifi: no speed-bin nvmem cell is wired up, but every
++		 * sm8150 GPU OPP is gated by opp-supported-hw. Returning here
++		 * leaves no usable OPP. Treat the part as bin 0, the standard
++		 * SM8150, and carry on.
++		 */
++		speedbin = 0;
+ 	} else if (ret) {
+ 		dev_err_probe(dev, ret,
+ 			      "failed to read speed-bin. Some OPPs may not be supported by hardware\n");

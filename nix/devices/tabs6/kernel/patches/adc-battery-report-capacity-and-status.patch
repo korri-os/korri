@@ -1,0 +1,107 @@
+diff --git a/drivers/power/supply/generic-adc-battery.c b/drivers/power/supply/generic-adc-battery.c
+index 43b735d4d..751b7ce57 100644
+--- a/drivers/power/supply/generic-adc-battery.c
++++ b/drivers/power/supply/generic-adc-battery.c
+@@ -48,6 +48,8 @@ struct gab {
+ 	struct delayed_work bat_work;
+ 	int status;
+ 	struct gpio_desc *charge_finished;
++	struct power_supply_battery_info *info;
++	int volt_avg;
+ };
+ 
+ static struct gab *to_generic_bat(struct power_supply *psy)
+@@ -95,10 +97,16 @@ static int gab_read_channel(struct gab *adc_bat, enum gab_chan_type channel,
+ 		return ret;
+ 	}
+ 
++	/*
++	 * Upstream multiplies voltage, current and power by 1000 here, because
++	 * IIO's convention for a processed voltage is millivolts while
++	 * power_supply wants microvolts. qcom-spmi-adc5, the ADC this board
++	 * reads the battery through, already reports microvolts - its 1.25 V
++	 * reference channel reads 1250216 - so scaling again would report
++	 * thousands of volts. Left unscaled.
++	 */
+ 	if (channel == GAB_TEMP)
+ 		*result /= 100; /* Convert from milli- to deci-degree */
+-	else
+-		*result *= 1000;
+ 
+ 	return 0;
+ }
+@@ -120,6 +128,34 @@ static int gab_get_property(struct power_supply *psy,
+ 		return gab_read_channel(adc_bat, GAB_POWER, &val->intval);
+ 	case POWER_SUPPLY_PROP_TEMP:
+ 		return gab_read_channel(adc_bat, GAB_TEMP, &val->intval);
++	case POWER_SUPPLY_PROP_CAPACITY: {
++		int uv, cap, ret;
++
++		ret = gab_read_channel(adc_bat, GAB_VOLTAGE, &uv);
++		if (ret < 0)
++			return ret;
++
++		/*
++		 * The rail this reads sags by hundreds of millivolts under load
++		 * and recovers when the machine goes idle, so an instantaneous
++		 * sample would make the reported percentage lurch every time
++		 * the CPU got busy. Smooth it before the lookup: the battery
++		 * itself cannot change quickly, so a slow average is closer to
++		 * the truth than the raw reading is.
++		 */
++		if (!adc_bat->volt_avg)
++			adc_bat->volt_avg = uv;
++		else
++			adc_bat->volt_avg += (uv - adc_bat->volt_avg) / 8;
++
++		cap = power_supply_batinfo_ocv2cap(adc_bat->info,
++						   adc_bat->volt_avg, 25);
++		if (cap < 0)
++			return cap;
++
++		val->intval = cap;
++		return 0;
++	}
+ 	default:
+ 		return -EINVAL;
+ 	}
+@@ -188,7 +224,7 @@ static int gab_probe(struct platform_device *pdev)
+ 	 */
+ 	properties = devm_kcalloc(&pdev->dev,
+ 				  ARRAY_SIZE(gab_props) +
+-				  ARRAY_SIZE(gab_chan_name),
++				  ARRAY_SIZE(gab_chan_name) + 1,
+ 				  sizeof(*properties),
+ 				  GFP_KERNEL);
+ 	if (!properties)
+@@ -225,6 +261,17 @@ static int gab_probe(struct platform_device *pdev)
+ 	if (!any)
+ 		return dev_err_probe(&pdev->dev, -ENODEV, "Failed to get any ADC channel\n");
+ 
++	/*
++	 * A monitored-battery description carries an open-circuit-voltage to
++	 * capacity table, which is the only way this driver can turn a voltage
++	 * into a percentage. Without one there is no honest way to report
++	 * capacity, so the property is simply not offered.
++	 */
++	bool has_batinfo = of_property_present(pdev->dev.of_node, "monitored-battery");
++
++	if (has_batinfo && adc_bat->channel[GAB_VOLTAGE])
++		properties[index++] = POWER_SUPPLY_PROP_CAPACITY;
++
+ 	/*
+ 	 * Total number of properties is equal to static properties
+ 	 * plus the dynamic properties.Some properties may not be set
+@@ -238,6 +285,12 @@ static int gab_probe(struct platform_device *pdev)
+ 	if (IS_ERR(adc_bat->psy))
+ 		return dev_err_probe(&pdev->dev, PTR_ERR(adc_bat->psy), "Failed to register power-supply device\n");
+ 
++	if (has_batinfo) {
++		ret = power_supply_get_battery_info(adc_bat->psy, &adc_bat->info);
++		if (ret)
++			return dev_err_probe(&pdev->dev, ret, "Failed to get battery info\n");
++	}
++
+ 	ret = devm_delayed_work_autocancel(&pdev->dev, &adc_bat->bat_work, gab_work);
+ 	if (ret)
+ 		return dev_err_probe(&pdev->dev, ret, "Failed to register delayed work\n");
