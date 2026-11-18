@@ -1816,6 +1816,13 @@ impl HostSessionControl {
                     }
                     _ => None,
                 };
+                // ADR 0083: a Steam engine game with no Steam Cloud set exports
+                // nothing and gets no snapshots, the same as before.
+                let save_snapshot = save_snapshot.filter(|snapshot| {
+                    snapshot.runner_id != crate::steam_engine::RUNNER_ID
+                        || !snapshot.parents.is_empty()
+                        || snapshot.locations.iter().any(|l| !l.files.is_empty())
+                });
                 replace_active(
                     &self.identity_root,
                     &ActiveSession::CompletionPending {
@@ -2426,6 +2433,8 @@ impl HostSessionControl {
             };
         let sunshine_args = crate::launcher::plugin_launch::sunshine_args(configured_command)
             .map_err(|message| failure("LocalRouteUnavailable", message))?;
+        let steam_engine = crate::launcher::plugin_launch::steam_engine_plan(configured_command)
+            .map_err(|message| failure("LocalRouteUnavailable", message))?;
         if let Some(person) = person_public_key {
             self.play_log
                 .validate_key(&PlayHistoryKey {
@@ -2774,12 +2783,59 @@ impl HostSessionControl {
                 });
             }
         }
+        if let Some(plan) = &steam_engine {
+            // ADR 0083: the engine host runs before the game unit, outside it.
+            let context = match &active {
+                ActiveSession::Running {
+                    game_id,
+                    person_public_key: Some(person),
+                    release_id,
+                    runner_id: Some(runner_id),
+                    save_locations: Some(locations),
+                    ..
+                } => locations
+                    .iter()
+                    .find(|location| location.key == crate::steam_engine::saves::LOCATION)
+                    .and_then(|location| {
+                        let root = self.identity_root.parent()?;
+                        let device = crate::identity::DeviceIdentity::load_or_create(root)
+                            .ok()?
+                            .device_public_key()?
+                            .to_owned();
+                        Some(crate::steam_engine::sessions::SessionContext {
+                            person: person.clone(),
+                            game_id: game_id.clone(),
+                            runner_id: runner_id.clone(),
+                            release_id: release_id.clone(),
+                            device,
+                            save_folder: location.path.clone().into(),
+                            private_root: root.to_path_buf(),
+                        })
+                    }),
+                _ => None,
+            };
+            if let Err(error) = self.backend.start_launch_service(&launch_id, plan, context) {
+                let _ = seat_lease.stop(&launch_id);
+                *state = if self.discard_active().is_ok() {
+                    ActiveState::NoActive
+                } else {
+                    ActiveState::RecoveryBlocked
+                };
+                return Err(failure(
+                    crate::steam_engine::availability::Unavailable::CODE,
+                    error.message,
+                ));
+            }
+        }
         if let Err(error) = self.backend.launch(
             &launch_id,
             configured_command,
             &launch_environment,
             &sandbox,
         ) {
+            if steam_engine.is_some() {
+                let _ = self.backend.stop_launch_service(&launch_id);
+            }
             let seats_stopped = seat_lease.stop(&launch_id).is_ok();
             match self.backend.live_launch_ids() {
                 Ok(live) if !live.iter().any(|id| id == &launch_id) => {

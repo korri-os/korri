@@ -579,7 +579,7 @@ impl HostRuntime {
         })
     }
 
-    fn launch_person(&self) -> Result<String, RpcFailure> {
+    pub(crate) fn launch_person(&self) -> Result<String, RpcFailure> {
         self.owner_public_key().ok_or_else(|| RpcFailure {
             code: "DeviceNeedsOwner".into(),
             message: "This device needs an owner before starting a game.".into(),

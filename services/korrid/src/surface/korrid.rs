@@ -50,6 +50,8 @@ pub struct Korrid {
     pub(crate) save_changes: Option<tokio::sync::watch::Receiver<crate::file_changes::InputState>>,
     launch_steps: Option<LaunchStepsResolver>,
     pub(crate) viewer: Option<Arc<dyn crate::linux_viewer::LinuxStreamViewer>>,
+    /// ADR 0083: the Steam engine runner's facts for the sign-in model.
+    pub(crate) steam_engine: Option<Arc<dyn super::steam_account::SteamEngineAccess>>,
 }
 
 /// How a refusal reads for one method, as the portal client mapped it.
@@ -138,7 +140,16 @@ impl Korrid {
             save_changes: None,
             launch_steps: None,
             viewer: None,
+            steam_engine: None,
         }
+    }
+
+    pub(crate) fn with_steam_engine(
+        mut self,
+        access: Arc<dyn super::steam_account::SteamEngineAccess>,
+    ) -> Self {
+        self.steam_engine = Some(access);
+        self
     }
 
     pub(crate) fn with_viewer(

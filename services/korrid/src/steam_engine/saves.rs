@@ -28,6 +28,20 @@ use std::{collections::BTreeMap, path::Path, sync::Mutex};
 /// where the files come from.
 pub const LOCATION: &str = "steam-cloud";
 
+/// The engine runner's one save location, `<saveRoot>/steam-cloud`, added
+/// by korrid to every engine-runner plan: korrid fills it from the host's
+/// exports and the existing session capture snapshots it. The runner never
+/// reads it; the game's files stay in the Steam folder.
+pub fn declare(runner_id: &str, save_root: &str, locations: &mut Vec<SaveLocation>) {
+    if runner_id == super::RUNNER_ID && !locations.iter().any(|l| l.key == LOCATION) {
+        locations.push(SaveLocation {
+            key: LOCATION.into(),
+            kind: SaveKind::Save,
+            path: Path::new(save_root).join(LOCATION).display().to_string(),
+        });
+    }
+}
+
 /// Read the host's archive into `scratch`, an empty folder korrid made.
 pub fn extract(archive: &Path, scratch: &Path) -> Result<(), String> {
     crate::acquisition::archive::extract_save_export(archive, scratch)
@@ -93,28 +107,27 @@ pub fn record_boundary(
     store.put_record(person, &record).map(Some)
 }
 
-/// The two sides of one Steam Cloud conflict.
+/// One open Steam Cloud conflict: the app and the cloud side's snapshot.
+/// The local side is the session's own snapshot, captured from the launch
+/// export when the refused session completes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Conflict {
     pub appid: u32,
-    pub local: String,
     pub cloud: String,
 }
 
-/// Record a conflict as a split: `local` (the exported files) and a cloud
-/// record with no files, both children of the current heads.
-pub fn split(
+/// Write the cloud side: a record with no files and the current heads as
+/// parents, `endedAt` at Steam's remote time. With the session's capture of
+/// the local files this makes the split's two heads.
+pub fn cloud_side(
     store: &NativeSaveStore,
     person: &str,
-    appid: u32,
-    mut local: SnapshotRecord,
+    template: SnapshotRecord,
     remote_time: u64,
-) -> Result<Conflict, SaveError> {
-    let records = store.records(person, &local.game_id)?;
-    let heads = head_ids(&records)?;
-    local.parents = heads.clone();
+) -> Result<String, SaveError> {
+    let records = store.records(person, &template.game_id)?;
     let cloud = SnapshotRecord {
-        parents: heads,
+        parents: head_ids(&records)?,
         ended_at: rfc3339(remote_time),
         duration_seconds: 0,
         interrupted: false,
@@ -123,20 +136,9 @@ pub fn split(
             kind: SaveKind::Save,
             files: vec![],
         }],
-        ..local.clone()
+        ..template
     };
-    let local = store.put_record(person, &local)?;
-    let cloud = store.put_record(person, &cloud)?;
-    if local == cloud {
-        return Err(SaveError::Invalid(
-            "the two sides of a Steam Cloud conflict are the same".into(),
-        ));
-    }
-    Ok(Conflict {
-        appid,
-        local,
-        cloud,
-    })
+    store.put_record(person, &cloud)
 }
 
 fn rfc3339(seconds: u64) -> String {
@@ -146,13 +148,15 @@ fn rfc3339(seconds: u64) -> String {
         .to_string()
 }
 
-/// Open conflicts by (person, game), and the side each pick means. Held in
-/// memory: after a korrid restart the next launch reports the conflict
-/// again, and the person picks again.
+type Key = (String, String);
+
+/// Open conflicts by (person, game), and the resolve each pick asks for.
+/// Held in memory: after a korrid restart the next launch reports the
+/// conflict again, and the person picks again.
 #[derive(Default)]
 pub struct Conflicts {
-    open: Mutex<BTreeMap<(String, String), Conflict>>,
-    picked: Mutex<BTreeMap<(String, String), (u32, super::protocol::Side)>>,
+    open: Mutex<BTreeMap<Key, Conflict>>,
+    picked: Mutex<BTreeMap<Key, (u32, super::protocol::Side)>>,
 }
 
 impl Conflicts {
@@ -163,27 +167,29 @@ impl Conflicts {
             .insert((person.into(), game.into()), conflict);
     }
 
-    /// The person picked `snapshot` in the split. Returns the side when it
-    /// is one of this conflict's sides.
+    /// The person picked `snapshot` in this game's split: the cloud record
+    /// means the cloud side, any other side means this device's files.
     pub fn pick(&self, person: &str, game: &str, snapshot: &str) -> Option<super::protocol::Side> {
         let key = (person.to_owned(), game.to_owned());
         let conflict = self.open.lock().expect("conflicts poisoned").remove(&key)?;
-        let side = if snapshot == conflict.local {
-            super::protocol::Side::Local
-        } else if snapshot == conflict.cloud {
+        let side = if snapshot == conflict.cloud {
             super::protocol::Side::Cloud
         } else {
-            self.open
-                .lock()
-                .expect("conflicts poisoned")
-                .insert(key, conflict);
-            return None;
+            super::protocol::Side::Local
         };
         self.picked
             .lock()
             .expect("conflicts poisoned")
             .insert(key, (conflict.appid, side));
         Some(side)
+    }
+
+    /// Put back a resolve that could not be sent.
+    pub fn keep_resolve(&self, person: &str, game: &str, appid: u32, side: super::protocol::Side) {
+        self.picked
+            .lock()
+            .expect("conflicts poisoned")
+            .insert((person.into(), game.into()), (appid, side));
     }
 
     /// The resolve to send before the next launch of this game, once.
@@ -294,41 +300,59 @@ mod tests {
         )
         .unwrap()
         .unwrap();
+        // Launch: the shim reports the conflict; korrid writes the cloud side.
+        let cloud = cloud_side(&store, &person, template("g"), 1_763_390_000).unwrap();
+        // The refused session completes: its capture of the launch export,
+        // child of the launch base, is the local side.
         let local = scratch(temp.path(), "local");
         extract(
             &export(temp.path(), "b.zip", &[("remote/s", b"local edit")]),
             &local,
         )
         .unwrap();
-        let record = capture(&store, &person, &local, template("g")).unwrap();
-        let conflict = split(&store, &person, 2379780, record, 1_763_390_000).unwrap();
+        let mut session = capture(&store, &person, &local, template("g")).unwrap();
+        session.parents = vec![base_id.clone()];
+        let local_id = store.put_record(&person, &session).unwrap();
         let records = store.records(&person, "g").unwrap();
         let heads = head_ids(&records).unwrap();
         assert_eq!(heads.len(), 2, "a split has two heads");
-        assert!(heads.contains(&conflict.local) && heads.contains(&conflict.cloud));
-        let cloud = records
+        assert!(heads.contains(&local_id) && heads.contains(&cloud));
+        let cloud_record = records
             .iter()
-            .find(|r| snapshot_id(r).unwrap() == conflict.cloud)
+            .find(|r| snapshot_id(r).unwrap() == cloud)
             .unwrap();
-        assert_eq!(cloud.parents, [base_id.clone()]);
-        assert_eq!(cloud.ended_at, "2025-11-17T14:33:20.000Z");
-        assert!(cloud.locations[0].files.is_empty());
+        assert_eq!(cloud_record.parents, [base_id]);
+        assert_eq!(cloud_record.ended_at, "2025-11-17T14:33:20.000Z");
+        assert!(cloud_record.locations[0].files.is_empty());
         assert_eq!(
             store.reconcile(&person, "g").unwrap(),
             crate::saves::types::SaveMark::Split
         );
 
         let conflicts = Conflicts::default();
-        conflicts.open(&person, "g", conflict.clone());
-        assert_eq!(conflicts.pick(&person, "g", "not-a-side"), None);
-        assert_eq!(
-            conflicts.pick(&person, "g", &conflict.cloud),
-            Some(Side::Cloud)
+        conflicts.open(
+            &person,
+            "g",
+            Conflict {
+                appid: 2379780,
+                cloud: cloud.clone(),
+            },
         );
+        assert_eq!(conflicts.pick(&person, "other", &cloud), None);
+        assert_eq!(conflicts.pick(&person, "g", &local_id), Some(Side::Local));
         assert_eq!(
             conflicts.take_resolve(&person, "g"),
-            Some((2379780, Side::Cloud))
+            Some((2379780, Side::Local))
         );
         assert_eq!(conflicts.take_resolve(&person, "g"), None);
+        conflicts.open(
+            &person,
+            "g",
+            Conflict {
+                appid: 2379780,
+                cloud: cloud.clone(),
+            },
+        );
+        assert_eq!(conflicts.pick(&person, "g", &cloud), Some(Side::Cloud));
     }
 }

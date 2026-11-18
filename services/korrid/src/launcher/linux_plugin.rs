@@ -415,6 +415,12 @@ fn inspect_route(
         }),
         android_package: None,
     };
+    if route.runner_id == crate::steam_engine::RUNNER_ID {
+        composition.steam_engine = Some(
+            crate::steam_engine::launch_plan(registry, &input.artifacts, &account_root)
+                .map_err(error)?,
+        );
+    }
     // Ask the runner whether it can start this target. A runner whose runtime is
     // its own package declares no runtime and proceeds. One that needs
     // something else refuses here, before korrid spawns anything.

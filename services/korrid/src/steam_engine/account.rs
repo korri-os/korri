@@ -178,6 +178,9 @@ impl Account {
                 reason: reason.reason().into(),
                 actions: if reason.offers_client_runner() {
                     vec![action(USE_CLIENT, "Use the Steam client for now")]
+                } else if *reason == Unavailable::PackageNotDownloaded {
+                    // Sign in downloads the pinned engine first.
+                    vec![action(SIGN_IN, "Download and sign in")]
                 } else {
                     vec![]
                 },

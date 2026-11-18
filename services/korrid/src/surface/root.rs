@@ -377,6 +377,7 @@ pub struct Root {
     pub network: Arc<NetworkOnboarding>,
     pub owner_binding: Arc<OwnerBinding>,
     pub starter_pack: Arc<StarterPack>,
+    pub steam: Arc<super::steam_account::SteamAccount>,
     pub downloads: Arc<GameDownloads>,
     pub acquisition: Arc<AcquisitionGate>,
     pub runner: Arc<RunnerChooser>,
@@ -681,6 +682,7 @@ impl Root {
                 network,
                 owner_binding,
                 starter_pack,
+                steam: super::steam_account::SteamAccount::new(korrid.clone(), notify.clone()),
                 downloads,
                 acquisition,
                 controllers,
@@ -966,6 +968,7 @@ impl Root {
     /// Start every poll the portal ran while mounted.
     pub fn start(self: &Arc<Self>, mut overlay_intent: tokio::sync::watch::Receiver<u64>) {
         self.saves.start();
+        self.steam.refresh();
         self.shared.start();
         let launch = Arc::clone(&self.launch);
         tokio::spawn(async move { launch.refresh_device().await });
@@ -1222,7 +1225,7 @@ impl Root {
             focused_game: None,
             systems: None,
             published_at: clock.published_at,
-            steam_account: None,
+            steam_account: self.steam.snapshot(),
         };
         Facts { base, games, state }
     }
@@ -1669,6 +1672,19 @@ impl Root {
             }
             finish(&done, None)
         });
+        // ADR 0083: after the downloads, a launch on the Steam engine runner
+        // with nobody signed in waits for the sign-in.
+        let steam = Arc::clone(&self.steam);
+        let (steam_game, steam_abandon, start) = (game.clone(), abandon.clone(), proceed);
+        let proceed: super::acquisition_gate::Step = Arc::new(move || {
+            steam.gate(
+                steam_game.id.clone(),
+                steam_game.title.clone(),
+                steam_game.runner_id.clone(),
+                start.clone(),
+                steam_abandon.clone(),
+            )
+        });
         self.acquisition.launch(game, proceed, abandon);
     }
 
@@ -1728,6 +1744,7 @@ impl Root {
                     || self.launch.act(&action_id)
                     || self.saves.act(&action_id)
                     || self.starter_pack.act(&action_id)
+                    || self.steam.act(&action_id)
                     || self.store.act(&action_id)
                     || self.acquisition.act(&action_id)
                 {

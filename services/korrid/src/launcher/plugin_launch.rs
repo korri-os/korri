@@ -320,6 +320,9 @@ pub struct LaunchComposition {
     pub netplay_config_source: Option<std::path::PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sunshine_args: Option<Vec<String>>,
+    /// ADR 0083: the engine host korrid starts beside an engine-runner game.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steam_engine: Option<crate::steam_engine::host::HostPlan>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub placement: Option<crate::host::display_placement::Placement>,
     pub modifiers: Vec<ResolvedLaunchModifier>,
@@ -370,8 +373,13 @@ pub fn evaluate_snapshot(
         &encoded,
     )
     .map_err(|failure| failure.to_string())?;
-    let plan: PluginLaunchOutput =
+    let mut plan: PluginLaunchOutput =
         serde_json::from_str(&result).map_err(|e| format!("invalid launch result: {e}"))?;
+    crate::steam_engine::saves::declare(
+        &input.runner_id,
+        &input.save_root,
+        &mut plan.save_locations,
+    );
     validate_plan(&plan, &input.account_root)?;
     validate_save_locations(&input.save_root, &plan.save_locations)?;
     Ok(plan)
@@ -680,6 +688,11 @@ fn prepare_with_diagnostics(
                 status_text(&reason, 1024)
             )
         })?;
+        crate::steam_engine::saves::declare(
+            &input.runner_id,
+            &input.save_root,
+            &mut plan.save_locations,
+        );
     }
     redaction.add_env(plan.env.values().cloned());
     let temporary_toml = if let Some(persistent) = composition.persistent.as_ref() {
@@ -713,6 +726,20 @@ fn prepare_with_diagnostics(
         runner_argv,
         release_id: None,
     })
+}
+
+/// The engine host plan of a plugin launch, when its runner is the Steam
+/// engine runner.
+pub(crate) fn steam_engine_plan(
+    command: &[String],
+) -> Result<Option<crate::steam_engine::host::HostPlan>, String> {
+    if command.get(1).map(String::as_str) != Some("plugin-launch") {
+        return Ok(None);
+    }
+    let composition: LaunchComposition =
+        serde_json::from_str(command.get(4).ok_or("missing launch composition")?)
+            .map_err(|e| e.to_string())?;
+    Ok(composition.steam_engine)
 }
 
 pub(crate) fn sunshine_args(command: &[String]) -> Result<Option<Vec<String>>, String> {

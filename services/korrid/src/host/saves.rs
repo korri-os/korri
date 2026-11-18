@@ -513,6 +513,15 @@ impl HostRuntime {
                         &now(),
                     )
                     .map_err(failure)?;
+                    if !restore {
+                        // ADR 0083: a pick in a Steam Cloud split is applied
+                        // with ResolveSyncConflict before the next launch.
+                        crate::steam_engine::conflicts().pick(
+                            person,
+                            &request.game_id,
+                            &request.snapshot_id,
+                        );
+                    }
                     host.control()?.notify_save_snapshot(&request.game_id);
                     host.save_history_blocking(&request.game_id)
                 })

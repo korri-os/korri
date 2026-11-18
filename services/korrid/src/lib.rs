@@ -5327,6 +5327,66 @@ fn surface_accepted(result: Result<(), RpcFailure>) -> surface::SurfaceAcceptedO
 
 /// The native surface host for one surface host router. It reaches korrid the
 /// way a surface host call does: the same typed requests, under the same capability and
+/// ADR 0083: the Steam engine runner's facts for the surface's sign-in
+/// model, read in process from the route registry and the artifact cache.
+struct SteamEngineFacts {
+    state: AppState,
+}
+
+impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
+    fn facts(&self) -> surface::steam_account::SteamFacts {
+        use surface::steam_account::SteamFacts;
+        let ServerMode::Host(host) = &self.state.mode else {
+            return SteamFacts::Absent;
+        };
+        let Ok((root, registry)) = self.state.acquisition_context() else {
+            return SteamFacts::Absent;
+        };
+        if registry.native_runner(steam_engine::RUNNER_ID).is_err() {
+            return SteamFacts::Absent;
+        }
+        if let Some(reason) = steam_engine::unavailable()
+            .lock()
+            .expect("availability poisoned")
+            .clone()
+        {
+            return SteamFacts::Unavailable(reason);
+        }
+        let Ok(person) = host.launch_person() else {
+            return SteamFacts::Absent;
+        };
+        let Ok(account_root) = saves::account_root(root, &person) else {
+            return SteamFacts::Absent;
+        };
+        let Ok(artifacts) = acquisition::launch_artifacts(root, &registry, steam_engine::RUNNER_ID)
+        else {
+            return SteamFacts::Unavailable(
+                steam_engine::availability::Unavailable::PackageNotDownloaded,
+            );
+        };
+        match steam_engine::launch_plan(&registry, &artifacts, &account_root) {
+            Ok(plan) => SteamFacts::Ready {
+                plan,
+                runner: host::SystemdLaunchUnitBackend::steam_engine_jobs(),
+            },
+            Err(_) => SteamFacts::Unavailable(
+                steam_engine::availability::Unavailable::PackageNotDownloaded,
+            ),
+        }
+    }
+
+    fn runs_on_engine(&self, game_id: &str, runner_id: Option<&str>) -> bool {
+        let Ok((root, registry)) = self.state.acquisition_context() else {
+            return false;
+        };
+        let Ok((snapshot, _)) = config::settings::runner_choice_snapshot(root) else {
+            return false;
+        };
+        config::resolver::resolve_linux_route(root, &snapshot, &registry, game_id, runner_id)
+            .is_ok_and(|route| route.runner_id == steam_engine::RUNNER_ID)
+    }
+}
+
 /// permission, handed to `dispatch` in process.
 fn surface_hub_for(
     surface_host: &AppState,
@@ -5376,8 +5436,13 @@ fn surface_hub_for(
             .flatten()
         })
     });
+    let steam_engine: Arc<dyn surface::steam_account::SteamEngineAccess> =
+        Arc::new(SteamEngineFacts {
+            state: surface_host.clone(),
+        });
     surface::SurfaceHub::new(
         surface::korrid::Korrid::new(send)
+            .with_steam_engine(steam_engine)
             .with_save_changes(match &surface_host.mode {
                 ServerMode::Host(host) => match host.save_status_changes() {
                     Ok(changes) => Some(changes),

@@ -91,6 +91,9 @@ pub struct LaunchSandbox {
     modifiers: bool,
     plugin: bool,
     pulse_audio: bool,
+    /// ADR 0083: the game unit reaches its engine host's channel.
+    #[serde(default)]
+    steam_engine: bool,
 }
 
 impl LaunchSandbox {
@@ -109,11 +112,26 @@ impl LaunchSandbox {
                 .is_some_and(|value| matches!(value.as_str(), "plugin-launch" | "plugin-prepare")),
             pulse_audio: baseline.get("PULSE_SERVER").map(String::as_str)
                 == Some("unix:/run/korri-game-audio/native"),
+            steam_engine: crate::launcher::plugin_launch::steam_engine_plan(command)
+                .is_ok_and(|plan| plan.is_some()),
         }
     }
 }
 
 pub trait LaunchUnitBackend: Send + Sync {
+    /// ADR 0083: start a launch's engine host before its game unit.
+    fn start_launch_service(
+        &self,
+        _launch_id: &str,
+        _plan: &crate::steam_engine::host::HostPlan,
+        _context: Option<crate::steam_engine::sessions::SessionContext>,
+    ) -> Result<(), LaunchUnitError> {
+        Ok(())
+    }
+    /// Stop a launch's engine host at once, when its game unit never ran.
+    fn stop_launch_service(&self, _launch_id: &str) -> Result<(), LaunchUnitError> {
+        Ok(())
+    }
     fn apply_sunshine_settings(&self, _args: &[String]) -> Result<(), LaunchUnitError> {
         Err(LaunchUnitError::new(
             LaunchUnitErrorKind::Failed,
@@ -1764,6 +1782,25 @@ impl SystemdLaunchUnitBackend {
                 "--setenv=WAYLAND_DISPLAY=diagnostics/wayland-parent".into(),
             ]);
         }
+        if sandbox.steam_engine && sandbox.plugin {
+            // The shim takes the session lock and writes the pre-game
+            // commands; the host unit binds the same channel.
+            let channel = format!("/run/korri-game-{launch_id}/steam-engine");
+            arguments.extend([
+                format!(
+                    "--property=BindPaths={}:{channel}",
+                    crate::steam_engine::host::Mode::Session {
+                        launch_id: launch_id.into()
+                    }
+                    .channel(&self.diagnostics_root)
+                    .display()
+                ),
+                format!(
+                    "--setenv={}={channel}",
+                    crate::steam_engine::host::CHANNEL_ENV
+                ),
+            ]);
+        }
         Ok(arguments)
     }
 
@@ -2296,7 +2333,75 @@ impl SystemdLaunchUnitBackend {
     }
 }
 
+impl SystemdLaunchUnitBackend {
+    fn steam_engine_units(&self) -> crate::steam_engine::host::SystemdHostUnits {
+        crate::steam_engine::host::SystemdHostUnits {
+            systemd_run: self.systemd_run.clone(),
+            systemctl: self.systemctl.clone(),
+            identity: crate::steam_engine::host::Identity {
+                uid: self.runtime_uid,
+                gid: self.runtime_gid,
+                korrid: std::env::current_exe().unwrap_or_else(|_| "korrid".into()),
+            },
+            launches_root: self.diagnostics_root.clone(),
+            // The host sees none of korrid's private state or controls.
+            hidden: [
+                &self.private_state_root,
+                &self.control_directory,
+                &self.cli_directory,
+                &self.compositor_control_directory,
+                &self.certificate_control_directory,
+            ]
+            .into_iter()
+            .cloned()
+            .chain(self.stream_private_state_root.clone())
+            .collect(),
+        }
+    }
+
+    /// ADR 0083: job-mode engine hosts with this device's launch identity.
+    pub(crate) fn steam_engine_jobs() -> crate::steam_engine::jobs::JobRunner {
+        let backend = Self::default();
+        crate::steam_engine::jobs::JobRunner {
+            units: Arc::new(backend.steam_engine_units()),
+            launches_root: backend.diagnostics_root.clone(),
+            runtime_uid: backend.runtime_uid,
+        }
+    }
+
+    fn steam_engine_sessions(&self) -> &'static crate::steam_engine::sessions::Sessions {
+        crate::steam_engine::sessions(|| {
+            crate::steam_engine::sessions::Sessions::with_state(
+                Arc::new(self.steam_engine_units()),
+                &self.diagnostics_root,
+                self.runtime_uid,
+                Arc::clone(crate::steam_engine::conflicts()),
+                Arc::clone(crate::steam_engine::unavailable()),
+            )
+        })
+    }
+}
+
 impl LaunchUnitBackend for SystemdLaunchUnitBackend {
+    fn start_launch_service(
+        &self,
+        launch_id: &str,
+        plan: &crate::steam_engine::host::HostPlan,
+        context: Option<crate::steam_engine::sessions::SessionContext>,
+    ) -> Result<(), LaunchUnitError> {
+        validate_launch_id(launch_id)?;
+        self.steam_engine_sessions()
+            .start(launch_id, plan, context)
+            .map_err(|message| LaunchUnitError::new(LaunchUnitErrorKind::Failed, message))
+    }
+
+    fn stop_launch_service(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
+        validate_launch_id(launch_id)?;
+        self.steam_engine_sessions()
+            .finish(launch_id, Duration::ZERO)
+            .map_err(|message| LaunchUnitError::new(LaunchUnitErrorKind::Failed, message))
+    }
+
     fn apply_sunshine_settings(&self, args: &[String]) -> Result<(), LaunchUnitError> {
         self.apply_sunshine_at(
             Path::new("/run/korri-launch-services/korri-sunshine.args"),
@@ -2550,6 +2655,11 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
 
     fn cleanup_completed(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
         validate_launch_id(launch_id)?;
+        // ADR 0083: the engine host stops after the exit sync, before the
+        // session's save capture reads what it exported.
+        self.steam_engine_sessions()
+            .finish(launch_id, crate::steam_engine::sessions::EXIT_SYNC_BOUND)
+            .map_err(|message| LaunchUnitError::new(LaunchUnitErrorKind::Failed, message))?;
         super::launch_diagnostics::cleanup(&self.diagnostics_root.join(launch_id)).map_err(
             |error| {
                 LaunchUnitError::new(
@@ -3177,6 +3287,7 @@ mod tests {
                         modifiers,
                         plugin: false,
                         pulse_audio: false,
+                        steam_engine: false,
                     },
                 )
                 .unwrap();

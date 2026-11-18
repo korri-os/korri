@@ -544,7 +544,7 @@ pub mod process_units {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn plan() -> HostPlan {
@@ -674,7 +674,8 @@ mod tests {
         let host = script_host(
             temp.path(),
             r#"echo '{"event":"phase","phase":"dlopen"}'
-while read -r line < "$fifo"; do
+exec 3<>"$fifo"
+while read -r line <&3; do
   case "$line" in
     "exited "*) echo "{\"event\":\"sync_finished\",\"appid\":${line#exited },\"kind\":\"exit\",\"result\":\"synchronized\"}" ;;
     shutdown) echo '{"event":"phase","phase":"stopped"}'; exit 0 ;;
