@@ -1765,9 +1765,7 @@ fn normalize_plugin(
 
     // ADR 0045: a discovery entry may name its local key; korrid prefixes `P/`.
     for provider in &mut declaration.discovery {
-        if is_provider_segment(&provider.id) {
-            provider.id = plugin_record_id(&id, &provider.id);
-        }
+        provider.id = crate::plugin_discovery::resolve_id(&id, &provider.id);
     }
     crate::plugin_discovery::validate(&id, &declaration.discovery)
         .map_err(|reason| invalid_contribution("discovery", &id, &reason))?;
