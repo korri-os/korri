@@ -2152,6 +2152,48 @@ mod tests {
         );
     }
 
+    /// The JSON that typeshare.toml's `SurfaceSteamAccountWire` spells.
+    #[test]
+    fn steam_account_wire() {
+        let action = SurfaceAction::new("steam-account:cancel", "Cancel", true);
+        let code = SurfaceSteamAccount::Code {
+            qr: SurfaceQrCode {
+                size: 21,
+                modules: "1".repeat(441),
+            },
+            kicker: "Sign in to Steam".into(),
+            detail: None,
+            for_game: Some("Celeste".into()),
+            actions: vec![action.clone()],
+        };
+        assert_eq!(
+            serde_json::to_value(&code).unwrap(),
+            json!({"_tag": "Code", "qr": {"size": 21, "modules": "1".repeat(441)},
+                "kicker": "Sign in to Steam", "forGame": "Celeste",
+                "actions": [{"id": "steam-account:cancel", "label": "Cancel", "enabled": true}]})
+        );
+        assert_eq!(
+            serde_json::to_value(SurfaceSteamAccount::SignedIn {
+                account_name: "p".into(),
+                actions: vec![],
+            })
+            .unwrap(),
+            json!({"_tag": "SignedIn", "accountName": "p", "actions": []})
+        );
+        assert_eq!(
+            serde_json::to_value(SurfaceSteamAccount::Working {
+                kicker: "k".into(),
+                for_game: None,
+                actions: vec![],
+            })
+            .unwrap(),
+            json!({"_tag": "Working", "kicker": "k", "actions": []})
+        );
+        let round: SurfaceSteamAccount =
+            serde_json::from_value(serde_json::to_value(&code).unwrap()).unwrap();
+        assert_eq!(round, code);
+    }
+
     #[test]
     fn request_debug_never_prints_secrets() {
         let request = SurfaceRequest::ConnectWifi {

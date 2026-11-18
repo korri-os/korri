@@ -208,6 +208,23 @@ export type SurfaceStarterPack = { _tag: "Offered"; actions: SurfaceAction[] } |
  */
 export type SurfaceStatus = { _tag: "Browsing" } | { _tag: "Busy"; kicker: string; detail?: string; progress?: SurfaceProgress; steps?: SurfaceSteps; actions?: SurfaceAction[]; declineActionId?: string; gameId?: string } | { _tag: "Confirm"; kicker: string; detail?: string; actions: SurfaceAction[]; declineActionId?: string; gameId?: string } | { _tag: "ChooseSave"; gameId: string; kicker: string; detail?: string; actions: SurfaceAction[]; declineActionId?: string; sides: SurfaceSaveSide[] } | { _tag: "Running"; kicker: string; gameId?: string } | { _tag: "Paused"; kicker: string; detail?: string; actions: SurfaceAction[]; declineActionId?: string; gameId?: string } | { _tag: "Ended"; kicker: string; reason: string; gameId?: string; gameTitle?: string } | { _tag: "Problem"; kicker: string; reason: string; canRetry: boolean; gameId?: string; gameTitle?: string };
 
+/**
+ * The current person's Steam sign-in on this device. Every string is
+ * finished, user-facing copy and every action runs through `RunAction`
+ * unchanged; a surface infers nothing from a label.
+ *
+ * - `SignedOut`: no Steam account is linked; `actions` holds Sign in.
+ * - `Code`: the person approves `qr` in the Steam mobile app. `forGame` is
+ * the title of the game whose launch asked for the sign-in, absent when
+ * the person asked from setup or settings. `actions` holds Cancel.
+ * - `Working`: approved, or starting; Korri is signing in. `actions` may
+ * hold Cancel.
+ * - `SignedIn`: `accountName` is the Steam account name. `actions` holds
+ * Sign out.
+ * - `Problem`: sign-in did not finish; `actions` holds Retry when one helps.
+ */
+export type SurfaceSteamAccount = { _tag: "SignedOut"; actions: SurfaceAction[] } | { _tag: "Code"; qr: SurfaceQrCode; kicker: string; detail?: string; forGame?: string; actions: SurfaceAction[] } | { _tag: "Working"; kicker: string; forGame?: string; actions: SurfaceAction[] } | { _tag: "SignedIn"; accountName: string; actions: SurfaceAction[] } | { _tag: "Problem"; kicker: string; reason: string; actions: SurfaceAction[] };
+
 export type SurfaceStoreDetails = { _tag: "Closed" } | { _tag: "Loading"; entry: SurfaceStoreEntry } | { _tag: "Problem"; entry: SurfaceStoreEntry; message: string; actions: SurfaceAction[] } | { _tag: "Ready"; entry: SurfaceStoreEntry; description?: string; get: SurfaceStoreGet };
 
 /**
@@ -719,6 +736,22 @@ export interface SurfaceModel {
 	 * a live clock. Absent when Korri has no trustworthy time.
 	 */
 	publishedAt?: number;
+	/**
+	 * The current person's Steam sign-in. Absent when no Steam engine runner
+	 * is installed on this device.
+	 */
+	steamAccount?: SurfaceSteamAccount;
+}
+
+/**
+ * A QR code for the surface to draw. `modules` holds `size` rows of `size`
+ * characters each, row by row from the top, `1` for a dark module and `0`
+ * for a light one, with no quiet zone. The surface draws it at any scale,
+ * with a light border of at least four modules.
+ */
+export interface SurfaceQrCode {
+	size: number;
+	modules: string;
 }
 
 /**
