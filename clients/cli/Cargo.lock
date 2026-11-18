@@ -2552,6 +2552,7 @@ dependencies = [
  "proseql-engine",
  "proseql-formats",
  "proseql-storage",
+ "qrcode",
  "rand 0.9.5",
  "rars",
  "regex",
