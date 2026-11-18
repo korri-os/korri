@@ -506,8 +506,8 @@ pub fn snapshot_for_person(
             runners.push(LaunchRunnerSnapshot {
                 id: id.clone(),
                 family: declaration.family.clone(),
-                title: registry
-                    .plugin_title(id.split_once('/').unwrap().0)
+                title: crate::steam_engine::runner_title(&id)
+                    .or_else(|| registry.plugin_title(id.split_once('/').unwrap().0))
                     .unwrap_or(&id)
                     .into(),
                 selected: selected.as_deref() == Some(&id),

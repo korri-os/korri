@@ -67,6 +67,33 @@ pub fn installed_pair(root: &Path) -> PluginRegistry {
     PluginRegistry::from_installed(packages).unwrap()
 }
 
+/// A Steam plugin `@korri:steam` whose client runner `steam` and engine
+/// runner `engine` (ADR 0083) both run the GBA fixture game.
+pub fn installed_steam_pair(root: &Path) -> PluginRegistry {
+    let runners = |name: &str| {
+        format!(
+            "  \"{name}\": {{\n    family: \"@korri:retroarch\",\n    program: \"retroarch\",\n    core: \"mgba\",\n    systems: [\"gba\"],\n  }},\n"
+        )
+    };
+    let source = GENERATED_CORE
+        .split("export const controls")
+        .next()
+        .unwrap()
+        .replace("export const name = \"mgba\"", "export const name = \"steam\"")
+        .replace("export const title = \"mGBA\"", "export const title = \"Steam\"")
+        .replace(
+            "  \"mgba\": {\n    family: \"@korri:retroarch\",\n    program: \"retroarch\",\n    core: \"mgba\",\n    systems: [\"gba\"],\n  },\n",
+            &(runners("steam") + &runners("engine")),
+        );
+    assert!(source.contains("\"engine\""), "{source}");
+    let mut package = core_package(root, "steam", source);
+    package.files.insert("mgba".into(), root.join("mgba.so"));
+    package
+        .files
+        .insert("korri-steam-host".into(), root.join("korri-steam-host"));
+    PluginRegistry::from_installed(vec![package]).unwrap()
+}
+
 fn core_package(root: &Path, name: &str, source: String) -> EnabledPackage {
     let package = root.join(format!("plugin-{name}"));
     fs::create_dir_all(&package).unwrap();

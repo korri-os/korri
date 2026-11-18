@@ -64,6 +64,18 @@ pub fn is_engine_runner(id: &str) -> bool {
     steam_parts(id).is_some_and(|(_, key)| key == ENGINE_KEY)
 }
 
+/// The title of a Steam plugin's runner in launch settings, where both
+/// runners otherwise carry the plugin's one title.
+pub fn runner_title(runner_id: &str) -> Option<&'static str> {
+    if is_engine_runner(runner_id) {
+        Some("Steam engine")
+    } else if is_client_runner(runner_id) {
+        Some("Steam client")
+    } else {
+        None
+    }
+}
+
 /// True for `P/steam` of a Steam plugin `P`.
 pub fn is_client_runner(id: &str) -> bool {
     steam_parts(id).is_some_and(|(_, key)| key == CLIENT_KEY)

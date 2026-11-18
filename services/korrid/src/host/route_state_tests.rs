@@ -772,3 +772,47 @@ async fn a_game_without_a_runner_blocks_only_itself() {
         "{status}"
     );
 }
+
+fn steam_library(root: &Path) -> Router {
+    crate::plugin_test_fixtures::write_gba_library(root);
+    fs::create_dir(root.join("roms")).unwrap();
+    fs::write(root.join("roms/wl4.gba"), b"rom").unwrap();
+    let registry = crate::plugin_test_fixtures::installed_steam_pair(root);
+    library_router(root, registry)
+}
+
+/// The id, title, selected and choosable of each runner in launch settings.
+async fn runner_rows(app: &Router) -> Vec<(String, String, bool, bool)> {
+    let settings = rpc(app, "app.launch-settings.snapshot", json!({"gameId": GAME})).await;
+    settings["payload"]["runners"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{settings}"))
+        .iter()
+        .map(|runner| {
+            (
+                runner["id"].as_str().unwrap().to_owned(),
+                runner["title"].as_str().unwrap().to_owned(),
+                runner["selected"] == json!(true),
+                runner["choosable"] == json!(true),
+            )
+        })
+        .collect()
+}
+
+const STEAM_CLIENT: &str = "@korri:steam/steam";
+const STEAM_ENGINE: &str = "@korri:steam/engine";
+
+/// Device proof 6: both Steam runners showed as "Steam".
+#[tokio::test]
+async fn the_steam_runners_carry_their_own_titles() {
+    let root = tempfile::tempdir().unwrap();
+    let app = steam_library(root.path());
+    save_runner(root.path(), STEAM_ENGINE);
+    assert_eq!(
+        runner_rows(&app).await,
+        [
+            (STEAM_ENGINE.into(), "Steam engine".into(), true, true),
+            (STEAM_CLIENT.into(), "Steam client".into(), false, true),
+        ]
+    );
+}
