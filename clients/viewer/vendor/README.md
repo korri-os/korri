@@ -55,16 +55,25 @@ it: nightjar-core ports parts of moonlight-common-c and moonlight-android
 (Artemis), Moonlight V+ and Moonlight V+ PC (qiin2333), and Nonary's
 moonlight-common-c, all GPL-3.0; and its `client/src/fec.rs` is "Ported
 from nanors (MIT, Joseph Calderon)". nanors' licence is `nanors-licence.nix`
-here, pinned by hash to the nanors commit that last changed it. Every
-artefact that carries nightjar-core carries that text: the PC package in
-`share/licenses/korri-viewer/` (with Nightjar's `rusty_enet` licence) and
-its corresponding source in `licenses/` (`../default.nix`), and the Korri
-app's release notices (`../../android-app/notices.nix`), whose build fails
-when a vendored source file says it ports code under another licence than
-the GPL that has no part of its own. No other source file in these trees
-names a port from code under another licence (2026-11-18). Nightjar's own
-non-GPL parts that the viewer does not copy (its apps' shaders, fonts and
-renderers) are not in these trees.
+here, pinned by hash to the nanors commit that created it. Every artefact
+that carries nightjar-core carries that text in its notices: the PC
+package's `share/licenses/korri-viewer/NOTICES.txt` and its corresponding
+source's `licenses/NOTICES.txt` (`../notices.nix`), and the Korri app's
+release notices (`../../android-app/notices.nix`).
+
+`licence-mentions.txt` lists every file of these trees that names a licence
+or a copyright (`check-licence-mentions.sh` has the words: SPDX names such
+as MIT, BSD, Apache, ISC, Zlib, MPL, CC0, BSL, LGPL and others, "Boost",
+"copyright", "(c)", "licensed under"), with the notices part that covers
+it, or `-` when the word names no licence of the file's code. Both notices'
+builds run the script: they fail when a file names such a word and is not
+listed, when a listed file no longer names one, and when a listed part is
+not in the notices. Two files name one today (2026-11-18): `fec.rs`
+(nanors) and a test of `http/power` ("Vibepollo's Boost writer", no
+licence). A port that names neither a licence nor a copyright is not
+caught: read the header of each new source file when the pin moves.
+Nightjar's own non-GPL parts that the viewer does not copy (its apps'
+shaders, fonts and renderers) are not in these trees.
 
 To move the pin: copy the same paths from the new commit with `git archive`
 in one commit with no edits, then make the edits above again in the next.

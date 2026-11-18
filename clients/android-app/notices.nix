@@ -160,8 +160,6 @@ pkgs.stdenv.mkDerivation {
       done
       part 'nightjar-core and the Rubylight crates' \
         "The stream's default network core: nightjar-core and the crates rubylight-protocol and rubylight-traverse, from Nightjar (https://github.com/RamazanKara/nightjar), and rubylight-native-api, from Rubylight (https://github.com/RamazanKara/Rubylight), compiled into the library from Korri's copies in clients/viewer/vendor, whose README names their commits and Korri's changes. GNU General Public License version 3 only; the text is at the end of this file. nightjar-core ports code from these GPL-3.0 projects, as its source files name them: moonlight-common-c and moonlight-android by Cameron Gutman and contributors, ClassicOldSong's moonlight-common-c (Artemis), Moonlight V+ and Moonlight V+ PC by qiin2333, and Nonary's moonlight-common-c. Its Reed-Solomon code is ported from nanors, under the MIT License (the next part). Nightjar's changed copy of the crate rusty_enet is among the Rust crates below."
-      # The file that ports nanors must still say so, or this part is stale.
-      grep -q 'Ported from nanors (MIT, Joseph Calderon)' ../viewer/vendor/nightjar/protocol/client/src/fec.rs
       part 'nanors' \
         "Reed-Solomon erasure coding by Joseph Calderon (https://github.com/sleepybishop/nanors), which nightjar-core ports to Rust for the stream's video and audio FEC, as moonlight-common-c vendors it (clients/viewer/vendor/nightjar/protocol/client/src/fec.rs). nanors' licence, at its commit 0b09d1ee, follows." \
         ${nanorsLicence}
@@ -262,15 +260,9 @@ pkgs.stdenv.mkDerivation {
       licence ${moonlight}/LICENSE.txt
     } > NOTICES.txt
 
-    # Every vendored source file that says it is ported from code under a
-    # licence other than the GPL ("Ported from nanors (MIT, Joseph
-    # Calderon)") must have a part of that name here.
-    grep -rhoE '(Ported|Port|Adapted|Derived|Taken) from [A-Za-z0-9_.+-]+ \((MIT|BSD|Apache|ISC|Zlib|zlib|MPL|Unlicense|CC0)[^)]*\)' \
-      ../viewer/vendor/nightjar/protocol ../viewer/vendor/rubylight-native-api --include='*.rs' |
-      sed -E 's/^[A-Za-z]+ from ([^ ]+) .*/\1/' | sort -u > ported.txt
-    while read -r name; do
-      grep -qx "$name" NOTICES.txt || { echo "notices: no part for $name, which vendored code ports" >&2; exit 1; }
-    done < ported.txt
+    # Every vendored nightjar or Rubylight file that names a licence or a
+    # copyright is listed, and its part is here (#521).
+    bash ../viewer/vendor/check-licence-mentions.sh ../viewer/vendor NOTICES.txt
     runHook postBuild
   '';
   installPhase = ''

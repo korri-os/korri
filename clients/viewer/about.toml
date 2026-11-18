@@ -1,0 +1,45 @@
+# cargo-about's rules for the Rust crates in the PC package's notices
+# (notices.nix, #521). The target and the features are the package's own;
+# notices.nix gives them on the command line.
+#
+# Korri's own crates (publish = false) are not third-party: the binary's
+# licence covers them. So is Nightjar's rubylight-traverse, which is
+# third-party: notices.nix names it in its part for nightjar-core.
+private = { ignore = true }
+# Build scripts, proc macros' builds and tests put no code in the binary.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+# A crate that offers a choice is listed under the first of these that it
+# offers. Nothing else is accepted, so a crate under any other licence fails
+# the build. The same list as the Korri app's (clients/android-app/about.toml).
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "BSD-2-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "Unlicense",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+    "MPL-2.0",
+    "bzip2-1.0.6",
+    "0BSD",
+    "MIT-0",
+    "BSD-1-Clause",
+    "OpenSSL",
+    "GPL-3.0-only",
+]
+# cargo-about's own readings of crates whose licence files it cannot read
+# alone.
+workarounds = ["ring", "rustls"]
+
+# The viewer itself: its licence is the package's (LICENSE beside the
+# notices). Its Zlib part (src/android/controller_list.rs) and its
+# Apache-2.0 part (src/android/gestures.rs) are Android code, which the PC
+# binary does not compile.
+[korri-viewer]
+accepted = ["GPL-3.0-or-later"]

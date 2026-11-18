@@ -1,0 +1,11 @@
+# Every file in nightjar/ and rubylight-native-api/ that names a licence,
+# a copyright or a notice (check-licence-mentions.sh reads them), and what
+# covers it in the notices of what ships nightjar-core: the title of the
+# notices part that carries its licence, or `-` when the word names no
+# licence of the file's code. nightjar/protocol/vendor/rusty_enet/ is left
+# out: it is a crate, and cargo-about lists its licence. A new mention fails
+# the notices' build until a person reads it and adds its line here.
+#
+# FILE                                              PART
+nightjar/protocol/client/src/fec.rs                 nanors
+nightjar/protocol/client/src/http/power/tests.rs    -

@@ -351,6 +351,34 @@ the middle of the stream"). On Linux, snapshots have no battery, health or contr
 real producer supplies them; on Android the app supplies them (slice D11,
 below).
 
+## Notices (#521)
+
+Each package installs `share/licenses/korri-viewer/NOTICES.txt` beside
+`LICENSE`: the licences of what its recipe builds in that other people
+wrote, for its own target and feature set (`notices.nix`, `noticesFor` in
+`default.nix`). In order: moonlight-common-c with ENet and its Reed-Solomon
+code; with nightjar-core, the Nightjar and Rubylight crates, the GPL-3.0
+projects that nightjar-core ports code from, and nanors (MIT,
+`vendor/nanors-licence.nix`); Rust's notice and licences from the source of
+the Rust that builds the binary; and the Rust crates of the binary, by
+`cargo about generate --fail` for its target and features (`about.toml`,
+`about.hbs`). `korri-viewer` on x86_64 lists the crates of
+`nightjar,rust-egl-presenter,rust-x11-window`, on aarch64 those of no
+feature, and each one-part package and `korri-viewer-c` its own. The
+corresponding source carries the default package's as
+`licenses/NOTICES.txt`, with the notices' recipe.
+
+Not in it: the carried C of `picture/` and `io/` (Moonlight Embedded's and
+Korri's, under the package's licence), and the shared libraries from
+nixpkgs (FFmpeg, libva, SDL, libcurl, OpenSSL, libopus, ALSA, PulseAudio,
+libevdev, libudev, X11, libglvnd), which come with their own packages. Rust
+lists the crates that its standard library is built from only in its own
+releases' `COPYRIGHT-library.html`, which nixpkgs' build of Rust does not
+make. No lawyer has read the notices (ADR 0059).
+
+With nightjar-core, the notices' build also runs
+`vendor/check-licence-mentions.sh` (`vendor/README.md`).
+
 ## The `@korri:viewer` plugin and korrid (slice 3)
 
 The plugin is built in the plugins repository from this directory

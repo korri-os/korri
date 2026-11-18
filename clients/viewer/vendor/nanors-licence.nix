@@ -1,10 +1,9 @@
 # nanors' licence (MIT, Joseph Calderon). nightjar-core's
 # `nightjar/protocol/client/src/fec.rs` is "Ported from nanors (MIT, Joseph
-# Calderon)", so every artefact that carries nightjar-core carries this text
-# (vendor/README.md): the PC package and its corresponding source
-# (../default.nix) and the Korri app's notices
-# (../../android-app/notices.nix). It is the file at the nanors commit that
-# last changed it, 0b09d1ee (2021-01-25), the repository's first.
+# Calderon)", so the notices of every artefact that carries nightjar-core
+# carry this text (vendor/README.md): the PC package's (../notices.nix) and
+# the Korri app's (../../android-app/notices.nix). It is the file as nanors'
+# commit 0b09d1ee (2021-01-25) created it; no later commit changed it.
 { pkgs }:
 pkgs.fetchurl {
   name = "nanors-0b09d1ee-LICENSE";

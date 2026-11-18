@@ -79,9 +79,6 @@ let
     "rust-egl-presenter"
     "rust-x11-window"
   ];
-  # nightjar-core's fec.rs ports nanors (MIT): its licence ships with every
-  # build that links nightjar-core (vendor/nanors-licence.nix).
-  nanorsLicence = import ./vendor/nanors-licence.nix { inherit pkgs; };
   featureFlag = pkgs.lib.optionalString (
     defaultFeatures != [ ]
   ) " --features ${pkgs.lib.concatStringsSep "," defaultFeatures}";
@@ -113,6 +110,16 @@ let
     fileset = sourceFiles;
   };
   source = "${repositorySource}/clients/viewer";
+  # The notices of a build with `features` (notices.nix, #521): the
+  # licences of what its recipe builds into it that other people wrote.
+  noticesFor =
+    features:
+    import ./notices.nix {
+      inherit pkgs upstream features;
+      src = repositorySource;
+      cargoDeps = pkgs.rustPlatform.importCargoLock { lockFile = ./Cargo.lock; };
+      version = "0.1.0";
+    };
   package = pkgs.rustPlatform.buildRustPackage (
     environment
     // {
@@ -122,6 +129,9 @@ let
       sourceRoot = "source/clients/viewer";
       cargoLock.lockFile = ./Cargo.lock;
       buildFeatures = defaultFeatures;
+      # The notices of this feature set (`noticesFor`); each variant below
+      # with other features gives its own.
+      korriNotices = "${noticesFor defaultFeatures}/NOTICES.txt";
       checkFeatures = defaultFeatures;
       nativeBuildInputs = native;
       buildInputs = libraries ++ [ network ];
@@ -161,17 +171,9 @@ let
           >> "$korriInputplumberMapping"
         mkdir -p $out/share/licenses/korri-viewer
         cp LICENSE $out/share/licenses/korri-viewer/
-        # With nightjar-core the binary also holds code under the MIT
-        # License: the Reed-Solomon code that nightjar-core ports from nanors,
-        # and Nightjar's rusty_enet (vendor/README.md). Their notices ship
-        # beside the licence.
-        case " $cargoBuildFeatures " in
-          *" nightjar "*)
-            install -m0444 ${nanorsLicence} $out/share/licenses/korri-viewer/nanors-LICENSE
-            install -m0444 vendor/nightjar/protocol/vendor/rusty_enet/LICENSE \
-              $out/share/licenses/korri-viewer/rusty_enet-LICENSE
-            ;;
-        esac
+        # The licences of what the build compiles in that other people wrote,
+        # for this feature set (notices.nix, #521).
+        install -m0444 "$korriNotices" $out/share/licenses/korri-viewer/NOTICES.txt
         # The wire contract this binary speaks, as Typeshare generated it. The
         # plugin declares it as files.treaty; korrid compares the bytes.
         install -Dm0444 ../../contracts/generated/viewer.ts $out/share/korri-viewer/viewer.ts
@@ -334,6 +336,7 @@ let
   cPackage = package.overrideAttrs (old: {
     pname = "korri-viewer-c";
     cargoBuildFeatures = [ ];
+    korriNotices = "${noticesFor [ ]}/NOTICES.txt";
     cargoCheckFeatures = [ ];
     meta = old.meta // {
       license = pkgs.lib.licenses.gpl3Plus;
@@ -350,6 +353,7 @@ let
   nightjarPackage = package.overrideAttrs (old: {
     pname = "korri-viewer-nightjar";
     cargoBuildFeatures = [ "nightjar" ];
+    korriNotices = "${noticesFor [ "nightjar" ]}/NOTICES.txt";
     cargoCheckFeatures = [ "nightjar" ];
     nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.makeBinaryWrapper ];
     postInstall = old.postInstall + ''
@@ -378,6 +382,7 @@ let
   rustAudioOutputPackage = package.overrideAttrs (old: {
     pname = "korri-viewer-rust-audio-output";
     cargoBuildFeatures = [ "rust-audio-output" ];
+    korriNotices = "${noticesFor [ "rust-audio-output" ]}/NOTICES.txt";
     cargoCheckFeatures = [ "rust-audio-output" ];
     nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.makeBinaryWrapper ];
     nativeCheckInputs = (old.nativeCheckInputs or [ ]) ++ [ pkgs.pulseaudio ];
@@ -400,6 +405,7 @@ let
   rustEglPresenterPackage = package.overrideAttrs (old: {
     pname = "korri-viewer-rust-egl-presenter";
     cargoBuildFeatures = [ "rust-egl-presenter" ];
+    korriNotices = "${noticesFor [ "rust-egl-presenter" ]}/NOTICES.txt";
     cargoCheckFeatures = [ "rust-egl-presenter" ];
     nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.makeBinaryWrapper ];
     preCheck = old.preCheck + ''
@@ -446,6 +452,7 @@ let
   rustX11WindowPackage = package.overrideAttrs (old: {
     pname = "korri-viewer-rust-x11-window";
     cargoBuildFeatures = [ "rust-x11-window" ];
+    korriNotices = "${noticesFor [ "rust-x11-window" ]}/NOTICES.txt";
     cargoCheckFeatures = [ "rust-x11-window" ];
     nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.makeBinaryWrapper ];
     nativeCheckInputs = (old.nativeCheckInputs or [ ]) ++ [ pkgs.xvfb ];
@@ -474,10 +481,14 @@ let
       ''
         root=korri-viewer-source
         mkdir -p $root/korri $root/moonlight-common-c $root/vendor $root/licenses
-        cp ${nanorsLicence} $root/licenses/nanors-LICENSE
+        cp ${noticesFor defaultFeatures}/NOTICES.txt $root/licenses/NOTICES.txt
         cp -r ${repositorySource}/. $root/korri/
         chmod -R u+w $root/korri
         cp ${./default.nix} $root/korri/clients/viewer/default.nix
+        # The notices' recipe, which default.nix imports.
+        cp ${./notices.nix} $root/korri/clients/viewer/notices.nix
+        cp ${./about.toml} $root/korri/clients/viewer/about.toml
+        cp ${./about.hbs} $root/korri/clients/viewer/about.hbs
         cp ${./README.md} $root/korri/clients/viewer/README.md
         # The FFmpeg patch of the aarch64 build; nixpkgs FFmpeg is its base.
         cp -r ${./ffmpeg} $root/korri/clients/viewer/ffmpeg
@@ -498,11 +509,12 @@ let
                               with its ENet, from Moonlight Embedded
                               775444287305849ebdf4736c75298ad0713e2d5d.
         vendor/               The Rust crates of korri/clients/viewer/Cargo.lock.
-        licenses/nanors-LICENSE
-                              The MIT licence of nanors (Joseph Calderon),
-                              whose Reed-Solomon code nightjar-core ports
-                              (korri/clients/viewer/vendor/nightjar/protocol/
-                              client/src/fec.rs).
+        licenses/NOTICES.txt  The licences of what the binary's recipe builds
+                              in that other people wrote: moonlight-common-c,
+                              nightjar-core and the code it ports (nanors'
+                              MIT licence among them), Rust's standard
+                              library and the Rust crates, as the package
+                              installs it in share/licenses/korri-viewer/.
 
         On aarch64 the viewer links nixpkgs FFmpeg with
         korri/clients/viewer/ffmpeg/0001-v4l2-request.patch, as default.nix says.
