@@ -64,8 +64,8 @@ const SIGN_IN_LIMIT: Duration = Duration::from_secs(15 * 60);
 const STATUS_LIMIT: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_millis(200);
 /// A sign-in waits this long for a job host that is ending (its shutdown
-/// grace and a little more).
-const JOB_END_WAIT: Duration = Duration::from_secs(15);
+/// grace, 40 s while the engine saves a login, and a little more).
+const JOB_END_WAIT: Duration = Duration::from_secs(45);
 /// How often the Steam package's presence is read (one small file).
 const PRESENCE_POLL: Duration = Duration::from_secs(2);
 /// The engine package (48 MB) and Proton download before a first sign-in.

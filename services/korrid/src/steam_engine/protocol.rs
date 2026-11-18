@@ -154,6 +154,18 @@ pub enum Event {
     Phase {
         phase: String,
     },
+    /// After a QR sign-in: whether the engine wrote its login to disk
+    /// (`config.vdf`). Comes before `signed_in`.
+    LoginSaved {
+        confirmed: bool,
+    },
+    /// The host took a command. On `shutdown` it may answer
+    /// `deferred: "login_save"`: it ends once the login is saved (up to 31 s).
+    Command {
+        command: String,
+        #[serde(default)]
+        deferred: Option<String>,
+    },
     #[serde(other)]
     Other,
 }
@@ -290,6 +302,24 @@ mod tests {
             Some(Event::LaunchRefused {
                 reason: "install_failed".into(),
                 message: "Steam could not install or update the game.".into()
+            })
+        );
+        assert_eq!(
+            parse(r#"{"event":"login_saved","confirmed":true}"#),
+            Some(Event::LoginSaved { confirmed: true })
+        );
+        assert_eq!(
+            parse(r#"{"event":"command","command":"shutdown","deferred":"login_save"}"#),
+            Some(Event::Command {
+                command: "shutdown".into(),
+                deferred: Some("login_save".into())
+            })
+        );
+        assert_eq!(
+            parse(r#"{"event":"command","command":"signin-qr"}"#),
+            Some(Event::Command {
+                command: "signin-qr".into(),
+                deferred: None
             })
         );
         assert_eq!(

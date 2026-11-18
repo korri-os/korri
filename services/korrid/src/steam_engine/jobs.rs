@@ -40,6 +40,9 @@ pub struct JobHost {
     channel: Channel,
     reader: EventReader,
     ended: Option<JobEnd>,
+    /// The host signed in, or saved a login, in this job: its `shutdown` may
+    /// wait for the engine to write the login (`deferred: login_save`).
+    saving_login: bool,
 }
 
 impl JobRunner {
@@ -77,6 +80,7 @@ impl JobRunner {
             mode,
             channel,
             ended: None,
+            saving_login: false,
         })
     }
 }
@@ -93,6 +97,7 @@ impl JobHost {
         let events = self.reader.read().unwrap_or_default();
         for event in &events {
             self.health.observe(&self.plan, event);
+            self.saving_login |= saves_login(event);
         }
         events
     }
@@ -116,16 +121,25 @@ impl JobHost {
     /// saved login of a sign-in among them), then stop the unit, whose
     /// KillSignal is SIGKILL, for whatever is left. Says how it ended.
     pub fn stop(mut self) -> JobEnd {
-        let end = self.end(SHUTDOWN_GRACE);
+        let end = self.end(self.grace());
         // Drop finds the host gone and only removes the channel.
         end
+    }
+
+    fn grace(&self) -> Duration {
+        if self.saving_login {
+            LOGIN_SAVE_GRACE
+        } else {
+            SHUTDOWN_GRACE
+        }
     }
 
     fn end(&mut self, grace: Duration) -> JobEnd {
         if self.ended.is_some() || !self.running() {
             return *self.ended.get_or_insert(JobEnd::Exited);
         }
-        let deadline = std::time::Instant::now() + grace;
+        let started = std::time::Instant::now();
+        let mut deadline = started + grace;
         let asked = self
             .channel
             .send_within(Command::Shutdown, Duration::from_secs(2))
@@ -133,6 +147,10 @@ impl JobHost {
         while asked && std::time::Instant::now() < deadline {
             if !self.running() {
                 return *self.ended.insert(JobEnd::ShutDown);
+            }
+            // The host may say only now that it waits for the login save.
+            if self.poll().iter().any(saves_login) {
+                deadline = deadline.max(started + LOGIN_SAVE_GRACE);
             }
             std::thread::sleep(Duration::from_millis(50));
         }
@@ -143,6 +161,20 @@ impl JobHost {
 
 /// A job host gets this long to end after `shutdown` before it is killed.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
+/// After a sign-in the host defers `shutdown` until the engine wrote the
+/// login (`config.vdf`), up to 30 s plus 1 s; korrid allows a margin.
+const LOGIN_SAVE_GRACE: Duration = Duration::from_secs(40);
+
+/// An event after which the host's `shutdown` may wait for the login save.
+fn saves_login(event: &Event) -> bool {
+    match event {
+        Event::SignedIn { .. } | Event::LoginSaved { .. } => true,
+        Event::Command { command, deferred } => {
+            command == "shutdown" && deferred.as_deref() == Some("login_save")
+        }
+        _ => false,
+    }
+}
 
 /// How a job host ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -169,7 +201,7 @@ impl std::fmt::Display for JobEnd {
 
 impl Drop for JobHost {
     fn drop(&mut self) {
-        self.end(SHUTDOWN_GRACE);
+        self.end(self.grace());
         let _ = std::fs::remove_dir_all(&self.channel.dir);
     }
 }
@@ -277,6 +309,49 @@ while read -r line <&3; do :; done"#,
         let channel = host.channel().to_path_buf();
         drop(host);
         assert!(!channel.exists());
+    }
+
+    /// After a sign-in the host waits for the login save before it ends;
+    /// korrid does not kill it inside that window.
+    #[test]
+    fn a_host_saving_a_login_gets_the_longer_grace() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut host = job(
+            temp.path(),
+            r#"echo '{"event":"login_saved","confirmed":true}'
+echo '{"event":"signed_in","account_name":"p"}'
+exec 3<>"$fifo"
+while read -r line <&3; do
+  case "$line" in
+    shutdown) echo '{"event":"command","command":"shutdown","deferred":"login_save"}'; sleep 1; exit 0 ;;
+  esac
+done"#,
+        );
+        assert_eq!(host.grace(), SHUTDOWN_GRACE);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !host.poll().iter().any(|e| matches!(e, Event::SignedIn { .. })) {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(host.grace(), LOGIN_SAVE_GRACE);
+        assert_eq!(host.stop(), JobEnd::ShutDown);
+    }
+
+    /// A host that defers shutdown, though korrid saw no sign-in, gets the
+    /// longer grace from its answer: a 300 ms grace does not kill it at 1 s.
+    #[test]
+    fn a_deferred_shutdown_extends_the_grace() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut host = job(
+            temp.path(),
+            r#"exec 3<>"$fifo"
+while read -r line <&3; do
+  case "$line" in
+    shutdown) echo '{"event":"command","command":"shutdown","deferred":"login_save"}'; sleep 1; exit 0 ;;
+  esac
+done"#,
+        );
+        assert_eq!(host.end(Duration::from_millis(300)), JobEnd::ShutDown);
     }
 
     /// A host that already ended is not asked again.
