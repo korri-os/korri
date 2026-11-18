@@ -1,0 +1,6 @@
+2026-11-18T14:56:07Z
+15.28 8.10 7.96 2/537 2915763
+tctl_mC=86750
+ 2.9 korrid   korrid
+ 0.7 root     .tailscaled-wra
+ 0.6 root     kworker/u48:6-btrfs-discard

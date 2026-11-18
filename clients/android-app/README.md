@@ -163,6 +163,20 @@ release key outside the store.
   under GPL-3.0-only (`clients/viewer/README.md`), so the library is
   GPL-3.0-only. The library also needs `libz.so`, `libmediandk.so` and
   `libaaudio.so`, which Android ships.
+- Since #391 step E the viewer carries nightjar-core (`clients/viewer/vendor`,
+  GPL-3.0-only), its default network core, as in the viewer's own APK; the
+  C core stays in the library. The library is built with the viewer's
+  `nightjar` feature, and on arm64 with the two cfgs that give nightjar-core's
+  AES and POLYVAL their ARMv8 code (`clients/viewer/android.nix`); its build
+  checks for `LiStartConnection`, `nightjar_core::session::start` and, on
+  arm64, that ARMv8 code. The lock adds nightjar-core, the Rubylight crates,
+  Nightjar's `rusty_enet` and their crates (`rsa` 0.9.10 with its `pkcs1`,
+  `pkcs8`, `spki`, `der`, `const-oid`, `num-bigint-dig`, `num-iter`,
+  `signature` and `spin` 0.9.9, and `socket2` 0.5.10), at the versions of the
+  viewer's own lock; no crate already locked changed. korrid's launch names
+  no core. Only the fixture APK can choose one: its proof trigger reads
+  `<cache>/proof-network-core`, and `c` there makes the next streams use the
+  C core (`src/proof.rs`, `proof/play.py --network-core c`).
 
 Cost: the library is large, about 103 MB for each ABI (54 MB of code, 26 MB
 of symbols, kept for crash reports): korrid, Slint, Skia and QuickJS in one
@@ -768,13 +782,14 @@ names and the certificate pass.
 
 ### Notices
 
-`assets/notices/NOTICES.txt` is one UTF-8 text, about 990 kB. No screen
+`assets/notices/NOTICES.txt` is one UTF-8 text, about 1.0 MB. No screen
 shows it yet: the shell has no view for it, which is design work.
 
 | Part | From |
 | --- | --- |
 | The app's licence, GPL-3.0-only (#481, ADR 0059), and its source | the packing (`default.nix`, `sourceNotice`) |
 | moonlight-common-c, ENet, its Reed-Solomon code; Valve's and SDL's controller lists in the viewer; OpenSSL; libopus | their sources: the viewer's parts (`clients/viewer/android.nix`) and the viewer's source |
+| nightjar-core, rubylight-protocol, rubylight-traverse and rubylight-native-api, GPL-3.0-only (#391 step E) | a part of their own, which names their projects and Korri's copies in `clients/viewer/vendor`; the build checks that both projects' licence files are still the GPL version 3. cargo-about also lists the three that are not `publish = false`, under GPL-3.0-only, and Nightjar's `rusty_enet` under MIT with its own licence |
 | The Android Open Source Project: the viewer's gesture detectors (`gestures.rs`, Apache-2.0) | `frameworks/base`'s NOTICE at `android-12.0.0_r34`, fetched: its notice for the Android code and the Apache License, Version 2.0 |
 | curl, QuickJS, libsecp256k1, ring's BoringSSL code | the C that `curl-sys`, `rquickjs-sys`, `secp256k1-sys` and `ring` build, from the vendored crates |
 | Skia, and the four libraries of its archive that the library keeps: libpng, zlib (Chromium's copy), FreeType, Expat | the archive's `LICENSE_SKIA`; nixpkgs' sources and Chromium's for the four |
@@ -782,8 +797,8 @@ shows it yet: the shell has no view for it, which is design work.
 | LLVM libc++ and compiler-rt | the NDK toolchain's NOTICE |
 | The Rust standard library (core, alloc, std and the crates they are built from) | the toolchain's own `COPYRIGHT-library.html`, as text (`html-notice.py`) |
 | The surface packages' fonts; Pico's `qrcode` and `dijkstrajs` | `pico-fonts.ts` (read with bun), the font licence files, the vendored licences |
-| 618 Rust crates of the arm64 library | `cargo about generate --fail` (`about.toml`, `about.hbs`) |
-| The GNU GPL version 3 | moonlight-common-c's `LICENSE.txt` |
+| 643 Rust crates of the arm64 library (with nightjar-core, 2026-11-18) | `cargo about generate --fail` (`about.toml`, `about.hbs`) |
+| The GNU GPL version 3, the licence of the app, moonlight-common-c, nightjar-core and the Rubylight crates | moonlight-common-c's `LICENSE.txt` |
 
 Skia's archive also holds libjpeg-turbo, Wuffs and the Vulkan Memory
 Allocator. The arm64 library keeps none of their code: `llvm-nm` finds no

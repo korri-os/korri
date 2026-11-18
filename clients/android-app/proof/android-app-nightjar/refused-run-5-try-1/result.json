@@ -1,0 +1,121 @@
+{
+  "stream_host": "192.168.1.117",
+  "network_core": "nightjar",
+  "checks": {
+    "sender_sunshine_has_certificate_control": true,
+    "apk_has_no_dex": true,
+    "apk_has_code_false": true,
+    "library_carries_the_viewer": true,
+    "library_carries_nightjar_core": true,
+    "the_emulators_display_has_a_camera_cutout": true,
+    "systemui_lives_with_the_cutout": true,
+    "identity_seeded_as_the_apps_own_files": true,
+    "the_emulator_played_the_streams_tone": false
+  },
+  "steps": {
+    "display_cutout": {
+      "name": "pixel_5",
+      "listed": [
+        "com.android.internal.display.cutout.emulation.corner",
+        "com.android.internal.display.cutout.emulation.double",
+        "com.android.internal.emulation.pixel_4a",
+        "com.android.internal.display.cutout.emulation.hole",
+        "com.android.internal.display.cutout.emulation.tall",
+        "com.android.internal.emulation.pixel_4",
+        "com.android.internal.emulation.pixel_5",
+        "com.android.internal.display.cutout.emulation.emu01",
+        "com.android.internal.display.cutout.emulation.waterfall",
+        "com.android.internal.emulation.pixel_2_xl",
+        "com.android.internal.emulation.pixel_3_xl",
+        "com.android.internal.emulation.pixel_4_xl",
+        "com.android.systemui.emulation.pixel_2_xl",
+        "com.android.systemui.emulation.pixel_3_xl",
+        "com.android.systemui.emulation.pixel_4_xl",
+        "com.android.systemui.emulation.pixel_3",
+        "com.android.systemui.emulation.pixel_4",
+        "com.android.systemui.emulation.pixel_5",
+        "com.android.systemui.emulation.pixel_3a_xl",
+        "com.android.systemui.emulation.pixel_3a",
+        "com.android.systemui.emulation.pixel_4a"
+      ],
+      "overlays": [
+        "com.android.internal.emulation.pixel_5",
+        "com.android.systemui.emulation.pixel_5"
+      ],
+      "enable": [
+        "",
+        ""
+      ],
+      "display": {
+        "file": "display-cutout-enabled.txt",
+        "rotation": 0,
+        "cutout": [
+          0,
+          136,
+          0,
+          0
+        ],
+        "cutout_rects": [
+          [
+            0,
+            0,
+            136,
+            136
+          ]
+        ]
+      },
+      "systemui_crashes": 0
+    },
+    "sunshine_state_error": "UnboundLocalError: cannot access local variable 'prepared' where it is not associated with a value"
+  },
+  "holder_user": {
+    "uid": 59034,
+    "gid": 59034,
+    "account": null
+  },
+  "store": {
+    "apk": "/nix/store/9rbaf6x7lql9syz222ay7ygz7wrkc73g-korri-android-app-fixture-apk-0.1.0/korri-android-app-unsigned.apk",
+    "federation_fixture": "/nix/store/8vxzin1r8q7mjd88s8yrk65ck3ihbwsy-korrid-federation-fixture-0.0.0/bin/federation_fixture",
+    "sunshine": "/nix/store/bvz43ydfridi8smy1gyqvzxk5v5xd3rg-sunshine-korri-2026.914.233613-korri"
+  },
+  "member_device": "436ebe5cfabddc01cae4c35352254faf52a1158a5e1f6ed911d6732d301db807",
+  "emulator": {
+    "release": "12",
+    "sdk": "31",
+    "abi": "x86_64"
+  },
+  "error": "Refusal: Waited 600 seconds; device did not cool below its start limit. Session ended; results so far are kept. sender: k10temp Tctl reads 93.0 \u00b0C. A run does not start at or above 82.0 \u00b0C; the AMD package sensor has no reported limit, so the fixed margin rule applies.",
+  "sender_sample_error": "sender fixture is not prepared",
+  "emulator_stop": {
+    "started": true,
+    "exit_code": 0,
+    "processes_left": []
+  },
+  "sound": {
+    "rate": 48000,
+    "channels": 2,
+    "seconds": 0.0,
+    "seconds_of_sound": 0.0,
+    "seconds_at_1000_hz": 0.0,
+    "median_rms_at_1000_hz": null,
+    "seconds_at_440_hz": 0.0,
+    "median_rms_at_440_hz": null
+  },
+  "sender_restore": {
+    "live_games": [],
+    "product_units": null,
+    "pass": true,
+    "pids_unchanged": {},
+    "run_folder": null,
+    "run_folder_bytes": 0,
+    "run_folder_removed": true,
+    "stray_processes_killed": [],
+    "remaining_processes": [],
+    "other_processes": [],
+    "new_input_devices": [],
+    "gone_input_devices": [],
+    "input_rule": "strict: the fixture is not prepared",
+    "errors": []
+  },
+  "pass": false
+}

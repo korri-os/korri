@@ -1,0 +1,6 @@
+2026-11-18T14:51:06Z
+0.86 2.52 7.15 3/721 2910608
+tctl_mC=71375
+ 156 korri    b5244dfc8e49df2
+83.3 korri    grim
+ 2.9 korrid   korrid

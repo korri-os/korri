@@ -1,0 +1,6 @@
+{"coordinator": {"operation": "hello"}}
+{"coordinator": {"operation": "applyCount", "count": 4}}
+{"coordinator": {"operation": "route", "launchId": null}}
+{"coordinator": {"operation": "beginSession", "launchId": "2d2d34fdfa67f0ef6c6ba2fcc645f6bc", "seatOrder": "firstPress"}}
+{"lease": "start", "launchId": "2d2d34fdfa67f0ef6c6ba2fcc645f6bc"}
+{"coordinator": {"operation": "route", "launchId": null}}

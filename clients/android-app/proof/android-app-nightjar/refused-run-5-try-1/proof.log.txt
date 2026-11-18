@@ -1,0 +1,26 @@
+[15:11:12] record: /var/tmp/step-e-core/play-proofs/run-5
+[15:11:12] nix build korri-android-app-fixture-apk in auto
+[15:11:12] nix build korrid.federationFixture in auto
+[15:11:15] the sender fixture's parts, for local
+Building prebuilt tools for x86_64 in auto.
+[15:11:17] starting the emulator on emulator-5674 (2 cores)
+[15:11:54] the emulator booted
+Waiting for the next run to cool (10 s polls, 600 s limit): sender: k10temp Tctl reads 96.2 °C. A run does not start at or above 82.0 °C; the AMD package sensor has no reported limit, so the fixed margin rule applies.
+[15:22:12] failed: Refusal: Waited 600 seconds; device did not cool below its start limit. Session ended; results so far are kept. sender: k10temp Tctl reads 93.0 °C. A run does not start at or above 82.0 °C; the AMD package sensor has no reported limit, so the fixed margin rule applies.
+[15:22:12] stopping the emulator
+{
+  "pass": false,
+  "checks": {
+    "sender_sunshine_has_certificate_control": true,
+    "apk_has_no_dex": true,
+    "apk_has_code_false": true,
+    "library_carries_the_viewer": true,
+    "library_carries_nightjar_core": true,
+    "the_emulators_display_has_a_camera_cutout": true,
+    "systemui_lives_with_the_cutout": true,
+    "identity_seeded_as_the_apps_own_files": true,
+    "the_emulator_played_the_streams_tone": false
+  },
+  "error": "Refusal: Waited 600 seconds; device did not cool below its start limit. Session ended; results so far are kept. sender: k10temp Tctl reads 93.0 \u00b0C. A run does not start at or above 82.0 \u00b0C; the AMD package sensor has no reported limit, so the fixed margin rule applies."
+}
+[15:22:13] record: /var/tmp/step-e-core/play-proofs/run-5

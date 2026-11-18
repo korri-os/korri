@@ -1,0 +1,128 @@
+[
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:37:29.912",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "804D",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:37:29.950",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "804D",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:37:31.033",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "804B",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:37:31.033",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "804B",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:37:31.090",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "804F",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:37:31.097",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "804F",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:37:31.125",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "8052",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:37:31.128",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "8052",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:37:31.203",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "8049",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:37:31.234",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "8049",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "absolute mouse move",
+  "time": "2026-11-18 15:37:31.300",
+  "fields": {
+   "x": "960",
+   "y": "360",
+   "width": "1919",
+   "height": "1079"
+  }
+ },
+ {
+  "kind": "mouse button",
+  "time": "2026-11-18 15:37:31.300",
+  "fields": {
+   "action": "00000008",
+   "button": "01"
+  }
+ },
+ {
+  "kind": "mouse button",
+  "time": "2026-11-18 15:37:31.415",
+  "fields": {
+   "action": "00000009",
+   "button": "01"
+  }
+ }
+]

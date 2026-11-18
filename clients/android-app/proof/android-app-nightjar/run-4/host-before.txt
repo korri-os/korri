@@ -1,0 +1,6 @@
+2026-11-18T15:05:50Z
+21.10 13.73 10.08 3/704 2927121
+tctl_mC=92375
+ 169 korri    b5244dfc8e49df2
+ 2.9 korrid   korrid
+ 1.6 korri    sway

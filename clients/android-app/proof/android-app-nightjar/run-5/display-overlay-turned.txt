@@ -1,0 +1,7 @@
+    mCurrentAppOrientation=SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    mRotation=3 mDeferredRotationPauseCount=0
+        mLastFilteredX=-9.809966
+        mLastFilteredY=2.3329605E-5
+        mLastFilteredZ=1.9385295E-6
+      mDisplayFrame=Rect(0, 0 - 2400, 1080)
+      mDisplayCutout=DisplayCutout{insets=Rect(0, 0 - 136, 0) waterfall=Insets{left=0, top=0, right=0, bottom=0} boundingRect={Bounds=[Rect(0, 0 - 0, 0), Rect(0, 0 - 0, 0), Rect(2264, 0 - 2400, 136), Rect(0, 0 - 0, 0)]} cutoutPathParserInfo={CutoutPathParserInfo{displayWidth=1080 displayHeight=2400 density={2.625} cutoutSpec={M 41,77 a 40,40 0 1 0 80,0 40,40 0 1 0 -80,0 Z @left} rotation={3} scale={1.0}}}}

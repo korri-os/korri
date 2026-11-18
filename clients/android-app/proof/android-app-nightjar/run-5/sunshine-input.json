@@ -1,0 +1,144 @@
+[
+ {
+  "kind": "relative mouse move",
+  "time": "2026-11-18 15:31:30.682",
+  "fields": {
+   "deltaX": "1",
+   "deltaY": "1"
+  }
+ },
+ {
+  "kind": "relative mouse move",
+  "time": "2026-11-18 15:31:30.682",
+  "fields": {
+   "deltaX": "-1",
+   "deltaY": "-1"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:32:26.921",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "804D",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:32:26.980",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "804D",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:32:28.087",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "804B",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:32:28.206",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "804B",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:32:28.309",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "804F",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:32:28.309",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "804F",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:32:28.413",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "8052",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:32:28.414",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "8052",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:32:28.541",
+  "fields": {
+   "keyAction": "00000003",
+   "keyCode": "8049",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "keyboard",
+  "time": "2026-11-18 15:32:28.542",
+  "fields": {
+   "keyAction": "00000004",
+   "keyCode": "8049",
+   "modifiers": "00",
+   "flags": "01"
+  }
+ },
+ {
+  "kind": "absolute mouse move",
+  "time": "2026-11-18 15:32:28.668",
+  "fields": {
+   "x": "960",
+   "y": "360",
+   "width": "1919",
+   "height": "1079"
+  }
+ },
+ {
+  "kind": "mouse button",
+  "time": "2026-11-18 15:32:28.669",
+  "fields": {
+   "action": "00000008",
+   "button": "01"
+  }
+ },
+ {
+  "kind": "mouse button",
+  "time": "2026-11-18 15:32:28.809",
+  "fields": {
+   "action": "00000009",
+   "button": "01"
+  }
+ }
+]
