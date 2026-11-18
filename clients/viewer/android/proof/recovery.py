@@ -175,6 +175,8 @@ def main() -> int:
     adb = f"{sdk}/platform-tools/adb"
     logcat = None
     try:
+        # The agent refuses a start at its heat limit: wait as run.py does.
+        result["sender_cooldown"] = run.cool_sender(fixture.request)
         prepared = fixture.request("prepare", sway=f"{parts['sway']}/bin/sway",
                                    sunshine=f"{parts['sunshine']}/bin/sunshine",
                                    pulseaudio=f"{parts['pulseaudio']}/bin/pulseaudio",

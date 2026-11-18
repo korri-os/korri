@@ -17,6 +17,7 @@ tests/nix-transport-peer.py) as nix and nix-store.
 import contextlib
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
 import shlex
@@ -277,6 +278,84 @@ class EachCoreBeginsItsStopWithItsOwnLine(unittest.TestCase):
     def test_a_gate_after_the_cores_stop_fails(self):
         late = [self.FEEDBACK, self.FEEDBACK_STOPPED, self.NIGHTJAR_STOPPING, self.GATE, self.STOPPED]
         self.assertEqual(set(run.stop_order_checks(late, "nightjar").values()), {False})
+
+
+class TheSenderCoolsBeforeItPrepares(unittest.TestCase):
+    """The sender's agent refuses a start at its heat limit (85 °C on aka's
+    k10temp). The proof's own steps before it, the builds' evaluation and
+    apksigner, lifted aka from 71 to 85 °C in 13 s, so five runs in a row
+    were refused. The proof waits as stream-cadence's view does between
+    runs: the agent's `heat` every 10 s, at most 600 s."""
+
+    COOL = {"thermal": [{"zone": "hwmon4/temp1", "temp": 70000}], "hot": None}
+    HOT = {"thermal": [{"zone": "hwmon4/temp1", "temp": 85400}], "hot": "k10temp Tctl reads 85.4 °C"}
+
+    def test_it_waits_until_the_agent_says_cool(self):
+        answers = [self.HOT, self.HOT, self.COOL]
+        asked, slept = [], []
+        now = [0.0]
+
+        def request(operation):
+            asked.append(operation)
+            return answers.pop(0)
+
+        def sleep(seconds):
+            slept.append(seconds)
+            now[0] += seconds
+
+        cooled = run.cool_sender(request, sleep=sleep, clock=lambda: now[0])
+        self.assertEqual(asked, ["heat", "heat", "heat"])
+        self.assertEqual(slept, [10, 10])
+        self.assertEqual(cooled["seconds"], 20)
+        self.assertEqual(cooled["start"], {"sender": self.HOT["thermal"]})
+        self.assertEqual(cooled["end"], {"sender": self.COOL["thermal"]})
+
+    def test_a_sender_that_stays_hot_is_refused_after_600_s(self):
+        now = [0.0]
+
+        def sleep(seconds):
+            now[0] += seconds
+
+        with self.assertRaises(run.cli.Refusal):
+            run.cool_sender(lambda operation: self.HOT, sleep=sleep, clock=lambda: now[0])
+        self.assertEqual(now[0], 600)
+
+    def test_run_asks_for_heat_before_it_prepares(self):
+        asked: list[str] = []
+        test = self
+
+        class Agent:
+            def __init__(self, command, log_file):
+                pass
+
+            def request(self, operation, **values):
+                asked.append(operation)
+                if operation == "heat":
+                    return test.COOL
+                if operation == "prepare":
+                    raise Stop
+                return {"journal": ""}
+
+            @contextlib.contextmanager
+            def kept_alive(self):
+                yield
+
+            def close(self):
+                return {"pass": True}
+
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.dict(os.environ, ENVIRONMENT), \
+                patch.object(sys, "argv", ["run", "--sender", run.LOCAL, "--stream-host", "192.0.2.1", "--out", directory]), \
+                patch.object(run, "nix_build", new=lambda root, installable, build_store: f"/nix/store/x-{installable}"), \
+                patch.object(run, "sender_tools", new=lambda target, stock, store: (["true"], {"sway": "s", "sunshine": "u", "pulseaudio": "p"})), \
+                patch.object(run, "Remote", new=Agent), \
+                patch.object(run, "sign", new=lambda build_tools, apk, out: out), \
+                patch.object(run, "run", new=lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout="")), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run.main(), 1)
+            result = json.loads(Path(directory, "result.json").read_text())
+        self.assertEqual(asked[:2], ["heat", "prepare"])
+        self.assertEqual(result["sender_cooldown"]["end"], {"sender": self.COOL["thermal"]})
 
 
 class TheProofsHandTheirBuildStoreToEveryBuild(unittest.TestCase):

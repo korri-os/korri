@@ -16,7 +16,8 @@ steps:
    `--build-store` names (`auto` on aka itself, stream-cadence's rule).
    Without it, this host builds nothing. Nothing is built on the sender or
    the emulator.
-2. Start the sender fixture with its tone, pair a fresh key pair with the
+2. Wait until the sender's agent says it is cool enough to start (at most
+   600 s), start the sender fixture with its tone, pair a fresh key pair with the
    Linux viewer's pair command, and start the fixture's picture source.
 3. Start the emulator (2 cores) with its sound to the WAV file, run the
    Android tests in it (one plays real Opus packets of a 440 Hz tone through
@@ -149,6 +150,16 @@ def nix_build(root: Path, installable: str, build_store: str | None) -> str:
         # The build host's own store (`auto`) holds them already.
         cli.from_build_store(build_store, None, [], paths)
     return paths[0]
+
+
+def cool_sender(request, sleep=time.sleep, clock=time.monotonic) -> dict:
+    """Waits until the sender's agent would start a run, as stream-cadence's
+    view waits between runs (cli.wait_for_cooldown): the agent's `heat`
+    every 10 s, at most 600 s, then a Refusal. The agent refuses `prepare`
+    at its heat limit (85 °C on aka's k10temp), and the proof's own steps
+    before it, the builds' evaluation and apksigner, can lift a host at rest
+    past it within seconds."""
+    return cli.wait_for_cooldown({"sender": request}, sleep=sleep, clock=clock)
 
 
 class Remote:
@@ -1586,6 +1597,7 @@ def main() -> int:
     ds4: VirtualDualShock4 | None = None
     try:
         alive.enter_context(fixture.kept_alive())
+        result["sender_cooldown"] = cool_sender(fixture.request)
         prepared = fixture.request("prepare", sway=f"{parts['sway']}/bin/sway",
                                    sunshine=f"{parts['sunshine']}/bin/sunshine",
                                    pulseaudio=f"{parts['pulseaudio']}/bin/pulseaudio",
