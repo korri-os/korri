@@ -2,7 +2,7 @@
 //! A keyboard key, from Android's key code to the Windows virtual-key code
 //! that the stream carries. Pure; `input.rs` sends the result.
 //!
-//! Ported from Korri's copy of Artemis (`clients/android`, from
+//! Ported from Korri's copy of Artemis (`clients/android` at the tag `artemis-final`, from
 //! `simonwjackson/artemis` at `cf12c432`, a fork of
 //! `ClassicOldSong/moonlight-android`, itself a fork of
 //! `moonlight-stream/moonlight-android`): `KeyboardTranslator.translate`,

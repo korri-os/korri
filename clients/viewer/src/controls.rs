@@ -2,9 +2,10 @@
 //! The stream controls that the viewer reports in its snapshot and takes in
 //! `Apply` (#434, slice D11), and the status that goes with them. Pure.
 //!
-//! Every field is the one that Artemis reports to korrid today
-//! (`clients/android`, `KorriViewerControls.java` and
-//! `korri/moonlight/KorriMoonlightActionExecutor.java`): a control's id is
+//! Every field is the one that the Artemis app reported to korrid
+//! (`KorriViewerControls.java` and
+//! `korri/moonlight/KorriMoonlightActionExecutor.java`, at the tag
+//! `artemis-final`): a control's id is
 //! `viewer:<launch>:<generation>:<lease>:<effect>`, with the effect's wire
 //! name; its label, its interaction and whether it dismisses the overlay are
 //! Artemis's; it is always enabled and never destructive. A control is
@@ -29,7 +30,8 @@
 //!
 //! The others need what this viewer does not have: Artemis's on-screen
 //! full keyboard and controller, its touch sensitivity, its GL renderer
-//! (SGSR) and picture-in-picture (`clients/viewer/README.md`, slice D11).
+//! (SGSR) and picture-in-picture (`clients/viewer/README.md`, slice D11;
+//! ADR 0087 drops, skips or backlogs each).
 use anyhow::{Result, anyhow, bail};
 use korri_viewer_treaty::{
     SurfaceGameplayControl, SurfaceGameplayControlInteraction as Interaction,

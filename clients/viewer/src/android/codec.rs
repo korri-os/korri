@@ -5,7 +5,7 @@
 //! findings 20 and 21). Pure: `picture.rs` reads the decoder list through JNI
 //! and configures the codec with each try in turn.
 //!
-//! Ported from Korri's copy of Artemis (`clients/android`, from
+//! Ported from Korri's copy of Artemis (`clients/android` at the tag `artemis-final`, from
 //! `simonwjackson/artemis` at `cf12c432`, a fork of
 //! `ClassicOldSong/moonlight-android`, itself a fork of
 //! `moonlight-stream/moonlight-android`), `MediaCodecHelper.java`: the decoder rounds

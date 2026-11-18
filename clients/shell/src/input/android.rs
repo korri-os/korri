@@ -237,7 +237,8 @@ mod tests {
         let mut router = Router::new(false);
         source.set_active(true);
         router.set_active(true, 0.0);
-        // Exact axes emitted by Game/KorriSurfaceHost's Nacon-style sample.
+        // Exact axes that the Artemis app's Game/KorriSurfaceHost emitted for
+        // a Nacon-style pad (tag `artemis-final`).
         assert_eq!(
             route(&mut router, source.axes(7, -0.8, 0.7, 1.0, -1.0), 0.0),
             vec![Press::Button(Button::Up)]

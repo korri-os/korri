@@ -22,7 +22,7 @@
 //! `InputDeviceListener`, a Java interface): the input reads the device list
 //! twice a second (`Input::check_devices`) and follows each change.
 //!
-//! Ported from Korri's copy of Artemis (`clients/android`, from
+//! Ported from Korri's copy of Artemis (`clients/android` at the tag `artemis-final`, from
 //! `simonwjackson/artemis` at `cf12c432`): `InputCaptureProvider.java`,
 //! `AndroidPointerIconCaptureProvider.java` and
 //! `AndroidNativePointerCaptureProvider.java`

@@ -6,7 +6,8 @@
 //! window. Rust gives the shell korrid's port and capability; neither
 //! crosses JNI, a URL, a file or the log.
 //!
-//! The steps of `KorriShellActivity.onCreate` and its callbacks, here:
+//! The steps of the Artemis app's `KorriShellActivity.onCreate` and its
+//! callbacks (tag `artemis-final`), here:
 //!
 //! | Artemis (Java) | Here |
 //! | --- | --- |

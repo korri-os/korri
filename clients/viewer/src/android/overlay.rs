@@ -17,7 +17,7 @@
 //! ([`Forwarded`]), Guide's and Back's presses too, and closes when korrid
 //! resumes the stream.
 //!
-//! Ported from Korri's copy of Artemis (`clients/android`, from
+//! Ported from Korri's copy of Artemis (`clients/android` at the tag `artemis-final`, from
 //! `simonwjackson/artemis` at `cf12c432`): `KorriOverlayHomeKey.java`,
 //! `KorriSurfaceHost.java` (`isSystemKey`, `forward`, `forwardTouch`) and
 //! `Game.java`'s Korri-mode routing (`dispatchKeyEvent`, `handleKeyDown`,

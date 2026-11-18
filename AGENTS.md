@@ -21,13 +21,13 @@ the `legacy` branch apply here unless this file says so.
   the last commit that carried it, and
   `docs/briefs/2026-11-15-webos-removal-scope.md` records what went.
 - Android returns as an app for stock phones (owner decision, 2026-10-27,
-  issue #290). It returns piecemeal, one epic at a time, and may support only a
-  subset of Korri's features. Start from the trimmed Artemis stack at
-  `android-final`; reuse its decoder, input and stream work instead of trimming
-  upstream again. Rebuild its integration against the current korrid, one slice
-  at a time. Artemis's Game activity is korrid's Android viewer until the
-  stages of issue #391 replace it. It is not a second Java-driven launch path.
-  Issue #300 tracks the epics.
+  issue #290). It returns piecemeal, one epic at a time (issue #300), and may
+  support only a subset of Korri's features. The app is `clients/android-app`:
+  korrid, the shell and the Rust viewer in one library, with no Korri Java.
+  It replaced the Artemis app on 2026-11-18 (ADR 0087); the tag
+  `artemis-final` marks the last commit that carried Artemis, and
+  `docs/briefs/2026-11-18-artemis-removal-scope.md` records what went. Port a
+  missing Artemis behaviour into Rust from that tag.
 - Read before you touch. Do exactly what was asked. No bonus refactors.
 - Backlog work lives in GitHub issues on `korri-os/korri`, not in
   `work/items/` (moved 2026-10-07; `work/items/.archive/` is history). Label
@@ -241,12 +241,12 @@ repositories, and no Korri client ships an outside repository address.
 - Peer korrids speak the native tagged `/rpc` wire. The Effect-RPC envelope
   client in `services/korrid/src/upstream.rs` exists only for aka until it is
   migrated; it dies at switchover. Do not grow abstractions around it.
-- One viewer that Korri owns replaces Moonlight Embedded and Artemis in
-  measured stages (issue #391, ADRs 0059 to 0064). A part moves to Rust only
-  when its replacement measures equal or better, and agents prove each stage
-  on aka and the device bench with no person in the loop. Build a new viewer
-  feature in the new viewer. In Moonlight Embedded and Artemis, fix only
-  `priority: high` bugs.
+- One viewer that Korri owns replaces Moonlight Embedded in measured stages
+  (issue #391, ADRs 0059 to 0064); on Android it is already the only viewer
+  (ADR 0087). A part moves to Rust only when its replacement measures equal
+  or better, and agents prove each stage on aka and the device bench with no
+  person in the loop. Build a new viewer feature in the new viewer. In
+  Moonlight Embedded, fix only `priority: high` bugs.
 
 ## Agent skills
 

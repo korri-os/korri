@@ -3,7 +3,7 @@
 //! the stream's controller packets. Pure; `input.rs` routes the events and
 //! sends the packets.
 //!
-//! Ported from Korri's copy of Artemis (`clients/android`, from
+//! Ported from Korri's copy of Artemis (`clients/android` at the tag `artemis-final`, from
 //! `simonwjackson/artemis` at `cf12c432`, a fork of
 //! `ClassicOldSong/moonlight-android`, itself a fork of
 //! `moonlight-stream/moonlight-android`): `ControllerHandler.java` (the

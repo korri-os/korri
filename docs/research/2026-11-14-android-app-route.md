@@ -5,6 +5,8 @@ Source: a research agent's brief for #434 (design-android-app). Not audited inde
 Date: 2026-11-14. Base: `0376f5268`. Research only: no code was changed or built.
 Labels: **verified** = I read the code or ran the command; **inferred** = follows from what I read, not proven; **opinion** = my judgement.
 
+> **Update, 2026-11-18:** D7′ is done. The owner removed the Artemis app before D12 and D13 (ADR 0087). The tag `artemis-final` keeps it, and `docs/briefs/2026-11-18-artemis-removal-scope.md` records what went. Paths into `clients/android` below name files at that tag.
+
 ## Answer
 
 Build a **new APK with no Java**, next to the Artemis app. Do not grow the Artemis Gradle app. In the new APK:

@@ -244,7 +244,7 @@ def main() -> int:
 
         log("starting the sender fixture: Korri's Sunshine, Korri Stream, certificate control")
         # The emulator's boot can heat aka past the fixture's heat guard for a
-        # while; the guard refuses, and the proof waits for it (as live_resize.py).
+        # while; the guard refuses, and the proof waits for it.
         until = time.monotonic() + 600
         while True:
             try:

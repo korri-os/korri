@@ -27,8 +27,8 @@
 //! output format, goes to the app, which places its video layer for it.
 //!
 //! The decoder list's queries, the configure tries and the base format's
-//! colour keys are ported from Korri's copy of Artemis (`clients/android`,
-//! from `simonwjackson/artemis` at `cf12c432`, a fork of
+//! colour keys are ported from Korri's copy of Artemis (`clients/android` at
+//! the tag `artemis-final`, from `simonwjackson/artemis` at `cf12c432`, a fork of
 //! `ClassicOldSong/moonlight-android`, itself a fork of
 //! `moonlight-stream/moonlight-android`), `MediaCodecHelper.java` and
 //! `MediaCodecDecoderRenderer.java` (`createBaseMediaFormat`, the tries in

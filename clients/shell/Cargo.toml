@@ -10,7 +10,7 @@ description = "Native Korri shell: loads surface packages (.slint views, QuickJS
 
 [lib]
 path = "src/lib.rs"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [[bin]]
 name = "korri-shell"
@@ -91,10 +91,8 @@ default = ["desktop"]
 # Android uses Slint's NativeActivity backend; the same interpreter and engine.
 # `android-host`: the backend and its loop (`backend::android::run`), for an app
 # that has its own `android_main` and supplies the host in Rust
-# (clients/android-app). `android`: also the Artemis app's `android_main`, whose
-# host is `KorriShellActivity` (Java) in clients/android.
+# (clients/android-app).
 android-host = ["slint/backend-android-activity-06", "rquickjs/bindgen", "dep:jni", "dep:i-slint-backend-android-activity"]
-android = ["android-host"]
 # Workstation and handheld: Slint's winit backend on Wayland and X11.
 desktop = [
   "slint/backend-winit-wayland",

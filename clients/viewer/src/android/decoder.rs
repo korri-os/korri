@@ -4,7 +4,7 @@
 //! an output thread hands each decoded frame to the display. `picture.rs`
 //! runs them over `AMediaCodec`; the tests run them over `ScriptedCodec`.
 //!
-//! Ported from Korri's copy of Artemis (`clients/android`, from
+//! Ported from Korri's copy of Artemis (`clients/android` at the tag `artemis-final`, from
 //! `simonwjackson/artemis` at `cf12c432`, a fork of
 //! `ClassicOldSong/moonlight-android`, itself a fork of
 //! `moonlight-stream/moonlight-android`), `MediaCodecDecoderRenderer.java`:

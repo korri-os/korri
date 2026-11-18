@@ -1,5 +1,6 @@
 //! Where korrid keeps its private state in the Android app:
-//! `<no_backup>/korrid-state`, as `KorriBrainService.privateStateRoot` names it.
+//! `<no_backup>/korrid-state`, as the Artemis app's
+//! `KorriBrainService.privateStateRoot` named it (tag `artemis-final`).
 use std::{
     io,
     path::{Path, PathBuf},

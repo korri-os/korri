@@ -34,19 +34,19 @@
 }:
 let
   inherit (pkgs) lib;
-  sdk = import ../android/sdk.nix { inherit pkgs; };
+  sdk = import ../../nix/android-sdk.nix { inherit pkgs; };
   api = "31";
   ndk = sdk.ndkRoot;
   toolchain = "${ndk}/toolchains/llvm/prebuilt/linux-x86_64";
   buildTools = "${sdk.sdkRoot}/build-tools/${sdk.buildToolsVersion}";
-  # The newest platform in sdk.nix: aapt2's view of the framework, and the
+  # The newest platform in nix/android-sdk.nix: aapt2's view of the framework, and the
   # android.jar that Slint's Java helper compiles against (its build.rs).
   platform = "android-36";
   framework = "${sdk.sdkRoot}/platforms/${platform}/android.jar";
   proseqlSource = import ../../services/korrid/proseql-source.nix { inherit pkgs proseql; };
-  # The product's relays, as the Artemis app's BuildConfig.PRODUCT_RELAYS.
-  # constants.relays does not force the product's korri argument (#315).
-  productRelays = import ../android/product.nix {
+  # The product's relays. constants.relays does not force the product's
+  # korri argument (#315).
+  productRelays = import ./product.nix {
     inherit pkgs;
     korri = null;
   };
@@ -60,7 +60,7 @@ let
   # library that it needs, unchanged, dexed into one file that korrid loads
   # in memory (services/korrid/src/android/app.rs). The component's version
   # is the one that Cargo.lock pins: its JVM part and its Rust part must
-  # match, as clients/android/app/build.gradle requires.
+  # match, as the Artemis app's build.gradle required (tag `artemis-final`).
   verifierVersion = "0.2.0";
   lockedVerifier =
     (lib.findFirst (crate: crate.name == "rustls-platform-verifier-android") null
@@ -71,7 +71,8 @@ let
       lockedVerifier == verifierVersion
     ) "Cargo.lock pins rustls-platform-verifier-android ${lockedVerifier}; fetch that AAR here";
     pkgs.fetchurl {
-      # The repository that clients/android/build.gradle names for org.rustls.
+      # The repository that the Artemis app's build.gradle named for org.rustls
+      # (tag `artemis-final`).
       url = "https://raw.githubusercontent.com/rustls/rustls-platform-verifier/maven-archive/android-release-support/maven/org/rustls/rustls-platform-verifier/${verifierVersion}/rustls-platform-verifier-${verifierVersion}.aar";
       hash = "sha256-qgIXlCMPvC8L41WZniz2c5jdVj3gZqLhcAH/vQtpEBs=";
     };
@@ -164,7 +165,7 @@ let
       export CXX_${target}=${cc}++
       export AR_${target}=${toolchain}/bin/llvm-ar
       export CARGO_TARGET_${cargoTarget}_LINKER=${cc}
-      # 16 KiB load segments, as clients/android/build.sh links its libraries;
+      # 16 KiB load segments, as the viewer's APK links its library;
       # on arm64 nightjar-core's ARMv8 AES and PMULL cfgs, as the viewer's
       # APK builds it (clients/viewer/android.nix).
       export CARGO_TARGET_${cargoTarget}_RUSTFLAGS="${
@@ -474,8 +475,8 @@ let
             cp ${built}/elf-${name}.txt .
           '') libs
         )}
-        # The packages exactly as the Artemis app carries them
-        # (clients/android/app/build.gradle, surfaceAssets).
+        # The packages exactly as the Artemis app carried them (its
+        # build.gradle's surfaceAssets, at the tag `artemis-final`).
         mkdir -p assets/surfaces
         (
           cd ${surfaces}/packages

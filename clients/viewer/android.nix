@@ -1,5 +1,5 @@
 # The shared session part on Android (#391 step D) and the viewer app around
-# it (slices D1 to D4b), at API 31 (ADR 0064) with the NDK that clients/android uses.
+# it (slices D1 to D4b), at API 31 (ADR 0064) with the NDK of nix/android-sdk.nix.
 # Two ABIs: arm64-v8a for phones, x86_64 for the emulator.
 #
 # - check: builds the library and links its own tests and the HTTPS and
@@ -22,12 +22,12 @@
 }:
 let
   inherit (pkgs) lib;
-  sdk = import ../android/sdk.nix { inherit pkgs; };
+  sdk = import ../../nix/android-sdk.nix { inherit pkgs; };
   api = "31";
   ndk = sdk.ndkRoot;
   toolchain = "${ndk}/toolchains/llvm/prebuilt/linux-x86_64";
   buildTools = "${sdk.sdkRoot}/build-tools/${sdk.buildToolsVersion}";
-  # The newest platform in sdk.nix, for aapt2's view of the framework.
+  # The newest platform in nix/android-sdk.nix, for aapt2's view of the framework.
   framework = "${sdk.sdkRoot}/platforms/android-36/android.jar";
 
   abis = {
@@ -199,7 +199,7 @@ let
       export CC_${target}=${cc}
       export AR_${target}=${toolchain}/bin/llvm-ar
       export CARGO_TARGET_${cargoTarget}_LINKER=${cc}
-      # 16 KiB load segments, as clients/android/build.sh links its libraries.
+      # 16 KiB load segments: the library also loads on a device with 16 KiB pages.
       export CARGO_TARGET_${cargoTarget}_RUSTFLAGS="${lib.concatStringsSep " " rustflags}"
       export BINDGEN_EXTRA_CLANG_ARGS_${target}="--target=${part.target}${api} --sysroot=${toolchain}/sysroot"
     '';

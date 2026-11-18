@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! korrid's stream viewer in this process (#434, slice D10): the Rust viewer
 //! of `clients/viewer`, run through its in-process lifecycle
-//! (`Lifecycle::in_process`, ADR 0060) in the place of korrid's Java adapter
-//! (`services/korrid/src/android/viewer.rs` → `KorriStreamViewer` → `Game`).
+//! (`Lifecycle::in_process`, ADR 0060) in the place of the Artemis app's
+//! Java viewer (korrid's JNI adapter → `KorriStreamViewer` → `Game`, at the
+//! tag `artemis-final`).
 //!
 //! Two halves, one launch at a time:
 //!

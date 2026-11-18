@@ -1,16 +1,14 @@
 //! Android's network and power observations, as federation consumes them
-//! (`federation::reach::Environment`). Two producers fill [`Snapshot`]:
-//! Artemis's `KorridNetwork.java` (JSON over JNI) and the app with no Korri
-//! Java, which reads Android's own classes through JNI
-//! (`android/framework_network.rs`) and applies [`snapshot`] here. The rules
-//! are `KorridNetwork.snapshot`'s, unchanged.
+//! (`federation::reach::Environment`). The app with no Korri Java reads
+//! Android's own classes through JNI (`android/framework_network.rs`) and
+//! applies [`snapshot`] here. The rules are those of the Artemis app's
+//! `KorridNetwork.snapshot` (tag `artemis-final`), unchanged.
 use crate::federation::{interfaces::InterfaceAddress, reach::RelayFacts};
 use std::net::IpAddr;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug)]
 pub(crate) struct Snapshot {
     pub interfaces: Vec<InterfaceAddress>,
-    #[serde(flatten)]
     pub facts: RelayFacts,
 }
 
@@ -225,24 +223,5 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["fec0::1", "192.168.1.20"]
         );
-    }
-
-    #[test]
-    fn the_java_producers_json_reads_into_the_same_snapshot() {
-        let json = r#"{"interfaces":[{"interface":"wlan0","address":"192.168.1.20","has_default_route":true}],"external_power":true,"unmetered":false}"#;
-        let read: Snapshot = serde_json::from_str(json).unwrap();
-        let derived = snapshot(
-            &[ObservedNetwork {
-                capabilities: Some(Capabilities {
-                    vpn: false,
-                    not_metered: false,
-                }),
-                ..network("wlan0", true, true, &["192.168.1.20"])
-            }],
-            true,
-            true,
-        );
-        assert_eq!(listed(&read), listed(&derived));
-        assert_eq!(read.facts, derived.facts);
     }
 }

@@ -7,7 +7,7 @@
 //! layer goes where [`PanZoom::rect`] says (`layer.rs`), and the input maps
 //! touches into that place.
 //!
-//! Ported from Korri's copy of Artemis (`clients/android`, from
+//! Ported from Korri's copy of Artemis (`clients/android` at the tag `artemis-final`, from
 //! `simonwjackson/artemis` at `cf12c432`): `utils/PanZoomHandler.java`.
 //! Artemis moves and scales its stream view inside its stream container,
 //! with the pivot at the view's corner; here the container is the picture's

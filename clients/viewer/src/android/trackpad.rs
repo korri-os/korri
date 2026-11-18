@@ -6,7 +6,7 @@
 //! tap of two fingers right-clicks; a fast move goes on after the finger
 //! lifts (a flick). Pure; `touch.rs` routes the events.
 //!
-//! Ported from Korri's copy of Artemis (`clients/android`, from
+//! Ported from Korri's copy of Artemis (`clients/android` at the tag `artemis-final`, from
 //! `simonwjackson/artemis` at `cf12c432`): `TrackpadContext.java`, as
 //! `Game.applyMouseMode` makes it for the touch screen (no swapped axes,
 //! sensitivity 1 on each). Its `Handler` callbacks are deadlines here, run by

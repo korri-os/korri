@@ -5,7 +5,7 @@
 //! 1280x720 picture; a tap clicks; a press held for 650 ms drags; two
 //! fingers scroll. Pure; `touch.rs` routes the events.
 //!
-//! Ported from Korri's copy of Artemis (`clients/android`, from
+//! Ported from Korri's copy of Artemis (`clients/android` at the tag `artemis-final`, from
 //! `simonwjackson/artemis` at `cf12c432`): `RelativeTouchContext.java`, with
 //! Artemis's defaults for its settings (touch pad sensitivity 100 % on each
 //! axis, no absolute mouse mode). Artemis ships under the GNU GPL version 3

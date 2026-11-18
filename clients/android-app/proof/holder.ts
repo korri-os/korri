@@ -1,8 +1,8 @@
 // The holder of the Android app's holder proof (#434 D9), on this host: the
 // federation fixture's real korrid host (services/korrid/examples/
-// federation_fixture.rs) and its NIP-01 relay, both from the Artemis app's
-// federation acceptance (clients/android/test/nostr-relay-fixture.ts), used
-// unchanged. The holder's game streams from the Sunshine at MOONLIGHT.
+// federation_fixture.rs) and its NIP-01 relay (nostr-relay-fixture.ts, from
+// the Artemis app's federation acceptance at the tag `artemis-final`). The
+// holder's game streams from the Sunshine at MOONLIGHT.
 //
 //   bun holder.ts RUN PROJECT EXECUTABLE MOONLIGHT
 //
@@ -19,7 +19,7 @@
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import type { Subprocess } from "bun";
-import { hostEnvironment, startRelay } from "../../android/test/nostr-relay-fixture";
+import { hostEnvironment, startRelay } from "./nostr-relay-fixture";
 
 // What korrid reads of its caller's sockets, when the caller names them: the
 // sender's certificate control, and the input-seat receiver.

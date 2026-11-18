@@ -1,6 +1,7 @@
 //! The app with no Korri Java (#434): the network and power observations of
-//! `KorridNetwork.java`, read from Android's own classes through JNI. The
-//! rules that turn them into a snapshot are shared (`android_network.rs`).
+//! the Artemis app's `KorridNetwork.java` (tag `artemis-final`), read from
+//! Android's own classes through JNI. The rules that turn them into a
+//! snapshot are in `android_network.rs`.
 use crate::{
     android_network::{snapshot, Capabilities, Link, ObservedNetwork, Snapshot},
     federation::reach::{Environment, RelayEnvironment, RelayFacts},

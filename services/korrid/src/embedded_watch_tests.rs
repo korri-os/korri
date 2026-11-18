@@ -254,8 +254,8 @@ async fn ack(socket: &mut Socket, push: &serde_json::Value) {
         .unwrap();
 }
 
-/// Android/JNI supplies an owner-binding coordinator to this same startup API.
-/// Keep that existing platform composition working with the added watch route.
+/// The Android app supplies an owner-binding coordinator to this same startup
+/// API. Keep that platform composition working with the watch route.
 #[test]
 fn embedded_owner_binding_platform_keeps_its_identity_rpc_and_surface_watch() {
     let _guard = crate::tests::embedded_server_guard();
@@ -268,14 +268,13 @@ fn embedded_owner_binding_platform_keeps_its_identity_rpc_and_surface_watch() {
             owner_binding: Some(owner_binding::OwnerBindingCoordinator::default()),
             ..EmbeddedPlatform::default()
         };
-        let origin = "https://android-shell.example";
-        let port = start_local_server(
-            origin,
+        let port = start_local_shell_server(
             readable.path().to_str().unwrap(),
             private.path().to_str().unwrap(),
             platform,
         )
         .unwrap();
+        let origin = format!("http://127.0.0.1:{port}");
         let _stop = Stop;
         let capability = zeroize::Zeroizing::new(local_server_capability().unwrap());
         let response: RpcResponse = reqwest::Client::builder()
@@ -322,7 +321,7 @@ fn embedded_owner_binding_platform_keeps_its_identity_rpc_and_surface_watch() {
         let push = receive(&mut socket).await;
         assert_eq!(push["kind"], "model");
         ack(&mut socket, &push).await;
-        // The existing JNI stop operation must also finish with a watch open.
+        // The embedded stop operation must also finish with a watch open.
         stop_local_server().unwrap();
         // A frame written before shutdown can still be buffered in TCP. Drain
         // it without ACKing; shutdown must close before the 30 s ACK deadline.

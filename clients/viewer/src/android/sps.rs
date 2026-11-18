@@ -4,7 +4,7 @@
 //! `SeqParameterSet`), so that the decoder holds no more frames than the
 //! stream needs. Pure: the decoder calls it with each SPS that arrives.
 //!
-//! The patch is ported from Korri's copy of Artemis (`clients/android`, from
+//! The patch is ported from Korri's copy of Artemis (`clients/android` at the tag `artemis-final`, from
 //! `simonwjackson/artemis` at `cf12c432`, a fork of
 //! `ClassicOldSong/moonlight-android`, itself a fork of
 //! `moonlight-stream/moonlight-android`), `MediaCodecDecoderRenderer.java`

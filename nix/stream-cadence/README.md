@@ -2255,7 +2255,7 @@ nix run .#stream-cadence -- view --build-store ssh-ng://root@aka \
 - The result does not record the build store, and the build store changes no
   record.
 - The Android proofs (`clients/viewer/android/proof/`,
-  `clients/android-app/proof/`, `clients/android/proof/`) take the same
+  `clients/android-app/proof/`) take the same
   `--build-store` and build with this code: `build()` for their APKs and
   other flake outputs, `tools()` for the sender fixture's parts (#500).
 

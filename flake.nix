@@ -172,10 +172,6 @@
           hooksInstall = tasks.hooks-install.program;
         };
         devShells.viewer = viewer.devShell;
-        devShells.android = import ./clients/android/devshell.nix {
-          inherit pkgs;
-          korri = self;
-        };
         devShells.korrid = import ./services/korrid/devshell.nix { inherit pkgs proseql; };
         devShells.inputd = import ./services/inputd/devshell.nix { inherit pkgs; };
         devShells.plugin-host = pluginHost.devShell;

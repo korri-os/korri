@@ -6,12 +6,8 @@
 //! 16 ms timer. The activity around the shell is a [`Host`]: what it gives
 //! (korrid's connection and the unpacked packages, removed input devices, the
 //! hosted overlay Surface) and what it is told (each rendered surface frame,
-//! the window coming to the front). Two activities host it:
-//!
-//! | Host | Feature | Where |
-//! | --- | --- | --- |
-//! | Artemis's `KorriShellActivity` (Java) | `android` | `activity.rs`, `android_main` |
-//! | The app with no Korri Java | `android-host` | `clients/android-app` |
+//! the window coming to the front). The app with no Korri Java hosts it
+//! (`clients/android-app`, feature `android-host`).
 use super::{Backend, FrameCounter, HostEvent, Placement};
 use crate::{
     config::Connection,
@@ -38,9 +34,6 @@ use std::{
     sync::{mpsc, Arc},
     time::{Duration, Instant},
 };
-
-#[cfg(feature = "android")]
-mod activity;
 
 type Sink = Rc<dyn Fn(HostEvent)>;
 type Front = Rc<RefCell<Option<(Sink, FrameCounter, bool)>>>;
@@ -295,8 +288,7 @@ pub trait Host {
     fn removed_input_devices(&mut self) -> Vec<i32>;
     /// The front window drew a new frame.
     fn rendered(&mut self, rendered: &Rendered);
-    /// The activity resumed or its window gained focus. The Artemis activity
-    /// applies its window flags itself.
+    /// The activity resumed or its window gained focus.
     fn shown(&mut self) {}
     /// The source of a hosted overlay Surface, when the host has one.
     fn overlay(&mut self) -> Option<&mut dyn Overlay> {
@@ -318,10 +310,9 @@ pub trait Host {
 
 /// A Surface that the host draws over the stream, and its input. The shell
 /// renders the `Overlay` component into it (`SurfaceWindow::from_surface`).
-/// Each call runs inside one JNI local frame of the loop's thread. Two hosts
-/// produce it: Artemis's `KorriSurfaceHost`, and the app with no Korri Java,
-/// whose Surface is the overlay layer over the Rust viewer's video
-/// (`clients/android-app`, #434 slice D5b).
+/// Each call runs inside one JNI local frame of the loop's thread. The app
+/// with no Korri Java produces it: its Surface is the overlay layer over the
+/// Rust viewer's video (`clients/android-app`, #434 slice D5b).
 pub trait Overlay {
     /// The host is taking the Surface back: release it, then [`Overlay::released`].
     fn closing(&mut self, env: &mut JNIEnv) -> jni::errors::Result<bool>;

@@ -292,7 +292,7 @@ pub(crate) fn spawn_answering<T: Send + 'static>(
 }
 
 /// The viewer's screen in its Start (#476): the window's size, its longer
-/// side first, as the Artemis app reports its screen
+/// side first, as the Artemis app reported its screen
 /// (`KorriStreamViewer.screenStreamSize`), because Portrait is a stream
 /// control and not the way the phone is held. With it the viewer reports its
 /// shape, which korrid's live-shape reads. None while the window has no size.

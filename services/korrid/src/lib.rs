@@ -6216,8 +6216,6 @@ struct ServerHandle {
     port: u16,
     rpc_capability: String,
     private_state_root: PathBuf,
-    folder_selection_grants: discovery::FolderSelectionGrantStore,
-    upstream: upstreams::UpstreamRegistry,
     federation: FederationResources,
     federation_wake: DiscoveryControl,
     owner_binding: Option<owner_binding::OwnerBindingCoordinator>,
@@ -6229,10 +6227,6 @@ static SERVER: OnceLock<Mutex<Option<ServerHandle>>> = OnceLock::new();
 
 fn server_slot() -> &'static Mutex<Option<ServerHandle>> {
     SERVER.get_or_init(|| Mutex::new(None))
-}
-
-pub fn korrid_version() -> String {
-    VERSION.into()
 }
 
 /// One in-process edge producer using the existing native input source.
@@ -6254,23 +6248,6 @@ pub struct EmbeddedPlatform {
     pub(crate) viewer: Option<Arc<dyn linux_viewer::LinuxStreamViewer>>,
 }
 
-/// Start one localhost brain with the embedding host's explicit origin.
-/// JNI callers retain their existing origin contract.
-pub fn start_local_server(
-    allowed_origin: &str,
-    local_storage_root: &str,
-    private_state_root: &str,
-    platform: EmbeddedPlatform,
-) -> Result<u16, ServerError> {
-    start_local_server_for_platform(
-        EmbeddedOrigin::Supplied(allowed_origin),
-        local_storage_root,
-        private_state_root,
-        embedded_registry_source(),
-        platform,
-    )
-}
-
 /// Start an embedded brain for the native local shell. Derive its canonical
 /// HTTP origin from the still-open listener, as in the Linux composition.
 pub fn start_local_shell_server(
@@ -6279,17 +6256,11 @@ pub fn start_local_shell_server(
     platform: EmbeddedPlatform,
 ) -> Result<u16, ServerError> {
     start_local_server_for_platform(
-        EmbeddedOrigin::LocalHttp,
         local_storage_root,
         private_state_root,
         embedded_registry_source(),
         platform,
     )
-}
-
-enum EmbeddedOrigin<'a> {
-    Supplied(&'a str),
-    LocalHttp,
 }
 
 fn embedded_registry_source() -> plugin_policy::RegistrySource {
@@ -6307,7 +6278,6 @@ fn embedded_registry_source() -> plugin_policy::RegistrySource {
 }
 
 fn start_local_server_for_platform(
-    origin: EmbeddedOrigin<'_>,
     local_storage_root: &str,
     private_state_root: &str,
     registry_source: plugin_policy::RegistrySource,
@@ -6337,12 +6307,8 @@ fn start_local_server_for_platform(
         .port();
     let rpc_capability = generate_rpc_capability();
     let server_capability = rpc_capability.clone();
-    let folder_selection_grants = discovery::FolderSelectionGrantStore::default();
-    let server_folder_selection_grants = folder_selection_grants.clone();
-    let allowed_origin = match origin {
-        EmbeddedOrigin::Supplied(origin) => origin.to_owned(),
-        EmbeddedOrigin::LocalHttp => format!("http://127.0.0.1:{port}"),
-    };
+    let server_folder_selection_grants = discovery::FolderSelectionGrantStore::default();
+    let allowed_origin = format!("http://127.0.0.1:{port}");
     let local_storage_root = local_storage_root.to_owned();
     let private_state_root = private_state_root.to_owned();
     let handle_private_state_root = PathBuf::from(&private_state_root);
@@ -6496,8 +6462,6 @@ fn start_local_server_for_platform(
         port,
         rpc_capability,
         private_state_root: handle_private_state_root,
-        folder_selection_grants,
-        upstream,
         federation,
         federation_wake,
         owner_binding,
@@ -6640,34 +6604,6 @@ pub fn local_server_capability() -> Option<String> {
         .expect("server mutex poisoned")
         .as_ref()
         .map(|server| server.rpc_capability.clone())
-}
-
-pub fn moonlight_host_candidates() -> Result<Vec<upstreams::MoonlightHostCandidate>, ServerError> {
-    let upstream = server_slot()
-        .lock()
-        .expect("server mutex poisoned")
-        .as_ref()
-        .map(|server| server.upstream.clone())
-        .ok_or(ServerError::NotRunning)?;
-    upstream
-        .moonlight_host_candidates()
-        .map_err(|error| ServerError::StartFailed {
-            details: error.to_string(),
-        })
-}
-
-pub fn issue_folder_selection_receipt(
-    canonical_approved_path: &str,
-) -> Result<String, discovery::FolderSelectionGrantError> {
-    let store = server_slot()
-        .lock()
-        .expect("server mutex poisoned")
-        .as_ref()
-        .map(|server| server.folder_selection_grants.clone())
-        .ok_or(discovery::FolderSelectionGrantError::Unknown)?;
-    store
-        .issue_approved_path(canonical_approved_path)
-        .map(|grant| grant.token)
 }
 
 pub mod android_local;

@@ -9,7 +9,7 @@
 //! callback empties. That callback never waits and takes no lock: it takes
 //! what is there and plays silence for the rest.
 //!
-//! Ported from Korri's copy of Artemis (`clients/android`, from
+//! Ported from Korri's copy of Artemis (`clients/android` at the tag `artemis-final`, from
 //! `simonwjackson/artemis` at `cf12c432`, a fork of
 //! `ClassicOldSong/moonlight-android`, itself a fork of
 //! `moonlight-stream/moonlight-android`): `AndroidAudioRenderer.java` (the

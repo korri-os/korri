@@ -111,11 +111,9 @@ impl UpstreamRegistry {
             .ok_or(UpstreamError::SourcePeerNotFound)?;
         registry.holder_resize(&selected, display).await
     }
-    /// Changes the stream's encode size. Today's Artemis app asks its own
-    /// Sunshine (`resizes_encoder`) until the D7 cut of #476 removes it. For
-    /// any other viewer korrid asks the holder, and only when the viewer is
-    /// `ready` to present a new picture size: the viewer then follows the new
-    /// size in the stream by itself.
+    /// Changes the stream's encode size: korrid asks the holder, and only
+    /// when the viewer is `ready` to present a new picture size; the viewer
+    /// then follows the new size in the stream by itself (#476 Route C).
     async fn resize_encoder(
         &self,
         selected: &SelectedRemoteSession,
@@ -123,16 +121,6 @@ impl UpstreamRegistry {
         ready: bool,
         display: PluginDisplay,
     ) -> EncodeSize {
-        if self.viewer.resizes_encoder() {
-            return match self
-                .viewer
-                .resize(&selected.launch_id, &cache.local_connection, display)
-                .await
-            {
-                Ok(()) => EncodeSize::Changed,
-                Err(_) => EncodeSize::Unknown,
-            };
-        }
         if !ready || cache.unavailable {
             return EncodeSize::Kept;
         }
@@ -548,9 +536,6 @@ impl LinuxStreamViewer for ShapeControls {
         d: PluginDisplay,
     ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
         self.0.viewer.resize(l, c, d)
-    }
-    fn resizes_encoder(&self) -> bool {
-        self.0.viewer.resizes_encoder()
     }
     fn start<'a>(
         &'a self,

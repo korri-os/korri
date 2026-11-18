@@ -850,10 +850,10 @@ swap interval is 0, as in slice F3), and any number.
 ## Android session part (#391 step D, slice D0)
 
 The session part also builds for Android at API 31 (ADR 0064), with the NDK
-of `clients/android/sdk.nix`: `aarch64-linux-android` for phones and
+of `nix/android-sdk.nix`: `aarch64-linux-android` for phones and
 `x86_64-linux-android` for the emulator. `android.nix` holds the recipe;
-`checks.x86_64-linux.korri-viewer-android` builds both. Nothing in
-`clients/android` uses it.
+`checks.x86_64-linux.korri-viewer-android` builds both. The Artemis app
+never used it.
 
 - Shared: `options.rs`, `session.rs`, `pair.rs`, `stream.rs`, `lifecycle.rs`
   and the binding are the same files on both platforms.
@@ -902,13 +902,14 @@ of `clients/android/sdk.nix`: `aarch64-linux-android` for phones and
   proof below runs the x86_64 pair on the emulator.
 
 Live resolution: Android also uses the unpatched core, so the Rust viewer
-answers `Resize` with "Live resolution is unavailable", as on Linux. Today's
-Android app changes the stream's resolution live (korrid's Portrait control,
+answers `Resize` with "Live resolution is unavailable", as on Linux. The
+Artemis app changed the stream's resolution live (korrid's Portrait control,
 fold and rotation) through `SunshineRuntimeSettings.c`. Korri wrote that file
 in its Artemis copy of the core (`1fd8f951a`); Sunshine patch 0044 in
 `korri-plugins` serves it. **Gate:** slice D7, which removes `Game.java`, does
 not ship until live resolution works in the Rust viewer. Dropping a live
-feature is not "equal or better" (ADR 0062). #476 chose the route, a control
+feature is not "equal or better" (ADR 0062). The owner removed the Artemis
+app on 2026-11-18 without waiting for this gate (ADR 0087). #476 chose the route, a control
 channel that korrid owns (Route C), in five slices. Slice 4, the Android
 decoder and video layer following a size change that the sender makes in
 the middle of a stream, is below ("A new picture size in the middle of the
@@ -924,9 +925,9 @@ Slice D1 of `docs/research/2026-11-13-viewer-rust-android.md`: the viewer in
 the app's own process (ADR 0060), started and stopped through its
 lifecycle, against the private Sunshine, with the core's empty decoder and
 no sound. It is the first Rust viewer that runs on Android. It has no
-picture, sound or input: those are D2 to D4. The Artemis app in
-`clients/android` does not change; it stays the shipping Android viewer
-until D7, so D1 removes none of its Java.
+picture, sound or input: those are D2 to D4. The Artemis app did not
+change; it stayed the shipping Android viewer until D7′ removed it on
+2026-11-18 (ADR 0087; the tag `artemis-final` keeps it).
 
 - `android/` is the app: a `cdylib` crate with its own `Cargo.lock` (the
   viewer's crates at the same versions, `android-activity` 0.6.1 and `jni`),
@@ -1563,7 +1564,8 @@ the sender, with `--sender local --stream-host <aka's address>`
   RGB rule (the emulator runs Android 12).
 
 **Gate:** D7, which removes `Game.java`, does not ship until D4b's proof
-on a real pad (step H) agrees with this one.
+on a real pad (step H) agrees with this one. The owner removed the Artemis
+app on 2026-11-18 without waiting for this gate (ADR 0087).
 
 ## Android gameplay overlay (#391 step D, slice D5)
 
@@ -1658,7 +1660,7 @@ in this app (below), so the layer shows a stand-in.
 | The camera cutout | The overlay view's margins are the display cutout's insets, and follow them (`KorriStreamCutout.keepOutOfCutout`) | The layer stands in the window less the cutout's insets, and follows them (#494) |
 
 **Why the shell's overlay cannot run in this app.** The overlay that the
-shell draws today needs, in Artemis's process:
+shell drew in Artemis's process needed:
 
 1. korrid, for the overlay's content (ADR 0053, `GameplayOverlay`) and its
    actions. This app runs no korrid. Artemis runs it in `KorriBrainService`,
@@ -1980,10 +1982,10 @@ shell's Slint backend.
 ## Stream controls and status (#434, slice D11)
 
 Owner decision O4: the viewer carries the stream controls and status that
-the Artemis app reports to korrid, through the treaty: Snapshot lists them,
-Apply sets a control. Every field is what Artemis and korrid exchange today
+the Artemis app reported to korrid, through the treaty: Snapshot lists them,
+Apply sets a control. Every field is what Artemis and korrid exchanged
 (`KorriViewerControls.java`, `KorriMoonlightActionExecutor.java`,
-`ViewerVideoStats.java` in `clients/android`); the treaty needed no new type
+`ViewerVideoStats.java`, at the tag `artemis-final`); the treaty needed no new type
 (`contracts/viewer` now names the surface treaty's control and health types
 that it already carried).
 
@@ -2030,15 +2032,17 @@ snapshot then shows what it did. The values change only when the stream's
 thread confirms a change that it took. With no controls attached, as on Linux
 and in the viewer's own app, Snapshot and Apply answer as before.
 
-Not carried, each because this viewer lacks the feature, not the control:
+Not carried, each because this viewer lacks the feature, not the control.
+The owner decided each one on 2026-11-18, when the Artemis app went
+(ADR 0087):
 
-| Artemis control | What it needs |
-| --- | --- |
-| Full keyboard | Artemis's own keyboard view (`KeyBoardLayoutController`) |
-| Touch sensitivity | Artemis's touch sensitivity settings (`touchSensitivityX` and `Y`); at their defaults, 100 %, the switch changes nothing |
-| Keyboard as controller | Artemis's on-screen controller |
-| SGSR sharpness, SGSR edge threshold | Artemis's GL renderer; MediaCodec renders straight into the layer here |
-| Picture-in-picture | An activity in picture-in-picture mode; leaving the app ends the stream here (D10) |
+| Artemis control | What it needs | Decision |
+| --- | --- | --- |
+| Full keyboard | Artemis's own keyboard view (`KeyBoardLayoutController`) | Dropped; rebuilt later, product first |
+| Touch sensitivity | Artemis's touch sensitivity settings (`touchSensitivityX` and `Y`); at their defaults, 100 %, the switch changes nothing | Backlog |
+| Keyboard as controller | Artemis's on-screen controller | Dropped; rebuilt later, product first |
+| SGSR sharpness, SGSR edge threshold | Artemis's GL renderer; MediaCodec renders straight into the layer here | Backlog, as a list of upscalers |
+| Picture-in-picture | An activity in picture-in-picture mode; leaving the app ends the stream here (D10) | Skipped |
 
 Notice (Artemis shows a toast) and Resize (#476) stay unavailable.
 

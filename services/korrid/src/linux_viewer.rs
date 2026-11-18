@@ -169,13 +169,6 @@ pub trait LinuxStreamViewer: Send + Sync {
     ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
         Box::pin(async { Err(LinuxViewerError::new("Live resolution is unavailable")) })
     }
-    /// Whether `resize` changes the stream's encode size itself. Today's
-    /// Artemis app does, with its own Sunshine control message, until the D7
-    /// cut of #476 removes it. For every other viewer korrid asks the holder
-    /// for the encode size (Route C) and never calls `resize`.
-    fn resizes_encoder(&self) -> bool {
-        false
-    }
     fn snapshot<'a>(
         &'a self,
         _launch: &'a str,
@@ -366,7 +359,6 @@ pub(crate) mod test_backend {
 
     #[derive(Default)]
     struct TestViewerState {
-        resizes_encoder: bool,
         display: Option<crate::launcher::plugin_launch::PluginDisplay>,
         statuses: BTreeMap<String, LinuxViewerStatus>,
         calls: Vec<LinuxViewerCall>,
@@ -379,10 +371,6 @@ pub(crate) mod test_backend {
     impl TestLinuxStreamViewer {
         pub fn set_snapshot(&self, snapshot: Option<ViewerSnapshot>) {
             self.inner.lock().unwrap().snapshot = snapshot;
-        }
-        /// Behave as today's Artemis app: `resize` changes the encode size.
-        pub fn set_resizes_encoder(&self, value: bool) {
-            self.inner.lock().unwrap().resizes_encoder = value;
         }
         pub fn applications(&self) -> Vec<(String, String)> {
             self.inner.lock().unwrap().applications.clone()
@@ -449,9 +437,6 @@ pub(crate) mod test_backend {
     }
 
     impl LinuxStreamViewer for TestLinuxStreamViewer {
-        fn resizes_encoder(&self) -> bool {
-            self.inner.lock().unwrap().resizes_encoder
-        }
         fn resize<'a>(
             &'a self,
             launch: &'a str,

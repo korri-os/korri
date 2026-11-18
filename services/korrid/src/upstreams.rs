@@ -2600,14 +2600,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn live_shape_reports_screen_applies_encode_and_acknowledges_exact_revision() {
+    async fn live_shape_reports_screen_and_acknowledges_exact_revision() {
         use crate::launcher::plugin_launch::PluginDisplay;
         use crate::linux_viewer::{ViewerShapeSnapshot, ViewerSnapshot};
-        use crate::live_display::{SessionViewerDisplay, ViewerDisplayEvent};
+        use crate::live_display::{
+            SessionViewerDisplay, SessionViewerResizeOutcome, ViewerDisplayEvent, ViewerResize,
+        };
         let (url, holder) = exact_native_server(false).await;
         let viewer = TestLinuxStreamViewer::default();
-        // Today's Artemis app: its own resize changes the encode size.
-        viewer.set_resizes_encoder(true);
         let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("holder", url)])
             .with_linux_viewer(Arc::new(viewer.clone()));
         registry.prepare_stream("game", None).await.unwrap();
@@ -2660,6 +2660,11 @@ mod tests {
                 notice: None,
             },
         ]);
+        holder
+            .resize_replies
+            .lock()
+            .unwrap()
+            .extend([SessionViewerResizeOutcome::Ok(ViewerResize::Applied)]);
         registry.synchronize_shape(&selected).await.unwrap();
         let mut observed = viewer.snapshot(&selected.launch_id).await.unwrap().unwrap();
         observed.shape.as_mut().unwrap().ready = true;
@@ -2679,19 +2684,30 @@ mod tests {
                 requests[1].event.connection()
             );
         }
+        // Only once the viewer is ready does korrid ask the holder for the
+        // screen's encode size (#476 Route C).
+        let resizes = holder.resize_requests.lock().unwrap().clone();
+        assert_eq!(resizes.len(), 1);
+        assert_eq!(
+            resizes[0].display,
+            PluginDisplay {
+                width: 2448,
+                height: 1848
+            }
+        );
+        assert_eq!(
+            registry.selected().unwrap().display,
+            Some(PluginDisplay {
+                width: 2448,
+                height: 1848
+            })
+        );
         let snapshot = registry
             .local_viewer()
             .snapshot(&selected.launch_id)
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(
-            snapshot.shape.unwrap().encoded,
-            PluginDisplay {
-                width: 2448,
-                height: 1848
-            }
-        );
         assert!(snapshot
             .controls
             .iter()

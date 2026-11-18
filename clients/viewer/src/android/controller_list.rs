@@ -2,8 +2,9 @@
 //! A controller's kind, from its USB vendor and product: the data that
 //! Artemis asks SDL's lists for (`MoonBridge.guessControllerType`,
 //! `guessControllerHasPaddles`, `guessControllerHasShareButton`). The
-//! table is Valve's `controller_list.h` as Korri's copy of Artemis carries
-//! it (`clients/android/app/src/main/jni/moonlight-core`), reduced to the
+//! table is Valve's `controller_list.h` as Korri's copy of Artemis carried
+//! it (`clients/android/app/src/main/jni/moonlight-core` at the tag
+//! `artemis-final`), reduced to the
 //! entries that give the stream a kind; the three functions are SDL's, from
 //! the same copy's `minisdl.c` and `usb_ids.h`. Korri changed both on
 //! 2026-11-14: the table is Rust data, sorted, with the stream's kind in

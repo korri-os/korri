@@ -4,7 +4,7 @@
 //! over each second or more, apart from any frame record. Pure; the decoder
 //! counts (`decoder.rs`) and the snapshot reads (`status.rs`).
 //!
-//! Ported from Korri's copy of Artemis (`clients/android`, from
+//! Ported from Korri's copy of Artemis (`clients/android` at the tag `artemis-final`, from
 //! `simonwjackson/artemis` at `cf12c432`, a fork of
 //! `ClassicOldSong/moonlight-android`, itself a fork of
 //! `moonlight-stream/moonlight-android`): `ViewerVideoStats.java`, Korri's

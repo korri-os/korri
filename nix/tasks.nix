@@ -209,35 +209,6 @@ let
         exec python3 "$KORRI_ROOT/clients/viewer/proof/nightjar/run.py" "$@"
       '';
     };
-    android-live-resize-proof =
-      let
-        emulator = import ../clients/viewer/android/emulator.nix { inherit pkgs; };
-      in
-      {
-        description = "Prove today's Artemis live resize (#476) on one headless Android 12 emulator against a private patched Sunshine on aka.";
-        usageSuffix = " -- --sunshine /nix/store/...-sunshine-korri-... [--sender ssh-target] [--build-store STORE] [--out DIRECTORY]";
-        runtimeInputs = [
-          # numpy and FFmpeg: stream-cadence's frame-ID bar decoder (bar.py).
-          (pkgs.python3.withPackages (p: [ p.numpy ]))
-          pkgs.ffmpeg
-          pkgs.nix
-          pkgs.openssh
-          pkgs.openssl
-          pkgs.git
-          pkgs.procps
-          # Pairs the app's key pair with the fixture's PIN, as stream-cadence does.
-          pkgs.moonlight-embedded
-        ];
-        env = {
-          KORRI_VIEWER_EMULATOR_SDK = emulator.sdkRoot;
-          KORRI_VIEWER_EMULATOR_IMAGE = emulator.systemImage;
-          # stream-cadence builds its sender fixture from this nixpkgs.
-          CADENCE_NIXPKGS = "${pkgs.path}";
-        };
-        script = ''
-          exec python3 "$KORRI_ROOT/clients/android/proof/live_resize.py" "$@"
-        '';
-      };
     viewer-linux-resize-proof = {
       description = "Prove on aka, as root, that the Linux viewer fits a new stream size from korrid's resize request, with no stretch, in stream-cadence's private pair (#476).";
       usageSuffix = " -- --sunshine /nix/store/...-sunshine-korri-... [--build-store STORE] [--caller-uid N] [--out DIRECTORY]";
@@ -330,7 +301,7 @@ let
             p.pillow
             p.numpy
           ]))
-          # holder.ts and the Artemis acceptance's relay that it runs.
+          # holder.ts and its relay (nostr-relay-fixture.ts).
           pkgs.bun
           pkgs.nix
           # A build store over ssh-ng:// (--build-store).
@@ -369,7 +340,7 @@ let
           pkgs.ffmpeg
           # Reads the gameplay overlay's words in its screenshots (#434 D5b).
           pkgs.tesseract
-          # holder.ts and the Artemis acceptance's relay that it runs.
+          # holder.ts and its relay (nostr-relay-fixture.ts).
           pkgs.bun
           pkgs.nix
           # A build store over ssh-ng:// (--build-store).
@@ -406,7 +377,7 @@ let
             p.numpy
           ]))
           pkgs.ffmpeg
-          # holder.ts and the Artemis acceptance's relay that it runs.
+          # holder.ts and its relay (nostr-relay-fixture.ts).
           pkgs.bun
           pkgs.nix
           # A build store over ssh-ng:// (--build-store).
@@ -1030,16 +1001,12 @@ let
 
   };
 
-  androidDefinitions = import ../clients/android/tasks.nix {
-    inherit pkgs korri;
-  };
-
   exports = pkgs.lib.mapAttrs (
     _: task:
     pkgs.lib.concatStringsSep "\n" (
       pkgs.lib.mapAttrsToList (name: value: ''export ${name}="${value}"'') (task.env or { })
     )
-  ) (definitions // androidDefinitions);
+  ) definitions;
 
   makeTask =
     name: task:
@@ -1072,13 +1039,13 @@ let
       '';
     };
 
-  packages = pkgs.lib.mapAttrs makeTask (definitions // androidDefinitions);
+  packages = pkgs.lib.mapAttrs makeTask definitions;
 
   helpText =
     pkgs.lib.concatStringsSep "\n" (
       pkgs.lib.mapAttrsToList (
         name: task: "  nix run .#${name}${task.usageSuffix or ""}\n      ${task.description}"
-      ) (definitions // androidDefinitions)
+      ) definitions
     )
     + extraHelpText;
 

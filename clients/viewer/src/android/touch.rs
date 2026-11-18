@@ -17,7 +17,7 @@
 //! `trackpad.rs`'s contexts), and its own button is the mouse's left
 //! button, or with two fingers on the pad the right one.
 //!
-//! Ported from Korri's copy of Artemis (`clients/android`, from
+//! Ported from Korri's copy of Artemis (`clients/android` at the tag `artemis-final`, from
 //! `simonwjackson/artemis` at `cf12c432`, a fork of
 //! `ClassicOldSong/moonlight-android`, itself a fork of
 //! `moonlight-stream/moonlight-android`): `Game.java` (`handleMotionEvent`,

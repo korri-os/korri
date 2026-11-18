@@ -1,9 +1,10 @@
 //! korrid in the Android app with no Korri Java (#434, slice D8). The app's
 //! own library calls [`start`] from `android_main`, in the same process as
 //! the shell. What `KorriBrainService`, `KorridServer` and their Java
-//! callbacks did for the Artemis app is Rust here, or absent until its slice:
+//! callbacks did for the Artemis app (removed on 2026-11-18, ADR 0087; the
+//! tag `artemis-final` keeps it) is Rust here, or absent until its slice:
 //!
-//! | Java today | Here |
+//! | The Artemis app's Java | Here |
 //! | --- | --- |
 //! | `KorriBrainService.ensureRunning`, `privateStateRoot` | [`start`], once per process; `android_storage` |
 //! | `KorridNetwork.snapshot` | `framework_network.rs`, JNI into Android's classes |
@@ -33,13 +34,15 @@ use jni::{
 };
 use std::path::Path;
 
-/// The official catalog the Android app offers (ADR 0043), as `android.rs`.
+/// The official catalog the Android app offers (ADR 0043), from
+/// `KORRI_OFFICIAL_CATALOG_URL` at build time. No build sets it today, so the
+/// person adds a repository by hand.
 const ANDROID_OFFICIAL_CATALOG: Option<&str> = option_env!("KORRI_OFFICIAL_CATALOG_URL");
 
 /// Start korrid in this process for `activity`'s application, or return the
 /// port of the korrid that an earlier activity of this process started.
 /// `product_relays` is the product's relay list as JSON
-/// (`clients/android/product.nix`). `verifier_classes` is the dex of
+/// (`clients/android-app/product.nix`). `verifier_classes` is the dex of
 /// rustls-platform-verifier's Kotlin component with the Kotlin standard
 /// library. `viewer` is the app's stream viewer, which runs in this process
 /// (ADR 0060); korrid drives it as it drives a Linux viewer. The capability
@@ -110,7 +113,7 @@ pub fn start(
 /// this device's broker has provisioned `client_certificate` (one PEM) there:
 /// the host UUID from Sunshine's `serverinfo`, as the Linux viewers read it,
 /// then the broker's provision through korrid's own RPC, as the Artemis
-/// viewer asks it. The holder that attests that UUID performs it through its
+/// viewer asked it. The holder that attests that UUID performs it through its
 /// Sunshine's certificate control.
 pub async fn provision_moonlight_certificate(
     address: &str,
@@ -127,7 +130,7 @@ pub async fn provision_moonlight_certificate(
 }
 
 /// The person left the stream of the exact `launch` for the gameplay
-/// overlay: korrid's `session.leave`, as the Artemis viewer asks it
+/// overlay: korrid's `session.leave`, as the Artemis viewer asked it
 /// (`KorriStreamViewer.leave`). korrid then opens its gameplay overlay
 /// (`surface/overlay.rs`), and its Resume comes back as the viewer's
 /// `resume_and_focus`. True when korrid answered that this launch runs on.

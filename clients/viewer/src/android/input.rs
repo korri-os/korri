@@ -24,7 +24,7 @@
 //! captures it then unless the local cursor shows (`capture.rs`). The app
 //! makes the calls on the view that `take_capture` gives.
 //!
-//! Ported from Korri's copy of Artemis (`clients/android`, from
+//! Ported from Korri's copy of Artemis (`clients/android` at the tag `artemis-final`, from
 //! `simonwjackson/artemis` at `cf12c432`, a fork of
 //! `ClassicOldSong/moonlight-android`, itself a fork of
 //! `moonlight-stream/moonlight-android`): `Game.java`'s input routing.

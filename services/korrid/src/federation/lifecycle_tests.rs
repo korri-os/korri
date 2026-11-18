@@ -24,13 +24,12 @@ fn binding_refreshes_existing_clients_without_rotating_port_and_stop_joins_block
     fs::write(readable.path().join("upstreams.json"), serde_json::json!([{"kind":"native", "label":"Peer", "baseUrl":format!("http://{host_address}"), "devicePublicKey":peer.device_public_key(), "moonlightAddress":"peer:47989"}]).to_string()).unwrap();
     let relay_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     fs::write(readable.path().join("device.yaml"), format!("host:\n  relays:\n    - ws://{}\n", relay_listener.local_addr().unwrap())).unwrap();
-    let port = start_local_server_for_platform(EmbeddedOrigin::Supplied("https://shell.example"), readable.path().to_str().unwrap(), private.path().to_str().unwrap(), plugin_policy::RegistrySource::Installed, EmbeddedPlatform::default()).unwrap();
+    let port = start_local_server_for_platform(readable.path().to_str().unwrap(), private.path().to_str().unwrap(), plugin_policy::RegistrySource::Installed, EmbeddedPlatform::default()).unwrap();
     let _stop = Stop;
     let capability = local_server_capability().unwrap();
-    let (credentials, registry) = {
+    let credentials = {
         let slot = server_slot().lock().unwrap();
-        let server = slot.as_ref().unwrap();
-        (server.federation.credentials.clone(), server.upstream.clone())
+        slot.as_ref().unwrap().federation.credentials.clone()
     };
     assert!(matches!(credentials.identity_snapshot().unwrap().state(), identity::IdentityState::Unowned { .. }));
     let now = peer_rpc::unix_time();
@@ -44,9 +43,11 @@ fn binding_refreshes_existing_clients_without_rotating_port_and_stop_joins_block
     assert!(matches!(credentials.identity_snapshot().unwrap().state(), identity::IdentityState::Owned { .. }));
     assert_eq!(local_server_port(), Some(port));
     assert_eq!(local_server_capability(), Some(capability.clone()));
-    assert_eq!(registry.catalog_snapshot().await.unwrap().games.len(), 1);
     let response = reqwest::Client::new().post(format!("http://127.0.0.1:{port}/rpc")).bearer_auth(&capability).json(&serde_json::json!({"_tag":"app.catalog.snapshot", "payload":{}})).send().await.unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::OK);
+    // The peer's one game, through the brain's upstream registry.
+    let catalog: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(catalog["outcome"]["payload"]["games"].as_array().map(Vec::len), Some(1), "{catalog}");
     // The relay accepts TCP but never answers the WebSocket handshake.
     let (_blocked, _) = tokio::time::timeout(Duration::from_secs(2), relay_listener.accept()).await.unwrap().unwrap();
     tokio::time::timeout(Duration::from_secs(2), tokio::task::spawn_blocking(stop_local_server)).await.unwrap().unwrap().unwrap();

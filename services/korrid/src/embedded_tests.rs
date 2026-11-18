@@ -1,4 +1,4 @@
-//! Exercise the same public startup used by the Android JNI edge.
+//! Exercise the same public startup that the Android app uses.
 use crate::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -15,8 +15,7 @@ fn embedded_stream_client_has_an_empty_local_catalog_without_linux_plugins() {
     let private = tempfile::tempdir().unwrap();
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(private.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
-    let port = start_local_server(
-        "https://shell.example",
+    let port = start_local_shell_server(
         readable.path().to_str().unwrap(),
         private.path().to_str().unwrap(),
         EmbeddedPlatform::default(),
@@ -63,8 +62,7 @@ fn embedded_peer_transport_reads_and_releases_its_platform_network_source() {
         observed.fetch_add(1, Ordering::SeqCst);
         Ok(Vec::new())
     });
-    start_local_server(
-        "https://shell.example",
+    start_local_shell_server(
         readable.path().to_str().unwrap(),
         private.path().to_str().unwrap(),
         EmbeddedPlatform {

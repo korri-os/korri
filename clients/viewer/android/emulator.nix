@@ -3,7 +3,7 @@
 # APK build (../android.nix) does not use it.
 { pkgs }:
 let
-  sdk = import ../../android/sdk.nix { inherit pkgs; };
+  sdk = import ../../../nix/android-sdk.nix { inherit pkgs; };
   composition = pkgs.androidenv.composeAndroidPackages {
     buildToolsVersions = [ sdk.buildToolsVersion ];
     platformVersions = [ "31" ];

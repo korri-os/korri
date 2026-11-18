@@ -5,9 +5,10 @@ Android's own `android.app.NativeActivity` loads one Rust library,
 `libkorri_android_app.so`. Its `android_main` starts korrid in the app's
 process, then runs the native shell on the activity's window. Since D10 the
 Rust viewer runs in the same process, on the shell's loop, and korrid drives
-it as its stream viewer. The APK has no dex (`hasCode="false"`). The Artemis
-app in `clients/android` does not change; it stays the shipping Android app
-until slice D7′.
+it as its stream viewer. The APK has no dex (`hasCode="false"`). It is
+Korri's only Android app: slice D7′ removed the Artemis app on 2026-11-18
+(ADR 0087; the tag `artemis-final` keeps it, and
+`docs/briefs/2026-11-18-artemis-removal-scope.md` records what went).
 
 ```sh
 nix build .#korri-android-app-apk          # both ABIs, unsigned, debuggable
@@ -28,12 +29,16 @@ nix run .#android-app-resize-proof -- --build-store auto --sunshine PACKAGE  # #
 
 | # | Decision | What it means here |
 | --- | --- | --- |
-| O1 | The new app installs side by side with the Artemis app, under its own package name. | Package `com.simonwjackson.korri.app`, label "Korri (native)". It is a separate federation device with its own korrid state. It does not answer the HOME intent; the Artemis app keeps that. |
-| O2 | korrid runs only while the app is open, with no foreground service yet. | korrid starts once per process and lives as long as the process. No service keeps the process alive in the background: Android can freeze or end it there, and nothing restarts korrid until a person opens the app (the Artemis app's `START_REDELIVER_INTENT` has no equivalent). |
+| O1 | The new app installs side by side with the Artemis app, under its own package name. | Package `com.simonwjackson.korri.app`, label "Korri (native)". It is a separate federation device with its own korrid state. It does not answer the HOME intent; the Artemis app kept that until it went (D7′). |
+| O2 | korrid runs only while the app is open, with no foreground service yet. | korrid starts once per process and lives as long as the process. No service keeps the process alive in the background: Android can freeze or end it there, and nothing restarts korrid until a person opens the app (the Artemis app's `START_REDELIVER_INTENT` has no equivalent here). |
 | O3 | Local Android games stay, with androidx `FileProvider` bundled unchanged. | Not in D8. Slice D13 (below) brings them; `FileProvider` then needs a third-party dex and `hasCode="true"`. |
-| O4 | The stream controls come in D11: carry every control and status item that the Artemis app reports to korrid. | D11 (below) carries 3 of Artemis's 13 controls (Crop to fill, Flip A/B and X/Y, Rumble), the battery and the health; Toggle keyboard, Mouse mode, Pan & zoom and Toggle local cursor came after it. The other 6 are missing, because the Rust viewer lacks what each needs (`clients/viewer/README.md`, slice D11): Full keyboard, Touch sensitivity, Keyboard as controller, SGSR sharpness, SGSR edge threshold, Picture-in-picture. They gate D7′. |
+| O4 | The stream controls come in D11: carry every control and status item that the Artemis app reports to korrid. | D11 (below) carries 3 of Artemis's 13 controls (Crop to fill, Flip A/B and X/Y, Rumble), the battery and the health; Toggle keyboard, Mouse mode, Pan & zoom and Toggle local cursor came after it. The other 6 are missing, because the Rust viewer lacks what each needs (`clients/viewer/README.md`, slice D11): Full keyboard, Touch sensitivity, Keyboard as controller, SGSR sharpness, SGSR edge threshold, Picture-in-picture. They gated D7′ until the owner's decision of 2026-11-18 (ADR 0087): Full keyboard and Keyboard as controller (the on-screen controller) are dropped, to be rebuilt later product first; Picture-in-picture is skipped; SGSR, as a list of upscalers, and Touch sensitivity go to the backlog. |
 
 ## What runs
+
+Java names in this README (`KorriShellActivity`, `KorriBrainService`,
+`KorriStreamViewer`, `Game` and the rest) are the Artemis app's, at the tag
+`artemis-final`: what this app replaced.
 
 | Part | Where | Java |
 | --- | --- | --- |
@@ -89,9 +94,9 @@ and the manifest attribute that names it. That file permits cleartext HTTP
 only to certificate authorities' revocation-list hosts, so that Android's
 revocation check can fetch a list. Without it Android's default for this
 target refuses cleartext, and the verifier's revocation check, which is
-`SOFT_FAIL`, passes when it cannot fetch. The Artemis app does not carry it
-either: its own `network_security_config` has the same resource name and
-replaces the AAR's.
+`SOFT_FAIL`, passes when it cannot fetch. The Artemis app did not carry it
+either: its own `network_security_config` had the same resource name and
+replaced the AAR's.
 
 What uses the verifier: nothing in this build that this slice found (a
 reading of the lock and of iroh's source, not a proof). iroh 1.4.1 is
@@ -110,7 +115,7 @@ shows only that the classes load.
 
 `default.nix`, as `clients/viewer/android.nix` builds the viewer's APK: cargo
 for `aarch64-linux-android` and `x86_64-linux-android` at API 31 with the NDK
-of `clients/android/sdk.nix`, one derivation for each ABI's library; then
+of `nix/android-sdk.nix`, one derivation for each ABI's library; then
 `aapt2 link` against android-36 and `zipalign` in a derivation that only
 packs, so a change to the packages or the manifest compiles nothing. No
 Gradle. The output is unsigned; the proof signs it with the user's debug key.
@@ -141,8 +146,8 @@ release key outside the store.
 - The surface packages are verified with the shell's own release build, with
   its test suite off; `nix run .#shell-check` runs those tests.
 - The relay list is an APK asset, `relays.json`, not a build input of the
-  library: `apk` carries `clients/android/product.nix`, the Artemis app's
-  list; `fixtureApk` carries one loopback relay, `ws://127.0.0.1:47800`,
+  library: `apk` carries `product.nix`, the product's list (the Artemis
+  app's list too); `fixtureApk` carries one loopback relay, `ws://127.0.0.1:47800`,
   which the holder proof maps to its own relay with `adb reverse`. Until D10
   both APKs shared one library. Since D11 the fixture's library is the same
   source built with the cargo feature `proof` (the controls' proof trigger,
@@ -221,7 +226,7 @@ Known gaps:
 - The status bar stays drawn on the emulator. The window manager reports
   it hidden (`InsetsSource type=ITYPE_STATUS_BAR … visible=false`), with its
   insets animation's leash still in place, and Velvet draws under it. Not
-  known whether the Artemis app, which makes the same calls, shows the same.
+  known whether the Artemis app, which made the same calls, showed the same.
 - On a new device Velvet shows "Connect your identity": this app has no
   signer route yet (route brief, the NIP-55 row). The emulator proof does not
   need an owner.
@@ -243,7 +248,7 @@ from that copy. One headless Android 12 emulator (2 cores, console port
 | Piece | What it is | Where it comes from |
 | --- | --- | --- |
 | The holder | korrid's federation fixture: a real host whose owner is the fixture's person signer (secret 3, public key `f9308a01…`). Its one game, "Acceptance Game", streams from the address in its endpoint record | `services/korrid/examples/federation_fixture.rs`, built as `korrid.federationFixture`; its fourth argument is the Moonlight address (#434 D9) |
-| Its relay | The NIP-01 relay of the Artemis app's federation acceptance, unchanged | `clients/android/test/nostr-relay-fixture.ts`; `proof/holder.ts` runs it with the holder, in the acceptance's isolated environment |
+| Its relay | The NIP-01 relay of the Artemis app's federation acceptance (tag `artemis-final`), moved here unchanged | `proof/nostr-relay-fixture.ts`; `proof/holder.ts` runs it with the holder, in the acceptance's isolated environment (`hostEnvironment`, with `proof/federation-systemd-fixture.sh`) |
 | The private sender | stream-cadence's sender fixture on aka, offering `Korri Stream` (the application korrid's viewer asks for) and showing the frame-ID source | `nix/stream-cadence/sender.py` with `application` (#434 D9); the proof checks its `serverinfo` at the address the holder publishes |
 | The test device's owner | A private state made by the fixture's own producer, `federation_fixture member DIR`: `DeviceIdentity::load_or_create` and an owner statement signed by secret 3, as the holder binds itself. The proof writes `identity/device.key` and `identity/owner.event.json` into `no_backup/korrid-state` through `run-as` (the APK is debuggable: `aapt2 link --debug-mode`) before the first start, and deletes its own copy | No signer route: the app still has none (route brief, NIP-55 row) |
 
@@ -663,15 +668,15 @@ launch, resize that viewer's stream. It cannot stream with it: Sunshine's
 TLS still requires the private key.
 
 korrid's Portrait control uses it for a viewer that does not send its own
-request (every viewer but today's Artemis app, which still does until D7)
-and that reports `ready`. This app's viewer reports `ready: true`: it
+request (every viewer since the Artemis app went in D7′) and that reports
+`ready`. This app's viewer reports `ready: true`: it
 follows a new stream size since #476 slice 4, and its `encoded` size follows
 each change (`clients/viewer/README.md`, "A new stream size in the middle of
 the stream"). It reports a shape because its Start names a screen: the
 window's size, longer side first (`rules::screen`), as the Artemis app
-reports its screen (`KorriStreamViewer.screenStreamSize`); Portrait is a
+reported its screen (`KorriStreamViewer.screenStreamSize`); Portrait is a
 stream control, not the way the phone is held. So korrid's live-shape runs
-for this app as for the Artemis app: on a holder with display authority the
+for this app as it did for the Artemis app: on a holder with display authority the
 holder's display and the stream take the phone's shape. korrid's viewer
 display at prepare is still none here, so a stream starts at Moonlight's
 1280x720 and live-shape changes it after the start.
@@ -733,8 +738,8 @@ which the proofs use.
 ### Signing
 
 The Artemis release key is not grounded enough to follow. The repository
-pins its certificate's SHA-256 (`clients/android/firmware/odin2portal/contract/korri-release-cert-SHA256.txt`,
-at `android-final` and here) and calls it "the selected Korri Android release
+pinned its certificate's SHA-256 (`clients/android/firmware/odin2portal/contract/korri-release-cert-SHA256.txt`,
+at `android-final` and `artemis-final`) and called it "the selected Korri Android release
 key", but records neither where the key lives nor a command that signs with
 it. This app is also another package (owner decision O1). So the app has a
 key of its own, which the build never sees: `sign-release.sh` signs the
@@ -845,7 +850,7 @@ The fixture binds the emulator's app to the test owner (secret 3,
 federation is owner `a80db13f…3dca`: on 2026-11-16 relay.primal.net held ten
 owned statements signed by that key, zao's device key `7bb368b2…` among them
 (signed 2026-09-06). The release APK's relays are the product's five
-(`clients/android/product.nix`); three of them held the owner's statements
+(`product.nix`); three of them held the owner's statements
 that day (relay.primal.net 10, offchain.pub 9, nostr.oxtr.dev 9), so the
 phone can read the owner's roster once it is bound.
 
@@ -862,8 +867,8 @@ What exists:
 What is missing:
 
 - A signer host. Nothing in this app attaches a signer to the coordinator
-  or runs NIP-55, which needs an activity result; Artemis's
-  `KorriOwnerBindingHost` is Java with no caller. "Set up owner" answers
+  or runs NIP-55, which needs an activity result; the Artemis app's
+  `KorriOwnerBindingHost` was Java with no caller (tag `artemis-final`). "Set up owner" answers
   "Open Korri to choose a signer".
 - An identity switch. It needs Linux's local signer
   (`KORRID_LOCAL_SIGNER_SOCKET`); the app's korrid has none, so it answers
@@ -1103,7 +1108,8 @@ connect.
 | D9 | Done: the holder proof above, and the TLS verifier's classes |
 | D10 | Done: the Rust viewer, driven by korrid, on the shell's loop (above) |
 | D5b | Done: Korri's gameplay overlay through `Overlay` (above), proven on the emulator (`proof/android-app-d5b/`). "Open Korri" (Background) is not carried yet; the camera cutout came with #494 |
-| D11 | Done in part: 7 of Artemis's 13 stream controls (Toggle keyboard, Crop to fill, Pan & zoom, Mouse mode, Toggle local cursor, Flip A/B and X/Y, Rumble), the battery and the health, through the treaty (above); shown and applied in the gameplay overlay since D5b. Missing, and gating D7′: Full keyboard, Touch sensitivity, Keyboard as controller, SGSR sharpness, SGSR edge threshold, Picture-in-picture |
+| D11 | Done: 7 of Artemis's 13 stream controls (Toggle keyboard, Crop to fill, Pan & zoom, Mouse mode, Toggle local cursor, Flip A/B and X/Y, Rumble), the battery and the health, through the treaty (above); shown and applied in the gameplay overlay since D5b. The other 6 are decided in ADR 0087: Full keyboard and Keyboard as controller dropped, Picture-in-picture skipped, Touch sensitivity and SGSR in the backlog |
+| D7′ | Done 2026-11-18: the Artemis app went, by the owner's decision, before D12 and D13 (ADR 0087, `docs/briefs/2026-11-18-artemis-removal-scope.md`). Until this app reaches a phone (D12), no Android app streams for a person |
 | D12 prep | Done in part: the release APK, its key and signing step, its notices (below). Not done: an owner binding that a release build can make (below) |
-| D13 (new) | Local Android games (O3): korrid's launcher through JNI, usage polling on a Rust thread, androidx `FileProvider` bundled unchanged (`hasCode="true"`), and the Guide service, which Android allows only as a Java `AccessibilityService` subclass: one Korri Java file on #434's list, or no Guide over other apps. Gates D7′ |
+| D13 (new) | Local Android games (O3): korrid's launcher through JNI, usage polling on a Rust thread, androidx `FileProvider` bundled unchanged (`hasCode="true"`), and the Guide service, which Android allows only as a Java `AccessibilityService` subclass: one Korri Java file on #434's list, or no Guide over other apps. It gated D7′ until ADR 0087 |
 | D12 | On the Galaxy Z Fold 8 |

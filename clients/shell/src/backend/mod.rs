@@ -5,7 +5,7 @@
 //! | Backend | Feature | Windows |
 //! | --- | --- | --- |
 //! | [`winit`] | `desktop` (default) | one per component: Wayland (sway) or X11 |
-//! | [`android`] | `android-host` (`android` adds Artemis's `android_main`) | one NativeActivity window |
+//! | [`android`] | `android-host` | one NativeActivity window |
 //! | [`headless`] | tests | one software buffer per component, no display |
 
 #[cfg(feature = "desktop")]
@@ -20,7 +20,9 @@ use crate::input::Key;
 use std::rc::Rc;
 
 #[cfg(all(feature = "android-host", feature = "desktop"))]
-compile_error!("choose one window system: desktop, or --no-default-features --features android");
+compile_error!(
+    "choose one window system: desktop, or --no-default-features --features android-host"
+);
 
 /// What a window reports to the shell.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

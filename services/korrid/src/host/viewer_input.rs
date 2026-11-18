@@ -117,9 +117,6 @@ impl LinuxStreamViewer for LocalInputViewer {
     ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
         self.viewer.resize(launch, connection, display)
     }
-    fn resizes_encoder(&self) -> bool {
-        self.viewer.resizes_encoder()
-    }
     fn snapshot<'a>(
         &'a self,
         launch: &'a str,
