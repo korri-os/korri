@@ -11,6 +11,9 @@ struct Raw<'a> {
     mode: Option<u32>,
     flags: u16,
     declared: Option<u32>,
+    /// Made on DOS (create_system 0) with `mode` in the external
+    /// attributes' high half, as Valve's packages are.
+    dos: bool,
 }
 fn raw(name: &str, data: &'static [u8]) -> Raw<'static> {
     Raw {
@@ -19,6 +22,7 @@ fn raw(name: &str, data: &'static [u8]) -> Raw<'static> {
         mode: None,
         flags: 0,
         declared: None,
+        dos: false,
     }
 }
 
@@ -50,7 +54,9 @@ fn raw_zip_counts(entries: &[Raw<'_>], disk: u16, on_disk: u16, total: u16) -> V
         out.extend_from_slice(entry.data);
 
         central.extend_from_slice(&0x02014b50u32.to_le_bytes());
-        let made_by: u16 = if entry.mode.is_some() {
+        let made_by: u16 = if entry.dos {
+            20
+        } else if entry.mode.is_some() {
             3 << 8 | 20
         } else {
             20
@@ -957,4 +963,49 @@ fn a_save_export_tar_unpacks_files_and_refuses_links_and_traversal() {
         Failure::Unpack,
         "repeated path",
     );
+}
+
+/// Valve's `bins_sdk_linuxarm64_linuxarm64` zip is made on DOS: its
+/// `linuxarm64/` entry has no bytes and mode 0x4000 in the attributes' high
+/// half, its files 0x81b6. The folder unpacks; a link or device still does
+/// not, also named as a folder.
+#[test]
+fn a_dos_made_folder_entry_is_a_folder() {
+    let dos = |name: &str, data: &'static [u8], mode: u32| Raw {
+        mode: Some(mode),
+        dos: true,
+        ..raw(name, data)
+    };
+    let run = unpack(&raw_zip(&[
+        dos("linuxarm64/", b"", 0x4000),
+        dos("linuxarm64/steamclient.so", b"engine", 0x81b6),
+    ]));
+    run.result.as_ref().unwrap();
+    assert_eq!(
+        tree(&run.work),
+        [
+            ("linuxarm64".to_owned(), 0o755),
+            ("linuxarm64/steamclient.so".to_owned(), 0o644),
+        ]
+    );
+    // A Unix-made folder entry with a link or device mode is still refused.
+    // (On a DOS-made entry the reader takes the DOS attributes, not the high
+    // half, and korrid only ever makes plain folders and files from it.)
+    for mode in [0o120777, 0o020644, 0o060644, 0o010644, 0o140644] {
+        let mut unix = raw("linuxarm64/", b"");
+        unix.mode = Some(mode);
+        refused(
+            unpack(&raw_zip(&[unix])),
+            Failure::Unpack,
+            "link or special file",
+        );
+    }
+    // A folder entry with a plain file mode and no bytes is a folder too.
+    let mut unix_file_mode = raw("linuxarm64/", b"");
+    unix_file_mode.mode = Some(0o100644);
+    assert!(unpack(&raw_zip(&[unix_file_mode])).result.is_ok());
+    // A folder entry that holds bytes is not a plain folder.
+    assert!(unpack(&raw_zip(&[dos("linuxarm64/", b"x", 0x81b6)]))
+        .result
+        .is_err());
 }

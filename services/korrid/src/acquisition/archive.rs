@@ -758,10 +758,16 @@ fn zip_archive(
         if entry.encrypted() {
             return Err(Stop::refuse("encrypted entry", &name));
         }
+        // A folder entry (its name ends in `/`) with no bytes is a folder
+        // whatever regular-file mode its attributes carry: Valve's packages
+        // are zipped on DOS (create_system 0) and the zip reader reads their
+        // `linuxarm64/` entry as mode 0o100666. A symlink or a device mode is
+        // still refused, for folders as for files.
+        let plain_folder = |mode: u32| folder && entry.size() == 0 && mode & 0o170000 == 0o100000;
         if entry.is_symlink()
             || !entry
                 .unix_mode()
-                .is_none_or(|mode| unix_type_is_safe(mode, folder))
+                .is_none_or(|mode| unix_type_is_safe(mode, folder) || plain_folder(mode))
         {
             return Err(Stop::refuse("link or special file", &name));
         }
