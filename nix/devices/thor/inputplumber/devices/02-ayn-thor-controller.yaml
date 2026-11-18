@@ -1,0 +1,51 @@
+# ROCKNIX's AYN Thor composite (rev 1178bc22, projects/ROCKNIX/devices/SM8550/
+# filesystem/usr/share/inputplumber/devices/02-ayn-thor-controller.yaml),
+# adapted the way the Portal's composite is (../../odin2portal/rocknix/
+# inputplumber/devices/02-ayn-controller.yaml):
+# - one XB360 target for inputd, no DualSense and no keyboard target;
+# - the AYN key source (gpio-keys-ayn, KEY_F24) is left out, so the bottom
+#   screen key stays unbound in this slice;
+# - both volume keys go through DBus, as on the Portal.
+# Source names come from the pinned DTS, not from a live Thor: the rsinput
+# node in qcs8550-ayn-common.dtsi sets gamepad-name "AYN Odin2 Gamepad" and
+# the Thor DTS does not override it; gpio-keys (KEY_VOLUMEUP) and pon_resin
+# (KEY_VOLUMEDOWN) also come from that shared file.
+version: 1
+kind: CompositeDevice
+name: AYN Thor Layout
+
+matches:
+  - udev:
+      sys_path: /sys/firmware/devicetree/base
+      attributes:
+        - name: model
+          value: AYN Thor
+
+maximum_sources: 3
+source_devices:
+  - group: gamepad
+    evdev:
+      name: AYN Odin2 Gamepad
+      phys_path: rsinput-gamepad/input0
+      handler: event*
+    capability_map_id: ayn_mcu
+
+  - group: keyboard
+    evdev:
+      name: gpio-keys
+      phys_path: gpio-keys/input0
+      handler: event*
+    capability_map_id: ayn_odin2portal_volume
+
+  - group: keyboard
+    evdev:
+      name: pmic_resin
+      phys_path: pmic_resin/input0
+      handler: event*
+    capability_map_id: ayn_odin2portal_volume
+
+options:
+  auto_manage: true
+
+target_devices:
+  - xb360

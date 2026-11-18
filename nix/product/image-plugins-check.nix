@@ -18,6 +18,7 @@ let
     "r36tmax"
     "rpminiv2"
     "odin2portal"
+    "thor"
     "rg35xxsp"
     "rg35xxpro"
   ];
@@ -69,6 +70,7 @@ assert lib.all
     "rgds"
     "rpminiv2"
     "odin2portal"
+    "thor"
   ];
 assert recoveryWithoutDefaults;
 # Gamescope wraps every launch by default on product images, and only where
@@ -101,6 +103,7 @@ assert lib.all
     "r36tmax"
     "rpminiv2"
     "odin2portal"
+    "thor"
     "rg35xxsp"
     "rg35xxpro"
   ];
@@ -111,6 +114,7 @@ assert lib.all
     "rgds"
     "rpminiv2"
     "odin2portal"
+    "thor"
     "rg35xxsp"
     "rg35xxpro"
   ];

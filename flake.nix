@@ -50,6 +50,11 @@
         inherit nixpkgs;
         korri = self;
       };
+      thor = import ./nix/devices/thor {
+        inherit nixpkgs;
+        korri = self;
+        odin = odin2portal;
+      };
       h700 = import ./nix/devices/h700 {
         inherit nixpkgs;
         korri = self;
@@ -92,6 +97,7 @@
         rpminiv2 = rpminiv2.configuration;
         r36tmax = r36tmax.configuration;
         odin2portal = odin2portal.configuration;
+        thor = thor.configuration;
         rg35xxsp = rg35xxsp.configuration;
         rg35xxpro = rg35xxpro.configuration;
       };
@@ -237,6 +243,9 @@
           odin2portal-mangohud = odin2portal.rocknix.mangohud;
           odin2portal-alsa-lib = odin2portal.rocknix.alsaLib;
           odin2portal-inputplumber-data = odin2portal.rocknix.inputplumberData;
+          thor-dtb = thor.dtb;
+          thor-firmware = thor.firmware;
+          thor-sd-image = thor.sdImage;
           rg35xxsp-sd-image = rg35xxsp.sdImage;
           rg35xxsp-v2-panel-sd-image = rg35xxsp.v2PanelSdImage;
           rg35xxpro-sd-image = rg35xxpro.sdImage;
@@ -256,6 +265,11 @@
           odin2portal-kernel = odin2portal.kernelCross;
           odin2portal-rescue-kernel = odin2portal.rescueKernelCross;
           odin2portal-firmware = odin2portal.firmwareCross;
+          thor-dtb = thor.dtbCross;
+          thor-firmware = thor.firmwareCross;
+          # The aarch64 image, so `nix build .#thor-sd-image` works on an x86_64
+          # host; its aarch64 steps go to the configured builders.
+          thor-sd-image = thor.sdImage;
           h700-uboot = h700.ubootCross;
           h700-kernel = h700.kernelCross;
           # The NDK's compilers run on x86_64 Linux only.
@@ -325,6 +339,7 @@
                   r36tmax
                   rpminiv2
                   odin2portal
+                  thor
                   rg35xxsp
                   rg35xxpro
                   ;
@@ -397,6 +412,8 @@
             rg353m-inputplumber = self.packages.${system}.rg353m-inputplumber-data;
             odin2portal = odin2portal.moduleCheck pkgs;
             odin2portal-inputplumber = odin2portal.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
+            thor = thor.moduleCheck pkgs;
+            thor-inputplumber = thor.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             korri-shell-module = shell.moduleCheck {
               inherit nixpkgs;
               korri = self;
