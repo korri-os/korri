@@ -214,9 +214,16 @@ impl SteamAccount {
                             .unwrap_or(Account::Checking)
                             .apply(&event)
                     };
-                    if matches!(event, Event::SignedIn { .. }) {
+                    match &event {
                         // The account name stays out of the journal.
-                        eprintln!("korrid steam account: signed in ({unit})");
+                        Event::SignedIn { .. } => {
+                            eprintln!("korrid steam account: signed in ({unit})")
+                        }
+                        Event::SignedOut { reason } => eprintln!(
+                            "korrid steam account: signed out ({unit}): {}",
+                            reason.as_deref().unwrap_or("no reason given")
+                        ),
+                        _ => {}
                     }
                     let finished = done(&next);
                     self.set(Some(next));

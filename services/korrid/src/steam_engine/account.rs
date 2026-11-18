@@ -96,7 +96,7 @@ impl Account {
             },
             // At start a host with no saved login says `signed_out`: sign-in
             // needed. A QR session already under way is not undone by it.
-            Event::SignedOut {} => match self {
+            Event::SignedOut { .. } => match self {
                 Self::Code { .. } | Self::Working { .. } | Self::Starting { .. } => self.clone(),
                 _ => Self::SignedOut,
             },
@@ -214,7 +214,7 @@ mod tests {
     #[test]
     fn the_qr_flow_runs_from_signed_out_to_signed_in_with_its_actions() {
         let mut account = Account::Checking;
-        account = account.apply(&Event::SignedOut {});
+        account = account.apply(&Event::SignedOut { reason: None });
         assert_eq!(account, Account::SignedOut);
         assert_eq!(ids(&account.surface().unwrap()), [SIGN_IN]);
 
@@ -267,7 +267,10 @@ mod tests {
                 actions: vec![SurfaceAction::new(SIGN_OUT, "Sign out", true)],
             })
         );
-        assert_eq!(signed_in.apply(&Event::SignedOut {}), Account::SignedOut);
+        assert_eq!(
+            signed_in.apply(&Event::SignedOut { reason: None }),
+            Account::SignedOut
+        );
     }
 
     #[test]
@@ -286,7 +289,7 @@ mod tests {
             challenge_url: "u".into(),
             for_game: None,
         };
-        assert_eq!(code.apply(&Event::SignedOut {}), code);
+        assert_eq!(code.apply(&Event::SignedOut { reason: None }), code);
         assert_eq!(
             code.apply(&Event::SigninFailed {
                 reason: "in_progress".into()

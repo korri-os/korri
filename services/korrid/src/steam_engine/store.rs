@@ -101,7 +101,7 @@ impl SteamStore {
             let deadline = Instant::now() + LIST_LIMIT;
             loop {
                 for event in host.poll() {
-                    if let Event::SigninFailed { .. } | Event::SignedOut {} = event {
+                    if let Event::SigninFailed { .. } | Event::SignedOut { .. } = event {
                         return Err(failure(
                             "SteamSignInNeeded",
                             "Sign in to Steam in Settings to see your games.",
@@ -343,7 +343,7 @@ fn run_app_job(
     let deadline = Instant::now() + limit;
     loop {
         for event in host.poll() {
-            if let Event::SigninFailed { .. } | Event::SignedOut {} = event {
+            if let Event::SigninFailed { .. } | Event::SignedOut { .. } = event {
                 return set(failed("Sign in to Steam in Settings first."));
             }
             state = state.apply(app, &event);

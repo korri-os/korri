@@ -93,7 +93,20 @@ pub enum Event {
     SigninFailed {
         reason: String,
     },
-    SignedOut {},
+    /// Nobody is signed in. `reason` says why the saved login was not used
+    /// (no_account_file, no_saved_login, select_failed); it holds no secret.
+    SignedOut {
+        #[serde(default)]
+        reason: Option<String>,
+    },
+    /// `steam-engine-session` refused to start the game. `reason` is one
+    /// word (session_busy, signin_timeout, install_timeout, install_failed,
+    /// not_installed_offline, no_launch_entry, game_files_missing);
+    /// `message` is the finished text the person sees.
+    LaunchRefused {
+        reason: String,
+        message: String,
+    },
     App {
         appid: AppId,
         name: String,
@@ -258,6 +271,25 @@ mod tests {
                 appid: 70,
                 name: "Half-Life".into(),
                 source: AppSource::Family
+            })
+        );
+        assert_eq!(
+            parse(r#"{"event":"signed_out","reason":"no_saved_login"}"#),
+            Some(Event::SignedOut {
+                reason: Some("no_saved_login".into())
+            })
+        );
+        assert_eq!(
+            parse(r#"{"event":"signed_out"}"#),
+            Some(Event::SignedOut { reason: None })
+        );
+        assert_eq!(
+            parse(
+                r#"{"event":"launch_refused","reason":"install_failed","message":"Steam could not install or update the game."}"#
+            ),
+            Some(Event::LaunchRefused {
+                reason: "install_failed".into(),
+                message: "Steam could not install or update the game.".into()
             })
         );
         assert_eq!(

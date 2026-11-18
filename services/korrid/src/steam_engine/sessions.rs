@@ -281,6 +281,13 @@ impl Watch {
                     .reason()
                     .to_owned(),
             ),
+            Event::LaunchRefused { reason, message } => {
+                eprintln!(
+                    "korrid steam engine: session {} refused: {reason}",
+                    self.launch_id
+                );
+                Some(message.clone())
+            }
             Event::SyncFinished { kind, result, .. }
                 if kind == "launch" && result == "conflict" =>
             {
@@ -631,6 +638,44 @@ done"#,
         assert_eq!(health.current(&plan), Some(Unavailable::EngineMismatch));
         sessions.finish(LAUNCH, Duration::from_millis(100)).unwrap();
         assert_eq!(sessions.take_refusal(LAUNCH), None);
+    }
+
+    /// The session program's own refusal reaches the session as its text.
+    #[test]
+    fn a_launch_refusal_gives_the_session_its_message() {
+        let temp = tempfile::tempdir().unwrap();
+        let launches = temp.path().join("launches");
+        let health = Arc::new(EngineHealth::default());
+        let sessions = Sessions::with_state(
+            Arc::new(ProcessHostUnits::new(&launches)),
+            &launches,
+            unsafe { libc::geteuid() },
+            Arc::default(),
+            Arc::clone(&health),
+            Arc::default(),
+        );
+        let host = crate::steam_engine::host::tests::script_host(
+            temp.path(),
+            r#"echo '{"event":"phase","phase":"dlopen"}'
+echo '{"event":"launch_refused","reason":"install_failed","message":"Steam could not install or update the game."}'
+exec 3<>"$fifo"
+while read -r line <&3; do :; done"#,
+        );
+        let plan = plan(host, temp.path());
+        sessions.start(LAUNCH, &plan, None).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let reason = loop {
+            if let Some(reason) = sessions.take_refusal(LAUNCH) {
+                break reason;
+            }
+            assert!(Instant::now() < deadline, "no refusal");
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        assert_eq!(reason, "Steam could not install or update the game.");
+        assert_eq!(sessions.take_refusal(LAUNCH), None, "said once");
+        // A refused launch is no engine state: the runner stays available.
+        assert_eq!(health.current(&plan), None);
+        sessions.finish(LAUNCH, Duration::from_millis(100)).unwrap();
     }
 
     #[test]

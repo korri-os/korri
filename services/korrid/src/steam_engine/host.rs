@@ -722,7 +722,10 @@ done"#,
         assert_eq!(reader.read().unwrap(), [protocol::Event::AppsDone {}]);
         let mut file = OpenOptions::new().append(true).open(&path).unwrap();
         file.write_all(b"out\"}\nnot json\n").unwrap();
-        assert_eq!(reader.read().unwrap(), [protocol::Event::SignedOut {}]);
+        assert_eq!(
+            reader.read().unwrap(),
+            [protocol::Event::SignedOut { reason: None }]
+        );
         assert!(reader.read().unwrap().is_empty());
     }
 }
