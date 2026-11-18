@@ -135,9 +135,8 @@ pub fn launch_plan(
 
 static CONFLICTS: std::sync::OnceLock<std::sync::Arc<saves::Conflicts>> =
     std::sync::OnceLock::new();
-static UNAVAILABLE: std::sync::OnceLock<
-    std::sync::Arc<std::sync::Mutex<Option<availability::Unavailable>>>,
-> = std::sync::OnceLock::new();
+static UNAVAILABLE: std::sync::OnceLock<std::sync::Arc<availability::EngineHealth>> =
+    std::sync::OnceLock::new();
 static SESSIONS: std::sync::OnceLock<sessions::Sessions> = std::sync::OnceLock::new();
 
 /// Open Steam Cloud conflicts of this korrid, kept in its private state
@@ -147,9 +146,8 @@ pub fn conflicts(private_root: &std::path::Path) -> &'static std::sync::Arc<save
     CONFLICTS.get_or_init(|| std::sync::Arc::new(saves::Conflicts::at(private_root)))
 }
 
-/// The engine state the last host reported on this device.
-pub fn unavailable() -> &'static std::sync::Arc<std::sync::Mutex<Option<availability::Unavailable>>>
-{
+/// The engine state the hosts of this device reported, while it holds.
+pub fn health() -> &'static std::sync::Arc<availability::EngineHealth> {
     UNAVAILABLE.get_or_init(Default::default)
 }
 

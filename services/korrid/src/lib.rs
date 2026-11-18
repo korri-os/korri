@@ -5511,13 +5511,6 @@ impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
         if registry.native_runner(&runner_id).is_err() {
             return SteamFacts::Absent;
         }
-        if let Some(reason) = steam_engine::unavailable()
-            .lock()
-            .expect("availability poisoned")
-            .clone()
-        {
-            return SteamFacts::Unavailable(reason);
-        }
         let Ok(person) = host.launch_person() else {
             return SteamFacts::Absent;
         };
@@ -5537,9 +5530,13 @@ impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
             );
         };
         match steam_engine::launch_plan(&registry, &runner_id, &artifacts, &account_root) {
-            Ok(plan) => SteamFacts::Ready {
-                plan,
-                runner: host::SystemdLaunchUnitBackend::steam_engine_jobs(),
+            Ok(plan) => match steam_engine::health().current(&plan) {
+                // What a host reported for these very files, while it holds.
+                Some(reason) => SteamFacts::Unavailable(reason),
+                None => SteamFacts::Ready {
+                    plan,
+                    runner: host::SystemdLaunchUnitBackend::steam_engine_jobs(),
+                },
             },
             Err(reason) => {
                 eprintln!("korrid steam engine: {runner_id} cannot run here: {reason}");
@@ -5569,10 +5566,13 @@ impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
                     .find(|package| steam_engine::is_steam_plugin(&package.id))
             })
             .map(|package| {
+                // The engine state moves when a host reports one, or when
+                // the files it was found on change: read the account again.
                 format!(
-                    "{}|{}",
+                    "{}|{}|{}",
                     package.package.display(),
-                    package.files.contains_key(steam_engine::HOST_FILE)
+                    package.files.contains_key(steam_engine::HOST_FILE),
+                    steam_engine::health().generation()
                 )
             })
             .unwrap_or_default()

@@ -7,7 +7,7 @@
 //! cloud side of a split, and the engine states become the runner's
 //! availability. The shim in the game unit sends the pre-game commands.
 use super::{
-    availability::Unavailable,
+    availability::EngineHealth,
     host::{Channel, EventReader, HostPlan, HostUnits, Mode},
     protocol::{Command, Event},
     saves::Conflicts,
@@ -58,8 +58,8 @@ pub struct Sessions {
     runtime_uid: u32,
     running: Mutex<BTreeMap<String, Running>>,
     pub conflicts: Arc<Conflicts>,
-    /// The last engine state a host reported, for the sign-in model.
-    pub unavailable: Arc<Mutex<Option<Unavailable>>>,
+    /// The engine state the hosts reported, for the sign-in model and routes.
+    pub health: Arc<EngineHealth>,
     /// Session hosts running now. The plugin's start wrapper allows one
     /// engine per person's folder, so job hosts wait while this is not 0.
     pub live: Arc<std::sync::atomic::AtomicUsize>,
@@ -84,7 +84,7 @@ impl Sessions {
         launches_root: &Path,
         runtime_uid: u32,
         conflicts: Arc<Conflicts>,
-        unavailable: Arc<Mutex<Option<Unavailable>>>,
+        health: Arc<EngineHealth>,
         live: Arc<std::sync::atomic::AtomicUsize>,
     ) -> Self {
         Self {
@@ -93,7 +93,7 @@ impl Sessions {
             runtime_uid,
             running: Mutex::new(BTreeMap::new()),
             conflicts,
-            unavailable,
+            health,
             live,
         }
     }
@@ -157,7 +157,8 @@ impl Sessions {
                 host_channel: mode.host_channel(),
                 context,
                 conflicts: Arc::clone(&self.conflicts),
-                unavailable: Arc::clone(&self.unavailable),
+                health: Arc::clone(&self.health),
+                plan: plan.clone(),
                 exit_synced: Arc::clone(&exit_synced),
             };
             let stop = Arc::clone(&stop);
@@ -228,7 +229,8 @@ struct Watch {
     host_channel: PathBuf,
     context: Option<SessionContext>,
     conflicts: Arc<Conflicts>,
-    unavailable: Arc<Mutex<Option<Unavailable>>>,
+    health: Arc<EngineHealth>,
+    plan: HostPlan,
     exit_synced: Arc<AtomicBool>,
 }
 
@@ -254,21 +256,8 @@ impl Watch {
     }
 
     fn handle(&mut self, event: &Event) {
+        self.health.observe(&self.plan, event);
         match event {
-            Event::EngineMapMissing {} => self.set(Unavailable::MapMissing),
-            Event::EngineMismatch {} => self.set(Unavailable::EngineMismatch),
-            Event::EngineRefused { eresult } => {
-                self.set(Unavailable::EngineRefused { eresult: *eresult })
-            }
-            Event::LogonState {
-                logged_on: true, ..
-            } => {
-                // The engine signed in: a refusal recorded earlier is past.
-                let mut current = self.unavailable.lock().expect("availability poisoned");
-                if matches!(*current, Some(Unavailable::EngineRefused { .. })) {
-                    *current = None;
-                }
-            }
             Event::SyncFinished { kind, .. } if kind == "exit" => {
                 self.exit_synced.store(true, Ordering::SeqCst)
             }
@@ -293,10 +282,6 @@ impl Watch {
             }
             _ => {}
         }
-    }
-
-    fn set(&self, state: Unavailable) {
-        *self.unavailable.lock().expect("availability poisoned") = Some(state);
     }
 
     /// The archive path as the host names it, inside the channel only.
@@ -587,7 +572,8 @@ done"#,
             host_channel: "/run/korri-steam-host-x/channel".into(),
             context: None,
             conflicts: Arc::default(),
-            unavailable: Arc::default(),
+            health: Arc::default(),
+            plan: plan(temp.path().join("host"), temp.path()),
             exit_synced: Arc::default(),
         };
         assert_eq!(

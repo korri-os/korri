@@ -555,6 +555,7 @@ mod tests {
                 launches_root: launches,
                 runtime_uid: unsafe { libc::geteuid() },
                 live: Arc::default(),
+                health: Arc::default(),
             },
             engine,
             chosen: Arc::clone(&chosen),

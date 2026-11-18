@@ -25,6 +25,8 @@ pub struct JobRunner {
     /// Session hosts running now: a job waits for them, because the plugin's
     /// start wrapper allows one engine per person's folder.
     pub live: Arc<std::sync::atomic::AtomicUsize>,
+    /// Every job host's engine states are reported here.
+    pub health: Arc<super::availability::EngineHealth>,
 }
 
 /// A job waits for a session at most this long.
@@ -32,6 +34,8 @@ const SESSION_WAIT: Duration = Duration::from_secs(6 * 3600);
 
 pub struct JobHost {
     units: Arc<dyn HostUnits>,
+    health: Arc<super::availability::EngineHealth>,
+    plan: HostPlan,
     mode: Mode,
     channel: Channel,
     reader: EventReader,
@@ -67,6 +71,8 @@ impl JobRunner {
         }
         Ok(JobHost {
             units: Arc::clone(&self.units),
+            health: Arc::clone(&self.health),
+            plan: plan.clone(),
             reader: EventReader::new(&channel.dir),
             mode,
             channel,
@@ -84,7 +90,11 @@ impl JobHost {
 
     /// Events since the last call.
     pub fn poll(&mut self) -> Vec<Event> {
-        self.reader.read().unwrap_or_default()
+        let events = self.reader.read().unwrap_or_default();
+        for event in &events {
+            self.health.observe(&self.plan, event);
+        }
+        events
     }
 
     /// False once the host has exited by itself.
@@ -189,6 +199,7 @@ done"#,
             launches_root: launches.clone(),
             runtime_uid: unsafe { libc::geteuid() },
             live: Arc::default(),
+            health: Arc::default(),
         };
         let mut job = runner
             .start(&HostPlan {
@@ -235,6 +246,7 @@ mod end_tests {
             launches_root: launches,
             runtime_uid: unsafe { libc::geteuid() },
             live: Arc::default(),
+            health: Arc::default(),
         }
         .start(&HostPlan {
             host_program: script_host(temp, body),
@@ -298,6 +310,7 @@ mod wait_tests {
             launches_root: launches.clone(),
             runtime_uid: unsafe { libc::geteuid() },
             live: Arc::clone(&live),
+            health: Arc::default(),
         };
         let plan = HostPlan {
             host_program: script_host(temp.path(), "sleep 5"),
