@@ -9,6 +9,13 @@
 }:
 let
   lib = pkgs.lib;
+  # The pinned catalog's plugins for this system. @korri:viewer is x86_64 only.
+  catalogPlugins =
+    {
+      x86_64-linux = 34;
+      aarch64-linux = 33;
+    }
+    .${system};
   catalog = import ./catalog-plugins.nix { inherit pkgs system; };
   published = catalog.plugins;
   publishers = {
@@ -63,8 +70,8 @@ pkgs.runCommand "korri-published-plugin-acceptance-${system}" { nativeBuildInput
       test "$(stat -c %a "$receipt")" = 600
       test "$(stat -c %a "$(dirname "$receipt")")" = 700
     done
-    test "$(find files/nix/var/nix/gcroots/korri-plugin-host -name active -type l | wc -l)" = 33
-    jq -e 'length == 33' receipts.json >/dev/null
+    test "$(find files/nix/var/nix/gcroots/korri-plugin-host -name active -type l | wc -l)" = ${toString catalogPlugins}
+    jq -e 'length == ${toString catalogPlugins}' receipts.json >/dev/null
     ${identityChecks}
     jq -e --arg fake08 ${lib.escapeShellArg published.korri-plugin-fake08} \
       --arg solarus ${lib.escapeShellArg published.korri-plugin-solarus} \

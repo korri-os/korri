@@ -9,6 +9,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+# The pinned catalog's plugins per system. @korri:viewer is x86_64 only.
+SYSTEMS = ["aarch64-linux", "x86_64-linux"]
+CATALOG_PLUGINS = {"aarch64-linux": 33, "x86_64-linux": 34}
+
 
 def snapshot(root: Path, target: Path) -> None:
     files = subprocess.check_output(["git", "-C", str(root), "ls-files", "-z"])
@@ -41,7 +45,7 @@ def evaluate(root: Path) -> list:
         (builtins.mapAttrs (_: builtins.unsafeDiscardStringContext) published)
         (builtins.mapAttrs (_: builtins.getContext) published)
         archives
-      ]) [ "aarch64-linux" "x86_64-linux" ])
+      ]) [ {" ".join(json.dumps(system) for system in SYSTEMS)} ])
         ++ [ korri.packages.x86_64-linux.korrid.drvPath ]
     """
     result = subprocess.check_output(
@@ -83,14 +87,14 @@ def main() -> None:
             "unrelated Core update changed catalog outputs or archive fetches"
         )
         assert expected[-1] != actual[-1], "the Core runtime derivation did not change"
-        for packages, contexts, *_ in actual[:-1]:
-            assert len(packages) == 33
+        for system, (packages, contexts, *_) in zip(SYSTEMS, actual[:-1]):
+            assert len(packages) == CATALOG_PLUGINS[system], (system, len(packages))
             for name, path in packages.items():
                 assert contexts[name] == {path: {"path": True}}, (
                     "plugin recipes entered image dependencies"
                 )
         print(
-            "Both architectures: 33 catalog outputs and archive fetches unchanged while the Core runtime derivation changes."
+            "Both architectures: 34 x86_64 and 33 aarch64 catalog outputs and archive fetches unchanged while the Core runtime derivation changes."
         )
 
 

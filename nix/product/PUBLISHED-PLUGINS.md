@@ -6,23 +6,23 @@ raw-cache fallback, receipt migration, or outside repository is in this lane.
 
 ## Published input
 
-- Plugins source: `b036fa5e31604321b286f40d34adc15edee08d16`.
-- Immutable tag: `build-b036fa5e3160-sunshine-0046`.
-- Publication dry run: `43934354164`; live publication: `43953806767`.
-- Catalog: <https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json>.
-- Actual catalog SHA-256: `392054e2a3c3f38d08928c3dd3d17bc37d5e1b17772f02b760dd485dfadfbd2d`.
-- SRI: `sha256-OSBU4qPD840Ikow909F7w31eGxd3LwK3YN1IXfrfvS0=`.
-- 33 plugin IDs, 63 records. Homebrew Hub, PICO-8 and RetroBrews use `any`.
+- Plugins source: `1f0543c4cfac359d523d90d197a8b8e1f49ba2a7`.
+- Immutable tag: `build-1f0543c4cfac-viewer-rust-default`.
+- Publication dry run: `44229547212`; live publication: `44244197372`.
+- Catalog: <https://github.com/korri-os/plugins/releases/download/build-1f0543c4cfac-viewer-rust-default/catalog.json>.
+- Actual catalog SHA-256: `9eb844d40b69c647c3748ef0752ca6580cf276f99c6dca409ea79d93110daaec`.
+- SRI: `sha256-nrhE1AtpxkfDdI7wdSymWAzydvmcbcpAnqedkxENquw=`.
+- 34 plugin IDs, 64 records: 34 for x86_64 and 33 for aarch64, because
+  `@korri:viewer` exists for x86_64 only. Homebrew Hub, PICO-8 and RetroBrews
+  use `any`.
 - Bound key remains
   `korri-plugins-1:qlK5Mgb3dYhF76WC4jGhrvL+CHsU93De7GpBFtrXb98=`.
 
-The selection is the same as the previous pin,
-`build-7e9c19c99b6f-sunshine-resize`. Against it, 2 plugins changed: Sunshine
-on both architectures (patch 0046, korrid can resize the encoder of one
-stream, #476; patch 0045, a silent peer no longer holds every HTTPS client,
-#443) and Steam on x86_64 (the same bytes as
-`build-1c5818a1ff22-steam-native-libs`). The other 31 plugins, and Steam on
-aarch64, keep their store paths and archive bytes.
+The selection is the previous pin's, `build-b036fa5e3160-sunshine-0046`,
+plus `@korri:viewer` (x86_64): the Korri viewer at Korri `12ba1ed78`, which
+streams with nightjar-core and its Rust parts by default (#391). The other 33
+plugins keep their store paths and archive bytes. No product image selects the
+viewer; a device installs it from the official catalog.
 
 These identify the actual live bytes. Publication verifies the dry-run artifact
 digests and requires its catalog byte for byte before uploading those artifacts.
