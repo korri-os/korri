@@ -1,0 +1,141 @@
+warning: Git tree '/var/tmp/step-e-core/android' is dirty
+[07:06:56] record: /var/tmp/step-e-core/android-proofs/run-3
+[07:06:56] nix build korri-viewer-android-apk in auto
+[07:06:57] nix build korri-viewer-android-refusal-probe in auto
+[07:06:57] nix build korri-viewer-android-feedback-probe in auto
+[07:06:58] nix build korri-viewer in auto
+[07:06:58] nix build checks.x86_64-linux.korri-viewer-android in auto
+[07:07:00] the sender fixture's parts, for local
+Building prebuilt tools for x86_64 in auto.
+[07:07:02] pairing a fresh key pair with the Linux viewer
+[07:07:02] starting the emulator on emulator-5634 (2 cores)
+[07:07:21] the emulator booted
+[07:07:44] starting the app
+[07:08:02] the sender changes the stream's size to 720x1280
+[07:08:08] input: keys, touches and a mouse
+[07:08:11] input: a game pad through /dev/uhid
+[07:08:24] stopping Android's audio server (pid 387)
+[07:08:25] feedback: a DualShock 4 through /dev/uhid
+[07:08:33] streaming for 15 s
+[07:08:49] overlay: a game pad through hid's stdin
+[07:08:52] overlay: Guide
+[07:08:56] overlay: input while it is open
+[07:08:58] overlay: Guide again
+[07:09:01] overlay: input after it closed
+[07:09:02] overlay: Back
+[07:09:06] pressing Home
+[07:09:19] starting the app again
+[07:09:31] pressing Home again
+[07:09:37] feedback: the probe calls the stream's rumble and light callbacks
+[07:10:05] stopping the emulator
+{
+  "pass": true,
+  "checks": {
+    "apk_has_no_code": true,
+    "apk_allows_no_backup": true,
+    "apk_leaves_no_recents_entry": true,
+    "apk_has_both_abis": true,
+    "sender_plays_the_tone": true,
+    "sender_logs_input": true,
+    "android_test_trust_anchor": true,
+    "android_test_https": true,
+    "android_test_lib": true,
+    "startup_shows_the_bar": true,
+    "running_event": true,
+    "start_reply_ok": true,
+    "app_in_front_while_streaming": true,
+    "video_layer_exists": true,
+    "screenshots_read_the_bar": true,
+    "screenshots_show_it_moving": true,
+    "screenshots_show_the_streams_shape": true,
+    "resize_sender_output_took_the_new_size": true,
+    "resize_decoder_saw_the_new_size": true,
+    "resize_decoder_gave_the_new_size": true,
+    "resize_decoder_did_not_fail": true,
+    "resize_layer_placed_for_the_new_shape": true,
+    "resize_screenshots_read_the_bar": true,
+    "resize_screenshots_show_the_new_shape": true,
+    "resize_picture_moves_at_the_new_size": true,
+    "input_unbuffered_dispatch_requested": true,
+    "input_pad_identity_from_android": true,
+    "input_pad_is_controller_0": true,
+    "input_pad_removed": true,
+    "picture_moves_after_input": true,
+    "audio_server_restarted": true,
+    "feedback_ds4_seated_with_rumble_and_light": true,
+    "feedback_ds4_battery_read_and_sent": true,
+    "feedback_ds4_left_its_seat": true,
+    "overlay_layer_listed": true,
+    "overlay_video_moves_under_it": true,
+    "overlay_stand_in_shows_while_open": true,
+    "overlay_gone_after_it_closed": true,
+    "overlay_video_moves_after_it_closed": true,
+    "overlay_back_opens_it_over_the_moving_video": true,
+    "overlay_sound_plays_while_open": true,
+    "overlay_input_held_in_the_app": true,
+    "overlay_took_the_input_while_open": true,
+    "sunshine_saw_the_session": true,
+    "stopped_event": true,
+    "stop_reply_ok": true,
+    "viewer_ended_without_failure": true,
+    "app_finished_after_home": true,
+    "no_crash": true,
+    "sound_output_reported": true,
+    "sound_played": true,
+    "sound_closed_before_stopped": true,
+    "sound_went_on_after_the_audio_server_restarted": true,
+    "input_report_has_no_failure": true,
+    "input_gate_closed_before_the_core_stopped": true,
+    "feedback_stopped_after_the_gate_and_before_the_core": true,
+    "feedback_report_has_no_failure": true,
+    "picture_path_reported": true,
+    "frame_record_written": true,
+    "frame_record_ids_move": true,
+    "frame_record_goes_on_at_the_new_size": true,
+    "restart_running_event": true,
+    "restart_start_reply_ok": true,
+    "restart_picture_moves": true,
+    "restart_stopped_event": true,
+    "restart_viewer_ended_without_failure": true,
+    "restart_no_crash": true,
+    "probe_ran_every_step": true,
+    "probe_pad_seated_with_rumble_and_light": true,
+    "probe_rumble_reached_the_pad": true,
+    "probe_rumble_off_reached_the_pad": true,
+    "probe_light_reached_the_pad": true,
+    "probe_android_vibrated_the_pad": true,
+    "probe_android_set_the_light": true,
+    "probe_trigger_rumble_made_no_call": true,
+    "probe_stop_stopped_the_pad": true,
+    "probe_read_the_battery": true,
+    "probe_feedback_had_no_failure": true,
+    "a_start_without_dump_is_refused": true,
+    "a_start_with_dump_granted_is_allowed": true,
+    "sender_keys_arrived": true,
+    "sender_touches_arrived": true,
+    "sender_touch_off_the_centre_arrived_where_the_picture_puts_it": true,
+    "sender_mouse_arrived": true,
+    "sender_pad_arrived_as_xbox_number_0": true,
+    "sender_pad_buttons_sticks_triggers_and_hat_arrived": true,
+    "sender_pad_held_button_kept_arriving": true,
+    "sender_pad_let_go_when_it_went": true,
+    "sender_pad_heartbeat_repeats_every_250_ms": true,
+    "sender_ds4_arrived_as_playstation_with_rumble_battery_and_light": true,
+    "sender_ds4_battery_arrived": true,
+    "sender_overlay_marker_arrived": true,
+    "sender_overlay_held_the_keys": true,
+    "sender_overlay_held_the_pad": true,
+    "sender_overlay_let_go_of_the_held_button": true,
+    "sender_overlay_pad_silent_while_open": true,
+    "sender_overlay_held_the_touch": true,
+    "sender_overlay_touch_after_it_closed": true,
+    "sender_overlay_held_the_mouse": true,
+    "sunshine_saw_the_end": true,
+    "sunshine_stream_followed_the_output": true,
+    "sunshine_captured_sound": true,
+    "emulator_played_the_streams_tone": true,
+    "emulator_played_the_tests_tone": true
+  },
+  "error": null
+}
+[07:10:07] record: /var/tmp/step-e-core/android-proofs/run-3

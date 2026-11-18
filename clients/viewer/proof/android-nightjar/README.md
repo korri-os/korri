@@ -127,3 +127,72 @@ logs "Input queue reached maximum size limit" and answers
 `answer`) now does the same: before, it answered -1 and logged nothing, so
 the 24 failed sends of attempt 2 above cannot be told apart from another
 failure. The policy is the C core's, through the adapter; no vendored edit.
+
+## Five runs after the quiet gate, and one with `-networkcore c`, 2026-11-18
+
+**Four of the five runs with the default core passed 104 of 104 checks.
+Run 1 failed one, `input_report_has_no_failure`: a full input queue
+dropped 2 of its 2060 touch sends.** The run with `--network-core c`
+passed 104 of 104.
+
+From the tree of the commit "the Android proofs wait for the sender to
+cool before they prepare it", on aka. The six runs started after three
+checks a minute apart found aka quiet, and held `/var/tmp/korri-turns.lock`
+from 07:00 to 07:20 UTC. Each run's load, Tctl and busiest processes before
+and after are in its `host-before.txt` and `host-after.txt`. Another
+session's proof (`mkw3d`, about 137 % CPU) started at 07:01:56 during run 1
+and ran into run 2, without the lock; run 1's swipe was over by then
+(07:01:26 to 07:01:27 at the sender), and run 2's start waited 10 s for the
+sender to cool.
+
+| Store path | |
+| --- | --- |
+| APK (unsigned) | `/nix/store/2i0h3v7h9sr9w9crgphdxh5prc784qnx-korri-viewer-android-apk-0.1.0` |
+| Android tests (x86_64) | `/nix/store/dp9nc58133ckmkhisr2n97qd2sdk3hv1-korri-viewer-android-check` |
+
+| Run | Core | Checks | Touch sends: in the app / at the sender | Failed sends | "Input queue reached maximum size limit" | Tctl before, after |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | nightjar | 103 of 104 | 2060 / 1534 | 2 | 2, at 64.959 s, during the swipe | 57.9, 69.0 °C |
+| 2 | nightjar | 104 of 104 | 1115 / 727 | 0 | 0 | 70.5, 63.6 °C |
+| 3 | nightjar | 104 of 104 | 1906 / 1497 | 0 | 0 | 63.6, 63.3 °C |
+| 4 | nightjar | 104 of 104 | 1247 / 803 | 0 | 0 | 63.3, 64.4 °C |
+| 5 | nightjar | 104 of 104 | 2062 / 1545 | 0 | 0 | 64.3, 63.9 °C |
+| c | C | 104 of 104 | 1366 / 788 | 0 | 0 | 63.8, 64.5 °C |
+
+The sender receives fewer touch moves than the app sends: Sunshine's log
+keeps one line for each input packet it takes, and both cores send moves
+unreliable. In each run with nightjar-core both streams logged `nightjar:
+at the stop`; the run with `-networkcore c` logged none. Every run's
+second stream ran in the same process as its first and its bar rose.
+
+Records: `switch-2026-11-18/run-{1,2,3,4,5,c}/`, every file each run wrote
+except the APKs, the WAV file, the screenshots, `pair.txt` and the agent's
+log, with the full logcat (`logcat-all.txt.xz`), Sunshine's input packets
+(`sunshine-input.json.xz`) and the proof's output (`proof.log.txt`).
+
+**The full queue in run 1.** Both cores drop the new packet when their
+150-packet queue is full, and now both log it; the C core's run here sent
+fewer touches (1366) and had none. One difference may halve nightjar-core's
+room for a burst (inferred, not shown): its control thread leaves input in
+the queue while ENet has reliable data waiting to leave
+(`vendor/nightjar/protocol/client/src/control/driver.rs`, `transmit`,
+`INPUT_HOLD_LIMIT`, 75), and Android delivers a swipe's moves in bursts.
+So the queue can hold 74 packets when a burst comes, where the C core's
+input thread sends each packet as it comes and holds only for a reliable
+packet's send (`InputStream.c`, `ControlStream.c`, at most 10 ms). The C
+core holds no unreliable packet, and the touch moves are unreliable in
+both. Showing this needs a test that queues a burst while a reliable
+packet waits; it would take a vendored edit to change.
+
+### The six runs before, refused
+
+The same six runs from the previous commit, 02:43 to 02:44 UTC, each ended
+within 15 s with "The device is hot. k10temp Tctl reads 85.1 to 85.5 °C. A
+run does not start at or above 85.0 °C" (`refused-2026-11-18T0243/`). The
+quiet gate had let run 1 start at 71.4 °C. The proof's own steps before
+the sender's `prepare`, the builds' evaluation and apksigner, lifted aka
+past 85 °C within 13 s, and the next runs started at 83.8 to 84.5 °C with
+no pause between them. stream-cadence's `view` waits for the sender's
+`heat` between runs; the proof did not. It now waits the same way, every
+10 s for at most 600 s, and keeps the wait in `result.json`
+(`sender_cooldown`: 0.1 s in five runs, 10.1 s in run 2).

@@ -1,0 +1,6 @@
+2026-11-18T07:00:06Z
+0.23 1.19 1.81 1/534 1791559
+tctl_mC=57875
+ 2.9 korrid   korrid
+ 0.8 root     .tailscaled-wra
+ 0.6 root     kworker/u48:1-btrfs-endio

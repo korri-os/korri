@@ -1,0 +1,6 @@
+2026-11-18T02:44:11Z
+1.61 2.50 3.92 2/494 1551089
+tctl_mC=85000
+42.4 root     longshot-ready3
+ 3.0 korrid   korrid
+ 0.8 root     .tailscaled-wra

@@ -1,0 +1,6 @@
+2026-11-18T07:03:29Z
+3.33 2.52 2.22 1/710 1798764
+tctl_mC=69000
+ 137 korri    mkw3d-mkw
+ 8.5 root     .emulator-wrapp
+ 2.9 korrid   korrid

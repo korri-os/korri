@@ -1,0 +1,7 @@
+Starting: Intent { cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity (has extras) }
+Status: ok
+LaunchState: WARM
+Activity: com.simonwjackson.korri.viewer/android.app.NativeActivity
+TotalTime: 87
+WaitTime: 88
+Complete

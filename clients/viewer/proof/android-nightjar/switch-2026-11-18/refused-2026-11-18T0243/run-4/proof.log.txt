@@ -1,0 +1,21 @@
+warning: Git tree '/var/tmp/step-e-core/android' is dirty
+[02:44:19] record: /var/tmp/step-e-core/android-proofs/run-4
+[02:44:19] nix build korri-viewer-android-apk in auto
+[02:44:20] nix build korri-viewer-android-refusal-probe in auto
+[02:44:20] nix build korri-viewer-android-feedback-probe in auto
+[02:44:21] nix build korri-viewer in auto
+[02:44:21] nix build checks.x86_64-linux.korri-viewer-android in auto
+[02:44:23] the sender fixture's parts, for local
+Building prebuilt tools for x86_64 in auto.
+[02:44:24] failed: RuntimeError: The device is hot. k10temp Tctl reads 85.1 °C. A run does not start at or above 85.0 °C; the AMD package sensor has no reported limit, so the fixed margin rule applies. Let it cool, then run again.
+{
+  "pass": false,
+  "checks": {
+    "apk_has_no_code": true,
+    "apk_allows_no_backup": true,
+    "apk_leaves_no_recents_entry": true,
+    "apk_has_both_abis": true
+  },
+  "error": "RuntimeError: The device is hot. k10temp Tctl reads 85.1 \u00b0C. A run does not start at or above 85.0 \u00b0C; the AMD package sensor has no reported limit, so the fixed margin rule applies. Let it cool, then run again."
+}
+[02:44:24] record: /var/tmp/step-e-core/android-proofs/run-4

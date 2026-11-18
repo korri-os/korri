@@ -1,0 +1,1883 @@
+{
+  "sender": "local",
+  "stream_host": "100.117.97.45",
+  "checks": {
+    "apk_has_no_code": true,
+    "apk_allows_no_backup": true,
+    "apk_leaves_no_recents_entry": true,
+    "apk_has_both_abis": true,
+    "sender_plays_the_tone": true,
+    "sender_logs_input": true,
+    "android_test_trust_anchor": true,
+    "android_test_https": true,
+    "android_test_lib": true,
+    "startup_shows_the_bar": true,
+    "running_event": true,
+    "start_reply_ok": true,
+    "app_in_front_while_streaming": true,
+    "video_layer_exists": true,
+    "screenshots_read_the_bar": true,
+    "screenshots_show_it_moving": true,
+    "screenshots_show_the_streams_shape": true,
+    "resize_sender_output_took_the_new_size": true,
+    "resize_decoder_saw_the_new_size": true,
+    "resize_decoder_gave_the_new_size": true,
+    "resize_decoder_did_not_fail": true,
+    "resize_layer_placed_for_the_new_shape": true,
+    "resize_screenshots_read_the_bar": true,
+    "resize_screenshots_show_the_new_shape": true,
+    "resize_picture_moves_at_the_new_size": true,
+    "input_unbuffered_dispatch_requested": true,
+    "input_pad_identity_from_android": true,
+    "input_pad_is_controller_0": true,
+    "input_pad_removed": true,
+    "picture_moves_after_input": true,
+    "audio_server_restarted": true,
+    "feedback_ds4_seated_with_rumble_and_light": true,
+    "feedback_ds4_battery_read_and_sent": true,
+    "feedback_ds4_left_its_seat": true,
+    "overlay_layer_listed": true,
+    "overlay_video_moves_under_it": true,
+    "overlay_stand_in_shows_while_open": true,
+    "overlay_gone_after_it_closed": true,
+    "overlay_video_moves_after_it_closed": true,
+    "overlay_back_opens_it_over_the_moving_video": true,
+    "overlay_sound_plays_while_open": true,
+    "overlay_input_held_in_the_app": true,
+    "overlay_took_the_input_while_open": true,
+    "sunshine_saw_the_session": true,
+    "stopped_event": true,
+    "stop_reply_ok": true,
+    "viewer_ended_without_failure": true,
+    "app_finished_after_home": true,
+    "no_crash": true,
+    "sound_output_reported": true,
+    "sound_played": true,
+    "sound_closed_before_stopped": true,
+    "sound_went_on_after_the_audio_server_restarted": true,
+    "input_report_has_no_failure": true,
+    "input_gate_closed_before_the_core_stopped": true,
+    "feedback_stopped_after_the_gate_and_before_the_core": true,
+    "feedback_report_has_no_failure": true,
+    "picture_path_reported": true,
+    "frame_record_written": true,
+    "frame_record_ids_move": true,
+    "frame_record_goes_on_at_the_new_size": true,
+    "restart_running_event": true,
+    "restart_start_reply_ok": true,
+    "restart_picture_moves": true,
+    "restart_stopped_event": true,
+    "restart_viewer_ended_without_failure": true,
+    "restart_no_crash": true,
+    "probe_ran_every_step": true,
+    "probe_pad_seated_with_rumble_and_light": true,
+    "probe_rumble_reached_the_pad": true,
+    "probe_rumble_off_reached_the_pad": true,
+    "probe_light_reached_the_pad": true,
+    "probe_android_vibrated_the_pad": true,
+    "probe_android_set_the_light": true,
+    "probe_trigger_rumble_made_no_call": true,
+    "probe_stop_stopped_the_pad": true,
+    "probe_read_the_battery": true,
+    "probe_feedback_had_no_failure": true,
+    "a_start_without_dump_is_refused": true,
+    "a_start_with_dump_granted_is_allowed": true,
+    "sender_keys_arrived": true,
+    "sender_touches_arrived": true,
+    "sender_touch_off_the_centre_arrived_where_the_picture_puts_it": true,
+    "sender_mouse_arrived": true,
+    "sender_pad_arrived_as_xbox_number_0": true,
+    "sender_pad_buttons_sticks_triggers_and_hat_arrived": true,
+    "sender_pad_held_button_kept_arriving": true,
+    "sender_pad_let_go_when_it_went": true,
+    "sender_pad_heartbeat_repeats_every_250_ms": true,
+    "sender_ds4_arrived_as_playstation_with_rumble_battery_and_light": true,
+    "sender_ds4_battery_arrived": true,
+    "sender_overlay_marker_arrived": true,
+    "sender_overlay_held_the_keys": true,
+    "sender_overlay_held_the_pad": true,
+    "sender_overlay_let_go_of_the_held_button": true,
+    "sender_overlay_pad_silent_while_open": true,
+    "sender_overlay_held_the_touch": true,
+    "sender_overlay_touch_after_it_closed": true,
+    "sender_overlay_held_the_mouse": true,
+    "sunshine_saw_the_end": true,
+    "sunshine_stream_followed_the_output": true,
+    "sunshine_captured_sound": true,
+    "emulator_played_the_streams_tone": true,
+    "emulator_played_the_tests_tone": true
+  },
+  "network_core": "nightjar",
+  "store": {
+    "apk": "/nix/store/2i0h3v7h9sr9w9crgphdxh5prc784qnx-korri-viewer-android-apk-0.1.0/korri-viewer-unsigned.apk",
+    "refusal_probe": "/nix/store/00fgx992pnszmr7i0vkmvw9ldjssngkk-korri-viewer-refusal-probe-apk-0.1.0/korri-viewer-refusal-probe-unsigned.apk",
+    "feedback_probe": "/nix/store/11valfqa2psf9n0d4152761h245p0f8r-korri-viewer-feedback-probe-apk-0.1.0/korri-viewer-feedback-probe-unsigned.apk",
+    "viewer": "/nix/store/2p4mnlc01pz98q57mdjp0gq5xv9849yk-korri-viewer-0.1.0",
+    "tests": "/nix/store/dp9nc58133ckmkhisr2n97qd2sdk3hv1-korri-viewer-android-check/x86_64/tests"
+  },
+  "sunshine": "follows its output",
+  "sender_cooldown": {
+    "seconds": 10.079029743908904,
+    "start": {
+      "sender": [
+        {
+          "zone": "hwmon4/temp1",
+          "type": "k10temp Tctl",
+          "driver": "k10temp",
+          "temp": 82250,
+          "trips": [],
+          "unreadable": null,
+          "limits": {
+            "critical": null,
+            "start_below": 85000,
+            "end_at": 100000
+          }
+        }
+      ]
+    },
+    "end": {
+      "sender": [
+        {
+          "zone": "hwmon4/temp1",
+          "type": "k10temp Tctl",
+          "driver": "k10temp",
+          "temp": 70625,
+          "trips": [],
+          "unreadable": null,
+          "limits": {
+            "critical": null,
+            "start_below": 85000,
+            "end_at": 100000
+          }
+        }
+      ]
+    }
+  },
+  "sunshine_port": 46337,
+  "emulator": {
+    "release": "12",
+    "sdk": "31",
+    "abi": "x86_64"
+  },
+  "startup_screenshots": {
+    "shots": [
+      {
+        "file": "00.png",
+        "from_start_ms": [
+          788,
+          1457
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "01.png",
+        "from_start_ms": [
+          1523,
+          1686
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "02.png",
+        "from_start_ms": [
+          1749,
+          1913
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "03.png",
+        "from_start_ms": [
+          1981,
+          2145
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "04.png",
+        "from_start_ms": [
+          2208,
+          2372
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "05.png",
+        "from_start_ms": [
+          2439,
+          2603
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "06.png",
+        "from_start_ms": [
+          2671,
+          2885
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "07.png",
+        "from_start_ms": [
+          2950,
+          3114
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "08.png",
+        "from_start_ms": [
+          3177,
+          3341
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "09.png",
+        "from_start_ms": [
+          3410,
+          3573
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "10.png",
+        "from_start_ms": [
+          3648,
+          3811
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "11.png",
+        "from_start_ms": [
+          3910,
+          4074
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "12.png",
+        "from_start_ms": [
+          4145,
+          4308
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "13.png",
+        "from_start_ms": [
+          4375,
+          4539
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "14.png",
+        "from_start_ms": [
+          4607,
+          4771
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "15.png",
+        "from_start_ms": [
+          4841,
+          5004
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "16.png",
+        "from_start_ms": [
+          5076,
+          5239
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "17.png",
+        "from_start_ms": [
+          5310,
+          5474
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "18.png",
+        "from_start_ms": [
+          5546,
+          5709
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "19.png",
+        "from_start_ms": [
+          5781,
+          5945
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "20.png",
+        "from_start_ms": [
+          6011,
+          6175
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "21.png",
+        "from_start_ms": [
+          6248,
+          6412
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "22.png",
+        "from_start_ms": [
+          6482,
+          6646
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "23.png",
+        "from_start_ms": [
+          6717,
+          6880
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "24.png",
+        "from_start_ms": [
+          6952,
+          7116
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "25.png",
+        "from_start_ms": [
+          7185,
+          7349
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "26.png",
+        "from_start_ms": [
+          7422,
+          7586
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "27.png",
+        "from_start_ms": [
+          7659,
+          7823
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "28.png",
+        "from_start_ms": [
+          7897,
+          8061
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "29.png",
+        "from_start_ms": [
+          8134,
+          8298
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "30.png",
+        "from_start_ms": [
+          8369,
+          8533
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "31.png",
+        "from_start_ms": [
+          8605,
+          8769
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "32.png",
+        "from_start_ms": [
+          8839,
+          9003
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "33.png",
+        "from_start_ms": [
+          9070,
+          9234
+        ],
+        "unreadable": "ID bar sync pattern not found; inspect discovered output transform"
+      },
+      {
+        "file": "34.png",
+        "from_start_ms": [
+          9312,
+          9828
+        ],
+        "id": 3245
+      }
+    ],
+    "first_readable": {
+      "file": "34.png",
+      "from_start_ms": [
+        9312,
+        9828
+      ],
+      "id": 3245
+    }
+  },
+  "app_pid": "4326",
+  "streaming_screenshots": [
+    {
+      "file": "streaming-1.png",
+      "id": 3407,
+      "x": 336.0,
+      "y": 270.0,
+      "cell": 48.0,
+      "expected": {
+        "cell": 48.0,
+        "y": 270.0
+      },
+      "in_place": true
+    },
+    {
+      "file": "streaming-2.png",
+      "id": 3486,
+      "x": 336.0,
+      "y": 270.0,
+      "cell": 48.0,
+      "expected": {
+        "cell": 48.0,
+        "y": 270.0
+      },
+      "in_place": true
+    },
+    {
+      "file": "streaming-3.png",
+      "id": 3564,
+      "x": 336.0,
+      "y": 270.0,
+      "cell": 48.0,
+      "expected": {
+        "cell": 48.0,
+        "y": 270.0
+      },
+      "in_place": true
+    },
+    {
+      "file": "streaming-4.png",
+      "id": 3641,
+      "x": 336.0,
+      "y": 270.0,
+      "cell": 48.0,
+      "expected": {
+        "cell": 48.0,
+        "y": 270.0
+      },
+      "in_place": true
+    }
+  ],
+  "resize": {
+    "before": {
+      "left": 240,
+      "top": 0,
+      "right": 2160,
+      "bottom": 1080,
+      "window": [
+        2400,
+        1080
+      ]
+    },
+    "size": [
+      720,
+      1280
+    ],
+    "sender_display": {
+      "name": "HEADLESS-1",
+      "mode": {
+        "width": 720,
+        "height": 1280,
+        "refresh": 58823
+      },
+      "refresh_hz": 58.823,
+      "transform": "normal",
+      "power": true,
+      "scale": 1.0,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 720,
+        "height": 1280
+      }
+    },
+    "after": {
+      "left": 896,
+      "top": 0,
+      "right": 1504,
+      "bottom": 1080,
+      "window": [
+        2400,
+        1080
+      ]
+    },
+    "screenshots": [
+      {
+        "file": "resized-1.png",
+        "id": 67,
+        "x": 927.0,
+        "y": 275.0,
+        "cell": 15.0,
+        "expected": {
+          "cell": 15.2,
+          "y": 270.22222222222223
+        },
+        "in_place": true
+      },
+      {
+        "file": "resized-2.png",
+        "id": 143,
+        "x": 927.0,
+        "y": 275.0,
+        "cell": 15.0,
+        "expected": {
+          "cell": 15.2,
+          "y": 270.22222222222223
+        },
+        "in_place": true
+      },
+      {
+        "file": "resized-3.png",
+        "id": 217,
+        "x": 927.0,
+        "y": 275.0,
+        "cell": 15.0,
+        "expected": {
+          "cell": 15.2,
+          "y": 270.22222222222223
+        },
+        "in_place": true
+      },
+      {
+        "file": "resized-4.png",
+        "id": 293,
+        "x": 927.0,
+        "y": 275.0,
+        "cell": 15.0,
+        "expected": {
+          "cell": 15.2,
+          "y": 270.22222222222223
+        },
+        "in_place": true
+      }
+    ],
+    "app_lines": [
+      "picture: the stream's size changes from 1280x720 to 720x1280 at frame 481; the decoder follows it (adaptive playback up to 2960x2960)",
+      "picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 719, 1279), width: int32(720), height: int32(1280), max-height: int32(2960), max-width: int32(2960), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}",
+      "picture: decoded size 720x1280",
+      "picture: video layer 720x1280 placed at (896, 0)-(1504, 1080) in the window 2400x1080",
+      "picture: the picture shown is 720x1280"
+    ]
+  },
+  "input": {
+    "placed": {
+      "left": 896,
+      "top": 0,
+      "right": 1504,
+      "bottom": 1080,
+      "window": [
+        2400,
+        1080
+      ]
+    },
+    "steps": [
+      {
+        "name": "keys",
+        "command": "input keyevent KEYCODE_K KEYCODE_O KEYCODE_R KEYCODE_R KEYCODE_I",
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "tap",
+        "command": "input tap 1200 540",
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "tap off the centre",
+        "command": "input tap 1048 810",
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "swipe",
+        "command": "input swipe 1048 540 1352 540 300",
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "mouse",
+        "command": "input mouse tap 1200 540",
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "gamepad",
+        "command": "hid /data/local/tmp/korri-gamepad.json",
+        "exit_code": 0,
+        "output": ""
+      }
+    ],
+    "app_lines": [
+      "input: the phone: Phone { api_level: 31, vibration: Vibration { manager: Vibrators { count: 1, amplitude: true }, vibrator: Vibrator { present: true, amplitude: true } } }",
+      "input: controller Korri test gamepad (16) vendor 045e product 7e57 external true",
+      "input: Korri test gamepad sticks Some((0, 1)) Some((11, 14)) triggers Some((23, 22)) hat true deadzones 0.05 0.05 0.13",
+      "input: Korri test gamepad (16) is controller 0",
+      "input: arrival Arrival { number: 0, active_mask: 1, kind: 1, buttons: 63487, capabilities: 65 }",
+      "input: controller Korri test gamepad (16) removed",
+      "input: controller number 0 is free"
+    ]
+  },
+  "screenshots_after_input": [
+    {
+      "file": "after-input-1.png",
+      "id": 1077
+    },
+    {
+      "file": "after-input-2.png",
+      "id": 1155
+    },
+    {
+      "file": "after-input-3.png",
+      "id": 1235
+    }
+  ],
+  "audio_server_restart": {
+    "before": "356",
+    "after": "4942"
+  },
+  "feedback_in_stream": {
+    "app_lines": [
+      "input: controller Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (17) vendor 054c product 05c4 external true",
+      "input: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad sticks Some((0, 1)) Some((11, 14)) triggers Some((17, 18)) hat true deadzones 0.05 0.05 0.13",
+      "input: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (17) is controller 0",
+      "feedback: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (17) is controller 0: rumble Dual(Device), RGB light true",
+      "feedback: battery of Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (17): status 3 capacity 0.6 sent to controller 0 as state 2 percentage 60: 0",
+      "input: controller Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (17) removed",
+      "feedback: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (17) stopped"
+    ]
+  },
+  "sound_after_the_restart": [],
+  "overlay": {
+    "placed": {
+      "left": 896,
+      "top": 0,
+      "right": 1504,
+      "bottom": 1080,
+      "window": [
+        2400,
+        1080
+      ]
+    },
+    "steps": [
+      {
+        "name": "marker",
+        "command": "input keyevent KEYCODE_M",
+        "at": 734703.165,
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "keys while open",
+        "command": "input keyevent KEYCODE_H KEYCODE_E KEYCODE_L KEYCODE_D",
+        "at": 734711.329,
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "tap while open",
+        "command": "input tap 1352 270",
+        "at": 734711.744,
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "mouse while open",
+        "command": "input mouse tap 1352 810",
+        "at": 734712.162,
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "key after close",
+        "command": "input keyevent KEYCODE_Z",
+        "at": 734716.5,
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "tap after close",
+        "command": "input tap 1048 270",
+        "at": 734716.912,
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "back opens",
+        "command": "input keyevent KEYCODE_BACK",
+        "at": 734717.328,
+        "exit_code": 0,
+        "output": ""
+      },
+      {
+        "name": "back closes",
+        "command": "input keyevent KEYCODE_BACK",
+        "at": 734718.141,
+        "exit_code": 0,
+        "output": ""
+      }
+    ],
+    "open_shots": [
+      {
+        "file": "overlay-open-1.png",
+        "id": 2983,
+        "lower_half_p99": 63
+      },
+      {
+        "file": "overlay-open-2.png",
+        "id": 3066,
+        "lower_half_p99": 63
+      }
+    ],
+    "closed_shots": [
+      {
+        "file": "overlay-closed-1.png",
+        "id": 3317,
+        "lower_half_p99": 254
+      },
+      {
+        "file": "overlay-closed-2.png",
+        "id": 3397,
+        "lower_half_p99": 254
+      }
+    ],
+    "missed_before_open": {
+      "at": 734707.189,
+      "hwc_missed": 41
+    },
+    "opened": "overlay: open on Guide; the stream's input is held",
+    "shown": "overlay: layer shown: posted 0.0 ms before, applied in 0.11 ms",
+    "overlay_layer_listed": true,
+    "hwc_layers_while_open": [
+      {
+        "layer": "bbq-wrapper#0",
+        "composition": "DEVICE"
+      },
+      {
+        "layer": "bbq-wrapper#0",
+        "composition": "DEVICE"
+      },
+      {
+        "layer": "bbq-wrapper#1",
+        "composition": "DEVICE"
+      }
+    ],
+    "sound_open_1": {
+      "emulator_time": "11-18 07:05:47.140",
+      "server_frames": 1335327,
+      "last_power_row": "11-18 07:05:47.025",
+      "last_powers_db": [
+        -41.6,
+        -41.6
+      ]
+    },
+    "sound_open_2": {
+      "emulator_time": "11-18 07:05:52.116",
+      "server_frames": 1574347,
+      "last_power_row": "11-18 07:05:52.025",
+      "last_powers_db": [
+        -41.6
+      ]
+    },
+    "missed_before_close": {
+      "at": 734712.603,
+      "hwc_missed": 41
+    },
+    "closed": "overlay: closed on Guide after 5.4 s; it took 12 keys and 6 motion events; the stream's input goes on",
+    "hidden": "overlay: layer hidden: posted 0.0 ms before, applied in 0.24 ms",
+    "missed_after_closed_shots": {
+      "at": 734716.189,
+      "hwc_missed": 41
+    },
+    "opened_on_back": "overlay: open on Back; the stream's input is held",
+    "back_shot": {
+      "file": "overlay-back.png",
+      "id": 3565,
+      "lower_half_p99": 63
+    },
+    "closed_on_back": "overlay: closed on Back after 0.8 s; it took 1 keys and 0 motion events; the stream's input goes on",
+    "pad_exit_code": 0,
+    "pad_steps": [
+      {
+        "at": 734703.566,
+        "id": 1,
+        "command": "register",
+        "name": "Korri test gamepad",
+        "vid": 1118,
+        "pid": 32343,
+        "bus": "usb",
+        "descriptor": [
+          5,
+          1,
+          9,
+          5,
+          161,
+          1,
+          133,
+          1,
+          5,
+          9,
+          25,
+          1,
+          41,
+          16,
+          21,
+          0,
+          37,
+          1,
+          117,
+          1,
+          149,
+          16,
+          129,
+          2,
+          5,
+          1,
+          9,
+          57,
+          21,
+          0,
+          37,
+          7,
+          53,
+          0,
+          70,
+          59,
+          1,
+          101,
+          20,
+          117,
+          4,
+          149,
+          1,
+          129,
+          66,
+          101,
+          0,
+          117,
+          4,
+          149,
+          1,
+          129,
+          3,
+          9,
+          48,
+          9,
+          49,
+          9,
+          50,
+          9,
+          53,
+          21,
+          0,
+          38,
+          255,
+          0,
+          117,
+          8,
+          149,
+          4,
+          129,
+          2,
+          5,
+          2,
+          9,
+          197,
+          9,
+          196,
+          21,
+          0,
+          38,
+          255,
+          0,
+          117,
+          8,
+          149,
+          2,
+          129,
+          2,
+          192
+        ]
+      },
+      {
+        "at": 734706.066,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          0,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 734706.366,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          1,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 734707.19,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          1,
+          16,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 734707.34,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          1,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 734710.458,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          0,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 734710.658,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          2,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 734710.808,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          0,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 734711.008,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          0,
+          0,
+          8,
+          255,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 734711.309,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          0,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 734712.604,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          0,
+          16,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 734712.756,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          0,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 734716.189,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          8,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      },
+      {
+        "at": 734716.489,
+        "id": 1,
+        "command": "report",
+        "report": [
+          1,
+          0,
+          0,
+          8,
+          128,
+          128,
+          128,
+          128,
+          0,
+          0
+        ]
+      }
+    ],
+    "app_lines": [
+      "input: controller Korri test gamepad (18) vendor 045e product 7e57 external true",
+      "input: Korri test gamepad sticks Some((0, 1)) Some((11, 14)) triggers Some((23, 22)) hat true deadzones 0.05 0.05 0.13",
+      "input: Korri test gamepad (18) is controller 0",
+      "input: arrival Arrival { number: 0, active_mask: 1, kind: 1, buttons: 63487, capabilities: 65 }",
+      "overlay: open on Guide; the stream's input is held",
+      "overlay: layer shown: posted 0.0 ms before, applied in 0.11 ms",
+      "overlay: closed on Guide after 5.4 s; it took 12 keys and 6 motion events; the stream's input goes on",
+      "overlay: layer hidden: posted 0.0 ms before, applied in 0.24 ms",
+      "overlay: open on Back; the stream's input is held",
+      "overlay: layer shown: posted 0.1 ms before, applied in 0.96 ms",
+      "overlay: closed on Back after 0.8 s; it took 1 keys and 0 motion events; the stream's input goes on",
+      "overlay: layer hidden: posted 0.1 ms before, applied in 0.13 ms",
+      "input: controller Korri test gamepad (18) removed",
+      "input: controller number 0 is free"
+    ]
+  },
+  "sound": {
+    "output": "sound: output try 0 asked low-latency granted none sharing shared rate 48000 channels 2 burst 960 capacity 2132 buffer 1920 (asked 1920) packet 240 frames",
+    "ended": "7703 callbacks, 3300000 frames played, 209116 frames silent, 434 short callbacks after the first sound, 14012 packets, 12 concealed, 261 dropped over 40 ms pending, 0 not decoded, 5 device xruns, 0 reopened",
+    "callbacks": 7703,
+    "played": 3300000,
+    "silent": 209116,
+    "short": 434,
+    "packets": 14012,
+    "concealed": 12,
+    "dropped": 261,
+    "decode_errors": 0,
+    "xruns": 5,
+    "reopened": 0
+  },
+  "sound_restart": {
+    "seconds_before_the_server_died": 31.3,
+    "seconds_played": 68.8
+  },
+  "input_report": "14 keys, 105 controller states, 3 arrivals, 2 mouse, 1115 touches sent; 26 held; 0 unsupported, 0 outside the stream, 0 failed",
+  "feedback_report": "0 rumbles, 0 trigger rumbles, 0 lights, 2 calls to Android; 3 battery reads, 1 battery reports sent, 0 outside the stream; 0 failed",
+  "viewer_ran": {
+    "decode": "mediacodec",
+    "decoder": "c2.goldfish.h264.decoder"
+  },
+  "picture_losses": {
+    "idr_requested_by_the_decoder": 0,
+    "frames_not_decoded": 0,
+    "decode_unit_queue_overflows": 0,
+    "frames_the_network_dropped": 0
+  },
+  "input_queue_full_lines": 0,
+  "frame_record": {
+    "header": "index,frame_number,enqueue_ns,decoded_ns,display_ns",
+    "rows": 4045,
+    "in_order": true,
+    "decoded": 4044,
+    "handed_off": 4028,
+    "recording_units": 4045,
+    "handed_off_readable_ids": 4028,
+    "handed_off_distinct_ids": 3558,
+    "first_handed_off_id": 3240,
+    "last_handed_off_id": 3780,
+    "first_handoff_ns": 51338629317,
+    "sizes": [
+      {
+        "size": [
+          1280,
+          720
+        ],
+        "first_handoff_ns": 51338629317,
+        "handed_off": 470,
+        "readable_ids": 470,
+        "distinct_ids": 469,
+        "ids_never_go_back": true,
+        "repeated": [
+          {
+            "handoff_s": 59.664,
+            "units": [
+              478,
+              479
+            ],
+            "ids": [
+              3718,
+              3718
+            ]
+          }
+        ],
+        "went_back": [],
+        "first_id": 3240,
+        "last_id": 3718
+      },
+      {
+        "size": [
+          720,
+          1280
+        ],
+        "first_handoff_ns": 59738162003,
+        "handed_off": 3558,
+        "readable_ids": 3558,
+        "distinct_ids": 3558,
+        "ids_never_go_back": true,
+        "repeated": [],
+        "went_back": [],
+        "first_id": 4,
+        "last_id": 3780
+      }
+    ],
+    "handed_off_ids_never_go_back": true,
+    "startup_ms": 9252.6
+  },
+  "restart": {
+    "pid_after_the_first_stream": "4326",
+    "pid": "4326",
+    "screenshots": [
+      {
+        "file": "again-1.png",
+        "id": 4642
+      },
+      {
+        "file": "again-2.png",
+        "id": 4714
+      },
+      {
+        "file": "again-3.png",
+        "id": 4789
+      }
+    ],
+    "input_packets_at_the_sender": 2
+  },
+  "refusal": {
+    "without_dump": "refused: java.lang.SecurityException: Permission Denial: starting Intent { cmp=com.simonwjackson.korri.viewer/android.app.NativeActivity } from ProcessRecord{e603cd8 5314:com.simonwjackson.korri.viewer.refusal/u0a148} (pid=5314, uid=10148) requires android.permission.DUMP",
+    "with_dump_granted": "started",
+    "viewer_lines_after_the_grant": [
+      "   145.710  4326  5370 E korri-viewer: viewer failed: no intent extra args"
+    ]
+  },
+  "feedback_probe": {
+    "ended": "ended",
+    "steps": {
+      "seat": {
+        "at_report": 1,
+        "vibrating": [
+          "false"
+        ],
+        "rgb_colours": [
+          "0xff000040"
+        ]
+      },
+      "rumble low c000 high 4000": {
+        "at_report": 2,
+        "vibrating": [
+          "true"
+        ],
+        "rgb_colours": [
+          "0xff000040"
+        ]
+      },
+      "light 446688": {
+        "at_report": 5,
+        "vibrating": [
+          "true"
+        ],
+        "rgb_colours": [
+          "0xff446688"
+        ]
+      },
+      "trigger rumble ffff ffff": {
+        "at_report": 5,
+        "vibrating": [
+          "true"
+        ],
+        "rgb_colours": [
+          "0xff446688"
+        ]
+      },
+      "rumble off": {
+        "at_report": 6,
+        "vibrating": [
+          "false"
+        ],
+        "rgb_colours": [
+          "0xff446688"
+        ]
+      },
+      "rumble low 4000 high c000": {
+        "at_report": 7,
+        "vibrating": [
+          "true"
+        ],
+        "rgb_colours": [
+          "0xff446688"
+        ]
+      },
+      "stop": {
+        "at_report": 9,
+        "vibrating": [
+          "false"
+        ],
+        "rgb_colours": [
+          "0x0"
+        ]
+      }
+    },
+    "output_reports": [
+      {
+        "weak": 64,
+        "strong": 192,
+        "rgb": [
+          0,
+          0,
+          64
+        ]
+      },
+      {
+        "weak": 64,
+        "strong": 192,
+        "rgb": [
+          68,
+          0,
+          64
+        ]
+      },
+      {
+        "weak": 64,
+        "strong": 192,
+        "rgb": [
+          68,
+          102,
+          64
+        ]
+      },
+      {
+        "weak": 64,
+        "strong": 192,
+        "rgb": [
+          68,
+          102,
+          136
+        ]
+      },
+      {
+        "weak": 0,
+        "strong": 0,
+        "rgb": [
+          68,
+          102,
+          136
+        ]
+      },
+      {
+        "weak": 192,
+        "strong": 64,
+        "rgb": [
+          68,
+          102,
+          136
+        ]
+      },
+      {
+        "weak": 0,
+        "strong": 0,
+        "rgb": [
+          68,
+          102,
+          136
+        ]
+      },
+      {
+        "weak": 0,
+        "strong": 0,
+        "rgb": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "app_lines": [
+      "input: the gestures of pan and zoom: GestureConfig { touch_slop: 21, double_tap_slop: 263, min_span: 446, long_press_ms: 400, double_tap_ms: 300 }",
+      "input: the phone: Phone { api_level: 31, vibration: Vibration { manager: Vibrators { count: 1, amplitude: true }, vibrator: Vibrator { present: true, amplitude: true } } }",
+      "input: controller Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (19) vendor 054c product 05c4 external true",
+      "input: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad sticks Some((0, 1)) Some((11, 14)) triggers Some((17, 18)) hat true deadzones 0.05 0.05 0.13",
+      "input: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (19) is controller 0",
+      "input: arrival Arrival { number: 0, active_mask: 1, kind: 2, buttons: 63487, capabilities: 195 }",
+      "feedback: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (19) is controller 0: rumble Dual(Device), RGB light true",
+      "feedback: battery of Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (19): status 3 capacity 0.6 sent to controller 0 as state 2 percentage 60: -2",
+      "feedback: rumble controller 0 low c000 high 4000: [Combined { target: Device(19), amplitudes: [64, 192] }]",
+      "feedback: light controller 0 ff446688: [Light { device: 19, argb: 4282672776 }]",
+      "feedback: trigger rumble controller 0 left ffff right ffff: no call: it has no trigger vibrators (four vibrators rumble the triggers)",
+      "feedback: rumble controller 0 low 0000 high 0000: [CancelManager { target: Device(19) }]",
+      "feedback: rumble controller 0 low 4000 high c000: [Combined { target: Device(19), amplitudes: [192, 64] }]",
+      "feedback: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (19) stopped",
+      "feedback: ended: 3 rumbles, 1 trigger rumbles, 1 lights, 7 calls to Android; 1 battery reads, 0 battery reports sent, 1 outside the stream; 0 failed"
+    ],
+    "probe_lines": [
+      "started",
+      "pad 19",
+      "step seat",
+      "step rumble low c000 high 4000",
+      "step light 446688",
+      "step trigger rumble ffff ffff",
+      "step rumble off",
+      "step rumble low 4000 high c000",
+      "step stop",
+      "stopped true",
+      "ended"
+    ]
+  },
+  "input_at_the_sender": {
+    "counts": {
+      "absolute mouse move": 2,
+      "controller": 47,
+      "controller arrival": 1,
+      "keyboard": 10,
+      "relative mouse move": 2,
+      "touch": 727
+    },
+    "keyboard": {
+      "sent": [
+        [
+          3,
+          75
+        ],
+        [
+          4,
+          75
+        ],
+        [
+          3,
+          79
+        ],
+        [
+          4,
+          79
+        ],
+        [
+          3,
+          82
+        ],
+        [
+          4,
+          82
+        ],
+        [
+          3,
+          82
+        ],
+        [
+          4,
+          82
+        ],
+        [
+          3,
+          73
+        ],
+        [
+          4,
+          73
+        ]
+      ],
+      "every_key_down_and_up_in_order": true,
+      "flags": [
+        1
+      ]
+    },
+    "touch": {
+      "types": [
+        1,
+        2,
+        3
+      ],
+      "at_the_middle": 42,
+      "downs_off_the_centre": 1
+    },
+    "mouse": {
+      "positions": 2,
+      "reference": [
+        [
+          608,
+          1080
+        ]
+      ]
+    },
+    "arrival": [
+      {
+        "controllerNumber": "0",
+        "type": "01",
+        "capabilities": "0041",
+        "supportedButtonFlags": "0000F7FF"
+      }
+    ],
+    "controller": {
+      "packets": 47,
+      "a_pressed": true,
+      "left_stick_full_right": true,
+      "right_trigger_full": true,
+      "hat_left": true,
+      "x_held_packets": 17,
+      "last": {
+        "controllerNumber": "0",
+        "activeGamepadMask": "0000",
+        "buttonFlags": "00000000",
+        "leftTrigger": "00",
+        "rightTrigger": "00",
+        "leftStickX": "0",
+        "leftStickY": "0",
+        "rightStickX": "0",
+        "rightStickY": "0"
+      },
+      "after_it_went": {
+        "packets": 5,
+        "gaps_ms": [
+          249,
+          251,
+          249,
+          252
+        ]
+      }
+    }
+  },
+  "feedback_at_the_sender": {
+    "arrival": [
+      {
+        "controllerNumber": "0",
+        "type": "02",
+        "capabilities": "00C3",
+        "supportedButtonFlags": "0000F7FF"
+      }
+    ],
+    "battery": [
+      {
+        "controllerNumber": "00",
+        "batteryState": "02",
+        "batteryPercentage": "3C"
+      }
+    ],
+    "app_sent_percentage": 60
+  },
+  "overlay_at_the_sender": {
+    "keys": [
+      "Z",
+      "Z"
+    ],
+    "controller_buttons": [
+      "00000000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00001000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00004000",
+      "00004000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000"
+    ],
+    "controller_gaps_ms": [
+      0,
+      253,
+      148,
+      51,
+      47,
+      6,
+      51,
+      50,
+      51,
+      51,
+      45,
+      5,
+      51,
+      162,
+      5535,
+      251,
+      250,
+      250,
+      250,
+      253,
+      247,
+      250,
+      250,
+      251,
+      251,
+      248,
+      250,
+      250,
+      64,
+      186,
+      112,
+      139,
+      249,
+      252,
+      196,
+      1056,
+      187,
+      63,
+      250,
+      0,
+      250,
+      250,
+      251,
+      250
+    ],
+    "touches": [
+      {
+        "eventType": "07",
+        "x": "0",
+        "y": "0"
+      },
+      {
+        "eventType": "01",
+        "x": "0.25",
+        "y": "0.25"
+      },
+      {
+        "eventType": "02",
+        "x": "0.25",
+        "y": "0.25"
+      },
+      {
+        "eventType": "07",
+        "x": "0",
+        "y": "0"
+      }
+    ],
+    "mouse": []
+  },
+  "sender_restore": {
+    "live_games": [],
+    "product_units": {
+      "at_start": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 8317014
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 219956135598
+        },
+        "korri-clock-governor.service": {
+          "pid": 3896,
+          "started": 164324721
+        },
+        "korri-compositor.service": {
+          "pid": 748122,
+          "started": 87957282465
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 2569242,
+          "started": 219957620000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 164531729
+        },
+        "korri-limits.service": {
+          "pid": 4035,
+          "started": 164533214
+        },
+        "korri-local-signer.service": {
+          "pid": 2569201,
+          "started": 219956806525
+        },
+        "korri-plugin-admin.service": {
+          "pid": 748266,
+          "started": 87969764633
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 87893718128
+        },
+        "korri-portal-credentials.service": {
+          "pid": 0,
+          "started": 162355048
+        },
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 1158271,
+          "started": 617470040000
+        },
+        "korri-sunshine.service": {
+          "pid": 482426,
+          "started": 728283246173
+        },
+        "korrid.service": {
+          "pid": 2083501,
+          "started": 426653099424
+        }
+      },
+      "at_end": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 8317014
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 219956135598
+        },
+        "korri-clock-governor.service": {
+          "pid": 3896,
+          "started": 164324721
+        },
+        "korri-compositor.service": {
+          "pid": 748122,
+          "started": 87957282465
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 2569242,
+          "started": 219957620000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 164531729
+        },
+        "korri-limits.service": {
+          "pid": 4035,
+          "started": 164533214
+        },
+        "korri-local-signer.service": {
+          "pid": 2569201,
+          "started": 219956806525
+        },
+        "korri-plugin-admin.service": {
+          "pid": 748266,
+          "started": 87969764633
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 87893718128
+        },
+        "korri-portal-credentials.service": {
+          "pid": 0,
+          "started": 162355048
+        },
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 1158271,
+          "started": 617470040000
+        },
+        "korri-sunshine.service": {
+          "pid": 482426,
+          "started": 728283246173
+        },
+        "korrid.service": {
+          "pid": 2083501,
+          "started": 426653099424
+        }
+      },
+      "changed": []
+    },
+    "pass": true,
+    "pids_unchanged": {},
+    "run_folder": "/tmp/korri-stream-cadence-sender-lfh2srqc",
+    "run_folder_bytes": 27464122,
+    "run_folder_removed": true,
+    "stray_processes_killed": [],
+    "remaining_processes": [],
+    "other_processes": [],
+    "new_input_devices": [],
+    "gone_input_devices": [],
+    "input_rule": "record",
+    "errors": []
+  },
+  "emulator_stop": {
+    "started": true,
+    "exit_code": 0,
+    "processes_left": []
+  },
+  "emulator_sound": {
+    "rate": 48000,
+    "channels": 2,
+    "seconds": 92.0,
+    "seconds_of_sound": 76.2,
+    "seconds_at_1000_hz": 72.7,
+    "median_rms_at_1000_hz": 273.0,
+    "seconds_at_440_hz": 2.0,
+    "median_rms_at_440_hz": 200.4
+  },
+  "pass": true
+}

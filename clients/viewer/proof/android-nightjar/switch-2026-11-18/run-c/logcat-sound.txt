@@ -1,0 +1,21 @@
+    47.253  4250  4338 I AAudio  : AAudioStreamBuilder_openStream() called ----------------------------------------
+    47.258  4250  4338 D AudioTrack: createTrack_l(0): AUDIO_OUTPUT_FLAG_FAST denied by server; frameCount 0 -> 2132
+    47.258  4250  4338 D AAudioStream: setState(s#1) from 0 to 2
+    47.259  4250  4338 I AAudio  : AAudioStreamBuilder_openStream() returns 0 = AAUDIO_OK for s#1 ----------------
+    47.259  4250  4338 D AAudio  : AAudioStream_requestStart(s#1) called --------------
+    47.259  4250  4338 D AAudioStream: setState(s#1) from 2 to 3
+    47.260  4250  4338 D AAudio  : AAudioStream_requestStart(s#1) returned 0 ---------
+    47.260  4250  4531 D AAudioStream: setState(s#1) from 3 to 4
+    78.652  4250  4319 W AudioSystem: AudioFlinger server died!
+    78.654  4250  4531 W AudioTrack: restoreTrack_l(17): dead IAudioTrack, PCM, creating a new one from obtainBuffer()
+    79.668  4250  4531 D AudioTrack: createTrack_l(17): AUDIO_OUTPUT_FLAG_FAST denied by server; frameCount 2132 -> 2132
+    79.674  4250  4531 D AudioTrack: releaseBuffer is no-op due to IAudioTrack sequence mismatch 1 != 2
+   121.565  4250  4338 D AAudio  : AAudioStream_requestStop(s#1) called
+   121.565  4250  4338 D AAudioStream: setState(s#1) from 4 to 9
+   121.565  4250  4338 D AudioTrack: stop(15): called with 3517775 frames delivered
+   121.576  4250  4338 D AAudio  : AAudioStream_requestStop(s#1) called
+   121.576  4250  4338 D AAudio  : AAudioStream_close(s#1) called ---------------
+   121.576  4250  4338 D AAudioStream: setState(s#1) from 9 to 11
+   121.578  4250  4338 D AAudioStream: setState(s#1) from 11 to 12
+   121.578  4250  4338 D AAudioStream: ~AudioStream(s#1) mPlayerBase strongCount = 2
+   121.578  4250  4338 D AAudio  : AAudioStream_close(s#1) returned 0 ---------

@@ -1,0 +1,6 @@
+2026-11-18T07:06:55Z
+3.81 3.70 2.76 1/537 1805833
+tctl_mC=63625
+ 2.9 korrid   korrid
+ 0.8 root     .tailscaled-wra
+ 0.5 root     systemd

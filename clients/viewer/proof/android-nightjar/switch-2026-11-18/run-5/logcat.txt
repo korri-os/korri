@@ -1,0 +1,141 @@
+    39.192  4352  4352 I korri-viewer: overlay: layer placed at (0, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 0, top 0, right 0, bottom 0)
+    39.234  4352  4381 I korri-viewer: picture: video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+    39.344  4352  4381 I korri-viewer: input: controllers attached at the start: mask 0x0
+    39.344  4352  4381 I korri-viewer: input: the gestures of pan and zoom: GestureConfig { touch_slop: 21, double_tap_slop: 263, min_span: 446, long_press_ms: 400, double_tap_ms: 300 }
+    39.344  4352  4381 I korri-viewer: request {"launchId":"d2-proof","command":{"kind":"Start","value":{"address":"100.117.97.45:33045"}}}
+    39.344  4352  4352 I korri-viewer: input: unbuffered dispatch requested
+    39.345  4352  4405 I korri-viewer: start: Start at 39345.045 ms
+    40.011  4352  4405 I korri-viewer: start: http serverinfo answered at 40011.121 ms (connected 157.5 ms, first byte 661.8 ms, total 661.9 ms)
+    41.013  4352  4405 I korri-viewer: start: https serverinfo answered at 41013.923 ms (connected 498.1 ms, TLS done 1001.4 ms, first byte 1002.4 ms, total 1002.5 ms)
+    41.013  4352  4405 I korri-viewer: start: paired at 41013.986 ms
+    42.020  4352  4405 I korri-viewer: start: https applist answered at 42020.895 ms (connected 502.0 ms, TLS done 1005.6 ms, first byte 1006.7 ms, total 1006.8 ms)
+    42.021  4352  4405 I korri-viewer: start: picture and input ready at 42021.291 ms
+    42.032  4352  4540 I korri-viewer: start: decoders listed at 42032.323 ms
+    42.032  4352  4540 I korri-viewer: picture: decoders for video/avc: c2.goldfish.h264.decoder (hardware true, software-only false, alias false, low-latency false, high true, adaptive true); c2.android.avc.decoder (hardware false, software-only true, alias false, low-latency false, high true, adaptive true); OMX.google.h264.decoder (hardware false, software-only true, alias true, low-latency false, high true, adaptive true)
+    42.060  4352  4540 I korri-viewer: picture: decode mediacodec decoder c2.goldfish.h264.decoder hardware true software-only false low-latency-feature false try 0 keys low-latency=1,vdec-lowlatency=1,priority=0 size 1280x720@60 adaptive 2960x2960
+    42.060  4352  4540 I korri-viewer: start: decoder made at 42060.636 ms
+    43.560  4352  4405 I korri-viewer: start: https launch answered at 43560.780 ms (connected 501.5 ms, TLS done 1003.9 ms, first byte 1538.9 ms, total 1539.3 ms)
+    43.561  4352  4405 I korri-viewer: start: core platform init begins at 43561.306 ms
+    43.561  4352  4405 I korri-viewer: start: core platform init done at 43561.327 ms
+    43.561  4352  4405 I korri-viewer: start: core name resolution begins at 43561.333 ms
+    43.561  4352  4405 I korri-viewer: start: core name resolution done at 43561.766 ms
+    43.561  4352  4405 I korri-viewer: start: core audio stream init begins at 43561.789 ms
+    43.561  4352  4405 I korri-viewer: start: core audio stream init done at 43561.794 ms
+    43.561  4352  4405 I korri-viewer: start: core RTSP handshake begins at 43561.803 ms
+    46.786  4352  4405 I korri-viewer: start: core RTSP handshake done at 46786.835 ms
+    46.786  4352  4405 I korri-viewer: start: core control stream init begins at 46786.962 ms
+    46.787  4352  4405 I korri-viewer: start: core control stream init done at 46787.021 ms
+    46.787  4352  4405 I korri-viewer: start: core video stream init begins at 46787.026 ms
+    46.787  4352  4405 I korri-viewer: start: core video stream init done at 46787.072 ms
+    46.787  4352  4405 I korri-viewer: start: core input stream init begins at 46787.077 ms
+    46.787  4352  4405 I korri-viewer: start: core input stream init done at 46787.081 ms
+    46.787  4352  4405 I korri-viewer: start: core control stream start begins at 46787.084 ms
+    47.265  4352  4405 I korri-viewer: start: core control stream start done at 47265.317 ms
+    47.265  4352  4405 I korri-viewer: start: core video stream start begins at 47265.406 ms
+    47.265  4352  4405 I korri-viewer: start: decoder taken at 47265.548 ms
+    47.265  4352  4405 I korri-viewer: Video receive buffer: the system granted 256 KiB of the 2080 KiB asked (the system's cap: raise it with `sudo sysctl -w net.core.rmem_max=2129920`)
+    47.265  4352  4405 I korri-viewer: start: core video stream start done at 47265.806 ms
+    47.265  4352  4405 I korri-viewer: start: core audio stream start begins at 47265.813 ms
+    47.266  4352  4662 I korri-viewer: Raised stream threads to nice -8 by setpriority, from VideoDec on
+    47.266  4352  4661 I korri-viewer: Video receive takes up to 32 queued datagrams per call
+    47.266  4352  4661 I korri-viewer: Video receive UDP_GRO is on: coalesced reads are split per datagram
+    47.269  4352  4405 I korri-viewer: sound: output try 0 asked low-latency granted none sharing shared rate 48000 channels 2 burst 960 capacity 2132 buffer 1920 (asked 1920) packet 240 frames
+    47.269  4352  4405 I korri-viewer: sound: playing
+    47.269  4352  4405 I korri-viewer: start: core audio stream start done at 47269.550 ms
+    47.269  4352  4405 I korri-viewer: start: core input stream start begins at 47269.559 ms
+    47.269  4352  4405 I korri-viewer: start: core input stream start done at 47269.568 ms
+    47.269  4352  4666 I korri-viewer: Received first audio packet
+    47.269  4352  4666 I korri-viewer: start: first audio packet at 47269.649 ms
+    47.289  4352  4405 I korri-viewer: event {"kind":"Status","value":"Running"}
+    47.289  4352  4405 I korri-viewer: event {"kind":"Snapshot","value":{"connected":true,"controls":[]}}
+    47.289  4352  4406 I korri-viewer: reply Start {"kind":"Ok"}
+    47.291  4352  4661 I korri-viewer: Received first video packet after 0 ms
+    47.291  4352  4661 I korri-viewer: start: first video packet at 47291.577 ms
+    47.408  4352  4660 I korri-viewer: picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 1279, 719), width: int32(1280), height: int32(720), max-height: int32(2960), max-width: int32(2960), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}
+    47.408  4352  4660 I korri-viewer: picture: decoded size 1280x720
+    47.409  4352  4660 I korri-viewer: start: first frame shown at 47409.248 ms
+    47.410  4352  4352 I korri-viewer: picture: the black backdrop shows under the video, with its first picture
+    47.523  4352  4405 I korri-viewer: picture: the picture shown is 1280x720
+    55.587  4352  4662 I korri-viewer: picture: the stream's size changes from 1280x720 to 720x1280 at frame 477; the decoder follows it (adaptive playback up to 2960x2960)
+    55.634  4352  4660 I korri-viewer: picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 719, 1279), width: int32(720), height: int32(1280), max-height: int32(2960), max-width: int32(2960), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}
+    55.634  4352  4660 I korri-viewer: picture: decoded size 720x1280
+    55.635  4352  4381 I korri-viewer: picture: video layer 720x1280 placed at (896, 0)-(1504, 1080) in the window 2400x1080
+    55.664  4352  4405 I korri-viewer: picture: the picture shown is 720x1280
+    55.665  4352  4667 I korri-viewer: sound: 45 ms pending; 1 packets dropped since the last line
+    56.838  4352  4667 I korri-viewer: sound: 43 ms pending; 15 packets dropped since the last line
+    57.769  4352  4666 I korri-viewer: Audio arrival over 10 s: 2001 packets, late p50 2 p95 8 p99 21 max 38 ms, >=8:102 >=12:40 >=16:31 >=20:24 >=24:15 >=32:4 >=40:0
+    64.670  4774  4774 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+    64.693  4774  4774 I AndroidRuntime: Using default boot image
+    64.694  4774  4774 I AndroidRuntime: Leaving lock profiling enabled
+    64.882  4774  4774 D AndroidRuntime: Calling main entry com.android.commands.hid.Hid
+    67.086  4352  4381 I korri-viewer: input: the phone: Phone { api_level: 31, vibration: Vibration { manager: Vibrators { count: 1, amplitude: true }, vibrator: Vibrator { present: true, amplitude: true } } }
+    67.086  4352  4381 I korri-viewer: input: controller Korri test gamepad (16) vendor 045e product 7e57 external true
+    67.086  4352  4381 I korri-viewer: input: Korri test gamepad sticks Some((0, 1)) Some((11, 14)) triggers Some((23, 22)) hat true deadzones 0.05 0.05 0.13
+    67.086  4352  4381 I korri-viewer: input: Korri test gamepad (16) is controller 0
+    67.086  4352  4381 I korri-viewer: input: arrival Arrival { number: 0, active_mask: 1, kind: 1, buttons: 63487, capabilities: 65 }
+    67.087  4352  4404 I korri-viewer: feedback: Korri test gamepad (16) is controller 0: rumble None, RGB light false
+    67.771  4352  4666 I korri-viewer: Audio arrival over 10 s: 2001 packets, late p50 1 p95 5 p99 7 max 11 ms, >=8:11 >=12:0 >=16:0 >=20:0 >=24:0 >=32:0 >=40:0
+    70.556  4774  4774 D AndroidRuntime: Shutting down VM
+    70.777  4352  4381 I korri-viewer: input: controller Korri test gamepad (16) removed
+    70.777  4352  4381 I korri-viewer: input: controller number 0 is free
+    70.777  4352  4404 I korri-viewer: feedback: Korri test gamepad (16) stopped
+    73.124  4352  4667 I korri-viewer: sound: 40 ms pending; 1 packets dropped since the last line
+    77.773  4352  4666 I korri-viewer: Audio arrival over 10 s: 2000 packets, late p50 3 p95 7 p99 9 max 20 ms, >=8:50 >=12:2 >=16:1 >=20:1 >=24:0 >=32:0 >=40:0
+    77.774  4352  4667 I korri-viewer: sound: 43 ms pending; 2 packets dropped since the last line
+    78.833  4848  4848 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+    78.835  4848  4848 I AndroidRuntime: Using default boot image
+    78.835  4848  4848 I AndroidRuntime: Leaving lock profiling enabled
+    78.898  4848  4848 D AndroidRuntime: Calling main entry com.android.commands.hid.Hid
+    82.797  4352  4381 I korri-viewer: input: controller Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (17) vendor 054c product 05c4 external true
+    82.797  4352  4381 I korri-viewer: input: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad sticks Some((0, 1)) Some((11, 14)) triggers Some((17, 18)) hat true deadzones 0.05 0.05 0.13
+    82.797  4352  4381 I korri-viewer: input: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (17) is controller 0
+    82.798  4352  4381 I korri-viewer: input: arrival Arrival { number: 0, active_mask: 1, kind: 2, buttons: 63487, capabilities: 195 }
+    82.798  4352  4404 I korri-viewer: feedback: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (17) is controller 0: rumble Dual(Device), RGB light true
+    82.798  4352  4404 I korri-viewer: feedback: battery of Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (17): status 3 capacity 0.6 sent to controller 0 as state 2 percentage 60: 0
+    84.244  4848  4848 D AndroidRuntime: Shutting down VM
+    84.370  4352  4381 I korri-viewer: input: controller Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (17) removed
+    84.370  4352  4381 I korri-viewer: input: controller number 0 is free
+    84.370  4352  4404 I korri-viewer: feedback: Sony DS4 (model CUH-ZCT1U)(Bluetooth Test) Touchpad (17) stopped
+    84.848  4352  4667 I korri-viewer: sound: 43 ms pending; 199 packets dropped since the last line
+    87.777  4352  4666 I korri-viewer: Audio arrival over 10 s: 2001 packets, late p50 2 p95 6 p99 8 max 11 ms, >=8:24 >=12:0 >=16:0 >=20:0 >=24:0 >=32:0 >=40:0
+    88.099  4352  4667 I korri-viewer: sound: 40 ms pending; 2 packets dropped since the last line
+    97.779  4352  4666 I korri-viewer: Audio arrival over 10 s: 2000 packets, late p50 3 p95 7 p99 8 max 10 ms, >=8:41 >=12:0 >=16:0 >=20:0 >=24:0 >=32:0 >=40:0
+   102.286  4352  4667 I korri-viewer: sound: 40 ms pending; 2 packets dropped since the last line
+   102.524  5114  5114 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+   102.528  5114  5114 I AndroidRuntime: Using default boot image
+   102.528  5114  5114 I AndroidRuntime: Leaving lock profiling enabled
+   102.598  5114  5114 D AndroidRuntime: Calling main entry com.android.commands.hid.Hid
+   105.283  4352  4381 I korri-viewer: input: controller Korri test gamepad (18) vendor 045e product 7e57 external true
+   105.283  4352  4381 I korri-viewer: input: Korri test gamepad sticks Some((0, 1)) Some((11, 14)) triggers Some((23, 22)) hat true deadzones 0.05 0.05 0.13
+   105.283  4352  4381 I korri-viewer: input: Korri test gamepad (18) is controller 0
+   105.284  4352  4381 I korri-viewer: input: arrival Arrival { number: 0, active_mask: 1, kind: 1, buttons: 63487, capabilities: 65 }
+   105.284  4352  4404 I korri-viewer: feedback: Korri test gamepad (18) is controller 0: rumble None, RGB light false
+   106.251  4352  4381 I korri-viewer: overlay: open on Guide; the stream's input is held
+   106.252  4352  4352 I korri-viewer: overlay: layer shown: posted 0.2 ms before, applied in 0.26 ms
+   110.866  4352  4667 I korri-viewer: sound: 40 ms pending; 2 packets dropped since the last line
+   111.637  4352  4381 I korri-viewer: overlay: closed on Guide after 5.4 s; it took 12 keys and 6 motion events; the stream's input goes on
+   111.637  4352  4352 I korri-viewer: overlay: layer hidden: posted 0.2 ms before, applied in 0.23 ms
+   112.282  4352  4666 I korri-viewer: Audio arrival over 10 s: 2005 packets, late p50 3 p95 9 p99 12 max 24 ms, >=8:171 >=12:27 >=16:1 >=20:1 >=24:1 >=32:0 >=40:0
+   114.125  4352  4667 I korri-viewer: sound: 43 ms pending; 3 packets dropped since the last line
+   116.208  4352  4381 I korri-viewer: overlay: open on Back; the stream's input is held
+   116.209  4352  4352 I korri-viewer: overlay: layer shown: posted 0.1 ms before, applied in 0.27 ms
+   117.020  4352  4381 I korri-viewer: overlay: closed on Back after 0.8 s; it took 1 keys and 0 motion events; the stream's input goes on
+   117.020  4352  4352 I korri-viewer: overlay: layer hidden: posted 0.0 ms before, applied in 0.22 ms
+   117.448  5114  5114 D AndroidRuntime: Shutting down VM
+   117.714  4352  4381 I korri-viewer: input: controller Korri test gamepad (18) removed
+   117.714  4352  4381 I korri-viewer: input: controller number 0 is free
+   117.714  4352  4404 I korri-viewer: feedback: Korri test gamepad (18) stopped
+   120.364  4352  4381 I korri-viewer: input: ended: 14 keys, 104 controller states, 3 arrivals, 2 mouse, 2062 touches sent; 25 held; 0 unsupported, 0 outside the stream, 0 failed
+   120.364  4352  4381 I korri-viewer: request {"launchId":"d2-proof","command":{"kind":"Stop"}}
+   120.366  4352  4405 I korri-viewer: input: the core takes no more input
+   120.368  4352  4404 I korri-viewer: feedback: ended: 0 rumbles, 0 trigger rumbles, 0 lights, 2 calls to Android; 3 battery reads, 1 battery reports sent, 0 outside the stream; 0 failed
+   120.369  4352  4405 I korri-viewer: feedback: vibration and lights stopped
+   120.369  4352  4405 I korri-viewer: nightjar: at the stop: SessionStats { rtt: Some((1ms, 3ms)), video: VideoStats { packet_count_video: 62391, packet_count_fec: 14443, packets_received: 76834, packets_recovered: 0, decrypt_failures: 0, frames_completed: 4003, frame_drops: 23, decoder_drops: 0 }, audio: AudioStats { packet_count_audio: 13815, packet_count_fec: 6910, packet_count_fec_recovered: 5, packet_count_fec_failed: 8, packet_count_oos: 0, packet_count_invalid: 0, packet_count_fec_invalid: 0, decrypt_failures: 0 }, frames_submitted: 4003, frames_need_idr: 0, decode_queue_overflows: 0, early_chunks_dropped: 0, frames_skipped: 0, chunks_skipped: 0, decode_queue_len: 0, audio_packets: 13841, audio_queue_len: 0, audio_queue_overflows: 0, connection_status: Some(Okay), input_contact_lost: false }
+   120.369  4352  4405 I korri-viewer: nightjar: recovery requests sent: 7 IDR, 0 reference frame invalidations
+   120.391  4352  4405 I korri-viewer: sound: stream closed
+   120.391  4352  4405 I korri-viewer: sound: ended: 7614 callbacks, 3265897 frames played, 198240 frames silent, 400 short callbacks after the first sound, 13841 packets, 21 concealed, 228 dropped over 40 ms pending, 0 not decoded, 4 device xruns, 0 reopened
+   120.438  4352  4405 I korri-viewer: picture: decoder stopped
+   120.455  4352  4405 I korri-viewer: event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+   120.455  4352  4405 I korri-viewer: event {"kind":"Status","value":"Stopped"}
+   120.456  4352  5230 I korri-viewer: reply Stop {"kind":"Ok"}
+   120.506  4352  4381 I korri-viewer: viewer ended
