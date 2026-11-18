@@ -11,6 +11,9 @@ pub enum Responses {
 pub struct Output {
     pub responses: Responses,
     pub human: String,
+    /// The library listing: it succeeds when it lists any game, and shows
+    /// other games' route failures without failing for them.
+    pub listing: bool,
 }
 
 impl Output {
@@ -18,18 +21,28 @@ impl Output {
         Self {
             responses: Responses::Text,
             human,
+            listing: false,
         }
     }
     pub fn one(response: RpcResponse, human: String) -> Self {
         Self {
             responses: Responses::One(Box::new(response)),
             human,
+            listing: false,
+        }
+    }
+    /// `library games list`: see `listing`.
+    pub fn listing(response: RpcResponse, human: String) -> Self {
+        Self {
+            listing: true,
+            ..Self::one(response, human)
         }
     }
     pub fn many(responses: Vec<RpcResponse>, human: String) -> Self {
         Self {
             responses: Responses::Many(responses),
             human,
+            listing: false,
         }
     }
     pub fn print(&self, json: bool) -> Result<u8, CliError> {
@@ -55,7 +68,11 @@ impl Output {
             Responses::Many(responses) => responses,
             Responses::Text => &[],
         };
-        let failures: Vec<_> = responses.iter().filter_map(failure).collect();
+        let failures: Vec<_> = responses
+            .iter()
+            .filter(|response| !(self.listing && lists_games(response)))
+            .filter_map(failure)
+            .collect();
         Ok(
             if failures
                 .iter()
@@ -69,6 +86,14 @@ impl Output {
             },
         )
     }
+}
+
+fn lists_games(response: &RpcResponse) -> bool {
+    matches!(
+        response,
+        RpcResponse::LocalGamesList(korrid::LocalGamesListOutcome::Ok(games))
+            if !games.games.is_empty()
+    )
 }
 
 /// Exit status follows both outer Err outcomes and canonical failure-bearing

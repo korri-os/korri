@@ -40,12 +40,21 @@ impl Module for Get {
             let RpcResponse::LocalGamesList(LocalGamesListOutcome::Ok(games)) = &response else {
                 return Ok(library::finish(response));
             };
-            if games.failures.as_ref().is_some_and(|v| !v.is_empty()) {
-                return Ok(library::finish(response));
-            }
+            // Another game's route failure never blocks this one. A library
+            // game with no installed route is listed only among the failures
+            // ("game <id> ..."), and a download is what it needs.
+            let unrouted = games.failures.iter().flatten().any(|failure| {
+                failure
+                    .message
+                    .strip_prefix("game ")
+                    .and_then(|rest| rest.split_whitespace().next())
+                    == Some(query.as_str())
+            });
             let exact = games.games.iter().find(|g| g.id == query);
             let choices = if let Some(g) = exact {
                 vec![(g.id.clone(), g.title.clone())]
+            } else if unrouted {
+                vec![(query.clone(), query.clone())]
             } else {
                 games
                     .games

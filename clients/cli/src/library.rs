@@ -251,7 +251,7 @@ impl Module for Library {
             } else {
                 lines
             };
-            return Ok(Output::one(response, lines));
+            return Ok(Output::listing(response, lines));
         }
         Ok(finish(response))
     }

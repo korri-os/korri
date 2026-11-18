@@ -1849,3 +1849,46 @@ fn play_library_another_games_failure_does_not_block_this_launch() {
         serde_json::json!([listed])
     );
 }
+/// Device run on bundle dhqzvb3k: `korri get vvvvvv-2` and `korri library
+/// games list` exited 1 for another game's missing runner.
+#[test]
+fn play_library_another_games_failure_does_not_block_get_or_the_listing() {
+    use acquisition::*;
+    let RpcResponse::LocalGamesList(LocalGamesListOutcome::Ok(mut listed)) = games() else {
+        unreachable!()
+    };
+    listed.failures = Some(vec![
+        RpcFailure {
+            code: "LocalRouteUnavailable".into(),
+            message: "game app1658150 has no installed Linux runner".into(),
+        },
+        RpcFailure {
+            code: "LocalRouteUnavailable".into(),
+            message: "game vvvvvv-2 has no installed Linux runner".into(),
+        },
+    ]);
+    let listed = RpcResponse::LocalGamesList(LocalGamesListOutcome::Ok(listed));
+    let queued = RpcResponse::AcquisitionDownload(AcquisitionOutcome::Ok(AcquisitionSnapshot {
+        artifacts: vec![],
+    }));
+    // A listed game, and a library game whose only entry is its own failure.
+    for game in ["game", "vvvvvv-2"] {
+        let server = Server::start(vec![listed.clone(), queued.clone()]);
+        let output = server.run(&["get", game, "--json"]);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{game}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            matches!(&server.calls.lock().unwrap()[1], RpcRequest::AcquisitionDownload(r) if r.game_id == game),
+            "{game}"
+        );
+    }
+    // The listing shows the failures and succeeds, since it lists games.
+    let server = Server::start(vec![listed.clone()]);
+    let output = server.run(&["library", "games", "list"]);
+    assert_eq!(output.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("game\tA Game"));
+}
