@@ -63,6 +63,9 @@ const SIGN_IN_LIMIT: Duration = Duration::from_secs(15 * 60);
 /// The status job and sign-out wait at most this long for the host.
 const STATUS_LIMIT: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_millis(200);
+/// A sign-in waits this long for a job host that is ending (its shutdown
+/// grace and a little more).
+const JOB_END_WAIT: Duration = Duration::from_secs(15);
 /// How often the Steam package's presence is read (one small file).
 const PRESENCE_POLL: Duration = Duration::from_secs(2);
 /// The engine package (48 MB) and Proton download before a first sign-in.
@@ -196,6 +199,11 @@ impl SteamAccount {
                 })?;
             }
             let deadline = Instant::now() + limit;
+            let unit = host.unit();
+            let end = |host: JobHost| {
+                let end = host.stop();
+                eprintln!("korrid steam account: job host {unit} ended: {end}");
+            };
             loop {
                 for event in host.poll() {
                     let next = {
@@ -206,19 +214,23 @@ impl SteamAccount {
                             .unwrap_or(Account::Checking)
                             .apply(&event)
                     };
+                    if matches!(event, Event::SignedIn { .. }) {
+                        // The account name stays out of the journal.
+                        eprintln!("korrid steam account: signed in ({unit})");
+                    }
                     let finished = done(&next);
                     self.set(Some(next));
                     if finished {
-                        host.stop();
+                        end(host);
                         return Ok(());
                     }
                     if matches!(event, Event::Phase { ref phase } if phase == "stopped") {
-                        host.stop();
+                        end(host);
                         return Err(());
                     }
                 }
                 if stop.load(Ordering::SeqCst) {
-                    host.stop();
+                    end(host);
                     return Ok(());
                 }
                 if Instant::now() >= deadline || !host.running() {
@@ -230,7 +242,7 @@ impl SteamAccount {
                             "ended"
                         }
                     );
-                    host.stop();
+                    end(host);
                     return Err(());
                 }
                 std::thread::sleep(POLL);
@@ -274,19 +286,33 @@ impl SteamAccount {
         }
     }
 
+    /// A job that has already answered may still be ending (its host shuts
+    /// down and the engine writes its stores). True once none runs.
+    async fn job_ended(&self) -> bool {
+        let deadline = Instant::now() + JOB_END_WAIT;
+        while self.lock().job.is_some() {
+            if Instant::now() >= deadline {
+                return false;
+            }
+            tokio::time::sleep(POLL).await;
+        }
+        true
+    }
+
     fn sign_in(self: &Arc<Self>, for_game: Option<String>) {
         let Some(access) = self.access.clone() else {
             return;
         };
-        if self.lock().job.is_some() {
-            return;
-        }
-        self.set(Some(Account::Starting {
-            for_game: for_game.clone(),
-        }));
         let this = Arc::clone(self);
         let korrid = self.korrid.clone();
         tokio::spawn(async move {
+            if !this.job_ended().await {
+                eprintln!("korrid steam account: sign-in not started: a job host still runs");
+                return;
+            }
+            this.set(Some(Account::Starting {
+                for_game: for_game.clone(),
+            }));
             // The pinned engine package comes first, through korrid's queue.
             let mut facts = {
                 let access = Arc::clone(&access);
@@ -389,6 +415,12 @@ impl SteamAccount {
                 .await
                 .unwrap_or(false)
             };
+            // The account a job reports is final only once its host ended;
+            // the ending job would also take this launch's pending steps.
+            if engine && !this.job_ended().await {
+                eprintln!("korrid steam account: launch not gated: a job host still runs");
+                return abandon();
+            }
             let wait = engine
                 && matches!(
                     this.lock().account,
@@ -591,6 +623,7 @@ while read -r line <&3; do
                sleep 1
                echo '{"event":"logon_state","state":4,"logged_on":true,"connected":true,"offline":false}'
                echo '{"event":"signed_in","account_name":"korri_player"}' ;;
+    shutdown) exit 0 ;;
   esac
 done"#;
 
@@ -625,8 +658,14 @@ done"#;
             matches!(s, Some(SurfaceSteamAccount::SignedIn { account_name, .. }) if account_name == "korri_player")
         })
         .await;
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        assert!(proceeded.load(Ordering::SeqCst) && !abandoned.load(Ordering::SeqCst));
+        // The launch goes on once the job host has shut down, so the engine
+        // has written the saved login before the game's own host reads it.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !proceeded.load(Ordering::SeqCst) {
+            assert!(Instant::now() < deadline, "the launch did not go on");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(!abandoned.load(Ordering::SeqCst));
         assert_eq!(
             std::fs::read_dir(temp.path().join("launches"))
                 .unwrap()
@@ -645,6 +684,7 @@ done"#;
 while read -r line <&3; do
   case "$line" in
     signin-qr) echo '{"event":"qr_code","challenge_url":"https://s.team/q/1/1"}' ;;
+    shutdown) exit 0 ;;
   esac
 done"#,
             true,

@@ -392,8 +392,9 @@ while read -r line <&3; do
                echo '{"event":"app_progress","appid":78000,"bytes_downloaded":40,"bytes_to_download":80,"bytes_staged":0,"bytes_to_stage":100}'
                sleep 0.6
                echo '{"event":"app_job_finished","appid":78000,"kind":"install","result":"installed"}' ;;
-    "install 440") echo '{"event":"app_progress","appid":440,"bytes_downloaded":1,"bytes_to_download":9,"bytes_staged":0,"bytes_to_stage":9}'; sleep 30 ;;
+    "install 440") echo '{"event":"app_progress","appid":440,"bytes_downloaded":1,"bytes_to_download":9,"bytes_staged":0,"bytes_to_stage":9}' ;;
     "uninstall 78000") echo '{"event":"app_job_finished","appid":78000,"kind":"uninstall","result":"uninstalled"}' ;;
+    shutdown) exit 0 ;;
   esac
 done"#;
 

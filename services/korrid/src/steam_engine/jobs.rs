@@ -35,6 +35,7 @@ pub struct JobHost {
     mode: Mode,
     channel: Channel,
     reader: EventReader,
+    ended: Option<JobEnd>,
 }
 
 impl JobRunner {
@@ -69,6 +70,7 @@ impl JobRunner {
             reader: EventReader::new(&channel.dir),
             mode,
             channel,
+            ended: None,
         })
     }
 }
@@ -94,15 +96,70 @@ impl JobHost {
         &self.channel.dir
     }
 
-    /// Stop the host now and remove its channel.
-    pub fn stop(self) {
-        drop(self)
+    /// The host's unit name, for the journal.
+    pub fn unit(&self) -> String {
+        self.mode.unit()
+    }
+
+    /// End the host and remove its channel: ask it to `shutdown` and wait
+    /// for its own exit, so the engine logs off and writes its stores (the
+    /// saved login of a sign-in among them), then stop the unit, whose
+    /// KillSignal is SIGKILL, for whatever is left. Says how it ended.
+    pub fn stop(mut self) -> JobEnd {
+        let end = self.end(SHUTDOWN_GRACE);
+        // Drop finds the host gone and only removes the channel.
+        end
+    }
+
+    fn end(&mut self, grace: Duration) -> JobEnd {
+        if self.ended.is_some() || !self.running() {
+            return *self.ended.get_or_insert(JobEnd::Exited);
+        }
+        let deadline = std::time::Instant::now() + grace;
+        let asked = self
+            .channel
+            .send_within(Command::Shutdown, Duration::from_secs(2))
+            .is_ok();
+        while asked && std::time::Instant::now() < deadline {
+            if !self.running() {
+                return *self.ended.insert(JobEnd::ShutDown);
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let _ = self.units.stop(&self.mode);
+        *self.ended.insert(JobEnd::Killed { asked })
+    }
+}
+
+/// A job host gets this long to end after `shutdown` before it is killed.
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
+
+/// How a job host ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JobEnd {
+    /// It had exited by itself before korrid stopped it.
+    Exited,
+    /// It exited by itself after `shutdown`.
+    ShutDown,
+    /// korrid killed it: it did not end within the grace, or (`asked`
+    /// false) it took no `shutdown` command.
+    Killed { asked: bool },
+}
+
+impl std::fmt::Display for JobEnd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Exited => "it exited by itself",
+            Self::ShutDown => "it shut down when asked",
+            Self::Killed { asked: true } => "killed: it did not end after shutdown",
+            Self::Killed { asked: false } => "killed: it took no shutdown command",
+        })
     }
 }
 
 impl Drop for JobHost {
     fn drop(&mut self) {
-        let _ = self.units.stop(&self.mode);
+        self.end(SHUTDOWN_GRACE);
         let _ = std::fs::remove_dir_all(&self.channel.dir);
     }
 }
@@ -123,6 +180,7 @@ exec 3<>"$fifo"
 while read -r line <&3; do
   case "$line" in
     list-apps) echo '{"event":"app","appid":70,"name":"Half-Life","source":"owned"}'; echo '{"event":"apps_done"}' ;;
+    shutdown) echo '{"event":"phase","phase":"stopped"}'; exit 0 ;;
   esac
 done"#,
         );
@@ -158,9 +216,68 @@ done"#,
         assert_eq!(signed_in.as_deref(), Some("korri_player"));
         assert_eq!(list.search("half")[0].id, "70");
         let channel = job.channel().to_path_buf();
-        job.stop();
+        // The host is asked to shut down and ends by itself.
+        assert_eq!(job.stop(), JobEnd::ShutDown);
         assert!(!channel.exists());
         assert_eq!(std::fs::read_dir(&launches).unwrap().count(), 0);
+    }
+}
+
+#[cfg(test)]
+mod end_tests {
+    use super::*;
+    use crate::steam_engine::host::{process_units::ProcessHostUnits, tests::script_host};
+
+    fn job(temp: &Path, body: &str) -> JobHost {
+        let launches = temp.join("launches");
+        JobRunner {
+            units: Arc::new(ProcessHostUnits::new(&launches)),
+            launches_root: launches,
+            runtime_uid: unsafe { libc::geteuid() },
+            live: Arc::default(),
+        }
+        .start(&HostPlan {
+            host_program: script_host(temp, body),
+            engine: temp.join("steamclient.so"),
+            proton: None,
+            account_root: temp.into(),
+        })
+        .unwrap()
+    }
+
+    /// A host that ignores `shutdown` is killed once the grace runs out.
+    #[test]
+    fn a_host_that_does_not_end_after_shutdown_is_killed() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut host = job(
+            temp.path(),
+            r#"exec 3<>"$fifo"
+while read -r line <&3; do :; done"#,
+        );
+        assert!(host.running());
+        let started = std::time::Instant::now();
+        assert_eq!(
+            host.end(Duration::from_millis(300)),
+            JobEnd::Killed { asked: true }
+        );
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(!host.running());
+        let channel = host.channel().to_path_buf();
+        drop(host);
+        assert!(!channel.exists());
+    }
+
+    /// A host that already ended is not asked again.
+    #[test]
+    fn a_host_that_exited_by_itself_says_so() {
+        let temp = tempfile::tempdir().unwrap();
+        let host = job(temp.path(), "exit 0");
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while host.running() {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(host.stop(), JobEnd::Exited);
     }
 }
 
