@@ -334,6 +334,7 @@ assert !(service.environment ? KORRID_MOONLIGHT_ADDRESS);
 assert hasFailedAssertion "moonlightAddress" invalidMoonlight;
 assert service.serviceConfig.User == "korrid";
 assert service.serviceConfig.LimitCORE == 0;
+assert service.serviceConfig.TimeoutStopSec >= 120;
 assert service.serviceConfig.User != "korri";
 assert
   builtins.removeAttrs service.environment [ "PATH" ] == {

@@ -817,6 +817,10 @@ in
         # korrid carries the recovery words in memory while they are in use
         # (ADR 0082), so a crash must not write them to a core file.
         LimitCORE = 0;
+        # ADR 0083: on stop korrid lets Steam engine hosts end by themselves
+        # (a login save may take 40 s, a session's exit sync up to 60 s)
+        # before it stops their units.
+        TimeoutStopSec = 120;
         NoNewPrivileges = true;
         CapabilityBoundingSet = [ ];
         AmbientCapabilities = [ ];
