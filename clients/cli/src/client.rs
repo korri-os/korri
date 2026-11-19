@@ -34,6 +34,11 @@ fn request_wait(request: &RpcRequest, default: Duration) -> Option<Duration> {
         RpcRequest::AcquisitionSearch(_) | RpcRequest::AcquisitionDetails(_) => {
             Some(korrid::steam_engine::store::LIST_LIMIT + default)
         }
+        // Remove download of a Steam engine game is the engine's uninstall,
+        // answered when it is done.
+        RpcRequest::AcquisitionRemove(_) => {
+            Some(korrid::steam_engine::store::UNINSTALL_LIMIT + default)
+        }
         _ => Some(default),
     }
 }
@@ -362,6 +367,13 @@ with socketserver.UnixStreamServer(socket_path, Handler) as server:
         ] {
             assert_eq!(request_wait(&request, DEFAULT_TIMEOUT), Some(wait));
         }
+        let remove = RpcRequest::AcquisitionRemove(korrid::acquisition::AcquisitionRemoveRequest {
+            game_id: "balatro".into(),
+        });
+        assert_eq!(
+            request_wait(&remove, DEFAULT_TIMEOUT),
+            Some(korrid::steam_engine::store::UNINSTALL_LIMIT + DEFAULT_TIMEOUT)
+        );
     }
 
     #[test]

@@ -34,6 +34,14 @@ const LIST_FRESH: Duration = Duration::from_secs(5 * 60);
 /// or the details of a claim use it too.
 pub const LIST_LIMIT: Duration = Duration::from_secs(120);
 const _: () = assert!(LIST_LIMIT.as_secs() >= 90);
+/// How long Remove download waits for the engine's `uninstall`. Before it
+/// acts the host waits up to 45 s for licences and retries InstallApp 9
+/// every 3 s up to 5 times; korrid allows a margin over those 60 s. Clients
+/// that wait for a Remove download use it too.
+pub const UNINSTALL_LIMIT: Duration = Duration::from_secs(150);
+const _: () = assert!(UNINSTALL_LIMIT.as_secs() >= 90);
+// Get's install job runs in the background with its own limit.
+const _: () = assert!(INSTALL_LIMIT.as_secs() >= 90);
 /// The host's own install limit is 3600 s by default; korrid allows more.
 const INSTALL_LIMIT: Duration = Duration::from_secs(4 * 3600);
 const POLL: Duration = Duration::from_millis(250);
@@ -312,7 +320,7 @@ impl SteamStore {
                 plan,
                 runner,
                 Command::Uninstall(app),
-                LIST_LIMIT,
+                UNINSTALL_LIMIT,
                 &none,
             )
         })
