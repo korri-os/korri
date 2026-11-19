@@ -1,0 +1,31 @@
+From: Korri <korri@localhost>
+Subject: [PATCH] input/hog-lib: read the Report Map after "Attribute Not Found"
+
+The GameSir-G8+ answers reads of its Report values and of their CCC
+descriptors with "Attribute Not Found". hog-lib read the Report Map only
+when the last outstanding request succeeded, so it never read it, never
+created the uhid device, and dropped the notifications the controller
+was already sending.
+
+Also read it when the last request failed with Attribute Not Found, and
+only while the device is still attached. Any other error (for example a
+request cancelled on disconnect) keeps the old behaviour: an earlier
+version of this patch read the Report Map after every error and crashed
+bluetoothd when requests were cancelled on detach.
+---
+--- a/profiles/input/hog-lib.c
++++ b/profiles/input/hog-lib.c
+@@ -159,7 +159,12 @@
+ 
+ 	queue_remove(hog->gatt_op, req);
+ 
+-	if (!status && queue_isempty(hog->gatt_op)) {
++	/* Some devices (GameSir-G8+) answer reads of Report values and their
++	 * CCC descriptors with Attribute Not Found. Treat that as done, so the
++	 * Report Map is still read and the uhid device is created.
++	 */
++	if ((!status || status == ATT_ECODE_ATTR_NOT_FOUND) && hog->attrib &&
++					queue_isempty(hog->gatt_op)) {
+ 		/* Report Map must be read last since that can result
+ 		 * in uhid being created and the driver may start to
+ 		 * use UHID_SET_REPORT which requires the report->id to

@@ -2,12 +2,31 @@
 # product. The console configuration in default.nix stays the tabs6 Linux
 # console that boots on the tablet today.
 {
+  config,
   lib,
   pkgs,
   tabs6KorriKernel,
   ...
 }:
 let
+  # Power key, short press: panel off or on. Both transitions go through
+  # korrid's display RPCs, as korri-display-idle's do (product/controls.nix),
+  # so korrid keeps the say over watched outputs. The compositor only reports
+  # whether the panel is on.
+  powerToggle = pkgs.writeShellScript "tabs6-power-key" ''
+    set -euo pipefail
+    action=idle
+    if ! ${pkgs.sway-unwrapped}/bin/swaymsg -t get_outputs -r \
+      | ${pkgs.jq}/bin/jq --exit-status 'any(.[]; .name == "DSI-1" and .power)' >/dev/null; then
+      action=wake
+    fi
+    ${pkgs.curl}/bin/curl --silent --show-error --fail --max-time 10 \
+      --unix-socket ${lib.escapeShellArg config.services.korridLinuxDevice.cliSocket} \
+      --header 'content-type: application/json' \
+      --data "{\"_tag\":\"app.displays.$action\",\"payload\":{}}" http://localhost/rpc \
+      | ${pkgs.jq}/bin/jq --exit-status '.outcome._tag == "Ok"' >/dev/null
+  '';
+
   pair = pkgs.writeShellApplication {
     name = "tabs6-bt-pair";
     runtimeInputs = [
@@ -47,9 +66,31 @@ in
   tabs6.usbRole.gadgetUnit = "usb-gadget";
 
   # No sleep state is verified with Korri's session freeze. The console's
-  # s2idle idle suspend stays a console feature; here the power key powers
-  # off, as on every product device without a sleep state.
+  # s2idle idle suspend stays a console feature.
   services.korriProduct.sleep.states = [ ];
+  # Power key: a short press turns the panel off or on (the compositor
+  # binding below); holding it for logind's long press (5 s) powers off.
+  # The product's default, power off on any press, read as the screen
+  # flashing and dying (2026-11-18).
+  services.logind.settings.Login = {
+    HandlePowerKey = lib.mkForce "ignore";
+    HandlePowerKeyLongPress = "poweroff";
+  };
+
+  # A trial boot is good once every way in is up: SSH on 2222 (USB and
+  # Wi-Fi), NetworkManager and korrid (system/boot.nix, tabs6-esp).
+  tabs6.bootGood.units = [
+    "korri-ssh.service"
+    "NetworkManager.service"
+    "korrid.service"
+  ];
+
+  # The plugin host opens plugin ports (SSH on 2222) with nftables-backed
+  # iptables, as on every product device. The board's legacy iptables
+  # firewall (system/network.nix, for the port's 6.12 kernel) put nixos-fw in
+  # a separate legacy table that dropped 2222 on usb0 and wlan0 alike. The
+  # product kernel has nf_tables.
+  networking.firewall.package = lib.mkForce pkgs.iptables;
 
   # Wi-Fi: NetworkManager with wpa_supplicant, the product's required
   # supplicant (the console uses standalone iwd). The modem chain and the efs
@@ -66,6 +107,9 @@ in
   # to korrid like a wired one. tabs6-bt-pair pairs the first time
   # (README.md, "Pair a Bluetooth controller").
   environment.systemPackages = [ pair ];
+
+  # sway runs `exec` bindings through `sh -c`; the compositor's PATH has no sh.
+  systemd.services.korri-compositor.path = [ pkgs.bash ];
 
   services.korriLinuxHost = {
     label = "tabs6";
@@ -91,8 +135,10 @@ in
       # Touch (fts1ba90a) reaches the shell through the compositor.
       localInput.enable = true;
       # sway would pick scale 2 from the panel's 227x142 mm, as on the console.
+      # --inhibited: the fullscreen shell and games inhibit shortcuts.
       extraConfig = ''
         output DSI-1 scale 1
+        bindsym --locked --inhibited --no-repeat XF86PowerOff exec ${powerToggle}
       '';
     };
   };

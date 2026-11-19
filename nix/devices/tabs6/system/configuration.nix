@@ -42,6 +42,13 @@
           "flakes"
         ];
         trusted-users = [ "root" ];
+        # NixOS's key and Korri's cache keys (zao, fuji, CI), as nix/base
+        # gives every Korri device. Deploys sign with zao's key, so a copy to
+        # the console checks signatures instead of using --no-check-sigs.
+        trusted-public-keys = [
+          "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+        ]
+        ++ (import ../../../cache/identity.nix).publicKeys;
       };
       # Never build on the tablet: it only receives closures.
       nix.settings.max-jobs = 0;

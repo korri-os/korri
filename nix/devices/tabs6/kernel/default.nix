@@ -49,7 +49,11 @@ let
     "input-touchscreen-wire-fts1ba90a"
     "power-supply-wire-sm5705-fuelgauge"
     "arm64-dts-qcom-wire-gts6lwifi"
-  ];
+  ]
+  # Upstream 743b5c86276b (v7.4-rc, Cc stable), backported unchanged from the
+  # tabs6 repository (feat/modem, a85332f). Product only, so the console
+  # kernel stays the tabs6 repository's derivation.
+  ++ lib.optional product ./patches/net-qrtr-announce-local-services-after-hello.patch;
 
   kernelSource = pkgs.applyPatches {
     name = "linux-${version}-gts6lwifi-source";

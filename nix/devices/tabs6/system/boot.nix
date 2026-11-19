@@ -26,6 +26,22 @@ in
       type = lib.types.bool;
       description = "True while the system uses the nixpkgs kernel instead of ../kernel.";
     };
+    bootGood = {
+      units = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        description = ''
+          Units that must all be active before a trial boot of a new default
+          entry is blessed (tabs6-esp bless). They are this system's ways in:
+          if one never comes up, the system reboots and the boot counter
+          sends the next boot to LAST KNOWN GOOD.
+        '';
+      };
+      timeout = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 300;
+        description = "Seconds the units have, from the start of tabs6-boot-good, before the trial fails.";
+      };
+    };
   };
 
   config = {
@@ -126,5 +142,48 @@ in
     '';
 
     environment.systemPackages = [ tabs6-esp ];
+
+    # Boot assessment (esp/tabs6-esp.sh). On a trial boot of a new default
+    # entry, bless it once every way in is up; otherwise reboot, and
+    # systemd-boot starts LAST KNOWN GOOD. A boot that is not a trial (a
+    # blessed entry, or LAST KNOWN GOOD itself) is left alone, so a later
+    # failure of one of these units never loops reboots.
+    systemd.services.tabs6-boot-good = {
+      description = "Bless the Tab S6 boot entry once the system is reachable";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "local-fs.target" ];
+      path = [
+        tabs6-esp
+        config.systemd.package
+      ];
+      # exec, not oneshot: multi-user.target must not wait for the checks.
+      serviceConfig.Type = "exec";
+      script = ''
+        if ! tabs6-esp trial; then
+          echo "not a trial boot of the default entry; nothing to bless"
+          exit 0
+        fi
+        deadline=$((SECONDS + ${toString cfg.bootGood.timeout}))
+        while :; do
+          missing=""
+          for unit in ${lib.escapeShellArgs cfg.bootGood.units}; do
+            systemctl is-active --quiet "$unit" || missing="$missing $unit"
+          done
+          [ -z "$missing" ] && break
+          if [ "$SECONDS" -ge "$deadline" ]; then
+            echo "trial boot failed:$missing not active after ${toString cfg.bootGood.timeout} s; rebooting into LAST KNOWN GOOD" >&2
+            systemctl reboot
+            exit 1
+          fi
+          sleep 5
+        done
+        tabs6-esp bless
+      '';
+    };
+
+    # A hang that stops systemd stops the qcom_wdt pings, and the SoC resets
+    # into the next boot (proven to keep the tablet alive with 30 s on
+    # 2026-11-18). After a failed trial that is LAST KNOWN GOOD.
+    systemd.settings.Manager.RuntimeWatchdogSec = "30s";
   };
 }

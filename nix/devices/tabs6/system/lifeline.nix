@@ -89,6 +89,12 @@ lib.mkIf config.tabs6.console.enable {
   users.users.root.openssh.authorizedKeys.keys = [ simonKey ];
   users.users.simon.openssh.authorizedKeys.keys = [ simonKey ];
 
+  # A trial boot of the console is good once its lifeline is up (boot.nix).
+  tabs6.bootGood.units = [
+    "tabs6-usb-gadget.service"
+    "sshd.service"
+  ];
+
   # Root shell on the ACM port, for when the network side is down. Physical
   # USB access already implies control of this unlocked device.
   systemd.services."serial-getty@ttyGS0" = {

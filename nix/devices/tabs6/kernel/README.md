@@ -123,6 +123,7 @@ dimmest level, not off. DPMS is display-off plus reset; Octa VDD stays on.
 | `arm64-dts-qcom-wire-gts6lwifi` | ours | applied | applies unchanged |
 | `clk-qcom-dispcc-sm8250-byte-clk-parent-enable` | ours | not carried | new: `CLK_OPS_PARENT_ENABLE` on the DSI byte clock sources (native display) |
 | `drm-panel-wire-samsung-ana38401` | ours | not carried | new: Kconfig/Makefile for `drivers/panel-samsung-ana38401.c` |
+| `net-qrtr-announce-local-services-after-hello` (product kernel only) | upstream 743b5c86276b (v7.4-rc, Cc stable), unchanged, from the tabs6 repository (feat/modem, a85332f) | not needed | new: 7.3 drops every QRTR packet but HELLO until our HELLO has gone out. When the modem's HELLO wins that race, the NEW_SERVER replies for rmtfs and tqftpserv are dropped ("failed to announce new service"), the modem watchdog fires every 40 s ("fatal error without message") and Wi-Fi comes up minutes late. Seen on the console and the Korri kernel. Drop it when the base has it |
 | ~~`dwc3-allow-userspace-role-control`~~ | port | applied | dropped: upstream in 7.3 (`dwc3_setup_role_switch` sets `allow_userspace_control`) |
 | ~~`asoc-cs48l32-backport-from-6.18.63`~~ | ours | applied | dropped: CS48L32 is upstream since 6.18 |
 | ~~`drm-msm-headless-a640-render-node`~~ (headless master, forced MMU) | ours | applied | dropped: with MDSS enabled the GPU is a component of the display master, the normal upstream topology (the kernel-bump commit used msm's `separate_gpu_kms=1` instead) |

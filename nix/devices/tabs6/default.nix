@@ -89,7 +89,10 @@ let
     port = 2222;
   };
   consoleImages = images consoleConfiguration {
-    signKey = null;
+    # The console trusts Korri's cache keys (system/configuration.nix), so it
+    # is signed like the product. A console that predates that trust still
+    # needs a one-off `nix copy --no-check-sigs` of the closure first.
+    signKey = "$HOME/.config/korri/cache-key.secret";
     target = "root@172.16.42.1";
     port = 22;
   };

@@ -3,15 +3,28 @@
 #
 #   tabs6-esp stage <toplevel> <dir>   write a fresh ESP tree into <dir> (image build)
 #   tabs6-esp install <toplevel>       make <toplevel> the default entry (device)
-#   tabs6-esp mark-good                copy the booted system to the LAST KNOWN GOOD entry
+#   tabs6-esp trial                    exit 0 if this boot is an unblessed trial of the default entry
+#   tabs6-esp bless                    keep the default entry: drop its boot counter
+#   tabs6-esp mark-good                bless, then copy the booted system to the LAST KNOWN GOOD entry
 #   tabs6-esp rollback                 make LAST KNOWN GOOD the default entry again
 #   tabs6-esp status                   show both entries and free space
 #
 # Layout (all paths on the FAT):
 #   /EFI/BOOT/BOOTAA64.EFI               systemd-boot
-#   /loader/loader.conf                  default tabs6-current.conf
-#   /loader/entries/tabs6-current.conf   /tabs6/current/{Image,gts6lwifi.dtb}
+#   /loader/loader.conf                  preferred tabs6-current.conf, default tabs6-lastgood.conf
+#   /loader/entries/tabs6-current[+L-D].conf   /tabs6/current/{Image,gts6lwifi.dtb}
 #   /loader/entries/tabs6-lastgood.conf  /tabs6/lastgood/{Image,gts6lwifi.dtb}
+#
+# Boot counting (systemd-boot "Automatic Boot Assessment"): `install` writes
+# the new default as tabs6-current+1-0.conf. systemd-boot renames it to
+# tabs6-current+0-1.conf before it boots it; Mu's FAT driver on the UFS ESP
+# does the rename (seen on the tablet, 2026-11-18). An entry with no tries
+# left is "bad": `preferred` skips it and `default` names LAST KNOWN GOOD, so
+# the next boot after a failed trial starts LAST KNOWN GOOD by itself. The
+# booted system blesses the entry (tabs6-boot-good.service runs `bless`) once
+# its own checks pass; `bless` renames it back to tabs6-current.conf.
+# `rollback` and `stage` write uncounted entries: both systems are known good
+# or have nothing to fall back to.
 #
 # Every entry carries init=<toplevel>/init, so the modules come with the closure
 # and no /lib/modules snapshot is needed. Each entry's toplevel is held by a GC
@@ -29,9 +42,19 @@ DTB_NAME=gts6lwifi.dtb
 
 die() { echo "tabs6-esp: $*" >&2; exit 1; }
 
-# write_tree <toplevel> <esp-root> <slot>
+# The current entry's file, counted or not; empty when there is none.
+current_entry() {
+	local f
+	for f in "$1"/loader/entries/tabs6-current.conf "$1"/loader/entries/tabs6-current+*.conf; do
+		[ -f "$f" ] && { echo "$f"; return 0; }
+	done
+	return 0
+}
+
+# write_slot <toplevel> <esp-root> <slot> [tries]
+# With tries, the entry is written with a systemd-boot boot counter.
 write_slot() {
-	local top=$1 root=$2 slot=$3 title
+	local top=$1 root=$2 slot=$3 tries=${4:-} title name f
 	[ -e "$top/init" ] || die "$top is not a NixOS system"
 	[ -e "$top/tabs6-dtb" ] || die "$top has no tabs6-dtb"
 	mkdir -p "$root/tabs6/$slot" "$root/loader/entries"
@@ -54,7 +77,13 @@ EOF
 	sync
 	mv -f "$root/tabs6/$slot/Image.new" "$root/tabs6/$slot/Image"
 	mv -f "$root/tabs6/$slot/$DTB_NAME.new" "$root/tabs6/$slot/$DTB_NAME"
-	mv -f "$root/loader/entries/tabs6-$slot.conf.new" "$root/loader/entries/tabs6-$slot.conf"
+	name=tabs6-$slot.conf
+	[ -z "$tries" ] || name=tabs6-$slot+$tries-0.conf
+	# One entry per slot: drop the other counter states of this slot.
+	for f in "$root/loader/entries/tabs6-$slot.conf" "$root/loader/entries/tabs6-$slot+"*.conf; do
+		[ -f "$f" ] && [ "$(basename "$f")" != "$name" ] && rm -f "$f"
+	done
+	mv -f "$root/loader/entries/tabs6-$slot.conf.new" "$root/loader/entries/$name"
 	sync
 }
 
@@ -64,13 +93,42 @@ write_loader() {
 	cp "$top/tabs6-systemd-boot.efi" "$root/EFI/BOOT/BOOTAA64.EFI.new"
 	mv -f "$root/EFI/BOOT/BOOTAA64.EFI.new" "$root/EFI/BOOT/BOOTAA64.EFI"
 	# Hold volume-down for the menu; the timeout leaves a window without it.
-	cat > "$root/loader/loader.conf" <<EOF
-default tabs6-current.conf
+	# `preferred` skips an entry with no tries left; `default` then picks
+	# LAST KNOWN GOOD (systemd-boot 261, config_select_default_entry).
+	cat > "$root/loader/loader.conf.new" <<EOF
+preferred tabs6-current.conf
+default tabs6-lastgood.conf
 timeout 3
 editor no
 console-mode keep
 EOF
+	mv -f "$root/loader/loader.conf.new" "$root/loader/loader.conf"
 	sync
+}
+
+# Trial: the default entry still carries a boot counter and holds the booted system.
+is_trial() {
+	local f booted
+	f=$(current_entry "$MNT")
+	booted=$(readlink -f /run/booted-system)
+	case $(basename "${f:-none}") in
+	tabs6-current+*.conf) [ "$(entry_toplevel "$f")" = "$booted" ] ;;
+	*) return 1 ;;
+	esac
+}
+
+bless() {
+	local f
+	f=$(current_entry "$MNT")
+	case $(basename "${f:-none}") in
+	tabs6-current+*.conf)
+		[ "$(entry_toplevel "$f")" = "$(readlink -f /run/booted-system)" ] || die "the booted system is not the default entry; not blessing it"
+		mv -f "$f" "$MNT/loader/entries/tabs6-current.conf"
+		sync
+		echo "blessed: $(basename "$f") -> tabs6-current.conf"
+		;;
+	*) echo "nothing to bless: the default entry has no boot counter" ;;
+	esac
 }
 
 entry_toplevel() {
@@ -113,7 +171,7 @@ install)
 		die "$top uses the placeholder kernel; it cannot boot the tablet"
 	fi
 	mount_esp
-	old=$(entry_toplevel "$MNT/loader/entries/tabs6-current.conf" || true)
+	old=$(entry_toplevel "$(current_entry "$MNT")" || true)
 	booted=$(readlink -f /run/booted-system || true)
 	# Seed the fallback once: the entry we are running from has survived a
 	# reboot, which is the port's rule for a snapshot. An existing lastgood is
@@ -124,15 +182,25 @@ install)
 		echo "seeded LAST KNOWN GOOD with the booted system $old"
 	fi
 	write_loader "$top" "$MNT"
-	write_slot "$top" "$MNT" current
+	# One trial boot: if it is not blessed, the next boot is LAST KNOWN GOOD.
+	write_slot "$top" "$MNT" current 1
 	gcroot current "$top"
-	echo "default entry: $top"
+	echo "default entry: $top (one trial boot)"
+	;;
+trial)
+	mount_esp
+	is_trial
+	;;
+bless)
+	mount_esp
+	bless
 	;;
 mark-good)
 	booted=$(readlink -f /run/booted-system)
 	mount_esp
-	cur=$(entry_toplevel "$MNT/loader/entries/tabs6-current.conf" || true)
+	cur=$(entry_toplevel "$(current_entry "$MNT")" || true)
 	[ "$cur" = "$booted" ] || die "the booted system is not the default entry; reboot into it first"
+	bless
 	write_slot "$booted" "$MNT" lastgood
 	gcroot lastgood "$booted"
 	echo "LAST KNOWN GOOD is now $booted"
@@ -148,12 +216,12 @@ rollback)
 status)
 	mount_esp
 	df -h "$MNT" | tail -1
-	for slot in current lastgood; do
-		printf '%-9s %s\n' "$slot" "$(entry_toplevel "$MNT/loader/entries/tabs6-$slot.conf" || echo none)"
-	done
+	cur=$(current_entry "$MNT")
+	printf '%-9s %s (%s)\n' current "$(entry_toplevel "$cur" || echo none)" "$(basename "${cur:-none}")"
+	printf '%-9s %s\n' lastgood "$(entry_toplevel "$MNT/loader/entries/tabs6-lastgood.conf" || echo none)"
 	echo "booted    $(readlink -f /run/booted-system)"
 	;;
 *)
-	die "usage: tabs6-esp stage|install|mark-good|rollback|status"
+	die "usage: tabs6-esp stage|install|trial|bless|mark-good|rollback|status"
 	;;
 esac
