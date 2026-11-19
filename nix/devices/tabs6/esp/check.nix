@@ -15,7 +15,8 @@ let
       echo "dtb ${name}" > $out/tabs6-dtb
       echo "efi" > $out/tabs6-systemd-boot.efi
       echo "#!/bin/sh" > $out/init
-      echo "console=tty0 root=PARTLABEL=userdata" > $out/kernel-params
+      # No trailing newline, as NixOS writes it.
+      printf %s "quiet console=tty0 root=PARTLABEL=userdata rw splash loglevel=0" > $out/kernel-params
       echo ${kind} > $out/tabs6-kernel-kind
     '';
   a = fakeSystem "a" "device";
@@ -133,6 +134,39 @@ pkgs.testers.runNixOSTest {
     assert entry("current") == "${c}" and kernel("current") == "kernel c"
     assert name("current") == "tabs6-current.conf"
     assert len([e for e in entries() if e.startswith("tabs6-current")]) == 1
+    clean()
+
+    # fsck-once: one counted entry that boots the current kernel with root
+    # read-only into tabs6-fsck-init; a spent try falls to the current entry.
+    machine.succeed("tabs6-esp fsck-once")
+    assert name("fsck") == "tabs6-fsck+1-0.conf"
+    opts = machine.succeed(
+        "mtype -i /dev/disk/by-partlabel/cache ::/loader/entries/tabs6-fsck+1-0.conf | grep ^options"
+    ).split()
+    assert opts[1] == "init=${tabs6-esp}/bin/tabs6-fsck-init" or opts[1].endswith("-tabs6-fsck-init/bin/tabs6-fsck-init"), opts
+    assert "ro" in opts and "rw" not in opts, opts
+    assert "quiet" not in opts and "splash" not in opts and "loglevel=0" not in opts, opts
+    assert "panic=10" in opts and "root=PARTLABEL=userdata" in opts, opts
+    fsck_entry = machine.succeed("mtype -i /dev/disk/by-partlabel/cache ::/loader/entries/tabs6-fsck+1-0.conf")
+    assert "linux /tabs6/current/Image" in fsck_entry
+    loader = machine.succeed("mtype -i /dev/disk/by-partlabel/cache ::/loader/loader.conf")
+    assert "preferred tabs6-fsck.conf" in loader and "default tabs6-current.conf" in loader
+    assert entry("current") == "${c}" and name("current") == "tabs6-current.conf"
+    clean()
+    # fsck-done keeps the log and restores the normal loader.conf.
+    machine.succeed("echo 'e2fsck exit 1' > /tmp/fsck.log", "tabs6-esp fsck-done /tmp/fsck.log")
+    assert not [e for e in entries() if e.startswith("tabs6-fsck")]
+    loader = machine.succeed("mtype -i /dev/disk/by-partlabel/cache ::/loader/loader.conf")
+    assert "preferred tabs6-current.conf" in loader and "default tabs6-lastgood.conf" in loader
+    assert "e2fsck exit 1" in machine.succeed("tabs6-esp fsck-log")
+    clean()
+    # install cancels a pending check, and fsck-once refuses a counted default.
+    machine.succeed("tabs6-esp fsck-once", "tabs6-esp install ${b}")
+    assert not [e for e in entries() if e.startswith("tabs6-fsck")]
+    machine.fail("tabs6-esp fsck-once")
+    assert not [e for e in entries() if e.startswith("tabs6-fsck")]
+    machine.succeed("tabs6-esp rollback")
+    assert entry("current") == "${c}"
     clean()
 
     # The placeholder kernel is refused before the ESP is opened.

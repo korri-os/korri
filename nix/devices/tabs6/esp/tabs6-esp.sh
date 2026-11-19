@@ -8,6 +8,9 @@
 #   tabs6-esp mark-good                bless, then copy the booted system to the LAST KNOWN GOOD entry
 #   tabs6-esp rollback                 make LAST KNOWN GOOD the default entry again
 #   tabs6-esp status                   show both entries and free space
+#   tabs6-esp fsck-once                boot once into an offline e2fsck of userdata
+#   tabs6-esp fsck-done <log>          (tabs6-fsck-init) keep the log, restore the normal entry
+#   tabs6-esp fsck-log                 print the last offline check's log
 #
 # Layout (all paths on the FAT):
 #   /EFI/BOOT/BOOTAA64.EFI               systemd-boot
@@ -25,6 +28,13 @@
 # its own checks pass; `bless` renames it back to tabs6-current.conf.
 # `rollback` and `stage` write uncounted entries: both systems are known good
 # or have nothing to fall back to.
+#
+# Offline root check: `fsck-once` writes tabs6-fsck+1-0.conf, which boots the
+# current kernel with root read-only and init=tabs6-fsck-init
+# (tabs6-fsck-init.sh, in this package), and makes it `preferred` with tabs6-current.conf as
+# `default`. The script runs e2fsck -fy, then `fsck-done` saves its log as
+# /tabs6/fsck.log and writes the normal loader.conf back. If it never gets
+# that far, its single try is spent and systemd-boot boots tabs6-current.
 #
 # Every entry carries init=<toplevel>/init, so the modules come with the closure
 # and no /lib/modules snapshot is needed. Each entry's toplevel is held by a GC
@@ -87,23 +97,38 @@ EOF
 	sync
 }
 
-write_loader() {
-	local top=$1 root=$2
-	mkdir -p "$root/EFI/BOOT" "$root/loader"
-	cp "$top/tabs6-systemd-boot.efi" "$root/EFI/BOOT/BOOTAA64.EFI.new"
-	mv -f "$root/EFI/BOOT/BOOTAA64.EFI.new" "$root/EFI/BOOT/BOOTAA64.EFI"
+# write_loader_conf <esp-root> [preferred default]
+write_loader_conf() {
+	local root=$1 preferred=${2:-tabs6-current.conf} default=${3:-tabs6-lastgood.conf}
+	mkdir -p "$root/loader"
 	# Hold volume-down for the menu; the timeout leaves a window without it.
 	# `preferred` skips an entry with no tries left; `default` then picks
 	# LAST KNOWN GOOD (systemd-boot 261, config_select_default_entry).
 	cat > "$root/loader/loader.conf.new" <<EOF
-preferred tabs6-current.conf
-default tabs6-lastgood.conf
+preferred $preferred
+default $default
 timeout 3
 editor no
 console-mode keep
 EOF
 	mv -f "$root/loader/loader.conf.new" "$root/loader/loader.conf"
 	sync
+}
+
+write_loader() {
+	local top=$1 root=$2
+	mkdir -p "$root/EFI/BOOT"
+	cp "$top/tabs6-systemd-boot.efi" "$root/EFI/BOOT/BOOTAA64.EFI.new"
+	mv -f "$root/EFI/BOOT/BOOTAA64.EFI.new" "$root/EFI/BOOT/BOOTAA64.EFI"
+	write_loader_conf "$root"
+}
+
+drop_fsck_entries() {
+	local f
+	for f in "$1"/loader/entries/tabs6-fsck.conf "$1"/loader/entries/tabs6-fsck+*.conf; do
+		[ -f "$f" ] && rm -f "$f"
+	done
+	return 0
 }
 
 # Trial: the default entry still carries a boot counter and holds the booted system.
@@ -181,6 +206,7 @@ install)
 		gcroot lastgood "$old"
 		echo "seeded LAST KNOWN GOOD with the booted system $old"
 	fi
+	drop_fsck_entries "$MNT"
 	write_loader "$top" "$MNT"
 	# One trial boot: if it is not blessed, the next boot is LAST KNOWN GOOD.
 	write_slot "$top" "$MNT" current 1
@@ -213,6 +239,59 @@ rollback)
 	gcroot current "$lg"
 	echo "default entry is LAST KNOWN GOOD again ($lg). Reboot."
 	;;
+fsck-once)
+	booted=$(readlink -f /run/booted-system)
+	# tabs6-fsck-init ships next to this command (package.nix), so any
+	# system that has this tabs6-esp can schedule the check.
+	init=$(readlink -f "$(dirname "$0")/tabs6-fsck-init" || true)
+	[ -x "$init" ] || die "no tabs6-fsck-init next to $0"
+	mount_esp
+	cur=$(current_entry "$MNT")
+	# The fallback after a failed check is the current entry, so it must be
+	# the booted, blessed system.
+	[ "$(basename "${cur:-none}")" = tabs6-current.conf ] || die "the default entry is not blessed (${cur:-none}); bless or mark-good first"
+	[ "$(entry_toplevel "$cur")" = "$booted" ] || die "the booted system is not the default entry"
+	# The booted command line with root read-only and without the splash.
+	params=""
+	# kernel-params has no trailing newline, so read returns 1 at its end.
+	read -ra words < "$booted/kernel-params" || true
+	for p in "${words[@]}"; do
+		case $p in
+		rw) params="$params ro" ;;
+		quiet | splash | loglevel=*) ;;
+		*) params="$params $p" ;;
+		esac
+	done
+	case "$params " in *" ro "*) ;; *) die "could not make root read-only in:$params" ;; esac
+	drop_fsck_entries "$MNT"
+	# panic=10: if PID 1 dies, the kernel reboots 10 s later.
+	cat > "$MNT/loader/entries/tabs6-fsck+1-0.conf.new" <<EOF
+title NixOS offline root check (one time)
+version $(basename "$booted")
+sort-key tabs6-fsck
+linux /tabs6/current/Image
+devicetree /tabs6/current/$DTB_NAME
+options init=$init$params loglevel=4 panic=10
+EOF
+	mv -f "$MNT/loader/entries/tabs6-fsck+1-0.conf.new" "$MNT/loader/entries/tabs6-fsck+1-0.conf"
+	rm -f "$MNT/tabs6/fsck.log"
+	write_loader_conf "$MNT" tabs6-fsck.conf tabs6-current.conf
+	echo "next boot: offline e2fsck of userdata, then $booted again. Reboot."
+	;;
+fsck-done)
+	[ $# = 2 ] || die "usage: tabs6-esp fsck-done <log>"
+	mount_esp
+	mkdir -p "$MNT/tabs6"
+	cp "$2" "$MNT/tabs6/fsck.log.new" && mv -f "$MNT/tabs6/fsck.log.new" "$MNT/tabs6/fsck.log"
+	drop_fsck_entries "$MNT"
+	write_loader_conf "$MNT"
+	echo "normal boot entry restored"
+	;;
+fsck-log)
+	mount_esp
+	[ -f "$MNT/tabs6/fsck.log" ] || die "no offline check log"
+	cat "$MNT/tabs6/fsck.log"
+	;;
 status)
 	mount_esp
 	df -h "$MNT" | tail -1
@@ -222,6 +301,6 @@ status)
 	echo "booted    $(readlink -f /run/booted-system)"
 	;;
 *)
-	die "usage: tabs6-esp stage|install|trial|bless|mark-good|rollback|status"
+	die "usage: tabs6-esp stage|install|trial|bless|mark-good|rollback|status|fsck-once|fsck-done|fsck-log"
 	;;
 esac
