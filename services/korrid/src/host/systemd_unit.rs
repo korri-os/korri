@@ -92,7 +92,6 @@ pub struct LaunchSandbox {
     plugin: bool,
     pulse_audio: bool,
     /// ADR 0083: the game unit reaches its engine host's channel.
-    #[serde(default)]
     steam_engine: bool,
 }
 
@@ -3030,6 +3029,22 @@ pub(super) fn validate_launch_id(value: &str) -> Result<(), LaunchUnitError> {
 
 #[cfg(test)]
 mod tests {
+    /// No fallback read: a sandbox record must say whether its game unit
+    /// reaches a Steam engine host.
+    #[test]
+    fn a_sandbox_without_steam_engine_is_refused() {
+        let old = serde_json::json!({
+            "netplayConfigSource": null,
+            "modifiers": false,
+            "plugin": true,
+            "pulseAudio": false,
+        });
+        assert!(serde_json::from_value::<LaunchSandbox>(old.clone()).is_err());
+        let mut current = old;
+        current["steamEngine"] = serde_json::json!(false);
+        assert!(serde_json::from_value::<LaunchSandbox>(current).is_ok());
+    }
+
     use super::*;
 
     const LAUNCH_ID: &str = "0123456789abcdef0123456789abcdef";
