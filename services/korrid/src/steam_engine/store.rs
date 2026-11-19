@@ -28,7 +28,12 @@ use std::{
 
 /// A listing is reused this long; Get and Remove download clear it.
 const LIST_FRESH: Duration = Duration::from_secs(5 * 60);
-const LIST_LIMIT: Duration = Duration::from_secs(120);
+/// How long one `list-apps` job may take. The host waits up to 45 s for the
+/// account's licences and up to 30 s more for appinfo before it answers;
+/// korrid allows a margin over those 75 s. Clients that wait for a search
+/// or the details of a claim use it too.
+pub const LIST_LIMIT: Duration = Duration::from_secs(120);
+const _: () = assert!(LIST_LIMIT.as_secs() >= 90);
 /// The host's own install limit is 3600 s by default; korrid allows more.
 const INSTALL_LIMIT: Duration = Duration::from_secs(4 * 3600);
 const POLL: Duration = Duration::from_millis(250);

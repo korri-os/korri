@@ -29,6 +29,11 @@ fn request_wait(request: &RpcRequest, default: Duration) -> Option<Duration> {
         RpcRequest::SettingsUpdate(request) if request.setting_id == "person-name" => {
             Some(REQUEST_TIMEOUT + DEFAULT_TIMEOUT)
         }
+        // A Steam search or claim lists the person's games through the
+        // engine host first, which may wait 75 s for Steam (ADR 0083).
+        RpcRequest::AcquisitionSearch(_) | RpcRequest::AcquisitionDetails(_) => {
+            Some(korrid::steam_engine::store::LIST_LIMIT + default)
+        }
         _ => Some(default),
     }
 }
@@ -336,6 +341,26 @@ with socketserver.UnixStreamServer(socket_path, Handler) as server:
                 serde_json::to_value(actual).unwrap(),
                 serde_json::to_value(expected).unwrap()
             );
+        }
+    }
+
+    /// The Steam provider's list-apps job may take up to LIST_LIMIT.
+    #[test]
+    fn a_search_and_a_claim_wait_for_the_steam_listing() {
+        use korrid::acquisition::{DetailsRequest, SearchRequest};
+        let wait = korrid::steam_engine::store::LIST_LIMIT + DEFAULT_TIMEOUT;
+        assert!(wait >= Duration::from_secs(120));
+        for request in [
+            RpcRequest::AcquisitionSearch(SearchRequest {
+                query: "balatro".into(),
+                provider_ids: vec!["@simonwjackson:steam".into()],
+            }),
+            RpcRequest::AcquisitionDetails(DetailsRequest {
+                provider_id: "@simonwjackson:steam".into(),
+                id: "2379780".into(),
+            }),
+        ] {
+            assert_eq!(request_wait(&request, DEFAULT_TIMEOUT), Some(wait));
         }
     }
 
