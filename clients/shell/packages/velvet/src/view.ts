@@ -25,7 +25,7 @@ import { entryHeading, screenPanel, sheetPanel, shown } from "./pages"
 import { QUIET, qrPath } from "./steam"
 import { plan, type Plan } from "./plan"
 import type { PanelSpec, RowSpec, State } from "./types"
-import { emptyAt, emptyButtons, panelFocus, panelStacks, takesFocus, topLayer } from "./update"
+import { emptyAt, emptyButtons, panelFocus, panelStacks, split, takesFocus, topLayer } from "./update"
 import { caps } from "./words"
 
 interface RowView {
@@ -216,27 +216,131 @@ function emptyView(state: State, model: Model, p: Plan, live: boolean) {
 /** The plan as main.slint's Screen. */
 const screenOf = (p: Plan) => p
 
-export function view(state: State, model: Model) {
+type Size = { readonly width: number; readonly height: number }
+
+/**
+ * What one window draws of the house, when the Stage and the Floor have a
+ * window each (ADR 0086). Absent: the whole house, as on one display.
+ */
+interface Part {
+  /** Focus is in the other window: the page is drawn, and nothing in it takes focus or a tap. */
+  readonly elsewhere?: boolean
+  /** No target drawn focused, but a tap still lands (the Floor while Play on the Stage holds focus). */
+  readonly unfocused?: boolean
+  /** The stage light under at least this veil: the Floor's light is the Stage's, dimmer. */
+  readonly veil?: number
+  /** Home's pick alone: the row, its shelves and the lobby are the Floor's. */
+  readonly pickOnly?: boolean
+  /** A list page's side content alone (the backup's QR code): its rows are the Floor's. */
+  readonly sideOnly?: boolean
+  /** No curtain, keyboard, sheet or notice: they are the other window's. */
+  readonly layersOff?: boolean
+  /** No page: the stage light alone. */
+  readonly blank?: boolean
+}
+
+/** The Floor's stage light: the Stage's own, under this veil at least. */
+export const FLOOR_VEIL = 0.62
+
+/**
+ * `view(state, model, window)`. On one window, the whole house as it has
+ * always been drawn. With a window each (ADR 0086), window 0 draws the Stage
+ * and window 1 the Floor; one focus moves across both.
+ */
+export function view(state: State, model: Model, window = 0) {
+  if (!split(model)) return whole(state, model, state.size, {})
+  return window === 0 ? stageWindow(state, model) : floorWindow(state, model)
+}
+
+/** The Stage's window: the lit game, the detail and Korri's status. */
+function stageWindow(state: State, model: Model) {
+  const size = state.size
+  const top = topLayer(state, model)
+  const what = shown(state, model)
+  // Korri's status and Velvet's questions take the Stage, over the page they came from.
+  if (top === "curtain") return whole(state, model, size, { pickOnly: true, sideOnly: true })
+  const library = what === "home" || what === "set" || what === "detail"
+  const lists = homeOf(state.lists, model.publishedAt)
+  // The detail, with its own sheet or keyboard over it.
+  if (what === "detail") return whole(state, model, size, {})
+  if (what === "home" && (lists.pick === undefined || (state.depth === 0 && top === "screen"))) {
+    return whole(state, model, size, { pickOnly: true })
+  }
+  // The Floor holds focus: the Stage shows the game in front of the person, or a page's
+  // own side content (the backup's QR code), or the last lit game under a veil.
+  const panel = library ? undefined : screenPanel(state, model)
+  if (panel?.side !== undefined) return whole(state, model, size, { elsewhere: true, sideOnly: true, layersOff: true })
+  const lead = focusedGame(state, model) ?? (state.reported === null ? lists.pick : gameById(state.lists, model, state.reported) ?? lists.pick)
+  if (lead === undefined) return whole(state, model, size, { elsewhere: true, blank: true, layersOff: true })
+  const cinema: State = { ...state, detail: { game: lead, at: 0 }, pages: [], sheet: undefined, keyboard: undefined }
+  return whole(cinema, model, size, { elsewhere: true, layersOff: true, veil: library ? 0 : 0.86 })
+}
+
+/** The Floor's window: home's row and lobby, sets, list pages, sheets and the keyboard. */
+function floorWindow(state: State, model: Model) {
+  const size = state.floor ?? state.size
+  const top = topLayer(state, model)
+  const what = shown(state, model)
+  const lists = homeOf(state.lists, model.publishedAt)
+  if (what === "home" && lists.pick === undefined) return whole(state, model, size, { elsewhere: true, blank: true, layersOff: true, veil: FLOOR_VEIL })
+  // The detail opens on the Stage: the Floor keeps the row or the set it came from.
+  const behind: State = what === "detail" ? { ...state, detail: undefined } : state
+  // Home on the Floor is its row and lobby: one level down, where the pick is out of sight.
+  const floor: State = shown(behind, model) === "home" && behind.depth === 0 ? { ...behind, depth: 1 } : behind
+  const onStage = top === "curtain" || what === "detail"
+  return whole(floor, model, size, {
+    elsewhere: onStage,
+    unfocused: !onStage && what === "home" && state.depth === 0,
+    layersOff: onStage,
+    veil: FLOOR_VEIL,
+  })
+}
+
+/** Every focus region a view draws a target in. */
+function regionsOf(value: unknown, into: Set<string>): Set<string> {
+  if (Array.isArray(value)) {
+    for (const item of value) regionsOf(item, into)
+  } else if (value !== null && typeof value === "object") {
+    const entry = value as Record<string, unknown>
+    if ("focused" in entry && typeof entry["focusRegion"] === "string") into.add(entry["focusRegion"] as string)
+    for (const key in entry) if (key !== "focusPlan") regionsOf(entry[key], into)
+  }
+  return into
+}
+
+/** A window's exits lead only to regions it draws: the other window's are its own (contract 8.4). */
+function exitsWithin(exits: Record<string, Record<string, { to: string; entry: string }>>, drawn: Set<string>) {
+  const kept: Record<string, Record<string, { to: string; entry: string }>> = {}
+  for (const region in exits) {
+    if (!drawn.has(region)) continue
+    const ways: Record<string, { to: string; entry: string }> = {}
+    for (const way in exits[region]) if (drawn.has(exits[region]![way]!.to)) ways[way] = exits[region]![way]!
+    if (Object.keys(ways).length > 0) kept[region] = ways
+  }
+  return kept
+}
+
+function whole(state: State, model: Model, size: Size, part: Part) {
   // What this view asks for in pictures: the stage first, then each part in its own order.
   const asked = pictures()
-  const p = plan(state.size.width, state.size.height)
+  const p = plan(size.width, size.height)
   const top = topLayer(state, model)
-  const live = top === "screen"
+  const live = top === "screen" && part.elsewhere !== true && part.unfocused !== true
   // A launch's curtain is black and holds the game's logo: it asks for its picture first.
   const curtain = curtainView(asked, state, model, p)
   const what = shown(state, model)
   const panel = screenPanel(state, model)
   const lists = homeOf(state.lists, model.publishedAt)
   const library = what === "home" || what === "set" || what === "detail" || what === "overlay"
-  const page = !library ? "list" : what === "detail" ? "detail" : what === "set" ? "set" : lists.pick === undefined ? "empty" : "home"
+  const page = part.blank === true ? "none" : !library ? "list" : what === "detail" ? "detail" : what === "set" ? "set" : lists.pick === undefined ? "empty" : "home"
   // The stage: lit by the game in front of the person; dimmer the further from it.
   const lead = what === "detail" ? detailGame(state, model) : focusedGame(state, model) ?? (state.reported === null ? lists.pick : gameById(state.lists, model, state.reported) ?? lists.pick)
-  const veil = page === "list" ? 0.86 : page === "set" ? 0.8 : page === "home" && state.depth === 2 ? 0.78 : page === "home" && state.depth === 1 ? 0.3 : 0
+  const veil = Math.max(part.veil ?? 0, page === "list" ? 0.86 : page === "set" ? 0.8 : page === "home" && state.depth === 2 ? 0.78 : page === "home" && state.depth === 1 ? 0.3 : 0)
   // The keyboard and the curtain take the house: its lights go down further.
   const taken = top === "curtain" || top === "keyboard"
-  const stage: StageView = page === "empty" ? stageOf(asked, undefined, 0, false) : stageOf(asked, lead, taken ? Math.max(veil, 0.84) : veil, state.drift && top === "screen" && (page === "home" || page === "detail"), page === "detail" || page === "home", page === "set" || page === "list" || (page === "home" && state.depth === 2), p.width, p.height)
-  const sheet = state.sheet === undefined ? undefined : sheetPanel(state.sheet.kind, state, model)
-  const exits = top !== "screen" ? {}
+  const stage: StageView = page === "empty" || (page === "none" && lead === undefined) ? stageOf(asked, undefined, part.veil ?? 0, false) : stageOf(asked, lead, taken ? Math.max(veil, 0.84) : veil, state.drift && top === "screen" && (page === "home" || page === "detail"), page === "detail" || page === "home", page === "set" || page === "list" || (page === "home" && state.depth === 2), p.width, p.height)
+  const sheet = state.sheet === undefined || part.layersOff === true ? undefined : sheetPanel(state.sheet.kind, state, model)
+  const exits = top !== "screen" || part.elsewhere === true ? {}
     : page === "home" ? homeExits(state, model)
       : page === "empty" ? (emptyButtons(model).length > 0 ? { menu: { down: { to: "empty", entry: "remembered" } }, empty: { up: { to: "menu", entry: "first" } } } : {})
         : page === "set" && state.set !== undefined ? setExits(state.set, model)
@@ -246,24 +350,28 @@ export function view(state: State, model: Model) {
   const detail = page === "detail" ? detailView(asked, state, model, p, live) : undefined
   const empty = page === "empty" ? emptyView(state, model, p, live) : undefined
   const list = page === "list" && panel !== undefined ? pageView(asked, panel, state, p, live) : undefined
-  const keyboard = keyboardView(state, top === "keyboard")
-  return {
+  const keyboard = part.layersOff === true ? { keyboard: NO_KEYBOARD, keys: [] } : keyboardView(state, top === "keyboard")
+  const pickOnly = part.pickOnly === true
+  const sideOnly = part.sideOnly === true
+  const drawn = {
     screen: screenOf(p),
     still: state.still,
     touching: state.touched,
-    // A finger's way back, where there is a level to go back to.
-    layer: top,
+    // A finger's way back, where there is a level to go back to. A window whose focus is
+    // in the other window draws its page, inert (`elsewhere`), under no layer of its own.
+    layer: part.elsewhere === true || (part.layersOff === true && top !== "curtain") ? "screen" : top,
+    elsewhere: part.elsewhere === true,
     page,
     stage,
-    home: home?.home ?? OFF,
+    home: home === undefined ? OFF : pickOnly ? { ...home.home, depth: 0 } : home.home,
     homeCards: home?.cards ?? NONE,
-    homeRow: home?.row ?? NONE,
-    shelves: home?.shelves ?? NONE,
-    shelfTiles: home?.shelfTiles ?? NONE,
+    homeRow: pickOnly ? NONE : home?.row ?? NONE,
+    shelves: pickOnly ? NONE : home?.shelves ?? NONE,
+    shelfTiles: pickOnly ? NONE : home?.shelfTiles ?? NONE,
     // The focused shelf stands alone too, for the lobby's track (see `setFirstRow`).
     shelfAt: home?.home.shelfAt ?? 0,
     // And how deep home is: the page, the row's tiles and the lobby all move by it.
-    homeDepth: home?.home.depth ?? 0,
+    homeDepth: pickOnly ? 0 : home?.home.depth ?? 0,
     set: set?.set ?? OFF,
     setTiles: set?.tiles ?? NONE,
     // The row a set's window starts at stands alone: a number the shell sets only when it
@@ -279,8 +387,8 @@ export function view(state: State, model: Model) {
     emptyLines: empty?.lines ?? NONE,
     emptyButtons: empty?.buttons ?? NONE,
     list: list?.list ?? NO_PAGE,
-    listRows: list?.rows ?? NONE,
-    listButtons: list?.buttons ?? NONE,
+    listRows: sideOnly ? NONE : list?.rows ?? NONE,
+    listButtons: sideOnly ? NONE : list?.buttons ?? NONE,
     listPanelLines: list?.panelLines ?? NONE,
     listTiles: list?.tiles ?? NONE,
     // The code changes about every 20 s; top-level, so the shell sets it only then.
@@ -290,14 +398,19 @@ export function view(state: State, model: Model) {
     sheetRows: sheet === undefined ? NONE : sheetRows(sheet, state, top === "sheet"),
     keyboard: keyboard.keyboard,
     keys: keyboard.keys,
-    curtain: curtain.curtain,
-    curtainKicker: curtain.kicker,
-    curtainLines: curtain.lines,
-    curtainSteps: curtain.steps,
-    curtainButtons: curtain.buttons,
-    notice: noticeView(state, model),
+    curtain: part.layersOff === true ? NO_CURTAIN : curtain.curtain,
+    curtainKicker: part.layersOff === true ? NONE : curtain.kicker,
+    curtainLines: part.layersOff === true ? NONE : curtain.lines,
+    curtainSteps: part.layersOff === true ? NONE : curtain.steps,
+    curtainButtons: part.layersOff === true ? NONE : curtain.buttons,
+    notice: part.layersOff === true ? NO_NOTICE : noticeView(state, model),
     focusPlan: exits,
   }
+  // With a window each, a window's exits lead only to what it draws itself.
+  if (part.pickOnly === true || part.sideOnly === true || part.unfocused === true || part.veil !== undefined) {
+    return { ...drawn, focusPlan: exitsWithin(exits, regionsOf(drawn, new Set())) }
+  }
+  return drawn
 }
 
 /** The gameplay overlay: Korri's controls over the running game, and Korri's status over those. */

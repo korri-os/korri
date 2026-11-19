@@ -92,6 +92,10 @@ struct TreeNode {
     id: i64,
     #[serde(default)]
     pid: Option<i32>,
+    /// The window title. The shell titles a surface's further pane windows
+    /// `korri-pane:<pane>` (ADR 0086, [`PANE_TITLE_PREFIX`]).
+    #[serde(default)]
+    name: Option<String>,
     #[serde(default)]
     focused: bool,
     #[serde(default)]
@@ -138,10 +142,13 @@ pub(crate) fn shell_window(
 ) -> Result<FocusCandidate, String> {
     fn visit(node: &TreeNode, shell_pids: &BTreeSet<i32>, windows: &mut Vec<FocusCandidate>) {
         if let Some(pid) = node.pid.filter(|pid| shell_pids.contains(pid)) {
-            windows.push(FocusCandidate {
-                node_id: node.id,
-                pid,
-            });
+            // A surface's further pane windows are not the shell's window.
+            if pane_of(node).is_none() {
+                windows.push(FocusCandidate {
+                    node_id: node.id,
+                    pid,
+                });
+            }
         }
         for child in node.nodes.iter().chain(node.floating_nodes.iter()) {
             visit(child, shell_pids, windows);
@@ -154,6 +161,37 @@ pub(crate) fn shell_window(
         return Err("no unique shell window".into());
     }
     Ok(windows.remove(0))
+}
+
+/// The title prefix of a surface's further pane windows (ADR 0086). The
+/// shell sets it on each window it maps for a pane other than the first, so
+/// korrid can tell those windows from the shell's own window, which shares
+/// their process.
+pub(crate) const PANE_TITLE_PREFIX: &str = "korri-pane:";
+
+fn pane_of(node: &TreeNode) -> Option<&str> {
+    node.name.as_deref()?.strip_prefix(PANE_TITLE_PREFIX)
+}
+
+/// The shell's further pane windows: each pane id with its window's node.
+pub(crate) fn pane_windows(
+    tree: &str,
+    shell_pids: &BTreeSet<i32>,
+) -> Result<Vec<(String, i64)>, String> {
+    fn visit(node: &TreeNode, shell_pids: &BTreeSet<i32>, windows: &mut Vec<(String, i64)>) {
+        if node.pid.is_some_and(|pid| shell_pids.contains(&pid)) {
+            if let Some(pane) = pane_of(node) {
+                windows.push((pane.to_owned(), node.id));
+            }
+        }
+        for child in node.nodes.iter().chain(node.floating_nodes.iter()) {
+            visit(child, shell_pids, windows);
+        }
+    }
+    let root: TreeNode = serde_json::from_str(tree).map_err(|e| e.to_string())?;
+    let mut windows = Vec::new();
+    visit(&root, shell_pids, &mut windows);
+    Ok(windows)
 }
 
 /// One window that the exact unit owns.

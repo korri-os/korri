@@ -33,9 +33,9 @@ pub struct Behaviour {
 #[derive(Default)]
 struct Surface {
     declared: Option<engine::Declaration>,
-    /// `displays` from the last declare; korrid publishes `model.displays`
-    /// only for `"all"`.
-    displays: Option<engine::Displays>,
+    /// `panes` from the last declare; korrid publishes `model.windows` only
+    /// for a package with panes (ADR 0086).
+    panes: Option<engine::Panes>,
     stored: BTreeMap<String, String>,
     query: Option<Value>,
     from: Option<Value>,
@@ -61,8 +61,9 @@ struct State {
     calls: Vec<String>,
     declarations: Vec<Value>,
     generation: u64,
-    /// `model.displays` for a surface that draws on all; absent: one 640x480 main display.
-    displays: Option<Value>,
+    /// `model.windows` for a package with panes; absent: one window that
+    /// holds them all, as korrid gives it with one display.
+    windows: Option<Value>,
     /// A catalog published as it is (Loading, Error, Empty) instead of a window.
     fixed_catalog: Option<Value>,
     /// `app.game-assets.object`: the bytes answered for each asset id.
@@ -103,7 +104,7 @@ impl Fixture {
                 calls: Vec::new(),
                 declarations: Vec::new(),
                 generation: 0,
-                displays: None,
+                windows: None,
                 fixed_catalog: None,
                 assets: BTreeMap::new(),
                 asset_requests: Vec::new(),
@@ -247,11 +248,12 @@ impl Fixture {
         changed.notify_all();
     }
 
-    /// The displays published to a surface that draws on all of them.
-    pub fn set_displays(&self, displays: Option<Value>) {
+    /// The windows published to a package with panes, as korrid would after
+    /// it placed them (ADR 0086). `None`: one window holds every pane.
+    pub fn set_windows(&self, windows: Option<Value>) {
         let (lock, changed) = &*self.shared;
         let mut state = lock.lock().unwrap();
-        state.displays = displays;
+        state.windows = windows;
         for surface in state.surfaces.values_mut() {
             surface.revision += 1;
         }
@@ -356,11 +358,12 @@ fn model_for(state: &State, surface_id: &str) -> Value {
         };
     }
 
-    if surface.and_then(|s| s.displays) == Some(engine::Displays::All) {
-        // One main display unless told otherwise; the fixture has no compositor to read outputs from.
-        model["displays"] = state.displays.clone().unwrap_or_else(
-            || json!([{"id": "fixture", "main": true, "x": 0, "y": 0, "width": 640, "height": 480, "touch": false}]),
-        );
+    if let Some(panes) = surface.and_then(|s| s.panes.as_ref()) {
+        // One window unless told otherwise; the fixture has no compositor to read outputs from.
+        model["windows"] = state
+            .windows
+            .clone()
+            .unwrap_or_else(|| json!([{ "panes": panes.panes }]));
     }
     // A model that names actions in `focusedGame` lends them to whichever
     // game the surface focuses (the fixture has no per-game actions).
@@ -549,19 +552,19 @@ fn rpc(shared: &Arc<(Mutex<State>, Condvar)>, request: &Value) -> Value {
             }
             if let Some(key) = payload.as_object().and_then(|o| {
                 o.keys()
-                    .find(|k| !["surfaceId", "preferences", "displays"].contains(&k.as_str()))
+                    .find(|k| !["surfaceId", "preferences", "panes"].contains(&k.as_str()))
             }) {
                 return err(&method, &format!("unknown field {key}"));
             }
-            let displays = match engine::check_displays(payload.get("displays")) {
-                Ok(displays) => displays,
+            let panes = match engine::check_panes(payload.get("panes").unwrap_or(&Value::Null)) {
+                Ok(panes) => panes,
                 Err(message) => return err(&method, &message),
             };
             match engine::check_declaration(payload.get("preferences").unwrap_or(&Value::Null)) {
                 Ok(declaration) => {
                     let surface = state.surfaces.entry(surface_id).or_default();
                     surface.declared = Some(declaration);
-                    surface.displays = displays;
+                    surface.panes = panes;
                     ok(&method, Value::Null)
                 }
                 Err(message) => err(&method, &message),

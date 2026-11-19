@@ -12,7 +12,9 @@
  *   preferences  velvet.motion, mark `device`: "full" or "reduced". A device
  *                that cannot hold 60 frames a second, or a person who wants
  *                stillness, sets it on that device; it does not follow them.
- *   displays     "main": Velvet is one stage.
+ *   panes        "stage" over "floor" (ADR 0086): the lit game, and the
+ *                house's lists under it. korrid gives them one window, or
+ *                a window each when a display stands under the main one.
  *
  * Pure: no timers, no Date.now, no randomness. "Now" is the model's
  * `publishedAt`; idle time is the shell's Tick.
@@ -33,18 +35,22 @@ export function update(state: State, message: Message, model: Model): { state: S
   return step(state, message, model)
 }
 
-// The view of the very state and model drawn last (src/memo.ts has the rule for everything kept).
-let lastView: { state: State; model: Model; view: ReturnType<typeof draw> } | undefined
+// The view of the very state, model and window drawn last, for each window (src/memo.ts has
+// the rule for everything kept).
+const lastViews: ({ state: State; model: Model; view: ReturnType<typeof draw> } | undefined)[] = []
 let lastOverlay: { state: State; model: Model; view: ReturnType<typeof overlayView> } | undefined
 onForget(() => {
-  lastView = undefined
+  lastViews.length = 0
   lastOverlay = undefined
 })
 
-export function view(state: State, model: Model) {
-  if (lastView?.state === state && lastView.model === model) return lastView.view
-  lastView = { state, model, view: draw(state, model) }
-  return lastView.view
+/** `window`: the index in `model.windows` (ADR 0086); 0 when the shell sends none. */
+export function view(state: State, model: Model, window = 0) {
+  const last = lastViews[window]
+  if (last?.state === state && last.model === model) return last.view
+  const drawn = { state, model, view: draw(state, model, window) }
+  lastViews[window] = drawn
+  return drawn.view
 }
 
 export function overlay(state: State, model: Model) {
@@ -57,14 +63,17 @@ export function overlay(state: State, model: Model) {
 // person's eyes can take is a fact about that device and that room.
 const preferences = { [MOTION_KEY]: { mark: "device", initial: "full" } } as const
 
-const displays = "main"
+// ADR 0086: the Stage goes on the main display, the Floor under it.
+const panes = ["stage", "floor"]
+const arrangement = "upper-above-lower"
 
-globalThis.surface = { displays, preferences, init, update, view, overlay }
+globalThis.surface = { panes, arrangement, preferences, init, update, view, overlay }
 
 declare global {
   // The one global the contract allows.
   var surface: {
-    displays: typeof displays
+    panes: typeof panes
+    arrangement: typeof arrangement
     preferences: typeof preferences
     init: typeof init
     update: typeof update

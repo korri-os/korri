@@ -1441,7 +1441,8 @@ mod tests {
     fn display_placement_is_person_local_and_idle_wake_cannot_be_forwarded() {
         let surface =
             RpcRequest::SurfaceDisplays(crate::host::display_placement::SurfaceDisplaysRequest {
-                displays: crate::host::display_placement::SurfaceDisplayScope::All,
+                panes: None,
+                check: false,
                 overlay: false,
                 launch_id: None,
             });

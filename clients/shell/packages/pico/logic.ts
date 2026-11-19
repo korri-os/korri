@@ -20,8 +20,6 @@ const preferences: SurfacePreferenceDeclarations = {
 }
 
 ;(globalThis as { surface?: unknown }).surface = {
-  // As the portal registered Pico: it draws on every display it is given.
-  displays: "all",
   preferences,
   init: (model: KorriModel, stored: Readonly<Record<string, string>>): State => init(model, stored),
   update: (state: State, message: SurfaceMessage, model: KorriModel) => update(state, message, model),

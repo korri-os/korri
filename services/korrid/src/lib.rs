@@ -4441,15 +4441,14 @@ async fn dispatch(
             })
         }
         RpcRequest::SurfaceDisplays(request) => {
-            use host::display_placement::{
-                configured_displays, surface_rectangles, SurfaceDisplaysOutcome,
-            };
+            use host::display_placement::{surface_windows, SurfaceDisplaysOutcome};
             let result = match &state.mode {
-                ServerMode::Host(host) => host.surface_displays(request).await,
-                ServerMode::Brain(_) => configured_displays().map(|d| surface_rectangles(&d, None)),
+                ServerMode::Host(host) => host.surface_displays(request).await.map(|p| p.windows),
+                // A brain places nothing: both panes share window 0.
+                ServerMode::Brain(_) => Ok(surface_windows(request.panes.as_ref(), None)),
             };
             RpcResponse::SurfaceDisplays(match result {
-                Ok(displays) => SurfaceDisplaysOutcome::Ok(displays),
+                Ok(windows) => SurfaceDisplaysOutcome::Ok(windows),
                 Err(message) => {
                     eprintln!("korrid: PlacementFailed {{ reason: {message} }}");
                     SurfaceDisplaysOutcome::Err(RpcFailure {
@@ -4479,11 +4478,7 @@ async fn dispatch(
                 .as_ref()
                 .ok_or_else(surface::surface_unavailable)
                 .and_then(|hub| {
-                    hub.declare(
-                        &request.surface_id,
-                        request.preferences,
-                        request.displays.unwrap_or_default(),
-                    )
+                    hub.declare(&request.surface_id, request.preferences, request.panes)
                 }),
         )),
         RpcRequest::SurfacePreferences(request) => RpcResponse::SurfacePreferences(

@@ -1,7 +1,7 @@
 //! The fixture korrid as a process, for proofs.
 //!
 //! ```text
-//! fixture-korrid --games N --credentials DIR [--model FILE] [--displays JSON]
+//! fixture-korrid --games N --credentials DIR [--model FILE] [--windows JSON]
 //! ```
 //!
 //! Writes `DIR/KORRID_RPC_CAPABILITY` (mode 0600) and prints
@@ -18,9 +18,9 @@
 //! | `stored ID` | print the preferences stored for a surface |
 //! | `store ID KEY VALUE` | store a preference for a surface, as a remembered one |
 //! | `model FILE` | publish the `SurfaceModel` in FILE (a Ready catalog's `games` become the window's games) |
-//! | `displays JSON` | publish these `model.displays` to a surface that draws on all; `displays none` for the default |
+//! | `windows JSON` | publish these `model.windows` to a package with panes (ADR 0086); `windows none` for one window |
 //!
-//! `--model FILE` and `--displays JSON` set the same at start.
+//! `--model FILE` and `--windows JSON` set the same at start.
 
 use crate::{
     catalog,
@@ -50,15 +50,17 @@ pub fn run() -> std::io::Result<()> {
     let mut games = 12;
     let mut credentials = None;
     let mut model_file = None;
-    let mut displays = None;
+    let mut windows = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--games" => games = args.next().and_then(|n| n.parse().ok()).expect("--games N"),
             "--credentials" => credentials = args.next(),
             "--model" => model_file = args.next(),
-            "--displays" => displays = args.next(),
-            _ => panic!("usage: fixture-korrid --games N --credentials DIR [--model FILE] [--displays JSON]"),
+            "--windows" => windows = args.next(),
+            _ => panic!(
+                "usage: fixture-korrid --games N --credentials DIR [--model FILE] [--windows JSON]"
+            ),
         }
     }
     let (model, examples) = verify::fixture();
@@ -74,8 +76,8 @@ pub fn run() -> std::io::Result<()> {
     if let Some(path) = &model_file {
         fixture.set_model(read_model(path));
     }
-    if let Some(json) = &displays {
-        fixture.set_displays(Some(serde_json::from_str(json).expect("displays JSON")));
+    if let Some(json) = &windows {
+        fixture.set_windows(Some(serde_json::from_str(json).expect("windows JSON")));
     }
     let credentials = credentials.expect("--credentials DIR");
     fixture.write_credential(std::path::Path::new(&credentials))?;
@@ -100,9 +102,9 @@ pub fn run() -> std::io::Result<()> {
                 fixture.send_input(&[key(code(value).expect("key code"), 0), report.clone()])
             }
             ["model", path] => fixture.set_model(read_model(path)),
-            ["displays", "none"] => fixture.set_displays(None),
-            ["displays", json @ ..] => fixture.set_displays(Some(
-                serde_json::from_str(&json.join(" ")).expect("displays JSON"),
+            ["windows", "none"] => fixture.set_windows(None),
+            ["windows", json @ ..] => fixture.set_windows(Some(
+                serde_json::from_str(&json.join(" ")).expect("windows JSON"),
             )),
             ["overlay", "on"] => fixture.set_overlay(true),
             ["overlay", "off"] => fixture.set_overlay(false),

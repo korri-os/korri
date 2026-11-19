@@ -52,7 +52,8 @@ use std::{
 /// Everything the shell reacts to.
 #[derive(Debug)]
 pub enum Event {
-    /// `window`: 0 for a surface's `Surface`, 1 for its `Overlay`.
+    /// `window`: 0 for a surface's `Surface`, 1 for its `Overlay`, and from 2
+    /// a further pane window (ADR 0086, [`pane_role`]).
     Host {
         generation: u64,
         window: u8,
@@ -133,6 +134,27 @@ pub struct LoadTiming {
     pub shown: Duration,
 }
 
+/// ADR 0086: the window role of a package's further window, by its index in
+/// `SurfaceModel.windows` (from 1). Roles 0 and 1 are Surface and Overlay.
+fn pane_role(index: u32) -> u8 {
+    (index + 1).min(u32::from(u8::MAX)) as u8
+}
+
+/// A further window of a package with panes (ADR 0086): another instance
+/// of its `Surface`, drawn from `view(state, model, index)`.
+struct PaneWindow {
+    /// Its index in `SurfaceModel.windows`, from 1.
+    index: u32,
+    component: ComponentInstance,
+    binder: Binder,
+    /// The view its binder applied last.
+    last_view: Option<Value>,
+    /// The last size sent in `Resized` for it, in logical pixels.
+    size: (f32, f32),
+    /// Whether it is mapped: only while the Surface window is.
+    shown: bool,
+}
+
 struct Loaded {
     generation: u64,
     /// The last button or pointer activity, or when this surface loaded.
@@ -144,6 +166,13 @@ struct Loaded {
     /// Posts this surface's logic outcomes to the UI thread.
     done: Done,
     overlay_definition: Option<ComponentDefinition>,
+    /// The `Surface` definition, for further pane windows (ADR 0086).
+    surface_definition: ComponentDefinition,
+    /// ADR 0086: the panes each window holds, from the last model. One entry
+    /// for a package without panes.
+    windows: Vec<Vec<String>>,
+    /// Windows 1.. of a package with panes.
+    panes: Vec<PaneWindow>,
     surface: ComponentInstance,
     surface_binder: Binder,
     overlay: Option<(ComponentInstance, Binder)>,
@@ -376,6 +405,26 @@ impl Shell {
         self.current.as_ref().is_some_and(|l| l.overlay.is_some())
     }
 
+    /// ADR 0086: how many further pane windows the current surface has
+    /// mapped, for tests and proofs.
+    pub fn pane_windows(&self) -> usize {
+        self.current
+            .as_ref()
+            .map_or(0, |l| l.panes.iter().filter(|p| p.shown).count())
+    }
+
+    /// A property of the current surface's further window `index` (from 1).
+    pub fn pane_property(&self, index: u32, name: &str) -> Option<slint_interpreter::Value> {
+        self.current
+            .as_ref()?
+            .panes
+            .iter()
+            .find(|p| p.index == index)?
+            .component
+            .get_property(name)
+            .ok()
+    }
+
     pub fn retiring(&self) -> usize {
         self.retiring.len()
     }
@@ -580,6 +629,12 @@ impl Shell {
             {
                 binder.refresh_image(component, view, url, &mut current.images)?;
             }
+            for pane in &mut current.panes {
+                if let Some(view) = &pane.last_view {
+                    pane.binder
+                        .refresh_image(&pane.component, view, url, &mut current.images)?;
+                }
+            }
             Ok(())
         })();
         match refreshed {
@@ -591,7 +646,11 @@ impl Shell {
     fn surface_input(&mut self, generation: u64, window: u8, message: Value) {
         if self.current.as_ref().is_some_and(|c| {
             c.generation == generation
-                && ((window == 0 && c.surface_shown) || (window == 1 && c.overlay.is_some()))
+                && ((window == 0 && c.surface_shown)
+                    || (window == 1 && c.overlay.is_some())
+                    || c.panes
+                        .iter()
+                        .any(|p| pane_role(p.index) == window && p.shown))
         }) {
             self.activity();
             self.update(&message);
@@ -619,6 +678,9 @@ impl Shell {
                     }
                 }
                 self.retire_drawn();
+                if window >= 2 {
+                    self.title_pane(generation, window);
+                }
                 // A window the shell mapped anew (the Overlay, or the Surface back from
                 // it) has drawn: korrid places it on the declare.
                 if self
@@ -663,7 +725,11 @@ impl Shell {
                     .as_ref()
                     .is_some_and(|c| c.generation == generation)
                 {
-                    self.resized();
+                    if window >= 2 {
+                        self.pane_resized(window);
+                    } else {
+                        self.resized();
+                    }
                 }
             }
             HostEvent::Close => {
@@ -844,7 +910,7 @@ impl Shell {
         let id = current.package.id.clone();
         if let Err(error) = self
             .korrid
-            .declare(&id, &current.declaration, current.logic.displays())
+            .declare(&id, &current.declaration, current.logic.panes())
         {
             self.say(format!("{id} declare again failed: {error:#}"));
         }
@@ -876,6 +942,7 @@ impl Shell {
             generation,
             surface,
             overlay,
+            panes,
             watch,
             logic,
             images,
@@ -890,7 +957,11 @@ impl Shell {
             if let Some((overlay, _)) = &overlay {
                 let _ = overlay.hide();
             }
+            for pane in &panes {
+                let _ = pane.component.hide();
+            }
         }
+        drop(panes);
         drop(overlay);
         drop(surface);
         // Interrupts a running call and joins the logic thread.
@@ -918,7 +989,7 @@ impl Shell {
         let declaration =
             serde_json::to_value(logic.declaration()).expect("declaration serialises");
         self.korrid
-            .declare(&package.id, &declaration, logic.displays())
+            .declare(&package.id, &declaration, logic.panes())
             .context("app.surface.declare")?;
         let stored = self
             .korrid
@@ -930,7 +1001,10 @@ impl Shell {
             .model(&package.id)
             .context("app.surface.model")?;
         let korrid_done = started.elapsed();
-        let gameplay_overlay = messages::is_gameplay_overlay(&serde_json::from_str(&model)?);
+        let parsed: Value = serde_json::from_str(&model)?;
+        let gameplay_overlay = messages::is_gameplay_overlay(&parsed);
+        let windows = messages::windows(&parsed);
+        let first_windows = windows.clone();
         self.next_generation += 1;
         let generation = self.next_generation;
         let mut images = ImageCache::new(&package.dir);
@@ -951,8 +1025,9 @@ impl Shell {
         // A2 (8.1): the window's size, once after init and before the first view.
         let size = logical_size(surface.window());
         let overlay_wanted = gameplay_overlay && views.overlay.is_some() && logic.has_overlay();
-        let (first_requests, view, overlay_view) = logic
+        let (first_requests, view, overlay_view, pane_views) = logic
             .now(move |worker| -> std::result::Result<_, Violation> {
+                worker.set_windows(&first_windows);
                 let engine = worker.engine();
                 engine.set_model(&model)?;
                 engine.init(&preferences)?;
@@ -969,7 +1044,8 @@ impl Shell {
                     let diff = worker.diff_overlay(&o);
                     (o, diff)
                 });
-                Ok((requests, (view, diff), overlay))
+                let panes = worker.pane_views()?;
+                Ok((requests, (view, diff), overlay, panes))
             })
             .and_then(|r| r)
             .map_err(|v| anyhow!("logic: {v}"))?;
@@ -1013,6 +1089,9 @@ impl Shell {
             logic,
             done,
             overlay_definition: views.overlay,
+            surface_definition: views.surface.clone(),
+            windows,
+            panes: Vec::new(),
             surface,
             surface_binder,
             overlay: None,
@@ -1034,7 +1113,10 @@ impl Shell {
                 shown: Duration::ZERO,
             },
         };
-        if let Err(error) = self.render_overlay(&mut loaded, overlay_view) {
+        if let Err(error) = self
+            .render_overlay(&mut loaded, overlay_view)
+            .and_then(|()| self.sync_panes(&mut loaded, pane_views))
+        {
             let id = loaded.package.id.clone();
             self.unload(loaded);
             return Err(anyhow!("{id} overlay: {error:#}"));
@@ -1064,6 +1146,120 @@ impl Shell {
         }
         current.size = size;
         self.update(&messages::resized(size.0, size.1));
+    }
+
+    /// ADR 0086: send `Resized` with its index when a pane window's logical
+    /// size changed.
+    fn pane_resized(&mut self, role: u8) {
+        let Some(current) = self.current.as_mut() else {
+            return;
+        };
+        let Some(pane) = current
+            .panes
+            .iter_mut()
+            .find(|p| pane_role(p.index) == role && p.shown)
+        else {
+            return;
+        };
+        let size = logical_size(pane.component.window());
+        if size == pane.size || size.0 <= 0.0 || size.1 <= 0.0 {
+            return;
+        }
+        pane.size = size;
+        let message = messages::window_resized(pane.index, size.0, size.1);
+        self.update(&message);
+    }
+
+    /// ADR 0086: title a pane window `korri-pane:<panes>` once it has drawn,
+    /// so korrid can place it apart from the shell's own window.
+    fn title_pane(&self, generation: u64, role: u8) {
+        let Some(current) = self.current.as_ref().filter(|c| c.generation == generation) else {
+            return;
+        };
+        if let Some(pane) = current.panes.iter().find(|p| pane_role(p.index) == role) {
+            let panes = current
+                .windows
+                .get(pane.index as usize)
+                .map(|panes| panes.join("+"))
+                .unwrap_or_default();
+            self.backend
+                .set_title(pane.component.window(), &format!("korri-pane:{panes}"));
+        }
+    }
+
+    /// ADR 0086: make the further pane windows match `loaded.windows`, apply
+    /// their new views, and map them exactly while the Surface window is
+    /// mapped. A window past the model's count goes; one it lacks is made,
+    /// another instance of the package's `Surface`. A one-window backend
+    /// makes none.
+    fn sync_panes(&mut self, loaded: &mut Loaded, views: Vec<(u32, Value, Diff)>) -> Result<()> {
+        let shared = self.backend.shared_window();
+        let wanted = if shared {
+            0
+        } else {
+            loaded.windows.len().saturating_sub(1)
+        };
+        while loaded.panes.len() > wanted {
+            let pane = loaded.panes.pop().expect("longer than wanted");
+            let _ = pane.component.hide();
+            if let Some(windows) = &mut self.focused {
+                windows.remove(&(loaded.generation, pane_role(pane.index)));
+            }
+        }
+        while loaded.panes.len() < wanted {
+            let index = loaded.panes.len() as u32 + 1;
+            let role = pane_role(index);
+            let component = loaded.surface_definition.create()?;
+            self.bind_input(&component, loaded.generation, role)?;
+            self.backend
+                .place(component.window(), self.options.placement);
+            loaded.panes.push(PaneWindow {
+                index,
+                binder: Binder::new(&loaded.surface_definition),
+                component,
+                last_view: None,
+                size: (0.0, 0.0),
+                shown: false,
+            });
+        }
+        for (index, view, diff) in views {
+            if let Some(pane) = loaded.panes.iter_mut().find(|p| p.index == index) {
+                pane.binder
+                    .apply_diff(&pane.component, &view, &diff, &mut loaded.images)?;
+                pane.last_view = Some(view);
+            }
+        }
+        let visible = loaded.surface_shown;
+        let mut resized = Vec::new();
+        for pane in &mut loaded.panes {
+            let role = pane_role(pane.index);
+            if visible && !pane.shown {
+                // Mapped anew: its first frame titles it and declares again,
+                // and korrid places it.
+                self.attach(pane.component.window(), loaded.generation, role);
+                pane.component.show()?;
+                pane.shown = true;
+                loaded.placed = false;
+                let size = logical_size(pane.component.window());
+                if size.0 > 0.0 && size.1 > 0.0 {
+                    pane.size = size;
+                    resized.push(messages::window_resized(pane.index, size.0, size.1));
+                }
+            } else if !visible && pane.shown {
+                pane.component.hide()?;
+                pane.shown = false;
+                if let Some(windows) = &mut self.focused {
+                    windows.remove(&(loaded.generation, role));
+                }
+            }
+        }
+        if !resized.is_empty() {
+            let done = loaded.done.clone();
+            for message in resized {
+                loaded.logic.submit(Call::Message(message), &done);
+            }
+        }
+        Ok(())
     }
 
     /// Resize the current surface's window, as a compositor would (tests).
@@ -1230,6 +1426,13 @@ impl Shell {
             if let Some(gameplay) = step.gameplay_overlay {
                 current.gameplay_overlay = gameplay;
             }
+            let windows_changed = step
+                .windows
+                .as_ref()
+                .is_some_and(|windows| *windows != current.windows);
+            if let Some(windows) = step.windows {
+                current.windows = windows;
+            }
             let viewed = step.view.is_some();
             if let Some((view, diff)) = step.view {
                 current
@@ -1240,6 +1443,10 @@ impl Shell {
             }
             if viewed || step.gameplay_overlay.is_some() {
                 self.render_overlay(&mut current, step.overlay)
+                    .map_err(Failure::View)?;
+            }
+            if viewed || windows_changed || step.gameplay_overlay.is_some() {
+                self.sync_panes(&mut current, step.panes)
                     .map_err(Failure::View)?;
             }
             Ok(step.requests)

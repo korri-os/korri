@@ -27,7 +27,6 @@ import {
 import { fixtureControllers, fixtureNetworks, onboardingModel } from "../test/fixtures/onboarding"
 import { pluginModels } from "../test/fixtures/plugin-settings"
 import { runnerChoice } from "../test/fixtures/runner-choice"
-import { rgdsDisplays } from "../test/fixtures/displays"
 import { STORE_GETS, storeDetails, storeFixture, STORE_ENTRIES } from "../test/fixtures/store"
 
 interface Scenario {
@@ -36,7 +35,6 @@ interface Scenario {
   readonly model: SurfaceModel & { readonly fixtureGameActions?: Record<string, unknown> }
   readonly keys?: readonly string[]
   readonly then?: readonly SurfaceModel[]
-  readonly displays?: unknown
 }
 
 /** Every game's actions, as korrid publishes them for the focused game. */
@@ -188,8 +186,6 @@ export const SCENARIOS: readonly Scenario[] = [
   { name: "overlay-default", ref: "PicoOverlay.page/default", model: { ...base, presentation: fixtureOverlay } },
   { name: "overlay-confirm-quit", ref: "PicoOverlay.page/ConfirmQuit", model: { ...base, presentation: fixtureOverlay }, keys: ["Down", "Return"] },
   { name: "overlay-stream", ref: "PicoOverlay.page/default", model: { ...base, presentation: fixtureOverlayStream, clockLabel: "3:42 PM" } },
-  // Two displays: the showcase on the main one
-  { name: "showcase", ref: "PicoDisplays.template/Shelf", model: base, displays: rgdsDisplays },
   // Attract: the shell's Tick reaches 45 s with no press (wait 46 s)
   { name: "attract", ref: "PicoAttract.organism/default", model: base },
 ]
@@ -204,7 +200,7 @@ if (import.meta.main) {
       writeFileSync(file, JSON.stringify(model))
       return file
     })
-    return { name: scenario.name, ref: scenario.ref, keys: scenario.keys ?? [], then, displays: scenario.displays ?? null }
+    return { name: scenario.name, ref: scenario.ref, keys: scenario.keys ?? [], then }
   })
   writeFileSync(join(out, "scenarios.json"), JSON.stringify(list, null, 2))
   console.log(`${list.length} scenarios in ${out}`)

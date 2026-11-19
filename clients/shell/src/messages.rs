@@ -61,7 +61,35 @@ pub fn tick(idle_ms: u32) -> Value {
 /// Contract amendment A2 (section 8.1): the surface window's size in
 /// logical pixels.
 pub fn resized(width: f32, height: f32) -> Value {
-    json(SurfaceMessage::Resized { width, height })
+    json(SurfaceMessage::Resized {
+        width,
+        height,
+        window: None,
+    })
+}
+
+/// ADR 0086: the size of a package's further window, by its index in
+/// `SurfaceModel.windows`. Window 0 is `resized`.
+pub fn window_resized(window: u32, width: f32, height: f32) -> Value {
+    json(SurfaceMessage::Resized {
+        width,
+        height,
+        window: (window > 0).then_some(window),
+    })
+}
+
+/// ADR 0086: the panes each window holds, from `SurfaceModel.windows`.
+/// A model without it has one window.
+pub fn windows(model: &Value) -> Vec<Vec<String>> {
+    let windows: Option<Vec<korri_surface_treaty::SurfaceWindow>> = model
+        .get("windows")
+        .and_then(|windows| serde_json::from_value(windows.clone()).ok());
+    match windows {
+        Some(windows) if !windows.is_empty() => {
+            windows.into_iter().map(|window| window.panes).collect()
+        }
+        _ => vec![Vec::new()],
+    }
 }
 
 /// How often the shell sends `Tick`.

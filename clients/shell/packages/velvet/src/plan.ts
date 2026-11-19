@@ -150,14 +150,22 @@ export const DEFAULT_SIZE = { width: 1280, height: 720 } as const
 const gapOf = (tile: number): number => Math.round(Math.max(10, tile * TILE_RATIO * 0.16))
 const growOf = (tile: number): number => Math.ceil(tile * (FOCUS_SCALE - 1))
 
-// The plan of the size asked for last: a window keeps its size for a long time.
+// The plans of the two sizes asked for last: a window keeps its size for a long
+// time, and with a window each (ADR 0086) the Stage and the Floor ask in turn.
 let last: Plan | undefined
+let before: Plan | undefined
 onForget(() => {
   last = undefined
+  before = undefined
 })
 
 export function plan(width: number, height: number): Plan {
   if (last !== undefined && last.width === width && last.height === height) return last
+  if (before !== undefined && before.width === width && before.height === height) {
+    ;[last, before] = [before, last]
+    return last
+  }
+  before = last
   const W = Math.max(1, width)
   const H = Math.max(1, height)
   const k = clamp(Math.min(W / 1600, H / 900), 0.4, 1.25)

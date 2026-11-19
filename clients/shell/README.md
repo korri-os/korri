@@ -54,10 +54,17 @@ Zone's package (`packages/zone`, its README) is built from TypeScript:
 with `bun test packages/zone/test`, and `tests/zone_package.rs` draws its
 previews and walks its focus at five sizes.
 
-`globalThis.surface = { displays?, preferences, init, update, view, overlay? }`.
-`displays` is `"main"` (the default when absent) or `"all"`; the shell passes
-it in `app.surface.declare` and korrid publishes `model.displays` only for
-`"all"`. Zone declares `"main"`, Pico `"all"`.
+`globalThis.surface = { panes?, arrangement?, preferences, init, update, view, overlay? }`.
+ADR 0086: `panes` names two panes, the first for the main display, and
+`arrangement` is `"upper-above-lower"`; both absent is one pane. The shell
+passes them in `app.surface.declare`, and korrid publishes `model.windows`,
+which panes each window holds, only to a package that declared them. Window
+0 is the `Surface` window; for each further window the shell maps another
+`Surface`, titled `korri-pane:<panes>` so korrid can place it, and draws it
+from `view(state, model, index)`. Its size reaches the logic as
+`Resized { width, height, window: index }`. It is mapped only while the
+`Surface` window is (never with the gameplay overlay). Velvet declares
+`stage` over `floor`; Zone and Pico declare none.
 
 ## Focus plan
 
@@ -272,8 +279,9 @@ still layers. Numbers and screenshots: `evidence/`.
 - `examples/fixture-korrid.rs`: the fixture korrid as a process.
   `--model FILE` serves another `SurfaceModel` (a Ready catalog's `games`
   become the window's games; a model's `fixtureGameActions` are published for
-  the focused game), `--displays JSON` sets `model.displays`; on stdin
-  `model FILE` and `displays JSON` change them while the shell runs.
+  the focused game), `--windows JSON` sets `model.windows` for a package
+  with panes; on stdin `model FILE` and `windows JSON` change them while the
+  shell runs.
 - `examples/surface-probe.rs`: `previews DIR` renders every
   `*.preview.slint` state headless at given sizes and fails one that does not
   compile or draws nothing; `walk PACKAGE --model FILE` presses every button

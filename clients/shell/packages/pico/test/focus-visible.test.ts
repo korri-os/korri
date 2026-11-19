@@ -19,7 +19,7 @@
  * and size.
  */
 import { expect, test } from "bun:test"
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync } from "node:fs"
 import { availableParallelism, tmpdir } from "node:os"
 import { join } from "node:path"
 import { FIVE_SIZES, PROBE } from "./probe"
@@ -30,21 +30,16 @@ const MODELS = [
   "home-ready", "home-playing-now", "home-downloading", "home-problem", "home-error", "store-results", "store-entry",
   "store-providers", "launch-default", "launch-changes", "launch-unreachable", "launch-long", "runner-ready", "setup-hello", "setup-wifi", "setup-pads", "overlay-default", "overlay-stream",
   "settings-wifi", "settings-identity", "settings-plugins",
-  // Korri reports a display larger than the window: Pico must fit the window.
-  "home-big-display",
 ]
 
 /** How far the full walk goes, per model; the plan keeps every target it reaches. */
 const REFERENCE = Number(process.env["PICO_FOCUS_STATES"] ?? "80")
 
-/** Write the scenario models once, and the large-display variant. */
+/** Write the scenario models once. */
 function models(): string {
   const gen = mkdtempSync(join(tmpdir(), "pico-models-"))
   const write = Bun.spawnSync(["bun", join(ROOT, "preview", "scenarios.ts"), gen], { cwd: ROOT })
   expect(write.exitCode).toBe(0)
-  const home = JSON.parse(readFileSync(join(gen, "home-ready.json"), "utf8"))
-  home.displays = [{ id: "big", main: true, x: 0, y: 0, width: 1920, height: 1080, touch: false }]
-  writeFileSync(join(gen, "home-big-display.json"), JSON.stringify(home))
   return gen
 }
 
@@ -63,8 +58,7 @@ function plan(gen: string): Planned[] {
     const reached = new Set<string>()
     for (const name of MODELS) {
       const file = JSON.parse(readFileSync(join(gen, `${name}.json`), "utf8"))
-      // The large display must change nothing: its targets are its own.
-      const known = name === "home-big-display" ? new Set<string>() : reached
+      const known = reached
       let states = 0
       const targets: string[] = []
       walkStates(file, REFERENCE, { width, height }).forEach((state, i) => {
@@ -105,7 +99,7 @@ async function walks(gen: string, planned: readonly Planned[]): Promise<string[]
   return failures
 }
 
-test("the plan keeps MENU's list, with and without GET GAMES, and the large display", () => {
+test("the plan keeps MENU's list, with and without GET GAMES", () => {
   const planned = plan(models())
   // Down puts the cursor on MENU; confirm opens the list. The store's
   // providers add GET GAMES, one entry more.
@@ -113,7 +107,6 @@ test("the plan keeps MENU's list, with and without GET GAMES, and the large disp
     const at = planned.filter(walk => walk.size === size).flatMap(walk => walk.targets)
     expect(new Set(at.filter(target => /^home:[^|]*:menu\|\.home\.menu\.\d+$/.test(target))).size).toBeGreaterThanOrEqual(4)
   }
-  expect(planned.filter(walk => walk.name === "home-big-display").length).toBe(5)
   // The plan walks far fewer states than the full walk.
   expect(planned.reduce((sum, walk) => sum + walk.states, 0)).toBeLessThan(5 * MODELS.length * REFERENCE)
 }, 120_000)

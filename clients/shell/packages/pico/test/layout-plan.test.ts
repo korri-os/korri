@@ -1,7 +1,7 @@
 /**
  * One layout plan drives both what is drawn and where a press goes
  * (contract A2, 8.2). The plan comes from the window the shell reports with
- * `Resized`. The displays only place a split.
+ * `Resized`.
  */
 import { describe, expect, test } from "bun:test"
 import { picoLayoutPlan } from "../src/pico-display-plan"
@@ -18,18 +18,16 @@ const FIVE = [
   [1920, 1080],
 ] as const
 
-const BIG_DISPLAY = [{ id: "big", main: true, x: 0, y: 0, width: 1920, height: 1080, touch: false }]
-
 /** The fixture with a Ready catalog, as the probe's model files hold it. */
-function file(displays?: unknown): Json {
+function file(): Json {
   const model = JSON.parse(JSON.stringify(fixtureModel)) as Json
   const catalog = model["catalog"] as Json
   if (catalog["_tag"] === "Ready" && catalog["games"] === undefined) catalog["games"] = catalog["window"]
-  return displays === undefined ? model : { ...model, displays }
+  return model
 }
 
-function opened(width: number, height: number, displays?: unknown) {
-  const pico = session(file(displays))
+function opened(width: number, height: number) {
+  const pico = session(file())
   pico.resize(width, height)
   pico.deliver({ _tag: "KorriPublished" })
   return pico
@@ -40,7 +38,7 @@ const view = (pico: ReturnType<typeof opened>) => pico.view() as { home: { body:
 describe("the plan is a function of the window alone", () => {
   test("columns, spines and the game's screen at Pico's five sizes", () => {
     expect(FIVE.map(([w, h]) => {
-      const plan = picoLayoutPlan({ width: w, height: h }, undefined)
+      const plan = picoLayoutPlan({ width: w, height: h })
       return [`${w}x${h}`, plan.columns, plan.spinesBeside, plan.detailStacked]
     })).toEqual([
       ["320x240", 4, false, true],
@@ -50,46 +48,15 @@ describe("the plan is a function of the window alone", () => {
       ["1920x1080", 18, true, false],
     ])
   })
-
-  test("a display larger than the window changes nothing", () => {
-    for (const [w, h] of FIVE) {
-      const plain = picoLayoutPlan({ width: w, height: h }, undefined)
-      expect(picoLayoutPlan({ width: w, height: h }, BIG_DISPLAY as never)).toEqual(plain)
-    }
-  })
-
-  test("two displays larger than the window split the window, not the displays", () => {
-    const two = [
-      { id: "large", main: true, x: 0, y: 0, width: 3840, height: 2160, touch: false },
-      { id: "side", main: false, x: 3840, y: 0, width: 2560, height: 1440, touch: false },
-    ]
-    for (const [w, h] of FIVE) {
-      const plan = picoLayoutPlan({ width: w, height: h }, two as never)
-      // A window too small for two screens draws one.
-      if (plan.split === undefined) {
-        expect(plan.width).toBe(Math.floor(w / plan.p))
-        continue
-      }
-      const { show, choose } = plan.split
-      expect(choose.width / plan.p).toBeGreaterThanOrEqual(160)
-      for (const rect of [show, choose]) {
-        expect(rect).toBeDefined()
-        expect(rect!.x + rect!.width).toBeLessThanOrEqual(w)
-        expect(rect!.y + rect!.height).toBeLessThanOrEqual(h)
-      }
-      // The chooser's columns fit the chooser's rectangle.
-      expect(plan.width).toBe(Math.floor(choose!.width / plan.p))
-    }
-  })
 })
 
 describe("the view draws the plan the focus graph moves by", () => {
   for (const [w, h] of FIVE) {
     test(`${w}x${h}: the grid's rows are the plan's, and down moves one drawn row`, () => {
-      const pico = opened(w, h, BIG_DISPLAY)
+      const pico = opened(w, h)
       pico.press("menu")
       const shown = view(pico)
-      const plan = picoLayoutPlan({ width: w, height: h }, undefined)
+      const plan = picoLayoutPlan({ width: w, height: h })
       expect(shown.home.body).toBe("grid")
       expect(shown.home.columns).toBe(plan.columns)
       // Down from the first cart: the cart one row below in the same
@@ -101,10 +68,10 @@ describe("the view draws the plan the focus graph moves by", () => {
     })
 
     test(`${w}x${h}: settings' spines stand as the plan says, and down follows them`, () => {
-      const pico = opened(w, h, BIG_DISPLAY)
+      const pico = opened(w, h)
       pico.press("down", "confirm", "down", "confirm")
       expect(focusedIn(pico.view())).toEqual([".panel.spines.0"])
-      const beside = picoLayoutPlan({ width: w, height: h }, undefined).spinesBeside
+      const beside = picoLayoutPlan({ width: w, height: h }).spinesBeside
       expect(view(pico).panel.beside).toBe(beside)
       pico.press("down")
       // Beside: the spines are a column. Above: down leaves the tabs.

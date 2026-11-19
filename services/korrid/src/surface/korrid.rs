@@ -681,9 +681,10 @@ impl Korrid {
 
     pub async fn surface_displays(
         &self,
-        displays: crate::host::display_placement::SurfaceDisplayScope,
+        panes: Option<korri_surface_treaty::SurfacePackagePanes>,
         overlay: bool,
         launch_id: Option<String>,
+        check: bool,
     ) -> crate::host::display_placement::SurfaceDisplaysOutcome {
         use crate::host::display_placement::{SurfaceDisplaysOutcome, SurfaceDisplaysRequest};
         call!(
@@ -691,9 +692,10 @@ impl Korrid {
             Mapping::Unreachable,
             SurfaceDisplays,
             SurfaceDisplaysRequest {
-                displays,
+                panes,
                 overlay,
-                launch_id
+                launch_id,
+                check
             },
             SurfaceDisplaysOutcome
         )

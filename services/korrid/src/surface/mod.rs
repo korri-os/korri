@@ -125,9 +125,9 @@ pub enum SurfacePreferencesOutcome {
 pub struct SurfaceDeclareRequest {
     pub surface_id: String,
     pub preferences: SurfacePreferenceDeclarations,
-    /// Absent: `main`, as in the portal's surface registry.
+    /// The package's panes (ADR 0086). Absent: one pane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub displays: Option<korri_surface_treaty::SurfacePackageDisplays>,
+    pub panes: Option<korri_surface_treaty::SurfacePackagePanes>,
 }
 
 /// The second frame on the native-input WebSocket that selects a model watch
@@ -314,7 +314,7 @@ impl SurfaceHub {
         let root = self.root();
         if let Some(overlay) = root.overlay() {
             let mut model = overlay.model();
-            model.displays = root.display_facts();
+            model.windows = root.windows();
             model.clock_label = Some(root.clock());
             model.published_at = root.published_at();
             return Ok(model);
@@ -323,7 +323,7 @@ impl SurfaceHub {
         let facts = root.facts();
         let games = self.games(host_revision, facts.games);
         let mut model = facts.base;
-        model.displays = root.display_facts();
+        model.windows = root.windows();
         let mut sessions = self.sessions.lock().expect("sessions poisoned");
         let session = sessions.entry(surface_id.to_owned()).or_default();
         model.systems = games.as_ref().map(|games| games.systems().to_vec());
@@ -386,17 +386,23 @@ impl SurfaceHub {
         Ok(())
     }
 
-    /// The shell loaded this package: its preferences and its displays. The
+    /// The shell loaded this package: its preferences and its panes. The
     /// last package declared is the one the window shows.
     pub fn declare(
         self: &Arc<Self>,
         surface_id: &str,
         preferences: SurfacePreferenceDeclarations,
-        displays: korri_surface_treaty::SurfacePackageDisplays,
+        panes: Option<korri_surface_treaty::SurfacePackagePanes>,
     ) -> Result<(), RpcFailure> {
         check_surface_id(surface_id)?;
+        if let Some(panes) = &panes {
+            panes.check().map_err(|message| RpcFailure {
+                code: "InvalidPanes".into(),
+                message,
+            })?;
+        }
         self.preferences.declare(surface_id, preferences)?;
-        self.root().show_package(displays);
+        self.root().show_package(panes);
         Ok(())
     }
 

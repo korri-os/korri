@@ -156,7 +156,7 @@ const BOOTSTRAP: &str = r#"(() => {
   };
   return {
     preferences: () => text(s.preferences ?? {}, "preferences"),
-    displays: () => (s.displays === undefined ? "[]" : text([s.displays], "displays")),
+    panes: () => (s.panes === undefined && s.arrangement === undefined ? "null" : text({ panes: s.panes, arrangement: s.arrangement }, "panes")),
     hasOverlay: () => typeof s.overlay === "function",
     setModel: (json) => { model = JSON.parse(json); },
     init: (preferences) => { state = s.init(model, JSON.parse(preferences)); },
@@ -169,7 +169,7 @@ const BOOTSTRAP: &str = r#"(() => {
       state = step.state;
       return (changed ? "1" : "0") + text(step.requests, "update requests");
     },
-    view: () => text(s.view(state, model), "view"),
+    view: (window) => text(s.view(state, model, Number(window)), "view"),
     overlay: () => text(s.overlay(state, model), "overlay"),
   };
 })()"#;
@@ -179,19 +179,20 @@ const BOOTSTRAP: &str = r#"(() => {
 /// Explicit `new Date(ms)` stays available for formatting model timestamps.
 const SANDBOX: &str = "Date.now = () => { throw new Error('Date.now is not available to surfaces'); };\nMath.random = () => { throw new Error('Math.random is not available to surfaces'); };";
 
-/// Which displays a package draws on: the treaty's `SurfacePackageDisplays`.
-/// The shell keeps "absent" apart from `main` so declare passes on exactly
-/// what the package wrote.
-pub use korri_surface_treaty::SurfacePackageDisplays as Displays;
+/// A package's panes (ADR 0086): the treaty's `SurfacePackagePanes`.
+pub use korri_surface_treaty::SurfacePackagePanes as Panes;
 
-/// Check a `displays` declaration: `"main"`, `"all"` or absent (`None`).
-pub fn check_displays(value: Option<&Value>) -> Result<Option<Displays>, String> {
-    match value.map(|v| v.as_str()) {
-        None => Ok(None),
-        Some(Some("main")) => Ok(Some(Displays::Main)),
-        Some(Some("all")) => Ok(Some(Displays::All)),
-        Some(_) => Err("displays must be \"main\", \"all\" or absent".into()),
+/// Check a `panes` and `arrangement` declaration: both absent (`None`), or
+/// what korrid places (`SurfacePackagePanes::check`).
+pub fn check_panes(value: &Value) -> Result<Option<Panes>, String> {
+    if value.is_null() {
+        return Ok(None);
     }
+    let panes: Panes = serde_json::from_value(value.clone()).map_err(|error| {
+        format!("panes must be a list of pane ids, with an arrangement: {error}")
+    })?;
+    panes.check()?;
+    Ok(Some(panes))
 }
 
 pub struct Engine {
@@ -202,7 +203,7 @@ pub struct Engine {
     deadline: Rc<Cell<(Timer, Duration)>>,
     limits: Limits,
     declaration: Declaration,
-    displays: Option<Displays>,
+    panes: Option<Panes>,
     has_overlay: bool,
     /// See `view_stale`.
     stale: bool,
@@ -262,7 +263,7 @@ impl Engine {
             deadline,
             limits,
             declaration: Declaration::new(),
-            displays: None,
+            panes: None,
             has_overlay: false,
             stale: true,
             max_call: Duration::ZERO,
@@ -282,16 +283,15 @@ impl Engine {
                 call: "preferences",
                 message,
             })?;
-        let displays = engine.call_string("displays", &[])?;
-        let displays: Value = serde_json::from_str(&displays).map_err(|e| Violation::Contract {
-            call: "displays",
+        let panes = engine.call_string("panes", &[])?;
+        let panes: Value = serde_json::from_str(&panes).map_err(|e| Violation::Contract {
+            call: "panes",
             message: e.to_string(),
         })?;
-        engine.displays =
-            check_displays(displays.get(0)).map_err(|message| Violation::Contract {
-                call: "displays",
-                message,
-            })?;
+        engine.panes = check_panes(&panes).map_err(|message| Violation::Contract {
+            call: "panes",
+            message,
+        })?;
         engine.has_overlay = engine.call_bool("hasOverlay")?;
         Ok(engine)
     }
@@ -300,9 +300,9 @@ impl Engine {
         &self.declaration
     }
 
-    /// The package's `displays`, exactly as declared (`None` when absent).
-    pub fn displays(&self) -> Option<Displays> {
-        self.displays
+    /// The package's panes, exactly as declared (`None` when absent).
+    pub fn panes(&self) -> Option<&Panes> {
+        self.panes.as_ref()
     }
 
     pub fn has_overlay(&self) -> bool {
@@ -387,8 +387,15 @@ impl Engine {
         Ok(requests)
     }
 
+    /// `view(state, model, 0)`: the view of window 0, the shell's `Surface`.
     pub fn view(&mut self) -> Result<Value, Violation> {
-        self.call_json("view")
+        self.view_window(0)
+    }
+
+    /// `view(state, model, window)`: the view of one window of a package with
+    /// panes (ADR 0086), by its index in `SurfaceModel.windows`.
+    pub fn view_window(&mut self, window: u32) -> Result<Value, Violation> {
+        self.call_json_with("view", &window.to_string())
     }
 
     /// Whether `view()` and `overlay()` may differ from their last results:
@@ -413,7 +420,16 @@ impl Engine {
 
     fn call_json(&mut self, name: &'static str) -> Result<Value, Violation> {
         let text = self.call_string(name, &[])?;
-        let value: Value = serde_json::from_str(&text).map_err(|e| Violation::Contract {
+        Self::json_object(name, &text)
+    }
+
+    fn call_json_with(&mut self, name: &'static str, argument: &str) -> Result<Value, Violation> {
+        let text = self.call_string(name, &[argument])?;
+        Self::json_object(name, &text)
+    }
+
+    fn json_object(name: &'static str, text: &str) -> Result<Value, Violation> {
+        let value: Value = serde_json::from_str(text).map_err(|e| Violation::Contract {
             call: name,
             message: e.to_string(),
         })?;
@@ -777,37 +793,51 @@ mod tests {
     }
 
     #[test]
-    fn displays_is_main_all_or_absent() {
+    fn panes_are_two_upper_above_lower_or_absent() {
         let load = |line: &str| {
             Engine::load(
-                &format!("globalThis.surface = {{ {line} init: () => 0, update: (s) => ({{ state: s, requests: [] }}), view: () => ({{}}) }};"),
+                &format!("globalThis.surface = {{ {line} init: () => 0, update: (s) => ({{ state: s, requests: [] }}), view: (s, m, w) => ({{ window: w }}) }};"),
                 cpu_limits(),
             )
         };
-        assert_eq!(load("").unwrap().displays(), None);
+        assert_eq!(load("").unwrap().panes(), None);
+        let panes = load(r#"panes: ["stage", "floor"], arrangement: "upper-above-lower","#)
+            .unwrap()
+            .panes()
+            .cloned();
         assert_eq!(
-            load("displays: \"main\",").unwrap().displays(),
-            Some(Displays::Main)
+            panes.map(|p| p.panes),
+            Some(vec!["stage".to_owned(), "floor".to_owned()])
         );
-        assert_eq!(
-            load("displays: \"all\",").unwrap().displays(),
-            Some(Displays::All)
-        );
-        for wrong in ["\"both\"", "\"Main\"", "1", "[\"main\"]", "null"] {
-            let error = load(&format!("displays: {wrong},"))
+        for wrong in [
+            r#"panes: ["stage"], arrangement: "upper-above-lower","#,
+            r#"panes: ["stage", "floor"],"#,
+            r#"panes: ["stage", "floor"], arrangement: "side-by-side","#,
+            r#"arrangement: "upper-above-lower","#,
+            r#"panes: "stage", arrangement: "upper-above-lower","#,
+        ] {
+            let error = load(wrong)
                 .err()
                 .unwrap_or_else(|| panic!("{wrong} accepted"));
             assert!(
-                matches!(
-                    error,
-                    Violation::Contract {
-                        call: "displays",
-                        ..
-                    }
-                ),
+                matches!(error, Violation::Contract { call: "panes", .. }),
                 "{wrong}: {error}"
             );
         }
+    }
+
+    /// ADR 0086: `view` gets the window's index as its third argument.
+    #[test]
+    fn view_gets_the_window_index() {
+        let source = "globalThis.surface = { init: () => 0, update: (s) => ({ state: s, requests: [] }), view: (s, m, w) => ({ window: w }) };";
+        let mut engine = Engine::load(source, cpu_limits()).unwrap();
+        engine.set_model("{}").unwrap();
+        engine.init(&BTreeMap::new()).unwrap();
+        assert_eq!(engine.view().unwrap(), serde_json::json!({ "window": 0 }));
+        assert_eq!(
+            engine.view_window(1).unwrap(),
+            serde_json::json!({ "window": 1 })
+        );
     }
 
     #[test]

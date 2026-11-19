@@ -8,10 +8,10 @@
 
 use std::time::{Duration, Instant};
 
-use korri_surface_treaty::SurfacePackageDisplays;
+use korri_surface_treaty::SurfacePackagePanes;
 
-/// Scope, overlay and launch of one placement.
-pub type PlacementKey = (SurfacePackageDisplays, bool, Option<String>);
+/// Panes (ADR 0086), overlay and launch of one placement.
+pub type PlacementKey = (Option<SurfacePackagePanes>, bool, Option<String>);
 
 const FIRST_BACKOFF: Duration = Duration::from_millis(250);
 const MAX_BACKOFF: Duration = Duration::from_secs(8);
@@ -123,10 +123,17 @@ mod tests {
     use super::*;
 
     fn main() -> PlacementKey {
-        (SurfacePackageDisplays::Main, false, None)
+        (None, false, None)
     }
     fn all() -> PlacementKey {
-        (SurfacePackageDisplays::All, false, None)
+        (
+            Some(SurfacePackagePanes {
+                panes: vec!["stage".into(), "floor".into()],
+                arrangement: "upper-above-lower".into(),
+            }),
+            false,
+            None,
+        )
     }
 
     #[test]
@@ -191,7 +198,7 @@ mod tests {
             panic!()
         };
         assert!(placement.failed(first, now));
-        let overlay = (SurfacePackageDisplays::Main, true, Some("launch-1".into()));
+        let overlay = (None, true, Some("launch-1".into()));
         assert!(matches!(placement.want(&overlay, now), Next::Attempt(_)));
     }
 

@@ -116,9 +116,10 @@ views `logic.ts` makes of those models.
   own screen; its actions arrive as `model.focusedGame`.
 - **Preferences.** `pico.font`, mark `device`, initial `tiny5`, stored with
   `RememberPreference` when Settings › PICO › Font changes.
-- **Displays.** `displays: "all"`. With two or more displays the plan
-  (`src/pico-display-plan.ts`) puts the showcase on the main one and every
-  control on the other.
+- **Displays.** One screen, on the main display. Pico's two-display split
+  read display facts that korrid no longer publishes (ADR 0086). Pico has
+  not declared panes yet. main.slint still holds the split's drawing
+  (`PicoDisplays`), and the view always sends it off.
 - **Window (contract A2).** The shell sends `Resized { width, height }`
   before the first view and on every resize. `picoLayoutPlan` in
   `src/pico-display-plan.ts` turns the window into one plan: the virtual
@@ -127,8 +128,7 @@ views `logic.ts` makes of those models.
   facts. The focus graph moves by that plan, and `view()` hands its
   decisions to main.slint (`home.columns`, `panel.beside`,
   `detail.stacked`), which draws them and decides no structure itself.
-  `displays` only place the two screens of a split. A resize keeps the
-  cursor on its control.
+  A resize keeps the cursor on its control.
 - **Regions and exits (contract 8.4).** Every focus target belongs to a
   region (`src/native/focus.ts`): `floor`, `menu`, `invites`, `shelf`,
   `grid`, `hero`, `resume`, `card`, `stage`, `sections`, `orders`, `keys`,

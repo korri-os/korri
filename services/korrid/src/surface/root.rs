@@ -334,27 +334,24 @@ impl ClockSample {
 /// window's placement for the package the shell shows.
 #[derive(Default)]
 struct Displays {
-    /// The scope of the package declared last; None before any.
-    scope: Option<korri_surface_treaty::SurfacePackageDisplays>,
+    /// The panes of the package declared last (ADR 0086). The outer None:
+    /// no package declared yet; the inner None: a package with one pane.
+    scope: Option<Option<korri_surface_treaty::SurfacePackagePanes>>,
     /// Which placement succeeded, which is in flight, which waits.
     placement: super::placement::Placement,
-    facts: Option<Vec<korri_surface_treaty::SurfaceDisplay>>,
+    /// The windows the last placement gave the panes; published as
+    /// `SurfaceModel.windows`. An effect-free check that finds other windows
+    /// places the surface again (ADR 0086).
+    windows: Option<Vec<korri_surface_treaty::SurfaceWindow>>,
+    /// The watch that checks the windows while a package with panes shows.
+    watching: bool,
     /// A game held the displays; restore the catalog's after it is gone.
     restore: bool,
 }
 
-fn host_scope(
-    scope: korri_surface_treaty::SurfacePackageDisplays,
-) -> crate::host::display_placement::SurfaceDisplayScope {
-    match scope {
-        korri_surface_treaty::SurfacePackageDisplays::Main => {
-            crate::host::display_placement::SurfaceDisplayScope::Main
-        }
-        korri_surface_treaty::SurfacePackageDisplays::All => {
-            crate::host::display_placement::SurfaceDisplayScope::All
-        }
-    }
-}
+/// How often korrid checks, without effects, whether a package's panes would
+/// get other windows: a display under the main one appeared or went (ADR 0086).
+const PANE_WINDOWS_CHECK: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Which presentation the surface shows: the catalog, or the gameplay
 /// overlay of one exact launch (`main.tsx`'s switch).
@@ -749,26 +746,92 @@ impl Root {
         .flatten()
     }
 
-    /// The shell shows a package with this display scope.
-    pub fn show_package(self: &Arc<Self>, scope: korri_surface_treaty::SurfacePackageDisplays) {
+    /// The shell shows a package with these panes.
+    pub fn show_package(
+        self: &Arc<Self>,
+        panes: Option<korri_surface_treaty::SurfacePackagePanes>,
+    ) {
+        let watch = panes.is_some();
         {
             let mut displays = self.displays.lock().expect("displays poisoned");
-            displays.scope = Some(scope);
+            if displays.scope.as_ref().and_then(Option::as_ref) != panes.as_ref() {
+                displays.windows = None;
+            }
+            displays.scope = Some(panes);
             // The shell declares once its new window has mapped: a
             // placement from before, failed or in flight, was for the old one.
             displays.placement.redeclare();
-            displays.facts = None;
         }
         self.place();
+        if watch {
+            self.watch_pane_windows();
+        }
         (self.notify)();
     }
 
-    /// `model.displays`: published only for a package that draws on all.
-    pub fn display_facts(&self) -> Option<Vec<korri_surface_treaty::SurfaceDisplay>> {
-        let displays = self.displays.lock().expect("displays poisoned");
-        (displays.scope == Some(korri_surface_treaty::SurfacePackageDisplays::All))
-            .then(|| displays.facts.clone())
-            .flatten()
+    /// `model.windows`: published only for a package that declared panes.
+    pub fn windows(&self) -> Option<Vec<korri_surface_treaty::SurfaceWindow>> {
+        self.displays
+            .lock()
+            .expect("displays poisoned")
+            .windows
+            .clone()
+    }
+
+    /// While a package with panes shows, check each `PANE_WINDOWS_CHECK`
+    /// whether its panes would get other windows, and place it again when
+    /// they would. The check has no effect; one watch runs at a time.
+    fn watch_pane_windows(self: &Arc<Self>) {
+        {
+            let mut displays = self.displays.lock().expect("displays poisoned");
+            if displays.watching {
+                return;
+            }
+            displays.watching = true;
+        }
+        let weak = Arc::downgrade(self);
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(PANE_WINDOWS_CHECK).await;
+                let Some(root) = weak.upgrade() else { return };
+                let panes = {
+                    let mut displays = root.displays.lock().expect("displays poisoned");
+                    match displays.scope.clone().flatten() {
+                        Some(panes) => panes,
+                        None => {
+                            displays.watching = false;
+                            return;
+                        }
+                    }
+                };
+                // While the gameplay overlay shows, the panes share its window.
+                if root.overlay().is_some() {
+                    continue;
+                }
+                let outcome = root
+                    .korrid
+                    .surface_displays(Some(panes.clone()), false, None, true)
+                    .await;
+                let crate::host::display_placement::SurfaceDisplaysOutcome::Ok(windows) = outcome
+                else {
+                    continue;
+                };
+                let changed = {
+                    let mut displays = root.displays.lock().expect("displays poisoned");
+                    let same_package =
+                        displays.scope.as_ref().and_then(Option::as_ref) == Some(&panes);
+                    let changed = same_package && displays.windows != windows;
+                    if changed {
+                        // What was placed was for the windows before.
+                        displays.placement.redeclare();
+                    }
+                    changed
+                };
+                if changed {
+                    root.place();
+                }
+            }
+        });
     }
 
     /// Place the window for the current package and presentation. It counts
@@ -778,7 +841,9 @@ impl Root {
         let overlay_launch = self.overlay().map(|overlay| overlay.launch_id().to_owned());
         let (key, attempt) = {
             let mut displays = self.displays.lock().expect("displays poisoned");
-            let Some(scope) = displays.scope else { return };
+            let Some(scope) = displays.scope.clone() else {
+                return;
+            };
             let key = (scope, overlay_launch.is_some(), overlay_launch);
             match displays.placement.want(&key, std::time::Instant::now()) {
                 super::placement::Next::Nothing => return,
@@ -792,20 +857,20 @@ impl Root {
                     });
                     return;
                 }
-                super::placement::Next::Attempt(attempt) => {
-                    displays.facts = None;
-                    (key, attempt)
-                }
+                super::placement::Next::Attempt(attempt) => (key, attempt),
             }
         };
         let this = Arc::clone(self);
         tokio::spawn(async move {
             let outcome = this
                 .korrid
-                .surface_displays(host_scope(key.0), key.1, key.2.clone())
+                .surface_displays(key.0.clone(), key.1, key.2.clone(), false)
                 .await;
-            let facts = match outcome {
-                crate::host::display_placement::SurfaceDisplaysOutcome::Ok(facts) => facts,
+            let windows = match outcome {
+                // Only a package with panes gets windows published.
+                crate::host::display_placement::SurfaceDisplaysOutcome::Ok(windows) => {
+                    windows.filter(|_| key.0.is_some())
+                }
                 crate::host::display_placement::SurfaceDisplaysOutcome::Err(_) => {
                     this.displays
                         .lock()
@@ -820,22 +885,12 @@ impl Root {
                 if !displays.placement.succeeded(attempt) {
                     return;
                 }
-                displays.facts = Some(
-                    facts
-                        .into_iter()
-                        .map(|display| korri_surface_treaty::SurfaceDisplay {
-                            id: display.id,
-                            main: display.main,
-                            x: f64::from(display.x),
-                            y: f64::from(display.y),
-                            width: f64::from(display.width),
-                            height: f64::from(display.height),
-                            touch: display.touch,
-                        })
-                        .collect(),
-                );
+                let changed = displays.windows != windows;
+                displays.windows = windows;
                 drop(displays);
-                (this.notify)();
+                if changed {
+                    (this.notify)();
+                }
             }
         });
     }
@@ -866,13 +921,11 @@ impl Root {
                 return;
             }
             displays.restore = false;
-            displays.scope.unwrap_or_default()
+            displays.scope.clone().flatten()
         };
         let korrid = self.korrid.clone();
         tokio::spawn(async move {
-            korrid
-                .surface_displays(host_scope(scope), false, None)
-                .await;
+            korrid.surface_displays(scope, false, None, false).await;
         });
     }
 
@@ -1206,7 +1259,7 @@ impl Root {
         let games = catalog_games(&state).map(|games| self.decorate(games, &state));
         let clock = self.clock.lock().expect("clock poisoned").clone();
         let base = SurfaceModel {
-            displays: None,
+            windows: None,
             presentation: SurfacePresentation::catalog(),
             catalog: korri_surface_treaty::SurfaceCatalog::Loading,
             status,

@@ -1659,7 +1659,7 @@ impl HostRuntime {
     pub(crate) async fn surface_displays(
         &self,
         request: display_placement::SurfaceDisplaysRequest,
-    ) -> Result<Vec<display_placement::SurfaceDisplay>, String> {
+    ) -> Result<display_placement::SurfacePlaced, String> {
         let runtime = self.clone();
         tokio::task::spawn_blocking(move || {
             runtime

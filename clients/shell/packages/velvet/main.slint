@@ -51,7 +51,10 @@ export component Surface inherits Window {
     in property <bool> touching;
     // "screen", "sheet", "keyboard" or "curtain": the layer that holds focus.
     in property <string> layer: "screen";
-    // "home", "empty", "set", "detail" or "list".
+    // ADR 0086: focus is in Velvet's other window (the Stage's or the Floor's). The page
+    // is drawn, and nothing on it takes focus or a tap.
+    in property <bool> elsewhere;
+    // "home", "empty", "set", "detail", "list", or "none" (the stage light alone).
     in property <string> page: "empty";
     in property <Stage> stage;
     // Every list is a property of its own (ui/types.slint says why).
@@ -95,7 +98,7 @@ export component Surface inherits Window {
     in property <Notice> notice;
     // Touch is in use and there is a level to go back to: the way back shows.
     // The page is in sight: the keyboard and the curtain take the house.
-    property <bool> paged: layer == "screen" || layer == "sheet";
+    property <bool> paged: layer == "screen" || layer == "sheet" || elsewhere;
 
     // ---- The Tokens' inputs ----
     // The house lights are up: set once, a moment after Velvet opens, so the change is
@@ -152,7 +155,7 @@ export component Surface inherits Window {
         shelf-at: root.shelf-at;
         depth: root.home-depth;
         resting: root.stage.drift;
-        inert: root.layer != "screen";
+        inert: root.layer != "screen" || root.elsewhere;
         activated(target, at, released) => { root.activated(target, at, released); }
         dragged(region, by) => { root.dragged(region, by); }
     }
@@ -163,7 +166,7 @@ export component Surface inherits Window {
         title: root.empty-title;
         lines: root.empty-lines;
         buttons: root.empty-buttons;
-        inert: root.layer != "screen";
+        inert: root.layer != "screen" || root.elsewhere;
         activated(target, at, released) => { root.activated(target, at, released); }
     }
     if root.paged && root.page == "set" && root.set.shown: VelvetSet {
@@ -173,7 +176,7 @@ export component Surface inherits Window {
         first-row: root.set-first-row;
         tiles: root.set-tiles;
         marks: root.set-marks;
-        inert: root.layer != "screen";
+        inert: root.layer != "screen" || root.elsewhere;
         activated(target, at, released) => { root.activated(target, at, released); }
         dragged(region, by) => { root.dragged(region, by); }
     }
@@ -183,7 +186,7 @@ export component Surface inherits Window {
         detail: root.detail;
         cards: root.detail-cards;
         buttons: root.detail-buttons;
-        inert: root.layer != "screen";
+        inert: root.layer != "screen" || root.elsewhere;
         activated(target, at, released) => { root.activated(target, at, released); }
     }
     if root.paged && root.page == "list" && root.list.shown: VelvetList {
@@ -196,7 +199,7 @@ export component Surface inherits Window {
         tiles: root.list-tiles;
         qr: root.list-qr;
         qr-size: root.list-qr-size;
-        inert: root.layer != "screen";
+        inert: root.layer != "screen" || root.elsewhere;
         activated(target, at, released) => { root.activated(target, at, released); }
     }
     // A tap beside a sheet, or over the keyboard's field, is Back.

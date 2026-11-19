@@ -316,8 +316,37 @@ export function topLayer(state: State, model: Model): Top {
   return "screen"
 }
 
+/**
+ * ADR 0086: whether korrid gave the Stage and the Floor a window each. The
+ * Stage is window 0 and the Floor window 1, in the order Velvet declares them.
+ */
+export function split(model: Model): boolean {
+  return (model.windows?.length ?? 0) >= 2
+}
+
+/**
+ * Whether the Floor's window holds focus: everything but the curtain, the
+ * detail, the empty house and the pick at the top of home is on the Floor.
+ */
+export function floorHolds(state: State, model: Model): boolean {
+  const top = topLayer(state, model)
+  if (top === "curtain") return false
+  // The detail's own sheet and keyboard stand over it, on the Stage.
+  const what = shown(state, model)
+  if (what === "detail") return false
+  if (top !== "screen") return true
+  if (what === "home") return state.depth > 0
+  return true
+}
+
+/** The size of the window that holds focus: the plan a press moves by. */
+export function focusSize(state: State, model: Model): { readonly width: number; readonly height: number } {
+  return split(model) && floorHolds(state, model) ? state.floor ?? state.size : state.size
+}
+
 function pressed(state: State, button: SurfaceButton, model: Model, out: Request[]): State {
-  const p = plan(state.size.width, state.size.height)
+  const size = focusSize(state, model)
+  const p = plan(size.width, size.height)
   const done = (step: Step): State => perform(step.state, step.act, model, out)
   const curtain = curtainOf(state, model)
   if (curtain !== undefined) return done(curtainPress(state, curtain, button, p))
@@ -542,7 +571,10 @@ export function update(state: State, message: Message, model: Model): { state: S
   switch (message._tag) {
     case "Resized": {
       const size = { width: Math.max(1, message.width), height: Math.max(1, message.height) }
-      if (size.width !== state.size.width || size.height !== state.size.height) next = { ...next, size }
+      // ADR 0086: window 1 is the Floor's own window.
+      if (message.window !== undefined && message.window > 0) {
+        if (size.width !== state.floor?.width || size.height !== state.floor?.height) next = { ...next, floor: size }
+      } else if (size.width !== state.size.width || size.height !== state.size.height) next = { ...next, size }
       break
     }
     case "Tick": {

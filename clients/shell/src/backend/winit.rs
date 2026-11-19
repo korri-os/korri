@@ -134,6 +134,10 @@ impl Backend for Winit {
         });
     }
 
+    fn set_title(&self, window: &slint::Window, title: &str) {
+        window.with_winit_window(|winit_window| winit_window.set_title(title));
+    }
+
     fn place(&self, window: &slint::Window, placement: Placement) {
         match placement {
             Placement::Fullscreen => window.set_fullscreen(true),

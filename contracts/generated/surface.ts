@@ -74,7 +74,7 @@ export type SurfaceMediaRole = "poster" | "hero" | "logo";
  *
  * Directional repeat: the first repeat after 400 ms, then every 100 ms.
  */
-export type SurfaceMessage = { _tag: "Pressed"; button: SurfaceButton } | { _tag: "KorriPublished" } | { _tag: "PreferenceStored"; key: string } | { _tag: "Tick"; idleMs: number } | { _tag: "Resized"; width: number; height: number } | { _tag: "Activated"; target: string; at?: number; released?: boolean } | { _tag: "Dragged"; region: string; by: number } | { _tag: "Touched" };
+export type SurfaceMessage = { _tag: "Pressed"; button: SurfaceButton } | { _tag: "KorriPublished" } | { _tag: "PreferenceStored"; key: string } | { _tag: "Tick"; idleMs: number } | { _tag: "Resized"; width: number; height: number; window?: number } | { _tag: "Activated"; target: string; at?: number; released?: boolean } | { _tag: "Dragged"; region: string; by: number } | { _tag: "Touched" };
 
 /**
  * How this device reaches the network right now. Grounded in legacy
@@ -84,16 +84,6 @@ export type SurfaceMessage = { _tag: "Pressed"; button: SurfaceButton } | { _tag
  * `strengthPercent` is NetworkManager `AccessPoint.Strength`, 0 to 100.
  */
 export type SurfaceNetworkConnection = { _tag: "Offline" } | { _tag: "Wired" } | { _tag: "Wifi"; ssid: string; strengthPercent?: number };
-
-/**
- * Which displays a package draws on: `globalThis.surface.displays` in its
- * `logic.js`, which the shell hands korrid with `app.surface.declare`.
- * Absent means `main`. `main`: the main display only. `all`: every display;
- * korrid places the window across them and publishes `SurfaceModel.displays`.
- * Grounding: the portal's surface registry (`clients/portal/src/surface/
- * surface-registry.tsx`): Pico `all`, Zone and Boxbuster `main`.
- */
-export type SurfacePackageDisplays = "main" | "all";
 
 /**
  * Whether a preference follows the person (`shared`) or stays on the device
@@ -329,20 +319,6 @@ export interface SurfaceController {
 	name: string;
 	/** The host has received input from it since onboarding began. */
 	heard: boolean;
-}
-
-/**
- * One display a surface draws on, in logical pixels of the surface's
- * viewport.
- */
-export interface SurfaceDisplay {
-	id: string;
-	main: boolean;
-	x: number;
-	y: number;
-	width: number;
-	height: number;
-	touch: boolean;
 }
 
 /**
@@ -644,6 +620,19 @@ export interface SurfaceLaunchSettingsContent {
 	actions: SurfaceAction[];
 }
 
+/**
+ * One window of a surface that declared panes (ADR 0086), and the panes it
+ * holds, in the declared order. Window 0 is the shell's `Surface` window;
+ * each further window is another instance of `Surface` that the shell maps.
+ * It carries no display facts: korrid placed it, and its size arrives in
+ * `Resized` with its index. Grounding: the shell's window roles
+ * (`clients/shell/src/shell.rs`) and a game placement's ordered outputs,
+ * main first (`services/korrid/src/host/display_placement.rs`).
+ */
+export interface SurfaceWindow {
+	panes: string[];
+}
+
 /** Present only when this host can read and change the device's network. */
 export interface SurfaceNetwork {
 	connection: SurfaceNetworkConnection;
@@ -689,8 +678,11 @@ export interface SurfaceSystem {
 
 /** Everything Korri publishes to the surface. Replaced wholesale on change. */
 export interface SurfaceModel {
-	/** Present only for a surface registered with displays: "all". */
-	displays?: SurfaceDisplay[];
+	/**
+	 * Present only for a package that declared panes: which panes each of
+	 * its windows holds (ADR 0086).
+	 */
+	windows?: SurfaceWindow[];
 	presentation: SurfacePresentation;
 	catalog: SurfaceCatalog;
 	status: SurfaceStatus;
@@ -741,6 +733,19 @@ export interface SurfaceModel {
 	 * is installed on this device.
 	 */
 	steamAccount?: SurfaceSteamAccount;
+}
+
+/**
+ * A package's panes (ADR 0086): `globalThis.surface.panes` and
+ * `globalThis.surface.arrangement` in its `logic.js`, which the shell hands
+ * korrid with `app.surface.declare`. The names and their meaning are a
+ * plugin system's own `panes` and `arrangement` (ADR 0039,
+ * `services/korrid/src/plugin.rs`): the ordered pane ids, the first for the
+ * main display, and how they relate. A package without them has one pane.
+ */
+export interface SurfacePackagePanes {
+	panes: string[];
+	arrangement: string;
 }
 
 /**

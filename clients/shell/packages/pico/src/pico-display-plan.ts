@@ -1,47 +1,8 @@
-import type { SurfaceDisplay } from "./model"
 import type { Entry, ExitChoices } from "./native/focus"
 
-/**
- * Where Pico draws when the host gives it more than one display.
- *
- * One display shows: the chosen game, its art and its facts, or the launch
- * under way. Another chooses and acts: the list, the menu, every button, and
- * the place a touch lands on a control. Each is a whole Pico screen at its
- * own rectangle, with its own virtual pixel.
- *
- * The plan reads only the rectangles and the flags, never a name or an order
- * such as "top" and "bottom", so displays side by side get the same split as
- * displays one above the other.
- */
-export interface PicoDisplayPlan {
-  /** The main display: it shows. */
-  readonly show: SurfaceDisplay
-  /** The display for choosing and acting: it holds every control. */
-  readonly choose: SurfaceDisplay
-}
-
-const area = (display: SurfaceDisplay) => display.width * display.height
-
-/**
- * The split, or `undefined` for one screen as Pico has always drawn it: no
- * displays (the host gave Pico one display's viewport), one display, or only
- * one with any room.
- *
- * The main display shows; with none marked main, the first does. The display
- * for choosing is a touch display where one is left, because touch is how a
- * person reaches past the d-pad, then the largest, then the host's order.
- * Displays past those two get nothing, so they stay dark.
- */
-export function picoDisplayPlan(displays: readonly SurfaceDisplay[] | undefined): PicoDisplayPlan | undefined {
-  const usable = (displays ?? []).filter(display => display.width > 0 && display.height > 0)
-  if (usable.length < 2) return undefined
-  const show = usable.find(display => display.main) ?? usable[0]
-  if (show === undefined) return undefined
-  const choose = usable
-    .filter(display => display !== show)
-    .sort((a, b) => Number(b.touch) - Number(a.touch) || area(b) - area(a))[0]
-  return choose === undefined ? undefined : { show, choose }
-}
+// Pico draws one screen. Its two-display split read the display facts korrid
+// no longer publishes (ADR 0086): a surface now declares panes, and korrid
+// places them. Pico has not been moved to panes yet.
 
 /** The surface window's size in logical pixels, from the shell's `Resized` (contract A2, 8.1). */
 export interface PicoWindow {
@@ -60,13 +21,8 @@ export const PICO_SPINES_BESIDE = 400
  * width and height. The focus graph and `view()` both read it, and
  * main.slint draws what it decides, so a press always moves to what is drawn
  * in its direction.
- *
- * `displays` only place the two screens of a split (`split`); they never
- * stand in for the window.
  */
 export interface PicoLayoutPlan {
-  /** The two screens' rectangles in the window, or `undefined` for one screen. */
-  readonly split: PicoDisplayPlan | undefined
   /** The virtual pixel, in logical pixels: as `Tokens.p` in ui/tokens.slint. */
   readonly p: number
   /** The screen that chooses, in virtual pixels. */
@@ -82,52 +38,14 @@ export interface PicoLayoutPlan {
   readonly exits: ExitChoices
 }
 
-/**
- * The split's two rectangles in the window. Pico draws on every display
- * (`displays: "all"`), so its window covers them all: each display's
- * rectangle is scaled from the displays' union onto the window, whatever
- * size the window is. The rectangles are whole logical pixels.
- */
-export function picoSplitInWindow(plan: PicoDisplayPlan | undefined, displays: readonly SurfaceDisplay[] | undefined, window: PicoWindow): PicoDisplayPlan | undefined {
-  if (plan === undefined) return undefined
-  const all = (displays ?? []).filter(display => display.width > 0 && display.height > 0)
-  const left = Math.min(...all.map(display => display.x))
-  const top = Math.min(...all.map(display => display.y))
-  const wide = Math.max(...all.map(display => display.x + display.width)) - left
-  const tall = Math.max(...all.map(display => display.y + display.height)) - top
-  const sx = window.width / wide
-  const sy = window.height / tall
-  const fit = (display: SurfaceDisplay): SurfaceDisplay => {
-    const x = Math.floor((display.x - left) * sx)
-    const y = Math.floor((display.y - top) * sy)
-    return {
-      ...display,
-      x,
-      y,
-      width: Math.max(1, Math.floor((display.x - left + display.width) * sx) - x),
-      height: Math.max(1, Math.floor((display.y - top + display.height) * sy) - y),
-    }
-  }
-  return { show: fit(plan.show), choose: fit(plan.choose) }
-}
-
-/** The smallest screen Pico lays out: 320x240 at a virtual pixel of 2. */
-const SMALLEST = { width: 160, height: 120 }
-
-export function picoLayoutPlan(window: PicoWindow, displays: readonly SurfaceDisplay[] | undefined): PicoLayoutPlan {
+export function picoLayoutPlan(window: PicoWindow): PicoLayoutPlan {
   // As Tokens.fit: the virtual pixel from the whole window.
   const p = Math.max(2, Math.floor(Math.min(window.width, window.height) / 360))
-  // A split only when the screen that chooses has room for a whole Pico
-  // screen; a window too small for two draws one.
-  const placed = picoSplitInWindow(picoDisplayPlan(displays), displays, window)
-  const split = placed !== undefined && placed.choose.width / p >= SMALLEST.width && placed.choose.height / p >= SMALLEST.height ? placed : undefined
-  const box = split === undefined ? window : split.choose
-  const width = Math.floor(box.width / p)
-  const height = Math.floor(box.height / p)
+  const width = Math.floor(window.width / p)
+  const height = Math.floor(window.height / p)
   // The screen shell's body: 8 virtual pixels in from each side.
   const body = width - 16
   return {
-    split,
     p,
     width,
     height,

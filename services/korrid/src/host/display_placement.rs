@@ -404,21 +404,26 @@ pub enum DisplayIdleOutcome {
 }
 
 #[typeshare::typeshare]
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum SurfaceDisplayScope {
-    Main,
-    All,
-}
-
-#[typeshare::typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SurfaceDisplaysRequest {
-    pub displays: SurfaceDisplayScope,
+    /// The shown package's panes (ADR 0086); absent for a package with one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub panes: Option<korri_surface_treaty::SurfacePackagePanes>,
     pub overlay: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub launch_id: Option<String>,
+    /// Only answer which windows the panes would get now; no effect.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub check: bool,
+}
+
+/// Where a surface placement left the shell: the main-display facts the host
+/// keeps for itself, and the windows a package with panes gets (ADR 0086).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SurfacePlaced {
+    pub rectangles: Vec<SurfaceDisplay>,
+    pub windows: Option<Vec<korri_surface_treaty::SurfaceWindow>>,
 }
 
 #[typeshare::typeshare]
@@ -433,12 +438,90 @@ pub struct SurfaceDisplay {
     pub touch: bool,
 }
 
+/// The windows a package's panes get: absent for a package without panes.
 #[typeshare::typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum SurfaceDisplaysOutcome {
-    Ok(Vec<SurfaceDisplay>),
+    Ok(Option<Vec<korri_surface_treaty::SurfaceWindow>>),
     Err(crate::RpcFailure),
+}
+
+/// ADR 0086: the output a surface's lower pane gets. A configured display
+/// that is not the main one, that Sway reports active (connected and
+/// enabled), and that sits directly under the main display with some
+/// horizontal overlap. The main display must be active too. Power is not
+/// asked: korrid itself powers an unused display off.
+pub(crate) fn lower_output(displays: &[Display], outputs: &str) -> Option<String> {
+    #[derive(Deserialize)]
+    struct Output {
+        name: String,
+        #[serde(default)]
+        active: bool,
+    }
+    let outputs: Vec<Output> = serde_json::from_str(outputs).ok()?;
+    let active = |name: &str| outputs.iter().any(|o| o.name == name && o.active);
+    let main = displays.iter().find(|d| d.main)?;
+    if !active(&main.name) {
+        return None;
+    }
+    let (left, right) = (i64::from(main.x), i64::from(main.x) + i64::from(main.width));
+    let bottom = i64::from(main.y) + i64::from(main.height);
+    displays
+        .iter()
+        .filter(|d| !d.main && !d.unwatched && active(&d.name))
+        .find(|d| {
+            i64::from(d.y) == bottom
+                && i64::from(d.x) < right
+                && i64::from(d.x) + i64::from(d.width) > left
+        })
+        .map(|d| d.name.clone())
+}
+
+/// ADR 0086: which panes each window holds. Two windows when the lower
+/// output exists, else both panes in window 0.
+pub(crate) fn surface_windows(
+    panes: Option<&korri_surface_treaty::SurfacePackagePanes>,
+    lower: Option<&str>,
+) -> Option<Vec<korri_surface_treaty::SurfaceWindow>> {
+    use korri_surface_treaty::SurfaceWindow;
+    let panes = panes?;
+    Some(match lower {
+        Some(_) => panes
+            .panes
+            .iter()
+            .map(|pane| SurfaceWindow {
+                panes: vec![pane.clone()],
+            })
+            .collect(),
+        None => vec![SurfaceWindow {
+            panes: panes.panes.clone(),
+        }],
+    })
+}
+
+/// Fullscreen each further pane window on the lower output. A pane window
+/// that has not mapped yet gets no command: the shell declares again once it
+/// has drawn, and that declare places it.
+pub(crate) fn pane_window_commands(
+    tree: &str,
+    shell_pids: &std::collections::BTreeSet<i32>,
+    panes: &korri_surface_treaty::SurfacePackagePanes,
+    lower: &str,
+) -> Result<Vec<String>, String> {
+    let windows = super::compositor_focus::pane_windows(tree, shell_pids)?;
+    let mut commands = Vec::new();
+    for (pane, node) in windows {
+        if panes.panes.iter().skip(1).any(|p| *p == pane) {
+            commands.extend([
+                format!("[con_id={node}] fullscreen disable"),
+                format!("[con_id={node}] floating disable"),
+                format!("[con_id={node}] move container to output {lower}"),
+                format!("[con_id={node}] fullscreen enable"),
+            ]);
+        }
+    }
+    Ok(commands)
 }
 
 pub(crate) fn surface_rectangles(
@@ -466,16 +549,28 @@ pub(crate) fn surface_rectangles(
         .collect()
 }
 
+/// A surface's lower pane and the output it goes on (ADR 0086).
+pub(crate) type LowerPane<'a> = (&'a korri_surface_treaty::SurfacePackagePanes, &'a str);
+
 pub(crate) fn place_surface(
     control: &dyn super::compositor_focus::CompositorControl,
     displays: &[Display],
     game: Option<&Placement>,
     pids: &std::collections::BTreeSet<i32>,
     shell_pids: &std::collections::BTreeSet<i32>,
+    lower: Option<LowerPane<'_>>,
 ) -> Result<Vec<SurfaceDisplay>, String> {
     let started = std::time::Instant::now();
     let mut timings = SurfacePlacementTimings::default();
-    let result = place_surface_timed(control, displays, game, pids, shell_pids, &mut timings);
+    let result = place_surface_timed(
+        control,
+        displays,
+        game,
+        pids,
+        shell_pids,
+        lower,
+        &mut timings,
+    );
     if displays.len() > 1 && game.is_none() {
         let outcome = if result.is_ok() { "Changed" } else { "Failed" };
         eprintln!("<6>korrid: PlacementTransition {{ target: Catalog, outcome: {outcome}, total_ms: {}, phases_ms: {{\"shell_tree\": {}, \"shell_power\": {}, \"shell_geometry\": {}}} }}", started.elapsed().as_millis(), timings.tree_ms, timings.power_ms, timings.geometry_ms);
@@ -496,8 +591,11 @@ pub(crate) fn place_surface_timed(
     game: Option<&Placement>,
     pids: &std::collections::BTreeSet<i32>,
     shell_pids: &std::collections::BTreeSet<i32>,
+    lower: Option<LowerPane<'_>>,
     timings: &mut SurfacePlacementTimings,
 ) -> Result<Vec<SurfaceDisplay>, String> {
+    // A lower pane belongs to the catalog only; a game holds the displays then.
+    let lower = lower.filter(|_| game.is_none());
     use super::compositor_focus::{select_focus_target, FocusTarget};
     let rectangles = surface_rectangles(displays, game);
     let restore = restore_commands(control, displays, game)?;
@@ -514,6 +612,11 @@ pub(crate) fn place_surface_timed(
     let shell = super::compositor_focus::shell_node(&tree, shell_pids)?;
     let mut occupied = game.map(|p| p.outputs.clone()).unwrap_or_default();
     occupied.extend(rectangles.iter().map(|d| d.id.clone()));
+    occupied.extend(lower.map(|(_, output)| output.to_owned()));
+    let pane_commands = match lower {
+        Some((panes, output)) => pane_window_commands(&tree, shell_pids, panes, output)?,
+        None => Vec::new(),
+    };
     let mut commands = restore;
     if let Some(game) = game.filter(|p| p.global) {
         let candidate = match select_focus_target(&tree, pids, shell_pids) {
@@ -551,8 +654,11 @@ pub(crate) fn place_surface_timed(
             format!("[con_id={shell}] floating disable"),
             format!("[con_id={shell}] move container to output {}", origin.name),
             format!("[con_id={shell}] fullscreen enable"),
-            format!("[con_id={shell}] focus"),
         ]);
+        // The lower pane's window, then focus back on the shell's own window:
+        // the shell takes controller input while one of its windows has focus.
+        commands.extend(pane_commands);
+        commands.push(format!("[con_id={shell}] focus"));
         commands.extend(
             power
                 .iter()
@@ -889,6 +995,7 @@ mod tests {
                     game.then_some(&p),
                     &Default::default(),
                     &[100].into_iter().collect(),
+                    None,
                 )
                 .unwrap();
                 let batches =
@@ -970,6 +1077,114 @@ fi
         .unwrap()
     }
 
+    fn stage_and_floor() -> korri_surface_treaty::SurfacePackagePanes {
+        korri_surface_treaty::SurfacePackagePanes {
+            panes: vec!["stage".into(), "floor".into()],
+            arrangement: "upper-above-lower".into(),
+        }
+    }
+
+    fn outputs(active: &[&str]) -> String {
+        serde_json::to_string(
+            &["DSI-2", "DSI-1"]
+                .iter()
+                .map(|name| serde_json::json!({ "name": name, "active": active.contains(name) }))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap()
+    }
+
+    /// ADR 0086, the Thor's arrangement: a narrower display centred under the
+    /// main one is the lower pane's output, while Sway has it active.
+    #[test]
+    fn the_lower_pane_goes_on_an_active_display_under_the_main_one() {
+        let mut ds = displays();
+        ds[0].width = 1920;
+        ds[0].height = 1080;
+        ds[1].x = 340;
+        ds[1].y = 1080;
+        ds[1].width = 1240;
+        ds[1].height = 1080;
+        assert_eq!(
+            lower_output(&ds, &outputs(&["DSI-2", "DSI-1"])).as_deref(),
+            Some("DSI-1")
+        );
+        // Disabled or unplugged: no lower pane. Main gone: nothing.
+        assert_eq!(lower_output(&ds, &outputs(&["DSI-2"])), None);
+        assert_eq!(lower_output(&ds, &outputs(&["DSI-1"])), None);
+        // Beside the main display, or not touching it: not under it.
+        let mut beside = ds.clone();
+        beside[1].x = 1920;
+        beside[1].y = 0;
+        assert_eq!(lower_output(&beside, &outputs(&["DSI-2", "DSI-1"])), None);
+        let mut apart = ds.clone();
+        apart[1].y = 1100;
+        assert_eq!(lower_output(&apart, &outputs(&["DSI-2", "DSI-1"])), None);
+        // An unwatched display is no place for a pane.
+        let mut unwatched = ds;
+        unwatched[1].unwatched = true;
+        assert_eq!(
+            lower_output(&unwatched, &outputs(&["DSI-2", "DSI-1"])),
+            None
+        );
+    }
+
+    #[test]
+    fn panes_get_two_windows_only_with_a_lower_output() {
+        use korri_surface_treaty::SurfaceWindow;
+        let window = |panes: &[&str]| SurfaceWindow {
+            panes: panes.iter().map(|p| p.to_string()).collect(),
+        };
+        assert_eq!(surface_windows(None, Some("DSI-1")), None);
+        assert_eq!(
+            surface_windows(Some(&stage_and_floor()), None),
+            Some(vec![window(&["stage", "floor"])])
+        );
+        assert_eq!(
+            surface_windows(Some(&stage_and_floor()), Some("DSI-1")),
+            Some(vec![window(&["stage"]), window(&["floor"])])
+        );
+    }
+
+    /// ADR 0086: the shell's own window goes on the main display, the lower
+    /// pane's window on the display under it, both stay powered, and focus
+    /// ends on the shell's own window.
+    #[test]
+    fn catalog_places_a_lower_pane_window_under_the_main_display() {
+        let dir = tempfile::tempdir().unwrap();
+        let control = sway_program(dir.path(), r#"[{"success":true}]"#);
+        std::fs::write(
+            dir.path().join("tree"),
+            r#"{"nodes":[{"id":10,"pid":100,"name":"Velvet"},{"id":11,"pid":100,"name":"korri-pane:floor"}]}"#,
+        )
+        .unwrap();
+        let panes = stage_and_floor();
+        place_surface(
+            &control,
+            &displays(),
+            None,
+            &Default::default(),
+            &[100].into_iter().collect(),
+            Some((&panes, "DSI-1")),
+        )
+        .unwrap();
+        let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
+        assert_eq!(
+            batches.lines().next().unwrap(),
+            "output DSI-2 power on; output DSI-1 power on"
+        );
+        assert_eq!(batches.lines().nth(1).unwrap(), "[con_id=10] fullscreen disable; [con_id=10] floating disable; [con_id=10] move container to output DSI-2; [con_id=10] fullscreen enable; [con_id=11] fullscreen disable; [con_id=11] floating disable; [con_id=11] move container to output DSI-1; [con_id=11] fullscreen enable; [con_id=10] focus");
+        assert!(!batches.contains("power off"), "{batches}");
+        // The pane window does not count as the shell's own window.
+        assert_eq!(
+            super::super::compositor_focus::shell_node(
+                &std::fs::read_to_string(dir.path().join("tree")).unwrap(),
+                &[100].into_iter().collect()
+            ),
+            Ok(10)
+        );
+    }
+
     #[test]
     fn catalog_moves_the_owned_shell_to_main_then_powers_off_unused_displays() {
         let dir = tempfile::tempdir().unwrap();
@@ -982,6 +1197,7 @@ fi
             None,
             &Default::default(),
             &[100].into_iter().collect(),
+            None,
         )
         .unwrap();
         assert_eq!(facts.len(), 1);
@@ -1018,6 +1234,7 @@ fi
             None,
             &Default::default(),
             &[100].into_iter().collect(),
+            None,
         )
         .unwrap();
         assert_eq!(facts.len(), 1);
@@ -1040,7 +1257,8 @@ fi
             &displays(),
             None,
             &Default::default(),
-            &[100].into_iter().collect()
+            &[100].into_iter().collect(),
+            None,
         )
         .is_err());
         assert_eq!(
@@ -1064,6 +1282,7 @@ fi
             Some(&single),
             &[200].into_iter().collect(),
             &[100].into_iter().collect(),
+            None,
             &mut timings,
         )
         .unwrap();
@@ -1110,7 +1329,15 @@ fi
             "[con_id=20] fullscreen enable global\n[con_id=20] opacity 1\n[con_id=20] focus\n"
         ));
         std::fs::write(dir.path().join("commands"), "").unwrap();
-        place_surface(&control, &ds, Some(&p), &pids, &[100].into_iter().collect()).unwrap();
+        place_surface(
+            &control,
+            &ds,
+            Some(&p),
+            &pids,
+            &[100].into_iter().collect(),
+            None,
+        )
+        .unwrap();
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
         assert!(commands.contains("[con_id=20] resize set width 640 px height 960 px"));
         assert!(
@@ -1131,6 +1358,7 @@ fi
             Some(&single),
             &pids,
             &[100].into_iter().collect(),
+            None,
         )
         .unwrap();
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
@@ -1160,6 +1388,7 @@ fi
             None,
             &std::collections::BTreeSet::new(),
             &[100].into_iter().collect(),
+            None,
         )
         .unwrap();
         let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
@@ -1186,7 +1415,8 @@ fi
                     &displays(),
                     None,
                     &std::collections::BTreeSet::new(),
-                    &shell_pids
+                    &shell_pids,
+                    None
                 )
                 .unwrap_err(),
                 "no unique shell window"

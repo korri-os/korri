@@ -129,4 +129,10 @@ pub trait Backend {
     fn attach(&self, window: &slint::Window, sink: Rc<dyn Fn(HostEvent)>, frames: FrameCounter);
 
     fn place(&self, window: &slint::Window, placement: Placement);
+
+    /// Title a shown window on the compositor's side. The shell titles a
+    /// package's further pane windows `korri-pane:<panes>` so korrid can
+    /// tell them from the shell's own window (ADR 0086). The package's own
+    /// `title` stays on its first window.
+    fn set_title(&self, _window: &slint::Window, _title: &str) {}
 }

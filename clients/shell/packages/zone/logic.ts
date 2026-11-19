@@ -512,15 +512,11 @@ export function overlay(state: State, model: Model) {
 // The look follows the person (ADR 0018's rule by kind): `shared`.
 const preferences = { [LOOK_KEY]: { mark: "shared", initial: ZONE_DEFAULT_LOOK } } as const
 
-// As the portal registered Zone: the main display only.
-const displays = "main"
-
-globalThis.surface = { displays, preferences, init, update, view, overlay }
+globalThis.surface = { preferences, init, update, view, overlay }
 
 declare global {
   // The one global the contract allows.
   var surface: {
-    displays: typeof displays
     preferences: typeof preferences
     init: typeof init
     update: typeof update

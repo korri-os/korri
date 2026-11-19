@@ -32,7 +32,7 @@ import { PICO_ALL_SECTIONS } from "../pico-library-view"
 import { PICO_ATTRACT_AFTER_MS } from "../pico-attract"
 import { picoLaunchViewFromModel } from "../pico-launch-view"
 import { picoOverlayViewFrom } from "../pico-overlay-view"
-import { PICO_WINDOW_BEFORE_RESIZED, picoLayoutPlan, type PicoDisplayPlan } from "../pico-display-plan"
+import { PICO_WINDOW_BEFORE_RESIZED, picoLayoutPlan } from "../pico-display-plan"
 import type { PicoShelfGame } from "../pico-shelf-game"
 import type { PicoMessage } from "../state/messages"
 import { initialNavigation, topLayer } from "../state/navigation"
@@ -62,10 +62,10 @@ const EDGE = 8
 
 /** The layout plan the focus graph and the view share (contract A2, 8.2). */
 export function planFor(s: State, korri: KorriModel): Plan {
-  return planOf(s.window, korri.displays)
+  return planOf(s.window)
 }
 
-const planOf = memo(4, (window: State["window"], displays: KorriModel["displays"]) => [window, displays], picoLayoutPlan)
+const planOf = memo(4, (window: State["window"]) => [window], picoLayoutPlan)
 
 export function init(raw: KorriModel, preferences: Readonly<Record<string, string>>): State {
   const korri = interned(raw)
@@ -901,11 +901,9 @@ function buildView(s: State, korri: KorriModel) {
   const notices = model.onboarding === undefined ? inviteNotices(s.nav, model) : []
   const shown = shownScreen(s.nav, model)
   const attract = model.onboarding === undefined && attractShowing(s.nav, model) && shown._tag === "Home" && shown.view._tag === "Shelf"
-  const plan = splitPlan(planFor(s, korri).split)
-  // On one display the attract covers the whole window: the page under it
-  // is not sent (the shell keeps what it was last sent), and nothing on it
-  // takes the cursor.
-  const covering = attract && plan === undefined
+  // The attract covers the whole window: the page under it is not sent (the
+  // shell keeps what it was last sent), and nothing on it takes the cursor.
+  const covering = attract
   const drawn = {
     fontFamily: font?.family ?? "Pico Tiny5",
     fontRows: font?.rows ?? 7,
@@ -919,7 +917,7 @@ function buildView(s: State, korri: KorriModel) {
       carts: attract && shown._tag === "Home" && shown.view._tag === "Shelf" ? attractCarts(shown.view.games) : NO_CARTS,
       chosen: shown._tag === "Home" && shown.view._tag === "Shelf" ? chosenIndex(shown.view.games, s.nav.home.selectedGameId) : 0,
     },
-    split: plan ?? NO_SPLIT,
+    split: NO_SPLIT,
     touching: s.touched,
   }
   return { ...(marked(drawn, screen) as typeof drawn), focusPlan: covering ? {} : focusPlanOf(s, korri, screen) }
@@ -930,15 +928,9 @@ const NO_CARTS: readonly CartView[] = []
 /** The attract's parade: the window's first twelve games, once per window. */
 const attractCarts = memo(2, (games: readonly PicoShelfGame[]) => [games], (games: readonly PicoShelfGame[]) => games.slice(0, 12).map(game => cartView(game)))
 
-/** One screen: main.slint reads the rectangles only on a split, so they are not sent. */
+/** One screen (ADR 0086 took the display facts its split read): main.slint
+ * reads the split's rectangles only when it is on. */
 const NO_SPLIT = { on: false }
-
-/** Where Pico's display plan (src/pico-display-plan.ts) puts the two screens, for main.slint. */
-function splitPlan(plan: PicoDisplayPlan | undefined) {
-  if (plan === undefined) return undefined
-  const { show, choose } = plan
-  return { on: true, showX: show.x, showY: show.y, showW: show.width, showH: show.height, chooseX: choose.x, chooseY: choose.y, chooseW: choose.width, chooseH: choose.height }
-}
 
 export function overlay(s: State, raw: KorriModel) {
   return overlayOf(s, interned(raw))

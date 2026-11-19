@@ -58,7 +58,7 @@ fn copy(from: &Path, to: &Path) {
 
 fn source(id: &str) -> PathBuf {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    if id == "probe" {
+    if id == "probe" || id == "panes" {
         root.join("tests/packages/probe")
     } else {
         root.join("packages").join(id)
@@ -93,6 +93,25 @@ fn rig_with(
                     "const t0 = new Date().getTime(); while (new Date().getTime() - t0 < 120) {}",
                     spin,
                 );
+                std::fs::write(path, source).unwrap();
+            }
+            if *id == "panes" {
+                // The probe with two panes (ADR 0086). Its view counts its
+                // window's views, and a further window's `Resized`.
+                let path = dir.join("logic.js");
+                let source = std::fs::read_to_string(&path)
+                    .unwrap()
+                    .replacen(
+                        "globalThis.surface = {",
+                        "globalThis.surface = { panes: [\"stage\", \"floor\"], arrangement: \"upper-above-lower\",",
+                        1,
+                    )
+                    .replacen(
+                        "if (message._tag === \"Resized\")",
+                        "if (message._tag === \"Resized\" && message.window) return { state: { ...state, paneWidth: message.width, paneWindow: message.window }, requests: [] };\n    if (message._tag === \"Resized\")",
+                        1,
+                    )
+                    + "\nconst probeView = globalThis.surface.view;\nglobalThis.surface.view = (state, model, window) => {\n  const view = probeView(state, model);\n  if (window) view.word = `pane ${window} ${state.paneWindow || 0} ${state.paneWidth || 0}`;\n  return view;\n};\n";
                 std::fs::write(path, source).unwrap();
             }
             Package::at(&dir).unwrap()
@@ -429,45 +448,84 @@ fn model_pushes_run_korri_published_and_are_acked_in_order() {
 }
 
 #[test]
-fn declare_carries_the_declared_displays_and_only_all_gets_model_displays() {
-    let mut rig = rig(&["pico", "zone", "probe"], 12, Behaviour::default());
-    rig.key(Key::F2);
-    rig.until("zone", |r| r.shell.current_id() == Some("zone"));
+fn declare_carries_the_declared_panes_and_only_a_package_with_panes_gets_windows() {
+    let mut rig = rig(&["panes", "probe"], 12, Behaviour::default());
+    rig.until("panes placed", |r| r.fixture.declarations().len() == 2);
     rig.key(Key::F2);
     rig.until("probe", |r| r.shell.current_id() == Some("probe"));
-    rig.until("probe placed", |r| r.fixture.declarations().len() == 6);
-    let displays: Vec<(String, Option<Value>)> = rig
+    rig.until("probe placed", |r| r.fixture.declarations().len() == 4);
+    let panes: Vec<(String, Option<Value>)> = rig
         .fixture
         .declarations()
         .iter()
         .map(|d| {
             (
                 d["surfaceId"].as_str().unwrap().to_owned(),
-                d.get("displays").cloned(),
+                d.get("panes").cloned(),
             )
         })
         .collect();
+    let declared = json!({ "panes": ["stage", "floor"], "arrangement": "upper-above-lower" });
     assert_eq!(
-        displays,
+        panes,
         vec![
             // Each surface declares before its preferences, then once more
             // after its first frame, when its window is the only one.
-            ("pico".into(), Some(json!("all"))),
-            ("pico".into(), Some(json!("all"))),
-            ("zone".into(), Some(json!("main"))),
-            ("zone".into(), Some(json!("main"))),
+            ("panes".into(), Some(declared.clone())),
+            ("panes".into(), Some(declared)),
             ("probe".into(), None),
             ("probe".into(), None),
         ]
     );
     let declarations = rig.fixture.declarations();
     assert_eq!(
-        declarations[2], declarations[3],
+        declarations[0], declarations[1],
         "the second declare repeats the first"
     );
-    assert!(rig.fixture.model("pico").get("displays").is_some());
-    assert!(rig.fixture.model("zone").get("displays").is_none());
-    assert!(rig.fixture.model("probe").get("displays").is_none());
+    assert_eq!(
+        rig.fixture.model("panes")["windows"],
+        json!([{ "panes": ["stage", "floor"] }])
+    );
+    assert!(rig.fixture.model("probe").get("windows").is_none());
+}
+
+/// ADR 0086: when korrid gives a package's panes one window each, the shell
+/// maps a further `Surface` window, draws it from `view(state, model, 1)`,
+/// tells the logic its size with its index, and declares again once it has
+/// drawn so korrid places it. Back to one window, it goes.
+#[test]
+fn panes_get_a_window_each_when_korrid_gives_them() {
+    let mut rig = rig(&["panes"], 12, Behaviour::default());
+    rig.until("placed", |r| r.fixture.declarations().len() == 2);
+    assert_eq!(rig.shell.pane_windows(), 0);
+    rig.fixture.set_windows(Some(
+        json!([{ "panes": ["stage"] }, { "panes": ["floor"] }]),
+    ));
+    rig.until("a second window", |r| r.shell.pane_windows() == 1);
+    rig.until("its size, with its index", |r| {
+        matches!(
+            r.shell.pane_property(1, "word"),
+            Some(slint_interpreter::Value::String(word)) if word.starts_with("pane 1 1 ") && !word.ends_with(" 0")
+        )
+    });
+    rig.until("placed again", |r| r.fixture.declarations().len() == 3);
+    // Window 0 keeps its own view.
+    assert!(matches!(
+        rig.shell.surface_property("word"),
+        Some(slint_interpreter::Value::String(word)) if word == "first"
+    ));
+    rig.fixture.set_windows(None);
+    rig.until("one window again", |r| r.shell.pane_windows() == 0);
+    // The gameplay overlay maps alone: a pane window hides with the Surface.
+    rig.fixture.set_windows(Some(
+        json!([{ "panes": ["stage"] }, { "panes": ["floor"] }]),
+    ));
+    rig.until("a second window", |r| r.shell.pane_windows() == 1);
+    rig.fixture.set_overlay(true);
+    rig.until("overlay", |r| r.shell.overlay_shown());
+    rig.until("pane hidden", |r| r.shell.pane_windows() == 0);
+    rig.fixture.set_overlay(false);
+    rig.until("pane back", |r| r.shell.pane_windows() == 1);
 }
 
 // All three viewer exits close the hosted Surface and publish catalog. Check

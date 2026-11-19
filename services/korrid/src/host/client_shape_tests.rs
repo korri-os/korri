@@ -115,10 +115,12 @@ fn catalog(runtime: &HostRuntime) -> Result<Vec<display_placement::SurfaceDispla
         .control()
         .unwrap()
         .surface_displays(display_placement::SurfaceDisplaysRequest {
-            displays: display_placement::SurfaceDisplayScope::Main,
+            panes: None,
+            check: false,
             overlay: false,
             launch_id: None,
         })
+        .map(|placed| placed.rectangles)
 }
 fn prepare(runtime: &HostRuntime) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
     runtime.prepare_blocking(

@@ -1386,19 +1386,18 @@ pub struct SurfaceInvite {
     pub actions: Vec<SurfaceAction>,
 }
 
-/// One display a surface draws on, in logical pixels of the surface's
-/// viewport.
+/// One window of a surface that declared panes (ADR 0086), and the panes it
+/// holds, in the declared order. Window 0 is the shell's `Surface` window;
+/// each further window is another instance of `Surface` that the shell maps.
+/// It carries no display facts: korrid placed it, and its size arrives in
+/// `Resized` with its index. Grounding: the shell's window roles
+/// (`clients/shell/src/shell.rs`) and a game placement's ordered outputs,
+/// main first (`services/korrid/src/host/display_placement.rs`).
 #[typeshare]
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SurfaceDisplay {
-    pub id: String,
-    pub main: bool,
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-    pub touch: bool,
+pub struct SurfaceWindow {
+    pub panes: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1472,9 +1471,10 @@ pub enum SurfaceSteamAccount {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SurfaceModel {
-    /// Present only for a surface registered with displays: "all".
+    /// Present only for a package that declared panes: which panes each of
+    /// its windows holds (ADR 0086).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub displays: Option<Vec<SurfaceDisplay>>,
+    pub windows: Option<Vec<SurfaceWindow>>,
     pub presentation: SurfacePresentation,
     pub catalog: SurfaceCatalog,
     pub status: SurfaceStatus,
@@ -1574,8 +1574,15 @@ pub enum SurfaceMessage {
     /// Each surface owns its own idle threshold.
     Tick { idle_ms: u32 },
     /// The surface window's size in logical pixels. Sent once after init,
-    /// before the first view, and on every size or scale change.
-    Resized { width: f32, height: f32 },
+    /// before the first view, and on every size or scale change. `window`:
+    /// the index in `SurfaceModel.windows` of a further window (ADR 0086);
+    /// absent for window 0.
+    Resized {
+        width: f32,
+        height: f32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        window: Option<u32>,
+    },
     /// The person touched (or clicked) a target the surface drew (ADR 0055).
     /// `target` is the surface's own focus-target id, reported by its view.
     /// The surface moves focus there and does what Confirm does there.
@@ -1774,19 +1781,44 @@ pub struct SurfacePreferenceDeclaration {
     pub initial: String,
 }
 
-/// Which displays a package draws on: `globalThis.surface.displays` in its
-/// `logic.js`, which the shell hands korrid with `app.surface.declare`.
-/// Absent means `main`. `main`: the main display only. `all`: every display;
-/// korrid places the window across them and publishes `SurfaceModel.displays`.
-/// Grounding: the portal's surface registry (`clients/portal/src/surface/
-/// surface-registry.tsx`): Pico `all`, Zone and Boxbuster `main`.
-#[typeshare(serialized_as = "SurfacePackageDisplaysWire")]
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SurfacePackageDisplays {
-    #[default]
-    Main,
-    All,
+/// A package's panes (ADR 0086): `globalThis.surface.panes` and
+/// `globalThis.surface.arrangement` in its `logic.js`, which the shell hands
+/// korrid with `app.surface.declare`. The names and their meaning are a
+/// plugin system's own `panes` and `arrangement` (ADR 0039,
+/// `services/korrid/src/plugin.rs`): the ordered pane ids, the first for the
+/// main display, and how they relate. A package without them has one pane.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SurfacePackagePanes {
+    pub panes: Vec<String>,
+    pub arrangement: String,
+}
+
+/// The one arrangement korrid places, for games and surfaces alike.
+pub const PANES_UPPER_ABOVE_LOWER: &str = "upper-above-lower";
+
+impl SurfacePackagePanes {
+    /// Two distinct pane ids, `[a-z][a-z0-9-]{0,31}`, upper above lower:
+    /// what korrid's placement supports (`display_placement::choose`).
+    pub fn check(&self) -> Result<(), String> {
+        let id = |pane: &str| {
+            let mut bytes = pane.bytes();
+            pane.len() <= 32
+                && bytes.next().is_some_and(|b| b.is_ascii_lowercase())
+                && bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        };
+        if self.panes.len() != 2 || self.panes[0] == self.panes[1] {
+            return Err("panes must name exactly two different panes".into());
+        }
+        if !self.panes.iter().all(|pane| id(pane)) {
+            return Err("a pane id is [a-z][a-z0-9-]{0,31}".into());
+        }
+        if self.arrangement != PANES_UPPER_ABOVE_LOWER {
+            return Err(format!("arrangement must be \"{PANES_UPPER_ABOVE_LOWER}\""));
+        }
+        Ok(())
+    }
 }
 
 /// A package's `preferences` declaration: key to declaration.
@@ -1941,13 +1973,38 @@ mod tests {
             resized,
             SurfaceMessage::Resized {
                 width: 640.0,
-                height: 480.0
+                height: 480.0,
+                window: None,
             }
         );
         assert_eq!(
             serde_json::to_value(&resized).unwrap(),
             json!({"_tag": "Resized", "width": 640.0, "height": 480.0})
         );
+        assert_eq!(
+            serde_json::to_value(SurfaceMessage::Resized {
+                width: 1240.0,
+                height: 1080.0,
+                window: Some(1),
+            })
+            .unwrap(),
+            json!({"_tag": "Resized", "width": 1240.0, "height": 1080.0, "window": 1})
+        );
+        let panes = |panes: &[&str], arrangement: &str| SurfacePackagePanes {
+            panes: panes.iter().map(|p| p.to_string()).collect(),
+            arrangement: arrangement.into(),
+        };
+        assert!(panes(&["stage", "floor"], "upper-above-lower")
+            .check()
+            .is_ok());
+        assert!(panes(&["stage"], "upper-above-lower").check().is_err());
+        assert!(panes(&["stage", "stage"], "upper-above-lower")
+            .check()
+            .is_err());
+        assert!(panes(&["Stage", "floor"], "upper-above-lower")
+            .check()
+            .is_err());
+        assert!(panes(&["stage", "floor"], "side-by-side").check().is_err());
         assert_eq!(
             serde_json::to_value(SurfaceStatus::Busy {
                 kicker: "Checking saves…".into(),

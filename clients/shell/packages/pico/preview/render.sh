@@ -49,19 +49,10 @@ render_device() {
     name=$(jq -r ".[$i].name" "$gen/scenarios.json")
     # ONLY="a b" renders just those scenarios.
     [[ -z ${ONLY:-} || " $ONLY " == *" $name "* ]] || continue
-    local displays
-    displays=$(jq -c ".[$i].displays" "$gen/scenarios.json")
-    if [[ $displays == null ]]; then
-      displays="[{\"id\":\"$device\",\"main\":true,\"x\":0,\"y\":0,\"width\":$w,\"height\":$h,\"touch\":false}]"
-    elif [[ $device != rgds && $device != rgds-side ]]; then
-      continue
-    elif [[ $device == rgds-side ]]; then
-      displays='[{"id":"top","main":true,"x":0,"y":0,"width":640,"height":480,"touch":false},{"id":"bottom","main":false,"x":640,"y":0,"width":640,"height":480,"touch":true}]'
-    fi
     mkdir -m 700 -p "$dir/cred-$i"
     rm -f "$dir/control"
     mkfifo "$dir/control"
-    "$fixture" --games 0 --credentials "$dir/cred-$i" --model "$gen/$name.json" --displays "$displays" \
+    "$fixture" --games 0 --credentials "$dir/cred-$i" --model "$gen/$name.json" \
       <"$dir/control" >"$dir/fixture.out" 2>"$dir/fixture.log" &
     local fixture_pid=$!
     exec 7>"$dir/control"

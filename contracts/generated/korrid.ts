@@ -2264,8 +2264,8 @@ export interface SurfaceAccepted {
 export interface SurfaceDeclareRequest {
 	surfaceId: string;
 	preferences: import("./surface").SurfacePreferenceDeclarations;
-	/** Absent: `main`, as in the portal's surface registry. */
-	displays?: import("./surface").SurfacePackageDisplays;
+	/** The package's panes (ADR 0086). Absent: one pane. */
+	panes?: SurfacePackagePanes;
 }
 
 export interface SurfaceDisplay {
@@ -2278,15 +2278,13 @@ export interface SurfaceDisplay {
 	touch: boolean;
 }
 
-export enum SurfaceDisplayScope {
-	Main = "main",
-	All = "all",
-}
-
 export interface SurfaceDisplaysRequest {
-	displays: SurfaceDisplayScope;
+	/** The shown package's panes (ADR 0086); absent for a package with one. */
+	panes?: SurfacePackagePanes;
 	overlay: boolean;
 	launchId?: string;
+	/** Only answer which windows the panes would get now; no effect. */
+	check?: boolean;
 }
 
 export interface SurfaceModelRequest {
@@ -2785,8 +2783,9 @@ export type SurfaceAcceptedOutcome =
 	| { _tag: "Ok", payload: SurfaceAccepted }
 	| { _tag: "Err", payload: RpcFailure };
 
+/** The windows a package's panes get: absent for a package without panes. */
 export type SurfaceDisplaysOutcome =
-	| { _tag: "Ok", payload: SurfaceDisplay[] }
+	| { _tag: "Ok", payload?: SurfaceWindow[] }
 	| { _tag: "Err", payload: RpcFailure };
 
 export type SurfaceModelOutcome =

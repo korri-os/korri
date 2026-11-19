@@ -24,7 +24,7 @@ fixtures' words and look are Zone's.
 ## Contract use
 
 - `preferences`: `zone.look`, mark `shared`, initial `blend`; stored with
-  `RememberPreference` when OPTIONS › SYSTEM › LOOK steps it. `displays: "main"`.
+  `RememberPreference` when OPTIONS › SYSTEM › LOOK steps it.
 - `FocusGame` whenever the band's focused game changes; GAME OPTS. lists
   `model.focusedGame.actions`.
 - `MoveCatalog`: the FIND draft is the query's text, `Around(focused game)`;

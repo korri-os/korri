@@ -33,7 +33,6 @@ unset WAYLAND_DISPLAY
 mkdir -m 700 "$work/credentials" "$work/cache"
 mkfifo "$work/control"
 "$fixture" --games 0 --credentials "$work/credentials" --model "$model" \
-  --displays '[{"id":"proof","main":true,"x":0,"y":0,"width":640,"height":480,"touch":false}]' \
   <"$work/control" >"$work/fixture.out" 2>"$out/fixture.log" &
 pids+=($!)
 exec 7>"$work/control"

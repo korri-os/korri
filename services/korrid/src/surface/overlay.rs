@@ -168,7 +168,7 @@ pub fn gameplay_overlay_presentation_from(
 
 fn model_for(launch_id: &str, title: Option<String>) -> SurfaceModel {
     SurfaceModel {
-        displays: None,
+        windows: None,
         presentation: SurfacePresentation::GameplayOverlay(gameplay_overlay_presentation_from(
             &SessionControls {
                 launch_id: launch_id.into(),

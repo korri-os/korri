@@ -858,6 +858,7 @@ impl HostSessionControl {
                     Some(&placement),
                     &pids,
                     &shell_pids,
+                    None,
                     &mut placement_timings,
                 )?;
                 Ok::<_, String>((placement, rectangles))
@@ -1433,7 +1434,7 @@ impl HostSessionControl {
     pub(crate) fn surface_displays(
         &self,
         request: super::display_placement::SurfaceDisplaysRequest,
-    ) -> Result<Vec<super::display_placement::SurfaceDisplay>, String> {
+    ) -> Result<super::display_placement::SurfacePlaced, String> {
         let mut state = self.lock_state_named("surface_displays");
         self.refresh_native_state_locked(&mut state);
         let catalog_idle = matches!(
@@ -1441,6 +1442,28 @@ impl HostSessionControl {
             ActiveState::NoActive | ActiveState::Completed { .. } | ActiveState::Failed { .. }
         );
         let mut displays = super::display_placement::configured_displays()?;
+        // ADR 0086: a package's lower pane gets its own window only in the
+        // catalog, and only while a display sits under the main one.
+        let lower = match (&request.panes, self.compositor.as_ref()) {
+            (Some(_), Some(control)) if !request.overlay && catalog_idle && displays.len() > 1 => {
+                control
+                    .outputs()
+                    .ok()
+                    .and_then(|outputs| super::display_placement::lower_output(&displays, &outputs))
+            }
+            _ => None,
+        };
+        let windows =
+            super::display_placement::surface_windows(request.panes.as_ref(), lower.as_deref());
+        let placed = |rectangles| super::display_placement::SurfacePlaced {
+            rectangles,
+            windows: windows.clone(),
+        };
+        if request.check {
+            return Ok(placed(super::display_placement::surface_rectangles(
+                &displays, None,
+            )));
+        }
         if displays.len() <= 1 {
             if let (Some(display), Some(control)) = (displays.first_mut(), self.compositor.as_ref())
             {
@@ -1451,6 +1474,7 @@ impl HostSessionControl {
                         None,
                         &Default::default(),
                         &Default::default(),
+                        None,
                     )?;
                 } else if matches!(&*state, ActiveState::Frozen { launch_id, .. }
                     if !request.overlay || request.launch_id.as_deref() == Some(launch_id.as_str()))
@@ -1468,27 +1492,31 @@ impl HostSessionControl {
                 display.width = logical.width;
                 display.height = logical.height;
             }
-            return Ok(super::display_placement::surface_rectangles(
+            return Ok(placed(super::display_placement::surface_rectangles(
                 &displays, None,
-            ));
+            )));
         }
         // A catalog flag is presentation intent, not proof that the holder is
         // idle. Never focus the shell, power off game outputs, or restore a mode
         // while an exact launch is live or recovery cannot prove absence.
         if !request.overlay && !catalog_idle {
             state.reconcile = false;
-            return Ok(super::display_placement::surface_rectangles(
+            return Ok(placed(super::display_placement::surface_rectangles(
                 &displays, None,
-            ));
+            )));
         }
         // Catalog requests return only main-display facts, even when the surface
         // asks for all. Overlay requests retain their free-display placement.
         // A live unit PID keys the effect-free catalog cache.
         let catalog_shell_pids = if !request.overlay {
             let shell_pids = self.shell_pids()?;
-            if let Some(rectangles) = self.cached_catalog_rectangles(&shell_pids) {
+            // A lower pane's window may have mapped since: never from the cache.
+            if let Some(rectangles) = self
+                .cached_catalog_rectangles(&shell_pids)
+                .filter(|_| lower.is_none())
+            {
                 state.reconcile = false;
-                return Ok(rectangles);
+                return Ok(placed(rectangles));
             }
             Some(shell_pids)
         } else {
@@ -1528,7 +1556,7 @@ impl HostSessionControl {
             // window mapped anew for the same launch is placed again.
             if let Some((window, rectangles)) = receipt {
                 if self.mapped_surface_window(&self.shell_pids()?).as_ref() == Some(&window) {
-                    return Ok(rectangles);
+                    return Ok(placed(rectangles));
                 }
             }
         }
@@ -1559,9 +1587,11 @@ impl HostSessionControl {
             placement.as_ref(),
             &pids,
             &shell_pids,
+            request.panes.as_ref().zip(lower.as_deref()),
         )?;
         let mut occupied = placement.map(|p| p.outputs).unwrap_or_default();
         occupied.extend(rectangles.iter().map(|d| d.id.clone()));
+        occupied.extend(lower.clone());
         *self
             .display_content
             .lock()
@@ -1591,7 +1621,7 @@ impl HostSessionControl {
                 .lock()
                 .expect("placement mutex poisoned") = None;
         }
-        Ok(rectangles)
+        Ok(placed(rectangles))
     }
 
     /// Restore the exact launch's fullscreen/opacity recipe on failed Leave.
@@ -5064,11 +5094,13 @@ printf '[{{"success":true}}]'
             let before_surface_rpc = fs::read_to_string(root.path().join("commands")).unwrap();
             let rectangles = control
                 .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
-                    displays: super::super::display_placement::SurfaceDisplayScope::All,
+                    panes: None,
+                    check: false,
                     overlay: true,
                     launch_id: Some(prepared.launch_id.clone()),
                 })
-                .unwrap();
+                .unwrap()
+                .rectangles;
             assert_eq!(rectangles.len(), 1);
             assert_eq!(rectangles[0].id, "DSI-1");
             assert_eq!(
@@ -5100,11 +5132,13 @@ printf '[{{"success":true}}]'
             assert_eq!(
                 control
                     .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
-                        displays: super::super::display_placement::SurfaceDisplayScope::All,
+                        panes: None,
+                        check: false,
                         overlay: true,
                         launch_id: Some(prepared.launch_id.clone()),
                     })
-                    .unwrap(),
+                    .unwrap()
+                    .rectangles,
                 rectangles
             );
             assert_eq!(
@@ -5123,12 +5157,13 @@ printf '[{{"success":true}}]'
             .unwrap();
             let replaced = control
                 .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
-                    displays: super::super::display_placement::SurfaceDisplayScope::All,
+                    panes: None,
+                    check: false,
                     overlay: true,
                     launch_id: Some(prepared.launch_id.clone()),
                 })
                 .unwrap();
-            assert_eq!(replaced, rectangles);
+            assert_eq!(replaced.rectangles, rectangles);
             let placed = fs::read_to_string(root.path().join("commands")).unwrap();
             let added = &placed[commands.len()..];
             assert!(
@@ -5139,7 +5174,8 @@ printf '[{{"success":true}}]'
             // Placed: the new window's receipt holds again, effect-free.
             control
                 .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
-                    displays: super::super::display_placement::SurfaceDisplayScope::All,
+                    panes: None,
+                    check: false,
                     overlay: true,
                     launch_id: Some(prepared.launch_id.clone()),
                 })
@@ -5550,11 +5586,13 @@ printf '[{{"success":true}}]'
                 .with_compositor(compositor);
         let displays = control
             .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
-                displays: super::super::display_placement::SurfaceDisplayScope::All,
+                panes: None,
+                check: false,
                 overlay: false,
                 launch_id: None,
             })
-            .unwrap();
+            .unwrap()
+            .rectangles;
         assert_eq!(displays.len(), 1);
         assert_eq!(displays[0].id, "DSI-2");
         let commands = fs::read_to_string(root.path().join("commands")).unwrap();
@@ -5563,12 +5601,13 @@ printf '[{{"success":true}}]'
         assert!(!commands.contains(" global"), "{commands}");
         let main = control
             .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
-                displays: super::super::display_placement::SurfaceDisplayScope::Main,
+                panes: None,
+                check: false,
                 overlay: false,
                 launch_id: None,
             })
             .unwrap();
-        assert_eq!(main, displays);
+        assert_eq!(main.rectangles, displays);
         assert_eq!(
             fs::read_to_string(root.path().join("commands")).unwrap(),
             commands,
@@ -5584,12 +5623,13 @@ printf '[{{"success":true}}]'
         .unwrap();
         let replaced = control
             .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
-                displays: super::super::display_placement::SurfaceDisplayScope::Main,
+                panes: None,
+                check: false,
                 overlay: false,
                 launch_id: None,
             })
             .unwrap();
-        assert_eq!(replaced, displays);
+        assert_eq!(replaced.rectangles, displays);
         let after = fs::read_to_string(root.path().join("commands")).unwrap();
         let added = &after[commands.len()..];
         assert!(
@@ -5600,7 +5640,8 @@ printf '[{{"success":true}}]'
         // Placed: the new window's receipt is effect-free again.
         control
             .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
-                displays: super::super::display_placement::SurfaceDisplayScope::Main,
+                panes: None,
+                check: false,
                 overlay: false,
                 launch_id: None,
             })
@@ -7616,7 +7657,8 @@ printf '[{{"success":true}}]'
                 compositor.commands.lock().unwrap().clear();
                 control
                     .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
-                        displays: super::super::display_placement::SurfaceDisplayScope::All,
+                        panes: None,
+                        check: false,
                         overlay,
                         launch_id: overlay.then(|| id.clone()),
                     })
@@ -7627,7 +7669,8 @@ printf '[{{"success":true}}]'
             compositor.commands.lock().unwrap().clear();
             let _ =
                 control.surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
-                    displays: super::super::display_placement::SurfaceDisplayScope::All,
+                    panes: None,
+                    check: false,
                     overlay: true,
                     launch_id: Some("another".into()),
                 });
@@ -7652,7 +7695,8 @@ printf '[{{"success":true}}]'
             compositor.commands.lock().unwrap().clear();
             let _ =
                 control.surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
-                    displays: super::super::display_placement::SurfaceDisplayScope::All,
+                    panes: None,
+                    check: false,
                     overlay: false,
                     launch_id: None,
                 });

@@ -68,8 +68,8 @@ pub fn fixture() -> (Value, Vec<Value>) {
 pub struct FixtureRun {
     pub games: usize,
     pub overlay: bool,
-    /// Displays in `model.displays`; 0 when the model has none.
-    pub displays: usize,
+    /// Windows in `model.windows` (ADR 0086); 0 when the model has none.
+    pub windows: usize,
     pub views: usize,
     pub updates: usize,
     pub requests: usize,
@@ -84,9 +84,10 @@ pub struct Summary {
     pub package_sha256: String,
     pub diagnostics: Vec<String>,
     pub preferences: engine::Declaration,
-    /// `globalThis.surface.displays`; absent when the package left it out.
+    /// `globalThis.surface.panes` and `arrangement` (ADR 0086); absent when
+    /// the package left them out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub displays: Option<engine::Displays>,
+    pub panes: Option<engine::Panes>,
     pub has_overlay: bool,
     pub runs: Vec<FixtureRun>,
     pub max_call_ms: f64,
@@ -150,32 +151,38 @@ struct Sweep<'a> {
     count: usize,
     focused: Option<String>,
     overlay: bool,
-    displays: Option<Value>,
+    windows: Option<Value>,
 }
 
-/// A display list larger than any swept window (A2 8.3): a package must lay
-/// out from `Resized`, never from `displays`.
-fn large_displays() -> Value {
-    json!([
-        {"id": "large", "main": true, "x": 0, "y": 0, "width": 3840, "height": 2160, "touch": false},
-        {"id": "side", "main": false, "x": 3840, "y": 0, "width": 2560, "height": 1440, "touch": false},
-    ])
+/// ADR 0086: the windows korrid gives a package's panes with one display
+/// (all in window 0) and with a display under the main one (one each).
+fn one_window(panes: &engine::Panes) -> Value {
+    json!([{ "panes": panes.panes }])
 }
 
-/// Two 640x480 touch displays, the main one above: the Anbernic RG DS as
-/// Pico's own fixture states it (`packages/pico/test/fixtures/displays.ts`).
-fn two_displays() -> Value {
-    json!([
-        {"id": "top", "main": true, "x": 0, "y": 0, "width": 640, "height": 480, "touch": true},
-        {"id": "bottom", "main": false, "x": 0, "y": 480, "width": 640, "height": 480, "touch": true},
-    ])
+fn window_each(panes: &engine::Panes) -> Value {
+    Value::Array(
+        panes
+            .panes
+            .iter()
+            .map(|pane| json!({ "panes": [pane] }))
+            .collect(),
+    )
 }
 
 impl Sweep<'_> {
+    /// How many windows the model gives the package: 1 without `windows`.
+    fn window_count(&self) -> usize {
+        self.windows
+            .as_ref()
+            .and_then(Value::as_array)
+            .map_or(1, |windows| windows.len().max(1))
+    }
+
     fn model(&self) -> Value {
         let mut model = self.base.clone();
-        if let Some(displays) = &self.displays {
-            model["displays"] = displays.clone();
+        if let Some(windows) = &self.windows {
+            model["windows"] = windows.clone();
         }
         model["catalog"] = catalog::window(self.games, &self.query, &self.from, self.count);
         if let Some(id) = &self.focused {
@@ -202,6 +209,15 @@ impl Checker<'_> {
         view::check(&surface_view, self.surface, &mut self.images).context("view()")?;
         view::check_focus_plan(&surface_view).context("view() focus plan")?;
         self.run.views += 1;
+        // ADR 0086: each further window draws another `Surface`.
+        for window in 1..sweep.window_count() {
+            let pane_view = self.engine.view_window(window as u32)?;
+            view::check(&pane_view, self.surface, &mut self.images)
+                .with_context(|| format!("view(window {window})"))?;
+            view::check_focus_plan(&pane_view)
+                .with_context(|| format!("view(window {window}) focus plan"))?;
+            self.run.views += 1;
+        }
         if sweep.overlay {
             if let (Some(types), Some(overlay)) = (self.overlay, self.engine.overlay()?) {
                 view::check(&overlay, types, &mut self.images).context("overlay()")?;
@@ -304,7 +320,7 @@ fn sweep_one(
     plan: &Plan,
     games: &[Value],
     gameplay_overlay: bool,
-    displays: Option<Value>,
+    windows: Option<Value>,
     peaks: &mut Peaks,
 ) -> Result<FixtureRun> {
     let Plan {
@@ -315,7 +331,7 @@ fn sweep_one(
         limits,
     } = *plan;
     let (base, _) = fixture();
-    let display_count = displays
+    let window_count = windows
         .as_ref()
         .and_then(Value::as_array)
         .map_or(0, Vec::len);
@@ -327,7 +343,7 @@ fn sweep_one(
         count: catalog::DEFAULT_COUNT,
         focused: None,
         overlay: gameplay_overlay,
-        displays,
+        windows,
     };
     let engine = Engine::load(source, limits)?;
     let mut checker = Checker {
@@ -338,7 +354,7 @@ fn sweep_one(
         run: FixtureRun {
             games: games.len(),
             overlay: gameplay_overlay,
-            displays: display_count,
+            windows: window_count,
             views: 0,
             updates: 0,
             requests: 0,
@@ -361,6 +377,9 @@ fn sweep_one(
         every.push(messages::korri_published());
         every.extend([0, 1_000, 60_000, u32::MAX].map(messages::tick));
         every.extend(RESIZED_SIZES.map(|(w, h)| messages::resized(w, h)));
+        for window in 1..sweep.window_count() as u32 {
+            every.extend(RESIZED_SIZES.map(|(w, h)| messages::window_resized(window, w, h)));
+        }
         every.extend(keys.iter().map(|k| messages::preference_stored(k)));
         for message in every {
             checker.deliver(&mut sweep, message)?;
@@ -418,7 +437,7 @@ fn drawn_targets(
         count: catalog::DEFAULT_COUNT,
         focused: None,
         overlay: false,
-        displays: None,
+        windows: None,
     };
     let instance = definition.create()?;
     instance
@@ -464,7 +483,7 @@ pub fn verify(package: &Package, limits: Limits) -> Summary {
         package_sha256: String::new(),
         diagnostics: Vec::new(),
         preferences: engine::Declaration::new(),
-        displays: None,
+        panes: None,
         has_overlay: false,
         runs: Vec::new(),
         max_call_ms: 0.0,
@@ -489,12 +508,12 @@ pub fn verify(package: &Package, limits: Limits) -> Summary {
         let source = package.logic_source()?;
         let probe = Engine::load(&source, limits)?;
         summary.preferences = probe.declaration().clone();
-        summary.displays = probe.displays();
+        summary.panes = probe.panes().cloned();
         summary.has_overlay = probe.has_overlay();
         if probe.has_overlay() != views.overlay.is_some() {
             bail!("surface.overlay and the exported Overlay component must come together");
         }
-        let displays = probe.displays();
+        let panes = probe.panes().cloned();
         drop(probe);
         let (_, examples) = fixture();
         let plan = Plan {
@@ -510,26 +529,15 @@ pub fn verify(package: &Package, limits: Limits) -> Summary {
                 .runs
                 .push(sweep_one(&plan, &games, false, None, &mut peaks)?);
         }
-        if displays == Some(engine::Displays::All) {
-            // korrid publishes `model.displays` only to an "all" surface.
-            let games = catalog::games(&examples, 12);
-            summary.runs.push(sweep_one(
-                &plan,
-                &games,
-                false,
-                Some(two_displays()),
-                &mut peaks,
-            )?);
-        }
-        {
-            let games = catalog::games(&examples, 12);
-            summary.runs.push(sweep_one(
-                &plan,
-                &games,
-                false,
-                Some(large_displays()),
-                &mut peaks,
-            )?);
+        if let Some(panes) = &panes {
+            // korrid publishes `model.windows` only to a package with panes:
+            // swept with every pane in one window, and with one window each.
+            for windows in [one_window(panes), window_each(panes)] {
+                let games = catalog::games(&examples, 12);
+                summary
+                    .runs
+                    .push(sweep_one(&plan, &games, false, Some(windows), &mut peaks)?);
+            }
         }
         if overlay.is_some() {
             let games = catalog::games(&examples, 12);
@@ -782,7 +790,7 @@ mod tests {
                     count: catalog::DEFAULT_COUNT,
                     focused: Some("celeste".into()),
                     overlay,
-                    displays: None,
+                    windows: Some(json!([{ "panes": ["stage"] }, { "panes": ["floor"] }])),
                 };
                 let model = sweep.model();
                 if let Err(error) =
@@ -802,10 +810,9 @@ mod tests {
         assert!(summary.pass, "{:?}", summary.reasons);
         assert_eq!(
             summary.runs.iter().map(|r| r.games).collect::<Vec<_>>(),
-            vec![0, 12, 10_000, 12]
+            vec![0, 12, 10_000]
         );
-        // The last run lays out under a display list larger than the window.
-        assert_eq!(summary.runs[3].displays, 2);
+        assert!(summary.runs.iter().all(|r| r.windows == 0));
         assert!(summary
             .runs
             .iter()
@@ -819,36 +826,48 @@ mod tests {
         );
     }
 
+    /// ADR 0086: a package with panes is swept with them in one window and
+    /// with one window each, and every window's view is checked.
     #[test]
-    fn displays_must_be_main_all_or_absent_and_all_is_swept_with_two_displays() {
-        let body = "return { count: (model.displays ?? []).length }";
-        let with = |displays: &str| {
+    fn panes_are_swept_in_one_window_and_in_one_window_each() {
+        let body = "return { count: (model.windows ?? []).length * 10 + (w ?? 0) }";
+        let with = |panes: &str| {
             let root = tempfile::tempdir().unwrap();
-            let source = logic(body).replacen(
-                "globalThis.surface = {",
-                &format!("globalThis.surface = {{ displays: {displays},"),
-                1,
-            );
+            let source = logic(body)
+                .replacen(
+                    "globalThis.surface = {",
+                    &format!("globalThis.surface = {{ {panes}"),
+                    1,
+                )
+                .replace("view: (s, model) =>", "view: (s, model, w) =>");
             verify(
                 &planted(&root.path().join("demo"), VIEW, &source),
                 Limits::default(),
             )
         };
-        let all = with("'all'");
-        assert!(all.pass, "{:?}", all.reasons);
-        assert_eq!(all.displays, Some(engine::Displays::All));
+        let split = with(r#"panes: ["stage", "floor"], arrangement: "upper-above-lower","#);
+        assert!(split.pass, "{:?}", split.reasons);
         assert_eq!(
-            all.runs.iter().map(|r| r.displays).collect::<Vec<_>>(),
-            vec![0, 0, 0, 2, 2]
+            split.panes.as_ref().map(|p| p.panes.clone()),
+            Some(vec!["stage".to_owned(), "floor".to_owned()])
         );
-        let main = with("'main'");
-        assert!(main.pass && main.displays == Some(engine::Displays::Main));
-        assert_eq!(main.runs.len(), 4);
-        for wrong in ["'both'", "true", "null"] {
+        assert_eq!(
+            split.runs.iter().map(|r| r.windows).collect::<Vec<_>>(),
+            vec![0, 0, 0, 1, 2]
+        );
+        // Two windows draw twice as many views as one.
+        assert!(split.runs[4].views > split.runs[3].views);
+        let none = with("");
+        assert!(none.pass && none.panes.is_none());
+        assert_eq!(none.runs.len(), 3);
+        for wrong in [
+            r#"panes: ["stage"], arrangement: "upper-above-lower","#,
+            r#"panes: ["stage", "floor"], arrangement: "beside","#,
+        ] {
             let summary = with(wrong);
             assert!(!summary.pass, "{wrong}");
             assert!(
-                summary.reasons.join(" ").contains("displays"),
+                summary.reasons.join(" ").contains("panes"),
                 "{wrong}: {:?}",
                 summary.reasons
             );

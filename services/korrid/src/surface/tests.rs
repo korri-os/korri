@@ -1795,12 +1795,12 @@ async fn a_second_declare_places_the_new_window_and_keeps_preferences() {
         )]
         .into()
     };
-    let window = |id: &str| json!({ "_tag": "Ok", "payload": [{ "id": id, "main": true, "x": 0, "y": 0, "width": 640, "height": 480, "touch": false }] });
+    let window = |id: &str| json!({ "_tag": "Ok", "payload": [{ "panes": [id] }] });
     let shown = |hub: &Arc<SurfaceHub>| {
-        hub.model("zone").unwrap().displays.map(|displays| {
-            displays
+        hub.model("zone").unwrap().windows.map(|windows| {
+            windows
                 .into_iter()
-                .map(|display| display.id)
+                .flat_map(|window| window.panes)
                 .collect::<Vec<_>>()
         })
     };
@@ -1810,12 +1810,8 @@ async fn a_second_declare_places_the_new_window_and_keeps_preferences() {
         let mut outcomes = idle_outcomes(1);
         outcomes.insert("app.surface.displays".into(), first.clone());
         let (hub, outcomes, _directory) = hub_with(outcomes);
-        hub.declare(
-            "zone",
-            declarations(),
-            korri_surface_treaty::SurfacePackageDisplays::All,
-        )
-        .unwrap();
+        hub.declare("zone", declarations(), Some(stage_and_floor()))
+            .unwrap();
         hub.request(
             "zone",
             SurfaceRequest::RememberPreference {
@@ -1836,12 +1832,8 @@ async fn a_second_declare_places_the_new_window_and_keeps_preferences() {
             .lock()
             .unwrap()
             .insert("app.surface.displays".into(), window("new-window"));
-        hub.declare(
-            "zone",
-            declarations(),
-            korri_surface_treaty::SurfacePackageDisplays::All,
-        )
-        .unwrap();
+        hub.declare("zone", declarations(), Some(stage_and_floor()))
+            .unwrap();
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert_eq!(
             shown(&hub),
@@ -3329,38 +3321,53 @@ async fn native_input_reports_controllers() {
     assert!(link.controllers.snapshot().is_empty());
 }
 
-/// Port of `SurfaceRoot.displays.test.tsx`: a package that draws on all
-/// displays gets korrid's display facts; one on the main display gets none.
+/// The panes a test package declares (ADR 0086).
+fn stage_and_floor() -> korri_surface_treaty::SurfacePackagePanes {
+    korri_surface_treaty::SurfacePackagePanes {
+        panes: vec!["stage".into(), "floor".into()],
+        arrangement: "upper-above-lower".into(),
+    }
+}
+
+/// ADR 0086: a package that declared panes gets the windows korrid gave
+/// them; one without panes gets none, whatever placement answered.
 #[tokio::test]
-async fn displays_follow_the_declared_scope() {
-    use korri_surface_treaty::SurfacePackageDisplays;
+async fn windows_follow_the_declared_panes() {
     let mut outcomes = idle_outcomes(1);
     outcomes.insert(
         "app.surface.displays".into(),
-        json!({ "_tag": "Ok", "payload": [
-            { "id": "DSI-1", "main": true, "x": 0, "y": 0, "width": 1080, "height": 1240, "touch": true },
-            { "id": "DP-1", "main": false, "x": 1080, "y": 0, "width": 1920, "height": 1080, "touch": false }
-        ] }),
+        json!({ "_tag": "Ok", "payload": [{ "panes": ["stage"] }, { "panes": ["floor"] }] }),
     );
     let (hub, _, _directory) = hub_with(outcomes);
-    settled(&hub, "pico").await;
-    hub.declare("pico", HashMap::new(), SurfacePackageDisplays::All)
+    settled(&hub, "velvet").await;
+    hub.declare("velvet", HashMap::new(), Some(stage_and_floor()))
         .unwrap();
-    let mut displays = None;
+    let mut windows = None;
     for _ in 0..100 {
-        displays = hub.model("pico").unwrap().displays;
-        if displays.is_some() {
+        windows = hub.model("velvet").unwrap().windows;
+        if windows.is_some() {
             break;
         }
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
-    let displays = displays.expect("pico gets the display facts");
-    assert_eq!(displays.len(), 2);
-    assert_eq!((displays[1].x, displays[1].width), (1080.0, 1920.0));
-    hub.declare("zone", HashMap::new(), SurfacePackageDisplays::Main)
-        .unwrap();
+    let windows = windows.expect("velvet gets its windows");
+    assert_eq!(windows.len(), 2);
+    assert_eq!(windows[1].panes, vec!["floor".to_owned()]);
+    hub.declare("zone", HashMap::new(), None).unwrap();
     tokio::time::sleep(Duration::from_millis(20)).await;
-    assert!(hub.model("zone").unwrap().displays.is_none());
+    assert!(hub.model("zone").unwrap().windows.is_none());
+}
+
+/// A declaration with panes korrid cannot place is refused.
+#[tokio::test]
+async fn panes_korrid_cannot_place_are_refused() {
+    let (hub, _, _directory) = hub_with(idle_outcomes(1));
+    let mut panes = stage_and_floor();
+    panes.arrangement = "side-by-side".into();
+    let refusal = hub
+        .declare("velvet", HashMap::new(), Some(panes))
+        .unwrap_err();
+    assert_eq!(refusal.code, "InvalidPanes");
 }
 
 mod runner_chooser {
@@ -5353,19 +5360,22 @@ mod placement {
     use super::acquisition_gate::{push, scripted};
     use super::*;
     use crate::surface::{placement::backoff, root::Root};
-    use korri_surface_treaty::SurfacePackageDisplays;
 
     const DISPLAYS: &str = "app.surface.displays";
 
     fn placed(id: &str) -> Value {
-        json!({ "_tag": "Ok", "payload": [{ "id": id, "main": true, "x": 0, "y": 0, "width": 640, "height": 480, "touch": false }] })
+        json!({ "_tag": "Ok", "payload": [{ "panes": [id] }] })
     }
     fn no_window() -> Value {
         json!({ "_tag": "Err", "payload": { "code": "SurfacePlacementFailed", "message": "no unique shell window" } })
     }
     fn shown(root: &Root) -> Option<Vec<String>> {
-        root.display_facts()
-            .map(|facts| facts.into_iter().map(|display| display.id).collect())
+        root.windows().map(|windows| {
+            windows
+                .into_iter()
+                .flat_map(|window| window.panes)
+                .collect()
+        })
     }
     async fn settle() {
         for _ in 0..20 {
@@ -5380,7 +5390,7 @@ mod placement {
         push(&script, DISPLAYS, no_window());
         push(&script, DISPLAYS, placed("DSI-1"));
         let root = Root::new(korrid, Arc::new(|| {}), Arc::default());
-        root.show_package(SurfacePackageDisplays::All);
+        root.show_package(Some(super::stage_and_floor()));
         settle().await;
         assert_eq!(shown(&root), None);
         // The next presentation change or window event comes inside the
@@ -5432,12 +5442,12 @@ mod placement {
         push(&script, DISPLAYS, no_window());
         push(&script, DISPLAYS, placed("DSI-2"));
         let root = Root::new(korrid, Arc::new(|| {}), Arc::default());
-        root.show_package(SurfacePackageDisplays::All);
+        root.show_package(Some(super::stage_and_floor()));
         settle().await;
         assert_eq!(shown(&root), None);
         // The shell declares again once its window has mapped: placed at
         // once, inside the failure's backoff.
-        root.show_package(SurfacePackageDisplays::All);
+        root.show_package(Some(super::stage_and_floor()));
         settle().await;
         let calls: Vec<Value> = script
             .lock()
@@ -5448,8 +5458,60 @@ mod placement {
             .map(|(_, payload)| payload.clone())
             .collect();
         assert_eq!(calls.len(), 2);
-        assert_eq!(calls[1]["displays"], json!("all"));
+        assert_eq!(calls[1]["panes"]["panes"], json!(["stage", "floor"]));
         assert_eq!(shown(&root), Some(vec!["DSI-2".to_owned()]));
+    }
+
+    /// ADR 0086: a display that appears under the main one, or goes, gives
+    /// the panes other windows. korrid notices it with an effect-free check
+    /// each second and places the surface again; the checks place nothing.
+    #[tokio::test(start_paused = true)]
+    async fn a_display_under_the_main_one_places_the_panes_again() {
+        let (korrid, script) = scripted();
+        let one = json!({ "_tag": "Ok", "payload": [{ "panes": ["stage", "floor"] }] });
+        let two =
+            json!({ "_tag": "Ok", "payload": [{ "panes": ["stage"] }, { "panes": ["floor"] }] });
+        push(&script, DISPLAYS, one.clone());
+        push(&script, DISPLAYS, one.clone());
+        push(&script, DISPLAYS, two.clone());
+        let root = Root::new(korrid, Arc::new(|| {}), Arc::default());
+        root.show_package(Some(super::stage_and_floor()));
+        settle().await;
+        let count = |root: &Root| root.windows().map(|windows| windows.len());
+        assert_eq!(count(&root), Some(1));
+        // The first check finds the same windows: nothing more.
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        settle().await;
+        assert_eq!(count(&root), Some(1));
+        // The next finds a display under the main one: placed again.
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        settle().await;
+        assert_eq!(count(&root), Some(2));
+        let calls: Vec<Value> = script
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .filter(|(tag, _)| tag == DISPLAYS)
+            .map(|(_, payload)| payload.clone())
+            .collect();
+        let checks: Vec<bool> = calls
+            .iter()
+            .map(|call| call["check"] == json!(true))
+            .collect();
+        assert_eq!(&checks[..4], &[false, true, true, false], "{calls:?}");
+        // A package without panes stops the watch.
+        root.show_package(None);
+        settle().await;
+        let before = script.lock().unwrap().calls.len();
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        settle().await;
+        let checks_after = script.lock().unwrap().calls[before..]
+            .iter()
+            .filter(|(tag, payload)| tag == DISPLAYS && payload["check"] == json!(true))
+            .count();
+        assert!(checks_after <= 1, "{checks_after}");
+        assert_eq!(root.windows(), None);
     }
 
     #[tokio::test]
@@ -5463,9 +5525,9 @@ mod placement {
         push(&script, DISPLAYS, placed("old-window"));
         push(&script, DISPLAYS, placed("new-window"));
         let root = Root::new(korrid, Arc::new(|| {}), Arc::default());
-        root.show_package(SurfacePackageDisplays::All);
+        root.show_package(Some(super::stage_and_floor()));
         tokio::task::yield_now().await;
-        root.show_package(SurfacePackageDisplays::All);
+        root.show_package(Some(super::stage_and_floor()));
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert_eq!(shown(&root), Some(vec!["new-window".to_owned()]));
     }

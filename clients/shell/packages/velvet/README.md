@@ -87,7 +87,16 @@ shell, `VELVET_FRAMES` (below) through the test harness.
 - `preferences`: `velvet.motion`, mark `device`, `full` or `reduced`; stored
   with `RememberPreference` from Settings › Velvet › Motion. Reduced lands
   every change at once (`Tokens.still`) and the stage never drifts.
-  `displays: "main"`.
+- Panes (ADR 0086): `panes: ["stage", "floor"]`, `arrangement:
+  "upper-above-lower"`. In one window (`model.windows` with one entry)
+  Velvet draws the whole house as it always has. When korrid gives each
+  pane a window, `view(state, model, 0)` draws the Stage (the pick, the
+  detail, Korri's status, or the game the Floor's focus is on) and
+  `view(state, model, 1)` the Floor (home's row and lobby, sets, list pages,
+  sheets, the keyboard), sized by its own `Resized { window: 1 }`. One focus
+  moves across both; the window without it draws its page inert
+  (`elsewhere`). The Floor's stage light is the Stage's under `FLOOR_VEIL`.
+  `src/view.ts` (`stageWindow`, `floorWindow`) and `test/panes.test.ts`.
 - One catalog window. Home needs several lists and has one window and one
   query at a time. `src/lists.ts` asks one after another, one question an
   update: `recent` from the start, `mostPlayed`, `recent` from the end,

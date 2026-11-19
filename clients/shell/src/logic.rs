@@ -15,7 +15,7 @@
 //! a surface.
 
 use crate::{
-    engine::{Declaration, Displays, Engine, Limits, Violation},
+    engine::{Declaration, Engine, Limits, Panes, Violation},
     messages,
     view::{Diff, Differ},
 };
@@ -60,6 +60,13 @@ pub struct Step {
     pub overlay: Option<(Value, Diff)>,
     /// Whether the model asks for the gameplay overlay (after a `Model` call).
     pub gameplay_overlay: Option<bool>,
+    /// ADR 0086: the panes each window holds (after a `Model` call), from
+    /// `SurfaceModel.windows`; one window when the model has none.
+    pub windows: Option<Vec<Vec<String>>>,
+    /// `view(state, model, window)` of each further window, by index from 1,
+    /// when the views were drawn again, and how each differs from that
+    /// window's view before.
+    pub panes: Vec<(u32, Value, Diff)>,
     /// Selected-clock time of the call on the logic thread.
     pub took: Duration,
     /// The message's `_tag` (`KorriPublished` for a model).
@@ -83,6 +90,10 @@ pub struct Worker {
     gameplay: bool,
     views: Differ,
     overlays: Differ,
+    /// How many windows the last model gave the package (ADR 0086).
+    windows: usize,
+    /// The diff state of windows 1.. (index - 1).
+    panes: Vec<Differ>,
 }
 
 impl Worker {
@@ -106,6 +117,27 @@ impl Worker {
         self.overlays = Differ::default();
     }
 
+    /// Take the windows of a model (ADR 0086). A window that is new, or
+    /// comes back, starts its diff from no view.
+    pub fn set_windows(&mut self, windows: &[Vec<String>]) {
+        self.windows = windows.len().max(1);
+        self.panes.truncate(self.windows - 1);
+        while self.panes.len() < self.windows - 1 {
+            self.panes.push(Differ::default());
+        }
+    }
+
+    /// `view(state, model, window)` of each further window, with its diff.
+    pub fn pane_views(&mut self) -> Result<Vec<(u32, Value, Diff)>, Violation> {
+        let mut views = Vec::new();
+        for window in 1..self.windows {
+            let view = self.engine.view_window(window as u32)?;
+            let diff = self.panes[window - 1].next(&view);
+            views.push((window as u32, view, diff));
+        }
+        Ok(views)
+    }
+
     fn run(&mut self, call: Call) -> Outcome {
         let started = self.engine.limits().clock.start();
         self.engine.take_slowest();
@@ -120,13 +152,21 @@ impl Worker {
         let (revision, result) = match call {
             Call::Message(message) => (None, self.step(&message, None)),
             Call::Model { model, revision } => {
-                let gameplay = serde_json::from_str::<Value>(&model)
-                    .map(|m| messages::is_gameplay_overlay(&m))
-                    .unwrap_or(false);
+                let parsed = serde_json::from_str::<Value>(&model).ok();
+                let gameplay = parsed.as_ref().is_some_and(messages::is_gameplay_overlay);
+                let windows = parsed
+                    .as_ref()
+                    .map(messages::windows)
+                    .unwrap_or_else(|| vec![Vec::new()]);
+                self.set_windows(&windows);
                 let result = self
                     .engine
                     .set_model(&model)
-                    .and_then(|()| self.step(&messages::korri_published(), Some(gameplay)));
+                    .and_then(|()| self.step(&messages::korri_published(), Some(gameplay)))
+                    .map(|mut step| {
+                        step.windows = Some(windows);
+                        step
+                    });
                 (revision, result)
             }
         };
@@ -146,7 +186,7 @@ impl Worker {
             self.gameplay = gameplay;
         }
         let requests = self.engine.update(message)?;
-        let (mut view, mut overlay) = (None, None);
+        let (mut view, mut overlay, mut panes) = (None, None, Vec::new());
         if self.engine.view_stale() {
             self.engine.views_drawn();
             let next = self.engine.view()?;
@@ -159,6 +199,7 @@ impl Worker {
                 );
             }
             view = Some((next.clone(), diff));
+            panes = self.pane_views()?;
             if self.gameplay && self.engine.has_overlay() {
                 overlay = self
                     .engine
@@ -173,6 +214,8 @@ impl Worker {
             view,
             overlay,
             gameplay_overlay: gameplay,
+            windows: None,
+            panes,
             took: Duration::ZERO,
             message: String::new(),
             slowest: None,
@@ -186,7 +229,7 @@ pub struct Logic {
     stop: Arc<AtomicBool>,
     thread: Option<thread::JoinHandle<()>>,
     declaration: Declaration,
-    displays: Option<Displays>,
+    panes: Option<Panes>,
     has_overlay: bool,
     heap: Arc<AtomicUsize>,
     /// Calls not sent yet; the next goes once the running one has returned.
@@ -217,7 +260,7 @@ impl Logic {
                 };
                 let _ = loaded_tx.send(Ok((
                     engine.declaration().clone(),
-                    engine.displays(),
+                    engine.panes().cloned(),
                     engine.has_overlay(),
                 )));
                 let mut worker = Worker {
@@ -225,6 +268,8 @@ impl Logic {
                     gameplay: false,
                     views: Differ::default(),
                     overlays: Differ::default(),
+                    windows: 1,
+                    panes: Vec::new(),
                 };
                 for job in receiver {
                     job(&mut worker);
@@ -235,7 +280,7 @@ impl Logic {
                 call: "load",
                 message: e.to_string(),
             })?;
-        let (declaration, displays, has_overlay) =
+        let (declaration, panes, has_overlay) =
             loaded_rx.recv().map_err(|_| Violation::Exception {
                 call: "load",
                 message: "the logic thread ended".into(),
@@ -245,7 +290,7 @@ impl Logic {
             stop,
             thread: Some(thread),
             declaration,
-            displays,
+            panes,
             has_overlay,
             heap,
             waiting: VecDeque::new(),
@@ -257,8 +302,9 @@ impl Logic {
         &self.declaration
     }
 
-    pub fn displays(&self) -> Option<Displays> {
-        self.displays
+    /// The package's panes (ADR 0086), as declared.
+    pub fn panes(&self) -> Option<&Panes> {
+        self.panes.as_ref()
     }
 
     pub fn has_overlay(&self) -> bool {

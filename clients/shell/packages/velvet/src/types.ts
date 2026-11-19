@@ -312,7 +312,10 @@ export interface OverlayState {
 }
 
 export interface State {
+  /** The size of window 0: the Stage's, and the Floor's too while they share it. */
   readonly size: { readonly width: number; readonly height: number }
+  /** ADR 0086: the size of the Floor's own window, while korrid gives it one. */
+  readonly floor?: { readonly width: number; readonly height: number }
   /** Reduced motion (the velvet.motion preference). */
   readonly still: boolean
   /** A tap or a drag came last, not a button (ADR 0055). */

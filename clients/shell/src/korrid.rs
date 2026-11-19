@@ -122,11 +122,11 @@ impl Korrid {
         &self,
         surface: &str,
         preferences: &Value,
-        displays: Option<crate::engine::Displays>,
+        panes: Option<&crate::engine::Panes>,
     ) -> Result<()> {
         let mut payload = json!({"surfaceId": surface, "preferences": preferences});
-        if let Some(displays) = displays {
-            payload["displays"] = json!(displays);
+        if let Some(panes) = panes {
+            payload["panes"] = json!(panes);
         }
         self.call("app.surface.declare", payload)?;
         Ok(())
