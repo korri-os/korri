@@ -5456,8 +5456,6 @@ fn surface_accepted(result: Result<(), RpcFailure>) -> surface::SurfaceAcceptedO
     }
 }
 
-/// The native surface host for one surface host router. It reaches korrid the
-/// way a surface host call does: the same typed requests, under the same capability and
 /// ADR 0083: the Steam engine runner's facts for the surface's sign-in
 /// model, read in process from the route registry and the artifact cache.
 struct SteamEngineFacts {
@@ -5708,6 +5706,8 @@ impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
     }
 }
 
+/// The native surface host for one surface host router. It reaches korrid the
+/// way a surface host call does: the same typed requests, under the same capability and
 /// permission, handed to `dispatch` in process.
 fn surface_hub_for(
     surface_host: &AppState,
