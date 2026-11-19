@@ -382,6 +382,9 @@ mod live_shape;
 pub struct UpstreamRegistry {
     live_shape: Arc<Mutex<Option<live_shape::ClientShape>>>,
     last_stream_play_end: Arc<Mutex<Option<crate::stream_play::StreamPlayEnded>>>,
+    /// The person's notice of a viewer that lost its link (#544), until the
+    /// selected-session watch shows it (`take_link_lost_notice`).
+    link_lost_notice: Arc<Mutex<Option<String>>>,
     hosts: Vec<RegisteredHost>,
     credentials: Option<PeerCredentials>,
     directory: Option<crate::federation::FederationDirectory>,
@@ -484,6 +487,7 @@ impl UpstreamRegistry {
             .collect();
         Self {
             last_stream_play_end: Arc::new(Mutex::new(None)),
+            link_lost_notice: Arc::new(Mutex::new(None)),
             hosts,
             credentials,
             directory: None,
@@ -535,6 +539,7 @@ impl UpstreamRegistry {
             Ok(registry) => registry,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Self {
                 last_stream_play_end: Arc::new(Mutex::new(None)),
+                link_lost_notice: Arc::new(Mutex::new(None)),
                 hosts: vec![],
                 credentials: credentials.clone(),
                 directory: None,
@@ -647,6 +652,7 @@ impl UpstreamRegistry {
     fn invalid_configuration(message: String) -> Self {
         Self {
             last_stream_play_end: Arc::new(Mutex::new(None)),
+            link_lost_notice: Arc::new(Mutex::new(None)),
             hosts: vec![],
             credentials: None,
             directory: None,
@@ -681,6 +687,7 @@ impl UpstreamRegistry {
         registry.directory = Some(directory.clone());
         registry.credentials = self.credentials.clone();
         registry.last_stream_play_end = self.last_stream_play_end.clone();
+        registry.link_lost_notice = self.link_lost_notice.clone();
         registry.selected_remote_session = self.selected_remote_session.clone();
         registry.remote_prepare_mutation = self.remote_prepare_mutation.clone();
         registry.viewer = self.viewer.clone();
@@ -763,6 +770,7 @@ impl UpstreamRegistry {
                 // The deferred file is static configuration only. Selection and
                 // mutation ordering belong to the runtime, not a rebuilt registry.
                 registry.last_stream_play_end = self.last_stream_play_end.clone();
+                registry.link_lost_notice = self.link_lost_notice.clone();
                 registry.selected_remote_session = self.selected_remote_session.clone();
                 registry.remote_prepare_mutation = self.remote_prepare_mutation.clone();
                 registry.viewer = self.viewer.clone();
@@ -1275,6 +1283,15 @@ impl UpstreamRegistry {
             }
             Ok(LinuxViewerStatus::Running | LinuxViewerStatus::Backgrounded) => Ok(()),
             Ok(LinuxViewerStatus::Stopped) => {
+                // The viewer ended its stream because the video and sound
+                // stopped (#544). The holder still runs the game: end this
+                // viewer as Disconnect does, keep the selection for a
+                // resume, and tell the person. No start: reconnecting is
+                // the stream controller's (ADR 0088).
+                if let Some(lost) = self.viewer.take_link_lost(&selected.launch_id).await {
+                    self.link_lost(selected, &lost);
+                    return Ok(());
+                }
                 // Prepare this peer again before the viewer starts.
                 let mut address = viewer.moonlight_address.clone();
                 if let SelectedRemoteRoute::Native { device_public_key } = &selected.route {
@@ -1323,6 +1340,44 @@ impl UpstreamRegistry {
                 ))
             }
         }
+    }
+
+    /// The selected launch's viewer lost its link: the viewer is ended, as
+    /// after Disconnect, and the person's notice waits for the watch.
+    fn link_lost(
+        &self,
+        selected: &SelectedRemoteSession,
+        lost: &korri_viewer_treaty::ViewerLinkLost,
+    ) {
+        let holder = match &selected.route {
+            SelectedRemoteRoute::Native { device_public_key } => self
+                .native_host_by_route_key(device_public_key)
+                .map(|host| host.label.clone()),
+            SelectedRemoteRoute::Legacy { label } => Some(label.clone()),
+        };
+        eprintln!(
+            "korrid: launch {} lost the link to {}: {lost:?}",
+            selected.launch_id,
+            holder.as_deref().unwrap_or("its holder")
+        );
+        if let Some(reach) = selected.viewer.as_ref().and_then(|v| v.reach.as_ref()) {
+            reach.release();
+        }
+        self.set_viewer_target(selected, LinuxViewerStatus::Stopped);
+        self.set_viewer_confirmed(selected, false);
+        *self
+            .link_lost_notice
+            .lock()
+            .expect("link lost notice mutex poisoned") =
+            Some(link_lost_notice(holder.as_deref(), lost));
+    }
+
+    /// The notice of a viewer that lost its link, once.
+    pub(crate) fn take_link_lost_notice(&self) -> Option<String> {
+        self.link_lost_notice
+            .lock()
+            .expect("link lost notice mutex poisoned")
+            .take()
     }
 
     async fn ensure_remote_prepare_available(&self) -> Result<(), UpstreamError> {
@@ -2205,6 +2260,19 @@ impl UpstreamRegistry {
             .iter()
             .find(|host| matches!(&host.client, RegisteredClient::Legacy(_)))
     }
+}
+
+/// What the person reads when the viewer lost its link (#544): which device,
+/// how long nothing came, and that the game still runs there.
+fn link_lost_notice(holder: Option<&str>, lost: &korri_viewer_treaty::ViewerLinkLost) -> String {
+    let last = lost
+        .audio_last_ms
+        .map_or(lost.video_last_ms, |audio| audio.max(lost.video_last_ms));
+    let seconds = ((lost.detected_ms - last) / 1000.0).max(0.0);
+    format!(
+        "Lost the link to {}: no picture or sound for {seconds:.1} s. The game still runs there.",
+        holder.unwrap_or("the streaming device")
+    )
 }
 
 fn viewer_error(code: &'static str, message: impl Into<String>) -> UpstreamError {
@@ -4309,8 +4377,10 @@ command = ["native-game"]
             holder.end_with(code);
             let notices = Arc::new(std::sync::Mutex::new(Vec::new()));
             let observed = notices.clone();
-            let watch = crate::stream_play::device::spawn_watch(registry.clone(), move |message| {
-                observed.lock().unwrap().push(message);
+            let watch = crate::stream_play::device::spawn_watch(registry.clone(), move |notice| {
+                if let crate::stream_play::device::SessionNotice::Failed(message) = notice {
+                    observed.lock().unwrap().push(message);
+                }
             });
             tokio::time::timeout(Duration::from_secs(3), async {
                 while registry.has_selected_session() {
@@ -4576,6 +4646,71 @@ command = ["native-game"]
             state.active_phase.lock().unwrap().as_deref(),
             Some("running")
         );
+    }
+
+    // #544: the viewer ended its stream because the video and sound stopped.
+    // The holder still runs the game: korrid does not start the viewer again,
+    // keeps the selection, tells the person once, and starts the viewer when
+    // the person resumes.
+    #[tokio::test]
+    async fn a_viewer_that_lost_its_link_ends_with_one_notice_and_resumes_on_request() {
+        let (native_url, state) = exact_native_server(false).await;
+        let viewer = TestLinuxStreamViewer::default();
+        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
+            .with_linux_viewer(Arc::new(viewer.clone()));
+        let prepared = registry.prepare_stream("game", None).await.unwrap();
+        let launch = prepared.session.launch_id;
+        let starts = || {
+            viewer
+                .calls()
+                .iter()
+                .filter(|c| c.action == LinuxViewerAction::Start)
+                .count()
+        };
+        assert_eq!(starts(), 1);
+        viewer.lose_link(
+            &launch,
+            korri_viewer_treaty::ViewerLinkLost {
+                video_last_ms: 1000.0,
+                audio_last_ms: Some(1004.0),
+                detected_ms: 2604.0,
+            },
+        );
+        let notices = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let observed = notices.clone();
+        let watch = crate::stream_play::device::spawn_watch(registry.clone(), move |notice| {
+            observed.lock().unwrap().push(notice);
+        });
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while notices.lock().unwrap().is_empty() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        // Later observations add nothing.
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        watch.abort();
+        assert_eq!(
+            *notices.lock().unwrap(),
+            [crate::stream_play::device::SessionNotice::LinkLost(
+                "Lost the link to zao: no picture or sound for 1.6 s. The game still runs there."
+                    .into()
+            )]
+        );
+        for _ in 0..3 {
+            let status = registry.session_status().await.unwrap();
+            assert_eq!(active_session(&status).unwrap().launch_id, launch);
+        }
+        assert_eq!(starts(), 1, "korrid started the viewer again");
+        assert!(registry.has_selected_session());
+        assert_eq!(
+            state.active_phase.lock().unwrap().as_deref(),
+            Some("running")
+        );
+        registry.session_resume_live(Some(&launch)).await.unwrap();
+        assert_eq!(starts(), 2);
+        assert_eq!(viewer.calls().last().unwrap().launch_id, launch);
     }
 
     #[tokio::test]

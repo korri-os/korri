@@ -232,9 +232,13 @@ impl SurfaceHub {
     }
 
     /// The selected-session watch can finish while the viewer covers the shell.
-    pub(crate) fn session_failed(&self, message: String) {
+    pub(crate) fn session_notice(&self, notice: crate::stream_play::device::SessionNotice) {
+        use crate::stream_play::device::SessionNotice;
         if let Some(root) = self.root.get() {
-            root.session_failed(message);
+            match notice {
+                SessionNotice::Failed(message) => root.session_failed(message),
+                SessionNotice::LinkLost(message) => root.link_lost(message),
+            }
         }
     }
 

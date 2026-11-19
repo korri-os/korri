@@ -190,6 +190,10 @@ struct Shared {
     /// The controls of the snapshot that korrid last read, as the treaty's
     /// JSON, so that the log names each change but not each reading.
     reported_controls: Mutex<Option<(String, String)>>,
+    /// The launch whose runtime reported a link loss (#544), and the loss,
+    /// until korrid takes it (`take_link_lost`). Only the lifecycle's event
+    /// function and korrid's workers touch it.
+    link_lost: Arc<Mutex<Option<(String, korri_viewer_treaty::ViewerLinkLost)>>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -263,6 +267,7 @@ pub fn adapter(keydir: PathBuf, pins: PathBuf) -> Arc<Adapter> {
                     changed: Arc::new(tokio::sync::Notify::new()),
                     reported: Mutex::new(None),
                     reported_controls: Mutex::new(None),
+                    link_lost: Arc::new(Mutex::new(None)),
                 })
             });
             Arc::new(Adapter(shared.clone()))
@@ -381,6 +386,20 @@ impl LinuxStreamViewer for Adapter {
         Some(self.0.changed.clone())
     }
 
+    fn take_link_lost<'a>(
+        &'a self,
+        launch: &'a str,
+    ) -> BoxFuture<'a, Option<korri_viewer_treaty::ViewerLinkLost>> {
+        Box::pin(async move {
+            let mut lost = lock(&self.0.link_lost);
+            if lost.as_ref().is_some_and(|(of, _)| of == launch) {
+                lost.take().map(|(_, lost)| lost)
+            } else {
+                None
+            }
+        })
+    }
+
     /// The viewer's screen for korrid's prepare, as Artemis's
     /// `viewerDisplay` gave it (#509 item 4): a holder with display
     /// authority shapes its display to it, so the stream starts in the
@@ -432,8 +451,15 @@ impl LinuxStreamViewer for Adapter {
                 options.network_core = kind;
             }
             let changed = self.0.changed.clone();
+            // A loss of an earlier launch is not this launch's.
+            *lock(&self.0.link_lost) = None;
+            let link_lost = self.0.link_lost.clone();
+            let losing = launch.to_owned();
             let lifecycle = Lifecycle::in_process(launch, move |event| {
                 logcat::info(&format!("korri-app: viewer event {}", json(event)));
+                if let korri_viewer_treaty::ViewerEvent::LinkLost(lost) = event {
+                    *lock(&link_lost) = Some((losing.clone(), lost.clone()));
+                }
                 changed.notify_one();
             })
             .map_err(|cause| error(format!("{cause:#}")))?;

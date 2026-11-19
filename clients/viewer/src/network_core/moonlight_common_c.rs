@@ -164,4 +164,9 @@ impl NetworkCore for MoonlightCommonC {
         // SAFETY: no preconditions.
         unsafe { ffi::LiGetPendingAudioDuration() }
     }
+
+    /// The C core is the fallback core: its stream is not watched (#544).
+    fn received(&self) -> Option<crate::link_watch::Received> {
+        None
+    }
 }

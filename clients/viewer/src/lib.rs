@@ -11,6 +11,8 @@ mod frame_record;
 #[cfg(not(target_os = "android"))]
 mod frame_times;
 pub mod launch;
+// A sender that stops in the middle of a stream (#544).
+pub mod link_watch;
 mod log;
 // The start's timeline (#391); the Android app marks its own steps with it.
 pub mod marks;

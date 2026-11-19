@@ -979,6 +979,76 @@ fn in_process_controller_gets_the_socket_replies_and_events_without_a_socket() {
     running.join().unwrap();
 }
 
+// #544: a sender that stops in the middle of the stream. The runtime tells
+// the controller what was lost and when, and then that it stopped, in that
+// order; a stream that is not connected reports no link loss.
+#[test]
+fn a_lost_link_reaches_the_controller_before_stopped() {
+    let (lifecycle, events) = in_process("launch-a");
+    let lost = korri_viewer_treaty::ViewerLinkLost {
+        video_last_ms: 1000.0,
+        audio_last_ms: Some(1005.0),
+        detected_ms: 2600.0,
+    };
+    let runtime = lifecycle.clone();
+    let reported = lost.clone();
+    let (answered, start_answered) = mpsc::channel();
+    let running = std::thread::spawn(move || {
+        runtime.wait_start().unwrap().expect("Start came first");
+        // Before the connection: nothing to report.
+        runtime.link_lost(reported.clone());
+        runtime.connected(display(1280, 720), false).unwrap();
+        // The stream runs once Start has its answer.
+        start_answered.recv().unwrap();
+        runtime.link_lost(reported);
+        runtime.failed("the stream ended: the link is gone".into());
+    });
+    assert!(matches!(
+        ask(
+            &lifecycle,
+            "launch-a",
+            C::Start {
+                address: "127.0.0.1:47989".into(),
+                display: None,
+            }
+        ),
+        R::Ok
+    ));
+    answered.send(()).unwrap();
+    running.join().unwrap();
+    let seen: Vec<_> = events.try_iter().collect();
+    let kinds: Vec<_> = seen
+        .iter()
+        .map(|event| match event {
+            E::Status(status) => format!("{status:?}"),
+            E::Snapshot(snapshot) => format!("Snapshot {:?}", snapshot.connected),
+            E::LinkLost(_) => "LinkLost".into(),
+        })
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            "Running",
+            "Snapshot Some(true)",
+            "LinkLost",
+            "Snapshot Some(false)",
+            "Stopped"
+        ]
+    );
+    assert!(
+        seen.iter()
+            .any(|event| matches!(event, E::LinkLost(event) if *event == lost))
+    );
+    // On the wire, as korrid reads it.
+    let mut bytes = Vec::new();
+    write_message(&mut bytes, &M::Event(E::LinkLost(lost))).unwrap();
+    assert_eq!(
+        String::from_utf8(bytes).unwrap(),
+        "{\"kind\":\"Event\",\"value\":{\"kind\":\"LinkLost\",\"value\":\
+         {\"videoLastMs\":1000.0,\"audioLastMs\":1005.0,\"detectedMs\":2600.0}}}\n"
+    );
+}
+
 fn display(width: u32, height: u32) -> ViewerDisplay {
     ViewerDisplay { width, height }
 }

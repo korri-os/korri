@@ -78,10 +78,20 @@ pub(crate) fn registry(
     registry.with_linux_viewer(viewer)
 }
 
+/// What the selected-session watch tells the person.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum SessionNotice {
+    /// The streamed launch failed: the session is over.
+    Failed(String),
+    /// This device's viewer lost its link and ended (#544). The holder
+    /// still runs the game, and the selection stays for a resume.
+    LinkLost(String),
+}
+
 /// Polls the selected streamed session so its end stops this device's viewer.
 pub(crate) fn spawn_watch(
     peers: upstreams::UpstreamRegistry,
-    on_failure: impl Fn(String) + Send + 'static,
+    on_notice: impl Fn(SessionNotice) + Send + 'static,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut ticks = tokio::time::interval(std::time::Duration::from_secs(1));
@@ -98,9 +108,14 @@ pub(crate) fn spawn_watch(
             if peers.has_selected_session() {
                 if let Err(error) = peers.session_status().await {
                     if error.code() == "HostLaunchFailed" {
-                        on_failure(error.to_string());
+                        on_notice(SessionNotice::Failed(error.to_string()));
                     }
                 }
+            }
+            // Whichever observation saw the viewer's link loss, the watch
+            // shows it.
+            if let Some(message) = peers.take_link_lost_notice() {
+                on_notice(SessionNotice::LinkLost(message));
             }
         }
     })

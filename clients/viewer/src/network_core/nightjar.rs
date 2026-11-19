@@ -209,6 +209,19 @@ impl NetworkCore for Nightjar {
             .as_ref()
             .map_or(0, |s| s.pending_audio_ms().min(i32::MAX as u32) as i32)
     }
+
+    /// The video datagrams that reached the video socket, FEC and rejected
+    /// ones included, and the sound packets that the audio receiver gave
+    /// out, a loss marker included: each counts at the socket's thread as
+    /// a datagram arrives, whatever the decoder or the sound output does.
+    fn received(&self) -> Option<crate::link_watch::Received> {
+        let session = self.session.lock().unwrap_or_else(PoisonError::into_inner);
+        let stats = session.as_ref()?.stats();
+        Some(crate::link_watch::Received {
+            video: stats.video.packets_received,
+            audio: stats.audio_packets,
+        })
+    }
 }
 
 /// The IDR requests and reference frame invalidations that the control

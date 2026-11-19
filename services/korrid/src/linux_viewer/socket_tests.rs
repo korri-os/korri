@@ -429,6 +429,56 @@ async fn stop_waits_for_a_unit_end_longer_than_the_request_deadline() {
     assert!(ended.load(std::sync::atomic::Ordering::SeqCst));
 }
 
+// #544: the viewer reports that its link was lost and then that it stopped.
+// korrid keeps the loss after the Stopped status ends the connection, gives
+// it once, and only for its own launch.
+#[tokio::test]
+async fn a_lost_link_outlives_the_stopped_connection_and_is_taken_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("viewer.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+    mode(&path, 0o600);
+    let lost = korri_viewer_treaty::ViewerLinkLost {
+        video_last_ms: 1000.0,
+        audio_last_ms: None,
+        detected_ms: 2500.0,
+    };
+    let event = lost.clone();
+    let server = std::thread::spawn(move || {
+        let mut socket = BufReader::new(listener.accept().unwrap().0);
+        let _: ViewerRequest = read_message(&mut socket).unwrap().unwrap();
+        write_message(socket.get_mut(), &M::Reply(R::Ok)).unwrap();
+        write_message(socket.get_mut(), &M::Event(E::LinkLost(event))).unwrap();
+        write_message(socket.get_mut(), &M::Event(E::Status(S::Stopped))).unwrap();
+        // A status asked before korrid read Stopped: the same answer.
+        while let Ok(Some(request)) = read_message::<ViewerRequest>(&mut socket) {
+            assert!(matches!(request.command, C::Status));
+            write_message(socket.get_mut(), &M::Reply(R::Status(S::Stopped))).unwrap();
+        }
+    });
+    let viewer = SocketLinuxStreamViewer::new(
+        Arc::new(|| None),
+        unsafe { libc::geteuid() },
+        Arc::new(move |_, _, _| {
+            let path = path.clone();
+            Box::pin(async move { Ok(path) })
+        }),
+        Arc::new(|_, _| Box::pin(async { Ok(()) })),
+        Arc::new(|_| Box::pin(async { Ok(()) })),
+    );
+    viewer.start(LAUNCH, "127.0.0.1", None).await.unwrap();
+    // Stopped, as korrid's watch reads it after the viewer's events.
+    assert_eq!(
+        viewer.status(LAUNCH).await.unwrap(),
+        LinuxViewerStatus::Stopped
+    );
+    assert_eq!(viewer.take_link_lost("another").await, None);
+    assert_eq!(viewer.take_link_lost(LAUNCH).await, Some(lost));
+    assert_eq!(viewer.take_link_lost(LAUNCH).await, None);
+    drop(viewer);
+    server.join().unwrap();
+}
+
 // #434 D10: the in-process viewer of the Android app reports through the same
 // treaty, so korrid reads its replies with the socket adapter's mapping.
 #[test]

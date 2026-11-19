@@ -6486,9 +6486,9 @@ fn secure_host_routers_with_federation(
     lan.remote = Some(peers.clone());
     local.remote = Some(peers.clone());
     let watch_surfaces = surfaces.clone();
-    drop(stream_play::device::spawn_watch(peers, move |message| {
+    drop(stream_play::device::spawn_watch(peers, move |notice| {
         if let Some(hub) = watch_surfaces.as_ref().and_then(|slot| slot.hub.get()) {
-            hub.session_failed(message);
+            hub.session_notice(notice);
         }
     }));
     let sessions = runtime.clone();
@@ -6814,9 +6814,9 @@ fn start_local_server_for_platform(
                 // Both tasks live inside this runtime and are joined before it exits.
                 let discovery = tokio::spawn(discovery);
                 let watch = watched_upstream.map(|peers| {
-                    stream_play::device::spawn_watch(peers, move |message| {
+                    stream_play::device::spawn_watch(peers, move |notice| {
                         if let Some(hub) = watch_surfaces.hub.get() {
-                            hub.session_failed(message);
+                            hub.session_notice(notice);
                         }
                     })
                 });

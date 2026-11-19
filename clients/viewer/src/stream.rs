@@ -331,11 +331,27 @@ pub(crate) fn run_with_lifecycle(
     crate::input::CORE_GATE.open();
     let mut poll_error = false;
     let mut shown = None;
+    // A sender that stops in the middle of the stream (#544).
+    let mut watch = crate::link_watch::Watch::default();
+    let mut link_lost = None;
     io.start();
     while !STOP.load(Ordering::Relaxed) && !lifecycle.is_some_and(|l| l.stop_requested()) {
         let event = io.poll(100);
         if event != 0 {
             poll_error = event < 0;
+            break;
+        }
+        if let Some(lost) = core
+            .received()
+            .and_then(|received| watch.observe(received, crate::marks::now_ms()))
+        {
+            crate::log::line(&crate::link_watch::line(&lost));
+            // Before the teardown: the controller hears at once what was
+            // lost and when, and Stopped follows.
+            if let Some(lifecycle) = lifecycle {
+                lifecycle.link_lost(lost.clone());
+            }
+            link_lost = Some(lost);
             break;
         }
         // The sender can change the stream's size in the middle of the
@@ -350,6 +366,11 @@ pub(crate) fn run_with_lifecycle(
             }
             shown = Some(size);
         }
+    }
+    if let Some((video_ms, audio_ms)) = watch.longest_ms() {
+        crate::log::line(&format!(
+            "link: longest silence while the stream ran: video {video_ms:.0} ms, sound {audio_ms:.0} ms"
+        ));
     }
     io.stop();
     // No send is inside the core when it stops, and none enters after:
@@ -367,6 +388,9 @@ pub(crate) fn run_with_lifecycle(
     let recorded = frame_times.close();
     #[cfg(target_os = "android")]
     let recorded = io.close();
+    if let Some(lost) = link_lost {
+        return Err(crate::link_watch::LinkLost(lost).into());
+    }
     ensure!(!poll_error, "picture or input event loop failed");
     let error = TERMINATED.load(Ordering::Relaxed);
     ensure!(error == 0, "stream terminated: {error}");

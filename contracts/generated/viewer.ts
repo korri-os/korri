@@ -9,6 +9,21 @@ export interface ViewerDisplay {
 }
 
 /**
+ * The stream's video and sound stopped arriving while it ran (#544): the
+ * sender, or the link to it, is gone. The viewer ends the stream after this
+ * event, so `Status(Stopped)` follows it. A runtime observation only.
+ * Times are CLOCK_MONOTONIC milliseconds, as `ViewerSnapshot.sampled_at_ms`.
+ */
+export interface ViewerLinkLost {
+	/** When the last video packet arrived. */
+	videoLastMs: number;
+	/** When the last sound packet arrived. None: no sound came in this stream. */
+	audioLastMs?: number;
+	/** When the viewer saw that both had stopped. */
+	detectedMs: number;
+}
+
+/**
  * Every variant and argument comes from LinuxStreamViewer's matching method.
  * Focus commands report focus already confirmed by korrid's compositor effect;
  * the viewer does not acquire compositor authority (ADR 0060).
@@ -65,7 +80,8 @@ export interface ViewerSnapshot {
  */
 export type ViewerEvent =
 	| { kind: "Status", value: ViewerStatus }
-	| { kind: "Snapshot", value: ViewerSnapshot };
+	| { kind: "Snapshot", value: ViewerSnapshot }
+	| { kind: "LinkLost", value: ViewerLinkLost };
 
 export type ViewerMessage =
 	| { kind: "Reply", value: ViewerReply }

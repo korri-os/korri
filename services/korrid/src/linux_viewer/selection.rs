@@ -239,6 +239,12 @@ impl LinuxStreamViewer for InstalledLinuxStreamViewer {
     fn change_signal(&self) -> Option<Arc<tokio::sync::Notify>> {
         self.korri.change_signal()
     }
+    fn take_link_lost<'a>(
+        &'a self,
+        launch: &'a str,
+    ) -> BoxFuture<'a, Option<korri_viewer_treaty::ViewerLinkLost>> {
+        Box::pin(async move { self.route(launch).await.ok()?.take_link_lost(launch).await })
+    }
     fn display(&self) -> Option<PluginDisplay> {
         self.moonlight.display()
     }

@@ -119,6 +119,23 @@ pub enum ViewerReply {
     },
 }
 
+/// The stream's video and sound stopped arriving while it ran (#544): the
+/// sender, or the link to it, is gone. The viewer ends the stream after this
+/// event, so `Status(Stopped)` follows it. A runtime observation only.
+/// Times are CLOCK_MONOTONIC milliseconds, as `ViewerSnapshot.sampled_at_ms`.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ViewerLinkLost {
+    /// When the last video packet arrived.
+    pub video_last_ms: f64,
+    /// When the last sound packet arrived. None: no sound came in this stream.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_last_ms: Option<f64>,
+    /// When the viewer saw that both had stopped.
+    pub detected_ms: f64,
+}
+
 /// The trait's change_signal observations. Connection/disconnection originate
 /// in the same native callbacks as Moonlight patch 0023, not process existence.
 #[typeshare]
@@ -127,6 +144,7 @@ pub enum ViewerReply {
 pub enum ViewerEvent {
     Status(ViewerStatus),
     Snapshot(ViewerSnapshot),
+    LinkLost(ViewerLinkLost),
 }
 
 #[typeshare]
@@ -190,6 +208,31 @@ mod tests {
                 .is_none()
         );
     }
+    // #544: what was lost and when, with no sound field for a stream that
+    // had no sound.
+    #[test]
+    fn a_link_loss_event_round_trips_and_omits_absent_sound() {
+        let lost = ViewerLinkLost {
+            video_last_ms: 10.5,
+            audio_last_ms: None,
+            detected_ms: 1510.5,
+        };
+        let mut bytes = Vec::new();
+        write_message(
+            &mut bytes,
+            &ViewerMessage::Event(ViewerEvent::LinkLost(lost.clone())),
+        )
+        .unwrap();
+        assert_eq!(
+            String::from_utf8(bytes.clone()).unwrap(),
+            "{\"kind\":\"Event\",\"value\":{\"kind\":\"LinkLost\",\"value\":{\"videoLastMs\":10.5,\"detectedMs\":1510.5}}}\n"
+        );
+        let decoded: ViewerMessage = read_message(&mut Cursor::new(&bytes)).unwrap().unwrap();
+        assert!(
+            matches!(decoded, ViewerMessage::Event(ViewerEvent::LinkLost(back)) if back == lost)
+        );
+    }
+
     #[test]
     fn commands_and_nested_control_values_round_trip() {
         for command in [

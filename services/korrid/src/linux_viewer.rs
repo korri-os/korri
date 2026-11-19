@@ -154,6 +154,15 @@ pub trait LinuxStreamViewer: Send + Sync {
     fn change_signal(&self) -> Option<std::sync::Arc<tokio::sync::Notify>> {
         None
     }
+    /// The link loss that this launch's viewer reported before it stopped
+    /// (#544, the treaty's `LinkLost` event), once: the next call has none.
+    /// A viewer that cannot see one has none.
+    fn take_link_lost<'a>(
+        &'a self,
+        _launch: &'a str,
+    ) -> BoxFuture<'a, Option<korri_viewer_treaty::ViewerLinkLost>> {
+        Box::pin(async { None })
+    }
     fn notice<'a>(
         &'a self,
         _launch: &'a str,
@@ -366,6 +375,7 @@ pub(crate) mod test_backend {
         status_block: Option<(Arc<Semaphore>, Arc<Semaphore>)>,
         snapshot: Option<ViewerSnapshot>,
         applications: Vec<(String, String)>,
+        link_lost: BTreeMap<String, korri_viewer_treaty::ViewerLinkLost>,
     }
 
     impl TestLinuxStreamViewer {
@@ -393,6 +403,21 @@ pub(crate) mod test_backend {
                 .expect("test viewer poisoned")
                 .failures
                 .push_back((action, message.into()));
+        }
+
+        /// The viewer of `launch_id` reports `lost` and stops, as the
+        /// socket viewer's LinkLost and Stopped events (#544).
+        pub fn lose_link(
+            &self,
+            launch_id: impl Into<String>,
+            lost: korri_viewer_treaty::ViewerLinkLost,
+        ) {
+            let launch_id = launch_id.into();
+            let mut state = self.inner.lock().expect("test viewer poisoned");
+            state
+                .statuses
+                .insert(launch_id.clone(), LinuxViewerStatus::Stopped);
+            state.link_lost.insert(launch_id, lost);
         }
 
         pub fn seed(&self, launch_id: impl Into<String>, status: LinuxViewerStatus) {
@@ -437,6 +462,18 @@ pub(crate) mod test_backend {
     }
 
     impl LinuxStreamViewer for TestLinuxStreamViewer {
+        fn take_link_lost<'a>(
+            &'a self,
+            launch: &'a str,
+        ) -> BoxFuture<'a, Option<korri_viewer_treaty::ViewerLinkLost>> {
+            Box::pin(async move {
+                self.inner
+                    .lock()
+                    .expect("test viewer poisoned")
+                    .link_lost
+                    .remove(launch)
+            })
+        }
         fn resize<'a>(
             &'a self,
             launch: &'a str,

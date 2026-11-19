@@ -208,6 +208,10 @@ pub(crate) trait NetworkCore: Sync {
         allow(dead_code, reason = "Android's sound reads it")
     )]
     fn pending_audio_ms(&self) -> i32;
+    /// The video and sound packets received at the core's sockets so far
+    /// in this stream, for the link watch (#544, `link_watch.rs`). None: the
+    /// core does not count them, and its stream is not watched.
+    fn received(&self) -> Option<crate::link_watch::Received>;
 }
 
 static MOONLIGHT_COMMON_C: moonlight_common_c::MoonlightCommonC =
@@ -277,6 +281,9 @@ pub(crate) mod tests {
         }
         fn pending_audio_ms(&self) -> i32 {
             40
+        }
+        fn received(&self) -> Option<crate::link_watch::Received> {
+            None
         }
     }
 

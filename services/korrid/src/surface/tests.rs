@@ -2671,7 +2671,9 @@ mod overlay {
                     json!({"_tag":"Ok", "payload":{}}),
                 );
                 if path == "watch" {
-                    hub.session_failed("game unit failed: [redacted]".into());
+                    hub.session_notice(crate::stream_play::device::SessionNotice::Failed(
+                        "game unit failed: [redacted]".into(),
+                    ));
                 } else {
                     overlay.resume_game().await;
                 }

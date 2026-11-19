@@ -5,8 +5,8 @@ use super::{LinuxStreamViewer, LinuxViewerError, LinuxViewerStatus, ViewerSnapsh
 use crate::launcher::plugin_launch::PluginDisplay;
 use futures::future::BoxFuture;
 use korri_viewer_treaty::{
-    ViewerCommand as C, ViewerDisplay, ViewerEvent as E, ViewerMessage as M, ViewerReply as R,
-    ViewerRequest, ViewerStatus as S, MAX_MESSAGE_BYTES,
+    ViewerCommand as C, ViewerDisplay, ViewerEvent as E, ViewerLinkLost, ViewerMessage as M,
+    ViewerReply as R, ViewerRequest, ViewerStatus as S, MAX_MESSAGE_BYTES,
 };
 use std::{
     collections::HashMap,
@@ -73,7 +73,11 @@ pub struct SocketLinuxStreamViewer {
     connections: Mutex<HashMap<String, Arc<Connection>>>,
     operation: Mutex<()>,
     changed: Arc<Notify>,
+    /// Each launch's `LinkLost` event (#544), until `take_link_lost`. It
+    /// outlives the connection, which a Stopped status removes.
+    link_lost: LinkLosses,
 }
+type LinkLosses = Arc<std::sync::Mutex<HashMap<String, ViewerLinkLost>>>;
 struct Connection {
     launch: String,
     exchange: Mutex<(OwnedWriteHalf, mpsc::Receiver<Result<R, LinuxViewerError>>)>,
@@ -117,6 +121,7 @@ impl SocketLinuxStreamViewer {
             connections: Mutex::new(HashMap::new()),
             operation: Mutex::new(()),
             changed: Arc::new(Notify::new()),
+            link_lost: LinkLosses::default(),
         }
     }
     #[cfg(test)]
@@ -171,6 +176,7 @@ impl Connection {
         path: PathBuf,
         launch: String,
         changed: Arc<Notify>,
+        link_lost: LinkLosses,
         expected_viewer_uid: u32,
         deadline: Duration,
     ) -> Result<Arc<Self>, LinuxViewerError> {
@@ -219,6 +225,7 @@ impl Connection {
         let (send, receive) = mpsc::channel(1);
         let terminal = Arc::new(AtomicU8::new(ALIVE));
         let observed = terminal.clone();
+        let reader_launch = launch.clone();
         tokio::spawn(async move {
             let mut reader = BufReader::new(read);
             loop {
@@ -240,8 +247,18 @@ impl Connection {
                 .await;
                 match message {
                     Ok(M::Event(event)) => {
-                        if matches!(event, E::Status(S::Stopped)) {
-                            observed.store(STOPPED, Ordering::Release);
+                        match event {
+                            E::Status(S::Stopped) => observed.store(STOPPED, Ordering::Release),
+                            E::LinkLost(lost) => {
+                                eprintln!(
+                                    "korrid viewer: launch {reader_launch} lost its link: {lost:?}"
+                                );
+                                link_lost
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                    .insert(reader_launch.clone(), lost);
+                            }
+                            E::Status(_) | E::Snapshot(_) => {}
                         }
                         changed.notify_one();
                     }
@@ -316,6 +333,14 @@ impl LinuxStreamViewer for SocketLinuxStreamViewer {
     fn change_signal(&self) -> Option<Arc<Notify>> {
         Some(self.changed.clone())
     }
+    fn take_link_lost<'a>(&'a self, launch: &'a str) -> BoxFuture<'a, Option<ViewerLinkLost>> {
+        Box::pin(async move {
+            self.link_lost
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(launch)
+        })
+    }
     fn display(&self) -> Option<PluginDisplay> {
         (self.display)()
     }
@@ -332,6 +357,11 @@ impl LinuxStreamViewer for SocketLinuxStreamViewer {
             if self.connections.lock().await.contains_key(launch) {
                 return Err(error("viewer launch already started"));
             }
+            // A loss of an earlier run of this launch is not this run's.
+            self.link_lost
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(launch);
             let size = (self.display)();
             let result = async {
                 let path = timeout(
@@ -344,6 +374,7 @@ impl LinuxStreamViewer for SocketLinuxStreamViewer {
                     path,
                     launch.into(),
                     self.changed.clone(),
+                    self.link_lost.clone(),
                     self.expected_viewer_uid,
                     self.connect_deadline,
                 )

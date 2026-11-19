@@ -102,6 +102,12 @@ impl LinuxStreamViewer for LocalInputViewer {
     fn change_signal(&self) -> Option<Arc<tokio::sync::Notify>> {
         self.viewer.change_signal()
     }
+    fn take_link_lost<'a>(
+        &'a self,
+        launch: &'a str,
+    ) -> BoxFuture<'a, Option<korri_viewer_treaty::ViewerLinkLost>> {
+        self.viewer.take_link_lost(launch)
+    }
     fn notice<'a>(
         &'a self,
         launch: &'a str,

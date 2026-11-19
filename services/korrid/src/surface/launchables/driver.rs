@@ -1647,6 +1647,22 @@ impl Launchables {
         self.changed();
     }
 
+    /// A notice about the selected session that does not end it: its
+    /// viewer lost the link (#544). Only a ready catalog shows it.
+    pub fn session_notice(&self, message: String) {
+        let mut inner = self.lock();
+        if !inner.state.is_ready() {
+            return;
+        }
+        let next = inner.take_state().with_notice(message);
+        // Older resume or catalog replies must not erase the watch's notice.
+        inner.action_seq += 1;
+        inner.load_seq += 1;
+        inner.publish(next);
+        drop(inner);
+        self.changed();
+    }
+
     pub fn resume_catalog_session(self: &Arc<Self>, session: ActiveSession) {
         let current = self.state();
         let Some(loaded) = current.loaded().filter(|_| current.is_ready()) else {

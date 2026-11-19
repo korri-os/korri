@@ -416,6 +416,19 @@ impl Lifecycle {
         self.0.changed.notify_all();
     }
 
+    /// The stream's video and sound stopped arriving (#544,
+    /// `link_watch.rs`): the controller hears what was lost and when, as
+    /// a LinkLost event. The stream ends after it, and Stopped follows. Only
+    /// a connected stream reports it.
+    pub fn link_lost(&self, lost: korri_viewer_treaty::ViewerLinkLost) {
+        let mut state = self.0.state.lock().unwrap();
+        if state.finished || state.snapshot.connected != Some(true) {
+            return;
+        }
+        self.0.emit(&mut state, E::LinkLost(lost));
+        self.0.changed.notify_all();
+    }
+
     pub fn disconnected(&self) {
         let mut state = self.0.state.lock().unwrap();
         state.snapshot = ViewerSnapshot {

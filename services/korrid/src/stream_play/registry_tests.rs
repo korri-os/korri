@@ -143,8 +143,10 @@ async fn streamed_session_watch_retires_disconnected_starter_and_stream_player()
             holder.end_with(code);
             let notices = Arc::new(std::sync::Mutex::new(Vec::new()));
             let observed = notices.clone();
-            let watch = crate::stream_play::device::spawn_watch(registry.clone(), move |message| {
-                observed.lock().unwrap().push(message);
+            let watch = crate::stream_play::device::spawn_watch(registry.clone(), move |notice| {
+                if let crate::stream_play::device::SessionNotice::Failed(message) = notice {
+                    observed.lock().unwrap().push(message);
+                }
             });
             let retired = tokio::time::timeout(Duration::from_secs(3), async {
                 while registry.has_selected_session() {

@@ -953,6 +953,13 @@ impl Root {
         self.show_catalog(None);
     }
 
+    /// The viewer lost its link and ended (#544): the catalog, with the
+    /// notice, while the game runs on in its holder.
+    pub(crate) fn link_lost(&self, message: String) {
+        self.launchables.session_notice(message);
+        self.show_catalog(None);
+    }
+
     fn show_overlay(self: &Arc<Self>, active: crate::ActiveSession) {
         let weak = Arc::downgrade(self);
         let launch_id = active.launch_id.clone();
