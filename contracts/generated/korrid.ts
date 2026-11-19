@@ -2265,7 +2265,7 @@ export interface SurfaceDeclareRequest {
 	surfaceId: string;
 	preferences: import("./surface").SurfacePreferenceDeclarations;
 	/** The package's panes (ADR 0086). Absent: one pane. */
-	panes?: SurfacePackagePanes;
+	panes?: import("./surface").SurfacePackagePanes;
 }
 
 export interface SurfaceDisplay {
@@ -2280,7 +2280,7 @@ export interface SurfaceDisplay {
 
 export interface SurfaceDisplaysRequest {
 	/** The shown package's panes (ADR 0086); absent for a package with one. */
-	panes?: SurfacePackagePanes;
+	panes?: import("./surface").SurfacePackagePanes;
 	overlay: boolean;
 	launchId?: string;
 	/** Only answer which windows the panes would get now; no effect. */
@@ -2785,7 +2785,7 @@ export type SurfaceAcceptedOutcome =
 
 /** The windows a package's panes get: absent for a package without panes. */
 export type SurfaceDisplaysOutcome =
-	| { _tag: "Ok", payload?: SurfaceWindow[] }
+	| { _tag: "Ok", payload?: import("./surface").SurfaceWindow[] }
 	| { _tag: "Err", payload: RpcFailure };
 
 export type SurfaceModelOutcome =
