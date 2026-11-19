@@ -110,10 +110,10 @@ If korrid already hit its start limit, run `systemctl reset-failed
 korrid-identity korrid-control.socket korri-local-signer`, then start
 `korrid-control.socket` and `korrid.service`.
 
-While the bottom-screen stall is open, the image carries `video=DSI-1:d`
-on its kernel command line until the re-plug fix lands (see "Top-screen
-stall"), so every generation's boot entry has it and no hand-made entry is
-needed.
+The image boots with `video=DSI-1:d` on its kernel command line and plugs
+DSI-1 back in after the compositor starts (`thor-bottom-panel-replug`, see
+"Top-screen stall"), so every generation's boot entry has it and no
+hand-made entry is needed.
 
 No step writes a raw block device, the GPT, LUN 1 to 5, or any firmware
 partition, changes the bootloader state, or writes EFI variables.
@@ -524,7 +524,7 @@ power off), so the difference from ROCKNIX is not settled.
 
 | Rank | Fix | Evidence | Cost |
 |---|---|---|---|
-| 1 | **Boot with the bottom panel unplugged, re-plug it after the compositor starts.** `video=DSI-1:d` on the kernel command line keeps fbcon and Plymouth off DSI-1. A Thor-only oneshot after `korri-compositor` is ready writes `on` (or `detect`) to `/sys/class/drm/card0-DSI-1/status`. Sway's existing `output DSI-1 power off` then keeps the bottom dark in this slice. The splash stays, on the top only. | Experiment 1 (3 of 3 clean, screens confirmed) and the live re-plug | Not yet tested: the re-plug a few seconds after compositor start rather than after 30 min, on this branch's 7.2 kernel, and across display idle and power cycles. Plymouth on the top only is untested. |
+| 1 | **Boot with the bottom panel unplugged, re-plug it after the compositor starts.** Built as `thor-bottom-panel-replug` in `./hardware.nix`; not yet tested on the device. `video=DSI-1:d` on the kernel command line keeps fbcon and Plymouth off DSI-1. A Thor-only oneshot after `korri-compositor` is ready writes `on` (or `detect`) to `/sys/class/drm/card0-DSI-1/status`. Sway's existing `output DSI-1 power off` then keeps the bottom dark in this slice. The splash stays, on the top only. | Experiment 1 (3 of 3 clean, screens confirmed) and the live re-plug | Not yet tested: the re-plug a few seconds after compositor start rather than after 30 min, on this branch's 7.2 kernel, and across display idle and power cycles. Plymouth on the top only is untested. |
 | 2 | Turn the splash off on the Thor with a product override (`services.korriProduct.bootSplash.overrideReason`) | Rests on experiment 2, which is invalid; fbcon would still light DSI-1 | Product schema change; held |
 
 Both runs above used ROCKNIX 7.3.5. This branch runs 7.2 with the fixed

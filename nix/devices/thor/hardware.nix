@@ -2,7 +2,12 @@
 # shared Korri product. First slice: the top screen only. The bottom screen
 # is left dark and its touch controller is ignored. README.md lists which
 # fact comes from where and which still need the device.
-{ lib, thorInputplumberData, ... }:
+{
+  lib,
+  pkgs,
+  thorInputplumberData,
+  ...
+}:
 
 let
   # Top screen. Observed on the Thor under ROCKNIX (nix-on-rocks
@@ -17,14 +22,43 @@ let
   bottom = "DSI-1";
 in
 {
-  # Stopgap: boot with the bottom panel unplugged. When DSI-1 is lit at boot,
-  # before the compositor owns the display, the top screen's command-mode
-  # encoder later stalls in wait_for_idle on about two boots in three; with
-  # DSI-1 unplugged at boot there were no stalls on 3 of 3 boots
-  # (README.md, "Top-screen stall: DSI-1 lit at boot is the trigger"). A
-  # hand-made boot entry did this before, but every switch-to-configuration
-  # replaced the default entry. This stays until the re-plug fix lands.
+  # Boot with the bottom panel unplugged, and plug it back in once the
+  # compositor owns the display. When DSI-1 is lit at boot, before the
+  # compositor (by fbcon or Plymouth), the top screen's command-mode encoder
+  # later stalls in wait_for_idle on about two boots in three; with DSI-1
+  # unplugged at boot there were no stalls on 3 of 3 boots, and plugging it
+  # back in after the compositor started left the top unaffected
+  # (README.md, "Top-screen stall: DSI-1 lit at boot is the trigger").
   boot.kernelParams = [ "video=${bottom}:d" ];
+
+  # Writing `on` to the connector's status forces it connected, overriding
+  # video=DSI-1:d. Sway sees a hot-plugged DSI-1 and applies its
+  # `output DSI-1 power off`, so the bottom stays dark in this slice. The
+  # unit is pulled in by every compositor start and needs the compositor to
+  # be active (Requisite), so it never runs without a compositor holding
+  # the display. It neither requires nor binds the compositor, so it never
+  # restarts it. A second run sees the connector already connected and
+  # does nothing.
+  systemd.services.thor-bottom-panel-replug = {
+    description = "Plug the Thor's bottom panel back in after the compositor starts";
+    wantedBy = [ "korri-compositor.service" ];
+    after = [ "korri-compositor.service" ];
+    requisite = [ "korri-compositor.service" ];
+    serviceConfig.Type = "oneshot";
+    script = ''
+      status=/sys/class/drm/card0-${bottom}/status
+      if [ ! -e "$status" ]; then
+        echo "no ${bottom} connector at $status"
+        exit 0
+      fi
+      if [ "$(${pkgs.coreutils}/bin/cat "$status")" = connected ]; then
+        echo "${bottom} already connected"
+        exit 0
+      fi
+      echo on > "$status"
+      echo "${bottom} plugged in: $(${pkgs.coreutils}/bin/cat "$status")"
+    '';
+  };
 
   services.korriLinuxInput.provider.extraDataPackages = [ thorInputplumberData ];
 

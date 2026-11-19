@@ -38,8 +38,20 @@ assert c.hardware.firmwareCompression == "none";
 assert builtins.elem "qcom/sm8550/a740_zap.mbn" c.boot.initrd.extraFirmwarePaths;
 assert builtins.elem "console=tty0" c.boot.kernelParams;
 assert builtins.elem "allow_mismatched_32bit_el0" c.boot.kernelParams;
-# Stopgap: the bottom panel is unplugged at boot (README "Top-screen stall").
+# The bottom panel is unplugged at boot and plugged back in after the
+# compositor starts (README "Top-screen stall"), without restarting it.
 assert builtins.elem "video=DSI-1:d" c.boot.kernelParams;
+assert c.systemd.services.thor-bottom-panel-replug.wantedBy == [ "korri-compositor.service" ];
+assert c.systemd.services.thor-bottom-panel-replug.after == [ "korri-compositor.service" ];
+assert c.systemd.services.thor-bottom-panel-replug.requisite == [ "korri-compositor.service" ];
+assert c.systemd.services.thor-bottom-panel-replug.serviceConfig.Type == "oneshot";
+assert lib.all (field: c.systemd.services.thor-bottom-panel-replug.${field} == [ ]) [
+  "requires"
+  "bindsTo"
+  "partOf"
+];
+assert lib.hasInfix "echo on > \"$status\"" c.systemd.services.thor-bottom-panel-replug.script;
+assert lib.hasInfix "/sys/class/drm/card0-DSI-1/status" c.systemd.services.thor-bottom-panel-replug.script;
 
 # Removable media only, with labels that cannot match the Portal's internal
 # install or ROCKNIX's.
