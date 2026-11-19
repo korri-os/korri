@@ -691,13 +691,13 @@ request (every viewer since the Artemis app went in D7′) and that reports
 follows a new stream size since #476 slice 4, and its `encoded` size follows
 each change (`clients/viewer/README.md`, "A new stream size in the middle of
 the stream"). It reports a shape because its Start names a screen: the
-window's size, longer side first (`rules::screen`), as the Artemis app
-reported its screen (`KorriStreamViewer.screenStreamSize`); Portrait is a
+display's physical size, longer side first (`rules::screen`), as the Artemis
+app reported its screen (`KorriStreamViewer.screenStreamSize`); Portrait is a
 stream control, not the way the phone is held. So korrid's live-shape runs
 for this app as it did for the Artemis app: on a holder with display authority the
-holder's display and the stream take the phone's shape. korrid's viewer
-display at prepare is still none here, so a stream starts at Moonlight's
-1280x720 and live-shape changes it after the start.
+holder's display and the stream take the phone's shape. Since #509 korrid's
+prepare sends that screen too, and the shape follows a fold ("The phone's
+screen, and a fold", below).
 
 The proof (`proof/resize.py`, `nix run .#android-app-resize-proof --
 --build-store auto --sunshine PACKAGE`, on aka as root) uses D10's holder,
@@ -710,6 +710,37 @@ Portrait control there; the proof reads what enables it: korrid's own
 snapshot of the viewer says `ready: true`, and its `encoded` size follows
 each change in the same connection. Record: `proof/android-app-476/` (35 of
 35 checks).
+
+## The phone's screen, and a fold (#509 items 3 to 5)
+
+The viewer's screen is what korrid offers a holder with display authority:
+that holder gives its display, and so the stream, the screen's shape
+(`services/korrid/src/upstreams/live_shape.rs`,
+`launcher/linux_plugin.rs`). Three parts, each a port of the Artemis app's
+(tag `artemis-final`), and none a new treaty field:
+
+| Part | Artemis | Here |
+| --- | --- | --- |
+| Which screen (item 3) | `KorriStreamViewer.screenStreamSize`: the default display's mode, `Display.getMode().getPhysicalWidth()` and `getPhysicalHeight()`, longer side first | The same reading through JNI (`korri_viewer::status::screen`), ordered by `rules::screen`. Before #509 the app gave its window's size |
+| At prepare (item 4) | `KorridServer.viewerDisplay()`, which korrid's JNI adapter returned from `LinuxStreamViewer::display` | The adapter's `display` returns the screen that the loop thread last read. korrid sends it as `viewerDisplay` in its prepare (`upstreams.rs`, "korrid: viewer display sent with prepare: WxH"), and starts the viewer at the size that the holder answers. Before #509 it sent none: a stream started at Moonlight's 1280x720 and live-shape changed it after the start |
+| A fold in the middle of a stream (item 5) | A `DisplayManager.DisplayListener`: each new screen was in the next snapshot at once, the snapshot was not `ready` until 400 ms after the last change, and then `viewerDisplayChanged` woke korrid (`Game.observeLiveDisplay`, `liveResolutionSnapshot`) | The loop thread reads the screen ten times a second, because native code cannot be a `DisplayListener` (`rules::Following`, `SCREEN_READ`). A new screen goes to the viewer's lifecycle at once, not settled, and once more 400 ms after the last change (`SCREEN_SETTLES`), settled (`Lifecycle::screen`). The lifecycle's shape names the new screen and is `ready` only when the picture follows new sizes and the screen has settled; each change is a Snapshot event, which wakes korrid. korrid's live-shape offers the holder a screen only from a `ready` shape, so it asks once, for the settled screen |
+
+The log names each new screen: `korri-app: viewer screen now WxH, not
+settled`, then `…, settled`. The first reading of an activity is a new
+screen too.
+
+Why the display and not the window: the owner's rule for #509 is Artemis's
+behaviour unless a reason speaks against it, and none was found. The two
+differ when the app has only a part of the screen (split screen, a pop-up
+window). The cost is Artemis's: there the stream has the whole screen's
+shape, and shows with bars in the app's part of it.
+
+What a fold needs besides: the activity must stay. Its manifest takes the
+`screenLayout`, `screenSize`, `smallestScreenSize` and `orientation`
+changes, as the Artemis app's did, and not `density`. Android restarts an
+activity at a configuration change that its manifest does not take, so a
+phone whose two screens differ in density would end the stream at a fold.
+Not checked on the Fold 8.
 
 ## The release APK (D12 prep)
 

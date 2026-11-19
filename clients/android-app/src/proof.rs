@@ -20,10 +20,18 @@
 //! | `apply LAUNCH CONTROL range NUMBER` | with a range value |
 //! | `apply LAUNCH CONTROL none` | with no value (a command) |
 //! | `resize LAUNCH WIDTH HEIGHT` | korrid's resize request to the holder (#476 slice 3, `android_app::proof_resize_stream`) |
+//! | `display WIDTH HEIGHT`, `display real` | the display's size that the loop thread reads from now on, in the place of Android's, or Android's again (#509, [`display`]) |
 //!
 //! The resize answer is the holder's: `Applied`, `Refused` or `Unavailable`.
 //! It stands in for korrid's Portrait control, which asks the same request
 //! only once the viewer reports that it can present a new size.
+//!
+//! `display` stands in for a phone's other panel. The emulator's fold keeps
+//! its one panel and its mode, and only forces another logical size, so the
+//! display's physical size, which the viewer reports as its screen
+//! (`korri_viewer::status::screen`), never changes there. Everything after
+//! that reading is the product's: the settle time, the lifecycle's shape,
+//! and korrid's reads of it.
 //!
 //! The viewer streams with its default network core, nightjar-core (#391
 //! step E). A file `<cache>/proof-network-core` that holds `c` makes the
@@ -33,7 +41,12 @@
 use crate::{logcat, viewer};
 use korri_viewer_treaty::SurfaceGameplayControlValue as Value;
 use korrid::linux_viewer::LinuxStreamViewer;
-use std::{path::PathBuf, sync::Once, thread, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::{Mutex, Once, PoisonError},
+    thread,
+    time::Duration,
+};
 
 const COMMAND: &str = "proof-command";
 const NETWORK_CORE: &str = "proof-network-core";
@@ -60,6 +73,15 @@ pub fn network_core() -> Option<korri_viewer::network_core::Kind> {
             None
         }
     }
+}
+
+/// The display's size that the `display` command gave.
+static DISPLAY: Mutex<Option<(i32, i32)>> = Mutex::new(None);
+
+/// The display's size that the proof gave in the place of Android's
+/// reading (`display WIDTH HEIGHT`), or none for Android's own.
+pub fn display() -> Option<(i32, i32)> {
+    *DISPLAY.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// The activity's app, for the input method's commands (DIAGNOSIS ONLY).
@@ -120,6 +142,18 @@ fn run(runtime: &tokio::runtime::Runtime, command: &str) {
     }
     if let ["ime", what] = command.split_whitespace().collect::<Vec<_>>().as_slice() {
         return ime(what);
+    }
+    if let ["display", size @ ..] = command.split_whitespace().collect::<Vec<_>>().as_slice() {
+        let display = match size {
+            ["real"] => None,
+            [width, height] => match (width.parse(), height.parse()) {
+                (Ok(width), Ok(height)) => Some((width, height)),
+                _ => return logcat::error(&format!("{LOG} not a size: {command}")),
+            },
+            _ => return logcat::error(&format!("{LOG} no such display: {command}")),
+        };
+        *DISPLAY.lock().unwrap_or_else(PoisonError::into_inner) = display;
+        return logcat::info(&format!("{LOG} {command} set"));
     }
     let Some(adapter) = viewer::korrids_adapter() else {
         return logcat::error(&format!("{LOG} korrid holds no viewer adapter yet"));

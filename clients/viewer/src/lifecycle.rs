@@ -96,6 +96,10 @@ struct State {
     start: Option<Start>,
     started: bool,
     screen: Option<ViewerDisplay>,
+    /// The screen changed and has not settled (`Lifecycle::screen`).
+    unsettled: bool,
+    /// The picture follows a new stream size (`Lifecycle::connected`).
+    follows_new_sizes: bool,
     status: Option<S>,
     snapshot: ViewerSnapshot,
     stop: bool,
@@ -315,7 +319,8 @@ impl Lifecycle {
     /// Called only from the native connectionStarted callback, like patch 0023.
     /// `display` is the size that the stream was asked for. `follows_new_sizes`:
     /// the picture follows a new stream size in the middle of the stream, so
-    /// korrid may ask the holder for one (`ready`, #476).
+    /// korrid may ask the holder for one (`ready`, #476). A screen that has
+    /// not settled is not ready either (`Lifecycle::screen`).
     pub fn connected(&self, display: ViewerDisplay, follows_new_sizes: bool) -> Result<()> {
         ensure!(
             display.width > 0 && display.height > 0,
@@ -327,6 +332,8 @@ impl Lifecycle {
             "read connection clock"
         );
         let mut state = self.0.state.lock().unwrap();
+        state.follows_new_sizes = follows_new_sizes;
+        let ready = follows_new_sizes && !state.unsettled;
         state.snapshot = ViewerSnapshot {
             connected: Some(true),
             shape: state.screen.clone().map(|screen| ViewerShape {
@@ -334,7 +341,7 @@ impl Lifecycle {
                 connection: format!("{}:{}:{}", std::process::id(), now.tv_sec, now.tv_nsec),
                 screen,
                 encoded: display,
-                ready: follows_new_sizes,
+                ready,
             }),
             ..Default::default()
         };
@@ -365,6 +372,45 @@ impl Lifecycle {
             return;
         }
         shape.encoded = encoded;
+        let snapshot = state.snapshot.clone();
+        self.0.emit(&mut state, E::Snapshot(snapshot));
+        self.0.changed.notify_all();
+    }
+
+    /// The viewer's screen now, which can change in the middle of the
+    /// stream: a phone folds (#509 item 5). `settled`: no other screen came
+    /// for the platform's settle time. A connected stream's shape names the
+    /// new screen at once and is not `ready` until it has settled, as
+    /// Artemis's snapshot was (`Game.liveResolutionSnapshot`); korrid offers
+    /// the holder a screen only from a ready shape
+    /// (`upstreams/live_shape.rs`). Each change goes to the controller as a
+    /// Snapshot event; the same report again changes nothing, and neither
+    /// does a size that no Start may name.
+    ///
+    /// Before the connection the next shape takes it. A screen that came
+    /// before Start stays the screen: it is newer than the one Start names.
+    pub fn screen(&self, screen: ViewerDisplay, settled: bool) {
+        if !valid_screen(&screen) {
+            return;
+        }
+        let mut state = self.0.state.lock().unwrap();
+        if state.finished {
+            return;
+        }
+        state.screen = Some(screen.clone());
+        state.unsettled = !settled;
+        let ready = state.follows_new_sizes && settled;
+        if state.snapshot.connected != Some(true) {
+            return;
+        }
+        let Some(shape) = state.snapshot.shape.as_mut() else {
+            return;
+        };
+        if shape.screen == screen && shape.ready == ready {
+            return;
+        }
+        shape.screen = screen;
+        shape.ready = ready;
         let snapshot = state.snapshot.clone();
         self.0.emit(&mut state, E::Snapshot(snapshot));
         self.0.changed.notify_all();
@@ -500,6 +546,11 @@ fn reply(inner: &Inner, request: ViewerRequest) -> R {
         message: e.to_string(),
     })
 }
+/// A screen that Start may name.
+fn valid_screen(screen: &ViewerDisplay) -> bool {
+    screen.width > 0 && screen.height > 0 && screen.width <= 16384 && screen.height <= 16384
+}
+
 fn handle(inner: &Inner, command: C) -> Result<R> {
     let mut state = inner.state.lock().unwrap();
     match command {
@@ -511,12 +562,13 @@ fn handle(inner: &Inner, command: C) -> Result<R> {
                 "invalid viewer address"
             );
             if let Some(d) = &display {
-                ensure!(
-                    d.width > 0 && d.height > 0 && d.width <= 16384 && d.height <= 16384,
-                    "invalid viewer dimensions"
-                );
+                ensure!(valid_screen(d), "invalid viewer dimensions");
             }
-            state.screen = display.clone();
+            // A screen that the viewer's own app reported already is newer
+            // (`Lifecycle::screen`).
+            if state.screen.is_none() {
+                state.screen = display.clone();
+            }
             state.started = true;
             state.start = Some(Start { address, display });
             inner.changed.notify_all();

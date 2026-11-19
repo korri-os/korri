@@ -5,7 +5,7 @@
 //! side by side, the end of the runtime's thread, the
 //! keys that go on to Android, the files of the pinned server certificates,
 //! the blocking calls from korrid's async code, and the screen that the
-//! viewer reports. The
+//! viewer reports, also while a phone folds. The
 //! library builds for Android only, so the build machine runs these tests
 //! through `tests/host.rs` (`cargo test --test host`).
 use std::{
@@ -291,14 +291,92 @@ pub(crate) fn spawn_answering<T: Send + 'static>(
     })
 }
 
-/// The viewer's screen in its Start (#476): the window's size, its longer
-/// side first, as the Artemis app reported its screen
-/// (`KorriStreamViewer.screenStreamSize`), because Portrait is a stream
-/// control and not the way the phone is held. With it the viewer reports its
-/// shape, which korrid's live-shape reads. None while the window has no size.
-pub(crate) fn screen(window: (i32, i32)) -> Option<(u32, u32)> {
-    let (width, height) = window;
+/// The viewer's screen (#476, #509 item 3): the display's physical size
+/// (`korri_viewer::status::screen`), its longer side first, as the Artemis
+/// app reported its screen (`KorriStreamViewer.screenStreamSize`), because
+/// Portrait is a stream control and not the way the phone is held. korrid
+/// sends it with its prepare, the viewer's Start names it, and with it the
+/// viewer reports its shape, which korrid's live-shape reads. None while the
+/// display has no size.
+pub(crate) fn screen(display: (i32, i32)) -> Option<(u32, u32)> {
+    let (width, height) = display;
     (width > 0 && height > 0).then(|| (width.max(height) as u32, width.min(height) as u32))
+}
+
+/// How long a new screen takes to settle: Artemis's wait after its last
+/// display event before it woke korrid and reported `ready` again
+/// (`Game.observeLiveDisplay`, `Game.liveResolutionSnapshot`). A fold sends
+/// several sizes.
+pub(crate) const SCREEN_SETTLES: Duration = Duration::from_millis(400);
+
+/// How often the loop thread reads the screen. Artemis heard each change
+/// from a `DisplayManager.DisplayListener`, a Java interface that native
+/// code cannot be; a reading is a few calls into values that Android keeps
+/// in the process.
+pub(crate) const SCREEN_READ: Duration = Duration::from_millis(100);
+
+/// What the viewer's lifecycle hears of the screen (`Lifecycle::screen`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ScreenReport {
+    pub(crate) screen: (u32, u32),
+    /// No new screen came for [`SCREEN_SETTLES`]: the shape is `ready`
+    /// again, and korrid offers the holder this screen.
+    pub(crate) settled: bool,
+}
+
+/// The screen while an activity runs (#509 item 5): a phone that folds or
+/// unfolds has another one. Each new screen is reported at once, not
+/// settled, and once more when no other came for [`SCREEN_SETTLES`], as
+/// Artemis's snapshot named its screen at once and was `ready` 400 ms after
+/// the last change. The first reading is a new screen too, as in Artemis
+/// (`Game.startLiveResolution`).
+#[derive(Default)]
+pub(crate) struct Following {
+    screen: Option<(u32, u32)>,
+    /// When the screen last changed, until that change is reported settled.
+    changed: Option<Instant>,
+    read: Option<Instant>,
+}
+
+impl Following {
+    /// The screen as it was last read; none before the first reading.
+    pub(crate) fn screen(&self) -> Option<(u32, u32)> {
+        self.screen
+    }
+
+    /// One tick of the loop thread: `read` reads the screen when a reading
+    /// is due, and gives none when Android did not say. Returns the report
+    /// that is due now: a new screen, or one that has settled.
+    pub(crate) fn tick(
+        &mut self,
+        now: Instant,
+        read: impl FnOnce() -> Option<(u32, u32)>,
+    ) -> Option<ScreenReport> {
+        let due = self
+            .read
+            .is_none_or(|at| now.saturating_duration_since(at) >= SCREEN_READ);
+        if due {
+            self.read = Some(now);
+            if let Some(screen) = read().filter(|screen| Some(*screen) != self.screen) {
+                self.screen = Some(screen);
+                self.changed = Some(now);
+                return Some(ScreenReport {
+                    screen,
+                    settled: false,
+                });
+            }
+        }
+        let screen = self.screen?;
+        let changed = self.changed?;
+        if now.saturating_duration_since(changed) < SCREEN_SETTLES {
+            return None;
+        }
+        self.changed = None;
+        Some(ScreenReport {
+            screen,
+            settled: true,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -612,12 +690,197 @@ mod tests {
     }
 
     #[test]
-    fn the_screen_is_the_window_with_its_longer_side_first() {
+    fn the_screen_is_the_display_with_its_longer_side_first() {
         assert_eq!(screen((2400, 1080)), Some((2400, 1080)));
         assert_eq!(screen((1080, 2400)), Some((2400, 1080)));
         assert_eq!(screen((1840, 2208)), Some((2208, 1840)));
         assert_eq!(screen((0, 0)), None);
         assert_eq!(screen((1080, 0)), None);
+    }
+
+    // #509 item 5: the screen while an activity runs, as the loop thread
+    // follows it. The Fold 8's two screens stand for any two.
+    const INNER: (u32, u32) = (2184, 1968);
+    const COVER: (u32, u32) = (2520, 1080);
+
+    fn ms(start: Instant, after: u64) -> Instant {
+        start + Duration::from_millis(after)
+    }
+
+    fn report(screen: (u32, u32), settled: bool) -> Option<ScreenReport> {
+        Some(ScreenReport { screen, settled })
+    }
+
+    /// A follower that first read `screen` at `start` and reported it
+    /// settled 400 ms later. Each test goes on from 1 s after `start`.
+    fn settled_on(screen: (u32, u32), start: Instant) -> Following {
+        let mut following = Following::default();
+        assert_eq!(following.screen(), None);
+        assert_eq!(
+            following.tick(start, || Some(screen)),
+            report(screen, false),
+            "the first reading is a new screen"
+        );
+        assert_eq!(following.screen(), Some(screen));
+        assert_eq!(following.tick(ms(start, 399), || Some(screen)), None);
+        assert_eq!(
+            following.tick(ms(start, 400), || Some(screen)),
+            report(screen, true)
+        );
+        following
+    }
+
+    /// The reports of a follower that is ticked every 16 ms from `start` for
+    /// `millis`, with the time of each, and how often it read the screen.
+    /// `screen_at` is the screen at each time.
+    fn followed(
+        following: &mut Following,
+        start: Instant,
+        millis: std::ops::Range<u64>,
+        screen_at: impl Fn(u64) -> Option<(u32, u32)>,
+    ) -> (Vec<(u64, ScreenReport)>, usize) {
+        let (mut reports, mut reads) = (Vec::new(), 0);
+        for at in millis.step_by(16) {
+            let report = following.tick(ms(start, at), || {
+                reads += 1;
+                screen_at(at)
+            });
+            reports.extend(report.map(|report| (at, report)));
+        }
+        (reports, reads)
+    }
+
+    #[test]
+    fn a_screen_that_stays_is_read_ten_times_a_second_and_reports_nothing() {
+        let start = Instant::now();
+        let mut following = settled_on(INNER, start);
+        let (reports, reads) = followed(&mut following, start, 1000..2000, |_| Some(INNER));
+        assert!(reports.is_empty(), "{reports:?}");
+        // Every 16 ms tick asked; the screen was read at 1000 ms and then
+        // at the first tick 100 ms or more after each reading.
+        assert_eq!(reads, 9, "one reading for each {SCREEN_READ:?}");
+    }
+
+    #[test]
+    fn a_fold_is_reported_at_once_and_settled_400_ms_later() {
+        let start = Instant::now();
+        let mut following = settled_on(INNER, start);
+        let (reports, _) = followed(&mut following, start, 1000..3000, |at| {
+            Some(if at < 1500 { INNER } else { COVER })
+        });
+        // The first reading at or after 1500 ms is the tick at 1560 ms.
+        assert_eq!(
+            reports,
+            [
+                (
+                    1560,
+                    ScreenReport {
+                        screen: COVER,
+                        settled: false
+                    }
+                ),
+                (
+                    1960,
+                    ScreenReport {
+                        screen: COVER,
+                        settled: true
+                    }
+                ),
+            ]
+        );
+        assert_eq!(following.screen(), Some(COVER));
+    }
+
+    #[test]
+    fn each_new_screen_starts_the_settle_time_again() {
+        let start = Instant::now();
+        let mut following = settled_on(INNER, start);
+        let mut steps = Vec::new();
+        let mut tick = |at: u64, screen: (u32, u32)| {
+            steps.push(following.tick(ms(start, at), || Some(screen)));
+        };
+        tick(1000, INNER);
+        tick(1100, COVER);
+        // 300 ms later the screen is another one: not settled yet.
+        tick(1400, (2208, 1840));
+        // 400 ms after the first change, 100 ms after the second: nothing.
+        tick(1500, (2208, 1840));
+        tick(1799, (2208, 1840));
+        tick(1800, (2208, 1840));
+        tick(1900, (2208, 1840));
+        assert_eq!(
+            steps,
+            [
+                None,
+                report(COVER, false),
+                report((2208, 1840), false),
+                None,
+                None,
+                report((2208, 1840), true),
+                None,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_screen_that_comes_back_within_the_settle_time_still_settles() {
+        // Artemis is not ready for 400 ms after the last change, also when
+        // the screen is the first one again (`liveDisplayChangedAt`).
+        let start = Instant::now();
+        let mut following = settled_on(INNER, start);
+        let mut steps = Vec::new();
+        let mut tick = |at: u64, screen: (u32, u32)| {
+            steps.push(following.tick(ms(start, at), || Some(screen)));
+        };
+        tick(1000, COVER);
+        tick(1100, INNER);
+        tick(1499, INNER);
+        tick(1500, INNER);
+        assert_eq!(
+            steps,
+            [
+                report(COVER, false),
+                report(INNER, false),
+                None,
+                report(INNER, true),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_screen_that_cannot_be_read_keeps_the_last_one() {
+        let start = Instant::now();
+        let mut following = settled_on(INNER, start);
+        assert_eq!(following.tick(ms(start, 1000), || None), None);
+        assert_eq!(following.screen(), Some(INNER));
+        assert_eq!(
+            following.tick(ms(start, 1100), || Some(COVER)),
+            report(COVER, false)
+        );
+        // Unreadable while it settles: the settle time still ends.
+        assert_eq!(following.tick(ms(start, 1300), || None), None);
+        assert_eq!(
+            following.tick(ms(start, 1500), || None),
+            report(COVER, true)
+        );
+        assert_eq!(following.tick(ms(start, 1600), || None), None);
+        assert_eq!(following.screen(), Some(COVER));
+    }
+
+    #[test]
+    fn no_screen_is_reported_until_one_is_read() {
+        let (start, mut following) = (Instant::now(), Following::default());
+        assert_eq!(following.tick(ms(start, 0), || None), None);
+        assert_eq!(following.tick(ms(start, 500), || None), None);
+        assert_eq!(following.screen(), None);
+        assert_eq!(
+            following.tick(ms(start, 600), || Some(COVER)),
+            report(COVER, false)
+        );
+        assert_eq!(
+            following.tick(ms(start, 1000), || Some(COVER)),
+            report(COVER, true)
+        );
     }
 
     #[test]

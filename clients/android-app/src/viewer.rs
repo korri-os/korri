@@ -177,6 +177,10 @@ struct Shared {
     orders: rules::Slot<Order>,
     /// The activity has a window, so a launch can be shown.
     window: AtomicBool,
+    /// The viewer's screen (`rules::screen`), as the loop thread of the
+    /// activity in front last read it; none before the first activity.
+    /// korrid's prepare sends it (#509 item 4).
+    screen: Mutex<Option<(u32, u32)>>,
     current: Mutex<Option<Current>>,
     /// One start or stop at a time.
     operation: tokio::sync::Mutex<()>,
@@ -253,6 +257,7 @@ pub fn adapter(keydir: PathBuf, pins: PathBuf) -> Arc<Adapter> {
                     pins,
                     orders: Mutex::new(None),
                     window: AtomicBool::new(false),
+                    screen: Mutex::new(None),
                     current: Mutex::new(None),
                     operation: tokio::sync::Mutex::new(()),
                     changed: Arc::new(tokio::sync::Notify::new()),
@@ -374,6 +379,16 @@ fn client_certificate(keydir: &Path) -> Result<String, LinuxViewerError> {
 impl LinuxStreamViewer for Adapter {
     fn change_signal(&self) -> Option<Arc<tokio::sync::Notify>> {
         Some(self.0.changed.clone())
+    }
+
+    /// The viewer's screen for korrid's prepare, as Artemis's
+    /// `viewerDisplay` gave it (#509 item 4): a holder with display
+    /// authority shapes its display to it, so the stream starts in the
+    /// phone's shape. The loop thread reads the screen (`Stream::tick`);
+    /// korrid's worker does not go into Android here.
+    fn display(&self) -> Option<PluginDisplay> {
+        let screen = *lock(&self.0.screen);
+        screen.map(|(width, height)| PluginDisplay { width, height })
     }
 
     fn start<'a>(
@@ -778,6 +793,9 @@ pub struct Stream {
     /// window (`layer::may_move_the_cutout`): the next tick of a stream
     /// places its overlay out of the cutout again.
     cutout_may_move: bool,
+    /// The viewer's screen, read while this activity runs: a phone that
+    /// folds or unfolds has another one (#509 item 5).
+    screen: rules::Following,
 }
 
 impl Stream {
@@ -803,12 +821,14 @@ impl Stream {
             phase: Phase::Idle,
             waiting: rules::Waiting::new(korri_viewer::lifecycle::STOP_DEADLINE),
             cutout_may_move: false,
+            screen: rules::Following::default(),
         })
     }
 
     /// Once per tick of the shell's timer: a new launch, korrid's resumes,
     /// the layers being made, and the stream's timers, window size and end.
     pub fn tick(&mut self) {
+        self.follow_screen();
         while let Ok(order) = self.orders.try_recv() {
             match order {
                 Order::Show(show) => self.begin(*show),
@@ -903,6 +923,46 @@ impl Stream {
             }
             _ if may_move_the_cutout(event) => self.cutout_may_move = true,
             _ => {}
+        }
+    }
+
+    /// The viewer's screen now: the display's physical size, its longer
+    /// side first (`rules::screen`, #509 item 3). The loop thread reads it
+    /// ten times a second (`rules::Following`), for korrid's prepare and
+    /// for the stream in front. When the phone folds or unfolds, the
+    /// stream's shape names the new screen at once and is ready again once
+    /// it has settled (#509 item 5); each report wakes korrid, whose
+    /// live-shape then offers the holder the settled screen.
+    fn follow_screen(&mut self) {
+        let read = || {
+            // The emulator proof's stand-in for a phone's other panel
+            // (fixture APK only, `proof.rs`).
+            #[cfg(feature = "proof")]
+            if let Some(display) = crate::proof::display() {
+                return rules::screen(display);
+            }
+            status::screen().and_then(rules::screen)
+        };
+        let Some(report) = self.screen.tick(Instant::now(), read) else {
+            return;
+        };
+        let (width, height) = report.screen;
+        *lock(&self.shared.screen) = Some(report.screen);
+        logcat::info(&format!(
+            "korri-app: viewer screen now {width}x{height}, {}",
+            if report.settled {
+                "settled"
+            } else {
+                "not settled"
+            }
+        ));
+        if let Phase::Playing(playing) = &self.phase {
+            if !playing.stopping {
+                playing.lifecycle.screen(
+                    korri_viewer_treaty::ViewerDisplay { width, height },
+                    report.settled,
+                );
+            }
         }
     }
 
@@ -1066,7 +1126,10 @@ impl Stream {
         let placed = layers.placed;
         // The viewer's screen, with which it reports its shape to korrid's
         // live-shape (#476): it follows a new stream size since slice 4.
-        let screen = rules::screen(layers.window)
+        // The display's size, not the window's (#509 item 3).
+        let screen = self
+            .screen
+            .screen()
             .map(|(width, height)| korri_viewer_treaty::ViewerDisplay { width, height });
         log_placement(&layers);
         let mut devices = match AndroidDevices::new() {

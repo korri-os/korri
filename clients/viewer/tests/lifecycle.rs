@@ -1077,6 +1077,176 @@ fn a_picture_that_cannot_follow_a_new_size_is_not_ready() {
     running.join().unwrap();
 }
 
+/// The next event within 2 s, as a snapshot's shape: its screen, whether it
+/// is ready, and its connection.
+fn next_screen(events: &mpsc::Receiver<E>) -> (ViewerDisplay, bool, String) {
+    loop {
+        if let E::Snapshot(snapshot) = events.recv_timeout(Duration::from_secs(2)).unwrap() {
+            let shape = snapshot.shape.expect("a shape");
+            return (shape.screen, shape.ready, shape.connection);
+        }
+    }
+}
+
+// #509 item 5: the viewer's screen changes in the middle of the stream (a
+// phone folds). The shape names the new screen at once and is not ready
+// until the screen has settled, as Artemis's snapshot was
+// (`Game.liveResolutionSnapshot`); each change reaches the controller in the
+// same connection, and the same report again sends nothing.
+#[test]
+fn a_new_screen_is_reported_at_once_and_is_ready_once_it_has_settled() {
+    let (lifecycle, events) = in_process("launch-a");
+    let runtime = lifecycle.clone();
+    let running = std::thread::spawn(move || {
+        runtime.wait_start().unwrap().expect("Start came first");
+        runtime.connected(display(2184, 1968), true).unwrap();
+        while !runtime.stop_requested() {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        runtime.stopped();
+    });
+    assert!(matches!(
+        ask(
+            &lifecycle,
+            "launch-a",
+            C::Start {
+                address: "127.0.0.1:47989".into(),
+                display: Some(display(2184, 1968)),
+            }
+        ),
+        R::Ok
+    ));
+    let (screen, ready, connection) = next_screen(&events);
+    assert_eq!((screen, ready), (display(2184, 1968), true));
+
+    // The phone folds: the new screen, not settled.
+    lifecycle.screen(display(2520, 1080), false);
+    assert_eq!(
+        next_screen(&events),
+        (display(2520, 1080), false, connection.clone())
+    );
+    assert!(matches!(
+        ask(&lifecycle, "launch-a", C::Snapshot),
+        R::Snapshot { snapshot: Some(s) }
+            if s.shape.as_ref().unwrap().screen == display(2520, 1080)
+                && !s.shape.as_ref().unwrap().ready
+                && s.shape.as_ref().unwrap().encoded == display(2184, 1968)
+    ));
+    lifecycle.screen(display(2520, 1080), false);
+    assert!(events.try_recv().is_err(), "the same report, no event");
+    // A new encoded size meanwhile keeps the screen and stays not ready.
+    lifecycle.resized(display(1280, 720));
+    assert_eq!(
+        next_screen(&events),
+        (display(2520, 1080), false, connection.clone())
+    );
+    // It has settled: ready again, which wakes the controller.
+    lifecycle.screen(display(2520, 1080), true);
+    assert_eq!(
+        next_screen(&events),
+        (display(2520, 1080), true, connection.clone())
+    );
+    // A size that no Start could name changes nothing.
+    lifecycle.screen(display(0, 1080), true);
+    lifecycle.screen(display(16385, 1080), true);
+    assert!(events.try_recv().is_err(), "no screen, no event");
+    assert!(matches!(
+        ask(&lifecycle, "launch-a", C::Snapshot),
+        R::Snapshot { snapshot: Some(s) }
+            if s.shape.as_ref().unwrap().screen == display(2520, 1080)
+                && s.shape.as_ref().unwrap().ready
+    ));
+
+    assert!(matches!(ask(&lifecycle, "launch-a", C::Stop), R::Ok));
+    running.join().unwrap();
+    let _: Vec<_> = events.try_iter().collect();
+    // A stopped stream has no shape to change.
+    lifecycle.screen(display(2184, 1968), true);
+    assert!(events.try_recv().is_err());
+}
+
+// A screen that has not settled never makes a picture ready that cannot
+// follow a new size (the handheld path), and a settled one does not either.
+#[test]
+fn a_settled_screen_does_not_make_a_fixed_picture_ready() {
+    let (lifecycle, events) = in_process("launch-a");
+    let runtime = lifecycle.clone();
+    let running = std::thread::spawn(move || {
+        runtime.wait_start().unwrap().expect("Start came first");
+        runtime.connected(display(1280, 720), false).unwrap();
+        while !runtime.stop_requested() {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        runtime.stopped();
+    });
+    assert!(matches!(
+        ask(
+            &lifecycle,
+            "launch-a",
+            C::Start {
+                address: "127.0.0.1:47989".into(),
+                display: Some(display(1280, 720)),
+            }
+        ),
+        R::Ok
+    ));
+    let (screen, ready, connection) = next_screen(&events);
+    assert_eq!((screen, ready), (display(1280, 720), false));
+    lifecycle.screen(display(1920, 1080), false);
+    assert_eq!(
+        next_screen(&events),
+        (display(1920, 1080), false, connection)
+    );
+    lifecycle.screen(display(1920, 1080), true);
+    assert!(events.try_recv().is_err(), "still not ready: no event");
+    assert!(matches!(ask(&lifecycle, "launch-a", C::Stop), R::Ok));
+    running.join().unwrap();
+}
+
+// The screen changed before the stream connected (a fold while it starts):
+// the connection's first shape has the newer screen, not Start's, and waits
+// for it to settle. A launch whose Start named no screen and that heard of
+// none reports no shape, as before.
+#[test]
+fn a_screen_that_changed_before_the_connection_is_the_first_shape() {
+    let (lifecycle, events) = in_process("launch-a");
+    let runtime = lifecycle.clone();
+    let (connect, connecting) = mpsc::channel::<()>();
+    let running = std::thread::spawn(move || {
+        runtime.wait_start().unwrap().expect("Start came first");
+        connecting.recv().unwrap();
+        runtime.connected(display(1280, 720), true).unwrap();
+        while !runtime.stop_requested() {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        runtime.stopped();
+    });
+    // Before Start: the newer screen stays when Start names an older one.
+    lifecycle.screen(display(2520, 1080), false);
+    let starter = lifecycle.clone();
+    let started = std::thread::spawn(move || {
+        ask(
+            &starter,
+            "launch-a",
+            C::Start {
+                address: "127.0.0.1:47989".into(),
+                display: Some(display(2184, 1968)),
+            },
+        )
+    });
+    connect.send(()).unwrap();
+    assert!(matches!(started.join().unwrap(), R::Ok));
+    let (screen, ready, connection) = next_screen(&events);
+    assert_eq!((screen, ready), (display(2520, 1080), false));
+    lifecycle.screen(display(2520, 1080), true);
+    assert_eq!(
+        next_screen(&events),
+        (display(2520, 1080), true, connection)
+    );
+    assert!(matches!(ask(&lifecycle, "launch-a", C::Stop), R::Ok));
+    running.join().unwrap();
+}
+
 #[test]
 fn a_socket_lifecycle_takes_no_in_process_request() {
     let dir = support::scratch();

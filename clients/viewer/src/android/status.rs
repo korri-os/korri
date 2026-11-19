@@ -5,7 +5,9 @@
 //! A controller passes [`readings`] to `Lifecycle::controls`; it runs on the
 //! thread that asks for a snapshot. [`touchscreen`] says whether the stream
 //! may offer the touch controls, and [`chromeos`] whether a touch screen may
-//! have the mouse's capture (`capture.rs`).
+//! have the mouse's capture (`capture.rs`). [`screen`] is the display's
+//! physical size, the screen that a controller reports for the viewer
+//! (`KorriStreamViewer.screenStreamSize`).
 use crate::{controls::Readings, log, picture};
 use jni::{
     JavaVM,
@@ -16,6 +18,10 @@ use korri_viewer_treaty::SurfaceStreamHealth;
 /// `Context.BATTERY_SERVICE` and `BatteryManager.BATTERY_PROPERTY_CAPACITY`.
 const BATTERY_SERVICE: &str = "batterymanager";
 const BATTERY_PROPERTY_CAPACITY: i32 = 4;
+
+/// `Context.DISPLAY_SERVICE` and `Display.DEFAULT_DISPLAY`.
+const DISPLAY_SERVICE: &str = "display";
+const DEFAULT_DISPLAY: i32 = 0;
 
 /// `PackageManager.FEATURE_TOUCHSCREEN`.
 const FEATURE_TOUCHSCREEN: &str = "android.hardware.touchscreen";
@@ -77,6 +83,73 @@ fn feature(name: &str, what: &str) -> bool {
         Err(error) => {
             log::line(&format!("status: {what} is unknown: {error}"));
             false
+        }
+    }
+}
+
+/// The physical size of the default display in its current mode, as
+/// Artemis's `KorriStreamViewer.screenStreamSize` reads it
+/// (`Display.getMode().getPhysicalWidth()` and `getPhysicalHeight()`): the
+/// whole panel in its natural orientation, whatever the size of the app's
+/// window or a forced logical size (`wm size`, the emulator's fold). On a
+/// phone with two panels Android's default display is the panel in use, so
+/// this size changes with a fold: read in AOSP (`LogicalDisplayMapper`),
+/// not yet seen on a phone with this code. Through JNI on this thread; None
+/// when it cannot be read.
+pub fn screen() -> Option<(i32, i32)> {
+    let context = ndk_context::android_context();
+    // SAFETY: the process's VM, which android-activity gave ndk-context.
+    let vm = unsafe { JavaVM::from_raw(context.vm().cast()) }.ok()?;
+    let mut env = vm.attach_current_thread().ok()?;
+    // SAFETY: ndk-context's global reference to the activity, which it
+    // keeps; this wrapper does not delete it.
+    let activity = unsafe { JObject::from_raw(context.context().cast()) };
+    let size = env.with_local_frame(8, |env| -> jni::errors::Result<Option<(i32, i32)>> {
+        let name = env.new_string(DISPLAY_SERVICE)?;
+        let manager = env
+            .call_method(
+                &activity,
+                "getSystemService",
+                "(Ljava/lang/String;)Ljava/lang/Object;",
+                &[JValue::Object(&name)],
+            )?
+            .l()?;
+        if manager.is_null() {
+            return Ok(None);
+        }
+        let display = env
+            .call_method(
+                &manager,
+                "getDisplay",
+                "(I)Landroid/view/Display;",
+                &[DEFAULT_DISPLAY.into()],
+            )?
+            .l()?;
+        if display.is_null() {
+            return Ok(None);
+        }
+        let mode = env
+            .call_method(&display, "getMode", "()Landroid/view/Display$Mode;", &[])?
+            .l()?;
+        if mode.is_null() {
+            return Ok(None);
+        }
+        let width = env
+            .call_method(&mode, "getPhysicalWidth", "()I", &[])?
+            .i()?;
+        let height = env
+            .call_method(&mode, "getPhysicalHeight", "()I", &[])?
+            .i()?;
+        Ok(Some((width, height)))
+    });
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_clear();
+    }
+    match size {
+        Ok(size) => size.filter(|(width, height)| *width > 0 && *height > 0),
+        Err(error) => {
+            log::line(&format!("status: the screen is unreadable: {error}"));
+            None
         }
     }
 }

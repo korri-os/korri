@@ -1899,8 +1899,9 @@ so in the treaty's snapshot (`ViewerShape`), which korrid's live-shape reads
 (`services/korrid/src/upstreams/live_shape.rs`):
 
 - `ready` is true exactly when the picture follows a new size
-  (`PlayerIo::follows_new_sizes`): on Linux with X11 VA-API and the SDL
-  fallback, on Android with the app's picture. The handheld `v4l2request`
+  (`PlayerIo::follows_new_sizes`) and the screen has settled (below): on
+  Linux with X11 VA-API and the SDL fallback, on Android with the app's
+  picture. The handheld `v4l2request`
   path keeps the size it started with and reports false, as does a stream
   with no picture (the session tests). With `ready`, korrid offers the
   holder the viewer's screen and asks for a new size when its shape
@@ -1912,8 +1913,17 @@ so in the treaty's snapshot (`ViewerShape`), which korrid's live-shape reads
   to the lifecycle (`Lifecycle::resized`), which sends a Snapshot event. The
   log says `picture: the picture shown is WxH`.
 - A shape needs a screen: Start's display. korrid's Linux adapter gives the
-  local screen. The Korri app gives its window, longer side first, as the
-  Artemis app gives its screen (`clients/android-app/README.md`).
+  local screen. The Korri app gives the display's physical size, longer side
+  first, as the Artemis app gave its screen (`clients/android-app/README.md`).
+- The screen can change in the middle of the stream: a phone folds (#509).
+  The viewer's app then tells the lifecycle (`Lifecycle::screen`, a call in
+  the app's process like `resized`, not a treaty request): the new screen,
+  and whether it has settled. The shape names the new screen at once, and
+  `ready` is false until it has settled, as Artemis's snapshot was; each
+  change is a Snapshot event. A screen that the app reported before Start
+  stays the screen, because it is newer than the one Start names. Only the
+  Korri app calls it; a Linux viewer's screen is Start's for the whole
+  stream.
 
 **Linux: an aspect fit.** Every PC picture path fits the picture in its
 window with the picture's own shape, centred, with black bars above and
@@ -1953,7 +1963,8 @@ rounding),
 for a portrait picture in a landscape window and back), `tests/test-sdl.c`
 (a real H.264 stream that turns from 128x72 to 72x128: the rendered window
 has black columns at both sides and the picture between them; it failed
-before this change), and the lifecycle tests (`ready`, and one Snapshot event for each new size).
+before this change), and the lifecycle tests (`ready`, one Snapshot event
+for each new size, and for each new or settled screen).
 
 **Proof** (`nix run .#viewer-linux-resize-proof -- --sunshine PACKAGE
 --build-store auto`, on aka as root; `proof/linux_resize.py`): stream-cadence's

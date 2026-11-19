@@ -367,7 +367,7 @@ let
         emulator = import ../clients/viewer/android/emulator.nix { inherit pkgs; };
       in
       {
-        description = "Prove on aka, as root, that korrid carries a live resize from the Android app to the holder's Sunshine (#476 Route C, slices 2 and 3).";
+        description = "Prove on aka, as root, that korrid carries a live resize from the Android app to the holder's Sunshine (#476 Route C, slices 2 and 3), and that the app reports its screen, also a new one (#509).";
         usageSuffix = " -- --sunshine /nix/store/...-sunshine-korri-... [--build-store STORE] [--apk FILE] [--fixture FILE] [--holder-uid N] [--port N] [--adb-port N] [--out DIRECTORY]";
         runtimeInputs = [
           # Pillow reads the screenshots; numpy and FFmpeg are stream-cadence's

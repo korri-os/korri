@@ -32,8 +32,31 @@ The steps:
    live-shape may ask the holder for a new size and enable Portrait, and its
    `encoded` size follows each change in the same connection.
 
+5. #509, the viewer's screen. korrid's prepare carries it (item 4: its line
+   `viewer display sent with prepare`), the viewer's Start names it, and
+   korrid's snapshot reads it: the default display's physical size in its
+   mode (`dumpsys display`), longer side first.
+6. #509 item 5, a new screen in the middle of the stream. The emulator
+   cannot make one: its fold (`adb emu fold`, a foldable profile) and
+   `wm size` force another logical size on the same panel, whose mode stays,
+   and its resizable profile refuses on this image (`resize-display`: "KO").
+   So the trigger's `display WIDTH HEIGHT` gives the app's loop thread
+   another reading in the place of Android's, as a phone's other panel
+   would. From there on the product runs: the app logs the new screen at
+   once, not settled, and settled 400 ms later; the lifecycle's Snapshot
+   events name the new screen, not ready and then ready, in the same
+   connection; korrid's snapshot reads the settled screen; the stream keeps
+   its size and plays. `display real` gives Android's reading back, and the
+   same holds for the way back.
+7. #509 item 3, the display and not the window. Home ends the stream;
+   `wm size` makes the logical display, and so the app's window, smaller
+   than the panel; the app comes back, and korrid's recovery starts the
+   stream again. Its Start names the display's size in the smaller window,
+   and the smaller window was no new screen.
+
 Not run here: korrid's Portrait toggle and the holder's display change (a
-Sway mode and the display hooks). The federation fixture has no compositor,
+Sway mode and the display hooks), so also not what the holder does with the
+screen at prepare and after a fold. The federation fixture has no compositor,
 so its `viewer_display_report` refuses before any encoder size, and korrid
 then lists no Portrait control at all; the trigger stands in for the
 toggle's last step. Unit tests cover both, and that a ready viewer's
@@ -69,6 +92,18 @@ PORTRAIT = (720, 1280)
 WINDOW = d10.WINDOW
 PLACED = re.compile(
     r"korri-app: viewer video layer (\d+)x(\d+) placed at \((-?\d+), (-?\d+)\)-\((-?\d+), (-?\d+)\) in the window (\d+)x(\d+)")
+# #509: the viewer's screen. korrid's line at its prepare, the Start that the app sends, the app's
+# line for each new or settled screen, and the lifecycle's Snapshot events.
+PREPARE_DISPLAY = re.compile(r"korrid: viewer display sent with prepare: (\S+)")
+START = re.compile(r'korri-app: viewer request (\{"launchId":"[0-9a-f]{32}","command":\{"kind":"Start".*\})\s*$')
+SCREEN_NOW = re.compile(r"^(\d\d-\d\d \d\d:\d\d:\d\d\.\d+) .*korri-app: viewer screen now (\d+)x(\d+), (not settled|settled)\s*$")
+SNAPSHOT_EVENT = re.compile(r'korri-app: viewer event (\{"kind":"Snapshot".*\})\s*$')
+# Artemis's settle time (rules::SCREEN_SETTLES), and what a loaded emulator may add to it.
+SETTLE_MS = (395, 1000)
+# Another panel's size, as Android would give it (its natural, portrait way round), for step 6.
+OTHER_PANEL = (1080, 2520)
+# A logical display smaller than the emulator's 1080x2400 panel, for step 7.
+SMALLER = (1080, 1920)
 
 
 def answer_pattern(launch: str, size: tuple[int, int]) -> re.Pattern:
@@ -120,6 +155,76 @@ def bar_in_place(png: Path, placed: dict, stream: tuple[int, int]) -> dict:
 def shape(snapshot: "dict | None") -> dict:
     """The viewer's shape in korrid's snapshot: its connection, encoded size and readiness."""
     return ((snapshot or {}).get("shape") or {})
+
+
+def display_mode(emulator) -> "tuple[int, int] | None":
+    """The default display's physical size in its active mode (`Display.getMode()`), from `dumpsys display`."""
+    dump = emulator.shell("dumpsys display").stdout
+    info = re.search(r"mBaseDisplayInfo=DisplayInfo\{.*", dump)
+    active = re.search(r", mode (\d+),", info.group(0)) if info else None
+    if active is None:
+        return None
+    mode = re.search(rf"\{{id={active.group(1)}, width=(\d+), height=(\d+)", info.group(0))
+    return (int(mode.group(1)), int(mode.group(2))) if mode else None
+
+
+def screen_of(display: tuple[int, int]) -> dict:
+    """The viewer's screen for a display (the app's rules::screen): its longer side first."""
+    return {"width": max(display), "height": min(display)}
+
+
+def screen_reports(lines: list[str]) -> list[dict]:
+    """The app's lines for a new or settled screen, with logcat's wall time in ms."""
+    reports = []
+    for line in lines:
+        found = SCREEN_NOW.search(line)
+        if found:
+            reports.append({"at_ms": round(d10.wall_seconds(found.group(1)) * 1000),
+                            "screen": {"width": int(found.group(2)), "height": int(found.group(3))},
+                            "settled": found.group(4) == "settled"})
+    return reports
+
+
+def start_request(lines: list[str]) -> "dict | None":
+    """The last Start that the app sent to the viewer's lifecycle."""
+    for line in reversed(lines):
+        found = START.search(line)
+        if found:
+            return json.loads(found.group(1))["command"]["value"]
+    return None
+
+
+def new_screen(emulator, logcat, sender, out: Path, launch: str, command: str, screen: dict, name: str,
+               before: dict) -> tuple[dict, dict]:
+    """The trigger gives the app another display reading; what the app, the lifecycle and korrid show."""
+    said = f"{screen['width']}x{screen['height']}"
+    mark = logcat.mark()
+    log(f"the trigger: {command}; the screen must become {said}")
+    d10.trigger(emulator, command)
+    d10.waiting(logcat, sender, f"korri-app: viewer screen now {said}, not settled", mark, 20)
+    d10.waiting(logcat, sender, f"korri-app: viewer screen now {said}, settled", mark, 20)
+    time.sleep(1)
+    lines = logcat.lines()[mark:]
+    reports = screen_reports(lines)
+    events = [json.loads(found.group(1))["value"].get("shape") for found in map(SNAPSHOT_EVENT.search, lines) if found]
+    done: dict = {"command": command, "reports": reports, "snapshot_event_shapes": events}
+    done["settle_ms"] = reports[1]["at_ms"] - reports[0]["at_ms"] if len(reports) == 2 else None
+    # What korrid's live-shape poll reads now, through korrid's own adapter.
+    observed = shape(d10.proof_snapshot(emulator, logcat, launch))
+    done["korrids_snapshot_shape"] = observed
+    done["picture"] = d10.bars(emulator, out, name, 3, 1.0)
+    same = {"connection": before.get("connection"), "encoded": before.get("encoded")}
+    checks = {
+        f"{name}_the_app_reports_the_new_screen_at_once_and_then_settled": [(r["screen"], r["settled"]) for r in reports]
+        == [(screen, False), (screen, True)],
+        f"{name}_the_screen_settles_after_400_ms": done["settle_ms"] is not None
+        and SETTLE_MS[0] <= done["settle_ms"] <= SETTLE_MS[1],
+        f"{name}_the_shape_names_the_new_screen_and_is_not_ready_until_settled": events
+        == [{**same, "screen": screen, "ready": False}, {**same, "screen": screen, "ready": True}],
+        f"{name}_korrid_reads_the_settled_screen_ready": observed == {**same, "screen": screen, "ready": True},
+        f"{name}_the_stream_plays_on": d10.rising(done["picture"]),
+    }
+    return done, checks
 
 
 def resize(emulator, logcat, sender, out: Path, launch: str, size: tuple[int, int], name: str,
@@ -344,6 +449,21 @@ def main() -> int:
         checks["the_viewer_reports_ready_to_korrid"] = first.get("ready") is True
         checks["korrid_reads_the_encoded_size_1280x720"] = first.get("encoded") == {"width": STREAM[0], "height": STREAM[1]}
         connection = first.get("connection")
+        # #509 items 3 and 4: the screen is the display's physical size; korrid's prepare sent it.
+        panel = display_mode(emulator)
+        steps["display_mode"] = panel
+        screen = screen_of(panel) if panel else None
+        said = f"{screen['width']}x{screen['height']}" if screen else None
+        sent = [found.group(1) for found in map(PREPARE_DISPLAY.search, logcat.lines()[launch_mark:]) if found]
+        steps["sent_with_prepare"] = sent
+        steps["start"] = start_request(logcat.lines()[launch_mark:])
+        steps["screen_reports_at_the_start"] = screen_reports(logcat.lines()[mark:launch_mark])
+        checks["the_display_has_a_mode"] = panel is not None
+        checks["korrids_prepare_sent_the_screen"] = said is not None and bool(sent) and set(sent) == {said}
+        checks["the_start_names_the_screen"] = screen is not None and (steps["start"] or {}).get("display") == screen
+        checks["korrid_reads_the_screen"] = screen is not None and first.get("screen") == screen
+        checks["the_app_read_the_screen_when_it_started"] = [(r["screen"], r["settled"]) for r in steps[
+            "screen_reports_at_the_start"]] == [(screen, False), (screen, True)]
 
         steps["portrait"], portrait_checks = resize(emulator, logcat, sender, out, launch, PORTRAIT, "portrait",
                                                     connection)
@@ -351,6 +471,44 @@ def main() -> int:
         steps["landscape"], landscape_checks = resize(emulator, logcat, sender, out, launch, STREAM, "landscape",
                                                       connection)
         checks.update(landscape_checks)
+
+        # #509 item 5: another screen in the middle of the stream, and back.
+        playing = shape(d10.proof_snapshot(emulator, logcat, launch))
+        steps["other_panel"], other_checks = new_screen(
+            emulator, logcat, sender, out, launch, f"display {OTHER_PANEL[0]} {OTHER_PANEL[1]}",
+            screen_of(OTHER_PANEL), "other-panel", playing)
+        checks.update(other_checks)
+        if screen is not None:
+            steps["first_panel"], first_checks = new_screen(
+                emulator, logcat, sender, out, launch, "display real", screen, "first-panel", playing)
+            checks.update(first_checks)
+
+        # #509 item 3: the display, not the window. The stream ends and starts again in a smaller window.
+        log("Home, a smaller logical display, and the app again: korrid's recovery starts the stream")
+        home_mark = logcat.mark()
+        emulator.shell("input keyevent KEYCODE_HOME")
+        checks["home_stops_the_stream"] = d10.waiting(logcat, sender, d10.STOPPED, home_mark, 30) is not None \
+            and d10.waiting(logcat, sender, d10.ENDED, home_mark, 30) is not None
+        emulator.shell(f"wm size {SMALLER[0]}x{SMALLER[1]}")
+        time.sleep(3)
+        steps["display_mode_in_the_smaller_display"] = display_mode(emulator)
+        again_mark = logcat.mark()
+        d8.start_app(emulator, out, "again")
+        again = d10.waiting(logcat, sender, d10.RUNNING, again_mark, 90)
+        d10.waiting(logcat, sender, f"in the window {max(SMALLER)}x{min(SMALLER)}", again_mark, 20)
+        time.sleep(2)
+        lines = logcat.lines()
+        windows = [(int(found.group(1)), int(found.group(2))) for found in map(d10.PLACED_IN.search, lines[again_mark:])
+                   if found]
+        steps["again"] = {"running": again is not None, "start": start_request(lines[again_mark:]),
+                          "placed_in_windows": windows, "screen_reports": screen_reports(lines[home_mark:])}
+        checks["the_panel_keeps_its_mode_in_a_smaller_display"] = panel is not None \
+            and steps["display_mode_in_the_smaller_display"] == panel
+        checks["the_stream_starts_again_in_the_smaller_window"] = again is not None \
+            and bool(windows) and windows[-1] == (max(SMALLER), min(SMALLER))
+        checks["the_start_names_the_display_not_the_window"] = screen is not None \
+            and (steps["again"]["start"] or {}).get("display") == screen
+        checks["a_smaller_window_is_no_new_screen"] = steps["again"]["screen_reports"] == []
 
         crashes = [l for l in logcat.lines() if "FATAL" in l or "Fatal signal" in l or "korri: panic" in l or "ANR in" in l]
         result["crashes"] = crashes
