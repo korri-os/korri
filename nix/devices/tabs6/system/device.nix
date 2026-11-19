@@ -129,6 +129,10 @@ lib.mkMerge [
         "context.objects" = [
           {
             factory = "adapter";
+            # On the product kernel hw:0,1 refuses to open for capture, and a
+            # failing context object makes PipeWire exit: no sink, no volume
+            # (2026-11-19). nofail keeps PipeWire up without the microphones.
+            flags = [ "nofail" ];
             args = {
               "factory.name" = "api.alsa.pcm.source";
               "node.name" = "alsa_input.tabs6.mic";
