@@ -147,7 +147,7 @@ describe("a window each", () => {
     expect(s.listRows).toEqual([])
     expect(s.elsewhere).toBe(true)
     expect(f.listQr).toBe("")
-    expect(f.list.panel).toBe("none")
+    expect(f.list.panel).toBe("")
   })
 
   test("Korri's status takes the Stage; the Floor's page waits under it, inert", () => {

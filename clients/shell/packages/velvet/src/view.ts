@@ -389,7 +389,7 @@ function whole(state: State, model: Model, size: Size, part: Part) {
     emptyTitle: empty?.title ?? NONE,
     emptyLines: empty?.lines ?? NONE,
     emptyButtons: empty?.buttons ?? NONE,
-    list: list === undefined ? NO_PAGE : part.sideOff === true ? { ...list.list, panel: "none", panelTitle: "", qr: NO_IMAGE } : list.list,
+    list: list === undefined ? NO_PAGE : part.sideOff === true ? { ...list.list, panel: "", panelTitle: "" } : list.list,
     listRows: sideOnly ? NONE : list?.rows ?? NONE,
     listButtons: sideOnly ? NONE : list?.buttons ?? NONE,
     listPanelLines: part.sideOff === true ? NONE : list?.panelLines ?? NONE,
