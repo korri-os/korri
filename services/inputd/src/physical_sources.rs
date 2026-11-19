@@ -11,7 +11,7 @@ use zbus::proxy::CacheProperties;
 use crate::{
     dbus::{
         composite_paths_from_introspection, current_unique_owner, DbusRuntimeError,
-        DBUS_OPERATION_TIMEOUT, INPUTPLUMBER_ROOT_PATH,
+        INPUTPLUMBER_ROOT_PATH,
     },
     devices::DeviceDescriptor,
     source_topology::{SourceTopology, SysfsSourceClassifier},
@@ -206,13 +206,20 @@ fn is_target_path(path: &str) -> bool {
 /// selected target is an error, with no compatibility path for older providers.
 /// The complete pass, including the final owner check, has a fixed deadline.
 /// No `dbus0` assumption, profile write, Stop, GetAll, or stable key is involved.
+/// A whole discovery pass makes several authorized property reads per
+/// composite, and InputPlumber checks each with polkit. On the Galaxy Tab S6
+/// one checked read takes about 190 ms (2026-11-19), so a pass bounded by the
+/// single-call `DBUS_OPERATION_TIMEOUT` (500 ms) never finished and capture
+/// failed closed with no controller. Bound the pass, not each call, by this.
+pub const PHYSICAL_DISCOVERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 pub async fn discover_physical_sources(
     connection: &zbus::Connection,
     devices: &[DeviceDescriptor],
     classifier: &SysfsSourceClassifier,
 ) -> Result<PhysicalSources, DbusRuntimeError> {
     tokio::time::timeout(
-        DBUS_OPERATION_TIMEOUT,
+        PHYSICAL_DISCOVERY_TIMEOUT,
         discover(connection, devices, classifier),
     )
     .await
