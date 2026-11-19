@@ -2886,6 +2886,11 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
     /// state, as before.
     fn stop(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
         self.invalidate_observations()?;
+        // ADR 0083: the end of a Steam engine session korrid stops is not
+        // the session program's refusal.
+        if let Some(sessions) = crate::steam_engine::started_sessions() {
+            sessions.stopping(launch_id);
+        }
         let (needs_thaw, failed) = match self.state(launch_id) {
             Ok(state) => (state.needs_thaw_before_stop(), false),
             Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => (false, true),

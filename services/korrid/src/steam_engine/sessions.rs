@@ -30,6 +30,11 @@ use std::{
 /// large save can take longer, so korrid allows a margin over it.
 pub const EXIT_SYNC_BOUND: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_millis(200);
+/// A session host gets this long to end after `shutdown`.
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
+/// The reason of a session whose game unit ended before any game ran, with
+/// no word from the host.
+pub const NO_GAME: &str = "The Steam engine session ended before the game started.";
 
 /// Who and what the session is, for its save snapshots.
 #[derive(Clone, Debug)]
@@ -50,6 +55,10 @@ struct Running {
     stop: Arc<AtomicBool>,
     exit_synced: Arc<AtomicBool>,
     refusal: Arc<Mutex<Option<String>>>,
+    /// The launch sync finished or the game exited: a game ran.
+    game_started: Arc<AtomicBool>,
+    /// korrid stopped the game unit itself: no refusal of its own.
+    stopped: AtomicBool,
     watcher: Option<JoinHandle<()>>,
 }
 
@@ -151,6 +160,7 @@ impl Sessions {
         let stop = Arc::new(AtomicBool::new(false));
         let exit_synced = Arc::new(AtomicBool::new(false));
         let refusal = Arc::new(Mutex::new(None));
+        let game_started = Arc::new(AtomicBool::new(false));
         let watcher = {
             let watch = Watch {
                 launch_id: launch_id.into(),
@@ -163,6 +173,7 @@ impl Sessions {
                 plan: plan.clone(),
                 exit_synced: Arc::clone(&exit_synced),
                 refusal: Arc::clone(&refusal),
+                game_started: Arc::clone(&game_started),
             };
             let stop = Arc::clone(&stop);
             std::thread::Builder::new()
@@ -179,6 +190,8 @@ impl Sessions {
                 stop,
                 exit_synced,
                 refusal,
+                game_started,
+                stopped: AtomicBool::new(false),
                 watcher: Some(watcher),
             },
         );
@@ -190,10 +203,60 @@ impl Sessions {
     /// program refuses then, but a wrapper in the game unit (gamescope) may
     /// end with 0 and the unit is collected with its status text, so korrid
     /// says it from the host's own events.
+    ///
+    /// With no word from the host at all (the session program could not
+    /// reach it), a game unit that ended before any game ran still failed:
+    /// `NO_GAME`, unless korrid stopped the unit itself.
     pub fn take_refusal(&self, launch_id: &str) -> Option<String> {
+        let said = |guard: &BTreeMap<String, Running>| {
+            if let Some(running) = guard.get(launch_id) {
+                running.stopped.store(true, Ordering::SeqCst);
+            }
+        };
+        let (refusal, game_started, stopped) = {
+            let guard = self.running.lock().expect("sessions poisoned");
+            let running = guard.get(launch_id)?;
+            (
+                Arc::clone(&running.refusal),
+                Arc::clone(&running.game_started),
+                running.stopped.load(Ordering::SeqCst),
+            )
+        };
+        if stopped {
+            return refusal.lock().ok()?.take();
+        }
+        // The watcher reads every POLL: give it the host's last words.
+        let deadline = Instant::now() + 3 * POLL;
+        loop {
+            if let Some(reason) = refusal.lock().ok()?.take() {
+                // The session's one reason: no generic one after it.
+                said(&self.running.lock().expect("sessions poisoned"));
+                return Some(reason);
+            }
+            if game_started.load(Ordering::SeqCst) {
+                return None;
+            }
+            if Instant::now() >= deadline {
+                break;
+            }
+            std::thread::sleep(POLL / 4);
+        }
+        // Said once, as a refusal is.
         let running = self.running.lock().expect("sessions poisoned");
-        let refusal = running.get(launch_id)?.refusal.lock().ok()?.take();
-        refusal
+        let running = running.get(launch_id)?;
+        (!running.stopped.swap(true, Ordering::SeqCst)).then(|| NO_GAME.to_owned())
+    }
+
+    /// korrid is stopping this session's game unit: its end is no failure.
+    pub fn stopping(&self, launch_id: &str) {
+        if let Some(running) = self
+            .running
+            .lock()
+            .expect("sessions poisoned")
+            .get(launch_id)
+        {
+            running.stopped.store(true, Ordering::SeqCst);
+        }
     }
 
     /// After the game unit is gone: wait for the exit sync (or the host's
@@ -209,12 +272,31 @@ impl Sessions {
             return Ok(());
         };
         let _live = Live(&self.live);
+        // With no game there is no exit sync to wait for.
+        let bound = if running.game_started.load(Ordering::SeqCst) {
+            bound
+        } else {
+            Duration::ZERO
+        };
         let deadline = Instant::now() + bound;
         while !running.exit_synced.load(Ordering::SeqCst)
             && self.units.active(&running.mode).unwrap_or(false)
             && Instant::now() < deadline
         {
             std::thread::sleep(POLL);
+        }
+        // Ask the host to end by itself (it writes the engine's stores),
+        // then stop the unit, whose KillSignal is SIGKILL, for what is left.
+        let channel = Channel::open(&running.channel);
+        if self.units.active(&running.mode).unwrap_or(false)
+            && channel
+                .send_within(Command::Shutdown, Duration::from_secs(2))
+                .is_ok()
+        {
+            let deadline = Instant::now() + SHUTDOWN_GRACE;
+            while self.units.active(&running.mode).unwrap_or(false) && Instant::now() < deadline {
+                std::thread::sleep(POLL);
+            }
         }
         running.stop.store(true, Ordering::SeqCst);
         if let Some(watcher) = running.watcher.take() {
@@ -248,6 +330,7 @@ struct Watch {
     plan: HostPlan,
     exit_synced: Arc<AtomicBool>,
     refusal: Arc<Mutex<Option<String>>>,
+    game_started: Arc<AtomicBool>,
 }
 
 impl Watch {
@@ -297,6 +380,14 @@ impl Watch {
         };
         if let Some(refusal) = refusal {
             *self.refusal.lock().expect("refusal poisoned") = Some(refusal);
+        }
+        let ran = match event {
+            Event::SyncFinished { kind, result, .. } => kind == "launch" && result != "conflict",
+            Event::Command { command, .. } => command == "exited",
+            _ => false,
+        };
+        if ran {
+            self.game_started.store(true, Ordering::SeqCst);
         }
         match event {
             Event::SyncFinished { kind, .. } if kind == "exit" => {
@@ -467,7 +558,8 @@ while read -r line <&3; do
   case "$line" in
     "resolve "*) echo "{{\"event\":\"resolved\",\"line\":\"$line\"}}"; echo "$line" > "$channel/resolved" ;;
     "launched "*) mkdir -p "$channel/saves"; cp '{export}' "$channel/saves/70-launch-1.tar"; echo "{{\"event\":\"save_export\",\"appid\":70,\"archive\":\"$channel/saves/70-launch-1.tar\"}}"; {conflict} ;;
-    "exited "*) mkdir -p "$channel/saves"; cp '{export}' "$channel/saves/70-exit-2.tar"; echo "{{\"event\":\"save_export\",\"appid\":70,\"archive\":\"$channel/saves/70-exit-2.tar\"}}"; sleep 0.3; echo '{{"event":"sync_finished","appid":70,"kind":"exit","result":"synchronized"}}' ;;
+    "exited "*) echo '{{"event":"command","command":"exited","appid":70,"queued":false}}'; mkdir -p "$channel/saves"; cp '{export}' "$channel/saves/70-exit-2.tar"; echo "{{\"event\":\"save_export\",\"appid\":70,\"archive\":\"$channel/saves/70-exit-2.tar\"}}"; sleep 0.3; echo '{{"event":"sync_finished","appid":70,"kind":"exit","result":"synchronized"}}' ;;
+    shutdown) exit 0 ;;
   esac
 done"#,
                 export = export.display()
@@ -640,6 +732,80 @@ done"#,
         assert_eq!(sessions.take_refusal(LAUNCH), None);
     }
 
+    fn silent_sessions(temp: &Path, body: &str) -> (Sessions, HostPlan) {
+        let launches = temp.join("launches");
+        let sessions = Sessions::new(
+            Arc::new(ProcessHostUnits::new(&launches)),
+            &launches,
+            unsafe { libc::geteuid() },
+        );
+        let host = crate::steam_engine::host::tests::script_host(temp, body);
+        (sessions, plan(host, temp))
+    }
+
+    /// Device run 23:45: the session program died before it reached the
+    /// host (no sh). No game, no refusal, no exited: still a failure.
+    #[test]
+    fn a_game_unit_that_ended_with_no_game_and_no_word_failed() {
+        let temp = tempfile::tempdir().unwrap();
+        let (sessions, plan) = silent_sessions(
+            temp.path(),
+            r#"exec 3<>"$fifo"
+while read -r line <&3; do case "$line" in shutdown) exit 0 ;; esac; done"#,
+        );
+        sessions.start(LAUNCH, &plan, None).unwrap();
+        assert_eq!(sessions.take_refusal(LAUNCH).as_deref(), Some(NO_GAME));
+        assert_eq!(sessions.take_refusal(LAUNCH), None, "said once");
+        sessions.finish(LAUNCH, Duration::from_millis(100)).unwrap();
+        // korrid stopped it: no failure of the session program.
+        sessions.start(LAUNCH, &plan, None).unwrap();
+        sessions.stopping(LAUNCH);
+        assert_eq!(sessions.take_refusal(LAUNCH), None);
+        sessions.finish(LAUNCH, Duration::from_millis(100)).unwrap();
+    }
+
+    /// A game that ran ends as it always did, with no refusal.
+    #[test]
+    fn a_game_that_ran_has_no_refusal() {
+        let temp = tempfile::tempdir().unwrap();
+        let (sessions, plan) = silent_sessions(
+            temp.path(),
+            r#"echo '{"event":"sync_finished","appid":70,"kind":"launch","result":"synchronized"}'
+exec 3<>"$fifo"
+while read -r line <&3; do case "$line" in shutdown) exit 0 ;; esac; done"#,
+        );
+        sessions.start(LAUNCH, &plan, None).unwrap();
+        std::thread::sleep(Duration::from_millis(600));
+        assert_eq!(sessions.take_refusal(LAUNCH), None);
+        sessions.finish(LAUNCH, Duration::from_millis(100)).unwrap();
+    }
+
+    /// Device run 23:43: the host of a launch that never ran a game lived
+    /// 62 s until SIGKILL. With no game there is no exit sync to wait for:
+    /// the host is asked to shut down at once and ends by itself.
+    #[test]
+    fn with_no_game_the_host_shuts_down_at_once() {
+        let temp = tempfile::tempdir().unwrap();
+        let asked = temp.path().join("asked");
+        let (sessions, plan) = silent_sessions(
+            temp.path(),
+            &format!(
+                r#"exec 3<>"$fifo"
+while read -r line <&3; do case "$line" in shutdown) touch '{}'; exit 0 ;; esac; done"#,
+                asked.display()
+            ),
+        );
+        sessions.start(LAUNCH, &plan, None).unwrap();
+        let started = Instant::now();
+        sessions.finish(LAUNCH, EXIT_SYNC_BOUND).unwrap();
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
+        assert!(asked.exists(), "the host was asked to shut down");
+    }
+
     /// The session program's own refusal reaches the session as its text.
     #[test]
     fn a_launch_refusal_gives_the_session_its_message() {
@@ -692,6 +858,7 @@ while read -r line <&3; do :; done"#,
             plan: plan(temp.path().join("host"), temp.path()),
             exit_synced: Arc::default(),
             refusal: Arc::default(),
+            game_started: Arc::default(),
         };
         assert_eq!(
             watch
