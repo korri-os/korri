@@ -108,6 +108,12 @@ in
   # (README.md, "Pair a Bluetooth controller").
   environment.systemPackages = [ pair ];
 
+  # The GameSir-G8+ answers some HID-over-GATT reads with Attribute Not Found;
+  # stock BlueZ then never reads the Report Map and makes no input device.
+  hardware.bluetooth.package = pkgs.bluez.overrideAttrs (old: {
+    patches = (old.patches or [ ]) ++ [ ./bluetooth/bluez-hog-read-report-map-after-failed-reads.patch ];
+  });
+
   # sway runs `exec` bindings through `sh -c`; the compositor's PATH has no sh.
   systemd.services.korri-compositor.path = [ pkgs.bash ];
 
