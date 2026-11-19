@@ -1515,9 +1515,10 @@ namespace (ADR 0083 amends ADR 0011): `steam/steamapps/appmanifest_*.acf` and
 `steam-engine/steam/steamapps/appmanifest_*.acf`. A discovery entry names its
 full id; a local key is refused. Unknown providers, foreign owners, duplicates,
 empty titles and missing handlers fail admission. korrid runs the discovery
-only while that plugin is the single enabled plugin named `steam`. This is first-party integration, not an open plugin capability.
-Third-party plugins cannot discover from their own data until another real case
-needs it. No plugin may declare a new root or a broader rule.
+only while that plugin is the single enabled plugin named `steam`. The table is
+closed: only the Steam plugin discovers, and only from these two roots. No other
+plugin may discover from its own data until another real case needs it, and no
+plugin may declare a new root or a broader rule.
 
 For the single enabled plugin named `steam`, korrid reads the manifests and
 calls `discovery.discover` with `{pluginId, files: [{relativePath, text}]}`, one

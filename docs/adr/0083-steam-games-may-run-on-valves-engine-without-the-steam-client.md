@@ -72,7 +72,11 @@ OpenSteamClient and Aurelia. The risk falls on the person's Steam account.
   its progress. The game starts after that.
 - The runner, the shim and the engine host's source are public, in the Steam
   plugin. The map of engine internals for each pinned engine version is built
-  privately and ships only with the prebuilt engine host.
+  privately and ships only with the prebuilt engine host. The map source stays
+  out of every public repository. The plugins publish job reads it from a
+  GitHub Actions secret and builds it into the published `@korri:steam`, so a
+  device needs no private build to use the engine runner (owner decision,
+  2026-11-19).
 - The sign-in token stays in the engine's Steam folder, owned by the user
   that runs games. The engine reads and writes it. korrid never reads it.
 - The engine runs for one session and stops when the session ends. Korri does
@@ -119,3 +123,17 @@ each of them by its full id.
 - Trust comes from two things: the owner's approval when a plugin of a bound
   publisher is installed, and this single-enabled rule. The name `steam` alone
   grants nothing.
+- This covers a sideloaded build that names itself `steam` under another
+  publisher. The owner accepts that: the install approval shows the publisher
+  and the exact package digest, and that approval is the trust decision (owner
+  decision, 2026-11-19).
+
+## Steam Cloud conflict picks
+
+The owner accepted the shape of the conflict record that korrid keeps in
+`<private state root>/steam-engine-conflicts.json` (owner decision,
+2026-11-19). `conflicts` holds, per person and game, the app id, the ids of
+the split's two snapshots (`local` and `cloud`, both in the save store) and the
+side the person `picked`, until korrid sends it to the engine. `launches` holds
+the launches whose session hit a conflict, so their completion adds no third
+head. Both survive a korrid restart.
