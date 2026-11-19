@@ -34,7 +34,7 @@ const MAX_REASON_READ_BYTES: u64 = (4 * MAX_REASON_CHARS + 3) as u64;
 
 /// Linux's native five-entry ACL shape is also used by systemd credentials
 /// (main.rs). Group and other have no access; mask bits are not group grants.
-fn private_acl(owner: u16, user: u32, permission: u16) -> Vec<u8> {
+pub(crate) fn private_acl(owner: u16, user: u32, permission: u16) -> Vec<u8> {
     let mut bytes = 2_u32.to_le_bytes().to_vec();
     for (tag, permission, id) in [
         (1_u16, owner, u32::MAX),

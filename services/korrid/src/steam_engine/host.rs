@@ -28,6 +28,8 @@ use std::{
 };
 
 pub const COMMANDS: &str = "commands";
+/// The folder the host writes save archives into (`saves/<appid>-...tar`).
+pub const SAVES: &str = "saves";
 pub const SESSION_LOCK: &str = "session.lock";
 pub const HOST_LOCK: &str = "host.lock";
 pub const EVENTS: &str = "events.jsonl";
@@ -98,6 +100,47 @@ pub struct Channel {
     pub dir: PathBuf,
 }
 
+/// The default ACL of `saves/`: the archive's owner (the host) and the
+/// runtime user rwx, korrid (`korrid_uid`) rwx, nobody else. The mask is the
+/// group bits of the mode the host creates with, so korrid reads a 0644 or
+/// 0640 archive, and nothing more.
+fn saves_default_acl(runtime_uid: u32, korrid_uid: u32) -> Vec<u8> {
+    let mut users = [runtime_uid, korrid_uid];
+    users.sort_unstable();
+    let mut entries = vec![(1_u16, 7_u16, u32::MAX)];
+    for uid in users {
+        if entries.iter().all(|(_, _, id)| *id != uid) {
+            entries.push((2, 7, uid));
+        }
+    }
+    entries.extend([(4, 0, u32::MAX), (16, 7, u32::MAX), (32, 0, u32::MAX)]);
+    let mut bytes = 2_u32.to_le_bytes().to_vec();
+    for (tag, permission, id) in entries {
+        bytes.extend(tag.to_le_bytes());
+        bytes.extend(permission.to_le_bytes());
+        bytes.extend(id.to_le_bytes());
+    }
+    bytes
+}
+
+fn set_acl(file: &File, name: &std::ffi::CStr, acl: &[u8]) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+    let result = unsafe {
+        libc::fsetxattr(
+            file.as_raw_fd(),
+            name.as_ptr(),
+            acl.as_ptr().cast(),
+            acl.len(),
+            0,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
 impl Channel {
     /// Make the channel for `runtime_uid`. The directory, the locks and the
     /// FIFO are korrid's, with a named-user ACL for the game user only, as
@@ -145,6 +188,21 @@ impl Channel {
         if grant {
             // The shim in the game unit reads the host's answers.
             crate::host::launch_diagnostics::grant_user(&events, 6, runtime_uid, 4)?;
+        }
+        // Save archives: korrid's folder, so korrid can always remove what
+        // the host wrote there. The host gets rwx; the default ACL gives
+        // korrid read on every archive the host makes, whatever its umask.
+        let saves = dir.join(SAVES);
+        fs::create_dir(&saves)?;
+        fs::set_permissions(&saves, fs::Permissions::from_mode(0o700))?;
+        if grant {
+            let folder = File::open(&saves)?;
+            crate::host::launch_diagnostics::grant_user(&folder, 7, runtime_uid, 7)?;
+            set_acl(
+                &folder,
+                c"system.posix_acl_default",
+                &saves_default_acl(runtime_uid, unsafe { libc::geteuid() }),
+            )?;
         }
         Ok(Self {
             dir: dir.to_path_buf(),
@@ -711,6 +769,70 @@ done"#,
         );
         channel.remove().unwrap();
         assert!(!mode.channel(&launches).exists());
+    }
+
+    fn xattr(path: &Path, name: &std::ffi::CStr) -> Vec<u8> {
+        let path = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
+        let mut buffer = vec![0_u8; 256];
+        let size = unsafe {
+            libc::getxattr(
+                path.as_ptr(),
+                name.as_ptr(),
+                buffer.as_mut_ptr().cast(),
+                buffer.len(),
+            )
+        };
+        assert!(size >= 0, "{}", io::Error::last_os_error());
+        buffer.truncate(size as usize);
+        buffer
+    }
+
+    /// Review B1: korrid makes `saves/` itself, so it owns what it removes;
+    /// the host (the runtime user) gets rwx, and the default ACL gives
+    /// korrid read on the host's archives. Only a device run with two real
+    /// uids proves the kernel side; this checks the ACLs korrid sets.
+    #[test]
+    fn the_saves_folder_is_korrids_with_acls_for_the_host_and_korrid() {
+        let temp = tempfile::tempdir().unwrap();
+        let me = unsafe { libc::geteuid() };
+        let runtime = me + 4242;
+        let channel = Channel::create(&temp.path().join("c"), runtime).unwrap();
+        let saves = channel.dir.join(SAVES);
+        let metadata = fs::metadata(&saves).unwrap();
+        assert!(metadata.is_dir());
+        assert_eq!(std::os::unix::fs::MetadataExt::uid(&metadata), me);
+        assert_eq!(
+            xattr(&saves, c"system.posix_acl_access"),
+            crate::host::launch_diagnostics::private_acl(7, runtime, 7)
+        );
+        let default = xattr(&saves, c"system.posix_acl_default");
+        assert_eq!(default, saves_default_acl(runtime, me));
+        // user_obj, the two named users (sorted), group_obj, mask, other.
+        let entries: Vec<(u16, u16, u32)> = default[4..]
+            .chunks(8)
+            .map(|e| {
+                (
+                    u16::from_le_bytes([e[0], e[1]]),
+                    u16::from_le_bytes([e[2], e[3]]),
+                    u32::from_le_bytes([e[4], e[5], e[6], e[7]]),
+                )
+            })
+            .collect();
+        assert_eq!(
+            entries,
+            [
+                (1, 7, u32::MAX),
+                (2, 7, me),
+                (2, 7, runtime),
+                (4, 0, u32::MAX),
+                (16, 7, u32::MAX),
+                (32, 0, u32::MAX)
+            ]
+        );
+        // An archive made there carries the named entries; korrid removes it.
+        fs::write(saves.join("70-exit-2.tar"), b"tar").unwrap();
+        channel.remove().unwrap();
+        assert!(!temp.path().join("c").exists());
     }
 
     #[test]
