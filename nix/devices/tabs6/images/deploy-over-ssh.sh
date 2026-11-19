@@ -148,6 +148,12 @@ if [ "$reboot" = yes ]; then
 		case $state in
 		"inactive success 0 ") ;;
 		"inactive success "*)
+			# A clean exit also covers "not a trial"; require the bless itself.
+			if ! on_tablet "journalctl -b -q -u tabs6-boot-good --no-pager | grep -q 'blessed: '"; then
+				echo "deploy-over-ssh: tabs6-boot-good exited without blessing the entry; the next boot falls back" >&2
+				on_tablet "journalctl -b -q -u tabs6-boot-good --no-pager | tail -5" >&2 || true
+				exit 1
+			fi
 			select_bundle
 			exit 0
 			;;

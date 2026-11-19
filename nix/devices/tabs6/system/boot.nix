@@ -15,6 +15,10 @@ let
   cfg = config.tabs6;
   rootDevice = "/dev/disk/by-partlabel/userdata";
   tabs6-esp = pkgs.callPackage ../esp/package.nix { };
+  # udev makes the by-partlabel links after early boot; a unit that opens
+  # them must wait for their device units (2026-11-18: tabs6-boot-good and
+  # tabs6-grow-root both ran before the links existed).
+  partlabelUnit = label: "dev-disk-by\\x2dpartlabel-${label}.device";
 in
 {
   options.tabs6 = {
@@ -122,7 +126,11 @@ in
     systemd.services.tabs6-grow-root = {
       description = "Grow the root filesystem to fill userdata";
       wantedBy = [ "multi-user.target" ];
-      after = [ "local-fs.target" ];
+      requires = [ (partlabelUnit "userdata") ];
+      after = [
+        "local-fs.target"
+        (partlabelUnit "userdata")
+      ];
       serviceConfig = {
         Type = "oneshot";
         ExecStart = "${pkgs.e2fsprogs}/bin/resize2fs ${rootDevice}";
@@ -156,7 +164,13 @@ in
     systemd.services.tabs6-boot-good = {
       description = "Bless the Tab S6 boot entry once the system is reachable";
       wantedBy = [ "multi-user.target" ];
-      after = [ "local-fs.target" ];
+      # Without the ESP link `tabs6-esp trial` fails and the trial was read
+      # as "not a trial": never blessed, so the next boot fell back.
+      requires = [ (partlabelUnit "cache") ];
+      after = [
+        "local-fs.target"
+        (partlabelUnit "cache")
+      ];
       path = [
         tabs6-esp
         config.systemd.package
