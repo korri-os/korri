@@ -94,6 +94,27 @@ signed closure, set the system profile, run `switch-to-configuration boot`
 with the install-bootloader variables unset, keep the previous generation,
 and reboot explicitly. `efi.canTouchEfiVariables` stays false.
 
+**Then switch the Korri bundle to the new system's.** A new generation does
+not select its own bundle. Its units keep running the previously selected
+bundle's binaries until you switch. On 2026-11-19 this was skipped. The
+old local signer panicked (`KORRI_LOCAL_SIGNER_PRIVATE_STATE_ROOT must be
+set`), and korrid never started. Take the exact bundle from
+`nixosConfigurations.thor.config.services.korriBundle.initialPackage`, check
+that it is in the new closure, and run:
+
+```sh
+/run/current-system/sw/bin/korri-bundle-select switch EXACT-NEW-BUNDLE /run/current-system/sw/bin/systemctl
+```
+
+If korrid already hit its start limit, run `systemctl reset-failed
+korrid-identity korrid-control.socket korri-local-signer`, then start
+`korrid-control.socket` and `korrid.service`.
+
+While the bottom-screen stall is open, the default boot entry is a copy of
+the new generation's entry with `video=DSI-1:d` added
+(`/boot/loader/entries/thor-main-top-only.conf`). Make it again after
+every `switch-to-configuration boot`.
+
 No step writes a raw block device, the GPT, LUN 1 to 5, or any firmware
 partition, changes the bootloader state, or writes EFI variables.
 
