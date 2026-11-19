@@ -233,6 +233,8 @@ interface Part {
   readonly pickOnly?: boolean
   /** A list page's side content alone (the backup's QR code): its rows are the Floor's. */
   readonly sideOnly?: boolean
+  /** A list page without its side content: the Stage shows that. */
+  readonly sideOff?: boolean
   /** No curtain, keyboard, sheet or notice: they are the other window's. */
   readonly layersOff?: boolean
   /** No page: the stage light alone. */
@@ -292,6 +294,7 @@ function floorWindow(state: State, model: Model) {
     elsewhere: onStage,
     unfocused: !onStage && what === "home" && state.depth === 0,
     layersOff: onStage,
+    sideOff: true,
     veil: FLOOR_VEIL,
   })
 }
@@ -386,14 +389,14 @@ function whole(state: State, model: Model, size: Size, part: Part) {
     emptyTitle: empty?.title ?? NONE,
     emptyLines: empty?.lines ?? NONE,
     emptyButtons: empty?.buttons ?? NONE,
-    list: list?.list ?? NO_PAGE,
+    list: list === undefined ? NO_PAGE : part.sideOff === true ? { ...list.list, panel: "none", panelTitle: "", qr: NO_IMAGE } : list.list,
     listRows: sideOnly ? NONE : list?.rows ?? NONE,
     listButtons: sideOnly ? NONE : list?.buttons ?? NONE,
-    listPanelLines: list?.panelLines ?? NONE,
-    listTiles: list?.tiles ?? NONE,
+    listPanelLines: part.sideOff === true ? NONE : list?.panelLines ?? NONE,
+    listTiles: part.sideOff === true ? NONE : list?.tiles ?? NONE,
     // The code changes about every 20 s; top-level, so the shell sets it only then.
-    listQr: list?.qr ?? "",
-    listQrSize: list?.qrSize ?? 0,
+    listQr: part.sideOff === true ? "" : list?.qr ?? "",
+    listQrSize: part.sideOff === true ? 0 : list?.qrSize ?? 0,
     sheet: sheet === undefined ? NO_SHEET : { shown: true, title: sheet.title },
     sheetRows: sheet === undefined ? NONE : sheetRows(sheet, state, top === "sheet"),
     keyboard: keyboard.keyboard,

@@ -135,7 +135,9 @@ impl Backend for Winit {
     }
 
     fn set_title(&self, window: &slint::Window, title: &str) {
-        window.with_winit_window(|winit_window| winit_window.set_title(title));
+        // The vendored backend keeps it over the Window item's own `title`, which Slint
+        // applies again with the item's other properties (vendor/README.md).
+        window.set_title_override(Some(title));
     }
 
     fn place(&self, window: &slint::Window, placement: Placement) {

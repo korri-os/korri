@@ -415,6 +415,10 @@ pub struct WinitWindowAdapter {
     /// Whether the current winit window has presented a frame.
     first_frame_presented: Cell<bool>,
 
+    /// A title the application set over the Window item's own (`WinitWindowAccessor::
+    /// set_title_override`): kept when the item's properties are applied again.
+    pub(crate) title_override: RefCell<Option<String>>,
+
     #[cfg(target_arch = "wasm32")]
     virtual_keyboard_helper: RefCell<Option<super::wasm_input_helper::WasmInputHelper>>,
 
@@ -494,6 +498,7 @@ impl WinitWindowAdapter {
             has_explicit_size: Default::default(),
             pending_resize_event_after_show: Default::default(),
             first_frame_presented: Default::default(),
+            title_override: Default::default(),
             renderer,
             #[cfg(target_arch = "wasm32")]
             virtual_keyboard_helper: Default::default(),
@@ -1877,7 +1882,10 @@ impl WindowAdapter for WinitWindowAdapter {
                 i_slint_core::lengths::LogicalSize::new(64., 64.) * ScaleFactor::new(sf),
             ));
         }
-        winit_window_or_none.set_title(&properties.title());
+        match self.title_override.borrow().as_deref() {
+            Some(title) => winit_window_or_none.set_title(title),
+            None => winit_window_or_none.set_title(&properties.title()),
+        }
         winit_window_or_none.set_decorations(
             !window_item.no_frame() || winit_window_or_none.fullscreen().is_some(),
         );

@@ -140,13 +140,14 @@ describe("a window each", () => {
     const f = floor(run)
     const s = stage(run)
     expect(f.page).toBe("list")
-    expect(f.listQr).not.toBe("")
-    {
-      expect(s.page).toBe("list")
-      expect(s.listQr).toBe(f.listQr)
-      expect(s.listRows).toEqual([])
-      expect(s.elsewhere).toBe(true)
-    }
+    expect(focused(f).length).toBe(1)
+    // The code stands on the Stage, once: the Floor keeps the page's rows and buttons.
+    expect(s.page).toBe("list")
+    expect(s.listQr).not.toBe("")
+    expect(s.listRows).toEqual([])
+    expect(s.elsewhere).toBe(true)
+    expect(f.listQr).toBe("")
+    expect(f.list.panel).toBe("none")
   })
 
   test("Korri's status takes the Stage; the Floor's page waits under it, inert", () => {

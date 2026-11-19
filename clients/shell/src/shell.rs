@@ -255,6 +255,9 @@ pub struct Shell {
     image_jobs: mpsc::Sender<ImageJob>,
     clock: Instant,
     frames: FrameCounter,
+    /// Frames of a surface's further pane windows (ADR 0086), apart from the
+    /// Surface's and the Overlay's: `--stats` reports each window.
+    pane_frames: FrameCounter,
     repeat: Option<slint::Timer>,
     /// Sends `Event::Idle` once a second while the shell runs.
     idle_timer: Option<slint::Timer>,
@@ -347,6 +350,7 @@ impl Shell {
             image_jobs,
             clock: Instant::now(),
             frames: FrameCounter::default(),
+            pane_frames: FrameCounter::default(),
             repeat: None,
             idle_timer: None,
             native_active: None,
@@ -372,6 +376,11 @@ impl Shell {
 
     pub fn frames(&self) -> FrameCounter {
         self.frames.clone()
+    }
+
+    /// The frames of the further pane windows (ADR 0086), counted apart.
+    pub fn pane_frames(&self) -> FrameCounter {
+        self.pane_frames.clone()
     }
 
     pub fn timing(&self) -> Option<LoadTiming> {
@@ -678,9 +687,6 @@ impl Shell {
                     }
                 }
                 self.retire_drawn();
-                if window >= 2 {
-                    self.title_pane(generation, window);
-                }
                 // A window the shell mapped anew (the Overlay, or the Surface back from
                 // it) has drawn: korrid places it on the declare.
                 if self
@@ -1170,23 +1176,6 @@ impl Shell {
         self.update(&message);
     }
 
-    /// ADR 0086: title a pane window `korri-pane:<panes>` once it has drawn,
-    /// so korrid can place it apart from the shell's own window.
-    fn title_pane(&self, generation: u64, role: u8) {
-        let Some(current) = self.current.as_ref().filter(|c| c.generation == generation) else {
-            return;
-        };
-        if let Some(pane) = current.panes.iter().find(|p| pane_role(p.index) == role) {
-            let panes = current
-                .windows
-                .get(pane.index as usize)
-                .map(|panes| panes.join("+"))
-                .unwrap_or_default();
-            self.backend
-                .set_title(pane.component.window(), &format!("korri-pane:{panes}"));
-        }
-    }
-
     /// ADR 0086: make the further pane windows match `loaded.windows`, apply
     /// their new views, and map them exactly while the Surface window is
     /// mapped. A window past the model's count goes; one it lacks is made,
@@ -1210,6 +1199,14 @@ impl Shell {
             let index = loaded.panes.len() as u32 + 1;
             let role = pane_role(index);
             let component = loaded.surface_definition.create()?;
+            let panes = loaded
+                .windows
+                .get(index as usize)
+                .map(|panes| panes.join("+"))
+                .unwrap_or_default();
+            // korrid tells it from the shell's own window by this title (ADR 0086).
+            self.backend
+                .set_title(component.window(), &format!("korri-pane:{panes}"));
             self.bind_input(&component, loaded.generation, role)?;
             self.backend
                 .place(component.window(), self.options.placement);
@@ -1315,7 +1312,11 @@ impl Shell {
                     event,
                 })
             }),
-            self.frames.clone(),
+            if role >= 2 {
+                self.pane_frames.clone()
+            } else {
+                self.frames.clone()
+            },
         );
     }
 

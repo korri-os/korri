@@ -68,8 +68,8 @@ diff -ruN a/i-slint-backend-testing/search_api.rs b/i-slint-backend-testing/sear
          self.item.upgrade().is_some()
      }
 diff -ruN a/i-slint-backend-winit/build.rs b/i-slint-backend-winit/build.rs
---- a/i-slint-backend-winit/build.rs	2026-11-05 01:39:57.348707591 -0700
-+++ b/i-slint-backend-winit/build.rs	2026-11-05 01:39:57.350592570 -0700
+--- a/i-slint-backend-winit/build.rs	2026-11-19 06:57:30.524727348 -0700
++++ b/i-slint-backend-winit/build.rs	2026-11-19 06:57:30.527110706 -0700
 @@ -12,7 +12,7 @@
         enable_accesskit: { all(feature = "accessibility", not(target_arch = "wasm32")) },
         supports_opengl: { all(any(feature = "renderer-skia-opengl", feature = "renderer-femtovg"), not(ios_and_friends)) },
@@ -80,8 +80,8 @@ diff -ruN a/i-slint-backend-winit/build.rs b/i-slint-backend-winit/build.rs
      }
      println!("cargo:rustc-check-cfg=cfg(slint_nightly_test)");
 diff -ruN a/i-slint-backend-winit/Cargo.toml b/i-slint-backend-winit/Cargo.toml
---- a/i-slint-backend-winit/Cargo.toml	2026-11-05 01:39:57.348628691 -0700
-+++ b/i-slint-backend-winit/Cargo.toml	2026-11-05 01:39:57.350592570 -0700
+--- a/i-slint-backend-winit/Cargo.toml	2026-11-19 06:57:30.524580431 -0700
++++ b/i-slint-backend-winit/Cargo.toml	2026-11-19 06:57:30.526980375 -0700
 @@ -36,6 +36,8 @@
  rustdoc-args = ["--generate-link-to-definition"]
  
@@ -92,8 +92,8 @@ diff -ruN a/i-slint-backend-winit/Cargo.toml b/i-slint-backend-winit/Cargo.toml
      "dep:accesskit",
      "dep:accesskit_winit",
 diff -ruN a/i-slint-backend-winit/frame_throttle.rs b/i-slint-backend-winit/frame_throttle.rs
---- a/i-slint-backend-winit/frame_throttle.rs	2026-11-05 01:39:57.348859491 -0700
-+++ b/i-slint-backend-winit/frame_throttle.rs	2026-11-05 01:39:57.350106562 -0700
+--- a/i-slint-backend-winit/frame_throttle.rs	2026-11-19 06:57:30.525221746 -0700
++++ b/i-slint-backend-winit/frame_throttle.rs	2026-11-19 06:57:30.527110706 -0700
 @@ -16,7 +16,7 @@
      _is_wayland: bool,
  ) -> Box<dyn FrameThrottle> {
@@ -191,8 +191,8 @@ diff -ruN a/i-slint-backend-winit/frame_throttle.rs b/i-slint-backend-winit/fram
  }
 +
 diff -ruN a/i-slint-backend-winit/lib.rs b/i-slint-backend-winit/lib.rs
---- a/i-slint-backend-winit/lib.rs	2026-11-05 01:39:57.348914756 -0700
-+++ b/i-slint-backend-winit/lib.rs	2026-11-05 01:39:57.350302350 -0700
+--- a/i-slint-backend-winit/lib.rs	2026-11-19 06:57:30.525307981 -0700
++++ b/i-slint-backend-winit/lib.rs	2026-11-19 06:57:30.527427312 -0700
 @@ -35,6 +35,8 @@
  use winitwindowadapter::*;
  pub(crate) mod event_loop;
@@ -202,9 +202,38 @@ diff -ruN a/i-slint-backend-winit/lib.rs b/i-slint-backend-winit/lib.rs
  #[cfg(target_os = "ios")]
  mod ios;
  #[cfg(target_os = "macos")]
+@@ -1170,9 +1172,28 @@
+     fn winit_window(
+         &self,
+     ) -> impl std::future::Future<Output = Result<Arc<winit::window::Window>, PlatformError>>;
++
++    /// Sets a title that replaces the Window item's own `title` from now on, also when Slint
++    /// applies the item's properties again; `None` returns to the item's title. A no-op for
++    /// a window not backed by winit.
++    fn set_title_override(&self, title: Option<&str>);
+ }
+ 
+ impl WinitWindowAccessor for i_slint_core::api::Window {
++    fn set_title_override(&self, title: Option<&str>) {
++        let adapter = i_slint_core::window::WindowInner::from_pub(self).window_adapter();
++        let Some(adapter) = adapter
++            .internal(i_slint_core::InternalToken)
++            .and_then(|wa| (wa as &dyn core::any::Any).downcast_ref::<WinitWindowAdapter>())
++        else {
++            return;
++        };
++        *adapter.title_override.borrow_mut() = title.map(str::to_owned);
++        if let (Some(title), Some(window)) = (title, adapter.winit_window()) {
++            window.set_title(title);
++        }
++    }
++
+     fn has_winit_window(&self) -> bool {
+         i_slint_core::window::WindowInner::from_pub(self)
+             .window_adapter()
 diff -ruN a/i-slint-backend-winit/renderer/sw.rs b/i-slint-backend-winit/renderer/sw.rs
---- a/i-slint-backend-winit/renderer/sw.rs	2026-11-05 01:39:57.349102152 -0700
-+++ b/i-slint-backend-winit/renderer/sw.rs	2026-11-05 01:39:57.350485777 -0700
+--- a/i-slint-backend-winit/renderer/sw.rs	2026-11-19 06:57:30.525600718 -0700
++++ b/i-slint-backend-winit/renderer/sw.rs	2026-11-19 06:57:30.527683006 -0700
 @@ -92,6 +92,7 @@
              return Ok(DrawOutcome::Success);
          };
@@ -221,6 +250,40 @@ diff -ruN a/i-slint-backend-winit/renderer/sw.rs b/i-slint-backend-winit/rendere
          if !damage.is_empty() {
              winit_window.pre_present_notify();
              target_buffer
+diff -ruN a/i-slint-backend-winit/winitwindowadapter.rs b/i-slint-backend-winit/winitwindowadapter.rs
+--- a/i-slint-backend-winit/winitwindowadapter.rs	2026-11-19 06:57:30.525922858 -0700
++++ b/i-slint-backend-winit/winitwindowadapter.rs	2026-11-19 06:57:30.527783361 -0700
+@@ -415,6 +415,10 @@
+     /// Whether the current winit window has presented a frame.
+     first_frame_presented: Cell<bool>,
+ 
++    /// A title the application set over the Window item's own (`WinitWindowAccessor::
++    /// set_title_override`): kept when the item's properties are applied again.
++    pub(crate) title_override: RefCell<Option<String>>,
++
+     #[cfg(target_arch = "wasm32")]
+     virtual_keyboard_helper: RefCell<Option<super::wasm_input_helper::WasmInputHelper>>,
+ 
+@@ -494,6 +498,7 @@
+             has_explicit_size: Default::default(),
+             pending_resize_event_after_show: Default::default(),
+             first_frame_presented: Default::default(),
++            title_override: Default::default(),
+             renderer,
+             #[cfg(target_arch = "wasm32")]
+             virtual_keyboard_helper: Default::default(),
+@@ -1877,7 +1882,10 @@
+                 i_slint_core::lengths::LogicalSize::new(64., 64.) * ScaleFactor::new(sf),
+             ));
+         }
+-        winit_window_or_none.set_title(&properties.title());
++        match self.title_override.borrow().as_deref() {
++            Some(title) => winit_window_or_none.set_title(title),
++            None => winit_window_or_none.set_title(&properties.title()),
++        }
+         winit_window_or_none.set_decorations(
+             !window_item.no_frame() || winit_window_or_none.fullscreen().is_some(),
+         );
 diff -ruN a/i-slint-core/animations.rs b/i-slint-core/animations.rs
 --- a/i-slint-core/animations.rs	2026-11-05 01:39:57.336544865 -0700
 +++ b/i-slint-core/animations.rs	2026-11-05 01:39:57.339105919 -0700

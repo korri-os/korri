@@ -1094,6 +1094,38 @@ fi
         .unwrap()
     }
 
+    /// ADR 0086, live: korrid's own pane placement against a running Sway.
+    /// The headless two-output proof runs it once per step
+    /// (`clients/shell/proof/panes.sh`), with `KORRI_LIVE_SWAYSOCK`,
+    /// `KORRI_LIVE_SHELL_PID` and `KORRI_LIVE_DISPLAYS` (display facts as
+    /// `KORRID_DISPLAYS` holds them). It prints the windows it gave.
+    #[test]
+    #[ignore = "needs a running Sway and shell; run by clients/shell/proof/panes.sh"]
+    fn live_pane_placement() {
+        use super::super::compositor_focus::{CompositorControl, SwayCompositorControl};
+        let env = |name: &str| std::env::var(name).unwrap_or_else(|_| panic!("{name}"));
+        let control = SwayCompositorControl::new(
+            env("KORRI_LIVE_SWAYSOCK").into(),
+            std::time::Duration::from_secs(2),
+        )
+        .expect("Sway IPC");
+        let displays: Vec<Display> = serde_json::from_str(&env("KORRI_LIVE_DISPLAYS")).unwrap();
+        let pid: i32 = env("KORRI_LIVE_SHELL_PID").parse().unwrap();
+        let panes = stage_and_floor();
+        let lower = lower_output(&displays, &control.outputs().unwrap());
+        let windows = surface_windows(Some(&panes), lower.as_deref());
+        place_surface(
+            &control,
+            &displays,
+            None,
+            &Default::default(),
+            &[pid].into_iter().collect(),
+            lower.as_deref().map(|output| (&panes, output)),
+        )
+        .unwrap();
+        println!("WINDOWS {}", serde_json::to_string(&windows).unwrap());
+    }
+
     /// ADR 0086, the Thor's arrangement: a narrower display centred under the
     /// main one is the lower pane's output, while Sway has it active.
     #[test]

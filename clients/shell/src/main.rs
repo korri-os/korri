@@ -310,18 +310,19 @@ fn run(arguments: Arguments) -> anyhow::Result<()> {
     }));
     shell.start()?;
     let frames = shell.frames();
+    let pane_frames = shell.pane_frames();
     SHELL.with(|cell| *cell.borrow_mut() = Some(shell));
 
     let _stats = arguments.stats.then(|| {
         let timer = slint::Timer::default();
-        let last = RefCell::new((Instant::now(), frames.get()));
+        let last = RefCell::new((Instant::now(), frames.get(), pane_frames.get()));
         let frames = frames.clone();
         timer.start(
             slint::TimerMode::Repeated,
             Duration::from_secs(5),
             move || {
-                let (then, count) = *last.borrow();
-                let now = (Instant::now(), frames.get());
+                let (then, count, pane_count) = *last.borrow();
+                let now = (Instant::now(), frames.get(), pane_frames.get());
                 let seconds = now.0.duration_since(then).as_secs_f64();
                 let heap = SHELL.with(|s| s.borrow().as_ref().map_or(0, |s| s.heap_bytes()));
                 let (p50, p95, max) = frames.take_intervals().unwrap_or_default();
@@ -330,6 +331,15 @@ fn run(arguments: Arguments) -> anyhow::Result<()> {
                     (now.1 - count) as f64 / seconds,
                     now.1 - count
                 );
+                // ADR 0086: a further pane window's frames, apart from the first window's.
+                if now.2 != pane_count {
+                    let (p50, p95, max) = pane_frames.take_intervals().unwrap_or_default();
+                    eprintln!(
+                        "SHELL_STATS window=pane fps={:.3} frames={} seconds={seconds:.3} interval_ms_p50={p50:.1} p95={p95:.1} max={max:.1}",
+                        (now.2 - pane_count) as f64 / seconds,
+                        now.2 - pane_count
+                    );
+                }
                 *last.borrow_mut() = now;
             },
         );

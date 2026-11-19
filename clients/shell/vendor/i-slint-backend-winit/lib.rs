@@ -1172,9 +1172,28 @@ pub trait WinitWindowAccessor: private::WinitWindowAccessorSealed {
     fn winit_window(
         &self,
     ) -> impl std::future::Future<Output = Result<Arc<winit::window::Window>, PlatformError>>;
+
+    /// Sets a title that replaces the Window item's own `title` from now on, also when Slint
+    /// applies the item's properties again; `None` returns to the item's title. A no-op for
+    /// a window not backed by winit.
+    fn set_title_override(&self, title: Option<&str>);
 }
 
 impl WinitWindowAccessor for i_slint_core::api::Window {
+    fn set_title_override(&self, title: Option<&str>) {
+        let adapter = i_slint_core::window::WindowInner::from_pub(self).window_adapter();
+        let Some(adapter) = adapter
+            .internal(i_slint_core::InternalToken)
+            .and_then(|wa| (wa as &dyn core::any::Any).downcast_ref::<WinitWindowAdapter>())
+        else {
+            return;
+        };
+        *adapter.title_override.borrow_mut() = title.map(str::to_owned);
+        if let (Some(title), Some(window)) = (title, adapter.winit_window()) {
+            window.set_title(title);
+        }
+    }
+
     fn has_winit_window(&self) -> bool {
         i_slint_core::window::WindowInner::from_pub(self)
             .window_adapter()
