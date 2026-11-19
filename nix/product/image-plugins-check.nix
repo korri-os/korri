@@ -97,7 +97,6 @@ assert lib.all
     "tabs6"
   ];
 assert !(lib.elem (toString published.korri-plugin-sunshine) (map toString selected.r36tmax));
-assert !(lib.elem (toString published.korri-plugin-sunshine) (map toString selected.tabs6));
 # Key-only SSH ships on every device (owner decision, 2026-09-30).
 assert lib.all
   (name: lib.elem (toString published.korri-plugin-ssh) (map toString selected.${name}))
@@ -122,6 +121,7 @@ assert lib.all
     "thor"
     "rg35xxsp"
     "rg35xxpro"
+    "tabs6"
   ];
 pkgs.runCommand "korri-product-image-plugins-check" { } ''
   touch "$out"

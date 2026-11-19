@@ -81,7 +81,8 @@ in
   rg35xxsp = shared ++ streamingHost ++ ssh;
   rg35xxpro = shared ++ streamingHost ++ ssh;
   # The Galaxy Tab S6 (SM8150, Adreno 640) takes the SM8250 handhelds' set
-  # without Steam (accepted on the Mini V2 only) and without the streaming
-  # host: no hardware encoder is enabled on this board yet.
-  tabs6 = shared ++ n64AndDreamcast ++ ds ++ ssh;
+  # without Steam (accepted on the Mini V2 only). Owner decision 2026-11-19:
+  # Sunshine on every device. Mainline has no SM8150 video encoder (neither
+  # venus nor iris lists the SoC), so it encodes in software.
+  tabs6 = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh;
 }
