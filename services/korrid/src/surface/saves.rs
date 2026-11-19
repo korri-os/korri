@@ -417,6 +417,10 @@ impl Inner {
                         // ADR 0083: the cloud side of a Steam Cloud conflict
                         // has no files here; it cannot be restored locally.
                         let cloud = crate::steam_engine::saves::in_steam_cloud(&entry.record);
+                        // ADR 0083: an engine-runner snapshot is restored only
+                        // once the engine host can restore it; until then the
+                        // history shows it with no Restore.
+                        let engine = crate::steam_engine::is_engine_runner(&entry.record.runner_id);
                         SurfaceSaveHistoryEntry {
                             snapshot_id: entry.snapshot_id.clone(),
                             device: if cloud {
@@ -430,7 +434,7 @@ impl Inner {
                             current,
                             // A restore replaces what the game plays from, so
                             // every surface asks first.
-                            restore: (!current && !cloud).then(|| {
+                            restore: (!current && !cloud && !engine).then(|| {
                                 self.history_action(&format!("restore:{}", entry.snapshot_id), "Restore")
                                     .destructive()
                                     .with_description("Makes a new save from this one. The save you have now stays in the history.")

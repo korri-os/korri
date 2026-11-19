@@ -4311,6 +4311,45 @@ mod save_sync {
         assert!(sync.status().is_none());
     }
 
+    /// Review B3: a snapshot of the Steam engine runner has no Restore
+    /// until the engine host can restore it.
+    #[tokio::test]
+    async fn an_engine_runner_snapshot_offers_no_restore() {
+        let (sync, script) = sync();
+        push(
+            &script,
+            "app.saves.status",
+            json!({ "_tag": "Ok", "payload": { "games": [] } }),
+        );
+        sync.refresh().await;
+        let mut engine = entry("a", HERE, "2026-10-01T00:00:00.000Z", &[]);
+        engine["record"]["runnerId"] = json!("@other:steam/engine");
+        push(
+            &script,
+            "app.saves.history",
+            json!({ "_tag": "Ok", "payload": { "current": "b", "records": [
+            engine,
+            entry("c", HERE, "2026-10-02T00:00:00.000Z", &["a"]),
+            entry("b", ZAO, "2026-10-03T00:00:00.000Z", &["c"])
+        ] } }),
+        );
+        sync.open_history(game());
+        settle().await;
+        let Some(SurfaceSaveHistory::Ready { entries, .. }) = sync.history() else {
+            panic!("not ready")
+        };
+        let restore = |id: &str| {
+            entries
+                .iter()
+                .find(|entry| entry.snapshot_id == id)
+                .unwrap()
+                .restore
+                .is_some()
+        };
+        assert!(!restore("a"), "engine runner");
+        assert!(restore("c"), "another runner");
+    }
+
     #[tokio::test]
     async fn history_is_newest_first_by_name_and_restore_asks_first() {
         let (sync, script) = sync();
