@@ -209,6 +209,27 @@ let
         exec python3 "$KORRI_ROOT/clients/viewer/proof/nightjar/run.py" "$@"
       '';
     };
+    viewer-dead-sender-proof = {
+      description = "Prove on aka, as root, that the Linux viewer survives a static picture and notices a sender that stops mid-stream within 2 s (#544), against a private patched Sunshine.";
+      usageSuffix = " -- --viewer /nix/store/...-korri-viewer-nightjar-... --sunshine /nix/store/...-sunshine-korri-... [--build-store STORE] [--moving N] [--static N] [--out DIRECTORY]";
+      runtimeInputs = [
+        # The nightjar proof's modules, which this proof imports, need numpy
+        # and FFmpeg at import and for its pairing.
+        (pkgs.python3.withPackages (p: [ p.numpy ]))
+        pkgs.ffmpeg
+        pkgs.nix
+        pkgs.openssh
+        pkgs.procps
+        pkgs.xorg-server
+      ];
+      env = {
+        # stream-cadence builds its sender fixture from this nixpkgs.
+        CADENCE_NIXPKGS = "${pkgs.path}";
+      };
+      script = ''
+        exec python3 "$KORRI_ROOT/clients/viewer/proof/dead-sender/run.py" "$@"
+      '';
+    };
     viewer-linux-resize-proof = {
       description = "Prove on aka, as root, that the Linux viewer fits a new stream size from korrid's resize request, with no stretch, in stream-cadence's private pair (#476).";
       usageSuffix = " -- --sunshine /nix/store/...-sunshine-korri-... [--build-store STORE] [--caller-uid N] [--out DIRECTORY]";
