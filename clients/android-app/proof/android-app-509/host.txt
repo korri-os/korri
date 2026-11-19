@@ -1,0 +1,20 @@
+18:18:16 load=4.00 k10temp=90C emulators=0 NOT READY
+18:18:46 load=4.68 k10temp=89C emulators=0 NOT READY
+18:19:16 load=4.02 k10temp=79C emulators=0 NOT READY
+18:19:47 load=8.44 k10temp=96C emulators=0 NOT READY
+18:20:17 load=14.92 k10temp=96C emulators=0 NOT READY
+18:20:47 load=18.81 k10temp=96C emulators=0 NOT READY
+18:21:17 load=21.54 k10temp=96C emulators=0 NOT READY
+18:21:47 load=22.51 k10temp=96C emulators=0 NOT READY
+18:22:17 load=23.29 k10temp=96C emulators=0 NOT READY
+18:22:47 load=23.76 k10temp=96C emulators=0 NOT READY
+18:23:17 load=23.68 k10temp=95C emulators=0 NOT READY
+18:23:47 load=16.67 k10temp=81C emulators=0 NOT READY
+18:24:17 load=12.95 k10temp=95C emulators=0 NOT READY
+18:24:47 load=10.39 k10temp=95C emulators=0 NOT READY
+18:25:17 load=9.35 k10temp=95C emulators=0 NOT READY
+18:25:47 load=7.39 k10temp=92C emulators=0 NOT READY
+18:26:17 load=5.12 k10temp=72C emulators=0 NOT READY
+18:26:47 load=3.23 k10temp=64C emulators=0 TAKEN: 2764438 fold-509 #509 resize proof 2026-11-19T18:26:47Z
+tree a38e7403e8c25a49b994c65d034c95436dfd1c1e, 0 changed files
+18:30:11 load=15.21 k10temp=94C emulators=0 PROOF rc=0

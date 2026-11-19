@@ -709,7 +709,8 @@ The fixture's holder refuses the viewer's shape reports, so korrid lists no
 Portrait control there; the proof reads what enables it: korrid's own
 snapshot of the viewer says `ready: true`, and its `encoded` size follows
 each change in the same connection. Record: `proof/android-app-476/` (35 of
-35 checks).
+35 checks). Since #509 the same proof also reads the viewer's screen (the
+next section).
 
 ## The phone's screen, and a fold (#509 items 3 to 5)
 
@@ -734,6 +735,26 @@ behaviour unless a reason speaks against it, and none was found. The two
 differ when the app has only a part of the screen (split screen, a pop-up
 window). The cost is Artemis's: there the stream has the whole screen's
 shape, and shows with bars in the app's part of it.
+
+The proof is a part of `proof/resize.py` (above): korrid's prepare line
+names the screen, the Start and korrid's snapshot name it, and the Start of
+a stream in a smaller logical display (`wm size`) still names the display.
+aka's Android 12 emulator cannot make a new screen for this reading: its
+fold and `wm size` force another logical size on its one panel, whose mode
+stays, and its resizable profile refuses on this image. So the fixture
+APK's proof trigger gives the loop thread another display reading (`display
+WIDTH HEIGHT`, `src/proof.rs`), and the proof reads what follows it: the
+app's two lines 400 ms apart, the lifecycle's two Snapshot events (not
+ready, then ready, in the same connection), korrid's snapshot of the
+settled screen, and the picture, which goes on. Record:
+`proof/android-app-509/` (55 of 55 checks, 20 of them for #509), with the
+emulator's fold as it was read.
+
+Not proven: a fold of a real phone, which is the owner's test on the Fold 8
+(the record names the logcat lines to read); and what a holder with display
+authority does with the screen at prepare and after a fold, because the
+proof's holder has no compositor. That part is korrid's path of #476,
+unchanged, with its unit tests.
 
 What a fold needs besides: the activity must stay. Its manifest takes the
 `screenLayout`, `screenSize`, `smallestScreenSize` and `orientation`

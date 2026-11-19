@@ -1,0 +1,11 @@
+$ adb emu resize-display 1
+KO: Failed to resize display
+$ adb emu resize-display 2
+KO: Failed to resize display
+$ adb emu resize-display 0
+KO: Failed to resize display
+$ adb emu fold
+OK
+$ adb emu unfold
+OK
+$ wm size 884x2208
