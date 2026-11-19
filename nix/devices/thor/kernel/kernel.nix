@@ -23,6 +23,10 @@
 # in dpu_encoder_phys_cmd wait_for_idle while DSI-1 goes on or off. This is
 # inferred, not yet proven on hardware.
 #
+# Hardware (2026-11-18): the series alone does not stop that stall; its
+# trigger is Plymouth lighting DSI-1 at boot (README.md, "Root cause"). The
+# series stays because every ROCKNIX SM8550 kernel carries it.
+#
 # ROCKNIX applies the series after the mainline patches and before the device
 # patches; it is inserted at that point here.
 {

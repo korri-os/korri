@@ -210,10 +210,10 @@ this image (commit f950545cc), Linux 7.2.
   kernel that drove both Thor screens carries it. The Thor kernel now
   carries the fixed copy.
 - **DPU cleanup kernel (commit cabd6d2d7, system `y0nz67hx…`, internal
-  UFS).** Boot without `video=DSI-1:d`: 3 of 3 boots logged no `failed
-  wait_for_idle` (the two boots before the fix logged 1,528 and 3,313; a
-  fourth boot after the live test logged 0). The series fixes the
-  boot-time stall. Two symptoms remain:
+  UFS).** **Correction:** the first report of "3 of 3 clean boots" counted
+  at about 80 s after boot, and stalls often start later. The whole-boot
+  counts are under [Root cause](#root-cause-plymouth-lights-dsi-1-at-boot-2026-11-18):
+  the series does **not** fix the stall. Two further symptoms were seen:
   - **Steady DSI-2 page-flip failures.** Each boot logs 4 to 7 `enc35 frame
     done timeout` between 10.7 and 12.0 s only, then 41 to 89 Sway
     `Page-flip failed on output DSI-2` that keep growing slowly at idle
@@ -394,6 +394,93 @@ Proposed changes, after the experiment (nothing built or deployed):
   queue, or backport the row 1 changes onto 7.2.
 - If rank 4 holds: port ROCKNIX patch 0509 and set this unit's frame
   length.
+
+## Root cause: Plymouth lights DSI-1 at boot (2026-11-18)
+
+### Whole-boot counts
+
+Counts of `failed wait_for_idle` over each boot's whole journal, all on
+id:38 (the top screen):
+
+| System | Kernel | Boot | Count |
+|---|---|---|---:|
+| `y0nz67hx…` | 7.2 + fixed DPU cleanup (this branch) | -6 | 0 |
+| | | -5 | 247 |
+| | | -4 | 845 |
+| | | -3 | 0 |
+| `axxdmm1z…` | ROCKNIX 7.3.5 (research, not kept) | -2 | 674 |
+| | | -1 | 199 (0 at 80 s) |
+| | | 0 | 0 |
+
+Onsets vary. One 7.3.5 boot logged `enc35` frame done timeouts at 8 to
+12 s and an `enc38` timeout at 128 s. The early compositor exits
+("compositor exited before it became ready") do not correlate: boot -4
+had none and 845 stalls.
+
+### Experiments (system `axxdmm1z…`, 7 min per boot, display idle held off)
+
+| Experiment | Boots | Stalls | `enc35` timeouts |
+|---|---|---|---|
+| 0: journal timeline, boots -10 to 0 | every stalling boot (-9, -8, -5, -4, -2, -1) | — | all had them at 8 to 12 s; -10, -6, -3 and 0 had them without a stall |
+| 0: the one earlier `video=DSI-1:d` boot (-7) | 1 | 0 | 0 |
+| 1: `video=DSI-1:d` | 3 of 3 | 0 | 0 (and 0 `enc38`) |
+| 2: `plymouth.enable=0`, DSI-1 connected | 3 of 3 | 0 | 0 (and 0 `enc38`) |
+
+**Conclusion (strong, inferred):** Plymouth's boot-time mode-set of DSI-1
+triggers the stall. Plymouth's DRM renderer lights every connected
+connector. The bottom panel's video-mode encoder (enc35) then times out at
+8 to 12 s, and on about two boots in three the top screen's command-mode
+encoder (enc38) later stalls in `wait_for_idle`. With Plymouth off, fbcon
+and Sway still light and power off DSI-1, and nothing stalls. ROCKNIX has
+no Plymouth, which explains why ROCKNIX Thors do not show this. Neither the
+DPU cleanup series nor the kernel version explains the stall.
+
+### The fix: pending an owner decision
+
+Plymouth cannot be kept off DSI-1 in a supported way.
+`get_output_info()` in Plymouth's DRM renderer
+(`src/plugins/renderers/drm/plugin.c`) skips a connector only when it is
+disconnected or has the kernel's `non-desktop` property; Plymouth has no
+per-output or per-device option. `video=DSI-1:d` unplugs the panel.
+Turning the splash off on the Thor fails `checks.korri-product`, because
+`korri-boot-splash-handoff` and the Plymouth systemd package are required
+product contributions (`nix/product/check-lib.nix`), and the product has
+no override for the boot splash. Adding one is product schema, so the
+owner decides. Until then this branch keeps Plymouth, and the stall
+remains on about two boots in three.
+
+### Research kept from the ROCKNIX 7.3.5 kernel (not on this branch)
+
+A Thor kernel on Linux 7.3.5 with ROCKNIX's 7.3 queue and SM8550 config
+(ROCKNIX next `1f8e5275fb`) built and booted, but stalled like 7.2. It was
+dropped: it did not help, and it overrode the owner's 7.2 pin. Findings
+worth keeping for a later kernel move:
+
+- ROCKNIX's 7.3 copy of `0010-msm-resource-cleanup.patch` still has the
+  uninitialised `cstate` write that `9416eec2c2` fixed for 7.2; use the 7.2
+  copy.
+- `0011-drm-msm-signal-hw_done-before-the-flip-event.patch` is only in
+  ROCKNIX's 7.2 queue.
+- Korri's force-key-frame Iris patch is upstream in 7.3 (`6f62dcefd249`);
+  the picture-type patch still applies.
+- The common dtsi needs ROCKNIX's 7.3 changes: the `pcie0_port0` label,
+  `&ipa` without `memory-region`, and `&crypto` disabled (QCE depends on
+  `BROKEN` in 7.3, and an unbound node keeps the interconnects from reaching
+  `sync_state`).
+- Ruled out as causes, by source: plane rotation (wlroots 0.20.2 parses the
+  `rotation` property but never sets it, so `transform 90` is drawn on the
+  GPU) and `allow_tearing` or `max_render_time` (`off` is Sway's default,
+  and tearing only applies to a client that asks for it).
+
+### Open, separate: DSI-2 page-flip EBUSY
+
+Sway logs `Page-flip failed on output DSI-2` (EBUSY) on every boot, also
+without Plymouth: 102 to 209 per boot in experiment 2, starting about 48 s
+after boot. This is a separate issue from the stall. Candidates: the
+icna3520 120 Hz frame length (`0x4C` ran at 118.63 Hz on a Thor in ROCKNIX
+PR #3489), and a commit that never reaches `flip_done` leaving a plane busy
+(the `[PLANE:97:plane-8] busy with a previous commit` line). Test it with
+screen activity, at 60 Hz and 120 Hz.
 
 ## Write and boot (owner)
 
