@@ -1108,6 +1108,7 @@ impl HostRuntime {
                     .map(crate::route_diagnostic_failure),
             );
             Ok(crate::LocalGames {
+                unrouted: crate::unrouted(&catalog.diagnostics),
                 games: catalog.games,
                 failures: (!failures.is_empty()).then_some(failures),
             })

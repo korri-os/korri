@@ -1001,6 +1001,45 @@ pub struct LocalGames {
     pub games: Vec<launcher::LocalGame>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failures: Option<Vec<RpcFailure>>,
+    /// The library games with no route here: the `playable_id` of each
+    /// route diagnostic among `failures`. A download is what they need.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unrouted: Option<Vec<String>>,
+}
+
+#[cfg(test)]
+mod unrouted_tests {
+    use crate::config::resolver::{RouteDiagnostic, RouteDiagnosticCode};
+
+    #[test]
+    fn unrouted_lists_each_diagnostics_playable_id_once() {
+        let diagnostic = |id: Option<&str>| RouteDiagnostic {
+            code: RouteDiagnosticCode::LocalRouteUnavailable,
+            message: "text korri does not read".into(),
+            playable_id: id.map(str::to_owned),
+        };
+        assert_eq!(
+            super::unrouted(&[
+                diagnostic(Some("vvvvvv-2")),
+                diagnostic(None),
+                diagnostic(Some("app1658150")),
+                diagnostic(Some("vvvvvv-2")),
+            ]),
+            Some(vec!["vvvvvv-2".to_owned(), "app1658150".to_owned()])
+        );
+        assert_eq!(super::unrouted(&[diagnostic(None)]), None);
+    }
+}
+
+/// The playable ids of these route diagnostics, once each, in order.
+pub(crate) fn unrouted(diagnostics: &[config::resolver::RouteDiagnostic]) -> Option<Vec<String>> {
+    let mut ids: Vec<String> = Vec::new();
+    for id in diagnostics.iter().filter_map(|d| d.playable_id.clone()) {
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    (!ids.is_empty()).then_some(ids)
 }
 
 #[typeshare]
@@ -2724,6 +2763,7 @@ fn brain_local_games(
     Ok(LocalGames {
         games: catalog.games,
         failures: (!failures.is_empty()).then_some(failures),
+        unrouted: unrouted(&catalog.diagnostics),
     })
 }
 

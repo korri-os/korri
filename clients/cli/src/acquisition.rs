@@ -41,15 +41,10 @@ impl Module for Get {
                 return Ok(library::finish(response));
             };
             // Another game's route failure never blocks this one. A library
-            // game with no installed route is listed only among the failures
-            // ("game <id> ..."), and a download is what it needs.
-            let unrouted = games.failures.iter().flatten().any(|failure| {
-                failure
-                    .message
-                    .strip_prefix("game ")
-                    .and_then(|rest| rest.split_whitespace().next())
-                    == Some(query.as_str())
-            });
+            // game with no installed route is listed by korrid among
+            // `unrouted` (its route diagnostic's playable id), and a download
+            // is what it needs.
+            let unrouted = games.unrouted.iter().flatten().any(|id| *id == query);
             let exact = games.games.iter().find(|g| g.id == query);
             let choices = if let Some(g) = exact {
                 vec![(g.id.clone(), g.title.clone())]

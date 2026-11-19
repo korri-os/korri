@@ -274,6 +274,7 @@ fn play_library_ambiguous_titles_piped_list_exact_choices() {
                 })
                 .to_vec(),
             failures: None,
+            unrouted: None,
         }),
     )]);
     let output = server.run(&["play", "sAmE", "--json"]);
@@ -297,6 +298,7 @@ fn games() -> RpcResponse {
             play_stats: None,
         }],
         failures: None,
+        unrouted: None,
     }))
 }
 fn test_snapshot() -> launch_settings::LaunchSnapshot {
@@ -675,6 +677,7 @@ fn play_library_failed_jobs_artifacts_and_partial_games_keep_ok_json_but_exit_on
             RpcResponse::LocalGamesList(LocalGamesListOutcome::Ok(LocalGames {
                 games: vec![],
                 failures: Some(vec![error]),
+                unrouted: None,
             })),
         ),
     ];
@@ -1091,6 +1094,7 @@ fn play_library_terminal_picker_requires_an_exact_game_id() {
                 })
                 .to_vec(),
             failures: None,
+            unrouted: None,
         })),
         RpcResponse::GameRoutes(game_routes::GameRoutesOutcome::Err(RpcFailure {
             code: "RouteUnavailable".into(),
@@ -1152,6 +1156,7 @@ fn play_library_terminal_picker_numbers_filters_and_cancel_never_guess() {
                     })
                     .to_vec(),
                 failures: None,
+                unrouted: None,
             },
         ))];
         if selected.is_some() {
@@ -1867,6 +1872,9 @@ fn play_library_another_games_failure_does_not_block_get_or_the_listing() {
             message: "game vvvvvv-2 has no installed Linux runner".into(),
         },
     ]);
+    // Review C13: korrid names the unrouted games by their route
+    // diagnostic's playable id; the CLI reads no message text.
+    listed.unrouted = Some(vec!["app1658150".into(), "vvvvvv-2".into()]);
     let listed = RpcResponse::LocalGamesList(LocalGamesListOutcome::Ok(listed));
     let queued = RpcResponse::AcquisitionDownload(AcquisitionOutcome::Ok(AcquisitionSnapshot {
         artifacts: vec![],

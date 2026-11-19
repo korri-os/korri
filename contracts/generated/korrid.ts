@@ -1103,6 +1103,11 @@ export interface RpcFailure {
 export interface LocalGames {
 	games: LocalGame[];
 	failures?: RpcFailure[];
+	/**
+	 * The library games with no route here: the `playable_id` of each
+	 * route diagnostic among `failures`. A download is what they need.
+	 */
+	unrouted?: string[];
 }
 
 export interface LocalGamesListRequest {
