@@ -13,6 +13,8 @@ pub enum Unavailable {
     PackageNotDownloaded,
     /// Steam refused the pinned engine at sign-in.
     EngineRefused { eresult: i64 },
+    /// Two or more enabled plugins are named steam: Steam features are off.
+    SteamPluginAmbiguous,
 }
 
 impl Unavailable {
@@ -30,6 +32,9 @@ impl Unavailable {
             }
             Self::EngineRefused { .. } => {
                 "Steam no longer accepts the engine version Korri uses. You can use the Steam client until Korri updates."
+            }
+            Self::SteamPluginAmbiguous => {
+                "More than one Steam plugin is enabled. Keep one enabled to use Steam without the client."
             }
         }
     }
@@ -225,6 +230,7 @@ mod tests {
             Unavailable::EngineMismatch,
             Unavailable::PackageNotDownloaded,
             Unavailable::EngineRefused { eresult: 5 },
+            Unavailable::SteamPluginAmbiguous,
         ] {
             assert!(state.reason().ends_with('.'));
             assert_eq!(

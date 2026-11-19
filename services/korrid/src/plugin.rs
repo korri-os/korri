@@ -517,6 +517,9 @@ pub struct PluginRegistry {
     providers: BTreeMap<String, ProviderRecord>,
     /// Enabled acquisition provider id -> owning plugin id.
     acquisition_providers: BTreeMap<String, String>,
+    /// ADR 0083: the one enabled plugin named `steam`, whatever its
+    /// publisher. With two or more, none: no Steam powers are granted.
+    steam_plugin: Option<String>,
     systems: BTreeMap<String, SystemRecord>,
     families: BTreeMap<String, FamilyRecord>,
     runners: BTreeMap<String, RunnerRecord>,
@@ -546,6 +549,21 @@ impl PluginRegistry {
         }
 
         let enabled_plugin_ids = requested_enabled;
+        let steam_plugins: Vec<&String> = enabled_plugin_ids
+            .iter()
+            .filter(|id| crate::plugin_discovery::is_steam_plugin(id))
+            .collect();
+        if steam_plugins.len() > 1 {
+            eprintln!(
+                "korrid steam: more than one plugin named steam is enabled ({}); Steam features are off",
+                steam_plugins
+                    .iter()
+                    .map(|id| id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        let steam_plugin = (steam_plugins.len() == 1).then(|| steam_plugins[0].clone());
         let mut registered_provider_ids = BTreeSet::new();
         let mut registered_system_ids = BTreeSet::new();
         let mut registered_family_ids = BTreeSet::new();
@@ -592,6 +610,12 @@ impl PluginRegistry {
                 insert_unique(&mut providers, record_id.clone(), record.clone())?;
             }
             for record_id in &plugin.acquisition_providers {
+                // The engine-backed Steam provider is the single Steam plugin's.
+                if crate::plugin_discovery::is_steam_plugin(record_id)
+                    && steam_plugin.as_ref() != Some(record_id)
+                {
+                    continue;
+                }
                 acquisition_providers.insert(record_id.clone(), plugin_id.clone());
             }
             for (local_id, record) in &plugin.systems {
@@ -727,6 +751,7 @@ impl PluginRegistry {
             registered_session_controls,
             providers,
             acquisition_providers,
+            steam_plugin,
             systems,
             families,
             runners,
@@ -925,7 +950,19 @@ impl PluginRegistry {
     pub fn discovery_providers(&self) -> impl Iterator<Item = &ReleaseDiscoveryProvider> {
         self.enabled_plugin_ids
             .iter()
+            // ADR 0083: Steam's installed-apps reads only for the one
+            // enabled plugin named steam.
+            .filter(|id| {
+                !crate::plugin_discovery::is_steam_plugin(id)
+                    || self.steam_plugin.as_ref() == Some(*id)
+            })
             .flat_map(|id| self.plugins[id].discovery.iter())
+    }
+
+    /// ADR 0083: the one enabled plugin named `steam`, in any namespace.
+    /// None with none, and with two or more (Steam features are then off).
+    pub fn steam_plugin(&self) -> Option<&str> {
+        self.steam_plugin.as_deref()
     }
 
     pub fn enabled_plugin_ids(&self) -> Vec<&str> {
@@ -3131,6 +3168,47 @@ mod steam_shape_tests {
         let plugin = load_plugin_source("@other", &bare).unwrap();
         assert_eq!(plugin.runners["engine"].artifacts, ["engine-package"]);
         assert!(PluginRegistry::new(vec![plugin], vec!["@other:steam".into()]).is_err());
+    }
+
+    /// ADR 0083: Steam powers go to the single enabled plugin named steam.
+    /// With two enabled, none: no provider, no installed-apps reads, no
+    /// engine runner route.
+    #[test]
+    fn two_enabled_plugins_named_steam_get_no_steam_powers() {
+        let load =
+            |namespace: &str| load_plugin_source(namespace, &steam_source(namespace)).unwrap();
+        let one = PluginRegistry::new(
+            vec![load("@korri"), load("@other")],
+            vec!["@other:steam".into()],
+        )
+        .unwrap();
+        assert_eq!(one.steam_plugin(), Some("@other:steam"));
+        assert_eq!(
+            crate::steam_engine::steam_plugin(&one).as_deref(),
+            Some("@other:steam")
+        );
+        assert!(one
+            .acquisition_providers()
+            .any(|(p, _)| p.id == "@other:steam"));
+        assert_eq!(one.discovery_providers().count(), 1);
+
+        let two = PluginRegistry::new(
+            vec![load("@korri"), load("@other")],
+            vec!["@korri:steam".into(), "@other:steam".into()],
+        )
+        .unwrap();
+        assert_eq!(two.steam_plugin(), None);
+        assert_eq!(crate::steam_engine::steam_plugin(&two), None);
+        assert_eq!(two.acquisition_providers().count(), 0);
+        assert_eq!(two.discovery_providers().count(), 0);
+        for runner in ["@korri:steam/engine", "@other:steam/engine"] {
+            assert_eq!(
+                crate::steam_engine::held_back(&two, runner),
+                Some(crate::steam_engine::availability::Unavailable::SteamPluginAmbiguous)
+            );
+        }
+        // The client runners are ordinary runners and stay.
+        assert!(two.runners().contains_key("@other:steam/steam"));
     }
 
     /// A Steam plugin's `providers` export must carry claims handlers like

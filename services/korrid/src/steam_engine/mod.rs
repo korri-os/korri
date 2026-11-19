@@ -68,9 +68,15 @@ pub fn is_engine_runner(id: &str) -> bool {
 /// reported while it still holds (contract "Pinned engine": games keep
 /// working on the client runner). None for every other runner. Routes leave
 /// such a runner out, so a selection of it falls back to the client runner.
-pub fn held_back(runner_id: &str) -> Option<availability::Unavailable> {
+pub fn held_back(
+    registry: &crate::plugin::PluginRegistry,
+    runner_id: &str,
+) -> Option<availability::Unavailable> {
     if !is_engine_runner(runner_id) {
         return None;
+    }
+    if steam_plugin(registry).as_deref() != plugin_of(runner_id) {
+        return Some(availability::Unavailable::SteamPluginAmbiguous);
     }
     health().any()
 }
@@ -97,14 +103,12 @@ pub fn plugin_of(id: &str) -> Option<&str> {
     steam_parts(id).map(|(plugin, _)| plugin)
 }
 
-/// The enabled Steam plugin that declares an engine runner, if any. With
-/// more than one (two namespaces), the first by id.
+/// The single enabled plugin named `steam`, when it declares an engine
+/// runner. With two or more plugins named steam, none (ADR 0083).
 pub fn steam_plugin(registry: &crate::plugin::PluginRegistry) -> Option<String> {
     registry
-        .runners()
-        .keys()
-        .find(|id| is_engine_runner(id))
-        .and_then(|id| plugin_of(id))
+        .steam_plugin()
+        .filter(|plugin| registry.runners().contains_key(&engine_runner(plugin)))
         .map(str::to_owned)
 }
 
