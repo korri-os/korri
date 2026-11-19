@@ -131,10 +131,12 @@ if [ "$mode" = switch ] && [ -n "$bundle" ]; then
 fi
 
 if [ "$reboot" = yes ]; then
+	# Read before the reboot: the tablet is unreachable right after it.
+	old_bundle=""
+	[ -z "$bundle" ] || old_bundle=$(on_tablet "readlink -f /nix/var/nix/gcroots/korri-bundle/active")
 	echo "== rebooting"
 	on_tablet "systemctl reboot" || true
 	[ -n "$bundle" ] || exit 0
-	old_bundle=$(on_tablet "readlink -f /nix/var/nix/gcroots/korri-bundle/active")
 	# The trial boot has tabs6.bootGood.timeout (300 s) to bless itself.
 	echo "== waiting for the new system to boot (previous bundle $old_bundle)"
 	deadline=$((SECONDS + 600))
