@@ -21,6 +21,13 @@ assert upstream.version == "1.12";
 assert upstream.src.outputHash == "sha256-OcF7jOOHhFPhM5APn5riy8S5jsEr9jALCVh9nBtD7Nk=";
 assert upstreamWlroots.version == "0.20.2";
 (pkgs.sway.override { sway-unwrapped = patched; }).overrideAttrs (old: {
+  # Sway runs every `exec` command through execlp("sh", "sh", "-c", …), a
+  # PATH lookup. korri-compositor.service's PATH has no shell, so the
+  # compositor carries its own: without it an `exec` binding (the Tab S6
+  # power key) fails with "execve failed".
+  postBuild = (old.postBuild or "") + ''
+    wrapProgram $out/bin/sway --suffix PATH : ${pkgs.lib.makeBinPath [ pkgs.bash ]}
+  '';
   passthru = (old.passthru or { }) // {
     inherit wlroots;
   };

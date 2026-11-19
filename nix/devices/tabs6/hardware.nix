@@ -122,9 +122,6 @@ in
     patches = (old.patches or [ ]) ++ [ ./bluetooth/bluez-hog-read-report-map-after-failed-reads.patch ];
   });
 
-  # sway runs `exec` bindings through `sh -c`; the compositor's PATH has no sh.
-  systemd.services.korri-compositor.path = [ pkgs.bash ];
-
   services.korriLinuxHost = {
     label = "tabs6";
     compositor = {
