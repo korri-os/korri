@@ -111,6 +111,10 @@ _Avoid_: queued game, loading game
 Stopping a launch before its game takes the screen. A pending launch never starts, and a live session that has not taken the screen yet is ended.
 _Avoid_: abort, kill, quit
 
+**Takes the screen**:
+A game takes the screen at its first frame: the first picture that the compositor it draws to accepts from any window of that launch, such as a launcher before the game itself. It happens once per launch. This is the same moment on the device's own display and on every stream of the game. Until then, Korri shows its own starting screen, where the launch can still be cancelled. The game's sound is muted and its controller presses are dropped; neither is replayed later. A first frame can be black: Korri reports that the game drew, not what it drew.
+_Avoid_: game started, window shown, handoff
+
 **Launch modifier**:
 A plugin that changes how another plugin's game launch runs, without being the game's runner. Gamescope is one.
 _Avoid_: wrapper, launch companion
