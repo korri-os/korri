@@ -45,6 +45,9 @@ const _: () = assert!(INSTALL_LIMIT.as_secs() >= 90);
 /// The host's own install limit is 3600 s by default; korrid allows more.
 const INSTALL_LIMIT: Duration = Duration::from_secs(4 * 3600);
 const POLL: Duration = Duration::from_millis(250);
+/// Steam installed the game, but discovery did not find it within 60 s.
+const NOT_FOUND: &str = "Steam installed the game, but it was not found in the library.";
+
 
 fn failure(code: &str, message: &str) -> RpcFailure {
     RpcFailure {
@@ -371,6 +374,7 @@ fn run_app_job(
         Command::Install(app) | Command::Uninstall(app) => app,
         _ => return,
     };
+    let installing = matches!(command, Command::Install(_));
     let set = |state: AcquireJobState| {
         let mut status = job.status.lock().expect("steam job poisoned");
         if !matches!(status.state, AcquireJobState::Cancelled) {
@@ -406,9 +410,17 @@ fn run_app_job(
                 }),
                 Job::Finished { ok: true, .. } => {
                     host.stop();
+                    if !installing {
+                        return set(AcquireJobState::Imported {
+                            game_id: String::new(),
+                        });
+                    }
                     set(AcquireJobState::Placing);
-                    let game_id = imported(app).unwrap_or_default();
-                    return set(AcquireJobState::Imported { game_id });
+                    // Review C9: discovery has 60 s to find the game.
+                    return set(match imported(app) {
+                        Some(game_id) => AcquireJobState::Imported { game_id },
+                        None => failed(NOT_FOUND),
+                    });
                 }
                 Job::Finished { ok: false, result } => {
                     return set(failed(Job::failure(result)));
@@ -482,6 +494,29 @@ done"#;
             assert!(Instant::now() < deadline, "{state:?}");
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
+    }
+
+    /// Review C9: an install that discovery does not find ends Failed, not
+    /// Imported with no game.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_install_discovery_does_not_find_fails() {
+        let temp = tempfile::tempdir().unwrap();
+        let (plan, runner) = setup(temp.path());
+        let store = Arc::new(SteamStore::default());
+        let job = store
+            .acquire("@korri:steam", plan, runner, "78000", Arc::new(|_| None))
+            .unwrap();
+        let state = until(&store, &job.job_id, |s| {
+            matches!(
+                s,
+                AcquireJobState::Failed { .. } | AcquireJobState::Imported { .. }
+            )
+        })
+        .await;
+        let AcquireJobState::Failed { reason } = state else {
+            panic!("{state:?}")
+        };
+        assert_eq!(reason.message, NOT_FOUND);
     }
 
     /// Review C5: a search during a game answers at once.
