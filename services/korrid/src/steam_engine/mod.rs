@@ -69,6 +69,7 @@ pub fn is_engine_runner(id: &str) -> bool {
 /// working on the client runner). None for every other runner. Routes leave
 /// such a runner out, so a selection of it falls back to the client runner.
 pub fn held_back(
+    root: &std::path::Path,
     registry: &crate::plugin::PluginRegistry,
     runner_id: &str,
 ) -> Option<availability::Unavailable> {
@@ -77,6 +78,16 @@ pub fn held_back(
     }
     if steam_plugin(registry).as_deref() != plugin_of(runner_id) {
         return Some(availability::Unavailable::SteamPluginAmbiguous);
+    }
+    // Review C8: what the runner needs on this device. The engine package
+    // is downloaded through the sign-in, not through a game's launch.
+    if registry.installed_file(runner_id, HOST_FILE).is_err() {
+        return Some(availability::Unavailable::HostMissing);
+    }
+    let package_ready = crate::acquisition::launch_artifacts(root, registry, runner_id)
+        .is_ok_and(|artifacts| artifacts.contains_key(PACKAGE_KEY));
+    if !package_ready {
+        return Some(availability::Unavailable::PackageNotDownloaded);
     }
     health().any()
 }
@@ -143,7 +154,7 @@ pub fn launch_plan(
 ) -> Result<host::HostPlan, String> {
     let host_program = registry
         .installed_file(runner_id, HOST_FILE)
-        .map_err(|_| "This Steam plugin has no engine host.".to_owned())?;
+        .map_err(|_| availability::Unavailable::HostMissing.reason().to_owned())?;
     let engine = artifacts.get(PACKAGE_KEY).ok_or_else(|| {
         availability::Unavailable::PackageNotDownloaded
             .reason()

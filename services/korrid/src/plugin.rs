@@ -3203,7 +3203,7 @@ mod steam_shape_tests {
         assert_eq!(two.discovery_providers().count(), 0);
         for runner in ["@korri:steam/engine", "@other:steam/engine"] {
             assert_eq!(
-                crate::steam_engine::held_back(&two, runner),
+                crate::steam_engine::held_back(std::path::Path::new("/nonexistent"), &two, runner),
                 Some(crate::steam_engine::availability::Unavailable::SteamPluginAmbiguous)
             );
         }

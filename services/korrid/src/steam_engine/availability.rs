@@ -15,6 +15,8 @@ pub enum Unavailable {
     EngineRefused { eresult: i64 },
     /// Two or more enabled plugins are named steam: Steam features are off.
     SteamPluginAmbiguous,
+    /// The Steam plugin carries no engine host (`korri-steam-host`).
+    HostMissing,
 }
 
 impl Unavailable {
@@ -32,6 +34,9 @@ impl Unavailable {
             }
             Self::EngineRefused { .. } => {
                 "Steam no longer accepts the engine version Korri uses. You can use the Steam client until Korri updates."
+            }
+            Self::HostMissing => {
+                "This Steam plugin has no engine host. Steam games use the Steam client."
             }
             Self::SteamPluginAmbiguous => {
                 "More than one Steam plugin is enabled. Keep one enabled to use Steam without the client."
@@ -231,6 +236,7 @@ mod tests {
             Unavailable::PackageNotDownloaded,
             Unavailable::EngineRefused { eresult: 5 },
             Unavailable::SteamPluginAmbiguous,
+            Unavailable::HostMissing,
         ] {
             assert!(state.reason().ends_with('.'));
             assert_eq!(

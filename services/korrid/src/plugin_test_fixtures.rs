@@ -68,11 +68,26 @@ pub fn installed_pair(root: &Path) -> PluginRegistry {
 }
 
 /// A Steam plugin `@korri:steam` whose client runner `steam` and engine
-/// runner `engine` (ADR 0083) both run the GBA fixture game.
+/// runner `engine` (ADR 0083) both run the GBA fixture game. The engine
+/// package is ready in `root`'s cache, and the plugin has its engine host.
 pub fn installed_steam_pair(root: &Path) -> PluginRegistry {
+    steam_pair(root, true)
+}
+
+/// `installed_steam_pair` whose package carries no engine host.
+pub fn installed_steam_pair_without_host(root: &Path) -> PluginRegistry {
+    steam_pair(root, false)
+}
+
+fn steam_pair(root: &Path, host: bool) -> PluginRegistry {
     let runners = |name: &str| {
+        let artifacts = if name == "engine" {
+            "    artifacts: [\"@korri:steam/engine-package\"],\n"
+        } else {
+            ""
+        };
         format!(
-            "  \"{name}\": {{\n    family: \"@korri:retroarch\",\n    program: \"retroarch\",\n    core: \"mgba\",\n    systems: [\"gba\"],\n  }},\n"
+            "  \"{name}\": {{\n    family: \"@korri:retroarch\",\n    program: \"retroarch\",\n    core: \"mgba\",\n    systems: [\"gba\"],\n{artifacts}  }},\n"
         )
     };
     let source = GENERATED_CORE
@@ -86,11 +101,17 @@ pub fn installed_steam_pair(root: &Path) -> PluginRegistry {
             &(runners("steam") + &runners("engine")),
         );
     assert!(source.contains("\"engine\""), "{source}");
+    let source = format!(
+        "{source}\nexport const artifacts = {{ \"engine-package\": {{ id: \"@korri:steam/engine-package\", version: \"1\", files: [{{ url: \"https://client-update.steamstatic.com/engine.zip\", sha256: \"sha256:e043d05b4e7bcc43e22cc2be3e8872ed1132e79e989cbbe181eb3a5d3f849df7\" }}] }} }}\n"
+    );
+    fs::create_dir_all(root.join("cache/steam/engine-package/1")).unwrap();
     let mut package = core_package(root, "steam", source);
     package.files.insert("mgba".into(), root.join("mgba.so"));
-    package
-        .files
-        .insert("korri-steam-host".into(), root.join("korri-steam-host"));
+    if host {
+        package
+            .files
+            .insert("korri-steam-host".into(), root.join("korri-steam-host"));
+    }
     PluginRegistry::from_installed(vec![package]).unwrap()
 }
 

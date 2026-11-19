@@ -5511,6 +5511,12 @@ impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
         if registry.native_runner(&runner_id).is_err() {
             return SteamFacts::Absent;
         }
+        if registry
+            .installed_file(&runner_id, steam_engine::HOST_FILE)
+            .is_err()
+        {
+            return SteamFacts::Unavailable(steam_engine::availability::Unavailable::HostMissing);
+        }
         let Ok(person) = host.launch_person() else {
             return SteamFacts::Absent;
         };

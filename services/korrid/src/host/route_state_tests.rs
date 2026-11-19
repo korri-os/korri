@@ -867,3 +867,38 @@ async fn an_unavailable_steam_engine_runner_falls_back_to_the_client_runner() {
     assert_eq!(launched["_tag"], "Ok", "{launched}");
     assert_eq!(launched["payload"]["session"]["gameId"], GAME, "{launched}");
 }
+
+/// Review C8: an engine runner with no downloaded engine package, or a Steam
+/// plugin with no engine host, is held back: the game plays on the client
+/// runner, and each says why.
+#[tokio::test]
+async fn a_missing_engine_package_or_host_holds_the_engine_runner_back() {
+    use crate::steam_engine::availability::Unavailable;
+    let _turn = STEAM_HEALTH.lock().await;
+    let root = tempfile::tempdir().unwrap();
+    let app = steam_library(root.path());
+    save_runner(root.path(), STEAM_ENGINE);
+    let registry = crate::plugin_test_fixtures::installed_steam_pair(root.path());
+    assert_eq!(
+        crate::steam_engine::held_back(root.path(), &registry, STEAM_ENGINE),
+        None
+    );
+    fs::remove_dir_all(root.path().join("cache/steam/engine-package")).unwrap();
+    assert_eq!(
+        crate::steam_engine::held_back(root.path(), &registry, STEAM_ENGINE),
+        Some(Unavailable::PackageNotDownloaded)
+    );
+    assert_eq!(
+        runner_rows(&app).await,
+        [(STEAM_CLIENT.into(), "Steam client".into(), true, true)]
+    );
+    let launched = rpc(&app, "app.session.prepare", json!({"gameId": GAME})).await;
+    assert_eq!(launched["_tag"], "Ok", "{launched}");
+
+    let other = tempfile::tempdir().unwrap();
+    let without = crate::plugin_test_fixtures::installed_steam_pair_without_host(other.path());
+    assert_eq!(
+        crate::steam_engine::held_back(other.path(), &without, STEAM_ENGINE),
+        Some(Unavailable::HostMissing)
+    );
+}
