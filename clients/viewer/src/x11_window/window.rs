@@ -12,16 +12,16 @@
 //! and the `_NET_WM_STATE` fullscreen request to the root; the keys (Linux
 //! key code to Windows virtual key, shift, alt and control tracked by key
 //! code, Ctrl+Alt+Shift+Q to quit, Ctrl+Alt+Shift with another key's
-//! release to toggle the grab); the buttons, with a scroll on both the
-//! press and the release of buttons 4 to 7, and the C's one `button` of a
-//! whole read (below); the relative mouse, warped back to (640, 360) while
-//! grabbed; `WM_DELETE_WINDOW` to quit.
+//! release to toggle the grab); the buttons, with one scroll for each
+//! press of buttons 4 to 7 (a wheel notch) and none for its release; the
+//! relative mouse, warped back to (640, 360) while grabbed;
+//! `WM_DELETE_WINDOW` to quit.
 //!
-//! The C's `button` is set to 0 once for each call of its handler, not for
-//! each event. A scroll (buttons 4 to 7), or a button past 9, that follows
-//! another button in the same read sends that button's press or release
-//! again. The port keeps this, so that the measure judges the language
-//! alone.
+//! F4 kept two faults of the C so that its measure judged the language
+//! alone; #511 fixed both, in the C too: a scroll on the release as well
+//! as the press, and a `button` set once for each read, which made a
+//! scroll or a button past 9 after a click in the same read send the
+//! click's button again.
 //!
 //! What differs: the window has an X11 connection of its own, through
 //! x11rb, where the C used the display that VA-API also uses; its requests
@@ -291,8 +291,6 @@ impl Window {
     /// Every event that has come, as `x11_handler` reads them while
     /// `XPending` says more are there.
     fn handle(&mut self) -> c_int {
-        // x11_handler's `button`, set once for the whole read.
-        let mut button = 0;
         loop {
             let event = match self.connection.poll_for_event() {
                 Ok(Some(event)) => event,
@@ -305,8 +303,8 @@ impl Window {
             let quit = match event {
                 Event::KeyPress(key) => self.key(key.detail, true),
                 Event::KeyRelease(key) => self.key(key.detail, false),
-                Event::ButtonPress(event) => self.button(event.detail, true, &mut button),
-                Event::ButtonRelease(event) => self.button(event.detail, false, &mut button),
+                Event::ButtonPress(event) => self.button(event.detail, true),
+                Event::ButtonRelease(event) => self.button(event.detail, false),
                 Event::MotionNotify(motion) => self.motion(motion.event_x, motion.event_y),
                 Event::ClientMessage(message) => message.data.as_data32()[0] == self.wm_delete,
                 Event::Error(error) => {
@@ -367,30 +365,35 @@ impl Window {
         false
     }
 
-    /// One button; never quits. `button` is the read's, as in the C.
-    fn button(&mut self, detail: u8, press: bool, button: &mut u32) -> bool {
+    /// One button; never quits. A wheel notch is a press and a release of
+    /// buttons 4 to 7: it scrolls once, on the press.
+    fn button(&mut self, detail: u8, press: bool) -> bool {
         // LiSendScrollEvent and LiSendHScrollEvent, as the C core makes them.
         let scroll = |clicks: i16| clicks * 120;
-        match detail {
-            1 => *button = ffi::BUTTON_LEFT,
-            2 => *button = ffi::BUTTON_MIDDLE,
-            3 => *button = ffi::BUTTON_RIGHT,
-            4 | 5 => send(Packet::Scroll {
-                amount: scroll(if detail == 4 { 1 } else { -1 }),
-            }),
-            6 | 7 => send(Packet::HScroll {
-                amount: scroll(if detail == 6 { -1 } else { 1 }),
-            }),
-            8 => *button = ffi::BUTTON_X1,
-            9 => *button = ffi::BUTTON_X2,
-            _ => {}
-        }
-        if *button != 0 {
-            send(Packet::MouseButton {
-                pressed: press,
-                button: *button as u8,
-            });
-        }
+        let button = match detail {
+            1 => ffi::BUTTON_LEFT,
+            2 => ffi::BUTTON_MIDDLE,
+            3 => ffi::BUTTON_RIGHT,
+            8 => ffi::BUTTON_X1,
+            9 => ffi::BUTTON_X2,
+            4 | 5 if press => {
+                send(Packet::Scroll {
+                    amount: scroll(if detail == 4 { 1 } else { -1 }),
+                });
+                return false;
+            }
+            6 | 7 if press => {
+                send(Packet::HScroll {
+                    amount: scroll(if detail == 6 { -1 } else { 1 }),
+                });
+                return false;
+            }
+            _ => return false,
+        };
+        send(Packet::MouseButton {
+            pressed: press,
+            button: button as u8,
+        });
         false
     }
 

@@ -746,12 +746,14 @@ request to the root (`_NET_WM_STATE`); every key through the same table,
 with shift, alt and control tracked by key code; Ctrl+Alt+Shift+Q to quit
 and Ctrl+Alt+Shift with another key's release to toggle the grab; the
 buttons, scroll and horizontal scroll; the relative mouse, warped back to
-(640, 360) while grabbed; `WM_DELETE_WINDOW` to quit. Two quirks of the C
-stay too, so that the measure judges the language alone: buttons 4 to 7
-scroll on both their press and their release, and the handler's `button`
-is set once for each read, not for each event, so a scroll (or a button
-past 9) that follows another button in the same read sends that button's
-press or release again.
+(640, 360) while grabbed; `WM_DELETE_WINDOW` to quit. F4 also kept two
+faults of the C, so that its measure judged the language alone; #511
+fixed both, in the C and the Rust. Buttons 4 to 7 scrolled on both their
+press and their release, so a wheel notch scrolled twice; they now scroll
+on their press only. The handler's `button` was set once for each read,
+not for each event, so a scroll (or a button past 9) that followed a
+click in the same read sent the click's button again; it is now set for
+each event.
 
 What differs:
 
@@ -783,8 +785,14 @@ Tests (`src/x11_window/tests.rs`), each window on a private Xvfb with a
   grabbed and ungrabbed, the grab toggled and back, `WM_DELETE_WINDOW`,
   the quit chord). Each group, then the descriptor loop until it is
   quiet: the same loop results, the same packets at the network core and
-  the same real pointer position from both. With the button reset for each
-  event, or with no warp, the test fails (checked by hand on aka).
+  the same real pointer position from both. With no warp, the test fails
+  (checked by hand on aka). Buttons 1 to 10 send 14 packets: both edges
+  of buttons 1 to 3, 8 and 9, and one scroll for each of buttons 4 to 7.
+  The C and F4's port sent 28 (#511).
+- A wheel notch (a press and a release of each of buttons 4 to 7) scrolls
+  once, and a click followed by a notch's press and button 10's in one
+  read sends the click and the scroll alone, from both windows. Each test
+  failed on the code before #511, for both windows.
 - The key table equals `io/input/keyboard.h`'s, read from the file.
 - A closed window is gone, and its descriptor has left the loop: a turn
   of the loop then calls no handler. The handler fails the loop (-1) when

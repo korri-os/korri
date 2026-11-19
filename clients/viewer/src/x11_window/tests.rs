@@ -505,12 +505,12 @@ fn script() -> Vec<Vec<Input>> {
 /// pointer is in the window afterwards.
 type Played = (Vec<c_int>, Vec<Packet>, (i16, i16));
 
-/// The script's results, group by group, for one kind.
-fn played(kind: Kind) -> Vec<Played> {
+/// The results of `groups`, group by group, for one kind.
+fn played(kind: Kind, groups: Vec<Vec<Input>>) -> Vec<Played> {
     let server = Server::start();
     let viewer = Viewer::open(kind, &server, (1280, 720), 0);
     let client = server.client();
-    let played = script()
+    let played = groups
         .into_iter()
         .map(|group| {
             for input in group {
@@ -535,8 +535,8 @@ fn the_rust_input_sends_the_packets_that_the_carried_c_sends() {
     let _turn = exclusive();
     let _core = installed(&*CORE);
     CORE.packets.lock().unwrap().clear();
-    let carried = played(Kind::Carried);
-    let rust = played(Kind::Rust);
+    let carried = played(Kind::Carried, script());
+    let rust = played(Kind::Rust, script());
     let key = |vk: u16, down, modifiers| Packet::Keyboard {
         code: (0x8000 | vk) as i16,
         down,
@@ -547,10 +547,9 @@ fn the_rust_input_sends_the_packets_that_the_carried_c_sends() {
     assert!(carried[0].0.is_empty());
     assert_eq!(carried[0].1, [key(0x41, true, 0), key(0x41, false, 0)]);
     assert_eq!(carried[1].1[1], key(0x41, true, ffi::MODIFIER_SHIFT as u8));
-    // Five buttons, a scroll on both edges of buttons 4 to 7, and the C's
-    // stale button: after button 3, each edge of buttons 4 to 7 sends the
-    // right button again, and after button 9 each edge of button 10 the X2.
-    assert_eq!(carried[2].1.len(), 2 * 5 + 2 * 4 + 2 * 4 + 2);
+    // Both edges of five buttons, and one scroll for each of buttons 4 to
+    // 7, on its press; button 10 sends nothing (#511).
+    assert_eq!(carried[2].1.len(), 2 * 5 + 4);
     assert!(carried[3].1.is_empty());
     assert!(
         carried[4].1.is_empty(),
@@ -568,6 +567,67 @@ fn the_rust_input_sends_the_packets_that_the_carried_c_sends() {
     for (group, (carried, rust)) in carried.iter().zip(&rust).enumerate() {
         assert_eq!(rust, carried, "group {group}");
     }
+}
+
+/// The packets of each group of `groups`, from the C's window and from the
+/// Rust's, beside the packets that each should send.
+fn both_send(groups: Vec<Vec<Input>>, expected: Vec<Vec<Packet>>) {
+    let _core = installed(&*CORE);
+    CORE.packets.lock().unwrap().clear();
+    let sent = [Kind::Carried, Kind::Rust].map(|kind| {
+        let packets: Vec<Vec<Packet>> = played(kind, groups.clone())
+            .into_iter()
+            .map(|(_, packets, _)| packets)
+            .collect();
+        (kind, packets)
+    });
+    assert_eq!(
+        sent,
+        [Kind::Carried, Kind::Rust].map(|kind| (kind, expected.clone()))
+    );
+}
+
+/// A wheel notch is a press and a release of its button (#511).
+#[test]
+fn a_wheel_notch_scrolls_once() {
+    let _turn = exclusive();
+    use Input::*;
+    both_send(
+        (4..=7)
+            .map(|number| vec![ButtonPress(number), ButtonRelease(number)])
+            .collect(),
+        vec![
+            vec![Packet::Scroll { amount: 120 }],
+            vec![Packet::Scroll { amount: -120 }],
+            vec![Packet::HScroll { amount: -120 }],
+            vec![Packet::HScroll { amount: 120 }],
+        ],
+    );
+}
+
+/// A click, then a notch and a button past 9 in the same read: each sends
+/// its own packet or none, never the click's button again (#511).
+#[test]
+fn a_scroll_after_a_click_sends_no_button() {
+    let _turn = exclusive();
+    use Input::*;
+    let left = |pressed| Packet::MouseButton {
+        pressed,
+        button: ffi::BUTTON_LEFT as u8,
+    };
+    both_send(
+        vec![vec![
+            ButtonPress(1),
+            ButtonRelease(1),
+            ButtonPress(4),
+            ButtonPress(10),
+        ]],
+        vec![vec![
+            left(true),
+            left(false),
+            Packet::Scroll { amount: 120 },
+        ]],
+    );
 }
 
 #[test]

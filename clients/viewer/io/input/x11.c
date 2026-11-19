@@ -48,7 +48,7 @@ static bool grabbed = True;
 
 static int x11_handler(int fd) {
   XEvent event;
-  int button = 0;
+  int button;
   int motion_x, motion_y;
 
   while (XPending(display)) {
@@ -95,6 +95,9 @@ static int x11_handler(int fd) {
       break;
     case ButtonPress:
     case ButtonRelease:
+      // Korri adaptation (#511), 2026-11-19: the button of this event only,
+      // and one scroll for each wheel notch, on its press.
+      button = 0;
       switch (event.xbutton.button) {
       case Button1:
         button = BUTTON_LEFT;
@@ -106,16 +109,20 @@ static int x11_handler(int fd) {
         button = BUTTON_RIGHT;
         break;
       case Button4:
-        LiSendScrollEvent(1);
+        if (event.type == ButtonPress)
+          LiSendScrollEvent(1);
         break;
       case Button5:
-        LiSendScrollEvent(-1);
+        if (event.type == ButtonPress)
+          LiSendScrollEvent(-1);
         break;
       case 6:
-        LiSendHScrollEvent(-1);
+        if (event.type == ButtonPress)
+          LiSendHScrollEvent(-1);
         break;
       case 7:
-        LiSendHScrollEvent(1);
+        if (event.type == ButtonPress)
+          LiSendHScrollEvent(1);
         break;
       case 8:
         button = BUTTON_X1;

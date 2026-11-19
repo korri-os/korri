@@ -6,7 +6,7 @@ GPL-3.0-or-later. Original notices stay on every carried file.
 
 Korri's modifications and adaptations identified below are dated 2026-11-13,
 including the SDL startup mouse-capture correction. The view-only change
-below is dated 2026-11-14.
+below is dated 2026-11-14, and the X11 buttons' change (#511) 2026-11-19.
 
 Source: Moonlight Embedded `775444287305849ebdf4736c75298ad0713e2d5d`, with
 `korri-plugins`' `services/moonlight/patches/` at
@@ -22,6 +22,7 @@ changes these three audio backends.
 | `audio/{audio.h,alsa.c,pulse.c,sdl.c}` | None. Opus decoder, channel reorder, PCM buffering, recovery and output are unchanged. `src/audio_output/renderer.rs` is their Rust port (#391 step F): the default in a build with the `rust-audio-output` feature, which the PC package has (the owner's call of 2026-11-18, ahead of a quiet measurement); there `-audiooutput c` chooses these files. A build without the feature plays through them. |
 | `input/{keyboard.h,x11.h}` | None. |
 | `input/{evdev.c,udev.c,x11.c}` | Include `../../picture/loop.h` instead of `../loop.h`; use the existing Rust-polled descriptor registry, not Moonlight's session loop. |
+| `input/x11.c` | `x11_handler` sets `button` to 0 for each button event, not once for each read, so a scroll or a button past 9 that follows a click in the same read no longer sends the click's button again. Buttons 4 to 7 scroll on their press only, so a wheel notch (a press and a release) scrolls once, not twice (#511). |
 | `input/sdl.c` | Include `../../picture/sdl.h` instead of `../sdl.h`. Add `sdlinput_destroy` to close controllers after the core joins its threads. |
 | `input/evdev.c` | Extend `evdev_stop` to join mouse-emulation producers before the core stops. Add `evdev_destroy` to remove devices, join mouse-emulation threads, close nodes and release grabs after the core joins its threads. `evdev_handle` returns -1 instead of calling `exit()` on a read error other than `EAGAIN` or `ENODEV`. `evdev_create` returns -1 instead of calling `exit()` when its device array cannot grow; it keeps the existing devices and closes the new node. |
 | `input/{mapping.c,mapping.h}` | `mapping_parse` returns `NULL` with `errno` set to `ENOMEM` instead of calling `exit()` when it cannot allocate. `mapping_load` returns -1 instead of calling `exit()` when it cannot open the file or allocate a mapping. It gives the list through a pointer and closes the file. |
