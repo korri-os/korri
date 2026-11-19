@@ -1,0 +1,49 @@
+start: Start at 866250609.558 ms
+start: http serverinfo answered at 866250610.815 ms (connected 0.1 ms, first byte 0.2 ms, total 0.3 ms)
+start: https serverinfo answered at 866250613.283 ms (connected 0.1 ms, TLS done 1.8 ms, first byte 2.4 ms, total 2.4 ms)
+start: paired at 866250613.305 ms
+start: https applist answered at 866250615.113 ms (connected 0.1 ms, TLS done 1.5 ms, first byte 1.8 ms, total 1.8 ms)
+start: picture and input ready at 866250725.149 ms
+start: https launch answered at 866251232.097 ms (connected 0.1 ms, TLS done 1.6 ms, first byte 506.8 ms, total 506.9 ms)
+start: core platform init begins at 866251232.144 ms
+start: core platform init done at 866251232.146 ms
+start: core name resolution begins at 866251232.148 ms
+start: core name resolution done at 866251232.179 ms
+start: core audio stream init begins at 866251232.181 ms
+start: core audio stream init done at 866251232.182 ms
+start: core RTSP handshake begins at 866251232.183 ms
+start: core RTSP handshake done at 866251233.224 ms
+start: core control stream init begins at 866251233.227 ms
+start: core control stream init done at 866251233.229 ms
+start: core video stream init begins at 866251233.231 ms
+start: core video stream init done at 866251233.238 ms
+start: core input stream init begins at 866251233.239 ms
+start: core input stream init done at 866251233.241 ms
+start: core control stream start begins at 866251233.242 ms
+start: core control stream start done at 866251234.464 ms
+start: core video stream start begins at 866251234.467 ms
+Platform SDL
+Couldn't open codec: h264_v4l2m2m
+Using FFmpeg decoder: h264
+Video receive buffer: 2016 KiB, as asked
+start: core video stream start done at 866251235.120 ms
+start: core audio stream start begins at 866251235.122 ms
+Video receive takes up to 32 queued datagrams per call
+Video receive UDP_GRO is on: coalesced reads are split per datagram
+CRITICAL: You are using the SDL disk i/o audio driver!
+CRITICAL:  Writing to file [/tmp/dead-sender-proof-2/nightjar/sound.raw], format=S16LE channels=2 freq=48000.
+start: core audio stream start done at 866251235.320 ms
+start: core input stream start begins at 866251235.322 ms
+start: core input stream start done at 866251235.324 ms
+Received first video packet after 0 ms
+start: first video packet at 866251255.959 ms
+start: first frame shown at 866251297.261 ms
+picture: the picture shown is 1280x720
+Received first audio packet
+start: first audio packet at 866253532.332 ms
+Audio arrival over 10 s: 2000 packets, late p50 1 p95 3 p99 5 max 9 ms, >=8:1 >=12:0 >=16:0 >=20:0 >=24:0 >=32:0 >=40:0
+link: no video for 1502 ms and no sound for 1502 ms: the sender or the link to it is gone
+link: longest silence while the stream ran: video 45 ms, sound 45 ms
+nightjar: at the stop: SessionStats { rtt: Some((1ms, 0ns)), video: VideoStats { packet_count_video: 41335, packet_count_fec: 10088, packets_received: 51423, packets_recovered: 0, decrypt_failures: 0, frames_completed: 2596, frame_drops: 0, decoder_drops: 0 }, audio: AudioStats { packet_count_audio: 8325, packet_count_fec: 4164, packet_count_fec_recovered: 0, packet_count_fec_failed: 0, packet_count_oos: 0, packet_count_invalid: 0, packet_count_fec_invalid: 0, decrypt_failures: 0 }, frames_submitted: 2596, frames_need_idr: 0, decode_queue_overflows: 0, early_chunks_dropped: 0, frames_skipped: 0, chunks_skipped: 0, decode_queue_len: 0, audio_packets: 8325, audio_queue_len: 0, audio_queue_overflows: 0, connection_status: Some(Okay), input_contact_lost: false }
+nightjar: recovery requests sent: 0 IDR, 0 reference frame invalidations
+korri-viewer: the stream ended: link: no video for 1502 ms and no sound for 1502 ms: the sender or the link to it is gone

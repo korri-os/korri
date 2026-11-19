@@ -1,0 +1,9 @@
+start: Start at 866250349.465 ms
+start: http serverinfo answered at 866250378.068 ms (connected 0.1 ms, first byte 0.3 ms, total 0.3 ms)
+Please enter the following PIN on the target PC: 0276
+start: http pair answered at 866250384.199 ms (connected 0.1 ms, first byte 6.0 ms, total 6.0 ms)
+start: http pair answered at 866250384.444 ms (connected 0.1 ms, first byte 0.2 ms, total 0.2 ms)
+start: http pair answered at 866250385.075 ms (connected 0.0 ms, first byte 0.6 ms, total 0.6 ms)
+start: http pair answered at 866250385.693 ms (connected 0.1 ms, first byte 0.3 ms, total 0.3 ms)
+start: https pair answered at 866250388.054 ms (connected 0.0 ms, TLS done 2.0 ms, first byte 2.3 ms, total 2.3 ms)
+Successfully paired

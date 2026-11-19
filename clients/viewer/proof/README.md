@@ -9,6 +9,9 @@ The handheld `v4l2request` build proof (aarch64, no device) is at
 
 The frame record and number 1 (#435) are at `aka/frame-times/README.md`.
 
+The viewer's watch for a sender that stops mid-stream (#544) is at
+`dead-sender/README.md`.
+
 The Android app's emulator proof (#391 step D, slice D1) is at
 `android-d1/README.md`.
 

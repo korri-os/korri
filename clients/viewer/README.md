@@ -2132,6 +2132,30 @@ package builds none of the Rust parts; nightjar-core would need the same
 two cfgs, and no handheld measured it), a phone run on Android, and a
 korrid setting to choose the core.
 
+## A sender that stops (#544)
+
+`src/link_watch.rs`. A sender that stops in the middle of the stream (a
+Sunshine that aborted, a link that went) used to leave the last picture on
+the screen with no message: nightjar-core still said the connection was
+`Okay`. Now the stream loop reads nightjar-core's video datagram and sound
+packet counts each 100 ms. When both have been silent for 1.5 s (the video
+alone in a stream with no sound), the viewer logs the loss, sends the
+treaty's `LinkLost` event (the CLOCK_MONOTONIC times of the last video
+packet, the last sound packet and the detection), and ends the stream with
+the error `the stream ended: link: …`, so `Status(Stopped)` follows. The C
+core is not watched. At the end of every watched stream the log has the
+longest silence of each, to the reads' 100 ms.
+
+korrid keeps the loss for the launch. When it then finds the viewer stopped
+while the holder still runs the game, it does not start the viewer again: it
+ends it as Disconnect does, keeps the selection for a resume, and shows one
+notice in the catalog (`Lost the link to <device>: no picture or sound for
+1.5 s. The game still runs there.`). Reconnecting is the stream
+controller's (ADR 0088).
+
+Why 1.5 s, and the proof on aka with a Sunshine that stops:
+`proof/dead-sender/README.md`.
+
 ## Next slices
 
 The bench proof of the handheld `v4l2request` path. No device installs

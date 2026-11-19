@@ -1,0 +1,9 @@
+start: Start at 866129588.026 ms
+start: http serverinfo answered at 866129605.306 ms (connected 0.1 ms, first byte 0.3 ms, total 0.3 ms)
+Please enter the following PIN on the target PC: 6524
+start: http pair answered at 866129611.606 ms (connected 0.1 ms, first byte 6.2 ms, total 6.2 ms)
+start: http pair answered at 866129611.856 ms (connected 0.1 ms, first byte 0.2 ms, total 0.2 ms)
+start: http pair answered at 866129612.580 ms (connected 0.0 ms, first byte 0.7 ms, total 0.7 ms)
+start: http pair answered at 866129613.154 ms (connected 0.0 ms, first byte 0.3 ms, total 0.3 ms)
+start: https pair answered at 866129615.633 ms (connected 0.0 ms, TLS done 2.1 ms, first byte 2.4 ms, total 2.5 ms)
+Successfully paired
