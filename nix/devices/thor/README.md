@@ -308,25 +308,81 @@ What differs (each is a candidate, none is proven):
 | 4 | Sway 1.12 + wlroots 0.20.2 here; ROCKNIX ships Sway 1.11 + wlroots 0.19.3 with plane-rotation patches | this system's closure; `packages/wayland/lib/wlroots` | (a), if the newer wlroots puts DSI-2 in the same atomic modeset as DSI-1 |
 | 5 | The `ch13726a` driver waits 120 ms after sleep-out in ROCKNIX (024a558c31) | patch diff | the bottom panel's own start, not the top's stall |
 
-Proposed next steps, in order (nothing built or deployed):
+### Step-1 results (2026-11-18, system `y0nz67hx…`, about 18 min after boot)
 
-1. Read-only on the device, no build. (i) Run `swaymsg output DSI-2 mode
-   1080x1920@60Hz` and count `Page-flip failed` for 5 minutes. If the
-   count stops growing, row 3 is the likely cause of (b). (ii) Run `echo
-   0x10 > /sys/module/drm/parameters/debug` (atomic debug, reset with
-   `0`), then power DSI-1 on once and save `dmesg`. If DSI-2's CRTC
-   appears in the same commit with `mode_changed` or `active_changed`,
-   row 4 is in play for (a). A `busy with a previous commit` line for the
-   top CRTC confirms that the page-flip EBUSY comes from
-   `stall_checks()` in `drm_atomic_helper.c`.
-2. If (i) holds: port ROCKNIX 0509 (the frame-length sysfs knob) to the
-   Thor kernel. The owner's unit then needs its own value, measured with
-   ROCKNIX's tool or read from Android. Until then the top runs at 60 Hz.
-3. For (a): build the Thor kernel on v7.3.5 with ROCKNIX's 7.3 queue,
-   which is what every working ROCKNIX Thor runs today. This is the
-   largest change but needs no guessing about which fix matters. Narrower
-   alternative: backport the `dsi_phy_7nm.c` PLL refcount and `dsi_host.c`
-   clock changes (row 1) plus ROCKNIX 0011 (row 2) onto 7.2.
+Logs on the device: `/root/dsi1-on-atomic.log`, `/root/dsi1-on-atomic-2.log`.
+
+- **60 Hz page-flip test: inconclusive.** The `Page-flip failed` count
+  stayed at 182 for 120 s at 120 Hz and for 300 s at 60 Hz. The screen was
+  static, so nothing flipped, and `korri-display-idle` powered DSI-2 off
+  partway through. A valid test needs screen activity.
+- **First `drm.debug=0x10` run: invalid.** DSI-2 had been idled off.
+- **Second run, DSI-2 on:** `output DSI-1 power on, output DSI-1 transform
+  90`. The commits touched only `CRTC:109` (crtc-0, DSI-1); no line
+  mentions `CRTC:110`. One `[PLANE:97:plane-8] busy with a previous commit`
+  on a nonblocking commit at 1108.84 s. With DSI-1 on: 0 `wait_for_idle`
+  and 0 `frame done timeout` over 50 s, and still 0 for 30 s after
+  `output DSI-1 power off`. **This live power cycle passed;** the one about
+  2 minutes after boot failed within 8 s. So (a) is intermittent too.
+- **Caveat:** the top screen was static in this run as well. A command-mode
+  encoder only reaches `wait_for_idle` on a kickoff
+  (`dpu_encoder_phys_cmd_prepare_for_kickoff`), so a static DSI-2 cannot
+  show the stall. The pass shows that enabling DSI-1 alone does not wedge
+  DSI-2. It does not show that DSI-2 flips survive while DSI-1 changes.
+
+### Candidate ranking after step 1
+
+| Rank | Candidate | State |
+|---|---|---|
+| 1 | **A DSI-1 commit that never reaches `flip_done` keeps planes busy.** `drm_atomic_helper_setup_commit()` refuses a nonblocking commit with EBUSY if a plane's previous commit has not reached `flip_done` (`[PLANE:…] busy with a previous commit`). The boot-time `enc35 frame done timeout`s at 10.7 to 12.0 s are where such a commit could stall. A plane left on it would fail every later commit that uses it, including DSI-2 page flips. | New, inferred. Fits the plane-8 line, the slow EBUSY trickle on DSI-2, and failures that happen early only |
+| 2 | Row 2: ROCKNIX `0011-drm-msm-signal-hw_done-before-the-flip-event.patch` | Open. It changes the same `flip_done`/`hw_done` ordering |
+| 3 | Row 1: the msm DSI and DPU fixes between 7.2.0 and 7.3.5 | Open. Clock and OPP state at start-up is one way to get an early-only fault |
+| 4 | Row 3: top-panel frame length `0x4C` (118.63 Hz on a Thor) | Open. Needs a test with screen activity |
+| 5 | Row 5: `ch13726a` 120 ms sleep-out delay | Unchanged; bottom panel only |
+| — | Row 4: wlroots puts DSI-2 in the same modeset | **Ruled out:** no commit touched `CRTC:110` |
+
+### Next experiment: separate early boot from DSI-1's boot-time modeset
+
+Two things are confounded so far: time since boot, and whether DSI-2 was
+flipping. Keep DSI-2 flipping in every run with a loop that needs no new
+package, for example
+`while :; do swaymsg output DSI-2 bg '#000001' solid_color; swaymsg output DSI-2 bg '#000000' solid_color; sleep 0.05; done`,
+and keep it out of display idle for the run. For each run, record the
+counts of `failed wait_for_idle`, `frame done timeout`, `Page-flip failed`
+and `busy with a previous commit` (with `drm.debug=0x10`), and save
+`/sys/kernel/debug/dri/0/state` before the toggle. That file shows which
+CRTC plane-8 is on.
+
+1. **Normal boot:** toggle DSI-1 on and off at 2 min and again at 15 min
+   in the same boot. Do 2 or 3 boots.
+2. **Control boot with the existing `video=DSI-1:d` entry:** fbcon and Sway
+   never mode-set DSI-1 at start, so there are no boot-time `enc35`
+   timeouts. At 2 min, run `echo on > /sys/class/drm/card0-DSI-1/status`
+   to force the connector on. Sway then sees DSI-1 as hot-plugged. Toggle
+   it on and off as in run 1.
+
+How to read the results:
+
+| Result | Meaning |
+|---|---|
+| Run 1 fails at 2 min and passes at 15 min, and run 2 passes at 2 min | The fault comes from DSI-1's boot-time modeset (rank 1). |
+| Run 2 also fails at 2 min | The fault is tied to time since boot (rank 3: clock, OPP or `sync_state` settling). Add the `sync_state` lines from `dmesg` to the comparison. |
+| Every run passes with DSI-2 flipping | The earlier failures need another trigger. Look again at what the shell was doing two minutes after boot. |
+
+The same flip loop also makes the 60 Hz versus 120 Hz test valid (rank 4):
+count `Page-flip failed` for 5 minutes at each rate.
+
+Proposed changes, after the experiment (nothing built or deployed):
+
+- If rank 1 holds: keep DSI-1's CRTC from being enabled at boot, without
+  removing the connector. One way is for the Thor not to light DSI-1 from
+  fbcon. Another is for Sway to start with `output DSI-1 disable` instead
+  of `power off`. Both need checking against the per-boot `state` dump
+  first. Then port ROCKNIX 0011 (rank 2).
+- If rank 3 holds: build the Thor kernel on 7.3.5 with ROCKNIX's 7.3
+  queue, or backport the row 1 changes onto 7.2.
+- If rank 4 holds: port ROCKNIX patch 0509 and set this unit's frame
+  length.
 
 ## Write and boot (owner)
 
