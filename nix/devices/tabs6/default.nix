@@ -128,6 +128,8 @@ in
     tabs6-console-esp-image = consoleImages.esp;
     tabs6-console-deploy-over-ssh = consoleImages.deploy;
   };
+  inputplumberData =
+    pkgs: inputplumber: import ./inputplumber-data.nix { inherit pkgs inputplumber; };
   checks = {
     tabs6-esp = import ./esp/check.nix { pkgs = hostPkgs; };
     tabs6-usb-role = import ./usb-role/check.nix { pkgs = hostPkgs; };

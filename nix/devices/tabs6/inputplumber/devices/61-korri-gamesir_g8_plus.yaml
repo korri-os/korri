@@ -1,0 +1,39 @@
+# The GameSir-G8+ (Bluetooth HID 3537:1108) has a DirectInput layout: its
+# right stick is ABS_Z/ABS_RZ (centre 128) and its analog triggers are
+# ABS_GAS/ABS_BRAKE. Upstream's Generic Gamepad maps ABS_Z/ABS_RZ to the
+# triggers, so both triggers rested at 128 of 255. inputd's state was then
+# never neutral, and the seat receiver held every gameplay press back
+# (input_seat.rs, requires_neutral). Upstream's dinput_generic map reads the
+# axes correctly; it is the same map 60-8bit_do_pro_2.yaml uses.
+#
+# The pad also exposes "Consumer Control" and "Keyboard" event nodes with the
+# same vendor and product IDs. ID_INPUT_JOYSTICK keeps them out, so the pad
+# makes one composite, as it did under Generic Gamepad.
+version: 1
+kind: CompositeDevice
+name: GameSir-G8+
+matches: []
+maximum_sources: 1
+source_devices:
+  - group: gamepad
+    udev:
+      attributes:
+        - name: id/vendor
+          value: "3537"
+        - name: id/product
+          value: "1108"
+      properties:
+        - name: ID_INPUT_JOYSTICK
+          value: "1"
+      sys_name: "event*"
+      subsystem: input
+    capability_map_id: dinput_generic
+# Same targets and options Korri gives every selected external profile
+# (services/inputd/nix/inputplumber-data.nix).
+target_devices:
+  - xb360
+  - mouse
+  - keyboard
+options:
+  auto_manage: true
+  persist: true

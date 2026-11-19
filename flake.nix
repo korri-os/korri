@@ -206,6 +206,7 @@
             rgds-update-renderer = import ./nix/devices/rgds/update/renderer.nix { inherit pkgs; };
             rpminiv2-inputplumber-data = rpminiv2.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             h700-inputplumber-data = h700.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
+            tabs6-inputplumber-data = tabs6.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             korri-viewer = viewer.package;
             # The viewer with no Rust part, the baseline for one part's turns (#391).
             korri-viewer-c = viewer.cPackage;

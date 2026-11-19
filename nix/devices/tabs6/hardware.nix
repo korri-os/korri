@@ -3,6 +3,7 @@
 # console that boots on the tablet today.
 {
   config,
+  korri,
   lib,
   pkgs,
   tabs6KorriKernel,
@@ -107,6 +108,13 @@ in
   # to korrid like a wired one. tabs6-bt-pair pairs the first time
   # (README.md, "Pair a Bluetooth controller").
   environment.systemPackages = [ pair ];
+
+  # The GameSir-G8+ needs its own InputPlumber composite: under Generic
+  # Gamepad its right stick reads as half-pressed triggers and no gameplay
+  # press reaches a seat (inputplumber/devices/61-korri-gamesir_g8_plus.yaml).
+  services.korriLinuxInput.provider.extraDataPackages = [
+    korri.packages.${pkgs.stdenv.hostPlatform.system}.tabs6-inputplumber-data
+  ];
 
   # The GameSir-G8+ answers some HID-over-GATT reads with Attribute Not Found;
   # stock BlueZ then never reads the Report Map and makes no input device.
