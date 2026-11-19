@@ -47,3 +47,22 @@ network. The frame timing from stage 1 is the measure for every later stage.
   every device would need a hands-on check before any of it ships.
 - **Rust wins when it conflicts with performance.** Streams could be worse
   than today for an unknown time.
+
+## Amendment
+
+**Owner decision, 2026-11-18.** The Rust audio output (#391 step F, slice
+F1) became the PC viewer's default ahead of a quiet measurement. The owner
+deferred that measurement to the end of #391, with the other final
+measurements: `korri-viewer-c` against `korri-viewer-rust-audio-output`,
+with `--tone 1000`. Until then F1 has not measured equal or better as the
+decision above asks. Its four sets on aka were all disturbed by other work
+(`clients/viewer/proof/rust-audio-output/`):
+
+- the first set, 2026-11-17 (`turns-2026-11-17/`): other work above 5 % of
+  all CPUs in four of the five candidate runs; equal on every number;
+- the three attempts of the rerun that was to make the verdict firm,
+  2026-11-17 (`rerun-2026-11-17/`): other work above 5 % in 6, 3 and 8 of
+  the 10 runs; the first two equal on every number, the third one frame
+  later at startup.
+
+`-audiooutput c` keeps the carried C.
