@@ -73,6 +73,74 @@ impl Mode {
 }
 
 /// A launch or job id is 32 lowercase hex characters, like a launch id.
+/// At korrid start: end the Steam engine hosts a previous korrid left, and
+/// remove their channels. Each host has a channel under the launches root
+/// (korrid makes it before the unit and removes it after). A session host
+/// whose game unit still runs (`game_running`) is kept: its game's exit
+/// sync still needs it. Returns the hosts it ended.
+pub fn clean_leftovers(
+    units: &dyn HostUnits,
+    launches_root: &Path,
+    game_running: impl Fn(&str) -> bool,
+) -> Vec<Mode> {
+    let Ok(entries) = fs::read_dir(launches_root) else {
+        return Vec::new();
+    };
+    let mut ended = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        let mode = if let Some(id) = name.strip_prefix("steam-engine-job-") {
+            Mode::Job { id: id.into() }
+        } else if let Some(launch_id) = name.strip_suffix(".steam-engine") {
+            Mode::Session {
+                launch_id: launch_id.into(),
+            }
+        } else {
+            continue;
+        };
+        let id = match &mode {
+            Mode::Job { id } => id,
+            Mode::Session { launch_id } => launch_id,
+        };
+        if !valid_id(id) {
+            continue;
+        }
+        if let Mode::Session { launch_id } = &mode {
+            if game_running(launch_id) {
+                eprintln!(
+                    "korrid steam engine: kept {}: its game still runs",
+                    mode.unit()
+                );
+                continue;
+            }
+        }
+        let channel = Channel::open(&entry.path());
+        if units.active(&mode).unwrap_or(false) {
+            // Its own end first (the engine writes its stores), then the unit.
+            if channel
+                .send_within(protocol::Command::Shutdown, Duration::from_secs(2))
+                .is_ok()
+            {
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while units.active(&mode).unwrap_or(false) && Instant::now() < deadline {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            }
+        }
+        if let Err(error) = units.stop(&mode) {
+            eprintln!("korrid steam engine: cannot stop {}: {error}", mode.unit());
+            continue;
+        }
+        if let Err(error) = channel.remove() {
+            eprintln!("korrid steam engine: cannot remove {}: {error}", name);
+        }
+        eprintln!("korrid steam engine: ended leftover {}", mode.unit());
+        ended.push(mode);
+    }
+    ended
+}
+
 pub fn valid_id(value: &str) -> bool {
     value.len() == 32
         && value
@@ -769,6 +837,55 @@ done"#,
         );
         channel.remove().unwrap();
         assert!(!mode.channel(&launches).exists());
+    }
+
+    /// Review C6: at start korrid ends the hosts and channels a previous
+    /// korrid left, but keeps a session host whose game still runs.
+    #[test]
+    fn leftover_hosts_and_channels_are_cleaned_but_a_running_games_host_stays() {
+        let temp = tempfile::tempdir().unwrap();
+        let launches = temp.path().join("launches");
+        let units = process_units::ProcessHostUnits::new(&launches);
+        let me = unsafe { libc::geteuid() };
+        let job = Mode::Job {
+            id: "0123456789abcdef0123456789abcdef".into(),
+        };
+        let gone = Mode::Session {
+            launch_id: "11111111111111111111111111111111".into(),
+        };
+        let playing = Mode::Session {
+            launch_id: "22222222222222222222222222222222".into(),
+        };
+        let host = script_host(
+            temp.path(),
+            r#"exec 3<>"$fifo"
+while read -r line <&3; do case "$line" in shutdown) exit 0 ;; esac; done"#,
+        );
+        let plan = HostPlan {
+            host_program: host,
+            engine: temp.path().join("steamclient.so"),
+            proton: None,
+            account_root: temp.path().into(),
+        };
+        for mode in [&job, &gone, &playing] {
+            Channel::create(&mode.channel(&launches), me).unwrap();
+            units.start(&plan, mode).unwrap();
+        }
+        // Not a host's channel: left alone.
+        fs::create_dir_all(launches.join("0123456789abcdef0123456789abcdef")).unwrap();
+        let ended = clean_leftovers(&units, &launches, |launch| {
+            launch == "22222222222222222222222222222222"
+        });
+        assert_eq!(ended.len(), 2);
+        assert!(ended.contains(&job) && ended.contains(&gone));
+        for mode in [&job, &gone] {
+            assert!(!units.active(mode).unwrap());
+            assert!(!mode.channel(&launches).exists());
+        }
+        assert!(units.active(&playing).unwrap());
+        assert!(playing.channel(&launches).exists());
+        assert!(launches.join("0123456789abcdef0123456789abcdef").exists());
+        units.stop(&playing).unwrap();
     }
 
     fn xattr(path: &Path, name: &std::ffi::CStr) -> Vec<u8> {

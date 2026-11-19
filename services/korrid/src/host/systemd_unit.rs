@@ -2369,6 +2369,21 @@ impl SystemdLaunchUnitBackend {
         }
     }
 
+    /// Review C6: at korrid start, end the Steam engine hosts and channels a
+    /// previous korrid left, except a session host whose game still runs.
+    pub(crate) fn clean_steam_leftovers(&self) {
+        let units = self.steam_engine_units();
+        crate::steam_engine::host::clean_leftovers(&units, &self.diagnostics_root, |launch| {
+            matches!(
+                self.state(launch),
+                Ok(LaunchUnitState::Running
+                    | LaunchUnitState::Frozen
+                    | LaunchUnitState::FreezerTransition
+                    | LaunchUnitState::Stopping)
+            )
+        });
+    }
+
     fn steam_engine_sessions(&self) -> &'static crate::steam_engine::sessions::Sessions {
         crate::steam_engine::sessions(|| {
             crate::steam_engine::sessions::Sessions::with_state(

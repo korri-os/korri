@@ -335,12 +335,14 @@ impl HostRuntime {
         private_state_root: PathBuf,
         native: Option<Arc<crate::surface_host_input::SurfaceHostInputSource>>,
     ) -> Self {
+        let units = SystemdLaunchUnitBackend::default();
+        units.clean_steam_leftovers();
         Self::from_paths_with_units(
             path,
             storage_root,
             private_state_root,
             native,
-            Arc::new(SystemdLaunchUnitBackend::default()),
+            Arc::new(units),
         )
     }
 
