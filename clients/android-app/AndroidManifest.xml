@@ -33,7 +33,9 @@
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
         <!-- As the Artemis app's KorriShellActivity: stateAlwaysHidden keeps the system keyboard
              from taking D-pad keys from Slint's text view; the configuration
-             changes reach the shell as window resizes, not a new activity. -->
+             changes reach the shell as window resizes, not a new activity.
+             locale is the Artemis app's Game's too, the activity that
+             streamed (#509): a new language does not end the stream. -->
         <activity
             android:name="android.app.NativeActivity"
             android:exported="true"
@@ -41,7 +43,7 @@
             android:resizeableActivity="true"
             android:enableOnBackInvokedCallback="false"
             android:windowSoftInputMode="stateAlwaysHidden"
-            android:configChanges="mcc|mnc|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|layoutDirection">
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|layoutDirection">
             <meta-data android:name="android.app.lib_name" android:value="korri_android_app" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

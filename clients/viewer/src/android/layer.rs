@@ -58,6 +58,11 @@
 //! has drawn into stays the CPU's, and EGL cannot draw into it. The stream's
 //! size does not change it.
 //!
+//! When the app's window goes and another comes, as at a fold on the
+//! Galaxy Z Fold 8 (#509), the layers go off the screen with the old
+//! window's root and [`Layers::reattach`] makes them children of the new
+//! one; the decoder renders into the video layer's Surface throughout.
+//!
 //! Two apps make these layers: the viewer's own (`clients/viewer/android`),
 //! which waits for them in its loop ([`Layers::make`]), and the Korri app
 //! (`clients/android-app`), whose loop is Slint's: it asks for them
@@ -685,6 +690,43 @@ impl Layers {
         }));
     }
 
+    /// The app's window went and another came, as at a fold on the Galaxy
+    /// Z Fold 8 (#509): the old window's root took the layers off the
+    /// screen with it, and they still are, with their places, their
+    /// buffers and the decoder's Surface. One transaction makes each a
+    /// child of the new window's root again; their order and visibility
+    /// are theirs and stay. The window's new size is [`Layers::follow`]'s.
+    /// Posted to Android's main thread without waiting; the answer says
+    /// whether it was applied.
+    pub fn reattach(&self, app: &AndroidApp) -> mpsc::Receiver<Result<()>> {
+        let vm = app.vm_as_ptr() as usize;
+        let mut controls = vec![self.video.control.clone()];
+        controls.extend(self.backdrop.as_ref().map(|b| b.layer.control.clone()));
+        controls.extend(self.overlay.as_ref().map(|o| o.control.clone()));
+        let activity = self.activity.clone();
+        let (answer, answered) = mpsc::channel();
+        app.run_on_java_main_thread(Box::new(move || {
+            let applied = attached(vm, |env| {
+                let root = window_root(env, activity.as_obj())?;
+                let transaction =
+                    env.new_object("android/view/SurfaceControl$Transaction", "()V", &[])?;
+                for control in &controls {
+                    let reparent = reparent_to(env, &root, control.as_obj())?;
+                    env.call_method(
+                        &transaction,
+                        "merge",
+                        format!("({TRANSACTION}){TRANSACTION}"),
+                        &[JValue::Object(&reparent)],
+                    )?;
+                }
+                env.call_method(&transaction, "apply", "()V", &[])?;
+                Ok(())
+            });
+            let _ = answer.send(applied);
+        }));
+        answered
+    }
+
     /// Remove the layers, on Android's main thread, without waiting: the
     /// main thread may wait for this one (in `onDestroy`).
     pub fn release(self, app: &AndroidApp) {
@@ -832,15 +874,8 @@ enum Blend {
     Translucent,
 }
 
-/// A layer named `name` with buffers of `size`, its reparent transaction to
-/// the window's root (not yet applied) and its Surface.
-fn make_layer<'a>(
-    env: &mut JNIEnv<'a>,
-    activity: &JObject,
-    name: &str,
-    size: (i32, i32),
-    blend: Blend,
-) -> jni::errors::Result<(JObject<'a>, JObject<'a>)> {
+/// The root of the activity's window, whose children the layers are.
+fn window_root<'a>(env: &mut JNIEnv<'a>, activity: &JObject) -> jni::errors::Result<JObject<'a>> {
     let window = env
         .call_method(activity, "getWindow", "()Landroid/view/Window;", &[])?
         .l()?;
@@ -858,6 +893,41 @@ fn make_layer<'a>(
     if root.is_null() {
         return Err(jni::errors::Error::NullPtr("getRootSurfaceControl"));
     }
+    Ok(root)
+}
+
+/// The transaction that makes `layer` a child of the window's `root`, not
+/// yet applied.
+fn reparent_to<'a>(
+    env: &mut JNIEnv<'a>,
+    root: &JObject,
+    layer: &JObject,
+) -> jni::errors::Result<JObject<'a>> {
+    let transaction = env
+        .call_method(
+            root,
+            "buildReparentTransaction",
+            format!("(Landroid/view/SurfaceControl;){TRANSACTION}"),
+            &[JValue::Object(layer)],
+        )?
+        .l()?;
+    if transaction.is_null() {
+        // The window's own surface is not valid (yet).
+        return Err(jni::errors::Error::NullPtr("buildReparentTransaction"));
+    }
+    Ok(transaction)
+}
+
+/// A layer named `name` with buffers of `size`, its reparent transaction to
+/// the window's root (not yet applied) and its Surface.
+fn make_layer<'a>(
+    env: &mut JNIEnv<'a>,
+    activity: &JObject,
+    name: &str,
+    size: (i32, i32),
+    blend: Blend,
+) -> jni::errors::Result<(JObject<'a>, JObject<'a>)> {
+    let root = window_root(env, activity)?;
     let builder = env.new_object("android/view/SurfaceControl$Builder", "()V", &[])?;
     let name = env.new_string(name)?;
     env.call_method(
@@ -896,18 +966,7 @@ fn make_layer<'a>(
     let layer = env
         .call_method(&builder, "build", "()Landroid/view/SurfaceControl;", &[])?
         .l()?;
-    let transaction = env
-        .call_method(
-            &root,
-            "buildReparentTransaction",
-            format!("(Landroid/view/SurfaceControl;){TRANSACTION}"),
-            &[JValue::Object(&layer)],
-        )?
-        .l()?;
-    if transaction.is_null() {
-        // The window's own surface is not valid (yet).
-        return Err(jni::errors::Error::NullPtr("buildReparentTransaction"));
-    }
+    let transaction = reparent_to(env, &root, &layer)?;
     Ok((layer, transaction))
 }
 

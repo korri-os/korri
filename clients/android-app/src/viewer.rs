@@ -79,7 +79,12 @@
 //! Surface go, and the stream's input goes on. Leaving the app (Home,
 //! another app) and Ctrl+Alt+Shift+Q end the runtime; korrid then sees
 //! `Stopped`, and its own recovery starts the stream again while the launch
-//! is selected and the app is in front.
+//! is selected and the app is in front. A fold is not leaving (#509): on the
+//! Galaxy Z Fold 8 it gives the default display the other panel, then sends
+//! the app back and takes its window. A window that goes within 2 s of a
+//! new screen is waited for 10 s, with the stream's input held; the next
+//! window takes the layers (`Layers::reattach`), and the stream plays on
+//! (`rules::Window`).
 mod hosted;
 mod rules;
 
@@ -735,6 +740,9 @@ struct Playing {
     left: mpsc::Receiver<(u64, bool)>,
     /// korrid's resumes that wait for the overlay to close.
     resumes: Vec<oneshot::Sender<Result<(), String>>>,
+    /// The layers go to the app's next window (#509): Android's main
+    /// thread answers once it has applied that.
+    reattaching: Option<mpsc::Receiver<anyhow::Result<()>>>,
     /// The runtime reads it when it connects; it goes with the launch.
     _pin: Pin,
 }
@@ -796,6 +804,9 @@ pub struct Stream {
     /// The viewer's screen, read while this activity runs: a phone that
     /// folds or unfolds has another one (#509 item 5).
     screen: rules::Following,
+    /// The app's window while a stream plays: a fold takes it away for a
+    /// while (#509).
+    window: rules::Window,
 }
 
 impl Stream {
@@ -822,13 +833,20 @@ impl Stream {
             waiting: rules::Waiting::new(korri_viewer::lifecycle::STOP_DEADLINE),
             cutout_may_move: false,
             screen: rules::Following::default(),
+            window: rules::Window::default(),
         })
     }
 
     /// Once per tick of the shell's timer: a new launch, korrid's resumes,
     /// the layers being made, and the stream's timers, window size and end.
     pub fn tick(&mut self) {
-        self.follow_screen();
+        self.follow_screen(false);
+        if self.window.expired(Instant::now()) {
+            self.leave(&format!(
+                "the app's window did not come back within {} s",
+                rules::WINDOW_GRACE.as_secs()
+            ));
+        }
         while let Ok(order) = self.orders.try_recv() {
             match order {
                 Order::Show(show) => self.begin(*show),
@@ -900,13 +918,17 @@ impl Stream {
 
     /// android-activity's main events. Leaving the app ends the stream, as
     /// Artemis's Game activity ends it in `onStop`: the window, and with it
-    /// the layers' parent, goes.
+    /// the layers' parent, goes. A window that a fold takes is waited for
+    /// (`window_went`).
     pub fn main_event(&mut self, event: &MainEvent<'_>) {
         match event {
-            MainEvent::InitWindow { .. } => self.shared.window.store(true, Ordering::Release),
+            MainEvent::InitWindow { .. } => {
+                self.shared.window.store(true, Ordering::Release);
+                self.window_came();
+            }
             MainEvent::TerminateWindow { .. } => {
                 self.shared.window.store(false, Ordering::Release);
-                self.leave("the app's window went");
+                self.window_went();
             }
             MainEvent::Destroy => {
                 self.shared.window.store(false, Ordering::Release);
@@ -933,7 +955,7 @@ impl Stream {
     /// stream's shape names the new screen at once and is ready again once
     /// it has settled (#509 item 5); each report wakes korrid, whose
     /// live-shape then offers the holder the settled screen.
-    fn follow_screen(&mut self) {
+    fn follow_screen(&mut self, now: bool) {
         let read = || {
             // The emulator proof's stand-in for a phone's other panel
             // (fixture APK only, `proof.rs`).
@@ -943,7 +965,13 @@ impl Stream {
             }
             status::screen().and_then(rules::screen)
         };
-        let Some(report) = self.screen.tick(Instant::now(), read) else {
+        let at = Instant::now();
+        let report = if now {
+            self.screen.read_now(at, read)
+        } else {
+            self.screen.tick(at, read)
+        };
+        let Some(report) = report else {
             return;
         };
         let (width, height) = report.screen;
@@ -964,6 +992,54 @@ impl Stream {
                 );
             }
         }
+    }
+
+    /// The app's window went. On the Galaxy Z Fold 8 a fold gives the
+    /// default display the other panel and then sends the app back, which
+    /// takes its window (#509, 2026-11-19): when the screen changed within
+    /// `rules::FOLD_WINDOW` before, the stream that plays goes on, its
+    /// input held and its decoder rendering into the layers that the old
+    /// window took off the screen, until a window comes back or
+    /// `rules::WINDOW_GRACE` has passed. Any other loss, as Home or another
+    /// app, stops it now.
+    fn window_went(&mut self) {
+        // A fold changes the screen just before: read it now.
+        self.follow_screen(true);
+        let now = Instant::now();
+        let folded = self.screen.replaced_within(now, rules::FOLD_WINDOW);
+        if let Phase::Playing(playing) = &mut self.phase {
+            if !playing.stopping && self.window.went(now, folded) == rules::Gone::Hold {
+                playing.play.hold_for_window();
+                logcat::info(&format!(
+                    "korri-app: viewer window went with a fold; the stream waits {} s for the next one",
+                    rules::WINDOW_GRACE.as_secs()
+                ));
+                return;
+            }
+        }
+        self.leave("the app's window went");
+    }
+
+    /// A window came: the stream that waited for it puts its layers in it,
+    /// and its input goes on.
+    fn window_came(&mut self) {
+        let Some(away) = self.window.came(Instant::now()) else {
+            return;
+        };
+        let Phase::Playing(playing) = &mut self.phase else {
+            return;
+        };
+        if playing.stopping {
+            return;
+        }
+        logcat::info(&format!(
+            "korri-app: viewer window back after {} ms; the layers go to it",
+            away.as_millis()
+        ));
+        playing.reattaching = Some(playing.layers.reattach(&self.app));
+        playing.play.window_back();
+        // The new window has its own cutout, also at the same size.
+        self.cutout_may_move = true;
     }
 
     fn window_size(&self) -> Option<(i32, i32)> {
@@ -1278,6 +1354,7 @@ impl Stream {
             answers,
             left,
             resumes: Vec::new(),
+            reattaching: None,
             _pin: pin,
         }))
     }
@@ -1312,6 +1389,27 @@ impl Stream {
         }
         if playing.stopping {
             return Phase::Playing(playing);
+        }
+        if let Some(answer) = playing.reattaching.take() {
+            match answer.try_recv() {
+                Err(mpsc::TryRecvError::Empty) => playing.reattaching = Some(answer),
+                Ok(Ok(())) => {
+                    logcat::info("korri-app: viewer layers are in the new window");
+                }
+                Ok(Err(cause)) => {
+                    let why = format!("the layers did not go to the new window: {cause:#}");
+                    stop_playing(&self.app, &mut playing, &why);
+                    return Phase::Playing(playing);
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    stop_playing(
+                        &self.app,
+                        &mut playing,
+                        "the layers did not go to the new window",
+                    );
+                    return Phase::Playing(playing);
+                }
+            }
         }
         playing.play.tick();
         pointer_capture::perform(&self.app, playing.play.take_capture());
@@ -1475,6 +1573,7 @@ impl Stream {
     /// The runtime has ended: its layers go, after the decoder, and after
     /// the shell has let the overlay layer's Surface go.
     fn ended(&mut self, playing: Box<Playing>) {
+        self.window.forget();
         let Playing {
             launch,
             lifecycle,
@@ -1506,6 +1605,7 @@ impl Stream {
     /// The person leaves the stream: its runtime stops. Stop waits for the
     /// runtime, so it runs on a thread of its own.
     fn leave(&mut self, why: &str) {
+        self.window.forget();
         self.waiting
             .close(&format!("{why} before the stream started"), |show, why| {
                 refuse(show, &why)
@@ -1518,14 +1618,7 @@ impl Stream {
                 refuse(making.show, &format!("{why} before the stream started"))
             }
             Phase::Playing(mut playing) => {
-                if !playing.stopping {
-                    logcat::info(&format!("korri-app: viewer stops: {why}"));
-                    playing.stopping = true;
-                    end_play(&self.app, &mut playing.play);
-                    let steps = playing.hosted.close(Closing::StreamStops);
-                    perform(&self.app, &mut playing, steps);
-                    stop_on_a_thread(&playing.launch, playing.lifecycle.clone());
-                }
+                stop_playing(&self.app, &mut playing, why);
                 self.phase = Phase::Playing(playing);
             }
         }
@@ -1610,6 +1703,7 @@ impl Drop for Stream {
                     answers: _,
                     left: _,
                     resumes,
+                    reattaching: _,
                     _pin,
                 } = *playing;
                 refuse_resumes(resumes, "the activity ended");
@@ -1779,6 +1873,21 @@ fn perform(app: &AndroidApp, playing: &mut Playing, steps: impl IntoIterator<Ite
 /// korrid's `session.leave` for an opening of the overlay, on a thread of
 /// its own: it is an RPC to korrid, which the loop thread must not wait for.
 /// When no thread starts, the opening hears a refusal, and closes.
+/// The person leaves the stream, or its window does not come back: its
+/// runtime stops, on a thread of its own because Stop waits for it. A
+/// stream that stops already stays as it is.
+fn stop_playing(app: &AndroidApp, playing: &mut Playing, why: &str) {
+    if playing.stopping {
+        return;
+    }
+    logcat::info(&format!("korri-app: viewer stops: {why}"));
+    playing.stopping = true;
+    end_play(app, &mut playing.play);
+    let steps = playing.hosted.close(Closing::StreamStops);
+    perform(app, playing, steps);
+    stop_on_a_thread(&playing.launch, playing.lifecycle.clone());
+}
+
 fn leave_on_a_thread(launch: &str, opening: u64, answer: mpsc::Sender<(u64, bool)>) {
     let launch = launch.to_owned();
     if let Err(cause) = rules::spawn_answering(

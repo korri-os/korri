@@ -335,6 +335,9 @@ pub(crate) struct Following {
     screen: Option<(u32, u32)>,
     /// When the screen last changed, until that change is reported settled.
     changed: Option<Instant>,
+    /// When a screen last took the place of another one: the first reading
+    /// is no such change.
+    replaced: Option<Instant>,
     read: Option<Instant>,
 }
 
@@ -362,9 +365,39 @@ impl Following {
         let due = self
             .read
             .is_none_or(|at| now.saturating_duration_since(at) >= SCREEN_READ);
+        self.step(now, due, read)
+    }
+
+    /// As [`Following::tick`], with a reading now whether one is due or
+    /// not: the window went, and whether the screen changed just before
+    /// decides what becomes of the stream ([`Following::replaced_within`]).
+    pub(crate) fn read_now(
+        &mut self,
+        now: Instant,
+        read: impl FnOnce() -> Option<(u32, u32)>,
+    ) -> Option<ScreenReport> {
+        self.step(now, true, read)
+    }
+
+    /// Whether a screen took the place of another one at most `limit`
+    /// before `now`: the phone folded or unfolded then.
+    pub(crate) fn replaced_within(&self, now: Instant, limit: Duration) -> bool {
+        self.replaced
+            .is_some_and(|at| now.saturating_duration_since(at) <= limit)
+    }
+
+    fn step(
+        &mut self,
+        now: Instant,
+        due: bool,
+        read: impl FnOnce() -> Option<(u32, u32)>,
+    ) -> Option<ScreenReport> {
         if due {
             self.read = Some(now);
             if let Some(screen) = read().filter(|screen| Some(*screen) != self.screen) {
+                if self.screen.is_some() {
+                    self.replaced = Some(now);
+                }
                 self.screen = Some(screen);
                 self.changed = Some(now);
                 return Some(ScreenReport {
@@ -383,6 +416,83 @@ impl Following {
             screen,
             settled: true,
         })
+    }
+}
+
+/// How long before the window went the screen may have changed for the
+/// loss to count as a fold's. On the Galaxy Z Fold 8 (2026-11-19, 16:21:28)
+/// the app read the cover screen 111 ms before its window went: the phone
+/// gives the default display the other panel first, then sends the app
+/// back (`fold_lock_behavior_setting=sleep_on_fold_key`). On aka's emulator
+/// the window went up to 1011 ms after the new reading, so the margin is
+/// 2 s. The loop thread also reads the screen when the window goes
+/// ([`Following::read_now`]).
+pub(crate) const FOLD_WINDOW: Duration = Duration::from_secs(2);
+
+/// How long a stream outlives a window that went with a fold. On the Fold 8
+/// the window came back 5.3 s after the fold, once the person had unlocked
+/// the cover screen and picked the app in Recents.
+pub(crate) const WINDOW_GRACE: Duration = Duration::from_secs(10);
+
+/// What becomes of the stream in front when the app's window goes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Gone {
+    /// It stops now, as it stops for Home or another app: Artemis's Game
+    /// stops in `onStop` and `surfaceDestroyed`.
+    Stop,
+    /// The phone folded or unfolded: the stream goes on with its input held
+    /// for [`WINDOW_GRACE`], and its layers go to the next window.
+    Hold,
+}
+
+/// The app's window while a stream plays: there, or away since when
+/// (#509). Only a window that a fold took is waited for.
+#[derive(Debug, Default)]
+pub(crate) struct Window {
+    away: Option<Instant>,
+}
+
+impl Window {
+    /// The window went at `now`; `folded`: the screen changed within
+    /// [`FOLD_WINDOW`] before. A window that is away already stays away
+    /// from its first loss.
+    pub(crate) fn went(&mut self, now: Instant, folded: bool) -> Gone {
+        if !folded {
+            self.away = None;
+            return Gone::Stop;
+        }
+        self.away.get_or_insert(now);
+        Gone::Hold
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_away(&self) -> bool {
+        self.away.is_some()
+    }
+
+    /// A window came at `now`: how long the window was away, or none when
+    /// it was not.
+    pub(crate) fn came(&mut self, now: Instant) -> Option<Duration> {
+        self.away
+            .take()
+            .map(|since| now.saturating_duration_since(since))
+    }
+
+    /// At each tick: true once, when the window has stayed away for
+    /// [`WINDOW_GRACE`]; the stream then stops.
+    pub(crate) fn expired(&mut self, now: Instant) -> bool {
+        let expired = self
+            .away
+            .is_some_and(|since| now.saturating_duration_since(since) >= WINDOW_GRACE);
+        if expired {
+            self.away = None;
+        }
+        expired
+    }
+
+    /// The stream ended or the activity went: nothing is waited for.
+    pub(crate) fn forget(&mut self) {
+        self.away = None;
     }
 }
 
@@ -909,6 +1019,108 @@ mod tests {
             following.tick(ms(start, 1000), || Some(COVER)),
             report(COVER, true)
         );
+    }
+
+    // #509, the Fold 8 on 2026-11-19: the app read the cover screen at
+    // 16:21:28.594 and its window went at .705, and the stream stopped.
+    #[test]
+    fn a_screen_that_replaced_another_just_before_is_a_fold() {
+        let start = Instant::now();
+        let mut following = settled_on(INNER, start);
+        assert!(
+            !following.replaced_within(ms(start, 1000), FOLD_WINDOW),
+            "the first reading is no fold"
+        );
+        following.tick(ms(start, 1000), || Some(COVER));
+        assert!(following.replaced_within(ms(start, 1111), FOLD_WINDOW));
+        assert!(following.replaced_within(ms(start, 3000), FOLD_WINDOW));
+        assert!(
+            !following.replaced_within(ms(start, 3001), FOLD_WINDOW),
+            "a fold more than 2 s ago"
+        );
+        // Settled since: still the fold's time.
+        following.tick(ms(start, 1400), || Some(COVER));
+        assert!(following.replaced_within(ms(start, 1500), FOLD_WINDOW));
+    }
+
+    #[test]
+    fn the_window_that_goes_reads_the_screen_at_once() {
+        // The 100 ms reading is not due; the window's loss reads anyway.
+        let start = Instant::now();
+        let mut following = settled_on(INNER, start);
+        assert_eq!(following.tick(ms(start, 1000), || Some(INNER)), None);
+        assert_eq!(
+            following.read_now(ms(start, 1020), || Some(COVER)),
+            report(COVER, false)
+        );
+        assert!(following.replaced_within(ms(start, 1020), FOLD_WINDOW));
+        // The reading counts as the 100 ms one, and it settles as any other.
+        assert_eq!(following.tick(ms(start, 1100), || Some(COVER)), None);
+        assert_eq!(
+            following.tick(ms(start, 1420), || Some(COVER)),
+            report(COVER, true)
+        );
+    }
+
+    #[test]
+    fn a_window_that_goes_without_a_fold_stops_the_stream() {
+        // Home, another app, the power key: as before #509.
+        let (start, mut window) = (Instant::now(), Window::default());
+        assert_eq!(window.went(start, false), Gone::Stop);
+        assert!(!window.is_away());
+        assert_eq!(window.came(ms(start, 500)), None);
+        assert!(!window.expired(ms(start, 60_000)));
+    }
+
+    #[test]
+    fn a_window_that_a_fold_took_and_that_comes_back_keeps_the_stream() {
+        let (start, mut window) = (Instant::now(), Window::default());
+        assert_eq!(window.went(start, true), Gone::Hold);
+        assert!(window.is_away());
+        assert!(!window.expired(ms(start, 5_300)));
+        assert_eq!(
+            window.came(ms(start, 5_300)),
+            Some(Duration::from_millis(5_300))
+        );
+        assert!(!window.is_away());
+        assert!(!window.expired(ms(start, 60_000)), "nothing is waited for");
+    }
+
+    #[test]
+    fn a_window_that_stays_away_past_the_grace_stops_the_stream_once() {
+        let (start, mut window) = (Instant::now(), Window::default());
+        assert_eq!(window.went(start, true), Gone::Hold);
+        let grace = WINDOW_GRACE.as_millis() as u64;
+        assert!(!window.expired(ms(start, grace - 1)));
+        assert!(window.expired(ms(start, grace)));
+        assert!(!window.is_away());
+        assert!(!window.expired(ms(start, grace + 16)), "once");
+        assert_eq!(window.came(ms(start, grace + 100)), None);
+    }
+
+    #[test]
+    fn the_grace_counts_from_the_first_loss() {
+        // A second loss before a window came (no window came between them)
+        // does not start the grace again.
+        let (start, mut window) = (Instant::now(), Window::default());
+        window.went(start, true);
+        assert_eq!(window.went(ms(start, 4_000), true), Gone::Hold);
+        assert!(window.expired(ms(start, WINDOW_GRACE.as_millis() as u64)));
+    }
+
+    #[test]
+    fn the_grace_is_for_a_fold_and_not_for_home_after_it() {
+        // A window away after a fold that goes again with no fold: Home's
+        // rule, at once.
+        let (start, mut window) = (Instant::now(), Window::default());
+        window.went(start, true);
+        assert_eq!(window.came(ms(start, 2_000)), Some(Duration::from_secs(2)));
+        assert_eq!(window.went(ms(start, 5_000), false), Gone::Stop);
+        assert!(!window.is_away());
+        window.went(ms(start, 6_000), true);
+        window.forget();
+        assert!(!window.is_away());
+        assert!(!window.expired(ms(start, 60_000)));
     }
 
     #[test]

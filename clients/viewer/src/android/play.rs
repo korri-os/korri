@@ -319,6 +319,31 @@ impl Play {
         }
     }
 
+    /// The app's window went with a fold, and the stream waits for the
+    /// next one (#509): the input is held as the overlay holds it. The
+    /// host lets go of what it holds down.
+    pub fn hold_for_window(&mut self) {
+        let Self { input, sink, .. } = self;
+        if input.run("window hold", |input| input.hold(sink)).is_some() {
+            log::line("input: held while the app's window is away");
+        }
+    }
+
+    /// The next window came: the input goes on, unless the overlay is
+    /// open, whose hold stays until it closes.
+    pub fn window_back(&mut self) {
+        if self.gameplay.overlay == Overlay::Open {
+            return;
+        }
+        let Self { input, sink, .. } = self;
+        if input
+            .run("window release", |input| input.release(sink))
+            .is_some()
+        {
+            log::line("input: the app's window is back; the stream's input goes on");
+        }
+    }
+
     /// Whether the gameplay overlay is open.
     pub fn overlay_open(&self) -> bool {
         self.gameplay.overlay == Overlay::Open
