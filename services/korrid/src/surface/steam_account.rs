@@ -190,7 +190,7 @@ impl SteamAccount {
             inner.job = Some(Arc::clone(&stop));
         }
         let outcome = (|| -> Result<(), ()> {
-            let mut host: JobHost = runner.start(&plan).map_err(|error| {
+            let mut host: JobHost = runner.start_after_session(&plan, &stop).map_err(|error| {
                 eprintln!("korrid steam account: job host did not start: {error}");
             })?;
             if let Some(command) = command {

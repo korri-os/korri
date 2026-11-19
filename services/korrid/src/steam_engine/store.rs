@@ -124,9 +124,20 @@ impl SteamStore {
                 return Ok(Arc::clone(list));
             }
         }
+        // During a game, at once: a queued Get may hold the turn until the
+        // game ends.
+        if runner.session_running() {
+            return Err(failure("SteamGameRunning", super::jobs::GAME_RUNNING));
+        }
         let _turn = self.turn.lock().await;
         let list = tokio::task::spawn_blocking(move || {
-            let mut host = runner.start(&plan).map_err(|_| unavailable())?;
+            let mut host = runner.start(&plan).map_err(|error| {
+                if error == super::jobs::GAME_RUNNING {
+                    failure("SteamGameRunning", super::jobs::GAME_RUNNING)
+                } else {
+                    unavailable()
+                }
+            })?;
             host.send(Command::ListApps).map_err(|_| unavailable())?;
             let mut list = AppList::default();
             let deadline = Instant::now() + LIST_LIMIT;
@@ -303,6 +314,10 @@ impl SteamStore {
         runner: JobRunner,
         app: AppId,
     ) -> Result<(), RpcFailure> {
+        // Remove download answers at once while a game runs.
+        if runner.session_running() {
+            return Err(failure("SteamGameRunning", super::jobs::GAME_RUNNING));
+        }
         let _turn = self.turn.lock().await;
         self.list.lock().expect("steam list poisoned").clear();
         let job = Arc::new(StoreJob {
@@ -366,8 +381,10 @@ fn run_app_job(
         reason: failure("SteamJobFailed", message),
     };
     set(AcquireJobState::Resolving);
-    let mut host = match runner.start(&plan) {
+    // A queued Get waits for a running game, and wakes on Cancel.
+    let mut host = match runner.start_after_session(&plan, &job.stop) {
         Ok(host) => host,
+        Err(error) if error == super::jobs::CANCELLED => return,
         Err(_) => return set(failed("Steam could not start on this device. Try again.")),
     };
     if host.send(command).is_err() {
@@ -465,6 +482,24 @@ done"#;
             assert!(Instant::now() < deadline, "{state:?}");
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
+    }
+
+    /// Review C5: a search during a game answers at once.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_search_during_a_game_refuses_at_once() {
+        let temp = tempfile::tempdir().unwrap();
+        let (plan, runner) = setup(temp.path());
+        runner.live.store(1, Ordering::SeqCst);
+        let store = SteamStore::default();
+        let at = Instant::now();
+        let refused = store
+            .search("@korri:steam", plan, runner, "fortress")
+            .await
+            .unwrap_err();
+        assert_eq!(refused.code, "SteamGameRunning");
+        assert_eq!(refused.message, "A Steam game is running.");
+        assert!(at.elapsed() < Duration::from_secs(1));
+        assert!(!temp.path().join("launches").exists());
     }
 
     /// Review C4: a listing is one person's; another person's search asks a

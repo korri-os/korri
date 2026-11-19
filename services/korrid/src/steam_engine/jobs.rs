@@ -31,6 +31,10 @@ pub struct JobRunner {
 
 /// A job waits for a session at most this long.
 const SESSION_WAIT: Duration = Duration::from_secs(6 * 3600);
+/// What a job that cannot wait answers while a session host runs.
+pub const GAME_RUNNING: &str = "A Steam game is running.";
+/// A job that waits gives up when its stop flag is set.
+pub const CANCELLED: &str = "cancelled";
 
 pub struct JobHost {
     units: Arc<dyn HostUnits>,
@@ -46,15 +50,42 @@ pub struct JobHost {
 }
 
 impl JobRunner {
-    /// Start a job host, after any running session. Blocking.
+    /// Start a job host now; while a game session runs, refuse with
+    /// `GAME_RUNNING` (a search must answer at once).
     pub fn start(&self, plan: &HostPlan) -> Result<JobHost, String> {
+        if self.session_running() {
+            return Err(GAME_RUNNING.into());
+        }
+        self.launch(plan)
+    }
+
+    /// Start a job host after any running session. Blocking; it gives up
+    /// with `CANCELLED` as soon as `stop` is set.
+    pub fn start_after_session(
+        &self,
+        plan: &HostPlan,
+        stop: &std::sync::atomic::AtomicBool,
+    ) -> Result<JobHost, String> {
         let deadline = std::time::Instant::now() + SESSION_WAIT;
-        while self.live.load(std::sync::atomic::Ordering::SeqCst) > 0 {
+        loop {
+            if stop.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(CANCELLED.into());
+            }
+            if !self.session_running() {
+                return self.launch(plan);
+            }
             if std::time::Instant::now() >= deadline {
                 return Err("a Steam game session is still running".into());
             }
-            std::thread::sleep(Duration::from_millis(500));
+            std::thread::sleep(Duration::from_millis(100));
         }
+    }
+
+    pub fn session_running(&self) -> bool {
+        self.live.load(std::sync::atomic::Ordering::SeqCst) > 0
+    }
+
+    fn launch(&self, plan: &HostPlan) -> Result<JobHost, String> {
         let mode = Mode::Job {
             id: format!("{:032x}", rand::random::<u128>()),
         };
@@ -397,10 +428,32 @@ mod wait_tests {
             proton: None,
             account_root: temp.path().into(),
         };
-        let started = std::thread::spawn(move || runner.start(&plan).map(JobHost::stop));
+        assert_eq!(runner.start(&plan).err().as_deref(), Some(GAME_RUNNING));
+        let never = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (waiting, stop) = (runner.clone(), Arc::clone(&never));
+        let wait_plan = plan.clone();
+        let started = std::thread::spawn(move || {
+            waiting
+                .start_after_session(&wait_plan, &stop)
+                .map(JobHost::stop)
+        });
         std::thread::sleep(Duration::from_millis(700));
         assert!(!launches.exists(), "no job host while the session runs");
         live.store(0, Ordering::SeqCst);
         started.join().unwrap().unwrap();
+
+        // Review C5: a waiting job wakes on its stop flag, not only when the
+        // session ends.
+        live.store(1, Ordering::SeqCst);
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (waiting, stop) = (runner.clone(), Arc::clone(&cancel));
+        let started = std::thread::spawn(move || {
+            waiting.start_after_session(&plan, &stop).map(JobHost::stop)
+        });
+        std::thread::sleep(Duration::from_millis(300));
+        let at = std::time::Instant::now();
+        cancel.store(true, Ordering::SeqCst);
+        assert_eq!(started.join().unwrap().err().as_deref(), Some(CANCELLED));
+        assert!(at.elapsed() < Duration::from_secs(1));
     }
 }
