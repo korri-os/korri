@@ -137,6 +137,47 @@ in
   # (README.md, "Pair a Bluetooth controller").
   environment.systemPackages = [ pair ];
 
+  # When the GameSir-G8+ reconnects by itself (Home press), BlueZ makes its
+  # input devices but the controller sends no HID reports: its CCC
+  # descriptors answer "Attribute Not Found", so notifications are never
+  # re-armed. A reconnect started from the tablet does arm them (measured
+  # 2026-11-19: 0 bytes on hidraw before, presses reached the shell after).
+  # So reconnect once from the tablet each time it arrives; the stamp stops
+  # the tablet's own reconnect from triggering another.
+  services.udev.extraRules = ''
+    ACTION=="add", SUBSYSTEM=="input", KERNEL=="event*", ATTRS{id/bustype}=="0005", ATTRS{id/vendor}=="3537", ATTRS{id/product}=="1108", ATTRS{name}=="GameSir-G8+", TAG+="systemd", ENV{SYSTEMD_WANTS}+="tabs6-gamesir-rearm.service"
+  '';
+  systemd.services.tabs6-gamesir-rearm = {
+    description = "Reconnect the GameSir-G8+ from the tablet so its reports flow";
+    after = [ "bluetooth.service" ];
+    serviceConfig.Type = "oneshot";
+    path = [
+      pkgs.bluez
+      pkgs.coreutils
+      pkgs.gnugrep
+    ];
+    script = ''
+      # Every connected GameSir-G8+ (USB ID 3537:1108 over Bluetooth).
+      macs=$(bluetoothctl devices Connected | while read -r _ mac _; do
+        bluetoothctl info "$mac" | grep -q "Modalias: usb:v3537p1108" && echo "$mac"
+      done)
+      [ -n "$macs" ] || exit 0
+      stamp=/run/tabs6-gamesir-rearm
+      now=$(date +%s)
+      if [ -f "$stamp" ] && [ $((now - $(cat "$stamp"))) -lt 60 ]; then
+        echo "rearmed $((now - $(cat "$stamp"))) s ago; skipping"
+        exit 0
+      fi
+      echo "$now" > "$stamp"
+      sleep 2
+      for mac in $macs; do
+        bluetoothctl disconnect "$mac" || true
+        sleep 3
+        bluetoothctl --timeout 15 connect "$mac"
+      done
+    '';
+  };
+
   # The GameSir-G8+ needs its own InputPlumber composite: under Generic
   # Gamepad its right stick reads as half-pressed triggers and no gameplay
   # press reaches a seat (inputplumber/devices/61-korri-gamesir_g8_plus.yaml).
