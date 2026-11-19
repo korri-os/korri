@@ -331,11 +331,15 @@ What the person does, by slice D5's rules (`korri_viewer::play`) and D5b's:
 The play proof (`proof/play.py`, `nix run .#android-app-play-proof --
 --build-store auto --sunshine PACKAGE`, on aka as root) runs these steps on one emulator with no person: the tap, Running in
 the app and in korrid, the frame-ID bar, the overlay, the keys and a tap at
-the sender, the tone, Home, and the return. Its docstring lists them. On the
-emulator a letter key starts an input method session that takes the next
-Back, so the proof opens the overlay before it sends letters.
+the sender, the tone, Home, and the return. Its docstring lists them. In D10,
+on the emulator, a letter key started an input method session and the next
+Back did not open the overlay (#491), so the proof opens the overlay before
+it sends letters. Since the stream's view holds the focus (Toggle keyboard,
+below) a letter key shows no input method, and the proof also presses Back
+after the letters: the overlay must open, and Back must close it.
 
-Records: `proof/android-app-d10/`.
+Records: `proof/android-app-d10/`; Back after the letters,
+`proof/android-app-back-after-keys/`, 153 of 153 checks.
 
 ### From the tap to the first frame (#391)
 

@@ -38,6 +38,8 @@ The steps:
    and events, and the status that korrid reads.
 5. The stream: screenshots whose frame-ID bar reads and rises; keys and a tap
    that the sender's Sunshine receives; the tone in the emulator's sound.
+   After the letter keys, Back opens Korri's gameplay overlay, and Back
+   closes it again (#491).
 6. Korri's gameplay overlay (slice D5b), before the keys of step 5: Guide
    opens it over the moving stream. The app lends the overlay layer's
    Surface to the shell, korrid hears that the person left
@@ -146,6 +148,7 @@ ENDED = re.compile(r"korri-app: viewer ([0-9a-f]{32}) ended")
 # The viewer library's own lines (tag korri-viewer) and the app's, for the
 # gameplay overlay (slice D5b).
 OVERLAY_OPEN = "overlay: open on Guide; the stream's input is held"
+OVERLAY_OPEN_ON_BACK = "overlay: open on Back; the stream's input is held"
 OVERLAY_CLOSED = re.compile(r"overlay: closed on korrid resumed the stream after ([\d.]+) s; it took (\d+) keys and (\d+) motion events")
 LAYER_SHOWN = "overlay: layer shown"
 LAYER_HIDDEN = "overlay: layer hidden"
@@ -410,6 +413,32 @@ def waiting(logcat: "d8.Logcat", sender: "viewer_proof.Remote", pattern, since: 
         if found or time.monotonic() >= until:
             return found
         sender.request("clock")
+
+
+def back_after_keys(emulator: "d8.Emulator", logcat: "d8.Logcat", sender: "viewer_proof.Remote") -> tuple[dict, dict]:
+    """#491: in D10 a hardware letter key in the stream started an input method session, which took the
+    next Back, and the overlay did not open. After step 5's letter keys, Back must open the overlay, and
+    Back again must close it through korrid's Resume."""
+    steps: dict = {}
+    checks: dict = {}
+    sender.request("clock")
+    mark = logcat.mark()
+    emulator.shell("input keyevent KEYCODE_BACK")
+    opened = waiting(logcat, sender, OVERLAY_OPEN_ON_BACK, mark, 20)
+    checks["back_after_the_letter_keys_opens_the_overlay"] = opened is not None
+    if opened is None:
+        return steps, checks
+    steps["shell_drew"] = waiting(logcat, sender, SHELL_DREW, mark, 30) is not None
+    time.sleep(2)
+    mark = logcat.mark()
+    emulator.shell("input keyevent KEYCODE_BACK")
+    closed = waiting(logcat, sender, OVERLAY_CLOSED, mark, 30)
+    steps["closed"] = None if closed is None else {
+        "seconds_open": float(closed.group(1)), "keys": int(closed.group(2)), "motions": int(closed.group(3))}
+    checks["back_after_the_letter_keys_closes_the_overlay_again"] = closed is not None
+    # The stream's input goes on before the next step's commands.
+    time.sleep(1)
+    return steps, checks
 
 
 def trigger(emulator: "d8.Emulator", text: str) -> None:
@@ -2135,9 +2164,9 @@ def main() -> int:
         steps["bars_stream"] = [outside(out / shot["file"], "fit") for shot in steps["picture"]]
         checks["the_bars_are_black_beside_the_picture"] = black_bars(steps["bars_stream"])
 
-        # Before any letter key: on the emulator a hardware letter key starts an
-        # input method session over the app, which then takes the next Back
-        # (README, "The viewer in the app").
+        # Before any letter key, as in D10, where a hardware letter key started
+        # an input method session and the next Back did not open the overlay
+        # (#491). back_after_keys, below, presses Back after the letters.
         log("Guide: Korri's gameplay overlay over the stream (D5b)")
         steps["gameplay_overlay"], overlay_checks = overlay(emulator, logcat, sender, out, launch, cutout)
         checks.update(overlay_checks)
@@ -2167,6 +2196,10 @@ def main() -> int:
             steps["input_method_after_keys"]["shown"] is False \
             and NATIVE_VIEW in (steps["input_method_after_keys"]["served"] or "")
         checks["a_touch_reaches_the_sender"] = any(p["kind"] in ("touch", "absolute mouse move") for p in packets)
+
+        log("Back after the letter keys: the overlay opens, and Back closes it (#491)")
+        steps["back_after_keys"], back_checks = back_after_keys(emulator, logcat, sender)
+        checks.update(back_checks)
 
         log("the stream's controls and status (D11): korrid's snapshot and apply")
         steps["controls"], controls_checks = controls(emulator, logcat, sender, out, launch)

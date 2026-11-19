@@ -1,0 +1,6 @@
+# aka (UTC): the lock, other work, load and Tctl before and after the proof.
+14:36:15 load=0.47 Tctl=64 other=emulator or stream NOT QUIET
+14:37:15 load=0.24 Tctl=57 other=none
+LOCK held: 1501528 fix-511b 491-back-after-keys 2026-11-19T14:37:15Z
+PROOF rc=0 at 2026-11-19T14:42:48Z
+14:42:48 load=18.08 Tctl=87 emulators=0

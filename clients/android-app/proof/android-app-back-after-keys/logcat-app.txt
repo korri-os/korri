@@ -1,0 +1,804 @@
+11-19 14:38:02.818   522  2223 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.simonwjackson.korri.app/android.app.NativeActivity} from uid 2000
+11-19 14:38:02.860   748   819 D StartingSurfaceDrawer: addSplashScreen com.simonwjackson.korri.app theme=103012a task=13 suggestType=3
+11-19 14:38:02.946   522   566 I ActivityManager: Start proc 5435:com.simonwjackson.korri.app/u0a145 for pre-top-activity {com.simonwjackson.korri.app/android.app.NativeActivity}
+11-19 14:38:03.140  5435  5435 V GraphicsEnvironment: ANGLE Developer option for 'com.simonwjackson.korri.app' set to: 'default'
+11-19 14:38:03.247  5435  5466 I korri   : korrid: Android TLS verifier classes loaded
+11-19 14:38:03.265  5435  5466 I korri   : korrid: Android network observed: 4 addresses on [wlan0, eth0]
+11-19 14:38:03.274  5435  5464 I korri   : korri-app: korrid serves on 127.0.0.1:43453
+11-19 14:38:03.291  5435  5466 I korri   : korrid discovery: @korri:android-app discovery is not enabled
+11-19 14:38:03.320  5435  5464 I korri   : korri-app: korrid answered system.health
+11-19 14:38:03.410  5435  5480 I korri   : korri-app: proof: watching /data/user/0/com.simonwjackson.korri.app/cache/proof-command
+11-19 14:38:03.896  5435  5435 I korri   : korri-app: window flags applied; system bars hidden: true
+11-19 14:38:03.896  5435  5435 I korri   : korri-app: no insets animation callback on 3 views: the input method's keyboard is drawn
+11-19 14:38:03.937   522   554 I ActivityTaskManager: Displayed com.simonwjackson.korri.app/android.app.NativeActivity: +1s118ms
+11-19 14:38:04.038  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:38:04.039  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:38:04.039  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-19 14:38:04.112  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:38:04.112  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:38:04.112  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-19 14:38:04.188  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:38:04.188  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:38:04.188  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-19 14:38:04.248   522   804 W InputManager-JNI: Input channel object 'e96b4c8 Splash Screen com.simonwjackson.korri.app (client)' was disposed without first being removed with the input manager!
+11-19 14:38:04.254  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:38:04.254  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:38:04.254  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-19 14:38:04.321  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:38:04.321  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:38:04.384  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:38:04.384  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name localCoord
+11-19 14:38:04.388  5435  5435 W tokio-rt-worker: type=1400 audit(0.0:31): avc: denied { nlmsg_readpriv } for scontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tcontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tclass=netlink_route_socket permissive=0 bug=b/155595000 app=com.simonwjackson.korri.app
+11-19 14:38:04.392  5435  5435 W Thread-4: type=1400 audit(0.0:32): avc: denied { nlmsg_readpriv } for scontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tcontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tclass=netlink_route_socket permissive=0 bug=b/155595000 app=com.simonwjackson.korri.app
+11-19 14:38:04.425  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:38:04.425  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:38:04.425  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-19 14:38:04.412  5435  5435 W Thread-22: type=1400 audit(0.0:33): avc: denied { search } for name="net" dev="sysfs" ino=6475 scontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tcontext=u:object_r:sysfs_net:s0 tclass=dir permissive=0 app=com.simonwjackson.korri.app
+11-19 14:38:04.412  5435  5435 W Thread-22: type=1400 audit(0.0:34): avc: denied { search } for name="net" dev="sysfs" ino=6475 scontext=u:r:untrusted_app:s0:c145,c256,c512,c768 tcontext=u:object_r:sysfs_net:s0 tclass=dir permissive=0 app=com.simonwjackson.korri.app
+11-19 14:38:04.450  5435  5466 I korri   : korrid: reach: reset=0 elapsed_ms=1177 stage=endpoint_bound port=52845
+11-19 14:38:04.457  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:38:04.457  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:38:04.457  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inTextureCoords
+11-19 14:38:04.519  5435  5464 I korri   : korri-app: shell rendered surface=velvet page=empty count=0 selected=0
+11-19 14:38:04.520  5435  5435 I korri   : korri-app: window flags applied; system bars hidden: true
+11-19 14:38:04.520  5435  5435 I korri   : korri-app: no insets animation callback on 4 views: the input method's keyboard is drawn
+11-19 14:38:04.553  5435  5466 I korri   : korrid: reach: reset=0 elapsed_ms=1280 stage=offer_published peer=ca2261fc relay_count=1 completed_relays=1 outcomes=ws://127.x.x.x:47800=failed:unprefixed operation_ms=1 first_ack_ms=none final=true
+11-19 14:38:04.553  5435  5466 I korri   : korrid: reach: stage=relay_read relay=ws://127.x.x.x:47800 outcome=failed reason=unprefixed failures=1
+11-19 14:38:09.563  5435  5466 I korri   : korrid: reach: reset=0 elapsed_ms=6290 stage=offer_published peer=ca2261fc relay_count=1 completed_relays=1 outcomes=ws://127.x.x.x:47800=failed:unprefixed operation_ms=1 first_ack_ms=none final=true
+11-19 14:38:19.579  5435  5466 I korri   : korrid: reach: reset=0 elapsed_ms=16306 stage=offer_published peer=ca2261fc relay_count=1 completed_relays=1 outcomes=ws://127.x.x.x:47800=failed:unprefixed operation_ms=0 first_ack_ms=none final=true
+11-19 14:38:39.606  5435  5466 I korri   : korrid: reach: reset=0 elapsed_ms=36333 stage=offer_published peer=ca2261fc relay_count=1 completed_relays=1 outcomes=ws://127.x.x.x:47800=failed:unprefixed operation_ms=0 first_ack_ms=none final=true
+11-19 14:39:04.149  5435  5464 I korri   : korri-app: shell rendered surface=velvet page=home count=4 selected=1
+11-19 14:39:04.155  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:39:04.155  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:39:04.155  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-19 14:39:04.192  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:39:04.193  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:39:04.260  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:39:04.260  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:39:04.260  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-19 14:39:04.622  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:39:04.622  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name localCoord
+11-19 14:39:04.649  5435  5466 I korri   : korrid: reach: stage=relay_read relay=ws://127.x.x.x:47800 outcome=failed reason=unprefixed failures=61
+11-19 14:39:12.312  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name resolveLevel_and_idx
+11-19 14:39:12.312  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name p01
+11-19 14:39:12.312  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name p23
+11-19 14:39:12.312  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 3 name fanPointAttrib
+11-19 14:39:12.312  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 4 name curveType
+11-19 14:39:12.395  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:39:12.395  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:39:12.440  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name unitCoord
+11-19 14:39:12.441  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name fillBounds
+11-19 14:39:12.441  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name color
+11-19 14:39:12.441  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 3 name locations
+11-19 14:39:12.477  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:39:12.478  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:39:12.511  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:39:12.511  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:39:12.511  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-19 14:39:12.537  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:39:12.537  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:39:12.557  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:39:12.557  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:39:12.557  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-19 14:39:12.593  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:39:12.593  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:39:12.594  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inQuadEdge
+11-19 14:39:12.632  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:39:12.632  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:39:12.654  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:39:12.681  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:39:12.681  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:39:12.681  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-19 14:39:12.714  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:39:12.714  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:39:12.714  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inTextureCoords
+11-19 14:39:17.047  5435  5464 I korri   : korri-app: shell rendered surface=velvet page=detail count=0 selected=1
+11-19 14:39:19.674  5435  5466 I korri   : korrid: reach: reset=0 elapsed_ms=76401 stage=offer_published peer=ca2261fc relay_count=1 completed_relays=1 outcomes=ws://127.x.x.x:47800=failed:unprefixed operation_ms=0 first_ack_ms=none final=true
+11-19 14:39:21.012  5435  5466 I korri   : korrid: viewer display sent with prepare: none
+11-19 14:39:21.020  5435  5471 I korri-viewer: start: korrid starts the viewer at 115144.247 ms
+11-19 14:39:21.024  5435  5471 I korri-viewer: start: client certificate read at 115147.960 ms
+11-19 14:39:21.030  5435  5464 I korri-viewer: start: video layers asked at 115153.532 ms
+11-19 14:39:21.030  5435  5464 I korri-viewer: start: window turn asked at 115153.556 ms
+11-19 14:39:21.041  5435  5435 I korri-viewer: overlay: layer placed at (0, 136)-(1080, 2400) in the window 1080x2400, out of the display cutout (left 0, top 136, right 0, bottom 0)
+11-19 14:39:21.043  5435  5464 I korri-viewer: start: video layers made at 115166.684 ms
+11-19 14:39:21.053  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:39:21.054  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:39:21.054  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-19 14:39:21.264   522  2290 I WindowManager: finishDrawing of orientation change: Window{12fa211 u0 com.simonwjackson.korri.app/android.app.NativeActivity} 77ms
+11-19 14:39:21.291   522   557 I WindowManager: Screen frozen for +237ms due to Window{12fa211 u0 com.simonwjackson.korri.app/android.app.NativeActivity}
+11-19 14:39:21.378  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:39:21.378  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:39:21.378  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inTextureCoords
+11-19 14:39:21.418  5435  5471 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:39143
+11-19 14:39:21.418  5435  5471 I korri-viewer: start: server certificate provisioned at 115542.314 ms
+11-19 14:39:21.432  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (0, 896)-(1080, 1504) in the window 1080x2400
+11-19 14:39:21.439  5435  5464 I korri   : korri-app: viewer input: controllers attached at the start: mask 0x0
+11-19 14:39:21.439  5435  5464 I korri-viewer: input: the gestures of pan and zoom: GestureConfig { touch_slop: 21, double_tap_slop: 263, min_span: 446, long_press_ms: 400, double_tap_ms: 300 }
+11-19 14:39:21.439  5435  5464 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Start","value":{"address":"192.168.1.117:39143","display":{"width":2400,"height":1080}}}}
+11-19 14:39:21.440  5435  5435 I korri-viewer: input: unbuffered dispatch requested
+11-19 14:39:21.440  5435  6426 I korri-viewer: start: Start at 115563.613 ms
+11-19 14:39:21.440  5435  5435 I korri-viewer: keyboard: the stream's view has the focus
+11-19 14:39:21.468  5435  5464 I korri-viewer: start: window now 2400x1080 at 115591.882 ms
+11-19 14:39:21.468  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-19 14:39:21.468  5435  5435 I korri-viewer: pointer: [HideIcon, Request] on the stream's view, which had pointer capture: false
+11-19 14:39:21.468  5435  5435 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-19 14:39:21.957  5435  6426 I korri-viewer: start: http serverinfo answered at 116081.126 ms (connected 24.2 ms, first byte 514.5 ms, total 514.6 ms)
+11-19 14:39:22.968  5435  6426 I korri-viewer: start: https serverinfo answered at 117091.770 ms (connected 499.7 ms, TLS done 1006.9 ms, first byte 1010.3 ms, total 1010.5 ms)
+11-19 14:39:22.968  5435  6426 I korri-viewer: start: paired at 117092.282 ms
+11-19 14:39:23.982  5435  6426 I korri-viewer: start: https applist answered at 118106.225 ms (connected 503.6 ms, TLS done 1005.5 ms, first byte 1011.3 ms, total 1013.7 ms)
+11-19 14:39:23.983  5435  6426 I korri-viewer: start: picture and input ready at 118106.873 ms
+11-19 14:39:24.002  5435  6434 I korri-viewer: start: decoders listed at 118126.308 ms
+11-19 14:39:24.003  5435  6434 I korri-viewer: picture: decoders for video/avc: c2.goldfish.h264.decoder (hardware true, software-only false, alias false, low-latency false, high true, adaptive true); c2.android.avc.decoder (hardware false, software-only true, alias false, low-latency false, high true, adaptive true); OMX.google.h264.decoder (hardware false, software-only true, alias true, low-latency false, high true, adaptive true)
+11-19 14:39:24.220  5435  6434 I korri-viewer: picture: decode mediacodec decoder c2.goldfish.h264.decoder hardware true software-only false low-latency-feature false try 0 keys low-latency=1,vdec-lowlatency=1,priority=0 size 1280x720@60 adaptive 2960x2960
+11-19 14:39:24.220  5435  6434 I korri-viewer: start: decoder made at 118344.292 ms
+11-19 14:39:25.661  5435  6426 I korri-viewer: start: https launch answered at 119784.674 ms (connected 503.3 ms, TLS done 1005.5 ms, first byte 1677.3 ms, total 1677.6 ms)
+11-19 14:39:25.663  5435  6426 I korri-viewer: start: core platform init begins at 119786.643 ms
+11-19 14:39:25.663  5435  6426 I korri-viewer: start: core platform init done at 119786.660 ms
+11-19 14:39:25.663  5435  6426 I korri-viewer: start: core name resolution begins at 119786.665 ms
+11-19 14:39:25.663  5435  6426 I korri-viewer: start: core name resolution done at 119787.183 ms
+11-19 14:39:25.663  5435  6426 I korri-viewer: start: core audio stream init begins at 119787.201 ms
+11-19 14:39:25.663  5435  6426 I korri-viewer: start: core audio stream init done at 119787.206 ms
+11-19 14:39:25.663  5435  6426 I korri-viewer: start: core RTSP handshake begins at 119787.210 ms
+11-19 14:39:32.700  5435  6426 I korri-viewer: start: core RTSP handshake done at 126823.973 ms
+11-19 14:39:32.701  5435  6426 I korri-viewer: start: core control stream init begins at 126824.635 ms
+11-19 14:39:32.701  5435  6426 I korri-viewer: start: core control stream init done at 126824.856 ms
+11-19 14:39:32.701  5435  6426 I korri-viewer: start: core video stream init begins at 126825.035 ms
+11-19 14:39:32.701  5435  6426 I korri-viewer: start: core video stream init done at 126825.212 ms
+11-19 14:39:32.701  5435  6426 I korri-viewer: start: core input stream init begins at 126825.385 ms
+11-19 14:39:32.702  5435  6426 I korri-viewer: start: core input stream init done at 126825.513 ms
+11-19 14:39:32.702  5435  6426 I korri-viewer: start: core control stream start begins at 126825.587 ms
+11-19 14:39:33.201  5435  6426 I korri-viewer: start: core control stream start done at 127324.585 ms
+11-19 14:39:33.201  5435  6426 I korri-viewer: start: core video stream start begins at 127324.614 ms
+11-19 14:39:33.203  5435  6426 I korri-viewer: start: decoder taken at 127327.042 ms
+11-19 14:39:33.203  5435  6426 I korri-viewer: Video receive buffer: the system granted 256 KiB of the 2816 KiB asked (the system's cap: raise it with `sudo sysctl -w net.core.rmem_max=2883584`)
+11-19 14:39:33.203  5435  6426 I korri-viewer: start: core video stream start done at 127327.169 ms
+11-19 14:39:33.203  5435  6426 I korri-viewer: start: core audio stream start begins at 127327.174 ms
+11-19 14:39:33.204  5435  6448 I korri-viewer: Video receive takes up to 32 queued datagrams per call
+11-19 14:39:33.204  5435  6448 I korri-viewer: Video receive UDP_GRO is on: coalesced reads are split per datagram
+11-19 14:39:33.204  5435  6449 I korri-viewer: Raised stream threads to nice -8 by setpriority, from VideoDec on
+11-19 14:39:33.251  5435  6448 I korri-viewer: Received first video packet after 0 ms
+11-19 14:39:33.251  5435  6448 I korri-viewer: start: first video packet at 127374.810 ms
+11-19 14:39:33.336  5435  6426 I korri-viewer: sound: output try 0 asked low-latency granted none sharing shared rate 48000 channels 2 burst 960 capacity 2132 buffer 1920 (asked 1920) packet 240 frames
+11-19 14:39:33.353  5435  6447 I korri-viewer: picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 1279, 719), width: int32(1280), height: int32(720), max-height: int32(2960), max-width: int32(2960), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}
+11-19 14:39:33.401  5435  6447 I korri-viewer: picture: decoded size 1280x720
+11-19 14:39:33.401  5435  6447 I korri-viewer: start: first frame shown at 127525.382 ms
+11-19 14:39:33.402  5435  6426 I korri-viewer: sound: playing
+11-19 14:39:33.402  5435  6426 I korri-viewer: start: core audio stream start done at 127525.732 ms
+11-19 14:39:33.402  5435  6426 I korri-viewer: start: core input stream start begins at 127525.738 ms
+11-19 14:39:33.402  5435  6426 I korri-viewer: start: core input stream start done at 127525.742 ms
+11-19 14:39:33.406  5435  5435 I korri-viewer: picture: the black backdrop shows under the video, with its first picture
+11-19 14:39:33.474  5435  6426 I korri   : korri-app: viewer event {"kind":"Status","value":"Running"}
+11-19 14:39:33.474  5435  6426 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"controls":[]}}
+11-19 14:39:33.474  5435  6427 I korri   : korri-app: viewer reply Start {"kind":"Ok"}
+11-19 14:39:33.530  5435  5471 I korri   : korri-app: viewer status for korrid: 658bc73742f137afc0c4bc12965e0a8e Running
+11-19 14:39:33.577  5435  5471 I korri   : korri-app: viewer snapshot for korrid: 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"batteryPercent":100.0,"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"0","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:39:33.632  5435  6426 I korri-viewer: picture: the picture shown is 1280x720
+11-19 14:39:33.682  5435  6453 I korri-viewer: Received first audio packet
+11-19 14:39:33.685  5435  6453 I korri-viewer: start: first audio packet at 127808.780 ms
+11-19 14:39:34.244  5435  6454 I korri-viewer: sound: 40 ms pending; 1 packets dropped since the last line
+11-19 14:39:35.351  5435  6454 I korri-viewer: sound: 50 ms pending; 40 packets dropped since the last line
+11-19 14:39:36.492  5435  6454 I korri-viewer: sound: 45 ms pending; 22 packets dropped since the last line
+11-19 14:39:37.572  5435  6454 I korri-viewer: sound: 48 ms pending; 36 packets dropped since the last line
+11-19 14:39:38.857  5435  6454 I korri-viewer: sound: 40 ms pending; 16 packets dropped since the last line
+11-19 14:39:39.929  5435  6454 I korri-viewer: sound: 50 ms pending; 24 packets dropped since the last line
+11-19 14:39:40.954  5435  6454 I korri-viewer: sound: 45 ms pending; 32 packets dropped since the last line
+11-19 14:39:41.461  5435  5464 I korri-viewer: overlay: open on Guide; the stream's input is held
+11-19 14:39:41.486  5435  5464 I korri   : korri-app: overlay: the shell took the layer's Surface; korrid hears that the person left
+11-19 14:39:41.486  5435  5435 I korri-viewer: pointer: [ShowIcon, Release] on the stream's view, which had pointer capture: true
+11-19 14:39:41.550  5435  5464 I korri   : korri-app: overlay: korrid's session.leave for 658bc73742f137afc0c4bc12965e0a8e: ok
+11-19 14:39:41.605  5435  5466 I korri   : Cannot load custom font /data/user/0/com.simonwjackson.korri.app/cache/surfaces/velvet/fonts/Archivo-SemiCondensed-Bold.ttf: slint platform not initialized
+11-19 14:39:41.605  5435  5466 I korri   : Cannot load custom font /data/user/0/com.simonwjackson.korri.app/cache/surfaces/velvet/fonts/Archivo-SemiCondensed.ttf: slint platform not initialized
+11-19 14:39:41.605  5435  5466 I korri   : Cannot load custom font /data/user/0/com.simonwjackson.korri.app/cache/surfaces/velvet/fonts/BigShoulders-ExtraBold-Text.ttf: slint platform not initialized
+11-19 14:39:41.606  5435  5466 I korri   : Cannot load custom font /data/user/0/com.simonwjackson.korri.app/cache/surfaces/velvet/fonts/BigShoulders-ExtraBold.ttf: slint platform not initialized
+11-19 14:39:41.622  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:39:41.622  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:39:41.690  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:39:41.690  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:39:41.690  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inTextureCoords
+11-19 14:39:41.734  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:39:41.735  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:39:41.735  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-19 14:39:41.801  5435  5464 I korri   : korri-app: overlay: the shell drew it; the layer shows
+11-19 14:39:41.801  5435  5464 I korri   : korri-app: shell rendered surface=velvet page=home count=4 selected=1
+11-19 14:39:41.812  5435  5435 I korri-viewer: overlay: layer shown: posted 5.4 ms before, applied in 5.04 ms
+11-19 14:39:41.860  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:39:41.860  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:39:41.860  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-19 14:39:41.920  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:39:41.920  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:39:41.920  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-19 14:39:41.982  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:39:41.982  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:39:41.982  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-19 14:39:42.047  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:39:42.047  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:39:42.047  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-19 14:39:42.088  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:39:42.088  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:39:42.169  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inputPoint
+11-19 14:39:42.213  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name resolveLevel_and_idx
+11-19 14:39:42.213  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name p01
+11-19 14:39:42.213  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name p23
+11-19 14:39:42.213  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 3 name curveType
+11-19 14:39:42.340  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:39:42.340  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:39:42.340  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-19 14:39:42.374  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name unitCoord
+11-19 14:39:42.374  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name fillBounds
+11-19 14:39:42.374  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name color
+11-19 14:39:42.374  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 3 name locations
+11-19 14:39:42.501  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:39:42.501  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name coverage
+11-19 14:39:42.501  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name color
+11-19 14:39:42.501  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 3 name localCoord
+11-19 14:39:42.640  5435  6454 I korri-viewer: sound: 40 ms pending; 22 packets dropped since the last line
+11-19 14:39:43.685  5435  6454 I korri-viewer: sound: 40 ms pending; 39 packets dropped since the last line
+11-19 14:39:44.138  5435  6453 I korri-viewer: Audio arrival over 10 s: 2001 packets, late p50 8 p95 39 p99 63 max 63 ms, >=8:1069 >=12:776 >=16:573 >=20:403 >=24:295 >=32:159 >=40:95
+11-19 14:39:44.880  5435  6454 I korri-viewer: sound: 60 ms pending; 30 packets dropped since the last line
+11-19 14:39:45.805   522  2290 I WindowManager: finishDrawing of orientation change: Window{12fa211 u0 com.simonwjackson.korri.app/android.app.NativeActivity} 73ms
+11-19 14:39:45.855  5435  5435 I korri-viewer: overlay: layer placed at (0, 0)-(2264, 1080) in the window 2400x1080, out of the display cutout (left 0, top 0, right 136, bottom 0)
+11-19 14:39:45.857   522   558 I WindowManager: Screen frozen for +263ms due to Window{12fa211 u0 com.simonwjackson.korri.app/android.app.NativeActivity}
+11-19 14:39:46.142  5435  6454 I korri-viewer: sound: 41 ms pending; 19 packets dropped since the last line
+11-19 14:39:47.156  5435  6454 I korri-viewer: sound: 40 ms pending; 40 packets dropped since the last line
+11-19 14:39:48.246  5435  6454 I korri-viewer: sound: 42 ms pending; 34 packets dropped since the last line
+11-19 14:39:49.249  5435  6454 I korri-viewer: sound: 40 ms pending; 52 packets dropped since the last line
+11-19 14:39:49.926  5435  5466 I korri   : korrid: reach: reset=0 elapsed_ms=106651 stage=offer_published peer=ca2261fc relay_count=1 completed_relays=1 outcomes=ws://127.x.x.x:47800=failed:unprefixed operation_ms=0 first_ack_ms=none final=true
+11-19 14:39:49.975   522  2223 I WindowManager: finishDrawing of orientation change: Window{12fa211 u0 com.simonwjackson.korri.app/android.app.NativeActivity} 37ms
+11-19 14:39:50.000   522   558 I WindowManager: Screen frozen for +143ms due to Window{12fa211 u0 com.simonwjackson.korri.app/android.app.NativeActivity}
+11-19 14:39:50.006  5435  5435 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-19 14:39:50.308  5435  6454 I korri-viewer: sound: 55 ms pending; 59 packets dropped since the last line
+11-19 14:39:51.364  5435  6454 I korri-viewer: sound: 40 ms pending; 28 packets dropped since the last line
+11-19 14:39:52.442  5435  6454 I korri-viewer: sound: 40 ms pending; 32 packets dropped since the last line
+11-19 14:39:53.488  5435  6454 I korri-viewer: sound: 40 ms pending; 37 packets dropped since the last line
+11-19 14:39:54.155  5435  6453 I korri-viewer: Audio arrival over 10 s: 2001 packets, late p50 10 p95 45 p99 63 max 63 ms, >=8:1177 >=12:884 >=16:646 >=20:496 >=24:378 >=32:227 >=40:140
+11-19 14:39:54.603  5435  6454 I korri-viewer: sound: 45 ms pending; 16 packets dropped since the last line
+11-19 14:39:55.845  5435  6454 I korri-viewer: sound: 70 ms pending; 62 packets dropped since the last line
+11-19 14:39:57.021  5435  6454 I korri-viewer: sound: 55 ms pending; 44 packets dropped since the last line
+11-19 14:39:58.056  5435  6454 I korri-viewer: sound: 65 ms pending; 39 packets dropped since the last line
+11-19 14:39:59.087  5435  6454 I korri-viewer: sound: 57 ms pending; 28 packets dropped since the last line
+11-19 14:40:00.290  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:40:00.290  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:40:00.290  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-19 14:40:00.766  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:40:00.767  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:40:00.767  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inTextureCoords
+11-19 14:40:00.775  5435  6454 I korri-viewer: sound: 40 ms pending; 61 packets dropped since the last line
+11-19 14:40:01.807  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:40:01.807  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:40:01.849  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:40:01.849  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:40:01.849  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-19 14:40:01.901  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:40:01.901  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:40:01.901  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-19 14:40:04.158  5435  6453 I korri-viewer: Audio arrival over 10 s: 2003 packets, late p50 6 p95 50 p99 63 max 63 ms, >=8:852 >=12:620 >=16:478 >=20:378 >=24:303 >=32:203 >=40:148
+11-19 14:40:04.601  5435  5472 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Apply","value":{"control":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","value":{"kind":"toggle","value":true}}}}
+11-19 14:40:04.608  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name resolveLevel_and_idx
+11-19 14:40:04.610  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name p01
+11-19 14:40:04.610  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name p23
+11-19 14:40:04.610  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 3 name fanPointAttrib
+11-19 14:40:04.610  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 4 name curveType
+11-19 14:40:04.724  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:40:04.725  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:40:04.784  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name unitCoord
+11-19 14:40:04.784  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name fillBounds
+11-19 14:40:04.784  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name color
+11-19 14:40:04.784  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 3 name locations
+11-19 14:40:04.853  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (0, -135)-(2400, 1215) in the window 2400x1080, cropped to fill
+11-19 14:40:04.853  5435  5464 I korri   : korri-app: viewer control set-fill-mode is true
+11-19 14:40:04.853  5435  5472 I korri   : korri-app: viewer reply Apply {"kind":"Ok"}
+11-19 14:40:04.869  5435  5471 I korri   : korri-app: viewer snapshot for korrid: 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":158947.0,"batteryPercent":100.0,"streamHealth":{"rttMs":2.0,"deliveredBitrateKbps":7309.3626373626375,"framesDropped":0.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":true,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"0","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:40:05.046  5435  5466 I korri   : korrid: reach: stage=relay_read relay=ws://127.x.x.x:47800 outcome=failed reason=unprefixed failures=121
+11-19 14:40:07.053  5435  6454 I korri-viewer: sound: 48 ms pending; 1 packets dropped since the last line
+11-19 14:40:08.059  5435  6454 I korri-viewer: sound: 45 ms pending; 15 packets dropped since the last line
+11-19 14:40:08.980  5435  5471 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Apply","value":{"control":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","value":{"kind":"toggle","value":false}}}}
+11-19 14:40:09.064  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-19 14:40:09.064  5435  5464 I korri   : korri-app: viewer control set-fill-mode is false
+11-19 14:40:09.064  5435  5472 I korri   : korri-app: viewer reply Apply {"kind":"Ok"}
+11-19 14:40:09.065  5435  5471 I korri   : korri-app: viewer snapshot for korrid: 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":163004.0,"batteryPercent":100.0,"streamHealth":{"rttMs":11.0,"deliveredBitrateKbps":7349.501976284585,"framesDropped":10.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"0","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:40:10.940  5435  6454 I korri-viewer: sound: 40 ms pending; 30 packets dropped since the last line
+11-19 14:40:11.949  5435  6454 I korri-viewer: sound: 77 ms pending; 37 packets dropped since the last line
+11-19 14:40:13.155  5435  6454 I korri-viewer: sound: 52 ms pending; 40 packets dropped since the last line
+11-19 14:40:14.206  5435  6453 I korri-viewer: Audio arrival over 10 s: 1999 packets, late p50 5 p95 37 p99 63 max 63 ms, >=8:773 >=12:511 >=16:373 >=20:286 >=24:216 >=32:139 >=40:88
+11-19 14:40:14.206  5435  6454 I korri-viewer: sound: 50 ms pending; 66 packets dropped since the last line
+11-19 14:40:14.553  5435  5435 I korri-viewer: overlay: layer hidden: posted 4.6 ms before, applied in 0.31 ms
+11-19 14:40:14.561  5435  5464 I korri   : korri-app: overlay: the shell let the layer's Surface go
+11-19 14:40:14.561  5435  5464 I korri-viewer: overlay: closed on korrid resumed the stream after 33.1 s; it took 9 keys and 4 motion events; the stream's input goes on
+11-19 14:40:14.561  5435  5472 I korri   : korri-app: viewer resume for korrid: 658bc73742f137afc0c4bc12965e0a8e: the stream is in front, its input goes on
+11-19 14:40:14.630  5435  5435 I korri-viewer: pointer: [HideIcon, Request] on the stream's view, which had pointer capture: false
+11-19 14:40:14.638  5435  5464 I korri   : korri-app: shell rendered surface=velvet page=detail count=0 selected=1
+11-19 14:40:15.264  5435  6454 I korri-viewer: sound: 45 ms pending; 30 packets dropped since the last line
+11-19 14:40:16.344  5435  6454 I korri-viewer: sound: 40 ms pending; 18 packets dropped since the last line
+11-19 14:40:17.355  5435  6454 I korri-viewer: sound: 50 ms pending; 19 packets dropped since the last line
+11-19 14:40:18.357  5435  6454 I korri-viewer: sound: 40 ms pending; 15 packets dropped since the last line
+11-19 14:40:19.580  5435  6454 I korri-viewer: sound: 40 ms pending; 18 packets dropped since the last line
+11-19 14:40:20.121  5435  5466 I korri   : korrid: reach: reset=0 elapsed_ms=136848 stage=offer_published peer=ca2261fc relay_count=1 completed_relays=1 outcomes=ws://127.x.x.x:47800=failed:unprefixed operation_ms=0 first_ack_ms=none final=true
+11-19 14:40:20.623  5435  6454 I korri-viewer: sound: 45 ms pending; 35 packets dropped since the last line
+11-19 14:40:21.845  5435  6454 I korri-viewer: sound: 55 ms pending; 18 packets dropped since the last line
+11-19 14:40:22.883  5435  6454 I korri-viewer: sound: 40 ms pending; 34 packets dropped since the last line
+11-19 14:40:24.165  5435  6454 I korri-viewer: sound: 40 ms pending; 23 packets dropped since the last line
+11-19 14:40:24.223  5435  6453 I korri-viewer: Audio arrival over 10 s: 2009 packets, late p50 8 p95 31 p99 50 max 63 ms, >=8:1035 >=12:718 >=16:503 >=20:341 >=24:227 >=32:100 >=40:52
+11-19 14:40:25.237  5435  6454 I korri-viewer: sound: 45 ms pending; 15 packets dropped since the last line
+11-19 14:40:26.241  5435  6454 I korri-viewer: sound: 45 ms pending; 18 packets dropped since the last line
+11-19 14:40:26.606  5435  5464 I korri-viewer: overlay: open on Back; the stream's input is held
+11-19 14:40:26.632  5435  5435 I korri-viewer: pointer: [ShowIcon, Release] on the stream's view, which had pointer capture: true
+11-19 14:40:26.633  5435  5464 I korri   : korri-app: overlay: the shell took the layer's Surface; korrid hears that the person left
+11-19 14:40:26.679  5435  5464 I korri   : korri-app: overlay: korrid's session.leave for 658bc73742f137afc0c4bc12965e0a8e: ok
+11-19 14:40:26.718  5435  5466 I korri   : Cannot load custom font /data/user/0/com.simonwjackson.korri.app/cache/surfaces/velvet/fonts/Archivo-SemiCondensed-Bold.ttf: slint platform not initialized
+11-19 14:40:26.718  5435  5466 I korri   : Cannot load custom font /data/user/0/com.simonwjackson.korri.app/cache/surfaces/velvet/fonts/Archivo-SemiCondensed.ttf: slint platform not initialized
+11-19 14:40:26.718  5435  5466 I korri   : Cannot load custom font /data/user/0/com.simonwjackson.korri.app/cache/surfaces/velvet/fonts/BigShoulders-ExtraBold-Text.ttf: slint platform not initialized
+11-19 14:40:26.718  5435  5466 I korri   : Cannot load custom font /data/user/0/com.simonwjackson.korri.app/cache/surfaces/velvet/fonts/BigShoulders-ExtraBold.ttf: slint platform not initialized
+11-19 14:40:26.731  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:40:26.731  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:40:26.771  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:40:26.772  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:40:26.772  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inTextureCoords
+11-19 14:40:26.815  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:40:26.815  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:40:26.815  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-19 14:40:26.852  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:40:26.852  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:40:26.852  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-19 14:40:26.935  5435  5464 I korri   : korri-app: overlay: the shell drew it; the layer shows
+11-19 14:40:26.935  5435  5435 I korri-viewer: overlay: layer shown: posted 0.1 ms before, applied in 0.13 ms
+11-19 14:40:26.936  5435  5464 I korri   : korri-app: shell rendered surface=velvet page=home count=4 selected=1
+11-19 14:40:26.986  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:40:26.986  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:40:26.986  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-19 14:40:27.053  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:40:27.053  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:40:27.053  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-19 14:40:27.094  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:40:27.094  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name coverage
+11-19 14:40:27.094  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name color
+11-19 14:40:27.094  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 3 name localCoord
+11-19 14:40:27.161  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:40:27.161  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:40:27.479  5435  6454 I korri-viewer: sound: 77 ms pending; 21 packets dropped since the last line
+11-19 14:40:28.514  5435  6454 I korri-viewer: sound: 60 ms pending; 24 packets dropped since the last line
+11-19 14:40:29.496  5435  5464 I korri   : korri-app: overlay: the shell let the layer's Surface go
+11-19 14:40:29.496  5435  5464 I korri-viewer: overlay: closed on korrid resumed the stream after 2.9 s; it took 1 keys and 0 motion events; the stream's input goes on
+11-19 14:40:29.501  5435  5435 I korri-viewer: overlay: layer hidden: posted 6.0 ms before, applied in 2.28 ms
+11-19 14:40:29.502  5435  5472 I korri   : korri-app: viewer resume for korrid: 658bc73742f137afc0c4bc12965e0a8e: the stream is in front, its input goes on
+11-19 14:40:29.508  5435  5435 I korri-viewer: pointer: [HideIcon, Request] on the stream's view, which had pointer capture: false
+11-19 14:40:29.566  5435  5464 I korri   : korri-app: shell rendered surface=velvet page=detail count=0 selected=1
+11-19 14:40:29.731  5435  6454 I korri-viewer: sound: 50 ms pending; 31 packets dropped since the last line
+11-19 14:40:30.837  5435  6454 I korri-viewer: sound: 45 ms pending; 33 packets dropped since the last line
+11-19 14:40:31.165  5435  5480 I korri   : korri-app: proof: snapshot 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":184308.0,"batteryPercent":100.0,"streamHealth":{"rttMs":12.0,"deliveredBitrateKbps":7400.692537313433,"framesDropped":7.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"0","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:40:32.023  5435  6454 I korri-viewer: sound: 45 ms pending; 22 packets dropped since the last line
+11-19 14:40:32.692  5435  5480 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Apply","value":{"control":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","value":{"kind":"toggle","value":true}}}}
+11-19 14:40:32.745  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (0, -135)-(2400, 1215) in the window 2400x1080, cropped to fill
+11-19 14:40:32.746  5435  5464 I korri   : korri-app: viewer control set-fill-mode is true
+11-19 14:40:32.746  5435  5480 I korri   : korri-app: viewer reply Apply {"kind":"Ok"}
+11-19 14:40:32.746  5435  5480 I korri   : korri-app: proof: apply 658bc73742f137afc0c4bc12965e0a8e viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode {"kind":"toggle","value":true} ok
+11-19 14:40:33.067  5435  6454 I korri-viewer: sound: 40 ms pending; 11 packets dropped since the last line
+11-19 14:40:33.209  5435  5472 I korri   : korri-app: viewer snapshot for korrid: 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":186328.0,"batteryPercent":100.0,"streamHealth":{"rttMs":4.0,"deliveredBitrateKbps":7222.775913129319,"framesDropped":8.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":true,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"0","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:40:34.228  5435  6453 I korri-viewer: Audio arrival over 10 s: 2005 packets, late p50 7 p95 35 p99 53 max 63 ms, >=8:971 >=12:679 >=16:479 >=20:340 >=24:239 >=32:133 >=40:70
+11-19 14:40:34.678  5435  6454 I korri-viewer: sound: 40 ms pending; 8 packets dropped since the last line
+11-19 14:40:35.034  5435  5480 I korri   : korri-app: proof: snapshot 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":188345.0,"batteryPercent":100.0,"streamHealth":{"rttMs":18.0,"deliveredBitrateKbps":7342.246791707798,"framesDropped":2.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":true,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"0","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:40:35.541  5435  5480 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Apply","value":{"control":"viewer:658bc73742f137afc0c4bc12965e0a8e:01:1:set-fill-mode","value":{"kind":"toggle","value":false}}}}
+11-19 14:40:35.546  5435  5480 I korri   : korri-app: viewer reply Apply {"kind":"Error","value":{"message":"Unknown or stale stream control"}}
+11-19 14:40:35.546  5435  5480 E korri   : korri-app: proof: apply 658bc73742f137afc0c4bc12965e0a8e viewer:658bc73742f137afc0c4bc12965e0a8e:01:1:set-fill-mode {"kind":"toggle","value":false} failed: Unknown or stale stream control
+11-19 14:40:35.913  5435  6454 I korri-viewer: sound: 40 ms pending; 12 packets dropped since the last line
+11-19 14:40:36.047  5435  5480 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Apply","value":{"control":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","value":{"kind":"toggle","value":false}}}}
+11-19 14:40:36.084  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-19 14:40:36.085  5435  5464 I korri   : korri-app: viewer control set-fill-mode is false
+11-19 14:40:36.090  5435  5480 I korri   : korri-app: viewer reply Apply {"kind":"Ok"}
+11-19 14:40:36.090  5435  5480 I korri   : korri-app: proof: apply 658bc73742f137afc0c4bc12965e0a8e viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode {"kind":"toggle","value":false} ok
+11-19 14:40:36.356  5435  5471 I korri   : korri-app: viewer snapshot for korrid: 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":190367.0,"batteryPercent":100.0,"streamHealth":{"rttMs":10.0,"deliveredBitrateKbps":7047.6474045053865,"framesDropped":3.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"0","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:40:37.044  5435  6454 I korri-viewer: sound: 45 ms pending; 6 packets dropped since the last line
+11-19 14:40:38.224  5435  6454 I korri-viewer: sound: 40 ms pending; 19 packets dropped since the last line
+11-19 14:40:38.390  5435  5480 I korri   : korri-app: proof: snapshot 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":192400.0,"batteryPercent":100.0,"streamHealth":{"rttMs":8.0,"deliveredBitrateKbps":7089.798449612403,"framesDropped":2.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"0","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:40:39.401  5435  5480 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Apply","value":{"control":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard"}}}
+11-19 14:40:39.446  5435  5435 D InputMethodManager: showSoftInput() view=android.app.NativeActivity$NativeContentView{b238060 VFED..... .F....ID 0,0-2400,1080 aid=1073741825} flags=0 reason=SHOW_TOGGLE_SOFT_INPUT
+11-19 14:40:39.455  5435  5435 I korri-viewer: keyboard: the soft keyboard toggled; the stream's view has the focus
+11-19 14:40:39.469  5435  5464 I korri   : korri-app: viewer control toggle-keyboard ran
+11-19 14:40:39.469  5435  5480 I korri   : korri-app: viewer reply Apply {"kind":"Ok"}
+11-19 14:40:39.469  5435  5480 I korri   : korri-app: proof: apply 658bc73742f137afc0c4bc12965e0a8e viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard null ok
+11-19 14:40:39.562  1286  1286 I AndroidIME: AbstractIme.onActivate():86 PasswordIme.onActivate() : EditorInfo = inputType=Text imeActionName=UNSPECIFIED dump=[inputType=0x0 imeOptions=0x0 privateImeOptions=null actionLabel=null actionId=0 initialSelStart=-1 initialSelEnd=-1 initialCapsMode=0x0 hintText=null label=null packageName=com.simonwjackson.korri.app autofillId=1073741825 fieldId=-1 fieldName=null extras=null hintLocales=null contentMimeTypes=null ], IncognitoMode = false, DeviceLocked = false
+11-19 14:40:39.609  5435  6454 I korri-viewer: sound: 50 ms pending; 21 packets dropped since the last line
+11-19 14:40:40.616  5435  6454 I korri-viewer: sound: 50 ms pending; 24 packets dropped since the last line
+11-19 14:40:41.704  5435  6454 I korri-viewer: sound: 105 ms pending; 64 packets dropped since the last line
+11-19 14:40:42.710  5435  6454 I korri-viewer: sound: 45 ms pending; 49 packets dropped since the last line
+11-19 14:40:43.718  5435  6454 I korri-viewer: sound: 65 ms pending; 32 packets dropped since the last line
+11-19 14:40:44.233  5435  6453 I korri-viewer: Audio arrival over 10 s: 2001 packets, late p50 10 p95 43 p99 63 max 63 ms, >=8:1164 >=12:873 >=16:631 >=20:467 >=24:345 >=32:194 >=40:117
+11-19 14:40:44.747  5435  6454 I korri-viewer: sound: 72 ms pending; 60 packets dropped since the last line
+11-19 14:40:45.750  5435  6454 I korri-viewer: sound: 80 ms pending; 43 packets dropped since the last line
+11-19 14:40:46.880  5435  6454 I korri-viewer: sound: 41 ms pending; 68 packets dropped since the last line
+11-19 14:40:47.954  5435  6454 I korri-viewer: sound: 45 ms pending; 34 packets dropped since the last line
+11-19 14:40:49.052  1286  1286 I AndroidIME: AbstractIme.onActivate():86 PasswordIme.onActivate() : EditorInfo = inputType=Text imeActionName=UNSPECIFIED dump=[inputType=0x0 imeOptions=0x0 privateImeOptions=null actionLabel=null actionId=0 initialSelStart=-1 initialSelEnd=-1 initialCapsMode=0x0 hintText=null label=null packageName=com.simonwjackson.korri.app autofillId=1073741825 fieldId=-1 fieldName=null extras=null hintLocales=null contentMimeTypes=null ], IncognitoMode = false, DeviceLocked = false
+11-19 14:40:49.090  5435  6454 I korri-viewer: sound: 40 ms pending; 32 packets dropped since the last line
+11-19 14:40:50.177  5435  6454 I korri-viewer: sound: 80 ms pending; 64 packets dropped since the last line
+11-19 14:40:50.331  5435  5466 I korri   : korrid: reach: reset=0 elapsed_ms=167057 stage=offer_published peer=ca2261fc relay_count=1 completed_relays=1 outcomes=ws://127.x.x.x:47800=failed:unprefixed operation_ms=0 first_ack_ms=none final=true
+11-19 14:40:51.187  5435  6454 I korri-viewer: sound: 75 ms pending; 52 packets dropped since the last line
+11-19 14:40:51.940  5435  5480 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Apply","value":{"control":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard"}}}
+11-19 14:40:51.968  5435  5435 I korri-viewer: keyboard: the soft keyboard toggled; the stream's view has the focus
+11-19 14:40:51.973  5435  5464 I korri   : korri-app: viewer control toggle-keyboard ran
+11-19 14:40:52.009  5435  5480 I korri   : korri-app: viewer reply Apply {"kind":"Ok"}
+11-19 14:40:52.009  5435  5480 I korri   : korri-app: proof: apply 658bc73742f137afc0c4bc12965e0a8e viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard null ok
+11-19 14:40:52.205  5435  6454 I korri-viewer: sound: 40 ms pending; 39 packets dropped since the last line
+11-19 14:40:53.401  5435  6454 I korri-viewer: sound: 41 ms pending; 16 packets dropped since the last line
+11-19 14:40:54.238  5435  6453 I korri-viewer: Audio arrival over 10 s: 1998 packets, late p50 10 p95 58 p99 63 max 63 ms, >=8:1175 >=12:921 >=16:741 >=20:589 >=24:467 >=32:306 >=40:227
+11-19 14:40:54.444  5435  6454 I korri-viewer: sound: 45 ms pending; 16 packets dropped since the last line
+11-19 14:40:55.036  5435  5480 I korri   : korri-app: proof: snapshot 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":208638.0,"batteryPercent":100.0,"streamHealth":{"rttMs":11.0,"deliveredBitrateKbps":7124.40396039604,"framesDropped":3.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"0","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:40:55.537  5435  5480 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Apply","value":{"control":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","value":{"kind":"choice","value":"3"}}}}
+11-19 14:40:55.563  5435  5464 I korri   : korri-app: viewer control set-mouse-mode is 3
+11-19 14:40:55.566  5435  5480 I korri   : korri-app: viewer reply Apply {"kind":"Ok"}
+11-19 14:40:55.566  5435  5480 I korri   : korri-app: proof: apply 658bc73742f137afc0c4bc12965e0a8e viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode {"kind":"choice","value":"3"} ok
+11-19 14:40:55.775  5435  5471 I korri   : korri-app: viewer snapshot for korrid: 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":209660.0,"batteryPercent":100.0,"streamHealth":{"rttMs":9.0,"deliveredBitrateKbps":7159.170254403131,"framesDropped":10.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"3","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:40:55.990  5435  6454 I korri-viewer: sound: 45 ms pending; 18 packets dropped since the last line
+11-19 14:40:57.017  5435  6454 I korri-viewer: sound: 44 ms pending; 15 packets dropped since the last line
+11-19 14:40:58.023  5435  6454 I korri-viewer: sound: 50 ms pending; 22 packets dropped since the last line
+11-19 14:40:59.040  5435  6454 I korri-viewer: sound: 42 ms pending; 13 packets dropped since the last line
+11-19 14:40:59.888  5435  5480 I korri   : korri-app: proof: snapshot 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":213727.0,"batteryPercent":100.0,"streamHealth":{"rttMs":12.0,"deliveredBitrateKbps":7194.367748279253,"framesDropped":11.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"3","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:41:00.068  5435  6454 I korri-viewer: sound: 40 ms pending; 32 packets dropped since the last line
+11-19 14:41:00.398  5435  5480 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Apply","value":{"control":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","value":{"kind":"choice","value":"4"}}}}
+11-19 14:41:00.399  5435  5464 I korri   : korri-app: viewer control set-mouse-mode is 4
+11-19 14:41:00.399  5435  5480 I korri   : korri-app: viewer reply Apply {"kind":"Ok"}
+11-19 14:41:00.399  5435  5480 I korri   : korri-app: proof: apply 658bc73742f137afc0c4bc12965e0a8e viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode {"kind":"choice","value":"4"} ok
+11-19 14:41:00.708  5435  5471 I korri   : korri-app: viewer snapshot for korrid: 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":214754.0,"batteryPercent":100.0,"streamHealth":{"rttMs":11.0,"deliveredBitrateKbps":7124.3154819863685,"framesDropped":9.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"4","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:41:01.154  5435  6454 I korri-viewer: sound: 40 ms pending; 20 packets dropped since the last line
+11-19 14:41:02.272  5435  6454 I korri-viewer: sound: 40 ms pending; 25 packets dropped since the last line
+11-19 14:41:03.319  5435  6454 I korri-viewer: sound: 40 ms pending; 18 packets dropped since the last line
+11-19 14:41:04.239  5435  6453 I korri-viewer: Audio arrival over 10 s: 2003 packets, late p50 8 p95 29 p99 46 max 63 ms, >=8:1046 >=12:718 >=16:494 >=20:315 >=24:192 >=32:65 >=40:36
+11-19 14:41:04.357  5435  6454 I korri-viewer: sound: 67 ms pending; 8 packets dropped since the last line
+11-19 14:41:04.687  5435  5480 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Apply","value":{"control":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","value":{"kind":"choice","value":"0"}}}}
+11-19 14:41:04.703  5435  5464 I korri   : korri-app: viewer control set-mouse-mode is 0
+11-19 14:41:04.703  5435  5480 I korri   : korri-app: viewer reply Apply {"kind":"Ok"}
+11-19 14:41:04.703  5435  5480 I korri   : korri-app: proof: apply 658bc73742f137afc0c4bc12965e0a8e viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode {"kind":"choice","value":"0"} ok
+11-19 14:41:05.278  5435  5471 I korri   : korri-app: viewer snapshot for korrid: 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":218793.0,"batteryPercent":100.0,"streamHealth":{"rttMs":9.0,"deliveredBitrateKbps":7166.980079681275,"framesDropped":4.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"0","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:41:05.392  5435  5466 I korri   : korrid: reach: stage=relay_read relay=ws://127.x.x.x:47800 outcome=failed reason=unprefixed failures=181
+11-19 14:41:05.764  5435  6454 I korri-viewer: sound: 40 ms pending; 32 packets dropped since the last line
+11-19 14:41:06.921  5435  6454 I korri-viewer: sound: 45 ms pending; 38 packets dropped since the last line
+11-19 14:41:08.057  5435  6454 I korri-viewer: sound: 40 ms pending; 14 packets dropped since the last line
+11-19 14:41:08.785  5435  5480 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Apply","value":{"control":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","value":{"kind":"toggle","value":true}}}}
+11-19 14:41:08.809  5435  5464 I korri   : korri-app: viewer control set-zoom-mode is true
+11-19 14:41:08.809  5435  5480 I korri   : korri-app: viewer reply Apply {"kind":"Ok"}
+11-19 14:41:08.809  5435  5480 I korri   : korri-app: proof: apply 658bc73742f137afc0c4bc12965e0a8e viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode {"kind":"toggle","value":true} ok
+11-19 14:41:08.925  5435  5472 I korri   : korri-app: viewer snapshot for korrid: 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":222823.0,"batteryPercent":100.0,"streamHealth":{"rttMs":14.0,"deliveredBitrateKbps":7265.811320754717,"framesDropped":8.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":true,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"0","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:41:09.152  5435  6454 I korri-viewer: sound: 50 ms pending; 16 packets dropped since the last line
+11-19 14:41:10.187  5435  6454 I korri-viewer: sound: 56 ms pending; 31 packets dropped since the last line
+11-19 14:41:11.289  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (184, -32)-(2217, 1111) in the window 2400x1080, zoomed 1.06 times
+11-19 14:41:11.319  5435  6454 I korri-viewer: sound: 55 ms pending; 5 packets dropped since the last line
+11-19 14:41:11.589  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (127, -63)-(2273, 1144) in the window 2400x1080, zoomed 1.12 times
+11-19 14:41:11.817  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (71, -95)-(2330, 1176) in the window 2400x1080, zoomed 1.18 times
+11-19 14:41:12.119  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (14, -127)-(2386, 1207) in the window 2400x1080, zoomed 1.24 times
+11-19 14:41:12.347  5435  6454 I korri-viewer: sound: 45 ms pending; 23 packets dropped since the last line
+11-19 14:41:12.441  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (-42, -159)-(2443, 1239) in the window 2400x1080, zoomed 1.29 times
+11-19 14:41:12.679  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (-99, -191)-(2498, 1270) in the window 2400x1080, zoomed 1.35 times
+11-19 14:41:12.901  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (-155, -222)-(2555, 1303) in the window 2400x1080, zoomed 1.41 times
+11-19 14:41:13.079  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (-212, -254)-(2611, 1334) in the window 2400x1080, zoomed 1.47 times
+11-19 14:41:13.399  5435  6454 I korri-viewer: sound: 40 ms pending; 10 packets dropped since the last line
+11-19 14:41:14.242  5435  6453 I korri-viewer: Audio arrival over 10 s: 2001 packets, late p50 7 p95 28 p99 46 max 63 ms, >=8:960 >=12:672 >=16:442 >=20:284 >=24:178 >=32:68 >=40:38
+11-19 14:41:14.486  5435  6454 I korri-viewer: sound: 40 ms pending; 13 packets dropped since the last line
+11-19 14:41:15.659  5435  6454 I korri-viewer: sound: 42 ms pending; 7 packets dropped since the last line
+11-19 14:41:15.867  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (-266, -254)-(2557, 1334) in the window 2400x1080, zoomed 1.47 times
+11-19 14:41:15.962  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (-343, -254)-(2480, 1334) in the window 2400x1080, zoomed 1.47 times
+11-19 14:41:16.009  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (-361, -254)-(2462, 1334) in the window 2400x1080, zoomed 1.47 times
+11-19 14:41:16.199  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (-503, -254)-(2320, 1334) in the window 2400x1080, zoomed 1.47 times
+11-19 14:41:16.663  5435  6454 I korri-viewer: sound: 42 ms pending; 21 packets dropped since the last line
+11-19 14:41:17.692  5435  6454 I korri-viewer: sound: 40 ms pending; 5 packets dropped since the last line
+11-19 14:41:18.874  5435  6454 I korri-viewer: sound: 42 ms pending; 19 packets dropped since the last line
+11-19 14:41:19.200  5435  5480 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Apply","value":{"control":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","value":{"kind":"toggle","value":false}}}}
+11-19 14:41:19.201  5435  5464 I korri   : korri-app: viewer control set-zoom-mode is false
+11-19 14:41:19.202  5435  5480 I korri   : korri-app: viewer reply Apply {"kind":"Ok"}
+11-19 14:41:19.203  5435  5480 I korri   : korri-app: proof: apply 658bc73742f137afc0c4bc12965e0a8e viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode {"kind":"toggle","value":false} ok
+11-19 14:41:19.227  5435  5471 I korri   : korri-app: viewer snapshot for korrid: 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":233029.0,"batteryPercent":100.0,"streamHealth":{"rttMs":10.0,"deliveredBitrateKbps":7550.533864541832,"framesDropped":16.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"0","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:41:19.887  5435  6454 I korri-viewer: sound: 44 ms pending; 17 packets dropped since the last line
+11-19 14:41:19.957  5435  5480 I korri   : korri-app: proof: snapshot 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":234046.0,"batteryPercent":100.0,"streamHealth":{"rttMs":12.0,"deliveredBitrateKbps":7075.366764995084,"framesDropped":6.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"0","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:41:20.508  5435  5466 I korri   : korrid: reach: reset=0 elapsed_ms=197235 stage=offer_published peer=ca2261fc relay_count=1 completed_relays=1 outcomes=ws://127.x.x.x:47800=failed:unprefixed operation_ms=0 first_ack_ms=none final=true
+11-19 14:41:20.922  5435  6454 I korri-viewer: sound: 44 ms pending; 24 packets dropped since the last line
+11-19 14:41:22.047  5435  6454 I korri-viewer: sound: 40 ms pending; 14 packets dropped since the last line
+11-19 14:41:23.136  5435  6454 I korri-viewer: sound: 42 ms pending; 24 packets dropped since the last line
+11-19 14:41:24.006  5435  5480 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Apply","value":{"control":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","value":{"kind":"toggle","value":true}}}}
+11-19 14:41:24.020  5435  5464 I korri   : korri-app: viewer control set-zoom-mode is true
+11-19 14:41:24.021  5435  5480 I korri   : korri-app: viewer reply Apply {"kind":"Ok"}
+11-19 14:41:24.021  5435  5480 I korri   : korri-app: proof: apply 658bc73742f137afc0c4bc12965e0a8e viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode {"kind":"toggle","value":true} ok
+11-19 14:41:24.230  5435  6454 I korri-viewer: sound: 61 ms pending; 7 packets dropped since the last line
+11-19 14:41:24.230  5435  5472 I korri   : korri-app: viewer snapshot for korrid: 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":238088.0,"batteryPercent":100.0,"streamHealth":{"rttMs":11.0,"deliveredBitrateKbps":7194.367748279253,"framesDropped":8.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":true,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"0","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:41:24.252  5435  6453 I korri-viewer: Audio arrival over 10 s: 2002 packets, late p50 7 p95 29 p99 42 max 60 ms, >=8:991 >=12:679 >=16:467 >=20:293 >=24:189 >=32:74 >=40:28
+11-19 14:41:24.521  5435  5480 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Apply","value":{"control":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","value":{"kind":"choice","value":"1"}}}}
+11-19 14:41:24.540  5435  5464 I korri   : korri-app: viewer control set-mouse-mode is 1
+11-19 14:41:24.540  5435  5480 I korri   : korri-app: viewer reply Apply {"kind":"Ok"}
+11-19 14:41:24.540  5435  5480 I korri   : korri-app: proof: apply 658bc73742f137afc0c4bc12965e0a8e viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode {"kind":"choice","value":"1"} ok
+11-19 14:41:24.793  5435  5472 I korri   : korri-app: viewer snapshot for korrid: 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":238088.0,"batteryPercent":100.0,"streamHealth":{"rttMs":18.0,"deliveredBitrateKbps":7194.367748279253,"framesDropped":8.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"1","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:41:25.251  5435  6454 I korri-viewer: sound: 44 ms pending; 41 packets dropped since the last line
+11-19 14:41:25.299  5435  5480 I korri   : korri-app: proof: snapshot 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":239117.0,"batteryPercent":100.0,"streamHealth":{"rttMs":16.0,"deliveredBitrateKbps":7110.468415937804,"framesDropped":7.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"1","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:41:25.800  5435  5480 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Apply","value":{"control":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","value":{"kind":"choice","value":"0"}}}}
+11-19 14:41:25.819  5435  5464 I korri   : korri-app: viewer control set-mouse-mode is 0
+11-19 14:41:25.822  5435  5480 I korri   : korri-app: viewer reply Apply {"kind":"Ok"}
+11-19 14:41:25.822  5435  5480 I korri   : korri-app: proof: apply 658bc73742f137afc0c4bc12965e0a8e viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode {"kind":"choice","value":"0"} ok
+11-19 14:41:25.985  5435  5471 I korri   : korri-app: viewer snapshot for korrid: 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":239117.0,"batteryPercent":100.0,"streamHealth":{"rttMs":24.0,"deliveredBitrateKbps":7110.468415937804,"framesDropped":7.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"0","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:41:26.257  5435  6454 I korri-viewer: sound: 65 ms pending; 31 packets dropped since the last line
+11-19 14:41:27.415  5435  6454 I korri-viewer: sound: 45 ms pending; 20 packets dropped since the last line
+11-19 14:41:28.612  5435  6454 I korri-viewer: sound: 50 ms pending; 20 packets dropped since the last line
+11-19 14:41:29.771  5435  6454 I korri-viewer: sound: 42 ms pending; 25 packets dropped since the last line
+11-19 14:41:30.849  5435  6454 I korri-viewer: sound: 40 ms pending; 19 packets dropped since the last line
+11-19 14:41:31.375  5435  5480 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Apply","value":{"control":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor"}}}
+11-19 14:41:31.415  5435  5464 I korri   : korri-app: viewer local cursor shows; the mouse points
+11-19 14:41:31.415  5435  5464 I korri   : korri-app: viewer control set-local-cursor ran
+11-19 14:41:31.417  5435  5435 I korri-viewer: pointer: [ShowIcon, Release] on the stream's view, which had pointer capture: true
+11-19 14:41:31.417  5435  5480 I korri   : korri-app: viewer reply Apply {"kind":"Ok"}
+11-19 14:41:31.418  5435  5480 I korri   : korri-app: proof: apply 658bc73742f137afc0c4bc12965e0a8e viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor null ok
+11-19 14:41:32.109  5435  6454 I korri-viewer: sound: 40 ms pending; 18 packets dropped since the last line
+11-19 14:41:33.158  5435  6454 I korri-viewer: sound: 45 ms pending; 14 packets dropped since the last line
+11-19 14:41:34.253  5435  6453 I korri-viewer: Audio arrival over 10 s: 2000 packets, late p50 9 p95 35 p99 51 max 63 ms, >=8:1128 >=12:789 >=16:567 >=20:395 >=24:263 >=32:131 >=40:68
+11-19 14:41:34.651  5435  6454 I korri-viewer: sound: 47 ms pending; 9 packets dropped since the last line
+11-19 14:41:35.958  5435  6454 I korri-viewer: sound: 42 ms pending; 6 packets dropped since the last line
+11-19 14:41:37.090  5435  6454 I korri-viewer: sound: 43 ms pending; 7 packets dropped since the last line
+11-19 14:41:37.212  5435  5480 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Apply","value":{"control":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor"}}}
+11-19 14:41:37.235  5435  5464 I korri   : korri-app: viewer local cursor hides; the mouse is captured
+11-19 14:41:37.240  5435  5435 I korri-viewer: pointer: [HideIcon, Request] on the stream's view, which had pointer capture: false
+11-19 14:41:37.241  5435  5464 I korri   : korri-app: viewer control set-local-cursor ran
+11-19 14:41:37.241  5435  5480 I korri   : korri-app: viewer reply Apply {"kind":"Ok"}
+11-19 14:41:37.241  5435  5480 I korri   : korri-app: proof: apply 658bc73742f137afc0c4bc12965e0a8e viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor null ok
+11-19 14:41:38.125  5435  6454 I korri-viewer: sound: 43 ms pending; 19 packets dropped since the last line
+11-19 14:41:39.217  5435  6454 I korri-viewer: sound: 40 ms pending; 24 packets dropped since the last line
+11-19 14:41:40.244  5435  6454 I korri-viewer: sound: 44 ms pending; 29 packets dropped since the last line
+11-19 14:41:41.277  5435  6454 I korri-viewer: sound: 40 ms pending; 27 packets dropped since the last line
+11-19 14:41:42.399  5435  6454 I korri-viewer: sound: 40 ms pending; 13 packets dropped since the last line
+11-19 14:41:43.327  5435  5480 I korri   : korri-app: proof: snapshot 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":257328.0,"batteryPercent":100.0,"streamHealth":{"rttMs":16.0,"deliveredBitrateKbps":7124.3154819863685,"framesDropped":8.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"0","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:41:43.527  5435  6454 I korri-viewer: sound: 40 ms pending; 14 packets dropped since the last line
+11-19 14:41:44.264  5435  6453 I korri-viewer: Audio arrival over 10 s: 2000 packets, late p50 8 p95 29 p99 41 max 60 ms, >=8:1048 >=12:725 >=16:478 >=20:308 >=24:192 >=32:75 >=40:32
+11-19 14:41:44.575  5435  6454 I korri-viewer: sound: 40 ms pending; 20 packets dropped since the last line
+11-19 14:41:45.723  5435  5435 I korri-viewer: pointer: [Follow { compatible: true }] on the stream's view, which had pointer capture: true
+11-19 14:41:45.839  5435  6454 I korri-viewer: sound: 45 ms pending; 27 packets dropped since the last line
+11-19 14:41:46.977  5435  6454 I korri-viewer: sound: 50 ms pending; 19 packets dropped since the last line
+11-19 14:41:48.003  5435  6454 I korri-viewer: sound: 40 ms pending; 23 packets dropped since the last line
+11-19 14:41:49.103  5435  6454 I korri-viewer: sound: 43 ms pending; 13 packets dropped since the last line
+11-19 14:41:50.186  5435  6454 I korri-viewer: sound: 40 ms pending; 20 packets dropped since the last line
+11-19 14:41:50.689  5435  5466 I korri   : korrid: reach: reset=0 elapsed_ms=227414 stage=offer_published peer=ca2261fc relay_count=1 completed_relays=1 outcomes=ws://127.x.x.x:47800=failed:unprefixed operation_ms=0 first_ack_ms=none final=true
+11-19 14:41:51.261  5435  6454 I korri-viewer: sound: 40 ms pending; 11 packets dropped since the last line
+11-19 14:41:52.341  5435  6454 I korri-viewer: sound: 41 ms pending; 13 packets dropped since the last line
+11-19 14:41:53.415  5435  5435 I korri-viewer: pointer: [Follow { compatible: true }] on the stream's view, which had pointer capture: true
+11-19 14:41:53.431  5435  6454 I korri-viewer: sound: 45 ms pending; 30 packets dropped since the last line
+11-19 14:41:54.265  5435  6453 I korri-viewer: Audio arrival over 10 s: 2004 packets, late p50 7 p95 29 p99 45 max 63 ms, >=8:973 >=12:664 >=16:443 >=20:289 >=24:182 >=32:78 >=40:39
+11-19 14:41:54.596  5435  6454 I korri-viewer: sound: 70 ms pending; 32 packets dropped since the last line
+11-19 14:41:55.725  5435  6454 I korri-viewer: sound: 45 ms pending; 27 packets dropped since the last line
+11-19 14:41:56.878  5435  6454 I korri-viewer: sound: 40 ms pending; 23 packets dropped since the last line
+11-19 14:41:57.009  5435  5464 I korri-viewer: overlay: open on Guide; the stream's input is held
+11-19 14:41:57.032  5435  5435 I korri-viewer: pointer: [ShowIcon, Release] on the stream's view, which had pointer capture: true
+11-19 14:41:57.035  5435  5464 I korri   : korri-app: overlay: the shell took the layer's Surface; korrid hears that the person left
+11-19 14:41:57.099  5435  5464 I korri   : korri-app: overlay: korrid's session.leave for 658bc73742f137afc0c4bc12965e0a8e: ok
+11-19 14:41:57.104  5435  5466 I korri   : Cannot load custom font /data/user/0/com.simonwjackson.korri.app/cache/surfaces/velvet/fonts/Archivo-SemiCondensed-Bold.ttf: slint platform not initialized
+11-19 14:41:57.104  5435  5466 I korri   : Cannot load custom font /data/user/0/com.simonwjackson.korri.app/cache/surfaces/velvet/fonts/Archivo-SemiCondensed.ttf: slint platform not initialized
+11-19 14:41:57.104  5435  5466 I korri   : Cannot load custom font /data/user/0/com.simonwjackson.korri.app/cache/surfaces/velvet/fonts/BigShoulders-ExtraBold-Text.ttf: slint platform not initialized
+11-19 14:41:57.104  5435  5466 I korri   : Cannot load custom font /data/user/0/com.simonwjackson.korri.app/cache/surfaces/velvet/fonts/BigShoulders-ExtraBold.ttf: slint platform not initialized
+11-19 14:41:57.120  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:41:57.120  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:41:57.189  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:41:57.190  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:41:57.190  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inTextureCoords
+11-19 14:41:57.235  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:41:57.236  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:41:57.236  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-19 14:41:57.312  5435  5464 I korri   : korri-app: overlay: the shell drew it; the layer shows
+11-19 14:41:57.312  5435  5435 I korri-viewer: overlay: layer shown: posted 0.0 ms before, applied in 0.16 ms
+11-19 14:41:57.312  5435  5464 I korri   : korri-app: shell rendered surface=velvet page=home count=4 selected=1
+11-19 14:41:57.356  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:41:57.356  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:41:57.356  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-19 14:41:57.481  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:41:57.481  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:41:57.482  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-19 14:41:57.547  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:41:57.547  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:41:57.547  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-19 14:41:57.593  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:41:57.593  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name coverage
+11-19 14:41:57.593  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name color
+11-19 14:41:57.593  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 3 name localCoord
+11-19 14:41:57.671  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:41:57.671  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:41:57.892  5435  6454 I korri-viewer: sound: 42 ms pending; 8 packets dropped since the last line
+11-19 14:41:59.272  5435  6454 I korri-viewer: sound: 40 ms pending; 17 packets dropped since the last line
+11-19 14:42:00.290  5435  6454 I korri-viewer: sound: 40 ms pending; 30 packets dropped since the last line
+11-19 14:42:01.317  5435  6454 I korri-viewer: sound: 40 ms pending; 29 packets dropped since the last line
+11-19 14:42:02.132  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:42:02.135  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:42:02.135  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-19 14:42:02.560  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:42:02.560  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:42:02.560  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inTextureCoords
+11-19 14:42:03.589  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:42:03.589  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:42:03.631  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:42:03.631  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:42:03.631  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-19 14:42:03.678  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:42:03.678  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:42:03.678  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-19 14:42:04.267  5435  6453 I korri-viewer: Audio arrival over 10 s: 1999 packets, late p50 7 p95 40 p99 63 max 63 ms, >=8:924 >=12:659 >=16:472 >=20:359 >=24:275 >=32:158 >=40:103
+11-19 14:42:05.745  5435  5466 I korri   : korrid: reach: stage=relay_read relay=ws://127.x.x.x:47800 outcome=failed reason=unprefixed failures=241
+11-19 14:42:06.163  5435  6454 I korri-viewer: sound: 40 ms pending; 37 packets dropped since the last line
+11-19 14:42:07.403  5435  6454 I korri-viewer: sound: 40 ms pending; 12 packets dropped since the last line
+11-19 14:42:08.559  5435  6454 I korri-viewer: sound: 45 ms pending; 11 packets dropped since the last line
+11-19 14:42:09.052  5435  5472 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Apply","value":{"control":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","value":{"kind":"toggle","value":true}}}}
+11-19 14:42:09.067  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name resolveLevel_and_idx
+11-19 14:42:09.068  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name p01
+11-19 14:42:09.068  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name p23
+11-19 14:42:09.068  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 3 name fanPointAttrib
+11-19 14:42:09.068  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 4 name curveType
+11-19 14:42:09.175  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:42:09.175  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:42:09.241  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name unitCoord
+11-19 14:42:09.241  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name fillBounds
+11-19 14:42:09.241  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name color
+11-19 14:42:09.241  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 3 name locations
+11-19 14:42:09.406  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (-928, -453)-(2601, 1532) in the window 2400x1080, cropped to fill, zoomed 1.47 times
+11-19 14:42:09.406  5435  5464 I korri   : korri-app: viewer control set-fill-mode is true
+11-19 14:42:09.407  5435  5472 I korri   : korri-app: viewer reply Apply {"kind":"Ok"}
+11-19 14:42:09.407  5435  5472 I korri   : korri-app: viewer snapshot for korrid: 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":282682.0,"batteryPercent":100.0,"streamHealth":{"rttMs":9.0,"deliveredBitrateKbps":6975.873392680514,"framesDropped":9.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":true,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"0","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:42:12.165  5435  6454 I korri-viewer: sound: 45 ms pending; 11 packets dropped since the last line
+11-19 14:42:13.359  5435  6454 I korri-viewer: sound: 40 ms pending; 8 packets dropped since the last line
+11-19 14:42:14.271  5435  6453 I korri-viewer: Audio arrival over 10 s: 1999 packets, late p50 5 p95 23 p99 37 max 63 ms, >=8:699 >=12:447 >=16:285 >=20:172 >=24:96 >=32:31 >=40:14
+11-19 14:42:14.521  5435  5472 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Apply","value":{"control":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","value":{"kind":"toggle","value":false}}}}
+11-19 14:42:14.638  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (-503, -254)-(2320, 1334) in the window 2400x1080, zoomed 1.47 times
+11-19 14:42:14.639  5435  5464 I korri   : korri-app: viewer control set-fill-mode is false
+11-19 14:42:14.639  5435  5471 I korri   : korri-app: viewer reply Apply {"kind":"Ok"}
+11-19 14:42:14.639  5435  5471 I korri   : korri-app: viewer snapshot for korrid: 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:127:582133644","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"sampledAtMs":288755.0,"batteryPercent":100.0,"streamHealth":{"rttMs":6.0,"deliveredBitrateKbps":7012.347996089931,"framesDropped":5.0},"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"0","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:1:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:42:14.991  5435  6454 I korri-viewer: sound: 40 ms pending; 12 packets dropped since the last line
+11-19 14:42:16.473  5435  6454 I korri-viewer: sound: 40 ms pending; 1 packets dropped since the last line
+11-19 14:42:17.489  5435  6454 I korri-viewer: sound: 43 ms pending; 7 packets dropped since the last line
+11-19 14:42:18.524  5435  5435 I korri-viewer: overlay: layer hidden: posted 0.5 ms before, applied in 0.54 ms
+11-19 14:42:18.531  5435  5464 I korri   : korri-app: overlay: the shell let the layer's Surface go
+11-19 14:42:18.531  5435  5464 I korri-viewer: overlay: closed on korrid resumed the stream after 21.5 s; it took 9 keys and 14 motion events; the stream's input goes on
+11-19 14:42:18.532  5435  5472 I korri   : korri-app: viewer resume for korrid: 658bc73742f137afc0c4bc12965e0a8e: the stream is in front, its input goes on
+11-19 14:42:18.585  5435  5435 I korri-viewer: pointer: [HideIcon, Request] on the stream's view, which had pointer capture: false
+11-19 14:42:18.590  5435  5464 I korri   : korri-app: shell rendered surface=velvet page=detail count=0 selected=1
+11-19 14:42:18.618  5435  6454 I korri-viewer: sound: 42 ms pending; 10 packets dropped since the last line
+11-19 14:42:19.635  5435  6454 I korri-viewer: sound: 41 ms pending; 10 packets dropped since the last line
+11-19 14:42:20.651  5435  6454 I korri-viewer: sound: 40 ms pending; 29 packets dropped since the last line
+11-19 14:42:20.850  5435  5466 I korri   : korrid: reach: reset=0 elapsed_ms=257577 stage=offer_published peer=ca2261fc relay_count=1 completed_relays=1 outcomes=ws://127.x.x.x:47800=failed:unprefixed operation_ms=0 first_ack_ms=none final=true
+11-19 14:42:21.787  5435  6454 I korri-viewer: sound: 40 ms pending; 24 packets dropped since the last line
+11-19 14:42:22.822  5435  6454 I korri-viewer: sound: 45 ms pending; 38 packets dropped since the last line
+11-19 14:42:23.900  5435  6454 I korri-viewer: sound: 44 ms pending; 31 packets dropped since the last line
+11-19 14:42:24.273  5435  6453 I korri-viewer: Audio arrival over 10 s: 2003 packets, late p50 7 p95 32 p99 52 max 63 ms, >=8:910 >=12:648 >=16:462 >=20:327 >=24:235 >=32:112 >=40:63
+11-19 14:42:24.928  5435  6454 I korri-viewer: sound: 40 ms pending; 16 packets dropped since the last line
+11-19 14:42:25.274  5435  5464 I korri   : korri-app: viewer stops: the app's window went
+11-19 14:42:25.274  5435  5464 I korri-viewer: input: ended: 12 keys, 0 controller states, 0 arrivals, 85 mouse, 0 touches sent; 0 held; 6 unsupported, 0 outside the stream, 0 failed
+11-19 14:42:25.274  5435  5464 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Stop"}}
+11-19 14:42:25.276  5435  5435 E BLASTBufferQueue: [ViewRootImpl[NativeActivity]#0](f:0,a:1) Applying pending transactions on dtor 23
+11-19 14:42:25.279  5435  5435 I korri-viewer: pointer: [ShowIcon, Release] on the stream's view, which had pointer capture: false
+11-19 14:42:25.284  5435  6426 I korri-viewer: input: the core takes no more input
+11-19 14:42:25.288  5435  6425 I korri-viewer: feedback: ended: 0 rumbles, 0 trigger rumbles, 0 lights, 1 calls to Android; 0 battery reads, 0 battery reports sent, 0 outside the stream; 0 failed
+11-19 14:42:25.293  5435  6426 I korri-viewer: feedback: vibration and lights stopped
+11-19 14:42:25.293  5435  6426 I korri-viewer: nightjar: at the stop: SessionStats { rtt: Some((9ms, 8ms)), video: VideoStats { packet_count_video: 112379, packet_count_fec: 28909, packets_received: 141288, packets_recovered: 0, decrypt_failures: 0, frames_completed: 9647, frame_drops: 0, decoder_drops: 17 }, audio: AudioStats { packet_count_audio: 34232, packet_count_fec: 17118, packet_count_fec_recovered: 0, packet_count_fec_failed: 0, packet_count_oos: 0, packet_count_invalid: 0, packet_count_fec_invalid: 0, decrypt_failures: 0 }, frames_submitted: 9630, frames_need_idr: 0, decode_queue_overflows: 1, early_chunks_dropped: 0, frames_skipped: 0, chunks_skipped: 0, decode_queue_len: 2, audio_packets: 34232, audio_queue_len: 0, audio_queue_overflows: 2, connection_status: Some(Okay), input_contact_lost: false }
+11-19 14:42:25.293  5435  6426 I korri-viewer: nightjar: recovery requests sent: 1 IDR, 0 reference frame invalidations
+11-19 14:42:25.301  5435  6426 I korri-viewer: sound: stream closed
+11-19 14:42:25.301  5435  6426 I korri-viewer: sound: ended: 16611 callbacks, 7362893 frames played, 840307 frames silent, 2209 short callbacks after the first sound, 34172 packets, 0 concealed, 3486 dropped over 40 ms pending, 0 not decoded, 41 device xruns, 0 reopened
+11-19 14:42:25.320  5435  6426 I korri-viewer: picture: decoder stopped
+11-19 14:42:25.324  5435  6426 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-19 14:42:25.324  5435  6426 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-19 14:42:25.324  5435  7277 I korri   : korri-app: viewer reply Stop {"kind":"Ok"}
+11-19 14:42:25.331  5435  5464 I korri   : korri-app: viewer 658bc73742f137afc0c4bc12965e0a8e ended
+11-19 14:42:25.331  5435  5435 I korri-viewer: keyboard: the soft keyboard hides; the stream's view gives the focus back
+11-19 14:42:25.334  5435  5472 I korri   : korri-app: viewer status for korrid: 658bc73742f137afc0c4bc12965e0a8e Stopped
+11-19 14:42:25.334  5435  5472 I korri-viewer: start: korrid starts the viewer at 299458.063 ms
+11-19 14:42:25.337  5435  5472 I korri-viewer: start: korrid starts the viewer at 299461.054 ms
+11-19 14:42:25.340  5435  5471 I korri-viewer: start: korrid starts the viewer at 299463.624 ms
+11-19 14:42:25.652  5435  5472 I korri-viewer: start: korrid starts the viewer at 299776.209 ms
+11-19 14:42:25.655  5435  5472 I korri-viewer: start: korrid starts the viewer at 299779.076 ms
+11-19 14:42:25.782  5435  5472 I korri-viewer: start: korrid starts the viewer at 299906.363 ms
+11-19 14:42:26.293  5435  5471 I korri-viewer: start: korrid starts the viewer at 300416.806 ms
+11-19 14:42:26.333  5435  5472 I korri-viewer: start: korrid starts the viewer at 300456.499 ms
+11-19 14:42:26.660  5435  5472 I korri-viewer: start: korrid starts the viewer at 300784.422 ms
+11-19 14:42:26.830  5435  5472 I korri-viewer: start: korrid starts the viewer at 300954.404 ms
+11-19 14:42:27.351  5435  5471 I korri-viewer: start: korrid starts the viewer at 301475.119 ms
+11-19 14:42:27.353  5435  5472 I korri-viewer: start: korrid starts the viewer at 301476.966 ms
+11-19 14:42:27.674  5435  5471 I korri-viewer: start: korrid starts the viewer at 301797.505 ms
+11-19 14:42:27.891  5435  5471 I korri-viewer: start: korrid starts the viewer at 302015.261 ms
+11-19 14:42:28.061   522  2255 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.simonwjackson.korri.app/android.app.NativeActivity} from uid 2000
+11-19 14:42:28.078  5435  5435 I korri   : korri-app: window flags applied; system bars hidden: true
+11-19 14:42:28.078  5435  5435 I korri   : korri-app: no insets animation callback on 4 views: the input method's keyboard is drawn
+11-19 14:42:28.153  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:42:28.153  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:42:28.154  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-19 14:42:28.259  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:42:28.259  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:42:28.259  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-19 14:42:28.321  5435  5471 I korri-viewer: start: korrid starts the viewer at 302444.789 ms
+11-19 14:42:28.321  5435  5471 I korri-viewer: start: client certificate read at 302445.412 ms
+11-19 14:42:28.339  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:42:28.339  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:42:28.339  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-19 14:42:28.411  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:42:28.411  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:42:28.411  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name localCoord
+11-19 14:42:28.445  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:42:28.445  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:42:28.472  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:42:28.472  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name localCoord
+11-19 14:42:28.504  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:42:28.504  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name localCoord
+11-19 14:42:28.554  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name position
+11-19 14:42:28.554  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name color
+11-19 14:42:28.575  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:42:28.575  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:42:28.575  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inTextureCoords
+11-19 14:42:28.612  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:42:28.612  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:42:28.612  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inTextureCoords
+11-19 14:42:28.641  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:42:28.642  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:42:28.642  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-19 14:42:28.669  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 0 name inPosition
+11-19 14:42:28.669  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 1 name inColor
+11-19 14:42:28.669  5435  5466 I korri   : s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-19 14:42:28.715  5435  5464 I korri-viewer: start: video layers asked at 302838.739 ms
+11-19 14:42:28.715  5435  5464 I korri-viewer: start: window turn asked at 302838.860 ms
+11-19 14:42:28.715  5435  5464 I korri   : korri-app: shell rendered surface=velvet page=detail count=0 selected=1
+11-19 14:42:28.760  5435  5435 I korri-viewer: overlay: layer placed at (136, 0)-(2400, 1080) in the window 2400x1080, out of the display cutout (left 136, top 0, right 0, bottom 0)
+11-19 14:42:28.760  5435  5464 I korri-viewer: start: video layers made at 302883.991 ms
+11-19 14:42:28.760  5435  5464 I korri   : korri-app: shell rendered surface=velvet page=detail count=0 selected=1
+11-19 14:42:28.766  5435  5435 I korri   : korri-app: window flags applied; system bars hidden: true
+11-19 14:42:28.767  5435  5435 I korri   : korri-app: no insets animation callback on 4 views: the input method's keyboard is drawn
+11-19 14:42:28.910  5435  5471 I korri   : korri-app: viewer certificate provisioned through korrid's broker for 192.168.1.117:39143
+11-19 14:42:28.910  5435  5471 I korri-viewer: start: server certificate provisioned at 303034.192 ms
+11-19 14:42:28.938  5435  5464 I korri   : korri-app: viewer video layer 1280x720 placed at (240, 0)-(2160, 1080) in the window 2400x1080
+11-19 14:42:28.941  5435  5464 I korri   : korri-app: viewer input: controllers attached at the start: mask 0x0
+11-19 14:42:28.945  5435  5464 I korri-viewer: input: the gestures of pan and zoom: GestureConfig { touch_slop: 21, double_tap_slop: 263, min_span: 446, long_press_ms: 400, double_tap_ms: 300 }
+11-19 14:42:28.945  5435  5464 I korri   : korri-app: viewer request {"launchId":"658bc73742f137afc0c4bc12965e0a8e","command":{"kind":"Start","value":{"address":"192.168.1.117:39143","display":{"width":2400,"height":1080}}}}
+11-19 14:42:28.945  5435  5435 I korri-viewer: input: unbuffered dispatch requested
+11-19 14:42:28.945  5435  7295 I korri-viewer: start: Start at 303069.469 ms
+11-19 14:42:28.946  5435  5435 I korri-viewer: keyboard: the stream's view has the focus
+11-19 14:42:28.963  5435  5435 I korri-viewer: pointer: [HideIcon, Request] on the stream's view, which had pointer capture: false
+11-19 14:42:29.916  5435  7295 I korri-viewer: start: http serverinfo answered at 304039.783 ms (connected 446.3 ms, first byte 968.3 ms, total 968.4 ms)
+11-19 14:42:30.918  5435  7295 I korri-viewer: start: https serverinfo answered at 305041.526 ms (connected 477.1 ms, TLS done 991.8 ms, first byte 997.1 ms, total 997.5 ms)
+11-19 14:42:30.918  5435  7295 I korri-viewer: start: paired at 305041.574 ms
+11-19 14:42:31.935  5435  7295 I korri-viewer: start: https applist answered at 306059.100 ms (connected 504.5 ms, TLS done 1009.9 ms, first byte 1016.6 ms, total 1017.5 ms)
+11-19 14:42:31.935  5435  7295 I korri-viewer: start: picture and input ready at 306059.453 ms
+11-19 14:42:31.937  5435  7297 I korri-viewer: start: decoders listed at 306060.596 ms
+11-19 14:42:31.937  5435  7297 I korri-viewer: picture: decoders for video/avc: c2.goldfish.h264.decoder (hardware true, software-only false, alias false, low-latency false, high true, adaptive true); c2.android.avc.decoder (hardware false, software-only true, alias false, low-latency false, high true, adaptive true); OMX.google.h264.decoder (hardware false, software-only true, alias true, low-latency false, high true, adaptive true)
+11-19 14:42:31.993  5435  7297 I korri-viewer: picture: decode mediacodec decoder c2.goldfish.h264.decoder hardware true software-only false low-latency-feature false try 0 keys low-latency=1,vdec-lowlatency=1,priority=0 size 1280x720@60 adaptive 2960x2960
+11-19 14:42:31.993  5435  7297 I korri-viewer: start: decoder made at 306117.187 ms
+11-19 14:42:32.954  5435  7295 I korri-viewer: start: https resume answered at 307078.045 ms (connected 501.2 ms, TLS done 1014.1 ms, first byte 1017.8 ms, total 1018.4 ms)
+11-19 14:42:32.955  5435  7295 I korri-viewer: start: core platform init begins at 307078.497 ms
+11-19 14:42:32.956  5435  7295 I korri-viewer: start: core platform init done at 307080.182 ms
+11-19 14:42:32.956  5435  7295 I korri-viewer: start: core name resolution begins at 307080.223 ms
+11-19 14:42:32.957  5435  7295 I korri-viewer: start: core name resolution done at 307080.509 ms
+11-19 14:42:32.957  5435  7295 I korri-viewer: start: core audio stream init begins at 307080.543 ms
+11-19 14:42:32.957  5435  7295 I korri-viewer: start: core audio stream init done at 307080.565 ms
+11-19 14:42:32.957  5435  7295 I korri-viewer: start: core RTSP handshake begins at 307080.585 ms
+11-19 14:42:39.350  5435  7295 I korri-viewer: start: core RTSP handshake done at 313474.005 ms
+11-19 14:42:39.350  5435  7295 I korri-viewer: start: core control stream init begins at 313474.262 ms
+11-19 14:42:39.350  5435  7295 I korri-viewer: start: core control stream init done at 313474.335 ms
+11-19 14:42:39.351  5435  7295 I korri-viewer: start: core video stream init begins at 313474.537 ms
+11-19 14:42:39.351  5435  7295 I korri-viewer: start: core video stream init done at 313474.992 ms
+11-19 14:42:39.351  5435  7295 I korri-viewer: start: core input stream init begins at 313475.161 ms
+11-19 14:42:39.351  5435  7295 I korri-viewer: start: core input stream init done at 313475.335 ms
+11-19 14:42:39.352  5435  7295 I korri-viewer: start: core control stream start begins at 313475.532 ms
+11-19 14:42:39.358  5435  7295 I korri-viewer: start: core control stream start done at 313481.832 ms
+11-19 14:42:39.358  5435  7295 I korri-viewer: start: core video stream start begins at 313481.856 ms
+11-19 14:42:39.358  5435  7295 I korri-viewer: start: decoder taken at 313481.910 ms
+11-19 14:42:39.358  5435  7295 I korri-viewer: Video receive buffer: the system granted 256 KiB of the 2816 KiB asked (the system's cap: raise it with `sudo sysctl -w net.core.rmem_max=2883584`)
+11-19 14:42:39.358  5435  7295 I korri-viewer: start: core video stream start done at 313482.003 ms
+11-19 14:42:39.358  5435  7295 I korri-viewer: start: core audio stream start begins at 313482.008 ms
+11-19 14:42:39.362  5435  7305 I korri-viewer: Video receive takes up to 32 queued datagrams per call
+11-19 14:42:39.362  5435  7305 I korri-viewer: Video receive UDP_GRO is on: coalesced reads are split per datagram
+11-19 14:42:39.362  5435  7306 I korri-viewer: Raised stream threads to nice -8 by setpriority, from VideoDec on
+11-19 14:42:39.365  5435  7295 I korri-viewer: sound: output try 0 asked low-latency granted none sharing shared rate 48000 channels 2 burst 960 capacity 2132 buffer 1920 (asked 1920) packet 240 frames
+11-19 14:42:39.366  5435  7295 I korri-viewer: sound: playing
+11-19 14:42:39.366  5435  7295 I korri-viewer: start: core audio stream start done at 313490.068 ms
+11-19 14:42:39.366  5435  7295 I korri-viewer: start: core input stream start begins at 313490.074 ms
+11-19 14:42:39.366  5435  7295 I korri-viewer: start: core input stream start done at 313490.078 ms
+11-19 14:42:39.367  5435  7310 I korri-viewer: Received first audio packet
+11-19 14:42:39.368  5435  7310 I korri-viewer: start: first audio packet at 313491.511 ms
+11-19 14:42:39.388  5435  7295 I korri   : korri-app: viewer event {"kind":"Status","value":"Running"}
+11-19 14:42:39.388  5435  7295 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":true,"shape":{"connection":"5435:313:512257962","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"controls":[]}}
+11-19 14:42:39.388  5435  7296 I korri   : korri-app: viewer reply Start {"kind":"Ok"}
+11-19 14:42:39.400  5435  5471 I korri   : korri-app: viewer snapshot for korrid: 658bc73742f137afc0c4bc12965e0a8e {"connected":true,"shape":{"connection":"5435:313:512257962","screen":{"width":2400,"height":1080},"encoded":{"width":1280,"height":720},"ready":true},"batteryPercent":100.0,"controls":[{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:2:1:toggle-keyboard","label":"Toggle keyboard","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:2:1:set-fill-mode","label":"Crop to fill","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:2:1:set-zoom-mode","label":"Pan & zoom","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:2:1:set-mouse-mode","label":"Mouse mode","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"choice","value":"0","options":[{"value":"0","label":"Multi touch"},{"value":"1","label":"Absolute touch"},{"value":"2","label":"Track pad(Natural/Double tap to drag)"},{"value":"3","label":"Track pad(Gaming/Long press to drag)"},{"value":"4","label":"Disabled"},{"value":"5","label":"Absolute touch (left/right click swapped)"}]}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:2:1:set-local-cursor","label":"Toggle local cursor","enabled":true,"destructive":false,"dismissOnSuccess":true,"interaction":{"kind":"command"}},{"id":"viewer:658bc73742f137afc0c4bc12965e0a8e:2:1:set-face-button-flip","label":"Flip A/B and X/Y","enabled":true,"destructive":false,"dismissOnSuccess":false,"interaction":{"kind":"toggle","value":false,"trueLabel":"On","falseLabel":"Off"}}]}
+11-19 14:42:39.404  5435  7305 I korri-viewer: Received first video packet after 0 ms
+11-19 14:42:39.404  5435  7305 I korri-viewer: start: first video packet at 313527.623 ms
+11-19 14:42:39.480  5435  7304 I korri-viewer: picture: output format android._color-format: int32(2135033992), android._video-scaling: int32(1), rotation-degrees: int32(0), color-standard: int32(4), color-range: int32(2), color-transfer: int32(3), sar-height: int32(1), sar-width: int32(1), crop: Rect(0, 0, 1279, 719), width: int32(1280), height: int32(720), max-height: int32(2960), max-width: int32(2960), mime: string(video/raw), android._dataspace: int32(259), color-format: int32(2130708361)}
+11-19 14:42:39.480  5435  7304 I korri-viewer: picture: decoded size 1280x720
+11-19 14:42:39.480  5435  7304 I korri-viewer: start: first frame shown at 313604.387 ms
+11-19 14:42:39.484  5435  5472 I korri   : korri-app: viewer status for korrid: 658bc73742f137afc0c4bc12965e0a8e Running
+11-19 14:42:39.502  5435  7295 I korri-viewer: picture: the picture shown is 1280x720
+11-19 14:42:39.502  5435  5435 I korri-viewer: picture: the black backdrop shows under the video, with its first picture
+11-19 14:42:40.084  5435  7311 I korri-viewer: sound: 47 ms pending; 1 packets dropped since the last line
+11-19 14:42:41.173  5435  7311 I korri-viewer: sound: 40 ms pending; 27 packets dropped since the last line
+11-19 14:42:42.214  5435  7311 I korri-viewer: sound: 40 ms pending; 23 packets dropped since the last line
+11-19 14:42:43.264  5435  7311 I korri-viewer: sound: 40 ms pending; 31 packets dropped since the last line
+11-19 14:42:44.278  5435  7311 I korri-viewer: sound: 40 ms pending; 26 packets dropped since the last line
+11-19 14:42:45.328  5435  7311 I korri-viewer: sound: 64 ms pending; 26 packets dropped since the last line
