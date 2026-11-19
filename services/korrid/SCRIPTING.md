@@ -425,7 +425,8 @@ export const artifacts = {
 
 Each strict record has `id`, `version`, ordered non-empty `files`, optional
 `unpack` and optional `title`. Each file has `url`, `sha256` and optional numeric
-`bytes`. IDs must match the declaring plugin and map key. Versions must be one
+`bytes`. `id` is required and must be the full `<pluginId>/<key>` of the
+declaring plugin and map key; korrid derives no id. Versions must be one
 safe non-hidden path segment. SHA-256 values require `sha256:` and 64 hex digits;
 admission lowercases the digits and rejects duplicates. `unpack` is a bare key
 in that plugin's own installed `files`. Unknown fields and explicit nulls fail.
@@ -455,8 +456,8 @@ is skipped: korrid does not acquire it, it is not in acquisition status, and
 runners that list it start without it.
 
 `RunnerRecord.artifacts` lists the full artifact IDs the runner needs, including
-artifacts from other enabled plugins. Every ID must resolve, or be skipped on
-this platform. Omission means an empty list. A runner does not acquire all
+artifacts from other enabled plugins and its own plugin's. A bare key is not
+resolved. Every ID must resolve, or be skipped on this platform. Omission means an empty list. A runner does not acquire all
 artifacts of its package dependencies.
 
 `PluginLaunchInput.artifacts` maps ready artifact IDs to paths. The runner's own
@@ -574,7 +575,13 @@ An explicit `providers` export declares acquisition providers (the existing
 `title`. A plugin that exports `providers` must carry callable
 `claims.search`, `claims.details` and `artifact.resolve-download` handlers;
 evaluation checks that they exist and never calls them. The implicit own-id
-provider that every plugin receives is not an acquisition provider.
+provider that every plugin receives is not an acquisition provider, with one
+exception (ADR 0083): a plugin named `steam` that declares an `engine` runner
+is the engine-backed acquisition provider `P`, its own id, with no `providers`
+export and no claims handlers, because korrid serves its search and installs
+through the engine host. korrid lists it only while that plugin is the single
+enabled plugin named `steam`. A Steam plugin that does export `providers`
+gets no exemption from the handler rule.
 `app.acquisition.providers` lists only the explicit records of enabled
 plugins, each with its owning `pluginId`.
 
@@ -1502,15 +1509,20 @@ payload.
 ADR 0011 amends ADR 0003 narrowly. `discovery` is a data list of `{id, title}`
 records. It requires a callable `handlers["discovery.discover"]`; declaration
 evaluation never calls it. Both administrator admission and runtime admission
-use `plugin_discovery.rs`'s closed provider-ID to account-relative-glob table:
-`@korri:steam/installed-apps` → `steam/steamapps/appmanifest_*.acf`. Unknown
-providers, foreign owners, duplicates, empty titles and missing handlers fail
-admission. This is first-party integration, not an open plugin capability.
+use `plugin_discovery.rs`'s closed table of account-relative globs. Its one
+provider is `P/installed-apps` of a plugin `P` named `steam` in any publisher
+namespace (ADR 0083 amends ADR 0011): `steam/steamapps/appmanifest_*.acf` and
+`steam-engine/steam/steamapps/appmanifest_*.acf`. A discovery entry names its
+full id; a local key is refused. Unknown providers, foreign owners, duplicates,
+empty titles and missing handlers fail admission. korrid runs the discovery
+only while that plugin is the single enabled plugin named `steam`. This is first-party integration, not an open plugin capability.
 Third-party plugins cannot discover from their own data until another real case
 needs it. No plugin may declare a new root or a broader rule.
 
-For an enabled Steam plugin, korrid reads the manifests and calls
-`discovery.discover` with `{files: [{relativePath, text}]}`, one file per call.
+For the single enabled plugin named `steam`, korrid reads the manifests and
+calls `discovery.discover` with `{pluginId, files: [{relativePath, text}]}`, one
+file per call; `pluginId` is the plugin's own id `P`, from which it builds the
+provider `P` and the runners `P/steam` and `P/engine`.
 Paths are relative to the Steam home. There is no `readText` callback, filesystem
 API or effect in plugin code. The sandbox and existing execution/input/output
 limits still apply. Rust owns the input and observation types exported through

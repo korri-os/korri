@@ -97,3 +97,25 @@ OpenSteamClient and Aurelia. The risk falls on the person's Steam account.
 - Downloading the engine from Valve's servers is an exception to ADR 0042's
   rule against outside download addresses. The exception covers Valve's
   update servers and the pinned engine package only.
+
+## Amends ADR 0011
+
+ADR 0011 names one Steam plugin, `@korri:steam`, as the owner of the Steam
+manifest discovery. This ADR moves the Steam integration to the single enabled
+plugin named `steam`, whatever its publisher namespace. Every id korrid uses for
+it is derived from that plugin's id `P` by ADR 0045: the discovery
+`P/installed-apps`, the provider `P`, the client runner `P/steam`, the engine
+runner `P/engine` and the engine package `P/engine-package`. The plugin declares
+each of them by its full id.
+
+- The Steam integration covers the installed-apps discovery reads (both
+  manifest folders, the client runner's `steam/` and the engine runner's
+  `steam-engine/steam/`), korrid's admission of `P` as the engine-backed
+  acquisition provider, the engine host launch for `P/engine`, and the Proton
+  lookup for that launch.
+- korrid grants it only while exactly one enabled plugin is named `steam`. With
+  two or more, korrid grants none of it and logs that Steam features are off.
+  The client runners stay ordinary runners.
+- Trust comes from two things: the owner's approval when a plugin of a bound
+  publisher is installed, and this single-enabled rule. The name `steam` alone
+  grants nothing.
