@@ -109,7 +109,8 @@ pub type Imported = Arc<dyn Fn(AppId) -> Option<String> + Send + Sync>;
 
 #[derive(Default)]
 pub struct SteamStore {
-    list: Mutex<Option<(Instant, Arc<AppList>)>>,
+    /// The last listing of each person, by their account root.
+    list: Mutex<BTreeMap<std::path::PathBuf, (Instant, Arc<AppList>)>>,
     jobs: Mutex<BTreeMap<String, Arc<StoreJob>>>,
     /// One engine job at a time on this device.
     turn: tokio::sync::Mutex<()>,
@@ -117,7 +118,8 @@ pub struct SteamStore {
 
 impl SteamStore {
     async fn list(&self, plan: HostPlan, runner: JobRunner) -> Result<Arc<AppList>, RpcFailure> {
-        if let Some((at, list)) = &*self.list.lock().expect("steam list poisoned") {
+        let person = plan.account_root.clone();
+        if let Some((at, list)) = self.list.lock().expect("steam list poisoned").get(&person) {
             if at.elapsed() < LIST_FRESH {
                 return Ok(Arc::clone(list));
             }
@@ -152,7 +154,10 @@ impl SteamStore {
         .await
         .map_err(|_| unavailable())??;
         let list = Arc::new(list);
-        *self.list.lock().expect("steam list poisoned") = Some((Instant::now(), Arc::clone(&list)));
+        self.list
+            .lock()
+            .expect("steam list poisoned")
+            .insert(person, (Instant::now(), Arc::clone(&list)));
         Ok(list)
     }
 
@@ -242,7 +247,7 @@ impl SteamStore {
         let this = Arc::clone(self);
         tokio::spawn(async move {
             let _turn = this.turn.lock().await;
-            *this.list.lock().expect("steam list poisoned") = None;
+            this.list.lock().expect("steam list poisoned").clear();
             if job.stop.load(Ordering::SeqCst) {
                 return;
             }
@@ -299,7 +304,7 @@ impl SteamStore {
         app: AppId,
     ) -> Result<(), RpcFailure> {
         let _turn = self.turn.lock().await;
-        *self.list.lock().expect("steam list poisoned") = None;
+        self.list.lock().expect("steam list poisoned").clear();
         let job = Arc::new(StoreJob {
             status: Mutex::new(AcquireJobStatus {
                 job_id: String::new(),
@@ -460,6 +465,49 @@ done"#;
             assert!(Instant::now() < deadline, "{state:?}");
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
+    }
+
+    /// Review C4: a listing is one person's; another person's search asks a
+    /// host for their own.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_listing_cache_is_per_person() {
+        let temp = tempfile::tempdir().unwrap();
+        let (plan, runner) = setup(temp.path());
+        let starts = temp.path().join("starts");
+        let mut first = plan.clone();
+        first.host_program = script_host(
+            temp.path(),
+            &format!(
+                r#"echo start >> '{starts}'
+exec 3<>"$fifo"
+while read -r line <&3; do
+  case "$line" in
+    list-apps) echo '{{"event":"app","appid":440,"name":"Team Fortress 2","source":"free"}}'
+               echo '{{"event":"apps_done"}}' ;;
+    shutdown) exit 0 ;;
+  esac
+done"#,
+                starts = starts.display()
+            ),
+        );
+        let mut second = first.clone();
+        second.account_root = temp.path().join("another-person");
+        let store = SteamStore::default();
+        let started = || std::fs::read_to_string(&starts).unwrap().lines().count();
+        store
+            .search("@korri:steam", first.clone(), runner.clone(), "fortress")
+            .await
+            .unwrap();
+        store
+            .search("@korri:steam", first, runner.clone(), "fortress")
+            .await
+            .unwrap();
+        assert_eq!(started(), 1, "the same person reads the cache");
+        store
+            .search("@korri:steam", second, runner, "fortress")
+            .await
+            .unwrap();
+        assert_eq!(started(), 2, "another person asks a host");
     }
 
     /// Device run on c2c1e9850: search said "Sign in" right after a QR
