@@ -747,6 +747,31 @@ mod tests {
     }
 
     #[test]
+    fn trigger_resting_inside_its_flat_counts_as_released() {
+        // korrid declares trigger flat 32 (the contract's rearm boundary).
+        // The AYN Thor's left trigger rests at 12 after a release.
+        let mut s = Session::new();
+        let axes = [2, 5].map(|code| Axis {
+            code,
+            minimum: 0.0,
+            maximum: 255.0,
+            flat: Some(32.0),
+        });
+        s.mapper.configure_device("pad", true, &axes).unwrap();
+        s.axis(2, 12);
+        s.initialize();
+        s.key(0x130, 1);
+        s.key(0x130, 0);
+        assert_eq!(s.out, vec![Output::Button(Action::Confirm)]);
+        s.mapper.configure_device("pad", true, &axes).unwrap();
+        s.axis(2, 33);
+        s.initialize();
+        s.key(0x130, 1);
+        s.key(0x130, 0);
+        assert_eq!(s.out.len(), 1, "a held trigger keeps the baseline closed");
+    }
+
+    #[test]
     fn separates_held_arrival_for_concurrent_sources() {
         let mut s = Session::new();
         s.initialize();

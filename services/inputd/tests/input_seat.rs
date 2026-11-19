@@ -188,6 +188,19 @@ fn startup_requires_count_reconciliation_and_authoritative_session() {
 #[test]
 fn rearm_uses_existing_kernel_flat_for_every_stick_and_requires_button_trigger_release() {
     assert_eq!(GAMEPAD_STICK_FLAT, 4096);
+    assert_eq!(GAMEPAD_TRIGGER_FLAT, 32);
+    for value in [0, 1, 12, 32, 33, 128, 255] {
+        let left = GamepadState {
+            left_trigger: value,
+            ..GamepadState::neutral()
+        };
+        let right = GamepadState {
+            right_trigger: value,
+            ..GamepadState::neutral()
+        };
+        assert_eq!(left.is_neutral_for_rearm(), value <= 32);
+        assert_eq!(right.is_neutral_for_rearm(), value <= 32);
+    }
     for axis in 0..4 {
         for value in [-4096, -97, 0, 121, 4096, -4097, 4097, i16::MIN, i16::MAX] {
             let mut state = GamepadState::neutral();
@@ -213,16 +226,56 @@ fn rearm_uses_existing_kernel_flat_for_every_stick_and_requires_button_trigger_r
             ..GamepadState::neutral()
         },
         GamepadState {
-            left_trigger: 1,
+            left_trigger: 33,
             ..GamepadState::neutral()
         },
         GamepadState {
-            right_trigger: 1,
+            right_trigger: 33,
             ..GamepadState::neutral()
         },
     ] {
         assert!(!state.is_neutral_for_rearm());
     }
+}
+
+// AYN Thor, 2026-11-19: after a release the left trigger rests at 12/255 on
+// InputPlumber's xb360 target. The overlay's Route barriers must not leave
+// that controller disarmed for the rest of the session.
+#[test]
+fn trigger_resting_inside_flat_rearms_after_route_barrier_but_a_held_trigger_does_not() {
+    let (mut runtime, probe) = runtime(4);
+    begin(&mut runtime);
+    let resting = GamepadState {
+        left_trigger: 12,
+        ..GamepadState::neutral()
+    };
+    ok(
+        &mut runtime,
+        SeatRequest::PhysicalConnected {
+            device_id: "thor-pad".into(),
+            name: "Native controller".into(),
+            state: resting,
+        },
+    );
+    // Overlay opened, then returned: two Route barriers.
+    for launch_id in [None, Some(LAUNCH.into())] {
+        ok(&mut runtime, SeatRequest::Route { launch_id });
+    }
+    let held = GamepadState {
+        left_trigger: 33,
+        ..GamepadState::neutral()
+    };
+    update(&mut runtime, "thor-pad", held);
+    update(&mut runtime, "thor-pad", HELD);
+    assert_eq!(probe.state(1), GamepadState::neutral()); // 33 is not a release
+    update(&mut runtime, "thor-pad", resting);
+    assert_eq!(probe.state(1), GamepadState::neutral()); // rearm frame only arms
+    let gameplay = GamepadState {
+        buttons: 0x1000,
+        ..resting
+    };
+    update(&mut runtime, "thor-pad", gameplay);
+    assert_eq!(probe.state(1), gameplay); // the resting value reaches the game unchanged
 }
 
 #[test]

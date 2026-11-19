@@ -14,6 +14,13 @@ pub const MAX_PHYSICAL_SOURCES: usize = 255;
 /// This is a rearm boundary, not a transformation of gameplay axis values.
 pub const GAMEPAD_STICK_FLAT: i16 = 4096;
 
+/// ABS_Z/ABS_RZ flat value of the shared Linux uinput seats: 1/8 of the
+/// 0..255 travel, the same fraction as `GAMEPAD_STICK_FLAT`. A released trigger
+/// does not always return to 0: the AYN Thor's left trigger rests at 12/255
+/// through InputPlumber's xb360 target. This is a rearm boundary, not a
+/// transformation of gameplay trigger values.
+pub const GAMEPAD_TRIGGER_FLAT: u8 = 32;
+
 /// Existing input-seat full state; axes use Linux orientation (positive Y down).
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -27,13 +34,13 @@ pub struct GamepadState {
     pub right_stick_y: i16,
 }
 impl GamepadState {
-    /// Buttons (including D-pad) and triggers must be released. All four stick
-    /// axes must lie within the seats' existing inclusive kernel flat interval.
+    /// Buttons (including D-pad) must be released. Both triggers and all four
+    /// stick axes must lie within the seats' inclusive kernel flat interval.
     /// Portal navigation's 0.6 directional threshold is not a release deadzone.
     pub const fn is_neutral_for_rearm(self) -> bool {
         self.buttons == 0
-            && self.left_trigger == 0
-            && self.right_trigger == 0
+            && self.left_trigger <= GAMEPAD_TRIGGER_FLAT
+            && self.right_trigger <= GAMEPAD_TRIGGER_FLAT
             && self.left_stick_x >= -GAMEPAD_STICK_FLAT
             && self.left_stick_x <= GAMEPAD_STICK_FLAT
             && self.left_stick_y >= -GAMEPAD_STICK_FLAT

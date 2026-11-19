@@ -119,6 +119,7 @@ impl UinputSeatBackend {
                 32767,
                 i32::from(GAMEPAD_STICK_FLAT),
             ),
+            // Trigger flat stays 0, not GAMEPAD_TRIGGER_FLAT: joydev turns flat into a dead band at mid-travel.
             (AbsoluteAxisCode::ABS_Z, 0, 255, 0),
             (
                 AbsoluteAxisCode::ABS_RX,

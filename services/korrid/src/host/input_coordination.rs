@@ -2,7 +2,8 @@
 use super::input_seat::{connect, peer_credentials, wait_ready};
 use crate::{native_input::*, surface_host_input::SurfaceHostInputSource};
 use korri_input_contract::{
-    GamepadState, RemoteEvent, SeatReply, SeatRequest, COORDINATION_VERSION, MAX_COORDINATION_BYTES,
+    GamepadState, RemoteEvent, SeatReply, SeatRequest, COORDINATION_VERSION, GAMEPAD_STICK_FLAT,
+    GAMEPAD_TRIGGER_FLAT, MAX_COORDINATION_BYTES,
 };
 use std::{
     collections::BTreeMap,
@@ -216,13 +217,17 @@ const BUTTONS: &[(u32, u16)] = &[
     (0x4000, 307),
     (0x8000, 308),
 ];
+/// Flat values are the contract's rearm boundaries, so the shell's neutral rule
+/// agrees with the seat receiver's. The seats keep trigger flat 0 (see inputd).
+const STICK_FLAT: i32 = GAMEPAD_STICK_FLAT as i32;
+const TRIGGER_FLAT: i32 = GAMEPAD_TRIGGER_FLAT as i32;
 const AXES: &[(u16, i32, i32, i32)] = &[
-    (0, -32768, 32767, 4096),
-    (1, -32768, 32767, 4096),
-    (2, 0, 255, 0),
-    (3, -32768, 32767, 4096),
-    (4, -32768, 32767, 4096),
-    (5, 0, 255, 0),
+    (0, -32768, 32767, STICK_FLAT),
+    (1, -32768, 32767, STICK_FLAT),
+    (2, 0, 255, TRIGGER_FLAT),
+    (3, -32768, 32767, STICK_FLAT),
+    (4, -32768, 32767, STICK_FLAT),
+    (5, 0, 255, TRIGGER_FLAT),
     (16, -1, 1, 0),
     (17, -1, 1, 0),
 ];
@@ -704,6 +709,19 @@ mod tests {
                 (3, 17, 0)
             ]
         );
+    }
+    #[test]
+    fn native_axis_flats_are_the_contract_rearm_boundaries() {
+        // The shell treats a trigger at or below its flat as released. It must
+        // agree with is_neutral_for_rearm, or a resting trigger (the AYN
+        // Thor's rests at 12/255) disarms the shell after every handoff.
+        let flat = |code: u16| AXES.iter().find(|axis| axis.0 == code).unwrap().3;
+        for code in [0, 1, 3, 4] {
+            assert_eq!(flat(code), i32::from(GAMEPAD_STICK_FLAT));
+        }
+        for code in [2, 5] {
+            assert_eq!(flat(code), i32::from(GAMEPAD_TRIGGER_FLAT));
+        }
     }
     #[test]
     fn overflow_remote_navigation_uses_source_identity_not_slot() {

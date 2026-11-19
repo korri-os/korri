@@ -198,6 +198,38 @@ async fn initial_held_state_is_a_baseline_and_quiet_sources_refresh_the_complete
     );
 }
 
+// AYN Thor, 2026-11-19: a restarted inputd opened the xb360 target with the
+// left trigger resting at 12/255 and ignored Guide from then on.
+#[tokio::test]
+async fn baseline_trigger_resting_inside_flat_arms_shortcuts_but_a_held_trigger_does_not() {
+    let ids = identities();
+    let mut provider = Provider::default();
+    let _resting = provider.add(
+        &ids[0],
+        GamepadState {
+            left_trigger: 12,
+            ..GamepadState::neutral()
+        },
+    );
+    let _held = provider.add(
+        &ids[1],
+        GamepadState {
+            left_trigger: 33,
+            ..GamepadState::neutral()
+        },
+    );
+    let mut runtime = runtime();
+    runtime.reconcile_sources(&mut provider, ids).unwrap();
+    let guide = |runtime: &mut CaptureRuntime, index| {
+        dbus(runtime, ":1.42", index, "ui_guide", 1.0);
+        dbus(runtime, ":1.42", index, "ui_guide", 0.0)
+            .iter()
+            .any(|action| action.id == ActionId::SystemPanel)
+    };
+    assert!(guide(&mut runtime, 0), "a resting trigger is released");
+    assert!(!guide(&mut runtime, 1), "a held baseline must not fire");
+}
+
 #[tokio::test]
 async fn source_loss_and_syn_dropped_revoke_only_that_source_then_requery_baseline() {
     let ids = identities();
@@ -500,7 +532,7 @@ async fn deflected_stick_or_held_trigger_must_release_before_physical_rearm() {
         (
             2,
             GamepadState {
-                left_trigger: 1,
+                left_trigger: 33,
                 ..GamepadState::neutral()
             },
         ),
