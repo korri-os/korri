@@ -1,0 +1,259 @@
+{
+  "pass": true,
+  "error": null,
+  "stream_host": "192.168.1.117",
+  "network_core": "nightjar",
+  "emulator": {
+    "release": "12",
+    "sdk": "31",
+    "abi": "x86_64"
+  },
+  "checks_passed": 155,
+  "checks": 155,
+  "failed_checks": [],
+  "steps": {
+    "sender_cooldown": {
+      "seconds": 0.0007917039329186082,
+      "start": {
+        "sender": [
+          {
+            "zone": "hwmon4/temp1",
+            "type": "k10temp Tctl",
+            "driver": "k10temp",
+            "temp": 81125,
+            "trips": [],
+            "unreadable": null,
+            "limits": {
+              "critical": null,
+              "start_below": 85000,
+              "end_at": 100000
+            }
+          }
+        ]
+      },
+      "end": {
+        "sender": [
+          {
+            "zone": "hwmon4/temp1",
+            "type": "k10temp Tctl",
+            "driver": "k10temp",
+            "temp": 81125,
+            "trips": [],
+            "unreadable": null,
+            "limits": {
+              "critical": null,
+              "start_below": 85000,
+              "end_at": 100000
+            }
+          }
+        ]
+      }
+    },
+    "offline_peer": {
+      "device": "edb46206712326711ef0cb90067a2ced471ab1c334ac382d706caccc4e6a9261",
+      "relay_answer": [
+        "OK",
+        "108e14fd64a729b9b998b9788266a0503c490b65a4a84bbcafb4f18be2a55496",
+        true,
+        ""
+      ]
+    },
+    "certificate_step": {
+      "ms": 419.5,
+      "holder_attested": {
+        "peer": "584b062a",
+        "ms": "3",
+        "skipped": "1",
+        "peers": "2"
+      },
+      "korrid_lines": [
+        "11-19 14:26:03.469  5042  5086 I korri   : korrid: certificate peer: 584b062a attested in 3 ms as the stream's holder; 1 of 2 peers not waited for",
+        "11-19 14:26:03.472  5042  5086 I korri   : korrid: certificate provision at 584b062a: Ok in 3 ms"
+      ]
+    },
+    "seconds_from_tap_to_start": 1.1,
+    "seconds_from_tap_to_running": 4.2,
+    "start_timeline": {
+      "tapped": "11-19 14:26:02.901497",
+      "steps": [
+        {
+          "step": "korrid starts the viewer",
+          "ms_after_tap": 146.5
+        },
+        {
+          "step": "video layers asked",
+          "ms_after_tap": 152.5
+        },
+        {
+          "step": "window turn asked",
+          "ms_after_tap": 152.8
+        },
+        {
+          "step": "client certificate read",
+          "ms_after_tap": 153.8
+        },
+        {
+          "step": "video layers made",
+          "ms_after_tap": 226.4
+        },
+        {
+          "step": "server certificate provisioned",
+          "ms_after_tap": 573.3
+        },
+        {
+          "step": "Start",
+          "ms_after_tap": 612.3
+        },
+        {
+          "step": "window now 2400x1080",
+          "ms_after_tap": 636.8
+        },
+        {
+          "step": "http serverinfo answered",
+          "ms_after_tap": 1604.9,
+          "detail": "connected 489.5 ms, first byte 989.9 ms, total 990.0 ms"
+        },
+        {
+          "step": "https serverinfo answered",
+          "ms_after_tap": 2281.2,
+          "detail": "connected 501.6 ms, TLS done 671.5 ms, first byte 676.0 ms, total 676.1 ms"
+        },
+        {
+          "step": "paired",
+          "ms_after_tap": 2281.7
+        },
+        {
+          "step": "https applist answered",
+          "ms_after_tap": 2336.4,
+          "detail": "connected 37.3 ms, TLS done 44.5 ms, first byte 54.2 ms, total 54.5 ms"
+        },
+        {
+          "step": "picture and input ready",
+          "ms_after_tap": 2336.5
+        },
+        {
+          "step": "decoders listed",
+          "ms_after_tap": 2361.1
+        },
+        {
+          "step": "decoder made",
+          "ms_after_tap": 2494.9
+        },
+        {
+          "step": "https launch answered",
+          "ms_after_tap": 3045.4,
+          "detail": "connected 7.1 ms, TLS done 58.9 ms, first byte 702.8 ms, total 708.8 ms"
+        },
+        {
+          "step": "core platform init begins",
+          "ms_after_tap": 3049.5
+        },
+        {
+          "step": "core platform init done",
+          "ms_after_tap": 3049.5
+        },
+        {
+          "step": "core name resolution begins",
+          "ms_after_tap": 3049.6
+        },
+        {
+          "step": "core name resolution done",
+          "ms_after_tap": 3052.2
+        },
+        {
+          "step": "core audio stream init begins",
+          "ms_after_tap": 3052.3
+        },
+        {
+          "step": "core audio stream init done",
+          "ms_after_tap": 3052.3
+        },
+        {
+          "step": "core RTSP handshake begins",
+          "ms_after_tap": 3052.3
+        },
+        {
+          "step": "core RTSP handshake done",
+          "ms_after_tap": 3756.2
+        },
+        {
+          "step": "core control stream init begins",
+          "ms_after_tap": 3756.6
+        },
+        {
+          "step": "core control stream init done",
+          "ms_after_tap": 3756.6
+        },
+        {
+          "step": "core video stream init begins",
+          "ms_after_tap": 3756.6
+        },
+        {
+          "step": "core video stream init done",
+          "ms_after_tap": 3756.8
+        },
+        {
+          "step": "core input stream init begins",
+          "ms_after_tap": 3756.8
+        },
+        {
+          "step": "core input stream init done",
+          "ms_after_tap": 3756.8
+        },
+        {
+          "step": "core control stream start begins",
+          "ms_after_tap": 3756.8
+        },
+        {
+          "step": "core control stream start done",
+          "ms_after_tap": 3821.4
+        },
+        {
+          "step": "core video stream start begins",
+          "ms_after_tap": 3821.5
+        },
+        {
+          "step": "decoder taken",
+          "ms_after_tap": 3821.6
+        },
+        {
+          "step": "core video stream start done",
+          "ms_after_tap": 3821.9
+        },
+        {
+          "step": "core audio stream start begins",
+          "ms_after_tap": 3821.9
+        },
+        {
+          "step": "first video packet",
+          "ms_after_tap": 3869.4
+        },
+        {
+          "step": "core audio stream start done",
+          "ms_after_tap": 3993.1
+        },
+        {
+          "step": "core input stream start begins",
+          "ms_after_tap": 3993.1
+        },
+        {
+          "step": "core input stream start done",
+          "ms_after_tap": 3993.2
+        },
+        {
+          "step": "first frame shown",
+          "ms_after_tap": 3994.4
+        }
+      ],
+      "ms_from_tap_to_first_frame": 3994.4
+    }
+  },
+  "apk": "/nix/store/9wnrclsjyr1q4hvlk1wdpa4qyy1vp0zr-korri-android-app-fixture-apk-0.1.0/korri-android-app-unsigned.apk",
+  "federation_fixture": "/nix/store/hxqqbw5c7l9hybhcq1jyb63jby3za8y8-korrid-federation-fixture-0.0.0/bin/federation_fixture",
+  "emulator_stop": {
+    "started": true,
+    "exit_code": 0,
+    "processes_left": []
+  },
+  "crashes": []
+}

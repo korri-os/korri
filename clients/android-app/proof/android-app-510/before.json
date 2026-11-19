@@ -1,0 +1,242 @@
+{
+  "pass": false,
+  "error": null,
+  "stream_host": "192.168.1.117",
+  "network_core": "nightjar",
+  "emulator": {
+    "release": "12",
+    "sdk": "31",
+    "abi": "x86_64"
+  },
+  "checks_passed": 153,
+  "checks": 155,
+  "failed_checks": [
+    "the_certificate_step_waits_for_no_offline_peer",
+    "the_certificate_step_is_shorter_than_an_attest_bound"
+  ],
+  "steps": {
+    "sender_cooldown": {
+      "seconds": 0.0008088370086625218,
+      "start": {
+        "sender": [
+          {
+            "zone": "hwmon4/temp1",
+            "type": "k10temp Tctl",
+            "driver": "k10temp",
+            "temp": 76500,
+            "trips": [],
+            "unreadable": null,
+            "limits": {
+              "critical": null,
+              "start_below": 85000,
+              "end_at": 100000
+            }
+          }
+        ]
+      },
+      "end": {
+        "sender": [
+          {
+            "zone": "hwmon4/temp1",
+            "type": "k10temp Tctl",
+            "driver": "k10temp",
+            "temp": 76500,
+            "trips": [],
+            "unreadable": null,
+            "limits": {
+              "critical": null,
+              "start_below": 85000,
+              "end_at": 100000
+            }
+          }
+        ]
+      }
+    },
+    "offline_peer": {
+      "device": "b30f729b635f51834bb6328dbb26f9aaeff9061229a55266c5c0076ea2ade3f5",
+      "relay_answer": [
+        "OK",
+        "4392d225c42356ee28b3921876ef4db52d9b3ea60e990bf129cf376fe620c6fa",
+        true,
+        ""
+      ]
+    },
+    "certificate_step": {
+      "ms": 5457.3,
+      "holder_attested": null,
+      "korrid_lines": []
+    },
+    "seconds_from_tap_to_start": 5.8,
+    "seconds_from_tap_to_running": 16.5,
+    "start_timeline": {
+      "tapped": "11-19 14:20:13.132220",
+      "steps": [
+        {
+          "step": "korrid starts the viewer",
+          "ms_after_tap": 154.8
+        },
+        {
+          "step": "video layers asked",
+          "ms_after_tap": 160.5
+        },
+        {
+          "step": "window turn asked",
+          "ms_after_tap": 161.0
+        },
+        {
+          "step": "client certificate read",
+          "ms_after_tap": 163.8
+        },
+        {
+          "step": "video layers made",
+          "ms_after_tap": 240.0
+        },
+        {
+          "step": "server certificate provisioned",
+          "ms_after_tap": 5621.1
+        },
+        {
+          "step": "Start",
+          "ms_after_tap": 5659.3
+        },
+        {
+          "step": "window now 2400x1080",
+          "ms_after_tap": 5666.4
+        },
+        {
+          "step": "http serverinfo answered",
+          "ms_after_tap": 6223.6,
+          "detail": "connected 54.7 ms, first byte 558.5 ms, total 558.5 ms"
+        },
+        {
+          "step": "https serverinfo answered",
+          "ms_after_tap": 7237.3,
+          "detail": "connected 501.2 ms, TLS done 1007.1 ms, first byte 1013.3 ms, total 1013.6 ms"
+        },
+        {
+          "step": "paired",
+          "ms_after_tap": 7237.4
+        },
+        {
+          "step": "https applist answered",
+          "ms_after_tap": 7755.7,
+          "detail": "connected 4.6 ms, TLS done 517.3 ms, first byte 518.2 ms, total 518.3 ms"
+        },
+        {
+          "step": "picture and input ready",
+          "ms_after_tap": 7756.4
+        },
+        {
+          "step": "decoders listed",
+          "ms_after_tap": 7807.4
+        },
+        {
+          "step": "decoder made",
+          "ms_after_tap": 7961.2
+        },
+        {
+          "step": "https launch answered",
+          "ms_after_tap": 9445.4,
+          "detail": "connected 501.8 ms, TLS done 1010.1 ms, first byte 1688.0 ms, total 1688.5 ms"
+        },
+        {
+          "step": "core platform init begins",
+          "ms_after_tap": 9449.4
+        },
+        {
+          "step": "core platform init done",
+          "ms_after_tap": 9449.4
+        },
+        {
+          "step": "core name resolution begins",
+          "ms_after_tap": 9449.4
+        },
+        {
+          "step": "core name resolution done",
+          "ms_after_tap": 9452.6
+        },
+        {
+          "step": "core audio stream init begins",
+          "ms_after_tap": 9452.6
+        },
+        {
+          "step": "core audio stream init done",
+          "ms_after_tap": 9452.6
+        },
+        {
+          "step": "core RTSP handshake begins",
+          "ms_after_tap": 9452.6
+        },
+        {
+          "step": "core RTSP handshake done",
+          "ms_after_tap": 15708.8
+        },
+        {
+          "step": "core control stream init begins",
+          "ms_after_tap": 15709.2
+        },
+        {
+          "step": "core control stream init done",
+          "ms_after_tap": 15709.4
+        },
+        {
+          "step": "core video stream init begins",
+          "ms_after_tap": 15709.5
+        },
+        {
+          "step": "core video stream init done",
+          "ms_after_tap": 15709.6
+        },
+        {
+          "step": "core input stream init begins",
+          "ms_after_tap": 15709.6
+        },
+        {
+          "step": "core input stream init done",
+          "ms_after_tap": 15709.7
+        },
+        {
+          "step": "core control stream start begins",
+          "ms_after_tap": 15709.8
+        },
+        {
+          "step": "core control stream start done",
+          "ms_after_tap": 15711.7
+        },
+        {
+          "step": "core video stream start begins",
+          "ms_after_tap": 15711.8
+        },
+        {
+          "step": "decoder taken",
+          "ms_after_tap": 15711.9
+        },
+        {
+          "step": "core video stream start done",
+          "ms_after_tap": 15712.2
+        },
+        {
+          "step": "core audio stream start begins",
+          "ms_after_tap": 15712.2
+        },
+        {
+          "step": "first video packet",
+          "ms_after_tap": 15747.9
+        },
+        {
+          "step": "first frame shown",
+          "ms_after_tap": 15883.4
+        }
+      ],
+      "ms_from_tap_to_first_frame": 15883.4
+    }
+  },
+  "apk": "/nix/store/97kd4vbsw87h2x143igf03jasyapgn2j-korri-android-app-fixture-apk-0.1.0/korri-android-app-unsigned.apk",
+  "federation_fixture": "/nix/store/hxqqbw5c7l9hybhcq1jyb63jby3za8y8-korrid-federation-fixture-0.0.0/bin/federation_fixture",
+  "emulator_stop": {
+    "started": true,
+    "exit_code": 0,
+    "processes_left": []
+  },
+  "crashes": []
+}

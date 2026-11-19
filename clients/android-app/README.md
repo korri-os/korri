@@ -375,7 +375,8 @@ attest every device decides, as before. korrid logs the step's times
 `korrid: certificate provision at …`), and the holder logs its own part
 (`korrid: certificate provision for peer …`). The play proof's
 `--offline-peer` adds an owner device that never answers and checks the
-step.
+step. Record: `proof/android-app-510/` (aka's emulator: 5 457 ms before,
+420 ms after).
 
 The viewer's steps and the app's write `start:` lines with their
 monotonic times (`clients/viewer`, "The start's timeline"). The play proof
