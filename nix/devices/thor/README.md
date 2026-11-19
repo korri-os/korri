@@ -269,8 +269,9 @@ this image (commit f950545cc), Linux 7.2.
      `AYN-Thor`).
   Checked live with a runtime topology and UCM tree: card `AYNThor` up,
   verb `HiFi` with Speaker, Headphones, Mic, DisplayPort, and WirePlumber's
-  default sink `alsa_output.platform-sound.HiFi__Speaker__sink`; a 440 Hz
-  stream ran on `hw:0,0`. This settles the sink question (`pro-output-0`
+  default sink `alsa_output.platform-sound.HiFi__Speaker__sink`. The owner
+  heard a clean 440 Hz WAV tone (48 kHz s16 stereo, sink volume 0.50) from
+  both speakers. This settles the sink question (`pro-output-0`
   was the profile-less fallback). The boot-time `CMD timeout for
   [1001021]` and soundwire `dout-ports mismatch` lines also appear on the
   Portal and are benign.
