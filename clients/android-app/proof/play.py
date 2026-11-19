@@ -96,6 +96,14 @@ The steps:
    recovery start the stream again.
 10. Stop the emulator, its adb server, the holder and the sender.
 
+With `--offline-peer` (#510), the app's korrid also knows a second owner
+device that never answers, as the owner's phone knows its offline devices:
+the fixture's member owner statement of another device, on the holder's
+relay, with no endpoint. korrid's certificate step must then not wait for
+that device's attest: the holder's attest decides it, and the step from
+the client certificate to the server certificate takes less than one
+attest bound (5 s).
+
 The bars (#495): in each screenshot of the stream, the window outside the
 picture is black, below the status bar that the emulator keeps drawn: with
 the picture fitted and with Crop to fill (then nothing lies outside it),
@@ -210,6 +218,12 @@ BACKDROP_SHOWN = "picture: the black backdrop shows under the video, with its fi
 # #391: the start's timeline, the viewer's and the app's marks (clients/viewer/src/marks.rs), each at
 # the emulator's CLOCK_MONOTONIC in milliseconds; logcat's wall clock (threadtime) heads each line.
 MARK = re.compile(r"start: (?P<step>.+?) at (?P<at>\d+\.\d{3}) ms(?: \((?P<detail>.*)\))?\s*$")
+# #510: korrid's broker chose the stream's holder without waiting for the others.
+HOLDER_ATTESTED = re.compile(
+    r"korrid: certificate peer: (?P<peer>\S+) attested in (?P<ms>\d+) ms as the stream's holder; "
+    r"(?P<skipped>\d+) of (?P<peers>\d+) peers not waited for")
+# korrid's own attest bound for one peer (upstream_native.rs NATIVE_RPC_TIMEOUT).
+ATTEST_BOUND_MS = 5000
 FIRST_FRAME = "first frame shown"
 # The emulator's wall clock as logcat prints it, to the microsecond: MM-DD HH:MM:SS.ffffff.
 WALL = "%m-%d %H:%M:%S.%f"
@@ -390,6 +404,46 @@ def start_timeline(lines: "list[str]", tapped: str) -> dict:
             break
     first = next((step["ms_after_tap"] for step in steps if step["step"] == FIRST_FRAME), None)
     return {"tapped": tapped, "steps": steps, "ms_from_tap_to_first_frame": first}
+
+
+def publish(relay: int, event: str) -> list:
+    """One event on the holder's relay (nostr-relay-fixture.ts), and the relay's answer."""
+    script = ("const ws = new WebSocket(process.env.RELAY);"
+              "ws.onopen = () => ws.send(JSON.stringify(['EVENT', JSON.parse(process.env.EVENT)]));"
+              "ws.onmessage = (answer) => { console.log(answer.data); ws.close(); };")
+    answered = d8.run(["bun", "-e", script], timeout=30,
+                      env=dict(os.environ, RELAY=f"ws://127.0.0.1:{relay}", EVENT=event)).stdout
+    return json.loads(answered.strip().splitlines()[-1])
+
+
+def offline_peer(fixture: str, scratch: Path, relay: int) -> dict:
+    """#510: an owner device that never answers. The fixture's member state of another device gives
+    its owner statement, signed by the holder's owner; the holder's relay gets that statement and no
+    endpoint, and the device's key leaves the scratch folder with it."""
+    member = scratch / "offline-peer"
+    device = d8.run([fixture, "member", str(member)]).stdout.strip()
+    answer = publish(relay, (member / "identity" / "owner.event.json").read_text())
+    shutil.rmtree(member)
+    return {"device": device, "relay_answer": answer}
+
+
+def remembers(emulator: "d8.Emulator", device: str, seconds: float) -> bool:
+    """The app's korrid remembers `device` in its federation memory (D9's read)."""
+    until = time.monotonic() + seconds
+    while True:
+        if device in d9.run_as(emulator, "cat", "no_backup/korrid-state/federation/peers.json").stdout:
+            return True
+        if time.monotonic() > until:
+            return False
+        time.sleep(2)
+
+
+def certificate_step_ms(timeline: dict) -> "float | None":
+    """The start's certificate step: from the client certificate to korrid's server certificate."""
+    marks = {step["step"]: step["ms_after_tap"] for step in timeline["steps"]}
+    if "client certificate read" not in marks or "server certificate provisioned" not in marks:
+        return None
+    return round(marks["server certificate provisioned"] - marks["client certificate read"], 1)
 
 
 def tcp_counters(text: str) -> dict:
@@ -1956,6 +2010,9 @@ def main() -> int:
     parser.add_argument("--network-core", choices=("nightjar", "c"), default="nightjar",
                         help="the viewer's network core (#391 step E): nightjar-core, the app's default, "
                              "or the C core through the fixture's proof file")
+    parser.add_argument("--offline-peer", action="store_true",
+                        help="#510: the app's korrid also knows an owner device that never answers, "
+                             "and its certificate step must not wait for it")
     parser.add_argument("--cutout", default="pixel_5",
                         help="the emulated camera cutout or phone of the display (#494): NAME of the overlays "
                              "com.android.{internal,systemui}[.display.cutout].emulation.NAME, or none")
@@ -2070,6 +2127,11 @@ def main() -> int:
 
         emulator.adb("reverse", f"tcp:{device_relay}", f"tcp:{holder.relay}")
         emulator.adb("reverse", f"tcp:{holder.port}", f"tcp:{holder.port}")
+        if args.offline_peer:
+            log("#510: an owner device that never answers, on the holder's relay")
+            steps["offline_peer"] = offline_peer(fixture, scratch, holder.relay)
+            answer = steps["offline_peer"]["relay_answer"]
+            checks["the_relay_took_the_offline_peers_owner_statement"] = answer[0] == "OK" and answer[2] is True
 
         logcat = d8.Logcat(emulator, out / "logcat-all.txt")
         log("starting the app")
@@ -2086,6 +2148,9 @@ def main() -> int:
         checks["velvet_lists_the_holders_game"] = shown is not None
         if shown is None:
             raise RuntimeError("Velvet did not list the holder's game")
+        if args.offline_peer:
+            checks["the_apps_korrid_remembers_the_offline_peer"] = remembers(
+                emulator, steps["offline_peer"]["device"], 60)
         time.sleep(3)
         # korrid's "Identity connected" covers the library first (D9); Confirm
         # takes it away. The first injected key is lost (D9's known gap).
@@ -2150,6 +2215,18 @@ def main() -> int:
             for name in before}
         checks["the_start_timeline_reaches_the_first_frame"] = \
             steps["start_timeline"]["ms_from_tap_to_first_frame"] is not None
+        if args.offline_peer:
+            step_ms = certificate_step_ms(steps["start_timeline"])
+            attested = HOLDER_ATTESTED.search("\n".join(logcat.lines()[launch_mark:]))
+            steps["certificate_step"] = {
+                "ms": step_ms,
+                "holder_attested": attested.groupdict() if attested else None,
+                "korrid_lines": [line for line in logcat.lines()[launch_mark:] if "korrid: certificate " in line],
+            }
+            checks["the_certificate_step_waits_for_no_offline_peer"] = \
+                attested is not None and int(attested["skipped"]) >= 1
+            checks["the_certificate_step_is_shorter_than_an_attest_bound"] = \
+                step_ms is not None and step_ms < ATTEST_BOUND_MS
 
         log("the picture: the frame-ID bar")
         steps["first_bar"] = first_bar(emulator, out, "stream-first", 30)

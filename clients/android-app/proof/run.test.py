@@ -447,5 +447,25 @@ class TheStartTimelineReadsTheMarks(unittest.TestCase):
                          {"active_opens": None, "retransmitted_segments": None, "syn_retransmits": None})
 
 
+class TheCertificateStepBesideAnOfflinePeer(unittest.TestCase):
+    """play.py's --offline-peer (#510): korrid's line for the holder it chose, and the step's time from
+    the viewer's marks; the phone's own marks of 2026-11-19 took 5043.6 ms."""
+
+    def test_the_holder_that_korrid_chose_is_read_from_its_line(self):
+        line = ("11-19 06:48:00.940 19193 19239 I korri   : korrid: certificate peer: 67438d87 attested in 23 ms "
+                "as the stream's holder; 1 of 2 peers not waited for")
+        self.assertEqual(play.HOLDER_ATTESTED.search(line).groupdict(),
+                         {"peer": "67438d87", "ms": "23", "skipped": "1", "peers": "2"})
+        self.assertIsNone(play.HOLDER_ATTESTED.search("korrid: certificate peers: 2 asked in 5004 ms: "
+                                                      "67438d87=matched@23,0aae318d=MoonlightCertificatePeerUnavailable@5001"))
+
+    def test_the_step_runs_from_the_client_certificate_to_the_server_certificate(self):
+        steps = [{"step": "korrid starts the viewer", "ms_after_tap": 0.0},
+                 {"step": "client certificate read", "ms_after_tap": 5.3},
+                 {"step": "server certificate provisioned", "ms_after_tap": 5048.9}]
+        self.assertEqual(play.certificate_step_ms({"steps": steps}), 5043.6)
+        self.assertIsNone(play.certificate_step_ms({"steps": steps[:2]}))
+
+
 if __name__ == "__main__":
     unittest.main()
