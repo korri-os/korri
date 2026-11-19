@@ -24,7 +24,7 @@
 # inferred, not yet proven on hardware.
 #
 # Hardware (2026-11-18): the series alone does not stop that stall; its
-# trigger is Plymouth lighting DSI-1 at boot (README.md, "Root cause"). The
+# trigger is DSI-1 being lit at boot (README.md, "Top-screen stall"). The
 # series stays because every ROCKNIX SM8550 kernel carries it.
 #
 # ROCKNIX applies the series after the mainline patches and before the device

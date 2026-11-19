@@ -212,7 +212,7 @@ this image (commit f950545cc), Linux 7.2.
 - **DPU cleanup kernel (commit cabd6d2d7, system `y0nz67hx…`, internal
   UFS).** **Correction:** the first report of "3 of 3 clean boots" counted
   at about 80 s after boot, and stalls often start later. The whole-boot
-  counts are under [Root cause](#root-cause-plymouth-lights-dsi-1-at-boot-2026-11-18):
+  counts are under [Top-screen stall](#top-screen-stall-dsi-1-lit-at-boot-is-the-trigger-2026-11-18):
   the series does **not** fix the stall. Two further symptoms were seen:
   - **Steady DSI-2 page-flip failures.** Each boot logs 4 to 7 `enc35 frame
     done timeout` between 10.7 and 12.0 s only, then 41 to 89 Sway
@@ -395,7 +395,7 @@ Proposed changes, after the experiment (nothing built or deployed):
 - If rank 4 holds: port ROCKNIX patch 0509 and set this unit's frame
   length.
 
-## Root cause: Plymouth lights DSI-1 at boot (2026-11-18)
+## Top-screen stall: DSI-1 lit at boot is the trigger (2026-11-18)
 
 ### Whole-boot counts
 
@@ -417,37 +417,97 @@ Onsets vary. One 7.3.5 boot logged `enc35` frame done timeouts at 8 to
 ("compositor exited before it became ready") do not correlate: boot -4
 had none and 845 stalls.
 
-### Experiments (system `axxdmm1z…`, 7 min per boot, display idle held off)
+### Experiments (system `axxdmm1z…`, ROCKNIX 7.3.5, 7 min per boot, display idle held off)
 
-| Experiment | Boots | Stalls | `enc35` timeouts |
+| Experiment | Boots | Stalls | `enc35` timeouts | Valid |
+|---|---|---|---|---|
+| 0: journal timeline, boots -10 to 0 | every stalling boot (-9, -8, -5, -4, -2, -1) | — | all had them at 8 to 12 s; -10, -6, -3 and 0 had them without a stall | yes |
+| 0: the one earlier `video=DSI-1:d` boot (-7) | 1 | 0 | 0 | yes |
+| 1: `video=DSI-1:d` | 3 of 3 | 0 | 0 (and 0 `enc38`) | **yes**: the owner confirmed Velvet on the top and the controller working; DRM shows DSI-2 on crtc-0 |
+| 2: `plymouth.enable=0`, DSI-1 connected | 3 of 3 | 0 | 0 (and 0 `enc38`) | **no**, see below |
+
+**Experiment 2 is invalid.** On a Plymouth-off boot the owner saw the kernel
+console on the **bottom** screen and nothing on the top. DRM state showed
+crtc-0 still active on DSI-1, with the bottom backlight on, and DSI-2 on no
+CRTC. Sway reported DSI-1 `power false`. `swaymsg output DSI-2 power on` and
+`swaymsg output DSI-1 disable` both returned success but changed nothing in
+the kernel. Display idle had turned DSI-2 off; `korri-display-idle`,
+restarted by hand, logged "Failed to find session". So "0 stalls" can mean
+that DSI-2 was barely committing frames, not that it was healthy.
+
+**Why the console went to DSI-1 and Sway's commits did not apply**
+(inferred; to confirm with the checks in the re-run below):
+
+- With Plymouth off, nothing holds the console in graphics mode at boot. The
+  kernel's DRM fbdev emulation draws the text console. It brought up DSI-1
+  (dsi0, the first connector the driver creates) and left DSI-2 on no CRTC,
+  as the DRM state shows.
+- VT1 runs a root autologin getty on seat0 (product requirement "physical
+  root autologin", `services.getty.autologinUser = "root"` in
+  `nix/product/requirements.nix`). Sway runs from `korri-compositor` through
+  seatd (`LIBSEAT_BACKEND=seatd`) and has no logind session. That is also
+  why a hand-started `swayidle` logs "Failed to find session". If the text
+  console on VT1 is in the foreground, the seat is not active for Sway.
+  wlroots then keeps its output state but makes no KMS commits, and fbcon
+  keeps the CRTC it set up. That matches "swaymsg succeeds, the kernel does
+  not change". With Plymouth on, the splash holds the console in graphics
+  mode until Sway takes over, so this did not show before.
+
+**Re-run of experiment 2, with a screen check.** Same change
+(`plymouth.enable=0`, added with `e` in the systemd-boot menu), 3 boots, on
+this branch's 7.2 system. A boot counts only if all of these hold:
+
+1. The owner sees Velvet on the top panel and confirms whether the bottom
+   panel is dark.
+2. `/sys/kernel/debug/dri/0/state` shows DSI-2 on a CRTC with `active=1`,
+   and that CRTC's primary plane `fb` id changes between two reads taken
+   while the shell animates (open a menu). Also record which CRTC, if any,
+   DSI-1 is on.
+3. The display controller's interrupt count in `/proc/interrupts` grows
+   between two reads 10 s apart (command-mode frames and TE both raise it).
+4. Seat and console state: `cat /sys/class/tty/tty0/active` and
+   `kbdinfo -C /dev/tty1 getmode` (graphics or text), and `journalctl -u
+   seatd -u korri-compositor` for seat disable or session pause lines. This
+   tests the VT1 explanation above.
+
+Record whole-boot counts of `failed wait_for_idle`, `frame done timeout` and
+`Page-flip failed` for each valid boot. Hold display idle off as before.
+
+### Re-plugging DSI-1 after the compositor starts (2026-11-18)
+
+Confirmed by the owner looking at both screens. System `axxdmm1z…`
+(ROCKNIX 7.3.5), booted with `video=DSI-1:d`; the top showed Velvet and the
+controller worked. After about 30 minutes of uptime:
+
+1. `echo on > /sys/class/drm/card0-DSI-1/status`: Sway picked up DSI-1.
+2. `swaymsg "output DSI-1 enable, output DSI-1 power on, output DSI-1
+   transform 90"` lit it. DRM shows DSI-1 on crtc-1 and DSI-2 on crtc-0.
+3. `swaybg -o DSI-1 -c '#d33682'` (as `korri`, `WAYLAND_DISPLAY=wayland-1`)
+   showed solid magenta on the bottom panel. This is the first picture on
+   the bottom panel in this stack.
+
+The top kept 0 stalls and 0 frame done timeouts. The bottom backlight
+brightness read 21.
+
+### Conclusion and fix candidates
+
+**Conclusion (strong, inferred):** the stall is triggered by DSI-1 being lit
+at boot, before the compositor owns the display. With DSI-1 unplugged at
+boot (experiment 1) there are no `enc35` timeouts and no stalls, and DSI-1
+can be brought up later without disturbing the top. Plymouth lights DSI-1
+in that window, but with experiment 2 invalid it is not shown that Plymouth
+alone is the cause: fbcon also lights DSI-1 at boot. ROCKNIX has no Plymouth
+and also lights DSI-1 at boot (fbcon, then Sway's power on, transform and
+power off), so the difference from ROCKNIX is not settled.
+
+| Rank | Fix | Evidence | Cost |
 |---|---|---|---|
-| 0: journal timeline, boots -10 to 0 | every stalling boot (-9, -8, -5, -4, -2, -1) | — | all had them at 8 to 12 s; -10, -6, -3 and 0 had them without a stall |
-| 0: the one earlier `video=DSI-1:d` boot (-7) | 1 | 0 | 0 |
-| 1: `video=DSI-1:d` | 3 of 3 | 0 | 0 (and 0 `enc38`) |
-| 2: `plymouth.enable=0`, DSI-1 connected | 3 of 3 | 0 | 0 (and 0 `enc38`) |
+| 1 | **Boot with the bottom panel unplugged, re-plug it after the compositor starts.** `video=DSI-1:d` on the kernel command line keeps fbcon and Plymouth off DSI-1. A Thor-only oneshot after `korri-compositor` is ready writes `on` (or `detect`) to `/sys/class/drm/card0-DSI-1/status`. Sway's existing `output DSI-1 power off` then keeps the bottom dark in this slice. The splash stays, on the top only. | Experiment 1 (3 of 3 clean, screens confirmed) and the live re-plug | Not yet tested: the re-plug a few seconds after compositor start rather than after 30 min, on this branch's 7.2 kernel, and across display idle and power cycles. Plymouth on the top only is untested. |
+| 2 | Turn the splash off on the Thor with a product override (`services.korriProduct.bootSplash.overrideReason`) | Rests on experiment 2, which is invalid; fbcon would still light DSI-1 | Product schema change; held |
 
-**Conclusion (strong, inferred):** Plymouth's boot-time mode-set of DSI-1
-triggers the stall. Plymouth's DRM renderer lights every connected
-connector. The bottom panel's video-mode encoder (enc35) then times out at
-8 to 12 s, and on about two boots in three the top screen's command-mode
-encoder (enc38) later stalls in `wait_for_idle`. With Plymouth off, fbcon
-and Sway still light and power off DSI-1, and nothing stalls. ROCKNIX has
-no Plymouth, which explains why ROCKNIX Thors do not show this. Neither the
-DPU cleanup series nor the kernel version explains the stall.
-
-### The fix: pending an owner decision
-
-Plymouth cannot be kept off DSI-1 in a supported way.
-`get_output_info()` in Plymouth's DRM renderer
-(`src/plugins/renderers/drm/plugin.c`) skips a connector only when it is
-disconnected or has the kernel's `non-desktop` property; Plymouth has no
-per-output or per-device option. `video=DSI-1:d` unplugs the panel.
-Turning the splash off on the Thor fails `checks.korri-product`, because
-`korri-boot-splash-handoff` and the Plymouth systemd package are required
-product contributions (`nix/product/check-lib.nix`), and the product has
-no override for the boot splash. Adding one is product schema, so the
-owner decides. Until then this branch keeps Plymouth, and the stall
-remains on about two boots in three.
+Both runs above used ROCKNIX 7.3.5. This branch runs 7.2 with the fixed
+DPU cleanup series; repeat experiment 1 and the re-plug on it before
+building fix 1.
 
 ### Research kept from the ROCKNIX 7.3.5 kernel (not on this branch)
 
@@ -474,9 +534,10 @@ worth keeping for a later kernel move:
 
 ### Open, separate: DSI-2 page-flip EBUSY
 
-Sway logs `Page-flip failed on output DSI-2` (EBUSY) on every boot, also
-without Plymouth: 102 to 209 per boot in experiment 2, starting about 48 s
-after boot. This is a separate issue from the stall. Candidates: the
+Sway logs `Page-flip failed on output DSI-2` (EBUSY) on every boot,
+starting about 48 s after boot. Experiment 2 logged 102 to 209 per boot,
+but that experiment is invalid (DSI-2 was barely committing), so its counts
+say nothing about whether Plymouth matters here. This is a separate issue from the stall. Candidates: the
 icna3520 120 Hz frame length (`0x4C` ran at 118.63 Hz on a Thor in ROCKNIX
 PR #3489), and a commit that never reaches `flip_done` leaving a plane busy
 (the `[PLANE:97:plane-8] busy with a previous commit` line). Test it with
