@@ -2398,6 +2398,76 @@ impl SystemdLaunchUnitBackend {
     }
 }
 
+/// The prefix of a game unit failure that carries a Steam engine session's
+/// own reason.
+const SESSION_REASON: &str = "game unit ended before the game: plugin-launch: ";
+
+/// A Steam engine session's reason over the unit's state: `refusal` (the
+/// host's reason, or the generic no-game one) when the unit completed,
+/// `reported` (the host's reason only) when it failed. A reason ends the
+/// session as failed with `SESSION_REASON` and that reason.
+fn with_session_reason(
+    state: Result<LaunchUnitState, LaunchUnitError>,
+    refusal: impl FnOnce() -> Option<String>,
+    reported: impl FnOnce() -> Option<String>,
+) -> Result<LaunchUnitState, LaunchUnitError> {
+    let reason = match &state {
+        Ok(LaunchUnitState::Completed) => refusal(),
+        Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => reported(),
+        _ => None,
+    };
+    match reason {
+        Some(reason) => Err(LaunchUnitError::new(
+            LaunchUnitErrorKind::UnitFailed,
+            format!("{SESSION_REASON}{reason}"),
+        )),
+        None => state,
+    }
+}
+
+#[cfg(test)]
+mod session_reason_tests {
+    use super::*;
+
+    /// Device run: VVVVVV's launch failed with exit 134 and status showed
+    /// gamescope's stderr tail. The session's own reason comes first.
+    #[test]
+    fn a_sessions_own_reason_beats_the_raw_stderr_tail() {
+        let failed = || {
+            Err(LaunchUnitError::new(
+                LaunchUnitErrorKind::UnitFailed,
+                "game unit failed with exit status 134: (gamescope stderr tail)",
+            ))
+        };
+        let never = || -> Option<String> { panic!("not asked") };
+        let reason = || Some("Steam could not install or update the game.".to_owned());
+        let error = with_session_reason(failed(), never, reason).unwrap_err();
+        assert_eq!(error.kind, LaunchUnitErrorKind::UnitFailed);
+        assert_eq!(
+            error.message,
+            format!("{SESSION_REASON}Steam could not install or update the game.")
+        );
+        // No reported reason: the unit's own failure (its stderr) stays.
+        let kept = with_session_reason(failed(), never, || None).unwrap_err();
+        assert!(kept.message.contains("gamescope stderr tail"));
+        // A completed unit with the generic reason fails; running is untouched.
+        assert!(with_session_reason(
+            Ok(LaunchUnitState::Completed),
+            || Some("no game".into()),
+            never
+        )
+        .is_err());
+        assert_eq!(
+            with_session_reason(Ok(LaunchUnitState::Completed), || None, never).unwrap(),
+            LaunchUnitState::Completed
+        );
+        assert_eq!(
+            with_session_reason(Ok(LaunchUnitState::Running), never, never).unwrap(),
+            LaunchUnitState::Running
+        );
+    }
+}
+
 impl LaunchUnitBackend for SystemdLaunchUnitBackend {
     fn start_launch_service(
         &self,
@@ -2769,20 +2839,25 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         } else {
             Self::parse_unit_state(&values)
         };
-        // ADR 0083: a Steam engine session whose game never started ends as
-        // a failure with the host's reason, even when the unit's main
-        // process (gamescope around the session program) exited with 0.
-        if matches!(state, Ok(LaunchUnitState::Completed)) {
-            if let Some(reason) = crate::steam_engine::started_sessions()
-                .and_then(|sessions| sessions.take_refusal(launch_id))
-            {
+        // ADR 0083: a Steam engine session says its own reason. A unit that
+        // ended with 0 around a session that never started a game (gamescope
+        // around the session program) fails with it; a failed unit takes the
+        // session's reported reason before its raw stderr tail.
+        let state = match crate::steam_engine::started_sessions() {
+            Some(sessions) => with_session_reason(
+                state,
+                || sessions.take_refusal(launch_id),
+                || sessions.take_reported(launch_id),
+            ),
+            None => state,
+        };
+        if let Err(error) = &state {
+            if error.message.starts_with(SESSION_REASON) {
                 eprintln!(
-                    "korrid steam engine: session {launch_id} ended before its game: {reason}"
+                    "korrid steam engine: session {launch_id}: {}",
+                    error.message
                 );
-                return Err(LaunchUnitError::new(
-                    LaunchUnitErrorKind::UnitFailed,
-                    format!("game unit ended before the game: plugin-launch: {reason}"),
-                ));
+                return Err(error.clone());
             }
         }
         let observed = match state {

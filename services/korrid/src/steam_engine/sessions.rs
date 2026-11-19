@@ -198,6 +198,20 @@ impl Sessions {
         Ok(())
     }
 
+    /// The reason the host reported for this session (its engine state, a
+    /// launch-sync conflict, or the session program's `launch_refused`),
+    /// once, with no wait and no generic fallback. For a game unit that
+    /// failed: this beats the unit's raw stderr.
+    pub fn take_reported(&self, launch_id: &str) -> Option<String> {
+        let guard = self.running.lock().expect("sessions poisoned");
+        let running = guard.get(launch_id)?;
+        let reason = running.refusal.lock().ok()?.take();
+        if reason.is_some() {
+            running.stopped.store(true, Ordering::SeqCst);
+        }
+        reason
+    }
+
     /// Why this session's game never started, once: the host's engine
     /// state or a Steam Cloud conflict at the launch sync. The session
     /// program refuses then, but a wrapper in the game unit (gamescope) may
@@ -839,6 +853,7 @@ while read -r line <&3; do :; done"#,
         };
         assert_eq!(reason, "Steam could not install or update the game.");
         assert_eq!(sessions.take_refusal(LAUNCH), None, "said once");
+        assert_eq!(sessions.take_reported(LAUNCH), None, "said once");
         // A refused launch is no engine state: the runner stays available.
         assert_eq!(health.current(&plan), None);
         sessions.finish(LAUNCH, Duration::from_millis(100)).unwrap();
