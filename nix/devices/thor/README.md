@@ -208,7 +208,22 @@ this image (commit f950545cc), Linux 7.2.
   assigned at disable time, not the ones the encoder used; ROCKNIX's
   resource-cleanup series (3/7, 5/7, 6/7) fixes that, and every ROCKNIX
   kernel that drove both Thor screens carries it. The Thor kernel now
-  carries the fixed copy. Not yet tested on hardware.
+  carries the fixed copy.
+- **DPU cleanup kernel (commit cabd6d2d7, system `y0nz67hx…`, internal
+  UFS).** Boot without `video=DSI-1:d`: 3 of 3 boots logged no `failed
+  wait_for_idle` (the two boots before the fix logged 1,528 and 3,313; a
+  fourth boot after the live test logged 0). The series fixes the
+  boot-time stall. Two symptoms remain:
+  - **Steady DSI-2 page-flip failures.** Each boot logs 4 to 7 `enc35 frame
+    done timeout` between 10.7 and 12.0 s only, then 41 to 89 Sway
+    `Page-flip failed on output DSI-2` that keep growing slowly at idle
+    (65 -> 82 over 30 s). Top screen only.
+  - **Live DSI-1 power cycle still wedges the top screen.** `swaymsg 'output
+    DSI-1 power on, output DSI-1 transform 90'`: within 8 s, id:38 (top)
+    `failed wait_for_idle` went 0 -> 84 and frame done timeouts 7 -> 27.
+    `output DSI-1 power off` did not recover it: after 30 s
+    `wait_for_idle` had reached 508 and was still climbing. Only a reboot
+    cleared it.
 - **First boot.** 50 SMMU faults on SID `0x1c00` at 0.75 s come from the
   bootloader splash handoff. One `WARNING: mm/shrinker.c:212` from udevadm
   at 165 s. The shell start race is listed under TODO.
@@ -248,19 +263,70 @@ this image (commit f950545cc), Linux 7.2.
   work/task-010 says `pro-output-0`. Read the longname from
   `/proc/asound/cards`; the UCM file must be `conf.d/sm8550/<longname>.conf`
   exactly, with no trailing dash.
-- **Bottom screen.** Never enable DSI-1 live (see the hardware results).
-  First test the DPU cleanup kernel: boot several times and check
-  `journalctl -k` for `wait_for_idle` and `frame done timeout`; then try
-  `swaymsg output DSI-1 power on, output DSI-1 transform 90` live. ROCKNIX
-  does this once at start for the rotation (PR #3507). If both pass,
-  enabling the screen needs a design for two displays in Korri, its touch
-  mapping, and the AYN key toggle (legacy d152fb370). ROCKNIX's current
-  ch13726a driver also waits 120 ms after sleep-out before display-on
-  (024a558c31); the pinned driver does not.
+- **Bottom screen.** Never enable DSI-1 live: it still wedges the top
+  screen on the DPU cleanup kernel (see the hardware results). The
+  comparison with ROCKNIX below names what differs. If a live power cycle
+  ever passes, enabling the screen needs a design for two displays in Korri,
+  its touch mapping, and the AYN key toggle (legacy d152fb370).
 - **USB unplug.** Legacy once saw an unplug reset the USB controller and
   drop DRM master, leaving both panels black with
   `Atomic commit failed: Permission denied` (legacy work/task-001, task-002).
   The first boot is tethered by USB; note whether this recurs.
+
+## Comparison with ROCKNIX (read-only, 2026-11-18)
+
+ROCKNIX drives both Thor screens and power-cycles DSI-1 live on every
+start: `111-sway-init` powers it on, sets `transform 90`, and powers it off
+(PR #3507), then powers it on for any window titled Secondary or Bottom.
+Sources: ROCKNIX distribution origin/next f8c1832749ad; Linux v7.2 and
+v7.3.5 tarballs; this branch's kernel tree.
+
+What is the same:
+
+- Thor DTS: only the lid wake action changed since 1178bc22 (1d5665e119).
+  dsi0 and dsi1 each take byte and pixel clocks from their own PHY PLL
+  (`sm8550.dtsi`, `assigned-clock-parents`); nothing is shared at clock
+  level.
+- DPU blocks should not overlap: the top (DSC, two slices) takes a mixer
+  pair, a pingpong pair and a DSC pair, and has INTF_2 with its own tear
+  interrupt (`MDP_INTF2_TEAR_INTR`); the bottom takes one mixer, one
+  pingpong and INTF_1 (`catalog/dpu_9_0_sm8550.h`; the block choice is the
+  resource manager's, inferred, not read from the device). The vsync source is set only for command-mode encoders
+  (`_dpu_encoder_update_vsync_source()`, `dpu_encoder.c`), so enabling the
+  video-mode DSI-1 does not reprogram the top's TE path.
+- Sway start-up: ROCKNIX sets no WLR variable that we lack that would
+  matter here (`WLR_DRM_DEVICES`, `WLR_BACKENDS`, `WLR_LIBINPUT_NO_DEVICES`).
+  It adds `allow_tearing yes` and `max_render_time off` on the top output.
+
+What differs (each is a candidate, none is proven):
+
+| # | Difference | Evidence | Fits |
+|---|---|---|---|
+| 1 | Kernel 7.2.0 here; ROCKNIX SM8550 runs 7.3.5 (`packages/linux/package.mk`) | v7.2 -> v7.3.5 `drivers/gpu/drm/msm` diff: `dsi_phy_7nm.c` makes PLL enable reference counting consistent with PHY enable and disable; `dsi_host.c` rounds the byte clock and derives the byte-intf clock from it, and stops dropping the OPP vote in `dsi_link_clk_disable_6g()`; `dpu_hw_ctl.c` clears `pending_periph_flush_mask` | (a) |
+| 2 | ROCKNIX 7.2/7.3 queue patches we lack: `0011-drm-msm-signal-hw_done-before-the-flip-event.patch` (PR #3377), plus rotation, QSEED and QoS patches | `projects/ROCKNIX/packages/linux/patches/7.2/` | (b): the flip event reaches userspace before `hw_done` |
+| 3 | Top-screen frame length: the pinned icna3520 driver writes `0x4C` for 120 Hz. PR #3489 measured 118.63 Hz with it on a Thor; that unit's Android value `0x34` gave 120.09 Hz. ROCKNIX made it a per-unit sysfs knob (`0509-ROCKNIX-thor-panel-frame-length-calibration.patch`, quirk `040-panel_calibration`) | PR #3489 | (b): the panel's TE runs about 1.1 % slower than the 120 Hz mode the DPU tear check is set for. At 60 Hz the error is 0.16 % (59.903 Hz), which fits "every recovery came at 60 Hz" |
+| 4 | Sway 1.12 + wlroots 0.20.2 here; ROCKNIX ships Sway 1.11 + wlroots 0.19.3 with plane-rotation patches | this system's closure; `packages/wayland/lib/wlroots` | (a), if the newer wlroots puts DSI-2 in the same atomic modeset as DSI-1 |
+| 5 | The `ch13726a` driver waits 120 ms after sleep-out in ROCKNIX (024a558c31) | patch diff | the bottom panel's own start, not the top's stall |
+
+Proposed next steps, in order (nothing built or deployed):
+
+1. Read-only on the device, no build. (i) Run `swaymsg output DSI-2 mode
+   1080x1920@60Hz` and count `Page-flip failed` for 5 minutes. If the
+   count stops growing, row 3 is the likely cause of (b). (ii) Run `echo
+   0x10 > /sys/module/drm/parameters/debug` (atomic debug, reset with
+   `0`), then power DSI-1 on once and save `dmesg`. If DSI-2's CRTC
+   appears in the same commit with `mode_changed` or `active_changed`,
+   row 4 is in play for (a). A `busy with a previous commit` line for the
+   top CRTC confirms that the page-flip EBUSY comes from
+   `stall_checks()` in `drm_atomic_helper.c`.
+2. If (i) holds: port ROCKNIX 0509 (the frame-length sysfs knob) to the
+   Thor kernel. The owner's unit then needs its own value, measured with
+   ROCKNIX's tool or read from Android. Until then the top runs at 60 Hz.
+3. For (a): build the Thor kernel on v7.3.5 with ROCKNIX's 7.3 queue,
+   which is what every working ROCKNIX Thor runs today. This is the
+   largest change but needs no guessing about which fix matters. Narrower
+   alternative: backport the `dsi_phy_7nm.c` PLL refcount and `dsi_host.c`
+   clock changes (row 1) plus ROCKNIX 0011 (row 2) onto 7.2.
 
 ## Write and boot (owner)
 
