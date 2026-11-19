@@ -176,3 +176,22 @@ them) because the console has none. After the reboot: `ssh -p 2222
 root@10.42.7.1`, then `tabs6-esp mark-good` once the product has survived a
 reboot. `tabs6-esp rollback` (or volume-down at power-on) returns to the
 console entry.
+
+## Offline root check
+
+`userdata` is the ext4 root and the tablet has no initrd, so e2fsck can only
+repair it from a boot that keeps root read-only. On the tablet, from a blessed
+system:
+
+```sh
+tabs6-esp fsck-once && systemctl reboot   # one boot: e2fsck -fy userdata, then the normal entry
+tabs6-esp fsck-log                        # after it: the check's log, kept on the ESP
+```
+
+The check entry is counted (one try). Its PID 1, `tabs6-fsck-init`, runs
+e2fsck, writes the log and the normal `loader.conf` back through
+`tabs6-esp fsck-done`, and reboots. If it never gets that far, systemd-boot
+skips the spent entry and boots `tabs6-current`; `tabs6-esp install` also
+drops a pending check. Proven on 2026-11-18: the first run repaired 2213
+recorded errors (the log was lost to a bug fixed since), the second logged
+`e2fsck exit 0`.
