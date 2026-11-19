@@ -1177,6 +1177,12 @@ impl Stream {
             lifecycle,
             started,
         } = show;
+        // A screen change that came before this stream went to no
+        // lifecycle: its shape is not `ready` until the change's settled
+        // report, which `follow_screen` gives it once it plays.
+        if let Some((width, height)) = self.screen.unsettled() {
+            lifecycle.screen(korri_viewer_treaty::ViewerDisplay { width, height }, false);
+        }
         let settings = Settings {
             mouse_emulation: options.mouse_emulation,
             gestures: events::gesture_config(&self.app),

@@ -25,6 +25,14 @@ korrid's paths of #476 (`launcher/linux_plugin.rs`, `apply_client_shape`;
 `upstreams/live_shape.rs`), which its unit tests cover and this change does
 not touch.
 
+**Screenshots kept: one.** `result.json` names 19 screenshots. Only
+`other-panel-1.png` is in this folder. The other 18 were not kept:
+`stream-first.png`, `stream-1.png` to `stream-4.png`, `portrait-1.png` to
+`portrait-4.png`, `landscape-1.png` to `landscape-4.png`,
+`other-panel-2.png`, `other-panel-3.png` and `first-panel-1.png` to
+`first-panel-3.png`. Their frame IDs and bar positions in `result.json` are
+what the run read from them; the record keeps those as the run wrote them.
+
 ## The emulator's fold
 
 Two boots of the proof's emulator image with other profiles, on 2026-11-19,

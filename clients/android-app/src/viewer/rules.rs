@@ -344,6 +344,13 @@ impl Following {
         self.screen
     }
 
+    /// The screen while its change is not yet reported settled; none once
+    /// it is. A stream that starts in this time hears it from its Start
+    /// (`ViewerApp::start`), as the reports before it went to no stream.
+    pub(crate) fn unsettled(&self) -> Option<(u32, u32)> {
+        self.changed.and(self.screen)
+    }
+
     /// One tick of the loop thread: `read` reads the screen when a reading
     /// is due, and gives none when Android did not say. Returns the report
     /// that is due now: a new screen, or one that has settled.
@@ -865,6 +872,27 @@ mod tests {
         );
         assert_eq!(following.tick(ms(start, 1600), || None), None);
         assert_eq!(following.screen(), Some(COVER));
+    }
+
+    #[test]
+    fn a_change_is_unsettled_until_its_settled_report() {
+        // A stream that starts before the report hears the change from its
+        // Start; one that starts after it does not.
+        let (start, mut following) = (Instant::now(), Following::default());
+        assert_eq!(following.unsettled(), None, "no screen yet");
+        following.tick(start, || Some(INNER));
+        assert_eq!(following.unsettled(), Some(INNER), "the first reading");
+        following.tick(ms(start, 399), || Some(INNER));
+        assert_eq!(following.unsettled(), Some(INNER));
+        assert_eq!(
+            following.tick(ms(start, 400), || Some(INNER)),
+            report(INNER, true)
+        );
+        assert_eq!(following.unsettled(), None);
+        following.tick(ms(start, 1000), || Some(COVER));
+        assert_eq!(following.unsettled(), Some(COVER), "a fold");
+        following.tick(ms(start, 1400), || Some(COVER));
+        assert_eq!(following.unsettled(), None);
     }
 
     #[test]
