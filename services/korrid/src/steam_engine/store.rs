@@ -47,7 +47,10 @@ const INSTALL_LIMIT: Duration = Duration::from_secs(4 * 3600);
 const POLL: Duration = Duration::from_millis(250);
 /// Steam installed the game, but discovery did not find it within 60 s.
 const NOT_FOUND: &str = "Steam installed the game, but it was not found in the library.";
-
+/// The engine host ended before it answered a Get or a Remove download.
+const HOST_ENDED: &str = "Steam stopped before it finished. Try again.";
+const LIST_HOST_ENDED: &str = "Steam stopped before it sent your games. Try again.";
+const LIST_TIMEOUT: &str = "Steam took too long to send your games. Try again.";
 
 fn failure(code: &str, message: &str) -> RpcFailure {
     RpcFailure {
@@ -156,11 +159,12 @@ impl SteamStore {
                         return Ok(list);
                     }
                 }
-                if Instant::now() >= deadline || !host.running() {
-                    return Err(failure(
-                        "ProviderUnavailable",
-                        "Steam did not send your games. Try again.",
-                    ));
+                // Review C10: a host that ended is not a timeout.
+                if !host.running() {
+                    return Err(failure("ProviderUnavailable", LIST_HOST_ENDED));
+                }
+                if Instant::now() >= deadline {
+                    return Err(failure("ProviderUnavailable", LIST_TIMEOUT));
                 }
                 std::thread::sleep(POLL);
             }
@@ -432,7 +436,11 @@ fn run_app_job(
             // The host is asked to shut down; Steam keeps what it downloaded.
             return;
         }
-        if Instant::now() >= deadline || !host.running() {
+        // Review C10: a host that ended is not a timeout.
+        if !host.running() {
+            return set(failed(HOST_ENDED));
+        }
+        if Instant::now() >= deadline {
             return set(failed(Job::failure("timeout")));
         }
         std::thread::sleep(POLL);
@@ -517,6 +525,26 @@ done"#;
             panic!("{state:?}")
         };
         assert_eq!(reason.message, NOT_FOUND);
+    }
+
+    /// Review C10: a listing host that ends says so; it is not a timeout.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_listing_host_that_ends_is_not_a_timeout() {
+        let temp = tempfile::tempdir().unwrap();
+        let (mut plan, runner) = setup(temp.path());
+        plan.host_program = script_host(
+            temp.path(),
+            r#"echo '{"event":"signed_in","account_name":"p"}'
+exec 3<>"$fifo"
+read -r line <&3
+exit 1"#,
+        );
+        let failed = SteamStore::default()
+            .search("@korri:steam", plan, runner, "fortress")
+            .await
+            .unwrap_err();
+        assert_eq!(failed.message, LIST_HOST_ENDED);
+        assert_ne!(LIST_HOST_ENDED, LIST_TIMEOUT);
     }
 
     /// Review C5: a search during a game answers at once.
