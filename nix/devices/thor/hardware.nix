@@ -17,6 +17,15 @@ let
   bottom = "DSI-1";
 in
 {
+  # Stopgap: boot with the bottom panel unplugged. When DSI-1 is lit at boot,
+  # before the compositor owns the display, the top screen's command-mode
+  # encoder later stalls in wait_for_idle on about two boots in three; with
+  # DSI-1 unplugged at boot there were no stalls on 3 of 3 boots
+  # (README.md, "Top-screen stall: DSI-1 lit at boot is the trigger"). A
+  # hand-made boot entry did this before, but every switch-to-configuration
+  # replaced the default entry. This stays until the re-plug fix lands.
+  boot.kernelParams = [ "video=${bottom}:d" ];
+
   services.korriLinuxInput.provider.extraDataPackages = [ thorInputplumberData ];
 
   # USB gadget identity. 10.42.7.0/24 is taken by the Galaxy Tab S6 Korri

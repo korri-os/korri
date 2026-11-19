@@ -38,6 +38,8 @@ assert c.hardware.firmwareCompression == "none";
 assert builtins.elem "qcom/sm8550/a740_zap.mbn" c.boot.initrd.extraFirmwarePaths;
 assert builtins.elem "console=tty0" c.boot.kernelParams;
 assert builtins.elem "allow_mismatched_32bit_el0" c.boot.kernelParams;
+# Stopgap: the bottom panel is unplugged at boot (README "Top-screen stall").
+assert builtins.elem "video=DSI-1:d" c.boot.kernelParams;
 
 # Removable media only, with labels that cannot match the Portal's internal
 # install or ROCKNIX's.

@@ -110,10 +110,10 @@ If korrid already hit its start limit, run `systemctl reset-failed
 korrid-identity korrid-control.socket korri-local-signer`, then start
 `korrid-control.socket` and `korrid.service`.
 
-While the bottom-screen stall is open, the default boot entry is a copy of
-the new generation's entry with `video=DSI-1:d` added
-(`/boot/loader/entries/thor-main-top-only.conf`). Make it again after
-every `switch-to-configuration boot`.
+While the bottom-screen stall is open, the image carries `video=DSI-1:d`
+on its kernel command line until the re-plug fix lands (see "Top-screen
+stall"), so every generation's boot entry has it and no hand-made entry is
+needed.
 
 No step writes a raw block device, the GPT, LUN 1 to 5, or any firmware
 partition, changes the bootloader state, or writes EFI variables.
