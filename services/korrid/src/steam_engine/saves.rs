@@ -15,6 +15,10 @@
 //! Both sides stay restorable: the local files are in Korri's history and
 //! on disk, the cloud files are in Steam Cloud, and the person's pick is
 //! applied with `ResolveSyncConflict` before the next launch.
+//!
+//! The conflicts book (`steam-engine-conflicts.json`, `Book` below) is a
+//! schema awaiting owner confirmation: no existing producer, treaty or
+//! record grounds it yet. It goes to the owner at land.
 use crate::saves::{
     record::snapshot_id,
     store::{head_ids, NativeSaveStore},
@@ -180,6 +184,7 @@ fn rfc3339(seconds: u64) -> String {
         .to_string()
 }
 
+/// Schema awaiting owner confirmation (see the module doc).
 /// The book of open conflicts, as korrid keeps it on disk next to the save
 /// store: `<private state root>/steam-engine-conflicts.json`. A record names
 /// a person, a game, the app and the split's two snapshot ids (which are in
