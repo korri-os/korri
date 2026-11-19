@@ -244,24 +244,25 @@ pub fn steam(root: &Path) -> PluginRegistry {
     )
 }
 
-/// ADR 0083 and ADR 0045: a Steam plugin in its derived-id shape, as the
-/// plugin publishes it: no `providers` export, its engine artifact with no
-/// `id`, its discovery and its runner's artifact named by local key, and a
-/// discovery handler that builds `P` and `P/steam` from `input.pluginId`.
-pub const DERIVED_STEAM_PLUGIN: &str = r#"
+/// ADR 0083 and ADR 0045: a Steam plugin as `NS:steam` publishes it, with
+/// full ids only (`@NS` stands for its namespace; see `steam_source`): no
+/// `providers` export, and a discovery handler that builds `P` and `P/steam`
+/// from `input.pluginId`.
+pub const STEAM_PLUGIN: &str = r#"
 export const name = "steam"
 export const title = "Steam"
-export const discovery = [{ id: "installed-apps", title: "Steam installed apps" }]
+export const discovery = [{ id: "@NS:steam/installed-apps", title: "Steam installed apps" }]
 export const systems = { steam: { title: "Steam" } }
 export const artifacts = {
   "engine-package": {
+    id: "@NS:steam/engine-package",
     version: "1792618285",
     files: [{ url: "https://client-update.steamstatic.com/bins_sdk_linuxarm64_linuxarm64.zip.vz.1424aaa3", sha256: "sha256:e043d05b4e7bcc43e22cc2be3e8872ed1132e79e989cbbe181eb3a5d3f849df7", bytes: 10044409 }],
   },
 }
 export const runners = {
   steam: { program: "steam-session", systems: ["steam"] },
-  engine: { program: "steam-engine-session", systems: ["steam"], artifacts: ["engine-package"] },
+  engine: { program: "steam-engine-session", systems: ["steam"], artifacts: ["@NS:steam/engine-package"] },
 }
 function discover(input) {
   const out = []
@@ -281,6 +282,11 @@ function discover(input) {
 }
 export const handlers = { "discovery.discover": discover }
 "#;
+
+/// `STEAM_PLUGIN` under `namespace` (`@korri`, `@other`).
+pub fn steam_source(namespace: &str) -> String {
+    STEAM_PLUGIN.replace("@NS", namespace)
+}
 
 /// The Steam fixture under `namespace`, with this `plugin.ts`.
 pub fn steam_in(root: &Path, namespace: &str, source: &str) -> PluginRegistry {

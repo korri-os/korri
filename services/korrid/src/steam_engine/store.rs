@@ -600,29 +600,3 @@ done"#,
             .is_err());
     }
 }
-
-#[cfg(test)]
-mod admission_tests {
-    const PLUGIN: &str = include_str!("../../tests/fixtures/first-party/steam/plugin.ts");
-
-    /// The Steam provider has no claims handlers: korrid serves it. Any other
-    /// provider, or a second one beside it, still needs them.
-    #[test]
-    fn only_the_steam_provider_is_admitted_without_claims_handlers() {
-        let declared = format!(
-            "{PLUGIN}\nexport const providers = {{ \"@korri:steam\": {{ title: \"Steam\" }} }}\n"
-        );
-        // Admitted with no claims handlers; the base fixture has none.
-        assert!(!PLUGIN.contains("claims.search"));
-        crate::plugin::load_plugin_source("@korri", &declared).unwrap();
-        let second = format!(
-            "{PLUGIN}\nexport const providers = {{ \"@korri:steam\": {{ title: \"Steam\" }}, \"@korri:other\": {{ title: \"Other\" }} }}\n"
-        );
-        assert!(crate::plugin::load_plugin_source("@korri", &second).is_err());
-        let renamed = declared.replace(
-            "export const name = \"steam\"",
-            "export const name = \"other\"",
-        );
-        assert!(crate::plugin::load_plugin_source("@korri", &renamed).is_err());
-    }
-}

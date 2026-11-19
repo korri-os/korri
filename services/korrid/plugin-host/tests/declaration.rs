@@ -139,39 +139,3 @@ fn artifacts_survive_admission_without_granting_services_or_file_authority() {
     )
     .unwrap();
 }
-
-/// ADR 0083 and ADR 0045: the Steam plugin's discovery may name its local key,
-/// in any publisher namespace; it is the plugin's own `P/installed-apps`.
-#[test]
-fn a_local_steam_discovery_id_is_the_plugins_own_in_any_namespace() {
-    const STEAM: &str = "export const name = 'steam'; export const handlers = { 'discovery.discover': () => [] }; export const discovery = [{ id: 'installed-apps', title: 'Steam installed apps' }];";
-    for namespace in ["@simonwjackson", "@korri"] {
-        let declaration = Declaration::evaluate(namespace, STEAM).unwrap();
-        assert_eq!(declaration.id(), format!("{namespace}:steam"));
-    }
-    // The full id keeps working, and must be the plugin's own.
-    let full = STEAM.replace("'installed-apps'", "'@simonwjackson:steam/installed-apps'");
-    assert!(Declaration::evaluate("@simonwjackson", &full).is_ok());
-    assert!(Declaration::evaluate("@korri", &full).is_err());
-    // An unknown local key, a duplicate, or a plugin not named steam is refused.
-    for (namespace, source) in [
-        (
-            "@simonwjackson",
-            STEAM.replace("'installed-apps'", "'other-apps'"),
-        ),
-        (
-            "@simonwjackson",
-            STEAM.replace(
-                "}];",
-                "}, { id: '@simonwjackson:steam/installed-apps', title: 'again' }];",
-            ),
-        ),
-        (
-            "@simonwjackson",
-            STEAM.replace("name = 'steam'", "name = 'steamy'"),
-        ),
-    ] {
-        let error = Declaration::evaluate(namespace, &source).unwrap_err();
-        assert!(error.contains("invalid discovery provider"), "{error}");
-    }
-}

@@ -231,8 +231,8 @@ fn engine_folder_installs_are_found_and_run_on_the_engine_runner() {
     assert_eq!(runner("78000").as_deref(), Some("@korri:steam/engine"));
 }
 
-/// ADR 0083 and ADR 0045: the Steam plugin under another namespace, in its
-/// derived-id shape, discovers both folders under `@other:steam`.
+/// ADR 0083 and ADR 0045: the Steam plugin under another namespace
+/// discovers both folders under `@other:steam`.
 #[test]
 fn a_steam_plugin_in_another_namespace_discovers_under_its_own_ids() {
     let root = tempfile::tempdir().unwrap();
@@ -240,7 +240,7 @@ fn a_steam_plugin_in_another_namespace_discovers_under_its_own_ids() {
     let registry = crate::plugin_test_fixtures::steam_in(
         package.path(),
         "@other",
-        crate::plugin_test_fixtures::DERIVED_STEAM_PLUGIN,
+        &crate::plugin_test_fixtures::steam_source("@other"),
     );
     let client = root.path().join("steam/steamapps");
     let engine = root.path().join("steam-engine/steam/steamapps");

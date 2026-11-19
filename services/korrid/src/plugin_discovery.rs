@@ -49,24 +49,13 @@ pub struct ReleaseDiscoveryProvider {
     pub title: String,
 }
 
-/// ADR 0045: a discovery entry may name its local key; its id is then
-/// `<owner>/<key>`. A full id is kept as it is. Both the korrid loader and the
-/// plugin host validate the id this gives.
-pub fn resolve_id(owner: &str, id: &str) -> String {
-    if !id.is_empty() && !id.contains([':', '/', '@']) {
-        format!("{owner}/{id}")
-    } else {
-        id.to_owned()
-    }
-}
-
 pub fn validate(owner: &str, providers: &[ReleaseDiscoveryProvider]) -> Result<(), String> {
     let mut seen = BTreeSet::new();
     for provider in providers {
-        let id = resolve_id(owner, &provider.id);
-        let known = (is_steam_plugin(owner) && steam_installed_apps_plugin(&id) == Some(owner))
+        let id = &provider.id;
+        let known = (is_steam_plugin(owner) && steam_installed_apps_plugin(id) == Some(owner))
             || (owner == "@korri:android-app" && id == ANDROID_INSTALLED_APPS);
-        if !known || provider.title.trim().is_empty() || !seen.insert(id.clone()) {
+        if !known || provider.title.trim().is_empty() || !seen.insert(id) {
             return Err(format!("invalid discovery provider {}: unknown first-party provider, empty title or duplicate id", provider.id));
         }
     }
