@@ -12,11 +12,13 @@
   lib,
   pkgs,
   odinRocknix,
+  # The board's UCM package function: ./audio here, ../thor/audio on the Thor.
+  odinUcm,
   ...
 }:
 
 let
-  ucmPackage = pkgs.callPackage ./audio { };
+  ucmPackage = pkgs.callPackage odinUcm { };
   ucmPath = "${ucmPackage}/share/alsa/ucm2";
 in
 {
@@ -111,9 +113,9 @@ in
     profileName = "thor-whisper";
   };
 
-  # Audio. The card is `AYNOdin2`; WirePlumber needs the matching UCM
-  # profile to build the speaker and headphone sinks, and it finds it
-  # through ALSA_CONFIG_UCM2.
+  # Audio. The card is `AYNOdin2` (`AYNThor` on the Thor); WirePlumber needs
+  # the board's UCM profile (odinUcm) to build the speaker and headphone
+  # sinks, and it finds it through ALSA_CONFIG_UCM2.
   #
   # Verified on device: the profile resolves through the real conf.d lookup,
   # `HiFi` exposes Speaker, Headphones, and DisplayPort, and enabling Speaker

@@ -41,6 +41,7 @@ let
       odinRescueKernel = rescueKernelCross;
       odinFirmware = firmwareCross;
       odinRocknix = rocknix;
+      odinUcm = ./audio;
     };
     modules = [
       (import ../../product/nixos-module.nix { inherit korri; })

@@ -13,8 +13,8 @@
 #   - the ROCKNIX SM8550 userspace harvest (../odin2portal/rocknix);
 #   - the SD image and platform policy (../odin2portal/sd-image.nix), with the
 #     Thor's labels, DTB and host name forced over the Portal's.
-# Thor-only: the DTB (./kernel), the InputPlumber composite (./inputplumber)
-# and the display/input/USB facts (./hardware.nix).
+# Thor-only: the DTB (./kernel), the InputPlumber composite (./inputplumber),
+# the UCM profile (./audio) and the display/input/USB facts (./hardware.nix).
 {
   nixpkgs,
   korri,
@@ -50,6 +50,7 @@ let
       odinKernel = kernelCross;
       odinFirmware = firmwareCross;
       odinRocknix = odin.rocknix;
+      odinUcm = ./audio;
       thorDtb = dtbCross;
       thorInputplumberData = inputplumberData pkgs korri.packages.aarch64-linux.inputplumber-korri;
     };

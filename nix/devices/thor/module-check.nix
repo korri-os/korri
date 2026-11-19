@@ -70,6 +70,12 @@ assert map (p: p.name) boardFirmware == [ "thor-firmware" ];
 assert builtins.elem "qcom/sm8550/ayn/thor/adsp.mbn" firmwarePaths;
 assert builtins.elem "qcom/sm8550/ayn/thor/aw883xx_acf.bin" firmwarePaths;
 assert !lib.any (lib.hasInfix "odin2portal") firmwarePaths;
+assert builtins.elem "qcom/sm8550/AYN-Thor-tplg.bin" firmwarePaths;
+
+# Audio: the Thor's own UCM profile, not the Portal's.
+assert lib.hasInfix "ayn-thor-ucm" c.systemd.user.services.wireplumber.environment.ALSA_CONFIG_UCM2;
+assert lib.hasInfix "ayn-thor-ucm" c.systemd.user.services.pipewire.environment.ALSA_CONFIG_UCM2;
+assert !lib.hasInfix "odin2" c.environment.sessionVariables.ALSA_CONFIG_UCM2;
 
 # Top screen only; the bottom screen is dark and never a Korri display.
 assert host.backend == "drm";

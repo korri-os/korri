@@ -129,9 +129,15 @@ let
       }
     ];
     thor = [
+      # In the ROCKNIX tree AYN-Thor-tplg.bin is a Git symlink to
+      # AYN-Odin2-tplg.bin, and raw.githubusercontent.com serves a symlink as
+      # its 18-byte target name. The kernel then rejected that text as a
+      # topology ("invalid header size ... size 0x12") and no sound card
+      # came up. Fetch the target and install it under the Thor's name.
       {
         path = "qcom/sm8550/AYN-Thor-tplg.bin";
-        hash = "sha256-jb4rYB8DCOwZVhysitxz20vrsz8fawEO8gTUfjGLfss=";
+        source = "qcom/sm8550/AYN-Odin2-tplg.bin";
+        hash = "sha256-DlMMH+oHZ8IbObsRSfqwHBenxzbnjYSmOAP49Gd4QkE=";
       }
       {
         path = "qcom/sm8550/ayn/thor/adsp.mbn";
@@ -192,7 +198,7 @@ let
       file
       // {
         src = fetchurl {
-          url = "${base}/${file.path}";
+          url = "${base}/${file.source or file.path}";
           inherit (file) hash;
         };
       }
@@ -209,7 +215,13 @@ let
       }
     ) adrenoFiles;
 
+  # A blob under 64 bytes is a Git symlink served as its target name, not
+  # firmware (see AYN-Thor-tplg.bin above). Refuse it at build time.
   install = lib.concatMapStringsSep "\n" (file: ''
+    if [ "$(stat -c %s ${file.src})" -lt 64 ]; then
+      echo "${file.path}: $(stat -c %s ${file.src}) bytes, a symlink pointer, not firmware" >&2
+      exit 1
+    fi
     install -Dm444 ${file.src} "$out/lib/firmware/${file.path}"
   '') fetched;
 in

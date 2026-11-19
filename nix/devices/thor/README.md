@@ -170,7 +170,7 @@ Wi-Fi board file to choose.
 | Bottom screen | off: Sway `output DSI-1 power off` at start; its touch controller is ignored by libinput (`LIBINPUT_IGNORE_DEVICE`) |
 | AYN key (`KEY_F24`), Back (`KEY_BACK`) | unbound |
 | Fan | in (shared curve) |
-| Audio | deferred, see TODO |
+| Audio | in: card `AYNThor`, Thor UCM profile (./audio), sink `alsa_output.platform-sound.HiFi__Speaker__sink` |
 | Suspend | none (`sleep.states = [ ]`); power key and lid close power off, as on the Portal |
 | Shoulder LEDs, haptics | untouched |
 
@@ -256,13 +256,24 @@ this image (commit f950545cc), Linux 7.2.
   timeout. A restart recovered it. Not seen on later boots; not fixed.
 - **Rescue SD.** Distinct labels and root selection, see the label
   collision above.
-- **Audio.** The card should be `AYNThor` (DTS `model = "AYN-Thor"`), WCD938x
-  plus two AW883xx amps. The image carries the Portal's UCM tree, whose
-  profile does not match this card. The sink is unresolved: nix-on-rocks
-  `thor.nix` and legacy 945934d96 say `HiFi__Speaker__sink`, legacy
-  work/task-010 says `pro-output-0`. Read the longname from
-  `/proc/asound/cards`; the UCM file must be `conf.d/sm8550/<longname>.conf`
-  exactly, with no trailing dash.
+- **Audio (fixed 2026-11-19).** Two faults kept the Thor silent:
+  1. No sound card. ROCKNIX's `AYN-Thor-tplg.bin` is a Git symlink to
+     `AYN-Odin2-tplg.bin`; the raw GitHub URL served the 18-byte target
+     name, and the kernel refused it (`ASoC: invalid header size ... size
+     0x12`, `snd-sc8280xp ... failed with error -22`). The firmware package
+     now fetches the Odin 2 topology under the Thor's name and refuses any
+     blob under 64 bytes.
+  2. No speaker sink. The image carried the Portal's UCM tree, so
+     WirePlumber offered only `pro-audio`. ./audio now carries ROCKNIX's
+     Thor profile at `conf.d/sm8550/AYN-Thor.conf` (card longname
+     `AYN-Thor`).
+  Checked live with a runtime topology and UCM tree: card `AYNThor` up,
+  verb `HiFi` with Speaker, Headphones, Mic, DisplayPort, and WirePlumber's
+  default sink `alsa_output.platform-sound.HiFi__Speaker__sink`; a 440 Hz
+  stream ran on `hw:0,0`. This settles the sink question (`pro-output-0`
+  was the profile-less fallback). The boot-time `CMD timeout for
+  [1001021]` and soundwire `dout-ports mismatch` lines also appear on the
+  Portal and are benign.
 - **Bottom screen.** Never enable DSI-1 live: it still wedges the top
   screen on the DPU cleanup kernel (see the hardware results). The
   comparison with ROCKNIX below names what differs. If a live power cycle
