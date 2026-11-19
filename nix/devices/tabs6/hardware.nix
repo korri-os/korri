@@ -28,6 +28,25 @@ let
       | ${pkgs.jq}/bin/jq --exit-status '.outcome._tag == "Ok"' >/dev/null
   '';
 
+  # Volume keys: the product's own inputd volume actions (product/controls.nix,
+  # wpctl as the runtime user), run from compositor bindings like the power
+  # key. The InputPlumber route other boards use cannot work here: inputd
+  # accepts DBus actions only from the composite that owns dbus0, and only
+  # while a gamepad target exists. A keys-only composite for this board would
+  # take dbus0 at boot, so the keys would do nothing without a controller,
+  # and a paired controller (dbus1) would lose Home and its other DBus
+  # shortcuts.
+  volumeAction =
+    name:
+    let
+      action = config.services.korriLinuxInput.inputd.actions.${name};
+    in
+    pkgs.writeShellScript "tabs6-${name}" ''
+      exec ${pkgs.coreutils}/bin/env ${
+        lib.escapeShellArgs (lib.mapAttrsToList (k: v: "${k}=${v}") action.environment)
+      } ${lib.escapeShellArgs action.command}
+    '';
+
   pair = pkgs.writeShellApplication {
     name = "tabs6-bt-pair";
     runtimeInputs = [
@@ -150,6 +169,8 @@ in
       extraConfig = ''
         output DSI-1 scale 1
         bindsym --locked --inhibited --no-repeat XF86PowerOff exec ${powerToggle}
+        bindsym --locked --inhibited XF86AudioRaiseVolume exec ${volumeAction "volume-up"}
+        bindsym --locked --inhibited XF86AudioLowerVolume exec ${volumeAction "volume-down"}
       '';
     };
   };

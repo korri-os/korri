@@ -137,6 +137,9 @@ assert c.services.korriLinuxHost.compositor.backend == "drm";
 assert c.services.korriLinuxHost.compositor.mainDisplay == "DSI-1";
 assert (builtins.head c.services.korriLinuxHost.compositor.displays).mode == "2560x1600@60Hz";
 assert c.services.korriLinuxHost.compositor.localInput.enable;
+# Volume keys run the product's inputd volume commands from compositor bindings.
+assert lib.hasInfix "XF86AudioRaiseVolume exec /nix/store/" c.services.korriLinuxHost.compositor.extraConfig;
+assert lib.hasInfix "XF86AudioLowerVolume exec /nix/store/" c.services.korriLinuxHost.compositor.extraConfig;
 assert c.services.korriLinuxInput.provider.enable;
 assert c.services.korriLinuxInput.inputd.enable;
 assert lib.elem "tabs6-bt-pair" (map lib.getName c.environment.systemPackages);

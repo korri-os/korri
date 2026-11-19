@@ -67,7 +67,7 @@ The shell never opens `/dev/input` and gets input two ways:
 | Bluetooth controller | BlueZ → evdev → InputPlumber profile → inputd → korrid native input → shell buttons | Primary. Works for controllers InputPlumber adopts (below). Unverified on the tablet |
 | Touchscreen | fts1ba90a → libinput in the Korri compositor → Wayland touch → Slint | Surfaces get touch where their views take pointer input; the shell itself maps only "touch started" |
 | USB gamepad | USB-C in host role (`tabs6-usb-role host`) → same as Bluetooth | Manual switch only; cuts the USB lifeline while in host role |
-| Volume keys | gpio-keys / PMIC resin → compositor | Do nothing: no InputPlumber data for this board routes them to inputd's volume actions |
+| Volume keys | gpio-keys (up) / PMIC resin (down) → compositor bindings → the product's inputd volume commands (wpctl ±5 %) | Not through InputPlumber: inputd takes DBus actions only from the dbus0 composite while a gamepad exists, and a keys-only composite would take dbus0 from a paired controller (`hardware.nix`) |
 | Power key | logind | Powers the tablet off (product policy without a sleep state) |
 
 Controllers InputPlumber adopts (`services/inputd/nix/inputplumber-data.nix`):
