@@ -1,0 +1,54 @@
+start: Start at 807031501.708 ms
+start: http serverinfo answered at 807031503.075 ms (connected 0.1 ms, first byte 0.2 ms, total 0.3 ms)
+start: https serverinfo answered at 807031505.241 ms (connected 0.0 ms, TLS done 1.8 ms, first byte 2.1 ms, total 2.1 ms)
+start: paired at 807031505.252 ms
+start: https applist answered at 807031506.799 ms (connected 0.0 ms, TLS done 1.3 ms, first byte 1.5 ms, total 1.5 ms)
+libva info: VA-API version 1.24.0
+libva info: Trying to open /run/opengl-driver/lib/dri/radeonsi_drv_video.so
+libva info: Found init function __vaDriverInit_1_24
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.24.0
+libva info: Trying to open /run/opengl-driver/lib/dri/radeonsi_drv_video.so
+libva info: Found init function __vaDriverInit_1_24
+libva info: va_openDriver() returns 0
+start: picture and input ready at 807031573.455 ms
+start: https resume answered at 807031575.557 ms (connected 0.1 ms, TLS done 1.7 ms, first byte 2.0 ms, total 2.0 ms)
+sound: the Rust audio output chose ALSA
+start: core platform init begins at 807031576.547 ms
+start: core platform init done at 807031576.549 ms
+start: core name resolution begins at 807031576.551 ms
+start: core name resolution done at 807031576.573 ms
+start: core audio stream init begins at 807031576.578 ms
+start: core audio stream init done at 807031576.580 ms
+start: core RTSP handshake begins at 807031576.581 ms
+start: core RTSP handshake done at 807031577.369 ms
+start: core control stream init begins at 807031577.372 ms
+start: core control stream init done at 807031577.377 ms
+start: core video stream init begins at 807031577.379 ms
+start: core video stream init done at 807031577.381 ms
+start: core input stream init begins at 807031577.383 ms
+start: core input stream init done at 807031577.384 ms
+start: core control stream start begins at 807031577.386 ms
+start: core control stream start done at 807031577.511 ms
+start: core video stream start begins at 807031577.513 ms
+picture: the Rust X11 window 0x800000, 1920x1080, on its own connection to :0
+Platform X Window System (VAAPI)
+Using FFmpeg decoder: h264
+Video receive buffer: 2080 KiB, as asked
+start: core video stream start done at 807031578.124 ms
+start: core audio stream start begins at 807031578.126 ms
+Video receive takes up to 32 queued datagrams per call
+Video receive UDP_GRO is on: coalesced reads are split per datagram
+sound: ALSA sysdefault: 2 channels at 48000 Hz, period 960 frames, buffer 2880 asked
+start: core audio stream start done at 807031578.275 ms
+start: core input stream start begins at 807031578.277 ms
+start: core input stream start done at 807031578.278 ms
+Received first video packet after 0 ms
+start: first video packet at 807031599.507 ms
+start: first frame shown at 807031610.926 ms
+picture: the picture shown is 1920x1080
+picture: the Rust EGL presenter shows VA-API surfaces
+Received first audio packet
+start: first audio packet at 807033421.614 ms
+nightjar: at the stop: SessionStats { rtt: Some((1ms, 0ns)), video: VideoStats { packet_count_video: 85524, packet_count_fec: 20015, packets_received: 105539, packets_recovered: 0, decrypt_failures: 0, frames_completed: 5475, frame_drops: 0, decoder_drops: 0 }, audio: AudioStats { packet_count_audio: 18239, packet_count_fec: 9120, packet_count_fec_recovered: 0, packet_count_fec_failed: 0, packet_count_oos: 0, packet_count_invalid: 0, packet_count_fec_invalid: 0, decrypt_failures: 0 }, frames_submitted: 5475, frames_need_idr: 0, decode_queue_overflows: 0, early_chunks_dropped: 0, frames_skipped: 0, chunks_skipped: 0, decode_queue_len: 0, audio_packets: 18239, audio_queue_len: 0, audio_queue_overflows: 0, connection_status: Some(Okay), input_contact_lost: false }
+nightjar: recovery requests sent: 0 IDR, 0 reference frame invalidations

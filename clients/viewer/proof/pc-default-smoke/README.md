@@ -137,3 +137,57 @@ nightjar: recovery requests sent: 0 IDR, 0 reference frame invalidations
 Record: `rust-audio-output/results.json` and `rust-audio-output/viewer.log`,
 unedited. It proves that the default plays through the port; it measures
 nothing about the sound, and its numbers are not the quiet set's.
+
+## The plugin's own build
+
+One stream with the `korri-viewer` that `@korri:viewer` ships: the plugins
+repository builds it from Korri's recipe with its own nixpkgs (Rust 1.99.0,
+FFmpeg 9.0.2, OpenSSL 3.5.9; Korri's own package above has Rust 1.98.1,
+FFmpeg 9.0.1, OpenSSL 3.6.4), so its binary differs from the one above. A
+smoke stream, not a measure: one run, no baseline.
+
+**It streamed with all four Rust parts, played the tone through the Rust
+audio output, and the run was valid.**
+
+- Package: `/nix/store/qjsif28aqa1w03fmgfpk6jr9bzb7vrb0-korri-viewer-0.1.0`,
+  `bin/korri-viewer` SHA-256 `be33acd64ed35744564cbab2b85f8ecf3ab4035ca9ae4693507757d35784f5b2`:
+  korri-plugins `a7448c0`'s `packages.x86_64-linux.korri-viewer`, at the
+  Korri pin `6b895b909`, built on aka.
+- 2026-11-19 03:11 to 03:12 UTC, after three checks a minute apart found
+  aka quiet, holding `/var/tmp/korri-turns.lock` (`plugin-build/host-load.txt`).
+  Other work took 1.4 % of all CPUs; Tctl 58.6 to 73.8 °C. stream-cadence
+  ran from Korri `6b895b909`.
+
+```sh
+nix run .#stream-cadence -- view --build-store auto --sender local --sender-fixture \
+  --viewer local --viewer-package /nix/store/qjsif28aqa1w03fmgfpk6jr9bzb7vrb0-korri-viewer-0.1.0 \
+  --sender-sunshine /nix/store/ap898nhjj347ysnaf3jpp4ynzndh88a6-sunshine-korri-2026.914.233613-korri \
+  --viewer-output 1920x1200 --tone 1000 --runs 1 --out /var/tmp/step-e-core/sets/plugin-build-smoke
+```
+
+The viewer passed no `-networkcore`, `-audiooutput`, `-eglpresenter` or
+`-x11window`, and the sender played its 1000 Hz tone
+(`discovered.tone`). The log (`plugin-build/viewer.log`) names each part:
+
+```text
+sound: the Rust audio output chose ALSA
+picture: the Rust X11 window 0x800000, 1920x1080, on its own connection to :0
+sound: ALSA sysdefault: 2 channels at 48000 Hz, period 960 frames, buffer 2880 asked
+picture: the Rust EGL presenter shows VA-API surfaces
+Received first audio packet
+nightjar: at the stop: SessionStats { … }
+nightjar: recovery requests sent: 0 IDR, 0 reference frame invalidations
+```
+
+| Field | Value |
+| --- | --- |
+| Picture | `x11_vaapi`, `decode=vaapi` |
+| Latency p50, p95 | 13.65, 20.85 ms (the medians of the six windows' p50 and p95) |
+| `cpu_seconds_per_second` | 0.018 |
+| `startup_ms` | 145.5 |
+| `input_ms`, `input_missed` | 0.055, 0 |
+| `stream_stalls`, `viewer_exits`, `torn_frames`, `decode_errors` | 0, 0, 0, 0 |
+
+Record: `plugin-build/results.json` and `plugin-build/viewer.log`,
+unedited. It proves that the shipped build streams with its four Rust
+parts; one run measures nothing.

@@ -1,0 +1,8 @@
+# The quiet gate's checks on aka (UTC), the lock, and /proc/loadavg before and after the stream.
+03:09:02 load=0.11 Tctl=59
+03:10:02 load=0.04 Tctl=56
+03:11:02 load=0.20 Tctl=65
+LOCK held: 3371756 step-e-core plugin-build-smoke at 2026-11-19T03:11:02Z
+0.20 0.35 1.19 2/546 3372845
+STREAM rc=0 at 2026-11-19T03:12:44Z
+0.36 0.45 1.14 1/565 3374200
