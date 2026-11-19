@@ -74,6 +74,7 @@ let
     ''
     + lib.optionalString product ''
       cat ${./dts/sm8150-samsung-gts6lwifi-venus.dtsi} >> arch/arm64/boot/dts/qcom/${dtbName}.dts
+      cat ${./dts/sm8150-samsung-gts6lwifi-sdcard.dtsi} >> arch/arm64/boot/dts/qcom/${dtbName}.dts
     '';
   };
 
@@ -200,6 +201,7 @@ let
           want venus_mem.reg "$(fdtget -t x "$dtb" "$(fdtget "$dtb" /__symbols__ venus_mem)" reg)" "0 97800000 0 500000"
           [ -e "$out/lib/modules/${version}/kernel/drivers/media/platform/qcom/iris/qcom-iris.ko" ] \
             || { echo "qcom-iris.ko not built"; exit 1; }
+          want sdhc_2.status "$(fdtget "$dtb" "$(fdtget "$dtb" /__symbols__ sdhc_2)" status)" "okay"
         '';
       });
 in

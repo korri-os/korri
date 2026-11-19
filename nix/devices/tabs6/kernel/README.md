@@ -27,7 +27,7 @@ not change.
 
 The product kernel also carries the Venus video codec ("Video codec" below);
 its build also fails without the `qcom,sm8150-iris` node, `venus_mem` at
-`0x97800000` and `qcom-iris.ko`.
+`0x97800000`, `qcom-iris.ko` and an enabled `sdhc_2` ("microSD" below).
 
 `Image` is uncompressed (the EFI stub needs it; about 45 MB). The `kernel` build fails unless `Image` is a PE ("MZ") arm64 EFI-stub image and the
 DTB carries the gts6lwifi compatible, the simple-framebuffer at `0x9c400000`,
@@ -140,6 +140,19 @@ gives FFmpeg room to read:
 ffmpeg -f lavfi -i testsrc=duration=5:size=1280x720:rate=30 \
   -vf format=nv12,pad=1280:736,crop=1280:720:0:0 -c:v h264_v4l2m2m -b:v 4M t.mp4
 ```
+
+## microSD
+
+Product kernel only. `dts/sm8150-samsung-gts6lwifi-sdcard.dtsi`, appended to
+the board DTS, enables SDHC2 (`mmc@8804000`) with the stock T860XXS5DWH1
+settings: card power from `vreg_l9c_2p9`, I/O from `vreg_l6c_2p9` (1.8 V for
+UHS), card detect on GPIO 96 (active low), and the stock `sdc2_*_on/off` pin
+drive strengths. `sdhci-msm` is already built in.
+
+On the tablet (2026-11-19) the controller probes (`mmc0: SDHCI controller on
+8804000.mmc`, `Got CD GPIO`) and takes both regulators. No card was read:
+whether the slot held one is unknown, so card detection and enumeration are
+untested.
 
 ## Patches
 

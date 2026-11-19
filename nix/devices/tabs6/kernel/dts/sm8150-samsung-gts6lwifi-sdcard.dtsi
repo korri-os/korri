@@ -1,0 +1,74 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * microSD slot (SDHC2) on the Galaxy Tab S6 Wi-Fi. Product kernel only:
+ * default.nix appends this file to sm8150-samsung-gts6lwifi.dts.
+ *
+ * From the stock T860XXS5DWH1 device tree: sdhci@8804000 in the boot.img DTB
+ * and its dtbo fragment (vdd-supply pm8150l_l9 2.95 V, vdd-io-supply
+ * pm8150l_l6 1.8/2.95 V, cd-gpios tlmm 96 active low, and the
+ * sdc2_{clk,cmd,data}_{on,off} and storage_cd pin states).
+ */
+
+&sdhc_2 {
+	vmmc-supply = <&vreg_l9c_2p9>;
+	vqmmc-supply = <&vreg_l6c_2p9>;
+	cd-gpios = <&tlmm 96 GPIO_ACTIVE_LOW>;
+	bus-width = <4>;
+	no-sdio;
+	no-mmc;
+
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&sdc2_on_state &sdc2_card_det_state>;
+	pinctrl-1 = <&sdc2_off_state &sdc2_card_det_state>;
+
+	status = "okay";
+};
+
+&tlmm {
+	sdc2_on_state: sdc2-on-state {
+		clk-pins {
+			pins = "sdc2_clk";
+			drive-strength = <16>;
+			bias-disable;
+		};
+
+		cmd-pins {
+			pins = "sdc2_cmd";
+			drive-strength = <8>;
+			bias-pull-up;
+		};
+
+		data-pins {
+			pins = "sdc2_data";
+			drive-strength = <8>;
+			bias-pull-up;
+		};
+	};
+
+	sdc2_off_state: sdc2-off-state {
+		clk-pins {
+			pins = "sdc2_clk";
+			drive-strength = <2>;
+			bias-disable;
+		};
+
+		cmd-pins {
+			pins = "sdc2_cmd";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+
+		data-pins {
+			pins = "sdc2_data";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
+
+	sdc2_card_det_state: sdc2-card-det-state {
+		pins = "gpio96";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+	};
+};
