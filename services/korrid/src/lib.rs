@@ -5551,10 +5551,15 @@ impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
         let ServerMode::Host(host) = &self.state.mode else {
             return false;
         };
+        let conflicts = steam_engine::conflicts(self.state.private_state_root());
+        // Called every 250 ms: no disk read (the person) unless one is fresh.
+        if !conflicts.any_fresh(game_id) {
+            return false;
+        }
         let Ok(person) = host.launch_person() else {
             return false;
         };
-        steam_engine::conflicts(self.state.private_state_root()).take_fresh(&person, game_id)
+        conflicts.take_fresh(&person, game_id)
     }
 
     fn presence(&self) -> String {

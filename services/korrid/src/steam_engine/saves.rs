@@ -254,6 +254,16 @@ impl Conflicts {
     }
 
     /// True once after a launch of this game hit a conflict.
+    /// Memory only: whether any person has a fresh conflict for this game.
+    /// The surface asks every 250 ms; it reads the person only after this.
+    pub fn any_fresh(&self, game: &str) -> bool {
+        self.fresh
+            .lock()
+            .expect("conflicts poisoned")
+            .iter()
+            .any(|(_, fresh)| fresh == game)
+    }
+
     pub fn take_fresh(&self, person: &str, game: &str) -> bool {
         self.fresh
             .lock()
@@ -479,7 +489,9 @@ mod tests {
 
         let book = Conflicts::at(&private);
         book.open(&person, "g", Some("launch-1"), conflict.clone());
+        assert!(book.any_fresh("g") && !book.any_fresh("h"));
         assert!(book.take_fresh(&person, "g") && !book.take_fresh(&person, "g"));
+        assert!(!book.any_fresh("g"));
         assert_eq!(book.pick(&person, "other", &conflict.cloud), None);
         assert_eq!(book.pick(&person, "g", &conflict.cloud), Some(Side::Cloud));
         // korrid restarts: the pick and the launch are read back.
