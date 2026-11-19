@@ -1,0 +1,99 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * Venus (Iris1, VIDEO.IR.1.2) video codec on the Galaxy Tab S6 Wi-Fi. Product
+ * kernel only: default.nix appends this file to sm8150-samsung-gts6lwifi.dts.
+ *
+ * The node is the Xiaomi Pad 5 (nabu, also SM8150) one from
+ * MCC45TR/nabu-linux-kernel 7.2.2 (arch/arm64/boot/dts/qcom/sm8150-xiaomi-nabu-iris.dtsi),
+ * which the media-iris-sm8150-legacy-vpu5 patch's driver binds. The stock
+ * T860XXS5DWH1 device tree (qcom,vidc@aa00000) agrees on the interrupt
+ * (SPI 174) and the non-secure stream (0x2300/0x60).
+ */
+
+/*
+ * The firmware region must sit inside the TZ firmware zone (SENSORS.md in
+ * the port). The stock address, 0x96e00000, is inside the 160 MB modem span
+ * on this firmware; 0x97800000 is the free gap from the modem's end to the
+ * IPA region (stock slpi_mem, which moved to 0x9b000000).
+ */
+&venus_mem {
+	reg = <0x0 0x97800000 0x0 0x500000>;
+};
+
+&soc {
+	venus: video-codec@aa00000 {
+		compatible = "qcom,sm8150-iris";
+		reg = <0 0x0aa00000 0 0x100000>;
+		interrupts = <GIC_SPI 174 IRQ_TYPE_LEVEL_HIGH>;
+
+		power-domains = <&videocc VENUS_GDSC>,
+				<&videocc VCODEC0_GDSC>,
+				<&videocc VCODEC1_GDSC>,
+				<&rpmhpd SM8150_CX>;
+		power-domain-names = "venus", "vcodec0", "vcodec1", "cx";
+		operating-points-v2 = <&venus_opp_table>;
+
+		clocks = <&videocc VIDEO_CC_MVSC_CORE_CLK>,
+			 <&videocc VIDEO_CC_IRIS_AHB_CLK>,
+			 <&gcc GCC_VIDEO_AXIC_CLK>,
+			 <&videocc VIDEO_CC_MVS0_CORE_CLK>,
+			 <&gcc GCC_VIDEO_AXI0_CLK>,
+			 <&videocc VIDEO_CC_MVS1_CORE_CLK>,
+			 <&gcc GCC_VIDEO_AXI1_CLK>;
+		clock-names = "core", "iface", "bus",
+			      "vcodec0_core", "vcodec0_bus",
+			      "vcodec1_core", "vcodec1_bus";
+
+		resets = <&gcc GCC_VIDEO_AXIC_CLK_BCR>,
+			 <&videocc VIDEO_CC_MVSC_CORE_CLK_BCR>,
+			 <&gcc GCC_VIDEO_AXI0_CLK_BCR>,
+			 <&gcc GCC_VIDEO_AXI1_CLK_BCR>;
+		reset-names = "bus", "core", "vcodec0_bus", "vcodec1_bus";
+
+		interconnects = <&mmss_noc MASTER_VIDEO_P0 0 &mc_virt SLAVE_EBI_CH0 0>,
+				<&gem_noc MASTER_AMPSS_M0 0 &config_noc SLAVE_VENUS_CFG 0>;
+		interconnect-names = "video-mem", "cpu-cfg";
+
+		/* SM8150 v2 moved the VIDC stream IDs from 0x13xx to 0x23xx. */
+		iommus = <&apps_smmu 0x2300 0x60>;
+		memory-region = <&venus_mem>;
+		firmware-name = "qcom/sm8150/gts6l/venus.mdt";
+
+		video-core0 {
+			compatible = "venus-decoder";
+		};
+
+		video-core1 {
+			compatible = "venus-encoder";
+		};
+
+		venus_opp_table: opp-table {
+			compatible = "operating-points-v2";
+
+			opp-200000000 {
+				opp-hz = /bits/ 64 <200000000>;
+				required-opps = <&rpmhpd_opp_min_svs>;
+			};
+
+			opp-240000000 {
+				opp-hz = /bits/ 64 <240000000>;
+				required-opps = <&rpmhpd_opp_low_svs>;
+			};
+
+			opp-365000000 {
+				opp-hz = /bits/ 64 <365000000>;
+				required-opps = <&rpmhpd_opp_svs>;
+			};
+
+			opp-444000000 {
+				opp-hz = /bits/ 64 <444000000>;
+				required-opps = <&rpmhpd_opp_svs_l1>;
+			};
+
+			opp-533000000 {
+				opp-hz = /bits/ 64 <533000000>;
+				required-opps = <&rpmhpd_opp_nom>;
+			};
+		};
+	};
+};

@@ -71,6 +71,12 @@ in
     2026-11-17. No 7.2 build of this board exists or has been tested.
   '';
 
+  # Venus video codec (kernel/README.md, "Video codec"). The Iris driver boots
+  # the firmware on the first open only when allow_fw_boot is set.
+  boot.extraModprobeConfig = ''
+    options qcom_iris allow_fw_boot=1
+  '';
+
   # USB gadget identity. One dwc3 controller (usb@a600000, dr_mode otg with
   # a userspace role switch), so exactly one UDC appears in device role.
   services.korriProduct.usbGadget = {

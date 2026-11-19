@@ -1,0 +1,226 @@
+media: iris: gen1 encoder controls and input layout for Sunshine
+
+Korri-local, on top of media-iris-sm8150-legacy-vpu5.patch. Sunshine's
+h264_v4l2m2m path needs all three. The Retroid Pocket Mini V2 carries the same
+changes for SM8250 against upstream Iris (nix/devices/rpminiv2/kernel:
+product-patches/9999-media-qcom-iris-add-request-key-frame-support.patch,
+product-patches/9999-media-qcom-iris-gen1-repeat-headers.patch and
+patches/9999-media-qcom-iris-gen1-visible-encoder-resolution.patch); these
+are their ports to the nabu Iris tree, gen1 only.
+
+- V4L2_CID_MPEG_VIDEO_FORCE_KEY_FRAME maps to the dynamic
+  HFI_PROPERTY_CONFIG_VENC_REQUEST_SYNC_FRAME (0x2006004). It has no payload,
+  but the packet size still counts the property id; without it the firmware
+  fails the session with HFI_ERR_SESSION_CMDSIZE (0x100e).
+- V4L2_CID_MPEG_VIDEO_PREPEND_SPSPPS_TO_IDR is exposed; when set, the gen1
+  HFI_PROPERTY_CONFIG_VENC_SYNC_FRAME_SEQUENCE_HEADER boolean is on even with
+  HEADER_MODE_SEPARATE.
+- The OUTPUT (raw) format reports the aligned storage size (width to 128,
+  height to 32), as upstream Iris does. The firmware reads the chroma plane
+  after the aligned height (UNCOMPRESSED_PLANE_ACTUAL_INFO); the port reported
+  the visible height, so clients wrote chroma 16 rows early at 1280x720 and
+  the picture's colours were shifted. The visible size is the crop: it is the
+  firmware's input frame size and the bitstream size.
+
+diff --git a/drivers/media/platform/qcom/iris/iris_ctrls.c b/drivers/media/platform/qcom/iris/iris_ctrls.c
+index 6cc289a41..da03293c9 100644
+--- a/drivers/media/platform/qcom/iris/iris_ctrls.c
++++ b/drivers/media/platform/qcom/iris/iris_ctrls.c
+@@ -40,6 +40,8 @@ static enum platform_inst_fw_cap_type iris_get_cap_id(u32 id)
+ 		return HEADER_MODE;
+ 	case V4L2_CID_MPEG_VIDEO_PREPEND_SPSPPS_TO_IDR:
+ 		return PREPEND_SPSPPS_TO_IDR;
++	case V4L2_CID_MPEG_VIDEO_FORCE_KEY_FRAME:
++		return REQUEST_SYNC_FRAME;
+ 	case V4L2_CID_MPEG_VIDEO_BITRATE:
+ 		return BITRATE;
+ 	case V4L2_CID_MPEG_VIDEO_BITRATE_PEAK:
+@@ -127,6 +129,8 @@ static u32 iris_get_v4l2_id(enum platform_inst_fw_cap_type cap_id)
+ 		return V4L2_CID_MPEG_VIDEO_HEADER_MODE;
+ 	case PREPEND_SPSPPS_TO_IDR:
+ 		return V4L2_CID_MPEG_VIDEO_PREPEND_SPSPPS_TO_IDR;
++	case REQUEST_SYNC_FRAME:
++		return V4L2_CID_MPEG_VIDEO_FORCE_KEY_FRAME;
+ 	case BITRATE:
+ 		return V4L2_CID_MPEG_VIDEO_BITRATE;
+ 	case BITRATE_PEAK:
+@@ -552,11 +556,17 @@ int iris_set_profile_level_gen1(struct iris_inst *inst, enum platform_inst_fw_ca
+ int iris_set_header_mode_gen1(struct iris_inst *inst, enum platform_inst_fw_cap_type cap_id)
+ {
+ 	const struct iris_hfi_command_ops *hfi_ops = inst->core->hfi_ops;
++	u32 prepend_sps_pps = inst->fw_caps[PREPEND_SPSPPS_TO_IDR].value;
+ 	u32 header_mode = inst->fw_caps[cap_id].value;
+ 	u32 hfi_id = inst->fw_caps[cap_id].hfi_id;
+ 	u32 hfi_val;
+ 
+-	if (header_mode == V4L2_MPEG_VIDEO_HEADER_MODE_SEPARATE)
++	/*
++	 * Gen1 prefixes sync frames with sequence headers using one boolean.
++	 * Keep the existing joined-header behavior when prepend is disabled.
++	 */
++	if (!prepend_sps_pps &&
++	    header_mode == V4L2_MPEG_VIDEO_HEADER_MODE_SEPARATE)
+ 		hfi_val = 0;
+ 	else
+ 		hfi_val = 1;
+@@ -969,6 +979,20 @@ int iris_set_qp_range(struct iris_inst *inst, enum platform_inst_fw_cap_type cap
+ 				     &range, sizeof(range));
+ }
+ 
++int iris_set_req_sync_frame_gen1(struct iris_inst *inst, enum platform_inst_fw_cap_type cap_id)
++{
++	const struct iris_hfi_command_ops *hfi_ops = inst->core->hfi_ops;
++	u32 hfi_id = inst->fw_caps[cap_id].hfi_id;
++	u32 hfi_val = 1;
++
++	/* The gen1 request carries no payload; the firmware ignores hfi_val. */
++	return hfi_ops->session_set_property(inst, hfi_id,
++					 HFI_HOST_FLAGS_NONE,
++				     iris_get_port_info(inst, cap_id),
++				     HFI_PAYLOAD_U32,
++				     &hfi_val, sizeof(u32));
++}
++
+ int iris_set_properties(struct iris_inst *inst, u32 plane)
+ {
+ 	const struct iris_hfi_command_ops *hfi_ops = inst->core->hfi_ops;
+diff --git a/drivers/media/platform/qcom/iris/iris_ctrls.h b/drivers/media/platform/qcom/iris/iris_ctrls.h
+index 0fcc79bfb..2f68470c8 100644
+--- a/drivers/media/platform/qcom/iris/iris_ctrls.h
++++ b/drivers/media/platform/qcom/iris/iris_ctrls.h
+@@ -33,6 +33,7 @@ int iris_set_min_qp(struct iris_inst *inst, enum platform_inst_fw_cap_type cap_i
+ int iris_set_max_qp(struct iris_inst *inst, enum platform_inst_fw_cap_type cap_id);
+ int iris_set_frame_qp(struct iris_inst *inst, enum platform_inst_fw_cap_type cap_id);
+ int iris_set_qp_range(struct iris_inst *inst, enum platform_inst_fw_cap_type cap_id);
++int iris_set_req_sync_frame_gen1(struct iris_inst *inst, enum platform_inst_fw_cap_type cap_id);
+ int iris_set_properties(struct iris_inst *inst, u32 plane);
+ 
+ #endif
+diff --git a/drivers/media/platform/qcom/iris/iris_hfi_gen1_command.c b/drivers/media/platform/qcom/iris/iris_hfi_gen1_command.c
+index d1b458ece..fb0f4ab8b 100644
+--- a/drivers/media/platform/qcom/iris/iris_hfi_gen1_command.c
++++ b/drivers/media/platform/qcom/iris/iris_hfi_gen1_command.c
+@@ -802,6 +802,10 @@ iris_hfi_gen1_packet_session_set_property(struct hfi_session_set_property_pkt *p
+ 		packet->shdr.hdr.size += sizeof(u32) + sizeof(*en);
+ 		break;
+ 	}
++	case HFI_PROPERTY_CONFIG_VENC_REQUEST_SYNC_FRAME:
++		/* No payload; the size still counts the property id. */
++		packet->shdr.hdr.size += sizeof(u32);
++		break;
+ 	case HFI_PROPERTY_CONFIG_VENC_TARGET_BITRATE: {
+ 		struct hfi_bitrate *brate = prop_data;
+ 		u32 *in = pdata;
+@@ -944,8 +948,14 @@ static int iris_hfi_gen1_set_resolution(struct iris_inst *inst, u32 plane)
+ 
+ 	if (!iris_drc_pending(inst)) {
+ 		fs.buffer_type = HFI_BUFFER_INPUT;
+-		fs.width = inst->fmt_src->fmt.pix_mp.width;
+-		fs.height = inst->fmt_src->fmt.pix_mp.height;
++		if (inst->domain == ENCODER) {
++			/* The visible size; the format holds the aligned layout. */
++			fs.width = inst->crop.width;
++			fs.height = inst->crop.height;
++		} else {
++			fs.width = inst->fmt_src->fmt.pix_mp.width;
++			fs.height = inst->fmt_src->fmt.pix_mp.height;
++		}
+ 
+ 		ret = hfi_gen1_set_property(inst, ptype, &fs, sizeof(fs));
+ 		if (ret)
+diff --git a/drivers/media/platform/qcom/iris/iris_hfi_gen1_defines.h b/drivers/media/platform/qcom/iris/iris_hfi_gen1_defines.h
+index 95c5d5f78..9529728a7 100644
+--- a/drivers/media/platform/qcom/iris/iris_hfi_gen1_defines.h
++++ b/drivers/media/platform/qcom/iris/iris_hfi_gen1_defines.h
+@@ -165,6 +165,7 @@
+ #define HFI_PROPERTY_PARAM_VENC_MAX_NUM_B_FRAMES		0x2005020
+ #define HFI_PROPERTY_CONFIG_VENC_TARGET_BITRATE			0x2006001
+ #define HFI_PROPERTY_CONFIG_VENC_INTRA_PERIOD			0x2006003
++#define HFI_PROPERTY_CONFIG_VENC_REQUEST_SYNC_FRAME		0x2006004
+ #define HFI_PROPERTY_CONFIG_VENC_SYNC_FRAME_SEQUENCE_HEADER	0x2006008
+ 
+ struct hfi_pkt_hdr {
+diff --git a/drivers/media/platform/qcom/iris/iris_platform_common.h b/drivers/media/platform/qcom/iris/iris_platform_common.h
+index 6775ffd5b..fcf22cbcf 100644
+--- a/drivers/media/platform/qcom/iris/iris_platform_common.h
++++ b/drivers/media/platform/qcom/iris/iris_platform_common.h
+@@ -140,6 +140,7 @@ enum platform_inst_fw_cap_type {
+ 	P_FRAME_QP_HEVC,
+ 	B_FRAME_QP_H264,
+ 	B_FRAME_QP_HEVC,
++	REQUEST_SYNC_FRAME,
+ 	INST_FW_CAP_MAX,
+ };
+ 
+diff --git a/drivers/media/platform/qcom/iris/iris_platform_sm8250.c b/drivers/media/platform/qcom/iris/iris_platform_sm8250.c
+index 6c40d20c6..760fe1844 100644
+--- a/drivers/media/platform/qcom/iris/iris_platform_sm8250.c
++++ b/drivers/media/platform/qcom/iris/iris_platform_sm8250.c
+@@ -155,6 +155,23 @@ static struct platform_inst_fw_cap inst_fw_cap_sm8250_enc[] = {
+ 		.flags = CAP_FLAG_OUTPUT_PORT | CAP_FLAG_MENU,
+ 		.set = iris_set_header_mode_gen1,
+ 	},
++	{
++		.cap_id = PREPEND_SPSPPS_TO_IDR,
++		.min = 0,
++		.max = 1,
++		.step_or_mask = 1,
++		.value = 0,
++	},
++	{
++		.cap_id = REQUEST_SYNC_FRAME,
++		.min = 0,
++		.max = 1,
++		.step_or_mask = 1,
++		.value = 0,
++		.hfi_id = HFI_PROPERTY_CONFIG_VENC_REQUEST_SYNC_FRAME,
++		.flags = CAP_FLAG_INPUT_PORT | CAP_FLAG_DYNAMIC_ALLOWED,
++		.set = iris_set_req_sync_frame_gen1,
++	},
+ 	{
+ 		.cap_id = BITRATE,
+ 		.min = BITRATE_MIN,
+diff --git a/drivers/media/platform/qcom/iris/iris_venc.c b/drivers/media/platform/qcom/iris/iris_venc.c
+index 22afb13ff..ea9cda404 100644
+--- a/drivers/media/platform/qcom/iris/iris_venc.c
++++ b/drivers/media/platform/qcom/iris/iris_venc.c
+@@ -226,9 +226,14 @@ static int iris_venc_s_fmt_input(struct iris_inst *inst, struct v4l2_format *f)
+ 
+ 	fmt = inst->fmt_src;
+ 	fmt->type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+-	/* Keep the visible dimensions separate from the DMA layout. */
+-	fmt->fmt.pix_mp.width = f->fmt.pix_mp.width;
+-	fmt->fmt.pix_mp.height = f->fmt.pix_mp.height;
++	/*
++	 * The OUTPUT format is the buffer layout: clients place the chroma
++	 * plane after height rows, where the firmware reads it (the aligned
++	 * plane height, iris_hfi_gen1_set_stride). The visible size is the
++	 * crop, and the bitstream keeps it.
++	 */
++	fmt->fmt.pix_mp.width = ALIGN(f->fmt.pix_mp.width, 128);
++	fmt->fmt.pix_mp.height = ALIGN(f->fmt.pix_mp.height, 32);
+ 	fmt->fmt.pix_mp.num_planes = 1;
+ 	fmt->fmt.pix_mp.pixelformat = f->fmt.pix_mp.pixelformat;
+ 	fmt->fmt.pix_mp.plane_fmt[0].bytesperline = ALIGN(f->fmt.pix_mp.width, 128);
+@@ -240,8 +245,8 @@ static int iris_venc_s_fmt_input(struct iris_inst *inst, struct v4l2_format *f)
+ 	fmt->fmt.pix_mp.quantization = f->fmt.pix_mp.quantization;
+ 
+ 	output_fmt = inst->fmt_dst;
+-	output_fmt->fmt.pix_mp.width = fmt->fmt.pix_mp.width;
+-	output_fmt->fmt.pix_mp.height = fmt->fmt.pix_mp.height;
++	output_fmt->fmt.pix_mp.width = f->fmt.pix_mp.width;
++	output_fmt->fmt.pix_mp.height = f->fmt.pix_mp.height;
+ 	output_fmt->fmt.pix_mp.colorspace = fmt->fmt.pix_mp.colorspace;
+ 	output_fmt->fmt.pix_mp.xfer_func = fmt->fmt.pix_mp.xfer_func;
+ 	output_fmt->fmt.pix_mp.ycbcr_enc = fmt->fmt.pix_mp.ycbcr_enc;
+@@ -254,8 +259,8 @@ static int iris_venc_s_fmt_input(struct iris_inst *inst, struct v4l2_format *f)
+ 	    f->fmt.pix_mp.height != inst->crop.height) {
+ 		inst->crop.top = 0;
+ 		inst->crop.left = 0;
+-		inst->crop.width = fmt->fmt.pix_mp.width;
+-		inst->crop.height = fmt->fmt.pix_mp.height;
++		inst->crop.width = f->fmt.pix_mp.width;
++		inst->crop.height = f->fmt.pix_mp.height;
+ 
+ 		iris_venc_s_fmt_output(inst, output_fmt);
+ 	}

@@ -82,7 +82,8 @@ in
   rg35xxpro = shared ++ streamingHost ++ ssh;
   # The Galaxy Tab S6 (SM8150, Adreno 640) takes the SM8250 handhelds' set
   # without Steam (accepted on the Mini V2 only). Owner decision 2026-11-19:
-  # Sunshine on every device. Mainline has no SM8150 video encoder (neither
-  # venus nor iris lists the SoC), so it encodes in software.
+  # Sunshine on every device. It encodes on the Venus core through the Xiaomi
+  # Pad 5 port's Iris driver (nix/devices/tabs6/kernel/README.md, "Video
+  # codec").
   tabs6 = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh;
 }

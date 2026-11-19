@@ -7,7 +7,7 @@
 # never enter git. This derivation and its output stay on this host: they are
 # proprietary, so never copy them to a binary cache.
 #
-#   BL  -> NON-HLOS.bin.lz4    apnhlos FAT: adsp, slpi, a640_zap
+#   BL  -> NON-HLOS.bin.lz4    apnhlos FAT: adsp, slpi, a640_zap, venus
 #   AP  -> modem.bin.lz4       modem FAT: modem.mdt + segments, modem_pr
 #   AP  -> vendor.img.ext4.lz4 sparse ext4: wlanmdsp.mbn, bdwlan.bin, crbtfw21/crnv21
 #
@@ -71,11 +71,12 @@ stdenvNoCC.mkDerivation {
     fw=$out/lib/firmware
     mkdir -p $fw/${board} $fw/qca $fw/ath10k/WCN3990/hw1.0 $fw/qcom/sm8150
 
-    # apnhlos: ADSP, SLPI and the Samsung-signed GPU zap (GPU.md, AUDIO.md 7).
+    # apnhlos: ADSP, SLPI, the Samsung-signed GPU zap (GPU.md, AUDIO.md 7) and
+    # the video core (VIDEO.IR.1.2, kernel/dts/sm8150-samsung-gts6lwifi-venus.dtsi).
     lz4 -dq ${nonHlos} apnhlos.bin
     for f in $(mdir -b -i apnhlos.bin ::/image | sed 's#.*/##'); do
       case "$f" in
-      adsp.* | adspr.jsn | adspua.jsn | slpi.* | slpir.jsn | slpius.jsn | a640_zap.*)
+      adsp.* | adspr.jsn | adspua.jsn | slpi.* | slpir.jsn | slpius.jsn | a640_zap.* | venus.*)
         mcopy -n -i apnhlos.bin "::/image/$f" "$fw/${board}/$f" ;;
       esac
     done
@@ -135,7 +136,7 @@ stdenvNoCC.mkDerivation {
   doCheck = true;
   checkPhase = ''
     fw=$out/lib/firmware
-    for f in ${board}/modem.mdt ${board}/adsp.mdt ${board}/slpi.mdt ${board}/a640_zap.mdt \
+    for f in ${board}/modem.mdt ${board}/adsp.mdt ${board}/slpi.mdt ${board}/a640_zap.mdt ${board}/venus.mdt ${board}/venus.b02 \
       ${board}/wlanmdsp.mbn wlanmdsp.mbn qca/crbtfw01.tlv qca/crnv01.bin \
       ath10k/WCN3990/hw1.0/board-2.bin ath10k/WCN3990/hw1.0/firmware-5.bin \
       qcom/a630_sqe.fw qcom/a640_gmu.bin; do

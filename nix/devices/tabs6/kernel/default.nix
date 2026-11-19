@@ -53,7 +53,14 @@ let
   # Upstream 743b5c86276b (v7.4-rc, Cc stable), backported unchanged from the
   # tabs6 repository (feat/modem, a85332f). Product only, so the console
   # kernel stays the tabs6 repository's derivation.
-  ++ lib.optional product ./patches/net-qrtr-announce-local-services-after-hello.patch;
+  ++ lib.optional product ./patches/net-qrtr-announce-local-services-after-hello.patch
+  # The Iris driver with SM8150 (Iris1, "legacy VPU5") support from
+  # MCC45TR/nabu-linux-kernel 7.2.2 (README.md). Product only, with its
+  # device tree node (dts/sm8150-samsung-gts6lwifi-venus.dtsi).
+  ++ lib.optionals product [
+    ./patches/media-iris-sm8150-legacy-vpu5.patch
+    ./patches/media-iris-gen1-encoder-for-sunshine.patch
+  ];
 
   kernelSource = pkgs.applyPatches {
     name = "linux-${version}-gts6lwifi-source";
@@ -64,6 +71,9 @@ let
       install -m644 ${./drivers/fts1ba90a.c} drivers/input/touchscreen/fts1ba90a.c
       install -m644 ${./drivers/sm5705_fuelgauge.c} drivers/power/supply/sm5705_fuelgauge.c
       install -m644 ${./drivers/panel-samsung-ana38401.c} drivers/gpu/drm/panel/panel-samsung-ana38401.c
+    ''
+    + lib.optionalString product ''
+      cat ${./dts/sm8150-samsung-gts6lwifi-venus.dtsi} >> arch/arm64/boot/dts/qcom/${dtbName}.dts
     '';
   };
 
@@ -183,6 +193,13 @@ let
             || { echo "panel-samsung-ana38401.ko not built"; exit 1; }
           want wlan_mem.reg "$(fdtget -t x "$dtb" "$(fdtget "$dtb" /__symbols__ wlan_mem)" reg)" "0 c0000000 0 100000"
           [ -d "$out/lib/modules/${version}/kernel" ] || { echo "no modules installed"; exit 1; }
+        ''
+        + lib.optionalString product ''
+          venus="$(fdtget "$dtb" /__symbols__ venus)"
+          want venus "$(fdtget "$dtb" "$venus" compatible)" "qcom,sm8150-iris"
+          want venus_mem.reg "$(fdtget -t x "$dtb" "$(fdtget "$dtb" /__symbols__ venus_mem)" reg)" "0 97800000 0 500000"
+          [ -e "$out/lib/modules/${version}/kernel/drivers/media/platform/qcom/iris/qcom-iris.ko" ] \
+            || { echo "qcom-iris.ko not built"; exit 1; }
         '';
       });
 in
