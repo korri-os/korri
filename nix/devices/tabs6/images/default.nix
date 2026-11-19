@@ -15,6 +15,7 @@
   nixpkgs,
   pkgsHost,
   toplevel,
+  bundle,
   firmware,
   placeholderKernel,
   tabs6PluginSeed,
@@ -122,6 +123,7 @@ rec {
     ];
     text = ''
       toplevel=${toplevel}
+      bundle=${if bundle == null then "" else bundle}
       firmware=${firmware}
       placeholder=${lib.boolToString placeholderKernel}
       plugin_seed=${tabs6PluginSeed}

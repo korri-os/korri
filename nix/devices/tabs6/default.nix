@@ -78,6 +78,12 @@ let
       pkgsHost = hostPkgs;
       inherit (config.config.system.build) toplevel tabs6PluginSeed;
       inherit (config.config.tabs6) placeholderKernel;
+      # The product's own service bundle; the console has none.
+      bundle =
+        if config.config.services ? korriBundle then
+          "${config.config.services.korriBundle.initialPackage}"
+        else
+          null;
       pluginStorePaths = config.config.sdImage.storePaths;
     };
   productImages = images configuration {

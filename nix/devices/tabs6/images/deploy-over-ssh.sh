@@ -11,12 +11,20 @@
 #    onto the cache ESP through a loop device, with a cleanup trap. The LAST
 #    KNOWN GOOD entry is kept; run `tabs6-esp mark-good` on the tablet after
 #    the new system has survived a reboot.
+# 5. selects the system's own Korri service bundle (korri-bundle-select
+#    switch), as the device update procedures do (nix/devices/rgds/UPDATE.md):
+#    system activation never changes the persistent bundle selection, so a
+#    new system would otherwise keep running the old korrid. With --switch it
+#    selects at once. With --reboot it waits for the new system to boot and
+#    bless its trial entry, then selects; a boot that fell back to LAST KNOWN
+#    GOOD keeps its bundle and the deploy fails. Without either it prints the
+#    command to run after the reboot.
 #
 # It writes only the root filesystem and, through tabs6-esp, the cache ESP.
 # It never opens any other partition and never flashes anything.
 #
-# Set by the wrapper: toplevel, firmware, placeholder, plugin_seed, sign_key,
-# default_target, default_port.
+# Set by the wrapper: toplevel, bundle (empty on the console), firmware,
+# placeholder, plugin_seed, sign_key, default_target, default_port.
 #
 # Signing: the Korri product requires signed paths (nix/device-cache), so
 # its wrapper signs the closure with Zao's cache key, as
@@ -96,10 +104,58 @@ if [ "$seed" = yes ]; then
 	on_tablet "test ! -e /var/lib/korri-plugin-host && tar -C / -xpf $plugin_seed/seed.tar --keep-old-files"
 fi
 
+select_cmd="/run/current-system/sw/bin/korri-bundle-select switch $bundle /run/current-system/sw/bin/systemctl"
+select_bundle() {
+	echo "== selecting the system's service bundle $bundle"
+	on_tablet "$select_cmd"
+	# The selector checks health; this checks it runs the bundle's korrid.
+	on_tablet "test \"\$(readlink -f /nix/var/nix/gcroots/korri-bundle/active)\" = $bundle && test \"\$(readlink -f /proc/\$(systemctl show korrid -p MainPID --value)/exe)\" = \"\$(readlink -f $bundle/bin/korrid)\"" || {
+		echo "deploy-over-ssh: korrid does not run the bundle's korrid" >&2
+		exit 1
+	}
+	echo "korrid runs $(on_tablet "readlink -f $bundle/bin/korrid")"
+}
+
+old_boot=$(on_tablet "cat /proc/sys/kernel/random/boot_id")
+
 echo "== installing ($mode)"
 on_tablet "nix-env -p /nix/var/nix/profiles/system --set $toplevel && $toplevel/bin/switch-to-configuration $mode && $toplevel/sw/bin/tabs6-esp status"
+
+if [ "$mode" = switch ] && [ -n "$bundle" ]; then
+	select_bundle
+fi
 
 if [ "$reboot" = yes ]; then
 	echo "== rebooting"
 	on_tablet "systemctl reboot" || true
+	[ -n "$bundle" ] || exit 0
+	# The trial boot has tabs6.bootGood.timeout (300 s) to bless itself.
+	echo "== waiting for the new system to boot and bless its entry"
+	deadline=$((SECONDS + 600))
+	booted=""
+	while [ "$SECONDS" -lt "$deadline" ]; do
+		sleep 10
+		boot=$(on_tablet "cat /proc/sys/kernel/random/boot_id" 2>/dev/null) || continue
+		[ "$boot" != "$old_boot" ] || continue
+		booted=$(on_tablet "readlink -f /run/booted-system") || continue
+		if [ "$booted" != "$toplevel" ]; then
+			echo "deploy-over-ssh: the tablet booted $booted, not $toplevel (LAST KNOWN GOOD?); the bundle selection is unchanged" >&2
+			exit 1
+		fi
+		# Blessed: tabs6-boot-good ran to a clean exit. (Not `tabs6-esp
+		# trial`: a second ESP mount while the unit blesses could race.)
+		state=$(on_tablet "systemctl show tabs6-boot-good -p ActiveState -p Result -p ExecMainExitTimestampMonotonic --value | tr '\n' ' '") || continue
+		case $state in
+		"inactive success 0 ") ;;
+		"inactive success "*)
+			select_bundle
+			exit 0
+			;;
+		esac
+	done
+	echo "deploy-over-ssh: the new system did not come back blessed within 600 s; the bundle selection is unchanged" >&2
+	exit 1
+elif [ "$mode" = boot ] && [ -n "$bundle" ]; then
+	echo "After the reboot, select the system's service bundle:"
+	echo "  ssh -p $port $target '$select_cmd'"
 fi

@@ -141,6 +141,16 @@ nix run .#tabs6-stage-firmware -- /home/simonwjackson/code/sandbox/tabs6/firmwar
 `switch-to-configuration boot` and writes the ESP through `tabs6-esp`. It
 never reboots unless asked and never flashes.
 
+System activation never changes the selected Korri service bundle, so the
+product deploy selects the system's own bundle
+(`services.korriBundle.initialPackage`) with `korri-bundle-select switch`, as
+`nix/devices/rgds/UPDATE.md` does by hand. With `--switch` it selects at once.
+With `--reboot` it waits until the new system has booted and
+`tabs6-boot-good` has blessed its trial entry, then selects and checks that
+korrid runs the bundle's binary. A boot that fell back to LAST KNOWN GOOD keeps
+its bundle, and the deploy exits non-zero. Without either flag it prints the
+command to run after the reboot.
+
 | Tool | Default target | Signing |
 | --- | --- | --- |
 | `tabs6-deploy-over-ssh` (product) | `root@10.42.7.1`, port 2222 | Zao's cache key, signatures checked |
