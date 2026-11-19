@@ -15,7 +15,10 @@ use crate::{
     SessionControlInvokeOutcome, SessionControlInvokeRequest, SessionControlsOutcome,
     SessionPrepared, SessionTransitionResult, SourceStatus,
 };
-use futures::future::join_all;
+use futures::{
+    future::join_all,
+    stream::{FuturesUnordered, StreamExt},
+};
 use serde::Deserialize;
 use std::{
     borrow::Cow,
@@ -894,37 +897,103 @@ impl UpstreamRegistry {
         })
     }
 
-    async fn moonlight_native_peer(&self, host_uuid: &str) -> Result<NativeClient, UpstreamError> {
+    /// The one native peer that attests `host_uuid`, and its short name for
+    /// the log.
+    async fn moonlight_native_peer(
+        &self,
+        host_uuid: &str,
+    ) -> Result<(NativeClient, String), UpstreamError> {
         let registry = self.resolved()?;
-        let native: Vec<NativeClient> = registry
+        let native: Vec<(String, Option<String>, NativeClient)> = registry
             .hosts
             .iter()
             .filter_map(|host| match &host.client {
-                RegisteredClient::Native(client) => Some(client.clone()),
+                RegisteredClient::Native(client) => {
+                    let key = host.native_route_key();
+                    let name = key
+                        .as_deref()
+                        .and_then(|key| key.get(..8))
+                        .unwrap_or(&host.label)
+                        .to_owned();
+                    Some((name, key, client.clone()))
+                }
                 RegisteredClient::Legacy(_) => None,
             })
             .collect();
+        // #510: the holder of the stream that this device's viewer starts for
+        // runs the Sunshine that the viewer reads. Once it attests the UUID,
+        // it is the peer, and no other attest is waited for: an offline owner
+        // device held every stream's start for its whole attest bound. With
+        // no such answer, every peer decides, as with no selected stream.
+        let holder = registry
+            .selected()
+            .and_then(|selected| match selected.route {
+                SelectedRemoteRoute::Native { device_public_key } => Some(device_public_key),
+                SelectedRemoteRoute::Legacy { .. } => None,
+            })
+            .and_then(|holder| {
+                native
+                    .iter()
+                    .position(|(_, key, _)| key.as_deref() == Some(holder.as_str()))
+            });
+        let started = tokio::time::Instant::now();
         // One slow or unreachable owner device must not spend the whole
         // broker budget: bound each attest by the native operation timeout.
-        let results = join_all(native.iter().map(|client| async move {
-            timeout(
-                NATIVE_RPC_TIMEOUT,
-                client.moonlight_certificate_attest(host_uuid),
-            )
-            .await
-            .unwrap_or(Err(UpstreamError::MoonlightCertificatePeerUnavailable))
-        }))
-        .await;
+        let mut pending = native
+            .iter()
+            .enumerate()
+            .map(|(index, (_, _, client))| async move {
+                let result = timeout(
+                    NATIVE_RPC_TIMEOUT,
+                    client.moonlight_certificate_attest(host_uuid),
+                )
+                .await
+                .unwrap_or(Err(UpstreamError::MoonlightCertificatePeerUnavailable));
+                (index, result)
+            })
+            .collect::<FuturesUnordered<_>>();
+        let mut answers = Vec::with_capacity(native.len());
+        while let Some((index, result)) = pending.next().await {
+            let answered = started.elapsed().as_millis();
+            if Some(index) == holder && matches!(&result, Ok(attested) if attested.matched) {
+                let (name, _, client) = &native[index];
+                client.ensure_not_revoked()?;
+                eprintln!(
+                    "korrid: certificate peer: {name} attested in {answered} ms as the stream's holder; {} of {} peers not waited for",
+                    pending.len(),
+                    native.len()
+                );
+                return Ok((client.clone(), name.clone()));
+            }
+            answers.push((index, result, answered));
+        }
+        drop(pending);
+        answers.sort_by_key(|(index, _, _)| *index);
+        eprintln!(
+            "korrid: certificate peers: {} asked in {} ms: {}",
+            native.len(),
+            started.elapsed().as_millis(),
+            native
+                .iter()
+                .zip(&answers)
+                .map(|((name, _, _), (_, result, ms))| match result {
+                    Ok(attested) if attested.matched => format!("{name}=matched@{ms}"),
+                    Ok(_) => format!("{name}=no@{ms}"),
+                    Err(error) => format!("{name}={}@{ms}", error.code()),
+                })
+                .collect::<Vec<_>>()
+                .join(",")
+        );
         // Most owner devices run no Sunshine host, and any of them may be
         // offline. Their attest failures say they do not own this UUID; they
         // must not hide the one peer that does. Report a failure only when no
         // peer matched.
         let mut matched = Vec::new();
         let mut first_failure = None;
-        for (client, result) in native.into_iter().zip(results) {
+        for ((name, _, client), (_, result, _)) in native.into_iter().zip(answers) {
             client.ensure_not_revoked()?;
             match result {
-                Ok(attested) if attested.matched => matched.push(client),
+                Ok(attested) if attested.matched => matched.push((client, name)),
                 Ok(_) => {}
                 Err(error) => {
                     first_failure.get_or_insert(error);
@@ -953,10 +1022,19 @@ impl UpstreamRegistry {
         client_certificate: &str,
     ) -> Result<MoonlightCertificateProvisioned, UpstreamError> {
         timeout(MOONLIGHT_CERTIFICATE_BROKER_TIMEOUT, async {
-            self.moonlight_native_peer(host_uuid)
-                .await?
+            let (peer, name) = self.moonlight_native_peer(host_uuid).await?;
+            let started = tokio::time::Instant::now();
+            let provisioned = peer
                 .moonlight_certificate_provision(host_uuid, client_certificate)
-                .await
+                .await;
+            eprintln!(
+                "korrid: certificate provision at {name}: {} in {} ms",
+                provisioned
+                    .as_ref()
+                    .map_or_else(UpstreamError::code, |_| "Ok"),
+                started.elapsed().as_millis()
+            );
+            provisioned
         })
         .await
         .map_err(|_| UpstreamError::MoonlightCertificatePeerUnavailable)?
@@ -969,6 +1047,7 @@ impl UpstreamRegistry {
     ) -> Result<MoonlightCertificateRevoked, UpstreamError> {
         self.moonlight_native_peer(host_uuid)
             .await?
+            .0
             .moonlight_certificate_revoke(host_uuid, client_certificate)
             .await
     }
@@ -3185,6 +3264,186 @@ mod tests {
     fn certificate_caller_deadline_outlives_the_complete_broker_budget() {
         assert!(MOONLIGHT_CERTIFICATE_BROKER_TIMEOUT > NATIVE_RPC_TIMEOUT * 2);
         assert!(MOONLIGHT_CERTIFICATE_CALLER_TIMEOUT > MOONLIGHT_CERTIFICATE_BROKER_TIMEOUT);
+    }
+
+    /// A peer's certificate control: it attests only `owned` and records each
+    /// attest and provision that reaches it.
+    async fn certificate_peer(owned: &'static str) -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
+        let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded = calls.clone();
+        let url = serve(Router::new().route(
+            "/rpc",
+            post(move |Json(request): Json<crate::RpcRequest>| {
+                let calls = recorded.clone();
+                async move {
+                    Json(match request {
+                        crate::RpcRequest::MoonlightCertificateAttest(asked) => {
+                            calls
+                                .lock()
+                                .unwrap()
+                                .push(format!("attest:{}", asked.host_uuid));
+                            crate::RpcResponse::MoonlightCertificateAttest(
+                                crate::MoonlightCertificateAttestOutcome::Ok(
+                                    crate::MoonlightCertificateAttested {
+                                        matched: asked.host_uuid == owned,
+                                    },
+                                ),
+                            )
+                        }
+                        crate::RpcRequest::MoonlightCertificateProvision(asked) => {
+                            calls
+                                .lock()
+                                .unwrap()
+                                .push(format!("provision:{}", asked.host_uuid));
+                            crate::RpcResponse::MoonlightCertificateProvision(
+                                crate::MoonlightCertificateProvisionOutcome::Ok(
+                                    MoonlightCertificateProvisioned {
+                                        server_certificate: format!("server of {owned}"),
+                                    },
+                                ),
+                            )
+                        }
+                        other => panic!("a certificate peer was asked {other:?}"),
+                    })
+                }
+            }),
+        ))
+        .await;
+        (url, calls)
+    }
+
+    /// An owner device that takes the connection and never answers: on the
+    /// phone, an offline peer costs its whole attest bound (#510).
+    async fn silent_peer() -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((socket, _)) = listener.accept().await {
+                held.push(socket);
+            }
+        });
+        format!("http://{address}")
+    }
+
+    /// The stream that this device's viewer starts for, at `label`.
+    fn select_holder(registry: &UpstreamRegistry, label: &str) {
+        let key = registry
+            .hosts
+            .iter()
+            .find(|host| host.label == label)
+            .and_then(RegisteredHost::native_route_key)
+            .unwrap();
+        registry.set_selected(SelectedRemoteSession {
+            display: None,
+            viewer_target: LinuxViewerStatus::Running,
+            participation: Participation::Starter,
+            route: SelectedRemoteRoute::Native {
+                device_public_key: key,
+            },
+            launch_id: "11111111111111111111111111111111".into(),
+            viewer: Some(SelectedViewer {
+                moonlight_address: format!("{label}:47989"),
+                confirmed_live: false,
+                reach: None,
+            }),
+        });
+    }
+
+    #[tokio::test]
+    async fn the_selected_holder_is_provisioned_without_waiting_for_silent_peers() {
+        // #510: the phone's broker waited 5.0 s for its offline owner
+        // devices before every stream, though the holder answered at once.
+        let (holder_url, holder) = certificate_peer("sunshine-host").await;
+        let registry = UpstreamRegistry::new(vec![
+            UpstreamHostConfig::native("offline", silent_peer().await),
+            UpstreamHostConfig::native("holder", holder_url),
+        ]);
+        select_holder(&registry, "holder");
+        let started = std::time::Instant::now();
+        let provisioned = registry
+            .moonlight_certificate_provision("sunshine-host", "client")
+            .await;
+        let took = started.elapsed();
+        assert!(took < NATIVE_RPC_TIMEOUT / 2, "the broker waited {took:?}");
+        assert_eq!(
+            provisioned.unwrap().server_certificate,
+            "server of sunshine-host"
+        );
+        assert_eq!(
+            *holder.lock().unwrap(),
+            ["attest:sunshine-host", "provision:sunshine-host"]
+        );
+    }
+
+    #[tokio::test]
+    async fn the_selected_holder_names_the_sunshine_when_another_peer_attests_it_too() {
+        let (twin_url, twin) = certificate_peer("sunshine-host").await;
+        let (holder_url, holder) = certificate_peer("sunshine-host").await;
+        let registry = UpstreamRegistry::new(vec![
+            UpstreamHostConfig::native("twin", twin_url),
+            UpstreamHostConfig::native("holder", holder_url),
+        ]);
+        select_holder(&registry, "holder");
+        let provisioned = registry
+            .moonlight_certificate_provision("sunshine-host", "client")
+            .await
+            .unwrap();
+        assert_eq!(provisioned.server_certificate, "server of sunshine-host");
+        assert_eq!(
+            *holder.lock().unwrap(),
+            ["attest:sunshine-host", "provision:sunshine-host"]
+        );
+        // The stream's holder runs the Sunshine that the viewer reads; another
+        // peer that attests the same UUID is never provisioned.
+        assert!(twin
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|call| call.starts_with("attest:")));
+    }
+
+    #[tokio::test]
+    async fn a_selected_holder_that_does_not_attest_leaves_the_choice_to_every_peer() {
+        let (holder_url, holder) = certificate_peer("another-host").await;
+        let (owner_url, owner) = certificate_peer("sunshine-host").await;
+        let registry = UpstreamRegistry::new(vec![
+            UpstreamHostConfig::native("holder", holder_url),
+            UpstreamHostConfig::native("owner", owner_url),
+        ]);
+        select_holder(&registry, "holder");
+        let provisioned = registry
+            .moonlight_certificate_provision("sunshine-host", "client")
+            .await
+            .unwrap();
+        assert_eq!(provisioned.server_certificate, "server of sunshine-host");
+        assert_eq!(*holder.lock().unwrap(), ["attest:sunshine-host"]);
+        assert_eq!(
+            *owner.lock().unwrap(),
+            ["attest:sunshine-host", "provision:sunshine-host"]
+        );
+
+        // Two other peers that attest it are still ambiguous, as with no
+        // selected stream, and nothing is provisioned.
+        let (holder_url, _) = certificate_peer("another-host").await;
+        let (one_url, one) = certificate_peer("sunshine-host").await;
+        let (two_url, two) = certificate_peer("sunshine-host").await;
+        let registry = UpstreamRegistry::new(vec![
+            UpstreamHostConfig::native("holder", holder_url),
+            UpstreamHostConfig::native("one", one_url),
+            UpstreamHostConfig::native("two", two_url),
+        ]);
+        select_holder(&registry, "holder");
+        let refused = registry
+            .moonlight_certificate_provision("sunshine-host", "client")
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(refused, UpstreamError::MoonlightHostAmbiguous),
+            "{refused:?}"
+        );
+        assert_eq!(*one.lock().unwrap(), ["attest:sunshine-host"]);
+        assert_eq!(*two.lock().unwrap(), ["attest:sunshine-host"]);
     }
 
     #[tokio::test]

@@ -364,6 +364,19 @@ adapter's one start or stop at a time, for ever (`rules::Waiting`). The client k
 thread of its own (#510), not in the first launch's start. Until #391 the layers were asked only after the
 certificate, and the window turned only after Start.
 
+korrid's broker asks each owner device whether its Sunshine has the host
+UUID, each for at most 5 s (`NATIVE_RPC_TIMEOUT`). Until #510 it waited for
+all of them, so one offline owner device held every start for those 5 s: on
+the owner's phone, 5.04 s of the 5.4 s from the viewer's start to the first
+frame (2026-11-19). Now the holder of the selected stream decides as soon
+as it attests the UUID, and the others are not waited for; without its
+attest every device decides, as before. korrid logs the step's times
+(`korrid: certificate peer: …` or `korrid: certificate peers: …`, then
+`korrid: certificate provision at …`), and the holder logs its own part
+(`korrid: certificate provision for peer …`). The play proof's
+`--offline-peer` adds an owner device that never answers and checks the
+step.
+
 The viewer's steps and the app's write `start:` lines with their
 monotonic times (`clients/viewer`, "The start's timeline"). The play proof
 reads them from the tap to the first frame into `result.json`

@@ -364,7 +364,25 @@ impl CertificateTransaction {
         };
         match request {
             RpcRequest::MoonlightCertificateProvision(asked) => {
-                self.provision(&context, &device, asked).await
+                // #510: the holder's half of a stream's certificate step.
+                let started = std::time::Instant::now();
+                let provisioned = self.provision(&context, &device, asked).await;
+                eprintln!(
+                    "korrid: certificate provision for peer {}: {} in {} ms",
+                    device.get(..8).unwrap_or(&device),
+                    match &provisioned {
+                        Ok(RpcResponse::MoonlightCertificateProvision(
+                            MoonlightCertificateProvisionOutcome::Ok(_),
+                        )) => "Ok".to_owned(),
+                        Ok(RpcResponse::MoonlightCertificateProvision(
+                            MoonlightCertificateProvisionOutcome::Err(failure),
+                        )) => failure.code.clone(),
+                        Ok(_) => "unexpected answer".to_owned(),
+                        Err(error) => error.to_string(),
+                    },
+                    started.elapsed().as_millis()
+                );
+                provisioned
             }
             RpcRequest::MoonlightCertificateRevoke(asked) => {
                 self.revoke(&context, &device, asked).await
