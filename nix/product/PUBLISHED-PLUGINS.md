@@ -6,12 +6,14 @@ raw-cache fallback, receipt migration, or outside repository is in this lane.
 
 ## Published input
 
-- Plugins source: `ba9f46af31ea3938f88af3aee00236439f8b8bf6`.
-- Immutable tag: `build-ba9f46af31ea-viewer-notices`.
-- Publication dry run: `44381400569`; live publication: `44403044631`.
-- Catalog: <https://github.com/korri-os/plugins/releases/download/build-ba9f46af31ea-viewer-notices/catalog.json>.
-- Actual catalog SHA-256: `d4ee84503cb84971a3cf6e4431d0ad1be93a0ab6e774239acd37c754ad66f787`.
-- SRI: `sha256-1O6EUDy4SXGjz25EMdCtG+k6CrbndCOazTfHVK1m94c=`.
+- Plugins source: `a7448c0a8ea2a02455e3b2105f51db7260dbf01f`.
+- Immutable tag: `build-a7448c0a8ea2-viewer-rust-audio`.
+- Publication dry run: `44449431724`; live publication: `44461941962`
+  (attempt 2; attempt 1 published the release, then timed out waiting for
+  Pages, whose deployment had failed).
+- Catalog: <https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json>.
+- Actual catalog SHA-256: `3e4ce2c7c808d7e5455e4b3ca4849a77947a2f04394f0457273fcf82a122cd34`.
+- SRI: `sha256-Pkzix8gI1+VFXks8pISad5R6LwQ5TwRXJz/PgqEizTQ=`.
 - 34 plugin IDs, 64 records: 34 for x86_64 and 33 for aarch64, because
   `@korri:viewer` exists for x86_64 only. Homebrew Hub, PICO-8 and RetroBrews
   use `any`.
@@ -19,10 +21,10 @@ raw-cache fallback, receipt migration, or outside repository is in this lane.
   `korri-plugins-1:qlK5Mgb3dYhF76WC4jGhrvL+CHsU93De7GpBFtrXb98=`.
 
 The selection is the same as the previous pin,
-`build-1f0543c4cfac-viewer-rust-default`. Against it, only `@korri:viewer`
-(x86_64) changed: the Korri viewer at Korri `07b0221b7`, whose PC package
-ships `NOTICES.txt` for what its recipe builds in (#521), with two nightjar
-input fixes. The other 33 plugins keep their store paths and archive bytes.
+`build-ba9f46af31ea-viewer-notices`. Against it, only `@korri:viewer`
+(x86_64) changed: the Korri viewer at Korri `6b895b909`, which plays sound
+through the Rust audio output by default (#391). The other 33 plugins keep
+their store paths and archive bytes.
 No product image selects the viewer; a device installs it from the official
 catalog.
 
