@@ -57,6 +57,11 @@ in
     # while it writes), so bootctl cannot find it and this unit always fails.
     # systemd-boot boots without a seed file; the kernel seeds itself.
     systemd.suppressedSystemUnits = [ "systemd-boot-random-seed.service" ];
+    # systemd-bless-boot-generator sees the boot counter in LoaderBootCountPath
+    # and pulls in systemd-bless-boot, which cannot find the ESP either and
+    # fails on every counted boot. Mask it: tabs6-boot-good blesses the entry
+    # through tabs6-esp.
+    systemd.services.systemd-bless-boot.enable = false;
 
     hardware.deviceTree = {
       enable = true;

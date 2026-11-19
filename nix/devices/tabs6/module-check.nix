@@ -113,7 +113,10 @@ assert !(c.systemd.network.networks ? "20-wlan");
 assert c.systemd.services ? korri-shell;
 assert c.systemd.services.korri-shell.serviceConfig.User != "root";
 assert c.services.korriProduct.sleep.states == [ ];
-assert c.services.logind.settings.Login.HandlePowerKey == "poweroff";
+# Short press: panel off/on through the compositor; long press: power off.
+assert c.services.logind.settings.Login.HandlePowerKey == "ignore";
+assert c.services.logind.settings.Login.HandlePowerKeyLongPress == "poweroff";
+assert !c.systemd.services.systemd-bless-boot.enable;
 assert c.services.korriProduct.kernel.overrideReason != null;
 assert lib.hasSuffix "linux-gts6lwifi-korri-aarch64-unknown-linux-gnu-7.3.4"
   c.boot.kernelPackages.kernel.name;
