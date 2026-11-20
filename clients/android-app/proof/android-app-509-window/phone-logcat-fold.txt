@@ -1,0 +1,72 @@
+11-19 16:21:28.447  3364  3554 D DeviceStateManagerService: Committing state: DeviceState{identifier=0, name='CLOSED', app_accessible=true, cancel_when_requester_not_on_top=false}
+11-19 16:21:28.452  3364  3554 I WindowManager: buildFoldingPolicyInfo: , appContinuityMode=APPLIED, fl=0x5
+11-19 16:21:28.459  3364  3554 I PowerGroup: Powering off display group due to device_folded (groupId= 0, uid= 1000, millisSinceLastUserActivity=10, lastUserActivityEvent=deviceState)...
+11-19 16:21:28.461  3364  3364 I PhoneWindowManager: Started going to sleep... (groupId=0 why=OFF_BECAUSE_OF_FOLD)
+11-19 16:21:28.466 14246 14246 I ImeTracker: com.simonwjackson.korri.app:3450c3b9: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+11-19 16:21:28.471  3364  3364 D ActivityTaskManager: scheduleTopResumedActivityChanged, onTop=false, r=ActivityRecord{176692828 u0 com.simonwjackson.korri.app/android.app.NativeActivity t2060}, caller=com.android.server.wm.ActivityTaskSupervisor.scheduleTopRe
+11-19 16:21:28.569  3364  4030 V WindowManager: Setting visibility of Window{82b240e u0 com.simonwjackson.korri.app/android.app.NativeActivity}: false, caller=com.android.server.wm.WindowContainer.sendAppVisibilityToClients:18 com.android.server.wm.WindowToken
+11-19 16:21:28.569 14246 14246 I VRI[NativeActivity]@a5e2d67: handleAppVisibility oldVisibility=true newVisibility=false seqId=-1 mSeqId=9
+11-19 16:21:28.569 14246 14246 D VRI[NativeActivity]@a5e2d67: visibilityChanged oldVisibility=true newVisibility=false
+11-19 16:21:28.594 14246 14283 I korri   : korri-app: viewer screen now 1972x1248, not settled
+11-19 16:21:28.594 14246 14283 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":true,"shape":{"connection":"14246:296405:125992032","screen":{"width":1972,"height":1248},"encoded":{"width":2448,"height":1848},"ready":false},"controls
+11-19 16:21:28.616 14246 14246 I InsetsController: onStateChanged: host=com.simonwjackson.korri.app/android.app.NativeActivity, from=android.view.ViewRootImpl.onInsetsStateChanged:3318, state=InsetsState: {mDisplayFrame=Rect(0, 0 - 2448, 1848), mDisplayCutout=
+11-19 16:21:28.620 14246 14246 I VRI[NativeActivity]@a5e2d67: Relayout returned: old=(0,0,2448,1848) new=(0,0,2448,1848) relayoutAsync=false req=(2448,1848)8 dur=6 res=0x2 s={false 0x0} ch=true seqId=0
+11-19 16:21:28.621 14246 14246 I VRI[NativeActivity]@a5e2d67: ViewRootImpl >> surfaceDestroyed
+11-19 16:21:28.683  3364  3364 I PhoneWindowManager: Finished going to sleep... (groupId=0 why=OFF_BECAUSE_OF_FOLD)
+11-19 16:21:28.687  2207  2207 I SurfaceFlinger: [LayerHierarchy{RequestedLayerState{Bounds for - com.simonwjackson.korri.app/android.app.NativeActivity@0#33811} 3 children}] reparent to OffscreenRoot
+11-19 16:21:28.705 14246 14283 I korri   : korri-app: viewer stops: the app's window went
+11-19 16:21:28.705 14246 14283 I korri-viewer: input: ended: 0 keys, 149 controller states, 1 arrivals, 0 mouse, 4 touches sent; 0 held; 0 unsupported, 0 outside the stream, 0 failed
+11-19 16:21:28.705 14246 14283 I korri   : korri-app: viewer request {"launchId":"a96abf6b1533d646b83ca300b7f43f32","command":{"kind":"Stop"}}
+11-19 16:21:28.705 14246 14246 D VRI[NativeActivity]@a5e2d67: Not drawing due to not visible. Reason=!mAppVisible && !mForceDecorViewVisibility
+11-19 16:21:28.705 14246 14246 I korri-viewer: pointer: [ShowIcon, Release] on the stream's view, which had pointer capture: false
+11-19 16:21:28.706 14246 14246 I InsetsController: onStateChanged: host=com.simonwjackson.korri.app/android.app.NativeActivity, from=android.view.ViewRootImpl.onInsetsStateChanged:3318, state=InsetsState: {mDisplayFrame=Rect(0, 0 - 2448, 1848), mDisplayCutout=
+11-19 16:21:28.706 14246 14246 I InsetsSourceConsumer: applyRequestedVisibilityToControl: visible=false, type=statusBars, host=com.simonwjackson.korri.app/android.app.NativeActivity
+11-19 16:21:28.736 14246 21668 I korri-viewer: input: the core takes no more input
+11-19 16:21:28.736 14246 21667 I korri-viewer: feedback: Nacon MG-X (44) stopped
+11-19 16:21:28.736 14246 21667 I korri-viewer: feedback: ended: 0 rumbles, 0 trigger rumbles, 0 lights, 1 calls to Android; 1 battery reads, 0 battery reports sent, 0 outside the stream; 0 failed
+11-19 16:21:28.736 14246 21668 I korri-viewer: feedback: vibration and lights stopped
+11-19 16:21:28.736 14246 21668 I korri-viewer: nightjar: at the stop: SessionStats { rtt: Some((4ms, 1ms)), video: VideoStats { packet_count_video: 50213, packet_count_fec: 12115, packets_received: 62328, packets_recovered: 0, decrypt_failures: 0, frames_compl
+11-19 16:21:28.737 14246 21668 I korri-viewer: nightjar: recovery requests sent: 0 IDR, 0 reference frame invalidations
+11-19 16:21:28.861 14246 21668 I korri-viewer: sound: stream closed
+11-19 16:21:28.861 14246 21668 I korri-viewer: sound: ended: 26373 callbacks, 2475936 frames played, 55872 frames silent, 154 short callbacks after the first sound, 10376 packets, 0 concealed, 53 dropped over 40 ms pending, 0 not decoded, 0 device xruns, 0 reo
+11-19 16:21:28.923 14246 21668 I korri-viewer: picture: decoder stopped
+11-19 16:21:28.932 14246 21668 I korri   : korri-app: viewer event {"kind":"Snapshot","value":{"connected":false,"controls":[]}}
+11-19 16:21:28.932 14246 21668 I korri   : korri-app: viewer event {"kind":"Status","value":"Stopped"}
+11-19 16:21:28.932 14246 21850 I korri   : korri-app: viewer reply Stop {"kind":"Ok"}
+11-19 16:21:28.935 14246 14283 I korri   : korri-app: viewer a96abf6b1533d646b83ca300b7f43f32 ended
+11-19 16:21:28.936 14246 14246 I ImeTracker: com.simonwjackson.korri.app:2f10b5ca: onRequestHide at ORIGIN_CLIENT reason HIDE_SOFT_INPUT fromUser false userId 0 displayId 0
+11-19 16:21:28.936 14246 14246 I ImeTracker: com.simonwjackson.korri.app:2f10b5ca: onFailed at PHASE_CLIENT_VIEW_SERVED
+11-19 16:21:28.936 14246 14246 I korri-viewer: keyboard: the soft keyboard hides; the stream's view gives the focus back
+11-19 16:21:28.945 14246 14296 I korri   : korri-app: viewer status for korrid: a96abf6b1533d646b83ca300b7f43f32 Stopped
+11-19 16:21:28.984 14246 14246 I VRI[NativeActivity]@a5e2d67: stopped(true) old = false
+11-19 16:21:28.999 14246 14283 I korri   : korri-app: viewer screen now 1972x1248, settled
+11-19 16:21:29.019  3364  6137 D GMR     : bg_async : 14246 com.simonwjackson.korri.app 700->900 state:15->16
+11-19 16:21:31.029  3364  4762 D GMR     : bg : 14246 com.simonwjackson.korri.app
+11-19 16:21:31.175 14246 14246 I InsetsController: onStateChanged: host=com.simonwjackson.korri.app/android.app.NativeActivity, from=android.view.ViewRootImpl.onInsetsStateChanged:3318, state=InsetsState: {mDisplayFrame=Rect(0, 0 - 2448, 1848), mDisplayCutout=
+11-19 16:21:33.913  5493  5493 I HoneySpace.TaskView: Active Launch activated from recents UI for com.simonwjackson.korri.app
+11-19 16:21:33.973  3364  4679 V WindowManager: Setting visibility of Window{82b240e u0 com.simonwjackson.korri.app/android.app.NativeActivity}: true, caller=com.android.server.wm.WindowContainer.sendAppVisibilityToClients:18 com.android.server.wm.WindowToken.
+11-19 16:21:33.973  3364  4679 D GMR     : fg_async : 14246 com.simonwjackson.korri.app (TaskFragment)
+11-19 16:21:33.973  3364  4757 D GMR     : fg : 14246 com.simonwjackson.korri.app
+11-19 16:21:33.974  3364  4679 D ActivityTaskManager: scheduleConfigurationChanged: ActivityRecord{176692828 u0 com.simonwjackson.korri.app/android.app.NativeActivity t2060} state=RESUMED config={1.08 310mcc240mnc [en_US] ldltr sw475dp w475dp h661dp 420dpi nrm
+11-19 16:21:33.975  3364  4679 D ActivityTaskManager: scheduleTopResumedActivityChanged, onTop=true, r=ActivityRecord{176692828 u0 com.simonwjackson.korri.app/android.app.NativeActivity t2060}, caller=com.android.server.wm.ActivityTaskSupervisor.scheduleTopRes
+11-19 16:21:33.984 14246 14246 I VRI[NativeActivity]@a5e2d67: handleAppVisibility oldVisibility=false newVisibility=true seqId=10 mSeqId=9
+11-19 16:21:33.987 14246 14246 I VRI[NativeActivity]@a5e2d67: stopped(false) old = true
+11-19 16:21:33.988 14246 14246 I korri   : korri-app: window flags applied; system bars hidden: true
+11-19 16:21:33.988 14246 14246 I korri   : korri-app: no insets animation callback on 4 views: the input method's keyboard is drawn
+11-19 16:21:33.991 14246 14246 I InsetsController: onStateChanged: host=com.simonwjackson.korri.app/android.app.NativeActivity, from=android.view.ViewRootImpl.onInsetsStateChanged:3318, state=InsetsState: {mDisplayFrame=Rect(0, 0 - 1248, 1972), mDisplayCutout=
+11-19 16:21:33.992 14246 14246 I VRI[NativeActivity]@a5e2d67: Relayout returned: old=(0,0,2448,1848) new=(0,0,1248,1972) relayoutAsync=false req=(2448,1848)0 dur=2 res=0x3 s={true 0xb400007c4b899460} ch=true seqId=0
+11-19 16:21:33.992 14246 14246 I VRI[NativeActivity]@a5e2d67: ViewRootImpl >> surfaceCreated
+11-19 16:21:33.992 14246 14246 I VRI[NativeActivity]@a5e2d67: ViewRootImpl >> surfaceChanged W=1248, H=1972)
+11-19 16:21:34.004 14246 14246 I InsetsController: onStateChanged: host=com.simonwjackson.korri.app/android.app.NativeActivity, from=android.view.ViewRootImpl.onInsetsStateChanged:3318, state=InsetsState: {mDisplayFrame=Rect(0, 0 - 1248, 1972), mDisplayCutout=
+11-19 16:21:34.005 14246 14246 I InsetsController: onStateChanged: host=com.simonwjackson.korri.app/android.app.NativeActivity, from=android.view.ViewRootImpl.onInsetsStateChanged:3318, state=InsetsState: {mDisplayFrame=Rect(0, 0 - 1248, 1972), mDisplayCutout=
+11-19 16:21:34.006 14246 14246 I ImeTracker: com.simonwjackson.korri.app:5b10e14f: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+11-19 16:21:34.016 14246 14246 I ImeTracker: com.simonwjackson.korri.app:b229d2fe: onRequestHide at ORIGIN_CLIENT reason HIDE_SOFT_INPUT fromUser false userId 0 displayId 0
+11-19 16:21:34.016 14246 14246 I ImeTracker: com.simonwjackson.korri.app:b229d2fe: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+11-19 16:21:34.035 14246 14283 I korri   : korri-app: shell rendered surface=velvet page=detail count=0 selected=3
+11-19 16:21:34.035 14246 14246 I korri   : korri-app: window flags applied; system bars hidden: true
+11-19 16:21:34.036 14246 14246 I korri   : korri-app: no insets animation callback on 4 views: the input method's keyboard is drawn
+11-19 16:21:34.040 14246 14246 I VRI[NativeActivity]@a5e2d67: Relayout returned: old=(0,0,1248,1972) new=(0,0,1248,1972) relayoutAsync=false req=(1248,1972)0 dur=3 res=0x0 s={true 0xb400007c4b899460} ch=false seqId=0
+11-19 16:21:34.040 14246 14246 I VRI[NativeActivity]@a5e2d67: ViewRootImpl >> surfaceChanged W=1248, H=1972)
+11-19 16:21:34.050 14246 14283 I korri   : korri-app: shell rendered surface=velvet page=detail count=0 selected=3
+11-19 16:21:35.057 14246 14288 E korri   : korri-app: viewer resume for korrid: a96abf6b1533d646b83ca300b7f43f32 failed: the stream is not in front
+11-19 16:21:36.645 14246 14294 E korri   : korri-app: viewer resume for korrid: a96abf6b1533d646b83ca300b7f43f32 failed: the stream is not in front

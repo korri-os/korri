@@ -1,0 +1,363 @@
+{
+  "stream_host": "192.168.1.117",
+  "checks": {
+    "viewer_reports_running": true,
+    "emulator-fold_korrid_reads_the_same_connection": true,
+    "emulator-fold_the_picture_moves": true,
+    "emulator-fold_the_console_answers_ok": true,
+    "emulator-fold_the_stream_does_not_stop": true,
+    "emulator-unfold_korrid_reads_the_same_connection": true,
+    "emulator-unfold_the_picture_moves": true,
+    "emulator-unfold_the_console_answers_ok": true,
+    "emulator-unfold_the_stream_does_not_stop": true,
+    "back-after-the-fold_korrid_reads_the_same_connection": true,
+    "back-after-the-fold_the_picture_moves": true,
+    "fold_the_app_waits_for_the_window": true,
+    "fold_the_input_is_held_then_goes_on": true,
+    "fold_the_window_comes_back_within_the_grace": true,
+    "fold_the_layers_go_to_the_new_window": true,
+    "fold_the_stream_does_not_stop": true,
+    "away_the_app_waits_for_the_window": true,
+    "away_the_stream_stops_after_the_grace": true,
+    "away_the_stream_ends": true,
+    "korrids_recovery_starts_the_stream_again": true,
+    "home_stops_the_stream_at_once": true,
+    "no_crash_panic_or_anr": true,
+    "holder_joined_its_discovery": true
+  },
+  "steps": {
+    "first_bar": {
+      "file": "stream-first.png",
+      "tries": 1,
+      "id": 4776
+    },
+    "korrids_snapshot_shape": {
+      "connection": "5623:143:874059626",
+      "screen": {
+        "width": 2208,
+        "height": 1768
+      },
+      "encoded": {
+        "width": 1280,
+        "height": 720
+      },
+      "ready": true
+    },
+    "display_mode": [
+      1768,
+      2208
+    ],
+    "emulator-fold": {
+      "korrids_snapshot_shape": {
+        "connection": "5623:143:874059626",
+        "screen": {
+          "width": 2208,
+          "height": 1768
+        },
+        "encoded": {
+          "width": 1280,
+          "height": 720
+        },
+        "ready": true
+      },
+      "picture": [
+        {
+          "file": "emulator-fold-1.png",
+          "host_s": 887373.958,
+          "id": 5270
+        },
+        {
+          "file": "emulator-fold-2.png",
+          "host_s": 887375.563,
+          "id": 5360
+        },
+        {
+          "file": "emulator-fold-3.png",
+          "host_s": 887377.175,
+          "id": 5454
+        }
+      ],
+      "console": "OK",
+      "wm_size": "Physical size: 1768x2208\nOverride size: 884x2208",
+      "display_mode": [
+        1768,
+        2208
+      ],
+      "window_lines": [
+        "11-20 01:30:06.305  5623  5642 I korri   : korri-app: viewer video layer 1280x720 placed at (127, 0)-(756, 354) in the window 884x354",
+        "11-20 01:30:07.177  5623  5642 I korri   : korri-app: viewer video layer 1280x720 placed at (318, 0)-(1890, 884) in the window 2208x884"
+      ],
+      "screen_reports": [],
+      "the_window_went": false
+    },
+    "emulator-unfold": {
+      "korrids_snapshot_shape": {
+        "connection": "5623:143:874059626",
+        "screen": {
+          "width": 2208,
+          "height": 1768
+        },
+        "encoded": {
+          "width": 1280,
+          "height": 720
+        },
+        "ready": true
+      },
+      "picture": [
+        {
+          "file": "emulator-unfold-1.png",
+          "host_s": 887385.566,
+          "id": 5917
+        },
+        {
+          "file": "emulator-unfold-2.png",
+          "host_s": 887387.319,
+          "id": 6021
+        },
+        {
+          "file": "emulator-unfold-3.png",
+          "host_s": 887389.328,
+          "id": 6129
+        }
+      ],
+      "console": "OK",
+      "wm_size": "Physical size: 1768x2208",
+      "display_mode": [
+        1768,
+        2208
+      ],
+      "window_lines": [
+        "11-20 01:30:17.573  5623  5642 I korri   : korri-app: viewer video layer 1280x720 placed at (0, 263)-(2208, 1505) in the window 2208x1768",
+        "11-20 01:30:18.802  5623  5642 I korri   : korri-app: viewer video layer 1280x720 placed at (0, 210)-(1768, 1205) in the window 1768x1416"
+      ],
+      "screen_reports": [],
+      "the_window_went": false
+    },
+    "fold": {
+      "korrids_snapshot_shape": {
+        "connection": "5623:143:874059626",
+        "screen": {
+          "width": 2520,
+          "height": 1080
+        },
+        "encoded": {
+          "width": 1280,
+          "height": 720
+        },
+        "ready": true
+      },
+      "picture": [
+        {
+          "file": "back-after-the-fold-1.png",
+          "host_s": 887400.277,
+          "id": 6744
+        },
+        {
+          "file": "back-after-the-fold-2.png",
+          "host_s": 887402.229,
+          "id": 6849
+        },
+        {
+          "file": "back-after-the-fold-3.png",
+          "host_s": 887404.187,
+          "id": 6963
+        }
+      ],
+      "home_at": "11-20 01:30:30.269191937",
+      "away_ms": 3539,
+      "window_lines": [
+        "11-20 01:30:31.462  5623  5642 I korri   : korri-app: viewer window went with a fold; the stream waits 10 s for the next one",
+        "11-20 01:30:35.001  5623  5642 I korri   : korri-app: viewer window back after 3539 ms; the layers go to it",
+        "11-20 01:30:35.904  5623  5642 I korri   : korri-app: viewer layers are in the new window"
+      ],
+      "screen_reports": [
+        {
+          "at_ms": 27999030185,
+          "screen": {
+            "width": 2520,
+            "height": 1080
+          },
+          "settled": false
+        },
+        {
+          "at_ms": 27999030600,
+          "screen": {
+            "width": 2520,
+            "height": 1080
+          },
+          "settled": true
+        }
+      ]
+    },
+    "away": {
+      "home_at": "11-20 01:30:44.899812638",
+      "seconds_to_the_stop": 10.0,
+      "window_lines": [
+        "11-20 01:30:45.662  5623  5642 I korri   : korri-app: viewer window went with a fold; the stream waits 10 s for the next one",
+        "11-20 01:30:55.670  5623  5642 I korri   : korri-app: viewer stops: the app's window did not come back within 10 s"
+      ]
+    },
+    "home": {
+      "window_lines": [
+        "11-20 01:31:02.894  5623  5642 I korri   : korri-app: viewer stops: the app's window went"
+      ]
+    }
+  },
+  "store": {
+    "apk": "/nix/store/myhzrjmqa9pgicz1wgjbnw5f55fir2lq-korri-android-app-fixture-apk-0.1.0/korri-android-app-unsigned.apk",
+    "federation_fixture": "/nix/store/dbxbq5pv6yl8pkvrb2nbddwd76fsh5n3-korrid-federation-fixture-0.0.0/bin/federation_fixture",
+    "sunshine": "/nix/store/ap898nhjj347ysnaf3jpp4ynzndh88a6-sunshine-korri-2026.914.233613-korri"
+  },
+  "member_device": "2a1ed64e271cd6215a8508bd9f35edfe4f657c44747da54ea2319e518aeed822",
+  "moonlight_address": "192.168.1.117:49373",
+  "launch": "3207433b3539669c26874af31113aef8",
+  "crashes": [],
+  "emulator_stop": {
+    "started": true,
+    "exit_code": 0,
+    "processes_left": []
+  },
+  "sender_restore": {
+    "live_games": [],
+    "product_units": {
+      "at_start": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 8317014
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 885314338790
+        },
+        "korri-clock-governor.service": {
+          "pid": 3896,
+          "started": 164324721
+        },
+        "korri-compositor.service": {
+          "pid": 733583,
+          "started": 885314434693
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 741483,
+          "started": 885352590000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 164531729
+        },
+        "korri-limits.service": {
+          "pid": 4035,
+          "started": 164533214
+        },
+        "korri-local-signer.service": {
+          "pid": 741420,
+          "started": 885352484537
+        },
+        "korri-plugin-admin.service": {
+          "pid": 783490,
+          "started": 885816660025
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 885314325015
+        },
+        "korri-portal-credentials.service": {
+          "pid": 0,
+          "started": 162355048
+        },
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 739410,
+          "started": 885348640000
+        },
+        "korri-sunshine.service": {
+          "pid": 741608,
+          "started": 885352854206
+        },
+        "korrid.service": {
+          "pid": 741574,
+          "started": 885352809731
+        }
+      },
+      "at_end": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 8317014
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 885314338790
+        },
+        "korri-clock-governor.service": {
+          "pid": 3896,
+          "started": 164324721
+        },
+        "korri-compositor.service": {
+          "pid": 733583,
+          "started": 885314434693
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 741483,
+          "started": 885352590000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 164531729
+        },
+        "korri-limits.service": {
+          "pid": 4035,
+          "started": 164533214
+        },
+        "korri-local-signer.service": {
+          "pid": 741420,
+          "started": 885352484537
+        },
+        "korri-plugin-admin.service": {
+          "pid": 783490,
+          "started": 885816660025
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 885314325015
+        },
+        "korri-portal-credentials.service": {
+          "pid": 0,
+          "started": 162355048
+        },
+        "korri-portal-initialize.service": {
+          "pid": 0,
+          "started": 8321684
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 739410,
+          "started": 885348640000
+        },
+        "korri-sunshine.service": {
+          "pid": 741608,
+          "started": 885352854206
+        },
+        "korrid.service": {
+          "pid": 741574,
+          "started": 885352809731
+        }
+      },
+      "changed": []
+    },
+    "pass": true,
+    "pids_unchanged": {},
+    "run_folder": "/tmp/korri-stream-cadence-sender-n43k34s8",
+    "run_folder_bytes": 4137533,
+    "run_folder_removed": true,
+    "stray_processes_killed": [],
+    "remaining_processes": [],
+    "other_processes": [],
+    "new_input_devices": [],
+    "gone_input_devices": [],
+    "input_rule": "record",
+    "errors": []
+  },
+  "pass": true
+}

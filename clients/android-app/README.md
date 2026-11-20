@@ -23,6 +23,7 @@ nix run .#android-app-proof -- --build-store auto         # D8: one headless API
 nix run .#android-app-holder-proof -- --build-store auto  # D9, on aka as root: binding and a holder's game
 nix run .#android-app-play-proof -- --build-store auto --sunshine PACKAGE  # D10, D11, D5b, on aka as root: a tap plays the game
 nix run .#android-app-resize-proof -- --build-store auto --sunshine PACKAGE  # #476, on aka as root: korrid carries a resize to the holder's Sunshine
+nix run .#android-app-fold-proof -- --build-store auto --sunshine PACKAGE  # #509, on aka as root: a fold keeps the stream
 ```
 
 ## Owner decisions (2026-11-14)
@@ -326,6 +327,7 @@ What the person does, by slice D5's rules (`korri_viewer::play`) and D5b's:
 | Back or Guide | Opens Korri's gameplay overlay (D5b, below) and holds the stream's input until it closes. In the overlay, Back and Guide (as Menu) go to the shell's surface package, which dismisses the overlay through korrid |
 | Volume and power under the overlay | Android's |
 | Home, another app | The runtime stops (`Stopped`). korrid's recovery starts the stream again while its launch is selected and the app is in front: it fails at once while the app has no window, and plays again when the app returns |
+| A fold that takes the app's window (#509) | The stream goes on for 10 s with its input held; when a window comes back in that time, the layers go to it and the input goes on. Later, the runtime stops as on Home ("A fold that takes the window", below) |
 | Ctrl+Alt+Shift+Q | The runtime stops, as on Home; korrid's recovery restarts it while the app is in front |
 
 The play proof (`proof/play.py`, `nix run .#android-app-play-proof --
@@ -758,10 +760,47 @@ unchanged, with its unit tests.
 
 What a fold needs besides: the activity must stay. Its manifest takes the
 `screenLayout`, `screenSize`, `smallestScreenSize` and `orientation`
-changes, as the Artemis app's did, and not `density`. Android restarts an
-activity at a configuration change that its manifest does not take, so a
-phone whose two screens differ in density would end the stream at a fold.
-Not checked on the Fold 8.
+changes, and `locale`, as the Artemis app's Game did, and not `density`.
+Android restarts an activity at a configuration change that its manifest
+does not take. On the Fold 8 both screens are 420 dpi, and the activity
+stayed at the unfold of 2026-11-19, 16:20:08, and the fold of 16:21:28: its
+configuration changed in place (`sw704dp`, `sw475dp`), in the same process
+and `ViewRootImpl`.
+
+### A fold that takes the window
+
+On the Fold 8 (2026-11-19, 16:21:28, the phone's logcat) a fold ended the
+stream: the phone gave the default display the cover panel, the app read
+the new screen (`viewer screen now 1972x1248, not settled`), and 111 ms
+later the phone went to sleep on the cover screen and sent the app back
+(`fold_lock_behavior_setting=sleep_on_fold_key`, `OFF_BECAUSE_OF_FOLD`).
+The activity stopped and its window went, as at Home, and the app's rule
+"the window went: the stream stops" stopped it. The window came back 5.3 s
+later, when the owner opened the app from Recents, and korrid's resume then
+found no stream. The Artemis app's Game stopped its stream in `onStop` and
+`surfaceDestroyed` too, so it has nothing to port for this.
+
+The rule since (`rules::Window`): a window that goes within 2 s of a new
+screen (`FOLD_WINDOW`; the loop thread reads the screen again when the
+window goes) is a fold's. The phone took 111 ms; aka's emulator up to
+1011 ms after Home. The stream then goes on for 10 s
+(`WINDOW_GRACE`): its input is held (`Play::hold_for_window`), the decoder
+renders on into the layers, which the old window's root took off the
+screen, and when a window comes back, one transaction makes the layers
+children of its root again (`Layers::reattach`), the input goes on, and the
+next tick places the layers in the new size and cutout. A window that does
+not come back in 10 s stops the stream ("the app's window did not come back
+within 10 s"). Any other loss of the window, as Home or another app, stops
+it at once, as before; so does the activity's end. The costs: for those
+10 s the stream's sound goes on while the phone shows its cover screen, and
+Home within 2 s of a fold or an unfold gets the 10 s too.
+
+The proof (`proof/fold.py`, `nix run .#android-app-fold-proof --
+--build-store auto --sunshine PACKAGE`, on aka as root) runs on a foldable
+emulator. Its own fold does not take the window, and it keeps the panel's
+mode, so the fixture's `display WIDTH HEIGHT` and Home stand in for the
+phone's order of events. Record: `proof/android-app-509-window/` (23 of 23
+checks, and the play proof's 153 of 153), with the phone's log of the fold.
 
 ## The release APK (D12 prep)
 

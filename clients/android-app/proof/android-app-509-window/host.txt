@@ -1,0 +1,20 @@
+01:19:00 load=8.08 k10temp=94C emulators=0 NOT READY
+01:19:30 load=7.32 k10temp=90C emulators=0 NOT READY
+01:20:00 load=8.77 k10temp=95C emulators=0 NOT READY
+01:20:30 load=8.02 k10temp=90C emulators=0 NOT READY
+01:21:00 load=7.03 k10temp=95C emulators=0 NOT READY
+01:21:30 load=7.41 k10temp=88C emulators=0 NOT READY
+01:22:00 load=6.47 k10temp=91C emulators=0 NOT READY
+01:22:30 load=5.99 k10temp=91C emulators=0 NOT READY
+01:23:00 load=5.82 k10temp=88C emulators=0 NOT READY
+01:23:30 load=7.17 k10temp=96C emulators=0 NOT READY
+01:24:00 load=6.50 k10temp=89C emulators=0 NOT READY
+01:24:30 load=7.95 k10temp=96C emulators=0 NOT READY
+01:25:00 load=7.50 k10temp=91C emulators=0 NOT READY
+01:25:30 load=6.64 k10temp=89C emulators=0 NOT READY
+01:26:00 load=4.14 k10temp=69C emulators=0 NOT READY
+01:26:30 load=2.57 k10temp=65C emulators=0 NOT READY
+01:27:00 load=1.56 k10temp=65C emulators=0 NOT READY
+01:27:31 load=0.94 k10temp=64C emulators=0 TAKEN: 818438 fold-window #509 fold and play proofs 2026-11-20T01:27:31Z
+tree b8cef1a0bce9d8e13e41643a738fe30a7d5580a0 (apk from 204b1d26e)
+01:31:06 load=10.06 k10temp=90C emulators=0 FOLD rc=0
