@@ -354,7 +354,7 @@ function whole(state: State, model: Model, size: Size, part: Part) {
   const veil = Math.max(part.veil ?? 0, page === "list" ? 0.86 : page === "set" ? 0.8 : page === "home" && state.depth === 2 ? 0.78 : page === "home" && state.depth === 1 ? 0.3 : 0)
   // The keyboard and the curtain take the house: its lights go down further.
   const taken = top === "curtain" || top === "keyboard"
-  const stage: StageView = page === "empty" || (page === "none" && lead === undefined) ? stageOf(asked, undefined, part.veil ?? 0, false) : stageOf(asked, lead, taken ? Math.max(veil, 0.84) : veil, state.drift && top === "screen" && (page === "home" || page === "detail"), page === "detail" || page === "home", page === "set" || page === "list" || (page === "home" && state.depth === 2), p.width, p.height)
+  const stage: StageView = page === "empty" || (page === "none" && lead === undefined) ? stageOf(asked, undefined, part.veil ?? 0, false) : stageOf(asked, lead, taken ? Math.max(veil, 0.84) : veil, state.drift && top === "screen" && (page === "home" || page === "detail"), page === "set" || page === "list" || (page === "home" && state.depth === 2), p.width, p.height)
   const sheet = state.sheet === undefined || part.layersOff === true ? undefined : sheetPanel(state.sheet.kind, state, model)
   const exits = top !== "screen" || part.elsewhere === true ? {}
     : page === "home" ? homeExits(state, model)

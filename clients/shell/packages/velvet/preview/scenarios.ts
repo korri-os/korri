@@ -10,10 +10,10 @@
  *
  * The library is made up for this: titles, facts and pictures (preview/art,
  * drawn by preview/art/build.py). It holds every mix of art a real library
- * has: a hero, a logo and a poster; a hero and a logo; a logo and a poster;
- * a hero alone; a poster alone; a logo alone; a square cover alone; nothing
- * on a system Velvet knows; nothing on one it does not; nothing and no
- * system. Korri's other slices (settings, the network, a runner choice,
+ * has: a background, a hero, a logo and a poster; a hero and a logo; a logo
+ * and a poster; a hero alone; a poster alone; a logo alone; a square cover
+ * alone; nothing on a system Velvet knows; nothing on one it does not;
+ * nothing and no system. Korri's other slices (settings, the network, a runner choice,
  * launch settings, the store, identity, first boot, the overlay, statuses)
  * are in preview/fixtures/korri.json.
  *
@@ -32,10 +32,12 @@ const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
-type Media = { role: "hero" | "logo" | "poster"; url: string; width: number; height: number; color?: string }
-const hero = (name: string, color: string): Media => ({ role: "hero", url: `preview/art/hero-${name}.png`, width: 1920, height: 620, color })
-const poster = (name: string, color: string): Media => ({ role: "poster", url: `preview/art/poster-${name}.png`, width: 600, height: 900, color })
-const logo = (name: string, width: number, height: number): Media => ({ role: "logo", url: `preview/art/logo-${name}.png`, width, height })
+// Korri sends a kind and a size; Velvet reads a picture's use from its shape (src/art.ts).
+type Media = { kind: "logo" | "picture"; url: string; width: number; height: number; color?: string }
+const hero = (name: string, color: string): Media => ({ kind: "picture", url: `preview/art/hero-${name}.png`, width: 1920, height: 620, color })
+const background = (name: string, color: string): Media => ({ kind: "picture", url: `preview/art/background-${name}.png`, width: 1920, height: 1080, color })
+const poster = (name: string, color: string): Media => ({ kind: "picture", url: `preview/art/poster-${name}.png`, width: 600, height: 900, color })
+const logo = (name: string, width: number, height: number): Media => ({ kind: "logo", url: `preview/art/logo-${name}.png`, width, height })
 
 interface Fixture {
   id: string
@@ -55,7 +57,7 @@ interface Fixture {
 
 const HERE = "This device"
 const fixtures: Fixture[] = [
-  { id: "ember-road", title: "Ember Road", systemId: "windows", system: "PC", section: HERE, ago: 2 * HOUR, plays: 46, hours: 61.33, resumable: true, media: [hero("ember", "#b0452a"), logo("ember", 785, 338), poster("ember", "#b0452a")] },
+  { id: "ember-road", title: "Ember Road", systemId: "windows", system: "PC", section: HERE, ago: 2 * HOUR, plays: 46, hours: 61.33, resumable: true, media: [hero("ember", "#b0452a"), logo("ember", 785, 338), poster("ember", "#b0452a"), background("ember", "#b0452a")] },
   { id: "tide-pool", title: "Tide Pool", systemId: "gba", system: "GBA", section: HERE, ago: 1 * DAY + 3 * HOUR, plays: 18, hours: 26.66, media: [hero("tide", "#2a7a8c"), logo("tide", 2364, 704)], places: [{ id: "here", label: HERE }, { id: "zao", label: "zao" }] },
   { id: "moss-and-stone", title: "Moss and Stone", systemId: "snes", system: "SNES", section: HERE, ago: 3 * DAY, plays: 112, hours: 19.1, media: [logo("moss", 1936, 1243), poster("moss", "#4a7a3a")] },
   { id: "dusk-runner", title: "Dusk Runner", systemId: "windows", system: "PC", section: HERE, ago: 4 * DAY, plays: 37, hours: 22.2, media: [hero("dusk", "#5a3a8a"), logo("dusk", 830, 355), poster("dusk", "#5a3a8a")] },

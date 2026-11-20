@@ -216,7 +216,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
   }
   add("organisms", "VelvetSheet", [sheet("Sort", "set-sort"), sheet("Menu", "menu"), sheet("Actions", "detail-actions")])
   const stage = (name: string, scene: string) => ({ name, body: one("VelvetStage", `${FILL} stage: ${l(view(scene).stage)};`) })
-  add("organisms", "VelvetStage", [stage("Band", "home"), stage("Cinema", "detail"), stage("LightOnly", "home-no-art"), stage("Library", "lobby"), stage("House", "empty")])
+  add("organisms", "VelvetStage", [stage("Background", "home"), stage("WideHero", "row"), stage("Cinema", "detail"), stage("LightOnly", "home-no-art"), stage("Library", "lobby"), stage("House", "empty")])
 
   // ---- Pages ----
   const p = lit("pages")

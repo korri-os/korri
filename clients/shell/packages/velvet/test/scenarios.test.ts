@@ -136,14 +136,14 @@ function layerOf(view: any, entry: any): string {
 
 describe("the pixel budget bites", () => {
   test("a library where every game has every picture still fits", () => {
-    const hero = { role: "hero", url: "", width: 1920, height: 620, color: "#804030" }
+    const hero = { kind: "picture", url: "", width: 1920, height: 620, color: "#804030" }
     const games = Array.from({ length: 60 }, (_, index) => ({
       id: `g${index}`, title: `Game ${index}`, section: "This device", systemId: "snes", system: "SNES",
       lastPlayedAt: Date.UTC(2026, 10, 11) - index * 3_600_000, playCount: 60 - index, totalPlaytimeSeconds: 3600,
       media: [
         { ...hero, url: `/game-assets/hero-${index}` },
-        { role: "logo", url: `/game-assets/logo-${index}`, width: 2364, height: 704 },
-        { role: "poster", url: `/game-assets/poster-${index}`, width: 600, height: 900, color: "#804030" },
+        { kind: "logo", url: `/game-assets/logo-${index}`, width: 2364, height: 704 },
+        { kind: "picture", url: `/game-assets/poster-${index}`, width: 600, height: 900, color: "#804030" },
       ],
     }))
     const base = scenarios().find(scene => scene.name === "home")!.models[0]

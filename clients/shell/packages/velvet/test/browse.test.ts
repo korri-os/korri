@@ -459,7 +459,7 @@ describe("the launch curtain (the prototype's)", () => {
     expect(view.curtainLines).toEqual(["Cancelling launch…"])
   })
   test("a game with no logo: its name in the display face at the pick's size", () => {
-    const { view, game } = launching(games => games.find(game => !(game.media ?? []).some((media: any) => media.role === "logo")))
+    const { view, game } = launching(games => games.find(game => !(game.media ?? []).some((media: any) => media.kind === "logo")))
     expect(view.curtain.solid).toBe(true)
     expect(view.curtain.logoShown).toBe(false)
     expect(view.curtainKicker.join(" ")).toBe(game.title.toUpperCase())

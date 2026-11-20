@@ -5,12 +5,16 @@ import { Tokens } from "../tokens.slint";
 import { VelvetPreview } from "../preview-frame.slint";
 import { VelvetStage } from "VelvetStage.slint";
 
-export component Band inherits VelvetPreview {
-    VelvetStage { x: 0; y: 0; width: parent.width; height: parent.height; stage: { key: "preview/art/hero-ember.png", light: 11355177, art-shown: true, art: @image-url("../../preview/art/hero-ember.png"), fill: true }; }
+export component Background inherits VelvetPreview {
+    VelvetStage { x: 0; y: 0; width: parent.width; height: parent.height; stage: { key: "preview/art/background-ember.png", light: 11355177, art-shown: true, art: @image-url("../../preview/art/background-ember.png"), fill: true }; }
+}
+
+export component WideHero inherits VelvetPreview {
+    VelvetStage { x: 0; y: 0; width: parent.width; height: parent.height; stage: { key: "preview/art/hero-tide.png", light: 2982549, art-shown: true, art: @image-url("../../preview/art/hero-tide.png"), fill: true, veil: 0.3 }; }
 }
 
 export component Cinema inherits VelvetPreview {
-    VelvetStage { x: 0; y: 0; width: parent.width; height: parent.height; stage: { key: "preview/art/hero-ember.png", light: 11355177, art-shown: true, art: @image-url("../../preview/art/hero-ember.png"), fill: true }; }
+    VelvetStage { x: 0; y: 0; width: parent.width; height: parent.height; stage: { key: "preview/art/background-ember.png", light: 11355177, art-shown: true, art: @image-url("../../preview/art/background-ember.png"), fill: true }; }
 }
 
 export component LightOnly inherits VelvetPreview {
@@ -22,5 +26,5 @@ export component Library inherits VelvetPreview {
 }
 
 export component House inherits VelvetPreview {
-    VelvetStage { x: 0; y: 0; width: parent.width; height: parent.height; stage: { light: 2762272 }; }
+    VelvetStage { x: 0; y: 0; width: parent.width; height: parent.height; stage: { light: 2762272, fill: true }; }
 }

@@ -2,19 +2,23 @@
  * What a game shows: its tile, its marquee (name and facts) and what it
  * does to the stage.
  *
- * Art order: `hero`, `logo` and `poster` from Korri's `media`; else the
- * square `coverArtUrl`; else the no-art card (src/poster.ts). A picture
- * keeps its own shape: a poster fills a 2:3 tile (it is one); a square
- * cover stands over a field with the title under it; a logo alone stands on
- * a field. Only the hero is cut, where it is the stage. Every picture is
- * late or may never come (ADR 0065), so the no-art card is always sent with
- * it and Slint draws it underneath.
+ * Korri's `media` says what kind each image is (a logo, a picture, an
+ * icon) and its size, and Velvet reads a picture's use from its shape
+ * (`classOf`, ADR 0091): a background near 16:9, a wide hero, a poster, a
+ * square tile. The stage takes the background, else the wide hero, cut to
+ * fill either way. The tile takes the poster; else the square tile, or
+ * Korri's square `coverArtUrl`; else the logo; else the no-art card
+ * (src/poster.ts). A picture keeps its own shape on a tile: a poster fills
+ * a 2:3 tile (it is one); a square cover stands over a field with the title
+ * under it; a logo alone stands on a field. Every picture is late or may
+ * never come (ADR 0065), so the no-art card is always sent with it and
+ * Slint draws it underneath.
  *
  * Text shows a logo where one exists, the title otherwise, and the facts
  * Korri publishes (system, last played, playtime, where it plays). Nothing
  * Korri does not publish is ever said.
  */
-import type { SurfaceMedia, SurfaceMediaRole } from "../../../../../contracts/generated/surface"
+import type { SurfaceMedia } from "../../../../../contracts/generated/surface"
 import { gelHue, hsl, parseHex, stageLight, toHsl } from "./colour"
 import { breakLines, DISPLAY_LINE, fitCaps, fitCapsOnce, textWidth } from "./fit"
 import { sameGame } from "./lists"
@@ -72,7 +76,86 @@ export function take(asked: Pictures, url: string, width: number, height: number
   return true
 }
 
-export const mediaOf = (game: Game, role: SurfaceMediaRole): SurfaceMedia | undefined => game.media?.find(media => media.role === role && media.url !== "")
+// ---- Which picture is for what ----
+
+/**
+ * What a picture is for, from its shape r = width / height (ADR 0091; the
+ * bounds are the coordinator's, contract slice 4). A shape between two
+ * classes (1.2 to 1.6, 1.9 to 2.0, 0.75 to 0.85) and anything taller than a
+ * poster is for nothing in Velvet.
+ */
+export type PictureClass = "background" | "wide" | "poster" | "square"
+
+/** A background stands near 16:9 (1.78). */
+export const BACKGROUND_MIN = 1.6
+export const BACKGROUND_MAX = 1.9
+/** A wide hero: a SteamGridDB hero is about 3.1 to 1. */
+export const WIDE_MIN = 2.0
+/** A poster: 2:3 is 0.67. */
+export const POSTER_MIN = 0.6
+export const POSTER_MAX = 0.75
+/** A square tile. */
+export const SQUARE_MIN = 0.85
+export const SQUARE_MAX = 1.2
+
+export function classOf(width: number, height: number): PictureClass | undefined {
+  if (!(width > 0 && height > 0)) return undefined
+  const r = width / height
+  if (r >= WIDE_MIN) return "wide"
+  if (r >= BACKGROUND_MIN && r <= BACKGROUND_MAX) return "background"
+  if (r >= SQUARE_MIN && r <= SQUARE_MAX) return "square"
+  if (r >= POSTER_MIN && r <= POSTER_MAX) return "poster"
+  return undefined
+}
+
+/** A game's art by use: the largest of each class, and its largest logo. */
+export interface ArtOf {
+  readonly background?: SurfaceMedia
+  readonly wide?: SurfaceMedia
+  readonly poster?: SurfaceMedia
+  readonly square?: SurfaceMedia
+  readonly logo?: SurfaceMedia
+  /** What lights the stage: the background, else the wide hero. */
+  readonly stage?: SurfaceMedia
+}
+
+const NO_ART: Readonly<ArtOf> = {}
+const larger = (one: SurfaceMedia, than: SurfaceMedia | undefined): boolean => than === undefined || one.width * one.height > than.width * than.height
+
+/**
+ * One look through a game's media. Within a class the largest in pixels
+ * wins; of two the same size, the first Korri sends. An image with no
+ * address is not there yet and counts for nothing. Velvet uses no icon.
+ */
+export function chooseArt(media: readonly SurfaceMedia[] | undefined): ArtOf {
+  if (media === undefined || media.length === 0) return NO_ART
+  let background: SurfaceMedia | undefined
+  let wide: SurfaceMedia | undefined
+  let poster: SurfaceMedia | undefined
+  let square: SurfaceMedia | undefined
+  let logo: SurfaceMedia | undefined
+  for (let i = 0; i < media.length; i++) {
+    const one = media[i]!
+    if (one.url === "") continue
+    if (one.kind === "logo") {
+      if (larger(one, logo)) logo = one
+      continue
+    }
+    if (one.kind !== "picture") continue
+    switch (classOf(one.width, one.height)) {
+      case "background": if (larger(one, background)) background = one; break
+      case "wide": if (larger(one, wide)) wide = one; break
+      case "poster": if (larger(one, poster)) poster = one; break
+      case "square": if (larger(one, square)) square = one; break
+    }
+  }
+  const stage = background ?? wide
+  if (stage === undefined && poster === undefined && square === undefined && logo === undefined) return NO_ART
+  return { background, wide, poster, square, logo, stage }
+}
+
+/** A game's art by use, kept with its tile (`madeOf`). */
+export const artOf = (game: Game): ArtOf => madeOf(game).chosen
 
 export interface Image {
   readonly $image: string
@@ -148,6 +231,7 @@ function fieldOf(colour: string | undefined, title: string): number {
 /** A game's tile, made once: as its no-art card, and with its picture (the same when it has none). */
 interface Made {
   readonly game: Game
+  readonly chosen: ArtOf
   readonly card: TileView
   readonly art: TileView
   /** The picture's address and stored size, for the pixel budget; "" with none. */
@@ -170,38 +254,29 @@ function madeOf(game: Game): Made {
   const lines = posterView(paper)
   const card: TileView = { shown: true, kind: "game", artKind: "none", art: NO_IMAGE, poster: lines, label: game.title }
   // One look through the game's pictures (this runs for every card on its way in).
-  let poster: SurfaceMedia | undefined
-  let logo: SurfaceMedia | undefined
-  let hero: SurfaceMedia | undefined
-  const media = game.media
-  if (media !== undefined) {
-    for (let i = 0; i < media.length; i++) {
-      const one = media[i]!
-      if (one.url === "") continue
-      if (one.role === "poster") poster ??= one
-      else if (one.role === "logo") logo ??= one
-      else if (one.role === "hero") hero ??= one
-    }
-  }
+  const chosen = chooseArt(game.media)
+  const { poster, square, logo, stage } = chosen
+  const cover = square?.url ?? game.coverArtUrl ?? ""
   let next: Made
   if (poster !== undefined) {
     next = {
-      game, card, art: { shown: true, kind: "game", artKind: "poster", art: { $image: poster.url }, poster: lines, label: game.title },
+      game, chosen, card, art: { shown: true, kind: "game", artKind: "poster", art: { $image: poster.url }, poster: lines, label: game.title },
       url: poster.url, width: poster.width, height: poster.height, cardBadgeTop: paper.badgeTop, artBadgeTop: false,
     }
-  } else if (game.coverArtUrl !== undefined && game.coverArtUrl !== "") {
+  } else if (cover !== "") {
+    // A square tile from Korri's media, else its square cover: either stands over a field.
     const fit = fitCapsOnce(game.title, 52, 24, 12, 4.2)
     next = {
-      game, card,
-      art: { shown: true, kind: "game", artKind: "cover", art: { $image: game.coverArtUrl }, field: fieldOf(hero?.color, game.title), capLines: fit.lines, capSize: fit.size, poster: lines, label: game.title },
-      url: game.coverArtUrl, width: COVER_SIDE, height: COVER_SIDE, cardBadgeTop: paper.badgeTop, artBadgeTop: true,
+      game, chosen, card,
+      art: { shown: true, kind: "game", artKind: "cover", art: { $image: cover }, field: fieldOf(square?.color ?? stage?.color, game.title), capLines: fit.lines, capSize: fit.size, poster: lines, label: game.title },
+      url: cover, width: square?.width ?? COVER_SIDE, height: square?.height ?? COVER_SIDE, cardBadgeTop: paper.badgeTop, artBadgeTop: true,
     }
   } else if (logo !== undefined) {
     next = {
-      game, card, art: { shown: true, kind: "game", artKind: "logo", art: { $image: logo.url }, field: fieldOf(logo.color ?? hero?.color, game.title), poster: lines, label: game.title },
+      game, chosen, card, art: { shown: true, kind: "game", artKind: "logo", art: { $image: logo.url }, field: fieldOf(logo.color ?? stage?.color, game.title), poster: lines, label: game.title },
       url: logo.url, width: logo.width, height: logo.height, cardBadgeTop: paper.badgeTop, artBadgeTop: false,
     }
-  } else next = { game, card, art: card, url: "", width: 0, height: 0, cardBadgeTop: paper.badgeTop, artBadgeTop: paper.badgeTop }
+  } else next = { game, chosen, card, art: card, url: "", width: 0, height: 0, cardBadgeTop: paper.badgeTop, artBadgeTop: paper.badgeTop }
   if (made.size > 1200) made.clear()
   made.set(game.id, next)
   return next
@@ -346,7 +421,10 @@ export interface StageView {
   readonly light: number
   readonly artShown: boolean
   readonly art: Image
-  /** Cut to fill the stage (the detail); else the hero keeps its shape. */
+  /**
+   * Cut to fill the stage: true whenever a picture shows (ADR 0091, at every
+   * size). VelvetStage.slint keeps a band for false, which Velvet no longer sends.
+   */
   readonly fill: boolean
   readonly veil: number
   readonly drift: boolean
@@ -354,25 +432,33 @@ export interface StageView {
 
 export const HOUSE_GLOW = 0x2a2620
 
-/** What a game does to the stage: its hero as the backdrop, and its art's colour (the title's gel without one) as the light. */
-export function stageOf(asked: Pictures, game: Game | undefined, veil: number, drift: boolean, fill = false, lit = false, width = 0, height = 0): StageView {
-  if (game === undefined) return { key: "", light: HOUSE_GLOW, artShown: false, art: NO_IMAGE, fill, veil, drift: false }
-  // `lit`: the stage is far from the game (the library's pages): its colour, without its picture.
-  const hero = lit ? undefined : mediaOf(game, "hero")
+/**
+ * What a game does to the stage: its background (else its wide hero) cut to
+ * fill the stage, and its art's colour (the title's gel without one) as the
+ * light. `lit`: the stage is far from the game (the library's pages): its
+ * colour, without its picture.
+ */
+export function stageOf(asked: Pictures, game: Game | undefined, veil: number, drift: boolean, lit = false, width = 0, height = 0): StageView {
+  if (game === undefined) return { key: "", light: HOUSE_GLOW, artShown: false, art: NO_IMAGE, fill: true, veil, drift: false }
+  const tile = madeOf(game)
+  const shown = tile.chosen.stage
+  const picture = lit ? undefined : shown
   // A game with no picture at all: its card lights the stage (owner, 2026-11-13, #423), and the
   // light takes the card's own colour, so the card and its light are one.
-  const noArt = madeOf(game).art.artKind === "none" && mediaOf(game, "hero") === undefined
+  const noArt = tile.art.artKind === "none" && shown === undefined
   const card = noArt ? posterFor(game.title, game.systemId) : undefined
-  const light = stageLight(mediaOf(game, "hero")?.color ?? mediaOf(game, "poster")?.color ?? mediaOf(game, "logo")?.color ?? (card === undefined ? undefined : `#${(card.paper & 0xffffff).toString(16).padStart(6, "0")}`), game.title)
+  const { poster, logo } = tile.chosen
+  const light = stageLight(shown?.color ?? poster?.color ?? logo?.color ?? (card === undefined ? undefined : `#${(card.paper & 0xffffff).toString(16).padStart(6, "0")}`), game.title)
   if (card !== undefined && !lit && width > 0 && height > 0) {
     return { key: `plate:${game.id}`, light, artShown: true, art: { $image: plateOf(card, width, height) }, fill: true, veil, drift }
   }
-  return hero === undefined || !take(asked, hero.url, hero.width, hero.height)
-    ? { key: `light:${game.id}`, light, artShown: false, art: NO_IMAGE, fill, veil, drift: false }
-    : { key: hero.url, light, artShown: true, art: { $image: hero.url }, fill, veil, drift }
+  return picture === undefined || !take(asked, picture.url, picture.width, picture.height)
+    ? { key: `light:${game.id}`, light, artShown: false, art: NO_IMAGE, fill: true, veil, drift: false }
+    : { key: picture.url, light, artShown: true, art: { $image: picture.url }, fill: true, veil, drift }
 }
 
-export const hasHero = (game: Game | undefined): boolean => game !== undefined && mediaOf(game, "hero") !== undefined
+/** Whether a picture of the game lights the stage: a background or a wide hero. */
+export const hasHero = (game: Game | undefined): boolean => game !== undefined && artOf(game).stage !== undefined
 
 // ---- The marquee ----
 
@@ -522,7 +608,7 @@ export function logoBox(width: number, height: number, boxW: number, boxH: numbe
 
 /** A game's marquee in a box: its logo (the title under it until it arrives, or alone), its badge and its facts. */
 export function marqueeOf(asked: Pictures, game: Game, box: MarqueeBox, publishedAt: number | undefined, facts: readonly FactView[] = factsOf(game, publishedAt)): MarqueeView {
-  const wanted = box.mark ? mediaOf(game, "logo") : undefined
+  const wanted = box.mark ? artOf(game).logo : undefined
   const logo = wanted !== undefined && take(asked, wanted.url, wanted.width, wanted.height) ? wanted : undefined
   const badge = box.badge ? game.system ?? "" : ""
   const lead = badge === "" ? 0 : box.fact * (1.6 + textWidth(badge, true))

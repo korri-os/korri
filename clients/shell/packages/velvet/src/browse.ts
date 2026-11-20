@@ -22,7 +22,7 @@
  * launches. Back closes each level.
  */
 import type { CatalogQuery, SurfaceCatalog, SurfaceModel as Model } from "../../../../../contracts/generated/surface"
-import { blankTile, factLines, factsOf, gameTile, hasHero, marqueeOf, mediaOf, navTile, NO_IMAGE, NO_MARQUEE, NO_TILE, setTile, systemTile, type Pictures, type Standing, whereOf, type FactView, type MarqueeView, type TileView } from "./art"
+import { artOf, blankTile, factLines, factsOf, gameTile, hasHero, marqueeOf, navTile, NO_IMAGE, NO_MARQUEE, NO_TILE, setTile, systemTile, type Pictures, type Standing, whereOf, type FactView, type MarqueeView, type TileView } from "./art"
 import { textWidth } from "./fit"
 import { gridMove, lineMove } from "./focus"
 import { homeOf, sameQuery, shelvesOf, type ShelfItem, type ShelfSpec } from "./lists"
@@ -197,7 +197,7 @@ export const pill = (label: string, region: string, focusId: string, focused: bo
   ({ ...NO_PILL, shown: true, label, focusId, focused, focusRegion: region, ...more })
 
 /** Whether a card already says the game's name (so the marquee beside it does not repeat it). */
-const cardNames = (game: Game): boolean => mediaOf(game, "poster") === undefined
+const cardNames = (game: Game): boolean => artOf(game).poster === undefined
 
 function shelfTile(asked: Pictures, item: ShelfItem, region: string, id: string, focused: boolean, at: number, standing: Standing): TileView {
   switch (item.kind) {

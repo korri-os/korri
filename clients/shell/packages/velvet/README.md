@@ -185,9 +185,16 @@ shell, `VELVET_FRAMES` (below) through the test harness.
   design).
 - `Tick`: the stage drifts after two seconds of rest and stops on any press.
 - Images (ADR 0065): a picture is empty until it arrives. The no-art card is
-  drawn under every picture, so there is never a hole. Only the detail cuts
-  the hero to fill; everywhere else it keeps its shape, as a band across the
-  top that falls off into the dark.
+  drawn under every picture, so there is never a hole.
+- `media` (ADR 0091): Korri says each image's kind (`logo`, `picture`,
+  `icon`) and its size; Velvet reads a picture's use from its shape, r =
+  width / height (`classOf`, `src/art.ts`): a background at 1.6 to 1.9, a
+  wide hero at 2.0 and over, a poster at 0.6 to 0.75, a square tile at 0.85
+  to 1.2; any other shape, and an icon, Velvet does not use. In a class the
+  largest in pixels wins, and the largest logo is the mark. The stage takes
+  the background, else the wide hero, and cuts it to fill at every size. A
+  tile takes the poster, else the square tile or `coverArtUrl`, else the
+  logo, else the no-art card.
 - `steamAccount` (ADR 0083): Settings › More › Steam, a first-boot step
   before the end (Sign in, or Skip for now; Next leads once signed in), and a
   page that takes the screen while a launch waits for the sign-in (`Code` or
@@ -212,12 +219,13 @@ picture, before it reaches the stage (`src/plate.ts`). From the back:
    game's colour, a large pool up and to the right and a low dim one at the
    left foot. Each is a square far larger than the window that fades to
    nothing inside itself. A second light cross-fades in when the game
-   changes. The colour is the art's (`color` of the hero, else the poster),
+   changes. The colour is the art's (`color` of the stage's picture, else
+   the poster, else the logo),
    else one of twelve gels by the title, at a brightness that keeps House
    light at 4.5 to 1 on its core (`src/colour.ts`).
-3. The game's picture. A hero: the pick and the detail cut it to fill the
-   stage (the prototype); elsewhere a band across the top in its own shape,
-   with a linear gradient that takes its foot into the dark. A game with no
+3. The game's picture: its background near 16:9, else its wide hero, cut to
+   fill the stage (`fit = max(W / w, H / h)`) at every size, portrait
+   windows too (ADR 0091). A game with no
    picture at all: its card lights the stage as a picture does (owner,
    2026-11-13, #423), a plate of its own shapes and colours under a large
    blur, cut to fill; the light under it takes the card's colour.
@@ -238,7 +246,7 @@ backdrop pixel differs from its neighbour by more than four levels.
 - **Pixels.** The shell keeps 24 MiB of decoded pixels for a surface. A
   stored poster is 600x900: 2.1 MiB. So a view asks for its pictures in
   order of importance (`take`, `src/art.ts`, into the count the view makes
-  and hands down: the hero, the focused game's
+  and hands down: the stage's picture, the focused game's
   logo, then tiles from the focused one outwards, rows in sight first; in
   the library the shelves before the home's row, which has left the stage)
   and stops at 23 MiB. A tile over the budget shows its no-art card. A set is

@@ -201,7 +201,7 @@ export function sameGame(a: Game, b: Game): boolean {
     if (count !== (other === undefined ? 0 : other.length)) return false
     for (let i = 0; i < count; i++) {
       const m = media![i]!, o = other![i]!
-      if (m.url !== o.url || m.role !== o.role || m.color !== o.color || m.width !== o.width || m.height !== o.height) return false
+      if (m.url !== o.url || m.kind !== o.kind || m.color !== o.color || m.width !== o.width || m.height !== o.height) return false
     }
   }
   const places = a.launchLocations, there = b.launchLocations

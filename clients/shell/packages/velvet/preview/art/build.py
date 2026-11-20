@@ -1,4 +1,4 @@
-"""Draws Velvet's test pictures: the heroes, posters, logos and covers its
+"""Draws Velvet's test pictures: the heroes, a background, posters, logos and covers its
 preview scenarios and tests name. Every pixel is made here, from flat bands
 and blocks; nothing is copied from a game, a store or the mockup.
 
@@ -134,6 +134,8 @@ def main():
     scene("hero-tide.png", 640, 206, 0x2A7A8C, 0xE8F0D8, 0x123844, 23)
     scene("hero-moss.png", 640, 206, 0x4A7A3A, 0xF0E08A, 0x1E3A1C, 37)
     scene("hero-dusk.png", 640, 206, 0x5A3A8A, 0xF29AB0, 0x231438, 41)
+    # A background: 16 to 9, the stage's first choice (ADR 0091).
+    scene("background-ember.png", 640, 360, 0xB0452A, 0xF2C46B, 0x4A1F1A, 14)
     # Posters: 2 to 3.
     scene("poster-ember.png", 200, 300, 0xB0452A, 0xF2C46B, 0x4A1F1A, 12)
     scene("poster-tide.png", 200, 300, 0x2A7A8C, 0xE8F0D8, 0x123844, 24)

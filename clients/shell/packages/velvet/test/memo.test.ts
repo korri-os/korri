@@ -318,7 +318,7 @@ describe("update and view: the same state, message and model, the same answer", 
             // Korri changes a game and publishes: its artwork is stored, or it was just played.
             const at = Math.floor(next() * games.length)
             const changed = next() < 0.5
-              ? { ...games[at]!, media: [{ role: "poster", url: `preview/art/poster-${at}-${step}.png`, width: 600, height: 900, color: "#804020" }] }
+              ? { ...games[at]!, media: [{ kind: "picture", url: `preview/art/poster-${at}-${step}.png`, width: 600, height: 900, color: "#804020" }] }
               : { ...games[at]!, lastPlayedAt: time, playCount: 9, totalPlaytimeSeconds: 100_000 + step }
             games[at] = changed
             library = { ...rest, catalog: { _tag: "Ready", games: [...games] }, publishedAt: time, clockLabel: `clock ${time}` }

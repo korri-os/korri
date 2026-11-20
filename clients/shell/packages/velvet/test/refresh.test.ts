@@ -68,8 +68,8 @@ describe("artwork published after the lists loaded", () => {
     const model = bare()
     const run = new Play(model)
     // Copper Sky was never played: it stands on Not started, far from the newest games.
-    const hero = { role: "hero", url: "preview/art/hero-moss.png", width: 1920, height: 620, color: "#4a7a3a" }
-    const poster = { role: "poster", url: "preview/art/poster-moss.png", width: 600, height: 900, color: "#4a7a3a" }
+    const hero = { kind: "picture", url: "preview/art/hero-moss.png", width: 1920, height: 620, color: "#4a7a3a" }
+    const poster = { kind: "picture", url: "preview/art/poster-moss.png", width: 600, height: 900, color: "#4a7a3a" }
     // A system's set holds the window meanwhile; Copper Sky has no system and is not in it.
     run.press("down", "down", "down", "down", "down", "confirm")
     expect(run.view.page).toBe("set")
@@ -192,7 +192,7 @@ describe("the pixel budget goes to what is in sight", () => {
       games: Array.from({ length: 40 }, (_, index) => ({
         id: `h${index}`, title: `Heavy ${String(index).padStart(2, "0")}`, section: "This device",
         ...(index < 30 ? { lastPlayedAt: base.publishedAt - (index + 1) * 3_600_000, playCount: 40 - index, totalPlaytimeSeconds: 600 * (40 - index) } : {}),
-        media: [{ role: "poster", url: `preview/art/heavy-${index}.png`, width: side, height: side * 1.5, color: "#804020" }],
+        media: [{ kind: "picture", url: `preview/art/heavy-${index}.png`, width: side, height: side * 1.5, color: "#804020" }],
       })),
     },
   })
@@ -291,8 +291,8 @@ describe("a game Velvet draws changes outside the published window", () => {
   const NOW: number = base.publishedAt
   const DAY = 86_400_000
   const { systems: _systems, ...rest } = base
-  const hero = (id: string) => ({ role: "hero", url: `preview/art/hero-${id}.png`, width: 1920, height: 620, color: "#b0452a" })
-  const poster = (id: string) => ({ role: "poster", url: `preview/art/poster-${id}.png`, width: 600, height: 900, color: "#804020" })
+  const hero = (id: string) => ({ kind: "picture", url: `preview/art/hero-${id}.png`, width: 1920, height: 620, color: "#b0452a" })
+  const poster = (id: string) => ({ kind: "picture", url: `preview/art/poster-${id}.png`, width: 600, height: 900, color: "#804020" })
   /**
    * 80 played games, all older than a week, `g0` played longest ago and most
    * (the pick, and not among the 60 newest); then 30 unplayed games; then 8
