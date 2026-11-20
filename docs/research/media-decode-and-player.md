@@ -155,7 +155,7 @@ Korri `nix/devices/r36tmax/CODEC-PATH.md` and
 
 Recommendation (opinion): GStreamer in a Korri-owned player process.
 
-- Why: one unpatched framework reaches all seven Linux decoders, and Korri
+- Why: one unpatched framework reaches the decoder of every Linux device (Hantro, Cedrus, Iris), and Korri
   already has two byte-exact proofs with it. It brings demux and audio.
 - Cost: Korri owns the pipeline choice per chip and the zero-copy path to EGL.
   It does not solve HEVC on the RG353M or the R36T Max; only transcoding does.
