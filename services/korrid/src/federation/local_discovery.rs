@@ -2,7 +2,8 @@
 //! with no server. An announcement holds no device key, only one rotating tag
 //! per known owner device; only that pair can derive it, and the two
 //! directions differ (`DeviceIdentity::nearby_announcement_tag`). A matched
-//! announcement's addresses join the dial pool for a short time. They are process memory,
+//! announcement's addresses join the dial pool for a short time, and a new
+//! address ends that peer's reach retry backoff. They are process memory,
 //! never persisted, and never proof of liveness: the connection still
 //! authenticates by device key.
 use crate::identity::DeviceIdentity;
@@ -95,6 +96,9 @@ pub(crate) fn origins(addresses: impl IntoIterator<Item = IpAddr>, port: u16) ->
 #[derive(Default)]
 pub(crate) struct Pool {
     found: Mutex<BTreeMap<String, Vec<(String, Instant)>>>,
+    /// Devices with an address that was not in the pool before. The reach
+    /// controller takes them and ends their retry backoff.
+    woken: Mutex<BTreeSet<String>>,
 }
 impl Pool {
     pub(crate) fn add(&self, device: &str, origins: Vec<String>, now: Instant) {
@@ -109,6 +113,14 @@ impl Pool {
             !entries.is_empty()
         });
         let entries = found.entry(device.to_owned()).or_default();
+        if origins
+            .iter()
+            .any(|origin| !entries.iter().any(|(known, _)| known == origin))
+        {
+            if let Ok(mut woken) = self.woken.lock() {
+                woken.insert(device.to_owned());
+            }
+        }
         entries.retain(|(origin, _)| !origins.contains(origin));
         let until = now + FOUND_LIFETIME;
         let mut fresh: Vec<_> = origins.into_iter().map(|origin| (origin, until)).collect();
@@ -132,6 +144,17 @@ impl Pool {
             })
             .unwrap_or_default()
     }
+    /// Takes the woken devices among `devices`; others stay for their owner.
+    pub(crate) fn take_woken(&self, devices: &BTreeSet<String>) -> Vec<String> {
+        let Ok(mut woken) = self.woken.lock() else {
+            return Vec::new();
+        };
+        let taken: Vec<_> = woken.intersection(devices).cloned().collect();
+        for device in &taken {
+            woken.remove(device);
+        }
+        taken
+    }
 }
 
 static FOUND: LazyLock<Pool> = LazyLock::new(Pool::default);
@@ -139,6 +162,12 @@ static FOUND: LazyLock<Pool> = LazyLock::new(Pool::default);
 /// The live local-discovery fact for one device, read like the nearby link.
 pub(crate) fn found(device: &str) -> Vec<String> {
     FOUND.origins(device, Instant::now())
+}
+
+/// Known devices that local discovery found at a new address since the last
+/// call. Their next reach attempt should not wait for its backoff.
+pub(crate) fn take_woken(devices: &BTreeSet<String>) -> Vec<String> {
+    FOUND.take_woken(devices)
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -213,6 +242,24 @@ mod tests {
         assert_eq!(matching_device(b, &[key(a)], &from_a, now), Some(key(a)));
         assert_eq!(matching_device(a, &[key(b)], &from_b, now), Some(key(b)));
         assert_eq!(matching_device(a, &[key(b), key(c)], &from_a, now), None);
+    }
+
+    #[test]
+    fn a_new_address_wakes_its_device_once_and_a_refresh_does_not() {
+        let pool = Pool::default();
+        let now = Instant::now();
+        let devices: BTreeSet<String> = ["b".to_owned()].into();
+        pool.add("b", vec!["http://192.168.1.20:39217".into()], now);
+        pool.add("z", vec!["http://192.168.1.90:39217".into()], now);
+        assert_eq!(pool.take_woken(&devices), ["b"]);
+        assert!(pool.take_woken(&devices).is_empty());
+        // The same address again only refreshes its lifetime.
+        pool.add("b", vec!["http://192.168.1.20:39217".into()], now);
+        assert!(pool.take_woken(&devices).is_empty());
+        pool.add("b", vec!["http://192.168.1.21:39217".into()], now);
+        assert_eq!(pool.take_woken(&devices), ["b"]);
+        // Another controller's device stays for that controller.
+        assert_eq!(pool.take_woken(&["z".to_owned()].into()), ["z"]);
     }
 
     #[test]

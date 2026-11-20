@@ -1682,3 +1682,52 @@ async fn reach_live_iroh_route_gets_no_relay_refresh_until_it_ends() {
         "relay offers did not resume after the route ended"
     );
 }
+
+#[tokio::test]
+async fn reach_newly_found_local_address_ends_the_retry_backoff() {
+    let mut fixture = rebind_fixture().await;
+    let peer = fixture.devices.cb.public_key().unwrap();
+    let origin = fixture
+        .snapshot
+        .current_endpoint
+        .clone()
+        .unwrap()
+        .candidates[0]
+        .clone();
+    // The directory holds no endpoint record for this peer, and its last
+    // attempt failed: the next one waits five minutes.
+    fixture
+        .controller
+        .retry
+        .insert(peer.clone(), (Instant::now() + Duration::from_secs(300), 6));
+    let stun = StunList(Vec::new());
+    assert!(
+        fixture
+            .controller
+            .exchange_reach(&fixture.signal, &stun)
+            .await
+    );
+    assert_ne!(
+        fixture.devices.da.snapshot().unwrap()[0].state,
+        PeerState::Ready,
+        "fixture peer was reachable without the found address"
+    );
+    // Local discovery finds the peer's native address: the very next pass
+    // tries it, and the signed reply makes the peer Ready.
+    crate::federation::local_discovery::record_found(&peer, vec![origin]);
+    assert!(
+        fixture
+            .controller
+            .exchange_reach(&fixture.signal, &stun)
+            .await
+    );
+    let state = fixture.devices.da.snapshot().unwrap()[0].state.clone();
+    let failures = fixture.controller.retry.get(&peer).map(|(_, n)| *n);
+    fixture.controller.reset().await;
+    assert_eq!(
+        state,
+        PeerState::Ready,
+        "the found address waited for backoff"
+    );
+    assert_eq!(failures, Some(7), "waking reset the failure count");
+}

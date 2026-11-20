@@ -530,6 +530,14 @@ impl Controller {
             .lock()
             .expect("reach recovery")
             .retain_members(&devices);
+        // A peer that local discovery just found at a new address is tried
+        // on this pass, not after its retry backoff. Its failure count stays.
+        let now = Instant::now();
+        for device in crate::federation::local_discovery::take_woken(&devices) {
+            if let Some((at, _)) = self.retry.get_mut(&device) {
+                *at = (*at).min(now);
+            }
+        }
         self.directory
             .reach
             .live
