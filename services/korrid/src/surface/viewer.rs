@@ -16,7 +16,6 @@ pub fn project(
     snapshot: Option<&(Instant, ViewerSnapshot)>,
     now: Instant,
 ) {
-    presentation.battery_percent = None;
     presentation.stream_health = None;
     presentation.groups.retain(|group| group.id != GROUP_ID);
     let Some((received_at, snapshot)) =
@@ -24,9 +23,6 @@ pub fn project(
     else {
         return;
     };
-    presentation.battery_percent = snapshot
-        .battery_percent
-        .filter(|v| v.is_finite() && (0.0..=100.0).contains(v) && v.fract() == 0.0);
     presentation.stream_health = snapshot
         .stream_health
         .clone()
@@ -98,7 +94,6 @@ mod tests {
         );
         let mut presentation = SurfaceGameplayOverlayPresentation {
             kind: SurfaceGameplayOverlayKind,
-            battery_percent: None,
             stream_health: None,
             title: Some("Game".into()),
             controls: Vec::new(),
@@ -106,7 +101,6 @@ mod tests {
             stream_players: None,
         };
         project(&mut presentation, Some(&snapshot), now + STALE_AFTER);
-        assert_eq!(presentation.battery_percent, Some(53.0));
         assert_eq!(presentation.groups.len(), 1);
         assert_eq!(presentation.groups[0].label, "Stream controls");
         assert_eq!(
@@ -118,13 +112,12 @@ mod tests {
             Some(&snapshot),
             now + STALE_AFTER + Duration::from_millis(1),
         );
-        assert!(presentation.battery_percent.is_none() && presentation.stream_health.is_none());
+        assert!(presentation.stream_health.is_none());
         assert!(presentation.groups.is_empty());
         assert_eq!(presentation.title.as_deref(), Some("Game"));
         let mut old_sample = snapshot.clone();
         old_sample.1.sampled_at = Some(now - STALE_AFTER - Duration::from_millis(1));
         project(&mut presentation, Some(&old_sample), now);
-        assert_eq!(presentation.battery_percent, Some(53.0));
         assert!(
             presentation.stream_health.is_none(),
             "a fresh JNI receipt must not refresh an old measurement"
@@ -143,6 +136,6 @@ mod tests {
             },
         );
         project(&mut presentation, Some(&invalid), now);
-        assert!(presentation.battery_percent.is_none() && presentation.stream_health.is_none());
+        assert!(presentation.stream_health.is_none());
     }
 }

@@ -309,6 +309,16 @@ export interface FocusedGame {
 }
 
 /**
+ * This device's battery. Grounded in legacy `DeviceBatteryReady`
+ * (`product/platform/device/device-facts.ts`: percent, charging) with
+ * `percent` made optional (ADR 0094). `charging` is the power_supply
+ * `status` "Charging". `percent` (0 to 100) is present only when the
+ * device declares its capacity events verified; korrid never publishes a
+ * percent that can be stale.
+ */
+export interface SurfaceBattery {
+	percent?: number;
+	charging: boolean;
  * One stored image of a game. A surface derives its ratio from `width`
  * and `height`; no ratio is sent.
  */
@@ -508,8 +518,6 @@ export interface SurfaceStreamHealth {
 }
 
 export interface SurfaceGameplayOverlayPresentation {
-	/** Phone/device capacity, projected from the local battery producer (0–100). */
-	batteryPercent?: number;
 	/** Current valid measurements of this device's exact stream viewer. */
 	streamHealth?: SurfaceStreamHealth;
 	kind: "gameplay-overlay";
@@ -735,6 +743,8 @@ export interface SurfaceModel {
 	buildLabel?: string;
 	/** Absent in hosts that cannot manage the device's network. */
 	network?: SurfaceNetwork;
+	/** Absent when the device has no battery or korrid cannot read it. */
+	battery?: SurfaceBattery;
 	/** Absent once first-boot setup is finished, and in hosts without it. */
 	onboarding?: SurfaceOnboarding;
 	/** Absent in hosts that cannot get games from providers. */

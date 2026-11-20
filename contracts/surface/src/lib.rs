@@ -827,9 +827,6 @@ pub struct SurfaceStreamHealth {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SurfaceGameplayOverlayPresentation {
-    /// Phone/device capacity, projected from the local battery producer (0–100).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub battery_percent: Option<f64>,
     /// Current valid measurements of this device's exact stream viewer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream_health: Option<SurfaceStreamHealth>,
@@ -1105,6 +1102,21 @@ pub enum SurfaceWifi {
         networks: Vec<SurfaceWifiNetwork>,
         attempt: SurfaceWifiAttempt,
     },
+}
+
+/// This device's battery. Grounded in legacy `DeviceBatteryReady`
+/// (`product/platform/device/device-facts.ts`: percent, charging) with
+/// `percent` made optional (ADR 0094). `charging` is the power_supply
+/// `status` "Charging". `percent` (0 to 100) is present only when the
+/// device declares its capacity events verified; korrid never publishes a
+/// percent that can be stale.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceBattery {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub percent: Option<f64>,
+    pub charging: bool,
 }
 
 /// Present only when this host can read and change the device's network.
@@ -1547,6 +1559,9 @@ pub struct SurfaceModel {
     /// Absent in hosts that cannot manage the device's network.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub network: Option<SurfaceNetwork>,
+    /// Absent when the device has no battery or korrid cannot read it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub battery: Option<SurfaceBattery>,
     /// Absent once first-boot setup is finished, and in hosts without it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub onboarding: Option<SurfaceOnboarding>,

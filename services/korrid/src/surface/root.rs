@@ -1290,6 +1290,7 @@ impl Root {
             identity_management: self.launchables.identity_management(),
             build_label: None,
             network: network.network,
+            battery: None,
             onboarding,
             store: Some(store_for_surface(self.store.snapshot(), &state)),
             invites: Some(

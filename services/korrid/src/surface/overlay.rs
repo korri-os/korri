@@ -153,7 +153,6 @@ pub fn gameplay_overlay_presentation_from(
 ) -> SurfaceGameplayOverlayPresentation {
     SurfaceGameplayOverlayPresentation {
         kind: SurfaceGameplayOverlayKind,
-        battery_percent: None,
         stream_health: None,
         title: controls.title.clone(),
         controls: core_controls(),
@@ -198,6 +197,7 @@ fn model_for(launch_id: &str, title: Option<String>) -> SurfaceModel {
         identity_management: None,
         build_label: None,
         network: None,
+        battery: None,
         onboarding: None,
         store: None,
         invites: None,
