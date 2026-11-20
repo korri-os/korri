@@ -512,3 +512,63 @@ fn walk_size(path: &PathBuf) -> u64 {
     }
     total
 }
+
+/// ADR 0092 measurement: the size of the BLAKE3 tree (outboard) that a
+/// holder keeps for one file, hashed in place with the real store.
+/// `KORRI_OUTBOARD_FILE=<path> cargo test --lib outboard_size -- --ignored --nocapture`
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs KORRI_OUTBOARD_FILE, a large file"]
+async fn outboard_size_of_a_release_hashed_in_place() {
+    let path = PathBuf::from(std::env::var("KORRI_OUTBOARD_FILE").expect("KORRI_OUTBOARD_FILE"));
+    let path = path.canonicalize().unwrap();
+    let store_dir = tempfile::tempdir().unwrap();
+    let store = iroh_blobs::store::fs::FsStore::load(store_dir.path())
+        .await
+        .unwrap();
+    let started = std::time::Instant::now();
+    let tag = store
+        .add_path_with_opts(iroh_blobs::api::blobs::AddPathOptions {
+            path: path.clone(),
+            format: iroh_blobs::BlobFormat::Raw,
+            mode: iroh_blobs::api::blobs::ImportMode::TryReference,
+        })
+        .temp_tag()
+        .await
+        .unwrap();
+    let elapsed = started.elapsed();
+    store.sync_db().await.unwrap();
+    let size = fs::metadata(&path).unwrap().len();
+    let mut outboards = Vec::new();
+    let mut data = 0;
+    walk_files(store_dir.path(), &mut |file: &Path, bytes| {
+        if file.extension().is_some_and(|ext| ext == "obao4") {
+            outboards.push(bytes);
+        } else if file.extension().is_some_and(|ext| ext == "data") {
+            data += bytes;
+        }
+    });
+    let groups = size.div_ceil(16 * 1024);
+    println!(
+        "file {} bytes; blake3 {}; outboard {:?} bytes (formula (groups - 1) * 64 = {}); copied data {} bytes; whole store {} bytes; hashed in {:.1} s",
+        size,
+        tag.hash().to_hex(),
+        outboards,
+        (groups.saturating_sub(1)) * 64,
+        data,
+        walk_size(&store_dir.path().to_path_buf()),
+        elapsed.as_secs_f64(),
+    );
+    assert_eq!(outboards, [(groups - 1) * 64]);
+    assert_eq!(data, 0, "hashed in place, not copied");
+}
+
+fn walk_files(path: &Path, seen: &mut impl FnMut(&Path, u64)) {
+    for entry in fs::read_dir(path).unwrap().flatten() {
+        let metadata = entry.metadata().unwrap();
+        if metadata.is_dir() {
+            walk_files(&entry.path(), seen);
+        } else {
+            seen(&entry.path(), metadata.len());
+        }
+    }
+}
