@@ -527,6 +527,101 @@ done"#;
         assert_eq!(reason.message, NOT_FOUND);
     }
 
+    /// Device run on the RP Mini V2 (2026-11-20, korri 469dd168a): Steam
+    /// installed Downwell in the engine folder, discovery published its
+    /// release `@korri:steam/360740` and location, and the job still ended
+    /// "not found" after 60 s: it waited for a provider link, which
+    /// discovery never writes. The job finds the game that discovery
+    /// publishes for the engine's appmanifest, also when the library already
+    /// keeps that game from an earlier install.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_engine_install_is_imported_with_the_game_discovery_found() {
+        use crate::{
+            acquisition::GameContext, discovery::DiscoveryLifecycleCoordinator,
+            plugin_policy::RegistrySource,
+        };
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("korri");
+        let account =
+            root.join("users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9");
+        let steamapps = account.join("steam-engine/steam/steamapps");
+        std::fs::create_dir_all(&steamapps).unwrap();
+        std::fs::create_dir_all(root.join("catalog")).unwrap();
+        std::fs::write(root.join("device.yaml"), "{}\n").unwrap();
+        // Bejeweled 3 is in the library's history from an earlier install:
+        // its release, no location.
+        std::fs::write(
+            root.join("catalog/library.yaml"),
+            "library:\n  bejeweled:\n    title: Bejeweled 3\n    releases:\n    - id: steam\n      system: steam\n      identity:\n        kind: provider\n        value: '@korri:steam/78000'\n",
+        )
+        .unwrap();
+        let package = tempfile::tempdir().unwrap();
+        let registry = crate::plugin_test_fixtures::steam(package.path());
+        let private_root = temp.path().join("private");
+        let discovery = DiscoveryLifecycleCoordinator::new_with_registry_source(
+            &root,
+            &private_root,
+            Arc::new(Mutex::new(())),
+            Default::default(),
+            RegistrySource::Selected(Arc::new(registry.clone())),
+        );
+        discovery.wait_until_idle(Duration::from_secs(10));
+        let context = GameContext {
+            root: root.clone(),
+            private_root,
+            registry,
+            discovery: discovery.clone(),
+        };
+        // Nothing is installed yet: discovery has no location to find.
+        assert_eq!(
+            crate::acquisition::discovered_provider_game(&context, "@korri:steam", "78000"),
+            None
+        );
+        let (mut plan, runner) = setup(temp.path());
+        plan.account_root = account.clone();
+        // The engine writes the appmanifest when the install ends.
+        plan.host_program = script_host(
+            temp.path(),
+            &format!(
+                r#"echo '{{"event":"signed_in","account_name":"p"}}'
+exec 3<>"$fifo"
+while read -r line <&3; do
+  case "$line" in
+    "install 78000") echo '{{"event":"app_job_started","appid":78000,"kind":"install"}}'
+               printf '"AppState" {{ "appid" "78000" "name" "Bejeweled 3" "StateFlags" "4" "installdir" "Bejeweled 3" }}' > '{manifest}'
+               echo '{{"event":"app_job_finished","appid":78000,"kind":"install","result":"installed"}}' ;;
+    shutdown) exit 0 ;;
+  esac
+done"#,
+                manifest = steamapps.join("appmanifest_78000.acf").display()
+            ),
+        );
+        let store = Arc::new(SteamStore::default());
+        let job = store
+            .acquire(
+                "@korri:steam",
+                plan,
+                runner,
+                "78000",
+                crate::steam_imported(context.clone(), "@korri:steam".into()),
+            )
+            .unwrap();
+        let state = until(&store, &job.job_id, |s| {
+            matches!(
+                s,
+                AcquireJobState::Failed { .. } | AcquireJobState::Imported { .. }
+            )
+        })
+        .await;
+        assert!(
+            matches!(&state, AcquireJobState::Imported { game_id } if game_id == "bejeweled"),
+            "{state:?}"
+        );
+        let snapshot = context.discovery.published().unwrap();
+        assert_eq!(snapshot.library.len(), 1, "the same game, not a second one");
+        assert!(snapshot.provider_links.is_empty());
+    }
+
     /// Review C10: a listing host that ends says so; it is not a timeout.
     #[tokio::test(flavor = "multi_thread")]
     async fn a_listing_host_that_ends_is_not_a_timeout() {

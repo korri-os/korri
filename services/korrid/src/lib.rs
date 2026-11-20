@@ -5481,7 +5481,8 @@ impl SteamEngineFacts {
     }
 }
 
-/// After a Steam install: rescan, then find the game by its provider link.
+/// After an engine install: rescan, then wait up to 60 s for discovery to
+/// publish the appmanifest's game (its provider release and location).
 fn steam_imported(
     context: acquisition::GameContext,
     provider: String,
@@ -5490,7 +5491,9 @@ fn steam_imported(
         context.discovery.rescan();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
         loop {
-            if let Some(game) = acquisition::linked_game(&context, &provider, &app.to_string()) {
+            if let Some(game) =
+                acquisition::discovered_provider_game(&context, &provider, &app.to_string())
+            {
                 return Some(game);
             }
             if std::time::Instant::now() >= deadline {

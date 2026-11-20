@@ -108,17 +108,38 @@ fn link_key(provider: &str, claim_id: &str) -> String {
     format!("{provider}/{claim_id}")
 }
 
-/// The library game a provider link names, in the published snapshot.
-pub(crate) fn linked_game(context: &GameContext, provider: &str, claim_id: &str) -> Option<String> {
+/// The library game that discovery found installed for a provider item, in
+/// the published snapshot: the game whose release has the provider identity
+/// `<provider>/<claim id>`, while that key has a provider location.
+/// `reconcile_providers` writes exactly these two records for a Steam
+/// appmanifest, and no provider link; it withdraws the location when the
+/// manifest goes, so a game that is only in the library's history is not
+/// found.
+pub(crate) fn discovered_provider_game(
+    context: &GameContext,
+    provider: &str,
+    claim_id: &str,
+) -> Option<String> {
     let snapshot = context.discovery.published().ok()?;
-    Some(
-        snapshot
-            .provider_links
-            .get(&link_key(provider, claim_id))?
-            .playable
-            .0
-            .clone(),
-    )
+    let key = link_key(provider, claim_id);
+    snapshot
+        .locations
+        .get(&key)?
+        .iter()
+        .any(|location| matches!(location, crate::config::Location::ProviderRef { .. }))
+        .then_some(())?;
+    snapshot
+        .library
+        .iter()
+        .find(|(_, game)| {
+            game.releases.iter().any(|release| {
+                matches!(
+                    &release.identity,
+                    Some(crate::config::library::LibraryIdentity::Provider { value }) if *value == key
+                )
+            })
+        })
+        .map(|(id, _)| id.clone())
 }
 
 /// ADR 0016 Q3 and ADR 0030: the ready directory of one library release in

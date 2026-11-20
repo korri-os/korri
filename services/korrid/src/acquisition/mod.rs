@@ -21,7 +21,7 @@ use crate::{
 use indexmap::IndexSet;
 
 pub use game::GameContext;
-pub(crate) use game::{acquired_game_content, linked_game};
+pub(crate) use game::{acquired_game_content, discovered_provider_game};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     path::{Path, PathBuf},
