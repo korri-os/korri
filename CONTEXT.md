@@ -191,6 +191,14 @@ _Avoid_: durable message, sync item, state
 A private Wi-Fi network that one device starts so that a device next to it can reach it with no router and no internet.
 _Avoid_: hotspot, local link, direct link, ad hoc network
 
+**Private network**:
+A network laid over the internet that gives each of a person's devices an address its other devices can reach from anywhere, such as Tailscale or ZeroTier. A plugin brings it; Korri sees only its addresses.
+_Avoid_: overlay, overlay network, VPN, tailnet, mesh
+
+**Account sign-in**:
+A plugin's link between a device and the person's account at an outside service, made by approving that service's own QR code on a phone. Each service has its own.
+_Avoid_: login, pairing, Steam sign-in (for the general case)
+
 **Invite**:
 What an idle device shows when another device holds a live session that it can take part in through shared play. It names the person who is playing and the game, not the kind of shared play; the receiving device chooses its route. It lasts until the session ends, the device is no longer idle, or the person dismisses it.
 _Avoid_: notification, broadcast, request

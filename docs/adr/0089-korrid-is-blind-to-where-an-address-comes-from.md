@@ -26,6 +26,15 @@ Tailscale just gives me those extra benefits for free."
   program's own login link, shown as a QR code that the person approves on a
   phone. Korri never sees a password or key (ADR 0034). When the sign-in
   expires, the plugin reports that it needs sign-in again.
+- Every account sign-in, Steam's and a private network's, uses one
+  plugin-neutral sign-in card in the surface treaty. Each service keeps its own
+  QR code; the card carries no service name in its type. The QR codes show the
+  service's logo in the middle and use a designed, not plain, module style.
+- Devices on one local network find each other with no server, on every
+  network they join. An announcement carries a rotating identifier that only
+  the person's own devices can recognise, so strangers on the network cannot
+  follow a device from place to place. Addresses found this way join the same
+  pool and expire soon, because a roaming device's local address is short-lived.
 - Tailscale is the first such plugin. ZeroTier and others follow only after
   Tailscale is proven: the RP Mini V2 on a phone hotspot reaches aka at home.
 
