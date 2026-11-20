@@ -63,9 +63,13 @@ The art pass runs after each successful discovery pass. To start one:
 korri library folders rescan
 ```
 
-Each pass asks one art plugin about at most 8 games. Run the rescan again
-until every cleaned game has its art back; `korri library games list` shows
-the library.
+Each pass asks each enabled art plugin about at most 8 games. Run the
+rescan again until every cleaned game has its art back;
+`korri library games list` shows the library.
+
+The measured-media migration (`../migrate-measured-media.py`) also resets
+stored art. The two migrations do not depend on each other, so they can run
+in either order, but both must run before korrid starts on the new build.
 
 ## Tests
 
