@@ -35,8 +35,20 @@ Tailscale just gives me those extra benefits for free."
   the person's own devices can recognise, so strangers on the network cannot
   follow a device from place to place. Addresses found this way join the same
   pool and expire soon, because a roaming device's local address is short-lived.
+  Each pair of the person's devices derives the identifier from their device
+  keys, and it changes every few minutes, so no new shared secret exists.
+- A device tries a peer's last known addresses even after the stored record
+  expires: fresh addresses first, then expired ones, then the relays. A wrong
+  address fails the device-key check.
+- While two devices are connected, the connection keeps its own paths current.
+  korrid stops refreshing that peer through the relays until the connection
+  ends.
+- The private network is offered in an optional setup step after Wi-Fi and in
+  settings, which show its sign-in state.
 - Tailscale is the first such plugin. ZeroTier and others follow only after
-  Tailscale is proven: the RP Mini V2 on a phone hotspot reaches aka at home.
+  Tailscale is proven: the RP Mini V2, with the plugin, on a phone hotspot
+  reaches aka at home. aka's Tailscale comes from its own system configuration;
+  korrid uses it the same way, which is the point.
 
 ## Considered options
 
