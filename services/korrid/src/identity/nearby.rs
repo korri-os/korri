@@ -31,20 +31,42 @@ impl DeviceIdentity {
         Ok(Zeroizing::new(mac.finalize().into_bytes().into()))
     }
 
-    /// ADR 0089 local discovery: the announcement tag for this device and
-    /// `peer_public_key` in one five-minute `window`. Tag =
-    /// HMAC-SHA256(key = secp256k1 ECDH shared secret (x coordinate),
-    /// msg = "korri-nearby-v1" || window as 8 big-endian bytes), first 8 bytes.
-    /// ECDH is symmetric, so both devices of the pair derive the same tag and
-    /// no other key can. The shared secret never leaves identity.
+    /// ADR 0089 local discovery: the tag this device announces to
+    /// `peer_public_key` in one five-minute `window`.
     pub fn nearby_announcement_tag(
         &self,
         peer_public_key: &str,
         window: u64,
     ) -> Result<[u8; 8], IdentityError> {
+        self.nearby_tag(peer_public_key, window, Sender::Local)
+    }
+
+    /// The tag `peer_public_key` announces to this device in `window`, which
+    /// a listener looks for.
+    pub fn nearby_announcement_tag_from(
+        &self,
+        peer_public_key: &str,
+        window: u64,
+    ) -> Result<[u8; 8], IdentityError> {
+        self.nearby_tag(peer_public_key, window, Sender::Peer)
+    }
+
+    /// Tag(sender S, receiver R) = HMAC-SHA256(key = secp256k1 ECDH(S, R)
+    /// shared x coordinate, msg = "korri-nearby-v1" || window as 8
+    /// big-endian bytes || S's 32-byte public key), first 8 bytes. Only S
+    /// and R can derive it. S's key in the message makes the two directions
+    /// differ, so A's and B's announcements share no tag. The shared secret
+    /// never leaves identity.
+    fn nearby_tag(
+        &self,
+        peer_public_key: &str,
+        window: u64,
+        sender: Sender,
+    ) -> Result<[u8; 8], IdentityError> {
         let peer = parse_public_key(peer_public_key)?;
         let keys = self.keys.as_ref().ok_or(IdentityError::NoDeviceKey)?;
-        if keys.public_key() == peer {
+        let local = keys.public_key();
+        if local == peer {
             return Err(IdentityError::Encryption);
         }
         // A Nostr key is x-only; either lift of x gives the same shared x.
@@ -61,10 +83,20 @@ impl DeviceIdentity {
             Hmac::<Sha256>::new_from_slice(&shared[..32]).map_err(|_| IdentityError::Encryption)?;
         mac.update(b"korri-nearby-v1");
         mac.update(&window.to_be_bytes());
+        mac.update(match sender {
+            Sender::Local => local.as_bytes(),
+            Sender::Peer => peer.as_bytes(),
+        });
         let mut tag = [0u8; 8];
         tag.copy_from_slice(&mac.finalize().into_bytes()[..8]);
         Ok(tag)
     }
+}
+
+/// Which device of the pair announces the tag.
+enum Sender {
+    Local,
+    Peer,
 }
 
 #[cfg(test)]
@@ -105,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn nearby_announcement_tag_is_pairwise_and_rotates_with_the_window() {
+    fn nearby_announcement_tag_is_pairwise_directional_and_rotates_with_the_window() {
         let roots: Vec<_> = (0..3).map(|_| tempfile::tempdir().unwrap()).collect();
         let identities: Vec<_> = roots
             .iter()
@@ -115,20 +147,30 @@ mod tests {
             unreachable!()
         };
         let key = |identity: &DeviceIdentity| identity.device_public_key().unwrap().to_owned();
-        let ab = a.nearby_announcement_tag(&key(b), 7).unwrap();
-        // Both members of the pair derive the same tag.
-        assert_eq!(ab, b.nearby_announcement_tag(&key(a), 7).unwrap());
+        let a_to_b = a.nearby_announcement_tag(&key(b), 7).unwrap();
+        // The receiver derives the tag the sender announces to it.
+        assert_eq!(a_to_b, b.nearby_announcement_tag_from(&key(a), 7).unwrap());
+        // The other direction is a different tag.
+        assert_ne!(a_to_b, b.nearby_announcement_tag(&key(a), 7).unwrap());
+        assert_ne!(a_to_b, a.nearby_announcement_tag_from(&key(b), 7).unwrap());
         // A key outside the pair cannot derive it for either member.
-        assert_ne!(ab, c.nearby_announcement_tag(&key(a), 7).unwrap());
-        assert_ne!(ab, c.nearby_announcement_tag(&key(b), 7).unwrap());
+        for derived in [
+            c.nearby_announcement_tag(&key(a), 7).unwrap(),
+            c.nearby_announcement_tag(&key(b), 7).unwrap(),
+            c.nearby_announcement_tag_from(&key(a), 7).unwrap(),
+            c.nearby_announcement_tag_from(&key(b), 7).unwrap(),
+        ] {
+            assert_ne!(a_to_b, derived);
+        }
         // A window change changes the tag.
-        assert_ne!(ab, a.nearby_announcement_tag(&key(b), 8).unwrap());
+        assert_ne!(a_to_b, a.nearby_announcement_tag(&key(b), 8).unwrap());
         assert!(a.nearby_announcement_tag(&key(a), 7).is_err());
         assert!(a.nearby_announcement_tag("not a key", 7).is_err());
     }
 
     /// The tag is exactly HMAC-SHA256(ECDH x, "korri-nearby-v1" || window
-    /// big-endian), truncated to 8 bytes, so another implementation can match it.
+    /// big-endian || sender key), truncated to 8 bytes, so another
+    /// implementation can match it.
     #[test]
     fn nearby_announcement_tag_matches_its_written_derivation() {
         let a = Keys::parse("0000000000000000000000000000000000000000000000000000000000000003")
@@ -149,6 +191,8 @@ mod tests {
         let mut mac = Hmac::<Sha256>::new_from_slice(&shared[..32]).unwrap();
         mac.update(b"korri-nearby-v1");
         mac.update(&5_900_000u64.to_be_bytes());
+        // The sender, A = 3·G, as its 32-byte x-only key.
+        mac.update(a.public_key().as_bytes());
         assert_eq!(
             identity
                 .nearby_announcement_tag(&b.public_key().to_hex(), 5_900_000)

@@ -1,8 +1,8 @@
 //! Local discovery (ADR 0089): devices on one local network find each other
 //! with no server. An announcement holds no device key, only one rotating tag
-//! per known owner device; only that pair can derive it
-//! (`DeviceIdentity::nearby_announcement_tag`). A matched announcement's
-//! addresses join the dial pool for a short time. They are process memory,
+//! per known owner device; only that pair can derive it, and the two
+//! directions differ (`DeviceIdentity::nearby_announcement_tag`). A matched
+//! announcement's addresses join the dial pool for a short time. They are process memory,
 //! never persisted, and never proof of liveness: the connection still
 //! authenticates by device key.
 use crate::identity::DeviceIdentity;
@@ -52,8 +52,9 @@ pub(crate) fn announcement_tags(
         .collect()
 }
 
-/// The known device whose pair tag an announcement carries, for the current
-/// or the previous window. A stranger's announcement matches nothing.
+/// The known device whose tag to this device an announcement carries, for
+/// the current or the previous window. A stranger's announcement, and this
+/// device's own, match nothing.
 pub(crate) fn matching_device(
     identity: &DeviceIdentity,
     peers: &[String],
@@ -67,7 +68,7 @@ pub(crate) fn matching_device(
             [Some(current), current.checked_sub(1)]
                 .into_iter()
                 .flatten()
-                .filter_map(|window| identity.nearby_announcement_tag(peer, window).ok())
+                .filter_map(|window| identity.nearby_announcement_tag_from(peer, window).ok())
                 .any(|tag| announced.contains(&tag))
         })
         .cloned()
@@ -188,6 +189,30 @@ mod tests {
             matching_device(stranger, &[key(a), key(b), key(c)], &announced, now),
             None
         );
+    }
+
+    #[test]
+    fn two_devices_announcements_in_one_window_share_no_tag() {
+        let (_roots, ids) = identities(3);
+        let [a, b, c] = ids.as_slice() else {
+            unreachable!()
+        };
+        let now = 1_800_000_000;
+        let from_a: BTreeSet<_> = announcement_tags(a, &[key(b), key(c)], now)
+            .into_iter()
+            .collect();
+        let from_b: BTreeSet<_> = announcement_tags(b, &[key(a), key(c)], now)
+            .into_iter()
+            .collect();
+        assert_eq!(from_a.len(), 2);
+        assert!(
+            from_a.is_disjoint(&from_b),
+            "an observer can link A and B by a shared tag"
+        );
+        // Each still recognises the other, and nobody recognises itself.
+        assert_eq!(matching_device(b, &[key(a)], &from_a, now), Some(key(a)));
+        assert_eq!(matching_device(a, &[key(b)], &from_b, now), Some(key(b)));
+        assert_eq!(matching_device(a, &[key(b), key(c)], &from_a, now), None);
     }
 
     #[test]

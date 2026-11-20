@@ -1,6 +1,7 @@
 //! Multicast DNS (DNS-SD) announce and browse on every network the device
 //! joins. The instance and host names are random and change with each tag
-//! window, so neither follows the device from place to place.
+//! window, so neither follows the device from place to place. A device's own
+//! announcement matches nothing, because its tags are for other devices.
 use super::{announcement_tags, matching_device, origins, record_found, window, Tag};
 use crate::{
     federation::{interfaces, FederationDirectory},
@@ -9,7 +10,7 @@ use crate::{
 };
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo, TxtProperty};
 use std::{
-    collections::{BTreeSet, VecDeque},
+    collections::BTreeSet,
     net::{IpAddr, SocketAddr},
     time::Duration,
 };
@@ -17,8 +18,6 @@ use std::{
 const SERVICE: &str = "_korri._tcp.local.";
 /// How often korrid checks for a new window, address set or peer set.
 const POLL: Duration = Duration::from_secs(5);
-/// Own announcements from recent windows, which a browse still reports.
-const OWN_NAMES: usize = 4;
 
 struct Daemon(ServiceDaemon);
 impl Drop for Daemon {
@@ -39,7 +38,6 @@ struct Basis {
 struct Announcer {
     basis: Option<Basis>,
     current: Option<String>,
-    own: VecDeque<String>,
 }
 
 pub async fn run(directory: FederationDirectory, credentials: PeerCredentials, bind: SocketAddr) {
@@ -57,7 +55,6 @@ pub async fn run(directory: FederationDirectory, credentials: PeerCredentials, b
     let mut announcer = Announcer {
         basis: None,
         current: None,
-        own: VecDeque::new(),
     };
     let mut poll = tokio::time::interval(POLL);
     loop {
@@ -65,9 +62,6 @@ pub async fn run(directory: FederationDirectory, credentials: PeerCredentials, b
             _ = poll.tick() => announcer.update(&daemon.0, &directory, &credentials, bind),
             event = events.recv_async() => match event {
                 Ok(ServiceEvent::ServiceResolved(service)) => {
-                    if announcer.own.contains(&service.fullname) {
-                        continue;
-                    }
                     let Some((identity, peers)) = known(&directory, &credentials) else {
                         continue;
                     };
@@ -178,10 +172,6 @@ impl Announcer {
         if daemon.register(service).is_err() {
             log::warn!("local discovery: announcement failed");
             return;
-        }
-        self.own.push_back(fullname.clone());
-        while self.own.len() > OWN_NAMES {
-            self.own.pop_front();
         }
         self.current = Some(fullname);
     }
