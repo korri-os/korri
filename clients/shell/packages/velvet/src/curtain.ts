@@ -242,6 +242,10 @@ export function curtainOf(state: State, model: Model): CurtainSpec | undefined {
   return curtain
 }
 
+/** The curtain's gap between its parts, in body sizes (ui/tokens.slint holds the same). */
+export const CURTAIN_GAP_SOLID = 2.2
+export const CURTAIN_GAP = 1.0
+
 export interface CurtainLayout {
   /** Every line of the words, broken to the curtain's width. */
   readonly lines: readonly string[]
@@ -262,11 +266,11 @@ export function curtainLayout(spec: CurtainSpec, plan: Plan): CurtainLayout {
   // may take two lines, a problem its mark, and words that do not all fit the two lines
   // that say so. An estimate on the safe side: a line too few shows; a button under the
   // window's foot does not.
-  const gap = plan.body * 0.7
+  const gap = plan.body * (spec.kind === "busy" && spec.game !== undefined ? CURTAIN_GAP_SOLID : CURTAIN_GAP)
   const fixedParts = [
     spec.name === undefined ? 0 : plan.body * 1.2,
     plan.kicker * 2 + (spec.kind === "problem" ? plan.body * 1.8 : 0),
-    spec.steps === undefined ? 0 : plan.body * 2.4,
+    spec.steps === undefined ? 0 : plan.body * 2.8,
     spec.progress.kind === "none" ? 0 : plan.body * 2,
     buttons,
   ].filter(part => part > 0)

@@ -134,6 +134,9 @@ export global Tokens {
     out property <length> edge: 3px;
     out property <length> hair: 1px;
     out property <float> rows-dim: 0.5;
+    // The curtain's gap between its parts, in body sizes: a launch's, and any other's (src/curtain.ts holds the same).
+    out property <float> curtain-gap-solid: 2.2;
+    out property <float> curtain-gap: 1.0;
 
     // ---- Motion ----
     out property <duration> t-focus: still ? 0ms : 240ms;

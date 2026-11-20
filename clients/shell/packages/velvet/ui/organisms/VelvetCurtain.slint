@@ -41,8 +41,10 @@ export component VelvetCurtain inherits Rectangle {
         y: self.preferred-height + 2 * Tokens.screen.pad-y * root.u <= root.height ? (root.height - self.preferred-height) / 2 : root.height - Tokens.screen.pad-y * root.u * 0.6 - self.preferred-height;
         width: root.w;
         height: self.preferred-height;
-        // A launch stands roomier: its few lines read as a title card (owner, 2026-11-13).
-        spacing: root.curtain.solid ? root.body * 1.15 : root.body * 0.7;
+        // A launch stands roomier: its few lines read as a title card (owner, 2026-11-13), with
+        // air between the title, the bars and Cancel (owner, 2026-11-20: "needs more vertical
+        // spacing"). src/curtain.ts (curtainLayout) counts the same gaps.
+        spacing: root.curtain.solid ? root.body * Tokens.curtain-gap-solid : root.body * Tokens.curtain-gap;
         alignment: start;
         if root.curtain.name != "": Text {
             text: root.curtain.name;
