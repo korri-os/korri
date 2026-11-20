@@ -201,11 +201,27 @@ pub fn run(arguments: &[OsString]) -> Result<(), String> {
 /// The host writes a plain tar (`saves/<appid>-<launch|exit>-<n>.tar`); any
 /// format the store reader knows is read too.
 pub(crate) fn extract_save_export(archive: &Path, work: &Path) -> Result<(), String> {
+    extract_save_export_with(archive, work, Arc::new(space::fstatvfs))
+}
+
+/// ADR 0030's 5% floor bounds store downloads; it keeps that space free for
+/// the writes the root reserve does not protect, saves among them. A save
+/// export is such a write, a few megabytes of the person's own files, so it
+/// is held only to the space there is: a file system that does not have room
+/// for it still refuses it with `NoSpace`. Device run 2026-11-20 (RP Mini V2):
+/// 5.82 GB free under a 6.11 GB floor refused every VVVVVV export.
+pub(super) fn extract_save_export_with(
+    archive: &Path,
+    work: &Path,
+    probe: space::Probe,
+) -> Result<(), String> {
     // korrid's own service hides /proc/meminfo (`launch_memory`).
     let limits = Limits {
         budget: TraversalBudget::default(),
         memory: launch_memory().map_err(|stop| stop.reason)?,
-        space: None,
+        space: Some(Arc::new(move |folder: &File| {
+            probe(folder).map(|space| space::Space { size: 0, ..space })
+        })),
         cancel: None,
     };
     let result = if is_tar(archive).map_err(|error| error.to_string())? {

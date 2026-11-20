@@ -965,6 +965,64 @@ fn a_save_export_tar_unpacks_files_and_refuses_links_and_traversal() {
     );
 }
 
+/// Device run 2026-11-20 (RP Mini V2): 5.82 GB free under a 6.11 GB floor
+/// refused every VVVVVV save export as `NoSpace`. A save export is held only
+/// to the space there is; a store download keeps ADR 0030's floor.
+#[test]
+fn a_save_export_below_the_download_floor_unpacks_and_a_full_disk_refuses_it() {
+    let mut builder = tar::Builder::new(Vec::new());
+    let mut header = tar::Header::new_ustar();
+    header.set_size(4);
+    header.set_mode(0o600);
+    header.set_entry_type(tar::EntryType::Regular);
+    builder
+        .append_data(&mut header, "remote/SaveData.bin", &b"save"[..])
+        .unwrap();
+    let bytes = builder.into_inner().unwrap();
+    // A file system of 100 MB with 4 MB free: below the 5% floor.
+    let probe = |available: u64| -> space::Probe {
+        Arc::new(move |_| {
+            Ok(space::Space {
+                available,
+                size: 100_000_000,
+                block: 4096,
+            })
+        })
+    };
+    let folder = tempfile::tempdir().unwrap();
+    let archive = folder.path().join("70300-launch-1.tar");
+    fs::write(&archive, &bytes).unwrap();
+    let work = |name: &str| {
+        let work = folder.path().join(name);
+        fs::create_dir(&work).unwrap();
+        work
+    };
+
+    let saves = work("saves");
+    extract_save_export_with(&archive, &saves, probe(4_000_000)).unwrap();
+    assert_eq!(
+        fs::read(saves.join("remote/SaveData.bin")).unwrap(),
+        b"save"
+    );
+
+    let download = work("download");
+    let floor = Limits {
+        space: Some(probe(4_000_000)),
+        ..limits()
+    };
+    assert_eq!(
+        extract_tar(&archive, &download, &floor)
+            .unwrap_err()
+            .failure,
+        Failure::NoSpace,
+        "a store download keeps the floor"
+    );
+
+    let full = work("full");
+    let error = extract_save_export_with(&archive, &full, probe(4096)).unwrap_err();
+    assert!(error.starts_with("NoSpace"), "{error}");
+}
+
 /// Valve's `bins_sdk_linuxarm64_linuxarm64` zip is made on DOS: its
 /// `linuxarm64/` entry has no bytes and mode 0x4000 in the attributes' high
 /// half, its files 0x81b6. The folder unpacks; a link or device still does
