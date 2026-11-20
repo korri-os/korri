@@ -136,6 +136,52 @@ assert
     ''SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHSCREEN}=="1", DEVPATH=="*/98c000.i2c/i2c-*/*-0038/input/input*/event*", ENV{WL_OUTPUT}="DSI-1"''
   ];
 assert !lib.hasInfix "LIBINPUT_IGNORE_DEVICE" c.services.udev.extraRules;
+# Touch orientation: both controllers carry ROCKNIX's calibration, and the
+# matrix composed with wlroots' turn for Sway's `transform 90`
+# (WL_OUTPUT_TRANSFORM_270: (x, y) -> (y, 1 - x)) gives back the libinput
+# position. The measured taps (2026-11-20), in hundredths of a percent so
+# the arithmetic is exact; before the fix the compositor reported (x, 1 - y).
+assert
+  lib.filter (line: lib.hasInfix "LIBINPUT_CALIBRATION_MATRIX" line) (
+    lib.splitString "\n" c.services.udev.extraRules
+  ) == [
+    ''SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHSCREEN}=="1", DEVPATH=="*/a90000.i2c/i2c-*/*-0038/input/input*/event*", ENV{LIBINPUT_CALIBRATION_MATRIX}="0 -1 1 1 0 0"''
+    ''SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHSCREEN}=="1", DEVPATH=="*/98c000.i2c/i2c-*/*-0038/input/input*/event*", ENV{LIBINPUT_CALIBRATION_MATRIX}="0 -1 1 1 0 0"''
+  ];
+assert
+  let
+    # libinput: (a x + b y + c, d x + e y + f), with a=0 b=-1 c=1 d=1 e=0 f=0.
+    calibrate = p: {
+      x = 10000 - p.y;
+      y = p.x;
+    };
+    wlrootsRotate270 = p: {
+      x = p.y;
+      y = 10000 - p.x;
+    };
+    taps = [
+      { x = 435; y = 417; }
+      { x = 4590; y = 4900; }
+      { x = 9690; y = 9580; }
+      { x = 594; y = 685; }
+      { x = 9540; y = 9180; }
+    ];
+    # The same taps as wev saw them without calibration (surface pixels over
+    # the output size, in hundredths of a percent): wlroots' turn alone
+    # explains them to within 0.1 %.
+    seen = [
+      { x = 417; y = 9565; } # bottom TL: 51.7/1240, 1033.0/1080
+      { x = 4898; y = 5411; } # bottom centre: 607.4/1240, 584.4/1080
+      { x = 9583; y = 306; } # bottom BR: 1188.3/1240, 33.1/1080
+      { x = 685; y = 9406; } # top TL: 131.6/1920, 1015.9/1080
+      { x = 9176; y = 464; } # top BR: 1761.8/1920, 50.1/1080
+    ];
+    near = a: b: lib.max (a - b) (b - a) <= 10;
+  in
+  map (p: wlrootsRotate270 (calibrate p)) taps == taps
+  && lib.all (pair: near pair.fst.x pair.snd.x && near pair.fst.y pair.snd.y) (
+    lib.zipLists (map wlrootsRotate270 taps) seen
+  );
 # Display idle stays the product's (README: first-boot test for the DSI-2 wedge).
 assert c.systemd.services.korri-display-idle.enable;
 assert builtins.elem "inputplumber-ayn-thor-data" inputDataNames;

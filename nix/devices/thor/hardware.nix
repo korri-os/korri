@@ -20,6 +20,7 @@ let
   top = "DSI-2";
   # Bottom screen, the same sources.
   bottom = "DSI-1";
+  touchCalibration = "0 -1 1 1 0 0";
 in
 {
   # Boot with the bottom panel unplugged, and plug it back in once the
@@ -74,6 +75,23 @@ in
     hostMac = "02:52:54:48:52:01";
     deviceMac = "02:52:54:48:52:02";
   };
+
+  # Touch orientation. Both ft5x06 controllers already report landscape
+  # coordinates (the DTS sets touchscreen-swapped-x-y and inverted-x). wlroots
+  # 0.20 then turns a touch mapped to an output by that output's transform
+  # (types/wlr_cursor.c handle_touch_down / apply_output_transform), and
+  # Sway's `transform 90` is WL_OUTPUT_TRANSFORM_270 (sway
+  # commands/output/transform.c), which maps (x, y) to (y, 1 - x). Measured
+  # 2026-11-20: Y came out as 1 - y on both panels. libinput's calibration
+  # (1 - y, x) undoes that turn. It is the matrix ROCKNIX's Thor quirk sets on
+  # both controllers (packages/hardware/quirks/devices/AYN Thor/touchcontrol,
+  # from ROCKNIX PR #2754) and legacy validated live on 2026-05-11.
+  services.udev.extraRules = lib.concatMapStringsSep "\n" (controller: ''
+    SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHSCREEN}=="1", DEVPATH=="*/${controller}.i2c/i2c-*/*-0038/input/input*/event*", ENV{LIBINPUT_CALIBRATION_MATRIX}="${touchCalibration}"
+  '') [
+    "a90000"
+    "98c000"
+  ];
 
   services.korriLinuxHost = {
     label = "thor";
