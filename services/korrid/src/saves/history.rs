@@ -22,6 +22,18 @@ pub(super) fn progress(record: &SnapshotRecord) -> Vec<(String, SaveKind, String
     files
 }
 
+/// The join that reconcile and launch may publish for a game's heads. A head
+/// that holds its progress outside Korri has no files to compare: the cloud
+/// side of a Steam Cloud split (ADR 0083) names Steam's copy. Its empty file
+/// list is not empty progress, so heads with such a side stay a split until
+/// the person picks one.
+pub fn join_of_heads(heads: &[SnapshotRecord]) -> Result<Option<SnapshotRecord>, SaveError> {
+    if heads.len() > 1 && heads.iter().any(crate::steam_engine::saves::in_steam_cloud) {
+        return Ok(None);
+    }
+    automatic_join(heads)
+}
+
 /// None means progress differs and must never be merged at file granularity.
 pub fn automatic_join(heads: &[SnapshotRecord]) -> Result<Option<SnapshotRecord>, SaveError> {
     let Some(first) = heads.first() else {

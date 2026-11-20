@@ -231,7 +231,7 @@ fn history_decision(records: Vec<SnapshotRecord>) -> Result<HistoryDecision, Sav
         .into_iter()
         .filter(|record| ids.contains(&snapshot_id(record).expect("validated record")))
         .collect();
-    Ok(match super::history::automatic_join(&heads)? {
+    Ok(match super::history::join_of_heads(&heads)? {
         None => HistoryDecision::Split,
         Some(joined) => HistoryDecision::Join {
             heads,
@@ -311,7 +311,7 @@ impl NativeSaveStore {
             .filter(|r| heads.contains(&snapshot_id(r).expect("validated record")))
             .cloned()
             .collect();
-        if current.len() > 1 && super::history::automatic_join(&current)?.is_none() {
+        if current.len() > 1 && super::history::join_of_heads(&current)?.is_none() {
             return Err(SaveError::Split);
         }
         for id in &heads {

@@ -10110,6 +10110,113 @@ printf '[{{"success":true}}]'
         );
     }
 
+    /// Device run 2026-11-20 (VVVVVV on the RP Mini V2): the launch export
+    /// was not imported, so neither side of the Steam Cloud split held files
+    /// here, and the next reconcile joined the two sides into one head
+    /// (`df859621`). The split keeps its two heads after the conflicted
+    /// session completes and after every reconcile, and the person can pick.
+    #[test]
+    fn a_steam_cloud_split_keeps_two_heads_after_its_session_completes_and_a_pick_works() {
+        use crate::saves::{
+            record::snapshot_id,
+            store::{head_ids, NativeSaveStore},
+            types::{SaveMark, SnapshotRecord},
+            SaveError, SaveRepository,
+        };
+        use crate::steam_engine::{protocol::Side, saves as steam_saves};
+        let root = tempfile::tempdir().unwrap();
+        // The conflicts book is one per process: this launch and game are
+        // this test's own.
+        let id = "5c11750c11750c11750c11750c117500";
+        let game = "vvvvvv-split-after-completion";
+        // The export was not imported: korrid has no files of either side.
+        let folder = root.path().join("game-saves").join(steam_saves::LOCATION);
+        fs::create_dir_all(&folder).unwrap();
+        let store = NativeSaveStore::new(root.path());
+        let device = "a".repeat(64);
+        let local = steam_saves::capture(
+            &store,
+            PERSON,
+            &folder,
+            SnapshotRecord {
+                parents: vec![],
+                game_id: game.into(),
+                release_id: Some("@korri:steam/70300".into()),
+                runner_id: "@korri:steam/engine".into(),
+                device: device.clone(),
+                ended_at: "2026-11-20T17:09:17.814Z".into(),
+                duration_seconds: 0,
+                interrupted: false,
+                locations: vec![],
+            },
+        )
+        .unwrap();
+        assert!(local.locations.iter().all(|l| l.files.is_empty()));
+        let conflict = steam_saves::split(&store, PERSON, 70300, local, 1_734_585_251).unwrap();
+        let conflicts = crate::steam_engine::conflicts(root.path());
+        conflicts.open(PERSON, game, Some(id), conflict.clone());
+        let record: ActiveSession = serde_json::from_value(serde_json::json!({
+            "phase":"running","launchId":id,"gameId":game,"personPublicKey":PERSON,
+            "startedAt":1700000000,"runnerId":"@korri:steam/engine",
+            "releaseId":"@korri:steam/70300",
+            "saveLocations":[{"key":steam_saves::LOCATION,"kind":"save","path":folder}]
+        }))
+        .unwrap();
+        persist_active(&root.path().join("host-session"), &record).unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        backend.insert(id, LaunchUnitState::Completed);
+        let recovered = control_with_clock(root.path(), backend, TestClock::at(1_700_000_010));
+        assert_eq!(recovered.status(), HostSessionStatus::NoActive);
+        let heads = |store: &NativeSaveStore| {
+            let mut heads = head_ids(&store.records(PERSON, game).unwrap()).unwrap();
+            heads.sort();
+            heads
+        };
+        let mut sides = vec![conflict.local.clone(), conflict.cloud.clone()];
+        sides.sort();
+        assert_eq!(
+            store.records(PERSON, game).unwrap().len(),
+            2,
+            "no third snapshot"
+        );
+        assert_eq!(heads(&store), sides);
+        // `korri saves status` and the launch check reconcile: no join.
+        assert_eq!(store.reconcile(PERSON, game).unwrap(), SaveMark::Split);
+        assert_eq!(store.reconcile(PERSON, game).unwrap(), SaveMark::Split);
+        assert_eq!(heads(&store), sides);
+        assert!(matches!(
+            store.launch_base(PERSON, game, &device),
+            Err(SaveError::Split)
+        ));
+        // `korri saves choose <cloud>` works and names the cloud side.
+        let chosen = store
+            .choose(
+                PERSON,
+                game,
+                &conflict.cloud,
+                &device,
+                "2026-11-20T18:00:00.000Z",
+            )
+            .unwrap();
+        assert_eq!(heads(&store), vec![chosen.clone()]);
+        let records = store.records(PERSON, game).unwrap();
+        let pick = records
+            .iter()
+            .find(|r| snapshot_id(r).unwrap() == chosen)
+            .unwrap();
+        let mut parents = pick.parents.clone();
+        parents.sort();
+        assert_eq!(parents, sides);
+        assert_eq!(
+            conflicts.pick(PERSON, game, &conflict.cloud),
+            Some(Side::Cloud)
+        );
+        assert_eq!(
+            conflicts.take_resolve(PERSON, game),
+            Some((70300, Side::Cloud))
+        );
+    }
+
     #[test]
     fn restart_completion_uses_first_observation_time_once() {
         let root = tempfile::tempdir().unwrap();
