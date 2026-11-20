@@ -6,7 +6,8 @@ status: accepted
 
 **Owner decisions, 2026-11-20 (issue #465).** This amends
 [ADR 0032](0032-steamgriddb-artwork-comes-from-a-plugin-not-from-korrid.md)
-sections 1 and 4.
+sections 1 and 4. Later on 2026-11-20 the owner added the public ids of
+systems and games (sections "System public ids" and "Game public ids").
 
 ## What exists today
 
@@ -24,6 +25,21 @@ Read on main at `8c4fd1a17`.
   (`config/library.rs` :34), from legacy `library-item.ts` :246.
 - The art handler gets only the title: `PluginGameAssetCandidatesInput
   { title, responses }` (`acquisition/artwork.rs` :49–52).
+- A system id is a string that plugins agree on by convention. korrid has
+  no built-in system list (`SystemRecord`, `plugin.rs` :33–47;
+  `docs/briefs/2026-10-02-system-identification-rules.md` :17–19 and :27).
+  When several enabled plugins declare one system, korrid unions their
+  content rules in plugin id order (`plugin.rs` :669–697).
+- No record on main holds an outside authority's id for a system or a game.
+  `ProviderLinkRefKind` has an `ExternalId` variant
+  (`config/library.rs` :177–183), but no code on main reads or writes it.
+  The one-off migration script names `external-id` only as an allowed value
+  (`services/korrid/deploy/launch-settings-migration/migrate.py` :733–738).
+- Legacy proposed a record of outside ids keyed by authority on games, with
+  one value per authority: `externalIds: Record<string, string>`
+  (`legacy:docs/research/game-library-entity-resolution-deduplication.md`
+  :485–494 and :553–558). Legacy did not build it, and it had no ids for
+  systems.
 
 The evidence for the match rule is a throwaway eval on 2026-11-20, kept
 outside the repository in `/tmp/match-eval/results.md`. It searched
@@ -86,6 +102,46 @@ Fuzzy matching takes siblings. At 90 it scores
 - A person cannot fix a match by hand yet. That comes with plugin
   management.
 
+### System public ids
+
+- A system declaration carries the system's public ids, keyed by authority.
+  Each authority has a list of values, not one value. A match on any value
+  of the list counts.
+- The list exists because an authority can split what Korri treats as one
+  system. For example, IGDB has separate platforms for the SNES (19) and the
+  Super Famicom.
+- The first authorities to fill in are Wikidata, IGDB, MobyGames,
+  TheGamesDB, ScreenScraper, RetroAchievements, and No-Intro/libretro.
+- korrid passes the system's public ids record to the art plugins. korrid
+  does not read the record itself.
+- This fills the "system's form" that this ADR first left unresolved: the
+  art handler gets the system as its public ids record.
+- The keying by authority extends legacy's game record
+  (`externalIds`, cited above) to systems. The delta from legacy is a list
+  of values per authority, not one value, for the split shown above.
+
+### Game public ids
+
+- Game public ids are stored in v1. They have the same shape as system
+  public ids: keyed by authority, with a list of values per authority.
+- This shape for games is a guess. The owner delegated the choice. It
+  copies the system shape; no real game record has shown a need for more
+  than one value per authority yet.
+- The reason to store them now: the eval found two SteamGridDB entries named
+  Ocarina of Time. A stored id keeps a game on the entry it matched first.
+- Id first: when a game has a stored id for a source, the plugin fetches by
+  that id. The plugin searches by title only when no id is stored for that
+  source.
+- The stored id comes from the first accepted match under the rules in
+  "Matching".
+- This changes the earlier "fix it by hand later" text only in one way: the
+  ids are stored now. Manual editing of a match or an id still waits for
+  plugin management.
+- Cost: a wrong first match stays wrong until someone edits the stored id,
+  and nobody can edit it before plugin management exists. Without stored
+  ids, a wrong match could correct itself when the title or the source
+  changed; with them, it cannot (inferred, not measured).
+
 ## Unresolved
 
 The owner has not chosen these shapes. Do not invent them; extract them from
@@ -97,8 +153,20 @@ a real producer or ask.
   declare the game's system are asked.
 - Whether title cleaning also applies to titles that come from acquisition
   or declared games, not from discovery.
-- The field that carries the system in `PluginGameAssetCandidatesInput`,
-  and the system's form (a system id or something else).
+- The field that carries the system's public ids record in
+  `PluginGameAssetCandidatesInput`, and whether the handler also gets the
+  system id. The form is decided ("System public ids").
+- All names for public ids: the field on the system declaration, the field
+  on the game record, the authority keys, and how a value is written.
+  Unresolved. Whether `ProviderLinkRefKind::ExternalId` carries game public
+  ids is also unresolved.
+- How the public ids of one system merge when two plugins declare that
+  system. Inferred, not decided: a union of the lists per authority, like
+  the content rules (`plugin.rs` :669–697).
+- How the art handler gets a game's stored ids, and how it returns the id
+  of a new match for korrid to store. Unresolved.
+- Whether a stored game id takes part in game identity across devices, as
+  legacy proposed for IGDB ids (legacy doc :490–491). Unresolved.
 - Where a plugin gets a release year. korrid does not pass one today.
 - The migration's script and its check. For a file-set release the raw names
   are in `FileSet { root, files }` (`config/mod.rs` :562–576), not in a

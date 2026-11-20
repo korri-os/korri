@@ -293,6 +293,10 @@ _Avoid_: title, entry, ROM
 One version of a game's content. A file release is identified by its content bytes, so new bytes make a new release; a multi-disc game's discs form one release. A folder release is identified by its library folder and path on one device, and stays one release until a person says otherwise. A replaced release stays in the game's history as unavailable.
 _Avoid_: ROM, build, file
 
+**Public id**:
+The id that an outside authority, such as Wikidata or IGDB, gives a system or a game. One authority can give one thing several ids, because it can split what Korri treats as one (IGDB has separate SNES and Super Famicom platforms); a match on any of them counts. A game's public id for an art source comes from its first accepted match. It is not a link.
+_Avoid_: external id, canonical id
+
 **Game identity**:
 What makes copies on different devices the same game: a provider reference, a hash list some plugin may contribute, or a link.
 _Avoid_: game ID, fold key
@@ -380,7 +384,7 @@ One place a device gets a game's art from: an art plugin's site, a peer that hol
 _Avoid_: provider, artwork provider, art plugin (for a peer or a drawing)
 
 **Art layer**:
-The place of one art source in the order a device tries them. For each picture, logo or icon, the first layer that has one wins; no source sets its own layer.
+The place of one art source in the order a device tries them: the device's own art plugins, then a peer, then the surface's own drawing. The art plugins share one layer: the device keeps the candidates of every one, and the surface picks by measured shape and resolution. No source and no person sets a layer or a priority.
 _Avoid_: priority, tier, fallback chain
 
 **Match**:

@@ -9,7 +9,8 @@ status: accepted
 (its "roles for Velvet" amendment) and applies
 [ADR 0067](0067-a-device-uses-its-own-metadata-first-and-a-peers-when-it-has-none.md)
 to art. [ADR 0090](0090-system-plugins-clean-titles-and-art-matches-only-on-equal-clean-titles.md)
-records how each source matches a game.
+records how each source matches a game. Later on 2026-11-20 the owner
+replaced the plugin-id-first-wins rule for art plugins (section "Layers").
 
 ## What exists today
 
@@ -38,18 +39,28 @@ Read on main at `8c4fd1a17`.
 
 ### Layers
 
-- With more than one art plugin, each role or picture comes from the first
-  plugin that has a candidate for it, in plugin id order. This is today's
-  behaviour in `artwork.rs`.
+- korrid keeps the candidates from every enabled art plugin. No art plugin
+  wins by its place in plugin id order.
+- The surface picks among the candidates by their measured shape and
+  resolution.
+- There is no priority among art plugins: a plugin cannot declare one, and
+  a person cannot set one.
+- Why: plugin ids sort as text, so `@korri:igdb` comes before
+  `@korri:steamgriddb`. Plugin id order would make IGDB's box art beat the
+  re-imagined SteamGridDB grids that the owner prefers.
+- This replaces today's behaviour in `artwork.rs` (first plugin in id order,
+  first candidate of each role).
 - Tiered or scored combination of sources is future work.
 - The layers for v1, first to last:
-  1. SteamGridDB, with each person's own key (`@korri:steamgriddb`).
-  2. IGDB, as `@korri:igdb` in `korri-os/plugins`, with each person's own
-     Twitch credentials. Korri ships no key. This follows the SteamGridDB
-     precedent of 2026-10-23 (ADR 0032).
-  3. A peer's art, under ADR 0067: a device uses its own art, and a peer's
+  1. The device's own art plugins, all together and with no order between
+     them:
+     - SteamGridDB, with each person's own key (`@korri:steamgriddb`).
+     - IGDB, as `@korri:igdb` in `korri-os/plugins`, with each person's own
+       Twitch credentials. Korri ships no key. This follows the SteamGridDB
+       precedent of 2026-10-23 (ADR 0032).
+  2. A peer's art, under ADR 0067: a device uses its own art, and a peer's
      art only when it has none.
-  4. Velvet's procedural poster, which the surface draws itself.
+  3. Velvet's procedural poster, which the surface draws itself.
 - Peers may share fetched art inside the owner's own federation. Art never
   passes through `@korri` infrastructure.
 
@@ -58,7 +69,7 @@ Read on main at `8c4fd1a17`.
 - The surface contract moves from fixed roles (`tile`, `poster`, `hero`,
   `logo`) to measured facts (width, height, ratio) plus three broad kinds:
   logo, picture and icon.
-- A surface chooses a picture by its ratio and its fidelity.
+- A surface chooses a picture by its measured shape and its resolution.
 - Box art is allowed as a picture. The owner prefers the re-imagined
   SteamGridDB style as first class.
 - SteamGridDB heroes, about 3.1:1, are the standard for Velvet's stage.
@@ -72,18 +83,18 @@ Read on main at `8c4fd1a17`.
 The owner has not chosen these shapes. Do not invent them; extract them from
 a real producer or ask.
 
-- **Layer order against plugin id order.** Plugin ids sort as text, so
-  `@korri:igdb` comes before `@korri:steamgriddb`. Plugin id order would make
-  IGDB the first layer, not the second. ibuki's SteamGridDB plugin is
-  `@simonwjackson:steamgriddb`, which also sorts after `@korri:igdb`. The
-  owner must say which rule wins until plugin management lets the person set
-  the order.
+- How korrid stores the extra candidates: the image bytes, or references
+  that it fetches later.
+- Whether korrid keeps every candidate of a plugin or only some of them
+  (today it keeps the first of each role, `artwork.rs` :623–624).
 - The treaty shape for kinds and measured facts: the names on the wire,
   whether the ratio is sent or derived from `width` and `height`, and what
   replaces `SurfaceMediaRole`.
-- What fidelity is and how korrid measures it.
-- What "first class" means for the re-imagined style: an order among
-  candidates, a fact on the wire, or a surface preference.
+- What resolution means beyond the `width` and `height` that already reach
+  the surface, and whether korrid measures more than that. This text first
+  said "fidelity".
+- What "first class" means for the re-imagined style: a fact on the wire or
+  a surface preference. It is not a source priority (section "Layers").
 - What replaces `GameAssetRole`, the per-role size rules and the
   `<playable id>:<role>` assignment key in storage, and what happens to
   `tile` and `LocalGame.coverAssetId`.
@@ -102,13 +113,21 @@ a real producer or ask.
 
 - **Scored or tiered combination across sources** now. The owner deferred it
   to future work.
-- **A plugin declares its layer or priority.** Rejected, as in ADR 0090:
-  priority belongs to the person.
+- **First plugin in plugin id order wins**, today's behaviour. Rejected:
+  `@korri:igdb` sorts before `@korri:steamgriddb`, so box art would beat the
+  re-imagined grids.
+- **A plugin declares its layer or priority.** Rejected, as in ADR 0090.
+- **A person sets an order among art plugins.** Rejected: the surface picks
+  by measured shape and resolution, so no order among art plugins is kept.
 - **Ship a Korri key for IGDB or SteamGridDB.** Rejected: each person uses
   their own credentials (ADR 0032 section 7).
 
 ## Consequences
 
+- korrid must ask every enabled art plugin about a game. Today it skips a
+  plugin for a game that already holds every role (ADR 0032, "roles for
+  Velvet"; `artwork.rs` :510–511 and :620). That skip no longer fits, and
+  each plugin now costs requests to its site for every game (inferred).
 - A surface no longer depends on a role name to find a hero. It reads the
   measured shape, so a source that labels art differently still fits.
 - The move off fixed roles is a treaty change, so it follows AGENTS.md: one
