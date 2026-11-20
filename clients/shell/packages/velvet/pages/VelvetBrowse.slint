@@ -12,7 +12,7 @@
 // go (contract 8.4) and the move between depths is one motion.
 
 import { Tokens } from "../ui/tokens.slint";
-import { Home, Tile, Shelf } from "../ui/types.slint";
+import { Home, Tile, Shelf, Cluster } from "../ui/types.slint";
 import { VelvetPill } from "../ui/atoms/VelvetPill.slint";
 import { VelvetWords } from "../ui/atoms/VelvetWords.slint";
 import { VelvetHead } from "../ui/atoms/VelvetHead.slint";
@@ -20,11 +20,14 @@ import { VelvetTile } from "../ui/molecules/VelvetTile.slint";
 import { VelvetMarquee } from "../ui/molecules/VelvetMarquee.slint";
 import { VelvetPick } from "../ui/organisms/VelvetPick.slint";
 import { VelvetLobby } from "../ui/organisms/VelvetLobby.slint";
+import { VelvetCluster } from "../ui/organisms/VelvetCluster.slint";
 
 export component VelvetBrowse inherits Rectangle {
     callback activated(target: string, at: float, released: bool);
     callback dragged(region: string, by: int);
     in property <Home> home;
+    // The clock, the network and the battery, beside the Menu pill.
+    in property <Cluster> cluster;
     // The focused shelf (a number of its own: main.slint says why).
     in property <int> shelf-at;
     // The pick's card (one tile, or none), the row's tiles, the shelves and their tiles.
@@ -123,16 +126,13 @@ export component VelvetBrowse inherits Rectangle {
                     inert: root.inert;
                     activated(target, at, released) => { root.activated(target, at, released); }
                 }
-                // The clock ends where the pill's focus ring starts (0.24 of its size out
+                // The cluster ends where the pill's focus ring starts (0.24 of its size out
                 // from its edge), less a gap of 0.6: it never runs under the pill, at any size.
-                if root.home.clock != "": VelvetWords {
-                    x: root.pad-x;
+                VelvetCluster {
+                    x: menu-pill.x - Tokens.screen.small * root.u * 0.84 - self.width;
                     y: root.pad-y * 0.7;
-                    width: Math.max(0px, menu-pill.x - Tokens.screen.small * root.u * 0.84 - root.pad-x);
-                    height: Tokens.screen.small * root.u * 2.3;
-                    text: root.home.clock;
-                    size: Tokens.screen.small * root.u;
-                    horizontal-alignment: right;
+                    cluster: root.cluster;
+                    room: Math.max(0px, menu-pill.x - Tokens.screen.small * root.u * 0.84 - root.pad-x);
                 }
             }
             // The focused game's facts over the shelf; no name: the tile says it, or the line under it.

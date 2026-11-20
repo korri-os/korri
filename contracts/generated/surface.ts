@@ -309,16 +309,6 @@ export interface FocusedGame {
 }
 
 /**
- * This device's battery. Grounded in legacy `DeviceBatteryReady`
- * (`product/platform/device/device-facts.ts`: percent, charging) with
- * `percent` made optional (ADR 0094). `charging` is the power_supply
- * `status` "Charging". `percent` (0 to 100) is present only when the
- * device declares its capacity events verified; korrid never publishes a
- * percent that can be stale.
- */
-export interface SurfaceBattery {
-	percent?: number;
-	charging: boolean;
  * One stored image of a game. A surface derives its ratio from `width`
  * and `height`; no ratio is sent.
  */
@@ -365,6 +355,19 @@ export interface SurfaceAccountSignIn {
 	 */
 	offer?: string;
 	state: SurfaceAccountState;
+}
+
+/**
+ * This device's battery. Grounded in legacy `DeviceBatteryReady`
+ * (`product/platform/device/device-facts.ts`: percent, charging) with
+ * `percent` made optional (ADR 0094). `charging` is the power_supply
+ * `status` "Charging". `percent` (0 to 100) is present only when the
+ * device declares its capacity events verified; korrid never publishes a
+ * percent that can be stale.
+ */
+export interface SurfaceBattery {
+	percent?: number;
+	charging: boolean;
 }
 
 export interface SurfaceCatalogPresentation {

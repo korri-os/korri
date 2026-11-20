@@ -21,7 +21,7 @@
 // finger scrolled back to its focus.
 
 import { Tokens } from "ui/tokens.slint";
-import { Screen, Poster, Tile, Fact, FactLine, Facts, Marquee, Pill, Stage, Shelf, Row, Key, Keyboard, Step, Curtain, Sheet, Page, Home, Mark, Set, Detail, Empty, Notice, Readout } from "ui/types.slint";
+import { Screen, Poster, Tile, Fact, FactLine, Facts, Marquee, Pill, Stage, Shelf, Row, Key, Keyboard, Step, Curtain, Sheet, Page, Home, Mark, Set, Detail, Empty, Notice, Readout, Cluster } from "ui/types.slint";
 import { VelvetStage } from "ui/organisms/VelvetStage.slint";
 import { VelvetTap } from "ui/atoms/VelvetTap.slint";
 import { VelvetSheet } from "ui/organisms/VelvetSheet.slint";
@@ -35,7 +35,7 @@ import { VelvetList } from "pages/VelvetList.slint";
 import { VelvetHouse } from "pages/VelvetHouse.slint";
 import { VelvetPaused } from "pages/VelvetPaused.slint";
 
-export { Screen, Poster, Tile, Fact, FactLine, Facts, Marquee, Pill, Stage, Shelf, Row, Key, Keyboard, Step, Curtain, Sheet, Page, Home, Mark, Set, Detail, Empty, Notice }
+export { Screen, Poster, Tile, Fact, FactLine, Facts, Marquee, Pill, Stage, Shelf, Row, Key, Keyboard, Step, Curtain, Sheet, Page, Home, Mark, Set, Detail, Empty, Notice, Cluster }
 
 export component Surface inherits Window {
     // A focus target was tapped or clicked (ADR 0055): one callback for every target.
@@ -57,6 +57,8 @@ export component Surface inherits Window {
     // "home", "empty", "set", "detail", "list", or "none" (the stage light alone).
     in property <string> page: "empty";
     in property <Stage> stage;
+    // The clock, the network and the battery at the top right of every page (ADR 0094).
+    in property <Cluster> cluster;
     // Every list is a property of its own (ui/types.slint says why).
     in property <Home> home;
     in property <[Tile]> home-cards;
@@ -147,6 +149,7 @@ export component Surface inherits Window {
     if root.paged && root.page == "home" && root.home.shown: VelvetBrowse {
         width: root.width;
         height: root.height;
+        cluster: root.cluster;
         home: root.home;
         cards: root.home-cards;
         row-tiles: root.home-row;
@@ -162,6 +165,7 @@ export component Surface inherits Window {
     if root.paged && root.page == "empty" && root.empty.shown: VelvetHouse {
         width: root.width;
         height: root.height;
+        cluster: root.cluster;
         empty: root.empty;
         title: root.empty-title;
         lines: root.empty-lines;
@@ -172,6 +176,7 @@ export component Surface inherits Window {
     if root.paged && root.page == "set" && root.set.shown: VelvetSet {
         width: root.width;
         height: root.height;
+        cluster: root.cluster;
         set: root.set;
         first-row: root.set-first-row;
         tiles: root.set-tiles;
@@ -183,6 +188,7 @@ export component Surface inherits Window {
     if root.paged && root.page == "detail" && root.detail.shown: VelvetDetail {
         width: root.width;
         height: root.height;
+        cluster: root.cluster;
         detail: root.detail;
         cards: root.detail-cards;
         buttons: root.detail-buttons;
@@ -192,6 +198,7 @@ export component Surface inherits Window {
     if root.paged && root.page == "list" && root.list.shown: VelvetList {
         width: root.width;
         height: root.height;
+        cluster: root.cluster;
         page: root.list;
         rows: root.list-rows;
         buttons: root.list-buttons;
@@ -266,7 +273,7 @@ export component Overlay inherits Window {
     in property <string> layer: "screen";
     in property <[string]> title-lines;
     in property <float> title-size;
-    in property <string> clock;
+    in property <Cluster> cluster;
     in property <[Readout]> readouts;
     in property <[Row]> rows;
     // Korri was asked to close the overlay. The rows stay as they are until it does.
@@ -305,7 +312,7 @@ export component Overlay inherits Window {
         height: root.height;
         title: root.title-lines;
         title-size: root.title-size * Tokens.unit;
-        clock: root.clock;
+        cluster: root.cluster;
         readouts: root.readouts;
         rows: root.rows;
         activated(target, at, released) => { root.activated(target, at, released); }

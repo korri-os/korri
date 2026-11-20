@@ -354,6 +354,8 @@ function peersIn(games: readonly Game[], known: readonly string[]): string[] {
 //   the answer to its own question   the window answers the question out
 //   the answer to its own FocusGame  `focusedGame` names another game than before
 //   the clock                        `clockLabel` changed
+//   the device                       the connection or the battery changed (the cluster's
+//                                    facts, ADR 0094: korrid publishes when they change)
 //   anything else                    Korri changed something Velvet cannot see: the lists
 //                                    are read again (`unread`), which reads every game the
 //                                    home and the lobby draw
@@ -361,11 +363,19 @@ function peersIn(games: readonly Game[], known: readonly string[]): string[] {
 // A change that comes in the same publication as one of the first three is not seen until
 // the next publication of the last kind.
 
-/** Korri published: what it said of the clock and the focus is kept, and a publication Velvet cannot explain marks the lists unread. */
+/** The device's facts a publication may carry alone: the connection and the battery, as one string. */
+const deviceSaid = (model: Model): string => {
+  const connection = model.network?.connection
+  const battery = model.battery
+  const net = connection === undefined ? "" : connection._tag === "Wifi" ? `Wifi:${connection.ssid}:${connection.strengthPercent ?? ""}` : connection._tag
+  return `${net}|${battery === undefined ? "" : `${battery.percent ?? ""}:${battery.charging}`}`
+}
+
+/** Korri published: what it said of the clock, the focus and the device is kept, and a publication Velvet cannot explain marks the lists unread. */
 export function hearLists(lists: Lists, model: Model): Lists {
-  const said = { clock: model.clockLabel ?? "", focus: model.focusedGame?.gameId ?? "" }
+  const said = { clock: model.clockLabel ?? "", focus: model.focusedGame?.gameId ?? "", device: deviceSaid(model) }
   const before = lists.heard
-  if (before === undefined || before.clock !== said.clock || before.focus !== said.focus) return { ...lists, heard: said }
+  if (before === undefined || before.clock !== said.clock || before.focus !== said.focus || before.device !== said.device) return { ...lists, heard: said }
   const catalog = model.catalog
   if (catalog._tag !== "Ready" || lists.unread) return lists
   // Nothing is read yet, or this is the answer to the question out.

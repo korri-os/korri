@@ -239,7 +239,7 @@ function nowOf(state: State, model: Model, shelves: readonly ShelfSpec[]): { tit
 /**
  * The height the pick's mark may take (ui/organisms/VelvetPick.slint): its box less Play and
  * the gap over it. On a wide window the mark stands on its foot and may rise above the box,
- * up to the line under the clock and the Menu pill.
+ * up to the line under the cluster and the Menu pill.
  */
 export function pickRoom(plan: Plan, hero: boolean): number {
   const boxY = hero ? plan.heroY : plan.textY
@@ -330,7 +330,6 @@ export function homeView(asked: Pictures, state: State, model: Model, plan: Plan
       mark,
       play: pick === undefined ? NO_PILL : pill(pick.resumable === true ? "Resume" : "Play", "pick", "play", onPick && !onCard, { icon: "play" }),
       menu: pill("Menu", "menu", "menu", live && state.onMenu, { icon: "menu", quiet: true }),
-      clock: model.clockLabel ?? "",
       rowAt: state.scrolled?.row ?? rowAt,
       rowMark,
       shelfAt: shelfAtNow,

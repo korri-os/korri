@@ -2,19 +2,22 @@
 // or every game. Its head names it and counts it; Sort and filter is a quiet
 // pill on that line, reached by up or the options button, and what focus is
 // on reads at the right. The pill aligns to the head's baseline; the readout
-// gives way to it.
+// gives way to it. The cluster stands at the top right, over the readout's
+// end: the readout gives way to it too, and the cluster gives way to the head.
 
 import { Tokens } from "../ui/tokens.slint";
-import { Set, Tile, Mark } from "../ui/types.slint";
+import { Set, Tile, Mark, Cluster } from "../ui/types.slint";
 import { VelvetPill } from "../ui/atoms/VelvetPill.slint";
 import { VelvetWords } from "../ui/atoms/VelvetWords.slint";
 import { VelvetHead } from "../ui/atoms/VelvetHead.slint";
 import { VelvetGrid } from "../ui/organisms/VelvetGrid.slint";
+import { VelvetCluster } from "../ui/organisms/VelvetCluster.slint";
 
 export component VelvetSet inherits Rectangle {
     callback activated(target: string, at: float, released: bool);
     callback dragged(region: string, by: int);
     in property <Set> set;
+    in property <Cluster> cluster;
     // The first row in the grid's window (a number of its own: main.slint says why).
     in property <int> first-row;
     in property <[Tile]> tiles;
@@ -30,18 +33,42 @@ export component VelvetSet inherits Rectangle {
     init => { in = true; }
     opacity: in ? 1 : 0;
     animate opacity { duration: Tokens.t-level; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+    // The cluster has what the head leaves of the line; the head gives way only to its glyphs.
+    property <length> cluster-gap: root.fact * 1.4;
+    cluster := VelvetCluster {
+        x: root.width - root.pad-x - self.width;
+        y: Tokens.screen.pad-y * root.u * 0.7;
+        cluster: root.cluster;
+        room: Math.max(0px, root.width - 2 * root.pad-x - head.preferred-width - root.cluster-gap);
+    }
+    property <length> head-room: root.width - 2 * root.pad-x - (cluster.used > 0 ? cluster.used + root.cluster-gap : 0px);
+    // The head's line when the cluster has given up all it can (its glyphs alone).
+    property <length> head-least: root.width - 2 * root.pad-x - (root.cluster.shown ? root.cluster.least-w * Tokens.screen.small * root.u + root.cluster-gap : 0px);
+    // What the pill takes of the head's line, with its gaps: the title leaves it that.
+    property <length> pill-need: root.set.pill.shown && !root.narrow ? pill-measure.natural + root.fact * 2.6 : root.fact * 0.8;
+    // Its width alone: no target, never focused, never drawn.
+    pill-measure := VelvetPill {
+        visible: false;
+        pill: { shown: true, label: root.set.pill.label, icon: root.set.pill.icon, quiet: true };
+        size: Tokens.screen.small * root.u;
+        inert: true;
+    }
     head := HorizontalLayout {
         x: root.pad-x;
         y: root.head-y;
-        width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
+        width: Math.max(0px, Math.min(self.preferred-width, root.head-room));
         height: root.head-h;
         spacing: root.fact * 0.8;
+        // The head gives way from its count, a readout: the title keeps its words while
+        // the line holds them (up to its share of the width).
         title := VelvetHead {
             horizontal-stretch: 0;
             max-width: root.width * (root.narrow ? 0.62 : 0.4);
+            min-width: Math.min(self.preferred-width, self.max-width, Math.max(0px, root.head-least - root.pill-need));
             text: root.set.title;
         }
         VerticalLayout {
+            horizontal-stretch: 1;
             alignment: end;
             padding-bottom: title.drop - root.fact * 0.24;
             VelvetWords {
@@ -49,6 +76,7 @@ export component VelvetSet inherits Rectangle {
             }
         }
         if root.set.pill.shown && !root.narrow: VerticalLayout {
+            horizontal-stretch: 0;
             alignment: end;
             padding-left: root.fact;
             padding-bottom: title.drop - Tokens.screen.small * root.u * 0.72;
@@ -68,11 +96,14 @@ export component VelvetSet inherits Rectangle {
         inert: root.inert;
         activated(target, at, released) => { root.activated(target, at, released); }
     }
-    // What focus is on. A readout: it has what the head leaves.
-    if !root.narrow: HorizontalLayout {
-        x: head.x + head.width + root.fact * 1.4;
+    // What focus is on. A readout: it has what the head and the cluster leave, and in less
+    // room than a short name it gives way whole (the focused tile shows the game).
+    property <length> readout-x: head.x + head.width + root.fact * 1.4;
+    property <length> readout-w: (cluster.used > 0 ? cluster.x - root.cluster-gap : root.width - root.pad-x) - root.readout-x;
+    if !root.narrow && root.readout-w >= root.fact * 4: HorizontalLayout {
+        x: root.readout-x;
         y: root.head-y + root.head-h - self.height - title.drop + root.fact * 0.3;
-        width: Math.max(0px, parent.width - root.pad-x - self.x);
+        width: root.readout-w;
         height: root.fact * 1.5;
         alignment: end;
         spacing: root.fact * 0.6;

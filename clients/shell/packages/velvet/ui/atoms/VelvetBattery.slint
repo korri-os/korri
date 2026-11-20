@@ -1,0 +1,43 @@
+// VelvetBattery: the device's battery as a cell, its body filled to its
+// level. It encodes Korri's percent as a share of the body, so the level
+// stays in sight when a short room gives up the percent's words (ADR 0094).
+
+import { Tokens } from "../tokens.slint";
+
+export component VelvetBattery inherits Rectangle {
+    // 0 to 1.
+    in property <float> share;
+    in property <color> ink: Tokens.house-light;
+    in property <length> size: Tokens.screen.small * Tokens.unit;
+    property <length> line: Math.max(Tokens.hair, root.size * 0.09);
+    property <length> body-w: root.size * 1.3;
+    property <length> body-h: root.size * 0.68;
+    width: size * 1.5;
+    height: size;
+    Rectangle {
+        x: 0;
+        y: (parent.height - root.body-h) / 2;
+        width: root.body-w;
+        height: root.body-h;
+        border-width: root.line;
+        border-color: root.ink;
+        border-radius: root.size * 0.16;
+        Rectangle {
+            x: root.line * 2;
+            y: root.line * 2;
+            width: Math.max(0px, (parent.width - root.line * 4) * Math.clamp(root.share, 0, 1));
+            height: parent.height - root.line * 4;
+            border-radius: root.size * 0.05;
+            background: root.ink;
+        }
+    }
+    // The nub.
+    Rectangle {
+        x: root.body-w + root.size * 0.05;
+        y: (parent.height - self.height) / 2;
+        width: root.size * 0.12;
+        height: root.body-h * 0.42;
+        border-radius: self.width / 3;
+        background: root.ink;
+    }
+}

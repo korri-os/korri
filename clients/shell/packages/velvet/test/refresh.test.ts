@@ -126,7 +126,23 @@ describe("a quiet model asks nothing", () => {
       run.deliver({ _tag: "Tick", idleMs: minute * 1000 })
     }
     expect(run.moves - settled).toBe(0)
-    expect(run.view.clock ?? run.view.home.clock).toBeDefined()
+    expect(run.view.cluster.clock).toBe("22:00")
+  })
+
+  test("only the battery and the connection change (ADR 0094: korrid publishes when they do): no MoveCatalog, and the cluster says it", () => {
+    const model = art()
+    const run = new Play(model)
+    const settled = run.moves
+    for (let step = 1; step <= 30; step++) {
+      run.swap({
+        ...model,
+        publishedAt: model.publishedAt + step * 1000,
+        battery: { percent: 80 - step, charging: step % 2 === 0 },
+        network: { connection: step % 3 === 0 ? { _tag: "Wired" } : { _tag: "Wifi", ssid: "attic", strengthPercent: step * 3 }, wifi: { _tag: "NoAdapter" } },
+      })
+    }
+    expect(run.moves - settled).toBe(0)
+    expect(run.view.cluster).toMatchObject({ network: "wired", battery: "bolt", percent: "50%" })
   })
 
   test("moving the focus asks for no list (Korri publishes the focused game each time)", () => {

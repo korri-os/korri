@@ -1,0 +1,110 @@
+// VelvetCluster: the device's own facts at the top right of every screen
+// (ADR 0094), left to right: the clock, the network, the battery. The page
+// puts the Menu pill after it where it has one, and gives it its room. Quiet:
+// House light in the small type, under the title in weight and size.
+//
+// A short room gives up the battery's percent first, then the clock; the
+// glyphs always stay (the cell keeps the level as its fill). The widths are
+// the logic's (src/cluster.ts), in font sizes, so the cluster is as wide here
+// as the logic says.
+//
+//   network  bars     Wi-Fi, its strength in four bars (VelvetSignal)
+//            wifi     Wi-Fi, no strength known: the plain mark
+//            wired    a cable
+//            offline  the Wi-Fi mark struck out
+//   battery  cell     the level, then the percent; both in Exit at 15 % and under
+//            bolt     it charges, then the percent when Korri knows it
+
+import { Tokens } from "../tokens.slint";
+import { Cluster } from "../types.slint";
+import { VelvetBattery } from "../atoms/VelvetBattery.slint";
+import { VelvetIcon } from "../atoms/VelvetIcon.slint";
+import { VelvetSignal } from "../atoms/VelvetSignal.slint";
+import { VelvetWords } from "../atoms/VelvetWords.slint";
+
+export component VelvetCluster inherits Rectangle {
+    in property <Cluster> cluster;
+    // The width the screen gives the cluster.
+    in property <length> room;
+    in property <length> size: Tokens.screen.small * Tokens.unit;
+    out property <bool> whole: root.cluster.full-w * root.size <= root.room;
+    out property <bool> timed: root.cluster.mid-w * root.size <= root.room;
+    // The width it takes in that room: the page stands it at its right edge by this.
+    out property <length> used: !root.cluster.shown ? 0px : (root.whole ? root.cluster.full-w : root.timed ? root.cluster.mid-w : root.cluster.least-w) * root.size;
+    property <color> charge-ink: root.cluster.low ? Tokens.exit : Tokens.house-light;
+    width: root.used;
+    height: root.size * 2.3;
+    if root.cluster.shown: HorizontalLayout {
+        // src/cluster.ts: CLUSTER_GAP.
+        spacing: root.size * 0.55;
+        if root.timed && root.cluster.clock != "": VelvetWords {
+            width: root.cluster.clock-w * root.size;
+            text: root.cluster.clock;
+            size: root.size;
+            ink: Tokens.house-light;
+            horizontal-alignment: right;
+        }
+        // NETWORK_W.
+        if root.cluster.network != "none": Rectangle {
+            width: root.size * 1.05;
+            if root.cluster.network == "bars": VelvetSignal {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2 + root.size * 0.04;
+                bars: root.cluster.bars;
+                size: root.size * 0.78;
+            }
+            if root.cluster.network == "wifi" || root.cluster.network == "wired": VelvetIcon {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                name: root.cluster.network;
+                ink: Tokens.house-light;
+                size: root.size * 1.05;
+            }
+            if root.cluster.network == "offline": Rectangle {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                width: root.size * 1.05;
+                height: self.width;
+                VelvetIcon {
+                    name: "wifi";
+                    ink: Tokens.house-light;
+                    size: parent.width;
+                    opacity: 0.45;
+                }
+                VelvetIcon {
+                    name: "slash";
+                    ink: Tokens.house-light;
+                    size: parent.width;
+                }
+            }
+        }
+        if root.cluster.battery != "none": HorizontalLayout {
+            // PERCENT_GAP.
+            spacing: root.size * 0.3;
+            // CELL_W, BOLT_W.
+            Rectangle {
+                width: root.size * (root.cluster.battery == "cell" ? 1.5 : 0.8);
+                if root.cluster.battery == "cell": VelvetBattery {
+                    x: 0;
+                    y: (parent.height - self.height) / 2;
+                    share: root.cluster.share;
+                    ink: root.charge-ink;
+                    size: root.size;
+                }
+                if root.cluster.battery == "bolt": VelvetIcon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    name: "bolt";
+                    ink: Tokens.house-light;
+                    size: root.size;
+                }
+            }
+            if root.whole && root.cluster.percent != "": VelvetWords {
+                width: root.cluster.percent-w * root.size;
+                text: root.cluster.percent;
+                size: root.size;
+                ink: root.charge-ink;
+            }
+        }
+    }
+}

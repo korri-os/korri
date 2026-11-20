@@ -2,12 +2,13 @@
 // invitation), a library still being read, or one Korri could not read.
 
 import { Tokens } from "../ui/tokens.slint";
-import { Empty, Pill } from "../ui/types.slint";
+import { Empty, Pill, Cluster } from "../ui/types.slint";
 import { VelvetEmpty } from "../ui/organisms/VelvetEmpty.slint";
 
 export component VelvetHouse inherits Rectangle {
     callback activated(target: string, at: float, released: bool);
     in property <Empty> empty;
+    in property <Cluster> cluster;
     in property <[string]> title;
     in property <[string]> lines;
     in property <[Pill]> buttons;
@@ -16,6 +17,7 @@ export component VelvetHouse inherits Rectangle {
         width: parent.width;
         height: parent.height;
         empty: root.empty;
+        cluster: root.cluster;
         title: root.title;
         lines: root.lines;
         buttons: root.buttons;

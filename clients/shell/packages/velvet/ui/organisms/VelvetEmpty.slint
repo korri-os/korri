@@ -5,16 +5,18 @@
 // not be read (with Try again), and holds still while it is being read.
 
 import { Tokens } from "../tokens.slint";
-import { Empty, Pill } from "../types.slint";
+import { Empty, Pill, Cluster } from "../types.slint";
 import { VelvetCaps } from "../atoms/VelvetCaps.slint";
 import { VelvetGhost } from "../atoms/VelvetGhost.slint";
 import { VelvetPill } from "../atoms/VelvetPill.slint";
 import { VelvetWords } from "../atoms/VelvetWords.slint";
 import { VelvetButtons } from "../molecules/VelvetButtons.slint";
+import { VelvetCluster } from "VelvetCluster.slint";
 
 export component VelvetEmpty inherits Rectangle {
     callback activated(target: string, at: float, released: bool);
     in property <Empty> empty;
+    in property <Cluster> cluster;
     in property <[string]> title;
     in property <[string]> lines;
     in property <[Pill]> buttons;
@@ -88,13 +90,10 @@ export component VelvetEmpty inherits Rectangle {
     }
     // Beside the Menu pill, as on home (C26): it ends where the pill's focus ring starts,
     // less a gap, so it never runs under the pill, at any size.
-    if root.empty.clock != "": VelvetWords {
-        x: root.pad-x;
+    VelvetCluster {
+        x: menu-pill.x - Tokens.screen.small * root.u * 0.84 - self.width;
         y: root.pad-y * 0.7;
-        width: Math.max(0px, menu-pill.x - Tokens.screen.small * root.u * 0.84 - root.pad-x);
-        height: Tokens.screen.small * root.u * 2.3;
-        text: root.empty.clock;
-        size: Tokens.screen.small * root.u;
-        horizontal-alignment: right;
+        cluster: root.cluster;
+        room: Math.max(0px, menu-pill.x - Tokens.screen.small * root.u * 0.84 - root.pad-x);
     }
 }

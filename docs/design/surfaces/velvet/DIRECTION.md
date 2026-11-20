@@ -25,7 +25,7 @@ art at all. Move the focus and the house changes colour.
 | House light | `#f3eee6` | Titles, the focus edge, the one filled button |
 | Usher | `#b3ada3` | Facts and quiet words |
 | Ink | `#0a0a0c` | Words on House light |
-| Exit | `#f0655a` | What cannot be undone, what went wrong; never decoration |
+| Exit | `#f0655a` | What cannot be undone, what went wrong, a battery at 15 % and under (ADR 0094); never decoration |
 | Velvet | House down with alpha | Scrims and veils |
 | The light | from the art's `color`, else one of twelve gels by title | Saturation 0.30 to 0.62; as bright as lets House light keep 4.5 to 1 on its core |
 
@@ -103,12 +103,13 @@ C20 The curtain: working, done, or what went wrong.
 C21 The Wi-Fi page's subtitle; the house menu's Wi-Fi row names the network.
 C22 Wi-Fi, a list page: Scan, then a row a network with its bars, Saved, Open or Needs a password.
 C23 Confirm on a network; its password on the keyboard; a wrong one opens the keyboard again; Hidden network asks for a name.
-C24 A panel on the left of the running game: PAUSED or the game's name, the clock, Continue first, Korri's controls by group, Exit in Exit.
+C24 A panel on the left of the running game: PAUSED or the game's name, the cluster (C46) at the right of its line, Continue first, Korri's controls by group, Exit in Exit. The battery is the cluster's; the panel's readouts are the stream's.
 C25 A list page a step, "Step 2 of 4": controllers, Wi-Fi, names, the starter pack when offered, then Finish.
 C39 Find games, a list page: a row a provider.
 C40 A provider's page: Search opens the keyboard; results as rows.
 C41 An entry's page: its words, Get, then what the download needs, its bar, Cancel.
-C26 The clock beside the Menu pill on home; the build at the foot of Settings.
+C26 The cluster (C46) beside the Menu pill on home and the empty library; the build at the foot of Settings.
+C46 The cluster, top right of every screen at one height (home, the pause panel, every list page, the detail, a set): the clock, the network, the battery, then Menu where the screen has one. Quiet: House light in the small type. Network: Wi-Fi as 0 to 4 bars (the Wi-Fi page's), the plain Wi-Fi mark when Korri gives no strength, a wired mark, a struck-out Wi-Fi mark offline, nothing without a network. Battery: a cell filled to its level and "82%"; a bolt while it charges, alone when Korri gives no percent; nothing without a battery or a percent. At 15 % and under, not charging, cell and percent in Exit (ADR 0094). A short room gives up the percent, then the clock; the glyphs stay. A set's "now" readout gives way to it.
 C27 After 2 s of rest the stage drifts. There is no attract screen.
 C28 `confirm` opens and starts; `back` goes up; `menu` opens the house menu; `options` opens sort and filter in a set and a game's actions in the detail; `system` opens Settings.
 C29 The keyboard (above).

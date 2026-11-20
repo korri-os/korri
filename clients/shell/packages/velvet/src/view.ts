@@ -17,6 +17,7 @@
 import type { SurfaceModel as Model } from "../../../../../contracts/generated/surface"
 import { gameCard, marqueeOf, NO_IMAGE, NO_MARQUEE, pictures, stageOf, take, type Pictures, type StageView } from "./art"
 import { detailGame, detailView, focusedGame, homeExits, homeView, NO_PILL, pill, pillsStack, setExits, setView, type PillView } from "./browse"
+import { clusterIn, clusterOf, NO_CLUSTER, PAUSE_CLUSTER_SHARE, CLUSTER_GAP } from "./cluster"
 import { curtainLayout, curtainOf } from "./curtain"
 import { breakLines, fitCaps } from "./fit"
 import { keyGrid } from "./keys"
@@ -225,7 +226,6 @@ function emptyView(state: State, model: Model, p: Plan, live: boolean) {
       titleSize: fit.size,
       stack,
       menu: pill("Menu", "menu", "menu", live && (state.onMenu || buttons.length === 0), { icon: "menu", quiet: true }),
-      clock: model.clockLabel ?? "",
       ghosts: catalog._tag === "Empty",
     },
     title: title === "" ? [] : fit.lines,
@@ -393,6 +393,9 @@ function whole(state: State, model: Model, size: Size, part: Part) {
     elsewhere: part.elsewhere === true,
     page,
     stage,
+    // The clock, the network and the battery, top right (ADR 0094). One window holds them: with
+    // a window each, the Stage's, the upper one, so the Floor does not say them twice.
+    cluster: part.floor === true ? NO_CLUSTER : clusterOf(model),
     home: home === undefined ? OFF : pickOnly ? { ...home.home, depth: 0 } : home.home,
     homeCards: home?.cards ?? NONE,
     homeRow: pickOnly ? NONE : home?.row ?? NONE,
@@ -455,15 +458,20 @@ export function overlayView(state: State, model: Model) {
   const curtain = curtainView(pictures(), state, model, p)
   // Value first, its name under it (owner, 2026-11-13: the overlay's head, version h2):
   // the number is what a glance at the stream's health looks for.
+  // The battery is the cluster's now (ADR 0094), at the panel's top right.
   const readouts = [
-    ...(overlay?.batteryPercent === undefined ? [] : [{ value: `${Math.round(overlay.batteryPercent)}%`, label: "Battery" }]),
     ...(health?.rttMs === undefined ? [] : [{ value: `${Math.round(health.rttMs)} ms`, label: "Latency" }]),
     ...(health?.deliveredBitrateKbps === undefined ? [] : [{ value: health.deliveredBitrateKbps >= 1000 ? `${(health.deliveredBitrateKbps / 1000).toFixed(1)} Mbit/s` : `${Math.round(health.deliveredBitrateKbps)} kbit/s`, label: "Stream" }]),
     ...(health?.framesDropped === undefined ? [] : [{ value: String(health.framesDropped), label: health.framesDropped === 1 ? "Frame dropped" : "Frames dropped" }]),
     ...((overlay?.streamPlayers ?? []).length === 0 ? [] : [{ value: (overlay?.streamPlayers ?? []).join(", "), label: "Playing" }]),
   ]
-  // The title shares its line with the clock at the right.
-  const titleWidth = p.pauseW * 0.8 - (model.clockLabel === undefined || model.clockLabel === "" ? 0 : p.fact * 4.6)
+  // The title shares its line with the cluster at the right: the cluster takes what it needs
+  // of its share of the line, giving up its percent and then its clock (src/cluster.ts), and
+  // the title has the rest (ui/organisms/VelvetPause.slint holds the same).
+  const padX = Math.min(p.padX, p.pauseW * 0.1)
+  const line = p.pauseW - 2 * padX
+  const cluster = clusterIn(clusterOf(model), (line * PAUSE_CLUSTER_SHARE) / p.small)
+  const titleWidth = line - (cluster.shown ? (cluster.fullW + CLUSTER_GAP) * p.small : 0)
   return {
     screen: screenOf(p),
     still: state.still,
@@ -471,7 +479,7 @@ export function overlayView(state: State, model: Model) {
     layer: top,
     titleLines: fitCaps(overlay?.title ?? "Paused", titleWidth, p.head * 2.2, p.head, 16).lines,
     titleSize: fitCaps(overlay?.title ?? "Paused", titleWidth, p.head * 2.2, p.head, 16).size,
-    clock: model.clockLabel ?? "",
+    cluster,
     readouts,
     rows: panel === undefined ? [] : panel.rows.map(row => rowView(row, "rows", focus, top === "screen")),
     leaving: state.overlay.leaving,

@@ -1,21 +1,23 @@
 // VelvetPause: the gameplay overlay's panel. The game keeps running and
 // shows through beside it (ADR 0053): a velvet panel at the left edge, never
-// a full screen. In it: the game's name with the clock at the right of its
-// line; the readouts that show only here (battery, the stream's health, who
-// else plays), each value first and its name under it, two across; then
-// Korri's controls as rows, in two tiers (src/pages.ts).
+// a full screen. In it: the game's name with the cluster (the clock, the
+// network, the battery; ADR 0094) at the right of its line, at the height it
+// has on every screen; the readouts that show only here (the stream's health,
+// who else plays), each value first and its name under it, two across; then
+// Korri's controls as rows, in two tiers (src/pages.ts). The logic fits the
+// cluster to its share of the line and the title to the rest (src/view.ts).
 
 import { Tokens } from "../tokens.slint";
-import { Row, Readout } from "../types.slint";
+import { Row, Readout, Cluster } from "../types.slint";
 import { VelvetCaps } from "../atoms/VelvetCaps.slint";
-import { VelvetWords } from "../atoms/VelvetWords.slint";
 import { VelvetRows } from "VelvetRows.slint";
+import { VelvetCluster } from "VelvetCluster.slint";
 
 export component VelvetPause inherits Rectangle {
     callback activated(target: string, at: float, released: bool);
     in property <[string]> title;
     in property <length> title-size;
-    in property <string> clock;
+    in property <Cluster> cluster;
     in property <[Readout]> readouts;
     in property <[Row]> rows;
     in property <bool> inert;
@@ -48,7 +50,9 @@ export component VelvetPause inherits Rectangle {
     property <length> readout-gap: fact * (tight ? 0.35 : 0.9);
     property <length> readout-pitch: readout-h + readout-gap;
     property <length> before-rows: fact * (tight ? 0.9 : 1.9);
-    property <length> clock-w: clock == "" ? 0px : fact * 4.6;
+    // What the cluster takes of the title's line, and the gap before it (src/cluster.ts, CLUSTER_GAP).
+    property <length> small: Tokens.screen.small * u;
+    property <length> cluster-w: cluster.shown ? (cluster.full-w + 0.55) * small : 0px;
     property <length> strip-h: readouts.length > 0 ? after-title + readout-rows * readout-pitch - readout-gap : 0px;
     // A press beside the panel does nothing, and never reaches the game.
     TouchArea { }
@@ -67,20 +71,16 @@ export component VelvetPause inherits Rectangle {
         head := VelvetCaps {
             x: root.pad-x;
             y: root.pad-y;
-            width: parent.width - 2 * root.pad-x - root.clock-w;
+            width: parent.width - 2 * root.pad-x - root.cluster-w;
             lines: root.title;
             size: root.title-size;
         }
-        // The clock on the title's first line, at the right: its words' top at the caps' top.
-        if root.clock != "": VelvetWords {
-            x: parent.width - root.pad-x - root.clock-w;
-            y: root.pad-y + root.title-size * Tokens.display-cap-top - root.fact * 0.2;
-            width: root.clock-w;
-            height: root.fact * 1.5;
-            text: root.clock;
-            ink: Tokens.house-light;
-            strong: true;
-            horizontal-alignment: right;
+        // The cluster at the line's right, already fitted to it by the logic.
+        VelvetCluster {
+            x: parent.width - root.pad-x - self.width;
+            y: root.pad-y * 0.7;
+            cluster: root.cluster;
+            room: parent.width - 2 * root.pad-x;
         }
         for item[n] in root.readouts: Rectangle {
             x: root.pad-x + Math.mod(n, 2) * (parent.width - 2 * root.pad-x) / 2;

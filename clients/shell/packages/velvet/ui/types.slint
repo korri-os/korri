@@ -347,7 +347,6 @@ export struct Home {
     mark: Marquee,
     play: Pill,
     menu: Pill,
-    clock: string,
     // The column the row keeps in view (the focused one, until a finger scrolls it).
     row-at: int,
     row-mark: Marquee,
@@ -399,7 +398,6 @@ export struct Empty {
     title-size: float,
     stack: bool,
     menu: Pill,
-    clock: string,
     ghosts: bool,
 }
 
@@ -408,4 +406,28 @@ export struct Notice {
     shown: bool,
     title: string,
     words: string,
+}
+
+// The cluster at the top right of every screen (ADR 0094): the clock, the network, the
+// battery (src/cluster.ts). Widths are in font sizes of the cluster's type; the logic and
+// the view lay it out with the same ones.
+export struct Cluster {
+    shown: bool,
+    clock: string,
+    clock-w: float,
+    // "bars" (Wi-Fi, its strength in `bars`, 0 to 4), "wifi" (Wi-Fi, no strength known),
+    // "wired", "offline" (a struck-out Wi-Fi mark), "none".
+    network: string,
+    bars: int,
+    // "cell" (its level in `share`, 0 to 1), "bolt" (it charges), "none".
+    battery: string,
+    share: float,
+    percent: string,
+    percent-w: float,
+    // At or under 15 % and not charging: glyph and percent in Exit.
+    low: bool,
+    // With every part; without the percent; the glyphs alone.
+    full-w: float,
+    mid-w: float,
+    least-w: float,
 }

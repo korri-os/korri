@@ -102,6 +102,7 @@ const base = {
   settings: korri.settings,
   settingsStatus: { _tag: "Idle" },
   network: korri.network,
+  battery: { percent: 82, charging: false },
   buildLabel: korri.buildLabel,
   clockLabel: "21:47",
   publishedAt: NOW,
@@ -135,6 +136,12 @@ const entry = (service: "steam" | "tailscale", state: string, more: object = {})
 }
 const signIns = (...entries: object[]) => ({ accountSignIns: entries })
 const signedIn = (...entries: object[]) => ({ ...ready, ...signIns(...entries) })
+/** The cluster's facts (ADR 0094): the connection and the battery, over the ready library. */
+const wifiAt = (strengthPercent?: number) => ({ ...korri.network, connection: { _tag: "Wifi", ssid: "hummingbird-lake", ...(strengthPercent === undefined ? {} : { strengthPercent }) } })
+const device = (more: object, model: object = ready) => ({ ...model, ...more })
+const { network: _network, ...unnetworked } = ready
+const { battery: _battery, ...unpowered } = ready
+const { battery: _none, network: _off, clockLabel: _clock, ...silent } = ready
 const firstBoot = (more: object = {}) => ({ ...ready, catalog: { _tag: "Empty" }, settings: korri.onboarding.settings, network: korri.onboarding.network, onboarding: korri.onboarding.onboarding, ...more })
 
 const invites = [{
@@ -328,6 +335,23 @@ const scenarios: Scenario[] = [
   // Two offers in Korri's order: Steam's (signed in, Next leads), then Tailscale's.
   { name: "first-boot-accounts", models: [firstBoot(signIns(entry("steam", "signedIn"), entry("tailscale", "expired")))], steps: [...pastNames, "confirm"] },
   { name: "first-boot-steam", models: [firstBoot(signIns(entry("steam", "signedOut"), entry("tailscale", "signedIn")))], steps: pastNames },
+  // The cluster at the top right (ADR 0094): the network's glyphs, the battery's states.
+  { name: "status-bars-0", models: [device({ network: wifiAt(0) })], steps: [] },
+  { name: "status-bars-1", models: [device({ network: wifiAt(12) })], steps: [] },
+  { name: "status-bars-2", models: [device({ network: wifiAt(30) })], steps: [] },
+  { name: "status-bars-3", models: [device({ network: wifiAt(60) })], steps: [] },
+  { name: "status-bars-4", models: [device({ network: wifiAt(92) })], steps: [] },
+  { name: "status-wifi-unmeasured", models: [device({ network: wifiAt() })], steps: [] },
+  { name: "status-wired", models: [device({ network: { ...korri.network, connection: { _tag: "Wired" } } })], steps: toSettings },
+  { name: "status-offline", models: [device({ network: { ...korri.network, connection: { _tag: "Offline" } } })], steps: toSet },
+  { name: "status-no-network", models: [unnetworked], steps: ["down", "left", "confirm"] },
+  { name: "status-low", models: [device({ battery: { percent: 12, charging: false } })], steps: [] },
+  { name: "status-charging", models: [device({ battery: { percent: 12, charging: true } })], steps: [] },
+  { name: "status-bolt", models: [device({ battery: { charging: true } })], steps: [] },
+  { name: "status-no-battery", models: [unpowered], steps: [] },
+  { name: "status-unverified", models: [device({ battery: { charging: false } })], steps: [] },
+  { name: "status-nothing", models: [silent], steps: [] },
+  { name: "status-low-pause", models: [overlay(korri.overlay.stream, { battery: { percent: 9, charging: false } })], steps: [] },
   // The gameplay overlay.
   { name: "overlay", models: [overlay(korri.overlay.plain)], steps: [] },
   { name: "overlay-groups", models: [overlay(korri.overlay.groups)], steps: ["down", "down"] },

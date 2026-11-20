@@ -13,20 +13,24 @@
 // logic decides it from the plan), the page is one list from the window's
 // top: the title, the code as a row as large as the window allows, its
 // words, the rows and the buttons, each a row (src/pages.ts).
-// First boot shows where it stands among its steps.
+// First boot shows where it stands among its steps. The cluster stands at the
+// top right; it has what the head leaves of the line. A code-first page has no
+// head line, so it shows no cluster.
 
 import { Tokens } from "../tokens.slint";
-import { Page, Row, Pill, Tile } from "../types.slint";
+import { Page, Row, Pill, Tile, Cluster } from "../types.slint";
 import { VelvetHead } from "../atoms/VelvetHead.slint";
 import { VelvetWords } from "../atoms/VelvetWords.slint";
 import { VelvetButtons } from "../molecules/VelvetButtons.slint";
 import { VelvetTile } from "../molecules/VelvetTile.slint";
 import { VelvetCode } from "../molecules/VelvetCode.slint";
 import { VelvetRows } from "VelvetRows.slint";
+import { VelvetCluster } from "VelvetCluster.slint";
 
 export component VelvetProgramme inherits Rectangle {
     callback activated(target: string, at: float, released: bool);
     in property <Page> page;
+    in property <Cluster> cluster;
     in property <[Row]> rows;
     in property <[Pill]> buttons;
     in property <[string]> panel-lines;
@@ -67,11 +71,19 @@ export component VelvetProgramme inherits Rectangle {
     init => { in = true; }
     opacity: in ? 1 : 0;
     animate opacity { duration: Tokens.t-level; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+    property <length> cluster-gap: root.fact * 1.4;
+    cluster := VelvetCluster {
+        visible: !root.alone;
+        x: root.width - root.pad-x - self.width;
+        y: root.pad-y * 0.7;
+        cluster: root.cluster;
+        room: Math.max(0px, root.width - 2 * root.pad-x - head.preferred-width - root.cluster-gap);
+    }
     // A title too long for one line beside the step: two lines, the step beside the second.
     if !root.alone && root.broken: VelvetHead {
         x: root.pad-x;
         y: Tokens.screen.head-y * root.u;
-        width: parent.width - 2 * root.pad-x;
+        width: Math.max(0px, parent.width - 2 * root.pad-x - (cluster.used > 0 ? cluster.used + root.cluster-gap : 0px));
         height: root.page.title-size * 1.2 * root.u;
         size: root.page.title-size * root.u;
         text: root.page.title-first;
@@ -95,10 +107,12 @@ export component VelvetProgramme inherits Rectangle {
             }
         }
     }
-    if !root.alone && !root.broken: HorizontalLayout {
+    // Always present, so the cluster can measure the title; shown when whole.
+    head := HorizontalLayout {
+        visible: !root.alone && !root.broken;
         x: root.pad-x;
         y: Tokens.screen.head-y * root.u;
-        width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
+        width: Math.max(0px, Math.min(self.preferred-width, parent.width - 2 * root.pad-x - (cluster.used > 0 ? cluster.used + root.cluster-gap : 0px)));
         height: Tokens.screen.head-h * root.u;
         spacing: root.fact;
         title := VelvetHead {

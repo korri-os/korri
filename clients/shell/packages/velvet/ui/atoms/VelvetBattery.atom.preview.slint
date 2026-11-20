@@ -1,0 +1,22 @@
+// VelvetBattery's preview states, with data from Velvet's scenarios.
+// Written by preview/previews.ts; do not edit by hand.
+
+import { Tokens } from "../tokens.slint";
+import { VelvetPreview } from "../preview-frame.slint";
+import { VelvetBattery } from "VelvetBattery.slint";
+
+export component Full inherits VelvetPreview {
+    VelvetBattery { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; share: 1; ink: Tokens.house-light; size: Math.min(parent.width, parent.height) * 0.2; }
+}
+
+export component Most inherits VelvetPreview {
+    VelvetBattery { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; share: 0.82; ink: Tokens.house-light; size: Math.min(parent.width, parent.height) * 0.2; }
+}
+
+export component Low inherits VelvetPreview {
+    VelvetBattery { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; share: 0.12; ink: Tokens.exit; size: Math.min(parent.width, parent.height) * 0.2; }
+}
+
+export component Empty inherits VelvetPreview {
+    VelvetBattery { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; share: 0; ink: Tokens.exit; size: Math.min(parent.width, parent.height) * 0.2; }
+}

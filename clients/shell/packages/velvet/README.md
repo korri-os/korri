@@ -83,7 +83,8 @@ shell, `VELVET_FRAMES` (below) through the test harness.
 | Invites | `invites`, `invite-notice` | `VelvetList.Invites`, `VelvetNotice` |
 | Account sign-ins (ADR 0083, ADR 0089) | `account-rows`, `account-rows-busy`, `account-signed-out`, `account-expired`, `account-checking`, `account-starting`, `account-code`, `account-code-tailscale`, `account-code-renewed`, `account-code-smallest`, `account-code-largest`, `account-code-malformed`, `account-code-logo`, `account-code-no-detail`, `account-signed-in`, `account-signed-in-long`, `account-problem`, `account-refused`, `account-for-game`, `account-working`, `first-boot-account`, `first-boot-account-code`, `first-boot-account-done`, `first-boot-accounts`, `first-boot-steam` | `VelvetList.Account*`, `.FirstBootAccount*`, `VelvetProgramme.AccountCode`, `VelvetCode`, `VelvetRow.Account` |
 | Saves, the runner, launch settings | `saves`, `saves-empty`, `saves-restore`, `runner`, `launch-settings`, `launch-changes`, `launch-keep`, `launch-streamed`, `launch-unreachable`, `launch-conflict`, `launch-loading`, `launch-empty` | `VelvetList.Saves`, `.Runner`, `.LaunchSettings` |
-| The gameplay overlay | `overlay`, `overlay-groups`, `overlay-stream`, `overlay-asking` | `pages/VelvetPaused`, `VelvetPause` |
+| The gameplay overlay | `overlay`, `overlay-groups`, `overlay-stream`, `overlay-asking`, `status-low-pause` | `pages/VelvetPaused`, `VelvetPause` |
+| The cluster: clock, network, battery (ADR 0094) | `status-bars-0` to `status-bars-4`, `status-wifi-unmeasured`, `status-wired`, `status-offline`, `status-no-network`, `status-low`, `status-charging`, `status-bolt`, `status-no-battery`, `status-unverified`, `status-nothing`, `status-low-pause` | `VelvetCluster` (`.NoPercent`, `.GlyphsOnly`: a short room), `VelvetBattery`, `VelvetSignal`, `VelvetIcon` (`.Bolt`, `.Wired`, `.Slash`) |
 
 ## Contract use
 
@@ -133,7 +134,8 @@ shell, `VELVET_FRAMES` (below) through the test harness.
   window (the pick may be the game played most, long ago), and the treaty
   has no mark for "a game changed". So Velvet tells a publication by what it
   can see. Its own answer: the window answers the question out, or
-  `focusedGame` names another game. The clock: `clockLabel` changed. Neither:
+  `focusedGame` names another game. The clock: `clockLabel` changed. The
+  device: the connection or the battery changed (the cluster's facts). None:
   Korri changed something out of sight, and the lists are read again, each
   once, which reads every game the home and the lobby draw; at most once in
   ten seconds of Korri's time, the next publication after that reading what
@@ -142,7 +144,7 @@ shell, `VELVET_FRAMES` (below) through the test harness.
   (`refresh`), with no question. An open set and the detail over it draw
   from the published window itself.
   What this cannot see: a change that arrives in the same publication as a
-  clock change or as one of Velvet's own answers waits for the next
+  clock or device change or as one of Velvet's own answers waits for the next
   publication that is neither. A revision mark on the catalog in the treaty
   would close that and save the pass ("Asked of the shell").
 - Not started holds "the first one, in Korri's order" (contract section 5).
@@ -159,6 +161,19 @@ shell, `VELVET_FRAMES` (below) through the test harness.
   pass (`test/fresh.test.ts`): 80 played then 300 unplayed, 8; 80 then
   10,000, 8; 10,000 unplayed among the first of Korri's order, 7; every game
   unplayed, 6; one unplayed game, 6; 3,000 played then 500 unplayed, 12.
+- The cluster (ADR 0094, `src/cluster.ts`, `ui/organisms/VelvetCluster.slint`):
+  `clockLabel`, `network.connection` and `battery`, top right of home, the
+  empty library, a set, the detail, every list page and the pause panel, at
+  `pad-y * 0.7` on each, Menu after it where the screen has one. Wi-Fi is
+  `barsOf` (the Wi-Fi page's bars); with no strength from Korri it is the
+  plain Wi-Fi mark, not a weak signal. The battery's cell is filled to its
+  percent, so the level stays when the percent's words give way. Each page
+  gives it the room its head leaves; it gives up the percent, then the
+  clock, and the glyphs stay. The pause panel's room is a share of its line
+  (`PAUSE_CLUSTER_SHARE`), fitted by the logic so the title can be fitted to
+  the rest. With a window each (ADR 0086) only the Stage's window holds it.
+  On home it travels with the Menu pill: the row and the lobby, one and two
+  levels down, show neither.
 - "Now" is `model.publishedAt`. It can be a minute behind, so a session that
   ended after it is "Just now". Without it a fact is a date and the pick is
   the last game played. Dates are read in UTC (`getUTC*` only; a surface has

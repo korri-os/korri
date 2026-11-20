@@ -69,7 +69,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
   ])
   add("atoms", "VelvetGhost", [{ name: "Place", body: one("VelvetGhost", centre("parent.height * 0.4", "parent.height * 0.6")) }])
   add("atoms", "VelvetHead", [{ name: "Library", body: one("VelvetHead", `x: Tokens.screen.pad-x * ${U}; y: Tokens.screen.pad-y * ${U}; height: Tokens.screen.head-h * ${U}; text: "LIBRARY";`) }])
-  add("atoms", "VelvetIcon", ["clock", "watch", "here", "peer", "play", "resume", "grid", "sliders", "check", "plus", "gear", "menu", "more", "back", "lock", "save", "down", "note", "key", "wifi", "person", "stop"].map(name => ({
+  add("atoms", "VelvetIcon", ["clock", "watch", "here", "peer", "play", "resume", "grid", "sliders", "check", "plus", "gear", "menu", "more", "back", "lock", "save", "down", "note", "key", "wifi", "person", "stop", "bolt", "wired", "slash"].map(name => ({
     name: name.charAt(0).toUpperCase() + name.slice(1), body: one("VelvetIcon", `${centre("self.size", "self.size")} name: "${name}"; ink: Tokens.house-light; size: Math.min(parent.width, parent.height) * 0.3;`),
   })))
   const key = (id: string) => keys.find(entry => entry.focusId === id)
@@ -95,6 +95,9 @@ const one = (component: string, props: string) => `${component} { ${props} }`
     { name: "Narrow", body: `Rectangle { ${FILL} background: Tokens.light-45; VelvetScrim { width: parent.width; height: parent.height; narrow: true; } }` },
   ])
   add("atoms", "VelvetShape", [{ name: "Play", body: one("VelvetShape", `${centre("parent.height * 0.3", "parent.height * 0.3")} commands: "M4.3 2.4V13.6L13.4 8Z";`) }])
+  add("atoms", "VelvetBattery", [["Full", 1, "house-light"], ["Most", 0.82, "house-light"], ["Low", 0.12, "exit"], ["Empty", 0, "exit"]].map(([name, share, ink]) => ({
+    name: name as string, body: one("VelvetBattery", `x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; share: ${share}; ink: Tokens.${ink}; size: Math.min(parent.width, parent.height) * 0.2;`),
+  })))
   add("atoms", "VelvetSignal", [0, 1, 2, 3, 4].map(bars => ({ name: `Bars${bars}`, body: one("VelvetSignal", `x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; bars: ${bars}; size: Math.min(parent.width, parent.height) * 0.2;`) })))
   add("atoms", "VelvetGlide", [{ name: "Resting", body: `Rectangle { ${centre("parent.width * 0.3", "parent.height * 0.3")} background: Tokens.light-10; VelvetGlide { pitch: Tokens.screen.tile-h * Tokens.unit; last: 4; at: 1; } }` }])
   add("atoms", "VelvetTap", [{ name: "Target", body: `Rectangle { ${centre("parent.width * 0.3", "parent.height * 0.3")} background: Tokens.light-10; VelvetTap { width: parent.width; height: parent.height; target: "play"; } }` }])
@@ -170,10 +173,26 @@ const one = (component: string, props: string) => `${component} { ${props} }`
     const v = view(scene)
     return { name, body: one("VelvetCurtain", `${FILL} curtain: ${l(v.curtain)}; kicker: ${l(v.curtainKicker)}; lines: ${l(v.curtainLines)}; steps: ${l(v.curtainSteps)}; buttons: ${l(v.curtainButtons)};`) }
   }
+  // The cluster at the top right, alone: every network glyph and battery state, and a room
+  // too short for it (the percent gives way, then the clock).
+  const cluster = (name: string, scene: string, room = "parent.width - 2 * Tokens.screen.pad-x * Tokens.unit") => ({
+    name, body: one("VelvetCluster", `x: parent.width - Tokens.screen.pad-x * ${U} - self.width; y: Tokens.screen.pad-y * ${U} * 0.7; cluster: ${l(view(scene).cluster)}; room: ${room};`),
+  })
+  const small = (times: number) => `Tokens.screen.small * ${U} * ${times}`
+  add("organisms", "VelvetCluster", [
+    cluster("Home", "home"),
+    ...[0, 1, 2, 3, 4].map(bars => cluster(`Bars${bars}`, `status-bars-${bars}`)),
+    cluster("WifiUnmeasured", "status-wifi-unmeasured"), cluster("Wired", "status-wired"), cluster("Offline", "status-offline"), cluster("NoNetwork", "status-no-network"),
+    cluster("Low", "status-low"), cluster("Charging", "status-charging"), cluster("Bolt", "status-bolt"), cluster("NoBattery", "status-no-battery"), cluster("Unverified", "status-unverified"),
+    // The room of a narrow line: without the percent, then the glyphs alone.
+    cluster("NoPercent", "home", small(view("home").cluster.midW + 0.01)),
+    cluster("GlyphsOnly", "home", small(view("home").cluster.leastW + 0.01)),
+    cluster("LowGlyphsOnly", "status-low", small(view("status-low").cluster.leastW + 0.01)),
+  ])
   add("organisms", "VelvetCurtain", [curtain("Steps", "busy-steps"), curtain("Progress", "busy-progress"), curtain("Problem", "problem"), curtain("LongProblem", "problem-long"), curtain("Confirm", "confirm"), curtain("ChooseSave", "choose-save"), curtain("Running", "running")])
   const empty = (name: string, scene: string) => {
     const v = view(scene)
-    return { name, body: one("VelvetEmpty", `${FILL} empty: ${l(v.empty)}; title: ${l(v.emptyTitle)}; lines: ${l(v.emptyLines)}; buttons: ${l(v.emptyButtons)};`) }
+    return { name, body: one("VelvetEmpty", `${FILL} empty: ${l(v.empty)}; cluster: ${l(v.cluster)}; title: ${l(v.emptyTitle)}; lines: ${l(v.emptyLines)}; buttons: ${l(v.emptyButtons)};`) }
   }
   add("organisms", "VelvetEmpty", [empty("Invitation", "empty"), empty("NoStore", "empty-no-store"), empty("Error", "error"), empty("Loading", "loading")])
   const grid = (name: string, scene: string) => {
@@ -194,7 +213,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
   add("organisms", "VelvetNotice", [{ name: "Invite", body: one("VelvetNotice", `x: (parent.width - self.width) / 2; y: parent.height - self.height - Tokens.screen.pad-y * ${U}; notice: ${l(view("invite-notice").notice)};`) }])
   const pause = (component: string, layer: Layer) => (name: string, scene: string) => {
     const v = view(scene)
-    return { name, body: one(component, `${FILL} title: ${lit(layer)(v.titleLines)}; title-size: ${v.titleSize} * ${U}; clock: ${JSON.stringify(v.clock)}; readouts: ${lit(layer)(v.readouts)}; rows: ${lit(layer)(v.rows)};`) }
+    return { name, body: one(component, `${FILL} title: ${lit(layer)(v.titleLines)}; title-size: ${v.titleSize} * ${U}; cluster: ${lit(layer)(v.cluster)}; readouts: ${lit(layer)(v.readouts)}; rows: ${lit(layer)(v.rows)};`) }
   }
   add("organisms", "VelvetPause", [pause("VelvetPause", "organisms")("Plain", "overlay"), pause("VelvetPause", "organisms")("Groups", "overlay-groups"), pause("VelvetPause", "organisms")("Stream", "overlay-stream")])
   const pick = (name: string, scene: string) => {
@@ -209,7 +228,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
   const programme = (component: string, layer: Layer) => (name: string, scene: string) => {
     const v = view(scene)
     const ll = lit(layer)
-    return { name, body: one(component, `${FILL} page: ${ll(v.list)}; rows: ${ll(v.listRows)}; buttons: ${ll(v.listButtons)}; panel-lines: ${ll(v.listPanelLines)}; tiles: ${ll(v.listTiles)};${v.listQr === "" ? "" : ` qr: ${JSON.stringify(v.listQr)}; qr-size: ${v.listQrSize};`}`) }
+    return { name, body: one(component, `${FILL} page: ${ll(v.list)}; cluster: ${ll(v.cluster)}; rows: ${ll(v.listRows)}; buttons: ${ll(v.listButtons)}; panel-lines: ${ll(v.listPanelLines)}; tiles: ${ll(v.listTiles)};${v.listQr === "" ? "" : ` qr: ${JSON.stringify(v.listQr)}; qr-size: ${v.listQrSize};`}`) }
   }
   add("organisms", "VelvetProgramme", [["Settings", "settings"], ["Wifi", "wifi"], ["Store", "store-results"], ["Offer", "store-offer"], ["FirstBoot", "first-boot"], ["AccountCode", "account-code"]].map(([name, scene]) => programme("VelvetProgramme", "organisms")(name!, scene!)))
   add("organisms", "VelvetRows", [
@@ -228,26 +247,26 @@ const one = (component: string, props: string) => `${component} { ${props} }`
   const p = lit("pages")
   const browse = (name: string, scene: string) => {
     const v = view(scene)
-    return { name, body: one("VelvetBrowse", `${FILL} home: ${p(v.home)}; cards: ${p(v.homeCards)}; row-tiles: ${p(v.homeRow)}; shelves: ${p(v.shelves)}; shelf-tiles: ${p(v.shelfTiles)}; shelf-at: ${v.shelfAt}; depth: ${v.homeDepth};`) }
+    return { name, body: one("VelvetBrowse", `${FILL} home: ${p(v.home)}; cluster: ${p(v.cluster)}; cards: ${p(v.homeCards)}; row-tiles: ${p(v.homeRow)}; shelves: ${p(v.shelves)}; shelf-tiles: ${p(v.shelfTiles)}; shelf-at: ${v.shelfAt}; depth: ${v.homeDepth};`) }
   }
   add("pages", "VelvetBrowse", [browse("Home", "home"), browse("HomeNoArt", "home-no-art"), browse("Row", "row"), browse("RowNamed", "row-poster"), browse("Lobby", "lobby"), browse("OneGame", "home-one")])
   const detail = (name: string, scene: string) => {
     const v = view(scene)
-    return { name, body: one("VelvetDetail", `${FILL} detail: ${p(v.detail)}; cards: ${p(v.detailCards)}; buttons: ${p(v.detailButtons)};`) }
+    return { name, body: one("VelvetDetail", `${FILL} detail: ${p(v.detail)}; cluster: ${p(v.cluster)}; cards: ${p(v.detailCards)}; buttons: ${p(v.detailButtons)};`) }
   }
   add("pages", "VelvetDetail", [detail("Cinema", "detail"), detail("NoArt", "detail-no-art"), detail("LongTitle", "detail-long-title"), detail("TwoPlaces", "detail-two-places"), detail("Poster", "detail-poster")])
   const house = (name: string, scene: string) => {
     const v = view(scene)
-    return { name, body: one("VelvetHouse", `${FILL} empty: ${p(v.empty)}; title: ${p(v.emptyTitle)}; lines: ${p(v.emptyLines)}; buttons: ${p(v.emptyButtons)};`) }
+    return { name, body: one("VelvetHouse", `${FILL} empty: ${p(v.empty)}; cluster: ${p(v.cluster)}; title: ${p(v.emptyTitle)}; lines: ${p(v.emptyLines)}; buttons: ${p(v.emptyButtons)};`) }
   }
   add("pages", "VelvetHouse", [house("Invitation", "empty"), house("Error", "error")])
   add("pages", "VelvetList", [["Settings", "settings"], ["Wifi", "wifi"], ["Identity", "identity"], ["Saves", "saves"], ["Runner", "runner"], ["LaunchSettings", "launch-settings"], ["LaunchChanges", "launch-keep"], ["LaunchUnreachable", "launch-unreachable"], ["Invites", "invites"], ["Store", "store"], ["AccountSignedOut", "account-signed-out"], ["AccountExpired", "account-expired"], ["AccountCode", "account-code"], ["AccountCodeTailscale", "account-code-tailscale"], ["AccountForGame", "account-for-game"], ["AccountWorking", "account-working"], ["AccountSignedIn", "account-signed-in"], ["AccountProblem", "account-problem"], ["AccountRefused", "account-refused"], ["FirstBootAccount", "first-boot-account"], ["FirstBootAccountCode", "first-boot-account-code"]].map(([name, scene]) => programme("VelvetList", "pages")(name!, scene!)))
-  add("pages", "VelvetPaused", [pause("VelvetPaused", "pages")("Plain", "overlay"), pause("VelvetPaused", "pages")("Stream", "overlay-stream")])
+  add("pages", "VelvetPaused", [pause("VelvetPaused", "pages")("Plain", "overlay"), pause("VelvetPaused", "pages")("Stream", "overlay-stream"), pause("VelvetPaused", "pages")("LowBattery", "status-low-pause")])
   const set = (name: string, scene: string) => {
     const v = view(scene)
-    return { name, body: one("VelvetSet", `${FILL} set: ${p(v.set)}; first-row: ${v.setFirstRow}; tiles: ${p(v.setTiles)}; marks: ${p(v.setMarks)};`) }
+    return { name, body: one("VelvetSet", `${FILL} set: ${p(v.set)}; cluster: ${p(v.cluster)}; first-row: ${v.setFirstRow}; tiles: ${p(v.setTiles)}; marks: ${p(v.setMarks)};`) }
   }
-  add("pages", "VelvetSet", [set("EveryGame", "set"), set("NoArt", "set-no-art"), set("Pill", "set-pill"), set("OneSystem", "set-system")])
+  add("pages", "VelvetSet", [set("EveryGame", "set"), set("NoArt", "set-no-art"), set("Pill", "set-pill"), set("OneSystem", "set-system"), set("Offline", "status-offline")])
 }
 
 

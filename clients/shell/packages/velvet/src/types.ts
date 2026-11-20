@@ -87,8 +87,11 @@ export interface Lists {
   readonly tails: readonly Page[]
   readonly earliest?: string
   readonly found?: string
-  /** What Korri's last publication said of the clock and of the focused game: the next one is told by them. */
-  readonly heard?: { readonly clock: string; readonly focus: string }
+  /**
+   * What Korri's last publication said of the clock, of the focused game and of the device
+   * (its connection and its battery, the cluster's facts): the next one is told by them.
+   */
+  readonly heard?: { readonly clock: string; readonly focus: string; readonly device: string }
   /** Korri published for a reason Velvet cannot see: the lists are to be read again. */
   readonly unread: boolean
   /** Korri's time when the lists were last read again for that reason. */
