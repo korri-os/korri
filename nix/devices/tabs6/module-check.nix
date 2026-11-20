@@ -110,6 +110,11 @@ assert !c.networking.networkmanager.wifi.scanRandMacAddress;
 assert !c.networking.wireless.iwd.enable;
 assert console.networking.wireless.iwd.enable;
 assert !(c.systemd.network.networks ? "20-wlan");
+# One owner for UDP 5353 in each image: korrid's module in the product
+# (ADR 0089 local discovery, every interface), the console's own rule there.
+assert builtins.elem 5353 c.networking.firewall.allowedUDPPorts;
+assert !(c.networking.firewall.interfaces ? wlan0);
+assert console.networking.firewall.interfaces.wlan0.allowedUDPPorts == [ 5353 ];
 assert c.systemd.services ? korri-shell;
 assert c.systemd.services.korri-shell.serviceConfig.User != "root";
 assert c.services.korriProduct.sleep.states == [ ];

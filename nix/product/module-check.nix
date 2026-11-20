@@ -1075,6 +1075,8 @@ assert rg353m.services.korri.shell.startSurface == "velvet";
 assert lib.hasInfix "--surfaces velvet," rg353m.systemd.services.korri-shell.serviceConfig.ExecStart;
 assert rg353m.services.korridLinuxDevice.address == requirements.constants.korridAddress;
 assert builtins.elem 39217 rg353m.networking.firewall.allowedTCPPorts;
+# ADR 0089: local discovery's multicast DNS on every network interface.
+assert builtins.elem 5353 rg353m.networking.firewall.allowedUDPPorts;
 # Every device runs the same shell arguments; no device passes its own flags.
 assert lib.all
   (

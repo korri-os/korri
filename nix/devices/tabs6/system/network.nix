@@ -133,11 +133,12 @@ lib.mkMerge [
     networking.firewall = {
       enable = true;
       package = pkgs.iptables-legacy;
-      # mDNS queries from the LAN reach resolved's responder.
-      interfaces.wlan0.allowedUDPPorts = [ 5353 ];
     };
   }
   (lib.mkIf config.tabs6.console.enable {
+    # mDNS queries from the LAN reach resolved's responder. The product image
+    # gets UDP 5353 from korrid's module (ADR 0089 local discovery) instead.
+    networking.firewall.interfaces.wlan0.allowedUDPPorts = [ 5353 ];
     networking.wireless.iwd.enable = true;
     systemd.network.networks."20-wlan" = {
       matchConfig.Name = "wlan0";

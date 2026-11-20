@@ -716,8 +716,12 @@ in
       };
     };
 
-    # The signed peer surface follows the device across LAN, tether and VPN.
+    # The signed peer surface follows the device on every network interface.
     networking.firewall.allowedTCPPorts = [ (lib.toInt (lib.last (lib.splitString ":" cfg.address))) ];
+    # ADR 0089: local discovery's multicast DNS announce and browse, on every
+    # network the device joins. This is the product's only UDP 5353 rule; a
+    # resolved mDNS responder on the same device uses it too.
+    networking.firewall.allowedUDPPorts = [ 5353 ];
 
     systemd.services.korrid = {
       description = "Korri Linux device daemon";
