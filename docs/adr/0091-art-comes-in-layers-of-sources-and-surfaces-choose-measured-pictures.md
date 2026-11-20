@@ -10,7 +10,9 @@ status: accepted
 [ADR 0067](0067-a-device-uses-its-own-metadata-first-and-a-peers-when-it-has-none.md)
 to art. [ADR 0090](0090-system-plugins-clean-titles-and-art-matches-only-on-equal-clean-titles.md)
 records how each source matches a game. Later on 2026-11-20 the owner
-replaced the plugin-id-first-wins rule for art plugins (section "Layers").
+replaced the plugin-id-first-wins rule for art plugins (section "Layers"),
+and chose the Velvet stage's picture and composition (section "The Velvet
+stage").
 
 ## What exists today
 
@@ -72,11 +74,42 @@ Read on main at `8c4fd1a17`.
 - A surface chooses a picture by its measured shape and its resolution.
 - Box art is allowed as a picture. The owner prefers the re-imagined
   SteamGridDB style as first class.
-- SteamGridDB heroes, about 3.1:1, are the standard for Velvet's stage.
-  The stage must not crop them heavily.
-- The stage composition is still under owner review
-  (`docs/briefs/2026-11-20-velvet-hero-stage-direction.md`, on another
-  branch). This ADR does not record a composition.
+- The stage must not crop a picture heavily. Section "The Velvet stage"
+  records which picture Velvet's stage prefers and how it shows a wide
+  hero.
+
+### The Velvet stage
+
+Owner decision, later on 2026-11-20. This replaces this ADR's first text,
+which made SteamGridDB heroes (about 3.1:1) the standard for the stage.
+
+- The Velvet stage prefers a picture near 16:9, for example IGDB artworks
+  or fanart. That picture fills the stage with little or no crop.
+- When only a wide hero exists (SteamGridDB, about 3.1:1), Velvet uses
+  composition A, the Band, from
+  `docs/briefs/2026-11-20-velvet-hero-stage-direction.md`. The Band shows
+  the whole hero at the window's full width from the top edge, and the
+  stage light fills the rest of the stage.
+- The owner's quality bar: "the design can't be shitty".
+- The Band ships only after the owner reviews it on real art and on real
+  devices.
+- Before it ships, the Band must solve the weaknesses that the brief names:
+  - A pale hero makes a white bar at the top of the stage (Chrono Trigger
+    in the brief).
+  - A dark logo is hard to read on the dark stage. The stored logo colour
+    is not reliable: on Hades it reads `#020101` for a red and white logo
+    (brief, "Open").
+  - Tall windows, and the Stage pane alone, show plain space under the
+    words.
+  - The Band is less immersive than a full-bleed picture: on a 16:9
+    window the hero takes 57 % of the height.
+- Evidence: in the brief's review deck, the owner chose "Today (cut to
+  fill)" on the pick frame at 02:48Z, and "A Band" at 03:41Z. Then, in
+  chat, the owner learned that 16:9 art exists, and chose the Band for
+  games whose only picture is a wide hero.
+- This decision does not choose how korrid finds a 16:9 picture, which
+  plugin produces it, or how the surface tells "near 16:9" from "wide".
+  Those stay in "Unresolved".
 
 ## Unresolved
 
@@ -100,7 +133,14 @@ a real producer or ask.
   `tile` and `LocalGame.coverAssetId`.
 - How many pictures one game may hold, and what a layer gives "per picture".
 - Which source produces icons. No producer exists today.
-- How much cropping is "heavy".
+- How much cropping is "heavy", and how near to 16:9 a picture must be to
+  fill the stage with "little or no crop".
+- Which source gives Velvet's stage its 16:9 picture. IGDB artworks and
+  fanart are the owner's examples. No producer of either exists today, and
+  this ADR does not name a fanart source.
+- How the Band solves each weakness in section "The Velvet stage". The
+  brief proposes a rule for dark logos that needs #422's colour extractor;
+  the owner has not accepted it.
 - `@korri:igdb`'s hosts and secrets. ADR 0034 stores one key that korrid adds
   as a bearer token. IGDB's own documentation (not read for this ADR)
   describes a Twitch client id plus an app access token, and query requests
@@ -119,6 +159,12 @@ a real producer or ask.
 - **A plugin declares its layer or priority.** Rejected, as in ADR 0090.
 - **A person sets an order among art plugins.** Rejected: the surface picks
   by measured shape and resolution, so no order among art plugins is kept.
+- **Cut a wide hero to fill the stage**, today's behaviour
+  (`VelvetStage.slint`, `fit = max(W / w, H / h)`). The owner chose it on
+  the pick frame in the deck at 02:48Z, then chose the Band for wide-only
+  heroes. A 16:9 picture now gives the filled stage with little or no crop.
+- **B, the Bleed, and C, Beside**, from the brief. Not chosen: the owner
+  chose A, the Band.
 - **Ship a Korri key for IGDB or SteamGridDB.** Rejected: each person uses
   their own credentials (ADR 0032 section 7).
 
