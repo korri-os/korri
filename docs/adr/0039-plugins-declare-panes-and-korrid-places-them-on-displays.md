@@ -134,3 +134,16 @@ Moonlight's retry address, or Moonlight's shutdown when an output disappears.
 ADR 0086 gives the per-display surface design that the 2026-10-27 amendment
 left for later. Surfaces declare panes and korrid places them, as it places a
 game's panes. `displays: all` and `SurfaceModel.displays` are removed.
+
+## Note 2026-11-20 — display facts carry the panel's transform
+
+Owner decision 2026-11-20, a note on the display facts, not a change to the
+decision. A display fact now carries `transform`, Sway's own value (`normal`,
+`90`, `180`, `270`; `services.korriLinuxHost.compositor.displays[].transform`).
+`mode` stays the panel's native mode. korrid turns a quarter-turned display's
+size once, when it reads the facts, so every placement and adjacency check
+works in Sway's layout space. The AYN Thor needed it: both its panels are
+portrait and shown at 90, so its bottom panel is under the top only in the
+turned sizes. korrid also places a game's overlay on a free display only
+while Sway reports that output active; otherwise the overlay stays on the
+main display.
