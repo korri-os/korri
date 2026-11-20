@@ -1,5 +1,10 @@
 # Velvet: the whole hero on the stage (direction brief)
 
+> **Superseded, 2026-11-20.** ADR 0091, section "The Velvet stage",
+> supersedes this brief. Velvet did not adopt the Band or the Echo. The
+> stage uses a background picture near 16:9 when one exists, and otherwise
+> cuts the wide hero to fill. The rest of this brief stays as the record.
+
 Round 2, 2026-11-20. This brief changes no code. Nothing here is built
 until the owner approves the design.
 
