@@ -118,6 +118,11 @@ let
       ]
     ''}
   '';
+  # Only turned displays get a line, so a display without a transform keeps
+  # the configuration it had before the field existed.
+  displayTransforms = lib.concatMapStrings (
+    display: lib.optionalString (display.transform != "normal") "output ${display.name} transform ${display.transform}\n"
+  ) cfg.compositor.displays;
   deviceConfig = if cfg.deviceConfig == null then generatedDeviceConfig else cfg.deviceConfig;
   swayConfig = pkgs.writeText "korri-sway.conf" ''
     default_border none
@@ -145,7 +150,7 @@ let
     )}
     workspace "${compositorWorkspace}" output ${cfg.compositor.mainDisplay}
     workspace "${compositorWorkspace}"
-    ${cfg.compositor.extraConfig}
+    ${displayTransforms}${cfg.compositor.extraConfig}
   '';
   resolveDrmDevice = pkgs.writeShellScript "korri-resolve-drm-device" ''
     set -eu
@@ -384,6 +389,19 @@ in
               x = lib.mkOption { type = lib.types.int; };
               y = lib.mkOption { type = lib.types.int; };
               touch = lib.mkOption { type = lib.types.nullOr lib.types.str; };
+              transform = lib.mkOption {
+                # Sway's own values for `output <name> transform`. The Odin 2
+                # Portal turns its one panel 270 and the AYN Thor both panels
+                # 90; flipped transforms have no device yet.
+                type = lib.types.enum [
+                  "normal"
+                  "90"
+                  "180"
+                  "270"
+                ];
+                default = "normal";
+                description = "Hardware fact: how Sway turns this panel. `mode` stays the panel's native mode; korrid places in the turned (logical) size.";
+              };
               unwatched = lib.mkOption {
                 type = lib.types.bool;
                 default = false;
@@ -599,6 +617,7 @@ in
             x
             y
             touch
+            transform
             unwatched
             mode
             ;

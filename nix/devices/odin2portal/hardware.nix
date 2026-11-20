@@ -33,12 +33,12 @@
           x = 0;
           y = 0;
           touch = null;
+          transform = "270";
         }
       ];
       renderer = "gles2";
       localInput.enable = true;
       extraConfig = ''
-        output DSI-1 transform 270
         input type:touch map_to_output DSI-1
       '';
     };

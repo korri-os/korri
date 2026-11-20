@@ -17,8 +17,8 @@ import viewer  # noqa: E402
 
 TESTS = Path(__file__).resolve().parent
 # KORRID_DISPLAYS as korrid has it in its environment on the two devices.
-AKA = '[{"height":1080,"main":true,"mode":"1920x1080@60Hz","name":"HDMI-A-1","touch":null,"unwatched":true,"width":1920,"x":0,"y":0}]'
-IBUKI = '[{"height":2160,"main":true,"mode":"3840x2160@60Hz","name":"DP-1","touch":null,"unwatched":false,"width":3840,"x":0,"y":0}]'
+AKA = '[{"height":1080,"main":true,"mode":"1920x1080@60Hz","name":"HDMI-A-1","touch":null,"transform":"normal","unwatched":true,"width":1920,"x":0,"y":0}]'
+IBUKI = '[{"height":2160,"main":true,"mode":"3840x2160@60Hz","name":"DP-1","touch":null,"transform":"normal","unwatched":false,"width":3840,"x":0,"y":0}]'
 
 
 class TheFact(unittest.TestCase):

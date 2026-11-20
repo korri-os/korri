@@ -34,7 +34,7 @@ fn remote_launch_wakes_watched_output_before_sunshine_and_game() {
         let result = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "host::session_state::stream_displays_tests::remote_launch_wakes_watched_output_before_sunshine_and_game", "--nocapture"])
             .env(CHILD, "1")
-            .env("KORRID_DISPLAYS", r#"[{"name":"DP-1","main":true,"unwatched":false,"mode":"1920x1080@60Hz","x":0,"y":0,"width":1920,"height":1080,"touch":null},{"name":"HDMI-A-1","main":false,"unwatched":false,"mode":"1920x1080@60Hz","x":1920,"y":0,"width":1920,"height":1080,"touch":null}]"#)
+            .env("KORRID_DISPLAYS", r#"[{"name":"DP-1","main":true,"unwatched":false,"mode":"1920x1080@60Hz","x":0,"y":0,"width":1920,"height":1080,"touch":null,"transform":"normal"},{"name":"HDMI-A-1","main":false,"unwatched":false,"mode":"1920x1080@60Hz","x":1920,"y":0,"width":1920,"height":1080,"touch":null,"transform":"normal"}]"#)
             .output().unwrap();
         assert!(
             result.status.success(),
@@ -123,7 +123,7 @@ fn stream_play_wakes_before_reply_and_idle_resumes_after_the_session_ends() {
         let result = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "host::session_state::stream_displays_tests::stream_play_wakes_before_reply_and_idle_resumes_after_the_session_ends", "--nocapture"])
             .env(CHILD, "1")
-            .env("KORRID_DISPLAYS", r#"[{"name":"DP-1","main":true,"unwatched":false,"mode":"1920x1080@60Hz","x":0,"y":0,"width":1920,"height":1080,"touch":null},{"name":"HDMI-A-1","main":false,"unwatched":false,"mode":"1920x1080@60Hz","x":1920,"y":0,"width":1920,"height":1080,"touch":null},{"name":"VIRTUAL-1","main":false,"unwatched":true,"mode":"1920x1080@60Hz","x":3840,"y":0,"width":1920,"height":1080,"touch":null}]"#)
+            .env("KORRID_DISPLAYS", r#"[{"name":"DP-1","main":true,"unwatched":false,"mode":"1920x1080@60Hz","x":0,"y":0,"width":1920,"height":1080,"touch":null,"transform":"normal"},{"name":"HDMI-A-1","main":false,"unwatched":false,"mode":"1920x1080@60Hz","x":1920,"y":0,"width":1920,"height":1080,"touch":null,"transform":"normal"},{"name":"VIRTUAL-1","main":false,"unwatched":true,"mode":"1920x1080@60Hz","x":3840,"y":0,"width":1920,"height":1080,"touch":null,"transform":"normal"}]"#)
             .output().unwrap();
         assert!(
             result.status.success(),

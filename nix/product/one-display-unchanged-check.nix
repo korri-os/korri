@@ -31,8 +31,11 @@ let
         output ${d.name} bg #000000 solid_color
         workspace "korri:game:active" output ${d.name}
         workspace "korri:game:active"
-        ${cfg.extraConfig}
+        ${transform}${cfg.extraConfig}
       '';
+      # The old generator had no transform; such a device wrote its turn as
+      # the first line of its extraConfig, which is where the new one puts it.
+      transform = lib.optionalString (d.transform != "normal") "output ${d.name} transform ${d.transform}\n";
       after = c.systemd.services.korri-compositor.environment.KORRI_SWAY_CONFIG.text;
     in
     assert builtins.length cfg.displays == 1;

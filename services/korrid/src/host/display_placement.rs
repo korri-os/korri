@@ -15,6 +15,40 @@ pub struct Display {
     pub height: u32,
     /// Hardware path, not a compositor input identifier.
     pub touch: Option<String>,
+    /// Sway's output transform. After `configured_displays`, `width` and
+    /// `height` are the logical (post-transform) size every placement uses;
+    /// `mode` stays the panel's native mode.
+    pub transform: Transform,
+}
+
+/// Sway's own transform vocabulary (`output <name> transform <t>`); flipped
+/// transforms have no device yet.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub enum Transform {
+    #[serde(rename = "normal")]
+    Normal,
+    #[serde(rename = "90")]
+    Rotate90,
+    #[serde(rename = "180")]
+    Rotate180,
+    #[serde(rename = "270")]
+    Rotate270,
+}
+
+impl Transform {
+    fn swaps_axes(self) -> bool {
+        matches!(self, Transform::Rotate90 | Transform::Rotate270)
+    }
+}
+
+/// The panel's native size, which its mode names. A quarter turn swaps the
+/// logical size back.
+fn native_size(display: &Display) -> (u32, u32) {
+    if display.transform.swaps_axes() {
+        (display.height, display.width)
+    } else {
+        (display.width, display.height)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -31,8 +65,19 @@ pub fn configured_displays() -> Result<Vec<Display>, String> {
     let Some(value) = std::env::var_os("KORRID_DISPLAYS") else {
         return Ok(Vec::new());
     };
-    let displays: Vec<Display> = serde_json::from_str(&value.to_string_lossy())
-        .map_err(|e| format!("invalid display facts: {e}"))?;
+    parse_displays(&value.to_string_lossy())
+}
+
+/// The published facts carry the native mode size. Every placement works in
+/// Sway's layout space, so turn a quarter-turned display's size here, once.
+pub(crate) fn parse_displays(value: &str) -> Result<Vec<Display>, String> {
+    let mut displays: Vec<Display> =
+        serde_json::from_str(value).map_err(|e| format!("invalid display facts: {e}"))?;
+    for display in &mut displays {
+        if display.transform.swaps_axes() {
+            std::mem::swap(&mut display.width, &mut display.height);
+        }
+    }
     if displays.iter().filter(|d| d.main).count() != 1
         || displays.iter().any(|d| {
             d.width == 0
@@ -53,7 +98,8 @@ pub fn configured_displays() -> Result<Vec<Display>, String> {
 // Mode is the native Sway value authored in the Nix display option. Validate
 // it before inserting it in an IPC command, without maintaining another mode.
 fn configured_refresh(display: &Display) -> Result<&str, String> {
-    let prefix = format!("{}x{}@", display.width, display.height);
+    let (width, height) = native_size(display);
+    let prefix = format!("{width}x{height}@");
     let refresh = display
         .mode
         .strip_prefix(&prefix)
@@ -250,13 +296,35 @@ fn restore_commands(
     if game.is_none() {
         for display in displays.iter().filter(|d| d.main && d.unwatched) {
             let current = output_size(control, &display.name)?;
-            if (current.width, current.height) != (display.width, display.height) {
+            if (current.width, current.height) != native_size(display) {
                 configured_refresh(display)?;
                 commands.push(configured_mode_command(display));
             }
         }
     }
     Ok(commands)
+}
+
+/// The configured displays Sway reports active now, and always the main one.
+/// A configured display can be absent: the Thor boots with its bottom panel
+/// unplugged (`video=DSI-1:d`) until the compositor runs. A surface placed on
+/// an absent output would hold focus where nobody can see it. When Sway's
+/// outputs cannot be read, only the main display counts.
+pub(crate) fn present_displays(displays: &[Display], outputs: Option<&str>) -> Vec<Display> {
+    #[derive(Deserialize)]
+    struct Output {
+        name: String,
+        #[serde(default)]
+        active: bool,
+    }
+    let outputs: Vec<Output> = outputs
+        .and_then(|outputs| serde_json::from_str(outputs).ok())
+        .unwrap_or_default();
+    displays
+        .iter()
+        .filter(|d| d.main || outputs.iter().any(|o| o.name == d.name && o.active))
+        .cloned()
+        .collect()
 }
 
 pub fn overlay_display<'a>(displays: &'a [Display], placement: &Placement) -> Option<&'a Display> {
@@ -597,7 +665,14 @@ pub(crate) fn place_surface_timed(
     // A lower pane belongs to the catalog only; a game holds the displays then.
     let lower = lower.filter(|_| game.is_none());
     use super::compositor_focus::{select_focus_target, FocusTarget};
-    let rectangles = surface_rectangles(displays, game);
+    // A game's overlay takes a free display only if Sway has that output now.
+    let rectangles = match game {
+        Some(_) if displays.len() > 1 => surface_rectangles(
+            &present_displays(displays, control.outputs().ok().as_deref()),
+            game,
+        ),
+        _ => surface_rectangles(displays, game),
+    };
     let restore = restore_commands(control, displays, game)?;
     if displays.len() <= 1 {
         if !restore.is_empty() {
@@ -721,6 +796,7 @@ mod tests {
                 width: 640,
                 height: 480,
                 touch: None,
+                transform: Transform::Normal,
             },
             Display {
                 name: "DSI-1".into(),
@@ -732,6 +808,7 @@ mod tests {
                 width: 640,
                 height: 480,
                 touch: None,
+                transform: Transform::Normal,
             },
         ]
     }
@@ -1022,6 +1099,8 @@ mod tests {
         let program = directory.join("swaymsg");
         std::fs::write(directory.join("tree"),r#"{"nodes":[{"id":10,"pid":100,"app_id":"shell"},{"id":20,"pid":200,"app_id":"game"}]}"#).unwrap();
         std::fs::write(directory.join("reply"), reply).unwrap();
+        // Both configured outputs are present unless a test says otherwise.
+        std::fs::write(directory.join("outputs"), outputs(&["DSI-2", "DSI-1"])).unwrap();
         std::fs::write(
             &program,
             format!(
@@ -1259,6 +1338,7 @@ fi
             width: 1920,
             height: 1080,
             touch: None,
+            transform: Transform::Normal,
         });
         let facts = place_surface(
             &control,
@@ -1514,6 +1594,155 @@ fi
                 "[con_id=20] focus",
                 "output DSI-1 power off",
             ]
+        );
+    }
+
+    /// The AYN Thor's facts as the host module publishes them: native mode
+    /// sizes, both panels turned 90 degrees, the bottom centred under the top.
+    fn thor_facts(top_mode: &str) -> String {
+        format!(
+            r#"[{{"name":"DSI-2","main":true,"unwatched":false,"mode":"{top_mode}","x":0,"y":0,"width":1080,"height":1920,"touch":"/soc@0/geniqup@ac0000/i2c@a90000/touchscreen@38","transform":"90"}},{{"name":"DSI-1","main":false,"unwatched":false,"mode":"1080x1240@60Hz","x":340,"y":1080,"width":1080,"height":1240,"touch":"/soc@0/geniqup@9c0000/i2c@98c000/touchscreen@38","transform":"90"}}]"#
+        )
+    }
+
+    #[test]
+    fn quarter_turned_displays_place_in_their_logical_size() {
+        let ds = parse_displays(&thor_facts("1080x1920@120Hz")).unwrap();
+        assert_eq!(
+            (ds[0].x, ds[0].y, ds[0].width, ds[0].height),
+            (0, 0, 1920, 1080)
+        );
+        assert_eq!(
+            (ds[1].x, ds[1].y, ds[1].width, ds[1].height),
+            (340, 1080, 1240, 1080)
+        );
+        // The mode stays the panel's native one.
+        assert_eq!(configured_refresh(&ds[0]), Ok("120Hz"));
+        assert_eq!(
+            configured_mode_command(&ds[1]),
+            "output DSI-1 mode 1080x1240@60Hz"
+        );
+        // ADR 0086: the bottom sits directly under the top.
+        assert_eq!(
+            lower_output(&ds, &outputs(&["DSI-2", "DSI-1"])).as_deref(),
+            Some("DSI-1")
+        );
+        let game = choose(None, &runner(), &ds).unwrap();
+        assert_eq!((game.width, game.height), (1920, 1080));
+        assert_eq!(
+            surface_rectangles(&ds, Some(&game)),
+            vec![SurfaceDisplay {
+                id: "DSI-1".into(),
+                main: false,
+                x: 0,
+                y: 0,
+                width: 1240,
+                height: 1080,
+                touch: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn a_mode_that_is_not_the_native_size_is_refused() {
+        assert!(parse_displays(&thor_facts("1920x1080@120Hz")).is_err());
+    }
+
+    #[test]
+    fn unturned_facts_keep_their_size() {
+        let ds = parse_displays(r#"[{"name":"DSI-2","main":true,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":0,"width":640,"height":480,"touch":"/i2c@fe5c0000/touchscreen@14","transform":"normal"},{"name":"DSI-1","main":false,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":480,"width":640,"height":480,"touch":"/i2c@fe5e0000/touchscreen@14","transform":"normal"}]"#).unwrap();
+        assert_eq!(
+            ds.iter().map(|d| (d.width, d.height)).collect::<Vec<_>>(),
+            vec![(640, 480), (640, 480)]
+        );
+        assert!(parse_displays(r#"[{"name":"DSI-2","main":true,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":0,"width":640,"height":480,"touch":null}]"#).is_err());
+    }
+
+    #[test]
+    fn the_overlay_on_a_quarter_turned_free_display_fits_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let control = sway_program(dir.path(), r#"[{"success":true}]"#);
+        let ds = parse_displays(&thor_facts("1080x1920@120Hz")).unwrap();
+        let game = choose(None, &runner(), &ds).unwrap();
+        let mut timings = SurfacePlacementTimings::default();
+        let rectangles = place_surface_timed(
+            &control,
+            &ds,
+            Some(&game),
+            &[200].into_iter().collect(),
+            &[100].into_iter().collect(),
+            None,
+            &mut timings,
+        )
+        .unwrap();
+        assert_eq!(rectangles[0].id, "DSI-1");
+        let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
+        assert_eq!(
+            batches.lines().next().unwrap(),
+            "output DSI-2 power on; output DSI-1 power on"
+        );
+        assert!(batches.lines().last().unwrap().ends_with(
+            "[con_id=10] resize set width 1240 px height 1080 px; [con_id=10] move absolute position 340 px 1080 px; [con_id=10] focus"
+        ));
+    }
+
+    #[test]
+    fn the_overlay_stays_on_main_while_the_free_display_is_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let control = sway_program(dir.path(), r#"[{"success":true}]"#);
+        // Unplugged at boot: Sway does not list the output at all.
+        std::fs::write(
+            dir.path().join("outputs"),
+            r#"[{"name":"DSI-2","active":true}]"#,
+        )
+        .unwrap();
+        let ds = parse_displays(&thor_facts("1080x1920@120Hz")).unwrap();
+        let game = choose(None, &runner(), &ds).unwrap();
+        let mut timings = SurfacePlacementTimings::default();
+        let rectangles = place_surface_timed(
+            &control,
+            &ds,
+            Some(&game),
+            &[200].into_iter().collect(),
+            &[100].into_iter().collect(),
+            None,
+            &mut timings,
+        )
+        .unwrap();
+        assert_eq!(rectangles[0].id, "DSI-2");
+        let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
+        assert_eq!(
+            batches.lines().next().unwrap(),
+            "output DSI-2 power on; output DSI-1 power off"
+        );
+        assert!(batches.lines().last().unwrap().ends_with(
+            "[con_id=10] resize set width 1920 px height 1080 px; [con_id=10] move absolute position 0 px 0 px; [con_id=10] focus"
+        ));
+    }
+
+    #[test]
+    fn present_displays_keeps_main_and_reported_active_outputs() {
+        let ds = displays();
+        let names = |present: Vec<Display>| present.into_iter().map(|d| d.name).collect::<Vec<_>>();
+        assert_eq!(
+            names(present_displays(&ds, Some(&outputs(&["DSI-2", "DSI-1"])))),
+            vec!["DSI-2", "DSI-1"]
+        );
+        assert_eq!(
+            names(present_displays(&ds, Some(&outputs(&["DSI-2"])))),
+            vec!["DSI-2"]
+        );
+        assert_eq!(
+            names(present_displays(
+                &ds,
+                Some(r#"[{"name":"DSI-2","active":true}]"#)
+            )),
+            vec!["DSI-2"]
+        );
+        assert_eq!(names(present_displays(&ds, None)), vec!["DSI-2"]);
+        assert_eq!(
+            names(present_displays(&ds, Some("not json"))),
+            vec!["DSI-2"]
         );
     }
 

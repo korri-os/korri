@@ -1002,7 +1002,7 @@ esac
             .env("KORRI_CLIENT_SHAPE_EVENTS", directory.path().join("events"))
             .env("KORRI_TEST_SWAY_SCRIPT", &program)
             .env("KORRID_COMPOSITOR_CONTROL_SOCKET", directory.path().join("socket"))
-            .env("KORRID_DISPLAYS", r#"[{"name":"HDMI-A-1","main":true,"unwatched":true,"mode":"1920x1080@60Hz","x":0,"y":0,"width":1920,"height":1080,"touch":null}]"#)
+            .env("KORRID_DISPLAYS", r#"[{"name":"HDMI-A-1","main":true,"unwatched":true,"mode":"1920x1080@60Hz","x":0,"y":0,"width":1920,"height":1080,"touch":null,"transform":"normal"}]"#)
             .output().unwrap();
         assert!(
             output.status.success(),

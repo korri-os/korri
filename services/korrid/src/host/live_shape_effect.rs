@@ -215,6 +215,7 @@ mod tests {
                 width: 1920,
                 height: 1080,
                 touch: None,
+                transform: crate::host::display_placement::Transform::Normal,
                 unwatched: true,
                 mode: "1920x1080@60Hz".into(),
             }],

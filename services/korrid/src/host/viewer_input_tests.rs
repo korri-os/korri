@@ -47,7 +47,7 @@ async fn stream_play_local_buttons_reach_seats_only_while_the_viewer_is_focused(
         let result = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "host::session_state::viewer_input::tests::stream_play_local_buttons_reach_seats_only_while_the_viewer_is_focused", "--nocapture"])
             .env(CHILD, "1")
-            .env("KORRID_DISPLAYS", r#"[{"name":"DP-1","main":true,"unwatched":false,"mode":"1920x1080@60Hz","x":0,"y":0,"width":1920,"height":1080,"touch":null}]"#)
+            .env("KORRID_DISPLAYS", r#"[{"name":"DP-1","main":true,"unwatched":false,"mode":"1920x1080@60Hz","x":0,"y":0,"width":1920,"height":1080,"touch":null,"transform":"normal"}]"#)
             .output().unwrap();
         assert!(
             result.status.success(),

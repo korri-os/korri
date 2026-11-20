@@ -31,7 +31,8 @@ assert c.services.korriLinuxHost.compositor.mainDisplay == "DSI-1";
 assert (builtins.head c.services.korriLinuxHost.compositor.displays).mode == "1080x1920@120Hz";
 assert c.services.korriLinuxHost.compositor.renderer == "gles2";
 assert c.services.korriLinuxHost.compositor.localInput.enable;
-assert lib.hasInfix "output DSI-1 transform 270" c.services.korriLinuxHost.compositor.extraConfig;
+assert (builtins.head c.services.korriLinuxHost.compositor.displays).transform == "270";
+assert lib.hasInfix "output DSI-1 transform 270\n" compositor.environment.KORRI_SWAY_CONFIG.text;
 assert lib.hasInfix "input type:touch map_to_output DSI-1"
   c.services.korriLinuxHost.compositor.extraConfig;
 assert builtins.elem "inputplumber-ayn-sm8550-data" inputDataNames;

@@ -7,8 +7,8 @@
 #[tokio::test]
 async fn surface_windows_over_localhost_http() {
     let facts = serde_json::json!([
-        {"name":"DSI-2","main":true,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":0,"width":640,"height":480,"touch":"/i2c@fe5c0000/touchscreen@14"},
-        {"name":"DSI-1","main":false,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":480,"width":640,"height":480,"touch":"/i2c@fe5e0000/touchscreen@14"}
+        {"name":"DSI-2","main":true,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":0,"width":640,"height":480,"touch":"/i2c@fe5c0000/touchscreen@14","transform":"normal"},
+        {"name":"DSI-1","main":false,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":480,"width":640,"height":480,"touch":"/i2c@fe5e0000/touchscreen@14","transform":"normal"}
     ]);
     std::env::set_var("KORRID_DISPLAYS", facts.to_string());
     let root = tempfile::tempdir().unwrap();

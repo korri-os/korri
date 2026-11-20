@@ -79,8 +79,8 @@ esac
             root.path().join("socket"),
         );
         let mut facts = serde_json::json!([
-            {"name":"HEADLESS-1","main":true,"unwatched":true,"mode":"1920x1080@60Hz","x":0,"y":0,"width":1920,"height":1080,"touch":null},
-            {"name":"HEADLESS-2","main":false,"unwatched":false,"mode":"800x600@60Hz","x":1920,"y":0,"width":800,"height":600,"touch":null}
+            {"name":"HEADLESS-1","main":true,"unwatched":true,"mode":"1920x1080@60Hz","x":0,"y":0,"width":1920,"height":1080,"touch":null,"transform":"normal"},
+            {"name":"HEADLESS-2","main":false,"unwatched":false,"mode":"800x600@60Hz","x":1920,"y":0,"width":800,"height":600,"touch":null,"transform":"normal"}
         ]);
         facts.as_array_mut().unwrap().truncate(displays);
         std::env::set_var("KORRID_DISPLAYS", facts.to_string());

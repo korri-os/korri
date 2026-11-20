@@ -4935,7 +4935,7 @@ mod tests {
             let result = std::process::Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", "host::session_state::tests::leave_focuses_the_shell_unit_places_overlay_on_free_display_and_return_focuses_game", "--nocapture"])
                 .env(CHILD, "1")
-                .env("KORRID_DISPLAYS", r#"[{"name":"DSI-2","main":true,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":0,"width":640,"height":480,"touch":null},{"name":"DSI-1","main":false,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":480,"width":640,"height":480,"touch":null}]"#)
+                .env("KORRID_DISPLAYS", r#"[{"name":"DSI-2","main":true,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":0,"width":640,"height":480,"touch":null,"transform":"normal"},{"name":"DSI-1","main":false,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":480,"width":640,"height":480,"touch":null,"transform":"normal"}]"#)
                 .output().unwrap();
             assert!(
                 result.status.success(),
@@ -4995,6 +4995,7 @@ mod tests {
 cd '{}' || exit 1
 for argument do command="$argument"; done
 case "$command" in get_tree) printf 'tree\n' >> reads; cat tree; exit;; esac
+case "$command" in get_outputs) printf '[{{"name":"DSI-2","active":true}},{{"name":"DSI-1","active":true}}]'; exit;; esac
 printf '%s\n' "$command" >> commands
 case "$command" in *'opacity 0.4'*)
  if test -f refuse-dim; then printf '[{{"success":false,"error":"dim refused"}}]'; exit; fi;;
@@ -5432,7 +5433,7 @@ printf '[{{"success":true}}]'
             let result = std::process::Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", "host::session_state::tests::delayed_game_window_is_pending_until_mapping_then_takes_focus", "--nocapture"])
                 .env(CHILD, "1")
-                .env("KORRID_DISPLAYS", r#"[{"name":"DSI-2","main":true,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":0,"width":640,"height":480,"touch":null},{"name":"DSI-1","main":false,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":480,"width":640,"height":480,"touch":null}]"#)
+                .env("KORRID_DISPLAYS", r#"[{"name":"DSI-2","main":true,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":0,"width":640,"height":480,"touch":null,"transform":"normal"},{"name":"DSI-1","main":false,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":480,"width":640,"height":480,"touch":null,"transform":"normal"}]"#)
                 .output().unwrap();
             let stderr = String::from_utf8_lossy(&result.stderr);
             assert!(
@@ -5508,7 +5509,7 @@ printf '[{{"success":true}}]'
             let result = std::process::Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", "host::session_state::tests::both_requested_scopes_place_only_main_by_shell_unit_identity", "--nocapture"])
                 .env(CHILD, "1")
-                .env("KORRID_DISPLAYS", r#"[{"name":"DSI-2","main":true,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":0,"width":640,"height":480,"touch":null},{"name":"DSI-1","main":false,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":480,"width":640,"height":480,"touch":null}]"#)
+                .env("KORRID_DISPLAYS", r#"[{"name":"DSI-2","main":true,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":0,"width":640,"height":480,"touch":null,"transform":"normal"},{"name":"DSI-1","main":false,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":480,"width":640,"height":480,"touch":null,"transform":"normal"}]"#)
                 .output().unwrap();
             assert!(
                 result.status.success(),
@@ -5661,7 +5662,7 @@ printf '[{{"success":true}}]'
             let result=std::process::Command::new(std::env::current_exe().unwrap())
                 .args(["--exact","host::session_state::tests::idle_resume_restores_only_the_single_pane_game_display","--nocapture"])
                 .env(CHILD,"1")
-                .env("KORRID_DISPLAYS",r#"[{"name":"DSI-2","main":true,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":0,"width":640,"height":480,"touch":null},{"name":"DSI-1","main":false,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":480,"width":640,"height":480,"touch":null}]"#)
+                .env("KORRID_DISPLAYS",r#"[{"name":"DSI-2","main":true,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":0,"width":640,"height":480,"touch":null,"transform":"normal"},{"name":"DSI-1","main":false,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":480,"width":640,"height":480,"touch":null,"transform":"normal"}]"#)
                 .output().unwrap();
             assert!(
                 result.status.success(),
@@ -7601,7 +7602,7 @@ printf '[{{"success":true}}]'
             for displays in [
                 None,
                 Some(
-                    r#"[{"name":"DP-1","main":true,"unwatched":false,"mode":"3840x2160@60Hz","x":0,"y":0,"width":3840,"height":2160,"touch":null}]"#,
+                    r#"[{"name":"DP-1","main":true,"unwatched":false,"mode":"3840x2160@60Hz","x":0,"y":0,"width":3840,"height":2160,"touch":null,"transform":"normal"}]"#,
                 ),
             ] {
                 let mut child = std::process::Command::new(std::env::current_exe().unwrap());

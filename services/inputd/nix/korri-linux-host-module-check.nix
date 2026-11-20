@@ -140,6 +140,14 @@ let
   touchInvalid = touchDisplays [
     (touchDisplay "DSI-2" 0 "/soc@0/spi@a90000/touchscreen@38")
   ];
+  # A display's transform is Sway's own value, written once, after the
+  # outputs and before the device's extraConfig.
+  turned = touchDisplays [
+    ((touchDisplay "DSI-2" 0 null) // { transform = "90"; })
+    (touchDisplay "DSI-1" 480 null)
+  ];
+  swayText = system: system.config.systemd.services.korri-compositor.environment.KORRI_SWAY_CONFIG.text;
+  displayFacts = system: builtins.fromJSON system.config.systemd.services.korrid.environment.KORRID_DISPLAYS;
   missingDrmDevice = evaluate { services.korriLinuxHost.compositor.backend = "drm"; };
   wrongRuntimeUid = evaluate { users.users.korri.uid = lib.mkForce 1002; };
   cfg = valid.config;
@@ -164,6 +172,14 @@ assert
 assert allAssertionsPass touchUnmapped;
 assert touchRules touchUnmapped == [ ];
 assert hasFailedAssertion "touch must be an I2C touch controller's devicetree path" touchInvalid;
+assert allAssertionsPass turned;
+assert lib.hasInfix "workspace \"korri:game:active\"\noutput DSI-2 transform 90\n" (swayText turned);
+assert !(lib.hasInfix "output DSI-1 transform" (swayText turned));
+assert !(lib.hasInfix "transform" (swayText touchUnmapped));
+assert map (display: display.transform) (displayFacts turned) == [
+  "90"
+  "normal"
+];
 # The server part alone: no local capture, but streamed controllers still
 # get their seats and the uinput access the stream plugin needs.
 assert allAssertionsPass serverOnly;
@@ -263,6 +279,7 @@ assert (builtins.fromJSON unwatched.config.systemd.services.korrid.environment.K
     width = 1920;
     height = 1080;
     touch = null;
+    transform = "normal";
   }
 ];
 assert cfg.services.korridLinuxDevice.compositorControlDirectory == "/run/korri-compositor";
