@@ -265,8 +265,48 @@ _Avoid_: view, screen, picture, feed
 
 ### Content and discovery
 
+**Library item**:
+One thing in the library that a person plays, watches or listens to, with every release of it on every device. Each library item has one item kind.
+_Avoid_: content, media, title, entry
+
+**Item kind**:
+What sort of library item something is: game, film, episode, track or audiobook. Korri defines the item kinds itself; plugins provide items of those kinds and cannot add a kind.
+_Avoid_: media type, content type, category
+
+**Film**:
+A library item that is one feature-length video, not part of a series.
+_Avoid_: movie, video
+
+**Series**:
+A named set of episodes of video, such as a TV show.
+_Avoid_: show, TV show
+
+**Podcast**:
+A named set of episodes that one feed publishes.
+_Avoid_: feed, channel, show
+
+**Episode**:
+A library item that is one installment of a series or of a podcast.
+_Avoid_: podcast (for one episode), show
+
+**Track**:
+A library item that is one piece of recorded music.
+_Avoid_: song
+
+**Album**:
+A named, ordered set of tracks that was released together.
+_Avoid_: record, release (for an album)
+
+**Artist**:
+The person or group credited with a track or an album.
+_Avoid_: band, performer
+
+**Audiobook**:
+A library item that is one book read aloud.
+_Avoid_: book (alone), narration
+
 **System**:
-A kind of playable content, declared by plugins, with rules for what one game of that kind looks like. Korri knows no system of its own.
+A kind of game, declared by plugins, with rules for what one game of that kind looks like. Korri knows no system of its own.
 _Avoid_: platform, console, core
 
 **System group**:
@@ -286,11 +326,11 @@ Turning the raw title that a layout captures into the clean title that the libra
 _Avoid_: title rewrite, normalization, fallback title
 
 **Game**:
-The thing a person plays, with every release of it on every device.
+A library item that a person plays, with every release of it on every device. It is the only item kind that has a system.
 _Avoid_: title, entry, ROM
 
 **Release**:
-One version of a game's content. A file release is identified by its content bytes, so new bytes make a new release; a multi-disc game's discs form one release. A folder release is identified by its library folder and path on one device, and stays one release until a person says otherwise. A replaced release stays in the game's history as unavailable.
+One version of a library item's content. A remote release, such as one version of a film on a media server, is identified by its provider's reference and has no bytes on any device until it is installed. Each release of a film, episode, track or audiobook states what it needs to play: video or audio only, and its formats. A device chooses among the releases it can play. A file release is identified by its content bytes, so new bytes make a new release; a multi-disc game's discs form one release. A folder release is identified by its library folder and path on one device, and stays one release until a person says otherwise. A replaced release stays in the game's history as unavailable.
 _Avoid_: ROM, build, file
 
 **Public id**:
@@ -318,7 +358,7 @@ A download a plugin declares by fixed address and hash. Korri fetches it, checks
 _Avoid_: payload, package, download (alone), delivery
 
 **Install**:
-Putting a release of a game on a device so that it plays there. Every way a release arrives is an install: from a provider, from an artifact, or from devices of the federation that hold the same release, in pieces from all of them at once. An installed release stays in the device's library until the person removes it.
+Putting a release of a library item on a device so that it plays there. Downloading a film or an episode for offline play is an install. Every way a release arrives is an install: from a provider, from an artifact, or from devices of the federation that hold the same release, in pieces from all of them at once. An installed release stays in the device's library until the person removes it.
 _Avoid_: copy, copied release, transfer, sideload, sync, download (alone)
 
 **Install source**:
