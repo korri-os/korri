@@ -524,8 +524,17 @@ file 1 marker, which keeps its creation time when it is renamed to its verified
 name. The creation time records when the person asked; the modification time
 moves while bytes arrive. Where the filesystem reports no creation time, korrid
 uses the modification time, which can put a running download behind a later
-one. Process restart forgets in-memory failures and progress. No new state is
-saved.
+one. Process restart forgets in-memory failures and progress.
+
+ADR 0092 makes this queue the install manager: artifacts, provider games and
+the netplay copy wait in one line. `<private-state-root>/acquisition/queue.json`
+keeps the person's order, a list of `{ "artifact": <artifact id> }` and
+`{ "job": <jobId> }`, the running install first. It only sorts: the cache
+says what is in the line, and an install the file does not name sorts after
+the named ones by when it was queued. Only the end of an install removes it
+from the file, so a korrid that stops keeps the order. The person can
+reorder installs that wait; the running one keeps running. The netplay copy
+goes to the front, as a launch's artifacts do.
 
 While a job downloads or unpacks, korrid holds a logind `sleep` inhibitor in
 `block` mode. The screen may blank, but the device does not suspend. Shutdown
@@ -984,13 +993,25 @@ type AcquireJobState =
    `AcquisitionSystemUnknown`. A new job starts `Queued`.
 
 `acquire-cancel` stops a `Queued`, `Resolving`, `Downloading` or `Unpacking`
-job; a queued job leaves the queue, a downloading one loses its staging file,
-and an unpacking one stops its unit and loses its work folder and archive
-(ADR 0030; an ADR 0012 artifact still cannot be cancelled while it unpacks).
-A `Placing` or finished job is returned unchanged. Claims and jobs live in memory only.
-After a restart `acquire-status` answers `AcquisitionUnknownJob`, startup
-removes leftover staging files and `.tmp-*` directories, and a store download
-never continues: korrid holds no expected hash and no saved URL.
+job; a queued job leaves the queue, a downloading one loses its staging file
+and its record, and an unpacking one stops its unit and loses its work folder
+and archive (ADR 0030; an ADR 0012 artifact still cannot be cancelled while it
+unpacks). A `Placing` or finished job is returned unchanged.
+
+ADR 0092: a provider install survives a restart. Beside its staged bytes
+`.acquire-<jobId>`, korrid keeps `.acquire-<jobId>.json` with existing fields
+only: `jobId`; `providerId`, `id` and `fileName` of the request; `url`,
+`title` and `system` of the held claim; and `etag` or `lastModified`, the
+validator of the staged bytes. At startup korrid queues every kept install
+again under its job id and holds its claim, so `acquire-status` answers for
+it. When its turn comes it resolves a fresh `FinalDownload` and asks for the
+rest with `Range: bytes=<staged length>-` and `If-Range: <validator>`. A 206
+continues the staged bytes; a 200, a 416, a POST download and bytes with no
+strong `ETag` or `Last-Modified` start again from byte 0. A network failure or
+a stall ends the job `Failed` and keeps the bytes; the next `acquire` of the
+claim takes the same job id and resumes them, and so does a restart. Every
+other failure, and cancel, delete them. Startup removes staging files that no
+kept install owns and leftover `.tmp-*` directories.
 
 `RpcFailure.code` values for `Err`: `AcquisitionUnavailable` (no local
 registry or discovery on this device), `AcquisitionCaller` (malformed request,
@@ -1012,12 +1033,14 @@ ADR 0012/0013's cache grammar, readiness, content-hash identity and
 `contentPath`, plus the ADR 0002 provider link (owner answers Q1-Q6, ADR 0016).
 
 - **Queue.** A store job waits in ADR 0013's one-at-a-time queue behind
-  earlier downloads and holds its deep-sleep block. It is never paused for a
-  launch; a launch's download runs after it.
+  earlier downloads and holds its deep-sleep block. While it downloads, a
+  launch or another front install pauses it: it reports `Queued`, keeps its
+  bytes, and resumes with a range after the front installs (ADR 0092). Once
+  its bytes are complete it finishes first.
 - **Download.** The file stages under
   `<storage-root>/cache/<plugin short name>/<provider name>/.downloads/`
   (the provider name is the part of the provider id after `:`), private
-  (0700), with a random `.acquire-*` name. It follows the declared hosts and
+  (0700), as `.acquire-<jobId>` beside its record (see above). It follows the declared hosts and
   the SSRF/redirect policy, ADR 0012's connect timeout and stall detection.
   It has no size cap (ADR 0030). Before each write korrid checks that the
   cache's file system keeps at least 5% of its size free for korrid's user
@@ -1073,10 +1096,11 @@ ADR 0012/0013's cache grammar, readiness, content-hash identity and
   The identity is discovery's (ADR 0005): `Hash`, header excluded, `Parts` or
   `Chd`. It is identity, not authentication.
 - **Ready folder.** korrid publishes
-  `<storage-root>/cache/<plugin>/<provider>/<hex of the release key>/`
-  (64 digits for `sha256:`, 40 for a CHD's `sha1:`) through a `.tmp-*`
-  directory and an atomic rename, read-only. Ready means the folder exists.
-  Identical content shares one folder.
+  `<storage-root>/cache/<hex of the release key>/` (64 digits for `sha256:`,
+  40 for a CHD's `sha1:`), the layout of every install whatever its source
+  (ADR 0092, from ADR 0040), through a `.tmp-*` directory and an atomic
+  rename, read-only. Ready means the folder exists. Identical content shares
+  one folder, also from two providers or from a device.
 - **Library record.** Once, under discovery's publication lock: the game
   (title from the claim), its release (`identity` `hash`, `parts` or `chd`
   as identified, `system` from the claim) and the provider link

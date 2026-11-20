@@ -1,7 +1,8 @@
 //! Game acquisition (ADR 0016): provider search, details and acquire jobs.
-//! A downloaded game stays in korrid's cache (ADR 0012 grammar) and becomes a
-//! library game through the records ADR 0013 already uses. Claims and jobs
-//! live in memory only; a restart forgets both.
+//! A downloaded game stays in korrid's cache under its release key (ADR
+//! 0092) and becomes a library game through the records ADR 0013 already
+//! uses. Claims and jobs live in memory; an unfinished install also keeps a
+//! record beside its staged bytes, so a restart resumes it (ADR 0092).
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
