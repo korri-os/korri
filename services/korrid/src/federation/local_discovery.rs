@@ -1,12 +1,14 @@
 //! Local discovery (ADR 0089): devices on one local network find each other
 //! with no server. An announcement holds no device key, only one rotating tag
 //! per known owner device; only that pair can derive it, and the two
-//! directions differ (`DeviceIdentity::nearby_announcement_tag`). A matched
+//! directions differ (`identity::NearbyPair`). Random filler tags pad every
+//! announcement to a fixed count, so the count does not tell how many devices
+//! the person has. A matched
 //! announcement's addresses join the dial pool for a short time, and a new
 //! address ends that peer's reach retry backoff. They are process memory,
 //! never persisted, and never proof of liveness: the connection still
 //! authenticates by device key.
-use crate::identity::DeviceIdentity;
+use crate::identity::{DeviceIdentity, NearbyPair};
 use std::{
     collections::{BTreeMap, BTreeSet},
     net::{IpAddr, SocketAddr},
@@ -29,6 +31,9 @@ const MAX_FOUND_PER_DEVICE: usize = 8;
 /// ordinary packet. Devices past this bound still reach this one through
 /// its endpoint record and the relays.
 pub(crate) const MAX_TAGS: usize = 64;
+/// Every announcement carries this many tags, real ones and random filler,
+/// or `MAX_TAGS` when the person has more devices than this.
+pub(crate) const PADDED_TAGS: usize = 16;
 
 pub(crate) type Tag = [u8; 8];
 
@@ -36,43 +41,86 @@ pub(crate) fn window(unix_time: u64) -> u64 {
     unix_time / WINDOW_SECONDS
 }
 
-/// The tags this device announces now: one per known device, current window.
-pub(crate) fn announcement_tags(
-    identity: &DeviceIdentity,
-    peers: &[String],
-    unix_time: u64,
-) -> Vec<Tag> {
-    peers
-        .iter()
-        .take(MAX_TAGS)
-        .filter_map(|peer| {
-            identity
-                .nearby_announcement_tag(peer, window(unix_time))
-                .ok()
-        })
-        .collect()
+/// The pair keys for this device and each known device, in directory order.
+/// Each pair costs one ECDH, made when the device first appears and kept
+/// while the device set and this device's own key stay the same, so a flood
+/// of announcements costs only HMACs.
+#[derive(Default)]
+pub(crate) struct PairKeys {
+    local: Option<String>,
+    pairs: Vec<(String, NearbyPair)>,
+    /// How many pairs were derived, each one ECDH.
+    derived: usize,
 }
-
-/// The known device whose tag to this device an announcement carries, for
-/// the current or the previous window. A stranger's announcement, and this
-/// device's own, match nothing.
-pub(crate) fn matching_device(
-    identity: &DeviceIdentity,
-    peers: &[String],
-    announced: &BTreeSet<Tag>,
-    unix_time: u64,
-) -> Option<String> {
-    let current = window(unix_time);
-    peers
-        .iter()
-        .find(|peer| {
-            [Some(current), current.checked_sub(1)]
-                .into_iter()
-                .flatten()
-                .filter_map(|window| identity.nearby_announcement_tag_from(peer, window).ok())
-                .any(|tag| announced.contains(&tag))
-        })
-        .cloned()
+impl PairKeys {
+    pub(crate) fn refresh(&mut self, identity: &DeviceIdentity, peers: &[String]) {
+        let local = identity.device_public_key().map(str::to_owned);
+        if local != self.local {
+            self.local = local;
+            self.pairs.clear();
+        }
+        let current = self.pairs.iter().map(|(peer, _)| peer);
+        if current.eq(peers.iter()) {
+            return;
+        }
+        let mut kept: BTreeMap<String, NearbyPair> = self.pairs.drain(..).collect();
+        for peer in peers {
+            let pair = match kept.remove(peer) {
+                Some(pair) => Some(pair),
+                None => {
+                    self.derived += 1;
+                    identity.nearby_pair(peer).ok()
+                }
+            };
+            if let Some(pair) = pair {
+                self.pairs.push((peer.clone(), pair));
+            }
+        }
+    }
+    pub(crate) fn is_empty(&self) -> bool {
+        self.pairs.is_empty()
+    }
+    /// The tags this device announces now: one per known device (at most
+    /// `MAX_TAGS`), padded with random tags to a fixed count, in random order.
+    pub(crate) fn announcement_tags(&self, unix_time: u64) -> Vec<Tag> {
+        let window = window(unix_time);
+        let mut tags: BTreeSet<Tag> = self
+            .pairs
+            .iter()
+            .take(MAX_TAGS)
+            .map(|(_, pair)| pair.tag_to_peer(window))
+            .collect();
+        let count = if tags.len() <= PADDED_TAGS {
+            PADDED_TAGS
+        } else {
+            MAX_TAGS
+        };
+        while tags.len() < count {
+            tags.insert(rand::random());
+        }
+        let mut tags: Vec<Tag> = tags.into_iter().collect();
+        rand::seq::SliceRandom::shuffle(tags.as_mut_slice(), &mut rand::rng());
+        tags
+    }
+    /// The known device whose tag to this device an announcement carries,
+    /// for the current or the previous window. A stranger's announcement,
+    /// filler, and this device's own announcement match nothing.
+    pub(crate) fn matching_device(
+        &self,
+        announced: &BTreeSet<Tag>,
+        unix_time: u64,
+    ) -> Option<String> {
+        let current = window(unix_time);
+        self.pairs
+            .iter()
+            .find(|(_, pair)| {
+                [Some(current), current.checked_sub(1)]
+                    .into_iter()
+                    .flatten()
+                    .any(|window| announced.contains(&pair.tag_from_peer(window)))
+            })
+            .map(|(peer, _)| peer.clone())
+    }
 }
 
 /// Peer `/rpc` origins for the addresses a matched announcement carried. The
@@ -191,6 +239,18 @@ mod tests {
         identity.device_public_key().unwrap().to_owned()
     }
 
+    fn keys(identity: &DeviceIdentity, peers: &[String]) -> PairKeys {
+        let mut keys = PairKeys::default();
+        keys.refresh(identity, peers);
+        keys
+    }
+    fn tags(identity: &DeviceIdentity, peers: &[String], now: u64) -> BTreeSet<Tag> {
+        keys(identity, peers)
+            .announcement_tags(now)
+            .into_iter()
+            .collect()
+    }
+
     #[test]
     fn members_match_each_other_and_a_non_member_key_matches_nothing() {
         let (_roots, ids) = identities(4);
@@ -198,24 +258,21 @@ mod tests {
             unreachable!()
         };
         let now = 1_800_000_000;
-        // A announces one tag for each device it knows.
-        let announced: BTreeSet<_> = announcement_tags(a, &[key(b), key(c)], now)
-            .into_iter()
-            .collect();
-        assert_eq!(announced.len(), 2);
+        // A announces one tag for each device it knows, among filler.
+        let announced = tags(a, &[key(b), key(c)], now);
         // B and C each recognise A among the devices they know.
         assert_eq!(
-            matching_device(b, &[key(c), key(a)], &announced, now),
+            keys(b, &[key(c), key(a)]).matching_device(&announced, now),
             Some(key(a))
         );
         assert_eq!(
-            matching_device(c, &[key(b), key(a)], &announced, now),
+            keys(c, &[key(b), key(a)]).matching_device(&announced, now),
             Some(key(a))
         );
         // A key outside the federation cannot derive any of A's tags, even
         // when it guesses A's and B's public keys.
         assert_eq!(
-            matching_device(stranger, &[key(a), key(b), key(c)], &announced, now),
+            keys(stranger, &[key(a), key(b), key(c)]).matching_device(&announced, now),
             None
         );
     }
@@ -227,21 +284,87 @@ mod tests {
             unreachable!()
         };
         let now = 1_800_000_000;
-        let from_a: BTreeSet<_> = announcement_tags(a, &[key(b), key(c)], now)
-            .into_iter()
-            .collect();
-        let from_b: BTreeSet<_> = announcement_tags(b, &[key(a), key(c)], now)
-            .into_iter()
-            .collect();
-        assert_eq!(from_a.len(), 2);
+        let from_a = tags(a, &[key(b), key(c)], now);
+        let from_b = tags(b, &[key(a), key(c)], now);
         assert!(
             from_a.is_disjoint(&from_b),
             "an observer can link A and B by a shared tag"
         );
         // Each still recognises the other, and nobody recognises itself.
-        assert_eq!(matching_device(b, &[key(a)], &from_a, now), Some(key(a)));
-        assert_eq!(matching_device(a, &[key(b)], &from_b, now), Some(key(b)));
-        assert_eq!(matching_device(a, &[key(b), key(c)], &from_a, now), None);
+        assert_eq!(
+            keys(b, &[key(a)]).matching_device(&from_a, now),
+            Some(key(a))
+        );
+        assert_eq!(
+            keys(a, &[key(b)]).matching_device(&from_b, now),
+            Some(key(b))
+        );
+        assert_eq!(
+            keys(a, &[key(b), key(c)]).matching_device(&from_a, now),
+            None
+        );
+    }
+
+    #[test]
+    fn announcements_carry_the_same_tag_count_whatever_the_device_count() {
+        let (_roots, ids) = identities(5);
+        let [a, b, c, d, e] = ids.as_slice() else {
+            unreachable!()
+        };
+        let now = 1_800_000_000;
+        let one = keys(a, &[key(b)]).announcement_tags(now);
+        let four = keys(a, &[key(b), key(c), key(d), key(e)]).announcement_tags(now);
+        let none = PairKeys::default().announcement_tags(now);
+        assert_eq!(one.len(), PADDED_TAGS);
+        assert_eq!(four.len(), PADDED_TAGS);
+        assert_eq!(none.len(), PADDED_TAGS);
+        // Filler is fresh randomness, and every tag is distinct.
+        assert_eq!(one.iter().collect::<BTreeSet<_>>().len(), PADDED_TAGS);
+        let again = keys(a, &[key(b)]).announcement_tags(now);
+        assert_eq!(
+            one.iter()
+                .collect::<BTreeSet<_>>()
+                .intersection(&again.iter().collect())
+                .count(),
+            1,
+            "only the real tag repeats within a window"
+        );
+        // The real tags still match among the filler.
+        let announced: BTreeSet<_> = four.into_iter().collect();
+        assert_eq!(
+            keys(e, &[key(a)]).matching_device(&announced, now),
+            Some(key(a))
+        );
+    }
+
+    #[test]
+    fn pair_keys_derive_one_ecdh_per_new_device_and_keep_it() {
+        let (_roots, ids) = identities(4);
+        let [a, b, c, d] = ids.as_slice() else {
+            unreachable!()
+        };
+        let mut pairs = PairKeys::default();
+        pairs.refresh(a, &[key(b), key(c)]);
+        assert_eq!(pairs.derived, 2);
+        // An unchanged device set, and any number of announcements matched
+        // and made, derive nothing more.
+        let flood = tags(b, &[key(a)], 1_800_000_000);
+        for now in 0..1000 {
+            pairs.refresh(a, &[key(b), key(c)]);
+            let _ = pairs.matching_device(&flood, 1_800_000_000 + now);
+            let _ = pairs.announcement_tags(1_800_000_000 + now);
+        }
+        assert_eq!(pairs.derived, 2);
+        assert_eq!(pairs.matching_device(&flood, 1_800_000_000), Some(key(b)));
+        // A changed set derives only the new device's pair.
+        pairs.refresh(a, &[key(b), key(c), key(d)]);
+        assert_eq!(pairs.derived, 3);
+        pairs.refresh(a, &[key(c)]);
+        assert_eq!(pairs.derived, 3);
+        assert_eq!(pairs.matching_device(&flood, 1_800_000_000), None);
+        // Another local identity starts over.
+        pairs.refresh(d, &[key(c)]);
+        assert_eq!(pairs.derived, 4);
     }
 
     #[test]
@@ -269,10 +392,11 @@ mod tests {
             unreachable!()
         };
         let start = 1_800_000_000 - 1_800_000_000 % WINDOW_SECONDS;
-        let announced: BTreeSet<_> = announcement_tags(a, &[key(b)], start).into_iter().collect();
+        let announced = tags(a, &[key(b)], start);
+        let listener = keys(b, &[key(a)]);
         for now in [start, start + WINDOW_SECONDS - 1, start + WINDOW_SECONDS] {
             assert_eq!(
-                matching_device(b, &[key(a)], &announced, now),
+                listener.matching_device(&announced, now),
                 Some(key(a)),
                 "window offset {}",
                 now - start
@@ -280,15 +404,13 @@ mod tests {
         }
         // Two windows on, and one window before, the tag no longer matches.
         assert_eq!(
-            matching_device(b, &[key(a)], &announced, start + 2 * WINDOW_SECONDS),
+            listener.matching_device(&announced, start + 2 * WINDOW_SECONDS),
             None
         );
-        assert_eq!(matching_device(b, &[key(a)], &announced, start - 1), None);
-        // The window change itself changes the announced tag.
-        assert_ne!(
-            announcement_tags(a, &[key(b)], start),
-            announcement_tags(a, &[key(b)], start + WINDOW_SECONDS)
-        );
+        assert_eq!(listener.matching_device(&announced, start - 1), None);
+        // The window change itself changes the announced real tag.
+        let next = tags(a, &[key(b)], start + WINDOW_SECONDS);
+        assert_eq!(listener.matching_device(&next, start), None);
     }
 
     #[test]

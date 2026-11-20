@@ -2,7 +2,7 @@
 //! joins. The instance and host names are random and change with each tag
 //! window, so neither follows the device from place to place. A device's own
 //! announcement matches nothing, because its tags are for other devices.
-use super::{announcement_tags, matching_device, origins, record_found, window, Tag};
+use super::{origins, record_found, window, PairKeys, Tag};
 use crate::{
     federation::{interfaces, FederationDirectory},
     identity::DeviceIdentity,
@@ -38,6 +38,9 @@ struct Basis {
 struct Announcer {
     basis: Option<Basis>,
     current: Option<String>,
+    /// Refreshed on each poll; browse events match against it, so an
+    /// announcement costs no directory read and no ECDH.
+    keys: PairKeys,
 }
 
 pub async fn run(directory: FederationDirectory, credentials: PeerCredentials, bind: SocketAddr) {
@@ -55,6 +58,7 @@ pub async fn run(directory: FederationDirectory, credentials: PeerCredentials, b
     let mut announcer = Announcer {
         basis: None,
         current: None,
+        keys: PairKeys::default(),
     };
     let mut poll = tokio::time::interval(POLL);
     loop {
@@ -62,15 +66,12 @@ pub async fn run(directory: FederationDirectory, credentials: PeerCredentials, b
             _ = poll.tick() => announcer.update(&daemon.0, &directory, &credentials, bind),
             event = events.recv_async() => match event {
                 Ok(ServiceEvent::ServiceResolved(service)) => {
-                    let Some((identity, peers)) = known(&directory, &credentials) else {
-                        continue;
-                    };
                     let tags = service
                         .txt_properties
                         .iter()
                         .filter_map(|property| parse_tag(property.key()))
                         .collect::<BTreeSet<_>>();
-                    if let Some(device) = matching_device(&identity, &peers, &tags, unix_time()) {
+                    if let Some(device) = announcer.keys.matching_device(&tags, unix_time()) {
                         let addresses = service.addresses.iter().map(|ip| ip.to_ip_addr());
                         let found = origins(addresses, service.port);
                         if !found.is_empty() && super::found(&device).is_empty() {
@@ -123,6 +124,10 @@ impl Announcer {
     ) {
         let now = unix_time();
         let known = known(directory, credentials);
+        match &known {
+            Some((identity, peers)) => self.keys.refresh(identity, peers),
+            None => self.keys = PairKeys::default(),
+        }
         let addresses: Vec<IpAddr> = interfaces::endpoints(bind)
             .unwrap_or_default()
             .iter()
@@ -146,13 +151,10 @@ impl Announcer {
             let _ = daemon.unregister(&fullname);
         }
         // Nobody to be found by, or no address a peer could use.
-        let Some((identity, peers)) = known.filter(|_| !addresses.is_empty()) else {
-            return;
-        };
-        let tags = announcement_tags(&identity, &peers, now);
-        if tags.is_empty() {
+        if known.is_none() || addresses.is_empty() || self.keys.is_empty() {
             return;
         }
+        let tags = self.keys.announcement_tags(now);
         let instance = hex::encode(rand::random::<[u8; 8]>());
         let properties: Vec<TxtProperty> = tags
             .iter()

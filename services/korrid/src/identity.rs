@@ -28,6 +28,7 @@ use zeroize::Zeroizing;
 mod automatic_tests;
 pub(crate) mod iroh;
 mod nearby;
+pub use nearby::NearbyPair;
 pub(crate) mod offline;
 #[cfg(test)]
 mod vouch_tests;
