@@ -1,18 +1,33 @@
-//! Read the live nearby-link fact without persisting another address. Pure
-//! helpers below keep candidate ordering and port handling injectable in tests.
+//! Read the live nearby-link and local-discovery facts without persisting
+//! another address. Pure helpers below keep candidate ordering and port
+//! handling injectable in tests.
 use std::net::{IpAddr, SocketAddr};
+/// Fresh live addresses go before the stored record's: the nearby link's
+/// peer IP, then the addresses local discovery found for this device.
 pub(crate) fn prepend(device: &str, candidates: &mut Vec<String>) {
-    prepend_ip(crate::network::nearby::nearby_peer_ip(device), candidates);
+    prepend_fresh(
+        crate::network::nearby::nearby_peer_ip(device),
+        crate::federation::local_discovery::found(device),
+        candidates,
+    );
 }
-fn prepend_ip(ip: Option<IpAddr>, candidates: &mut Vec<String>) {
+fn prepend_fresh(ip: Option<IpAddr>, found: Vec<String>, candidates: &mut Vec<String>) {
     let port = candidates
         .iter()
+        .chain(&found)
         .find_map(|origin| url::Url::parse(origin).ok()?.port_or_known_default());
-    if let (Some(ip), Some(port)) = (ip, port) {
-        let origin = format!("http://{}", SocketAddr::new(ip, port));
-        candidates.retain(|candidate| candidate != &origin);
-        candidates.insert(0, origin);
+    let nearby = ip
+        .zip(port)
+        .map(|(ip, port)| format!("http://{}", SocketAddr::new(ip, port)));
+    let mut fresh: Vec<String> = nearby.into_iter().chain(found).collect();
+    if fresh.is_empty() {
+        return;
     }
+    let mut seen = std::collections::BTreeSet::new();
+    fresh.retain(|origin| seen.insert(origin.clone()));
+    candidates.retain(|candidate| !fresh.contains(candidate));
+    fresh.append(candidates);
+    *candidates = fresh;
 }
 pub(crate) fn moonlight_control_origin(address: &str) -> Option<String> {
     let address = address.trim();
@@ -97,15 +112,49 @@ mod tests {
     fn nearby_candidate_is_first_only_while_the_link_is_present() {
         let original = vec!["http://192.168.1.2:39217".into()];
         let mut candidates = original.clone();
-        prepend_ip(None, &mut candidates);
+        prepend_fresh(None, Vec::new(), &mut candidates);
         assert_eq!(candidates, original);
-        prepend_ip(Some("10.42.0.2".parse().unwrap()), &mut candidates);
+        prepend_fresh(
+            Some("10.42.0.2".parse().unwrap()),
+            Vec::new(),
+            &mut candidates,
+        );
         assert_eq!(
             candidates,
             ["http://10.42.0.2:39217", "http://192.168.1.2:39217"]
         );
         let mut empty = Vec::new();
-        prepend_ip(Some("10.42.0.2".parse().unwrap()), &mut empty);
+        prepend_fresh(Some("10.42.0.2".parse().unwrap()), Vec::new(), &mut empty);
         assert!(empty.is_empty());
+    }
+    /// ADR 0089 try order: the nearby link, then local discovery, then the
+    /// stored record's candidates, each address once.
+    #[test]
+    fn fresh_addresses_precede_the_stored_record() {
+        let mut candidates = vec![
+            "http://192.168.1.2:39217".into(),
+            "http://100.64.0.2:39217".into(),
+        ];
+        prepend_fresh(
+            Some("10.42.0.2".parse().unwrap()),
+            vec![
+                "http://192.168.1.30:39217".into(),
+                "http://100.64.0.2:39217".into(),
+            ],
+            &mut candidates,
+        );
+        assert_eq!(
+            candidates,
+            [
+                "http://10.42.0.2:39217",
+                "http://192.168.1.30:39217",
+                "http://100.64.0.2:39217",
+                "http://192.168.1.2:39217",
+            ]
+        );
+        // Found origins carry their own port, so they help a peer with no record.
+        let mut none = Vec::new();
+        prepend_fresh(None, vec!["http://192.168.1.30:39217".into()], &mut none);
+        assert_eq!(none, ["http://192.168.1.30:39217"]);
     }
 }

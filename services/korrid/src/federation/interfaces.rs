@@ -41,9 +41,30 @@ pub struct InterfaceAddress {
     pub has_default_route: bool,
 }
 
-/// Tailscale and default-route interfaces precede other interfaces, so virtual
-/// networks cannot fill the existing eight-candidate bound before the real LAN.
-/// Address class, numeric address and interface name break ties deterministically.
+/// The one candidate rule (ADR 0089): every address on every interface is a
+/// candidate unless it is loopback, unspecified, multicast or link-local.
+/// Limited broadcast and IPv4 "this network" (0.0.0.0/8) are unspecified
+/// destinations too. No network, interface name or range is singled out; a
+/// wrong address fails the device-key check. Peer `/rpc` origins, iroh direct
+/// addresses, relay-duty listeners and the published endpoint all use it.
+pub fn is_candidate(ip: IpAddr) -> bool {
+    let ip = match ip {
+        IpAddr::V6(v6) => v6.to_ipv4_mapped().map(IpAddr::V4).unwrap_or(ip),
+        ip => ip,
+    };
+    if ip.is_loopback() || ip.is_unspecified() || ip.is_multicast() {
+        return false;
+    }
+    match ip {
+        IpAddr::V4(ip) => !ip.is_broadcast() && !ip.is_link_local() && ip.octets()[0] != 0,
+        IpAddr::V6(ip) => !ip.is_unicast_link_local(),
+    }
+}
+
+/// Default-route interfaces precede other interfaces, so many virtual
+/// networks cannot fill the existing eight-candidate bound before the real
+/// LAN. Address class, numeric address and interface name break ties
+/// deterministically. The order only bounds the list; peers race what is in it.
 pub fn derive_endpoints(
     bind: SocketAddr,
     addresses: impl IntoIterator<Item = InterfaceAddress>,
@@ -58,32 +79,22 @@ pub fn derive_endpoints(
         })
         .filter(|entry| {
             let ip = entry.address;
-            if ip.is_loopback()
-                || ip.is_unspecified()
-                || ip.is_multicast()
-                || bind.ip().is_loopback()
-            {
+            if !is_candidate(ip) || bind.ip().is_loopback() {
                 return false;
             }
             if !bind.ip().is_unspecified() && bind.ip() != ip {
                 return false;
             }
-            match ip {
-                IpAddr::V4(ip) => !ip.is_broadcast() && ip.octets()[0] != 0,
-                IpAddr::V6(ip) => !bind.is_ipv4() && !ip.is_unicast_link_local(),
-            }
+            !(ip.is_ipv6() && bind.is_ipv4())
         })
         .collect();
     addresses.sort_by_key(|entry| {
-        let class = priority(entry.address);
-        let interface = if class <= 1 || entry.interface == "tailscale0" {
-            0
-        } else if entry.has_default_route {
-            1
-        } else {
-            2
-        };
-        (interface, class, entry.address, entry.interface.clone())
+        (
+            !entry.has_default_route,
+            class(entry.address),
+            entry.address,
+            entry.interface.clone(),
+        )
     });
     let mut seen = BTreeSet::new();
     addresses.retain(|entry| seen.insert(entry.address));
@@ -94,15 +105,12 @@ pub fn derive_endpoints(
         .collect()
 }
 
-fn priority(ip: IpAddr) -> u8 {
+fn class(ip: IpAddr) -> u8 {
     match ip {
-        IpAddr::V4(ip) if u32::from(ip) & 0xffc00000 == 0x64400000 => 0,
-        IpAddr::V6(ip) if ip.segments()[..3] == [0xfd7a, 0x115c, 0xa1e0] => 1,
-        IpAddr::V4(ip) if ip.is_private() => 2,
-        IpAddr::V4(ip) if ip.is_link_local() => 6,
-        IpAddr::V4(_) => 3,
-        IpAddr::V6(ip) if ip.is_unique_local() => 4,
-        IpAddr::V6(_) => 5,
+        IpAddr::V4(ip) if ip.is_private() => 0,
+        IpAddr::V4(_) => 1,
+        IpAddr::V6(ip) if ip.is_unique_local() => 2,
+        IpAddr::V6(_) => 3,
     }
 }
 
@@ -226,28 +234,87 @@ mod tests {
             "224.0.0.1",
             "255.255.255.255",
             "0.1.2.3",
+            "169.254.1.2",
+            "::ffff:169.254.1.3",
             "100.100.1.2",
             "fd7a:115c:a1e0::1",
             "192.168.1.2",
             "10.42.0.1",
             "172.16.1.2",
-            "169.254.1.2",
             "2001:db8::1",
         ]);
         assert_eq!(
             result,
             [
-                "http://100.100.1.2:39217",
-                "http://[fd7a:115c:a1e0::1]:39217",
                 "http://10.42.0.1:39217",
                 "http://172.16.1.2:39217",
                 "http://192.168.1.2:39217",
+                "http://100.100.1.2:39217",
+                "http://[fd7a:115c:a1e0::1]:39217",
                 "http://[2001:db8::1]:39217",
-                "http://169.254.1.2:39217"
             ]
         );
         for origin in result {
             super::super::peer_origin(&origin).unwrap();
+        }
+    }
+    /// Test fixture: a private network's addresses (here 100.x and fd7a::)
+    /// are kept like any other address. Nothing names or prefers them.
+    #[test]
+    fn candidate_rule_keeps_every_address_a_peer_could_reach() {
+        for kept in [
+            "100.64.0.1",
+            "100.100.1.2",
+            "fd7a:115c:a1e0::1",
+            "10.0.0.2",
+            "192.168.1.2",
+            "172.17.0.1",
+            "203.0.113.9",
+            "fd00::1",
+            "2001:db8::1",
+            "::ffff:100.64.0.1",
+        ] {
+            assert!(is_candidate(kept.parse().unwrap()), "{kept} was dropped");
+        }
+        for skipped in [
+            "127.0.0.1",
+            "::1",
+            "0.0.0.0",
+            "::",
+            "0.1.2.3",
+            "255.255.255.255",
+            "224.0.0.251",
+            "ff02::fb",
+            "169.254.1.2",
+            "fe80::1",
+            "::ffff:127.0.0.1",
+        ] {
+            assert!(
+                !is_candidate(skipped.parse().unwrap()),
+                "{skipped} was kept"
+            );
+        }
+        let any = |interface: &str, ip: &str| InterfaceAddress {
+            interface: interface.into(),
+            address: ip.parse().unwrap(),
+            has_default_route: false,
+        };
+        // The interface name never matters: the same address on any name
+        // gives the same candidate.
+        for interface in ["tailscale0", "zt0", "wg0", "eth1"] {
+            assert_eq!(
+                derive_endpoints(
+                    "[::]:39217".parse().unwrap(),
+                    [
+                        any(interface, "100.64.0.1"),
+                        any(interface, "fd7a:115c:a1e0::2")
+                    ]
+                ),
+                [
+                    "http://100.64.0.1:39217",
+                    "http://[fd7a:115c:a1e0::2]:39217"
+                ]
+            );
         }
     }
     #[test]
@@ -263,7 +330,7 @@ mod tests {
             "10.1.0.3",
             "10.1.0.2",
             "100.64.0.1",
-            "fd7a:115c:a1e0::2",
+            "fd00::2",
             "100.64.0.1",
             "::ffff:100.64.0.1",
         ];
@@ -272,9 +339,9 @@ mod tests {
         assert_eq!(
             &result[..3],
             [
-                "http://100.64.0.1:39217",
-                "http://[fd7a:115c:a1e0::2]:39217",
-                "http://192.168.1.9:39217"
+                "http://192.168.1.9:39217",
+                "http://10.1.0.2:39217",
+                "http://10.1.0.3:39217",
             ]
         );
         assert_eq!(

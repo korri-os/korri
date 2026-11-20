@@ -121,7 +121,7 @@ async fn publishes_offer(path: NativePath) -> bool {
         moonlight_address: None,
     });
     controller
-        .offer_peer(snapshot, &signal, &StunList(Vec::new()), unix_time())
+        .offer_peer(snapshot, &signal, &StunList(Vec::new()))
         .await;
     let received = receiver.receive(unix_time()).await.unwrap();
     let offered = received.commands.iter().any(|command| {
@@ -561,7 +561,7 @@ async fn reach_read_pass_releases_next_offer_before_dead_relay_handshake_timeout
         .find(|snapshot| snapshot.device_public_key == peer)
         .unwrap();
     controller
-        .offer_peer(next, &signal, &StunList(Vec::new()), unix_time())
+        .offer_peer(next, &signal, &StunList(Vec::new()))
         .await;
     assert!(
         controller.pending.contains_key(&peer),
@@ -663,12 +663,9 @@ async fn reach_offer_advances_on_first_ack_and_keeps_the_bounded_fanout_alive() 
     let snapshot = fixture.devices.da.snapshot().unwrap().remove(0);
     let offered = timeout(
         Duration::from_secs(2),
-        fixture.controller.offer_peer(
-            snapshot,
-            &fixture.signal,
-            &StunList(Vec::new()),
-            unix_time(),
-        ),
+        fixture
+            .controller
+            .offer_peer(snapshot, &fixture.signal, &StunList(Vec::new())),
     )
     .await;
     if offered.is_err() {
@@ -706,12 +703,9 @@ async fn reach_reset_aborts_background_publication_and_closes_its_socket() {
     let snapshot = fixture.devices.da.snapshot().unwrap().remove(0);
     timeout(
         Duration::from_secs(2),
-        fixture.controller.offer_peer(
-            snapshot,
-            &fixture.signal,
-            &StunList(Vec::new()),
-            unix_time(),
-        ),
+        fixture
+            .controller
+            .offer_peer(snapshot, &fixture.signal, &StunList(Vec::new())),
     )
     .await
     .expect("working relay did not release offer");
@@ -739,12 +733,9 @@ async fn reach_drop_aborts_background_publication_and_closes_its_socket() {
     let snapshot = fixture.devices.da.snapshot().unwrap().remove(0);
     timeout(
         Duration::from_secs(2),
-        fixture.controller.offer_peer(
-            snapshot,
-            &fixture.signal,
-            &StunList(Vec::new()),
-            unix_time(),
-        ),
+        fixture
+            .controller
+            .offer_peer(snapshot, &fixture.signal, &StunList(Vec::new())),
     )
     .await
     .expect("working relay did not release offer");
@@ -842,7 +833,7 @@ async fn reach_sends_its_own_offer_before_an_unavailable_read_tail() {
     let exchange = tokio::spawn(async move {
         fixture
             .controller
-            .exchange_reach(&fixture.signal, &StunList(Vec::new()), unix_time())
+            .exchange_reach(&fixture.signal, &StunList(Vec::new()))
             .await;
     });
     let offered = timeout(Duration::from_secs(2), async {
@@ -999,7 +990,7 @@ async fn rebind_fixture() -> RebindFixture {
     let interfaces: InterfaceReader = Arc::new(move || {
         let mut addresses = interfaces::interface_addresses()?
             .into_iter()
-            .filter(|a| a.has_default_route && a.address.is_ipv4() && a.interface != "tailscale0")
+            .filter(|a| a.has_default_route && a.address.is_ipv4())
             .take(1)
             .collect::<Vec<_>>();
         if !reader.load(Ordering::SeqCst) {
@@ -1072,12 +1063,7 @@ impl RebindFixture {
     }
     async fn offer(&mut self) {
         self.controller
-            .offer_peer(
-                self.snapshot.clone(),
-                &self.signal,
-                &StunList(Vec::new()),
-                unix_time(),
-            )
+            .offer_peer(self.snapshot.clone(), &self.signal, &StunList(Vec::new()))
             .await;
     }
 }
@@ -1282,8 +1268,9 @@ async fn reach_repeated_offer_from_the_same_peer_endpoint_keeps_the_live_route()
     let mut fixture = live_route_fixture().await;
     let peer = fixture.fixture.devices.cb.public_key().unwrap();
     let route = fixture.fixture.devices.da.reach.connection(&peer).unwrap();
-    // Live peers re-offer to refresh relay eligibility. That must not replace
-    // a route that an active netplay or stream forward may be using.
+    // A peer whose own route has ended offers again while ours still looks
+    // live. That must not replace a route that an active netplay or stream
+    // forward may be using.
     let accepting = fixture.old.clone();
     let accepted = tokio::spawn(async move { accepting.accept().await.is_some() });
     let old = fixture.old.clone();
@@ -1590,4 +1577,108 @@ async fn reach_controller_minute_bounds_connections_per_relay() {
     }
     servers.abort_all();
     while servers.join_next().await.is_some() {}
+}
+
+/// The stored record of `fixture`'s peer, as the directory keeps it after
+/// its `expiration`: no current record, the remembered one expired.
+fn expire(snapshot: &mut crate::federation::PeerSnapshot, candidates: Vec<String>) {
+    let mut record = snapshot.current_endpoint.take().unwrap();
+    record.candidates = candidates;
+    record.issued_at = unix_time() - 7200;
+    record.expires_at = unix_time() - 3600;
+    assert!(
+        record.validate(unix_time()).is_err(),
+        "fixture record is not expired"
+    );
+    snapshot.remembered_endpoint = Some(record);
+}
+
+#[tokio::test]
+async fn reach_try_order_is_fresh_then_expired_addresses_then_relays() {
+    let mut fixture = rebind_fixture().await;
+    let peer = fixture.devices.cb.public_key().unwrap();
+    let live = fixture
+        .snapshot
+        .current_endpoint
+        .clone()
+        .unwrap()
+        .candidates;
+    // Fresh: a current record's candidates, after local discovery's.
+    let found = "http://192.0.2.44:39217".to_owned();
+    crate::federation::local_discovery::record_found(&peer, vec![found.clone()]);
+    let mut expected = vec![found.clone()];
+    expected.extend(live.clone());
+    assert_eq!(fixture.snapshot.dial_candidates(), expected);
+    // Expired: the stored record's last-known addresses are still tried,
+    // after every fresh address.
+    expire(
+        &mut fixture.snapshot,
+        vec!["http://192.0.2.45:39217".into()],
+    );
+    assert_eq!(
+        fixture.snapshot.dial_candidates(),
+        [found, "http://192.0.2.45:39217".to_owned()]
+    );
+    // Relays: only once no address answered does the peer get a relay offer.
+    fixture
+        .bindable
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    fixture.offer().await;
+    let offers = fixture.offers().await;
+    let state = fixture.devices.da.snapshot().unwrap()[0].state.clone();
+    fixture.controller.reset().await;
+    assert_eq!(offers, 1, "no relay offer after every address failed");
+    assert_ne!(state, PeerState::Ready);
+}
+
+#[tokio::test]
+async fn reach_peer_reachable_only_by_an_expired_address_connects_without_a_relay() {
+    let mut fixture = rebind_fixture().await;
+    let live = fixture
+        .snapshot
+        .current_endpoint
+        .clone()
+        .unwrap()
+        .candidates;
+    expire(&mut fixture.snapshot, live);
+    // The endpoint cannot bind, so no relay offer can leave this device.
+    fixture.offer().await;
+    let offers = fixture.offers().await;
+    let state = fixture.devices.da.snapshot().unwrap()[0].state.clone();
+    fixture.controller.reset().await;
+    assert_eq!(offers, 0, "the relays carried this contact");
+    assert_eq!(
+        state,
+        PeerState::Ready,
+        "the expired record's last-known address was not tried"
+    );
+}
+
+#[tokio::test]
+async fn reach_live_iroh_route_gets_no_relay_refresh_until_it_ends() {
+    let mut fixture = live_route_fixture().await;
+    let peer = fixture.fixture.devices.cb.public_key().unwrap();
+    // Several controller passes while the connection is up send nothing.
+    for _ in 0..3 {
+        fixture.fixture.offer().await;
+    }
+    let while_connected = fixture.fixture.offers().await;
+    assert!(fixture.fixture.controller.pending.is_empty());
+    // The connection ends: the next pass offers through the relays again.
+    fixture
+        .fixture
+        .devices
+        .da
+        .reach
+        .connection(&peer)
+        .unwrap()
+        .close(0u32.into(), b"test ends the route");
+    fixture.fixture.offer().await;
+    let after = fixture.fixture.offers().await;
+    fixture.close().await;
+    assert_eq!(while_connected, 0, "a live iroh route got a relay refresh");
+    assert_eq!(
+        after, 1,
+        "relay offers did not resume after the route ended"
+    );
 }

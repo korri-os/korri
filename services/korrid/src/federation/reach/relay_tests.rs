@@ -97,7 +97,7 @@ async fn reach_relay_uses_an_actual_fallback_port_and_unmetered_loss_stops_it() 
 }
 
 #[test]
-fn reach_relay_addresses_are_bounded_and_never_loopback_or_tailscale() {
+fn reach_relay_addresses_follow_the_candidate_rule_and_are_bounded() {
     let mut answer = signal::Answer {
         endpoint_id: iroh::SecretKey::generate().public().to_string(),
         direct_addresses: Vec::new(),
@@ -110,12 +110,18 @@ fn reach_relay_addresses_are_bounded_and_never_loopback_or_tailscale() {
     for address in [
         "127.0.0.1:443",
         "[::1]:443",
-        "100.64.0.1:443",
-        "[fd7a:115c:a1e0::1]:443",
+        "169.254.1.2:443",
+        "[fe80::1]:443",
+        "[::ffff:192.168.1.2]:443",
         "192.168.1.2:0",
     ] {
         answer.relay_addresses = vec![address.parse().unwrap()];
-        assert!(answer.validate(100).is_err());
+        assert!(answer.validate(100).is_err(), "{address}");
+    }
+    // Test fixture: a private network's addresses are ordinary listeners.
+    for address in ["100.64.0.1:443", "[fd7a:115c:a1e0::1]:443", "[fd00::1]:443"] {
+        answer.relay_addresses = vec![address.parse().unwrap()];
+        assert!(answer.validate(100).is_ok(), "{address}");
     }
     answer.relay_addresses = vec!["192.168.1.2:443".parse().unwrap(); 9];
     assert!(answer.validate(100).is_err());
@@ -131,19 +137,31 @@ fn reach_relay_addresses_are_bounded_and_never_loopback_or_tailscale() {
             has_default_route: default,
         }
     };
+    // Every candidate listens, default-route interfaces first; no interface
+    // name or address range is singled out.
     assert_eq!(
         relay::listener_ips(&[
             entry("eth0", "192.168.1.2", true),
             entry("docker0", "172.17.0.1", false),
             entry("tailscale0", "100.64.0.1", false),
             entry("eth0", "2001:db8::1", true),
-            entry("eth0", "fd00::1", true)
+            entry("eth0", "fd00::1", true),
+            entry("eth0", "fe80::1", true),
+            entry("eth0", "169.254.7.7", true),
+            entry("lo", "127.0.0.1", false),
         ]),
         [
             "192.168.1.2".parse::<std::net::IpAddr>().unwrap(),
-            "2001:db8::1".parse().unwrap()
+            "2001:db8::1".parse().unwrap(),
+            "fd00::1".parse().unwrap(),
+            "172.17.0.1".parse().unwrap(),
+            "100.64.0.1".parse().unwrap(),
         ]
     );
+    let many: Vec<_> = (1..=12)
+        .map(|n| entry(&format!("veth{n}"), &format!("10.0.0.{n}"), false))
+        .collect();
+    assert_eq!(relay::listener_ips(&many).len(), 8);
 }
 
 #[test]

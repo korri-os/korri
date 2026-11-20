@@ -1,7 +1,10 @@
 //! An embedded relay, never a third-party traffic service. Its authenticated
 //! Ed25519 clients must have a current, device-signed membership binding.
 use super::policy::{RelayEnvironment, RelayFacts};
-use crate::federation::{interfaces::InterfaceAddress, FederationDirectory};
+use crate::federation::{
+    interfaces::{is_candidate, InterfaceAddress},
+    FederationDirectory,
+};
 use iroh::EndpointId;
 use iroh_relay::server::{Access, AccessControl, ClientRequest, RelayConfig, Server, ServerConfig};
 use std::{
@@ -67,35 +70,20 @@ impl AccessControl for Membership {
     }
 }
 
-pub(super) fn is_tailscale(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(ip) => u32::from(ip) & 0xffc00000 == 0x64400000,
-        IpAddr::V6(ip) => {
-            ip.segments()[..3] == [0xfd7a, 0x115c, 0xa1e0]
-                || ip.to_ipv4_mapped().is_some_and(|v| is_tailscale(v.into()))
-        }
-    }
-}
-pub(super) fn allowed_relay_ip(ip: IpAddr) -> bool {
-    if ip.is_unspecified() || ip.is_loopback() || ip.is_multicast() || is_tailscale(ip) {
-        return false;
-    }
-    match ip {
-        IpAddr::V4(ip) => !ip.is_broadcast() && !ip.is_link_local() && ip.octets()[0] != 0,
-        IpAddr::V6(ip) => !ip.is_unicast_link_local() && ip.to_ipv4_mapped().is_none(),
-    }
-}
+/// A relay-duty listener binds every candidate address (ADR 0089), with the
+/// default-route interfaces first so the existing eight-listener bound keeps
+/// the real LAN. Which listener a peer can reach is learned by trying it.
 pub(super) fn listener_ips(addresses: &[InterfaceAddress]) -> Vec<IpAddr> {
-    addresses
+    let mut addresses: Vec<_> = addresses
         .iter()
-        .filter(|a| a.interface != "tailscale0" && allowed_relay_ip(a.address))
-        .filter(|a| match a.address {
-            IpAddr::V4(ip) => a.has_default_route && ip.is_private(),
-            // ULA is not reachable from other networks. Do not advertise it
-            // as the globally reachable IPv6 relay case.
-            IpAddr::V6(ip) => !ip.is_unique_local(),
-        })
+        .filter(|a| is_candidate(a.address) && a.address.to_canonical() == a.address)
+        .collect();
+    addresses.sort_by_key(|a| !a.has_default_route);
+    let mut seen = std::collections::BTreeSet::new();
+    addresses
+        .into_iter()
         .map(|a| a.address)
+        .filter(|ip| seen.insert(*ip))
         .take(8)
         .collect()
 }

@@ -226,15 +226,17 @@ impl Controller {
         let addresses = (self.environment.interfaces)()?;
         let ips = addresses
             .iter()
-            .filter(|a| a.interface != "tailscale0" && relay::allowed_relay_ip(a.address))
+            .filter(|a| {
+                interfaces::is_candidate(a.address) && a.address.to_canonical() == a.address
+            })
             .map(|a| a.address)
             .collect::<BTreeSet<_>>();
         if ips.is_empty() {
-            return Err(io::Error::other("no non-VPN interface"));
+            return Err(io::Error::other("no candidate interface address"));
         }
         // Same-port public STUN precedes bind. Builder::empty has no address
-        // lookup and no relay defaults. Explicit interface binds exclude VPNs
-        // from QUIC's internal address exchange too, not only from the signal.
+        // lookup and no relay defaults. Every candidate address is bound, so
+        // QUIC's own address exchange sees the same pool as the signal.
         let (port, external) = stun::discover(&stun.0, &self.directory.reach.diagnostics).await?;
         let mut builder = Builder::empty()
             .crypto_provider(iroh::tls::default_provider())
@@ -502,7 +504,7 @@ impl Controller {
                 .write()
                 .expect("relay answers")
                 .retain(|_, (expires, _)| *expires > now);
-            if !self.exchange_reach(&signal, &stun, now).await {
+            if !self.exchange_reach(&signal, &stun).await {
                 continue;
             }
             while self.tasks.try_join_next().is_some() {}
@@ -513,7 +515,6 @@ impl Controller {
         &mut self,
         signal: &CoordinatedRelays<T>,
         stun: &StunList,
-        now: u64,
     ) -> bool {
         let Ok(peers) = self.directory.snapshot() else {
             self.reset().await;
@@ -547,7 +548,7 @@ impl Controller {
         // still take the full operation bound. Send fresh offers before that
         // wait, rather than making every recovering peer wait for the tail.
         for peer in peers.into_iter().take(1024) {
-            self.offer_peer(peer, signal, stun, now).await;
+            self.offer_peer(peer, signal, stun).await;
         }
         self.receive_reach(signal, stun, unix_time()).await;
         true
@@ -766,47 +767,34 @@ impl Controller {
         peer: crate::federation::PeerSnapshot,
         signal: &CoordinatedRelays<T>,
         stun: &StunList,
-        now: u64,
     ) {
         let device = peer.device_public_key.clone();
-        let live = self.directory.reach.connection(&device).is_some();
-        let wait = if live {
-            // Refresh current relay eligibility even on an existing
-            // connection. A 60-second answer is not a durable record.
-            self.relaying
-                .read()
-                .expect("relay answers")
-                .get(&device)
-                .is_some_and(|(expires, _)| *expires > now.saturating_add(30))
-        } else {
-            self.retry
-                .get(&device)
-                .is_some_and(|(at, _)| *at > Instant::now())
-        };
+        // ADR 0089: while an iroh connection to this peer is up, the
+        // connection keeps its own paths current. Send no relay refresh for
+        // it; offers resume on the first pass after the connection ends.
+        if self.directory.reach.connection(&device).is_some() {
+            return;
+        }
+        let wait = self
+            .retry
+            .get(&device)
+            .is_some_and(|(at, _)| *at > Instant::now());
         if self.pending.contains_key(&device) || wait {
             return;
         }
         let Ok(token) = self.directory.begin_peer_work(&device) else {
             return;
         };
-        let failures = if live {
-            0
-        } else {
-            self.retry.get(&device).map_or(0, |(_, n)| *n)
-        };
+        let failures = self.retry.get(&device).map_or(0, |(_, n)| *n);
         let attempt = (
             Instant::now() + retry_delay(failures),
             failures.saturating_add(1),
         );
         self.retry.insert(device.clone(), attempt);
-        let mut candidates = peer
-            .current_endpoint
-            .or(peer.remembered_endpoint)
-            .map(|e| e.candidates)
-            .unwrap_or_default();
-        super::nearby_seam::prepend(&device, &mut candidates);
-        // Existing LAN/VPN race first. Do not send HTTP to every route.
-        // A successful signed read clears the error.
+        // ADR 0089 try order: fresh addresses, then an expired record's
+        // last-known addresses, and only then the relays below. Do not send
+        // HTTP to every route. A successful signed read clears the error.
+        let candidates = peer.dial_candidates();
         if let Ok(index) = connect::select_origin(&candidates).await {
             let client = crate::upstream_native::NativeClient::new_secure(
                 candidates[index].clone(),
@@ -1027,14 +1015,12 @@ impl Dialer {
                         .lock()
                         .expect("reach recovery")
                         .failed(&device);
-                    let mut candidates = directory
+                    let candidates = directory
                         .snapshot()
                         .ok()
                         .and_then(|peers| peers.into_iter().find(|p| p.device_public_key == device))
-                        .and_then(|p| p.current_endpoint.or(p.remembered_endpoint))
-                        .map(|e| e.candidates)
+                        .map(|p| p.dial_candidates())
                         .unwrap_or_default();
-                    super::nearby_seam::prepend(&device, &mut candidates);
                     let native = crate::upstream_native::NativeClient::new_secure_candidates(
                         candidates,
                         device.clone(),
@@ -1123,7 +1109,7 @@ pub(super) fn endpoint_addresses(endpoint: &Endpoint) -> Vec<SocketAddr> {
         .addrs
         .into_iter()
         .filter_map(|a| match a {
-            TransportAddr::Ip(a) if !relay::is_tailscale(a.ip()) => Some(a),
+            TransportAddr::Ip(a) => Some(a),
             _ => None,
         })
         .take(16)
@@ -1137,9 +1123,7 @@ pub(super) async fn connect_iroh(
 ) -> io::Result<Connection> {
     let mut address = EndpointAddr::new(id);
     for direct in addresses {
-        if !relay::is_tailscale(direct.ip()) {
-            address.addrs.insert(TransportAddr::Ip(direct));
-        }
+        address.addrs.insert(TransportAddr::Ip(direct));
     }
     let started = Instant::now();
     if let Ok(Ok(connection)) = timeout(

@@ -771,6 +771,12 @@ async fn main() {
         resources.clone(),
         nearby_stopped,
     ));
+    // ADR 0089: devices on one local network find each other with no server.
+    let local_discovery = tokio::spawn(korrid::federation::local_discovery::run(
+        resources.directory.clone(),
+        resources.credentials.clone(),
+        address,
+    ));
     let (lan_router, local_control_router, cli_router, host_runtime) = match mode {
         Mode::Brain => (
             brain_router(resources, wake)
@@ -865,6 +871,9 @@ async fn main() {
     let result = serve_with_discovery(serving, shutdown, wake, discovery).await;
     let _ = stop_nearby.send(());
     nearby.await.expect("stop nearby link");
+    // Dropping the task sends the announcement's goodbye.
+    local_discovery.abort();
+    let _ = local_discovery.await;
     if let Some(runtime) = host_runtime {
         if let Err(error) = runtime.shutdown_sessions().await {
             eprintln!("korrid shutdown: {}", error.message);

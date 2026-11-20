@@ -3,6 +3,7 @@
 pub(crate) mod connect;
 pub mod coordinator;
 pub mod interfaces;
+pub mod local_discovery;
 pub mod reach;
 mod store;
 
@@ -91,6 +92,29 @@ pub struct PeerSnapshot {
     pub last_seen: u64,
     pub state: PeerState,
     pub updated_at: u64,
+}
+
+impl PeerSnapshot {
+    /// ADR 0089 try order before the relays: fresh addresses first (the
+    /// nearby link, local discovery, a current endpoint record), then the
+    /// last-known addresses of the stored record after it expired. An
+    /// expired record is a dial candidate only, never proof of liveness: a
+    /// wrong address fails the device-key check. The relays come last, in
+    /// the reach controller.
+    pub(crate) fn dial_candidates(&self) -> Vec<String> {
+        let current = self.current_endpoint.as_ref();
+        let expired = self
+            .remembered_endpoint
+            .as_ref()
+            .filter(|_| current.is_none());
+        let mut candidates: Vec<String> = current
+            .into_iter()
+            .chain(expired)
+            .flat_map(|endpoint| endpoint.candidates.iter().cloned())
+            .collect();
+        reach::nearby_seam::prepend(&self.device_public_key, &mut candidates);
+        candidates
+    }
 }
 
 /// Must accompany results of asynchronous work. Identity and configuration
