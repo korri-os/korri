@@ -122,17 +122,27 @@ pub(super) struct Grant {
 
 impl Queue {
     /// Write the order when it changed: the running install, then the line.
+    /// A kept install that is in neither, because its task stopped with
+    /// korrid, keeps its place after them: only its end removes it.
     pub(super) fn persist(&mut self) {
         let Some(private_root) = self.private_root.clone() else {
             return;
         };
-        let order: Vec<Member> = self
+        let mut order: Vec<Member> = self
             .running
             .iter()
             .map(|running| &running.base)
             .chain(self.waiting.iter())
             .filter_map(|key| self.members.get(key).cloned())
             .collect();
+        let kept: Vec<Member> = self
+            .written
+            .iter()
+            .flatten()
+            .filter(|member| !order.contains(member) && self.members.values().any(|m| m == *member))
+            .cloned()
+            .collect();
+        order.extend(kept);
         if self.written.as_ref() == Some(&order) {
             return;
         }
@@ -318,12 +328,22 @@ impl TurnWait {
     }
 }
 
+impl TurnWait {
+    /// The install ended: it leaves the person's order too.
+    pub(super) fn end(&self) {
+        let mut queue = self.queue.lock().expect("acquisition queue mutex poisoned");
+        queue.members.remove(&self.key);
+        queue.persist();
+    }
+}
+
+/// Dropping a place leaves the line in memory. Only `end` removes a kept
+/// install from the order file, so a korrid that stops keeps its order.
 impl Drop for TurnWait {
     fn drop(&mut self) {
         let mut queue = self.queue.lock().expect("acquisition queue mutex poisoned");
         queue.tickets.remove(&self.key);
         queue.waiting.retain(|item| *item != self.key);
-        queue.members.remove(&self.key);
         queue.persist();
     }
 }

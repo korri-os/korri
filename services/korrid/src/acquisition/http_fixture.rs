@@ -20,6 +20,9 @@ pub(super) struct Route {
     /// Repeat the request's own `Authorization` header in the response, as a
     /// debugging endpoint or an error page does.
     pub echo_authorization: Option<Echo>,
+    /// Serve `Range: bytes=<n>-` as 206 when `If-Range` names this entity
+    /// tag, which every response carries (RFC 9110 sections 14 and 13.1.5).
+    pub etag: Option<String>,
 }
 
 /// Where a route repeats the request's `Authorization` header.
@@ -68,7 +71,13 @@ impl Route {
             pace: None,
             unsized_body: false,
             echo_authorization: None,
+            etag: None,
         }
+    }
+    /// Answer ranges for this strong entity tag.
+    pub fn ranges(mut self, etag: &str) -> Self {
+        self.etag = Some(etag.into());
+        self
     }
     pub fn unsized_body(mut self) -> Self {
         self.unsized_body = true;
@@ -89,6 +98,7 @@ impl Route {
             pace: None,
             unsized_body: false,
             echo_authorization: None,
+            etag: None,
         }
     }
     pub fn echoing(mut self, echo: Echo) -> Self {
@@ -178,7 +188,7 @@ impl HttpFixture {
                     log.lock().unwrap().push(Received {
                         method,
                         path: path.clone(),
-                        headers,
+                        headers: headers.clone(),
                         body,
                     });
                     let queued = queues.lock().unwrap().get_mut(&path).and_then(|queue| {
@@ -197,6 +207,7 @@ impl HttpFixture {
                             pace: None,
                             unsized_body: false,
                             echo_authorization: None,
+                            etag: None,
                         });
                     let sent = authorization.clone().unwrap_or_default();
                     let body_with = |value: serde_json::Value| {
@@ -260,6 +271,33 @@ impl HttpFixture {
                             ));
                         }
                         None => {}
+                    }
+                    if let Some(etag) = route.etag.clone() {
+                        let value = |name: &str| {
+                            headers.iter().find_map(|header| {
+                                header.strip_prefix(&format!("{name}: ")).map(str::to_owned)
+                            })
+                        };
+                        let start = value("range")
+                            .and_then(|range| {
+                                range
+                                    .strip_prefix("bytes=")?
+                                    .strip_suffix('-')?
+                                    .parse()
+                                    .ok()
+                            })
+                            .filter(|_| value("if-range").as_deref() == Some(etag.as_str()));
+                        if let Some(start) = start.filter(|start: &usize| *start < route.body.len())
+                        {
+                            let total = route.body.len();
+                            route.status = 206;
+                            route.headers.push((
+                                "Content-Range".into(),
+                                format!("bytes {start}-{}/{total}", total - 1),
+                            ));
+                            route.body = route.body[start..].to_vec();
+                        }
+                        route.headers.push(("ETag".into(), etag));
                     }
                     let mut head = format!("HTTP/1.1 {} Status\r\n", route.status);
                     let declares_length = route

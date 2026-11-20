@@ -933,22 +933,26 @@ impl Pipeline {
         mut self,
         cancelled: watch::Receiver<bool>,
     ) -> (AcquireJobState, Option<(PathBuf, InstallRecord)>) {
-        let state = match self.steps(cancelled).await {
+        let mut wait = self.turn.take().expect("one turn per job");
+        let state = match self.steps(&mut wait, cancelled).await {
             Ok(state) | Err(state) => state,
         };
+        // The install ends here and leaves the person's order. A korrid
+        // that stops before this keeps it there.
+        wait.end();
         let discard = (!self.keep).then(|| (self.staging.clone(), self.record.clone()));
         (state, discard)
     }
 
     async fn steps(
         &mut self,
+        wait: &mut super::TurnWait,
         mut cancelled: watch::Receiver<bool>,
     ) -> Result<AcquireJobState, AcquireJobState> {
         // ADR 0013 queue: one download at a time, in the order asked. The
         // job reports Queued while it waits; cancel leaves the queue. ADR
         // 0092: a launch can pause the download; it keeps its bytes, waits
         // again and resolves a fresh link when its turn comes back.
-        let mut wait = self.turn.take().expect("one turn per job");
         let (_turn, downloaded, name, rules) = loop {
             let mut turn = tokio::select! {
                 biased;
@@ -976,7 +980,7 @@ impl Pipeline {
             let flag = cancelled.clone();
             let validator = self.record.validator();
             let (job, staging) = (self.job.clone(), self.staging.clone());
-            let mut record = self.record.clone();
+            let record = Mutex::new(self.record.clone());
             let fetched = tokio::select! {
                 biased;
                 _ = cancelled.changed() => return Err(AcquireJobState::Cancelled),
@@ -984,6 +988,7 @@ impl Pipeline {
                 downloaded = self.engine.fetch_game_into(
                     &request, &self.provider.hosts, &staged, validator.as_ref(),
                     |validator| {
+                        let mut record = record.lock().expect("record mutex poisoned");
                         record.keep_validator(validator);
                         if let Err(error) = record.save(&staging) {
                             eprintln!("korrid acquisition: the install record was not saved: {}", error.rpc().message);
@@ -999,16 +1004,17 @@ impl Pipeline {
                             };
                         }
                     },
-                ) => Some((downloaded, record)),
+                ) => Some(downloaded),
             };
+            // A pause keeps the validator of the bytes for the next turn.
+            self.record = record.into_inner().expect("record mutex poisoned");
             match fetched {
                 // Paused for a launch: the bytes stay, the turn goes back.
                 None => {
                     self.set(AcquireJobState::Queued);
                     continue;
                 }
-                Some((downloaded, record)) => {
-                    self.record = record;
+                Some(downloaded) => {
                     let downloaded = downloaded.map_err(|error| {
                         self.keep = matches!(error, Failure::Network | Failure::Stalled);
                         download_failed(error)

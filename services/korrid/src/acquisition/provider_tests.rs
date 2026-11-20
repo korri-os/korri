@@ -382,9 +382,12 @@ impl World {
         self.coordinator.acquire(&self.context, &request(id)).await
     }
     async fn finish(&self, job: AcquireJobStatus) -> AcquireJobStatus {
+        self.finish_on(&self.coordinator, &job.job_id).await
+    }
+    async fn finish_on(&self, coordinator: &AcquisitionCoordinator, job: &str) -> AcquireJobStatus {
         tokio::time::timeout(Duration::from_secs(20), async {
             loop {
-                let status = self.api().status(&job.job_id).unwrap();
+                let status = coordinator.games.status(job).unwrap();
                 if !matches!(
                     status.state,
                     AcquireJobState::Queued
@@ -1941,4 +1944,262 @@ async fn a_nested_playlist_routes_to_the_outer_playlist() {
     let key = discovered(&world, "psx", &files, "Game.m3u");
     let ready = world.installs().join(key.strip_prefix("sha256:").unwrap());
     assert_eq!(world.route(&game), Some(ready.join("Game.m3u")));
+}
+
+/// ADR 0092 (#551): a site that answers byte ranges for one entity tag, and
+/// a game slow enough to interrupt.
+const RESUMABLE: usize = 64 * 1024;
+const ETAG: &str = "\"slow-v1\"";
+
+fn resumable_site() -> (HttpFixture, Vec<u8>) {
+    let server = site();
+    let body: Vec<u8> = (0..RESUMABLE).map(|index| (index % 251) as u8).collect();
+    server.route(
+        "/files/slow.gba",
+        Route::ok("application/octet-stream", body.clone())
+            .paced(1024, Duration::from_millis(20))
+            .ranges(ETAG),
+    );
+    (server, body)
+}
+
+fn runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+}
+
+async fn downloading_past(coordinator: &AcquisitionCoordinator, job: &str, bytes: u64) {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !matches!(coordinator.games.status(job).unwrap().state,
+            AcquireJobState::Downloading { bytes_done, .. } if bytes_done >= bytes)
+        {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
+/// The range requests that reached the game file, as `(range, if-range)`.
+fn game_requests(world: &World) -> Vec<(Option<String>, Option<String>)> {
+    world
+        .server
+        .received()
+        .iter()
+        .filter(|request| request.path == "/files/slow.gba")
+        .map(|request| {
+            let value = |name: &str| {
+                request
+                    .headers
+                    .iter()
+                    .find_map(|header| header.strip_prefix(&format!("{name}: ")).map(str::to_owned))
+            };
+            (value("range"), value("if-range"))
+        })
+        .collect()
+}
+
+/// ADR 0092 acceptance for #551: korrid stops in the middle of an install.
+/// The next korrid finds the install in its line, asks the provider for the
+/// rest of the staged bytes, and finishes the same job.
+#[test]
+fn a_korrid_restart_interrupts_an_install_and_the_next_korrid_resumes_its_bytes() {
+    let host = runtime();
+    let _host = host.enter();
+    let (server, body) = resumable_site();
+    let world = world_with(server, None);
+    let private = world.context.private_root.clone();
+    let staging = world.cache().join(".downloads");
+
+    // The first korrid starts the install and dies in the middle of it.
+    let first = runtime();
+    let job = first.block_on(async {
+        world.search().await;
+        let job = world.acquire("slow").await.unwrap();
+        downloading_past(&world.coordinator, &job.job_id, 8 * 1024).await;
+        job
+    });
+    first.shutdown_timeout(Duration::from_secs(5));
+    let staged = staging.join(format!("{STAGING_PREFIX}{}", job.job_id));
+    let kept = fs::metadata(&staged).unwrap().len() as usize;
+    assert!(kept >= 8 * 1024 && kept < RESUMABLE, "{kept}");
+    assert_eq!(fs::read(&staged).unwrap(), body[..kept]);
+    let record: serde_json::Value = serde_json::from_slice(
+        &fs::read(staging.join(format!("{STAGING_PREFIX}{}.json", job.job_id))).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        record,
+        serde_json::json!({
+            "jobId": job.job_id, "providerId": PROVIDER, "id": "slow",
+            "url": world.server.url(HOST, "/game/slow"), "title": "Slow", "system": "gba",
+            "etag": ETAG.to_ascii_lowercase(),
+        })
+    );
+    let order = super::install::order_path(&private);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&fs::read(&order).unwrap()).unwrap(),
+        serde_json::json!([{ "job": job.job_id }])
+    );
+
+    // The next korrid: a new line, no claims or jobs in memory.
+    let second = runtime();
+    let restarted = AcquisitionCoordinator {
+        engine: DownloadEngine::for_test(Duration::from_secs(5)),
+        sleep: sleep::SleepBlock::InMemory(Arc::default()),
+        games: GameAcquisition::with_engine(engine()),
+        ..Default::default()
+    };
+    let done = second.block_on(async {
+        restarted
+            .recover_installs(
+                &world.root,
+                &private,
+                &world.context.registry,
+                Some(&world.context),
+            )
+            .unwrap();
+        assert_eq!(restarted.line(), [super::Member::Job(job.job_id.clone())]);
+        world.finish_on(&restarted, &job.job_id).await
+    });
+    let game_id = imported(&done);
+    assert_eq!(done.job_id, job.job_id, "the same install, not a new one");
+
+    // One request for the whole file, then one for the rest of it, tied to
+    // the bytes korrid kept by their entity tag.
+    let requests = game_requests(&world);
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    assert_eq!(requests[0], (None, None));
+    assert_eq!(
+        requests[1],
+        (
+            Some(format!("bytes={kept}-")),
+            Some(ETAG.to_ascii_lowercase())
+        )
+    );
+    let ready = world.installs().join(sha_hex(&body));
+    assert_eq!(fs::read(ready.join("slow.gba")).unwrap(), body);
+    assert_eq!(
+        world.snapshot().library[&game_id].releases[0]
+            .identity
+            .as_ref()
+            .unwrap()
+            .value(),
+        format!("sha256:{}", sha_hex(&body))
+    );
+    assert!(names(&staging).is_empty(), "no record, no staged bytes");
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&fs::read(&order).unwrap()).unwrap(),
+        serde_json::json!([])
+    );
+    second.shutdown_timeout(Duration::from_secs(5));
+}
+
+/// ADR 0092: play-here goes to the front of the line. The provider download
+/// that runs pauses with its bytes, and resumes with a range after it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_front_install_pauses_a_provider_download_which_resumes_with_a_range() {
+    let (server, body) = resumable_site();
+    let world = world_with(server, None);
+    world.search().await;
+    let slow = world.acquire("slow").await.unwrap();
+    downloading_past(&world.coordinator, &slow.job_id, 8 * 1024).await;
+    let first = world
+        .coordinator
+        .acquire_at(&world.context, &request("2048"), super::Place::Front)
+        .await
+        .unwrap();
+    let first = world.finish(first).await;
+    imported(&first);
+    let done = world.finish(slow).await;
+    imported(&done);
+    let requests = game_requests(&world);
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    let range = requests[1].0.clone().expect("the resume asked for a range");
+    let start: usize = range
+        .strip_prefix("bytes=")
+        .and_then(|range| range.strip_suffix('-'))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(start >= 8 * 1024, "{range}");
+    let ready = world.installs().join(sha_hex(&body));
+    assert_eq!(fs::read(ready.join("slow.gba")).unwrap(), body);
+}
+
+/// ADR 0092: the person reorders the line; the running install keeps
+/// running, and the order file keeps the new order for a restart.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_line_can_be_reordered_and_the_order_is_kept() {
+    let (server, _) = resumable_site();
+    let world = world_with(server, None);
+    world.search().await;
+    let slow = world.acquire("slow").await.unwrap();
+    downloading_past(&world.coordinator, &slow.job_id, 1).await;
+    let a = world.acquire("2048").await.unwrap();
+    let b = world.acquire("tetris").await.unwrap();
+    let job = |status: &AcquireJobStatus| super::Member::Job(status.job_id.clone());
+    assert_eq!(world.coordinator.line(), [job(&slow), job(&a), job(&b)]);
+    assert!(world.coordinator.reorder(&job(&b), 0));
+    assert_eq!(world.coordinator.line(), [job(&slow), job(&b), job(&a)]);
+    assert!(
+        !world.coordinator.reorder(&job(&slow), 1),
+        "the running one does not wait"
+    );
+    let order: Vec<super::Member> = serde_json::from_slice(
+        &fs::read(super::install::order_path(&world.context.private_root)).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(order, [job(&slow), job(&b), job(&a)]);
+    world.api().cancel(&slow.job_id).await.unwrap();
+    world.api().cancel(&a.job_id).await.unwrap();
+    world.api().cancel(&b.job_id).await.unwrap();
+}
+
+/// ADR 0092: an install resumes when its source returns. A connection that
+/// breaks keeps the bytes and the record; the next Get of the claim takes
+/// the same job and asks only for the rest.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_broken_download_keeps_its_bytes_and_the_next_get_resumes_it() {
+    let (server, body) = resumable_site();
+    let half = RESUMABLE / 2;
+    server.route(
+        "/files/slow.gba",
+        Route::ok("application/octet-stream", body[..half].to_vec())
+            .header("Content-Length", &RESUMABLE.to_string())
+            .ranges(ETAG),
+    );
+    let world = world_with(server, None);
+    world.search().await;
+    let broken = world.get("slow").await;
+    assert!(
+        matches!(broken.state, AcquireJobState::Failed { .. }),
+        "{broken:?}"
+    );
+    let staging = world.cache().join(".downloads");
+    let staged = staging.join(format!("{STAGING_PREFIX}{}", broken.job_id));
+    assert_eq!(fs::read(&staged).unwrap(), body[..half]);
+    assert!(staging
+        .join(format!("{STAGING_PREFIX}{}.json", broken.job_id))
+        .is_file());
+
+    world.server.route(
+        "/files/slow.gba",
+        Route::ok("application/octet-stream", body.clone()).ranges(ETAG),
+    );
+    let done = world.get("slow").await;
+    imported(&done);
+    assert_eq!(done.job_id, broken.job_id);
+    assert_eq!(
+        game_requests(&world)[1],
+        (
+            Some(format!("bytes={half}-")),
+            Some(ETAG.to_ascii_lowercase())
+        )
+    );
+    assert!(names(&staging).is_empty());
+    let ready = world.installs().join(sha_hex(&body));
+    assert_eq!(fs::read(ready.join("slow.gba")).unwrap(), body);
 }
