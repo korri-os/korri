@@ -1639,8 +1639,8 @@ impl Host {
     /// plugin, accept only a new review of the exact installed package and
     /// provenance, for example after the host policy changed its approval.
     /// That is the existing update intent and keeps the desired state. Any
-    /// other selection for an installed plugin needs `repository update` or
-    /// `repository switch`, which the socket does not offer.
+    /// other selection for an installed plugin needs `repository update`
+    /// (the socket's `Update`) or `repository switch`, which it does not offer.
     pub fn install_reviewed(&self, report: Report, approval: &str) -> Result<(), Refusal> {
         self.graph_update_pending()?;
         validate_id(&report.id)?;
@@ -6725,6 +6725,77 @@ mod tests {
             host.status(&selected.id).unwrap().unwrap().approval,
             selected.approval
         );
+    }
+
+    /// The admin socket's Update is `repository update`: the receipt's source,
+    /// the exact reviewed digest, and the plugin keeps its on/off state.
+    #[test]
+    fn admin_update_moves_an_installed_plugin_to_a_new_release_from_its_own_source() {
+        use crate::admin::*;
+        let root = tempfile::tempdir().unwrap();
+        let source = "https://plugins.example/catalog.json";
+        let selected = repository_report("@test:clock", "clock-v1", source, "v1");
+        let next = repository_report("@test:clock", "clock-v2", source, "v2");
+        // The same release at another source must never be chosen.
+        let elsewhere = repository_report(
+            "@test:clock",
+            "clock-v3",
+            "https://other.example/catalog.json",
+            "v3",
+        );
+        let runtime = runtime(&[selected.clone(), next.clone(), elsewhere.clone()]);
+        let host = Host::for_test(
+            root.path(),
+            PathBuf::from("/unavailable-nix"),
+            permitted_policy(),
+            runtime.clone(),
+        )
+        .unwrap();
+        host.install_reviewed(selected.clone(), &selected.approval)
+            .unwrap();
+        host.set_enabled(&selected.id, true).unwrap();
+        let config = admin_configuration(None);
+        let update = |release: &str, approval: &str| {
+            handle(
+                &host,
+                &config,
+                PluginAdminRequest::Update(PluginUpdateRequest {
+                    plugin_id: selected.id.clone(),
+                    release_version: release.into(),
+                    approval: approval.into(),
+                }),
+            )
+        };
+        // Another release's digest does not approve this one.
+        let (code, _) = admin_failure(update("v2", &selected.approval));
+        assert_eq!(code, CODE_REFUSED);
+        let (code, _) = admin_failure(update("v3", &elsewhere.approval));
+        assert_eq!(code, CODE_REFUSED);
+        assert_eq!(
+            host.status(&selected.id).unwrap().unwrap().package,
+            selected.package
+        );
+        assert_eq!(
+            update("v2", &next.approval),
+            PluginAdminResponse::Applied(PluginChangeApplied {})
+        );
+        let receipt = host.status(&selected.id).unwrap().unwrap();
+        assert_eq!(receipt.package, next.package);
+        assert_eq!(receipt.provenance, next.provenance);
+        assert_eq!(receipt.approval, next.approval);
+        assert_eq!(receipt.desired, Desired::Enabled);
+        // A plugin that is not installed has no source to update from.
+        let (code, message) = admin_failure(handle(
+            &host,
+            &config,
+            PluginAdminRequest::Update(PluginUpdateRequest {
+                plugin_id: "@test:missing".into(),
+                release_version: "v1".into(),
+                approval: "x".into(),
+            }),
+        ));
+        assert_eq!(code, CODE_REFUSED);
+        assert_eq!(message, "plugin is not installed");
     }
     #[test]
     #[ignore = "requires writable build-machine Nix; no device services or shared-data cleanup"]

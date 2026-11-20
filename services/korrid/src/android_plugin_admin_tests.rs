@@ -103,6 +103,58 @@ fn catalog_offers_only_android_releases_and_install_needs_trust_and_review() {
 }
 
 #[test]
+fn update_uses_the_installed_source_and_keeps_an_off_plugin_off() {
+    let nar = nar_of(&[("manifest.json", &manifest("")), ("plugin.ts", b"x")]);
+    let f = fixture_with(&nar, "", true);
+    let dir = tempfile::tempdir().unwrap();
+    let admin = admin(dir.path(), f.archive.clone(), &f.sha256, "any");
+    let update = |approval: &str| {
+        admin.handle(PluginAdminRequest::Update(PluginUpdateRequest {
+            plugin_id: "@korri:homebrewhub".into(),
+            release_version: "r1".into(),
+            approval: approval.into(),
+        }))
+    };
+    assert_eq!(
+        update(&f.sha256).unwrap_err().message,
+        "this plugin is not installed"
+    );
+    admin
+        .handle(PluginAdminRequest::RepositoryAdd(PluginRepositoryRequest {
+            url: REPO.into(),
+        }))
+        .unwrap();
+    admin
+        .handle(PluginAdminRequest::TrustPublisher(
+            PluginTrustPublisherRequest {
+                namespace: "@korri".into(),
+                public_key: f.key.clone(),
+            },
+        ))
+        .unwrap();
+    install(&admin, &f.sha256).unwrap();
+    admin
+        .handle(PluginAdminRequest::SetEnabled(PluginSetEnabledRequest {
+            id: "@korri:homebrewhub".into(),
+            enabled: false,
+        }))
+        .unwrap();
+    assert_eq!(update("stale").unwrap_err().code, CODE_NEEDS_REVIEW);
+    update(&f.sha256).unwrap();
+    assert!(admin.store.read().unwrap().is_empty(), "still off");
+    let PluginAdminResponse::Repositories(repositories) = admin
+        .handle(PluginAdminRequest::Repositories(
+            PluginRepositoriesRequest {},
+        ))
+        .unwrap()
+    else {
+        panic!("wrong response")
+    };
+    assert_eq!(repositories.repository_installs.len(), 1);
+    assert!(!repositories.repository_installs[0].enabled);
+}
+
+#[test]
 fn a_rebound_namespace_key_is_refused() {
     let nar = nar_of(&[("manifest.json", &manifest("")), ("plugin.ts", b"x")]);
     let (a, b) = (fixture_with(&nar, "", true), fixture_with(&nar, "", true));

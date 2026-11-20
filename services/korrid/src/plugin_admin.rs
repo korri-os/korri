@@ -284,6 +284,20 @@ pub struct PluginInstallRequest {
     pub approval: String,
 }
 
+/// A new release of an installed repository plugin, from the source in its
+/// receipt. Producer: `korri-plugin repository update ID RELEASE APPROVAL`
+/// (`main.rs`), which resolves only that stored source.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginUpdateRequest {
+    pub plugin_id: String,
+    pub release_version: String,
+    /// The exact approval digest the person reviewed from PluginInspection
+    /// of this release at the installed source.
+    pub approval: String,
+}
+
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -395,6 +409,8 @@ pub enum PluginAdminRequest {
     Inspect(PluginInspectRequest),
     /// `repository install URL ID RELEASE APPROVAL`
     Install(PluginInstallRequest),
+    /// `repository update ID RELEASE APPROVAL`
+    Update(PluginUpdateRequest),
     /// `enable ID` / `disable ID`
     SetEnabled(PluginSetEnabledRequest),
 }

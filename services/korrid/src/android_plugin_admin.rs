@@ -358,6 +358,29 @@ impl AndroidPluginAdmin {
                 self.save(&state)?;
                 PluginAdminResponse::Applied(PluginChangeApplied {})
             }
+            // `repository update`: the installed source only, and the
+            // plugin keeps its on/off state.
+            PluginAdminRequest::Update(request) => {
+                let installed = state
+                    .installs
+                    .iter()
+                    .find(|i| i.id == request.plugin_id)
+                    .cloned()
+                    .ok_or_else(|| other("this plugin is not installed"))?;
+                self.handle(PluginAdminRequest::Install(PluginInstallRequest {
+                    url: installed.source_url,
+                    plugin_id: request.plugin_id.clone(),
+                    release_version: request.release_version,
+                    approval: request.approval,
+                }))?;
+                if !installed.enabled {
+                    self.handle(PluginAdminRequest::SetEnabled(PluginSetEnabledRequest {
+                        id: request.plugin_id,
+                        enabled: false,
+                    }))?;
+                }
+                PluginAdminResponse::Applied(PluginChangeApplied {})
+            }
             PluginAdminRequest::SetEnabled(request) => {
                 let install = state
                     .installs

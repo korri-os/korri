@@ -1756,6 +1756,21 @@ export interface PluginTrustPublisherRequest {
 	publicKey: string;
 }
 
+/**
+ * A new release of an installed repository plugin, from the source in its
+ * receipt. Producer: `korri-plugin repository update ID RELEASE APPROVAL`
+ * (`main.rs`), which resolves only that stored source.
+ */
+export interface PluginUpdateRequest {
+	pluginId: string;
+	releaseVersion: string;
+	/**
+	 * The exact approval digest the person reviewed from PluginInspection
+	 * of this release at the installed source.
+	 */
+	approval: string;
+}
+
 export interface ProviderClaim {
 	_tag: ProviderClaimTag;
 	providerId: string;
@@ -2593,6 +2608,7 @@ export type RpcRequest =
 	| { _tag: "system.plugins.catalog", payload: PluginRepositoryRequest }
 	| { _tag: "system.plugins.inspect", payload: PluginInspectRequest }
 	| { _tag: "system.plugins.install", payload: PluginInstallRequest }
+	| { _tag: "system.plugins.update", payload: PluginUpdateRequest }
 	| { _tag: "system.plugins.setEnabled", payload: PluginSetEnabledRequest };
 
 export type RpcResponse =
@@ -2697,6 +2713,7 @@ export type RpcResponse =
 	| { _tag: "system.plugins.catalog", outcome: PluginCatalogOutcome }
 	| { _tag: "system.plugins.inspect", outcome: PluginInspectOutcome }
 	| { _tag: "system.plugins.install", outcome: PluginChangeOutcome }
+	| { _tag: "system.plugins.update", outcome: PluginChangeOutcome }
 	| { _tag: "system.plugins.setEnabled", outcome: PluginChangeOutcome };
 
 export type SaveCheckOutcome =

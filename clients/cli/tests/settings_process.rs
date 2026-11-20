@@ -633,6 +633,123 @@ fn settings_plugin_install_passes_exact_reviewed_digest_and_keeps_host_refusals(
     server.done();
 }
 
+fn installed_repositories() -> RpcResponse {
+    RpcResponse::PluginRepositories(PluginRepositoriesOutcome::Ok(
+        plugin_admin::PluginRepositories {
+            official: None,
+            user_added: vec!["https://example.com/catalog".into()],
+            repository_installs: vec![plugin_admin::PluginRepositoryInstall {
+                id: "plugin".into(),
+                source_url: "https://example.com/catalog".into(),
+                release_version: "0".into(),
+                enabled: true,
+            }],
+            other_installs: vec![plugin_admin::PluginOtherInstall {
+                id: "seeded".into(),
+                title: None,
+                enabled: false,
+            }],
+        },
+    ))
+}
+
+fn repositories_request() -> RpcRequest {
+    RpcRequest::PluginRepositories(plugin_admin::PluginRepositoriesRequest {})
+}
+
+#[test]
+fn settings_plugin_update_reviews_the_installed_source_and_sends_the_exact_digest() {
+    let response = RpcResponse::PluginUpdate(PluginChangeOutcome::Ok(
+        plugin_admin::PluginChangeApplied {},
+    ));
+    let server = RpcServer::start(vec![
+        exchange(repositories_request(), installed_repositories()),
+        exchange(
+            inspect_request(),
+            RpcResponse::PluginInspect(PluginInspectOutcome::Ok(inspection())),
+        ),
+        exchange(
+            RpcRequest::PluginUpdate(plugin_admin::PluginUpdateRequest {
+                plugin_id: "plugin".into(),
+                release_version: "1".into(),
+                approval: "exact-digest".into(),
+            }),
+            response.clone(),
+        ),
+    ]);
+    assert_json(
+        &server.run(
+            &[
+                "plugins",
+                "update",
+                "plugin",
+                "1",
+                "--approval",
+                "exact-digest",
+                "--json",
+            ],
+            "",
+        ),
+        &response,
+        0,
+    );
+    server.done();
+}
+
+#[test]
+fn settings_plugin_update_never_sends_a_stale_digest_or_runs_without_one() {
+    // No digest: the error names the review command for the installed source.
+    let server = RpcServer::start(vec![exchange(
+        repositories_request(),
+        installed_repositories(),
+    )]);
+    let output = server.run(&["plugins", "update", "plugin", "1", "--yes", "--json"], "");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("korri plugins review https://example.com/catalog plugin 1"));
+    server.done();
+
+    let server = RpcServer::start(vec![
+        exchange(repositories_request(), installed_repositories()),
+        exchange(
+            inspect_request(),
+            RpcResponse::PluginInspect(PluginInspectOutcome::Ok(inspection())),
+        ),
+    ]);
+    let output = server.run(
+        &[
+            "plugins",
+            "update",
+            "plugin",
+            "1",
+            "--approval",
+            "stale-digest",
+            "--json",
+        ],
+        "",
+    );
+    assert_eq!(output.status.code(), Some(1));
+    let error: RpcFailure = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error.code, "PluginNeedsReview");
+    server.done();
+
+    // Not installed, or installed without a repository: nothing is inspected.
+    for id in ["missing", "seeded"] {
+        let server = RpcServer::start(vec![exchange(
+            repositories_request(),
+            installed_repositories(),
+        )]);
+        let output = server.run(
+            &["plugins", "update", id, "1", "--approval", "x", "--json"],
+            "",
+        );
+        assert_eq!(output.status.code(), Some(1));
+        let error: RpcFailure = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(error.code, "PluginHostRefused");
+        server.done();
+    }
+}
+
 #[test]
 fn settings_identity_switch_preserves_coordinator_disposition_preconditions() {
     let request = IdentityWordsSwitchRequest {

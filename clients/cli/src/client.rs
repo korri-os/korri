@@ -453,6 +453,10 @@ with socketserver.UnixStreamServer(socket_path, Handler) as server:
                 serde_json::json!({"url":"https://example.com","pluginId":"@test:a","releaseVersion":"v1","approval":"reviewed"}),
             ),
             (
+                "system.plugins.update",
+                serde_json::json!({"pluginId":"@test:a","releaseVersion":"v2","approval":"reviewed"}),
+            ),
+            (
                 "system.plugins.setEnabled",
                 serde_json::json!({"id":"@test:a","enabled":true}),
             ),

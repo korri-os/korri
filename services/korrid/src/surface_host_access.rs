@@ -114,6 +114,7 @@ impl SurfaceHostPermission {
             | RpcRequest::PluginCatalog(_)
             | RpcRequest::PluginInspect(_)
             | RpcRequest::PluginInstall(_)
+            | RpcRequest::PluginUpdate(_)
             | RpcRequest::PluginPublishers(_)
             | RpcRequest::PluginTrustPublisher(_)
             | RpcRequest::PluginRevokePublisher(_)

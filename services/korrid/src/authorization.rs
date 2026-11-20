@@ -322,6 +322,7 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::PluginCatalog(_)
         | RpcRequest::PluginInspect(_)
         | RpcRequest::PluginInstall(_)
+        | RpcRequest::PluginUpdate(_)
         | RpcRequest::PluginPublishers(_)
         | RpcRequest::PluginTrustPublisher(_)
         | RpcRequest::PluginRevokePublisher(_)
@@ -412,6 +413,7 @@ pub fn is_security_mutation(request: &RpcRequest) -> bool {
             | RpcRequest::PluginRepositoryRemove(_)
             | RpcRequest::PluginInspect(_)
             | RpcRequest::PluginInstall(_)
+            | RpcRequest::PluginUpdate(_)
             | RpcRequest::PluginTrustPublisher(_)
             | RpcRequest::PluginRevokePublisher(_)
             | RpcRequest::PluginArchiveBegin(_)
@@ -1854,6 +1856,10 @@ mod tests {
             (
                 "system.plugins.install",
                 serde_json::json!({"url":"https://example.com", "pluginId":"@test:a", "releaseVersion":"1", "approval":"digest"}),
+            ),
+            (
+                "system.plugins.update",
+                serde_json::json!({"pluginId":"@test:a", "releaseVersion":"2", "approval":"digest"}),
             ),
             (
                 "system.plugins.setEnabled",

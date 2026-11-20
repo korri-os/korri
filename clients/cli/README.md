@@ -341,10 +341,10 @@ and exact-session controls already do.
 ### Plugins
 
 Plugin administration includes installed and repository listing, repository
-add/remove, catalog, inspect, install-disabled, enable/disable, publisher
-list/trust/revoke, and chunked archive staging/inspect/install. It exposes no
-raw-cache install, update, source switch, remove/purge, restore, or target-side
-package build. Publisher trust is per device, not shared with the author's
+add/remove, catalog, inspect, install-disabled, update, enable/disable,
+publisher list/trust/revoke, and chunked archive staging/inspect/install. It
+exposes no raw-cache install or update, source switch, remove/purge, restore,
+or target-side package build. Publisher trust is per device, not shared with the author's
 computer or the owner's other devices.
 
 Run `plugins review` and `plugins install --approval DIGEST` with the same
@@ -353,6 +353,16 @@ Install re-inspects there and requires that exact digest. Enable re-derives the
 installed report and checks the stored approved digest there. A stale digest
 cannot install or enable a plugin. `--yes` never supplies that approval. There
 is no second manifest, approval store, or copied signing credential.
+
+`plugins install` refuses a plugin that is already installed. To move an
+installed repository plugin to another release, use
+`plugins update ID RELEASE --approval DIGEST`. It is the host's
+`korri-plugin repository update`: the CLI reads the plugin's source from
+`plugins list`, reviews the release at that source, and sends the exact digest.
+The host resolves only that stored source and the plugin keeps its on/off
+state. Without `--approval` and without a terminal, the error names the
+`plugins review SOURCE ID RELEASE` command to run first. A plugin installed
+from a raw cache or a sideload has no repository to update from.
 
 Plugin calls have no total response deadline, locally or through a
 peer. The root host bounds catalog transfers and detects stalled archives;

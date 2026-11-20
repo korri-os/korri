@@ -16,6 +16,10 @@ impl Module for Plugins {
             .subcommand(source_command("review").about("Inspect publisher policy, native units, ports and dependencies before approval"))
             .subcommand(source_command("install").about("Install disabled using the exact reviewed approval digest; --yes never grants permissions")
                 .arg(Arg::new("approval").long("approval").value_name("REVIEWED_DIGEST").help("The exact approval field from plugins review")))
+            .subcommand(Command::new("update").about("Move an installed plugin to another release from the repository it came from; it keeps its on/off state")
+                .arg(Arg::new("id").value_name("PLUGIN_ID"))
+                .arg(Arg::new("version").value_name("RELEASE_VERSION"))
+                .arg(Arg::new("approval").long("approval").value_name("REVIEWED_DIGEST").help("The exact approval field from plugins review of this release")))
             .subcommand(Command::new("on").about("Enable an already-approved plugin; the host rechecks its approval").arg(Arg::new("id").value_name("PLUGIN_ID")))
             .subcommand(Command::new("off").about("Disable an installed plugin").arg(Arg::new("id").value_name("PLUGIN_ID")));
         let repositories = Command::new("repositories")
@@ -114,6 +118,7 @@ impl Module for Plugins {
                 RpcRequest::PluginRevokePublisher(PluginRevokePublisherRequest { namespace })
             }
             Some(("install", args)) => return install(args, context),
+            Some(("update", args)) => return update(args, context),
             Some(("credential", args)) => return credential(args, context),
             Some((action @ ("on" | "off"), args)) => {
                 RpcRequest::PluginSetEnabled(PluginSetEnabledRequest {
@@ -143,7 +148,7 @@ impl Module for Plugins {
             },
             _ => {
                 return Err(CliError::usage(
-                    "Choose plugins list, review, install, on, off, credential or repositories.",
+                    "Choose plugins list, review, install, update, on, off, credential or repositories.",
                 ))
             }
         };
@@ -266,6 +271,70 @@ fn install(args: &ArgMatches, context: &Context) -> Result<Output, CliError> {
     });
     Ok(result(context.rpc(&request)?))
 }
+/// `korri-plugin repository update`: the host resolves only the source in the
+/// plugin's receipt, so the review here uses that same source.
+fn update(args: &ArgMatches, context: &Context) -> Result<Output, CliError> {
+    let plugin_id = settings_input::required(args, "id", "Exact plugin ID")?;
+    let release_version =
+        settings_input::required(args, "version", "Exact release version from the catalog")?;
+    let installs = context.rpc(&RpcRequest::PluginRepositories(
+        PluginRepositoriesRequest {},
+    ))?;
+    let RpcResponse::PluginRepositories(PluginRepositoriesOutcome::Ok(repositories)) = &installs
+    else {
+        return Ok(result(installs));
+    };
+    let Some(installed) = repositories
+        .repository_installs
+        .iter()
+        .find(|plugin| plugin.id == plugin_id)
+    else {
+        let message = if repositories
+            .other_installs
+            .iter()
+            .any(|plugin| plugin.id == plugin_id)
+        {
+            "This plugin was not installed from a repository, so it has no repository to update from. Nothing was changed."
+        } else {
+            "This plugin is not installed. Nothing was changed."
+        };
+        return Err(CliError::failure(
+            CODE_REFUSED,
+            message,
+            "Run korri plugins list to see installed plugins, or install it with korri plugins install.",
+        ));
+    };
+    let source = PluginInspectRequest {
+        url: installed.source_url.clone(),
+        plugin_id,
+        release_version,
+    };
+    if args.get_one::<String>("approval").is_none() && !can_prompt(args.get_flag("json")) {
+        return Err(CliError::usage(format!(
+            "Plugin update needs --approval with the exact digest you reviewed. Review it with korri plugins review {} {} {}. --yes does not grant permissions.",
+            output::text(&source.url),
+            output::text(&source.plugin_id),
+            output::text(&source.release_version),
+        )));
+    }
+    let response = inspect_with_trust(
+        context,
+        &RpcRequest::PluginInspect(source.clone()),
+        args.get_flag("json"),
+    )?;
+    let inspection = match &response {
+        RpcResponse::PluginInspect(PluginInspectOutcome::Ok(inspection)) => inspection,
+        _ => return Ok(result(response)),
+    };
+    let approval = approval(args, inspection)?;
+    let request = RpcRequest::PluginUpdate(PluginUpdateRequest {
+        plugin_id: source.plugin_id,
+        release_version: source.release_version,
+        approval,
+    });
+    Ok(result(context.rpc(&request)?))
+}
+
 pub(crate) fn result(response: RpcResponse) -> Output {
     let human = match &response {
         RpcResponse::PluginRepositories(PluginRepositoriesOutcome::Ok(repositories)) => {
@@ -333,6 +402,9 @@ pub(crate) fn result(response: RpcResponse) -> Output {
         }
         RpcResponse::PluginInstall(PluginChangeOutcome::Ok(_)) => {
             "Plugin installed, off. Use korri plugins on with its ID to enable it.".into()
+        }
+        RpcResponse::PluginUpdate(PluginChangeOutcome::Ok(_)) => {
+            "Plugin updated. It kept its on/off state.".into()
         }
         RpcResponse::PluginSetEnabled(PluginChangeOutcome::Ok(_)) => "Plugin state updated.".into(),
         RpcResponse::PluginRepositoryAdd(PluginRepositoryAddOutcome::Ok(result)) => {
@@ -502,11 +574,11 @@ pub(crate) fn approval(args: &ArgMatches, report: &PluginInspection) -> Result<S
         None if !can_prompt(args.get_flag("json")) => return Err(CliError::usage("Plugin installation needs --approval with the exact digest you reviewed. --yes does not grant permissions.")),
         None => {
             eprintln!("{}", describe_inspection(report));
-            prompt::read("Review these permissions, then type the exact approval digest to install disabled")?
+            prompt::read("Review these permissions, then type the exact approval digest to continue")?
         }
     };
     if approval != report.approval {
-        return Err(CliError::failure(CODE_NEEDS_REVIEW, "The supplied approval digest does not match the current inspection. Nothing was installed.", "Review the current plugin permissions, then use its exact approval digest."));
+        return Err(CliError::failure(CODE_NEEDS_REVIEW, "The supplied approval digest does not match the current inspection. Nothing was changed.", "Review the current plugin permissions, then use its exact approval digest."));
     }
     Ok(approval)
 }

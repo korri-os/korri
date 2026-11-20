@@ -23,6 +23,7 @@ pub fn is_admin_request(request: &crate::RpcRequest) -> bool {
             | crate::RpcRequest::PluginCatalog(_)
             | crate::RpcRequest::PluginInspect(_)
             | crate::RpcRequest::PluginInstall(_)
+            | crate::RpcRequest::PluginUpdate(_)
             | crate::RpcRequest::PluginPublishers(_)
             | crate::RpcRequest::PluginTrustPublisher(_)
             | crate::RpcRequest::PluginRevokePublisher(_)

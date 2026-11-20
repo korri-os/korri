@@ -1780,6 +1780,8 @@ pub enum RpcRequest {
     PluginInspect(plugin_admin::PluginInspectRequest),
     #[serde(rename = "system.plugins.install")]
     PluginInstall(plugin_admin::PluginInstallRequest),
+    #[serde(rename = "system.plugins.update")]
+    PluginUpdate(plugin_admin::PluginUpdateRequest),
     #[serde(rename = "system.plugins.setEnabled")]
     PluginSetEnabled(plugin_admin::PluginSetEnabledRequest),
 }
@@ -2003,6 +2005,8 @@ pub enum RpcResponse {
     PluginInspect(PluginInspectOutcome),
     #[serde(rename = "system.plugins.install")]
     PluginInstall(PluginChangeOutcome),
+    #[serde(rename = "system.plugins.update")]
+    PluginUpdate(PluginChangeOutcome),
     #[serde(rename = "system.plugins.setEnabled")]
     PluginSetEnabled(PluginChangeOutcome),
 }
@@ -4908,6 +4912,12 @@ async fn dispatch(
         ),
         RpcRequest::PluginInstall(request) => RpcResponse::PluginInstall(
             plugin_admin_call(state, PluginAdminRequest::Install(request), applied)
+                .await
+                .map(PluginChangeOutcome::Ok)
+                .unwrap_or_else(PluginChangeOutcome::Err),
+        ),
+        RpcRequest::PluginUpdate(request) => RpcResponse::PluginUpdate(
+            plugin_admin_call(state, PluginAdminRequest::Update(request), applied)
                 .await
                 .map(PluginChangeOutcome::Ok)
                 .unwrap_or_else(PluginChangeOutcome::Err),

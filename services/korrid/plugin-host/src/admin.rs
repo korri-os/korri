@@ -6,13 +6,14 @@
 //! command named on its `PluginAdminRequest` variant already calls. The host
 //! keeps its lock, catalog validation, archive hash, publisher signature and
 //! approval-digest checks. Raw-cache install, update, switch, remove, purge,
-//! restore and enabled-packages are not reachable from here.
+//! restore and enabled-packages are not reachable from here; repository
+//! update is.
 pub use crate::plugin_admin::*;
 use crate::{
     host::Host,
     package,
     package::Report,
-    provenance::{current_platform, Provenance},
+    provenance::{current_platform, Provenance, SelectionIntent},
     repository::{Configuration, SourceUrl},
     selection::Desired,
     source_store::{AddOutcome, RemoveOutcome},
@@ -184,6 +185,25 @@ pub fn handle(
                 .map_err(host_failure)?;
             Ok(PluginAdminResponse::Applied(PluginChangeApplied {}))
         }),
+        // The same steps as `repository update`: only the receipt's source.
+        PluginAdminRequest::Update(request) => (|| {
+            let url = host.installed_source(&request.plugin_id)?;
+            let report = host.inspect_repository(
+                config,
+                &url,
+                &request.plugin_id,
+                &request.release_version,
+            )?;
+            host.install(
+                report,
+                &request.approval,
+                SelectionIntent::Update {
+                    id: &request.plugin_id,
+                },
+            )
+        })()
+        .map(|()| PluginAdminResponse::Applied(PluginChangeApplied {}))
+        .map_err(host_failure),
         PluginAdminRequest::SetEnabled(PluginSetEnabledRequest { id, enabled }) => host
             .set_enabled(&id, enabled)
             .map(|()| PluginAdminResponse::Applied(PluginChangeApplied {}))
@@ -424,6 +444,7 @@ mod tests {
             r#"{"_tag":"Catalog","payload":{"url":"https://a.example/"}}"#,
             r#"{"_tag":"Inspect","payload":{"url":"https://a.example/","pluginId":"@a:b","releaseVersion":"1"}}"#,
             r#"{"_tag":"Install","payload":{"url":"https://a.example/","pluginId":"@a:b","releaseVersion":"1","approval":"x"}}"#,
+            r#"{"_tag":"Update","payload":{"pluginId":"@a:b","releaseVersion":"2","approval":"x"}}"#,
             r#"{"_tag":"SetEnabled","payload":{"id":"@a:b","enabled":false}}"#,
         ] {
             serde_json::from_str::<PluginAdminRequest>(request).unwrap();
