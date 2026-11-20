@@ -16,7 +16,7 @@
  */
 import { describe, expect, test } from "bun:test"
 import { decodedBytes, logoBox, LOGO_USUAL, PIXEL_BUDGET } from "../src/art"
-import { FOCUS_SCALE, KEY_COLUMNS, KEY_ROWS, MOST_COLUMNS, NARROW_RATIO, PANEL_BESIDE_RATIO, plan, ROW_FACT_LINES, SHELF_SLOTS, TILE_RATIO } from "../src/plan"
+import { FOCUS_SCALE, KEY_COLUMNS, KEY_ROWS, MOST_COLUMNS, NARROW_RATIO, PANEL_BESIDE_RATIO, plan, ROW_FACT_LINES, SET_FIT_SHRINK, SHELF_SLOTS, TILE_RATIO } from "../src/plan"
 import { SIZES } from "./korri"
 
 const sweep: [number, number][] = []
@@ -143,6 +143,23 @@ describe("the plan", () => {
       expect(p.columns * poster * 2, at).toBeLessThanOrEqual(PIXEL_BUDGET)
     }
     expect(SHELF_SLOTS * poster * 2).toBeLessThanOrEqual(PIXEL_BUDGET)
+  })
+
+  test("a set leaves no room for another column at its right unless the budget's columns are all there", () => {
+    for (const [width, height] of all) {
+      for (const floor of [false, true]) {
+        const p = plan(width, height, floor)
+        const at = `${width}x${height}${floor ? " floor" : ""}`
+        const free = width - 2 * p.padX - (p.columns * p.tileW + (p.columns - 1) * p.gridGap)
+        const lobby = Math.round(Math.max(p.shelfH, 90) * TILE_RATIO)
+        // A tile never grows past the lobby's (owner, 2026-11-13).
+        expect(p.tileW, at).toBeLessThanOrEqual(lobby)
+        expect(p.tileW, at).toBeGreaterThanOrEqual(Math.floor(lobby * (1 - SET_FIT_SHRINK)) - 1)
+        if (p.columns < MOST_COLUMNS) expect(free, at).toBeLessThan(lobby * (1 - SET_FIT_SHRINK) + p.gridGap)
+      }
+    }
+    // The Thor's Floor: five across, not four with a fifth of the width empty.
+    expect(plan(1240, 1080, true).columns).toBe(5)
   })
 
   test("the keyboard: five rows of ten inside the window", () => {

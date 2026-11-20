@@ -46,6 +46,8 @@ export const SHELF_SLOTS = 5
 export const MOST_COLUMNS = 5
 /** A list page stands beside its panel only when the window is this wide for its height. */
 export const PANEL_BESIDE_RATIO = 1.25
+/** How much of its width a set's tile may give so one more column fills the window. */
+export const SET_FIT_SHRINK = 0.1
 /** Type never grows past this many times the smaller axis's scale: a thin strip cannot set type its width cannot hold. */
 export const TYPE_REACH = 2.5
 /** The keyboard's grid. */
@@ -288,9 +290,12 @@ export function plan(width: number, height: number, floor = false): Plan {
   // A set: its tiles are the lobby's (owner, 2026-11-13: larger ones felt too big beside the
   // library's), as many across as fit and the pixel budget holds; the grid stands at the left.
   // At least 60 px wide, where the lobby's smallest are 56: a set is read title by title.
+  // A tile may give up to SET_FIT_SHRINK of its width so one more column fills the row: at
+  // 1240 x 1080 (the Thor's Floor) four lobby tiles left 220 px empty at the right, and five
+  // fit at 197 px instead of 200. Tiles never grow past the lobby's.
   const gridH = Math.max(shelfH, 90)
   const gridGap = gapOf(gridH)
-  const columns = Math.min(MOST_COLUMNS, Math.max(2, Math.floor((W - 2 * padX + gridGap) / (gridH * R + gridGap))))
+  const columns = Math.min(MOST_COLUMNS, Math.max(2, Math.floor((W - 2 * padX + gridGap) / (gridH * R * (1 - SET_FIT_SHRINK) + gridGap))))
   const tileW = Math.min(Math.round(gridH * R), Math.floor((W - 2 * padX - (columns - 1) * gridGap) / columns))
   const tileH = Math.round(tileW / R)
   const gridInset = growOf(tileH) + halo
