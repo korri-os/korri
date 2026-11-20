@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Every release arrives by one install, in pieces from every source
 
-**Owner decisions, 2026-11-20, design in progress.** A game that only a
+**Owner decisions, 2026-11-20.** A game that only a
 peer holds can be played only by stream play today. The owner wants to play
 it locally when that is possible, and the game should be copied to the
 device. Today three separate mechanisms put game bytes on a device. Provider
@@ -37,6 +37,13 @@ None of them can resume after an interruption.
 - Velvet is the first surface to show play-here and the list of installs.
 - A Steam-engine game (ADR 0083) has two kinds of install source: Valve,
   through the Steam engine, and devices whose folder of the game matches.
+  The install takes exactly the files in Valve's manifest for that build.
+  A device serves only when its files match that build. Files that a game
+  wrote into its own folder stay on their device. The Wine prefix
+  (`steamapps/compatdata/<appid>`) and the appmanifest are outside the
+  game's folder and are not part of the install. Steam-engine games are
+  today's only folder releases. Library-folder folder releases wait for
+  the PC entry-point picker.
 - When this device has no runner for the game but a plugin offers one,
   Korri asks to install the plugin first, with the usual permission
   approval, as for netplay (ADR 0040).
