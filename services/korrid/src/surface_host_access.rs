@@ -17,6 +17,8 @@ impl SurfaceHostPermission {
     fn permits(self, request: &RpcRequest) -> bool {
         let initial_read = match request {
             RpcRequest::SessionStreamPlay(_) | RpcRequest::SessionNetplay(_) | RpcRequest::ReleaseObject(_) => false,
+            // Peer-only: a holder answers other devices' installs (ADR 0092).
+            RpcRequest::InstallManifest(_) | RpcRequest::InstallPiece(_) => false,
             RpcRequest::SaveHeads(_)
             | RpcRequest::SaveRecords(_)
             | RpcRequest::SaveInUse(_)

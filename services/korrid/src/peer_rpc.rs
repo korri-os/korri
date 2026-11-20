@@ -1,3 +1,5 @@
+#[path = "acquisition/pieces_route.rs"]
+mod installs_piece;
 #[path = "saves/peer/object_route.rs"]
 mod saves_object;
 
@@ -569,6 +571,7 @@ impl PeerRpcServer {
             .route("/peer-rpc", post(peer_rpc))
             .route("/peer-saves-object", post(saves_object::object_route))
             .route("/peer-releases-object", post(saves_object::object_route))
+            .route("/peer-installs-piece", post(installs_piece::piece_route))
             .layer(DefaultBodyLimit::max(MAX_PEER_EVENT_BYTES))
             .with_state(self)
             .layer(axum::middleware::from_fn_with_state(
@@ -647,7 +650,7 @@ impl PeerRpcServer {
             .map_err(|_| PeerRpcError::Invalid)?;
         if matches!(
             &envelope.request,
-            RpcRequest::SaveObject(_) | RpcRequest::ReleaseObject(_)
+            RpcRequest::SaveObject(_) | RpcRequest::ReleaseObject(_) | RpcRequest::InstallPiece(_)
         ) != object_route
         {
             return Err(PeerRpcError::WrongKind);

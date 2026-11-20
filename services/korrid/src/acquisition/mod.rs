@@ -7,6 +7,7 @@ mod download;
 mod game;
 mod install;
 pub(crate) mod netplay;
+pub(crate) mod pieces;
 pub(crate) mod placement;
 mod policy;
 mod sleep;
@@ -54,6 +55,8 @@ pub struct AcquisitionCoordinator {
     sleep: sleep::SleepBlock,
     /// Game acquisition: provider claims and acquire jobs (ADR 0016).
     games: game::GameAcquisition,
+    /// ADR 0092 (#552): devices as install sources.
+    pieces: pieces::Pieces,
 }
 
 enum Next {
@@ -83,6 +86,10 @@ pub(crate) struct GameArtifacts {
 }
 
 impl AcquisitionCoordinator {
+    pub(crate) fn pieces(&self) -> &pieces::Pieces {
+        &self.pieces
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, Queue> {
         self.queue.lock().expect("acquisition queue mutex poisoned")
     }
@@ -1066,6 +1073,8 @@ pub(crate) fn game_artifacts_for_removal(
 
 #[cfg(test)]
 mod game_tests;
+#[cfg(test)]
+mod pieces_tests;
 #[cfg(test)]
 mod queue_tests;
 #[cfg(test)]

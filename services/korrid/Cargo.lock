@@ -2573,6 +2573,7 @@ name = "korrid"
 version = "0.0.0"
 dependencies = [
  "axum",
+ "bao-tree",
  "base64 0.22.1",
  "bip39",
  "chrono",

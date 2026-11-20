@@ -1679,6 +1679,14 @@ pub enum RpcRequest {
     #[typeshare(skip)]
     #[serde(rename = "app.releases.object")]
     ReleaseObject(netplay::ReleaseObjectRequest),
+    /// ADR 0092 (#552): what a holder holds of a release, for an install.
+    #[typeshare(skip)]
+    #[serde(rename = "app.installs.manifest")]
+    InstallManifest(acquisition::pieces::InstallManifestRequest),
+    /// ADR 0092 (#552): one checked piece, answered on its own route.
+    #[typeshare(skip)]
+    #[serde(rename = "app.installs.piece")]
+    InstallPiece(acquisition::pieces::InstallPieceRequest),
     #[serde(rename = "app.invites.netplay")]
     InvitesNetplay(InviteRequest),
     #[serde(rename = "app.session.streamPlay")]
@@ -1904,6 +1912,9 @@ pub enum RpcResponse {
     SessionCancel(SessionEndOutcome),
     #[serde(rename = "app.session.netplay")]
     SessionNetplay(netplay::SessionNetplayOutcome),
+    #[typeshare(skip)]
+    #[serde(rename = "app.installs.manifest")]
+    InstallManifest(acquisition::pieces::InstallManifestOutcome),
     #[serde(rename = "app.invites.netplay")]
     InvitesNetplay(SessionStreamPlayOutcome),
     #[serde(rename = "app.session.streamPlay")]
@@ -3045,7 +3056,11 @@ async fn dispatch(
         // Objects are answered with bytes on their own routes, never here.
         RpcRequest::SaveObject(_)
         | RpcRequest::ReleaseObject(_)
+        | RpcRequest::InstallPiece(_)
         | RpcRequest::GameAssetObject(_) => return Err(authorization::AuthorizationDenied),
+        RpcRequest::InstallManifest(request) => {
+            RpcResponse::InstallManifest(acquisition::pieces::manifest_rpc(state, &request).await)
+        }
         RpcRequest::SaveHeads(_) => {
             let service = state
                 .saves

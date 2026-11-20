@@ -179,6 +179,9 @@ pub enum PeerPolicy {
     LocalSurfaceHostOrOwnerDevice,
     LocalOnly,
     OwnerDeviceOnly,
+    /// ADR 0077 and ADR 0092: the owner's devices and family members'
+    /// devices, with no prompt. Never a guest.
+    OwnerOrHouseholdDevice,
     ExplicitScope(Scope),
     CatalogOrStreamScope,
 }
@@ -219,6 +222,9 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         RpcRequest::SessionStreamPlay(_)
         | RpcRequest::SessionNetplay(_)
         | RpcRequest::ReleaseObject(_) => PeerPolicy::OwnerDeviceOnly,
+        RpcRequest::InstallManifest(_) | RpcRequest::InstallPiece(_) => {
+            PeerPolicy::OwnerOrHouseholdDevice
+        }
         RpcRequest::InvitesList(_)
         | RpcRequest::InvitesNetplay(_)
         | RpcRequest::InvitesStreamPlay(_)
@@ -362,6 +368,9 @@ pub fn authorize(
                 | PeerPolicy::LocalSurfaceHostOnly
                 | PeerPolicy::LocalSurfaceHostOrOwnerDevice
                 | PeerPolicy::OwnerDeviceOnly => false,
+                PeerPolicy::OwnerOrHouseholdDevice => {
+                    matches!(principal, Principal::Household { .. })
+                }
                 PeerPolicy::ExplicitScope(scope) => principal.has_scope(scope),
                 PeerPolicy::CatalogOrStreamScope => {
                     principal.has_scope(Scope::CatalogRead)
