@@ -153,7 +153,7 @@ def invert_article(main):
 
 def clean_title(raw):
     """`discovery::title::clean_title`, rule for rule."""
-    spaced = [" " if c in "_." else c for c in without_version(without_groups(raw))]
+    spaced = [" " if c == "_" else c for c in without_version(without_groups(raw))]
 
     def blank(index):
         return index < 0 or index >= len(spaced) or spaced[index].isspace()

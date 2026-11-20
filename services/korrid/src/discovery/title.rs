@@ -106,8 +106,8 @@ pub fn fallback_title(file_name: &str, extension: &str) -> String {
 
 /// Korri's generic title cleaning (ADR 0090), used when no system plugin
 /// answers: the No-Intro and GoodTools convention. It strips `(…)` and
-/// `[…]` groups and then a final `v1.0`-style version token, turns `_`, `.`
-/// and a `-` inside a word into spaces, keeps a ` - ` subtitle separator,
+/// `[…]` groups and then a final `v1.0`-style version token, turns `_` and
+/// a `-` inside a word into spaces, keeps `.` and a ` - ` subtitle separator,
 /// moves a trailing `, The`, `, A` or `, An` of the main title, or a `, The `
 /// inside it, to its front, and collapses whitespace.
 /// `deploy/title-cleaning-migration/migrate.py` ports these rules; both
@@ -132,7 +132,7 @@ pub fn clean_title(raw: &str) -> String {
     let spaced = without_groups
         .chars()
         .map(|character| match character {
-            '_' | '.' => ' ',
+            '_' => ' ',
             other => other,
         })
         .collect::<Vec<_>>();
@@ -411,6 +411,20 @@ export const handlers = {{
         );
     }
 
+    /// A `.` is part of the title: `Bros.` and `Dr.` keep it.
+    #[test]
+    fn keeps_dots() {
+        assert_eq!(
+            clean_title("Super Mario Bros. 3 (U) (PRG0) [!]"),
+            "Super Mario Bros. 3"
+        );
+        assert_eq!(clean_title("Dr. Mario (World)"), "Dr. Mario");
+        assert_eq!(fallback_title("Dr. Mario.nes", "nes"), "Dr. Mario");
+        // `_` is still a space, and the version strip still applies.
+        assert_eq!(clean_title("Super_Mario_Bros._3"), "Super Mario Bros. 3");
+        assert_eq!(clean_title("Game v1.2.3"), "Game");
+    }
+
     #[test]
     fn cleans_ibuki_shaped_titles() {
         assert_eq!(clean_title("Secret of Mana (U) [!]"), "Secret of Mana");
@@ -443,7 +457,7 @@ export const handlers = {{
         assert_eq!(clean_title("Once, An Elf"), "Once, An Elf");
         // A version needs digits, and never is the whole title.
         assert_eq!(clean_title("Mega Man V"), "Mega Man V");
-        assert_eq!(clean_title("v1.0"), "v1 0");
+        assert_eq!(clean_title("v1.0"), "v1.0");
     }
 
     #[test]
