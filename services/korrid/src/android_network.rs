@@ -2,8 +2,12 @@
 //! (`federation::reach::Environment`). The app with no Korri Java reads
 //! Android's own classes through JNI (`android/framework_network.rs`) and
 //! applies [`snapshot`] here. The rules are those of the Artemis app's
-//! `KorridNetwork.snapshot` (tag `artemis-final`), unchanged.
-use crate::federation::{interfaces::InterfaceAddress, reach::RelayFacts};
+//! `KorridNetwork.snapshot` (tag `artemis-final`), except that ADR 0089 ends
+//! its VPN exclusion: addresses follow korrid's one candidate rule.
+use crate::federation::{
+    interfaces::{is_candidate, InterfaceAddress},
+    reach::RelayFacts,
+};
 use std::net::IpAddr;
 
 #[derive(Debug)]
@@ -16,7 +20,7 @@ pub(crate) struct Snapshot {
 /// that Android returned as null is `None`.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ObservedNetwork {
-    /// `NetworkCapabilities`: whether it is a VPN and is not metered.
+    /// `NetworkCapabilities`: whether it is not metered.
     pub capabilities: Option<Capabilities>,
     /// `LinkProperties`.
     pub link: Option<Link>,
@@ -26,7 +30,6 @@ pub(crate) struct ObservedNetwork {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Capabilities {
-    pub vpn: bool,
     pub not_metered: bool,
 }
 
@@ -38,9 +41,10 @@ pub(crate) struct Link {
     pub addresses: Vec<IpAddr>,
 }
 
-/// QUIC uses physical links. VPNs stay available to ordinary peer HTTP
-/// through Android's routing, never as a required path. With no active
-/// network, a link with a default route counts as the default.
+/// Every network's addresses are candidates by the one rule korrid uses
+/// everywhere (ADR 0089): a VPN or private network is not left out, and
+/// paths are chosen by measurement. With no active network, a link with a
+/// default route counts as the default.
 pub(crate) fn snapshot(
     networks: &[ObservedNetwork],
     any_active: bool,
@@ -55,14 +59,16 @@ pub(crate) fn snapshot(
         let Some(interface) = &link.interface else {
             continue;
         };
-        if capabilities.vpn {
-            continue;
-        }
         let has_default_route = network.active || (!any_active && link.default_route);
         if network.active {
             unmetered = capabilities.not_metered;
         }
-        for address in link.addresses.iter().copied().filter(|ip| usable(*ip)) {
+        for address in link
+            .addresses
+            .iter()
+            .copied()
+            .filter(|ip| is_candidate(*ip))
+        {
             interfaces.push(InterfaceAddress {
                 interface: interface.clone(),
                 address,
@@ -79,16 +85,6 @@ pub(crate) fn snapshot(
     }
 }
 
-/// `InetAddress`'s loopback, any-local, multicast and link-local addresses
-/// are left out.
-fn usable(ip: IpAddr) -> bool {
-    let link_local = match ip {
-        IpAddr::V4(ip) => ip.is_link_local(),
-        IpAddr::V6(ip) => ip.segments()[0] & 0xffc0 == 0xfe80,
-    };
-    !(ip.is_loopback() || ip.is_unspecified() || ip.is_multicast() || link_local)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,10 +96,7 @@ mod tests {
         addresses: &[&str],
     ) -> ObservedNetwork {
         ObservedNetwork {
-            capabilities: Some(Capabilities {
-                vpn: false,
-                not_metered: true,
-            }),
+            capabilities: Some(Capabilities { not_metered: true }),
             link: Some(Link {
                 interface: Some(interface.into()),
                 default_route,
@@ -170,11 +163,28 @@ mod tests {
         assert!(!snapshot.facts.unmetered && !snapshot.facts.external_power);
     }
 
+    /// Test fixture: a VPN or private network (here `tun0` with a 100.x and
+    /// an fd7a address) is a candidate like any other network.
     #[test]
-    fn vpns_unnamed_links_and_missing_answers_are_left_out() {
-        let mut vpn = network("tun0", true, true, &["100.64.0.2"]);
-        vpn.capabilities.as_mut().unwrap().vpn = true;
-        let mut unnamed = network("x", false, true, &["10.9.0.1"]);
+    fn a_vpn_network_is_kept_like_any_other() {
+        let vpn = network("tun0", true, false, &["100.64.0.2", "fd7a:115c:a1e0::2"]);
+        let wifi = network("wlan0", false, true, &["192.168.1.20"]);
+        let snapshot = snapshot(&[vpn, wifi], true, true);
+        assert_eq!(
+            listed(&snapshot),
+            vec![
+                ("tun0".into(), "100.64.0.2".into(), true),
+                ("tun0".into(), "fd7a:115c:a1e0::2".into(), true),
+                ("wlan0".into(), "192.168.1.20".into(), false),
+            ]
+        );
+        // The active network decides metering, whatever its transport.
+        assert!(snapshot.facts.unmetered);
+    }
+
+    #[test]
+    fn unnamed_links_and_missing_answers_are_left_out() {
+        let mut unnamed = network("x", true, true, &["10.9.0.1"]);
         unnamed.link.as_mut().unwrap().interface = None;
         let no_capabilities = ObservedNetwork {
             capabilities: None,
@@ -184,10 +194,10 @@ mod tests {
             link: None,
             ..network("eth2", false, true, &["10.7.0.1"])
         };
-        let snapshot = snapshot(&[vpn, unnamed, no_capabilities, no_link], true, true);
+        let snapshot = snapshot(&[unnamed, no_capabilities, no_link], true, true);
         assert!(snapshot.interfaces.is_empty());
-        // The VPN was the active network, but a left-out network decides
-        // nothing: its metering is never read, so nothing is unmetered.
+        // The unnamed link was the active network, but a left-out network
+        // decides nothing: its metering is never read, so nothing is unmetered.
         assert!(!snapshot.facts.unmetered);
     }
 

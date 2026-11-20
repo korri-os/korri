@@ -16,7 +16,6 @@ use jni::{
 use std::{io, net::IpAddr, sync::Arc};
 
 // android.net.NetworkCapabilities and android.os.BatteryManager constants.
-const TRANSPORT_VPN: i32 = 4;
 const NET_CAPABILITY_NOT_METERED: i32 = 11;
 
 struct Reader {
@@ -141,14 +140,6 @@ fn observe_network(
         None
     } else {
         Some(Capabilities {
-            vpn: env
-                .call_method(
-                    &capabilities,
-                    "hasTransport",
-                    "(I)Z",
-                    &[JValue::Int(TRANSPORT_VPN)],
-                )?
-                .z()?,
             not_metered: env
                 .call_method(
                     &capabilities,
