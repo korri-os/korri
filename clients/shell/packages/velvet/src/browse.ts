@@ -250,7 +250,8 @@ export function pickRoom(plan: Plan, hero: boolean): number {
   return Math.max(0, boxY + boxH - play - top)
 }
 
-export function homeView(asked: Pictures, state: State, model: Model, plan: Plan, live: boolean) {
+/** `named`: the row's focused game is named over the row (not on the Floor's own window, where the Stage names it). */
+export function homeView(asked: Pictures, state: State, model: Model, plan: Plan, live: boolean, named = true) {
   const home = homeOf(state.lists, model.publishedAt)
   const pick = home.pick
   const shelves = shelvesOf(state.lists, model)
@@ -263,7 +264,7 @@ export function homeView(asked: Pictures, state: State, model: Model, plan: Plan
     width: hero ? plan.heroW : plan.textW, logoH: hero ? Math.round(plan.markH * 1.25) : plan.markH, title: hero ? plan.title : plan.pickTitle, fact: plan.fact,
     mark: hero || !cardNames(pick), badge: true, room: pickRoom(plan, hero),
   }, model.publishedAt)
-  const rowGame = depth === 1 ? row[state.rowAt] : undefined
+  const rowGame = depth === 1 && named ? row[state.rowAt] : undefined
   const rowMark = rowGame === undefined ? NO_MARQUEE : rowGame.kind === "game"
     ? marqueeOf(asked, rowGame.game, { width: plan.rowMarkW, logoH: Math.max(24, plan.rowMarkH - plan.fact * 3.2), title: Math.min(plan.title, Math.max(24, (plan.rowMarkH - plan.fact * 3.2) / 2)), fact: plan.fact, mark: true, badge: false, room: plan.rowMarkH }, model.publishedAt)
     : { ...NO_MARQUEE, key: "all", ...fitMark("Library", plan.rowMarkW, plan), facts: factLines([{ icon: "grid", text: gamesWords(state.lists.total), strong: false }], plan.fact, plan.rowMarkW) }

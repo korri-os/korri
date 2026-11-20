@@ -1103,12 +1103,18 @@ fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
 
 /// VELVET_FRAMES=DIR draws each scenario's last frame (VELVET_ONLY=a,b; all
 /// without it) at VELVET_SIZES (WxH,WxH; 1280x720 without it) into
-/// DIR/<WxH>/<name>.png. Without VELVET_FRAMES it does nothing.
+/// DIR/<WxH>/<name>.png. With VELVET_PANES=SxF (two sizes, WxH+WxH) it draws
+/// the scenario with a window each (ADR 0086) instead: the Stage at the first
+/// size, the Floor at the second, into DIR/<SxF>/<name>.stage.png and
+/// <name>.floor.png. Without VELVET_FRAMES it does nothing.
 #[test]
 fn frames() {
     let Some(out) = std::env::var_os("VELVET_FRAMES").map(PathBuf::from) else {
         return;
     };
+    if let Ok(panes) = std::env::var("VELVET_PANES") {
+        return pane_frames(&out, &panes);
+    }
     install();
     let root = package();
     let views =
@@ -1169,6 +1175,69 @@ fn frames() {
                 &out.join(format!("{width}x{height}")),
                 name,
             );
+            instance.hide().unwrap();
+        }
+    }
+}
+
+/// VELVET_PANES: each scenario played with a window a pane, then each window drawn at its size.
+fn pane_frames(out: &Path, panes: &str) {
+    let size = |s: &str| -> (u32, u32) {
+        let (w, h) = s.split_once('x').expect("WxH");
+        (w.parse().unwrap(), h.parse().unwrap())
+    };
+    let (stage, floor) = panes.split_once('+').expect("VELVET_PANES=WxH+WxH");
+    let sizes = [size(stage), size(floor)];
+    install();
+    let root = package();
+    let views =
+        korri_shell::package::compile(&korri_shell::package::Package::at(&root).unwrap()).unwrap();
+    let dir = out.join(panes);
+    for (name, scenario) in &scenarios(&root) {
+        let mut first = scenario["models"][0].clone();
+        if first["presentation"]["kind"] == "gameplay-overlay" {
+            continue;
+        }
+        let windows = json!([{"panes": ["stage"]}, {"panes": ["floor"]}]);
+        first["windows"] = windows.clone();
+        let (mut engine, mut korri) = start(&root, &first, sizes[0].0, sizes[0].1);
+        deliver(
+            &mut engine,
+            &mut korri,
+            json!({"_tag": "Resized", "width": sizes[1].0, "height": sizes[1].1, "window": 1}),
+        );
+        for press in scenario["steps"].as_array().unwrap() {
+            step(&mut engine, &mut korri, scenario, press.as_str().unwrap());
+            // A later model keeps the windows korrid gave.
+            if korri.model.get("windows").is_none() {
+                korri.model["windows"] = windows.clone();
+                engine.set_model(&korri.published()).unwrap();
+            }
+        }
+        deliver(
+            &mut engine,
+            &mut korri,
+            json!({"_tag": "Tick", "idleMs": 1000}),
+        );
+        for (window, (width, height)) in sizes.into_iter().enumerate() {
+            let instance = views.surface.create().unwrap();
+            instance
+                .window()
+                .set_size(slint::PhysicalSize::new(width, height));
+            instance.show().unwrap();
+            let mut binder = view::Binder::new(&views.surface);
+            let mut images = ImageCache::new(&root);
+            let view = engine.view_window(window as u32).unwrap();
+            for _ in 0..2 {
+                binder.apply(&instance, &view, &mut images).unwrap();
+                for _ in 0..4 {
+                    render(width, height);
+                    settle();
+                }
+            }
+            let pixels = render(width, height);
+            let part = if window == 0 { "stage" } else { "floor" };
+            save(&pixels, width, height, &dir, &format!("{name}.{part}"));
             instance.hide().unwrap();
         }
     }

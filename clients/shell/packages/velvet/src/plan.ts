@@ -1,6 +1,7 @@
 /**
  * Velvet's layout: one pure function of the window's width and height
- * (contract amendment A2, the intrinsic-design method). Every threshold is a
+ * (contract amendment A2, the intrinsic-design method), and of one fact
+ * korrid gives: whether this window is the Floor's own (ADR 0086). Every threshold is a
  * named constant here; the focus graph (src/focus.ts, src/browse.ts) and the
  * view both read the plan it returns, and main.slint draws from it. Nothing
  * else decides structure: not a display, not a device, not `.slint`.
@@ -150,20 +151,34 @@ export const DEFAULT_SIZE = { width: 1280, height: 720 } as const
 const gapOf = (tile: number): number => Math.round(Math.max(10, tile * TILE_RATIO * 0.16))
 const growOf = (tile: number): number => Math.ceil(tile * (FOCUS_SCALE - 1))
 
-// The plans of the two sizes asked for last: a window keeps its size for a long
-// time, and with a window each (ADR 0086) the Stage and the Floor ask in turn.
-let last: Plan | undefined
-let before: Plan | undefined
+// The plans of the two windows asked for last, each by its size and whether it is the
+// Floor's: a window keeps its size for a long time, and with a window each (ADR 0086) the
+// Stage and the Floor ask in turn.
+interface Kept {
+  readonly plan: Plan
+  readonly floor: boolean
+}
+let last: Kept | undefined
+let before: Kept | undefined
 onForget(() => {
   last = undefined
   before = undefined
 })
 
-export function plan(width: number, height: number): Plan {
-  if (last !== undefined && last.width === width && last.height === height) return last
-  if (before !== undefined && before.width === width && before.height === height) {
+const holds = (kept: Kept | undefined, width: number, height: number, floor: boolean): kept is Kept =>
+  kept !== undefined && kept.plan.width === width && kept.plan.height === height && kept.floor === floor
+
+/**
+ * The plan for a window. `floor`: the window is the Floor's own, when korrid
+ * gives the Stage and the Floor a window each (ADR 0086). The Stage names the
+ * game there, so no marquee stands over home's row: the row stands at the top,
+ * under the pad, and the library under it takes the room.
+ */
+export function plan(width: number, height: number, floor = false): Plan {
+  if (holds(last, width, height, floor)) return last.plan
+  if (holds(before, width, height, floor)) {
     ;[last, before] = [before, last]
-    return last
+    return last!.plan
   }
   before = last
   const W = Math.max(1, width)
@@ -227,11 +242,14 @@ export function plan(width: number, height: number): Plan {
     rowY = Math.round(H * 0.47)
     rowMarkW = W - 2 * padX
   }
+  // The Floor's own window: no marquee over the row, which stands under the pad with room
+  // for its focused tile's growth.
+  if (floor) rowY = padY + growOf(rowH)
   // The shelf never leaves the window: on a short one it yields height first.
   rowH = Math.min(rowH, Math.max(60, Math.round((H - padY - rowY) / FOCUS_SCALE)))
   const rowGap = gapOf(rowH)
   // The focused tile grows up by half its growth: the facts stay clear of it.
-  const rowMarkH = Math.max(0, rowY - padY - Math.round(Math.max(fs(40, 16), (rowH * (FOCUS_SCALE - 1)) / 2 + fs(18, 12))))
+  const rowMarkH = floor ? 0 : Math.max(0, rowY - padY - Math.round(Math.max(fs(40, 16), (rowH * (FOCUS_SCALE - 1)) / 2 + fs(18, 12))))
   const peek = rowY + Math.round(rowH * FOCUS_SCALE) + Math.round(rowGap * 2)
   // The marquee widens as type outgrows space (kt over k), so the facts keep one line.
   const heroW = narrow ? W - 2 * padX : Math.round(W * Math.min(0.8, (0.62 * kt) / k))
@@ -279,7 +297,7 @@ export function plan(width: number, height: number): Plan {
   const keyH = Math.floor(Math.min(keyW * 0.92, (H * 0.56 - (KEY_ROWS - 1) * keyGap) / KEY_ROWS, 78))
   const keysY = H - Math.round(padY * 0.8) - KEY_ROWS * keyH - (KEY_ROWS - 1) * keyGap
 
-  last = {
+  const made: Plan = {
     width: W, height: H, k, kt, padX, padY, narrow,
     title: ft(104, narrow ? 30 : 28), head, body: ft(30, 16), fact, label, button: ft(32, 17), small: ft(22, 14),
     posterX, posterY, posterH, textX, textY, textW, textH,
@@ -300,5 +318,6 @@ export function plan(width: number, height: number): Plan {
     emptyWide: W / H >= EMPTY_WIDE_RATIO,
     pauseW: Math.round(Math.min(W, clamp(W * 0.42, 280, 640))),
   }
-  return last
+  last = { plan: made, floor }
+  return made
 }

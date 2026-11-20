@@ -46,6 +46,16 @@ describe("one window", () => {
     expect(stage(one).page).toBe("home")
     expect((stage(one).homeRow as unknown[]).length).toBeGreaterThan(0)
   })
+
+  test("one window still names the row's focused game over the row", () => {
+    const run = opened("home", ONE)
+    run.press("down", "right")
+    const view = stage(run)
+    expect(view.home.rowMark.key).not.toBe("")
+    expect(view.home.rowMark.key).not.toBe(view.home.mark.key)
+    expect(view.home.rowMark.lines + (view.home.rowMark.logoShown ? 1 : 0)).toBeGreaterThan(0)
+    expect(view.screen.rowMarkH).toBeGreaterThan(0)
+  })
 })
 
 describe("a window each", () => {
@@ -158,6 +168,34 @@ describe("a window each", () => {
     expect(f.curtain.shown).toBe(false)
     expect(f.elsewhere).toBe(true)
     expect(focused(f)).toEqual([])
+  })
+
+  // The Stage is the one place that names the game (owner's report from the Thor: the title
+  // showed twice, and while Play held focus the Floor named another game than the Stage).
+  test("the Floor draws no row marquee; the Stage names the focused game", () => {
+    const run = opened("home", TWO)
+    // Play on the Stage holds focus: the Stage names the pick, the Floor's row names nothing.
+    const pick = stage(run).home.mark.key
+    expect(pick).not.toBe("")
+    expect(floor(run).home.rowMark.key).toBe("")
+    // Focus on the row: the Stage names the focused tile's game, the Floor still names nothing.
+    run.press("down", "right")
+    const s = stage(run)
+    const f = floor(run)
+    expect((f.homeRow as any[]).some(entry => entry.focused === true)).toBe(true)
+    expect(s.detail.mark.key).not.toBe("")
+    expect(s.detail.mark.key).not.toBe(pick)
+    expect(f.home.rowMark.key).toBe("")
+    expect(f.home.rowMark.lines).toBe(0)
+    // No band is kept for it: the row stands at the top of the Floor, and the library under it has the room.
+    const one = new Play(scenario("home").models[0], 1240, 1080)
+    one.press("down", "right")
+    const whole = globalThis.surface.view(one.state, one.model, 0) as any
+    expect(f.screen.rowMarkH).toBe(0)
+    expect(f.screen.rowY).toBeLessThan(whole.screen.rowY)
+    expect(f.screen.rowY - f.screen.padY).toBeLessThanOrEqual(Math.ceil(f.screen.rowH * 0.08))
+    expect(f.screen.peekY).toBeGreaterThan(0)
+    expect(f.screen.peekY).toBeLessThan(whole.screen.peekY)
   })
 
   test("a further window's Resized sizes the Floor and leaves the Stage", () => {

@@ -13,7 +13,7 @@ table and its capability map are in `docs/design/surfaces/velvet/DIRECTION.md`.
 | `ui/atoms`, `ui/molecules`, `ui/organisms`, `pages/` | One component per file. Each has its preview states beside it, `<Name>.<layer>.preview.slint`, written by `preview/previews.ts`. |
 | `ui/preview-frame.slint` | The window a preview state inherits. |
 | `logic.ts` → `logic.js` | `init`, `update`, `view`, `overlay`. `bun run velvet:build` in `clients/shell`; `velvet-check` rebuilds it and fails on any difference. |
-| `src/plan.ts` | The plan: layout as a pure function of (width, height). |
+| `src/plan.ts` | The plan: layout as a pure function of (width, height), and whether the window is the Floor's own (ADR 0086). |
 | `src/update.ts` | Every message. A row, a button and a key carry an `Act` (data); `perform` is the one place an act is done. |
 | `src/view.ts` | The view, from the state and the model. |
 | `src/browse.ts`, `src/lists.ts` | Home, the row, the lobby, a set, the detail; the lists home keeps over the one catalog window. |
@@ -31,9 +31,11 @@ table and its capability map are in `docs/design/surfaces/velvet/DIRECTION.md`.
 
 ## The plan
 
-`plan(width, height)` (`src/plan.ts`) is the whole layout. The view sends it
-as `screen`; `Tokens.screen` holds it; components read sizes from it. Named
-thresholds decide structure, never a device:
+`plan(width, height, floor)` (`src/plan.ts`) is the whole layout. `floor`
+is the one fact besides the size: the window is the Floor's own, when korrid
+gives each pane a window (Panes, below). The view sends it as `screen`;
+`Tokens.screen` holds it; components read sizes from it. Named thresholds
+decide structure, never a device:
 
 | Name | Value | What changes |
 | --- | --- | --- |
@@ -96,6 +98,9 @@ shell, `VELVET_FRAMES` (below) through the test harness.
   sheets, the keyboard), sized by its own `Resized { window: 1 }`. One focus
   moves across both; the window without it draws its page inert
   (`elsewhere`). The Floor's stage light is the Stage's under `FLOOR_VEIL`.
+  The Stage is the one place that names the game: on its own window the
+  Floor draws no marquee over home's row, and its plan (`plan(w, h, true)`)
+  stands the row under the pad and gives the library under it the room.
   `src/view.ts` (`stageWindow`, `floorWindow`) and `test/panes.test.ts`.
 - One catalog window. Home needs several lists and has one window and one
   query at a time. `src/lists.ts` asks one after another, one question an
@@ -368,7 +373,9 @@ press, holds the backdrop free of seams, holds a system's set to that
 system's games, and times every `view()` and every step's longest
 `update()` of a tour over 10,000 games.
 `VELVET_FRAMES=DIR VELVET_SIZES=WxH,... VELVET_ONLY=a,b` writes scenarios'
-last frames; `VELVET_PREVIEW_OUT=DIR` writes every preview state.
+last frames; with `VELVET_PANES=1920x1080+1240x1080` it plays them with a
+window each and writes `<name>.stage.png` and `<name>.floor.png` (the Thor's
+two panes); `VELVET_PREVIEW_OUT=DIR` writes every preview state.
 
 | Gate | Holds |
 | --- | --- |

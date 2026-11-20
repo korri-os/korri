@@ -346,7 +346,7 @@ export function focusSize(state: State, model: Model): { readonly width: number;
 
 function pressed(state: State, button: SurfaceButton, model: Model, out: Request[]): State {
   const size = focusSize(state, model)
-  const p = plan(size.width, size.height)
+  const p = plan(size.width, size.height, split(model) && floorHolds(state, model))
   const done = (step: Step): State => perform(step.state, step.act, model, out)
   const curtain = curtainOf(state, model)
   if (curtain !== undefined) return done(curtainPress(state, curtain, button, p))

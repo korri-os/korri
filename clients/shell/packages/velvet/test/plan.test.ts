@@ -32,6 +32,35 @@ describe("the plan", () => {
     }
   })
 
+  test("the Floor's own window is an input of its own: the memory never hands one for the other", () => {
+    for (const [width, height] of SIZES) {
+      const whole = JSON.stringify(plan(width, height))
+      const floor = JSON.stringify(plan(width, height, true))
+      expect(floor).not.toBe(whole)
+      // In turn, as the Stage and the Floor ask: each gets its own every time.
+      for (let i = 0; i < 3; i++) {
+        expect(JSON.stringify(plan(width, height, true))).toBe(floor)
+        expect(JSON.stringify(plan(width, height))).toBe(whole)
+        plan(width + 1, height, true)
+      }
+    }
+  })
+
+  test("the Floor's own window: no band for a marquee; the row under the pad, the library under it", () => {
+    for (const [width, height] of all) {
+      const p = plan(width, height, true)
+      const one = plan(width, height)
+      const at = `${width}x${height}`
+      expect(p.rowMarkH, at).toBe(0)
+      expect(p.rowY, at).toBeLessThanOrEqual(one.rowY)
+      expect(p.rowY - Math.ceil(p.rowH * (FOCUS_SCALE - 1)), at).toBeGreaterThanOrEqual(p.padY)
+      expect(p.rowY + Math.round(p.rowH * FOCUS_SCALE), at).toBeLessThanOrEqual(height)
+      if (one.peekY > 0) expect(p.peekY, at).toBeGreaterThan(0)
+      // Everything else is the window's plan.
+      expect({ ...p, rowY: 0, rowH: 0, rowGap: 0, rowMarkH: 0, peekY: 0 }, at).toEqual({ ...one, rowY: 0, rowH: 0, rowGap: 0, rowMarkH: 0, peekY: 0 })
+    }
+  })
+
   test("every number is finite and no size is negative", () => {
     for (const [width, height] of all) {
       for (const [key, value] of Object.entries(plan(width, height))) {

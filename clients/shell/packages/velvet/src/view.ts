@@ -246,6 +246,11 @@ interface Part {
   readonly layersOff?: boolean
   /** No page: the stage light alone. */
   readonly blank?: boolean
+  /**
+   * The Floor's own window. The Stage is the one place that names the game, so home's
+   * row has no marquee here; the plan stands the row at the top (plan's `floor`).
+   */
+  readonly floor?: boolean
 }
 
 /** The Floor's stage light: the Stage's own, under this veil at least. */
@@ -291,13 +296,14 @@ function floorWindow(state: State, model: Model) {
   const top = topLayer(state, model)
   const what = shown(state, model)
   const lists = homeOf(state.lists, model.publishedAt)
-  if (what === "home" && lists.pick === undefined) return whole(state, model, size, { elsewhere: true, blank: true, layersOff: true, veil: FLOOR_VEIL })
+  if (what === "home" && lists.pick === undefined) return whole(state, model, size, { floor: true, elsewhere: true, blank: true, layersOff: true, veil: FLOOR_VEIL })
   // The detail opens on the Stage: the Floor keeps the row or the set it came from.
   const behind: State = what === "detail" ? { ...state, detail: undefined } : state
   // Home on the Floor is its row and lobby: one level down, where the pick is out of sight.
   const floor: State = shown(behind, model) === "home" && behind.depth === 0 ? { ...behind, depth: 1 } : behind
   const onStage = top === "curtain" || what === "detail"
   return whole(floor, model, size, {
+    floor: true,
     elsewhere: onStage,
     unfocused: !onStage && what === "home" && state.depth === 0,
     layersOff: onStage,
@@ -333,7 +339,7 @@ function exitsWithin(exits: Record<string, Record<string, { to: string; entry: s
 function whole(state: State, model: Model, size: Size, part: Part) {
   // What this view asks for in pictures: the stage first, then each part in its own order.
   const asked = pictures()
-  const p = plan(size.width, size.height)
+  const p = plan(size.width, size.height, part.floor === true)
   const top = topLayer(state, model)
   const live = top === "screen" && part.elsewhere !== true && part.unfocused !== true
   // A launch's curtain is black and holds the game's logo: it asks for its picture first.
@@ -355,7 +361,7 @@ function whole(state: State, model: Model, size: Size, part: Part) {
       : page === "empty" ? (emptyButtons(model).length > 0 ? { menu: { down: { to: "empty", entry: "remembered" } }, empty: { up: { to: "menu", entry: "first" } } } : {})
         : page === "set" && state.set !== undefined ? setExits(state.set, model)
           : page === "list" && panel !== undefined ? panelExits(panel) : {}
-  const home = page === "home" ? homeView(asked, state, model, p, live) : undefined
+  const home = page === "home" ? homeView(asked, state, model, p, live, part.floor !== true) : undefined
   const set = page === "set" && state.set !== undefined ? setView(asked, state, state.set, model, p, live) : undefined
   const detail = page === "detail" ? detailView(asked, state, model, p, live) : undefined
   const empty = page === "empty" ? emptyView(state, model, p, live) : undefined
