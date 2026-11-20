@@ -6,9 +6,9 @@
  *    (the logo, else the title's first letter).
  *  - Settings has a row per entry with its state, and the kicker a signed
  *    out entry carries ("needs sign-in") stands under it at rest.
- *  - Setup has a skippable step for each entry with an `offer`, right after
- *    Wi-Fi, with the offer as its heading; Steam's keeps its place after the
- *    Starter pack (ADR 0083).
+ *  - Setup has a skippable step for each entry with an `offer`, after Names
+ *    and the Starter pack and before the end, in Korri's order, with the
+ *    offer as its heading. No id is special-cased.
  *  - A launch that waits for a sign-in (`Code` or `Working` with `forGame`)
  *    takes the screen; Back there is Korri's Cancel.
  *  - Where the window cannot give a module 4 px beside or over the rows, the
@@ -182,39 +182,51 @@ describe("a launch waits for the sign-in", () => {
 })
 
 describe("setup", () => {
-  test("an offered sign-in is a step right after Wi-Fi, headed by its offer", () => {
+  test("an offered sign-in is a step after Names, headed by its offer", () => {
     const run = play(scenario("first-boot-account"))
     expect(run.view.list.title).toBe("PRIVATE NETWORK: REACH YOUR DEVICES FROM ANYWHERE")
-    expect(run.view.list.step).toBe(3)
+    expect(run.view.list.step).toBe(4)
+    expect(run.view.list.steps).toBe(5)
     expect((run.view.listButtons as any[]).map(button => button.label)).toEqual(["Sign in", "Skip for now"])
     expect(runs(run.press("confirm"))).toEqual(["account-sign-in:sign-in:@korri:tailscale"])
+    const back = play(scenario("first-boot-account"))
+    back.press("back")
+    expect(back.view.list.title).toBe("NAMES")
   })
-  test("Skip passes the step to the names", () => {
+  test("Skip passes the step to the end", () => {
     const run = play(scenario("first-boot-account"))
     run.press("right", "confirm")
-    expect(run.view.list.title).toBe("NAMES")
+    expect(run.view.list.title).toBe("THE HOUSE IS READY")
   })
-  test("a plugin's offer comes right after Wi-Fi with its kicker; Steam's keeps its place after the Starter pack (ADR 0083)", () => {
+  test("several offers follow one another in Korri's order, Steam's like any other", () => {
     const run = play(scenario("first-boot-accounts"))
     expect(run.view.list.title).toBe("PRIVATE NETWORK: REACH YOUR DEVICES FROM ANYWHERE")
-    expect(run.view.list.step).toBe(3)
-    expect(run.view.list.sub).toBe("Tailscale needs you to sign in again")
+    expect(run.view.list.step).toBe(5)
     expect(run.view.list.steps).toBe(6)
+    expect(run.view.list.sub).toBe("Tailscale needs you to sign in again")
+    run.press("back")
+    expect(run.view.list.title).toBe("STEAM: PLAY THE GAMES IN YOUR STEAM LIBRARY")
     const steam = play(scenario("first-boot-steam"))
     expect(steam.view.list.title).toBe("STEAM: PLAY THE GAMES IN YOUR STEAM LIBRARY")
-    expect(steam.view.list.step).toBe(5)
+    expect(steam.view.list.step).toBe(4)
     expect(steam.view.list.steps).toBe(6)
     steam.press("back")
     expect(steam.view.list.title).toBe("NAMES")
   })
-  test("with the Starter pack offered, Steam's step comes after it", () => {
-    const scene = scenario("first-boot-steam")
-    const model = structuredClone(scene.models[0])
-    model.onboarding.starterPack = { _tag: "Installed" }
-    const run = play({ ...scene, steps: [...scene.steps, "confirm"], models: [model] })
-    expect(run.view.list.title).toBe("STEAM: PLAY THE GAMES IN YOUR STEAM LIBRARY")
-    run.press("back")
-    expect(run.view.list.title).toBe("STARTER PACK")
+  test("with the Starter pack offered, every sign-in step comes after it, Tailscale's and Steam's alike", () => {
+    for (const [name, title] of [
+      ["first-boot-account", "PRIVATE NETWORK: REACH YOUR DEVICES FROM ANYWHERE"],
+      ["first-boot-steam", "STEAM: PLAY THE GAMES IN YOUR STEAM LIBRARY"],
+    ] as const) {
+      const scene = scenario(name)
+      const model = structuredClone(scene.models[0])
+      model.onboarding.starterPack = { _tag: "Installed" }
+      const run = play({ ...scene, steps: [...scene.steps, "confirm"], models: [model] })
+      expect(run.view.list.title, name).toBe(title)
+      expect(run.view.list.step, name).toBe(5)
+      run.press("back")
+      expect(run.view.list.title, name).toBe("STARTER PACK")
+    }
   })
   test("the code in setup: the card's code, with Skip beside Korri's Cancel", () => {
     const run = play(scenario("first-boot-account-code"))
@@ -231,7 +243,7 @@ describe("setup", () => {
     const scene = scenario("first-boot-account")
     const model = structuredClone(scene.models[0])
     delete model.accountSignIns[0].offer
-    expect(play({ ...scene, models: [model] }).view.list.title).toBe("NAMES")
+    expect(play({ ...scene, models: [model] }).view.list.title).toBe("THE HOUSE IS READY")
   })
 })
 

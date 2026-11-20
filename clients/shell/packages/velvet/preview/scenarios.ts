@@ -188,6 +188,8 @@ const toAccount = [...toAccountRow, "confirm"]
 const toSecondAccount = [...toAccountRow, "down", "confirm"]
 /** First boot: past the controllers, and past Wi-Fi with "Skip for now". */
 const pastWifi = ["confirm", "down", "down", "down", "down", "down", "confirm"]
+/** And past Names, with Next. */
+const pastNames = [...pastWifi, "down", "confirm"]
 const toLobby = ["down", "down"]
 const toSet = [...toLobby, "right", "right", "right", "right", "right", "right", "confirm"]
 const toSystems = [...toLobby, "down", "down", "down"]
@@ -317,12 +319,13 @@ const scenarios: Scenario[] = [
   { name: "account-refused", models: [signedIn(entry("steam", "refused"))], steps: toAccount },
   { name: "account-for-game", models: [signedIn(entry("steam", "codeForGame"))], steps: [] },
   { name: "account-working", models: [signedIn(entry("steam", "working"))], steps: [] },
-  { name: "first-boot-account", models: [firstBoot(signIns(entry("tailscale", "signedOut")))], steps: pastWifi },
-  { name: "first-boot-account-code", models: [firstBoot(signIns(entry("tailscale", "code")))], steps: pastWifi },
-  { name: "first-boot-account-done", models: [firstBoot(signIns(entry("tailscale", "signedIn")))], steps: pastWifi },
-  // Two offers: the plugin's right after Wi-Fi, Steam's after the Starter pack (ADR 0083).
-  { name: "first-boot-accounts", models: [firstBoot(signIns(entry("steam", "signedOut"), entry("tailscale", "expired")))], steps: pastWifi },
-  { name: "first-boot-steam", models: [firstBoot(signIns(entry("steam", "signedOut"), entry("tailscale", "signedIn")))], steps: [...pastWifi, "confirm", "down", "confirm"] },
+  // Setup: every offered sign-in after Names and the Starter pack, before the end, in Korri's order.
+  { name: "first-boot-account", models: [firstBoot(signIns(entry("tailscale", "signedOut")))], steps: pastNames },
+  { name: "first-boot-account-code", models: [firstBoot(signIns(entry("tailscale", "code")))], steps: pastNames },
+  { name: "first-boot-account-done", models: [firstBoot(signIns(entry("tailscale", "signedIn")))], steps: pastNames },
+  // Two offers in Korri's order: Steam's (signed in, Next leads), then Tailscale's.
+  { name: "first-boot-accounts", models: [firstBoot(signIns(entry("steam", "signedIn"), entry("tailscale", "expired")))], steps: [...pastNames, "confirm"] },
+  { name: "first-boot-steam", models: [firstBoot(signIns(entry("steam", "signedOut"), entry("tailscale", "signedIn")))], steps: pastNames },
   // The gameplay overlay.
   { name: "overlay", models: [overlay(korri.overlay.plain)], steps: [] },
   { name: "overlay-groups", models: [overlay(korri.overlay.groups)], steps: ["down", "down"] },

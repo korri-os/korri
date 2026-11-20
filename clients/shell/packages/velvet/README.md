@@ -203,10 +203,10 @@ shell, `VELVET_FRAMES` (below) through the test harness.
   Korri's line under focus; a signed-out entry's kicker ("needs you to sign
   in again") and a problem's stand under the row at rest. The row opens the
   card: the entry's title, its state in Korri's words, and Korri's actions
-  as buttons. Setup has a step for each entry with an `offer`, right after
-  Wi-Fi (a sign-in needs the network), headed by the offer: Korri's actions,
-  or Skip for now; Next leads once signed in. Steam's step (`@korri:steam`,
-  the one id Velvet names) keeps its place after the Starter pack (ADR 0083). A card takes the screen by
+  as buttons. Setup has a step for each entry with an `offer`, after Names
+  and the Starter pack and before the end (so after Wi-Fi), in Korri's
+  order, headed by the offer: Korri's actions, or Skip for now; Next leads
+  once signed in. No id is special-cased. A card takes the screen by
   itself while a launch waits for its sign-in (`Code` or `Working` with
   `forGame`), where Back is Korri's Cancel. Every action is a `RunAction`
   with Korri's id.
