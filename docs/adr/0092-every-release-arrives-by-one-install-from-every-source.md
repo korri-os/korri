@@ -4,7 +4,7 @@ status: accepted
 
 # Every release arrives by one install, in pieces from every source
 
-**Owner decisions, 2026-11-20.** A game that only a
+**Owner decisions, 2026-11-20. Work: #551 to #556; waking a device: #557.** A game that only a
 peer holds can be played only by stream play today. The owner wants to play
 it locally when that is possible, and the game should be copied to the
 device. Today three separate mechanisms put game bytes on a device. Provider
