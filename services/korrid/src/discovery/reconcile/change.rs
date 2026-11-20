@@ -404,8 +404,10 @@ fn reconcile_providers(
             .iter()
             .map(|o| format!("{}/{}", o.target.provider, o.target.provider_ref))
             .collect();
+        // A partial scan could not read one of its manifest folders: a game
+        // missing from it may be installed there, so nothing is withdrawn.
         for (key, origins) in &mut change.origins {
-            if origins.contains(&scan.id) && !seen.contains(key) {
+            if !scan.partial && origins.contains(&scan.id) && !seen.contains(key) {
                 if let Some(locations) = next.locations.get_mut(key) {
                     locations.retain(|location| !matches!(location, Location::ProviderRef { .. }));
                     if locations.is_empty() {

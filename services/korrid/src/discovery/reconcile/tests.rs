@@ -382,6 +382,62 @@ fn authored_steam_location_after_uninstall_survives_disabled_rescan() {
     assert_authored_steam_location_after_uninstall_survives(false);
 }
 
+/// A Steam folder korrid cannot read withdraws none of its games, and the
+/// other folder's new game is still added (ADR 0083: client and engine).
+#[test]
+fn an_unreadable_steam_folder_keeps_its_games_and_the_other_folder_still_adds() {
+    use std::os::unix::fs::PermissionsExt;
+    if unsafe { libc::geteuid() } == 0 {
+        eprintln!("skipped: root ignores directory modes");
+        return;
+    }
+    let root = tempfile::tempdir().unwrap();
+    let private = tempfile::tempdir().unwrap();
+    let package = tempfile::tempdir().unwrap();
+    let account = root
+        .path()
+        .join("users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9");
+    let client = account.join("steam/steamapps");
+    let engine = account.join("steam-engine/steam/steamapps");
+    fs::create_dir_all(&client).unwrap();
+    fs::create_dir_all(&engine).unwrap();
+    let app = |folder: &std::path::Path, appid: &str, name: &str| {
+        fs::write(
+            folder.join(format!("appmanifest_{appid}.acf")),
+            format!(
+                "\"AppState\" {{ \"appid\" \"{appid}\" \"name\" \"{name}\" \"StateFlags\" \"4\" }}"
+            ),
+        )
+        .unwrap();
+    };
+    app(&client, "401710", "Flinthook");
+    app(&engine, "78000", "Bejeweled 3");
+    let writer = DiscoveryCoordinator::new(root.path(), private.path()).with_registry_source(
+        plugin_policy::RegistrySource::Selected(Arc::new(crate::plugin_test_fixtures::steam(
+            package.path(),
+        ))),
+    );
+    let options = DiscoveryOptions::default();
+    let located = || {
+        let snapshot = Documents::read(root.path()).unwrap().validate().unwrap();
+        [
+            "@korri:steam/401710",
+            "@korri:steam/78000",
+            "@korri:steam/620",
+        ]
+        .map(|key| snapshot.locations.contains_key(key))
+    };
+    writer.rescan(&options).unwrap();
+    assert_eq!(located(), [true, true, false]);
+
+    app(&client, "620", "Portal 2");
+    fs::set_permissions(&engine, fs::Permissions::from_mode(0o100)).unwrap();
+    let scanned = writer.rescan(&options);
+    fs::set_permissions(&engine, fs::Permissions::from_mode(0o700)).unwrap();
+    scanned.unwrap();
+    assert_eq!(located(), [true, true, true]);
+}
+
 #[test]
 fn artwork_uses_acquired_content_identities_without_discovery_ownership() {
     let root = tempfile::tempdir().unwrap();

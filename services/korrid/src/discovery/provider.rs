@@ -241,6 +241,10 @@ pub struct ProviderReleaseLaunch {
 pub struct ProviderScan {
     pub id: String,
     pub observations: Vec<ProviderRefReleaseObservation>,
+    /// A manifest folder of this provider could not be read. The scan adds
+    /// what the other folders hold and withdraws nothing: an unreadable folder
+    /// is not evidence of uninstall.
+    pub partial: bool,
 }
 
 fn location_diagnostic(
@@ -341,24 +345,37 @@ fn scan_location(
         .flat_map(|account| globs.clone().map(move |glob| (account, glob)))
     {
         let engine = glob.starts_with(crate::steam_engine::folder::NAME);
+        // Each manifest folder stands on its own. One that cannot be read is
+        // logged and skipped; the others still report their games, and the
+        // scan withdraws no prior location (an unreadable paired source does
+        // the same).
+        let folder = glob.rsplit_once('/').map_or(glob, |(folder, _)| folder);
+        let unavailable = |diagnostics: &mut Vec<DiscoveryDiagnostic>,
+                           result: &mut ProviderScan,
+                           error: String| {
+            diagnostic(
+                diagnostics,
+                None,
+                &format!(
+                    "manifest directory {folder} of {} unavailable: {error}",
+                    account.storage_id
+                ),
+            );
+            result.partial = true;
+        };
         let directory = match manifest_directory(&account.root, glob) {
             Ok(directory) => directory,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => {
-                diagnostic(
-                    diagnostics,
-                    None,
-                    &format!("manifest directory unavailable: {error}"),
-                );
-                // Like an unreadable paired source, do not withdraw prior locations.
-                return vec![];
+                unavailable(diagnostics, &mut result, error.to_string());
+                continue;
             }
         };
         let names = match manifest_names(&directory) {
             Ok(names) => names,
             Err(error) => {
-                diagnostic(diagnostics, None, &error);
-                return vec![];
+                unavailable(diagnostics, &mut result, error);
+                continue;
             }
         };
         for name in names {
@@ -455,29 +472,59 @@ fn manifest_appid(name: &str) -> Option<&str> {
     (!id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())).then_some(id)
 }
 
-fn child(parent: &File, name: &str, directory: bool) -> std::io::Result<File> {
+/// How [`child`] opens one part of a manifest path.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Open {
+    /// A folder on the way to the manifest folder: `O_PATH`, which needs only
+    /// search permission. The Steam engine host grants korrid no more than
+    /// that on `steam-engine/` (ADR 0083).
+    Traverse,
+    /// The manifest folder, which korrid must list.
+    List,
+    /// One manifest file.
+    Read,
+}
+
+impl Open {
+    /// Every kind refuses a symlink: `O_NOFOLLOW` fails on a link to a file,
+    /// and with `O_PATH` it opens the link itself, which `O_DIRECTORY` refuses.
+    fn flags(self) -> libc::c_int {
+        let always = libc::O_CLOEXEC | libc::O_NOFOLLOW;
+        match self {
+            Open::Traverse => always | libc::O_PATH | libc::O_DIRECTORY,
+            Open::List => always | libc::O_RDONLY | libc::O_NONBLOCK | libc::O_DIRECTORY,
+            Open::Read => always | libc::O_RDONLY | libc::O_NONBLOCK,
+        }
+    }
+}
+
+fn child(parent: &File, name: &str, open: Open) -> std::io::Result<File> {
     let name = CString::new(name).map_err(std::io::Error::other)?;
-    let flags = libc::O_RDONLY
-        | libc::O_CLOEXEC
-        | libc::O_NOFOLLOW
-        | libc::O_NONBLOCK
-        | if directory { libc::O_DIRECTORY } else { 0 };
-    let fd = unsafe { libc::openat(parent.as_raw_fd(), name.as_ptr(), flags) };
+    let fd = unsafe { libc::openat(parent.as_raw_fd(), name.as_ptr(), open.flags()) };
     if fd < 0 {
         return Err(std::io::Error::last_os_error());
     }
     Ok(unsafe { File::from_raw_fd(fd) })
 }
 
+/// The manifest folder of `glob` below `account`, opened for listing. The
+/// account root and each folder between it and the manifest folder are only
+/// traversed, never listed.
 fn manifest_directory(account: &Path, glob: &str) -> std::io::Result<File> {
+    let (relative, _) = glob.rsplit_once('/').expect("first-party manifest glob");
     let account = OpenOptions::new()
         .read(true)
-        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .custom_flags(Open::Traverse.flags())
         .open(account)?;
-    let (relative, _) = glob.rsplit_once('/').expect("first-party manifest glob");
+    let parts: Vec<&str> = relative.split('/').collect();
     let mut directory = account;
-    for part in relative.split('/') {
-        directory = child(&directory, part, true)?;
+    for (index, part) in parts.iter().enumerate() {
+        let open = if index + 1 == parts.len() {
+            Open::List
+        } else {
+            Open::Traverse
+        };
+        directory = child(&directory, part, open)?;
     }
     Ok(directory)
 }
@@ -503,7 +550,7 @@ fn manifest_names(directory: &File) -> Result<Vec<String>, String> {
 }
 
 fn read_manifest(directory: &File, name: &str) -> Result<String, String> {
-    let mut file = child(directory, name, false).map_err(|e| e.to_string())?;
+    let mut file = child(directory, name, Open::Read).map_err(|e| e.to_string())?;
     let meta = file.metadata().map_err(|e| e.to_string())?;
     if !meta.is_file() || meta.len() > MAX_FILE_BYTES as u64 {
         return Err("manifest must be a regular file of at most 65536 bytes; skipped".into());

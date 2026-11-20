@@ -1534,9 +1534,14 @@ Typeshare. The `provider-ref-release` observation retains legacy `kind`,
 korrid admits at most 4,096 manifests per pass and 65,536 bytes per manifest.
 It skips files over those caps and reports daemon stderr and discovery
 diagnostics. It uses descriptor-relative no-follow opens and regular-file
-checks, never recursive scanning or symlink traversal. More than 10,000 entries
-in one manifest directory, unreadable directories or invalid handler output
-preserve previous locations. A missing directory is an empty installed set.
+checks, never recursive scanning or symlink traversal. It only traverses the
+folders above a manifest directory (`O_PATH`), so it needs search permission
+there and read permission only on the manifest directory itself. More than
+10,000 entries in one manifest directory, unreadable directories or invalid
+handler output preserve previous locations. An unreadable manifest directory
+does not hide the other directory's manifests: the scan adds what that
+directory holds and withdraws nothing. A missing directory is an empty
+installed set.
 AppIDs must be numeric and match their manifest filenames, provider IDs must
 belong to Steam, titles must be non-empty, and release, system, source and
 runner must match the admitted Steam case. Steam's pure VDF parser admits only

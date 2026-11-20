@@ -1,6 +1,6 @@
 use super::*;
 use crate::plugin_discovery::STEAM_INSTALLED_APPS;
-use std::os::unix::fs::symlink;
+use std::os::unix::fs::{symlink, PermissionsExt};
 
 const PLUGIN: &str = include_str!("../../../tests/fixtures/first-party/steam/plugin.ts");
 
@@ -143,6 +143,165 @@ fn files_are_bounded_regular_and_confined_to_the_steam_root() {
     )
     .unwrap();
     assert!(manifest_directory(root.path(), "steam/steamapps/appmanifest_*.acf").is_err());
+    // The manifest folder itself may not be a link either.
+    fs::remove_file(root.path().join("steam")).unwrap();
+    fs::create_dir(root.path().join("steam")).unwrap();
+    symlink(
+        root.path().join("original-steam/steamapps"),
+        root.path().join("steam/steamapps"),
+    )
+    .unwrap();
+    assert!(manifest_directory(root.path(), "steam/steamapps/appmanifest_*.acf").is_err());
+}
+
+#[test]
+fn folders_on_the_way_are_only_traversed_and_the_manifest_folder_is_listed() {
+    assert_eq!(
+        Open::Traverse.flags(),
+        libc::O_PATH | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC
+    );
+    for open in [Open::List, Open::Read] {
+        assert_eq!(open.flags() & libc::O_PATH, 0, "{open:?}");
+        assert_eq!(open.flags() & libc::O_ACCMODE, libc::O_RDONLY, "{open:?}");
+        assert_ne!(open.flags() & libc::O_NOFOLLOW, 0, "{open:?}");
+    }
+    assert_ne!(Open::List.flags() & libc::O_DIRECTORY, 0);
+    assert_eq!(Open::Read.flags() & libc::O_DIRECTORY, 0);
+}
+
+/// Sets a folder's mode for one test and gives the owner full access back
+/// before the temporary folder is removed.
+struct Mode<'a>(&'a Path);
+
+impl<'a> Mode<'a> {
+    fn set(path: &'a Path, mode: u32) -> Self {
+        fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
+        Self(path)
+    }
+}
+
+impl Drop for Mode<'_> {
+    fn drop(&mut self) {
+        let _ = fs::set_permissions(self.0, fs::Permissions::from_mode(0o700));
+    }
+}
+
+/// A process with CAP_DAC_OVERRIDE ignores the modes these tests set.
+fn modes_apply() -> bool {
+    let root = unsafe { libc::geteuid() } == 0;
+    if root {
+        eprintln!("skipped: root ignores directory modes");
+    }
+    !root
+}
+
+fn engine_and_client_folders(root: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
+    let client = root.join("steam/steamapps");
+    let engine = root.join("steam-engine/steam/steamapps");
+    fs::create_dir_all(&client).unwrap();
+    fs::create_dir_all(&engine).unwrap();
+    fs::write(client.join("appmanifest_401710.acf"), manifest("")).unwrap();
+    fs::write(
+        engine.join("appmanifest_78000.acf"),
+        r#""AppState" { "appid" "78000" "StateFlags" "4" "name" "Bejeweled 3" }"#,
+    )
+    .unwrap();
+    (client, engine)
+}
+
+fn account(root: &Path) -> Vec<AccountRoot> {
+    vec![AccountRoot {
+        user: "default".into(),
+        storage_id: "account-f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+            .into(),
+        root: root.into(),
+    }]
+}
+
+fn refs(scan: &ProviderScan) -> Vec<(&str, &str)> {
+    scan.observations
+        .iter()
+        .map(|o| (o.target.provider_ref.as_str(), o.launch.runner.as_str()))
+        .collect()
+}
+
+/// ADR 0083: the engine host gives korrid only search (`--x`) on
+/// `steam-engine/` and read on `steam-engine/steam/steamapps`. korrid finds
+/// the engine's games through that and lists nothing else.
+#[test]
+fn a_search_only_engine_folder_still_yields_its_manifests() {
+    if !modes_apply() {
+        return;
+    }
+    let root = tempfile::tempdir().unwrap();
+    let package = tempfile::tempdir().unwrap();
+    let registry = crate::plugin_test_fixtures::steam(package.path());
+    engine_and_client_folders(root.path());
+    let engine_root = root.path().join("steam-engine");
+    let _mode = Mode::set(&engine_root, 0o100);
+    assert_eq!(
+        fs::read_dir(&engine_root).unwrap_err().kind(),
+        std::io::ErrorKind::PermissionDenied,
+        "the test folder must not be listable"
+    );
+    let mut diagnostics = Vec::new();
+    let scans = scan(
+        &account(root.path()),
+        &registry,
+        std::iter::empty(),
+        &mut diagnostics,
+    );
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    assert!(!scans[0].partial);
+    assert_eq!(
+        refs(&scans[0]),
+        [
+            ("401710", "@korri:steam/steam"),
+            ("78000", "@korri:steam/engine")
+        ]
+    );
+}
+
+/// One manifest folder that cannot be read does not hide the other's games,
+/// and marks the scan partial so that no prior location is withdrawn.
+#[test]
+fn an_unreadable_manifest_folder_keeps_the_other_folders_games() {
+    if !modes_apply() {
+        return;
+    }
+    let root = tempfile::tempdir().unwrap();
+    let package = tempfile::tempdir().unwrap();
+    let registry = crate::plugin_test_fixtures::steam(package.path());
+    let (client, engine) = engine_and_client_folders(root.path());
+    for (unreadable, found) in [
+        (&engine, ("401710", "@korri:steam/steam")),
+        (&client, ("78000", "@korri:steam/engine")),
+    ] {
+        let _mode = Mode::set(unreadable, 0o100);
+        let mut diagnostics = Vec::new();
+        let scans = scan(
+            &account(root.path()),
+            &registry,
+            std::iter::empty(),
+            &mut diagnostics,
+        );
+        assert_eq!(scans.len(), 1);
+        assert!(scans[0].partial);
+        assert_eq!(refs(&scans[0]), [found]);
+        let folder = unreadable
+            .strip_prefix(root.path())
+            .unwrap()
+            .display()
+            .to_string();
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert!(
+            diagnostics[0]
+                .message
+                .contains(&format!("manifest directory {folder} of "))
+                && diagnostics[0].message.contains("Permission denied"),
+            "{diagnostics:?}"
+        );
+    }
 }
 
 #[test]
