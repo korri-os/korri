@@ -31,6 +31,12 @@ export const CELL_W = 1.5
 export const BOLT_W = 0.8
 /** A share of the pause panel's line the cluster may take; the game's name has the rest. */
 export const PAUSE_CLUSTER_SHARE = 0.45
+/**
+ * A share of the line the cluster may take where no Menu pill stands beside it: the detail,
+ * and home's row and lobby (one and two levels down). The row's facts and the lobby's readout
+ * have the rest.
+ */
+export const OPEN_CLUSTER_SHARE = 0.5
 
 /** The network as the cluster draws it. */
 export type NetworkGlyph = "bars" | "wifi" | "wired" | "offline" | "none"
@@ -128,4 +134,14 @@ export function clusterIn(cluster: ClusterView, room: number): ClusterView {
     ...cluster, clock, clockW: fits.clock ? cluster.clockW : 0, percent, percentW: fits.percent ? cluster.percentW : 0,
     fullW: fits.width, midW: fits.width, leastW: fits.width,
   }
+}
+
+/**
+ * What the cluster takes of a line `line` px wide where it may have OPEN_CLUSTER_SHARE of it,
+ * with the gap before it, in px: home's row keeps its facts clear of it (src/browse.ts).
+ */
+export function openClusterReserve(model: Pick<Model, "clockLabel" | "network" | "battery">, line: number, small: number): number {
+  const cluster = clusterOf(model)
+  if (!cluster.shown) return 0
+  return (clusterFits(cluster, (line * OPEN_CLUSTER_SHARE) / small).width + CLUSTER_GAP) * small
 }

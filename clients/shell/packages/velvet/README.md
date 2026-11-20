@@ -84,7 +84,7 @@ shell, `VELVET_FRAMES` (below) through the test harness.
 | Account sign-ins (ADR 0083, ADR 0089) | `account-rows`, `account-rows-busy`, `account-signed-out`, `account-expired`, `account-checking`, `account-starting`, `account-code`, `account-code-tailscale`, `account-code-renewed`, `account-code-smallest`, `account-code-largest`, `account-code-malformed`, `account-code-logo`, `account-code-no-detail`, `account-signed-in`, `account-signed-in-long`, `account-problem`, `account-refused`, `account-for-game`, `account-working`, `first-boot-account`, `first-boot-account-code`, `first-boot-account-done`, `first-boot-accounts`, `first-boot-steam` | `VelvetList.Account*`, `.FirstBootAccount*`, `VelvetProgramme.AccountCode`, `VelvetCode`, `VelvetRow.Account` |
 | Saves, the runner, launch settings | `saves`, `saves-empty`, `saves-restore`, `runner`, `launch-settings`, `launch-changes`, `launch-keep`, `launch-streamed`, `launch-unreachable`, `launch-conflict`, `launch-loading`, `launch-empty` | `VelvetList.Saves`, `.Runner`, `.LaunchSettings` |
 | The gameplay overlay | `overlay`, `overlay-groups`, `overlay-stream`, `overlay-asking`, `status-low-pause` | `pages/VelvetPaused`, `VelvetPause` |
-| The cluster: clock, network, battery (ADR 0094) | `status-bars-0` to `status-bars-4`, `status-wifi-unmeasured`, `status-wired`, `status-offline`, `status-no-network`, `status-low`, `status-charging`, `status-bolt`, `status-no-battery`, `status-unverified`, `status-nothing`, `status-low-pause` | `VelvetCluster` (`.NoPercent`, `.GlyphsOnly`: a short room), `VelvetBattery`, `VelvetSignal`, `VelvetIcon` (`.Bolt`, `.Wired`, `.Slash`) |
+| The cluster: clock, network, battery (ADR 0094) | `status-bars-0` to `status-bars-4`, `status-wifi-unmeasured`, `status-wired`, `status-offline`, `status-no-network`, `status-low`, `status-charging`, `status-bolt`, `status-no-battery`, `status-unverified`, `status-nothing`, `status-row`, `status-lobby`, `status-low-pause` | `VelvetCluster` (`.NoPercent`, `.GlyphsOnly`: a short room), `VelvetBattery`, `VelvetSignal`, `VelvetIcon` (`.Bolt`, `.Wired`, `.Slash`) |
 
 ## Contract use
 
@@ -172,8 +172,10 @@ shell, `VELVET_FRAMES` (below) through the test harness.
   clock, and the glyphs stay. The pause panel's room is a share of its line
   (`PAUSE_CLUSTER_SHARE`), fitted by the logic so the title can be fitted to
   the rest. With a window each (ADR 0086) only the Stage's window holds it.
-  On home it travels with the Menu pill: the row and the lobby, one and two
-  levels down, show neither.
+  On home it stands still at every depth: beside the Menu pill with the
+  pick, at the right edge in the row and the lobby, where it has half the
+  line first (`OPEN_CLUSTER_SHARE`, as on the detail) and the row's facts
+  and the lobby's readout give way.
 - "Now" is `model.publishedAt`. It can be a minute behind, so a session that
   ended after it is "Just now". Without it a fact is a date and the pick is
   the last game played. Dates are read in UTC (`getUTC*` only; a surface has

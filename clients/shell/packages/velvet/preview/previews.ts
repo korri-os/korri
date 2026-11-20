@@ -249,7 +249,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
     const v = view(scene)
     return { name, body: one("VelvetBrowse", `${FILL} home: ${p(v.home)}; cluster: ${p(v.cluster)}; cards: ${p(v.homeCards)}; row-tiles: ${p(v.homeRow)}; shelves: ${p(v.shelves)}; shelf-tiles: ${p(v.shelfTiles)}; shelf-at: ${v.shelfAt}; depth: ${v.homeDepth};`) }
   }
-  add("pages", "VelvetBrowse", [browse("Home", "home"), browse("HomeNoArt", "home-no-art"), browse("Row", "row"), browse("RowNamed", "row-poster"), browse("Lobby", "lobby"), browse("OneGame", "home-one")])
+  add("pages", "VelvetBrowse", [browse("Home", "home"), browse("HomeNoArt", "home-no-art"), browse("Row", "row"), browse("RowNamed", "row-poster"), browse("Lobby", "lobby"), browse("OneGame", "home-one"), browse("RowLowBattery", "status-row"), browse("LobbyCharging", "status-lobby")])
   const detail = (name: string, scene: string) => {
     const v = view(scene)
     return { name, body: one("VelvetDetail", `${FILL} detail: ${p(v.detail)}; cluster: ${p(v.cluster)}; cards: ${p(v.detailCards)}; buttons: ${p(v.detailButtons)};`) }

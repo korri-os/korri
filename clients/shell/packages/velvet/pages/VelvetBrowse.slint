@@ -41,6 +41,9 @@ export component VelvetBrowse inherits Rectangle {
     property <length> u: Tokens.unit;
     property <length> pad-x: Tokens.screen.pad-x * u;
     property <length> pad-y: Tokens.screen.pad-y * u;
+    // The lobby's readout of what focus is on: from the middle of the line to the cluster.
+    property <length> lobby-readout-w: (cluster.used > 0 ? cluster.x - Tokens.screen.fact * u * 1.4 : root.width - pad-x) - root.width * 0.5;
+    property <bool> lobby-readout-shown: Tokens.screen.narrow || root.lobby-readout-w >= Tokens.screen.fact * u * 4;
     // How deep home is (a number of its own: main.slint says why).
     in property <int> depth;
     // The row's tile: a strip at rest, a shelf once it is focused. These are where things
@@ -126,14 +129,6 @@ export component VelvetBrowse inherits Rectangle {
                     inert: root.inert;
                     activated(target, at, released) => { root.activated(target, at, released); }
                 }
-                // The cluster ends where the pill's focus ring starts (0.24 of its size out
-                // from its edge), less a gap of 0.6: it never runs under the pill, at any size.
-                VelvetCluster {
-                    x: menu-pill.x - Tokens.screen.small * root.u * 0.84 - self.width;
-                    y: root.pad-y * 0.7;
-                    cluster: root.cluster;
-                    room: Math.max(0px, menu-pill.x - Tokens.screen.small * root.u * 0.84 - root.pad-x);
-                }
             }
             // The focused game's facts over the shelf; no name: the tile says it, or the line under it.
             VelvetMarquee {
@@ -193,11 +188,11 @@ export component VelvetBrowse inherits Rectangle {
                 // Under the row it only peeks and holds still: one texture then (#484).
                 cache-rendering-hint: root.depth < 2;
                 animate y { duration: Tokens.t-layer; easing: cubic-bezier(0.22, 1, 0.36, 1); }
-                // The library's head.
+                // The library's head: it leaves the cluster its room.
                 HorizontalLayout {
                     x: root.pad-x;
                     y: Tokens.screen.head-y * root.u;
-                    width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
+                    width: Math.max(0px, Math.min(self.preferred-width, parent.width - 2 * root.pad-x - (cluster.used > 0 ? cluster.used + Tokens.screen.fact * root.u * 1.4 : 0px)));
                     height: Tokens.screen.head-h * root.u;
                     spacing: Tokens.screen.fact * root.u * 0.8;
                     opacity: root.depth == 2 ? 1 : 0;
@@ -218,20 +213,21 @@ export component VelvetBrowse inherits Rectangle {
                 HorizontalLayout {
                     x: Tokens.screen.narrow ? root.pad-x : parent.width * 0.5;
                     y: Tokens.screen.narrow ? (Tokens.screen.head-y + Tokens.screen.head-h) * root.u + Tokens.thin : (Tokens.screen.head-y + Tokens.screen.head-h) * root.u - self.height - lib.drop + Tokens.screen.fact * root.u * 0.3;
-                    width: Tokens.screen.narrow ? parent.width - 2 * root.pad-x : parent.width * 0.5 - root.pad-x;
+                    // Beside the head it gives way to the cluster, and whole in less room than a short name.
+                    width: Tokens.screen.narrow ? parent.width - 2 * root.pad-x : root.lobby-readout-w;
                     height: Tokens.screen.fact * root.u * 1.5;
                     alignment: Tokens.screen.narrow ? start : end;
                     spacing: Tokens.screen.fact * root.u * 0.6;
                     opacity: root.depth == 2 ? 1 : 0;
                     animate opacity { duration: Tokens.t-level; easing: cubic-bezier(0.4, 0, 0.2, 1); }
                     VelvetWords {
-                        text: root.home.now-title;
+                        text: root.lobby-readout-shown ? root.home.now-title : "";
                         ink: Tokens.house-light;
                         strong: true;
                     }
                     VelvetWords {
                         horizontal-stretch: 0;
-                        text: root.home.now-fact;
+                        text: root.lobby-readout-shown ? root.home.now-fact : "";
                     }
                 }
                 VelvetLobby {
@@ -249,5 +245,16 @@ export component VelvetBrowse inherits Rectangle {
                 }
             }
         }
+    }
+    // The cluster stands still at every depth (ADR 0094), at the height it has on every screen.
+    // With the pick, the Menu pill beside it: it ends where the pill's focus ring starts (0.24 of
+    // its size out from its edge), less a gap of 0.6, and never runs under the pill. One and two
+    // levels down the pill has gone with the pick: the cluster stands at the right edge and has
+    // its share of the line first; the row's facts (src/browse.ts) and the lobby's readout give way.
+    cluster := VelvetCluster {
+        x: root.depth == 0 ? menu-pill.x - Tokens.screen.small * root.u * 0.84 - self.width : root.width - root.pad-x - self.width;
+        y: root.pad-y * 0.7;
+        cluster: root.cluster;
+        room: root.depth == 0 ? Math.max(0px, menu-pill.x - Tokens.screen.small * root.u * 0.84 - root.pad-x) : (root.width - 2 * root.pad-x) * 0.5;
     }
 }

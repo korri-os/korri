@@ -5,7 +5,7 @@
  * held here; tests/velvet_package.rs draws it at every size.
  */
 import { describe, expect, test } from "bun:test"
-import { CELL_W, CLUSTER_GAP, BOLT_W, clusterFits, clusterIn, clusterOf, LOW_PERCENT, NETWORK_W, NO_CLUSTER, PERCENT_GAP } from "../src/cluster"
+import { CELL_W, CLUSTER_GAP, BOLT_W, clusterFits, clusterIn, clusterOf, LOW_PERCENT, NETWORK_W, NO_CLUSTER, openClusterReserve, PERCENT_GAP } from "../src/cluster"
 import { textWidth } from "../src/fit"
 import { barsOf } from "../src/settings"
 import { Play, play, scenario, scenarios } from "./korri"
@@ -119,6 +119,24 @@ describe("every screen carries it, the Floor's own window does not repeat it", (
       expect(play(scenario(name), 1280, 720).view.cluster.shown, name).toBe(true)
     }
     expect(play(scenario("status-nothing"), 1280, 720).view.cluster.shown).toBe(false)
+  })
+
+  test("home at every depth: the pick, the row and the lobby; the row's facts leave the cluster its room", () => {
+    for (const [width, height] of [[1920, 1080], [640, 480], [480, 800], [320, 240]] as const) {
+      for (const name of ["home", "status-row", "status-lobby"]) {
+        expect(play(scenario(name), width, height).view.cluster.shown, `${name} ${width}x${height}`).toBe(true)
+      }
+      const run = play(scenario("status-row"), width, height)
+      const p = run.view.screen
+      const reserve = openClusterReserve(run.model, p.width - 2 * p.padX, p.small)
+      const facts = run.view.home.rowMark.facts
+      for (const line of [facts.first, facts.second].filter(Boolean)) {
+        const words = ["a", "b", "c", "d"].slice(0, line.count).map(key => line[key].text as string)
+        // Each fact is its icon, its words and a gap: the line's words alone stay inside the room.
+        const used = words.reduce((sum, text) => sum + textWidth(text) * p.fact, 0)
+        expect(used, `${width}x${height}: ${words.join(", ")}`).toBeLessThanOrEqual(p.rowMarkW - reserve)
+      }
+    }
   })
 
   test("with a window each (ADR 0086), the Stage's holds it and the Floor's does not", () => {

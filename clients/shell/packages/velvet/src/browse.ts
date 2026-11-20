@@ -23,6 +23,7 @@
  */
 import type { CatalogQuery, SurfaceCatalog, SurfaceModel as Model } from "../../../../../contracts/generated/surface"
 import { artOf, blankTile, factLines, factsOf, gameTile, hasHero, marqueeOf, navTile, NO_IMAGE, NO_MARQUEE, NO_TILE, setTile, systemTile, type Pictures, type Standing, whereOf, type FactView, type MarqueeView, type TileView } from "./art"
+import { openClusterReserve } from "./cluster"
 import { textWidth } from "./fit"
 import { gridMove, lineMove } from "./focus"
 import { homeOf, sameQuery, shelvesOf, type ShelfItem, type ShelfSpec } from "./lists"
@@ -267,9 +268,12 @@ export function homeView(asked: Pictures, state: State, model: Model, plan: Plan
   // The row's marquee holds the focused tile's facts and no name (owner, 2026-11-20): the
   // name is in one place, the tile's own drawing or the name line under it (a tile's `name`, src/art.ts).
   const rowGame = depth === 1 && named ? row[state.rowAt] : undefined
+  // The cluster stands at the top right over the row's facts (ADR 0094): it has its room
+  // first, and the facts the rest (pages/VelvetBrowse.slint).
+  const factsW = rowGame === undefined ? plan.rowMarkW : Math.max(0, plan.rowMarkW - openClusterReserve(model, plan.width - 2 * plan.padX, plan.small))
   const rowMark = rowGame === undefined ? NO_MARQUEE : rowGame.kind === "game"
-    ? { ...NO_MARQUEE, key: rowGame.game.id, facts: factLines(factsOf(rowGame.game, model.publishedAt), plan.fact, plan.rowMarkW, 0, ROW_FACT_LINES) }
-    : { ...NO_MARQUEE, key: "all", facts: factLines([{ icon: "grid", text: gamesWords(state.lists.total), strong: false }], plan.fact, plan.rowMarkW, 0, ROW_FACT_LINES) }
+    ? { ...NO_MARQUEE, key: rowGame.game.id, facts: factLines(factsOf(rowGame.game, model.publishedAt), plan.fact, factsW, 0, ROW_FACT_LINES) }
+    : { ...NO_MARQUEE, key: "all", facts: factLines([{ icon: "grid", text: gamesWords(state.lists.total), strong: false }], plan.fact, factsW, 0, ROW_FACT_LINES) }
   // Play holds the pick's focus (owner, 2026-11-13, on usu: A should feel like it plays).
   // The card beside it takes focus with Left and opens the detail; with the hero as the
   // stage there is no card.

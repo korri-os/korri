@@ -33,13 +33,14 @@ export component VelvetSet inherits Rectangle {
     init => { in = true; }
     opacity: in ? 1 : 0;
     animate opacity { duration: Tokens.t-level; easing: cubic-bezier(0.22, 1, 0.36, 1); }
-    // The cluster has what the head leaves of the line; the head gives way only to its glyphs.
+    // The cluster has what the head's title and pill leave of the line: the count gives way to
+    // it first, as a readout, and the title only to its glyphs.
     property <length> cluster-gap: root.fact * 1.4;
     cluster := VelvetCluster {
         x: root.width - root.pad-x - self.width;
         y: Tokens.screen.pad-y * root.u * 0.7;
         cluster: root.cluster;
-        room: Math.max(0px, root.width - 2 * root.pad-x - head.preferred-width - root.cluster-gap);
+        room: Math.max(0px, root.width - 2 * root.pad-x - Math.min(title.preferred-width, title.max-width) - root.pill-need - root.cluster-gap);
     }
     property <length> head-room: root.width - 2 * root.pad-x - (cluster.used > 0 ? cluster.used + root.cluster-gap : 0px);
     // The head's line when the cluster has given up all it can (its glyphs alone).

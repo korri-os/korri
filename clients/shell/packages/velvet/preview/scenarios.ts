@@ -351,6 +351,9 @@ const scenarios: Scenario[] = [
   { name: "status-no-battery", models: [unpowered], steps: [] },
   { name: "status-unverified", models: [device({ battery: { charging: false } })], steps: [] },
   { name: "status-nothing", models: [silent], steps: [] },
+  // One and two levels down home, where the Menu pill has gone with the pick.
+  { name: "status-row", models: [device({ battery: { percent: 12, charging: false } })], steps: ["down"] },
+  { name: "status-lobby", models: [device({ battery: { percent: 64, charging: true } })], steps: toLobby },
   { name: "status-low-pause", models: [overlay(korri.overlay.stream, { battery: { percent: 9, charging: false } })], steps: [] },
   // The gameplay overlay.
   { name: "overlay", models: [overlay(korri.overlay.plain)], steps: [] },
