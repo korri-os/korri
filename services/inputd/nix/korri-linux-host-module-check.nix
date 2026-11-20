@@ -105,6 +105,41 @@ let
       localInput.enable = true;
     };
   };
+  # Per-display touch: the generator's two real path shapes (RG DS, AYN Thor)
+  # and a path it must refuse.
+  touchDisplays =
+    displays:
+    evaluate {
+      services.korriLinuxHost.compositor = {
+        backend = "drm";
+        drmDevice = "/dev/dri/card0";
+        renderDevice = "/dev/dri/renderD128";
+        mainDisplay = "DSI-2";
+        inherit displays;
+        renderer = "gles2";
+        localInput.enable = true;
+      };
+    };
+  touchDisplay = name: y: touch: {
+    inherit name y touch;
+    mode = "640x480@60Hz";
+    x = 0;
+  };
+  touchRules =
+    system:
+    lib.filter (line: lib.hasInfix "ENV{WL_OUTPUT}=" line) (
+      lib.splitString "\n" system.config.services.udev.extraRules
+    );
+  touchMapped = touchDisplays [
+    (touchDisplay "DSI-2" 0 "/soc@0/geniqup@ac0000/i2c@a90000/touchscreen@38")
+    (touchDisplay "DSI-1" 480 "/i2c@fe5e0000/touchscreen@14")
+  ];
+  touchUnmapped = touchDisplays [
+    (touchDisplay "DSI-2" 0 null)
+  ];
+  touchInvalid = touchDisplays [
+    (touchDisplay "DSI-2" 0 "/soc@0/spi@a90000/touchscreen@38")
+  ];
   missingDrmDevice = evaluate { services.korriLinuxHost.compositor.backend = "drm"; };
   wrongRuntimeUid = evaluate { users.users.korri.uid = lib.mkForce 1002; };
   cfg = valid.config;
@@ -120,6 +155,15 @@ let
   validationAction = cfg.services.korriLinuxInput.inputd.actions.workspace-next.command;
 in
 assert allAssertionsPass valid;
+assert allAssertionsPass touchMapped;
+assert
+  touchRules touchMapped == [
+    ''SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHSCREEN}=="1", DEVPATH=="*/a90000.i2c/i2c-*/*-0038/input/input*/event*", ENV{WL_OUTPUT}="DSI-2"''
+    ''SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHSCREEN}=="1", DEVPATH=="*/fe5e0000.i2c/i2c-*/*-0014/input/input*/event*", ENV{WL_OUTPUT}="DSI-1"''
+  ];
+assert allAssertionsPass touchUnmapped;
+assert touchRules touchUnmapped == [ ];
+assert hasFailedAssertion "touch must be an I2C touch controller's devicetree path" touchInvalid;
 # The server part alone: no local capture, but streamed controllers still
 # get their seats and the uinput access the stream plugin needs.
 assert allAssertionsPass serverOnly;

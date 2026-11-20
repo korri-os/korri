@@ -81,16 +81,8 @@ in
     };
   };
 
-  # libinput 1.31.3 src/udev-seat.c reads WL_OUTPUT per device. A carried
-  # wlroots patch passes it to Sway's existing touch output mapping. Match
-  # controller address AND I2C device address, never the repeated Goodix name.
-  services.udev.extraRules = lib.concatMapStringsSep "\n" (
-    display:
-    let
-      controller = builtins.head (builtins.match "^/i2c@([^/]+)/touchscreen@14$" display.touch);
-    in
-    ''SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHSCREEN}=="1", DEVPATH=="*/${controller}.i2c/i2c-*/*-0014/input/input*/event*", ENV{WL_OUTPUT}="${display.name}"''
-  ) config.services.korriLinuxHost.compositor.displays;
+  # The per-controller WL_OUTPUT udev rules come from each display's `touch`
+  # in the shared host module (services/inputd/nix/korri-linux-host-core.nix).
 
   assertions = [
     {

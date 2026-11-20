@@ -15,6 +15,24 @@ let
   runtimeHome = config.users.users.${cfg.runtimeUser}.home or "/home/${cfg.runtimeUser}";
   runtimeDir = "/run/user/${toString cfg.runtimeUid}";
   compositorWorkspace = "korri:game:active";
+  # A display's `touch` is the devicetree path of its touch controller on an
+  # I2C bus: [/parent…]/i2c@<controller>/touchscreen@<address>. The two real
+  # cases are the RG DS (/i2c@fe5c0000/touchscreen@14) and the AYN Thor
+  # (/soc@0/geniqup@ac0000/i2c@a90000/touchscreen@38). Linux names such a
+  # device <bus>-<address as four hex digits> under <controller>.i2c, so the
+  # udev rule matches the controller AND the device address, never an input
+  # name that two controllers can share.
+  touchPathParts = touch: builtins.match "^(/[^/]+)*/i2c@([0-9a-f]+)/touchscreen@([0-9a-f]+)$" touch;
+  touchDisplays = lib.filter (display: display.touch != null) cfg.compositor.displays;
+  touchOutputRule =
+    display:
+    let
+      parts = touchPathParts display.touch;
+      controller = builtins.elemAt parts 1;
+      address = builtins.elemAt parts 2;
+      device = lib.fixedWidthString 4 "0" address;
+    in
+    ''SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHSCREEN}=="1", DEVPATH=="*/${controller}.i2c/i2c-*/*-${device}/input/input*/event*", ENV{WL_OUTPUT}="${display.name}"'';
   mainDisplay = lib.findFirst (
     d: d.name == cfg.compositor.mainDisplay
   ) (throw "main display missing") cfg.compositor.displays;
@@ -486,6 +504,12 @@ in
         message = "services.korriLinuxHost compositor input requires the DRM backend.";
       }
       {
+        assertion = lib.all (
+          display: touchPathParts display.touch != null && builtins.stringLength (builtins.elemAt (touchPathParts display.touch) 2) <= 4
+        ) touchDisplays;
+        message = "services.korriLinuxHost compositor display touch must be an I2C touch controller's devicetree path, [/parent]/i2c@<controller>/touchscreen@<address>.";
+      }
+      {
         assertion = lib.all (name: builtins.match "[A-Za-z0-9_.:-]+" name != null) cfg.firewallInterfaces;
         message = "services.korriLinuxHost firewall interface names are invalid.";
       }
@@ -700,9 +724,16 @@ in
       "uhid"
     ];
     users.groups.uinput = lib.mkIf noLocalInput { };
-    services.udev.extraRules = lib.mkIf noLocalInput ''
-      KERNEL=="uinput", SUBSYSTEM=="misc", OWNER="root", GROUP="uinput", MODE="0660", OPTIONS+="static_node=uinput"
-    '';
+    services.udev.extraRules = lib.mkMerge [
+      (lib.mkIf noLocalInput ''
+        KERNEL=="uinput", SUBSYSTEM=="misc", OWNER="root", GROUP="uinput", MODE="0660", OPTIONS+="static_node=uinput"
+      '')
+      # libinput 1.31.3 src/udev-seat.c reads WL_OUTPUT per device. A carried
+      # wlroots patch (./wlroots-libinput-touch-output.patch) passes it to
+      # Sway's existing touch output mapping, so each touch controller maps to
+      # the display that declares it.
+      (lib.mkIf (touchDisplays != [ ]) (lib.concatMapStringsSep "\n" touchOutputRule touchDisplays))
+    ];
     # Plugin units (the Sunshine plugin among them) require the source guard
     # that korri-input.nix defines with local capture. Keep the same unit, so
     # the root-only /dev/inputplumber/sources fence exists on every host.
