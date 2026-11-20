@@ -419,6 +419,27 @@ impl Watch {
         if ran {
             self.game_started.store(true, Ordering::SeqCst);
         }
+        // The host's events go with its channel; the journal keeps what
+        // each Steam Cloud sync of the session found.
+        match event {
+            Event::SyncFinished {
+                appid,
+                kind,
+                result,
+            } => eprintln!(
+                "korrid steam engine: session {}: {kind} sync of {appid}: {result}",
+                self.launch_id
+            ),
+            Event::SyncConflict {
+                appid,
+                local_time,
+                remote_time,
+            } => eprintln!(
+                "korrid steam engine: session {}: Steam Cloud conflict for {appid}: local {local_time}, cloud {remote_time}",
+                self.launch_id
+            ),
+            _ => {}
+        }
         match event {
             Event::SyncFinished { kind, .. } => {
                 if kind == "exit" {
