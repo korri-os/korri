@@ -425,13 +425,38 @@ describe("the launch curtain (the prototype's)", () => {
     const run = new Play({ ...base, status: { ...base.status, gameId: game.id } })
     return { view: run.view as any, game }
   }
-  test("a game with a logo: black, its logo, where it starts and Korri's words under it", () => {
+  test("a game with a logo: black, its logo, and Korri's words under it", () => {
     const { view } = launching(games => games.find(game => game.id === "ember-road"))
     expect(view.curtain.solid).toBe(true)
     expect(view.curtain.logoShown).toBe(true)
     expect(view.curtain.logo.$image).toBe("preview/art/logo-ember.png")
     expect(view.curtainKicker).toEqual([])
-    expect(view.curtainLines.slice(0, 2)).toEqual(["Starting", "Checking saves"])
+    expect(view.curtainLines).toEqual(["Checking saves"])
+  })
+  // Owner, 2026-11-20: the launch said "Starting" three times and the title twice.
+  test("a launch says each thing once: the title, the bars, one line under them", () => {
+    const base = model("busy-steps")
+    const game = base.catalog.games.find((candidate: any) => candidate.id === "tide-pool")
+    const status = {
+      ...base.status, gameId: game.id, kicker: `Starting ${game.title}…`, detail: "Opening your session",
+      steps: { labels: ["Checking saves", "Getting the game ready", "Starting the game"], current: 2 },
+    }
+    const view = new Play({ ...base, status }).view as any
+    const said = [...view.curtainKicker, ...view.curtainLines, view.curtain.stepLine].join(" · ")
+    expect(view.curtainLines).toEqual([])
+    expect(view.curtain.stepLine).toBe("Opening your session")
+    expect(said).not.toContain("Starting")
+    expect(said).not.toContain("Step ")
+    expect(said.split(game.title).length - 1).toBeLessThanOrEqual(1)
+    // Without Korri's detail, the line names the step.
+    const { detail: _, ...plain } = status
+    expect((new Play({ ...base, status: plain }).view as any).curtain.stepLine).toBe("Starting the game")
+  })
+  test("a launch keeps a kicker that says more than the title", () => {
+    const base = model("busy-plain")
+    const game = base.catalog.games[0]
+    const view = new Play({ ...base, status: { ...base.status, gameId: game.id, kicker: "Cancelling launch…" } }).view as any
+    expect(view.curtainLines).toEqual(["Cancelling launch…"])
   })
   test("a game with no logo: its name in the display face at the pick's size", () => {
     const { view, game } = launching(games => games.find(game => !(game.media ?? []).some((media: any) => media.role === "logo")))

@@ -80,7 +80,7 @@ C8  The curtain, "Playing now", no button.
 C9  The curtain with the Exit mark: what went wrong in Korri's words (paged when long), Dismiss, and Korri's actions.
 C10 The error page's Try again; the house menu's device actions.
 C31 The curtain as a question: Korri's words, its two answers, the safe one focused.
-C32 A bar under the kicker with Korri's words about it; launch steps as a row of bars, "Step 3 of 4".
+C32 A bar under the kicker with Korri's words about it; launch steps as a row of bars, with one line under them: Korri's detail, else the step's name (owner, 2026-11-20: a launch says each thing once; a kicker that only says the title is starting is not repeated under the title).
 C42 A notice at the stage's foot when an invite arrives; Invites in the house menu, each with its answers.
 C43 The curtain: the session is paused elsewhere, with Korri's actions.
 C44 The curtain: the session ended, with Korri's words and Dismiss.

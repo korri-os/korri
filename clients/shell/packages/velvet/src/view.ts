@@ -150,7 +150,6 @@ function curtainView(asked: Pictures, state: State, model: Model, p: Plan) {
   const kicker = mark !== undefined
     ? { size: mark.size, lines: mark.logoShown ? [] : [mark.line1, mark.line2, mark.line3].slice(0, mark.lines) }
     : fitCaps(spec.kicker, p.curtainW, p.kicker * 3, p.kicker, Math.min(p.kicker, 18))
-  const now = steps === undefined ? 0 : Math.max(0, Math.min(steps.current, steps.labels.length - 1))
   return {
     curtain: {
       shown: true,
@@ -159,7 +158,8 @@ function curtainView(asked: Pictures, state: State, model: Model, p: Plan) {
       name: spec.name ?? "",
       moreUp: line > 0,
       moreDown: line + layout.room < layout.lines.length,
-      stepLine: steps === undefined ? "" : `Step ${now + 1} of ${steps.labels.length} · ${steps.labels[now] ?? ""}`,
+      // The segments show which step of how many; one line says what is happening (src/curtain.ts).
+      stepLine: spec.stepLine ?? "",
       // The union, as plain properties for the view: its kind, and the share when it is measured.
       progress: spec.progress.kind,
       progressShare: spec.progress.kind === "measured" ? spec.progress.fraction : 0,

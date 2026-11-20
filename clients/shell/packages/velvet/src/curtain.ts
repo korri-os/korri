@@ -5,7 +5,7 @@
  * the words stand on it; there is no card.
  *
  *   Busy        Korri's kicker and detail, a launch's steps (one segment a
- *               step, "Step i of n · label"), measured progress, and
+ *               step, the current step's label under them), measured progress, and
  *               Korri's own actions. Back runs Korri's declineActionId; with
  *               none it is swallowed.
  *   Problem     Korri's kicker and reason against the game it names; Dismiss
@@ -60,6 +60,8 @@ export interface CurtainSpec {
   readonly game?: Game
   readonly words: readonly string[]
   readonly steps?: SurfaceSteps
+  /** The line under the steps: Korri's detail when it gives one, else the current step's label. */
+  readonly stepLine?: string
   readonly progress: Progress
   readonly progressLine?: string
   readonly buttons: readonly CurtainButton[]
@@ -103,15 +105,25 @@ function statusCurtain(state: State, model: Model): CurtainSpec | undefined {
       const actions = status.actions ?? []
       const progress = status.progress
       // A game on its way (owner, 2026-11-13: the prototype's launch curtain): its name is the
-      // display line, where it starts under it, and Korri's own words after that.
-      const where = game === undefined ? undefined : whereOf(game)
-      const starting = where === undefined || where === "" || where === "This device" || where === "Other devices" ? "Starting" : `Starting on ${where}`
+      // display line. Each thing is said once (owner, 2026-11-20, "saying the same thing
+      // multiple times"): the device it starts on, only when that is not this one; Korri's kicker,
+      // unless it only says the title is starting, which the title already says; and Korri's
+      // detail, which with steps is the one line under the bars in place of the step's label
+      // (the segments show which step of how many).
+      // Only one place is a fact about this launch; a list of the game's places ("This device,
+      // zao") does not say which one it starts on.
+      const where = game === undefined || (game.launchLocations?.length ?? 0) > 1 ? undefined : whereOf(game)
+      const remote = where === undefined || where === "" || where === "This device" || where === "Other devices" ? [] : [`On ${where}`]
+      const stepped = status.steps !== undefined && status.steps.labels.length > 0
+      const restates = game !== undefined && startingWords(game.title).includes(status.kicker.trim())
+      const detail = status.detail === undefined || stepped ? [] : [status.detail]
+      const now = stepped ? Math.max(0, Math.min(status.steps!.current, status.steps!.labels.length - 1)) : 0
       return {
         key: `busy:${status.kicker}:${status.gameId ?? ""}`, kind: "busy",
         ...(game === undefined
-          ? { kicker: status.kicker, words: status.detail === undefined ? [] : [status.detail] }
-          : { kicker: game.title, game, words: [starting, status.kicker, ...(status.detail === undefined ? [] : [status.detail])] }),
-        ...(status.steps === undefined || status.steps.labels.length === 0 ? {} : { steps: status.steps }),
+          ? { kicker: status.kicker, words: status.detail === undefined || stepped ? [] : [status.detail] }
+          : { kicker: game.title, game, words: [...remote, ...(restates ? [] : [status.kicker]), ...detail] }),
+        ...(!stepped ? {} : { steps: status.steps!, stepLine: status.detail ?? status.steps!.labels[now] ?? "" }),
         // Steps say where the work is; with neither steps nor a measure the bar only says it is under way.
         progress: progress === undefined ? (status.steps === undefined ? UNDER_WAY : NO_PROGRESS)
           : progress.total === undefined || progress.total <= 0 ? UNDER_WAY
@@ -266,3 +278,6 @@ export function curtainLayout(spec: CurtainSpec, plan: Plan): CurtainLayout {
 }
 
 export { question }
+
+/** What a launch's kicker says when it only says the game is starting: the title already says that. */
+const startingWords = (title: string): readonly string[] => [`Starting ${title}…`, `Starting ${title}...`, `Starting ${title}`]
