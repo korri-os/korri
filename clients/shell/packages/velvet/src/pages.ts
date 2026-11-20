@@ -344,6 +344,12 @@ export function pagePanel(page: PageRef, state: State, model: Model): PanelSpec 
 
 // ---- Korri's own pages ----
 
+/**
+ * Steam's entry (ADR 0083). The one id Velvet names: Steam's setup step keeps
+ * the place it had before the shared sign-in card (after the Starter pack).
+ */
+const STEAM = "@korri:steam"
+
 export type SetupStep = "controllers" | "wifi" | "name" | "starter" | "finish" | `account:${string}`
 
 /** The steps of first boot Korri gives reason for, in order. */
@@ -351,9 +357,11 @@ export function onboardingSteps(model: Model): readonly SetupStep[] {
   return [
     "controllers", ...(model.network === undefined ? [] : ["wifi" as const]),
     // ADR 0089: each account sign-in Korri offers, right after Wi-Fi (a sign-in needs the network), each one skippable.
-    ...offered(model).map((entry): SetupStep => `account:${entry.id}`),
+    ...offered(model).filter(entry => entry.id !== STEAM).map((entry): SetupStep => `account:${entry.id}`),
     "name",
     ...(model.onboarding?.starterPack === undefined ? [] : ["starter" as const]),
+    // ADR 0083: Steam's sign-in keeps its place after the Starter pack, before the end.
+    ...offered(model).filter(entry => entry.id === STEAM).map((entry): SetupStep => `account:${entry.id}`),
     "finish",
   ]
 }

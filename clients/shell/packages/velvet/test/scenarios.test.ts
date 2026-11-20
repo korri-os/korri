@@ -29,7 +29,7 @@ const MIB = 1024 * 1024
 const SHELL_KEEPS = 24 * MIB
 const VIEW_BYTES = 96_000
 
-/** A picture's stored size, from the games of the scenario that name it. */
+/** A picture's stored size, from the games and the account sign-ins of the scenario that name it. */
 function sizes(models: readonly any[]): Map<string, [number, number]> {
   const known = new Map<string, [number, number]>()
   for (const model of models) {
@@ -37,6 +37,8 @@ function sizes(models: readonly any[]): Map<string, [number, number]> {
       for (const media of game.media ?? []) known.set(media.url, [media.width, media.height])
       if (typeof game.coverArtUrl === "string") known.set(game.coverArtUrl, [512, 512])
     }
+    // An account sign-in's logo, on its code's badge (ADR 0089).
+    for (const entry of model.accountSignIns ?? []) if (entry.logo !== undefined) known.set(entry.logo.url, [entry.logo.width, entry.logo.height])
   }
   return known
 }
@@ -67,7 +69,7 @@ function check(run: Play, name: string, at: string, known: Map<string, [number, 
   let bytes = 0
   for (const url of pictures(view)) {
     const size = known.get(url)
-    expect(size, `${where}: ${url} is a picture of a game in the model`).toBeDefined()
+    expect(size, `${where}: ${url} is a picture in the model`).toBeDefined()
     bytes += decodedBytes(size![0], size![1])
   }
   expect(bytes, `${where}: ${(bytes / MIB).toFixed(1)} MiB of pictures`).toBeLessThanOrEqual(SHELL_KEEPS)

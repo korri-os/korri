@@ -6,7 +6,7 @@
  * launch waits for it (`forGame`).
  *
  * The code is Korri's module grid, drawn in the "Pleats" style
- * (/tmp/private-network-reach/qr/brief.md): each vertical run of dark modules
+ * (packages/velvet/docs/account-code.md): each vertical run of dark modules
  * is one capsule, the three finders are rounded squares, and the middle is
  * cleared for a small Ink badge with the service's logo, or the first letter
  * of its title when it has none. Ink on House light, with a quiet zone of

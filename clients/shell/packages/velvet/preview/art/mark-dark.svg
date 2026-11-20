@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+  <!-- A stand-in plugin mark in a dark colour of its own, to prove the badge draws a logo in House light. -->
+  <g fill="#1d1b2a">
+    <circle cx="24" cy="24" r="12" opacity="0.25"/><circle cx="60" cy="24" r="12" opacity="0.25"/><circle cx="96" cy="24" r="12" opacity="0.25"/>
+    <circle cx="24" cy="60" r="12"/><circle cx="60" cy="60" r="12"/><circle cx="96" cy="60" r="12"/>
+    <circle cx="24" cy="96" r="12" opacity="0.25"/><circle cx="60" cy="96" r="12"/><circle cx="96" cy="96" r="12" opacity="0.25"/>
+  </g>
+</svg>

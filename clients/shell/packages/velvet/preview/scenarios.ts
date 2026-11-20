@@ -308,6 +308,8 @@ const scenarios: Scenario[] = [
   { name: "account-code-smallest", models: [signedIn(entry("steam", "codeSmallest"))], steps: toAccount },
   { name: "account-code-largest", models: [signedIn(entry("tailscale", "codeLargest"))], steps: toAccount },
   { name: "account-code-malformed", models: [signedIn(entry("steam", "codeMalformed"))], steps: toAccount },
+  // A plugin's logo in a dark colour of its own: the badge draws it in House light.
+  { name: "account-code-logo", models: [signedIn(entry("tailscale", "code", { logo: { kind: "logo", url: "preview/art/mark-dark.svg", width: 120, height: 120 } }))], steps: toAccount },
   { name: "account-code-no-detail", models: [signedIn(entry("tailscale", "code", { state: { ...accounts.tailscale.states.code, detail: undefined } }))], steps: toAccount },
   { name: "account-signed-in", models: [signedIn(entry("steam", "signedIn"))], steps: toAccount },
   { name: "account-signed-in-long", models: [signedIn(entry("tailscale", "signedIn", { state: { ...accounts.tailscale.states.signedIn, accountName: "a.very.long.account.name.without.any.break.points@example-tailnet.ts.net" } }))], steps: toAccount },
@@ -318,7 +320,9 @@ const scenarios: Scenario[] = [
   { name: "first-boot-account", models: [firstBoot(signIns(entry("tailscale", "signedOut")))], steps: pastWifi },
   { name: "first-boot-account-code", models: [firstBoot(signIns(entry("tailscale", "code")))], steps: pastWifi },
   { name: "first-boot-account-done", models: [firstBoot(signIns(entry("tailscale", "signedIn")))], steps: pastWifi },
-  { name: "first-boot-accounts", models: [firstBoot(signIns(entry("steam", "signedIn"), entry("tailscale", "expired")))], steps: [...pastWifi, "confirm"] },
+  // Two offers: the plugin's right after Wi-Fi, Steam's after the Starter pack (ADR 0083).
+  { name: "first-boot-accounts", models: [firstBoot(signIns(entry("steam", "signedOut"), entry("tailscale", "expired")))], steps: pastWifi },
+  { name: "first-boot-steam", models: [firstBoot(signIns(entry("steam", "signedOut"), entry("tailscale", "signedIn")))], steps: [...pastWifi, "confirm", "down", "confirm"] },
   // The gameplay overlay.
   { name: "overlay", models: [overlay(korri.overlay.plain)], steps: [] },
   { name: "overlay-groups", models: [overlay(korri.overlay.groups)], steps: ["down", "down"] },

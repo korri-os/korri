@@ -2,7 +2,8 @@
 // ADR 0089): Ink on a House light plate that holds the quiet zone, every
 // vertical run of dark modules a capsule, the finders rounded squares. The
 // middle is cleared for the badge: an Ink rounded square with the service's
-// logo, or the first letter of its title, in House light. Never inverted,
+// logo, or the first letter of its title, in House light (a logo is drawn
+// in House light through its alpha, whatever its own colours). Never inverted,
 // never faded: a new code replaces the old one in the same frame, so a phone
 // never catches two.
 //
@@ -49,6 +50,9 @@ export component VelvetCode inherits Rectangle {
             height: parent.height * 0.72;
             source: root.logo;
             image-fit: contain;
+            // The mark in House light whatever its own colours (the brief): a dark logo would
+            // vanish on the Ink badge. Its shape is its alpha.
+            colorize: Tokens.house-light;
         }
         if !root.logo-shown: Text {
             x: 0;

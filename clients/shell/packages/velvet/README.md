@@ -18,7 +18,7 @@ table and its capability map are in `docs/design/surfaces/velvet/DIRECTION.md`.
 | `src/view.ts` | The view, from the state and the model. |
 | `src/browse.ts`, `src/lists.ts` | Home, the row, the lobby, a set, the detail; the lists home keeps over the one catalog window. |
 | `src/pages.ts`, `src/settings.ts`, `src/curtain.ts`, `src/keys.ts` | Every other screen Korri publishes, as one list page; status and questions as the curtain; the keyboard. |
-| `src/account.ts` | Korri's account sign-ins (ADR 0089): one card for any entry, its words and buttons by state, and the QR code's ink in the "Pleats" style. |
+| `src/account.ts`, `docs/account-code.md` | Korri's account sign-ins (ADR 0089): one card for any entry, its words and buttons by state, and the QR code's ink in the "Pleats" style; the QR brief it follows. |
 | `src/art.ts`, `src/poster.ts`, `src/colour.ts` | Which picture a tile shows, the pixel budget, which no-art card a game gets, the stage light. |
 | `drawings/` | The no-art cards, drawn at build time. `draw.ts` is the geometry (a shape names a palette place, never a colour), `palettes.ts` the colours, `plates.ts` each card's stage plate (a few soft ellipses), `build.ts` writes the two files below. Every card has one anatomy (owner, 2026-11-13, #423): the field (the top 58 of 90 units) holds the machine's art, the plate and its rule hold the title, always at its foot. An unknown system repeats the generic machine's parts. `bun packages/velvet/drawings/build.ts` in `clients/shell`; `velvet-check` runs it and fails on any difference. |
 | `src/plate.ts` | A no-art game's stage plate: its card's soft shapes in its colours, as an SVG with a Gaussian blur and a fine dither, set at half the window's size. The shell renders it once, on its image thread. |
@@ -28,7 +28,7 @@ table and its capability map are in `docs/design/surfaces/velvet/DIRECTION.md`.
 | `src/fit.ts`, `src/measure.ts`, `src/words.ts` | Fitting caps titles and fact lines from the fonts' advance tables; words about time and size. |
 | `fonts/` | Big Shoulders ExtraBold (display, caps) at opsz 72, and at opsz 28 as Big Shoulders Text for display type under 48 px (looser spacing; the fit measures with it); Archivo semi-condensed 400 and 700; their OFL texts; `fonts/source/` the scripts that cut them. |
 | `test/` | The gates and tests (`bun test packages/velvet/test` in `clients/shell`). |
-| `preview/` | `scenarios.ts` → `scenarios/*.json` (119 models with the presses to each screen), `fixtures/korri.json` (Korri's slices), `art/` (self-drawn test pictures and `build.py`), `previews.ts`, `shots.sh` (the real shell under Xvfb), `probe.sh` (the shell's probe over every scenario). |
+| `preview/` | `scenarios.ts` → `scenarios/*.json` (121 models with the presses to each screen), `fixtures/korri.json` (Korri's slices), `art/` (self-drawn test pictures and `build.py`), `previews.ts`, `shots.sh` (the real shell under Xvfb), `probe.sh` (the shell's probe over every scenario). |
 
 ## The plan
 
@@ -81,7 +81,7 @@ shell, `VELVET_FRAMES` (below) through the test harness.
 | Identity | `identity`, `identity-bunker`, `identity-working`, `identity-problem`, `identity-switched` | `VelvetList.Identity` |
 | The store and its search | `store`, `store-none`, `store-search`, `store-results`, `store-offer`, `store-confirm`, `store-downloading` | `VelvetList.Store`, `VelvetProgramme.Store`, `.Offer` |
 | Invites | `invites`, `invite-notice` | `VelvetList.Invites`, `VelvetNotice` |
-| Account sign-ins (ADR 0083, ADR 0089) | `account-rows`, `account-rows-busy`, `account-signed-out`, `account-expired`, `account-checking`, `account-starting`, `account-code`, `account-code-tailscale`, `account-code-renewed`, `account-code-smallest`, `account-code-largest`, `account-code-malformed`, `account-code-no-detail`, `account-signed-in`, `account-signed-in-long`, `account-problem`, `account-refused`, `account-for-game`, `account-working`, `first-boot-account`, `first-boot-account-code`, `first-boot-account-done`, `first-boot-accounts` | `VelvetList.Account*`, `.FirstBootAccount*`, `VelvetProgramme.AccountCode`, `VelvetCode`, `VelvetRow.Account` |
+| Account sign-ins (ADR 0083, ADR 0089) | `account-rows`, `account-rows-busy`, `account-signed-out`, `account-expired`, `account-checking`, `account-starting`, `account-code`, `account-code-tailscale`, `account-code-renewed`, `account-code-smallest`, `account-code-largest`, `account-code-malformed`, `account-code-logo`, `account-code-no-detail`, `account-signed-in`, `account-signed-in-long`, `account-problem`, `account-refused`, `account-for-game`, `account-working`, `first-boot-account`, `first-boot-account-code`, `first-boot-account-done`, `first-boot-accounts`, `first-boot-steam` | `VelvetList.Account*`, `.FirstBootAccount*`, `VelvetProgramme.AccountCode`, `VelvetCode`, `VelvetRow.Account` |
 | Saves, the runner, launch settings | `saves`, `saves-empty`, `saves-restore`, `runner`, `launch-settings`, `launch-changes`, `launch-keep`, `launch-streamed`, `launch-unreachable`, `launch-conflict`, `launch-loading`, `launch-empty` | `VelvetList.Saves`, `.Runner`, `.LaunchSettings` |
 | The gameplay overlay | `overlay`, `overlay-groups`, `overlay-stream`, `overlay-asking` | `pages/VelvetPaused`, `VelvetPause` |
 
@@ -205,19 +205,23 @@ shell, `VELVET_FRAMES` (below) through the test harness.
   card: the entry's title, its state in Korri's words, and Korri's actions
   as buttons. Setup has a step for each entry with an `offer`, right after
   Wi-Fi (a sign-in needs the network), headed by the offer: Korri's actions,
-  or Skip for now; Next leads once signed in. A card takes the screen by
+  or Skip for now; Next leads once signed in. Steam's step (`@korri:steam`,
+  the one id Velvet names) keeps its place after the Starter pack (ADR 0083). A card takes the screen by
   itself while a launch waits for its sign-in (`Code` or `Working` with
   `forGame`), where Back is Korri's Cancel. Every action is a `RunAction`
   with Korri's id.
 - The code (`Code`): Korri sends the module grid; `src/account.ts` draws it
-  in the "Pleats" style of the QR brief (`ui/molecules/VelvetCode.slint`):
+  in the "Pleats" style of the QR brief (`docs/account-code.md`;
+  `ui/molecules/VelvetCode.slint`):
   Ink on a House light plate with a quiet zone of four modules, each
   vertical run of dark modules a capsule, the finders rounded squares, all
   one path. The middle is cleared, whole modules only (the largest odd
   number at most 0.3 of the size, at least 7, and under 9 % of the code;
   the smallest code, 21 modules, cannot spare it and has none), for an
-  Ink badge two modules smaller with the entry's `logo` in it, or the first
-  letter of its title in House light when it has none. A new code replaces
+  Ink badge two modules smaller with the entry's `logo` in it, drawn in
+  House light through its alpha whatever its own colours (a dark logo would
+  vanish on Ink), or the first letter of its title in House light when it
+  has none. A new code replaces
   the old one in the same frame, with no fade: a phone that caught a fade
   would see two codes. A grid that is not a code draws nothing, and the
   card says so. Beside the rows the code takes the panel's width; over them,
