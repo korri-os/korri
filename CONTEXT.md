@@ -281,6 +281,10 @@ _Avoid_: source, game folder, entry point, ROM folder
 A pattern that says where one game sits inside a library folder and which values its path names.
 _Avoid_: shape, glob, folder structure
 
+**Title cleaning**:
+Turning the raw title that a layout captures into the clean title that the library keeps for a game. A system plugin may clean a title with its own data; Korri's generic cleaning applies only when no plugin answers. The raw name stays with the release's location.
+_Avoid_: title rewrite, normalization, fallback title
+
 **Game**:
 The thing a person plays, with every release of it on every device.
 _Avoid_: title, entry, ROM
@@ -368,6 +372,20 @@ _Avoid_: preset, mode, config
 **Attention list**:
 The files on one device that discovery could not identify or could not decide between, shown to everyone on that device to resolve.
 _Avoid_: errors, unmatched, inbox
+
+### Art
+
+**Art source**:
+One place a device gets a game's art from: an art plugin's site, a peer that holds the game, or the surface's own drawing when no other source has art. A person brings their own credentials to a site; Korri ships no key.
+_Avoid_: provider, artwork provider, art plugin (for a peer or a drawing)
+
+**Art layer**:
+The place of one art source in the order a device tries them. For each picture, logo or icon, the first layer that has one wins; no source sets its own layer.
+_Avoid_: priority, tier, fallback chain
+
+**Match**:
+The one game in an art source that a game's clean title names exactly, once accents, case and punctuation are ignored. A match is never a guess: when two of the source's games fit and the system or release year does not separate them, there is no match. It is not a link.
+_Avoid_: fuzzy match, best match, link
 
 ### Saves
 
