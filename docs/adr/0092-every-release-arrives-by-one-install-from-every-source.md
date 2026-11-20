@@ -26,8 +26,11 @@ None of them can resume after an interruption.
   server allows them, and devices serve the rest.
 - Pieces are made and checked with iroh-blobs: each holder computes a
   BLAKE3 tree once and keeps it, and every piece is checked as it arrives.
-  The finished install is also checked against its release key. (Pending a
-  check that iroh-blobs fits korrid's iroh version.)
+  The finished install is also checked against its release key. iroh-blobs
+  0.105 needs iroh 1.x, so it fits korrid's iroh 1.4.1. A holder hashes a
+  release in place, without copying it into a store. A file that changes
+  while it is served fails the check on the receiving device, so a holder
+  must hash a folder release again after it changes.
 - Where an installed release lives on disk is not decided. The first slice
   of the install manager decides it from one of the two existing layouts:
   netplay's release-key layout (ADR 0040) or the provider layout (ADR 0016).
