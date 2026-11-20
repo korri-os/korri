@@ -317,6 +317,14 @@ _Avoid_: bundle, game pack, pack plugin
 A download a plugin declares by fixed address and hash. Korri fetches it, checks it and unpacks it on the device that needs it, and can fetch it again if it is lost. It can hold a runtime or a game's content.
 _Avoid_: payload, package, download (alone), delivery
 
+**Install**:
+Putting a release of a game on a device so that it plays there. Every way a release arrives is an install: from a provider, from an artifact, or from devices of the federation that hold the same release, in pieces from all of them at once. An installed release stays in the device's library until the person removes it.
+_Avoid_: copy, copied release, transfer, sideload, sync, download (alone)
+
+**Install source**:
+A place that one install can take pieces from: a device that holds the same release, a provider or an artifact address. For a folder release, only devices whose files match are sources of one install.
+_Avoid_: seed, peer, mirror
+
 **Variant**:
 A game that is a port, edition or standalone mod of another game.
 _Avoid_: fork, remake
