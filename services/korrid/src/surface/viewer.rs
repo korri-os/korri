@@ -2,7 +2,7 @@
 use std::time::{Duration, Instant};
 
 use korri_surface_treaty::{
-    SurfaceGameplayControlGroup, SurfaceGameplayControlInteraction as Interaction,
+    SurfaceBattery, SurfaceGameplayControlGroup, SurfaceGameplayControlInteraction as Interaction,
     SurfaceGameplayControlValue as Value, SurfaceGameplayOverlayPresentation,
 };
 
@@ -51,6 +51,23 @@ pub fn project(
     }
 }
 
+/// The device's battery as the exact local viewer last read it (the
+/// Android app's `BatteryManager`, ADR 0094), while that reading is fresh.
+/// Absent with no fresh snapshot or no charging state; a percent outside
+/// whole numbers 0 to 100 is dropped.
+pub fn battery(
+    snapshot: Option<&(Instant, ViewerSnapshot)>,
+    now: Instant,
+) -> Option<SurfaceBattery> {
+    let (_, snapshot) = snapshot.filter(|(at, _)| now.duration_since(*at) <= STALE_AFTER)?;
+    Some(SurfaceBattery {
+        percent: snapshot
+            .battery_percent
+            .filter(|v| v.is_finite() && (0.0..=100.0).contains(v) && v.fract() == 0.0),
+        charging: snapshot.battery_charging?,
+    })
+}
+
 pub fn valid(interaction: &Interaction, value: &Option<Value>) -> bool {
     match (interaction, value) {
         (Interaction::Command, None) | (Interaction::Toggle { .. }, Some(Value::Toggle { .. })) => {
@@ -70,6 +87,47 @@ pub fn valid(interaction: &Interaction, value: &Option<Value>) -> bool {
 mod tests {
     use super::*;
     use korri_surface_treaty::{SurfaceGameplayOverlayKind, SurfaceStreamHealth};
+
+    #[test]
+    fn a_fresh_viewer_reading_is_the_battery_and_a_stale_one_is_none() {
+        let now = Instant::now();
+        let reading = |percent, charging| {
+            (
+                now,
+                ViewerSnapshot {
+                    battery_percent: percent,
+                    battery_charging: charging,
+                    ..Default::default()
+                },
+            )
+        };
+        assert_eq!(
+            battery(Some(&reading(Some(53.0), Some(true))), now + STALE_AFTER),
+            Some(SurfaceBattery {
+                percent: Some(53.0),
+                charging: true
+            })
+        );
+        assert_eq!(
+            battery(
+                Some(&reading(Some(53.0), Some(true))),
+                now + STALE_AFTER + Duration::from_millis(1)
+            ),
+            None
+        );
+        assert_eq!(battery(None, now), None);
+        // No charging state: no battery, even with a percent.
+        assert_eq!(battery(Some(&reading(Some(53.0), None)), now), None);
+        for invalid in [-1.0, 101.0, 52.5, f64::NAN] {
+            assert_eq!(
+                battery(Some(&reading(Some(invalid), Some(false))), now),
+                Some(SurfaceBattery {
+                    percent: None,
+                    charging: false
+                })
+            );
+        }
+    }
 
     #[test]
     fn viewer_projection_clears_expired_and_invalid_measurements() {

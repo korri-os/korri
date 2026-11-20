@@ -94,6 +94,9 @@ in
   # No sleep state is verified with Korri's session freeze. The console's
   # s2idle idle suspend stays a console feature.
   services.korriProduct.sleep.states = [ ];
+  # sm5705_fuelgauge (kernel/drivers) calls power_supply_changed() when the
+  # capacity percent changes (ADR 0094), so korrid shows the percent.
+  services.korriProduct.battery.verified = [ "percent" ];
   # Power key: a short press turns the panel off or on (the compositor
   # binding below); holding it for logind's long press (5 s) powers off.
   # The product's default, power off on any press, read as the screen

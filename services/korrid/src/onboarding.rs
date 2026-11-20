@@ -100,6 +100,21 @@ pub enum OnboardingStatusOutcome {
     Err(RpcFailure),
 }
 
+/// Every change of this process's setup marker. korrid writes the marker
+/// only through [`finish`] and [`restart`]; each tells the surface host,
+/// which then reads the status again (ADR 0094: no timer reads it).
+static CHANGES: std::sync::LazyLock<tokio::sync::watch::Sender<()>> =
+    std::sync::LazyLock::new(|| tokio::sync::watch::channel(()).0);
+
+/// Notices of the setup marker's changes in this process.
+pub fn changes() -> tokio::sync::watch::Receiver<()> {
+    CHANGES.subscribe()
+}
+
+fn changed() {
+    CHANGES.send_replace(());
+}
+
 fn failure() -> RpcFailure {
     RpcFailure {
         code: "OnboardingStorageUnavailable".into(),
@@ -140,21 +155,24 @@ pub fn finish(root: &Path) -> OnboardingStatusOutcome {
         let _ = fs::remove_file(&temporary);
         return OnboardingStatusOutcome::Err(failure());
     }
+    changed();
     status(root)
 }
 /// Put the device back into first-boot setup. Removes only the marker; every
 /// other setting, profile and identity stays. Idempotent: a device already in
 /// setup stays there.
 pub fn restart(root: &Path) -> OnboardingStatusOutcome {
-    let result = (|| -> std::io::Result<()> {
+    let result = (|| -> std::io::Result<bool> {
         match fs::remove_file(root.join(ONBOARDING_FINISHED_FILE_NAME)) {
-            Ok(()) => File::open(root)?.sync_all(),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Ok(()) => File::open(root)?.sync_all().map(|()| true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
             Err(error) => Err(error),
         }
     })();
-    if result.is_err() {
-        return OnboardingStatusOutcome::Err(failure());
+    match result {
+        Ok(true) => changed(),
+        Ok(false) => {}
+        Err(_) => return OnboardingStatusOutcome::Err(failure()),
     }
     status(root)
 }
@@ -373,6 +391,18 @@ mod tests {
         fs::remove_file(root.join(ONBOARDING_FINISHED_FILE_NAME)).unwrap();
         fs::create_dir(root.join(ONBOARDING_FINISHED_FILE_NAME)).unwrap();
         assert!(matches!(restart(&root), OnboardingStatusOutcome::Err(_)));
+    }
+    #[test]
+    fn finish_and_restart_tell_the_surface_host() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("private");
+        let mut changes = changes();
+        changes.mark_unchanged();
+        finish(&root);
+        assert!(changes.has_changed().unwrap());
+        changes.mark_unchanged();
+        restart(&root);
+        assert!(changes.has_changed().unwrap());
     }
     #[test]
     fn storage_failure_does_not_report_finished() {

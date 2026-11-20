@@ -58,6 +58,8 @@ pub struct ViewerSnapshot {
     #[serde(skip)]
     pub sampled_at: Option<std::time::Instant>,
     pub battery_percent: Option<f64>,
+    /// Android's `BatteryManager` status is "charging" (ADR 0094).
+    pub battery_charging: Option<bool>,
     pub stream_health: Option<korri_surface_treaty::SurfaceStreamHealth>,
     pub controls: Vec<korri_surface_treaty::SurfaceGameplayControl>,
 }
@@ -129,6 +131,7 @@ impl From<korri_viewer_treaty::ViewerSnapshot> for ViewerSnapshot {
             sampled_at_ms: s.sampled_at_ms,
             sampled_at: None,
             battery_percent: s.battery_percent,
+            battery_charging: s.battery_charging,
             stream_health: s.stream_health,
             controls: s.controls,
         }

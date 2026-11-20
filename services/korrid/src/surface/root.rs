@@ -399,6 +399,8 @@ pub struct Root {
     onboarding_was_needed: std::sync::Mutex<Option<bool>>,
     clock: std::sync::Mutex<ClockSample>,
     last_local_ids: std::sync::Mutex<Option<Vec<String>>>,
+    /// This device's battery, where korrid reads one (ADR 0094).
+    battery: Option<tokio::sync::watch::Receiver<Option<korri_surface_treaty::SurfaceBattery>>>,
     notify: Notify,
 }
 
@@ -704,9 +706,17 @@ impl Root {
                 onboarding_was_needed: std::sync::Mutex::new(None),
                 clock: std::sync::Mutex::new(ClockSample::now()),
                 last_local_ids: std::sync::Mutex::new(None),
+                battery: korrid.battery.as_ref().map(|battery| battery()),
                 notify,
             }
         })
+    }
+
+    /// This device's battery now; absent where korrid reads none.
+    pub fn battery(&self) -> Option<korri_surface_treaty::SurfaceBattery> {
+        self.battery
+            .as_ref()
+            .and_then(|battery| battery.borrow().clone())
     }
 
     /// The chooser's start: the presented entry's id and title, then the gate.
@@ -1091,6 +1101,14 @@ impl Root {
             }
         });
         self.network.start();
+        if let Some(mut battery) = self.battery.clone() {
+            let notify = self.notify.clone();
+            tokio::spawn(async move {
+                while battery.changed().await.is_ok() {
+                    notify();
+                }
+            });
+        }
         self.owner_binding.start();
         self.launchables.start();
         let this = Arc::clone(self);
@@ -1290,7 +1308,7 @@ impl Root {
             identity_management: self.launchables.identity_management(),
             build_label: None,
             network: network.network,
-            battery: None,
+            battery: self.battery(),
             onboarding,
             store: Some(store_for_surface(self.store.snapshot(), &state)),
             invites: Some(

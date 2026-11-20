@@ -43,6 +43,17 @@ pub(crate) type LaunchStepsResolver = Arc<
         + Sync,
 >;
 
+/// Subscribe to the notices of one korrid fact. The first call may start
+/// the fact's watcher; a notice says only that the fact may have changed.
+pub(crate) type Changes = Arc<dyn Fn() -> tokio::sync::watch::Receiver<()> + Send + Sync>;
+
+/// Subscribe to this device's battery (`crate::battery`).
+pub(crate) type Battery = Arc<
+    dyn Fn() -> tokio::sync::watch::Receiver<Option<korri_surface_treaty::SurfaceBattery>>
+        + Send
+        + Sync,
+>;
+
 #[derive(Clone)]
 pub struct Korrid {
     send: Send_,
@@ -52,6 +63,13 @@ pub struct Korrid {
     pub(crate) viewer: Option<Arc<dyn crate::linux_viewer::LinuxStreamViewer>>,
     /// ADR 0083: the Steam engine runner's facts for the sign-in model.
     pub(crate) steam_engine: Option<Arc<dyn super::steam_account::SteamEngineAccess>>,
+    /// ADR 0094: NetworkManager's signals, so the network is read only when
+    /// it may have changed.
+    pub(crate) network_changes: Option<Changes>,
+    /// ADR 0094: korrid's own changes of the setup marker.
+    pub(crate) onboarding_changes: Option<Changes>,
+    /// ADR 0094: this device's battery, where korrid reads one.
+    pub(crate) battery: Option<Battery>,
     /// ADR 0089: the generic account host's facts for plugin sign-ins.
     pub(crate) plugin_accounts: Option<Arc<dyn super::account_sign_ins::PluginAccountAccess>>,
 }
@@ -143,8 +161,26 @@ impl Korrid {
             launch_steps: None,
             viewer: None,
             steam_engine: None,
+            network_changes: None,
+            onboarding_changes: None,
+            battery: None,
             plugin_accounts: None,
         }
+    }
+
+    pub(crate) fn with_network_changes(mut self, changes: Changes) -> Self {
+        self.network_changes = Some(changes);
+        self
+    }
+
+    pub(crate) fn with_onboarding_changes(mut self, changes: Changes) -> Self {
+        self.onboarding_changes = Some(changes);
+        self
+    }
+
+    pub(crate) fn with_battery(mut self, battery: Battery) -> Self {
+        self.battery = Some(battery);
+        self
     }
 
     pub(crate) fn with_plugin_accounts(

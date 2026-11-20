@@ -749,3 +749,113 @@ async fn dbus_manager_reuses_one_connection_and_reconnects_after_the_bus_closes(
     manager.read().await.unwrap();
     assert_eq!(connects.load(Ordering::SeqCst), 2);
 }
+
+#[test]
+fn only_signals_about_shown_facts_cause_a_read() {
+    let names = |names: &[&str]| names.iter().map(|name| (*name).to_owned()).collect();
+    assert_eq!(
+        reaction(&Event::Point(names(&["Strength"]))),
+        Reaction::Read
+    );
+    assert_eq!(
+        reaction(&Event::Point(names(&["LastSeen", "Frequency"]))),
+        Reaction::Ignore
+    );
+    assert_eq!(reaction(&Event::AccessPoints), Reaction::Read);
+    assert_eq!(reaction(&Event::Manager(names(&["State"]))), Reaction::Read);
+    assert_eq!(
+        reaction(&Event::Manager(names(&["PrimaryConnection"]))),
+        Reaction::Resubscribe
+    );
+    assert_eq!(
+        reaction(&Event::Manager(names(&["Connectivity"]))),
+        Reaction::Ignore
+    );
+    assert_eq!(reaction(&Event::Active(names(&["State"]))), Reaction::Read);
+    assert_eq!(
+        reaction(&Event::Active(names(&["SpecificObject"]))),
+        Reaction::Resubscribe
+    );
+    assert_eq!(reaction(&Event::Owner), Reaction::Resubscribe);
+}
+
+/// NetworkManager's `PropertiesChanged` from the fake's side of the socket.
+async fn properties_changed_on(server: &Connection, object: &str, interface: &str, names: &[&str]) {
+    let changed: HashMap<&str, Value<'_>> = names
+        .iter()
+        .map(|name| (*name, Value::from(1u32)))
+        .collect();
+    server
+        .emit_signal(
+            None::<&str>,
+            object,
+            "org.freedesktop.DBus.Properties",
+            "PropertiesChanged",
+            &(interface, changed, Vec::<&str>::new()),
+        )
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn dbus_watch_reads_again_only_for_signals_that_change_what_a_surface_shows() {
+    let (server, client, _state) = bus().await;
+    let notices = Arc::new(AtomicU32::new(0));
+    let watcher = tokio::spawn({
+        let notices = notices.clone();
+        async move {
+            let changed = move || {
+                notices.fetch_add(1, Ordering::SeqCst);
+            };
+            watch(&client, &changed).await
+        }
+    });
+    let reached = |count: u32| {
+        let notices = notices.clone();
+        async move {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while notices.load(Ordering::SeqCst) < count {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .expect("notice");
+        }
+    };
+    // Subscribed: one read.
+    reached(1).await;
+    properties_changed_on(&server, AP_PATH, AP, &["Strength"]).await;
+    reached(2).await;
+    // Neither an unrelated property, an unwatched object nor another
+    // interface of the access point causes a read.
+    properties_changed_on(&server, AP_PATH, AP, &["LastSeen"]).await;
+    properties_changed_on(&server, "/weak", AP, &["Strength"]).await;
+    properties_changed_on(&server, AP_PATH, DEVICE, &["Strength"]).await;
+    server
+        .emit_signal(
+            None::<&str>,
+            WIFI_PATH,
+            WIRELESS,
+            "AccessPointAdded",
+            &(path("/new"),),
+        )
+        .await
+        .unwrap();
+    reached(3).await;
+    // A new primary connection: subscribe again, then read.
+    properties_changed_on(&server, ROOT, NM, &["PrimaryConnection"]).await;
+    reached(4).await;
+    properties_changed_on(&server, ACTIVE_PATH, ACTIVE, &["State"]).await;
+    reached(5).await;
+    properties_changed_on(&server, AP_PATH, AP, &["Strength"]).await;
+    reached(6).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(notices.load(Ordering::SeqCst), 6);
+    // The watcher ends with the bus.
+    server.close().await.unwrap();
+    assert!(tokio::time::timeout(Duration::from_secs(5), watcher)
+        .await
+        .unwrap()
+        .unwrap()
+        .is_err());
+}

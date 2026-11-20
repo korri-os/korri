@@ -319,13 +319,11 @@ impl OverlayController {
     pub fn model(&self) -> SurfaceModel {
         let inner = self.lock();
         let mut model = inner.current.clone();
+        let now = std::time::Instant::now();
         if let SurfacePresentation::GameplayOverlay(presentation) = &mut model.presentation {
-            super::viewer::project(
-                presentation,
-                inner.viewer.as_ref(),
-                std::time::Instant::now(),
-            );
+            super::viewer::project(presentation, inner.viewer.as_ref(), now);
         }
+        model.battery = super::viewer::battery(inner.viewer.as_ref(), now);
         model
     }
 

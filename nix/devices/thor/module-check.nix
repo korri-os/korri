@@ -192,6 +192,9 @@ assert c.services.korri.clockGovernor.cpuIdleDisable == [ "cpu0/cpuidle/state1" 
 assert c.services.korri.fanControl.hwmonName == "pwmfan";
 assert c.services.korriProduct.sleep.states == [ ];
 assert !c.systemd.targets.suspend.enable;
+# ADR 0094: the battery driver's capacity events are verified.
+assert c.services.korriProduct.battery.verified == [ "percent" ];
+assert c.systemd.services.korrid.environment.KORRID_BATTERY_VERIFIED == ''["percent"]'';
 
 # The shared product: korrid, the shell as its own user, SSH by plugin.
 assert c.services.korriProduct.installed;

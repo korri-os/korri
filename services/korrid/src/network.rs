@@ -171,6 +171,13 @@ pub trait NetworkManager: Send + Sync {
         hidden: bool,
         password: Option<&'a str>,
     ) -> BoxFuture<'a, Result<(), NetworkFailure>>;
+    /// Call `changed` whenever the facts that `read` returns may have
+    /// changed, until the signals end. A manager without signals returns at
+    /// once.
+    fn watch<'a>(&'a self, changed: &'a (dyn Fn() + Send + Sync)) -> BoxFuture<'a, ()> {
+        let _ = changed;
+        Box::pin(async {})
+    }
 }
 
 #[derive(Clone)]
@@ -178,6 +185,7 @@ pub struct NetworkService {
     manager: Arc<dyn NetworkManager>,
     operation: Arc<Mutex<()>>,
     state: Arc<Mutex<(bool, WifiAttempt)>>,
+    changes: Arc<std::sync::OnceLock<tokio::sync::watch::Sender<()>>>,
 }
 impl Default for NetworkService {
     fn default() -> Self {
@@ -192,7 +200,30 @@ impl NetworkService {
             manager,
             operation: Arc::new(Mutex::new(())),
             state: Arc::new(Mutex::new((false, WifiAttempt::Idle))),
+            changes: Arc::default(),
         }
+    }
+    /// Notices that the network may have changed (ADR 0094). The first call
+    /// starts the manager's one watcher; it needs a Tokio runtime.
+    pub fn changes(&self) -> tokio::sync::watch::Receiver<()> {
+        let mut started = false;
+        let sender = self.changes.get_or_init(|| {
+            started = true;
+            tokio::sync::watch::channel(()).0
+        });
+        let receiver = sender.subscribe();
+        if started {
+            let manager = Arc::clone(&self.manager);
+            let sender = sender.clone();
+            tokio::spawn(async move {
+                manager
+                    .watch(&move || {
+                        sender.send_replace(());
+                    })
+                    .await;
+            });
+        }
+        receiver
     }
     pub async fn status(&self) -> NetworkStatusOutcome {
         match self.manager.read().await {

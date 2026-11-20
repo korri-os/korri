@@ -48,6 +48,16 @@ in
       default = [ ];
       description = "Sleep states verified for this device. No state means the power button and lid shut down cleanly.";
     };
+    battery.verified = lib.mkOption {
+      type = lib.types.listOf (lib.types.enum [ "percent" ]);
+      default = [ ];
+      description = ''
+        Battery facts verified for this device (ADR 0094). "percent" means
+        the battery driver sends a power_supply uevent when the capacity
+        percent changes, so korrid shows the percent. Without it korrid
+        shows only whether the battery is charging.
+      '';
+    };
     runtimeAccount.uid = lib.mkOption {
       # systemd treats 1000-60000 as regular users, and the runtime account
       # needs a regular user manager and /run/user directory.
@@ -129,6 +139,8 @@ in
       KORRID_STREAM_CERTIFICATE_CONTROL_PEER_UID = "0";
       KORRID_STREAM_CERTIFICATE_CONTROL_PEER_GID = "0";
       KORRID_INPUT_SEAT_CONTROL_SOCKET = "/run/korri-input-seat/control.sock";
+      # services/korrid/src/battery.rs reads it.
+      KORRID_BATTERY_VERIFIED = builtins.toJSON config.services.korriProduct.battery.verified;
     };
 
     services.korri.pluginHost = {

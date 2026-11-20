@@ -58,6 +58,11 @@ pub struct ViewerSnapshot {
     pub sampled_at_ms: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub battery_percent: Option<f64>,
+    /// The device's battery is charging (Android's `BatteryManager` status
+    /// `BATTERY_STATUS_CHARGING`). Absent when it cannot be read. korrid
+    /// shows the battery from a fresh snapshot only (ADR 0094).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub battery_charging: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream_health: Option<SurfaceStreamHealth>,
     pub controls: Vec<SurfaceGameplayControl>,

@@ -831,6 +831,59 @@ fn hub_with(outcomes: HashMap<String, Value>) -> (Arc<SurfaceHub>, Outcomes, tem
     (hub, outcomes, directory)
 }
 
+#[tokio::test]
+async fn the_model_carries_korrids_battery_and_a_change_publishes() {
+    let outcomes = Arc::new(std::sync::Mutex::new(idle_outcomes(1)));
+    let directory = tempfile::tempdir().unwrap();
+    let intent = Arc::new(crate::overlay_intent::OverlayIntent::default());
+    let (battery, _) = tokio::sync::watch::channel(Some(korri_surface_treaty::SurfaceBattery {
+        percent: Some(82.0),
+        charging: false,
+    }));
+    let hub = SurfaceHub::new(
+        in_memory_korrid(Arc::clone(&outcomes)).with_battery(Arc::new({
+            let battery = battery.clone();
+            move || battery.subscribe()
+        })),
+        directory.path().join("private"),
+        intent.subscribe(),
+        Arc::default(),
+    );
+    let model = settled(&hub, "pico").await;
+    assert_eq!(
+        model.battery,
+        Some(korri_surface_treaty::SurfaceBattery {
+            percent: Some(82.0),
+            charging: false
+        })
+    );
+    let mut revision = hub.subscribe();
+    revision.borrow_and_update();
+    battery.send_replace(Some(korri_surface_treaty::SurfaceBattery {
+        percent: Some(81.0),
+        charging: true,
+    }));
+    tokio::time::timeout(Duration::from_secs(5), revision.changed())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        hub.model("pico").unwrap().battery,
+        Some(korri_surface_treaty::SurfaceBattery {
+            percent: Some(81.0),
+            charging: true
+        })
+    );
+    battery.send_replace(None);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while hub.model("pico").unwrap().battery.is_some() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
 /// What a Home freeze does to korrid's intent.
 fn home_intent(launch_id: &str) {
     INTENT.with(|slot| {

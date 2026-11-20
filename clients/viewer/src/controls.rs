@@ -369,6 +369,8 @@ pub fn parse(prefix: &str, id: &str, value: Option<&Value>, offer: Offer) -> Res
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Readings {
     pub battery_percent: Option<f64>,
+    /// `BatteryManager.BATTERY_PROPERTY_STATUS` is `BATTERY_STATUS_CHARGING`.
+    pub battery_charging: Option<bool>,
     /// `ViewerVideoStats.Sample.atMs`: when the health was measured, in
     /// CLOCK_MONOTONIC milliseconds.
     pub sampled_at_ms: Option<f64>,
@@ -379,6 +381,14 @@ impl Readings {
     /// A battery reading only within 0 to 100, as Artemis reports it.
     pub fn battery(capacity: i32) -> Option<f64> {
         (0..=100).contains(&capacity).then_some(f64::from(capacity))
+    }
+
+    /// Charging from a `BatteryManager.BATTERY_STATUS_*` value: only
+    /// `BATTERY_STATUS_CHARGING` (2) is charging, as the Linux battery's
+    /// status "Charging" is. A value outside the statuses (1 to 5) is no
+    /// reading.
+    pub fn charging(status: i32) -> Option<bool> {
+        (1..=5).contains(&status).then_some(status == 2)
     }
 }
 
@@ -766,6 +776,18 @@ mod tests {
         // BatteryManager gives Integer.MIN_VALUE when it cannot tell.
         for absent in [i32::MIN, -1, 101] {
             assert_eq!(Readings::battery(absent), None);
+        }
+    }
+
+    #[test]
+    fn only_the_charging_status_is_charging() {
+        assert_eq!(Readings::charging(2), Some(true));
+        // Unknown, discharging, not charging, full.
+        for status in [1, 3, 4, 5] {
+            assert_eq!(Readings::charging(status), Some(false));
+        }
+        for absent in [i32::MIN, 0, 6] {
+            assert_eq!(Readings::charging(absent), None);
         }
     }
 }

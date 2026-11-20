@@ -55,6 +55,12 @@ export interface ViewerSnapshot {
 	shape?: ViewerShape;
 	sampledAtMs?: number;
 	batteryPercent?: number;
+	/**
+	 * The device's battery is charging (Android's `BatteryManager` status
+	 * `BATTERY_STATUS_CHARGING`). Absent when it cannot be read. korrid
+	 * shows the battery from a fresh snapshot only (ADR 0094).
+	 */
+	batteryCharging?: boolean;
 	streamHealth?: import("./surface").SurfaceStreamHealth;
 	controls: import("./surface").SurfaceGameplayControl[];
 }

@@ -904,6 +904,10 @@ assert productConfig.services.korriProduct.sleep.states == [ ];
 assert productConfig.services.logind.settings.Login.HandlePowerKey == "poweroff";
 assert productConfig.services.logind.settings.Login.HandleLidSwitch == "poweroff";
 assert rg353m.services.korriProduct.sleep.states == [ ];
+# ADR 0094: no battery fact is verified by default; korrid then shows no percent.
+assert productConfig.services.korriProduct.battery.verified == [ ];
+assert productConfig.systemd.services.korrid.environment.KORRID_BATTERY_VERIFIED == "[]";
+assert rg353m.systemd.services.korrid.environment.KORRID_BATTERY_VERIFIED == "[]";
 assert
   builtins.fromJSON productConfig.environment.etc."korri-plugin-host/publishers.json".text
   == requirements.constants.publishers;

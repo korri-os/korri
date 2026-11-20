@@ -287,6 +287,9 @@ assert !(recovery.systemd.services ? korri-shell);
 assert !(c.users.users ? gameplay);
 assert !(c.users.groups ? games);
 assert c.services.korriProduct.sleep.states == [ ];
+# ADR 0094: the battery driver's capacity events are verified.
+assert c.services.korriProduct.battery.verified == [ "percent" ];
+assert c.systemd.services.korrid.environment.KORRID_BATTERY_VERIFIED == ''["percent"]'';
 assert c.services.logind.settings.Login.HandlePowerKey == "poweroff";
 assert c.services.logind.settings.Login.HandleLidSwitch == "poweroff";
 assert c.services.korriLinuxHost.compositor.localInput.enable;

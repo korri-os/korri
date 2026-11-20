@@ -44,6 +44,7 @@ use tokio::sync::oneshot;
 use typeshare::typeshare;
 
 pub mod authorization;
+pub mod battery;
 pub mod catalog_cli;
 pub mod catalog_migrate;
 pub mod cli;
@@ -5847,8 +5848,16 @@ fn surface_hub_for(
         Arc::new(SteamEngineFacts {
             state: surface_host.clone(),
         });
+    let network = surface_host.network.clone();
+    let korrid = surface::korrid::Korrid::new(send)
+        .with_network_changes(Arc::new(move || network.changes()))
+        .with_onboarding_changes(Arc::new(onboarding::changes));
+    // ADR 0094: korrid reads the battery itself on Linux. The Android app's
+    // battery comes from its viewer's snapshot (surface/viewer.rs).
+    #[cfg(target_os = "linux")]
+    let korrid = korrid.with_battery(Arc::new(battery::device));
     surface::SurfaceHub::new(
-        surface::korrid::Korrid::new(send)
+        korrid
             .with_steam_engine(steam_engine)
             .with_plugin_accounts(Arc::new(PluginAccountFacts {
                 state: surface_host.clone(),

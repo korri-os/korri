@@ -316,6 +316,9 @@ impl SurfaceHub {
         let root = self.root();
         if let Some(overlay) = root.overlay() {
             let mut model = overlay.model();
+            // korrid's own battery reader, where the device has one, before
+            // the viewer's reading.
+            model.battery = root.battery().or(model.battery);
             model.windows = root.windows();
             model.clock_label = Some(root.clock());
             model.published_at = root.published_at();

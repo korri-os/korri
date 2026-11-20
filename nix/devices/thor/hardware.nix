@@ -68,6 +68,10 @@ in
   # gadgets gave zao two 10.42.7.0/24 routes. 10.42.0-7 are taken, so the
   # Thor uses 10.42.8.1. The MACs are "THR" in ASCII after the shared 02:52
   # prefix and do not derive from the subnet.
+  # qcom_battmgr calls power_supply_changed() when the capacity changes
+  # (ADR 0094), so korrid shows the battery percent.
+  services.korriProduct.battery.verified = [ "percent" ];
+
   services.korriProduct.usbGadget = {
     name = "thor";
     product = "Thor NixOS";

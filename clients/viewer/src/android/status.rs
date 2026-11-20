@@ -15,9 +15,11 @@ use jni::{
 };
 use korri_viewer_treaty::SurfaceStreamHealth;
 
-/// `Context.BATTERY_SERVICE` and `BatteryManager.BATTERY_PROPERTY_CAPACITY`.
+/// `Context.BATTERY_SERVICE`, `BatteryManager.BATTERY_PROPERTY_CAPACITY`
+/// and `BatteryManager.BATTERY_PROPERTY_STATUS` (API 26).
 const BATTERY_SERVICE: &str = "batterymanager";
 const BATTERY_PROPERTY_CAPACITY: i32 = 4;
+const BATTERY_PROPERTY_STATUS: i32 = 6;
 
 /// `Context.DISPLAY_SERVICE` and `Display.DEFAULT_DISPLAY`.
 const DISPLAY_SERVICE: &str = "display";
@@ -157,8 +159,10 @@ pub fn screen() -> Option<(i32, i32)> {
 /// The battery and the health now; each is absent when it cannot be read.
 pub fn readings() -> Readings {
     let health = picture::health();
+    let (battery_percent, battery_charging) = battery();
     Readings {
-        battery_percent: battery(),
+        battery_percent,
+        battery_charging,
         sampled_at_ms: health.map(|(sample, _)| sample.at_ms as f64),
         stream_health: health.map(|(sample, rtt)| SurfaceStreamHealth {
             rtt_ms: rtt.map(f64::from),
@@ -168,17 +172,23 @@ pub fn readings() -> Readings {
     }
 }
 
-/// `BatteryManager.getIntProperty(BATTERY_PROPERTY_CAPACITY)`, through JNI
-/// on this thread.
-fn battery() -> Option<f64> {
+/// `BatteryManager.getIntProperty` of `BATTERY_PROPERTY_CAPACITY` and of
+/// `BATTERY_PROPERTY_STATUS`, through JNI on this thread: the percent and
+/// whether the battery is charging (ADR 0094). Each is absent when it
+/// cannot be read.
+fn battery() -> (Option<f64>, Option<bool>) {
     let context = ndk_context::android_context();
     // SAFETY: the process's VM, which android-activity gave ndk-context.
-    let vm = unsafe { JavaVM::from_raw(context.vm().cast()) }.ok()?;
-    let mut env = vm.attach_current_thread().ok()?;
+    let Ok(vm) = (unsafe { JavaVM::from_raw(context.vm().cast()) }) else {
+        return (None, None);
+    };
+    let Ok(mut env) = vm.attach_current_thread() else {
+        return (None, None);
+    };
     // SAFETY: ndk-context's global reference to the activity, which it
     // keeps; this wrapper does not delete it.
     let activity = unsafe { JObject::from_raw(context.context().cast()) };
-    let capacity = env.with_local_frame(8, |env| -> jni::errors::Result<i32> {
+    let read = env.with_local_frame(8, |env| -> jni::errors::Result<(i32, i32)> {
         let name = env.new_string(BATTERY_SERVICE)?;
         let manager = env
             .call_method(
@@ -189,24 +199,25 @@ fn battery() -> Option<f64> {
             )?
             .l()?;
         if manager.is_null() {
-            return Ok(i32::MIN);
+            return Ok((i32::MIN, i32::MIN));
         }
-        env.call_method(
-            &manager,
-            "getIntProperty",
-            "(I)I",
-            &[BATTERY_PROPERTY_CAPACITY.into()],
-        )?
-        .i()
+        let mut property = |id: i32| -> jni::errors::Result<i32> {
+            env.call_method(&manager, "getIntProperty", "(I)I", &[id.into()])?
+                .i()
+        };
+        Ok((
+            property(BATTERY_PROPERTY_CAPACITY)?,
+            property(BATTERY_PROPERTY_STATUS)?,
+        ))
     });
     if env.exception_check().unwrap_or(false) {
         let _ = env.exception_clear();
     }
-    match capacity {
-        Ok(capacity) => Readings::battery(capacity),
+    match read {
+        Ok((capacity, status)) => (Readings::battery(capacity), Readings::charging(status)),
         Err(error) => {
             log::line(&format!("status: the battery is unreadable: {error}"));
-            None
+            (None, None)
         }
     }
 }

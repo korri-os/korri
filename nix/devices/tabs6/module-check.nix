@@ -118,6 +118,9 @@ assert console.networking.firewall.interfaces.wlan0.allowedUDPPorts == [ 5353 ];
 assert c.systemd.services ? korri-shell;
 assert c.systemd.services.korri-shell.serviceConfig.User != "root";
 assert c.services.korriProduct.sleep.states == [ ];
+# ADR 0094: the battery driver's capacity events are verified.
+assert c.services.korriProduct.battery.verified == [ "percent" ];
+assert c.systemd.services.korrid.environment.KORRID_BATTERY_VERIFIED == ''["percent"]'';
 # Short press: panel off/on through the compositor; long press: power off.
 assert c.services.logind.settings.Login.HandlePowerKey == "ignore";
 assert c.services.logind.settings.Login.HandlePowerKeyLongPress == "poweroff";

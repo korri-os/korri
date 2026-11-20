@@ -654,6 +654,7 @@ fn snapshot(state: MutexGuard<'_, State>) -> Option<ViewerSnapshot> {
     drop(state);
     let readings = readings();
     snapshot.battery_percent = readings.battery_percent;
+    snapshot.battery_charging = readings.battery_charging;
     snapshot.sampled_at_ms = readings.sampled_at_ms;
     snapshot.stream_health = readings.stream_health;
     Some(snapshot)
@@ -790,6 +791,7 @@ mod tests {
     fn readings() -> Readings {
         Readings {
             battery_percent: Some(53.0),
+            battery_charging: Some(true),
             sampled_at_ms: Some(1234.0),
             stream_health: Some(korri_viewer_treaty::SurfaceStreamHealth {
                 rtt_ms: Some(8.0),
@@ -885,6 +887,7 @@ mod tests {
             ]
         );
         assert_eq!(snapshot.battery_percent, Some(53.0));
+        assert_eq!(snapshot.battery_charging, Some(true));
         assert_eq!(snapshot.sampled_at_ms, Some(1234.0));
         assert_eq!(snapshot.stream_health, readings().stream_health);
         assert_eq!(snapshot.connected, Some(true));
@@ -892,7 +895,11 @@ mod tests {
         lifecycle.disconnected();
         let snapshot = observed(&lifecycle);
         assert_eq!(snapshot.connected, Some(false));
-        assert!(snapshot.controls.is_empty() && snapshot.battery_percent.is_none());
+        assert!(
+            snapshot.controls.is_empty()
+                && snapshot.battery_percent.is_none()
+                && snapshot.battery_charging.is_none()
+        );
     }
 
     #[test]

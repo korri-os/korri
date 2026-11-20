@@ -39,6 +39,9 @@ in
 
   # No suspend or light-sleep path has been verified on this board.
   services.korriProduct.sleep.states = [ ];
+  # qcom_fg calls power_supply_changed() when the capacity changes (ADR
+  # 0094), so korrid shows the battery percent.
+  services.korriProduct.battery.verified = [ "percent" ];
 
   image.baseName = lib.mkForce "nixos-rpminiv2-korri";
 

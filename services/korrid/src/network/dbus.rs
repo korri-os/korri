@@ -18,10 +18,10 @@ pub(super) mod nearby;
 
 type Connect = Box<dyn Fn() -> BoxFuture<'static, zbus::Result<Connection>> + Send + Sync>;
 
-/// NetworkManager over one system bus connection. The shell reads network
-/// status every 2 s. A new connection for each read made korrid, dbus-daemon
-/// and NetworkManager busy on an idle device (#289). Every failed operation
-/// drops the connection, so the next operation connects again.
+/// NetworkManager over one system bus connection. A new connection for each
+/// read made korrid, dbus-daemon and NetworkManager busy on an idle device
+/// (#289). Every failed operation drops the connection, so the next
+/// operation connects again. The signal watcher has its own connection.
 pub struct DbusNetworkManager {
     connect: Connect,
     bus: tokio::sync::Mutex<Option<Connection>>,
@@ -72,7 +72,7 @@ async fn proxy<'a>(
     path: &'a str,
     interface: &'a str,
 ) -> zbus::Result<Proxy<'a>> {
-    // Each read is a fresh physical fact. In particular, polling must not
+    // Each read is a fresh physical fact. In particular, a read must not
     // retain the State/LastScan value read before an activation or scan.
     zbus::proxy::Builder::new(bus)
         .destination(NM)?
@@ -404,7 +404,172 @@ async fn connect(
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
 }
+/// What one NetworkManager signal is about.
+#[derive(Debug)]
+enum Event {
+    /// `PropertiesChanged` of an object, with the names it changed.
+    Manager(Vec<String>),
+    Active(Vec<String>),
+    Point(Vec<String>),
+    /// The Wi-Fi device found or lost an access point.
+    AccessPoints,
+    /// NetworkManager started, stopped or restarted on the bus.
+    Owner,
+}
+
+/// What the watcher does about one signal.
+#[derive(Debug, PartialEq, Eq)]
+enum Reaction {
+    /// The facts a surface shows may have changed: read them again.
+    Read,
+    /// The objects to watch changed: subscribe again, then read.
+    Resubscribe,
+    Ignore,
+}
+
+/// The signals that can change the primary connection and its state, the
+/// active access point's Strength, or the list of access points (ADR 0094).
+fn reaction(event: &Event) -> Reaction {
+    let any =
+        |names: &[String], wanted: &[&str]| names.iter().any(|n| wanted.contains(&n.as_str()));
+    match event {
+        Event::Owner => Reaction::Resubscribe,
+        Event::AccessPoints => Reaction::Read,
+        Event::Manager(names) if any(names, &["PrimaryConnection", "Devices"]) => {
+            Reaction::Resubscribe
+        }
+        Event::Manager(names) if any(names, &["State", "WirelessEnabled"]) => Reaction::Read,
+        Event::Active(names) if any(names, &["SpecificObject"]) => Reaction::Resubscribe,
+        Event::Active(names) if any(names, &["State"]) => Reaction::Read,
+        Event::Point(names) if any(names, &["Strength"]) => Reaction::Read,
+        _ => Reaction::Ignore,
+    }
+}
+
+type Events = futures::stream::BoxStream<'static, Event>;
+
+/// `PropertiesChanged` of one NetworkManager object and interface.
+async fn properties_changed(
+    bus: &Connection,
+    path: &str,
+    interface: &'static str,
+    event: fn(Vec<String>) -> Event,
+) -> zbus::Result<Events> {
+    use futures::StreamExt;
+    let stream = zbus::fdo::PropertiesProxy::builder(bus)
+        .destination(NM)?
+        .path(path.to_owned())?
+        .cache_properties(zbus::proxy::CacheProperties::No)
+        .build()
+        .await?
+        .receive_properties_changed()
+        .await?;
+    Ok(stream
+        .filter_map(move |signal| async move {
+            let args = signal.args().ok()?;
+            (args.interface_name().as_str() == interface).then(|| {
+                event(
+                    args.changed_properties()
+                        .keys()
+                        .map(|name| (*name).to_owned())
+                        .chain(
+                            args.invalidated_properties()
+                                .iter()
+                                .map(|name| (*name).to_owned()),
+                        )
+                        .collect(),
+                )
+            })
+        })
+        .boxed())
+}
+
+/// The streams of the objects that hold the facts now. When NetworkManager
+/// is not running only its root and its owner are watched.
+async fn subscribe(bus: &Connection) -> zbus::Result<Events> {
+    use futures::StreamExt;
+    let mut streams = Vec::new();
+    if bus.is_bus() {
+        let owner = zbus::fdo::DBusProxy::new(bus)
+            .await?
+            .receive_name_owner_changed_with_args(&[(0, NM)])
+            .await?;
+        streams.push(owner.map(|_| Event::Owner).boxed());
+    }
+    streams.push(properties_changed(bus, ROOT, NM, Event::Manager).await?);
+    if let Ok(manager) = proxy(bus, ROOT, NM).await {
+        if let Ok(primary) = manager
+            .get_property::<OwnedObjectPath>("PrimaryConnection")
+            .await
+        {
+            if primary.as_str() != "/" {
+                streams
+                    .push(properties_changed(bus, primary.as_str(), ACTIVE, Event::Active).await?);
+                let active = proxy(bus, primary.as_str(), ACTIVE).await?;
+                if let Ok(point) = active
+                    .get_property::<OwnedObjectPath>("SpecificObject")
+                    .await
+                {
+                    if point.as_str() != "/" {
+                        streams
+                            .push(properties_changed(bus, point.as_str(), AP, Event::Point).await?);
+                    }
+                }
+            }
+        }
+    }
+    if let Ok(Some(device)) = wifi_device(bus).await {
+        let wireless = proxy(bus, device.as_str(), WIRELESS).await?;
+        for signal in ["AccessPointAdded", "AccessPointRemoved"] {
+            streams.push(
+                wireless
+                    .receive_signal(signal)
+                    .await?
+                    .map(|_| Event::AccessPoints)
+                    .boxed(),
+            );
+        }
+    }
+    Ok(futures::stream::select_all(streams).boxed())
+}
+
+/// Call `changed` once subscribed, then for each signal that can change
+/// what a surface shows. No timer: NetworkManager's signals are the only
+/// cause. Returns when the bus connection ends.
+async fn watch(bus: &Connection, changed: &(dyn Fn() + Send + Sync)) -> zbus::Result<()> {
+    use futures::StreamExt;
+    loop {
+        let mut events = subscribe(bus).await?;
+        // Subscribed first, read after: no change between the two is lost.
+        changed();
+        loop {
+            let Some(event) = events.next().await else {
+                return Err(zbus::Error::InputOutput(
+                    std::io::Error::new(std::io::ErrorKind::BrokenPipe, "the bus closed").into(),
+                ));
+            };
+            match reaction(&event) {
+                Reaction::Read => changed(),
+                Reaction::Resubscribe => break,
+                Reaction::Ignore => {}
+            }
+        }
+    }
+}
+
 impl NetworkManager for DbusNetworkManager {
+    fn watch<'a>(&'a self, changed: &'a (dyn Fn() + Send + Sync)) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            // Its own connection: a failed operation drops the shared one.
+            let outcome = match (self.connect)().await {
+                Ok(bus) => watch(&bus, changed).await,
+                Err(error) => Err(error),
+            };
+            if let Err(error) = outcome {
+                eprintln!("korrid: NetworkManager signals ended: {error}");
+            }
+        })
+    }
     fn read(&self) -> BoxFuture<'_, Result<NetworkSnapshot, NetworkFailure>> {
         Box::pin(self.on_bus(Duration::from_secs(5), |bus| {
             Box::pin(async move { read(&bus).await.map_err(|_| NetworkFailure::unavailable()) })
