@@ -11,7 +11,10 @@ let
   catalog = import ./catalog-plugins.nix { inherit pkgs system; };
   selection = import ./plugin-selection.nix { plugins = catalog.plugins; };
   seeded = import ../../services/korrid/plugin-host/image-seed.nix {
-    disabled = [ "@korri:starter-pack" ];
+    disabled = [
+      "@korri:starter-pack"
+      "@korri:tailscale"
+    ];
     inherit pkgs catalog;
     hostPackage = korri.packages.${system}.korri-plugin-host;
     publishers = (import ./requirements.nix { inherit korri; }).constants.publishers;

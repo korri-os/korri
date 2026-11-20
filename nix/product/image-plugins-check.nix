@@ -59,6 +59,10 @@ assert lib.all (
     published.korri-plugin-zquest-classic
   ]
 ) names;
+# ADR 0089: the private network's plugin ships on every product image.
+assert lib.all (
+  name: lib.elem (toString published.korri-plugin-tailscale) (map toString selected.${name})
+) names;
 # Stream play's removable viewer ships on every product image.
 assert lib.all (
   name: lib.elem (toString published.korri-plugin-moonlight) (map toString selected.${name})

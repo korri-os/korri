@@ -25,7 +25,10 @@ let
     inherit pkgs publishers catalog;
     hostPackage = seedPackage;
     pluginPackages = builtins.attrValues published;
-    disabled = [ "@korri:starter-pack" ];
+    disabled = [
+      "@korri:starter-pack"
+      "@korri:tailscale"
+    ];
   };
   metadata = import ./published-plugin-metadata.nix {
     inherit
@@ -46,7 +49,17 @@ let
         --arg source ${lib.escapeShellArg catalog.catalogUrl} \
         '.[] | select(.id == $record.plugin_id) |
           .package == $record.store_path and .previous == null and
-          .desired.state == "${if name == "korri-plugin-starter-pack" then "Disabled" else "Enabled"}" and
+          .desired.state == "${
+            if
+              lib.elem name [
+                "korri-plugin-starter-pack"
+                "korri-plugin-tailscale"
+              ]
+            then
+              "Disabled"
+            else
+              "Enabled"
+          }" and
           .provenance == {kind: "Repository", source_url: $source,
             plugin_id: $record.plugin_id, release_version: $record.release_version,
             platform: $record.platform, archive_sha256: $record.archive_sha256, signed: true}' \

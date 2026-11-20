@@ -45,6 +45,10 @@ let
     "pico8"
     "homebrewhub"
     "retrobrews"
+    # ADR 0089: the private network ships on every product device, disabled
+    # (image-plugins.nix). Its service stays stopped until the person signs
+    # in from setup or settings.
+    "tailscale"
   ];
   n64AndDreamcast = select [
     "mupen64plus"
