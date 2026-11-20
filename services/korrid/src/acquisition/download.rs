@@ -186,10 +186,11 @@ pub(super) struct TextResponse {
     pub text: String,
 }
 
-/// A downloaded game in its private staging directory. Dropping it removes
-/// the file, so every failure and cancellation leaves no partial bytes.
+/// A complete downloaded game in its private staging directory. Dropping it
+/// removes the file once the install has used it.
 pub(super) struct DownloadedGame {
     pub path: PathBuf,
+    #[cfg_attr(not(test), allow(dead_code))] // Tests check the byte count.
     pub bytes: u64,
     /// The first bytes, up to 512: native byte evidence or transport archive.
     pub lead: Vec<u8>,
@@ -202,6 +203,34 @@ impl Drop for DownloadedGame {
 
 /// Prefix of every game staging file; startup removes leftovers by it.
 pub(super) const STAGING_PREFIX: &str = ".acquire-";
+/// The HTTP validator of staged game bytes (RFC 9110 section 8.8): a strong
+/// entity tag, else the last-modified date. `If-Range` sends it back, so a
+/// server continues only the same file. A weak tag cannot (section 13.1.5).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) enum Validator {
+    ETag(String),
+    LastModified(String),
+}
+impl Validator {
+    fn of(headers: &header::HeaderMap) -> Option<Self> {
+        let text = |name| {
+            headers
+                .get(name)
+                .and_then(|value: &header::HeaderValue| value.to_str().ok())
+                .map(str::to_owned)
+        };
+        text(header::ETAG)
+            .filter(|tag| !tag.starts_with("W/"))
+            .map(Self::ETag)
+            .or_else(|| text(header::LAST_MODIFIED).map(Self::LastModified))
+    }
+    fn value(&self) -> &str {
+        match self {
+            Self::ETag(value) | Self::LastModified(value) => value,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Progress {
     pub done: u64,
@@ -628,31 +657,123 @@ impl DownloadEngine {
     }
 
     /// A resolved game with no expected hash: one attempt, streamed to a
-    /// private random file. No size cap: the free-space floor (ADR 0030)
-    /// bounds it. Empty bodies and web pages are refused (legacy
-    /// `rejectNonArtifactPayload`).
+    /// private random file, which goes on any failure. Tests use it for the
+    /// transport rules that `fetch_game_into` applies.
+    #[cfg(test)]
     pub(super) async fn fetch_game(
         &self,
         request: &GameRequest,
         hosts: &[String],
         directory: &Path,
+        progress: impl FnMut(Progress),
+    ) -> Result<DownloadedGame, Failure> {
+        let mut name = [0u8; 12];
+        rand::RngCore::fill_bytes(&mut rand::rng(), &mut name);
+        let staged = directory.join(format!("{STAGING_PREFIX}{}", hex::encode(name)));
+        let result = self
+            .fetch_game_into(request, hosts, &staged, None, |_| {}, progress)
+            .await;
+        if result.is_err() {
+            let _ = fs::remove_file(&staged);
+        }
+        result
+    }
+
+    /// A resolved game with no expected hash, streamed to `staged`. No size
+    /// cap: the free-space floor (ADR 0030) bounds it. Empty bodies and web
+    /// pages are refused (legacy `rejectNonArtifactPayload`).
+    ///
+    /// ADR 0092: an install resumes from the bytes already in `staged` when
+    /// it has their `validator`. korrid asks for the rest with `Range` and
+    /// `If-Range` (RFC 9110 sections 14.2 and 13.1.5). A server that ignores
+    /// the range, or whose file changed, answers 200 with the whole file,
+    /// which replaces the staged bytes. A POST never asks for a range: range
+    /// handling is defined only for GET. `kept` hears the validator of the
+    /// bytes before the first byte is written. A network failure or a stall
+    /// keeps the bytes for a later resume; any other failure deletes them.
+    pub(super) async fn fetch_game_into(
+        &self,
+        request: &GameRequest,
+        hosts: &[String],
+        staged: &Path,
+        validator: Option<&Validator>,
+        mut kept: impl FnMut(Option<&Validator>),
         mut progress: impl FnMut(Progress),
     ) -> Result<DownloadedGame, Failure> {
-        let url = Url::parse(&request.url).map_err(|_| Failure::UnsafeUrl)?;
-        // The game download never carries a plugin's secret.
-        let (_, mut response, _) = self
-            .send(
-                url,
-                policy::Hosts::Only(hosts),
-                request.form.as_deref().map(PostBody::form),
-                None,
-                |b| b,
-            )
-            .await
-            .map_err(ChainFailure::transport)?;
-        if !response.status().is_success() || response.status() == StatusCode::PARTIAL_CONTENT {
-            return Err(Failure::Network);
+        let result = self
+            .transfer_game(request, hosts, staged, validator, &mut kept, &mut progress)
+            .await;
+        match result {
+            Ok((bytes, lead)) => Ok(DownloadedGame {
+                path: staged.to_path_buf(),
+                bytes,
+                lead,
+            }),
+            Err(error @ (Failure::Network | Failure::Stalled)) => Err(error),
+            Err(error) => {
+                let _ = fs::remove_file(staged);
+                Err(error)
+            }
         }
+    }
+
+    async fn transfer_game(
+        &self,
+        request: &GameRequest,
+        hosts: &[String],
+        staged: &Path,
+        validator: Option<&Validator>,
+        kept: &mut impl FnMut(Option<&Validator>),
+        progress: &mut impl FnMut(Progress),
+    ) -> Result<(u64, Vec<u8>), Failure> {
+        let url = Url::parse(&request.url).map_err(|_| Failure::UnsafeUrl)?;
+        let existing = fs::symlink_metadata(staged)
+            .ok()
+            .filter(|metadata| metadata.is_file())
+            .map_or(0, |metadata| metadata.len());
+        let mut offset = match validator {
+            Some(_) if request.form.is_none() => existing,
+            _ => 0,
+        };
+        let (mut response, start, total) = loop {
+            let range = (offset > 0).then(|| (offset, validator.expect("resume has a validator")));
+            // The game download never carries a plugin's secret.
+            let (_, response, _) = self
+                .send(
+                    url.clone(),
+                    policy::Hosts::Only(hosts),
+                    request.form.as_deref().map(PostBody::form),
+                    None,
+                    |builder| match range {
+                        Some((offset, validator)) => builder
+                            .header(header::RANGE, format!("bytes={offset}-"))
+                            .header(header::IF_RANGE, validator.value()),
+                        None => builder,
+                    },
+                )
+                .await
+                .map_err(ChainFailure::transport)?;
+            let status = response.status();
+            if offset > 0 && status == StatusCode::RANGE_NOT_SATISFIABLE {
+                // The staged bytes are not a prefix the server can continue.
+                offset = 0;
+                continue;
+            }
+            if offset > 0 && status == StatusCode::PARTIAL_CONTENT {
+                let value = response
+                    .headers()
+                    .get(header::CONTENT_RANGE)
+                    .and_then(|v| v.to_str().ok())
+                    .ok_or(Failure::Network)?;
+                let total = content_range(value, offset)?;
+                break (response, offset, total);
+            }
+            if !status.is_success() || status == StatusCode::PARTIAL_CONTENT {
+                return Err(Failure::Network);
+            }
+            let total = response.content_length();
+            break (response, 0, total);
+        };
         let content_type = response
             .headers()
             .get(header::CONTENT_TYPE)
@@ -662,32 +783,38 @@ impl DownloadEngine {
         if content_type.starts_with("text/html") || content_type.starts_with("application/xhtml") {
             return Err(Failure::WebPage);
         }
-        let total = response.content_length();
+        let directory = staged.parent().ok_or(Failure::UnsafePath)?;
         let mut floor = space::Floor::new(directory, self.space())?;
         // A declared length never allows a write; it only refuses early a
         // download that can never finish.
-        if let Some(total) = total {
-            if total > floor.room()? {
+        if let Some(remaining) = response.content_length() {
+            if remaining > floor.room()? {
                 return Err(Failure::NoSpace);
             }
         }
-        let mut name = [0u8; 12];
-        rand::RngCore::fill_bytes(&mut rand::rng(), &mut name);
-        let mut staged = DownloadedGame {
-            path: directory.join(format!("{STAGING_PREFIX}{}", hex::encode(name))),
-            bytes: 0,
-            lead: Vec::new(),
-        };
+        if start == 0 {
+            kept(Validator::of(response.headers()).as_ref());
+        }
         let mut output = OpenOptions::new()
             .write(true)
-            .create_new(true)
+            .create(true)
+            .truncate(start == 0)
+            .append(start > 0)
             .mode(0o600)
             .custom_flags(libc::O_NOFOLLOW)
-            .open(&staged.path)?;
+            .open(staged)?;
         let mut lead = Vec::with_capacity(512);
-        let mut done = 0u64;
-        let mut samples = VecDeque::from([(Instant::now(), 0u64)]);
-        let (mut window_start, mut window_bytes) = (Instant::now(), 0u64);
+        if start > 0 {
+            File::options()
+                .read(true)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(staged)?
+                .take(512)
+                .read_to_end(&mut lead)?;
+        }
+        let mut done = start;
+        let mut samples = VecDeque::from([(Instant::now(), done)]);
+        let (mut window_start, mut window_bytes) = (Instant::now(), done);
         progress(Progress {
             done,
             total,
@@ -728,8 +855,8 @@ impl DownloadEngine {
             while samples.len() > 1 && now.duration_since(samples[0].0) > Duration::from_secs(5) {
                 samples.pop_front();
             }
-            let (start, bytes) = samples[0];
-            let elapsed = now.duration_since(start).as_secs_f64();
+            let (first, bytes) = samples[0];
+            let elapsed = now.duration_since(first).as_secs_f64();
             progress(Progress {
                 done,
                 total,
@@ -743,9 +870,7 @@ impl DownloadEngine {
             return Err(Failure::WebPage);
         }
         output.sync_all()?;
-        staged.bytes = done;
-        staged.lead = lead;
-        Ok(staged)
+        Ok((done, lead))
     }
 
     pub(super) async fn fetch(

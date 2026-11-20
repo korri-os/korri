@@ -2096,10 +2096,15 @@ struct AppState {
 impl AppState {
     fn recover_acquisition(&self) {
         if let Ok((root, registry)) = self.acquisition_context() {
-            if let Err(failure) =
-                self.acquisition
-                    .recover(root, self.private_state_root(), &registry)
-            {
+            // ADR 0092: provider installs resume only where a library can
+            // record them.
+            let games = self.game_context().ok();
+            if let Err(failure) = self.acquisition.recover_installs(
+                root,
+                self.private_state_root(),
+                &registry,
+                games.as_ref(),
+            ) {
                 eprintln!("korrid acquisition recovery: {}", failure.message);
             }
         }

@@ -196,12 +196,9 @@ impl Fixture {
                 identity: &identity,
             })
             .unwrap();
-        let cache = super::super::placement::provider_cache(
-            self.readable.path(),
-            ART_PLUGIN_ID,
-            ART_PLUGIN_ID,
-        )
-        .join(super::super::placement::ready_name(identity.value()).unwrap());
+        // ADR 0092: an installed release lives under its release key.
+        let cache = super::super::placement::copied_release_cache(self.readable.path())
+            .join(super::super::placement::ready_name(identity.value()).unwrap());
         fs::create_dir_all(&cache).unwrap();
         fs::write(cache.join("game.gba"), bytes).unwrap();
         id

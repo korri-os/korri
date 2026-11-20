@@ -142,7 +142,8 @@ impl Copy {
     }
 }
 
-/// Same queue and sleep inhibitor as provider downloads.
+/// Same line and sleep inhibitor as provider downloads. ADR 0092: netplay
+/// goes to the front of the line; a background download pauses for it.
 pub(crate) struct CopyTurn {
     _turn: super::Turn,
 }
@@ -155,6 +156,8 @@ pub(crate) async fn turn(
         .queue_turn(
             placement::copied_release_cache(root)
                 .join(placement::ready_name(key).expect("validated release key")),
+            super::Place::Front,
+            None,
         )
         .turn()
         .await;

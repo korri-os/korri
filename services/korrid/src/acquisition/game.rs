@@ -13,7 +13,7 @@ use tokio::sync::watch;
 use super::{
     archive,
     claims::{DownloadResolution, FailedDownloadReason, ProviderClaim, ProviderClaimDetails},
-    download::{DownloadEngine, DownloadedGame, GameRequest},
+    download::{DownloadEngine, GameRequest, Validator, STAGING_PREFIX},
     placement,
     turns::{self, ProviderContext, ProviderError},
     types::{
@@ -142,10 +142,10 @@ pub(crate) fn discovered_provider_game(
         .map(|(id, _)| id.clone())
 }
 
-/// ADR 0016 Q3 and ADR 0030: the ready directory of one library release in
-/// the cache of a provider linked to its game:
-/// `cache/<plugin>/<provider>/<hex of the release key>/`, with a file of the
-/// release system for the route. Returns the directories in release order.
+/// ADR 0092: the ready directory of one library release, whatever source
+/// installed it: `cache/<hex of the release key>/` (ADR 0040's layout, folder
+/// name from ADR 0030), with a file of the release system for the route.
+/// Returns the directories in release order.
 pub(crate) fn acquired_game_dirs(
     root: &Path,
     registry: &PluginRegistry,
@@ -155,31 +155,14 @@ pub(crate) fn acquired_game_dirs(
     let Some(game) = snapshot.library.get(game_id) else {
         return Vec::new();
     };
-    let providers: Vec<_> = snapshot
-        .provider_links
-        .values()
-        .filter(|link| link.playable.0 == game_id)
-        .filter_map(|link| {
-            registry
-                .acquisition_provider(&link.provider.0)
-                .map(|(record, owner)| placement::provider_cache(root, owner, &record.id))
-        })
-        .collect();
     game.releases
         .iter()
         .filter_map(|release| {
             let key = release.identity.as_ref()?.value();
             let hex = placement::ready_name(key)?;
             let rules = registry.content_rules(&release.system.as_ref()?.0)?;
-            let copied = placement::copied_release_cache(root).join(hex);
-            if placement::ready_game_file(&copied, rules).is_some() {
-                return Some((key.to_owned(), copied));
-            }
-            providers
-                .iter()
-                .map(|cache| cache.join(hex))
-                .find(|ready| placement::ready_game_file(ready, rules).is_some())
-                .map(|ready| (key.to_owned(), ready))
+            let ready = placement::copied_release_cache(root).join(hex);
+            placement::ready_game_file(&ready, rules).map(|_| (key.to_owned(), ready))
         })
         .collect()
 }
@@ -381,6 +364,7 @@ impl GameAcquisition {
         coordinator: &AcquisitionCoordinator,
         context: &GameContext,
         request: &AcquireArtifactRequest,
+        place: super::Place,
     ) -> Result<AcquireJobStatus, RpcFailure> {
         if request
             .file_name
@@ -461,41 +445,98 @@ impl GameAcquisition {
                     "Korri cannot play this kind of game on this device.",
                 )
             })?;
-        let status = AcquireJobStatus {
-            job_id: job_id(),
+        // ADR 0092: a Get of a claim whose install was interrupted resumes
+        // it, with its job id and its staged bytes.
+        let staging = placement::provider_cache(&context.root, &owner, &request.provider_id)
+            .join(".downloads");
+        let kept = InstallRecord::find(&staging, &request.provider_id, &request.id);
+        let record = InstallRecord {
+            job_id: kept
+                .as_ref()
+                .map_or_else(job_id, |kept| kept.job_id.clone()),
             provider_id: request.provider_id.clone(),
             id: request.id.clone(),
             file_name: request.file_name.clone(),
-            system: Some(system.clone()),
+            url: claim.url.clone(),
+            title: claim.title.clone(),
+            system,
+            etag: kept.as_ref().and_then(|kept| kept.etag.clone()),
+            last_modified: kept.and_then(|kept| kept.last_modified),
+        };
+        if let Err(error) = placement::game_staging(&context.root, &owner, &request.provider_id)
+            .and_then(|staging| record.save(&staging))
+        {
+            // The install still runs; only a restart would forget it.
+            eprintln!(
+                "korrid acquisition: the install record was not saved: {}",
+                error.rpc().message
+            );
+        }
+        Ok(self.start(coordinator, context, provider, owner, record, place))
+    }
+
+    /// Queue one provider install and run its pipeline in the background.
+    fn start(
+        &self,
+        coordinator: &AcquisitionCoordinator,
+        context: &GameContext,
+        provider: ProviderContext,
+        owner: String,
+        record: InstallRecord,
+        place: super::Place,
+    ) -> AcquireJobStatus {
+        let key = (record.provider_id.clone(), record.id.clone());
+        let claim = HeldClaim {
+            url: record.url.clone(),
+            title: record.title.clone(),
+            system: Some(record.system.clone()),
+        };
+        self.claims
+            .lock()
+            .expect("claims mutex poisoned")
+            .insert(key.clone(), claim.clone());
+        let status = AcquireJobStatus {
+            job_id: record.job_id.clone(),
+            provider_id: record.provider_id.clone(),
+            id: record.id.clone(),
+            file_name: record.file_name.clone(),
+            system: Some(record.system.clone()),
             message: None,
             state: AcquireJobState::Queued,
         };
         let (cancel, cancelled) = watch::channel(false);
         let (done_tx, done) = watch::channel(false);
         let job = self.insert(&key, status.clone(), cancel, done);
+        let cache = placement::provider_cache(&context.root, &owner, &record.provider_id);
         let pipeline = Pipeline {
             context: context.clone(),
-            turn: Some(
-                coordinator.queue_turn(
-                    placement::provider_cache(&context.root, &owner, &request.provider_id)
-                        .join(format!(".job-{}", status.job_id)),
-                ),
-            ),
+            turn: Some(coordinator.queue_turn(
+                cache.join(format!(".job-{}", record.job_id)),
+                place,
+                Some((
+                    &context.private_root,
+                    super::Member::Job(record.job_id.clone()),
+                )),
+            )),
             provider,
             owner,
-            claim_id: request.id.clone(),
+            claim_id: record.id.clone(),
             claim,
-            system,
-            file_name: request.file_name.clone(),
+            system: record.system.clone(),
+            file_name: record.file_name.clone(),
             engine: self.engine.clone(),
             job: job.clone(),
+            staging: cache.join(".downloads"),
+            record,
+            keep: false,
             #[cfg(test)]
             hold_unpack: self.hold_unpack.clone(),
         };
         tokio::spawn(async move {
-            let state = match pipeline.run(cancelled).await {
-                Ok(state) | Err(state) => state,
-            };
+            let (state, record) = pipeline.run(cancelled).await;
+            if let Some((staging, record)) = record {
+                record.discard(&staging);
+            }
             {
                 let mut job = job.lock().expect("job mutex poisoned");
                 job.status.message = match &state {
@@ -506,7 +547,7 @@ impl GameAcquisition {
             }
             let _ = done_tx.send(true);
         });
-        Ok(status)
+        status
     }
 
     fn insert(
@@ -533,21 +574,18 @@ impl GameAcquisition {
         job
     }
 
-    /// Startup: a game download never resumes (no expected hash, no saved
-    /// URL); remove every staging file and interrupted publication.
+    /// Startup: remove every staging file that no kept install owns, and
+    /// every interrupted publication. `resume` then queues the kept ones.
     ///
-    /// Returns `(provider, folder name)` for every ready folder that no library
-    /// release names: korrid stopped between publishing it and writing the
-    /// record. Nothing deletes it; the next Get of that game records it.
+    /// Returns the folder name of every ready folder in the install cache
+    /// that no library release names: korrid stopped between publishing it
+    /// and writing the record. Nothing deletes it; the next Get of that game
+    /// records it.
     pub(super) fn recover(
         &self,
         root: &Path,
         registry: &PluginRegistry,
-    ) -> Result<Vec<(String, String)>, Failure> {
-        let library = crate::config::settings::runner_choice_snapshot(root)
-            .ok()
-            .map(|(snapshot, _)| snapshot);
-        let mut unrecorded = Vec::new();
+    ) -> Result<Vec<String>, Failure> {
         for (record, owner) in registry.acquisition_providers() {
             let cache = placement::provider_cache(root, owner, &record.id);
             if !cache.is_dir() {
@@ -556,27 +594,86 @@ impl GameAcquisition {
             // ADR 0030: stop a reader unit that outlived korrid before its
             // archive and work folder go.
             super::unit::reclaim_provider(&super::unit::provider_name(owner, &record.id))?;
-            placement::remove_game_staging(&cache.join(".downloads"))?;
+            // ADR 0092: a kept install keeps its record and its bytes.
+            let staging = cache.join(".downloads");
+            let keep: Vec<String> = InstallRecord::all(&staging)
+                .into_iter()
+                .filter(|install| install.provider_id == record.id)
+                .flat_map(|install| {
+                    [
+                        format!("{STAGING_PREFIX}{}", install.job_id),
+                        format!("{STAGING_PREFIX}{}{RECORD_SUFFIX}", install.job_id),
+                    ]
+                })
+                .collect();
+            placement::remove_game_staging(&staging, &keep)?;
             placement::clean_work(&cache)?;
-            let Some(library) = &library else {
+        }
+        let cache = placement::copied_release_cache(root);
+        // An install that korrid stopped while it published (ADR 0092).
+        if cache.is_dir() {
+            placement::clean_work(&cache)?;
+        }
+        let Some((library, _)) = crate::config::settings::runner_choice_snapshot(root).ok() else {
+            return Ok(Vec::new());
+        };
+        let entries = match std::fs::read_dir(&cache) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error.into()),
+        };
+        let mut unrecorded = Vec::new();
+        for entry in entries {
+            let name = entry?.file_name().to_string_lossy().into_owned();
+            let Some(key) = placement::ready_key(&name) else {
                 continue;
             };
-            for entry in std::fs::read_dir(&cache)? {
-                let name = entry?.file_name().to_string_lossy().into_owned();
-                let Some(key) = placement::ready_key(&name) else {
+            let named = library.library.values().any(|game| {
+                game.releases
+                    .iter()
+                    .any(|release| release.identity.as_ref().is_some_and(|i| i.value() == key))
+            });
+            if !named {
+                unrecorded.push(name);
+            }
+        }
+        unrecorded.sort();
+        Ok(unrecorded)
+    }
+
+    /// ADR 0092: queue again every install that a restart interrupted, with
+    /// its job id, its claim and its staged bytes. A record whose provider
+    /// or system this device no longer has goes with its bytes.
+    pub(super) fn resume(&self, coordinator: &AcquisitionCoordinator, context: &GameContext) {
+        if tokio::runtime::Handle::try_current().is_err() {
+            eprintln!(
+                "korrid acquisition recovery: no runtime; kept installs wait for the next start"
+            );
+            return;
+        }
+        for (record, owner) in context.registry.acquisition_providers() {
+            let staging =
+                placement::provider_cache(&context.root, owner, &record.id).join(".downloads");
+            for install in InstallRecord::all(&staging) {
+                if install.provider_id != record.id {
                     continue;
-                };
-                let named = library.library.values().any(|game| {
-                    game.releases
-                        .iter()
-                        .any(|release| release.identity.as_ref().is_some_and(|i| i.value() == key))
-                });
-                if !named {
-                    unrecorded.push((record.id.clone(), name));
+                }
+                let usable = context.registry.content_rules(&install.system).is_some();
+                match Self::provider(&context.registry, &install.provider_id) {
+                    Ok((provider, owner)) if usable => {
+                        self.start(
+                            coordinator,
+                            context,
+                            provider,
+                            owner,
+                            install,
+                            super::Place::Back,
+                        );
+                    }
+                    _ => install.discard(&staging),
                 }
             }
         }
-        Ok(unrecorded)
     }
 }
 
@@ -597,6 +694,124 @@ fn job_id() -> String {
     format!("{:032x}", rand::random::<u128>())
 }
 
+/// A provider install kept across a restart (ADR 0092, #551), beside its
+/// staged bytes in the provider cache's private `.downloads` folder:
+/// `.acquire-<jobId>` holds the bytes and `.acquire-<jobId>.json` this
+/// record. Every field is an existing one under its existing name: `jobId`
+/// from `AcquireJobStatus`; `providerId`, `id` and `fileName` from
+/// `AcquireArtifactRequest`; `url`, `title` and `system` from the
+/// `ProviderClaim` that korrid holds (`HeldClaim`); `etag` or `lastModified`
+/// is the HTTP validator of the staged bytes, sent back as `If-Range`
+/// (RFC 9110 section 13.1.5).
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct InstallRecord {
+    job_id: String,
+    provider_id: String,
+    id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    file_name: Option<String>,
+    url: String,
+    title: String,
+    system: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    etag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    last_modified: Option<String>,
+}
+
+const RECORD_SUFFIX: &str = ".json";
+
+impl InstallRecord {
+    fn validator(&self) -> Option<Validator> {
+        self.etag
+            .clone()
+            .map(Validator::ETag)
+            .or_else(|| self.last_modified.clone().map(Validator::LastModified))
+    }
+
+    fn keep_validator(&mut self, validator: Option<&Validator>) {
+        (self.etag, self.last_modified) = match validator {
+            Some(Validator::ETag(tag)) => (Some(tag.clone()), None),
+            Some(Validator::LastModified(date)) => (None, Some(date.clone())),
+            None => (None, None),
+        };
+    }
+
+    fn path(staging: &Path, job_id: &str) -> PathBuf {
+        staging.join(format!("{STAGING_PREFIX}{job_id}{RECORD_SUFFIX}"))
+    }
+
+    /// Written whole and renamed into place, so a crash leaves the old
+    /// record or the new one.
+    fn save(&self, staging: &Path) -> Result<(), Failure> {
+        use std::{io::Write, os::unix::fs::OpenOptionsExt};
+        let path = Self::path(staging, &self.job_id);
+        let temporary = staging.join(format!("{STAGING_PREFIX}{}.tmp", self.job_id));
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&temporary)?;
+        file.write_all(&serde_json::to_vec(self).map_err(|_| Failure::Storage)?)?;
+        file.sync_all()?;
+        std::fs::rename(&temporary, &path)?;
+        Ok(())
+    }
+
+    /// The install ends: its record and its staged bytes go.
+    fn discard(&self, staging: &Path) {
+        for path in [
+            Self::path(staging, &self.job_id),
+            staging.join(format!("{STAGING_PREFIX}{}", self.job_id)),
+        ] {
+            match std::fs::remove_file(&path) {
+                Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                    eprintln!("korrid acquisition: an install file stayed after its end: {error}")
+                }
+                _ => (),
+            }
+        }
+    }
+
+    /// Every readable record in one staging folder, by job id. A record
+    /// whose name and job id differ is not one.
+    fn all(staging: &Path) -> Vec<Self> {
+        let Ok(entries) = std::fs::read_dir(staging) else {
+            return Vec::new();
+        };
+        let mut records: Vec<(std::time::SystemTime, Self)> = entries
+            .filter_map(Result::ok)
+            .filter_map(|entry| {
+                let metadata = entry.metadata().ok()?;
+                let since = metadata.created().or_else(|_| metadata.modified()).ok()?;
+                let name = entry.file_name().into_string().ok()?;
+                let job = name
+                    .strip_prefix(STAGING_PREFIX)?
+                    .strip_suffix(RECORD_SUFFIX)?;
+                let record: Self =
+                    serde_json::from_slice(&std::fs::read(entry.path()).ok()?).ok()?;
+                (record.job_id == job
+                    && job.len() == 32
+                    && job.bytes().all(|byte| byte.is_ascii_hexdigit()))
+                .then_some((since, record))
+            })
+            .collect();
+        // Oldest first: the order a restart keeps for installs that the
+        // order file does not name (ADR 0013's rule for artifacts).
+        records.sort_by_key(|(since, _)| *since);
+        records.into_iter().map(|(_, record)| record).collect()
+    }
+
+    fn find(staging: &Path, provider_id: &str, id: &str) -> Option<Self> {
+        Self::all(staging)
+            .into_iter()
+            .find(|record| record.provider_id == provider_id && record.id == id)
+    }
+}
+
 fn provider_failure(provider_id: &str, operation: &str, error: &ProviderError) -> RpcFailure {
     // Diagnostics may hold URLs or plugin text: debug level only.
     log::debug!("acquisition provider {provider_id} {operation}: {error:?}");
@@ -614,6 +829,12 @@ struct Pipeline {
     file_name: Option<String>,
     engine: DownloadEngine,
     job: Arc<Mutex<Job>>,
+    /// The provider cache's private `.downloads` folder.
+    staging: PathBuf,
+    record: InstallRecord,
+    /// The record and the staged bytes stay after the end: the install
+    /// resumes later.
+    keep: bool,
     #[cfg(test)]
     hold_unpack: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
@@ -630,25 +851,13 @@ impl Pipeline {
         self.job.lock().expect("job mutex poisoned").status.state = state;
     }
 
-    async fn run(
-        mut self,
-        mut cancelled: watch::Receiver<bool>,
-    ) -> Result<AcquireJobState, AcquireJobState> {
-        // ADR 0013 queue: one download at a time, in the order asked. The
-        // job reports Queued while it waits; cancel leaves the queue.
-        let wait = self.turn.take().expect("one turn per job");
-        let _turn = tokio::select! {
-            biased;
-            _ = cancelled.changed() => return Err(AcquireJobState::Cancelled),
-            turn = wait.turn() => turn,
-        };
-        {
-            let mut job = self.job.lock().expect("job mutex poisoned");
-            if *cancelled.borrow() {
-                return Err(AcquireJobState::Cancelled);
-            }
-            job.status.state = AcquireJobState::Resolving;
-        }
+    /// The provider's `FinalDownload` for this turn, its outer name and the
+    /// claim system's rules. A store job resolves only when its turn starts,
+    /// so a signed link is fresh (ADR 0030), also after a pause or restart.
+    async fn resolve(
+        &self,
+        cancelled: &mut watch::Receiver<bool>,
+    ) -> Result<(GameRequest, String, crate::plugin::ContentRules), AcquireJobState> {
         let resolution = tokio::select! {
             biased;
             _ = cancelled.changed() => return Err(AcquireJobState::Cancelled),
@@ -698,9 +907,6 @@ impl Pipeline {
             .expect("job mutex poisoned")
             .status
             .file_name = Some(name.clone());
-
-        let cache =
-            placement::provider_cache(&self.context.root, &self.owner, &self.provider.provider_id);
         let staging = {
             let (root, owner, provider) = (
                 self.context.root.clone(),
@@ -712,30 +918,109 @@ impl Pipeline {
                 .map_err(|_| download_failed(Failure::Storage))?
                 .map_err(download_failed)?
         };
-        self.set(AcquireJobState::Downloading {
-            bytes_done: 0,
-            bytes_total: None,
-            bytes_per_second: None,
-        });
-        let flag = cancelled.clone();
+        debug_assert_eq!(staging, self.staging);
         let request = GameRequest {
             url: download.url.clone(),
             form: download.form(),
         };
-        let downloaded: DownloadedGame = tokio::select! {
-            biased;
-            _ = cancelled.changed() => return Err(AcquireJobState::Cancelled),
-            downloaded = self.engine.fetch_game(&request, &self.provider.hosts, &staging, |progress| {
-                let mut job = self.job.lock().expect("job mutex poisoned");
-                if !*flag.borrow() {
-                    job.status.state = AcquireJobState::Downloading {
-                        bytes_done: progress.done,
-                        bytes_total: progress.total,
-                        bytes_per_second: progress.rate,
-                    };
-                }
-            }) => downloaded.map_err(download_failed)?,
+        Ok((request, name, rules))
+    }
+
+    /// Run the install. Returns its end state, and its record and staging
+    /// folder when they must go: only a network failure or a stall keeps
+    /// them, so the install resumes on the next Get or after a restart.
+    async fn run(
+        mut self,
+        cancelled: watch::Receiver<bool>,
+    ) -> (AcquireJobState, Option<(PathBuf, InstallRecord)>) {
+        let state = match self.steps(cancelled).await {
+            Ok(state) | Err(state) => state,
         };
+        let discard = (!self.keep).then(|| (self.staging.clone(), self.record.clone()));
+        (state, discard)
+    }
+
+    async fn steps(
+        &mut self,
+        mut cancelled: watch::Receiver<bool>,
+    ) -> Result<AcquireJobState, AcquireJobState> {
+        // ADR 0013 queue: one download at a time, in the order asked. The
+        // job reports Queued while it waits; cancel leaves the queue. ADR
+        // 0092: a launch can pause the download; it keeps its bytes, waits
+        // again and resolves a fresh link when its turn comes back.
+        let mut wait = self.turn.take().expect("one turn per job");
+        let (_turn, downloaded, name, rules) = loop {
+            let mut turn = tokio::select! {
+                biased;
+                _ = cancelled.changed() => return Err(AcquireJobState::Cancelled),
+                turn = wait.turn() => turn,
+            };
+            {
+                let mut job = self.job.lock().expect("job mutex poisoned");
+                if *cancelled.borrow() {
+                    return Err(AcquireJobState::Cancelled);
+                }
+                job.status.state = AcquireJobState::Resolving;
+            }
+            let (request, name, rules) = self.resolve(&mut cancelled).await?;
+            let staged = self
+                .staging
+                .join(format!("{STAGING_PREFIX}{}", self.record.job_id));
+            let done = std::fs::metadata(&staged).map_or(0, |metadata| metadata.len());
+            self.set(AcquireJobState::Downloading {
+                bytes_done: done,
+                bytes_total: None,
+                bytes_per_second: None,
+            });
+            turn.allow_pause();
+            let flag = cancelled.clone();
+            let validator = self.record.validator();
+            let (job, staging) = (self.job.clone(), self.staging.clone());
+            let mut record = self.record.clone();
+            let fetched = tokio::select! {
+                biased;
+                _ = cancelled.changed() => return Err(AcquireJobState::Cancelled),
+                () = turn.paused() => None,
+                downloaded = self.engine.fetch_game_into(
+                    &request, &self.provider.hosts, &staged, validator.as_ref(),
+                    |validator| {
+                        record.keep_validator(validator);
+                        if let Err(error) = record.save(&staging) {
+                            eprintln!("korrid acquisition: the install record was not saved: {}", error.rpc().message);
+                        }
+                    },
+                    |progress| {
+                        let mut job = job.lock().expect("job mutex poisoned");
+                        if !*flag.borrow() {
+                            job.status.state = AcquireJobState::Downloading {
+                                bytes_done: progress.done,
+                                bytes_total: progress.total,
+                                bytes_per_second: progress.rate,
+                            };
+                        }
+                    },
+                ) => Some((downloaded, record)),
+            };
+            match fetched {
+                // Paused for a launch: the bytes stay, the turn goes back.
+                None => {
+                    self.set(AcquireJobState::Queued);
+                    continue;
+                }
+                Some((downloaded, record)) => {
+                    self.record = record;
+                    let downloaded = downloaded.map_err(|error| {
+                        self.keep = matches!(error, Failure::Network | Failure::Stalled);
+                        download_failed(error)
+                    })?;
+                    // A pause that comes now lets this install finish first.
+                    turn.forbid_pause();
+                    break (turn, downloaded, name, rules);
+                }
+            }
+        };
+        let cache =
+            placement::provider_cache(&self.context.root, &self.owner, &self.provider.provider_id);
         let format = archive::format(&downloaded.lead);
         // A native content format can itself use an archive container. Keep
         // its bytes only with positive plugin-owned byte evidence and a
@@ -843,7 +1128,7 @@ impl Pipeline {
         );
         tokio::task::spawn_blocking(move || {
             publish_and_record(
-                &context, &cache, &rules, work, &provider, &claim_id, &title, &system,
+                &context, &rules, work, &provider, &claim_id, &title, &system,
             )
         })
         .await
@@ -926,7 +1211,6 @@ pub(super) fn identify_work(
 #[allow(clippy::too_many_arguments)]
 fn publish_and_record(
     context: &GameContext,
-    cache: &Path,
     rules: &crate::plugin::ContentRules,
     work: placement::WorkFolder,
     provider: &str,
@@ -935,7 +1219,14 @@ fn publish_and_record(
     system: &str,
 ) -> Result<AcquireJobState, AcquireJobState> {
     let identity = identify_work(&work.path, rules).map_err(download_failed)?;
-    placement::publish_acquired_game(cache, work, identity.value()).map_err(download_failed)?;
+    // ADR 0092: an install lands in the release-key layout; the provider
+    // cache only held the job's work folder.
+    let installs = placement::create_base(
+        &context.root,
+        placement::copied_release_cache(&context.root),
+    )
+    .map_err(download_failed)?;
+    placement::publish_acquired_game(&installs, work, identity.value()).map_err(download_failed)?;
     let game_id = context
         .discovery
         .record_acquired(&AcquiredGame {

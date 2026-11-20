@@ -5,6 +5,7 @@ pub mod artwork;
 pub mod claims;
 mod download;
 mod game;
+mod install;
 pub(crate) mod netplay;
 pub(crate) mod placement;
 mod policy;
@@ -22,8 +23,10 @@ use indexmap::IndexSet;
 
 pub use game::GameContext;
 pub(crate) use game::{acquired_game_content, discovered_provider_game};
+pub(crate) use install::{Member, Place};
+use install::{Queue, Running, Stop, Turn, TurnWait};
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
@@ -39,7 +42,8 @@ pub use types::{
     SearchOutcome, SearchRequest, SearchResponse,
 };
 
-/// One job runs at a time. `waiting` is the person's order, front first; a
+/// The install manager (`install.rs`, ADR 0092) runs every install of this
+/// device, one at a time. `waiting` is the person's order, front first; a
 /// launch moves its artifacts to the front and pauses a background job,
 /// which later resumes with `Range`. A queued contribution always has a
 /// `.part` marker, so a restart can rebuild the queue from the cache alone.
@@ -51,53 +55,9 @@ pub struct AcquisitionCoordinator {
     /// Game acquisition: provider claims and acquire jobs (ADR 0016).
     games: game::GameAcquisition,
 }
-#[derive(Default)]
-struct Queue {
-    jobs: BTreeMap<PathBuf, Job>,
-    waiting: VecDeque<PathBuf>,
-    running: Option<Running>,
-    worker: bool,
-    /// ADR 0016: provider game downloads waiting in the same line. The worker hands
-    /// each its turn and waits until the game job reports it is done.
-    tickets: BTreeMap<PathBuf, tokio::sync::oneshot::Sender<watch::Sender<bool>>>,
-}
-
-/// A provider game job's place in the one-at-a-time queue. Dropping it before the
-/// turn comes (cancel) leaves the queue.
-pub(super) struct TurnWait {
-    key: PathBuf,
-    turn: Option<tokio::sync::oneshot::Receiver<watch::Sender<bool>>>,
-    queue: Arc<Mutex<Queue>>,
-}
-/// The running turn. Dropping it lets the queue continue.
-pub(super) struct Turn(watch::Sender<bool>);
-impl Drop for Turn {
-    fn drop(&mut self) {
-        let _ = self.0.send(true);
-    }
-}
-impl TurnWait {
-    pub(super) async fn turn(mut self) -> Turn {
-        let receiver = self.turn.take().expect("one turn per ticket");
-        match receiver.await {
-            Ok(done) => Turn(done),
-            // The worker is gone; nothing else can run, so proceed alone.
-            Err(_) => Turn(watch::channel(false).0),
-        }
-    }
-}
-impl Drop for TurnWait {
-    fn drop(&mut self) {
-        if self.turn.is_some() {
-            let mut queue = self.queue.lock().expect("acquisition queue mutex poisoned");
-            queue.tickets.remove(&self.key);
-            queue.waiting.retain(|item| *item != self.key);
-        }
-    }
-}
 
 enum Next {
-    Ticket(PathBuf, tokio::sync::oneshot::Sender<watch::Sender<bool>>),
+    Ticket(watch::Receiver<bool>),
     Artifact(
         PathBuf,
         Box<ArtifactRecord>,
@@ -115,18 +75,6 @@ struct Job {
     private_root: PathBuf,
     state: ArtifactState,
 }
-struct Running {
-    base: PathBuf,
-    stop: watch::Sender<Stop>,
-    done: watch::Receiver<bool>,
-}
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Stop {
-    Run,
-    Pause,
-    Cancel,
-}
-
 /// The artifacts of one game's default route, release artifacts first.
 pub(crate) struct GameArtifacts {
     pub ids: Vec<String>,
@@ -139,20 +87,42 @@ impl AcquisitionCoordinator {
         self.queue.lock().expect("acquisition queue mutex poisoned")
     }
 
-    /// ADR 0013 artifact recovery first, so pinned downloads resume; then
-    /// the ADR 0016 provider caches, whose errors are only logged.
+    /// Startup recovery without a library, as tests start a device.
+    #[cfg(test)]
     pub(crate) fn recover(
         &self,
         root: &Path,
         private_root: &Path,
         registry: &PluginRegistry,
     ) -> Result<(), RpcFailure> {
+        self.recover_installs(root, private_root, registry, None)
+    }
+
+    /// ADR 0013 artifact recovery first, so pinned downloads resume; then
+    /// the ADR 0016 provider caches, whose errors are only logged; then, with
+    /// a library to write to, the provider installs a restart interrupted
+    /// (ADR 0092). The line then takes the person's saved order, and only
+    /// then does its worker start.
+    pub(crate) fn recover_installs(
+        &self,
+        root: &Path,
+        private_root: &Path,
+        registry: &PluginRegistry,
+        games: Option<&GameContext>,
+    ) -> Result<(), RpcFailure> {
+        {
+            let mut queue = self.lock();
+            queue.holding = true;
+            queue
+                .private_root
+                .get_or_insert_with(|| private_root.to_path_buf());
+        }
         let artifacts = self.recover_artifacts(root, private_root, registry);
         match self.games.recover(root, registry) {
             Ok(unrecorded) => {
-                for (provider, hex) in unrecorded {
+                for hex in unrecorded {
                     eprintln!(
-                        "korrid acquisition recovery: {provider} cache folder {hex} has no library release; the next Get of that game records it"
+                        "korrid acquisition recovery: install folder {hex} has no library release; the next Get of that game records it"
                     );
                 }
             }
@@ -161,6 +131,15 @@ impl AcquisitionCoordinator {
                 error.rpc().message
             ),
         }
+        if let Some(context) = games {
+            self.games.resume(self, context);
+        }
+        {
+            let mut queue = self.lock();
+            queue.sort_by_order(&install::read_order(private_root));
+            queue.holding = false;
+        }
+        self.ensure_worker();
         artifacts
     }
 
@@ -342,6 +321,8 @@ impl AcquisitionCoordinator {
                     continue;
                 }
                 if let Some(position) = queue.waiting.iter().position(|item| *item == base) {
+                    let member = Member::Artifact(artifact.id.clone());
+                    queue.remember(private_root, &base, member);
                     if front {
                         queue.waiting.remove(position);
                         first.push(base);
@@ -355,6 +336,10 @@ impl AcquisitionCoordinator {
                     },
                 };
                 let queued = matches!(state, ArtifactState::Queued);
+                if queued {
+                    let member = Member::Artifact(artifact.id.clone());
+                    queue.remember(private_root, &base, member);
+                }
                 queue.jobs.insert(
                     base.clone(),
                     Job {
@@ -374,29 +359,12 @@ impl AcquisitionCoordinator {
                     queue.waiting.push_back(base);
                 }
             }
-            if front && !first.is_empty() {
+            if front {
                 // A background download pauses for the launch and resumes
                 // next, before anything else that was waiting.
-                let mut paused = None;
-                if let Some(running) = &queue.running {
-                    if !first.contains(&running.base)
-                        && queue.jobs.get(&running.base).is_some_and(|job| {
-                            matches!(job.state, ArtifactState::Downloading { .. })
-                        })
-                    {
-                        let _ = running.stop.send(Stop::Pause);
-                        paused = Some(running.base.clone());
-                    }
-                }
-                let running = queue.running.as_ref().map(|run| run.base.clone());
-                let mut order: VecDeque<_> = first
-                    .into_iter()
-                    .filter(|base| Some(base) != running.as_ref())
-                    .collect();
-                order.extend(paused);
-                order.extend(queue.waiting.drain(..));
-                queue.waiting = order;
+                queue.place_front(first);
             }
+            queue.persist();
         }
         self.ensure_worker();
         Ok(())
@@ -404,7 +372,7 @@ impl AcquisitionCoordinator {
 
     fn ensure_worker(&self) {
         let mut queue = self.lock();
-        if queue.worker || queue.waiting.is_empty() {
+        if queue.worker || queue.holding || queue.waiting.is_empty() {
             return;
         }
         // Startup may run outside a runtime; the next request starts it then.
@@ -415,20 +383,56 @@ impl AcquisitionCoordinator {
         handle.spawn(self.clone().work());
     }
 
-    /// ADR 0016: a provider game job joins the end of the one-at-a-time queue.
-    pub(super) fn queue_turn(&self, key: PathBuf) -> TurnWait {
-        let (sender, receiver) = tokio::sync::oneshot::channel();
+    /// ADR 0016 and ADR 0092: a provider game job or a netplay copy joins
+    /// the line. A `member` is kept across a restart in the order file.
+    pub(super) fn queue_turn(
+        &self,
+        key: PathBuf,
+        place: Place,
+        member: Option<(&Path, Member)>,
+    ) -> TurnWait {
+        let (sender, grants) = tokio::sync::mpsc::unbounded_channel();
         {
             let mut queue = self.lock();
             queue.tickets.insert(key.clone(), sender);
-            queue.waiting.push_back(key.clone());
+            if let Some((private_root, member)) = member {
+                queue.remember(private_root, &key, member);
+            }
+            match place {
+                Place::Back => {
+                    queue.waiting.push_back(key.clone());
+                    queue.persist();
+                }
+                Place::Front => queue.place_front(vec![key.clone()]),
+            }
         }
         self.ensure_worker();
         TurnWait {
             key,
-            turn: Some(receiver),
+            grants,
             queue: self.queue.clone(),
         }
+    }
+
+    /// Move a waiting install to `index` in the line (0 is next). False
+    /// when it does not wait.
+    #[cfg_attr(not(test), allow(dead_code))] // #553: Velvet's list of installs.
+    pub(crate) fn reorder(&self, member: &Member, index: usize) -> bool {
+        self.lock().reorder(member, index)
+    }
+
+    /// The person's line: the running install first, then those that wait.
+    /// Only installs that a restart keeps are named.
+    #[cfg_attr(not(test), allow(dead_code))] // #553: Velvet's list of installs.
+    pub(crate) fn line(&self) -> Vec<Member> {
+        let queue = self.lock();
+        queue
+            .running
+            .iter()
+            .map(|running| &running.base)
+            .chain(queue.waiting.iter())
+            .filter_map(|key| queue.members.get(key).cloned())
+            .collect()
     }
 
     async fn work(self) {
@@ -440,8 +444,11 @@ impl AcquisitionCoordinator {
                     queue.worker = false;
                     break;
                 };
-                if let Some(go) = queue.tickets.remove(&base) {
-                    Next::Ticket(base, go)
+                if queue.tickets.contains_key(&base) {
+                    match queue.grant(base) {
+                        Some(finished) => Next::Ticket(finished),
+                        None => continue,
+                    }
                 } else {
                     let Some(job) = queue.jobs.get_mut(&base) else {
                         continue;
@@ -466,6 +473,7 @@ impl AcquisitionCoordinator {
                         base,
                         stop,
                         done: done_rx,
+                        pausable: false,
                     });
                     Next::Artifact(
                         next.0,
@@ -485,22 +493,15 @@ impl AcquisitionCoordinator {
                 Next::Artifact(base, artifact, unpack, root, private_root, stop, done) => {
                     (base, *artifact, unpack, root, private_root, stop, done)
                 }
-                Next::Ticket(base, go) => {
-                    let (done, mut finished) = watch::channel(false);
-                    let (stop, _) = watch::channel(Stop::Run);
-                    self.lock().running = Some(Running {
-                        base,
-                        stop,
-                        done: finished.clone(),
-                    });
-                    if go.send(done).is_ok() {
-                        while !*finished.borrow() {
-                            if finished.changed().await.is_err() {
-                                break;
-                            }
+                Next::Ticket(mut finished) => {
+                    while !*finished.borrow() {
+                        if finished.changed().await.is_err() {
+                            break;
                         }
                     }
-                    self.lock().running = None;
+                    let mut queue = self.lock();
+                    queue.running = None;
+                    queue.persist();
                     continue;
                 }
             };
@@ -531,9 +532,14 @@ impl AcquisitionCoordinator {
                         reason: error.rpc(),
                     },
                 };
+                // A paused job waits again; any other end leaves the line.
+                if !matches!(state, ArtifactState::Queued) {
+                    queue.members.remove(&base);
+                }
                 if let Some(job) = queue.jobs.get_mut(&base) {
                     job.state = state;
                 }
+                queue.persist();
             }
             if stopped == Stop::Cancel {
                 if let Err(error) = discard_partials(&base).await {
@@ -582,6 +588,8 @@ impl AcquisitionCoordinator {
                 Cancel::Running(done)
             } else {
                 queue.waiting.retain(|item| *item != base);
+                queue.members.remove(&base);
+                queue.persist();
                 if let Some(job) = queue.jobs.get_mut(&base) {
                     if matches!(job.state, ArtifactState::Queued) {
                         job.state = ArtifactState::Missing;
@@ -728,7 +736,20 @@ impl AcquisitionCoordinator {
         context: &GameContext,
         request: &AcquireArtifactRequest,
     ) -> Result<AcquireJobStatus, RpcFailure> {
-        self.games.acquire(self, context, request).await
+        self.games
+            .acquire(self, context, request, Place::Back)
+            .await
+    }
+    /// ADR 0092: an install at a chosen place in the line; play-here goes
+    /// to the front.
+    #[cfg_attr(not(test), allow(dead_code))] // #553: play-here.
+    pub(crate) async fn acquire_at(
+        &self,
+        context: &GameContext,
+        request: &AcquireArtifactRequest,
+        place: Place,
+    ) -> Result<AcquireJobStatus, RpcFailure> {
+        self.games.acquire(self, context, request, place).await
     }
     pub fn acquire_status(&self, job_id: &str) -> Result<AcquireJobStatus, RpcFailure> {
         self.games.status(job_id)

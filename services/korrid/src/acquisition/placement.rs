@@ -265,9 +265,10 @@ pub(super) fn game_staging(
     )?)
 }
 
-/// Startup: a game download never resumes, so every staging file goes.
-/// Pinned artifact partials in the same grammar have other names and stay.
-pub(super) fn remove_game_staging(directory: &Path) -> Result<(), Failure> {
+/// Startup: every game staging file goes, except the files of a kept
+/// install (`keep`: names in the folder; ADR 0092). Pinned artifact
+/// partials in the same grammar have other names and stay.
+pub(super) fn remove_game_staging(directory: &Path, keep: &[String]) -> Result<(), Failure> {
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -275,11 +276,11 @@ pub(super) fn remove_game_staging(directory: &Path) -> Result<(), Failure> {
     };
     for entry in entries {
         let entry = entry?;
-        if entry
-            .file_name()
-            .to_str()
-            .is_some_and(|name| name.starts_with(super::download::STAGING_PREFIX))
-            && entry.file_type()?.is_file()
+        let name = entry.file_name();
+        if name.to_str().is_some_and(|name| {
+            name.starts_with(super::download::STAGING_PREFIX)
+                && !keep.iter().any(|kept| kept == name)
+        }) && entry.file_type()?.is_file()
         {
             fs::remove_file(entry.path())?;
         }
@@ -343,18 +344,27 @@ impl Drop for WorkFolder {
     }
 }
 
-/// ADR 0016 and ADR 0030: publish an identified work folder as
-/// `<provider cache>/<hex of the release key>/`. The folder is frozen and
+/// ADR 0030 and ADR 0092: publish an identified work folder as
+/// `<install cache>/<hex of the release key>/`. The folder is frozen and
 /// synced, then renamed atomically. Identical content already published is
 /// reused and the work folder is discarded. Returns the ready directory.
 pub(super) fn publish_acquired_game(
-    provider_cache: &Path,
-    work: WorkFolder,
+    install_cache: &Path,
+    mut work: WorkFolder,
     key: &str,
 ) -> Result<PathBuf, Failure> {
-    let ready = provider_cache.join(ready_name(key).ok_or(Failure::UnsafePath)?);
+    let ready = install_cache.join(ready_name(key).ok_or(Failure::UnsafePath)?);
     if is_ready(&ready) {
         return Ok(ready);
+    }
+    if work.path.parent() != Some(install_cache) {
+        // A provider job's work folder is in the provider cache, where the
+        // reader's unit may write (ADR 0030). A folder that changes parent
+        // must be writable, so it moves before it is frozen (rename(2),
+        // EACCES for the `..` entry).
+        let moved = install_cache.join(format!(".tmp-{:032x}", rand::random::<u128>()));
+        fs::rename(&work.path, &moved)?;
+        work.path = moved;
     }
     freeze_and_sync(&work.path)?;
     match fs::rename(&work.path, &ready) {
@@ -363,7 +373,7 @@ pub(super) fn publish_acquired_game(
         Err(_) if is_ready(&ready) => (),
         Err(error) => return Err(error.into()),
     }
-    File::open(provider_cache)?.sync_all()?;
+    File::open(install_cache)?.sync_all()?;
     Ok(ready)
 }
 
@@ -407,7 +417,8 @@ pub(crate) fn ready_game_file(
 
 /// ADR 0040 owner decision, 2026-10-26 (netplay q27): copied releases use
 /// cache/<release-key hex>/<original filename>. The release key names it,
-/// so a peer never becomes a provider. Keep placement policy in one place.
+/// so a peer never becomes a provider. ADR 0092 (#551): every install uses
+/// this layout, provider installs too. Keep placement policy in one place.
 pub(crate) fn copied_release_cache(root: &Path) -> PathBuf {
     root.join("cache")
 }

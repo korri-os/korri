@@ -401,8 +401,20 @@ impl World {
         .await
         .unwrap()
     }
+    /// The provider cache: only a job's staging and work folder (ADR 0092).
     fn cache(&self) -> PathBuf {
         self.root.join("cache/shop/shop")
+    }
+    /// ADR 0092: every install lands in `cache/<release-key hex>/`.
+    fn installs(&self) -> PathBuf {
+        self.root.join("cache")
+    }
+    /// The ready folders in the install cache.
+    fn installed(&self) -> Vec<String> {
+        names(&self.installs())
+            .into_iter()
+            .filter(|name| placement::ready_key(name).is_some())
+            .collect()
     }
     fn downloads(&self) -> usize {
         self.server
@@ -477,7 +489,7 @@ async fn a_download_is_published_in_the_cache_and_recorded_once_with_the_claim_t
     assert_eq!(done.message, None);
     // Q1: cache/<plugin>/<provider>/<sha256 hex>/<URL basename>.
     let hex = sha_hex(ROM);
-    let ready = world.cache().join(&hex);
+    let ready = world.installs().join(&hex);
     assert_eq!(fs::read(ready.join("2048.gba")).unwrap(), ROM);
     assert_eq!(names(&ready), ["2048.gba"]);
     assert!(names(&world.cache().join(".downloads")).is_empty());
@@ -511,10 +523,8 @@ async fn a_download_is_published_in_the_cache_and_recorded_once_with_the_claim_t
     // the same game, a second provider link. Nothing else is rewritten.
     let copy = world.finish(world.acquire("copy").await.unwrap()).await;
     assert_eq!(imported(&copy), game_id);
-    assert_eq!(
-        names(&world.cache()),
-        [".downloads".to_owned(), hex.clone()]
-    );
+    assert_eq!(names(&world.cache()), [".downloads"]);
+    assert_eq!(world.installed(), [hex.clone()]);
     let after = world.snapshot();
     assert_eq!(after.library.len(), 1);
     assert_eq!(after.library[&game_id].releases.len(), 1);
@@ -549,7 +559,7 @@ async fn the_route_reaches_the_download_by_hash_and_passes_it_as_content_path() 
         None,
     )
     .unwrap();
-    let download = world.cache().join(sha_hex(ROM)).join("2048.gba");
+    let download = world.installs().join(sha_hex(ROM)).join("2048.gba");
     assert_eq!(route.cache_target.as_ref(), Some(&download));
     assert!(
         route.file_target.is_none()
@@ -596,7 +606,7 @@ async fn remove_download_keeps_the_game_in_history_and_get_downloads_into_it_aga
     let world = world();
     world.search().await;
     let game_id = imported(&world.finish(world.acquire("2048").await.unwrap()).await);
-    let ready = world.cache().join(sha_hex(ROM));
+    let ready = world.installs().join(sha_hex(ROM));
     let removal = |world: &World| {
         super::game_artifacts_for_removal(&world.root, &world.context.registry, &game_id).unwrap()
     };
@@ -883,14 +893,14 @@ async fn a_restart_drops_jobs_cleans_staging_and_get_answers_play_through_the_li
     };
     // A folder published just before a crash, with no library record yet:
     // recovery reports it and deletes nothing.
-    let unrecorded = world.cache().join("b".repeat(64));
+    let unrecorded = world.installs().join("b".repeat(64));
     fs::create_dir(&unrecorded).unwrap();
     assert_eq!(
         restarted
             .games
             .recover(&world.root, &world.context.registry)
             .unwrap(),
-        [(PROVIDER.to_owned(), "b".repeat(64))]
+        ["b".repeat(64)]
     );
     assert!(unrecorded.is_dir());
     restarted
@@ -902,7 +912,11 @@ async fn a_restart_drops_jobs_cleans_staging_and_get_answers_play_through_the_li
         .unwrap();
     assert!(names(&staging).is_empty());
     assert!(!world.cache().join(".tmp-interrupted").exists());
-    assert!(world.cache().join(sha_hex(ROM)).join("2048.gba").is_file());
+    assert!(world
+        .installs()
+        .join(sha_hex(ROM))
+        .join("2048.gba")
+        .is_file());
     assert_eq!(
         restarted.games.status("any").unwrap_err().code,
         "AcquisitionUnknownJob"
@@ -946,7 +960,11 @@ async fn remove_download_refuses_while_the_game_runs() {
         refused["outcome"]["payload"]["code"], "ActiveSessionConflict",
         "{refused}"
     );
-    assert!(world.cache().join(sha_hex(ROM)).join("2048.gba").is_file());
+    assert!(world
+        .installs()
+        .join(sha_hex(ROM))
+        .join("2048.gba")
+        .is_file());
 }
 
 /// A link that names game Y never reports Imported{Y} for bytes game X
@@ -1243,13 +1261,11 @@ async fn acquired_headered_and_headerless_dumps_join_the_discovered_release() {
         game_id = Some(acquired);
     }
     let game_id = game_id.unwrap();
-    let ready = world.cache().join(sha_hex(&payload));
+    let ready = world.installs().join(sha_hex(&payload));
     assert_eq!(names(&ready), ["headered.nes"]);
     assert_eq!(fs::read(ready.join("headered.nes")).unwrap(), headered);
-    assert_eq!(
-        names(&world.cache()),
-        [".downloads".to_owned(), sha_hex(&payload)]
-    );
+    assert_eq!(names(&world.cache()), [".downloads"]);
+    assert_eq!(world.installed(), [sha_hex(&payload)]);
     let route = config::resolver::resolve_linux_route(
         &world.root,
         &world.snapshot(),
@@ -1476,10 +1492,8 @@ async fn a_zipped_rom_is_unpacked_identified_and_routed_and_joins_the_plain_copy
     assert_eq!(imported(&done), plain);
     assert_eq!(done.file_name.as_deref(), Some("2048-usa.zip"));
     let hex = sha_hex(ROM);
-    assert_eq!(
-        names(&world.cache()),
-        [".downloads".to_owned(), hex.clone()]
-    );
+    assert_eq!(names(&world.cache()), [".downloads"]);
+    assert_eq!(world.installed(), [hex.clone()]);
     assert!(
         names(&world.cache().join(".downloads")).is_empty(),
         "the archive is deleted"
@@ -1502,7 +1516,7 @@ async fn a_zipped_rom_is_unpacked_identified_and_routed_and_joins_the_plain_copy
         )
         .await;
     let game = imported(&fresh.get("zipped").await);
-    let ready = fresh.cache().join(&hex);
+    let ready = fresh.installs().join(&hex);
     assert_eq!(names(&ready), ["2048 (USA).gba", "readme.txt"]);
     assert_eq!(
         fresh.snapshot().library[&game].releases[0]
@@ -1535,7 +1549,7 @@ async fn a_7z_disc_under_a_zip_name_is_one_parts_release_routed_to_its_cue() {
         release.identity.as_ref().unwrap(),
         config::library::LibraryIdentity::Parts { value, parts } if *value == key && parts.len() == 2
     ));
-    let ready = world.cache().join(key.strip_prefix("sha256:").unwrap());
+    let ready = world.installs().join(key.strip_prefix("sha256:").unwrap());
     // The system's own layout "{title}.{ext}" matches no subfolder; the
     // appended default layout accepts the archive's folder.
     assert_eq!(world.route(&game), Some(ready.join("Game/Game.cue")));
@@ -1564,7 +1578,7 @@ async fn an_m3u_set_in_a_rar_routes_to_the_playlist() {
             .value(),
         key
     );
-    let ready = world.cache().join(key.strip_prefix("sha256:").unwrap());
+    let ready = world.installs().join(key.strip_prefix("sha256:").unwrap());
     assert_eq!(world.route(&game), Some(ready.join("Game.m3u")));
 }
 
@@ -1584,18 +1598,18 @@ async fn a_plain_chd_gets_its_header_identity_and_a_40_digit_ready_folder() {
         release.identity.as_ref().unwrap(),
         config::library::LibraryIdentity::Chd { value } if *value == format!("sha1:{sha1}")
     ));
-    let ready = world.cache().join(&sha1);
+    let ready = world.installs().join(&sha1);
     assert_eq!(names(&ready), ["Game.chd"]);
     assert_eq!(world.route(&game), Some(ready.join("Game.chd")));
 
     // Recovery reports a 40-digit folder that no release names.
     let orphan = "ab".repeat(20);
-    fs::create_dir(world.cache().join(&orphan)).unwrap();
+    fs::create_dir(world.installs().join(&orphan)).unwrap();
     assert_eq!(
         GameAcquisition::default()
             .recover(&world.root, &world.context.registry)
             .unwrap(),
-        [(PROVIDER.to_owned(), orphan)]
+        [orphan]
     );
 }
 
@@ -1668,11 +1682,8 @@ async fn downloads_that_do_not_give_exactly_one_game_leave_nothing() {
     }
     assert_eq!(world.downloads(), cases.len(), "each was downloaded once");
     assert!(world.snapshot().library.is_empty());
-    assert_eq!(
-        names(&world.cache()),
-        [".downloads"],
-        "no ready or work folder"
-    );
+    assert_eq!(names(&world.cache()), [".downloads"], "no work folder");
+    assert!(world.installed().is_empty(), "no ready folder");
     assert!(names(&world.cache().join(".downloads")).is_empty());
     assert!(!world.root.join("cache/shop/escape.gba").exists());
 }
@@ -1729,7 +1740,7 @@ async fn a_form_post_download_is_named_by_filename_not_by_its_token_url() {
         "emuid=1&file=Super+Mario+World+%28USA%29.zip&id=42"
     );
     assert_eq!(
-        names(&world.cache().join(sha_hex(ROM))),
+        names(&world.installs().join(sha_hex(ROM))),
         ["Super Mario World (USA).gba"]
     );
     // N1: with no filename, the token is the name. It has no extension, so
@@ -1867,7 +1878,7 @@ async fn a_name_without_an_extension_downloads_and_the_bytes_decide() {
     imported(&zipped);
     assert_eq!(zipped.file_name.as_deref(), Some("Zool"));
     assert_eq!(
-        names(&world.cache().join(sha_hex(ROM))),
+        names(&world.installs().join(sha_hex(ROM))),
         ["Zool (Europe).gba"]
     );
 
@@ -1880,10 +1891,8 @@ async fn a_name_without_an_extension_downloads_and_the_bytes_decide() {
     assert_eq!(fetched("/dl/wrong/"), 0);
 
     assert_eq!(world.snapshot().library.len(), 1);
-    assert_eq!(
-        names(&world.cache()),
-        [".downloads".to_owned(), sha_hex(ROM)]
-    );
+    assert_eq!(names(&world.cache()), [".downloads"]);
+    assert_eq!(world.installed(), [sha_hex(ROM)]);
     assert!(names(&world.cache().join(".downloads")).is_empty());
 }
 
@@ -1908,7 +1917,7 @@ async fn a_disc_set_that_the_system_layout_combines_routes_to_its_first_disc() {
         .unwrap()
         .value()
         .to_owned();
-    let ready = world.cache().join(key.strip_prefix("sha256:").unwrap());
+    let ready = world.installs().join(key.strip_prefix("sha256:").unwrap());
     assert_eq!(world.route(&game), Some(ready.join("Game (Disc 1).cue")));
 }
 
@@ -1930,6 +1939,6 @@ async fn a_nested_playlist_routes_to_the_outer_playlist() {
         .await;
     let game = imported(&world.get("nested-list").await);
     let key = discovered(&world, "psx", &files, "Game.m3u");
-    let ready = world.cache().join(key.strip_prefix("sha256:").unwrap());
+    let ready = world.installs().join(key.strip_prefix("sha256:").unwrap());
     assert_eq!(world.route(&game), Some(ready.join("Game.m3u")));
 }
