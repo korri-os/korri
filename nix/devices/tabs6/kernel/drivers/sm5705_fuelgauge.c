@@ -53,7 +53,7 @@
 #define SM5705_FG_CURRENT_NOISE_UA	50000
 
 /*
- * How often to look for a change in charging state.
+ * How often to look for a change in charging state or whole percent.
  *
  * The gauge interrupt line is described in the vendor device tree but is not
  * wired up here, and nothing else on this board reports cable events, so
@@ -71,6 +71,7 @@ struct sm5705_fg {
 	struct power_supply_battery_info *info;
 	struct delayed_work poll_work;
 	int last_status;
+	int last_capacity;
 };
 
 static int sm5705_fg_read(struct sm5705_fg *fg, u8 reg)
@@ -128,6 +129,19 @@ static int sm5705_fg_get_current_ua(struct sm5705_fg *fg, int *out)
 	return 0;
 }
 
+/* Whole percent from the high byte; clamp, the part can read over. */
+static int sm5705_fg_get_capacity(struct sm5705_fg *fg, int *out)
+{
+	int raw = sm5705_fg_read(fg, SM5705_FG_SOC);
+
+	if (raw < 0)
+		return raw;
+
+	*out = min(raw >> 8, 100);
+
+	return 0;
+}
+
 static int sm5705_fg_get_status(struct sm5705_fg *fg, int *out)
 {
 	int ret, cur, soc;
@@ -161,25 +175,40 @@ static int sm5705_fg_get_status(struct sm5705_fg *fg, int *out)
 }
 
 /*
- * Notice a plug or unplug and tell the power-supply core about it.
+ * Notice a plug or unplug, or a new whole percent, and tell the power-supply
+ * core about it.
  *
- * Deliberately fires power_supply_changed() ONLY on a transition. Calling it
- * every poll would wake the whole desktop stack twice a second for nothing;
- * calling it never is what made the tablet sit there claiming to be charging
- * long after the cable came out.
+ * Deliberately fires power_supply_changed() ONLY on a transition of the
+ * status or of the whole capacity percent. Calling it every poll would wake
+ * the whole desktop stack for nothing; calling it never is what made the
+ * tablet sit there claiming to be charging long after the cable came out.
+ * Korri shows the percent only because this uevent comes when it moves
+ * (ADR 0094); korrid itself reads the battery on uevents alone.
  */
 static void sm5705_fg_poll(struct work_struct *work)
 {
 	struct sm5705_fg *fg = container_of(work, struct sm5705_fg,
 					    poll_work.work);
-	int status;
+	bool changed = false;
+	int status, capacity;
 
 	if (!sm5705_fg_get_status(fg, &status) && status != fg->last_status) {
 		dev_dbg(&fg->client->dev, "status %d -> %d\n",
 			fg->last_status, status);
 		fg->last_status = status;
-		power_supply_changed(fg->psy);
+		changed = true;
 	}
+
+	if (!sm5705_fg_get_capacity(fg, &capacity) &&
+	    capacity != fg->last_capacity) {
+		dev_dbg(&fg->client->dev, "capacity %d -> %d\n",
+			fg->last_capacity, capacity);
+		fg->last_capacity = capacity;
+		changed = true;
+	}
+
+	if (changed)
+		power_supply_changed(fg->psy);
 
 	schedule_delayed_work(&fg->poll_work, SM5705_FG_POLL_INTERVAL);
 }
@@ -213,12 +242,7 @@ static int sm5705_fg_get_property(struct power_supply *psy,
 		return sm5705_fg_get_current_ua(fg, &val->intval);
 
 	case POWER_SUPPLY_PROP_CAPACITY:
-		raw = sm5705_fg_read(fg, SM5705_FG_SOC);
-		if (raw < 0)
-			return raw;
-		/* High byte is whole percent; clamp, the part can read over. */
-		val->intval = min(raw >> 8, 100);
-		return 0;
+		return sm5705_fg_get_capacity(fg, &val->intval);
 
 	case POWER_SUPPLY_PROP_PRESENT:
 		ret = sm5705_fg_read(fg, SM5705_FG_DEVICE_ID);
@@ -317,6 +341,8 @@ static int sm5705_fg_probe(struct i2c_client *client)
 	/* Seed the state so the first poll does not report a false transition. */
 	if (sm5705_fg_get_status(fg, &fg->last_status))
 		fg->last_status = POWER_SUPPLY_STATUS_UNKNOWN;
+	if (sm5705_fg_get_capacity(fg, &fg->last_capacity))
+		fg->last_capacity = -1;
 
 	ret = devm_delayed_work_autocancel(dev, &fg->poll_work, sm5705_fg_poll);
 	if (ret)
