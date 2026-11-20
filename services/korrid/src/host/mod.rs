@@ -2805,6 +2805,7 @@ esac
                 requires: vec![],
                 hosts: vec![],
                 credential_host: None,
+                credential_token_url: None,
                 files: std::collections::BTreeMap::from([("run".into(), package.join("run"))]),
             },
         ])

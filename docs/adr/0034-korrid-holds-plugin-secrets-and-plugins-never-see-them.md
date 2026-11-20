@@ -311,3 +311,75 @@ person's, kept on one device.
 ## Owner questions
 
 No open owner questions.
+
+## Amendment: a client pair that korrid exchanges for a token (IGDB, 2026-11-20)
+
+Coordinator decision for the `@korri:igdb` art plugin (Velvet layered art,
+slice 5), from the IGDB research of 2026-11-20. IGDB is the real case that
+section 2 waited for ("A query parameter or another header waits for a real
+case"). IGDB needs two headers, `Client-ID` and `Authorization: Bearer
+<app token>` (`https://api-docs.igdb.com/#requests`). The token is not what
+the person holds: Twitch makes it from a client ID and a client secret with
+an OAuth2 client-credentials grant at `https://id.twitch.tv/oauth2/token`.
+It lasts about 60 days and cannot be refreshed; Twitch tells an app to get
+a new one after a 401 (`https://dev.twitch.tv/docs/authentication/refresh-tokens/`).
+An application has at most 25 active tokens, and an extra one ends the
+oldest (IGDB FAQ).
+
+**The secret.** It is still one secret per plugin, in the same file, with
+the same entry, status, set and clear, modes, identity-switch rule and
+256-byte bound. For a plugin that declares a token address, it holds a
+client ID and a client secret, written `id:secret`. korrid splits it at the
+first `:`, as HTTP Basic splits a user ID and a password (RFC 7617, section
+2), and `set` refuses a value without both parts.
+
+**Declaration.** `plugin.nix` gains `credentialTokenUrl`, an `https` URL
+with no user, port, query or fragment, whose host is one of `hosts`. It
+needs `credentialHost`. The builder copies it into `manifest.json` and omits
+it when absent, so other packages keep their bytes and approvals; the
+approval digest binds it through the manifest bytes. The plugin host
+validates it, shows it as the report field `credential_token_url`, names
+both hosts in the approval warning, and projects it into `enabled-packages`
+as `EnabledPackage.credential_token_url`. The name is invented: legacy has
+no token field. Its root is `credentialHost`.
+
+**Exchange.** Before a request that gets the credential, korrid makes sure
+it holds a token: one POST to the token address, HTTPS, a declared host, a
+public address, no redirect, 30 seconds, an answer of at most 64 KiB. The
+body is the form `grant_type=client_credentials`, `client_id`,
+`client_secret` (RFC 6749, sections 4.4.2 and 2.3.1). The secret never goes
+in an address. The answer must be JSON with `access_token` and
+`token_type: "bearer"`; `expires_in` is used when present. 400, 401 or 403
+mean the pair is wrong. The exchange is generic OAuth2: korrid knows no
+site.
+
+**Token cache.** korrid keeps the token in memory, per plugin, bound to the
+stored value and the token address, until it expires, until the site answers
+401, or until the secret is set or cleared. A restart gets a new one. No
+token is written to disk: no file and no new schema. The cost is one
+exchange per plugin after each korrid start, far below the 25-token limit
+for a person's own application.
+
+**401.** A 401 to a request that carried the token makes korrid drop the
+token, get a new one once, and send the same request again. Only a second
+401, or a refused exchange, ends the operation as `CredentialUnauthorized`
+in the artwork pass. A Bearer secret keeps today's rule: one 401 ends it.
+
+**Headers.** korrid adds `Client-ID: <client id>` and
+`Authorization: Bearer <token>` to a request that is `https` to
+`credentialHost`, and only there, with the same redirect rules as the
+Bearer secret. The token host gets only the form body. Other hosts get
+neither. The header name `Client-ID` is Twitch's, fixed for this form: no
+second real case names another.
+
+**Echo check.** The response guard of section 2 also looks for the client
+ID, the client secret and the token korrid holds, in the same three forms
+(as they are, JSON-unescaped, percent-decoded once), in every response and
+redirect of the turn. Failure text is redacted for all of them.
+
+The plugin still sees no secret, no client ID and no token.
+
+What it costs: the client secret now goes to a second host, the declared
+token host. korrid holds a derived credential with its own lifetime, and it
+has its first OAuth code path. The person must create their own Twitch
+application (no key ships, Twitch DSA section IV.B).

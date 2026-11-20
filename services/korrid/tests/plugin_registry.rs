@@ -117,6 +117,7 @@ fn install(root: &Path, id: &str, source: &str, files: &[&str]) -> EnabledPackag
         requires: Vec::new(),
         hosts: vec![],
         credential_host: None,
+        credential_token_url: None,
     }
 }
 

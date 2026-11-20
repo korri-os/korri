@@ -42,6 +42,7 @@ NonFinalDownloadReasonWire = '"interstitial" | "requires-user-action" | "unsuppo
 FailedDownloadReasonWire = '"provider-error" | "configuration" | "not-found" | "defective-provider"'
 DownloadResolutionWire = "FinalDownload | NonFinalDownload | FailedDownload"
 PluginHttpQueryValueWire = "string | number | boolean"
+PluginHttpBodyWire = "string | Record<string, string>"
 PluginHttpRequestsTagWire = '"HttpRequests"'
 PluginSearchOutputWire = "PluginHttpRequests | ProviderClaim[]"
 PluginDetailsOutputWire = "PluginHttpRequests | ProviderClaimDetails"

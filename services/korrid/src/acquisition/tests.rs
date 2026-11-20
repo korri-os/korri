@@ -510,6 +510,7 @@ async fn unpacking_is_observable_and_cannot_be_cancelled() {
             requires: vec![],
             hosts: vec![],
             credential_host: None,
+            credential_token_url: None,
             files: BTreeMap::from([("unpack".into(), program)]),
         }])
         .unwrap();

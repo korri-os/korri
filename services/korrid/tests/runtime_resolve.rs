@@ -54,6 +54,7 @@ fn installed(root: &Path, runtime_resolve: Option<&str>) -> PluginRegistry {
         requires: Vec::new(),
         hosts: vec![],
         credential_host: None,
+        credential_token_url: None,
     }])
     .unwrap()
 }

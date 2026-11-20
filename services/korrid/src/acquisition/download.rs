@@ -56,12 +56,34 @@ const IMAGE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Body text one provider turn response may carry (ADR 0016).
 pub(super) const MAX_TEXT_BYTES: u64 = 512 * 1024;
 
-/// A GET or form POST a provider asked for, after turn admission.
+/// The body of a POST and the Content-Type korrid sends with it. korrid owns
+/// that header: a provider turn cannot set another one.
+#[derive(Clone, Copy)]
+pub(super) struct PostBody<'a> {
+    pub content_type: &'static str,
+    pub text: &'a str,
+}
+
+/// The Content-Type of a form POST (ADR 0030, ADR 0016 amendment).
+pub(super) const FORM_CONTENT_TYPE: &str = "application/x-www-form-urlencoded";
+/// The Content-Type of a raw text POST (ADR 0016, IGDB amendment).
+pub(super) const TEXT_CONTENT_TYPE: &str = "text/plain; charset=utf-8";
+
+impl<'a> PostBody<'a> {
+    pub(super) fn form(text: &'a str) -> Self {
+        Self {
+            content_type: FORM_CONTENT_TYPE,
+            text,
+        }
+    }
+}
+
+/// A GET or POST a provider asked for, after turn admission.
 pub(super) struct TextRequest<'a> {
     pub url: Url,
     pub headers: &'a [(String, String)],
     pub timeout: Option<Duration>,
-    pub form: Option<&'a str>,
+    pub body: Option<PostBody<'a>>,
     /// The owning plugin's secret (ADR 0034). korrid adds it on each hop to
     /// the secret's own host, and on no other.
     pub credential: Option<&'a crate::plugin_secrets::PluginCredential>,
@@ -101,6 +123,29 @@ impl SecretCarry<'_> {
         header
     }
 }
+
+/// Why korrid holds no token for a plugin's client pair.
+#[derive(Debug, Eq, PartialEq)]
+pub(super) enum TokenFailure {
+    /// The token host refused the client ID and secret (400, 401 or 403), or
+    /// the token address is not HTTPS.
+    Refused,
+    /// DNS, connect, timeout, a redirect, an undeclared host, a large answer.
+    Transport(Failure),
+    /// Another status, or an answer that holds no Bearer token.
+    Invalid(String),
+}
+
+impl From<Failure> for TokenFailure {
+    fn from(failure: Failure) -> Self {
+        Self::Transport(failure)
+    }
+}
+
+/// The most text korrid reads from a token answer.
+const MAX_TOKEN_ANSWER_BYTES: u64 = 64 * 1024;
+/// The whole time one token exchange may take.
+const TOKEN_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Why a chain of requests gave no response.
 #[derive(Debug, Eq, PartialEq)]
@@ -196,6 +241,102 @@ impl DownloadEngine {
         }
     }
 
+    /// Whether a request to `url` gets the plugin's credential, with or
+    /// without a token held yet: the rule of `secret_header`.
+    pub(super) fn secret_applies(
+        &self,
+        credential: &crate::plugin_secrets::PluginCredential,
+        url: &Url,
+    ) -> bool {
+        #[cfg(test)]
+        if !self.secrets_need_https && !self.addresses.requires_https() {
+            return credential.applies_to_over_test_http(url);
+        }
+        credential.applies_to(url)
+    }
+
+    /// Get a token for a plugin's client pair when korrid holds none (ADR
+    /// 0034 amendment): one OAuth2 client-credentials POST to the plugin's
+    /// declared token address, with the client ID and secret in the form
+    /// body, never in the address. HTTPS, a declared host, a public address,
+    /// no redirect. A Bearer secret, or a token held already, needs nothing.
+    pub(super) async fn ensure_token(
+        &self,
+        credential: &crate::plugin_secrets::PluginCredential,
+        hosts: &[String],
+    ) -> Result<(), TokenFailure> {
+        let Some(request) = credential.token_request() else {
+            return Ok(());
+        };
+        #[cfg(test)]
+        let needs_https = self.secrets_need_https || self.addresses.requires_https();
+        #[cfg(not(test))]
+        let needs_https = true;
+        if needs_https && request.url.scheme() != "https" {
+            return Err(TokenFailure::Refused);
+        }
+        policy::declared(&request.url, policy::Hosts::Only(hosts))?;
+        let work = async {
+            let client = self.client(&request.url).await?;
+            let mut response = client
+                .post(request.url.clone())
+                .header(header::CONTENT_TYPE, FORM_CONTENT_TYPE)
+                .header(header::ACCEPT, "application/json")
+                .header(header::ACCEPT_ENCODING, "identity")
+                .body(request.form)
+                .send()
+                .await
+                .map_err(transfer)?;
+            let status = response.status();
+            if status.is_redirection() {
+                return Err(Failure::Redirect.into());
+            }
+            if matches!(status.as_u16(), 400 | 401 | 403) {
+                return Err(TokenFailure::Refused);
+            }
+            if !status.is_success() {
+                return Err(TokenFailure::Invalid(format!(
+                    "the token host answered HTTP {}",
+                    status.as_u16()
+                )));
+            }
+            if response
+                .content_length()
+                .is_some_and(|length| length > MAX_TOKEN_ANSWER_BYTES)
+            {
+                return Err(Failure::TooLarge.into());
+            }
+            let mut body = Vec::new();
+            while let Some(chunk) = response.chunk().await.map_err(transfer)? {
+                if body.len() as u64 + chunk.len() as u64 > MAX_TOKEN_ANSWER_BYTES {
+                    return Err(Failure::TooLarge.into());
+                }
+                body.extend_from_slice(&chunk);
+            }
+            Ok::<_, TokenFailure>(body)
+        };
+        let body = tokio::time::timeout(TOKEN_TIMEOUT, work)
+            .await
+            .map_err(|_| TokenFailure::Transport(Failure::Stalled))??;
+        // RFC 6749, section 5.1: `access_token`, `token_type`, and
+        // `expires_in` in seconds when the host gives it.
+        #[derive(serde::Deserialize)]
+        struct Answer {
+            access_token: String,
+            token_type: String,
+            #[serde(default)]
+            expires_in: Option<u64>,
+        }
+        let invalid = || TokenFailure::Invalid("the token answer holds no Bearer token".into());
+        let answer: Answer = serde_json::from_slice(&body).map_err(|_| invalid())?;
+        if !answer.token_type.eq_ignore_ascii_case("bearer") {
+            return Err(invalid());
+        }
+        credential
+            .keep_token(&answer.access_token, answer.expires_in)
+            .map_err(|_| invalid())
+    }
+
     /// The header that carries a plugin's secret on a request to `url`, when
     /// that request may carry it: HTTPS to the secret's own host (ADR 0034).
     /// A secret never leaves in clear text. Only a test's loopback server
@@ -287,7 +428,7 @@ impl DownloadEngine {
         .map_err(ChainFailure::transport)
     }
 
-    /// One GET, or one form POST for a provider turn or game download, with manual
+    /// One GET, or one POST for a provider turn or game download, with manual
     /// redirects. Every hop passes the SSRF policy and, for provider traffic,
     /// the owning plugin's declared hosts. After a POST, 301, 302 and 303
     /// continue as a GET with no body and 307 and 308 repeat the POST, as
@@ -299,7 +440,7 @@ impl DownloadEngine {
         &self,
         mut url: Url,
         hosts: policy::Hosts<'_>,
-        mut form: Option<&str>,
+        mut body: Option<PostBody<'_>>,
         credential: Option<&crate::plugin_secrets::PluginCredential>,
         configure: impl Fn(reqwest::RequestBuilder) -> reqwest::RequestBuilder,
     ) -> Result<(Url, Response, bool), ChainFailure> {
@@ -307,11 +448,11 @@ impl DownloadEngine {
         let mut carry = self.secret_carry(credential);
         for hops in 0..=5 {
             let client = self.client(&url).await?;
-            let request = match form {
+            let request = match body {
                 Some(body) => client
                     .post(url.clone())
-                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                    .body(body.to_owned()),
+                    .header(header::CONTENT_TYPE, body.content_type)
+                    .body(body.text.to_owned()),
                 None => client.get(url.clone()),
             };
             let mut request = configure(request.header(header::ACCEPT_ENCODING, "identity"));
@@ -319,6 +460,14 @@ impl DownloadEngine {
             let credential_sent = authorization.is_some();
             if let Some(authorization) = authorization {
                 request = request.header(header::AUTHORIZATION, authorization);
+                // `Client-ID` of a client pair goes with it, on the same
+                // hops only (ADR 0034 amendment).
+                for (name, value) in credential
+                    .map(|c| c.companion_headers())
+                    .unwrap_or_default()
+                {
+                    request = request.header(name, value);
+                }
             }
             let response = request.send().await.map_err(|error| {
                 if error.is_timeout() {
@@ -331,7 +480,7 @@ impl DownloadEngine {
                 return Ok((url, response, credential_sent));
             }
             if matches!(response.status().as_u16(), 301..=303) {
-                form = None;
+                body = None;
             }
             let location = response
                 .headers()
@@ -373,7 +522,7 @@ impl DownloadEngine {
                 .send(
                     request.url,
                     policy::Hosts::Only(hosts),
-                    request.form,
+                    request.body,
                     request.credential,
                     |mut builder| {
                         for (name, value) in request.headers {
@@ -495,7 +644,7 @@ impl DownloadEngine {
             .send(
                 url,
                 policy::Hosts::Only(hosts),
-                request.form.as_deref(),
+                request.form.as_deref().map(PostBody::form),
                 None,
                 |b| b,
             )

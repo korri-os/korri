@@ -66,6 +66,32 @@ let
         }).outPath
         true
     )).success;
+  # ADR 0034 amendment: a client pair exchanged at a declared token address.
+  pairHosts = [
+    "api.igdb.com"
+    "id.twitch.tv"
+  ];
+  withClientPair = mkPlugin {
+    inherit publisher source;
+    plugin = {
+      hosts = pairHosts;
+      credentialHost = "api.igdb.com";
+      credentialTokenUrl = "https://id.twitch.tv/oauth2/token";
+    };
+  };
+  invalidTokenUrl =
+    credentialHost: credentialTokenUrl:
+    !(builtins.tryEval (
+      builtins.seq
+        (mkPlugin {
+          inherit publisher source;
+          plugin = _: {
+            hosts = pairHosts;
+            inherit credentialHost credentialTokenUrl;
+          };
+        }).outPath
+        true
+    )).success;
   dependencies = import ./dependency-fixtures.nix { inherit pkgs mkPlugin; };
   invalidRequirement =
     requires:
@@ -98,6 +124,11 @@ assert invalidRequirement (pkgs.lib.replicate 129 dependencies.runner);
 assert invalidCredentialHost "api.example.com";
 assert invalidCredentialHost [ "www.steamgriddb.com" ];
 assert invalidCredentialHost true;
+assert invalidTokenUrl "api.igdb.com" "http://id.twitch.tv/oauth2/token";
+assert invalidTokenUrl "api.igdb.com" "https://other.example/oauth2/token";
+assert invalidTokenUrl "api.igdb.com" "https://id.twitch.tv:8443/oauth2/token";
+assert invalidTokenUrl "api.igdb.com" "https://id.twitch.tv/oauth2/token?x=1";
+assert invalidTokenUrl null "https://id.twitch.tv/oauth2/token";
 pkgs.runCommand "korri-plugin-builder-check"
   {
     nativeBuildInputs = [
@@ -112,6 +143,8 @@ pkgs.runCommand "korri-plugin-builder-check"
     # so a package without a secret keeps its manifest bytes and approval.
     jq -e '.credentialHost == "www.steamgriddb.com" and .hosts == ["www.steamgriddb.com","cdn2.steamgriddb.com"]' ${withSecret}/manifest.json
     jq -e '(has("credentialHost") | not) and (has("hosts") | not)' ${sourceOnly}/manifest.json
+    jq -e '.credentialTokenUrl == "https://id.twitch.tv/oauth2/token" and .credentialHost == "api.igdb.com"' ${withClientPair}/manifest.json
+    jq -e 'has("credentialTokenUrl") | not' ${withSecret}/manifest.json
     test -f ${nested}/manifest.json
     test -f ${nested}/plugin.ts
     test -f ${nested}/src/prefix.ts

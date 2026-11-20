@@ -1045,6 +1045,14 @@ impl PluginRegistry {
             .and_then(|package| package.credential_host.as_deref())
     }
 
+    /// The plugin's declared token address (ADR 0034 amendment): its secret
+    /// is a client ID and a client secret that korrid exchanges there.
+    pub fn plugin_credential_token_url(&self, plugin_id: &str) -> Option<&str> {
+        self.installed
+            .get(plugin_id)
+            .and_then(|package| package.credential_token_url.as_deref())
+    }
+
     pub fn plugin_source(
         &self,
         plugin_id: &str,

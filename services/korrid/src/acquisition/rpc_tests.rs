@@ -36,6 +36,7 @@ async fn local_rpc_download_retry_and_launch_gate_share_cache_truth() {
             requires: vec![],
             hosts: vec![],
             credential_host: None,
+            credential_token_url: None,
             files: BTreeMap::from([("run".into(), package.join("run"))]),
         }])
         .unwrap();
@@ -239,6 +240,7 @@ async fn acquisition_status_resolves_the_same_explicit_runner_as_session_start()
             requires: vec![],
             hosts: vec![],
             credential_host: None,
+            credential_token_url: None,
             files: BTreeMap::from([("run".into(), package.join("run"))]),
         });
     }

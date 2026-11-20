@@ -666,6 +666,47 @@ it resolves to holds the secret in one of those forms, korrid does not follow
 the redirect, to another host or to the same host, and the operation ends in
 the same way.
 
+**A client pair exchanged for a token** (ADR 0034 amendment, IGDB). A plugin
+whose site wants an OAuth2 app token also names the token address:
+
+```nix
+{
+  hosts = [ "api.igdb.com" "id.twitch.tv" "images.igdb.com" ];
+  credentialHost = "api.igdb.com";
+  credentialTokenUrl = "https://id.twitch.tv/oauth2/token";
+}
+```
+
+`credentialTokenUrl` is an `https` URL with no user, port, query or
+fragment, on one of `hosts`, and needs `credentialHost`. The builder copies
+it into `manifest.json` (omitted when absent), the administrator validates
+it, names both hosts in the approval `warning`, shows it as the report field
+`credential_token_url` and projects it as
+`EnabledPackage.credential_token_url`. The secret is then a client ID and a
+client secret, entered as `id:secret`; korrid splits it at the first `:`, and
+`set` refuses a value without both parts.
+
+Before a turn request that gets the credential, korrid makes sure it holds a
+token: one POST to `credentialTokenUrl` with the form body
+`grant_type=client_credentials&client_id=…&client_secret=…` (never in an
+address), HTTPS, a declared host, a public address, no redirect, 30 seconds,
+at most 64 KiB of answer. The answer must be JSON with `access_token` and
+`token_type` `bearer`; `expires_in` is kept when given. A 400, 401 or 403
+ends the operation as `Unauthorized`; another status or a bad answer is
+`ProviderFailed`; a transport failure is `ProviderUnreachable`. korrid keeps
+the token in memory per plugin, bound to the stored value and the token
+address, until it expires, until a 401, or until the secret is set or
+cleared; a restart gets a new one. Nothing about it is written to disk.
+
+The request to `credentialHost` then carries `Client-ID: <client id>` and
+`Authorization: Bearer <token>`, under the same rules as a Bearer secret
+(HTTPS only, the same host on each redirect hop, no other host). The token
+host gets only the form. A 401 to a request that carried the token makes
+korrid drop the token, get a new one once and send the request again; a
+second 401 ends the operation as `Unauthorized`. The response and redirect
+check above also looks for the client ID, the client secret and the token,
+in the same three forms.
+
 Today korrid supplies the secret to the turns of `game-assets.candidates`
 (ADR 0032). The turns of an acquisition provider carry no secret: no provider
 in scope uses one.
@@ -732,7 +773,7 @@ interface PluginHttpRequest {
   headers?: Record<string, string>
   timeoutMs?: number                              // whole request, positive integer milliseconds
   method?: "POST"                                 // absent: GET, same as FinalDownload
-  body?: Record<string, string>                    // form fields; needs method "POST"
+  body?: string | Record<string, string>           // PluginHttpBody: raw text or form fields; needs method "POST"
 }
 
 interface PluginHttpResponse {
@@ -756,6 +797,12 @@ before any request in that turn is sent. korrid uses the existing game-download
 sender and `application/x-www-form-urlencoded` encoding, not a second client.
 The sender owns a form POST's Content-Type; a conflicting provider header
 fails admission (a matching header is not duplicated).
+A string `body` (legacy `PluginHttpRequestOptions.body` was
+`string | Uint8Array | URLSearchParams`) is sent as it is, as UTF-8, with
+`Content-Type: text/plain; charset=utf-8`, such as an IGDB Apicalypse query
+(ADR 0016, IGDB amendment). It has the same rules: it needs POST, it has at
+most 8192 characters, and a provider Content-Type other than `text/plain`
+(alone or with `charset=utf-8`) fails admission.
 After POST, 301/302/303 become GET without the body; 307/308 repeat the POST.
 This narrow addition supports public raw Bitsy attachments on itch.io; it
 adds no cookie session, authorization, host wildcard, or resource-limit change
@@ -1249,7 +1296,9 @@ asks a plugin about a game only when:
 A kind with no candidate is not an error. A game is `transient` when any of
 its downloads failed, also when other images arrived. A 401 answer to a
 request that carried the secret stops the pass for that plugin and records
-nothing (`CredentialUnauthorized`). korrid records an attempt only while the
+nothing (`CredentialUnauthorized`). For a client pair (see "Plugin secret")
+that is the second 401, after korrid got one new token, or a refused token
+exchange. korrid records an attempt only while the
 secret it used still stands. korrid does not retry a 429 or a 5xx: the plugin
 sees `ok: false`.
 

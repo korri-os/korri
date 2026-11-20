@@ -82,6 +82,7 @@ impl Fixture {
             requires,
             hosts: vec![],
             credential_host: None,
+            credential_token_url: None,
         }
     }
 
@@ -138,6 +139,7 @@ fn package(root: &Path, name: &str, keys: &[&str]) -> EnabledPackage {
         requires: Vec::new(),
         hosts: vec![],
         credential_host: None,
+        credential_token_url: None,
     }
 }
 

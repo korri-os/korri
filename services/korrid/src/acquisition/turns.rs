@@ -25,9 +25,21 @@ pub enum PluginHttpQueryValue {
     Boolean(bool),
 }
 
+/// A POST body: legacy `PluginHttpRequestOptions.body`, which was
+/// `string | Uint8Array | URLSearchParams`. A string is sent as raw UTF-8
+/// text, such as an IGDB Apicalypse query (ADR 0016, IGDB amendment); an
+/// object of string fields is form-encoded, as `FinalDownload`'s body is.
+#[typeshare(serialized_as = "PluginHttpBodyWire")]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum PluginHttpBody {
+    Text(String),
+    Form(BTreeMap<String, String>),
+}
+
 /// The legacy `request(url, options)` call as a value: `url` plus the legacy
-/// `PluginHttpRequestOptions` fields `query`, `headers`, `timeoutMs`, and the
-/// same GET/form-POST semantics as `FinalDownload`.
+/// `PluginHttpRequestOptions` fields `query`, `headers`, `timeoutMs`, and
+/// GET, the same form POST as `FinalDownload`, or a raw text POST.
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -54,7 +66,7 @@ pub struct PluginHttpRequest {
     )]
     #[typeshare(serialized_as = "Option<number>")]
     pub timeout_ms: Option<u64>,
-    /// Absent: GET. POST uses the final-download form semantics.
+    /// Absent: GET. POST sends `body`: form fields, or raw text.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -66,8 +78,7 @@ pub struct PluginHttpRequest {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "non_null"
     )]
-    #[typeshare(serialized_as = "Option<HashMap<String, String>>")]
-    pub body: Option<BTreeMap<String, String>>,
+    pub body: Option<PluginHttpBody>,
 }
 
 #[typeshare(serialized_as = "PluginHttpRequestsTagWire")]
@@ -187,8 +198,10 @@ pub(super) enum ProviderError {
     /// The plugin: thrown error, invalid output, undeclared host, exceeded bound.
     Failed(String),
     /// The site answered 401 to a request that carried the plugin's secret
-    /// (ADR 0032, section 2). The operation ends: the handler is not called
-    /// again with an answer that only says the secret is wrong.
+    /// (ADR 0032, section 2), or, for a client pair, the token host refused
+    /// it or the site answered 401 also to a new token (ADR 0034 amendment).
+    /// The operation ends: the handler is not called again with an answer
+    /// that only says the secret is wrong.
     Unauthorized,
     /// A response repeated the plugin's secret: in a header, in its body, in
     /// its final address, or in the address of a redirect, which korrid then
@@ -295,32 +308,24 @@ pub(super) async fn run<T>(
             .map(|request| admit(request, &context.hosts))
             .collect::<Result<Vec<_>, _>>()?;
         for request in admitted {
-            let response = engine
-                .fetch_text(
-                    super::download::TextRequest {
-                        url: request.url,
-                        headers: &request.headers,
-                        timeout: request.timeout,
-                        form: request.form.as_deref(),
-                        credential: context.credential.as_deref(),
-                    },
-                    &context.hosts,
-                )
-                .await
-                .map_err(|failure| match failure {
-                    super::download::ChainFailure::Transport(failure) => {
-                        ProviderError::Unreachable(failure)
+            let mut renewed = false;
+            let response = loop {
+                let response = fetch(engine, context, &request).await?;
+                // A client pair's token can expire or be revoked: get a new
+                // one once, and ask again (ADR 0034 amendment). A Bearer
+                // secret is what the person entered, so a 401 ends at once.
+                if response.credential_sent && response.status == 401 {
+                    match context.credential.as_deref() {
+                        Some(credential) if credential.exchanges() && !renewed => {
+                            credential.drop_token();
+                            renewed = true;
+                            continue;
+                        }
+                        _ => return Err(ProviderError::Unauthorized),
                     }
-                    // The site put the secret in a redirect. korrid followed
-                    // it nowhere; for the plugin this is the same fault as a
-                    // response that repeats the secret.
-                    super::download::ChainFailure::SecretInRedirect { host } => {
-                        ProviderError::CredentialRepeated { host }
-                    }
-                })?;
-            if response.credential_sent && response.status == 401 {
-                return Err(ProviderError::Unauthorized);
-            }
+                }
+                break response;
+            };
             if let Some(credential) = &context.credential {
                 if repeats_secret(credential, &response) {
                     return Err(ProviderError::CredentialRepeated {
@@ -338,6 +343,58 @@ pub(super) async fn run<T>(
         }
     }
     unreachable!("the loop returns by the fourth call")
+}
+
+/// One admitted request, with the plugin's token got first when the request
+/// goes to the credential host and korrid holds none.
+async fn fetch(
+    engine: &super::download::DownloadEngine,
+    context: &ProviderContext,
+    request: &Admitted,
+) -> Result<super::download::TextResponse, ProviderError> {
+    let credential = context.credential.as_deref();
+    if let Some(credential) = credential.filter(|credential| credential.exchanges()) {
+        if engine.secret_applies(credential, &request.url) {
+            engine
+                .ensure_token(credential, &context.hosts)
+                .await
+                .map_err(|failure| match failure {
+                    super::download::TokenFailure::Refused => ProviderError::Unauthorized,
+                    super::download::TokenFailure::Transport(failure) => {
+                        ProviderError::Unreachable(failure)
+                    }
+                    super::download::TokenFailure::Invalid(reason) => {
+                        ProviderError::Failed(credential.redact(&reason))
+                    }
+                })?;
+        }
+    }
+    engine
+        .fetch_text(
+            super::download::TextRequest {
+                url: request.url.clone(),
+                headers: &request.headers,
+                timeout: request.timeout,
+                body: request
+                    .body
+                    .as_ref()
+                    .map(|(content_type, text)| super::download::PostBody { content_type, text }),
+                credential,
+            },
+            &context.hosts,
+        )
+        .await
+        .map_err(|failure| match failure {
+            super::download::ChainFailure::Transport(failure) => {
+                ProviderError::Unreachable(failure)
+            }
+            // The site put the secret in a redirect. korrid followed it
+            // nowhere; for the plugin this is the same fault as a response
+            // that repeats the secret.
+            super::download::ChainFailure::SecretInRedirect { host } => {
+                ProviderError::CredentialRepeated { host }
+            }
+        })
 }
 
 /// Whether any part of a response that a handler would be given holds the
@@ -369,7 +426,8 @@ struct Admitted {
     url: url::Url,
     headers: Vec<(String, String)>,
     timeout: Option<std::time::Duration>,
-    form: Option<String>,
+    /// A POST's Content-Type, which korrid owns, and its body.
+    body: Option<(&'static str, String)>,
 }
 
 fn admit(request: &PluginHttpRequest, hosts: &[String]) -> Result<Admitted, ProviderError> {
@@ -415,8 +473,18 @@ fn admit(request: &PluginHttpRequest, hosts: &[String]) -> Result<Admitted, Prov
             return Err(failed("refused or invalid request header"));
         }
         if request.method.is_some() && lower == "content-type" {
-            if !value.eq_ignore_ascii_case("application/x-www-form-urlencoded") {
-                return Err(failed("a form POST needs the form content type"));
+            let text = matches!(request.body, Some(PluginHttpBody::Text(_)));
+            let matching = if text {
+                is_text_content_type(value)
+            } else {
+                value.eq_ignore_ascii_case(super::download::FORM_CONTENT_TYPE)
+            };
+            if !matching {
+                return Err(failed(if text {
+                    "a text POST needs the text/plain content type"
+                } else {
+                    "a form POST needs the form content type"
+                }));
             }
             // The shared sender owns this header, as for FinalDownload.
             continue;
@@ -428,13 +496,45 @@ fn admit(request: &PluginHttpRequest, hosts: &[String]) -> Result<Admitted, Prov
         Some(ms) => Some(std::time::Duration::from_millis(ms)),
         None => None,
     };
-    let form = admit_form(request.method, &request.body).map_err(|error| failed(error.0))?;
+    let body = match &request.body {
+        Some(PluginHttpBody::Text(text)) => {
+            if request.method.is_none() {
+                return Err(failed("download body needs method POST"));
+            }
+            // The same 8192-character bound as a form (ADR 0016 amendment).
+            super::claims::safe_text(text).map_err(|error| failed(error.0))?;
+            Some((super::download::TEXT_CONTENT_TYPE, text.clone()))
+        }
+        Some(PluginHttpBody::Form(fields)) => admit_form(request.method, &Some(fields.clone()))
+            .map_err(|error| failed(error.0))?
+            .map(|form| (super::download::FORM_CONTENT_TYPE, form)),
+        None => admit_form(request.method, &None)
+            .map_err(|error| failed(error.0))?
+            .map(|form| (super::download::FORM_CONTENT_TYPE, form)),
+    };
     Ok(Admitted {
         url,
         headers,
         timeout,
-        form,
+        body,
     })
+}
+
+/// `text/plain`, alone or with `charset=utf-8`: what korrid sends with a
+/// text body. Any other value would describe bytes korrid does not send.
+fn is_text_content_type(value: &str) -> bool {
+    let mut parts = value.split(';').map(str::trim);
+    let media = parts.next().unwrap_or_default();
+    let rest: Vec<_> = parts.filter(|part| !part.is_empty()).collect();
+    media.eq_ignore_ascii_case("text/plain")
+        && match rest.as_slice() {
+            [] => true,
+            [charset] => charset.split_once('=').is_some_and(|(name, value)| {
+                name.trim().eq_ignore_ascii_case("charset")
+                    && value.trim().trim_matches('"').eq_ignore_ascii_case("utf-8")
+            }),
+            _ => false,
+        }
 }
 
 fn requests<T>(value: &serde_json::Value) -> Option<serde_json::Result<Turn<T>>> {

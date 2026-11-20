@@ -66,6 +66,7 @@ impl Fixture {
                     requires: vec![],
                     hosts: vec![],
                     credential_host: None,
+                    credential_token_url: None,
                     files: std::collections::BTreeMap::from([(
                         "program".into(),
                         std::env::current_exe().unwrap(),

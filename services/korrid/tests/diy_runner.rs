@@ -29,6 +29,7 @@ fn installed(root: &Path) -> PluginRegistry {
         requires: Vec::new(),
         hosts: vec![],
         credential_host: None,
+        credential_token_url: None,
     }])
     .unwrap()
 }
@@ -171,6 +172,7 @@ fn hello_needs_no_authored_ids_or_launch_handler() {
         requires: vec![],
         hosts: vec![],
         credential_host: None,
+        credential_token_url: None,
     }])
     .unwrap();
     assert_eq!(

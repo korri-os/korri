@@ -608,6 +608,7 @@ fn linux_viewer_settings_use_local_device_and_matching_game_system_selected_prof
             requires: vec![],
             hosts: vec![],
             credential_host: None,
+            credential_token_url: None,
         },
     ])
     .unwrap();

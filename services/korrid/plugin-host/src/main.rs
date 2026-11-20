@@ -477,6 +477,7 @@ mod seed_tests {
             ports: Default::default(),
             hosts: Vec::new(),
             credential_host: None,
+            credential_token_url: None,
             packages: Default::default(),
             files: Default::default(),
             entry: "plugin.ts".into(),

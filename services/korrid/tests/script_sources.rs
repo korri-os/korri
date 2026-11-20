@@ -128,6 +128,7 @@ fn installed_registry_rejects_oversized_and_linked_source_at_admission() {
         requires: Vec::new(),
         hosts: vec![],
         credential_host: None,
+        credential_token_url: None,
     };
     fs::write(
         root.path().join("plugin.ts"),
@@ -189,6 +190,7 @@ fn installed_registry_evaluates_manifest_selected_relative_and_package_imports()
         requires: Vec::new(),
         hosts: vec![],
         credential_host: None,
+        credential_token_url: None,
     };
     let registry = korrid::plugin::PluginRegistry::from_installed(vec![selection]).unwrap();
     assert!(registry

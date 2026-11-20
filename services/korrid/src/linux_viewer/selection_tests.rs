@@ -16,6 +16,7 @@ fn package(id: &str, treaty: Option<PathBuf>) -> EnabledPackage {
         requires: vec![],
         hosts: vec![],
         credential_host: None,
+        credential_token_url: None,
     }
 }
 

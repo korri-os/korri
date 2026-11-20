@@ -147,6 +147,7 @@ fn core_package(root: &Path, name: &str, source: String) -> EnabledPackage {
         requires: Vec::new(),
         hosts: vec![],
         credential_host: None,
+        credential_token_url: None,
     }
 }
 
@@ -196,6 +197,7 @@ pub fn installed(root: &Path) -> PluginRegistry {
         requires: Vec::new(),
         hosts: vec![],
         credential_host: None,
+        credential_token_url: None,
     }])
     .unwrap()
 }
@@ -241,6 +243,7 @@ pub fn art_package_as(
         requires: Vec::new(),
         hosts: hosts.iter().map(|host| (*host).to_owned()).collect(),
         credential_host: credential_host.map(str::to_owned),
+        credential_token_url: None,
     }
 }
 
@@ -353,6 +356,7 @@ pub fn steam_in(root: &Path, namespace: &str, source: &str) -> PluginRegistry {
             requires: vec![],
             hosts: vec![],
             credential_host: None,
+            credential_token_url: None,
             files: keys
                 .into_iter()
                 .map(|key| (key.into(), directory.join(key)))
@@ -378,6 +382,7 @@ pub fn steam_in(root: &Path, namespace: &str, source: &str) -> PluginRegistry {
         requires,
         hosts: vec![],
         credential_host: None,
+        credential_token_url: None,
     });
     PluginRegistry::from_installed(dependencies).unwrap()
 }

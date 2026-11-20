@@ -21,6 +21,7 @@ fn package(root: &Path, name: &str, exports: &str, files: &[&str]) -> EnabledPac
         requires: Vec::new(),
         hosts: vec![],
         credential_host: None,
+        credential_token_url: None,
     }
 }
 

@@ -29,6 +29,11 @@ let
       # ADR 0034: the one host, also in `hosts`, that receives the plugin's
       # secret. korrid adds the secret itself; the plugin never sees it.
       credentialHost ? null,
+      # ADR 0034 amendment: an https URL on one of `hosts` where korrid
+      # exchanges the secret, a client ID and a client secret, for a token
+      # (OAuth2 client credentials). korrid sends `Client-ID` and that token
+      # to `credentialHost`. Absent: the secret goes as it is.
+      credentialTokenUrl ? null,
     }:
     let
       releases = builtins.filter (item: builtins.isAttrs item && !lib.isDerivation item) requires;
@@ -85,6 +90,9 @@ let
           }
           // lib.optionalAttrs (credentialHost != null) {
             inherit credentialHost;
+          }
+          // lib.optionalAttrs (credentialTokenUrl != null) {
+            inherit credentialTokenUrl;
           }
         )
       );
@@ -152,6 +160,19 @@ let
     assert lib.assertMsg (
       credentialHost == null || (builtins.isString credentialHost && builtins.elem credentialHost hosts)
     ) "plugin credentialHost must be one of the plugin's hosts";
+    assert lib.assertMsg (
+      credentialTokenUrl == null
+      || (
+        credentialHost != null
+        && builtins.isString credentialTokenUrl
+        && (
+          let
+            parts = builtins.match "https://([a-z0-9.-]+)(/[^?#]*)?" credentialTokenUrl;
+          in
+          parts != null && builtins.elem (builtins.head parts) hosts
+        )
+      )
+    ) "plugin credentialTokenUrl must be a plain https URL on one of the plugin's hosts, with credentialHost";
     pkgs.runCommand "korri-plugin"
       {
         nativeBuildInputs = [ pkgs.python3 ];

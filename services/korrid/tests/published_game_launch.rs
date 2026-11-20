@@ -61,6 +61,7 @@ fn published_mgba_route_and_launch_prepare() {
         requires: Vec::new(),
         hosts: vec![],
         credential_host: None,
+        credential_token_url: None,
     }])
     .expect("current Core must admit the published declaration and source graph");
 

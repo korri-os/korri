@@ -31,6 +31,51 @@ pub struct EnabledPackage {
     /// the one declared host that receives the plugin's secret.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub credential_host: Option<String>,
+    /// The manifest's `credentialTokenUrl` (ADR 0034 amendment), as the host
+    /// verified it: where korrid exchanges the plugin's client ID and client
+    /// secret for the token it sends to `credential_host`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential_token_url: Option<String>,
+}
+
+/// ADR 0034 amendment: a token address is an `https` URL with no user,
+/// port, query or fragment, on one of the plugin's declared hosts, and only
+/// a plugin that declares `credentialHost` has one. korrid sends the client
+/// secret there in a form body and nowhere else.
+pub fn validate_credential_token_url(
+    token_url: Option<&str>,
+    credential_host: Option<&str>,
+    hosts: &[String],
+) -> Result<(), String> {
+    let Some(token_url) = token_url else {
+        return Ok(());
+    };
+    if credential_host.is_none() {
+        return Err("credentialTokenUrl needs credentialHost".into());
+    }
+    let url = url::Url::parse(token_url)
+        .map_err(|_| String::from("credentialTokenUrl must be an absolute URL"))?;
+    let host = match url.host() {
+        Some(url::Host::Domain(host)) => host,
+        _ => return Err("credentialTokenUrl must name a DNS host".into()),
+    };
+    if url.scheme() != "https"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.port().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || url.as_str() != token_url
+    {
+        return Err(
+            "credentialTokenUrl must be a plain https URL with no user, port, query or fragment"
+                .into(),
+        );
+    }
+    if !hosts.iter().any(|declared| declared == host) {
+        return Err("credentialTokenUrl must be on one of the declared hosts".into());
+    }
+    Ok(())
 }
 
 pub fn encode(selections: &[EnabledPackage]) -> Result<Vec<u8>, String> {

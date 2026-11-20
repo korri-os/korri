@@ -232,3 +232,32 @@ change the four-call, body, input, heap or deadline bounds. Artifact bytes still
 flow through korrid's existing cache, identification, record and route path.
 Provider approval remains separate from acquiring an author's file; an engine
 tag or browser-playable listing alone never establishes a Bitsy artifact.
+
+### Raw text POST body (IGDB, 2026-11-20)
+
+Coordinator decision for the `@korri:igdb` art plugin (Velvet layered art,
+slice 5). IGDB takes every query as a POST whose body is Apicalypse text,
+such as `fields name; where platforms = 19;`
+(`https://api-docs.igdb.com/#requests`). A form body cannot carry it: korrid
+would percent-encode the text into a field name.
+
+- `PluginHttpRequest.body` may be a string as well as an object of string
+  fields. The name and the shape are legacy
+  `PluginHttpRequestOptions.body` (`string | Uint8Array | URLSearchParams`,
+  `product/platform/plugin/services.ts`); `Uint8Array` is not carried. No
+  new field is added.
+- A string body is sent as it is, as UTF-8, with
+  `Content-Type: text/plain; charset=utf-8`. korrid owns that header, as it
+  owns a form's: a provider header `text/plain`, alone or with
+  `charset=utf-8`, is not sent twice, and any other Content-Type with a
+  string body fails admission.
+- The rules of a form body apply unchanged: it needs `method: "POST"`; at
+  most 8192 characters, the same `SafeText` bound; the same sender, DNS and
+  SSRF checks, exact declared hosts on every hop, and POST redirect rules
+  (301/302/303 become GET without the body; 307/308 repeat the POST).
+- A turn of `game-assets.candidates` may send it, because artwork turns use
+  the provider turn rules. The game download (`FinalDownload`) keeps its
+  form body only.
+
+The cost: a turn can now send any text an approved host accepts in a POST,
+not only form fields. It adds no method, no host, no header and no bound.

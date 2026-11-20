@@ -51,6 +51,10 @@ pub struct Report {
     /// plugin declares no secret.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub credential_host: Option<String>,
+    /// Where korrid exchanges the plugin's client ID and client secret for
+    /// a token (ADR 0034 amendment). Absent: the secret is sent as it is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credential_token_url: Option<String>,
     pub packages: BTreeMap<String, PathBuf>,
     pub files: BTreeMap<String, PathBuf>,
     pub entry: String,
@@ -182,6 +186,12 @@ struct Manifest {
         deserialize_with = "required_credential_host"
     )]
     credential_host: Option<String>,
+    #[serde(
+        default,
+        rename = "credentialTokenUrl",
+        deserialize_with = "required_credential_host"
+    )]
+    credential_token_url: Option<String>,
     #[serde(default)]
     requires: Vec<PathBuf>,
     #[serde(default, rename = "requiresReleases")]
@@ -322,6 +332,11 @@ fn parse_manifest(bytes: &[u8]) -> Result<Manifest, String> {
     manifest.ports.validate()?;
     validate_hosts(&manifest.hosts)?;
     validate_credential_host(manifest.credential_host.as_deref(), &manifest.hosts)?;
+    crate::plugin_installation::validate_credential_token_url(
+        manifest.credential_token_url.as_deref(),
+        manifest.credential_host.as_deref(),
+        &manifest.hosts,
+    )?;
     if manifest.requires.len() + manifest.requires_releases.len() > crate::dependencies::MAX_PLUGINS
     {
         return Err("too many required plugins".into());
@@ -403,10 +418,15 @@ pub fn validate_credential_host(
 
 /// The approval sentence for a plugin secret (ADR 0034, "Approval"): the
 /// person sees which host gets the key before approval.
-fn credential_warning(credential_host: Option<&str>) -> String {
-    credential_host.map_or(String::new(), |host| {
-        format!(" PLUGIN SECRET: this plugin uses one secret that you enter in Settings, such as an API key. Korri keeps it on this device and sends it only to {host}. The plugin's code never receives it.")
-    })
+fn credential_warning(credential_host: Option<&str>, token_url: Option<&str>) -> String {
+    let token_host = token_url
+        .and_then(|url| url::Url::parse(url).ok())
+        .and_then(|url| url.host_str().map(str::to_owned));
+    match (credential_host, token_host) {
+        (Some(host), Some(token_host)) => format!(" PLUGIN SECRET: this plugin uses one secret that you enter in Settings: a client ID and a client secret, written as id:secret. Korri keeps it on this device. It sends both to {token_host} to get a token, and sends the client ID and that token only to {host}. The plugin's code never receives them."),
+        (Some(host), None) => format!(" PLUGIN SECRET: this plugin uses one secret that you enter in Settings, such as an API key. Korri keeps it on this device and sends it only to {host}. The plugin's code never receives it."),
+        (None, _) => String::new(),
+    }
 }
 
 pub fn manifest_namespace(package: &Path) -> Result<String, String> {
@@ -1368,7 +1388,10 @@ fn report_from(
         .any(|unit| unit.user.as_deref() == Some("root"));
     let mut warning = authority_warning(&native_units);
     warning.push_str(&native_rule_warning(&manifest.files)?);
-    warning.push_str(&credential_warning(manifest.credential_host.as_deref()));
+    warning.push_str(&credential_warning(
+        manifest.credential_host.as_deref(),
+        manifest.credential_token_url.as_deref(),
+    ));
     let mut report = Report {
         id,
         publisher: None,
@@ -1393,6 +1416,7 @@ fn report_from(
         ports: manifest.ports,
         hosts: manifest.hosts,
         credential_host: manifest.credential_host,
+        credential_token_url: manifest.credential_token_url,
         packages: manifest.packages,
         files: manifest.files,
         entry: manifest.entry,
@@ -1629,6 +1653,81 @@ mod approval_tests {
         let error = provider_report(&package).err().unwrap();
         assert!(
             error.contains("credentialHost must be one of the declared hosts"),
+            "{error}"
+        );
+    }
+
+    /// ADR 0034 amendment: a client pair that korrid exchanges for a token
+    /// at a declared https address on one of the plugin's hosts.
+    #[test]
+    fn a_token_address_is_a_plain_https_url_on_a_declared_host_and_the_approval_names_it() {
+        let directory = tempfile::tempdir().unwrap();
+        let hosts = r#"["api.igdb.com","id.twitch.tv","images.igdb.com"]"#;
+        let with = |extra: &str| {
+            provider_report(&provider_package(
+                directory.path(),
+                Some(&format!(
+                    "{hosts},\"credentialHost\":\"api.igdb.com\"{extra}"
+                )),
+                true,
+            ))
+        };
+        let bearer = with("").unwrap();
+        assert_eq!(bearer.credential_token_url, None);
+        assert!(serde_json::to_value(&bearer)
+            .unwrap()
+            .get("credential_token_url")
+            .is_none());
+
+        let pair = with(r#","credentialTokenUrl":"https://id.twitch.tv/oauth2/token""#).unwrap();
+        assert_eq!(
+            pair.credential_token_url.as_deref(),
+            Some("https://id.twitch.tv/oauth2/token")
+        );
+        assert!(
+            pair.warning
+                .contains("sends both to id.twitch.tv to get a token")
+                && pair
+                    .warning
+                    .contains("the client ID and that token only to api.igdb.com."),
+            "{}",
+            pair.warning
+        );
+        assert!(!pair.warning.contains("images.igdb.com"));
+        assert_ne!(bearer.approval, pair.approval);
+
+        for invalid in [
+            r#""http://id.twitch.tv/oauth2/token""#,
+            r#""https://other.example/oauth2/token""#,
+            r#""https://id.twitch.tv:8443/oauth2/token""#,
+            r#""https://id.twitch.tv/oauth2/token?client_secret=x""#,
+            r#""https://id.twitch.tv/oauth2/token#x""#,
+            r#""https://user@id.twitch.tv/oauth2/token""#,
+            r#""https://ID.twitch.tv/oauth2/token""#,
+            r#""id.twitch.tv""#,
+            "null",
+            "true",
+        ] {
+            assert!(
+                with(&format!(r#","credentialTokenUrl":{invalid}"#)).is_err(),
+                "{invalid}"
+            );
+        }
+        // A token address needs the host that receives the token.
+        let package = provider_package(directory.path(), Some(hosts), true);
+        let manifest = fs::read_to_string(package.join("manifest.json")).unwrap();
+        fs::write(
+            package.join("manifest.json"),
+            manifest.replacen(
+                "\"hosts\":",
+                "\"credentialTokenUrl\":\"https://id.twitch.tv/oauth2/token\",\"hosts\":",
+                1,
+            ),
+        )
+        .unwrap();
+        let error = provider_report(&package).err().unwrap();
+        assert!(
+            error.contains("credentialTokenUrl needs credentialHost"),
             "{error}"
         );
     }

@@ -382,6 +382,8 @@ struct ArtPlugin {
     id: String,
     context: ProviderContext,
     credential_host: Option<String>,
+    /// Where korrid exchanges a client pair for a token (ADR 0034 amendment).
+    credential_token_url: Option<String>,
 }
 
 /// Every enabled, installed plugin with a `game-assets.candidates` handler,
@@ -404,6 +406,9 @@ fn art_plugins(registry: &PluginRegistry) -> Vec<ArtPlugin> {
                         credential: None,
                     },
                     credential_host: registry.plugin_credential_host(id).map(str::to_owned),
+                    credential_token_url: registry
+                        .plugin_credential_token_url(id)
+                        .map(str::to_owned),
                 })
         })
         .collect()
@@ -548,7 +553,11 @@ impl ArtworkPass {
         let Some(host) = &plugin.credential_host else {
             return Ok(None);
         };
-        match PluginSecrets::new(&self.private_root).credential(&plugin.id, host) {
+        match PluginSecrets::new(&self.private_root).credential_declared(
+            &plugin.id,
+            host,
+            plugin.credential_token_url.as_deref(),
+        ) {
             Ok(Some(credential)) => Ok(Some(Arc::new(credential))),
             Ok(None) => Err(diagnostic(
                 "CredentialMissing",
@@ -662,7 +671,11 @@ impl ArtworkPass {
     ) -> Result<bool, ()> {
         let _guard = self.lock();
         if let (Some(expected), Some(host)) = (credential, &plugin.credential_host) {
-            match PluginSecrets::new(&self.private_root).credential(&plugin.id, host) {
+            match PluginSecrets::new(&self.private_root).credential_declared(
+                &plugin.id,
+                host,
+                plugin.credential_token_url.as_deref(),
+            ) {
                 Ok(Some(current)) if current.same_secret(expected) => {}
                 Ok(_) => return Ok(false),
                 Err(_) => return Err(()),

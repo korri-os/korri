@@ -112,6 +112,9 @@ pub(super) struct Received {
 pub(super) struct HttpFixture {
     pub address: SocketAddr,
     routes: Arc<Mutex<BTreeMap<String, Route>>>,
+    /// Routes answered in turn: each request takes the first, and the last
+    /// one stays.
+    queues: Arc<Mutex<BTreeMap<String, std::collections::VecDeque<Route>>>>,
     received: Arc<Mutex<Vec<Received>>>,
 }
 
@@ -125,11 +128,17 @@ impl HttpFixture {
             .collect();
         let routes = Arc::new(Mutex::new(routes));
         let received = Arc::new(Mutex::new(Vec::new()));
-        let (served_routes, log) = (routes.clone(), received.clone());
+        let queues = Arc::new(Mutex::new(BTreeMap::<
+            String,
+            std::collections::VecDeque<Route>,
+        >::new()));
+        let (served_routes, log, served_queues) =
+            (routes.clone(), received.clone(), queues.clone());
         thread::spawn(move || {
             for socket in listener.incoming() {
                 let Ok(mut socket) = socket else { continue };
                 let routes = served_routes.clone();
+                let queues = served_queues.clone();
                 let log = log.clone();
                 thread::spawn(move || {
                     let mut reader = BufReader::new(socket.try_clone().unwrap());
@@ -172,14 +181,23 @@ impl HttpFixture {
                         headers,
                         body,
                     });
-                    let mut route = routes.lock().unwrap().get(&path).cloned().unwrap_or(Route {
-                        status: 404,
-                        headers: Vec::new(),
-                        body: b"missing".to_vec(),
-                        pace: None,
-                        unsized_body: false,
-                        echo_authorization: None,
+                    let queued = queues.lock().unwrap().get_mut(&path).and_then(|queue| {
+                        if queue.len() > 1 {
+                            queue.pop_front()
+                        } else {
+                            queue.front().cloned()
+                        }
                     });
+                    let mut route = queued
+                        .or_else(|| routes.lock().unwrap().get(&path).cloned())
+                        .unwrap_or(Route {
+                            status: 404,
+                            headers: Vec::new(),
+                            body: b"missing".to_vec(),
+                            pace: None,
+                            unsized_body: false,
+                            echo_authorization: None,
+                        });
                     let sent = authorization.clone().unwrap_or_default();
                     let body_with = |value: serde_json::Value| {
                         serde_json::json!({
@@ -279,8 +297,18 @@ impl HttpFixture {
         Self {
             address,
             routes,
+            queues,
             received,
         }
+    }
+
+    /// Answer `path` with `routes` in turn; the last one answers every
+    /// request after it.
+    pub fn queue(&self, path: &str, routes: Vec<Route>) {
+        self.queues
+            .lock()
+            .unwrap()
+            .insert(path.into(), routes.into());
     }
 
     pub fn route(&self, path: &str, route: Route) {

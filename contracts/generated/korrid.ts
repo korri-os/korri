@@ -55,6 +55,14 @@ export type PluginDetailsOutput = PluginHttpRequests | ProviderClaimDetails;
 
 export type PluginGameAssetCandidatesOutput = PluginHttpRequests | GameAssetCandidates;
 
+/**
+ * A POST body: legacy `PluginHttpRequestOptions.body`, which was
+ * `string | Uint8Array | URLSearchParams`. A string is sent as raw UTF-8
+ * text, such as an IGDB Apicalypse query (ADR 0016, IGDB amendment); an
+ * object of string fields is form-encoded, as `FinalDownload`'s body is.
+ */
+export type PluginHttpBody = string | Record<string, string>;
+
 /** Legacy `PluginHttpRequestOptions` value type, without `undefined`. */
 export type PluginHttpQueryValue = string | number | boolean;
 
@@ -1529,17 +1537,17 @@ export interface PluginGameAssetCandidatesInput {
 
 /**
  * The legacy `request(url, options)` call as a value: `url` plus the legacy
- * `PluginHttpRequestOptions` fields `query`, `headers`, `timeoutMs`, and the
- * same GET/form-POST semantics as `FinalDownload`.
+ * `PluginHttpRequestOptions` fields `query`, `headers`, `timeoutMs`, and
+ * GET, the same form POST as `FinalDownload`, or a raw text POST.
  */
 export interface PluginHttpRequest {
 	url: string;
 	query?: Record<string, PluginHttpQueryValue>;
 	headers?: Record<string, string>;
 	timeoutMs?: number;
-	/** Absent: GET. POST uses the final-download form semantics. */
+	/** Absent: GET. POST sends `body`: form fields, or raw text. */
 	method?: FinalDownloadMethod;
-	body?: Record<string, string>;
+	body?: PluginHttpBody;
 }
 
 /** A handler's "fetch these, then call me again" answer. */

@@ -498,3 +498,53 @@ fn a_set_request_never_prints_its_token() {
         &serde_json::from_value(clear(PLUGIN)).unwrap()
     ));
 }
+
+/// ADR 0034 amendment: a plugin that declares a token address takes its
+/// secret as a client ID and a client secret, `id:secret`.
+#[tokio::test]
+async fn a_plugin_with_a_token_address_takes_only_a_client_pair() {
+    let root = tempfile::tempdir().unwrap();
+    config::test_fixtures::gba(root.path());
+    let mut art = plugin_test_fixtures::art_package(
+        root.path(),
+        "export const name = 'steamgriddb'; export const handlers = {'game-assets.candidates': () => ({candidates: []})};",
+        &["api.igdb.com", "id.twitch.tv"],
+        Some("api.igdb.com"),
+    );
+    art.credential_token_url = Some("https://id.twitch.tv/oauth2/token".into());
+    let registry = plugin_test_fixtures::installed_with_art(root.path(), art);
+    let (mut state, _) = brain_app_state(
+        TOKEN,
+        ORIGIN,
+        root.path(),
+        root.path().join("private"),
+        plugin_policy::RegistrySource::Selected(Arc::new(registry)),
+        config::snapshot::ConfigSnapshotCoordinator::new(root.path()),
+        discovery::FolderSelectionGrantStore::default(),
+        None,
+        None,
+        None,
+    );
+    state.surface_host_access = Some(SurfaceHostAccess::new(
+        TOKEN,
+        ORIGIN,
+        SurfaceHostPermission::Full,
+    ));
+    let app = surface_host_router_from_state(state);
+    let credential = root.path().join("private").join(PLUGIN).join("credential");
+    for refused in [SECRET, ":not-a-real-secret", "client-id:"] {
+        let answer = rpc(&app, set(PLUGIN, refused)).await;
+        assert_error(&answer, "SettingsInvalid");
+        assert!(
+            !answer.to_string().contains("not-a-real-secret"),
+            "{answer}"
+        );
+        assert!(!credential.exists());
+    }
+    let stored = rpc(&app, set(PLUGIN, &format!("client-id:{SECRET}"))).await;
+    assert_eq!(stored["outcome"]["_tag"], "Ok", "{stored}");
+    assert_eq!(
+        std::fs::read_to_string(&credential).unwrap(),
+        format!("client-id:{SECRET}")
+    );
+}

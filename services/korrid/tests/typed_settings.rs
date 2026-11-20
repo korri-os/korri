@@ -66,6 +66,7 @@ fn package(root: &Path, name: &str, source: &str) -> EnabledPackage {
         requires: Vec::new(),
         hosts: vec![],
         credential_host: None,
+        credential_token_url: None,
     }
 }
 
@@ -336,6 +337,7 @@ fn packaged_source_evidence_reaches_the_packaged_callback_configuration_bytes() 
         requires: Vec::new(),
         hosts: vec![],
         credential_host: None,
+        credential_token_url: None,
     };
     let build = package.package.display().to_string();
     let program = package.files["retroarch"].display().to_string();

@@ -362,7 +362,7 @@ pub enum DownloadResolution {
 #[derive(Debug, Eq, PartialEq)]
 pub(super) struct Inadmissible(pub(super) &'static str);
 
-fn safe_text(value: &str) -> Result<(), Inadmissible> {
+pub(super) fn safe_text(value: &str) -> Result<(), Inadmissible> {
     (value.chars().count() <= SAFE_TEXT_CHARS)
         .then_some(())
         .ok_or(Inadmissible("text exceeds 8192 characters"))

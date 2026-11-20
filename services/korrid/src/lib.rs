@@ -5099,13 +5099,17 @@ fn set_plugin_credential(
     let secrets = plugin_secrets::PluginSecrets::new(state.private_state_root());
     let result = match token {
         Some(token) => {
-            let declares_a_secret = state
-                .settings_registry_source()
-                .registry()
-                .map(|registry| registry.plugin_credential_host(plugin_id).is_some());
+            // `Some(true)`: a client pair that korrid exchanges for a token
+            // (ADR 0034 amendment); `Some(false)`: a value sent as it is.
+            let declares_a_secret = state.settings_registry_source().registry().map(|registry| {
+                registry
+                    .plugin_credential_host(plugin_id)
+                    .map(|_| registry.plugin_credential_token_url(plugin_id).is_some())
+            });
             match declares_a_secret {
-                Ok(true) => secrets.set(plugin_id, token),
-                Ok(false) => {
+                Ok(Some(true)) => secrets.set_client_pair(plugin_id, token),
+                Ok(Some(false)) => secrets.set(plugin_id, token),
+                Ok(None) => {
                     return failure("SettingsInvalid", "This plugin does not use a secret.")
                 }
                 Err(_) => {

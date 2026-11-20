@@ -20,6 +20,9 @@ use std::{
 const CREDENTIAL_FILE_NAME: &str = "credential";
 /// The length the settings row allows (`sensitiveText`, 256 characters).
 const MAX_SECRET_BYTES: usize = 256;
+/// The longest token korrid keeps from a token answer. Twitch app tokens
+/// are 30 characters; the bound only stops an answer that is not a token.
+const MAX_TOKEN_BYTES: usize = 4096;
 
 #[derive(Debug, thiserror::Error, Eq, PartialEq)]
 pub enum PluginSecretError {
@@ -33,6 +36,10 @@ pub enum PluginSecretError {
     Unsendable,
     #[error("the secret has a character outside ASCII, which a request header does not carry in one fixed form")]
     NotAscii,
+    #[error("the secret must be a client ID and a client secret, written as id:secret")]
+    NotAClientPair,
+    #[error("the plugin's token address is not one korrid can use")]
+    InvalidTokenAddress,
     #[error("private state root is unavailable")]
     Storage,
 }
@@ -83,7 +90,21 @@ impl PluginSecrets {
         fs::set_permissions(&folder, fs::Permissions::from_mode(0o700))
             .map_err(|_| PluginSecretError::Storage)?;
         write_private_file(&folder.join(CREDENTIAL_FILE_NAME), secret.as_bytes())?;
+        forget_token(&self.private_root, plugin_id);
         Ok(SecretSettingStatus::Configured)
+    }
+
+    /// `set` for a plugin that declares a token address
+    /// (`credentialTokenUrl`, ADR 0034 amendment): the value must be a client
+    /// ID and a client secret, written as `id:secret`.
+    pub fn set_client_pair(
+        &self,
+        plugin_id: &str,
+        secret: &str,
+    ) -> Result<SecretSettingStatus, PluginSecretError> {
+        self.plugin_folder(plugin_id)?;
+        client_pair(secret.trim())?;
+        self.set(plugin_id, secret)
     }
 
     /// The secret, for the one caller that adds it to a request. `None` when
@@ -115,7 +136,50 @@ impl PluginSecrets {
         };
         Ok(Some(PluginCredential {
             host: host.to_owned(),
-            header: bearer(&secret)?,
+            form: Form::Bearer(bearer(&secret)?),
+            secret,
+        }))
+    }
+
+    /// The plugin's secret in the form its declaration names: a Bearer value
+    /// for `credentialHost` alone, or a client ID and a client secret that
+    /// korrid exchanges at `token_url` for a token (ADR 0034 amendment).
+    pub(crate) fn credential_declared(
+        &self,
+        plugin_id: &str,
+        host: &str,
+        token_url: Option<&str>,
+    ) -> Result<Option<PluginCredential>, PluginSecretError> {
+        let Some(token_url) = token_url else {
+            return self.credential(plugin_id, host);
+        };
+        let token_url =
+            url::Url::parse(token_url).map_err(|_| PluginSecretError::InvalidTokenAddress)?;
+        let Some(secret) = self.read(plugin_id)? else {
+            return Ok(None);
+        };
+        let (client_id, client_secret) = client_pair(&secret)?;
+        let mut client_id_header = reqwest::header::HeaderValue::from_str(client_id)
+            .map_err(|_| PluginSecretError::Unsendable)?;
+        client_id_header.set_sensitive(true);
+        let fingerprint = {
+            use sha2::{Digest, Sha256};
+            let mut hash = Sha256::new();
+            hash.update(secret.as_bytes());
+            hash.update([0]);
+            hash.update(token_url.as_str().as_bytes());
+            hash.finalize().into()
+        };
+        Ok(Some(PluginCredential {
+            host: host.to_owned(),
+            form: Form::ClientCredentials(Box::new(Exchange {
+                token_url,
+                client_id: client_id.to_owned(),
+                client_secret: client_secret.to_owned(),
+                client_id_header,
+                cache_key: (self.private_root.clone(), plugin_id.to_owned()),
+                fingerprint,
+            })),
             secret,
         }))
     }
@@ -146,6 +210,7 @@ impl PluginSecrets {
     /// so a step that runs twice is safe.
     pub fn clear(&self, plugin_id: &str) -> Result<SecretSettingStatus, PluginSecretError> {
         let folder = self.plugin_folder(plugin_id)?;
+        forget_token(&self.private_root, plugin_id);
         match fs::remove_file(folder.join(CREDENTIAL_FILE_NAME)) {
             Ok(()) => {
                 sync_directory(&folder);
@@ -284,9 +349,80 @@ fn percent_decoded(text: &str) -> String {
 #[derive(Clone)]
 pub(crate) struct PluginCredential {
     host: String,
-    header: reqwest::header::HeaderValue,
+    form: Form,
+    /// The stored value as it is: the Bearer value, or `id:secret`.
     secret: String,
 }
+
+/// What a request to the credential host carries.
+#[derive(Clone)]
+enum Form {
+    /// `Authorization: Bearer <secret>` (ADR 0034).
+    Bearer(reqwest::header::HeaderValue),
+    /// `Client-ID: <client id>` and `Authorization: Bearer <token>`, where
+    /// korrid gets the token with an OAuth2 client-credentials exchange at
+    /// the plugin's declared token address (ADR 0034 amendment).
+    ClientCredentials(Box<Exchange>),
+}
+
+#[derive(Clone)]
+struct Exchange {
+    token_url: url::Url,
+    client_id: String,
+    client_secret: String,
+    client_id_header: reqwest::header::HeaderValue,
+    /// Where the token is kept: korrid's private root and the plugin id.
+    cache_key: (PathBuf, String),
+    /// The stored value and the token address, hashed: a token got with
+    /// another value is never used.
+    fingerprint: [u8; 32],
+}
+
+/// A token korrid got for a plugin. It is kept in memory only, so a restart
+/// gets a new one; Twitch keeps 25 tokens of one application active and
+/// drops the oldest after that.
+struct CachedToken {
+    fingerprint: [u8; 32],
+    token: String,
+    header: reqwest::header::HeaderValue,
+    expires: Option<std::time::Instant>,
+}
+
+static TOKENS: std::sync::Mutex<std::collections::BTreeMap<(PathBuf, String), CachedToken>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+fn tokens(
+) -> std::sync::MutexGuard<'static, std::collections::BTreeMap<(PathBuf, String), CachedToken>> {
+    TOKENS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Drop the plugin's token: its secret was set or cleared.
+fn forget_token(private_root: &Path, plugin_id: &str) {
+    tokens().remove(&(private_root.to_owned(), plugin_id.to_owned()));
+}
+
+/// `id:secret`, split at the first `:`, as HTTP Basic writes a user ID and a
+/// password (RFC 7617, section 2): the ID holds no `:`. Both parts must be
+/// there.
+fn client_pair(secret: &str) -> Result<(&str, &str), PluginSecretError> {
+    match secret.split_once(':') {
+        Some((id, secret)) if !id.is_empty() && !secret.is_empty() => Ok((id, secret)),
+        _ => Err(PluginSecretError::NotAClientPair),
+    }
+}
+
+/// The form body of a client-credentials token request (RFC 6749, section
+/// 4.4.2, with the client's ID and secret in the body, section 2.3.1).
+pub(crate) struct TokenRequest {
+    pub url: url::Url,
+    pub form: String,
+}
+
+/// Why korrid did not keep a token answer.
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) struct InvalidToken;
 
 /// What stands where a secret was, in a text korrid may show or log.
 const REDACTED: &str = "<redacted>";
@@ -298,7 +434,137 @@ impl PluginCredential {
     /// redirect hop asks again with its own URL, so the secret follows a
     /// redirect only to the same host.
     pub(crate) fn authorization(&self, url: &url::Url) -> Option<reqwest::header::HeaderValue> {
-        (url.scheme() == "https" && self.is_for(url)).then(|| self.header.clone())
+        (url.scheme() == "https" && self.is_for(url))
+            .then(|| self.bearer())
+            .flatten()
+    }
+
+    /// Whether a request to `url` gets the credential: HTTPS to its host.
+    /// With a token form it can be true while korrid holds no token yet.
+    pub(crate) fn applies_to(&self, url: &url::Url) -> bool {
+        url.scheme() == "https" && self.is_for(url)
+    }
+
+    /// As `applies_to`, for a test's loopback server that speaks plain HTTP.
+    #[cfg(test)]
+    pub(crate) fn applies_to_over_test_http(&self, url: &url::Url) -> bool {
+        self.is_for(url)
+    }
+
+    /// The `Authorization` value, whatever the address. With a token form,
+    /// `None` until korrid holds a token got with this value.
+    fn bearer(&self) -> Option<reqwest::header::HeaderValue> {
+        match &self.form {
+            Form::Bearer(header) => Some(header.clone()),
+            Form::ClientCredentials(exchange) => tokens()
+                .get(&exchange.cache_key)
+                .filter(|cached| cached.fingerprint == exchange.fingerprint)
+                .filter(|cached| {
+                    cached
+                        .expires
+                        .is_none_or(|expires| std::time::Instant::now() < expires)
+                })
+                .map(|cached| cached.header.clone()),
+        }
+    }
+
+    /// Headers that go with `Authorization` on the credential host:
+    /// `Client-ID` for a token form, none for a Bearer secret.
+    pub(crate) fn companion_headers(
+        &self,
+    ) -> Vec<(reqwest::header::HeaderName, reqwest::header::HeaderValue)> {
+        match &self.form {
+            Form::Bearer(_) => Vec::new(),
+            Form::ClientCredentials(exchange) => vec![(
+                reqwest::header::HeaderName::from_static("client-id"),
+                exchange.client_id_header.clone(),
+            )],
+        }
+    }
+
+    /// The token request, when the credential is a client pair and korrid
+    /// holds no usable token for it. `None` for a Bearer secret or when a
+    /// token is held.
+    pub(crate) fn token_request(&self) -> Option<TokenRequest> {
+        let Form::ClientCredentials(exchange) = &self.form else {
+            return None;
+        };
+        if self.bearer().is_some() {
+            return None;
+        }
+        Some(TokenRequest {
+            url: exchange.token_url.clone(),
+            form: url::form_urlencoded::Serializer::new(String::new())
+                .append_pair("grant_type", "client_credentials")
+                .append_pair("client_id", &exchange.client_id)
+                .append_pair("client_secret", &exchange.client_secret)
+                .finish(),
+        })
+    }
+
+    /// Whether korrid gets the value it sends by an exchange.
+    pub(crate) fn exchanges(&self) -> bool {
+        matches!(self.form, Form::ClientCredentials(_))
+    }
+
+    /// Keep the token of a token answer. It must be a value a header carries
+    /// in one fixed form, as a secret must. `expires_in` is in seconds.
+    pub(crate) fn keep_token(
+        &self,
+        token: &str,
+        expires_in: Option<u64>,
+    ) -> Result<(), InvalidToken> {
+        let Form::ClientCredentials(exchange) = &self.form else {
+            return Err(InvalidToken);
+        };
+        if token.is_empty() || token.len() > MAX_TOKEN_BYTES {
+            return Err(InvalidToken);
+        }
+        let header = bearer(token).map_err(|_| InvalidToken)?;
+        let expires = expires_in.and_then(|seconds| {
+            std::time::Instant::now().checked_add(std::time::Duration::from_secs(seconds))
+        });
+        tokens().insert(
+            exchange.cache_key.clone(),
+            CachedToken {
+                fingerprint: exchange.fingerprint,
+                token: token.to_owned(),
+                header,
+                expires,
+            },
+        );
+        Ok(())
+    }
+
+    /// Drop the token: the credential host answered 401 to it. The next
+    /// request gets a new one.
+    pub(crate) fn drop_token(&self) {
+        if let Form::ClientCredentials(exchange) = &self.form {
+            let mut tokens = tokens();
+            if tokens
+                .get(&exchange.cache_key)
+                .is_some_and(|cached| cached.fingerprint == exchange.fingerprint)
+            {
+                tokens.remove(&exchange.cache_key);
+            }
+        }
+    }
+
+    /// The values a response must not repeat: the secret; for a token form
+    /// also the client ID, the client secret and the token korrid holds.
+    fn guarded(&self) -> Vec<String> {
+        let mut values = vec![self.secret.clone()];
+        if let Form::ClientCredentials(exchange) = &self.form {
+            values.push(exchange.client_id.clone());
+            values.push(exchange.client_secret.clone());
+            if let Some(cached) = tokens()
+                .get(&exchange.cache_key)
+                .filter(|cached| cached.fingerprint == exchange.fingerprint)
+            {
+                values.push(cached.token.clone());
+            }
+        }
+        values
     }
 
     /// As `authorization`, for a test's loopback server that speaks plain
@@ -309,7 +575,7 @@ impl PluginCredential {
         &self,
         url: &url::Url,
     ) -> Option<reqwest::header::HeaderValue> {
-        self.is_for(url).then(|| self.header.clone())
+        self.is_for(url).then(|| self.bearer()).flatten()
     }
 
     /// Whether `text` holds the secret: its exact value, which is also what
@@ -325,28 +591,34 @@ impl PluginCredential {
     /// encoding, such as base64, is not compared. Each decode is one pass
     /// over the text, and a turn's response is at most 512 KiB.
     pub(crate) fn appears_in(&self, text: &str) -> bool {
-        let secret = self.secret.as_str();
-        let percent = |text: &str| text.contains('%') && percent_decoded(text).contains(secret);
-        if text.contains(secret) || percent(text) {
+        let guarded = self.guarded();
+        let holds = |text: &str| guarded.iter().any(|value| text.contains(value.as_str()));
+        let percent = |text: &str| text.contains('%') && holds(&percent_decoded(text));
+        if holds(text) || percent(text) {
             return true;
         }
         if !text.contains('\\') {
             return false;
         }
         let unescaped = json_unescaped(text);
-        unescaped.contains(secret) || percent(&unescaped)
+        holds(&unescaped) || percent(&unescaped)
     }
 
     /// `text` without the secret, for a failure text or a log line that is
     /// built from something a site or a plugin wrote. A text that holds the
     /// secret only in an escaped form is not shown at all.
     pub(crate) fn redact(&self, text: &str) -> String {
-        if text.contains(self.secret.as_str()) {
-            text.replace(self.secret.as_str(), REDACTED)
-        } else if self.appears_in(text) {
+        let mut out = text.to_owned();
+        // Longest first, so a value inside another goes with it.
+        let mut guarded = self.guarded();
+        guarded.sort_by_key(|value| std::cmp::Reverse(value.len()));
+        for value in &guarded {
+            out = out.replace(value.as_str(), REDACTED);
+        }
+        if self.appears_in(&out) {
             REDACTED.to_owned()
         } else {
-            text.to_owned()
+            out
         }
     }
 
@@ -358,7 +630,13 @@ impl PluginCredential {
     /// pass records what it learned only while the secret it used still
     /// stands.
     pub(crate) fn same_secret(&self, other: &Self) -> bool {
-        self.host == other.host && self.header == other.header
+        let token_url = |credential: &Self| match &credential.form {
+            Form::Bearer(_) => None,
+            Form::ClientCredentials(exchange) => Some(exchange.token_url.clone()),
+        };
+        self.host == other.host
+            && self.secret == other.secret
+            && token_url(self) == token_url(other)
     }
 }
 

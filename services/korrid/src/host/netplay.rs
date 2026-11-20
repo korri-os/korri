@@ -432,6 +432,7 @@ mod tests {
                 requires: vec![],
                 hosts: vec![],
                 credential_host: None,
+                credential_token_url: None,
                 files: BTreeMap::from([("program".into(), std::env::current_exe().unwrap())]),
             },
         ])

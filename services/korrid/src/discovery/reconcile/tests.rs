@@ -525,6 +525,7 @@ fn ibuki_lobby_fixture() -> (
             requires: Vec::new(),
             hosts: Vec::new(),
             credential_host: None,
+            credential_token_url: None,
         },
     ])
     .unwrap();

@@ -131,6 +131,7 @@ fn package(root: &Path, name: &str, source: &str, hosts: Vec<String>) -> Enabled
         requires: vec![],
         hosts,
         credential_host: None,
+        credential_token_url: None,
     }
 }
 

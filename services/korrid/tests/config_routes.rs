@@ -23,6 +23,7 @@ fn registry(root: &std::path::Path, hashes: bool) -> PluginRegistry {
         requires: Vec::new(),
         hosts: vec![],
         credential_host: None,
+        credential_token_url: None,
     }])
     .unwrap()
 }

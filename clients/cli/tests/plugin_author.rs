@@ -491,6 +491,7 @@ fn plugin_new_builds_and_admits_the_generated_runner() {
             requires: manifest.requires,
             hosts: manifest.hosts,
             credential_host: None,
+            credential_token_url: None,
         },
     ])
     .unwrap();

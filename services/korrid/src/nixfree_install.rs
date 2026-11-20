@@ -355,6 +355,7 @@ pub fn install_archive(
         requires: Vec::new(),
         hosts: manifest.hosts,
         credential_host: manifest.credential_host,
+        credential_token_url: manifest.credential_token_url,
     })
 }
 
@@ -384,6 +385,13 @@ struct Manifest {
         deserialize_with = "credential_host"
     )]
     credential_host: Option<String>,
+    /// ADR 0034 amendment: one https URL, never `null`.
+    #[serde(
+        default,
+        rename = "credentialTokenUrl",
+        deserialize_with = "credential_host"
+    )]
+    credential_token_url: Option<String>,
     #[serde(default)]
     requires: Vec<String>,
     #[serde(default, rename = "requiresReleases")]
@@ -432,6 +440,12 @@ fn read_manifest(package: &Path) -> Result<Manifest, InstallError> {
             "credentialHost must be one of the declared hosts".into(),
         ));
     }
+    crate::plugin_installation::validate_credential_token_url(
+        manifest.credential_token_url.as_deref(),
+        manifest.credential_host.as_deref(),
+        &manifest.hosts,
+    )
+    .map_err(InstallError::Archive)?;
     Ok(manifest)
 }
 
