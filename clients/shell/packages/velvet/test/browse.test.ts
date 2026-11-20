@@ -82,6 +82,77 @@ describe("the row under the pick", () => {
   })
 })
 
+// The name in one place (owner, 2026-11-20): over the row, the facts alone; the name is the
+// focused tile's own drawing, or a line under a tile whose drawing does not name its game.
+describe("the row names its focused game once", () => {
+  const lit = (run: Play) => (run.view.homeRow as any[]).find(tile => tile.focused === true)
+  const nameless = (mark: any) => mark.lines === 0 && mark.line1 === "" && mark.size === 0 && mark.logoShown === false && mark.logoW === 0
+
+  test("the marquee over the row: facts, no logo and no title, at every size", () => {
+    for (const [width, height] of SIZES) {
+      const at = `${width}x${height}`
+      const run = new Play(model("home"), width, height)
+      run.press("down")
+      for (let step = 0; step < ROW_SLOTS + 1; step++) {
+        const mark = run.view.home.rowMark
+        const tile = lit(run)
+        expect(mark.key, at).not.toBe("")
+        expect(nameless(mark), `${at} ${tile.label}`).toBe(true)
+        expect(mark.facts.count, `${at} ${tile.label}`).toBeGreaterThanOrEqual(1)
+        expect(mark.facts.first.a.text, at).not.toBe("")
+        run.press("right")
+      }
+      // "All games": its count stays, the big word goes.
+      expect(lit(run).kind, at).toBe("nav")
+      const all = run.view.home.rowMark
+      expect(all.key, at).toBe("all")
+      expect(nameless(all), at).toBe(true)
+      expect(all.facts.count, at).toBe(1)
+      expect(all.facts.first.a.text, at).toBe("21 games")
+    }
+  })
+
+  test("a focused poster carries its name line; a logo, a cover and a no-art card name the game themselves", () => {
+    const run = new Play(model("home"), 1920, 1080)
+    run.press("down", "left")
+    const seen = new Set<string>()
+    for (let step = 0; step < ROW_SLOTS + 1; step++) {
+      const tile = lit(run)
+      seen.add(tile.artKind)
+      expect(tile.name, tile.label).toBe(tile.artKind === "poster" ? tile.label : "")
+      // Only the focused tile has a name line.
+      for (const other of run.view.homeRow as any[]) if (other !== tile) expect(other.focused === true && (other.name ?? "") !== "").toBe(false)
+      run.press("right")
+    }
+    expect(seen.has("poster")).toBe(true)
+    expect(seen.has("logo")).toBe(true)
+    // The way into the library says its own words.
+    expect(lit(run).kind).toBe("nav")
+    expect(lit(run).name ?? "").toBe("")
+
+    const bare = new Play(scenario("row-no-art").models[0], 1920, 1080)
+    bare.press("down", "right")
+    expect(lit(bare).artKind).toBe("none")
+    expect(lit(bare).name).toBe("")
+  })
+
+  test("the pick on one window is as it was: its mark names the game, nothing names it over or under the row", () => {
+    for (const [width, height] of SIZES) {
+      const at = `${width}x${height}`
+      const run = new Play(model("home"), width, height)
+      const mark = run.view.home.mark
+      expect(mark.lines > 0 || mark.logoShown, at).toBe(true)
+      expect(run.view.home.rowMark.key, at).toBe("")
+      expect(run.view.homeDepth, at).toBe(0)
+      expect((run.view.homeRow as any[]).every(tile => tile.focused !== true && (tile.name ?? "") === ""), at).toBe(true)
+      // Back from the row: the same pick, the same mark.
+      run.press("down", "right", "up")
+      expect(run.view.home.mark, at).toEqual(mark)
+      expect(run.view.home.rowMark.key, at).toBe("")
+    }
+  })
+})
+
 describe("one catalog window, several lists", () => {
   test("home asks one list after another and tells the answers apart by the query", () => {
     const run = new Play(model("home"))

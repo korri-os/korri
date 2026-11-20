@@ -192,6 +192,8 @@ const scenarios: Scenario[] = [
   { name: "home-one", models: [one], steps: [] },
   { name: "home-undated", models: [undated], steps: [] },
   { name: "row", models: [ready], steps: ["down"] },
+  // A poster in focus: its drawing does not name the game, so its name stands on a line under it.
+  { name: "row-poster", models: [ready], steps: ["down", "right"] },
   { name: "row-no-art", models: [bare], steps: ["down", "right"] },
   { name: "row-all", models: [ready], steps: ["down", "right", "right", "right", "right"] },
   // The library.

@@ -97,6 +97,8 @@ export const NO_IMAGE: Image = { $image: "data:image/png;base64,iVBORw0KGgoAAAAN
  *   nav, system   kind, poster, label, count
  *   a target      focusId, focused, focusRegion
  *   focused, lit  badge, badgeTop (the badge shows on no other tile)
+ *   focused game  name: the name line under it (home's row only), "" where
+ *                 its drawing names the game (`drawsName`) and elsewhere
  *   on a shelf    shelf, rests; in the row: rests; in a set: lit
  *   nothing here  shown: false and no focus id
  */
@@ -111,6 +113,8 @@ export interface TileView {
   readonly poster?: PosterView
   readonly badge?: string
   readonly badgeTop?: boolean
+  /** The name line under the focused tile in home's row; "" when the tile's drawing names the game. */
+  readonly name?: string
   readonly label?: string
   readonly count?: string
   readonly at?: number
@@ -228,17 +232,18 @@ interface Placed {
   readonly count: string | undefined
   readonly badge: string
   readonly badgeTop: boolean
+  readonly name: string | undefined
   readonly out: TileView
 }
 const placed = new Map<string, Placed>()
 
-function place(base: TileView, region: string, focusId: string, focused: boolean, at: number, standing: Standing | undefined, count: string | undefined, badge: string, badgeTop: boolean): TileView {
+function place(base: TileView, region: string, focusId: string, focused: boolean, at: number, standing: Standing | undefined, count: string | undefined, badge: string, badgeTop: boolean, name?: string): TileView {
   const shelf = standing?.shelf
   const rests = standing?.rests
   const known = placed.get(focusId)
   if (
     known !== undefined && known.base === base && known.region === region && known.focused === focused && known.at === at && known.shelf === shelf && known.rests === rests
-    && known.count === count && (!focused || (known.badge === badge && known.badgeTop === badgeTop))
+    && known.count === count && known.name === name && (!focused || (known.badge === badge && known.badgeTop === badgeTop))
   ) return known.out
   const out: TileView = {
     ...base, focusId, focused, focusRegion: region, at,
@@ -246,18 +251,35 @@ function place(base: TileView, region: string, focusId: string, focused: boolean
     // The system's badge shows on the focused tile only. It is sent with every focused tile, an
     // empty one too: a field left out would keep the badge of the tile that stood here before.
     ...(focused ? { badge, badgeTop } : {}),
+    // The name line, likewise: "" where the drawing names the game.
+    ...(name === undefined ? {} : { name }),
     ...(shelf === undefined ? {} : { shelf }),
     ...(rests === undefined ? {} : { rests }),
   }
   if (placed.size > 600) placed.clear()
-  placed.set(focusId, { base, region, focused, at, shelf, rests, count, badge, badgeTop, out })
+  placed.set(focusId, { base, region, focused, at, shelf, rests, count, badge, badgeTop, name, out })
   return out
 }
 
-/** A game's tile on a shelf or in the row. */
-export function gameTile(asked: Pictures, game: Game, region: string, focusId: string, focused: boolean, at: number, standing?: Standing): TileView {
+/**
+ * Whether a tile's drawing names its game, decided from what Velvet itself draws there
+ * (ui/molecules/VelvetTile.slint): the no-art card holds the title at its plate's foot
+ * (owner, 2026-11-13), a square cover has the title under it, and a logo is the name Velvet
+ * chose to show. A poster is a picture Velvet cannot read: it may carry the logo or not, so
+ * it counts as not naming the game. The tile a view sends decides it, so a poster over the
+ * pixel budget, which shows its no-art card, names its game.
+ */
+export const drawsName = (tile: TileView): boolean => tile.kind !== "game" || tile.artKind !== "poster"
+
+/**
+ * A game's tile on a shelf or in the row. `naming`: when focused, it carries its name line
+ * (home's row on one window; the lobby has its own head line, the Floor's Stage names the game).
+ */
+export function gameTile(asked: Pictures, game: Game, region: string, focusId: string, focused: boolean, at: number, standing?: Standing, naming = false): TileView {
   const { view, badgeTop } = budgeted(asked, game)
-  return place(view, region, focusId, focused, at, standing, undefined, game.system ?? "", badgeTop)
+  // Sent with every focused tile, "" for none: a field left out keeps the row's old value.
+  const name = focused ? (naming && !drawsName(view) ? game.title : "") : undefined
+  return place(view, region, focusId, focused, at, standing, undefined, game.system ?? "", badgeTop, name)
 }
 
 /** A game's card where it is no focus target (the pick's card). */

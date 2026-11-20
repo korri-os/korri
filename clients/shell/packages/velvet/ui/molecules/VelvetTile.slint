@@ -10,7 +10,9 @@
 //
 // Focus: the tile grows from its foot (Tokens.focus-scale) and takes the
 // edge; its neighbours never move. The system's badge shows on the focused
-// game only, after the focus has rested.
+// game only, after the focus has rested. In home's row a focused tile whose
+// drawing does not name its game (a poster) has its name on a line under
+// its foot, which the growth never moves (src/art.ts, `drawsName`).
 
 import { Tokens } from "../tokens.slint";
 import { Tile } from "../types.slint";
@@ -34,6 +36,9 @@ export component VelvetTile inherits Rectangle {
     in property <bool> fixed;
     // Under another layer, or a card that only shows: drawn, but no target.
     in property <bool> inert;
+    // How far the name line may run from the card's left edge: the card's width unless the
+    // row keeps more room beside the focused tile (VelvetBrowse).
+    in property <length> name-w: root.width;
     // `focused` counts only on a tile that is a target now (see VelvetRow); `lit` is a set's
     // own flag for its pictures, sent with every one.
     // An animated place is written out from the tile itself, never through a property
@@ -189,6 +194,21 @@ export component VelvetTile inherits Rectangle {
         visible: self.opacity > 0;
         opacity: (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && !root.inert && root.tile.badge != "" && (root.tile.poster.shown || root.tile.art-kind != "none") ? 1 : 0;
         animate opacity { duration: Tokens.t-meta; delay: (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && !root.inert && root.tile.badge != "" ? Tokens.dwell : 0ms; easing: ease-out; }
+    }
+    // The name line: under the foot, from the card's left edge, one line cut short. Outside
+    // the card like the badge; the logic sends a name only where the drawing has none.
+    if root.tile.kind == "game": VelvetWords {
+        x: card.x;
+        y: root.height + Tokens.screen.row-name-gap * Tokens.unit;
+        width: Math.max(card.width, root.name-w);
+        height: Tokens.screen.row-name-h * Tokens.unit;
+        text: root.tile.name;
+        size: Tokens.screen.label * Tokens.unit;
+        ink: Tokens.house-light;
+        strong: true;
+        visible: self.opacity > 0;
+        opacity: (root.tile.shown && root.tile.focus-id != "" && root.tile.focused) && !root.inert && root.tile.name != "" ? 1 : 0;
+        animate opacity { duration: Tokens.t-focus; easing: cubic-bezier(0.4, 0, 0.2, 1); }
     }
     // Over the card, not in it: the card's rounded clip is a GPU layer, drawn again
     // whenever anything inside it changes (#484). The edge stands inside the card's corner.

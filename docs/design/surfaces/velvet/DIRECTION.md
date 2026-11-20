@@ -70,6 +70,7 @@ No live blur anywhere (the authoring gate).
 C1  Loading: the house lights and nothing else, the Menu pill in focus. Error: THE LIBRARY DID NOT OPEN, Try again. Empty: THE STAGE IS YOURS, Find games focused, Open settings beside it. Ready: the pick.
 C2  The pick, the row, the lobby's shelves, a set. A section that is not Korri's own is a shelf, "Plays on <section>". Art of any shape: hero as the stage, logo as the name, poster as the tile, a square cover over a field, else the no-art card (a system poster, or a pattern tile).
 C3  Facts under the name after the dwell: Ready to resume, when it was last played, time played. The Not started shelf holds games never played.
+    In the row under the pick the name stands once (owner, 2026-11-20): the facts over the row, the name on the focused tile's own drawing, or on a line under a poster.
 C33 The detail's note: "Needs a 1.2 GB download before it can start", then its progress, or that it waits behind another.
 C4  The detail. One place: Play (Resume). Two or more: one button a place, "Play on <place>"; none is chosen for the person.
 C5  The detail's More, and `options`: a sheet of the game's actions; a destructive one asks first.

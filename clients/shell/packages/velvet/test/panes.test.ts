@@ -47,14 +47,22 @@ describe("one window", () => {
     expect((stage(one).homeRow as unknown[]).length).toBeGreaterThan(0)
   })
 
-  test("one window still names the row's focused game over the row", () => {
+  // The name in one place (owner, 2026-11-20): the facts over the row, the name on the tile or under it.
+  test("one window keeps the row's focused game's facts over the row, and no name there", () => {
     const run = opened("home", ONE)
     run.press("down", "right")
     const view = stage(run)
     expect(view.home.rowMark.key).not.toBe("")
     expect(view.home.rowMark.key).not.toBe(view.home.mark.key)
-    expect(view.home.rowMark.lines + (view.home.rowMark.logoShown ? 1 : 0)).toBeGreaterThan(0)
+    expect(view.home.rowMark.lines).toBe(0)
+    expect(view.home.rowMark.logoShown).toBe(false)
+    expect(view.home.rowMark.facts.count).toBeGreaterThan(0)
     expect(view.screen.rowMarkH).toBeGreaterThan(0)
+    // The focused tile here is a poster: its name line says the game.
+    const tile = (view.homeRow as any[]).find(entry => entry.focused === true)
+    expect(tile.artKind).toBe("poster")
+    expect(tile.name).toBe(tile.label)
+    expect(view.screen.rowNameH).toBeGreaterThan(0)
   })
 })
 
@@ -212,6 +220,9 @@ describe("a window each", () => {
     expect(s.detail.mark.key).not.toBe(pick)
     expect(f.home.rowMark.key).toBe("")
     expect(f.home.rowMark.lines).toBe(0)
+    // No name line under the focused tile either: the Stage names it.
+    expect((f.homeRow as any[]).filter(entry => entry.focused === true).map(entry => entry.name)).toEqual([""])
+    expect(f.screen.rowNameH).toBe(0)
     // No band is kept for it: the row stands at the top of the Floor, and the library under it has the room.
     const one = new Play(scenario("home").models[0], 1240, 1080)
     one.press("down", "right")

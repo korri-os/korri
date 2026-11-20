@@ -63,7 +63,7 @@ shell, `VELVET_FRAMES` (below) through the test harness.
 | Screen | Scenarios | Component previews |
 | --- | --- | --- |
 | Home: the pick | `home`, `home-no-art`, `home-fresh`, `home-stale`, `home-undated`, `home-one`, `home-menu-pill` | `pages/VelvetBrowse` (Home, HomeNoArt, OneGame), `VelvetPick`, `VelvetStage`, `VelvetMarquee` |
-| The row under the pick | `row`, `row-no-art`, `row-all` | `VelvetBrowse.Row`, `VelvetTile` |
+| The row under the pick | `row`, `row-poster`, `row-no-art`, `row-all` | `VelvetBrowse.Row`, `.RowNamed`, `VelvetTile` (`.PosterNamed`), `VelvetMarquee` (`.RowFacts`, `.RowCount`) |
 | The lobby | `lobby`, `lobby-no-art`, `lobby-not-started`, `lobby-peer`, `lobby-systems` | `VelvetBrowse.Lobby`, `VelvetLobby` |
 | A set | `set`, `set-no-art`, `set-deep`, `set-system`, `set-peer`, `set-pill`, `set-sorted` | `pages/VelvetSet`, `VelvetGrid` |
 | Sort and filter | `set-sort` | `VelvetSheet.Sort` |
@@ -102,6 +102,20 @@ shell, `VELVET_FRAMES` (below) through the test harness.
   Floor draws no marquee over home's row, and its plan (`plan(w, h, true)`)
   stands the row under the pad and gives the library under it the room.
   `src/view.ts` (`stageWindow`, `floorWindow`) and `test/panes.test.ts`.
+- The row names its focused game once (owner, 2026-11-20). Over the row the
+  marquee holds the facts alone (`ROW_FACT_LINES`, two lines; "All games"
+  its count), so the row stands just under them. A focused tile whose drawing
+  does not name its game has its name on one line under its foot, in Archivo
+  at the `label` size, House light, cut short (`name`, `drawsName` in
+  `src/art.ts`). The rule, from what Velvet draws: a no-art card holds the
+  title on its plate, a square cover has it under the picture, a logo is the
+  name Velvet chose, and "All games" says its words; a poster is a picture
+  Velvet cannot read, so it gets the line. A poster over the pixel budget
+  shows its card and gets none. The line stands under the foot, which the
+  focus growth never moves, and the library's peek stands under the line
+  (`rowNameGap`, `rowNameH`, `peekY`). On the Floor's own window there is
+  neither: the Stage names the game. The pick, the detail and the lobby's
+  head line are as they were. `test/browse.test.ts`, `test/plan.test.ts`.
 - One catalog window. Home needs several lists and has one window and one
   query at a time. `src/lists.ts` asks one after another, one question an
   update: `recent` from the start, `mostPlayed`, `recent` from the end,

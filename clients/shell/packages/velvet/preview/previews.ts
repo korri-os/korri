@@ -121,7 +121,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
     { name: "WithBadge", body: one("VelvetFacts", `${pad} y: parent.height / 2; width: parent.width - 2 * self.x; facts: ${l(home.home.mark.facts)}; badge: "PC";`) },
     { name: "TwoLines", body: one("VelvetFacts", `${pad} y: parent.height / 2; width: parent.width - 2 * self.x; facts: ${l(play(scenario("home"), 480, 800).view.home.mark.facts)};`) },
   ])
-  const marks: [string, any][] = [["Logo", home.home.mark], ["Title", view("home-no-art").home.mark], ["LongLogo", view("row").home.rowMark]]
+  const marks: [string, any][] = [["Logo", home.home.mark], ["Title", view("home-no-art").home.mark], ["RowFacts", view("row").home.rowMark], ["RowCount", view("row-all").home.rowMark]]
   for (const component of ["VelvetMark", "VelvetMarquee"]) {
     add("molecules", component, marks.map(([name, mq]) => ({ name, body: one(component, `${pad} y: Tokens.screen.pad-y * ${U}; width: Tokens.screen.hero-w * ${U}; height: parent.height * 0.7; mq: ${l(mq)};`) })))
   }
@@ -146,6 +146,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
   add("molecules", "VelvetTile", [
     tile("Poster", { ...by("poster"), focused: false, lit: false }),
     tile("PosterFocused", { ...by("poster"), focused: true, badge: "PC" }),
+    tile("PosterNamed", (view("row-poster").homeRow as any[]).find(entry => entry.focused === true)),
     tile("Cover", by("cover")),
     tile("Logo", by("logo")),
     tile("NoArt", cards[0]),
@@ -223,7 +224,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
     const v = view(scene)
     return { name, body: one("VelvetBrowse", `${FILL} home: ${p(v.home)}; cards: ${p(v.homeCards)}; row-tiles: ${p(v.homeRow)}; shelves: ${p(v.shelves)}; shelf-tiles: ${p(v.shelfTiles)}; shelf-at: ${v.shelfAt}; depth: ${v.homeDepth};`) }
   }
-  add("pages", "VelvetBrowse", [browse("Home", "home"), browse("HomeNoArt", "home-no-art"), browse("Row", "row"), browse("Lobby", "lobby"), browse("OneGame", "home-one")])
+  add("pages", "VelvetBrowse", [browse("Home", "home"), browse("HomeNoArt", "home-no-art"), browse("Row", "row"), browse("RowNamed", "row-poster"), browse("Lobby", "lobby"), browse("OneGame", "home-one")])
   const detail = (name: string, scene: string) => {
     const v = view(scene)
     return { name, body: one("VelvetDetail", `${FILL} detail: ${p(v.detail)}; cards: ${p(v.detailCards)}; buttons: ${p(v.detailButtons)};`) }

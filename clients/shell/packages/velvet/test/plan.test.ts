@@ -16,7 +16,7 @@
  */
 import { describe, expect, test } from "bun:test"
 import { decodedBytes, logoBox, LOGO_USUAL, PIXEL_BUDGET } from "../src/art"
-import { FOCUS_SCALE, KEY_COLUMNS, KEY_ROWS, MOST_COLUMNS, NARROW_RATIO, PANEL_BESIDE_RATIO, plan, SHELF_SLOTS, TILE_RATIO } from "../src/plan"
+import { FOCUS_SCALE, KEY_COLUMNS, KEY_ROWS, MOST_COLUMNS, NARROW_RATIO, PANEL_BESIDE_RATIO, plan, ROW_FACT_LINES, SHELF_SLOTS, TILE_RATIO } from "../src/plan"
 import { SIZES } from "./korri"
 
 const sweep: [number, number][] = []
@@ -57,7 +57,10 @@ describe("the plan", () => {
       expect(p.rowY + Math.round(p.rowH * FOCUS_SCALE), at).toBeLessThanOrEqual(height)
       if (one.peekY > 0) expect(p.peekY, at).toBeGreaterThan(0)
       // Everything else is the window's plan.
-      expect({ ...p, rowY: 0, rowH: 0, rowGap: 0, rowMarkH: 0, peekY: 0 }, at).toEqual({ ...one, rowY: 0, rowH: 0, rowGap: 0, rowMarkH: 0, peekY: 0 })
+      expect(p.rowNameH, at).toBe(0)
+      expect(p.rowNameGap, at).toBe(0)
+      const rest = { rowY: 0, rowH: 0, rowGap: 0, rowMarkH: 0, rowNameGap: 0, rowNameH: 0, peekY: 0 }
+      expect({ ...p, ...rest }, at).toEqual({ ...one, ...rest })
     }
   })
 
@@ -97,6 +100,30 @@ describe("the plan", () => {
       expect(p.posterX, at).toBeGreaterThanOrEqual(0)
       expect(p.posterX + p.posterH * TILE_RATIO, at).toBeLessThanOrEqual(width)
       expect(p.rowMarkW, at).toBeLessThanOrEqual(width - p.padX)
+    }
+  })
+
+  // The name in one place (owner, 2026-11-20): over the row only its facts, under the focused tile its name.
+  test("the row: a band for its facts over it, its name line under it, both clear of the focus growth and the library's peek", () => {
+    for (const [width, height] of all) {
+      const p = plan(width, height)
+      const at = `${width}x${height}`
+      const facts = Math.round(p.fact * 1.7 * ROW_FACT_LINES)
+      // The band holds the facts and no title: the row stands just under it.
+      expect(p.rowMarkH, at).toBeGreaterThanOrEqual(facts)
+      expect(p.rowMarkH, at).toBeLessThanOrEqual(facts + 1)
+      // The focused tile grows up from its foot and stays clear of the facts.
+      expect(p.rowMarkY + p.rowMarkH, at).toBeLessThanOrEqual(p.rowY - Math.ceil(p.rowH * (FOCUS_SCALE - 1)))
+      // The name line: under the row's foot, one line of the label size, inside the window.
+      const nameTop = p.rowY + p.rowH + p.rowNameGap
+      expect(p.rowNameGap, at).toBeGreaterThan(0)
+      expect(p.rowNameH, at).toBeGreaterThanOrEqual(Math.round(p.label * 1.5))
+      expect(nameTop + p.rowNameH, at).toBeLessThanOrEqual(height)
+      // The library's peek stands under the name line with a gap, or not at all.
+      if (p.peekY > 0) {
+        expect(p.peekY - (nameTop + p.rowNameH), at).toBeGreaterThanOrEqual(p.rowGap)
+        expect(p.peekY, at).toBeLessThan(height - 24)
+      }
     }
   })
 
@@ -171,7 +198,7 @@ describe("a logo's box", () => {
   test("no logo leaves its box, at any of the sizes", () => {
     for (const [width, height] of SIZES) {
       const p = plan(width, height)
-      for (const [boxW, boxH] of [[p.heroW * 0.92, Math.round(p.markH * 1.25)], [p.detailLogoW * 0.92, p.detailLogoH], [p.rowMarkW * 0.92, p.rowMarkH * 0.6]] as [number, number][]) {
+      for (const [boxW, boxH] of [[p.heroW * 0.92, Math.round(p.markH * 1.25)], [p.detailLogoW * 0.92, p.detailLogoH]] as [number, number][]) {
         for (const [w, h] of shapes) {
           const box = logoBox(w, h, boxW, boxH)
           expect(box.width, `${w}x${h} in ${boxW}x${boxH}`).toBeLessThanOrEqual(Math.ceil(boxW))

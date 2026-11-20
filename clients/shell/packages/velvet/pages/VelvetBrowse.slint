@@ -2,8 +2,9 @@
 // view moves over (`depth`).
 //
 //   0  the pick fills the stage; the row under it is a strip of small tiles
-//   1  the strip has grown into a shelf, the focused game's name over it,
-//      and the library shows under it
+//   1  the strip has grown into a shelf, the focused game's facts over it
+//      (its name is the tile's own, or the line under it), and the library
+//      shows under it
 //   2  the lobby: the library's head and its shelves
 //
 // Every part stays on the page at every depth, above or below the window
@@ -134,7 +135,7 @@ export component VelvetBrowse inherits Rectangle {
                     horizontal-alignment: right;
                 }
             }
-            // The focused game's name over the shelf.
+            // The focused game's facts over the shelf; no name: the tile says it, or the line under it.
             VelvetMarquee {
                 x: root.pad-x;
                 y: Tokens.screen.row-mark-y * root.u;
@@ -161,6 +162,9 @@ export component VelvetBrowse inherits Rectangle {
                 height: (root.depth == 0 ? Tokens.screen.strip-h : Tokens.screen.row-h) * Tokens.unit;
                 tile: tile;
                 inert: root.inert;
+                // The row keeps 1.75 tiles in sight from the focused tile's left edge (`x` above):
+                // its name line may run that far, under the empty foot of the tile beside it.
+                name-w: Tokens.screen.row-h * Tokens.tile-ratio * Tokens.unit * 1.75;
                 slides: root.depth == 1;
                 // The load reveal: the strip's tiles come in one after another.
                 opacity: Tokens.revealed ? 1 : 0;

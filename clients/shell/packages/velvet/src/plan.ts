@@ -32,6 +32,14 @@ export const HERO_RATIO = 3.1
 export const TILE_RATIO = 2 / 3
 /** Games in the row under the pick. */
 export const ROW_SLOTS = 4
+/**
+ * Lines of facts over the row while a tile in it has focus. The marquee there holds the
+ * facts alone (owner, 2026-11-20): the game's name is the focused tile's own, or the name
+ * line under it. Facts past these lines give way, the last first.
+ */
+export const ROW_FACT_LINES = 2
+/** A line of facts, in font sizes (ui/molecules/VelvetFacts.slint). */
+const FACT_PITCH = 1.7
 /** Games a lobby shelf shows before "See all": two shelves of posters are what the pixel budget holds. */
 export const SHELF_SLOTS = 5
 /** The most tiles a set shows across: two rows of posters are what the pixel budget holds (src/art.ts). */
@@ -89,10 +97,13 @@ export interface Plan {
   readonly rowY: number
   readonly rowH: number
   readonly rowGap: number
-  /** The focused tile's marquee over the shelf. */
+  /** The focused tile's facts over the shelf (no name: the tile, or the line under it, says it). */
   readonly rowMarkY: number
   readonly rowMarkH: number
   readonly rowMarkW: number
+  /** The name line under a focused tile whose drawing does not name its game: the gap over it, its height. 0 on the Floor's own window. */
+  readonly rowNameGap: number
+  readonly rowNameH: number
   /** Where the library shows under the shelf; 0 when there is no room. */
   readonly peekY: number
   // ---- the library ----
@@ -205,7 +216,7 @@ export function plan(width: number, height: number, floor = false): Plan {
   const stripY = H - padY - stripH
   let posterH: number, posterX: number, posterY: number, gap: number
   let textX: number, textY: number, textW: number, textH: number
-  let markH: number, pickTitle: number, rowH: number, rowY: number, rowMarkW: number
+  let markH: number, pickTitle: number, rowH: number
   if (!narrow) {
     posterH = Math.round(Math.min(H * 0.52, stripY - padY * 1.6, (W * 0.3) / R))
     posterX = padX
@@ -218,8 +229,6 @@ export function plan(width: number, height: number, floor = false): Plan {
     markH = Math.round(clamp(posterH * 0.42, 60, 330))
     pickTitle = Math.round(clamp(posterH * 0.17, 30, 150))
     rowH = Math.round(clamp(H * 0.32, 100, 380))
-    rowY = Math.round(H * 0.46)
-    rowMarkW = Math.round(W * 0.6)
   } else {
     posterH = Math.round(Math.min(H * 0.36, ((W - 2 * padX) * 0.52) / R))
     // One left edge for the card, its words, Play and the strip (owner, 2026-11-13: a centred
@@ -239,18 +248,26 @@ export function plan(width: number, height: number, floor = false): Plan {
     markH = Math.round(clamp(H * 0.1, 44, 120))
     pickTitle = ft(104, 30)
     rowH = Math.round(clamp((W - 2 * padX) / 2.3 / R, 100, 360))
-    rowY = Math.round(H * 0.47)
-    rowMarkW = W - 2 * padX
   }
-  // The Floor's own window: no marquee over the row, which stands under the pad with room
-  // for its focused tile's growth.
-  if (floor) rowY = padY + growOf(rowH)
-  // The shelf never leaves the window: on a short one it yields height first.
-  rowH = Math.min(rowH, Math.max(60, Math.round((H - padY - rowY) / FOCUS_SCALE)))
+  // The row's facts take the width: no title is fitted there.
+  const rowMarkW = W - 2 * padX
+  // Between the facts and the row: the focused tile grows up from its foot into it, all of
+  // its growth, and stays clear of them.
+  const markGap = (tile: number) => Math.max(fs(40, 16), growOf(tile) + fs(12, 6))
+  // The band over the row holds its facts and no more, so the row stands under it. On the
+  // Floor's own window no marquee stands there at all: the row stands under the pad with
+  // room for its focused tile's growth.
+  const rowFactsH = floor ? 0 : Math.round(fact * FACT_PITCH * ROW_FACT_LINES)
+  const rowY = floor ? padY + growOf(rowH) : padY + rowFactsH + markGap(rowH)
+  // The name line under the focused tile (none on the Floor's own window: the Stage names the game).
+  const rowNameH = floor ? 0 : Math.round(label * 1.5)
+  // The shelf and the line under it never leave the window: on a short one the shelf yields height first.
+  rowH = Math.min(rowH, Math.max(60, Math.round((H - padY - rowY - rowNameH) / FOCUS_SCALE)))
   const rowGap = gapOf(rowH)
-  // The focused tile grows up by half its growth: the facts stay clear of it.
-  const rowMarkH = floor ? 0 : Math.max(0, rowY - padY - Math.round(Math.max(fs(40, 16), (rowH * (FOCUS_SCALE - 1)) / 2 + fs(18, 12))))
-  const peek = rowY + Math.round(rowH * FOCUS_SCALE) + Math.round(rowGap * 2)
+  const rowNameGap = floor ? 0 : Math.round(rowGap * 0.4)
+  const rowMarkH = floor ? 0 : Math.max(0, rowY - padY - markGap(rowH))
+  // The library peeks under the row (and under the name line, with a gap of its own over the shelf's label).
+  const peek = floor ? rowY + Math.round(rowH * FOCUS_SCALE) + Math.round(rowGap * 2) : rowY + rowH + rowNameGap + rowNameH + Math.round(rowGap * 2)
   // The marquee widens as type outgrows space (kt over k), so the facts keep one line.
   const heroW = narrow ? W - 2 * padX : Math.round(W * Math.min(0.8, (0.62 * kt) / k))
   // A narrow window stacks: the hero's band (about 3.1 to 1) across the top, the words under it.
@@ -303,7 +320,7 @@ export function plan(width: number, height: number, floor = false): Plan {
     posterX, posterY, posterH, textX, textY, textW, textH,
     heroX: padX, heroY, heroW, heroH, markH, pickTitle,
     stripY, stripH, stripGap: gapOf(stripH),
-    rowY, rowH, rowGap, rowMarkY: padY, rowMarkH, rowMarkW,
+    rowY, rowH, rowGap, rowMarkY: padY, rowMarkH, rowMarkW, rowNameGap, rowNameH,
     peekY: peek < H - 24 ? peek : 0,
     headY: padY, headH, libTop, shelfLabel, shelfRowY, shelfH, shelfGap, shelfPitch, halo,
     columns, tileW, tileH, gridGap, gridInset, gridRows, poolRows,

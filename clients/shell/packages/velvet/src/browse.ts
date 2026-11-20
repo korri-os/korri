@@ -22,13 +22,13 @@
  * launches. Back closes each level.
  */
 import type { CatalogQuery, SurfaceCatalog, SurfaceModel as Model } from "../../../../../contracts/generated/surface"
-import { blankTile, factLines, factsOf, gameTile, hasHero, marqueeOf, mediaOf, navTile, NO_IMAGE, NO_MARQUEE, NO_TILE, setTile, systemTile, type Pictures, type Standing, titleLines, whereOf, type FactView, type MarqueeView, type TileView } from "./art"
-import { fitCaps, textWidth } from "./fit"
+import { blankTile, factLines, factsOf, gameTile, hasHero, marqueeOf, mediaOf, navTile, NO_IMAGE, NO_MARQUEE, NO_TILE, setTile, systemTile, type Pictures, type Standing, whereOf, type FactView, type MarqueeView, type TileView } from "./art"
+import { textWidth } from "./fit"
 import { gridMove, lineMove } from "./focus"
 import { homeOf, sameQuery, shelvesOf, type ShelfItem, type ShelfSpec } from "./lists"
 import { sortWords } from "./pages"
 import { onForget } from "./memo"
-import { TILE_RATIO, type Plan } from "./plan"
+import { ROW_FACT_LINES, TILE_RATIO, type Plan } from "./plan"
 import { NONE, send, type Act, type Direction, type Game, type Request, type SetState, type State } from "./types"
 import { ago, bytes, caps, games as gamesWords } from "./words"
 
@@ -264,10 +264,12 @@ export function homeView(asked: Pictures, state: State, model: Model, plan: Plan
     width: hero ? plan.heroW : plan.textW, logoH: hero ? Math.round(plan.markH * 1.25) : plan.markH, title: hero ? plan.title : plan.pickTitle, fact: plan.fact,
     mark: hero || !cardNames(pick), badge: true, room: pickRoom(plan, hero),
   }, model.publishedAt)
+  // The row's marquee holds the focused tile's facts and no name (owner, 2026-11-20): the
+  // name is in one place, the tile's own drawing or the name line under it (a tile's `name`, src/art.ts).
   const rowGame = depth === 1 && named ? row[state.rowAt] : undefined
   const rowMark = rowGame === undefined ? NO_MARQUEE : rowGame.kind === "game"
-    ? marqueeOf(asked, rowGame.game, { width: plan.rowMarkW, logoH: Math.max(24, plan.rowMarkH - plan.fact * 3.2), title: Math.min(plan.title, Math.max(24, (plan.rowMarkH - plan.fact * 3.2) / 2)), fact: plan.fact, mark: true, badge: false, room: plan.rowMarkH }, model.publishedAt)
-    : { ...NO_MARQUEE, key: "all", ...fitMark("Library", plan.rowMarkW, plan), facts: factLines([{ icon: "grid", text: gamesWords(state.lists.total), strong: false }], plan.fact, plan.rowMarkW) }
+    ? { ...NO_MARQUEE, key: rowGame.game.id, facts: factLines(factsOf(rowGame.game, model.publishedAt), plan.fact, plan.rowMarkW, 0, ROW_FACT_LINES) }
+    : { ...NO_MARQUEE, key: "all", facts: factLines([{ icon: "grid", text: gamesWords(state.lists.total), strong: false }], plan.fact, plan.rowMarkW, 0, ROW_FACT_LINES) }
   // Play holds the pick's focus (owner, 2026-11-13, on usu: A should feel like it plays).
   // The card beside it takes focus with Left and opens the detail; with the hero as the
   // stage there is no card.
@@ -283,7 +285,8 @@ export function homeView(asked: Pictures, state: State, model: Model, plan: Plan
       if (item.kind === "all") rowTiles[at] = navTile("All games", String(state.lists.total), "row", id, focused, at, standing)
       // The pick's own place, at the row's head, stands off the stage's left edge while the
       // row is a strip; it keeps its game, so nothing changes in it as it slides in or away.
-      else rowTiles[at] = gameTile(asked, item.game, "row", id, focused, at, standing)
+      // A focused tile carries its name line where its drawing does not name the game.
+      else rowTiles[at] = gameTile(asked, item.game, "row", id, focused, at, standing, named)
     }
   }
   // The pixel budget goes to what is in sight first (src/art.ts): the row before the shelf
@@ -362,11 +365,6 @@ export function nearest(count: number, from: number): readonly number[] {
     byFrom.set(from, order)
   }
   return order
-}
-
-function fitMark(text: string, width: number, plan: Plan) {
-  const fit = fitCaps(text, width, plan.title * 2, plan.title, 18)
-  return { ...titleLines(fit.lines), size: fit.size }
 }
 
 /** The exits of the home's regions (contract 8.4). */

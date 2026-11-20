@@ -49,6 +49,8 @@ export struct Screen {
     row-mark-y: float,
     row-mark-h: float,
     row-mark-w: float,
+    row-name-gap: float,
+    row-name-h: float,
     peek-y: float,
     head-y: float,
     head-h: float,
@@ -122,6 +124,9 @@ export struct Tile {
     // The system, on the focused game only; at the card's top when its title is low.
     badge: string,
     badge-top: bool,
+    // The name line under the focused tile in home's row: "" where the tile's drawing names
+    // the game (src/art.ts, `drawsName`).
+    name: string,
     label: string,
     count: string,
     // Its place: a column in a row, or its place in the whole set.
