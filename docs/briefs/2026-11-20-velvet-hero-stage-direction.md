@@ -1,344 +1,334 @@
 # Velvet: the whole hero on the stage (direction brief)
 
-Owner decision (2026-11-20): SteamGridDB heroes (1920 x 620, about 3.1 to 1)
-are the stage's standard art, and heavy cropping is not acceptable. This
-brief proposes three stage compositions, recommends one, and states its cost.
-It changes no code.
+Round 2, 2026-11-20. This brief changes no code. Nothing here is built
+until the owner approves the design.
 
-Mockups: `~/code/sandbox/korri-mockups/hero-stage/` (outside the repository:
-its `art/` is third-party art that may not be committed; `CREDITS.md` there).
-`plan.js` there is the layout as one pure function, a port of the pick's part
-of `src/plan.ts` plus the three compositions. The review deck is
-`deck.json` in that folder.
+Owner decisions (ADR 0091, section "The Velvet stage"):
+
+- A picture near 16:9 fills the stage when one exists (IGDB artworks are
+  the likely source).
+- The Band is used only when the only art is a wide hero (SteamGridDB,
+  about 3.1:1). The hero is shown whole, never cut.
+- The bar: "the design can't be shitty". The Band must beat the immersion
+  of today's cut-to-fill stage. Being acceptable is not enough.
+
+Mockups: `~/code/sandbox/korri-mockups/hero-stage/` (outside the
+repository: its `art/` is third-party art that may not be committed;
+`CREDITS.md` there). Round 2 is `band.html` and `band-plan.js`; the motion
+spec and tokens are `DIRECTION.md` there. The review deck is `deck.json`
+there, round 2.
 
 ## Recommendation
 
-**A, the Band.** The hero at the window's full width from the top edge, in
-its own shape, never cut. The rest of the stage is the stage light that
-Velvet already draws (the art's colour, #422). Where the room under the
-picture holds the words, they stand there; where it does not, the logo stands
-over the picture's lower left and Play makes a bar under the picture with the
-facts beside it.
+**The Echo.** The whole hero stands at the top of the stage, sharp and
+still. Behind it, the same picture is cut to fill the whole stage and set
+far back: enlarged, under a veil of the house lit by the game's colour. The
+hero's foot dissolves into its own echo, so there is no edge where the
+picture stops. The stage is picture from edge to edge, as it is today, and
+the hero is still whole.
 
-Cost, in short: about 43 % of a 16:9 window is light, not picture, so the
-pick is less immersive than today's full bleed; the Stage pane alone and tall
-windows show a quiet field of light under the words; and the work touches
-`src/plan.ts`, `src/art.ts`, `VelvetStage`, `VelvetPick` and their tests
-(see "Cost" below).
-
-## The problem
-
-The pick and the detail cut the hero to fill the stage
-(`VelvetStage.slint`: `fit = max(W / w, H / h)`; `src/view.ts` sends
-`fill` true for `home` and `detail`). The share of the hero's width that
-shows is `min(1, (W / H) / 3.1)`:
-
-| Window | Shown today | Cut today |
-| --- | --- | --- |
-| 1920 x 1080 (TV, Odin 2 Portal, Thor top) | 57 % | 43 % |
-| 1280 x 720 | 57 % | 43 % |
-| 1240 x 1080 (RP Mini V2, Thor bottom) | 37 % | 63 % |
-| 640 x 480 (RG353M) | 43 % | 57 % |
-| 900 x 412 (phone, landscape) | 71 % | 29 % |
-| 412 x 900 (phone, portrait) | 15 % | 85 % |
-
-Verified: the 1920 x 1080 figure in Velvet's own frames (`VELVET_FRAMES`,
-`cargo test --features fixture --test velvet_package frames`, scenario
-`home`): the test hero `hero-ember.png` (640 x 206) shows as a zoomed sun.
-The other rows follow from the formula.
-
-Real heroes make the cut worse than the number says. Of 12 heroes in the
-mockup set (5 from SteamGridDB, 7 from the Steam CDN in the same 1920 x 620
-format), Chrono Trigger and Sonic Mania put their subjects in the right
-third: a centred 57 % cut loses Crono and half of Knuckles. A 16:9 cut also
-keeps a 30 % dimmer over the whole picture (`velvet-30`).
-
-## The three compositions
-
-All three keep every capability on screen at every size (Play, the facts,
-the Menu pill, the clock, the row). All three are pure functions of the
-window's width and height, plus one fact of the window's content: whether
-the Floor's strip shares it (ADR 0086: one window, or the Stage pane alone).
-
-| | A Band | B Bleed | C Beside |
+| | Today (cut to fill) | Round 1 Band | Echo (recommended) |
 | --- | --- | --- | --- |
-| The picture | Full width from the top edge, its own shape | Full width; its own edge rows (and columns) stretched to the window's edges under a veil | Its own shape, about 56 % of the width, at the right, the words in a column at the left |
-| Hero shown | 100 % at every size | 100 % at every size | 100 % at every size |
-| Hero share of a 1920 x 1080 window | 1920 x 620 (57 % of the height) | 1920 x 620 plus the bleed | 1075 x 347 (32 % of the height) |
-| Under the picture | The stage light (#422) | The picture's foot, stretched to the window's foot | The stage light, on all sides |
-| Words | Under the picture when the room holds them; else logo over its lower left, Play bar under it | Logo, facts, Play in the lower bleed, over the picture's foot when room is short | A column beside the picture; falls back to A under 1.45 width / room height |
-| Real-hero risks seen | Pale heroes (Chrono Trigger) light the top edge white; a dark logo on the dark house | A shape on the picture's foot row becomes a vertical pole or stripe (10 of 10 heroes in the deck); pale heroes make a grey plane; on a phone the streaks fill the top third | The picture reads as a thumbnail; 1240 x 1080 and 640 x 480 show it at 21 % and 24 % of the height |
-| New pixels | None (same hero) | None (Slint `source-clip-*` on the same image) | None |
-| Distance from today's code | Small: `fill` false already draws a band; the new parts are the plan and the logo's place | Medium: four stretched slices per hero image, two per crossfade layer | Medium: a new layout and its fallback |
+| Hero shown | 57 % of its width on 16:9; 15 % on a portrait phone | 100 % | 100 % |
+| Stage covered by picture | 100 % | 57 % (16:9), the rest flat light | 100 %: 57 % sharp, 43 % the echo |
+| Where the band meets the stage | no band | a dark belt, then flat light | no edge: the foot dissolves into the same picture |
+| Words move when focus moves between a 16:9 game and a Band game | — | — | no: the words' places depend on the window only |
+| New data from Korri | none | none (but the light needs a colour) | none |
 
-Verdict on each (opinion, from the renders):
+Cost, in short: the echo is the cut picture again, so on some heroes a
+large, dim fragment of the subject stands behind the words (a second
+Wario hand, Chrono Trigger's legs). The dim copy is drawn with Slint's
+nearest-pixel sampling, so it is blocky under the veil at 1.7 times and
+more. The work is a new stage composition, not a new constant (see
+"Cost").
 
-- **A** holds every real hero I tried, at every size, and the layout does not
-  move when the focus moves: every hero has one shape, so the logo and Play
-  stand still while the picture changes. That is the fluid part.
-- **B** is the most filled stage on the TV and on the Thor's top display,
-  and where the foot row is calm it reads as a velvet curtain. But every one
-  of the 10 heroes in the deck has its subject or a strong shape on its foot
-  row, and in the bleed renders (1920 x 1080, both windows) each of them
-  shows at least one distinct pole or bright stripe: Zelda's red pole, Super
-  Metroid's blue column, Pokémon Emerald's yellow line, Hollow Knight's white
-  pole, Celeste's red hair, Chrono Trigger's grey plane, a blue water drop in
-  Wario Land 4 (the faintest). A flourish that depends on luck in the art
-  does not earn its place.
-- **C** shows the whole picture and gives the words their own column, but it
-  shrinks the art to a card. It is the least cinematic and loses most on the
-  squarish handhelds. Its structure survives inside A, as A's rule for a
-  wide-short window (the band narrows and keeps the right edge).
+## The four weaknesses, and how the Echo answers them
 
-## Direction (A, the Band)
+| # | Weakness (round 1) | Echo's answer | Cost | Seen on |
+| --- | --- | --- | --- | --- |
+| 1 | A pale hero makes a white bar at the top (Chrono Trigger) | The band's top falls to House down 60 % over its top 40 % (a valance). The stage's two sides fall to 60 % (left) and 48 % (right). The echo's veil is the game's own dark colour, not grey. Three linear gradients over every band, the same for every picture. | A pale hero still has a bright middle. Its echo is a dull olive field. On Chrono Trigger's top row the mean luminance falls from 115 (round 1) to 46 of 255; the band's mean falls from 148 to 121. A dark hero shows none of it, so nothing is lost there. | Game: Chrono Trigger, pale hero |
+| 2 | A dark logo on the dark stage; the stored logo colour is unreliable (Hades `#020101`) | A light rim round every logo: the logo's own shape in House light (Slint `colorize`), eight copies at 1.2 % of its height (alpha 0.50) and eight at 3 % (alpha 0.14), under the logo. It reads no colour from Korri. A logo over the band also stands on the band's shaded foot (House down to 45 %). | 16 extra image draws a logo. A light logo gets a faint glow; a logo with a baked soft shadow (Hollow Knight) gets a slightly brighter edge. A logo smaller than about 40 px (320 x 240) blurs a little. | Logo edge: Light rim / No rim; Window: Stage pane alone; Game: Chrono Trigger |
+| 3 | Tall windows and the Stage pane alone leave plain space under the words | The space under the words is the echo: the picture, dim. The words stand where round 1 put them. | On a pale hero the space is a dim plain colour again. The echo carries no information; it is atmosphere. | Window: Stage pane alone; phone portrait |
+| 4 | The Band covers 57 % of a 16:9 height; less immersive than full bleed | The whole stage is picture, as today's cut. The sharp hero is in front; its last 35 % dissolves into the echo in 24 strips of falling opacity (Slint has no mask). At rest only the echo drifts (6 %, 18 s each way); the hero stays whole and still. | The double image: shapes in the echo repeat the hero's shapes, larger. It reads as depth on most heroes; on a few it reads as a ghost. | Treatment: Echo / Today; the "At rest" clip |
 
-The stage is a cinema with the screen at the top of the house: the game's
-picture runs edge to edge in its own shape, its foot sinks into the dark,
-and below it the house is lit by the picture's own colour. The logo stands
-where the picture lets it: over the picture's lower left when the window is
-short, under the picture when the room holds it. Play and the facts make one
-line under the picture, as Steam's library page does with the same 3.1 to 1
-art. Nothing is cut; nothing moves when the game changes, only the picture
-and the light cross-fade. The one bold thing is still the stage light.
+### With #422 (better, not needed)
+
+#422 asks korrid for a colour a surface can light its stage with. The
+colour korrid computes today (`dominant_color` in
+`services/korrid/src/game_assets.rs`) drops near-black, near-white and grey
+pixels on purpose, so it can never say that a picture is pale or that a logo
+is dark. Verified in the source. The Echo therefore decides nothing from it
+except the light's hue. If korrid later stores a lightness for each picture
+(a schema change; no producer exists, so it is not proposed here), two
+things could improve: the rim only on dark logos, and a stronger valance
+only on pale heroes. Neither is needed for the design to work.
+
+## The three treatments explored
+
+All three keep round 1's slots (the band at the window's width from the top
+edge, the logo over its lower left or under it, Play and the facts on one
+line under it) and the same rim. They differ only in how the band meets the
+stage.
+
+| | Echo (depth) | Spill (light) | Screen (an object) |
+| --- | --- | --- | --- |
+| The idea | The same picture, enlarged and far back, fills the stage; the hero dissolves into it | The hero's foot pours into its own light, which runs down the house | The hero is a lit screen inside the house, its light on the room round it |
+| Weakness 1, pale | Valance, sides, a tinted echo | Valance, sides; the foot turns to the light colour | A pale screen in a dark room is a cinema; it reads as meant |
+| Weakness 2, dark logo | Rim | Rim | Rim |
+| Weakness 3, plain space | Filled with the echo | Not solved: a plain field of light. One window: the strip grows into the room (up to 1.5 times), "the shelf rises" | Not solved: the room round the screen is plain light |
+| Weakness 4, immersion | Full bleed, like today | Less than today: 57 % picture, the rest coloured light | Least: the picture is inset, 51 % of a 16:9 height |
+| Eye lands first | The hero's subject, then the logo, then Play | The same | The screen as an object, then the subject |
+| Verdict (opinion) | Beats cut-to-fill: as full, and the hero is whole | Calm and clean, close to round 1; not more immersive than cut | The most intentional; the least immersive |
+
+## Direction (the Echo)
+
+The stage is a cinema in which the film is already running. The game's
+picture stands whole across the top of the house, sharp and still; behind
+and below it, the same picture fills the room, enlarged and far back in the
+dark, lit by the game's own colour. Where the picture ends, it melts into
+its echo, so the eye never finds an edge. The words stand in the same
+places for every game: a 16:9 game and a Band game differ only in the
+picture and the light, which cross-fade. At rest the echo breathes slowly;
+the picture in front never moves and is never cut. The one bold thing is
+still the stage light, now carried by the picture itself.
 
 ## Token plan
 
 No new colour, type or motion token. The palette, faces and motion table in
-`DIRECTION.md` stand.
+`docs/design/surfaces/velvet/DIRECTION.md` stand. New plan constants:
 
 | Kind | Name | Value | Note |
 | --- | --- | --- | --- |
-| Colour | House down, House light, Usher, Ink, Exit, Velvet, the light | unchanged | `ui/tokens.slint` |
-| Type | Big Shoulders ExtraBold, Archivo semi-condensed | unchanged | |
 | Plan | `HERO_RATIO` | 3.1 | exists |
-| Plan (new) | `BAND_SHARE` | 0.8 | the most of the room's height the band may take before it narrows |
-| Plan (new) | `UNDER_LOGO` | 0.55 | the words stand under the band when a logo there is at least this share of `markH` |
-| Stage | band foot | the last 22 % of the band falls to Velvet 90 %, then the light rises back over 60 % of the band's height | today the band's lower 60 % falls to House down |
-| Stage | dimmer | none over the band | today `velvet-30` over the whole picture |
-| Stage | shade behind a logo over the band | a radial pool of Velvet 60 % at the logo's foot | not over a pale picture under a dark logo (Korri's `color` for each) |
-| Motion | `drift-scale` | 0.03, was 0.10 | the rest drift pushes in at most 3 %: a short cut at rest, gone on any press |
-| Motion | `t-backdrop`, `t-light` | unchanged | cross-fade, no dark dip |
+| Plan | `BAND_SHARE`, `UNDER_LOGO` | 0.8, 0.55 | round 1, unchanged |
+| Stage | `ECHO_VEIL` | 0.80 | the veil's alpha over the echo |
+| Stage | `ECHO_TINT` | 0.35 | the veil's colour: House down 35 % of the way to the stage light |
+| Stage | `ECHO_FOOT`, `SLICES` | 0.35, 24 | the share of the band that dissolves, in strips |
+| Stage | `VALANCE`, `VALANCE_H` | 0.60, 0.40 | the band's top shade |
+| Stage | `WING`, `WING_L`, `WING_R` | 0.60, 0.30, 0.12 | the stage's side shades, full height |
+| Logo | `RIM_NEAR`, `RIM_FAR` | 0.012, 0.03 of the logo's height | alpha 0.50 and 0.14 |
+| Motion | `drift-scale` | 0.06, was 0.10 | applies to the echo and to a 16:9 picture; the band never drifts |
+| Stage | dimmer over a band | none | today `velvet-30` over the whole cut picture; a 16:9 picture keeps it |
 
-## The layout as a function of size
+## Layout as a function of size
 
-`roomBottom` is the strip's top less a gap in one window, else the window's
-foot less `padY`. `rest` is the words under a logo: gap, a fact line, gap,
-the buttons, and in the detail the foot's facts.
+Round 1's plan stands (the rules are in `band-plan.js`, `bandPlan`). The
+words' places are a function of the window only, never of the art:
 
-1. Band height `h = W / 3.1`.
-2. `under` when the window is narrow (`W / H < 0.9`), or when
-   `min(markH, roomBottom - h - 2.2 gap - rest) >= 0.55 markH`.
-3. If not `under`, the bar (gap and the buttons) must stand under the band:
-   `h <= min(0.8 roomBottom, roomBottom - bar - 0.3 padY)`. When it is not,
-   the band yields height and width together, keeps the right edge, and its
-   left edge falls into the dark (8 % of its width), where the logo stands.
-4. The buttons stand side by side when they fit the width, else one under
-   the other. A button never yields; the band yields first.
-5. Yield order: the gaps, then the logo (its box), then the facts on the bar
-   (last first, as `factLines` does today; the detail says every fact), then
-   the band's size. Never the buttons, the Menu pill or the row.
-
-The plan's numbers at the real windows (from `plan.js`):
-
-| Window | Band | Words | Logo box | Bar or words at |
+| Window | Band | Logo | Logo box | Words at |
 | --- | --- | --- | --- | --- |
-| 1920 x 1080, strip | 1920 x 620 | logo over | 211 | y 650 |
+| 1920 x 1080, one window | 1920 x 620 | over the band | 211 | y 650 |
 | 1920 x 1080, Stage pane alone | 1920 x 620 | under | 159 | y 656 |
-| 1280 x 720, strip | 1280 x 413 | logo over | 141 | y 436 |
-| 1240 x 1080, strip | 1240 x 400 | under | 219 | y 430 |
-| 640 x 480, strip | 640 x 207 | logo over | 70 | y 224 |
-| 412 x 900, strip | 412 x 133 | under | 90 | y 153 |
-| 900 x 412, strip | 731 x 236, right edge | logo over | 80 | y 254 |
-| 320 x 240, strip | 318 x 103 | logo over | 36 | y 119 |
-| 320 x 240, detail | 183 x 59, right edge | logo over | 36 | buttons one under the other |
+| 1280 x 720, one window | 1280 x 413 | over | 140 | y 436 |
+| 1240 x 1080, one window | 1240 x 400 | under | 219 | y 430 |
+| 640 x 480, one window | 640 x 207 | over | 70 | y 224 |
+| 640 x 480, Stage pane alone | 640 x 207 | under | 105 | y 227 |
+| 412 x 900 | 412 x 133 | under | 90 | y 153 |
+| 900 x 412, one window | 731 x 236, right edge | over | 80 | y 254 |
+| 320 x 240 | 318 x 103 | over | 36 | y 119 |
+| The detail, 320 x 240 | 183 x 59, right edge | over | 36 | buttons one under the other |
+
+A 16:9 picture fills the stage at every size (owner's rule) and puts its
+words in the same places, over the picture with today's scrim.
 
 ## Wireframes
 
-1920 x 1080, one window (TV, Odin 2 Portal):
+1920 x 1080, one window:
 
 ```
 +--------------------------------------------------------------+
-| HERO 1920 x 620, whole                    4:19 AM  [ Menu ]  |
-|                                                              |
-|                                                              |
-|  [LOGO over the lower left]                                  |
-|__________________ foot falls into the dark __________________|
+|░ HERO 1920 x 620, whole, still            4:19 AM  [ Menu ] ░|
+|░ (valance at the top, the sides shaded)                     ░|
+|  [LOGO + rim, over the lower left]                           |
+|~~~~~~ the hero's last 35 % dissolves into the echo ~~~~~~~~~~|
 |  [> Play]  GBA  Played 2 days ago  14 h 20 min  This device  |
-|                                                              |
-|  the stage light (art colour)                                |
+|  THE ECHO: the same picture, cut to fill, enlarged, veiled   |
 |  [tile][tile][tile][tile][All games]                         |
 +--------------------------------------------------------------+
 ```
 
-1920 x 1080, the Stage pane alone (Thor top display; the Floor is below):
+1920 x 1080, the Stage pane alone (Thor top display):
 
 ```
 +--------------------------------------------------------------+
-| HERO 1920 x 620, whole                    4:19 AM  [ Menu ]  |
-|                                                              |
-|______________________________________________________________|
-|  [LOGO, 159 high]                                            |
+|░ HERO 1920 x 620, whole, still            4:19 AM  [ Menu ] ░|
+|~~~~~~~~~~~~~~~~~~~~~~ dissolves ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~|
+|  [LOGO, 159 high, rim]                                       |
 |  GBA  Played 2 days ago  14 h 20 min  This device            |
 |  [> Play]                                                    |
-|  the stage light                                             |
+|  THE ECHO, darker toward the foot                            |
 +--------------------------------------------------------------+
 ```
 
-1240 x 1080 (RP Mini V2, one window):
+1240 x 1080, 640 x 480 and 320 x 240:
 
 ```
-+------------------------------------------+
-| HERO 1240 x 400        4:19 AM [ Menu ]  |
-|__________________________________________|
-|  [LOGO, 219 high]                        |
-|  GBA  Played 2 days ago  14 h 20 min     |
-|  This device                             |
-|  [> Play]                                |
-|  [tile][tile][tile][tile][All games]     |
-+------------------------------------------+
++------------------------------------+  +---------------------------+  +----------------+
+| HERO 1240 x 400   4:19 [Menu]      |  | HERO 640 x 207 4:19 [Menu]|  | HERO 318 x 103 |
+|~~~~~~~~~~~ dissolves ~~~~~~~~~~~~~~|  | [LOGO] ~~~~~ dissolves ~~~|  | [LOGO]  ~~~~~~ |
+| [LOGO, 219 high]                   |  | [> Play] GBA Played 2 d...|  | [> Play] GBA ..|
+| GBA Played 2 days ago 14 h 20 min  |  | ECHO [t][t][t][t][All]    |  | [t][t][t][t][A]|
+| [> Play]                           |  +---------------------------+  +----------------+
+| ECHO                               |
+| [tile][tile][tile][tile][All]      |
++------------------------------------+
 ```
 
-640 x 480 (RG353M) and 320 x 240:
-
-```
-+--------------------------------+   +----------------+
-| HERO 640 x 207  4:19 [Menu]    |   | HERO 318 x 103 |
-| [LOGO]                         |   | [LOGO]   [Menu]|
-|________________________________|   |________________|
-| [> Play] GBA  Played 2 days... |   | [> Play] GBA ..|
-| [t][t][t][t][All]              |   | [t][t][t][t][A]|
-+--------------------------------+   +----------------+
-```
-
-412 x 900 (phone, portrait) and 900 x 412 (phone, landscape):
+412 x 900 and 900 x 412:
 
 ```
 +------------------+   +----------------------------------------+
-| HERO 412 x 133   |   |dark | HERO 731 x 236, right edge [Menu]|
-|__________________|   |[LOGO over the dark and the fade]        |
-| [LOGO]           |   |_____|__________________________________|
+| HERO 412 x 133   |   |ECHO | HERO 731 x 236, right edge [Menu]|
+|~~~ dissolves ~~~~|   |[LOGO over the echo and the fade]        |
+| [LOGO]           |   |~~~~~|~~~~~~~~~~ dissolves ~~~~~~~~~~~~~~|
 | GBA Played 2 ... |   | [> Play] GBA Played 2 days ago 14 h... |
-| This device      |   | [t][t][t][t][All]                      |
-| [> Play]         |   +----------------------------------------+
-|                  |
-|  the light       |
+| [> Play]         |   | [t][t][t][t][All]                      |
+| ECHO             |   +----------------------------------------+
 | [t][t][All]      |
 +------------------+
 ```
 
-The detail, 1920 x 1080 (Confirm on a game; no strip):
+The detail, 1920 x 1080:
 
 ```
 +--------------------------------------------------------------+
 | HERO 1920 x 620, whole                    4:19 AM  [ Menu ]  |
-|______________________________________________________________|
+|~~~~~~~~~~~~~~~~~~~~~~ dissolves ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~|
 |  [LOGO, 165 high]                                            |
 |  [> Play on This device] [Play on aka]  ... More             |
-|                                                              |
-|  GBA  Played 2 days ago  14 h 20 min  This device            |
+|  ECHO                                                        |
+|  GBC  Played yesterday  31 h  This device                    |
 +--------------------------------------------------------------+
 ```
 
 ## Stress set
 
-| Case | What the Band does | Deck toggle |
+| Case | What the Echo does | Deck toggle |
 | --- | --- | --- |
-| Loading: the hero is not in yet (ADR 0065) | The light alone; the words stand where they will stand with the picture, so nothing moves when it arrives | State: Hero not yet in |
-| Partial: no logo | The title in Big Shoulders caps, fitted to three lines in the logo's box | State: No logo |
-| Ideal | Hero and logo | default |
+| Loading: the hero is not in yet (ADR 0065) | The light alone, no echo; the words stand where they will stand | State: Hero not yet in |
+| Partial: no logo | The title in Big Shoulders caps, fitted to three lines in the logo's box | State: No logo: title |
+| Ideal | Hero, echo, logo with rim | default |
+| A 16:9 picture | Fills the stage, today's dimmer and scrim, the same word places | Game: Hades, 16:9 art |
 | Error, empty library | Unchanged: the curtain and the empty page draw no hero | not drawn |
 | No hero, a poster or no art | Unchanged: the card at the left and the plate or the light | not drawn |
-| Longest title (The Legend of Zelda: Oracle of Seasons) with no logo | Three lines, fitted to the logo's box; the title gives way before a button | Hero: Zelda OoS, State: No logo |
-| Long fact line (Ready to resume, a date, a time, a place) | One line on the bar; facts that do not fit leave, last first; the detail says them all | State: Ready to resume, at 640 x 480 |
-| Missing values (Never played, no time played) | The fact is left out, as today | Hero: Tetris |
-| Pale hero (Chrono Trigger, `color` #cdbba8) | No shade behind a dark logo over it; the corners of the vignette turn grey on white | Hero: Chrono Trigger |
-| Bright hero (Sonic Mania) | The logo carries its own outline; reads | Hero: Sonic Mania |
-| Dark hero (Super Metroid, Hollow Knight) | The band's foot vanishes into the house; the band reads as the top of the room | Hero: Super Metroid |
-| Subject at the picture's foot (Celeste, Wario Land 4) | The foot fade is 22 %, so faces stay lit; today's band fade covers 60 % | Hero: Celeste |
-| Dark logo on the dark house | Not solved: see "Open" | Hero: Chrono Trigger at 900 x 412 |
+| Longest title with no logo (The Legend of Zelda: Oracle of Seasons) | Three lines; the title gives way before a button | Game: Zelda OoS + State: No logo |
+| Long fact line at 320 x 240 | Facts leave last first; the one fact left ends in an ellipsis ("Ready to res…"); the detail says them all | State: Ready to resume, at 320 x 240 |
+| Never played, no time | The fact is left out | Game: Tetris, never played |
+| Pale hero | Valance, sides and a tinted echo; still the weakest case | Game: Chrono Trigger, pale hero |
+| Bright hero (Sonic Mania) | The echo is a bright olive field; the words still read | Game: Sonic Mania |
+| Dark hero (Hollow Knight, Super Metroid) | The best case: hero and echo read as one deep picture | Game: Hollow Knight |
+| Subject at the picture's foot (Celeste) | The foot dissolves over 35 %, so faces at the foot are dimmer than under round 1's 22 % fade | Game: Celeste, faces at foot |
+| Dark logo | The rim | Logo edge |
 | Row counts 0, 1, many | Unchanged: the strip is the Floor's | |
+
+## Motion
+
+| What | Kind | How |
+| --- | --- | --- |
+| Focus moves to another game | Structural | The new stage (hero, echo, light) and the new words cross-fade over the old in 380 ms, cubic-bezier(0.4, 0, 0.2, 1), no dark dip. The words do not move. |
+| At rest | Idle | After 2 s, the echo (or a 16:9 picture) pushes in 6 % and drifts, 18 s each way, a seamless loop. The band does not move. A press stops it at once. |
+| Reduced motion | — | Every change lands at once; no drift |
+
+Evidence: the "Focus" clip in the deck (16:9 Hades, then Wario Land 4 and
+Chrono Trigger as Bands), recorded at 1280 x 720. Its filmstrip shows each
+cross-fade over 3 cells (100 ms a cell) where the spec says 380 ms: the
+recorder dropped about a quarter of its frames, so the count is within one
+cell, not exact. The logo, Play and the facts stay in the same pixels in
+every cell. The reduced-motion clip shows end states only.
 
 ## Copy
 
-No new string. Every visible string is one Velvet already says:
-`Play`, `Resume`, `Play on <place>`, `More`, `Menu`, the clock label from
-Korri, the system badge (`GBA`), `Ready to resume`, `Played 2 days ago`,
-`14 h 20 min`, `This device`, `Never played`, `All games`.
+No new string. Every visible string is one Velvet already says: `Play`,
+`Resume`, `Play on <place>`, `More`, `Menu`, the clock, the system badge,
+`Ready to resume`, `Played 2 days ago`, `14 h 20 min`, `This device`,
+`Never played`, `All games`.
 
 ## Eye flow (1920 x 1080, one window)
 
 | First | Then | Then | Quiet | The one filled action |
 | --- | --- | --- | --- | --- |
-| The picture's subject | The logo | Play | The facts, the clock, the strip | Play |
+| The hero's subject, in the sharp band | The logo at its lower left | Play | The echo, the facts, the clock, the strip | Play |
 
-Checked in the renders: the eye lands on the subject in the band, then on the
-logo at its lower left, then on Play, the only filled shape on the screen.
+Checked in the renders: the sharp band is brighter and finer than its
+veiled echo, so the eye lands on the band, not on the echo's enlarged
+copy of the same subject.
 
 ## Held back
 
 | Considered | Why not |
 | --- | --- |
-| A blurred copy of the hero behind the band | Live blur is forbidden (the authoring gate). A stored blurred copy needs korrid to make and publish another asset; that is a schema change with no producer yet (#422 says so for the colour). Possible later, not needed for A |
-| The bleed (B) as a flourish on top of A | A pole or bright stripe on all 10 heroes in the deck |
-| A slow pan across a cut picture (Ken Burns) | Every frame is a cut picture; the owner ruled out heavy cuts |
-| A mirror of the picture under it, as a stage floor | The software renderer has no flip or rotation |
-| A frame or rule around the picture | Decoration with no information |
+| A blurred copy behind the band | Live blur is forbidden. A stored blurred copy needs a new asset from korrid (a schema change with no producer). The echo's veil and enlargement do most of the work. |
+| A pale stage for pale heroes (the house turns to paper) | Needs a lightness Korri does not have, and it breaks the dark house and the focus edge |
+| The bleed (stretched edge rows) | Round 1: a pole or stripe on all 10 heroes |
+| A mirror of the hero under it | The software renderer has no flip; and it reads as a 2008 web effect |
+| A drift of the band itself | Every frame of it would be a cut picture |
+| A frame or rule round the band | Decoration with no information (Screen keeps one, as its idea) |
 
 ## Grounding
 
-Steam's library page puts the same 3.1 to 1 art (`library_hero`) at the top
-at full width, the logo over its lower left, and the Play button with the
-last-played and play-time facts on a bar under it. This is where the format
-comes from. Inferred from memory of the shipped product, not checked against
-a screenshot here: the Mobbin tools are not available in this runtime, so no
-Mobbin reference was searched.
+The pattern of a whole picture over its own enlarged, dimmed copy is the
+standard answer to art that does not fit its frame in shipped media apps
+(album and film detail pages that sit on a blurred copy of their own art).
+Inferred from memory of those products; the Mobbin tools are not available
+in this runtime, so no reference was searched. Steam's library page is
+still the source of the band and the logo over its lower left.
+
+Slint facts this design depends on, read in the source of
+`i-slint-renderer-software` 1.18.1 (the version the shell pins):
+
+- A scaled picture is sampled at the nearest pixel (`draw_functions.rs`).
+  The mockup draws the echo the same way.
+- `colorize` paints an image's alpha in one colour (`lib.rs`). The rim
+  depends on it.
+- Gradients are linear and circular (`scene.rs`). The shades are linear.
 
 ## Cost
 
 | Item | What |
 | --- | --- |
-| Less picture | On 16:9 the band is 57 % of the height; the rest is light. On tall windows the picture is small (15 % of a portrait phone's height). Today's fill feels bigger, because it is a cut |
-| Quiet field | In the Stage pane alone and on tall windows, the light under the words is empty. It is the stage light, not a hole, but it carries no information |
-| `src/plan.ts` | New fields for the band (height, x, `under`, the logo's box, the bar's row count) and the two constants; tests at one pixel either side of `UNDER_LOGO` and `BAND_SHARE`, and the sweep |
-| `src/view.ts`, `src/art.ts` | `fill` false for `home` and `detail`; the pick and the detail lay out from the band |
-| `VelvetStage.slint` | The band's foot (22 % not 60 %), no `velvet-30` over a band, the narrowed band at the right edge with a left fade, the logo's shade |
-| `VelvetPick.slint` | The logo over or under the band, the bar (buttons and facts on one line) |
-| `drift-scale` | 0.10 to 0.03 (opinion: a 10 % push cuts 10 % at rest) |
-| Gates | `the_backdrop_has_no_seam` must hold with the new foot; `contrast-gate` should cover a logo's shade over a picture |
-| Depends on #422 | The light below the band is the art's colour. Without #422 it is the title's gel, which works but does not match the picture |
+| The double image | On some heroes the echo shows a large, dim copy of the subject next to the sharp one (Wario's hand, Chrono Trigger's legs) |
+| Pale heroes | Improved, not solved: a bright middle and a dull echo |
+| Draw cost | The echo is today's full-stage cut picture plus the band (one more image), 24 strips, the veil, and 16 logo copies. Today's stage already draws a full-stage picture and drifts it. Not measured on the RG353M or the RP Mini V2 |
+| Pixel budget | None: the echo is the same image as the band |
+| `src/plan.ts` | The band's slots (round 1) and the rule that a 16:9 picture uses the same slots; tests one pixel either side of `UNDER_LOGO` and `BAND_SHARE` |
+| `src/art.ts`, `src/view.ts` | The stage view tells the band from a 16:9 picture (needs the picture's shape, which Korri already sends) |
+| `VelvetStage.slint` | A third picture layer (the echo) per cross-fade side, the 24 strips, the veil, the shades. Round 1's dark belt goes |
+| `VelvetMark` / `VelvetPick` | The rim (16 `Image` copies with `colorize`); the logo over or under the band |
+| Gates | `the_backdrop_has_no_seam` must hold across the dissolve; `contrast-gate` should cover Play and the facts over the echo |
 
-What A does not solve: a dark logo on the dark house (below), and the empty
-light on tall windows.
+## What is still weak
 
-What could still go wrong: a hero whose top edge is bright under the clock
-(the top shade helps; check on device); the radial vignette greys the
-corners of a pale hero; the thresholds are guesses until seen on the Thor
-and the TV at viewing distance.
+- Pale heroes: better, but still the weakest case.
+- The double image on heroes with a large subject at the band's foot.
+- The 16:9 rule cuts 74 % of a 16:9 picture's width on a portrait phone
+  (412 x 900). The owner's rule says fill; the Band would show it whole.
+  Not decided here.
+- The 16:9 source is not settled (ADR 0091 "Unresolved"). The deck's 16:9
+  pictures are TheGamesDB fanart, as stand-ins for IGDB artworks; some
+  fanart carries its own logo (Hollow Knight's did, so it is not used).
+- Thresholds and the veil are guesses until seen on the TV and the Thor at
+  viewing distance.
 
-## Open
+## Round 1, in short
 
-- **A dark logo on the dark house.** Chrono Trigger's logo (`color`
-  #59272d) is hard to read where it stands on the house (900 x 412, and on
-  the Stage pane alone). Today's fill has the same problem over a dimmed
-  picture. Proposal: when the logo's `color` is dark (lightness under 0.3),
-  the title in caps stands in its place, unless the logo stands over a pale
-  picture. The `color` Korri sends for a logo is the art's dominant colour;
-  on Hades it reads #020101 for a red and white logo, so this rule needs
-  #422's extractor (ignore near-black) before it can be trusted.
+Round 1 compared three compositions (A Band, B Bleed, C Beside) against
+today's cut. The owner first picked "Today (cut to fill)", then chose the
+Band for wide-only heroes after he learned that 16:9 art exists. Round 1's
+problem table: the share of a 3.1:1 hero that today's cut shows is
+`min(1, (W / H) / 3.1)`: 57 % at 1920 x 1080 and 1280 x 720, 37 % at
+1240 x 1080, 43 % at 640 x 480, 71 % at 900 x 412, 15 % at 412 x 900. B
+put a pole or stripe on all 10 heroes; C shrank the art to a card. Round 1's
+slots and stress cases carry into round 2 unchanged.
 
 ## Checks
 
-- `review-deck check deck.json --toggles` in the mockup folder: 273 frames
-  Passed (7 devices, 2 pages, every toggle once, 6 tour moments), run with
-  Chromium flags that make raster deterministic (`--disable-partial-raster
-  --run-all-compositor-stages-before-draw --num-raster-threads=1`). Without
-  them, repeat captures differed by 1 level in at most 1 of 255 per pixel.
-- Velvet's own frames at 1920 x 1080, 1280 x 720, 1240 x 1080, 640 x 480
-  and 480 x 800 for `home`, `detail` and `row`, through
-  `velvet_package.rs` (`frames`), to confirm today's cut.
+- `review-deck check deck.json --toggles` in the mockup folder: see the
+  report named in the round-2 handoff.
+- Pixel reads in the mockup at 1920 x 1080, Chrono Trigger: the top row's
+  mean luminance 115 (round 1 band), 46 (Echo), 46 (Spill), 54 (Screen).
 
 ## The one thing not to lose
 
-The picture is whole and stands still: every hero has one shape, so the
-words never move when the game changes, and only the picture and its light
-cross-fade.
+The hero is whole and still, and the stage is still full of picture: the
+band in front is never cut and never moves, the echo behind it fills the
+room, and the words stand in the same places for every game.
