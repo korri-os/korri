@@ -12,6 +12,60 @@ use super::{optional_non_null, InheritableLayer, NonEmptyString};
 
 pub const LIBRARY_FILE_NAME: &str = "catalog/library.yaml";
 
+/// Public ids (ADR 0090): an outside authority's key, such as `wikidata`
+/// or `igdb`, to that authority's own ids for one system or game, as text.
+/// Legacy's `externalIds` with a list per authority, not one value.
+pub type ExternalIds = BTreeMap<String, Vec<String>>;
+
+const MAX_AUTHORITIES: usize = 64;
+const MAX_IDS_PER_AUTHORITY: usize = 64;
+const MAX_ID_CHARS: usize = 256;
+
+/// Authority keys and ids are non-empty text with no control character;
+/// an authority has at least one id and no id twice.
+pub fn validate_external_ids(ids: &ExternalIds) -> Result<(), &'static str> {
+    let text = |value: &str| {
+        !value.is_empty()
+            && value.chars().count() <= MAX_ID_CHARS
+            && !value.chars().any(char::is_control)
+    };
+    if ids.len() > MAX_AUTHORITIES {
+        return Err("externalIds has too many authorities");
+    }
+    for (authority, values) in ids {
+        if !text(authority) {
+            return Err("an externalIds authority is 1 to 256 characters of text");
+        }
+        if values.is_empty() || values.len() > MAX_IDS_PER_AUTHORITY {
+            return Err("an externalIds authority has 1 to 64 ids");
+        }
+        if !values.iter().all(|value| text(value)) {
+            return Err("an externalIds id is 1 to 256 characters of text");
+        }
+        let unique: std::collections::BTreeSet<_> = values.iter().collect();
+        if unique.len() != values.len() {
+            return Err("an externalIds authority lists one id twice");
+        }
+    }
+    Ok(())
+}
+
+/// Union per authority: `into`'s ids first, then each new one of `from` in
+/// its order. Returns whether `into` changed.
+pub fn merge_external_ids(into: &mut ExternalIds, from: &ExternalIds) -> bool {
+    let mut changed = false;
+    for (authority, values) in from {
+        let merged = into.entry(authority.clone()).or_default();
+        for value in values {
+            if !merged.contains(value) {
+                merged.push(value.clone());
+                changed = true;
+            }
+        }
+    }
+    changed
+}
+
 /// `library.<id>`. Ids are readable legacy playable-id segments.
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 pub struct LibraryItemPayload {
@@ -63,6 +117,15 @@ pub struct LibraryItemPayload {
         deserialize_with = "optional_non_null"
     )]
     pub metadata: Option<BTreeMap<String, serde_json::Value>>,
+    /// The game's public ids that art plugins matched (ADR 0090). Not part
+    /// of game identity.
+    #[serde(
+        default,
+        rename = "externalIds",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
+    pub external_ids: Option<ExternalIds>,
     /// Ordered, oldest first, non-empty.
     pub releases: Vec<LibraryReleasePayload>,
 }

@@ -54,7 +54,7 @@ pub fn identify_source(
         }
     };
     let pairing = crate::discovery::sources::pairing_key(source.system, source.root);
-    identify_with_rules(
+    identify_cleaned(
         source,
         &members,
         group,
@@ -70,9 +70,15 @@ pub fn identify_source(
                 .filter_map(|release| release.release.system.clone())
                 .collect()
         },
+        &|raw, system| title::clean_discovered_title(registry, raw, system),
         cache,
         budget,
     )
+}
+
+/// Korri's generic title cleaning, for a caller with no plugin registry.
+fn generic_title(raw: &str, _system: &str) -> String {
+    title::clean_title(raw)
 }
 
 /// Core seam for registry-independent consumers and tests. `declared_systems`
@@ -85,6 +91,31 @@ pub fn identify_with_rules(
     group: bool,
     assigned: &dyn Fn(&str, &str, &str) -> Option<String>,
     declared_systems: &dyn Fn(&str) -> Vec<String>,
+    cache: &mut HashCache,
+    budget: &TraversalBudget,
+) -> SourceScan {
+    identify_cleaned(
+        source,
+        members,
+        group,
+        assigned,
+        declared_systems,
+        &generic_title,
+        cache,
+        budget,
+    )
+}
+
+/// `identify_with_rules` with the title cleaning of ADR 0090: `clean_title`
+/// gets each raw captured title and the unit's system.
+#[allow(clippy::too_many_arguments)]
+fn identify_cleaned(
+    source: &SourceInput<'_>,
+    members: &[&ContentRules],
+    group: bool,
+    assigned: &dyn Fn(&str, &str, &str) -> Option<String>,
+    declared_systems: &dyn Fn(&str) -> Vec<String>,
+    clean_title: &dyn Fn(&str, &str) -> String,
     cache: &mut HashCache,
     budget: &TraversalBudget,
 ) -> SourceScan {
@@ -112,6 +143,7 @@ pub fn identify_with_rules(
         group,
         assigned,
         declared_systems,
+        clean_title,
         cache,
         budget,
         &root,
@@ -148,6 +180,7 @@ pub fn unit_paths_with_rules(
         false,
         &|_, _, _| None,
         &|_| Vec::new(),
+        &generic_title,
         &mut HashCache::default(),
         budget,
         &root,
@@ -169,6 +202,7 @@ pub fn identify_planned_with_rules(
     group: bool,
     assigned: &dyn Fn(&str, &str, &str) -> Option<String>,
     declared_systems: &dyn Fn(&str) -> Vec<String>,
+    clean_title: &dyn Fn(&str, &str) -> String,
     changes: &BTreeMap<PathBuf, Option<PathBuf>>,
     cache: &mut HashCache,
     budget: &TraversalBudget,
@@ -235,6 +269,7 @@ pub fn identify_planned_with_rules(
         group,
         assigned,
         declared_systems,
+        clean_title,
         cache,
         budget,
         source.root,
@@ -255,6 +290,7 @@ fn identify_files(
     group: bool,
     assigned: &dyn Fn(&str, &str, &str) -> Option<String>,
     declared_systems: &dyn Fn(&str) -> Vec<String>,
+    clean_title: &dyn Fn(&str, &str) -> String,
     cache: &mut HashCache,
     budget: &TraversalBudget,
     root: &Path,
@@ -442,11 +478,16 @@ fn identify_files(
                     .filter_map(|path| traversal::relative(root, path))
                     .collect(),
                 system: candidate.rules.system.clone(),
-                title: candidate
-                    .captures
-                    .title
-                    .clone()
-                    .unwrap_or_else(|| title::fallback_title(name, &candidate.extension)),
+                // ADR 0090: the captured title always passes through
+                // cleaning; the raw name stays in the location's path.
+                title: clean_title(
+                    &candidate
+                        .captures
+                        .title
+                        .clone()
+                        .unwrap_or_else(|| title::file_stem(name, &candidate.extension)),
+                    &candidate.rules.system,
+                ),
                 version: candidate.captures.version.clone(),
                 region: candidate.captures.region.clone(),
                 identity: candidate.content.identity,

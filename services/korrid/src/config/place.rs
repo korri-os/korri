@@ -160,6 +160,7 @@ pub(crate) fn validate_document_shape(yaml: &str) -> Result<(), String> {
                     "contains",
                     "display",
                     "metadata",
+                    "externalIds",
                     "releases",
                     "profiles",
                     "profile",

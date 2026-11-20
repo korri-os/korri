@@ -1,0 +1,98 @@
+library:
+  secret-of-mana-u:
+    args:
+      prepend: []
+      append: []
+    profiles: {}
+    title: Secret of Mana (U) [!]
+    releases:
+    - id: original
+      system: snes
+      identity:
+        kind: hash
+        value: sha256:1111111111111111111111111111111111111111111111111111111111111111
+  legend-of-zelda-the-oracle-of-ages-usa:
+    profiles: {}
+    title: Legend of Zelda, The - Oracle of Ages (USA)
+    releases:
+    - id: original
+      system: gbc
+      identity:
+        kind: hash
+        value: sha256:2222222222222222222222222222222222222222222222222222222222222222
+  metroid-fusion:
+    profiles: {}
+    title: Metroid Fusion (USA, Australia)
+    releases:
+    - id: original
+      system: gba
+      identity:
+        kind: hash
+        value: sha256:3333333333333333333333333333333333333333333333333333333333333333
+  castlevania:
+    profiles: {}
+    title: Castlevania - Symphony of the Night (USA)
+    releases:
+    - id: original
+      system: psx
+      identity:
+        kind: parts
+        value: sha256:4444444444444444444444444444444444444444444444444444444444444444
+        parts: [a, b]
+  final-fantasy-vii:
+    profiles: {}
+    title: Final Fantasy VII (USA)
+    releases:
+    - id: original
+      system: psx
+      identity:
+        kind: parts
+        value: sha256:5555555555555555555555555555555555555555555555555555555555555555
+        parts: [a, b]
+  super-mario-world:
+    profiles: {}
+    title: My Mario
+    releases:
+    - id: original
+      system: snes
+      identity:
+        kind: hash
+        value: sha256:6666666666666666666666666666666666666666666666666666666666666666
+  wario-land-4:
+    profiles: {}
+    title: Wario Land 4
+    display:
+      flag: yes
+    releases:
+    - id: original
+      system: gba
+      identity:
+        kind: hash
+        value: sha256:7777777777777777777777777777777777777777777777777777777777777777
+  super-off-road:
+    profiles: {}
+    title: Super_Off_Road_(U)
+    releases:
+    - id: original
+      system: snes
+      identity:
+        kind: hash
+        value: sha256:8888888888888888888888888888888888888888888888888888888888888888
+  air-delivery:
+    profiles: {}
+    title: Air Delivery (v1.3)
+    releases:
+    - id: original
+      system: pico8
+      identity:
+        kind: provider
+        value: '@korri:starter-pack/air-delivery'
+  pokemon-emerald:
+    profiles: {}
+    title: Pokémon Emerald
+    releases:
+    - id: original
+      system: gba
+      identity:
+        kind: hash
+        value: sha256:9999999999999999999999999999999999999999999999999999999999999999

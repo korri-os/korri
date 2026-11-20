@@ -447,9 +447,12 @@ export interface GameAssetCandidate {
  * The handler's result (legacy `ListGameAssetCandidatesResponse`): the
  * candidates in the plugin's order of preference, roles in any order.
  * korrid takes the first candidate of each role. Empty: no match.
+ * `externalIds`: the public ids of the matched game, which korrid merges
+ * into the game's record (ADR 0090).
  */
 export interface GameAssetCandidates {
 	candidates: GameAssetCandidate[];
+	externalIds?: Record<string, string[]>;
 }
 
 export interface GameProviderIdentity {
@@ -1512,11 +1515,25 @@ export interface PluginDetailsInput {
 }
 
 /**
- * `game-assets.candidates` input: the game's library title, the only game
- * fact a plugin gets, and every response so far.
+ * The game's system as art plugins see it: its id, its title when a
+ * plugin gives one, and the union of its declared public ids.
+ */
+export interface PluginGameAssetSystem {
+	id: string;
+	title?: string;
+	externalIds: Record<string, string[]>;
+}
+
+/**
+ * `game-assets.candidates` input (ADR 0090): the game's library title, its
+ * system, the game's stored public ids, and every response so far.
+ * `system` is absent for a release that names no system.
  */
 export interface PluginGameAssetCandidatesInput {
 	title: string;
+	system?: PluginGameAssetSystem;
+	/** The game's public ids from earlier matches, by authority. */
+	externalIds: Record<string, string[]>;
 	responses: PluginHttpResponse[];
 }
 
@@ -1749,6 +1766,23 @@ export interface PluginSettingsValidateInput {
 export interface PluginSettingsValidateOutput {
 	valid: boolean;
 	diagnostics?: PluginSettingsDiagnostic[];
+}
+
+/**
+ * `title.clean` input (ADR 0090): the raw captured `{title}` and the
+ * game's system id.
+ */
+export interface PluginTitleCleanInput {
+	title: string;
+	system: string;
+}
+
+/**
+ * `title.clean` output: the clean title, or `{}` when the plugin gives no
+ * answer.
+ */
+export interface PluginTitleCleanOutput {
+	title?: string;
 }
 
 export interface PluginTrustPublisherRequest {

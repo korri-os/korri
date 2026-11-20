@@ -44,6 +44,14 @@ pub struct SystemRecord {
     pub panes: Option<Vec<String>>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub arrangement: Option<String>,
+    /// The system's public ids (ADR 0090): authority key -> that authority's
+    /// own ids, as text. korrid passes them to art plugins and reads none.
+    #[serde(
+        default,
+        rename = "externalIds",
+        deserialize_with = "deserialize_optional_non_null"
+    )]
+    pub external_ids: Option<crate::config::library::ExternalIds>,
 }
 
 /// `systems.<id>.content`: extensions, ordered layouts, evidence and header
@@ -109,6 +117,9 @@ pub struct ContentRules {
     pub layouts: Vec<String>,
     pub evidence: EvidenceRecord,
     pub header: Vec<HeaderRule>,
+    /// The union of every declaring plugin's public ids per authority, in
+    /// plugin id order, without duplicates (ADR 0090).
+    pub external_ids: crate::config::library::ExternalIds,
 }
 
 /// `groups.<id>`: related systems one source can hold (ADR 0001). Only
@@ -680,6 +691,9 @@ impl PluginRegistry {
                 if rules.title.is_none() {
                     rules.title = system.title.clone();
                 }
+                if let Some(ids) = &system.external_ids {
+                    crate::config::library::merge_external_ids(&mut rules.external_ids, ids);
+                }
                 if let Some(content) = &system.content {
                     union(&mut rules.extensions, &content.extensions);
                     if let Some(layouts) = &content.layout {
@@ -1071,6 +1085,19 @@ impl PluginRegistry {
     }
 
     /// Merged content rules for one enabled system, independent of runners.
+    /// Enabled plugins that declare `system`, in plugin id order.
+    pub fn system_plugin_ids(&self, system: &str) -> Vec<&str> {
+        self.enabled_plugin_ids
+            .iter()
+            .filter(|id| {
+                self.plugins
+                    .get(*id)
+                    .is_some_and(|plugin| plugin.systems.values().any(|record| record.id == system))
+            })
+            .map(String::as_str)
+            .collect()
+    }
+
     pub fn content_rules(&self, system: &str) -> Option<&ContentRules> {
         self.content_rules.get(system)
     }
@@ -1346,6 +1373,10 @@ fn normalize_plugin(
         }
         if let Some(content) = &system.content {
             validate_content(local_id, content)?;
+        }
+        if let Some(ids) = &system.external_ids {
+            crate::config::library::validate_external_ids(ids)
+                .map_err(|reason| invalid_contribution("system", local_id, reason))?;
         }
     }
 
@@ -2389,6 +2420,38 @@ mod tests {
         ));
         assert!(registry.content_rules("missing").is_none());
         assert!(registry.pairing_target("missing").is_none());
+    }
+
+    #[test]
+    fn system_public_ids_union_per_authority_in_plugin_id_order() {
+        let a = plugin("a", json!({"systems": {"snes": {"externalIds": {"igdb": ["19"], "wikidata": ["Q183259"]}}}})).unwrap();
+        let b = plugin("b", json!({"systems": {"snes": {"externalIds": {"igdb": ["58", "19"], "no-intro": ["Nintendo - Super Nintendo Entertainment System"]}}}})).unwrap();
+        let c = plugin("c", json!({"systems": {"snes": {}}})).unwrap();
+        let registry = PluginRegistry::new(
+            vec![c, b, a],
+            ["@test:c".into(), "@test:b".into(), "@test:a".into()],
+        )
+        .unwrap();
+        let ids = &registry.content_rules("snes").unwrap().external_ids;
+        assert_eq!(ids["igdb"], ["19", "58"]);
+        assert_eq!(ids["wikidata"], ["Q183259"]);
+        assert_eq!(
+            ids["no-intro"],
+            ["Nintendo - Super Nintendo Entertainment System"]
+        );
+        assert_eq!(ids.len(), 3);
+        for bad in [
+            json!({"igdb": []}),
+            json!({"igdb": [""]}),
+            json!({"": ["19"]}),
+            json!({"igdb": ["19", "19"]}),
+            json!({"igdb": "19"}),
+        ] {
+            assert!(
+                plugin("bad", json!({"systems": {"snes": {"externalIds": bad}}})).is_err(),
+                "{bad}"
+            );
+        }
     }
 
     #[test]

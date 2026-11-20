@@ -1053,6 +1053,33 @@ ADR 0012/0013's cache grammar, readiness, content-hash identity and
   between publishing and recording). Nothing deletes such a folder; the next
   Get of that game records it.
 
+### Title cleaning
+
+ADR 0090 records the decision. A system plugin may carry a pure
+`title.clean` handler: no request turns, no `responses`.
+
+| Operation | Input type | Output type |
+|---|---|---|
+| `title.clean` | `PluginTitleCleanInput { title, system }` | `PluginTitleCleanOutput { title? }` |
+
+`title` is the raw title the layout captured (the file name without its
+extension when no layout captures one); `system` is the system id. The
+handler answers `{ title }`, or `{}` for no answer. Discovery asks only the
+enabled plugins that declare the game's system, in plugin id order, and the
+first answer wins. A failed call, an unknown field, or a blank or control
+character title is no answer. With no answer, korrid's generic cleaning in
+`discovery/title.rs` applies: it strips `(…)` and `[…]` groups, turns `_`,
+`.` and a `-` inside a word into spaces, keeps ` - ` subtitle separators,
+moves a trailing `, The`, `, A` or `, An` of the main title to its front, and
+collapses whitespace. Answers are kept like other pure operations (#289).
+Acquired and declared titles are not cleaned.
+
+A system may declare its public ids as `externalIds`: authority key to a
+list of that authority's ids, as text (`wikidata`, `igdb`, `mobygames`,
+`thegamesdb`, `screenscraper`, `retroachievements`, `no-intro`). korrid
+unions every declaring plugin's lists per authority in plugin id order and
+passes them to art plugins.
+
 ### Artwork
 
 ADR 0032 records the decision, with the roles widened on 2026-11-11 for the
@@ -1091,13 +1118,20 @@ per response, 4 MiB of input, 1000 ms and 16 MiB per call.
 
 | Operation | Input type | Output type |
 |---|---|---|
-| `game-assets.candidates` | `PluginGameAssetCandidatesInput { title, responses }` | `PluginGameAssetCandidatesOutput = PluginHttpRequests \| GameAssetCandidates` |
+| `game-assets.candidates` | `PluginGameAssetCandidatesInput { title, system?, externalIds, responses }` | `PluginGameAssetCandidatesOutput = PluginHttpRequests \| GameAssetCandidates` |
 
-`title` is the game's library title, the only game fact a plugin gets. The
-playable id, the release, the system and every path stay in korrid.
+`title` is the game's library title. `system` is the system of the release
+that owns the art, `{ id, title?, externalIds }`, absent when that release
+names no system; its `externalIds` is the union of the public ids every
+enabled plugin declares for it (ADR 0090). `externalIds` is the game's stored
+public ids from earlier matches, by authority. The playable id, the release
+and every path stay in korrid. korrid reads none of the public ids.
 
 ```ts
-interface GameAssetCandidates { candidates: GameAssetCandidate[] }
+interface GameAssetCandidates {
+  candidates: GameAssetCandidate[]
+  externalIds?: Record<string, string[]>   // the matched game's public ids
+}
 
 interface GameAssetCandidate {
   role: "tile" | "poster" | "hero" | "logo"   // GameAssetRole
@@ -1120,6 +1154,14 @@ role korrid does not admit, an empty `source.id` and a `source.url` with
 credentials, a query or a fragment each refuse the whole answer
 (`ProviderFailed`). A plugin cannot name a provider or a title: korrid writes
 the owning plugin's id as the source's provider, and titles are library data.
+
+`externalIds` in the result names the matched game's ids, keyed by authority.
+korrid merges them into the game's `externalIds` in `catalog/library.yaml`,
+per authority and without duplicates, under discovery's write lock. They are
+not part of game identity, and they do not change the release fingerprint.
+An authority with no id, an empty id or an id given twice refuses the whole
+answer (`ProviderFailed`). A plugin that has a stored id for its own
+authority fetches by it and skips the title search (ADR 0090).
 
 #### What korrid does with the candidates
 

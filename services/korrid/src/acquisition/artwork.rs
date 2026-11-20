@@ -41,14 +41,41 @@ const ATTEMPTS_FILE: &str = "attempts.json";
 /// Games one plugin is asked about in one pass.
 const BATCH_LIMIT: usize = 8;
 
-/// `game-assets.candidates` input: the game's library title, the only game
-/// fact a plugin gets, and every response so far.
+/// `game-assets.candidates` input (ADR 0090): the game's library title, its
+/// system, the game's stored public ids, and every response so far.
+/// `system` is absent for a release that names no system.
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginGameAssetCandidatesInput {
     pub title: String,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "non_null"
+    )]
+    pub system: Option<PluginGameAssetSystem>,
+    /// The game's public ids from earlier matches, by authority.
+    #[typeshare(serialized_as = "HashMap<String, Vec<String>>")]
+    pub external_ids: BTreeMap<String, Vec<String>>,
     pub responses: Vec<PluginHttpResponse>,
+}
+
+/// The game's system as art plugins see it: its id, its title when a
+/// plugin gives one, and the union of its declared public ids.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginGameAssetSystem {
+    pub id: String,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "non_null"
+    )]
+    pub title: Option<String>,
+    #[typeshare(serialized_as = "HashMap<String, Vec<String>>")]
+    pub external_ids: BTreeMap<String, Vec<String>>,
 }
 
 /// Legacy `GameAssetSource` without `provider`: korrid writes the owning
@@ -93,11 +120,20 @@ pub struct GameAssetCandidate {
 /// The handler's result (legacy `ListGameAssetCandidatesResponse`): the
 /// candidates in the plugin's order of preference, roles in any order.
 /// korrid takes the first candidate of each role. Empty: no match.
+/// `externalIds`: the public ids of the matched game, which korrid merges
+/// into the game's record (ADR 0090).
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GameAssetCandidates {
     pub candidates: Vec<GameAssetCandidate>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "non_null"
+    )]
+    #[typeshare(serialized_as = "Option<HashMap<String, Vec<String>>>")]
+    pub external_ids: Option<BTreeMap<String, Vec<String>>>,
 }
 
 #[typeshare(serialized_as = "PluginGameAssetCandidatesOutputWire")]
@@ -580,8 +616,36 @@ impl ArtworkPass {
         report: &mut ArtworkReport,
     ) -> GameOutcome {
         let playable_id = game.playable_id.as_str();
-        let candidates = match self.candidates(&plugin.context, &game.title).await {
-            Ok(candidates) => candidates,
+        let input = asset_input(registry, game);
+        let candidates = match self.candidates(&plugin.context, &input).await {
+            Ok(result) => {
+                if let Some(ids) = result.external_ids.filter(|ids| !ids.is_empty()) {
+                    // Under the write lock, as an image is stored.
+                    let merged = {
+                        let _guard = self.lock();
+                        reconcile::merge_game_external_ids(
+                            &self.readable_root,
+                            &self.private_root,
+                            registry,
+                            game,
+                            &ids,
+                        )
+                    };
+                    match merged {
+                        Ok(true) => {}
+                        Ok(false) => return GameOutcome::Skipped,
+                        Err(error) => {
+                            report.diagnostics.push(diagnostic(
+                                "EnrichmentCatalogWriteFailed",
+                                &error.to_string(),
+                                Some(playable_id),
+                            ));
+                            return GameOutcome::Recorded(AttemptOutcome::Transient);
+                        }
+                    }
+                }
+                result.candidates
+            }
             Err(ProviderError::Unauthorized) => return GameOutcome::Unauthorized,
             Err(ProviderError::CredentialRepeated { host }) => {
                 // The site, not the network, is at fault, and it will be at
@@ -670,20 +734,20 @@ impl ArtworkPass {
         })
     }
 
-    /// Run the handler's turns to its candidates.
+    /// Run the handler's turns to its candidates and matched ids.
     async fn candidates(
         &self,
         context: &ProviderContext,
-        title: &str,
-    ) -> Result<Vec<GameAssetCandidate>, ProviderError> {
+        input: &PluginGameAssetCandidatesInput,
+    ) -> Result<GameAssetCandidates, ProviderError> {
         let result: GameAssetCandidates = turns::run(
             &self.engine,
             context,
             GAME_ASSETS_CANDIDATES,
             |responses| {
                 serde_json::to_string(&PluginGameAssetCandidatesInput {
-                    title: title.to_owned(),
                     responses,
+                    ..input.clone()
                 })
             },
             turns::decode_turn,
@@ -694,7 +758,11 @@ impl ArtworkPass {
                 .admit()
                 .map_err(|reason| ProviderError::Failed(reason.into()))?;
         }
-        Ok(result.candidates)
+        if let Some(ids) = &result.external_ids {
+            crate::config::library::validate_external_ids(ids)
+                .map_err(|reason| ProviderError::Failed(reason.into()))?;
+        }
+        Ok(result)
     }
 
     /// The image a candidate names. This download never carries the secret.
@@ -746,6 +814,26 @@ impl ArtworkPass {
             )
             .map_err(Stored::Asset)?;
         Ok(true)
+    }
+}
+
+/// The handler's first input: the game's title, system and stored ids
+/// (ADR 0090). korrid passes the system's ids and reads none of them.
+fn asset_input(registry: &PluginRegistry, game: &ArtworkGame) -> PluginGameAssetCandidatesInput {
+    PluginGameAssetCandidatesInput {
+        title: game.title.clone(),
+        system: game.system.as_ref().map(|id| {
+            let rules = registry.content_rules(id);
+            PluginGameAssetSystem {
+                id: id.clone(),
+                title: rules.and_then(|rules| rules.title.clone()),
+                external_ids: rules
+                    .map(|rules| rules.external_ids.clone())
+                    .unwrap_or_default(),
+            }
+        }),
+        external_ids: game.external_ids.clone(),
+        responses: Vec::new(),
     }
 }
 

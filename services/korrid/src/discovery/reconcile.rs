@@ -501,6 +501,7 @@ impl DiscoveryCoordinator {
                         contains: None,
                         display: None,
                         metadata: None,
+                        external_ids: None,
                         releases: Vec::new(),
                     },
                 );
@@ -708,6 +709,23 @@ pub(crate) struct ArtworkGame {
     pub release_id: String,
     pub release_fingerprint: String,
     pub rom_identity: String,
+    /// The system of the release that owns the art, when it names one.
+    pub system: Option<String>,
+    /// The game's stored public ids (ADR 0090). Not in the fingerprint: an
+    /// art plugin writes them, and that must not hide the art it stored.
+    pub external_ids: config::library::ExternalIds,
+}
+
+impl ArtworkGame {
+    /// The same record as `other`, whatever public ids either one holds.
+    pub(crate) fn same_record(&self, other: &Self) -> bool {
+        self.playable_id == other.playable_id
+            && self.title == other.title
+            && self.release_id == other.release_id
+            && self.release_fingerprint == other.release_fingerprint
+            && self.rom_identity == other.rom_identity
+            && self.system == other.system
+    }
 }
 pub(crate) fn artwork_games(
     readable_root: &Path,
@@ -787,14 +805,24 @@ pub(crate) fn artwork_games(
                         (!folder_origin && !folder_location).then_some(key)
                     })
                 })?;
+            let system = game
+                .releases
+                .iter()
+                .find(|release| {
+                    release.identity.as_ref().map(|identity| identity.value()) == Some(key)
+                })
+                .and_then(|release| release.system.as_ref())
+                .map(|system| system.0.clone());
+            let mut record = serde_yaml::to_value(game).ok()?.as_mapping()?.clone();
+            record.remove(Value::String("externalIds".into()));
             Some(ArtworkGame {
                 playable_id: id.clone(),
                 title: game.title.clone().unwrap_or_default(),
                 release_id: key.into(),
-                release_fingerprint: fingerprint_mapping(
-                    serde_yaml::to_value(game).ok()?.as_mapping()?,
-                ),
+                release_fingerprint: fingerprint_mapping(&record),
                 rom_identity: key.into(),
+                system,
+                external_ids: game.external_ids.clone().unwrap_or_default(),
             })
         })
         .collect())
@@ -807,7 +835,44 @@ pub(crate) fn current_artwork_game(
 ) -> Result<Option<ArtworkGame>, DiscoveryError> {
     Ok(artwork_games(readable_root, private_root, registry)?
         .into_iter()
-        .find(|game| game == expected))
+        .find(|game| game.same_record(expected)))
+}
+
+/// Merge an art plugin's matched public ids into the game's record
+/// (ADR 0090), per authority. The caller holds the discovery write lock.
+/// `Ok(false)`: the game is no longer `expected`, and nothing was written.
+pub(crate) fn merge_game_external_ids(
+    readable_root: &Path,
+    private_root: &Path,
+    registry: &crate::plugin::PluginRegistry,
+    expected: &ArtworkGame,
+    ids: &config::library::ExternalIds,
+) -> Result<bool, DiscoveryError> {
+    if current_artwork_game(readable_root, private_root, registry, expected)?.is_none() {
+        return Ok(false);
+    }
+    let mut private = PrivateState::read(private_root)?;
+    documents::recover(readable_root, private_root, &mut private)?;
+    let current = Documents::read(readable_root)?;
+    let before = current.validate()?;
+    let mut after = before.clone();
+    let Some(game) = after.library.get_mut(&expected.playable_id) else {
+        return Ok(false);
+    };
+    let mut merged = game.external_ids.clone().unwrap_or_default();
+    if !config::library::merge_external_ids(&mut merged, ids) {
+        return Ok(true);
+    }
+    config::library::validate_external_ids(&merged)
+        .map_err(|reason| DiscoveryError::Invalid(reason.into()))?;
+    game.external_ids = Some(merged);
+    current.commit(
+        current.with_snapshot(&before, &after)?,
+        readable_root,
+        private_root,
+        &mut private,
+    )?;
+    Ok(true)
 }
 #[cfg(test)]
 mod tests;

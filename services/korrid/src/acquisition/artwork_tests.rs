@@ -20,8 +20,10 @@ const CDN: &str = "cdn.art.test";
 const SECRET: &str = "artwork-pass-test-not-a-real-secret";
 
 /// A plugin shaped like the real one: one search turn, then one turn that
-/// asks for the four lists. It checks that it is given the title and the
-/// responses and nothing else, and it never sees a secret.
+/// asks for the four lists. It checks that it is given the title, the
+/// system, the stored ids and the responses and nothing else, and it never
+/// sees a secret. A stored `test` id replaces the search (ADR 0090, id
+/// first), and a search answer's `ids` are returned as the match's ids.
 fn plugin_source(api: &str) -> String {
     format!(
         r#"
@@ -35,21 +37,28 @@ export const handlers = {{
   "claims.details": () => ({{}}),
   "artifact.resolve-download": () => ({{}}),
   "game-assets.candidates": (input) => {{
-    if (Object.keys(input).sort().join() !== "responses,title") {{
+    if (Object.keys(input).sort().join() !== "externalIds,responses,system,title") {{
       throw new Error("unexpected input");
+    }}
+    if (typeof input.system.id !== "string" || typeof input.system.externalIds !== "object"
+      || (input.system.id === "gba" && input.system.title !== "Game Boy Advance")) {{
+      throw new Error("unexpected system");
     }}
     if (JSON.stringify(input).toLowerCase().includes("authorization")) {{
       throw new Error("the plugin must never see a request header");
     }}
     const responses = input.responses;
     const slug = input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const stored = (input.externalIds.test ?? [])[0];
     if (responses.length === 0) {{
-      return {{ _tag: "HttpRequests", requests: [{{ url: API + "/search/" + slug }}] }};
+      const url = stored === undefined ? API + "/search/" + slug : API + "/id/" + stored;
+      return {{ _tag: "HttpRequests", requests: [{{ url }}] }};
     }}
     if (responses[0].status === 404) return {{ candidates: [] }};
     if (!responses[0].ok) throw new Error("search failed");
     const game = JSON.parse(responses[0].text);
-    if (game.candidates) return {{ candidates: game.candidates }};
+    const ids = game.ids ? {{ externalIds: game.ids }} : {{}};
+    if (game.candidates) return {{ candidates: game.candidates, ...ids }};
     if (responses.length === 1) {{
       return {{
         _tag: "HttpRequests",
@@ -65,7 +74,7 @@ export const handlers = {{
           source: {{ id: String(item.id), url: item.url }} }});
       }}
     }});
-    return {{ candidates }};
+    return {{ candidates, ...ids }};
   }},
 }};
 "#
@@ -1001,7 +1010,7 @@ fn a_result_korrid_cannot_admit_is_a_provider_failure_and_downloads_nothing() {
     }
     assert!(matches!(
         turns::decode_turn::<GameAssetCandidates>(r#"{"candidates": []}"#),
-        Ok(turns::Turn::Result(GameAssetCandidates { candidates })) if candidates.is_empty()
+        Ok(turns::Turn::Result(GameAssetCandidates { candidates, .. })) if candidates.is_empty()
     ));
 }
 
@@ -1247,4 +1256,68 @@ fn library_lobby_games_get_art_without_downloads_or_installed_declarations() {
     let report = fixture.pass().run();
     assert_eq!((report.attempted, report.stored), (1, 1));
     assert_eq!(fixture.requests_to("/search/2048gb").len(), 2);
+}
+
+/// ADR 0090: the ids of a match go into the game's record, the art stored
+/// with them stays visible, and the next lookup goes by the stored id.
+#[test]
+fn a_matched_id_is_stored_keeps_the_art_and_the_next_lookup_goes_by_id() {
+    let fixture = Fixture::new(&["Wario Land 4.gba"]);
+    fixture.server.route(
+        "/search/wario-land-4",
+        Route::ok("application/json", r#"{"id":7,"ids":{"test":["7"]}}"#),
+    );
+    fixture.list("logo", 7, &[(400, "/img/logo.png", 40, 13)]);
+    fixture.image("/img/logo.png", png(40, 13));
+
+    let report = fixture.pass().run();
+
+    assert_eq!((report.attempted, report.stored), (1, 1), "{report:?}");
+    let game = fixture.game("Wario Land 4");
+    assert_eq!(
+        game.external_ids,
+        BTreeMap::from([("test".to_owned(), vec!["7".to_owned()])])
+    );
+    let library = fs::read_to_string(fixture.readable.path().join("catalog/library.yaml")).unwrap();
+    assert!(library.contains("externalIds"), "{library}");
+    // Writing the ids changed no fingerprint: the stored logo still shows.
+    assert_eq!(
+        fixture
+            .repository()
+            .assigned_roles(&owner_identity(&game))
+            .unwrap(),
+        BTreeSet::from([GameAssetRole::Logo])
+    );
+    assert_eq!(fixture.outcome(&game), Some(AttemptOutcome::Assigned));
+
+    // Another dump of the game is asked about again, by its stored id.
+    fs::write(
+        fixture.roms.path().join("Wario Land 4.gba"),
+        b"another dump",
+    )
+    .unwrap();
+    fixture.discovery.rescan(&options()).unwrap();
+    assert_eq!(
+        fixture.game("Wario Land 4").external_ids,
+        BTreeMap::from([("test".to_owned(), vec!["7".to_owned()])])
+    );
+    fixture
+        .server
+        .route("/id/7", Route::ok("application/json", r#"{"id":7}"#));
+    assert_eq!(fixture.pass().run().attempted, 1);
+    assert_eq!(fixture.requests_to("/id/7").len(), 1);
+    assert_eq!(fixture.requests_to("/search/").len(), 1);
+}
+
+/// A plugin's ids that korrid cannot store are a provider failure.
+#[test]
+fn ids_korrid_cannot_store_are_a_provider_failure() {
+    let fixture = Fixture::new(&["Wario Land 4.gba"]);
+    fixture.server.route(
+        "/search/wario-land-4",
+        Route::ok("application/json", r#"{"id":7,"ids":{"test":[]}}"#),
+    );
+    let report = fixture.pass().run();
+    assert_eq!(codes(&report), ["ProviderFailed"]);
+    assert!(fixture.game("Wario Land 4").external_ids.is_empty());
 }

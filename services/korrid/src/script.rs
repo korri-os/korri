@@ -42,6 +42,10 @@ pub const LAUNCH_PREPARE: &str = "launch.prepare";
 /// finds images for a game. Admission looks for it and never calls it.
 pub const GAME_ASSETS_CANDIDATES: &str = "game-assets.candidates";
 
+/// A system plugin's title cleaning (ADR 0090): a raw captured title in, a
+/// clean title or no answer out. Pure: no request turns.
+pub const TITLE_CLEAN: &str = "title.clean";
+
 /// Compose a modifier around the preceding plan, before any launch effects.
 pub const LAUNCH_COMPOSE: &str = "launch.compose";
 

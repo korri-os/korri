@@ -1,0 +1,76 @@
+# Shaped like ibuki's device.yaml (2026-11-20): folder releases, a disc set
+# with a descriptor, a disc set without one, and an acquired release.
+storage:
+  snes:
+    root: /srv/roms/snes
+  psx:
+    root: /srv/roms/psx
+sources:
+  snes:
+    kind: [files]
+    storage: snes
+    system: snes
+  psx:
+    kind: [files]
+    storage: psx
+    system: psx
+locations:
+  'sha256:1111111111111111111111111111111111111111111111111111111111111111':
+  - storage: snes
+    path: Secret of Mana (U) [!].sfc
+    discovery:
+      first-seen-at: '2026-10-20T00:00:00Z'
+  'sha256:2222222222222222222222222222222222222222222222222222222222222222':
+  - storage: snes
+    path: zelda/Legend of Zelda, The - Oracle of Ages (USA).gbc
+    discovery:
+      first-seen-at: '2026-10-20T00:00:00Z'
+  'sha256:3333333333333333333333333333333333333333333333333333333333333333':
+  - storage: snes
+    path: Metroid Fusion (USA, Australia).gba
+    discovery:
+      first-seen-at: '2026-10-20T00:00:00Z'
+      missing-since: '2026-11-01T00:00:00Z'
+  'sha256:4444444444444444444444444444444444444444444444444444444444444444':
+  - storage: psx
+    files:
+    - id: descriptor
+      role: descriptor
+      path: Castlevania - Symphony of the Night (USA).cue
+    - id: '1'
+      role: track
+      path: Castlevania - Symphony of the Night (USA) (Track 1).bin
+    discovery:
+      first-seen-at: '2026-10-20T00:00:00Z'
+  'sha256:5555555555555555555555555555555555555555555555555555555555555555':
+  - storage: psx
+    files:
+    - id: '1'
+      role: disc
+      path: Final Fantasy VII (USA) (Disc 1).chd
+    - id: '2'
+      role: disc
+      path: Final Fantasy VII (USA) (Disc 2).chd
+    discovery:
+      first-seen-at: '2026-10-20T00:00:00Z'
+  'sha256:6666666666666666666666666666666666666666666666666666666666666666':
+  - storage: snes
+    path: Super Mario World (U) [!].sfc
+    discovery:
+      first-seen-at: '2026-10-20T00:00:00Z'
+  'sha256:7777777777777777777777777777777777777777777777777777777777777777':
+  - storage: snes
+    path: Wario Land 4.gba
+    discovery:
+      first-seen-at: '2026-10-20T00:00:00Z'
+  'sha256:8888888888888888888888888888888888888888888888888888888888888888':
+  - storage: snes
+    path: Super_Off_Road_(U).sfc
+  'sha256:9999999999999999999999999999999999999999999999999999999999999999':
+  - storage: snes
+    path: Pokémon - Emerald (Rev 1).gba
+    discovery:
+      first-seen-at: '2026-10-20T00:00:00Z'
+  '@korri:starter-pack/air-delivery':
+  - provider: '@korri:starter-pack'
+    ref: air-delivery

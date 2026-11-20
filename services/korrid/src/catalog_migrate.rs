@@ -158,9 +158,16 @@ trait MigrationRules {
         excluded: &[PathBuf],
         rules: &ContentRules,
     ) -> Result<Vec<String>, MigrationError>;
+    /// Discovery's title cleaning (ADR 0090).
+    fn clean_title(&self, raw: &str, _system: &str) -> String {
+        crate::discovery::title::clean_title(raw)
+    }
 }
 
 impl MigrationRules for PluginRegistry {
+    fn clean_title(&self, raw: &str, system: &str) -> String {
+        crate::discovery::title::clean_discovered_title(self, raw, system)
+    }
     fn target(&self, id: &str) -> Option<crate::plugin::PairingTarget<'_>> {
         self.pairing_target(id)
     }
@@ -694,6 +701,7 @@ fn prospective_catalog(
                     .filter_map(|release| release.system.clone())
                     .collect()
             },
+            &|raw, system| registry.clean_title(raw, system),
             &changes,
             &mut cache,
             &TraversalBudget::default(),

@@ -21,13 +21,15 @@ use std::{
 /// The operations that korrid repeats with unchanged input while idle.
 /// Discovery and acquisition turns read new outside facts each time, so their
 /// answers are not kept.
-const REUSED_OPERATIONS: [&str; 6] = [
+const REUSED_OPERATIONS: [&str; 7] = [
     super::SETTINGS_DESCRIBE,
     super::SETTINGS_VALIDATE,
     super::SETTINGS_RENDER,
     super::RUNTIME_RESOLVE,
     super::LAUNCH_PREPARE,
     super::LAUNCH_COMPOSE,
+    // Pure, and asked again for every file at every rescan.
+    super::TITLE_CLEAN,
 ];
 
 /// haku asks about 400 different questions. The bounds leave room for a

@@ -1,0 +1,28 @@
+{
+  "about": "Korri's generic title cleaning (ADR 0090), raw captured title -> clean title. discovery/title.rs and deploy/title-cleaning-migration/migrate.py both test against this file.",
+  "cases": [
+    ["Secret of Mana (U) [!]", "Secret of Mana"],
+    ["Legend of Zelda, The - Oracle of Ages (USA)", "The Legend of Zelda - Oracle of Ages"],
+    ["Metroid Fusion (USA, Australia)", "Metroid Fusion"],
+    ["Legend of Zelda, The - A Link To The Past Four Swords (U) [!]", "The Legend of Zelda - A Link To The Past Four Swords"],
+    ["Legend of Zelda, The - The Minish Cap (U)", "The Legend of Zelda - The Minish Cap"],
+    ["Legend of Zelda, The (USA)", "The Legend of Zelda"],
+    ["Castlevania - Symphony of the Night (USA)", "Castlevania - Symphony of the Night"],
+    ["Teenage Mutant Ninja Turtles IV - Turtles in Time (USA)", "Teenage Mutant Ninja Turtles IV - Turtles in Time"],
+    ["Wario_Land_4 (USA) [!]", "Wario Land 4"],
+    ["Pokémon - Emerald (Rev 1)", "Pokémon - Emerald"],
+    ["Super Mario Bros. 3 (U) (PRG0) [!]", "Super Mario Bros 3"],
+    ["Tetris Battle Gaiden (English) (With Bosses)", "Tetris Battle Gaiden"],
+    ["Yoshi's Island (U) (V1.1)", "Yoshi's Island"],
+    ["Zelda - The Legend of Link", "Zelda - The Legend of Link"],
+    ["Super Metroid - Z-Factor", "Super Metroid - Z Factor"],
+    ["duck-tales-2", "duck tales 2"],
+    ["Adventure, A - Part 2 (Europe)", "A Adventure - Part 2"],
+    ["Elder Scroll, An", "An Elder Scroll"],
+    ["Hello, A Story", "Hello, A Story"],
+    ["Title -  (USA)", "Title"],
+    ["  Spaced    Out   (J)  ", "Spaced Out"],
+    ["(Prototype)", "(Prototype)"],
+    ["A Very Super Mario World", "A Very Super Mario World"]
+  ]
+}

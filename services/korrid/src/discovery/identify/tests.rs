@@ -910,6 +910,7 @@ fn projected_sources_use_future_names_and_match_real_identification_without_earl
         false,
         &|_, _, _| None,
         &|_| vec![],
+        &|raw, _| crate::discovery::title::clean_title(raw),
         &changes,
         &mut Default::default(),
         &TraversalBudget::default(),
@@ -967,6 +968,7 @@ fn projected_budgets_include_existing_empty_directories_and_incoming_parents() {
             false,
             &|_, _, _| None,
             &|_| vec![],
+            &|raw, _| crate::discovery::title::clean_title(raw),
             &changes,
             &mut Default::default(),
             &budget,
@@ -1053,4 +1055,28 @@ fn a_package_file_is_never_hashed_as_an_account_root_path() {
     assert!(report.files.is_empty());
     assert!(report.attention.is_empty());
     assert_eq!(report.hashed_bytes, 0);
+}
+
+/// ADR 0090: a captured `{title}` always passes through title cleaning; the
+/// raw name stays in the unit's path.
+#[test]
+fn a_captured_title_is_cleaned_and_the_path_keeps_the_raw_name() {
+    let root = tempfile::tempdir().unwrap();
+    write(
+        root.path(),
+        "Legend of Zelda, The - Oracle of Ages (USA).gbc",
+        b"rom",
+    );
+    let mut gbc = rules("gbc", &["gbc"]);
+    gbc.layouts = vec!["**/{title}.{ext}".into()];
+    let report = scan(root.path(), &[&gbc], false);
+    assert_eq!(report.units.len(), 1);
+    assert_eq!(
+        report.units[0].title,
+        "The Legend of Zelda - Oracle of Ages"
+    );
+    assert_eq!(
+        report.units[0].path,
+        "Legend of Zelda, The - Oracle of Ages (USA).gbc"
+    );
 }

@@ -340,6 +340,7 @@ fn reconcile_artifact_and_package_releases(
                             contains: None,
                             display: None,
                             metadata: None,
+                            external_ids: None,
                             releases: Vec::new(),
                         },
                     );
@@ -444,6 +445,7 @@ fn reconcile_providers(
                         contains: None,
                         display: None,
                         metadata: None,
+                        external_ids: None,
                         releases: vec![LibraryReleasePayload {
                             id: NonEmptyString(observation.release.id.clone()),
                             system: Some(NonEmptyString(observation.release.system.clone())),
@@ -544,6 +546,7 @@ fn add_unit(
                     contains: None,
                     display: None,
                     metadata: None,
+                    external_ids: None,
                     releases: Vec::new(),
                 },
             );

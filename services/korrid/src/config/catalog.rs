@@ -44,6 +44,10 @@ pub(super) fn validate(snapshot: &ConfigSnapshot) -> Result<(), ConfigSchemaErro
         if item.releases.is_empty() {
             return Err(invalid(&path, "game must declare at least one release"));
         }
+        if let Some(external_ids) = &item.external_ids {
+            super::library::validate_external_ids(external_ids)
+                .map_err(|message| invalid(&path, message))?;
+        }
         let mut ids = BTreeSet::new();
         for release in &item.releases {
             if !valid_local_id(&release.id.0) || !ids.insert(&release.id.0) {
