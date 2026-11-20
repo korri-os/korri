@@ -34,7 +34,8 @@ What it changes, all under the private root:
 `coverAssetId` stays the same: the old tile is square, so it is the largest
 square-ish picture of its game unless the game has no other one.
 
-It is a dry run unless `--apply` is given. It checks everything before it
+It refuses to run while a process named `korrid` runs. It is a dry run
+unless `--apply` is given. It checks everything before it
 writes anything, keeps one backup of the old `assignments.json` beside it
 (`assignments.json.before-measured-media`), and refuses to run on a file that
 is already migrated or that holds a record it does not know. A run that
@@ -176,8 +177,23 @@ def attempt_files(private):
     return found
 
 
+def korrid_running(proc_root=Path('/proc')):
+    """Whether a process named `korrid` runs on this machine."""
+    for entry in proc_root.iterdir():
+        if entry.name.isdigit():
+            try:
+                if (entry / 'comm').read_text().strip() == 'korrid':
+                    return True
+            except (FileNotFoundError, PermissionError, ProcessLookupError):
+                pass
+    return False
+
+
 def run(private, apply=False):
     """Check everything, then change it when `apply`. Returns the report."""
+    # korrid rewrites assignments.json and attempts.json while it runs.
+    if korrid_running():
+        raise Refused('stop korrid before migrating')
     if private.is_symlink() or not private.is_dir():
         raise Refused('the private state root is not a directory')
     owner = private.stat()

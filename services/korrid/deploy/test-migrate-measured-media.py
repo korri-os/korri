@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE / 'migrate-measured-media.py'
@@ -16,6 +17,8 @@ FIXTURES = HERE.parent / 'tests' / 'fixtures' / 'measured-media-migration'
 spec = importlib.util.spec_from_file_location('migration', SCRIPT)
 migration = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(migration)
+# The tests replace it; this one is tested on its own.
+KORRID_RUNNING = migration.korrid_running
 
 BEFORE = (FIXTURES / 'before.assignments.json').read_bytes()
 AFTER = (FIXTURES / 'after.assignments.json').read_bytes()
@@ -23,6 +26,20 @@ PLUGIN = '@korri:steamgriddb'
 OLD_ATTEMPTS = json.dumps({'attempts': {'sha256:aa': {
     'outcome': 'assigned', 'playable_id': 'wario-land-4', 'release_id': 'r',
     'release_fingerprint': 'f', 'rom_identity': 'i'}}}).encode()
+
+
+# The command itself, with no korrid on the machine: a korrid may run on the
+# machine that runs these tests.
+COMMAND_WITHOUT_KORRID = (
+    'import importlib.util, sys\n'
+    'script = sys.argv.pop(1)\n'
+    'spec = importlib.util.spec_from_file_location("migration", script)\n'
+    'migration = importlib.util.module_from_spec(spec)\n'
+    'spec.loader.exec_module(migration)\n'
+    'migration.korrid_running = lambda: False\n'
+    'sys.argv[0] = script\n'
+    'migration.main()\n'
+)
 
 
 class Device:
@@ -59,6 +76,33 @@ class Device:
 
 
 class MigrationTests(unittest.TestCase):
+    def setUp(self):
+        # A korrid may run on the machine that runs these tests.
+        running = mock.patch.object(migration, 'korrid_running', return_value=False)
+        running.start()
+        self.addCleanup(running.stop)
+
+    def test_it_refuses_to_run_while_korrid_runs(self):
+        device = Device(self)
+        before = device.tree()
+        with mock.patch.object(migration, 'korrid_running', return_value=True):
+            for apply in (False, True):
+                with self.assertRaisesRegex(migration.Refused, 'stop korrid'):
+                    migration.run(device.private, apply=apply)
+        self.assertEqual(device.tree(), before)
+
+    def test_korrid_running_reads_each_process_name(self):
+        with tempfile.TemporaryDirectory() as folder:
+            proc = Path(folder)
+            (proc / 'self').mkdir()
+            (proc / '12').mkdir()
+            (proc / '12' / 'comm').write_text('korri-shell\n')
+            (proc / '13').mkdir()  # gone before its name was read
+            self.assertFalse(KORRID_RUNNING(proc))
+            (proc / '14').mkdir()
+            (proc / '14' / 'comm').write_text('korrid\n')
+            self.assertTrue(KORRID_RUNNING(proc))
+
     def test_a_device_is_migrated_in_one_run(self):
         device = Device(self)
         blobs_before = {path.name: path.read_bytes() for path in device.blobs.iterdir()}
@@ -210,7 +254,8 @@ class MigrationTests(unittest.TestCase):
         device = Device(self)
         for arguments, code in [([], 0), (['--apply'], 0), (['--apply'], 1)]:
             result = subprocess.run(
-                [sys.executable, str(SCRIPT), '--private', str(device.private), *arguments],
+                [sys.executable, '-c', COMMAND_WITHOUT_KORRID, str(SCRIPT),
+                 '--private', str(device.private), *arguments],
                 capture_output=True, text=True, check=False)
             self.assertEqual(result.returncode, code, result.stderr)
         self.assertIn('refused, nothing changed', result.stderr)
