@@ -67,6 +67,10 @@ pub enum Problem {
     NotEnabled,
     /// The plugin is on, but its service is not running yet.
     NotRunning,
+    /// The plugin changed since the person approved it; Settings reviews it.
+    NeedsReview,
+    /// The program wrote output korrid does not read (a line too long).
+    BadOutput,
 }
 
 impl Account {
@@ -156,6 +160,22 @@ impl Account {
             } => SurfaceAccountState::Problem {
                 kicker: format!("{title} could not be turned on"),
                 reason: format!("Korri could not start {title}. Try again."),
+                actions: vec![action(RETRY, "Try again")],
+            },
+            Self::Problem {
+                problem: Problem::NeedsReview,
+            } => SurfaceAccountState::Problem {
+                kicker: format!("{title} needs your review"),
+                reason: format!(
+                    "{title} changed since you approved it. Review it in Settings, then sign in."
+                ),
+                actions: vec![action(RETRY, "Try again")],
+            },
+            Self::Problem {
+                problem: Problem::BadOutput,
+            } => SurfaceAccountState::Problem {
+                kicker: format!("{title} sign-in did not finish"),
+                reason: format!("{title} answered in a way Korri cannot read."),
                 actions: vec![action(RETRY, "Try again")],
             },
             Self::Problem {
@@ -270,7 +290,12 @@ mod tests {
             reason: "timeout".into(),
         });
         assert_eq!(ids(&failed.surface(ID, "T")), [action_id(RETRY, ID)]);
-        for problem in [Problem::NotEnabled, Problem::NotRunning] {
+        for problem in [
+            Problem::NotEnabled,
+            Problem::NotRunning,
+            Problem::NeedsReview,
+            Problem::BadOutput,
+        ] {
             assert_eq!(
                 ids(&Account::Problem { problem }.surface(ID, "T")),
                 [action_id(RETRY, ID)]

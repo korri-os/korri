@@ -615,9 +615,9 @@ pub const KORRID_GROUP: &str = "korrid";
 /// The longest one account job runs: a QR sign-in waits up to 15 minutes in
 /// korrid, and this bounds a program that does not end with its input.
 pub const ACCOUNT_RUNTIME_MAX: &str = "20min";
-const ACCOUNT_POLICY: &str = "account-policy-v1: host-generated account sign-in socket for korrid only; the declared program as the plugin's first service's user, reading its runtime directory and with its approved credentials; no capabilities; two connections; bounded runtime";
+const ACCOUNT_POLICY: &str = "account-policy-v1: host-generated account sign-in socket for korrid only; the declared program as the plugin's first service's dynamic user, reading its runtime directory and with its approved credentials; no capabilities; Unix sockets only; system-service calls; two connections; bounded runtime";
 
-/// ADR 0089: for a plugin that declares `accounts`, a socket that only
+/// ADR 0089: for a plugin that declares an `account`, a socket that only
 /// korrid can connect to, and the service template systemd starts for each
 /// connection, with the connection as the program's input and output. The
 /// program runs as the plugin's first declared service's user, beside that
@@ -626,35 +626,40 @@ const ACCOUNT_POLICY: &str = "account-policy-v1: host-generated account sign-in 
 /// package supplies only the program.
 fn account_units(report: &Report) -> Result<Vec<ManagedUnit>, String> {
     let declaration = serde_json::to_value(&report.declaration).map_err(|e| e.to_string())?;
-    let accounts = crate::plugin_references::accounts(&declaration, &report.files)?;
-    let Some(account) = accounts.values().next() else {
+    let Some(account) = crate::plugin_references::account(&declaration, &report.files)? else {
         return Ok(Vec::new());
     };
-    let (declared, service) = report
-        .declaration
-        .services
-        .iter()
-        .find_map(|declared| {
-            report
-                .native_units
-                .get(declared)
-                .filter(|native| native.kind == crate::native_unit::NativeUnitKind::Service)
-                .map(|native| (declared, native))
-        })
-        .ok_or("accounts require a native service for the account program to run beside")?;
+    // The plugin's first declared unit, by the rule korrid also uses
+    // (`plugin_references::account_service`), and it must be a service.
+    const NO_SERVICE: &str =
+        "an account needs the plugin's first native unit to be a service for the account program to run beside";
+    let declared = report.declaration.services.first().ok_or(NO_SERVICE)?;
+    let service = report
+        .native_units
+        .get(declared)
+        .filter(|native| native.kind == crate::native_unit::NativeUnitKind::Service)
+        .ok_or(NO_SERVICE)?;
     let service_name = crate::native_unit::managed_unit_name(declared, service.kind)?;
-    let identity = match service.user.as_deref() {
-        Some("root") => return Err("an account program may not run as root".into()),
-        Some(user) => format!("User={user}\nDynamicUser=no\n"),
-        // systemd names a dynamic user after its unit when User= is unset, so
-        // this shares the running service's uid and its runtime directory.
-        None => format!(
-            "DynamicUser=yes\nUser={}\n",
-            service_name
-                .strip_suffix(".service")
-                .unwrap_or(&service_name)
-        ),
-    };
+    if crate::plugin_references::account_service(&report.declaration.services).as_deref()
+        != Some(service_name.as_str())
+    {
+        return Err(NO_SERVICE.into());
+    }
+    // Only the dynamic user is the approved shape: systemd names it after
+    // the unit when User= is unset, so this shares the running service's uid
+    // and its runtime directory. A named user, root or not, is refused.
+    if service.user.is_some() {
+        return Err(
+            "an account needs the plugin's first service to run as its dynamic user, with no User="
+                .into(),
+        );
+    }
+    let identity = format!(
+        "DynamicUser=yes\nUser={}\n",
+        service_name
+            .strip_suffix(".service")
+            .unwrap_or(&service_name)
+    );
     let program = report.files[&account.program]
         .to_str()
         .ok_or("account program path must be UTF-8")?;
@@ -688,7 +693,7 @@ fn account_units(report: &Report) -> Result<Vec<ManagedUnit>, String> {
         path = crate::plugin_references::account_socket(&report.id).display(),
     );
     let mut template = format!(
-        "[Unit]\nDescription=Account sign-in for {id}\nRequisite={service_name}\nAfter={service_name}\n\n[Service]\nType=simple\nExecStart={program}\nStandardInput=socket\nStandardOutput=socket\nStandardError=journal\nRuntimeMaxSec={ACCOUNT_RUNTIME_MAX}\nRestart=no\nKillMode=control-group\nTimeoutStopSec=10\n{identity}Environment=RUNTIME_DIRECTORY=/run/{runtime_directory}\nUMask=0077\nNoNewPrivileges=yes\nProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\nPrivateDevices=yes\nDevicePolicy=closed\nProtectKernelTunables=yes\nProtectKernelModules=yes\nProtectKernelLogs=yes\nProtectControlGroups=yes\nProtectProc=invisible\nRestrictSUIDSGID=yes\nRestrictRealtime=yes\nRestrictNamespaces=yes\nLockPersonality=yes\nRestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK\nCapabilityBoundingSet=\nAmbientCapabilities=\n",
+        "[Unit]\nDescription=Account sign-in for {id}\nRequisite={service_name}\nAfter={service_name}\n\n[Service]\nType=simple\nExecStart={program}\nStandardInput=socket\nStandardOutput=socket\nStandardError=journal\nRuntimeMaxSec={ACCOUNT_RUNTIME_MAX}\nRestart=no\nKillMode=control-group\nTimeoutStopSec=10\n{identity}Environment=RUNTIME_DIRECTORY=/run/{runtime_directory}\nUMask=0077\nNoNewPrivileges=yes\nProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\nPrivateDevices=yes\nDevicePolicy=closed\nProtectKernelTunables=yes\nProtectKernelModules=yes\nProtectKernelLogs=yes\nProtectControlGroups=yes\nProtectProc=invisible\nRestrictSUIDSGID=yes\nRestrictRealtime=yes\nRestrictNamespaces=yes\nLockPersonality=yes\nRestrictAddressFamilies=AF_UNIX\nSystemCallFilter=@system-service\nCapabilityBoundingSet=\nAmbientCapabilities=\n",
         id = report.id,
     );
     for credential in &service.credentials {
@@ -955,7 +960,7 @@ mod tests {
         report.declaration = crate::declaration::Declaration::evaluate(
             "@korri",
             "export const name = 'tailscale'; export const services = ['tailscaled']; \
-             export const accounts = { tailscale: { title: 'Tailscale', program: 'account', offer: 'Private network: reach your devices from anywhere' } };",
+             export const account = { title: 'Tailscale', program: 'account', offer: 'Private network: reach your devices from anywhere' };",
         )
         .unwrap();
         report.native_units = std::collections::BTreeMap::from([(
@@ -1013,6 +1018,8 @@ mod tests {
             "CapabilityBoundingSet=".into(),
             "AmbientCapabilities=".into(),
             "LoadCredential=authkey:tailscale-authkey".into(),
+            "RestrictAddressFamilies=AF_UNIX".into(),
+            "SystemCallFilter=@system-service".into(),
         ] {
             assert!(
                 template_lines.contains(&expected),
@@ -1048,20 +1055,24 @@ mod tests {
     }
 
     #[test]
-    fn an_account_needs_an_unprivileged_service_and_a_plugin_without_one_gets_no_units() {
-        assert_eq!(
-            managed_units(&account_report(
-                "[Service]\nType=exec\nUser=root\nExecStart=/nix/store/00000000000000000000000000000000-x/bin/x\n"
-            ))
-            .err()
-            .as_deref(),
-            Some("an account program may not run as root")
-        );
+    fn an_account_needs_a_dynamic_user_service_and_a_plugin_without_one_gets_no_units() {
+        // Root or a named user: only the dynamic user is the approved shape.
+        for user in ["root", "tailscale"] {
+            assert_eq!(
+                managed_units(&account_report(&format!(
+                    "[Service]\nType=exec\nUser={user}\nExecStart=/nix/store/00000000000000000000000000000000-x/bin/x\n"
+                )))
+                .err()
+                .as_deref(),
+                Some("an account needs the plugin's first service to run as its dynamic user, with no User="),
+                "{user}"
+            );
+        }
         let mut none = account_report(TAILSCALED);
         none.native_units.clear();
         assert_eq!(
             managed_units(&none).err().as_deref(),
-            Some("accounts require a native service for the account program to run beside")
+            Some("an account needs the plugin's first native unit to be a service for the account program to run beside")
         );
         assert_eq!(managed_units(&report()).unwrap().len(), 1);
     }

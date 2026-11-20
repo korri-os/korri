@@ -96,14 +96,14 @@ pub struct Declaration {
         skip_serializing_if = "Option::is_none"
     )]
     pub config: Option<BTreeMap<String, serde_json::Value>>,
-    /// ADR 0089: the plugin's account sign-in. `plugin_references::accounts`
+    /// ADR 0089: the plugin's account sign-in. `plugin_references::account`
     /// checks it against the package's files; the host generates its units.
     #[serde(
         default,
         deserialize_with = "optional_non_null",
         skip_serializing_if = "Option::is_none"
     )]
-    pub accounts: Option<BTreeMap<String, serde_json::Value>>,
+    pub account: Option<serde_json::Value>,
 }
 
 pub fn valid_name(name: &str) -> bool {

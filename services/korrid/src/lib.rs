@@ -5489,18 +5489,10 @@ impl surface::account_sign_ins::PluginAccountAccess for PluginAccountFacts {
 
     fn service(&self, plugin: &str) -> Option<String> {
         let (_, registry) = self.state.acquisition_context().ok()?;
-        // The plugin host runs the account program beside the first declared
-        // service (plugin-host `unit.rs` account_units); a socket is not one.
-        registry.plugin(plugin).and_then(|plugin| {
-            plugin
-                .services()
-                .iter()
-                .find(|name| !name.ends_with(".socket"))
-                .map(|name| match name.ends_with(".service") {
-                    true => name.clone(),
-                    false => format!("{name}.service"),
-                })
-        })
+        // The plugin host's own rule (plugin-host `unit.rs` account_units).
+        registry
+            .plugin(plugin)
+            .and_then(|plugin| plugin_references::account_service(plugin.services()))
     }
 
     fn active(&self, service: &str) -> bool {

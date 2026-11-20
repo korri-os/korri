@@ -38,9 +38,11 @@ impl AccountHosts for SocketHosts {
     }
 }
 
-/// One program's event line is a bounded JSON event; a longer line is
-/// dropped.
+/// One program's event line is a bounded JSON event. A longer line ends the
+/// job: the program is not speaking the protocol.
 const MAX_LINE: usize = 64 * 1024;
+/// One `poll` reads at most this much; the rest waits for the next call.
+const MAX_POLL_BYTES: usize = 256 * 1024;
 /// How long one `poll` waits for output.
 const READ_WAIT: Duration = Duration::from_millis(50);
 
@@ -48,6 +50,7 @@ pub struct Job {
     stream: UnixStream,
     partial: Vec<u8>,
     ended: bool,
+    overflowed: bool,
 }
 
 impl Job {
@@ -59,6 +62,7 @@ impl Job {
             stream,
             partial: Vec::new(),
             ended: false,
+            overflowed: false,
         })
     }
 
@@ -67,15 +71,26 @@ impl Job {
     }
 
     /// The events written since the last call; waits at most `READ_WAIT`
-    /// for the first byte.
+    /// for the first byte and reads at most `MAX_POLL_BYTES`. A line longer
+    /// than `MAX_LINE` ends the job (`overflowed`).
     pub fn poll(&mut self) -> Vec<Event> {
         let mut events = Vec::new();
         let mut buffer = [0_u8; 8192];
-        while !self.ended {
+        let mut read = 0;
+        while !self.ended && read < MAX_POLL_BYTES {
             match self.stream.read(&mut buffer) {
                 Ok(0) => self.ended = true,
                 Ok(count) => {
+                    read += count;
                     self.partial.extend_from_slice(&buffer[..count]);
+                    self.take_lines(&mut events);
+                    if self.partial.len() > MAX_LINE {
+                        self.partial.clear();
+                        self.overflowed = true;
+                        self.ended = true;
+                        let _ = self.stream.shutdown(std::net::Shutdown::Both);
+                        break;
+                    }
                     if count < buffer.len() {
                         break;
                     }
@@ -92,21 +107,30 @@ impl Job {
                 Err(_) => self.ended = true,
             }
         }
-        while let Some(end) = self.partial.iter().position(|byte| *byte == b'\n') {
-            let line: Vec<u8> = self.partial.drain(..=end).collect();
-            if let Some(event) = std::str::from_utf8(&line).ok().and_then(protocol::parse) {
-                events.push(event);
-            }
-        }
-        if self.partial.len() > MAX_LINE {
-            self.partial.clear();
-        }
         events
     }
 
-    /// False once the program closed its output.
+    /// Move each complete line out of `partial`, parsed.
+    fn take_lines(&mut self, events: &mut Vec<Event>) {
+        let mut start = 0;
+        while let Some(end) = self.partial[start..].iter().position(|byte| *byte == b'\n') {
+            let line = &self.partial[start..start + end + 1];
+            if let Some(event) = std::str::from_utf8(line).ok().and_then(protocol::parse) {
+                events.push(event);
+            }
+            start += end + 1;
+        }
+        self.partial.drain(..start);
+    }
+
+    /// False once the program closed its output, or the job ended.
     pub fn running(&self) -> bool {
         !self.ended
+    }
+
+    /// The program wrote a line longer than `MAX_LINE`; the job ended.
+    pub fn overflowed(&self) -> bool {
+        self.overflowed
     }
 }
 
@@ -253,6 +277,52 @@ echo '{"event":"signed_out","reason":"input_ended"}' >&2"#;
             );
             std::thread::sleep(Duration::from_millis(20));
         }
+    }
+
+    /// A program that floods its output with no line end: each poll reads a
+    /// bounded amount, and the job ends as soon as the line passes the limit.
+    #[test]
+    fn a_program_that_floods_its_output_ends_the_job() {
+        let temp = tempfile::tempdir().unwrap();
+        let hosts = ProcessHosts {
+            program: script(
+                temp.path(),
+                r#"echo '{"event":"signed_out"}'
+exec tr -d '\n' < /dev/zero"#,
+            ),
+        };
+        let mut job = Job::start(&hosts, "@korri:fake").unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut events = Vec::new();
+        while job.running() {
+            assert!(std::time::Instant::now() < deadline, "the flood went on");
+            events.extend(job.poll());
+            assert!(job.partial.len() <= MAX_LINE);
+        }
+        assert!(job.overflowed());
+        assert_eq!(events, [Event::SignedOut { reason: None }]);
+        assert!(job.poll().is_empty());
+    }
+
+    /// Many short lines in one write are each read; a poll stops at its cap.
+    #[test]
+    fn one_poll_reads_a_bounded_amount() {
+        let temp = tempfile::tempdir().unwrap();
+        let hosts = ProcessHosts {
+            program: script(temp.path(), r#"yes '{"event":"other"}' | head -n 100000"#),
+        };
+        let mut job = Job::start(&hosts, "@korri:fake").unwrap();
+        std::thread::sleep(Duration::from_millis(500));
+        let first = job.poll();
+        // 18 bytes a line: one poll reads at most MAX_POLL_BYTES and one
+        // more buffer, far less than the 1.8 MB the program wrote.
+        assert!(!first.is_empty());
+        assert!(
+            first.len() <= (MAX_POLL_BYTES + 8192) / 18,
+            "{}",
+            first.len()
+        );
+        assert!(!job.overflowed());
     }
 
     #[test]

@@ -196,8 +196,8 @@ runner fields name package file keys as described below.
 `sessionControls` is an unknown export and fails admission. `services` names
 native units packaged by `plugin.nix`. The Linux host selects those units; the data registry validates the names but does not
 activate them or change its existing records. `daemons` and the old `contributes`
-wrapper are rejected. No TypeScript export encodes systemd directives. `accounts` (ADR 0089)
-declares at most one account sign-in: `{ <key>: { title, program, offer?, logo? } }`.
+wrapper are rejected. No TypeScript export encodes systemd directives. `account` (ADR 0089)
+declares the plugin's one account sign-in: `{ title, program, offer?, logo? }`.
 `program` and `logo` (an `.svg`) are keys of the plugin's own `files`. The
 plugin host runs `program` for each korrid connection to a socket it generates
 for the plugin, as the plugin's first service's user; `services/korrid/src/account_sign_in/`

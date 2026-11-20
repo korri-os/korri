@@ -1639,8 +1639,8 @@ export interface PluginOtherInstall {
 	id: string;
 	title?: string;
 	enabled: boolean;
-	/** As `PluginRepositoryInstall.accounts`. */
-	accounts?: Record<string, PluginAccount>;
+	/** As `PluginRepositoryInstall.account`. */
+	account?: PluginAccount;
 }
 
 /** Publishers emits only Bound or Trusted; the shared state type also serves inspection. */
@@ -1664,10 +1664,10 @@ export interface PluginRepositoryInstall {
 	releaseVersion: string;
 	enabled: boolean;
 	/**
-	 * The installed declaration's `accounts` (ADR 0089), on or off. Absent
+	 * The installed declaration's `account` (ADR 0089), on or off. Absent
 	 * when it declares none or cannot be read.
 	 */
-	accounts?: Record<string, PluginAccount>;
+	account?: PluginAccount;
 }
 
 export interface PluginRepositories {

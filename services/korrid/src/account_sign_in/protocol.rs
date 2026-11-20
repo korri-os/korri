@@ -59,6 +59,19 @@ pub enum Event {
     Other,
 }
 
+/// A reason as korrid logs it: no control characters, at most 200 bytes.
+/// A reason is the program's word; it is never shown to the person.
+pub fn loggable(reason: &str) -> String {
+    let mut out = String::new();
+    for c in reason.chars().filter(|c| !c.is_control()) {
+        if out.len() + c.len_utf8() > 200 {
+            break;
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// One output line, or `None` when it is not a JSON event. A line is never
 /// logged: it may carry a login link.
 pub fn parse(line: &str) -> Option<Event> {
@@ -75,6 +88,15 @@ mod tests {
         assert_eq!(Command::SignInQr.line(), Steam::SignInQr.line());
         assert_eq!(Command::SignOut.line(), Steam::SignOut.line());
         assert_eq!(Command::Status.line(), "status\n");
+    }
+
+    #[test]
+    fn a_logged_reason_is_bounded_and_has_no_control_characters() {
+        assert_eq!(loggable("time\nout\u{1b}[31m"), "timeout[31m");
+        let long = "é".repeat(300);
+        let logged = loggable(&long);
+        assert!(logged.len() <= 200 && logged.len() >= 198);
+        assert!(logged.chars().all(|c| c == 'é'));
     }
 
     #[test]

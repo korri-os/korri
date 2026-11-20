@@ -66,3 +66,31 @@ Tailscale just gives me those extra benefits for free."
 - Container bridges, work VPNs and other unrelated addresses also become
   candidates. A wrong address fails the device-key check, so the cost is wasted
   attempts, not a wrong peer.
+
+## Account sign-in declaration
+
+Added 2026-11-20 with the first implementation.
+
+- **Grounding.** The shared sign-in card is the owner's decision of
+  2026-11-19 (above). The account host's line protocol is extracted from the
+  Steam engine host's (`services/korrid/src/steam_engine/protocol.rs`): its
+  account subset, with the same command words (`signin-qr`, `signout`, and a
+  `status`), event names and fields (`qr_code`, `qr_refreshed`, `signed_in`,
+  `signin_failed`, `signed_out`). Only the transport differs: one socket
+  connection per job instead of a FIFO and an event file.
+- **Declaration.** A plugin declares at most one sign-in, as one `account`
+  export: `{ title, program, offer?, logo? }`. `program` and `logo` name files
+  of the plugin's own package, as a runner's `program` does. The surface knows
+  the sign-in by the plugin's id.
+- **Limits.** A title is at most 64 bytes and an offer at most 200 bytes, with
+  no control characters. A logo is an SVG of at most 64 KiB. korrid reads at
+  most 64 KiB in one event line and ends a job whose program writes more.
+- **An exception to "Plugin boundaries" (AGENTS.md).** The plugin host
+  generates the account socket and its service template itself; the plugin
+  ships no unit file for them. Root alone sets every property: the identity
+  (the plugin's first service's dynamic user), the credentials, the sandbox and
+  the bounds. korrid can only connect to the socket. A plugin-shipped unit
+  would let the plugin choose its own identity and reach.
+- **Logo.** A service with no logo licensed for redistribution (ADR 0042)
+  ships none, and the surface shows a monogram of the title. Tailscale ships
+  none: its media kit grants no copyright license.

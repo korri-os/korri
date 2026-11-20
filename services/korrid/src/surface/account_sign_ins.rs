@@ -1,4 +1,4 @@
-//! `SurfaceModel.accountSignIns` for plugins that declare `accounts` (ADR
+//! `SurfaceModel.accountSignIns` for plugins that declare an `account` (ADR
 //! 0089): the generic account host. Steam's entry comes from
 //! `steam_account.rs`.
 //!
@@ -23,7 +23,7 @@ use super::Notify;
 use crate::{
     account_sign_in::{
         job::{AccountHosts, Job},
-        protocol::{Command, Event},
+        protocol::{self, Command, Event},
         state::{self, Account, Problem},
     },
     plugin_admin::PluginAccount,
@@ -162,7 +162,7 @@ impl PluginAccounts {
         }
     }
 
-    /// Read the installed plugins' accounts. A plugin that is new here, or
+    /// Read the installed plugins' account sign-ins. A plugin that is new here, or
     /// was turned on, is asked who is signed in.
     pub async fn refresh(self: Arc<Self>) {
         if self.access.is_none() {
@@ -177,17 +177,14 @@ impl PluginAccounts {
         let installs = repositories
             .repository_installs
             .into_iter()
-            .map(|install| (install.id, install.enabled, install.accounts))
+            .map(|install| (install.id, install.enabled, install.account))
             .chain(
                 repositories
                     .other_installs
                     .into_iter()
-                    .map(|install| (install.id, install.enabled, install.accounts)),
+                    .map(|install| (install.id, install.enabled, install.account)),
             )
-            .filter_map(|(id, enabled, accounts)| {
-                let account = accounts?.into_values().next()?;
-                Some((id, enabled, account))
-            })
+            .filter_map(|(id, enabled, account)| Some((id, enabled, account?)))
             // Steam has its own entry.
             .filter(|(id, _, _)| !crate::steam_engine::is_steam_plugin(id))
             .collect::<Vec<_>>();
@@ -320,11 +317,15 @@ impl PluginAccounts {
                         }
                         Event::SignedOut { reason } => eprintln!(
                             "korrid account sign-in: {plugin}: signed out: {}",
-                            reason.as_deref().unwrap_or("no reason given")
+                            reason
+                                .as_deref()
+                                .map(protocol::loggable)
+                                .unwrap_or_else(|| "no reason given".into())
                         ),
-                        Event::SigninFailed { reason } => {
-                            eprintln!("korrid account sign-in: {plugin}: sign-in failed: {reason}")
-                        }
+                        Event::SigninFailed { reason } => eprintln!(
+                            "korrid account sign-in: {plugin}: sign-in failed: {}",
+                            protocol::loggable(reason)
+                        ),
                         _ => {}
                     }
                     let finished = done(&next);
@@ -335,6 +336,12 @@ impl PluginAccounts {
                 }
                 if stop.load(Ordering::SeqCst) {
                     return Ok(());
+                }
+                if job.overflowed() {
+                    eprintln!(
+                        "korrid account sign-in: {plugin}: the account host wrote a line longer than korrid reads; the job ended"
+                    );
+                    return Err(Problem::BadOutput);
                 }
                 if Instant::now() >= deadline || !job.running() {
                     eprintln!(
@@ -395,17 +402,20 @@ impl PluginAccounts {
                             entry.enabled = true;
                         }
                     }
+                    // The same request and approval checks as the Settings
+                    // switch (`plugins.rs` toggle): the plugin host enables
+                    // only an approved receipt whose package still matches.
                     PluginChangeOutcome::Err(failure) => {
                         eprintln!(
                             "korrid account sign-in: {plugin}: not turned on: {}",
                             failure.message
                         );
-                        this.set(
-                            &plugin,
-                            Account::Problem {
-                                problem: Problem::NotEnabled,
-                            },
-                        );
+                        let problem = if failure.code == super::plugins::NEEDS_REVIEW_CODE {
+                            Problem::NeedsReview
+                        } else {
+                            Problem::NotEnabled
+                        };
+                        this.set(&plugin, Account::Problem { problem });
                         return;
                     }
                 }
@@ -609,17 +619,13 @@ mod tests {
                                 id: ID.into(),
                                 title: Some("Tailscale".into()),
                                 enabled: on.load(Ordering::SeqCst),
-                                accounts: Some(std::collections::HashMap::from([(
-                                    "tailscale".into(),
-                                    PluginAccount {
-                                        title: "Tailscale".into(),
-                                        offer: Some(
-                                            "Private network: reach your devices from anywhere"
-                                                .into(),
-                                        ),
-                                        logo: None,
-                                    },
-                                )])),
+                                account: Some(PluginAccount {
+                                    title: "Tailscale".into(),
+                                    offer: Some(
+                                        "Private network: reach your devices from anywhere".into(),
+                                    ),
+                                    logo: None,
+                                }),
                             }],
                         }),
                     ),
@@ -627,8 +633,8 @@ mod tests {
                         assert_eq!(request.id, ID);
                         if no.load(Ordering::SeqCst) {
                             RpcResponse::PluginSetEnabled(PluginChangeOutcome::Err(RpcFailure {
-                                code: "PluginHostRefused".into(),
-                                message: "no".into(),
+                                code: super::super::plugins::NEEDS_REVIEW_CODE.into(),
+                                message: "changed since approval".into(),
                             }))
                         } else {
                             on.store(request.enabled, Ordering::SeqCst);
@@ -780,7 +786,7 @@ done"#;
         Arc::clone(&fake.accounts).refresh().await;
         fake.accounts.act(&state::action_id(state::SIGN_IN, ID));
         until(&fake.accounts, |s| {
-            matches!(s, SurfaceAccountState::Problem { kicker, .. } if kicker == "Tailscale could not be turned on")
+            matches!(s, SurfaceAccountState::Problem { kicker, .. } if kicker == "Tailscale needs your review")
         })
         .await;
         fake.refuse.store(false, Ordering::SeqCst);
@@ -801,6 +807,21 @@ done"#;
         })
         .await;
         assert!(!slow.accounts.act("steam-account:cancel"));
+    }
+
+    /// A program that floods its output: the job ends, and the sign-in is a
+    /// Problem, not a guess that nobody is signed in.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_program_that_floods_its_output_is_a_problem() {
+        let temp = tempfile::tempdir().unwrap();
+        let fake = fake(temp.path(), "exec tr -d '\\n' < /dev/zero", true);
+        Arc::clone(&fake.accounts).refresh().await;
+        until(&fake.accounts, |s| {
+            matches!(s, SurfaceAccountState::Problem { reason, actions, .. }
+                if reason == "Tailscale answered in a way Korri cannot read."
+                    && actions[0].id == state::action_id(state::RETRY, ID))
+        })
+        .await;
     }
 
     /// A program that shows a code and never finishes.

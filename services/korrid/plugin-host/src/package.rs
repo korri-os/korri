@@ -925,34 +925,25 @@ fn load_declaration_snapshot(package: &Path) -> Result<(Declaration, SourceSnaps
     evaluate_package(package)
 }
 
-/// The installed declaration's `accounts` as the admin projection carries
-/// them (ADR 0089), with each logo resolved through the package's files.
-pub fn projected_accounts(
+/// The installed declaration's `account` as the admin projection carries it
+/// (ADR 0089), with its logo resolved through the package's files.
+pub fn projected_account(
     package: &Path,
     declaration: &Declaration,
-) -> Result<std::collections::HashMap<String, crate::plugin_admin::PluginAccount>, String> {
+) -> Result<Option<crate::plugin_admin::PluginAccount>, String> {
     let manifest = manifest(package)?;
-    let accounts = crate::plugin_references::accounts(
+    let account = crate::plugin_references::account(
         &serde_json::to_value(declaration).map_err(|e| e.to_string())?,
         &manifest.files,
     )?;
-    Ok(accounts
-        .into_iter()
-        .map(|(key, account)| {
-            let logo = account
-                .logo
-                .as_ref()
-                .map(|key| manifest.files[key].display().to_string());
-            (
-                key,
-                crate::plugin_admin::PluginAccount {
-                    title: account.title,
-                    offer: account.offer,
-                    logo,
-                },
-            )
-        })
-        .collect())
+    Ok(account.map(|account| crate::plugin_admin::PluginAccount {
+        logo: account
+            .logo
+            .as_ref()
+            .map(|key| manifest.files[key].display().to_string()),
+        title: account.title,
+        offer: account.offer,
+    }))
 }
 
 /// Evaluation after the caller established package authority.
