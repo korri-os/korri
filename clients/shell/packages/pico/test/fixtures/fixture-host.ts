@@ -141,7 +141,6 @@ const viewerRange = (id: string, label: string, value: number, min: number, max:
   ({ id: `viewer:l:1:1:${id}`, label, enabled: true, destructive: false, dismissOnSuccess: false, interaction: { kind: "range", value, min, max, step: 1 } })
 export const fixtureOverlayStream: SurfaceGameplayOverlayPresentation = {
   ...fixtureOverlay,
-  batteryPercent: 82,
   streamHealth: { rttMs: 3, deliveredBitrateKbps: 20140, framesDropped: 0 },
   groups: [
     ...fixtureOverlay.groups,

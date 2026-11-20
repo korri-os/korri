@@ -7,11 +7,16 @@ import { init, overlay } from "../logic"
 test("strip facts remain read-only model inputs, separate from focus state", () => {
   const health = { rttMs: 8, deliveredBitrateKbps: 4000, framesDropped: 0 }
   const model: SurfaceModel = {
-    presentation: { kind: "gameplay-overlay", title: "Game", controls: [], groups: [], batteryPercent: 57, streamHealth: health },
+    presentation: { kind: "gameplay-overlay", title: "Game", controls: [], groups: [], streamHealth: health },
+    battery: { percent: 57, charging: false },
     clockLabel: "10:24 AM", catalog: { _tag: "Empty" }, status: { _tag: "Browsing" }, actions: [], settings: [], settingsStatus: { _tag: "Idle" },
   }
   expect(overlayViewerFacts(model)).toEqual({ title: "Game", clockLabel: "10:24 AM", batteryPercent: 57, streamHealth: health })
   expect(overlayViewerFacts({ ...model, presentation: { kind: "catalog" } })).toBeUndefined()
+  // ADR 0094: charging alone, or no battery, is no percent.
+  expect(overlayViewerFacts({ ...model, battery: { charging: true } })?.batteryPercent).toBeUndefined()
+  const { battery: _, ...bare } = model
+  expect(overlayViewerFacts(bare)?.batteryPercent).toBeUndefined()
 })
 
 test("PAUSED's strip: every fact Korri gives, Zone's dashes for each it does not, a measured 0 as 0", () => {
@@ -28,7 +33,8 @@ test("PAUSED's strip: every fact Korri gives, Zone's dashes for each it does not
 
 test("the overlay view carries the strip, and no strip entry is a focus target", () => {
   const model: SurfaceModel = {
-    presentation: { kind: "gameplay-overlay", title: "Game", controls: [], groups: [], batteryPercent: 57 },
+    presentation: { kind: "gameplay-overlay", title: "Game", controls: [], groups: [] },
+    battery: { percent: 57, charging: false },
     clockLabel: "10:24 AM", catalog: { _tag: "Empty" }, status: { _tag: "Browsing" }, actions: [], settings: [], settingsStatus: { _tag: "Idle" },
   }
   const state = init(model, {})

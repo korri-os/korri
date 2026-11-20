@@ -532,7 +532,7 @@ describe("a drag across a rack scrolls it; focus stays (ADR 0055)", () => {
 })
 
 describe("the stream controls (#379) take touch as every pause-menu row does", () => {
-  const streamModel = (): KorriModel => ({ ...catalogModel(), presentation: fixtureOverlayStream, clockLabel: "3:42 PM" }) as unknown as KorriModel
+  const streamModel = (): KorriModel => ({ ...catalogModel(), presentation: fixtureOverlayStream, clockLabel: "3:42 PM", battery: { percent: 82, charging: false } }) as unknown as KorriModel
   const stream = fixtureOverlayStream.groups.find(group => group.label === "Stream controls")!.controls
 
   test("every one is a drawn target with its focusId; a tap moves the cursor there; the status strip is none", () => {

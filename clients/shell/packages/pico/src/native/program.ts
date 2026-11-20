@@ -165,7 +165,7 @@ function deliver(step: Step, dispatch: Dispatch, korri: KorriModel): Step {
     }
     case "overlay": {
       if (korri.presentation.kind !== "gameplay-overlay") break
-      const view = picoOverlayViewFrom(korri.presentation, korri.status, korri.clockLabel)
+      const view = picoOverlayViewFrom(korri.presentation, korri.status, korri.clockLabel, korri.battery)
       const result = updateOverlay(state.overlay, dispatch.message, view)
       state = { ...state, overlay: result.model }
       answer(result.requests, "overlay")
@@ -270,7 +270,7 @@ const overlayScreenOf = memo(
   (overlay: State["overlay"], focus: State["overlayFocus"], korri: KorriModel) =>
     korri.presentation.kind !== "gameplay-overlay"
       ? undefined as never
-      : overlayScreen(picoOverlayViewFrom(korri.presentation, korri.status, korri.clockLabel), overlay, focus),
+      : overlayScreen(picoOverlayViewFrom(korri.presentation, korri.status, korri.clockLabel, korri.battery), overlay, focus),
 )
 
 /** Keep the cursor on a target of the screen shown, starting where the
@@ -468,7 +468,7 @@ function pressed(step: Step, button: string, korri: KorriModel): Step {
 
 function leftRange(id: string, korri: KorriModel): Act {
   if (korri.presentation.kind !== "gameplay-overlay") return []
-  const view = picoOverlayViewFrom(korri.presentation, korri.status, korri.clockLabel)
+  const view = picoOverlayViewFrom(korri.presentation, korri.status, korri.clockLabel, korri.battery)
   const control = [...view.controls, ...view.groups.flatMap(group => group.controls)].find(candidate => `control:${candidate.id}` === id)
   return control === undefined ? [] : [{ to: "overlay", message: { _tag: "LeftRange", control } }]
 }

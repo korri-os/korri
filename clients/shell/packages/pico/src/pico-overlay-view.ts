@@ -1,4 +1,5 @@
 import type {
+  SurfaceBattery,
   SurfaceGameplayControl,
   SurfaceGameplayControlValue,
   SurfaceGameplayOverlayPresentation,
@@ -105,7 +106,8 @@ export interface PicoOverlayGroupView {
 export interface PicoOverlayView {
   readonly title: string
   readonly clockLabel?: string
-  readonly batteryPercent?: SurfaceGameplayOverlayPresentation["batteryPercent"]
+  /** The device's battery percent (`SurfaceModel.battery.percent`, ADR 0094). */
+  readonly batteryPercent?: number
   readonly streamHealth?: SurfaceGameplayOverlayPresentation["streamHealth"]
   /** Korri's own controls: always first. */
   readonly controls: readonly PicoOverlayControlView[]
@@ -185,12 +187,13 @@ export function picoOverlayViewFrom(
   presentation: SurfaceGameplayOverlayPresentation,
   status: SurfaceStatus,
   clockLabel?: string,
+  battery?: SurfaceBattery,
 ): PicoOverlayView {
   return {
     // A game Korri did not name shows the unknown mark, not a word that reads as a name.
     title: presentation.title ?? PICO_UNKNOWN,
     ...(clockLabel === undefined ? {} : { clockLabel }),
-    ...(presentation.batteryPercent === undefined ? {} : { batteryPercent: presentation.batteryPercent }),
+    ...(battery?.percent === undefined ? {} : { batteryPercent: battery.percent }),
     ...(presentation.streamHealth === undefined ? {} : { streamHealth: presentation.streamHealth }),
     controls: presentation.controls.map(controlView),
     groups: presentation.groups.map((group) => ({

@@ -78,7 +78,7 @@ export function overlayViewerFacts(model: SurfaceModel) {
   return {
     clockLabel: model.clockLabel,
     title: overlay.title,
-    batteryPercent: overlay.batteryPercent,
+    batteryPercent: model.battery?.percent,
     streamHealth: overlay.streamHealth,
   }
 }

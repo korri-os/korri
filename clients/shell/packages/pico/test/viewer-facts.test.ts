@@ -5,11 +5,15 @@ test("the overlay adapter retains read-only viewer facts and the declared stream
   const health = { rttMs: 8, deliveredBitrateKbps: 4000, framesDropped: 0 }
   const view = picoOverlayViewFrom({ kind: "gameplay-overlay", title: "Game", controls: [],
     groups: [{ id: "opaque-group", label: "Stream controls", controls: [] }],
-    batteryPercent: 57, streamHealth: health }, { _tag: "Browsing" }, "10:24 AM")
+    streamHealth: health }, { _tag: "Browsing" }, "10:24 AM", { percent: 57, charging: false })
   expect(view.clockLabel).toBe("10:24 AM")
   expect(view.batteryPercent).toBe(57)
   expect(view.streamHealth).toBe(health)
   expect(view.groups[0].id).toBe("opaque-group")
+  // ADR 0094: the percent is the model's battery; charging alone, or no battery, is no percent.
+  const bare = { kind: "gameplay-overlay", title: "Game", controls: [], groups: [] } as const
+  expect(picoOverlayViewFrom(bare, { _tag: "Browsing" }, "10:24 AM", { charging: true }).batteryPercent).toBeUndefined()
+  expect(picoOverlayViewFrom(bare, { _tag: "Browsing" }).batteryPercent).toBeUndefined()
 })
 
 test("the status strip shows every fact Korri gives and `--` for every one it does not", () => {

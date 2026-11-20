@@ -302,7 +302,6 @@
      }
     ],
     "title": "Wario Land 4",
-    "batteryPercent": 82,
     "streamHealth": {
      "rttMs": 3,
      "deliveredBitrateKbps": 20140,
@@ -433,7 +432,7 @@
    "settingsStatus": {
     "_tag": "Idle"
    },
-   "buildLabel": "korri 0.4.1 \u00b7 9a1fb22",
+   "buildLabel": "korri 0.4.1 · 9a1fb22",
    "network": {
     "connection": {
      "_tag": "Wifi",
@@ -448,6 +447,10 @@
       "_tag": "Idle"
      }
     }
+   },
+   "battery": {
+    "percent": 82,
+    "charging": false
    }
   }
  ],
