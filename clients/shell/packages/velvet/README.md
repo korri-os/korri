@@ -397,7 +397,9 @@ system's games, and times every `view()` and every step's longest
 `VELVET_FRAMES=DIR VELVET_SIZES=WxH,... VELVET_ONLY=a,b` writes scenarios'
 last frames; with `VELVET_PANES=1920x1080+1240x1080` it plays them with a
 window each and writes `<name>.stage.png` and `<name>.floor.png` (the Thor's
-two panes); `VELVET_PREVIEW_OUT=DIR` writes every preview state.
+two panes); `VELVET_SCENARIOS=DIR` reads the scenarios from another folder
+(their pictures stay package-relative); `VELVET_PREVIEW_OUT=DIR` writes every
+preview state.
 
 | Gate | Holds |
 | --- | --- |

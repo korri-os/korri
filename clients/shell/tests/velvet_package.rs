@@ -231,7 +231,19 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
 }
 
 fn scenarios(root: &Path) -> Vec<(String, Value)> {
-    let mut paths: Vec<PathBuf> = std::fs::read_dir(root.join("preview/scenarios"))
+    scenarios_in(&root.join("preview/scenarios"))
+}
+
+/// The scenarios frames draw: VELVET_SCENARIOS=DIR, else the package's own.
+fn frame_scenarios(root: &Path) -> Vec<(String, Value)> {
+    match std::env::var_os("VELVET_SCENARIOS") {
+        Some(dir) => scenarios_in(Path::new(&dir)),
+        None => scenarios(root),
+    }
+}
+
+fn scenarios_in(dir: &Path) -> Vec<(String, Value)> {
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)
         .unwrap()
         .map(|e| e.unwrap().path())
         .collect();
@@ -1106,7 +1118,9 @@ fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
 /// DIR/<WxH>/<name>.png. With VELVET_PANES=SxF (two sizes, WxH+WxH) it draws
 /// the scenario with a window each (ADR 0086) instead: the Stage at the first
 /// size, the Floor at the second, into DIR/<SxF>/<name>.stage.png and
-/// <name>.floor.png. Without VELVET_FRAMES it does nothing.
+/// <name>.floor.png. Without VELVET_FRAMES it does nothing. VELVET_SCENARIOS=DIR
+/// reads the scenarios from DIR instead of the package's own (their pictures
+/// are still package-relative paths).
 #[test]
 fn frames() {
     let Some(out) = std::env::var_os("VELVET_FRAMES").map(PathBuf::from) else {
@@ -1127,7 +1141,7 @@ fn frames() {
             Some((w.parse().ok()?, h.parse().ok()?))
         })
         .collect();
-    for (name, scenario) in &scenarios(&root) {
+    for (name, scenario) in &frame_scenarios(&root) {
         for &(width, height) in &sizes {
             let (mut engine, mut korri) = start(&root, &scenario["models"][0], width, height);
             let overlay = korri.model["presentation"]["kind"] == "gameplay-overlay";
@@ -1193,7 +1207,7 @@ fn pane_frames(out: &Path, panes: &str) {
     let views =
         korri_shell::package::compile(&korri_shell::package::Package::at(&root).unwrap()).unwrap();
     let dir = out.join(panes);
-    for (name, scenario) in &scenarios(&root) {
+    for (name, scenario) in &frame_scenarios(&root) {
         let mut first = scenario["models"][0].clone();
         if first["presentation"]["kind"] == "gameplay-overlay" {
             continue;
