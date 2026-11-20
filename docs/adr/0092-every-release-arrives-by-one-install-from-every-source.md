@@ -31,9 +31,20 @@ None of them can resume after an interruption.
   release in place, without copying it into a store. A file that changes
   while it is served fails the check on the receiving device, so a holder
   must hash a folder release again after it changes.
-- Where an installed release lives on disk is not decided. The first slice
-  of the install manager decides it from one of the two existing layouts:
-  netplay's release-key layout (ADR 0040) or the provider layout (ADR 0016).
+- Where an installed release lives on disk is netplay's release-key layout
+  (ADR 0040): `cache/<release-key hex>/` with the content inside, the same
+  folder for every install source. Decided in #551. The producer is the
+  netplay copy (`placement::copied_release_cache`, owner decision netplay
+  q27, 2026-10-26), and the folder name is ADR 0030's "ready folder name"
+  (`placement::ready_name`). The provider layout
+  (`cache/<plugin>/<provider>/<hex>/`, `placement::provider_cache`) needs a
+  provider, and an install from devices has none: ADR 0040 chose the
+  release-key layout for that reason ("so it needs no provider"). One
+  release from two providers also becomes one folder. Provider installs now
+  publish there. The provider cache keeps only the work of a provider job:
+  its `.downloads` staging and the `.tmp-*` folder that the reader's sandbox
+  unit writes (ADR 0030, Change 1d). Real data moves once, by the operator,
+  when the cut is deployed (see "One-off migration: provider installs").
 - Velvet is the first surface to show play-here and the list of installs.
 - A Steam-engine game (ADR 0083) has two kinds of install source: Valve,
   through the Steam engine, and devices whose folder of the game matches.
@@ -86,6 +97,29 @@ None of them can resume after an interruption.
 - Devices that are awake or in light sleep serve pieces. A device in deep
   sleep does not. The owner wants a sleeping holder woken to serve, but
   korrid cannot wake a peer today, so waking is separate work.
+
+## One-off migration: provider installs
+
+The #551 cut moves the ready folders of provider installs. On each device
+that ran a provider download before the cut, the operator runs this once,
+as the `korrid` user, with korrid stopped. `<provider cache>` is each
+`cache/<plugin short>/<provider name>/` folder of an acquisition provider
+(ADR 0016). Do not run it on an ADR 0012 artifact folder: an artifact
+version can also be a long hex name.
+
+```sh
+cd /var/lib/korri/cache
+for ready in <provider cache>/*; do
+  name=$(basename "$ready")
+  case ${#name} in 40|64) ;; *) continue ;; esac
+  if [ -e "$name" ]; then chmod -R u+w "$ready" && rm -rf "$ready"
+  else mv "$ready" "$name"; fi
+done
+```
+
+A folder that already exists under its release key holds the same bytes,
+because the name is their identity, so the copy in the provider cache goes.
+A device that has no provider cache needs nothing.
 
 ## Considered options
 
