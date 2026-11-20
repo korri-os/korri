@@ -791,8 +791,10 @@ impl PeerHolder {
                     .map_err(|_| unreachable())?,
             ),
             Err(_) => {
-                let PeerRoute::Federation(directory) = &self.route else {
-                    return Err(unreachable());
+                let directory = match &self.route {
+                    PeerRoute::Federation(directory) => directory,
+                    #[cfg(test)]
+                    PeerRoute::Origin(_) => return Err(unreachable()),
                 };
                 let connection = directory
                     .reach_connection(&self.device)

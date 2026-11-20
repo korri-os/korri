@@ -536,6 +536,20 @@ from the file, so a korrid that stops keeps the order. The person can
 reorder installs that wait; the running one keeps running. The netplay copy
 goes to the front, as a launch's artifacts do.
 
+ADR 0092 (#552): devices are install sources for file releases. A holder
+hashes a release in place with iroh-blobs and keeps the BLAKE3 tree in
+`<storage-root>/cache/.blobs`, derived data that korrid rebuilds by hashing
+again; a named tag per release key names its files, so a cue with its tracks
+or a disc set is one collection. Peers ask over signed peer HTTP:
+`app.installs.manifest` on `/peer-rpc`, and `app.installs.piece` on
+`/peer-installs-piece`, which answers the BAO encoding of a 1 MiB piece. The
+receiver checks every piece as it arrives and takes pieces from every holder
+whose files match at once; a holder that fails three pieces leaves the
+install. The finished install moves out of the store, is checked against its
+release key, and is published under `cache/<hex of the release key>/`. The
+owner's devices and family members' devices may install, with no prompt on
+the holder; guests are refused.
+
 While a job downloads or unpacks, korrid holds a logind `sleep` inhibitor in
 `block` mode. The screen may blank, but the device does not suspend. Shutdown
 is not blocked. Without logind, korrid logs the failure and continues.
