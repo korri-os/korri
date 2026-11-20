@@ -160,7 +160,6 @@ pub fn device() -> tokio::sync::watch::Receiver<Option<SurfaceBattery>> {
 }
 
 /// Subscribe before the first read, so no event between the two is lost.
-/// When the kernel's events cannot be received, the first read stays.
 #[cfg(target_os = "linux")]
 fn listen(
     root: &Path,
@@ -173,17 +172,38 @@ fn listen(
         socket.bind(&SocketAddr::new(0, 1))?;
         Ok(socket)
     });
-    publish(sender, read(root, verified));
-    let socket = match socket {
-        Ok(socket) => socket,
+    follow(root, verified, sender, socket, |socket, buffer| {
+        socket
+            .recv_from(&mut &mut buffer[..], 0)
+            .map(|(length, from)| (length, from.port_number()))
+    });
+}
+
+/// Read on each kernel power_supply event that `receive` gives: the length
+/// of one datagram in `buffer` and its sender's netlink port (0 is the
+/// kernel). When the events cannot start or they end, no later event can
+/// correct a percent, so the reading goes out once more without it: only
+/// `charging` stays, or nothing when that read fails.
+#[cfg(target_os = "linux")]
+fn follow<S>(
+    root: &Path,
+    verified: Verified,
+    sender: &tokio::sync::watch::Sender<Option<SurfaceBattery>>,
+    events: io::Result<S>,
+    mut receive: impl FnMut(&S, &mut [u8]) -> io::Result<(usize, u32)>,
+) {
+    let events = match events {
+        Ok(events) => events,
         Err(error) => {
-            eprintln!("korrid: battery events unavailable: {error}");
+            eprintln!("korrid: battery events unavailable, percent off: {error}");
+            publish(sender, read(root, Verified::default()));
             return;
         }
     };
+    publish(sender, read(root, verified));
     let mut buffer = vec![0u8; 8192];
     loop {
-        let (length, from) = match socket.recv_from(&mut &mut buffer[..], 0) {
+        let (length, port) = match receive(&events, &mut buffer) {
             Ok(received) => received,
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
             // The kernel dropped events for a full queue: one of them may
@@ -193,11 +213,12 @@ fn listen(
                 continue;
             }
             Err(error) => {
-                eprintln!("korrid: battery events ended: {error}");
+                eprintln!("korrid: battery events ended, percent off: {error}");
+                publish(sender, read(root, Verified::default()));
                 return;
             }
         };
-        if from.port_number() == 0 && is_power_supply_uevent(&buffer[..length.min(buffer.len())]) {
+        if port == 0 && is_power_supply_uevent(&buffer[..length.min(buffer.len())]) {
             publish(sender, read(root, verified));
         }
     }
@@ -345,6 +366,122 @@ mod tests {
         assert!(publish(&sender, battery(Some(81.0), true)));
         assert!(publish(&sender, None));
         assert_eq!(*receiver.borrow_and_update(), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    const EVENT: &[u8] = b"change@/devices/battery\0SUBSYSTEM=power_supply\0";
+
+    /// One received datagram, or the error that ends the events.
+    #[cfg(target_os = "linux")]
+    fn datagram(buffer: &mut [u8], bytes: &[u8]) -> io::Result<(usize, u32)> {
+        buffer[..bytes.len()].copy_from_slice(bytes);
+        Ok((bytes.len(), 0))
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_percent_goes_away_when_the_events_cannot_start() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        supply(
+            root,
+            "battery",
+            &[
+                ("type", "Battery"),
+                ("status", "Charging"),
+                ("capacity", "82"),
+            ],
+        );
+        let (sender, receiver) = tokio::sync::watch::channel(Some(SurfaceBattery {
+            percent: Some(90.0),
+            charging: false,
+        }));
+        follow::<()>(
+            root,
+            PERCENT,
+            &sender,
+            Err(io::Error::from(io::ErrorKind::PermissionDenied)),
+            |_, _| unreachable!("no events"),
+        );
+        assert_eq!(
+            *receiver.borrow(),
+            Some(SurfaceBattery {
+                percent: None,
+                charging: true
+            })
+        );
+        // When that read fails too, nothing stays.
+        sender.send_replace(Some(SurfaceBattery {
+            percent: Some(90.0),
+            charging: true,
+        }));
+        follow::<()>(
+            &root.join("missing"),
+            PERCENT,
+            &sender,
+            Err(io::Error::from(io::ErrorKind::PermissionDenied)),
+            |_, _| unreachable!("no events"),
+        );
+        assert_eq!(*receiver.borrow(), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_percent_goes_away_when_the_events_end() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().to_owned();
+        supply(
+            &root,
+            "battery",
+            &[
+                ("type", "Battery"),
+                ("status", "Discharging"),
+                ("capacity", "82"),
+            ],
+        );
+        let (sender, receiver) = tokio::sync::watch::channel(None);
+        let mut step = 0;
+        follow(&root, PERCENT, &sender, Ok(()), |_, buffer| {
+            step += 1;
+            match step {
+                1 => {
+                    assert_eq!(
+                        *receiver.borrow(),
+                        Some(SurfaceBattery {
+                            percent: Some(82.0),
+                            charging: false
+                        })
+                    );
+                    supply(&root, "battery", &[("capacity", "81")]);
+                    datagram(buffer, EVENT)
+                }
+                2 => {
+                    assert_eq!(receiver.borrow().as_ref().unwrap().percent, Some(81.0));
+                    Err(io::Error::from(io::ErrorKind::Interrupted))
+                }
+                3 => Err(io::Error::from_raw_os_error(libc::EBADF)),
+                _ => unreachable!("the events ended"),
+            }
+        });
+        assert_eq!(step, 3);
+        assert_eq!(
+            *receiver.borrow(),
+            Some(SurfaceBattery {
+                percent: None,
+                charging: false
+            })
+        );
+        // When that read fails too, nothing stays.
+        let (sender, receiver) = tokio::sync::watch::channel(None);
+        let mut ended = false;
+        follow(&root, PERCENT, &sender, Ok(()), |_, _| {
+            assert!(!std::mem::replace(&mut ended, true));
+            fs::remove_dir_all(root.join("battery")).unwrap();
+            fs::create_dir(root.join("battery")).unwrap();
+            fs::create_dir(root.join("battery/type")).unwrap();
+            Err(io::Error::from_raw_os_error(libc::EBADF))
+        });
+        assert_eq!(*receiver.borrow(), None);
     }
 
     #[test]
