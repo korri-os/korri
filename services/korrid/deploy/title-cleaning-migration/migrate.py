@@ -127,17 +127,33 @@ def old_fallback_title(stem):
     return normalized or " ".join(stem.split())
 
 
+VERSION = re.compile(r"[vV][0-9]+(?:\.[0-9]+)*")
+
+
+def without_version(text):
+    trimmed = text.rstrip()
+    parts = re.split(r"\s", trimmed)
+    if len(parts) > 1 and VERSION.fullmatch(parts[-1]):
+        head = trimmed[: len(trimmed) - len(parts[-1]) - 1]
+        if head.strip():
+            return head
+    return text
+
+
 def invert_article(main):
     for article in ("The", "A", "An"):
         suffix = f", {article}"
         if main.endswith(suffix) and main[: -len(suffix)].strip():
             return f"{article} {main[: -len(suffix)].rstrip()}"
+    head, separator, rest = main.partition(", The ")
+    if separator and head.strip() and rest.strip():
+        return f"The {head.rstrip()} {rest.lstrip()}"
     return main
 
 
 def clean_title(raw):
     """`discovery::title::clean_title`, rule for rule."""
-    spaced = [" " if c in "_." else c for c in without_groups(raw)]
+    spaced = [" " if c in "_." else c for c in without_version(without_groups(raw))]
 
     def blank(index):
         return index < 0 or index >= len(spaced) or spaced[index].isspace()

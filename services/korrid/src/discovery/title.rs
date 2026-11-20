@@ -106,9 +106,10 @@ pub fn fallback_title(file_name: &str, extension: &str) -> String {
 
 /// Korri's generic title cleaning (ADR 0090), used when no system plugin
 /// answers: the No-Intro and GoodTools convention. It strips `(…)` and
-/// `[…]` groups, turns `_`, `.` and a `-` inside a word into spaces, keeps
-/// a ` - ` subtitle separator, moves a trailing `, The`, `, A` or `, An` of
-/// the main title to its front, and collapses whitespace.
+/// `[…]` groups and then a final `v1.0`-style version token, turns `_`, `.`
+/// and a `-` inside a word into spaces, keeps a ` - ` subtitle separator,
+/// moves a trailing `, The`, `, A` or `, An` of the main title, or a `, The `
+/// inside it, to its front, and collapses whitespace.
 /// `deploy/title-cleaning-migration/migrate.py` ports these rules; both
 /// test against `test-data/title-cleaning.json`.
 pub fn clean_title(raw: &str) -> String {
@@ -127,6 +128,7 @@ pub fn clean_title(raw: &str) -> String {
         }
     }
 
+    let without_groups = without_version(&without_groups);
     let spaced = without_groups
         .chars()
         .map(|character| match character {
@@ -182,13 +184,39 @@ pub fn clean_title(raw: &str) -> String {
     }
 }
 
-/// `Legend of Zelda, The` becomes `The Legend of Zelda`.
+/// A final `v<digits>(.<digits>)*` token, such as `v1.0`, is a dump's
+/// version, not part of the title.
+fn without_version(text: &str) -> String {
+    let trimmed = text.trim_end();
+    if let Some((head, last)) = trimmed.rsplit_once(char::is_whitespace) {
+        let version = last.strip_prefix(['v', 'V']).is_some_and(|number| {
+            !number.is_empty()
+                && number
+                    .split('.')
+                    .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))
+        });
+        if version && !head.trim().is_empty() {
+            return head.to_owned();
+        }
+    }
+    text.to_owned()
+}
+
+/// `Legend of Zelda, The` becomes `The Legend of Zelda`, and so does a
+/// `, The ` inside the main title: `Legend of Zelda, The Majora's Mask`
+/// becomes `The Legend of Zelda Majora's Mask`. Only a trailing `, A` or
+/// `, An` moves: `Hello, A Story` stays.
 fn invert_article(main: &str) -> String {
     for article in ["The", "A", "An"] {
         if let Some(head) = main.strip_suffix(&format!(", {article}")) {
             if !head.trim().is_empty() {
                 return format!("{article} {}", head.trim_end());
             }
+        }
+    }
+    if let Some((head, rest)) = main.split_once(", The ") {
+        if !head.trim().is_empty() && !rest.trim().is_empty() {
+            return format!("The {} {}", head.trim_end(), rest.trim_start());
         }
     }
     main.to_owned()
@@ -393,6 +421,28 @@ export const handlers = {{
             clean_title("Metroid Fusion (USA, Australia)"),
             "Metroid Fusion"
         );
+    }
+
+    #[test]
+    fn inverts_the_inside_the_main_title_and_strips_a_final_version() {
+        assert_eq!(
+            clean_title("Legend of Zelda, The A Link to the Past"),
+            "The Legend of Zelda A Link to the Past"
+        );
+        assert_eq!(
+            clean_title("Legend of Zelda, The Majora's Mask"),
+            "The Legend of Zelda Majora's Mask"
+        );
+        assert_eq!(
+            clean_title("Mario Builder 64 v1.0 (USA)"),
+            "Mario Builder 64"
+        );
+        // Only `, The ` moves from inside a title; `, A ` and `, An ` stay.
+        assert_eq!(clean_title("Hello, A Story"), "Hello, A Story");
+        assert_eq!(clean_title("Once, An Elf"), "Once, An Elf");
+        // A version needs digits, and never is the whole title.
+        assert_eq!(clean_title("Mega Man V"), "Mega Man V");
+        assert_eq!(clean_title("v1.0"), "v1 0");
     }
 
     #[test]

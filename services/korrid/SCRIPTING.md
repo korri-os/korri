@@ -1068,9 +1068,10 @@ handler answers `{ title }`, or `{}` for no answer. Discovery asks only the
 enabled plugins that declare the game's system, in plugin id order, and the
 first answer wins. A failed call, an unknown field, or a blank or control
 character title is no answer. With no answer, korrid's generic cleaning in
-`discovery/title.rs` applies: it strips `(…)` and `[…]` groups, turns `_`,
-`.` and a `-` inside a word into spaces, keeps ` - ` subtitle separators,
-moves a trailing `, The`, `, A` or `, An` of the main title to its front, and
+`discovery/title.rs` applies: it strips `(…)` and `[…]` groups and then a
+final `v1.0`-style version token, turns `_`, `.` and a `-` inside a word into
+spaces, keeps ` - ` subtitle separators, moves a trailing `, The`, `, A` or
+`, An` of the main title, or a `, The ` inside it, to its front, and
 collapses whitespace. Answers are kept like other pure operations (#289).
 Acquired and declared titles are not cleaned.
 
