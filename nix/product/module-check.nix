@@ -1030,6 +1030,9 @@ assert
   == "${productPluginHost.package}/bin/korri-plugin restore-all";
 assert productPluginRestore.serviceConfig.Type == "oneshot";
 assert productPluginRestore.serviceConfig.User == "root";
+# A transient dependency failure at boot must not leave plugins removed (#549).
+assert productPluginRestore.serviceConfig.Restart == "on-failure";
+assert productPluginRestore.startLimitBurst == 3;
 assert productPluginRestore.environment.XDG_CACHE_HOME == "/run/korri-plugin-host";
 assert
   productPluginRestore.restartTriggers == [

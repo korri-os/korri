@@ -125,11 +125,22 @@ in
             "systemd-tmpfiles-setup.service"
             "firewall.service"
           ];
+          # A plugin unit that fails a dependency at boot fails the whole pass,
+          # and the pass rolls that plugin's units back. On aka (2026-11-20,
+          # #549) the compositor timed out its first start and was up again
+          # 1 s later, but @korri:sunshine stayed removed until a manual start.
+          # restore-all is safe to run again, so systemd retries it. Three
+          # starts per hour bound a failure that a retry cannot fix; the
+          # window is wide because each pass may take TimeoutStartSec.
+          startLimitIntervalSec = 3600;
+          startLimitBurst = 3;
           serviceConfig = hardening // {
             Type = "oneshot";
             ExecStart = "${cfg.package}/bin/korri-plugin restore-all";
             RemainAfterExit = true;
             TimeoutStartSec = 300;
+            Restart = "on-failure";
+            RestartSec = 5;
           };
         };
       }
