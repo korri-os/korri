@@ -307,27 +307,30 @@ mod surface_model {
     }
 
     #[test]
-    fn publishes_a_local_games_stored_media_by_asset_id_with_size_and_colour() {
+    fn publishes_every_stored_image_of_a_local_game_with_its_kind_size_and_colour() {
         let poster = format!("{}.jpg", "b".repeat(64));
         let hero = format!("{}.png", "c".repeat(64));
         let logo = format!("{}.webp", "d".repeat(64));
+        let icon = format!("{}.png", "e".repeat(64));
         let cover = format!("{}.png", "a".repeat(64));
         let with_media = Entry::LocalGame {
             game: from(
                 json!({ "id": "wl4", "title": "Wario Land 4", "system": "GBA",
                 "systemId": "gba", "coverAssetId": cover, "media": [
-                    { "role": "poster", "assetId": poster, "width": 600, "height": 900, "color": "#3a7bd5" },
-                    { "role": "hero", "assetId": hero, "width": 1920, "height": 620, "color": "#20304f" },
-                    { "role": "logo", "assetId": logo, "width": 400, "height": 120 },
+                    { "kind": "icon", "assetId": icon, "width": 64, "height": 64 },
+                    { "kind": "logo", "assetId": logo, "width": 400, "height": 120 },
+                    { "kind": "picture", "assetId": cover, "width": 512, "height": 512, "color": "#c83c28" },
+                    { "kind": "picture", "assetId": poster, "width": 600, "height": 900, "color": "#3a7bd5" },
+                    { "kind": "picture", "assetId": hero, "width": 1920, "height": 620, "color": "#20304f" },
                 ] }),
             ),
             alternatives: Vec::new(),
         };
-        // Only some roles: exactly those.
+        // Only one image: exactly that one.
         let hero_only = Entry::LocalGame {
             game: from(
                 json!({ "id": "anguna", "title": "Anguna", "system": "GBA", "media": [
-                { "role": "hero", "assetId": hero, "width": 1920, "height": 620 },
+                { "kind": "picture", "assetId": hero, "width": 1920, "height": 620 },
             ] }),
             ),
             alternatives: Vec::new(),
@@ -338,23 +341,26 @@ mod surface_model {
             None,
         );
         let games = games(&state);
-        // References only, in the form of `coverArtUrl` (ADR 0065).
+        // References only, in the form of `coverArtUrl` (ADR 0065), with the
+        // measured size and no ratio: a surface derives it.
         assert_eq!(
             serde_json::to_value(&games[0].media).unwrap(),
             json!([
-                { "role": "poster", "url": format!("/game-assets/{poster}"), "width": 600, "height": 900, "color": "#3a7bd5" },
-                { "role": "hero", "url": format!("/game-assets/{hero}"), "width": 1920, "height": 620, "color": "#20304f" },
-                { "role": "logo", "url": format!("/game-assets/{logo}"), "width": 400, "height": 120 },
+                { "kind": "icon", "url": format!("/game-assets/{icon}"), "width": 64, "height": 64 },
+                { "kind": "logo", "url": format!("/game-assets/{logo}"), "width": 400, "height": 120 },
+                { "kind": "picture", "url": format!("/game-assets/{cover}"), "width": 512, "height": 512, "color": "#c83c28" },
+                { "kind": "picture", "url": format!("/game-assets/{poster}"), "width": 600, "height": 900, "color": "#3a7bd5" },
+                { "kind": "picture", "url": format!("/game-assets/{hero}"), "width": 1920, "height": 620, "color": "#20304f" },
             ])
         );
-        // The tile stays the cover and is never in media.
+        // The cover stays `coverArtUrl` as well.
         assert_eq!(
             games[0].cover_art_url.as_deref(),
             Some(format!("/game-assets/{cover}").as_str())
         );
         assert_eq!(
             serde_json::to_value(&games[1].media).unwrap(),
-            json!([{ "role": "hero", "url": format!("/game-assets/{hero}"), "width": 1920, "height": 620 }])
+            json!([{ "kind": "picture", "url": format!("/game-assets/{hero}"), "width": 1920, "height": 620 }])
         );
         assert_eq!(games[1].cover_art_url, None);
         // No stored image, and a peer's game: absent, not an empty list.
@@ -364,14 +370,17 @@ mod surface_model {
             .unwrap()
             .get("media")
             .is_none());
-        // A list korrid's game source never sends: a tile as media is refused
+        // A list korrid's game source never sends: a fixed role is refused
         // where the game is read.
-        assert!(serde_json::from_value::<crate::launcher::LocalGame>(
-            json!({ "id": "wl4", "title": "Wario Land 4", "system": "GBA", "media": [
-                { "role": "tile", "assetId": cover, "width": 512, "height": 512 },
-            ] })
-        )
-        .is_err());
+        for item in [
+            json!({ "role": "poster", "assetId": poster, "width": 600, "height": 900 }),
+            json!({ "kind": "tile", "assetId": cover, "width": 512, "height": 512 }),
+        ] {
+            assert!(serde_json::from_value::<crate::launcher::LocalGame>(
+                json!({ "id": "wl4", "title": "Wario Land 4", "system": "GBA", "media": [item] })
+            )
+            .is_err());
+        }
     }
 
     #[test]

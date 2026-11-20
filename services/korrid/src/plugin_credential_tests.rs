@@ -174,7 +174,8 @@ async fn a_set_or_a_clear_drops_the_plugins_artwork_attempts_except_assigned() {
     std::fs::create_dir_all(&folder).unwrap();
     let attempt = |outcome: &str| {
         json!({ "outcome": outcome, "playable_id": outcome, "release_id": "r",
-            "release_fingerprint": "f", "rom_identity": "i" })
+            "release_fingerprint": "f", "rom_identity": "i",
+            "answered_at": 1_794_000_000_u64, "external_ids_sha256": "sha256:ids" })
     };
     let attempts = json!({ "attempts": {
         "sha256:a": attempt("assigned"), "sha256:b": attempt("no-match"),

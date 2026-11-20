@@ -232,8 +232,8 @@ pub fn game_from_entry(entry: &Entry, entries: &[Entry]) -> SurfaceGame {
                 .cover_asset_id
                 .as_deref()
                 .map(crate::game_assets::asset_url);
-            // The other stored images, named as the cover is. A game with
-            // none carries no list.
+            // Every stored image with its measured size and colour, named
+            // as the cover is. A game with none carries no list.
             game.media = local
                 .media
                 .as_ref()
@@ -242,7 +242,7 @@ pub fn game_from_entry(entry: &Entry, entries: &[Entry]) -> SurfaceGame {
                     media
                         .iter()
                         .map(|stored| SurfaceMedia {
-                            role: stored.role,
+                            kind: stored.kind,
                             url: crate::game_assets::asset_url(&stored.asset_id),
                             width: stored.width,
                             height: stored.height,

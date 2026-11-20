@@ -21,6 +21,14 @@ Run it once on each device, with korrid stopped, against korrid's private
 state root. Its docstring gives the steps and the check afterwards.
 `test-migrate-plugin-artwork.py` is its test.
 
+`migrate-measured-media.py` moves a device's stored art from the fixed
+roles to kinds when the korrid of ADR 0091 is deployed: each record becomes
+`<playable id>:<plugin id>:<kind>:<n>`, and each art plugin's old
+`attempts.json` is set aside so that korrid asks the plugin again. Run it
+once on each device, with korrid stopped, against korrid's private state
+root. Its docstring gives the steps and the check afterwards.
+`test-migrate-measured-media.py` is its test.
+
 `person-key-move.md` moves a device whose local signer kept a person key in
 `/var/lib/korri-local-signer` to the person key of its recovery words (ADR
 0082). Do it once on each such device after the change is deployed.

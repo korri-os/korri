@@ -22,24 +22,25 @@ pub struct LocalGame {
         skip_serializing_if = "Option::is_none"
     )]
     pub cover_asset_id: Option<String>,
-    /// The game's stored `poster`, `hero` and `logo`, in that order. Absent
-    /// when it has none. The tile is `coverAssetId` and is never in here.
+    /// Every image korrid stores for the game, of every kind and from every
+    /// art plugin (ADR 0091). Absent when it has none. `coverAssetId` is one
+    /// of them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media: Option<Vec<LocalGameMedia>>,
     #[serde(default, rename = "playStats", skip_serializing_if = "Option::is_none")]
     pub play_stats: Option<crate::play_log::PlayStats>,
 }
 
-/// One stored image of a local game that is not its cover.
+/// One stored image of a local game.
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalGameMedia {
-    /// `poster`, `hero` or `logo`. It cannot be `tile`.
-    pub role: korri_surface_treaty::SurfaceMediaRole,
+    /// `logo`, `picture` or `icon`.
+    pub kind: korri_surface_treaty::SurfaceMediaKind,
     /// The asset id, as `coverAssetId`: `<sha256>.<png|jpg|webp>`.
     pub asset_id: String,
-    /// The image's own size in pixels.
+    /// The image's own size in pixels, as korrid measured it.
     pub width: u32,
     pub height: u32,
     /// One colour of the image as lowercase `#rrggbb`. Absent when the image

@@ -217,38 +217,57 @@ pub struct SurfaceGame {
     /// title, else its id. Absent together with `systemId`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub system: Option<String>,
-    /// Images Korri stores for this game, at most one of each role. Absent
-    /// when Korri has none. The square tile stays `coverArtUrl`.
+    /// Every image Korri stores for this game, from every art plugin, each
+    /// with its measured size (ADR 0091). Absent when Korri has none. The
+    /// list has no order a surface may rely on: a surface picks by `kind`
+    /// and by the shape and size it reads from `width` and `height`.
+    /// `coverArtUrl` stays the square cover.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media: Option<Vec<SurfaceMedia>>,
 }
 
-/// What an image of a game is for. `poster` is upright, two wide to three
-/// tall. `hero` is a wide backdrop. `logo` is the game's title as an image,
-/// with a transparent background.
-#[typeshare(serialized_as = "SurfaceMediaRoleWire")]
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+/// What a stored image of a game is, in three broad kinds (ADR 0091).
+/// `logo` is the game's title as an image with a transparent background.
+/// `picture` is any other image of the game: box art, a grid, a wide hero
+/// or a background; its shape is in its measured size, not in its kind.
+/// `icon` is a small square mark of the game.
+#[typeshare(serialized_as = "SurfaceMediaKindWire")]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub enum SurfaceMediaRole {
-    Poster,
-    Hero,
+pub enum SurfaceMediaKind {
     Logo,
+    Picture,
+    Icon,
 }
 
-/// One stored image of a game.
+impl SurfaceMediaKind {
+    pub const ALL: [Self; 3] = [Self::Logo, Self::Picture, Self::Icon];
+
+    /// The name of this kind on the wire.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Logo => "logo",
+            Self::Picture => "picture",
+            Self::Icon => "icon",
+        }
+    }
+}
+
+/// One stored image of a game. A surface derives its ratio from `width`
+/// and `height`; no ratio is sent.
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SurfaceMedia {
-    pub role: SurfaceMediaRole,
+    pub kind: SurfaceMediaKind,
     /// Opaque, as `coverArtUrl`: hand it back unchanged as an image,
     /// `{ $image: url }`. The host loads it later, so the image is empty
     /// until it arrives, and stays empty if it cannot be loaded.
     pub url: String,
-    /// The image's own width in pixels, so a surface can lay it out before
-    /// it arrives.
+    /// The image's own width in pixels, measured by Korri, so a surface can
+    /// lay it out before it arrives.
     pub width: u32,
-    /// The image's own height in pixels.
+    /// The image's own height in pixels, measured by Korri.
     pub height: u32,
     /// One colour taken from this image, as lowercase `#rrggbb`. Absent when
     /// the image has no clear colour. A surface that tints with it must have
@@ -2074,7 +2093,7 @@ mod tests {
     #[test]
     fn systems_and_media_use_the_agreed_json() {
         let media = SurfaceMedia {
-            role: SurfaceMediaRole::Hero,
+            kind: SurfaceMediaKind::Picture,
             url: "/game-assets/aa.png".into(),
             width: 1920,
             height: 620,
@@ -2082,24 +2101,42 @@ mod tests {
         };
         assert_eq!(
             serde_json::to_value(&media).unwrap(),
-            json!({"role": "hero", "url": "/game-assets/aa.png", "width": 1920,
+            json!({"kind": "picture", "url": "/game-assets/aa.png", "width": 1920,
                 "height": 620, "color": "#3a7bd5"})
         );
         assert_eq!(
             serde_json::to_value(SurfaceMedia {
-                role: SurfaceMediaRole::Logo,
+                kind: SurfaceMediaKind::Logo,
                 color: None,
                 ..media.clone()
             })
             .unwrap(),
-            json!({"role": "logo", "url": "/game-assets/aa.png", "width": 1920, "height": 620})
+            json!({"kind": "logo", "url": "/game-assets/aa.png", "width": 1920, "height": 620})
         );
         assert_eq!(
-            serde_json::to_value(SurfaceMediaRole::Poster).unwrap(),
-            json!("poster")
+            SurfaceMediaKind::ALL.map(|kind| serde_json::to_value(kind).unwrap()),
+            [json!("logo"), json!("picture"), json!("icon")]
         );
-        // A tile is `coverArtUrl`, never media.
-        assert!(serde_json::from_value::<SurfaceMediaRole>(json!("tile")).is_err());
+        for kind in SurfaceMediaKind::ALL {
+            assert_eq!(serde_json::to_value(kind).unwrap(), json!(kind.as_str()));
+        }
+        // The fixed roles are gone, with no alias (ADR 0091): a tile, a
+        // poster or a hero is not a kind, and `role` does not stand in for `kind`.
+        for role in ["tile", "poster", "hero", "Picture"] {
+            assert!(
+                serde_json::from_value::<SurfaceMediaKind>(json!(role)).is_err(),
+                "{role}"
+            );
+        }
+        for item in [
+            json!({"role": "logo", "url": "/game-assets/aa.png", "width": 4, "height": 4}),
+            json!({"kind": "tile", "url": "/game-assets/aa.png", "width": 4, "height": 4}),
+        ] {
+            assert!(
+                serde_json::from_value::<SurfaceMedia>(item.clone()).is_err(),
+                "{item}"
+            );
+        }
         assert_eq!(
             serde_json::to_value(SurfaceSystem {
                 system_id: "gba".into(),
@@ -2142,12 +2179,12 @@ mod tests {
         );
         let game: SurfaceGame = serde_json::from_value(json!({
             "id": "g", "title": "G", "systemId": "gba", "system": "Game Boy Advance",
-            "media": [{"role": "poster", "url": "/game-assets/bb.jpg", "width": 600, "height": 900}]
+            "media": [{"kind": "picture", "url": "/game-assets/bb.jpg", "width": 600, "height": 900}]
         }))
         .unwrap();
         assert_eq!(game.system_id.as_deref(), Some("gba"));
         assert_eq!(game.system.as_deref(), Some("Game Boy Advance"));
-        assert_eq!(game.media.unwrap()[0].role, SurfaceMediaRole::Poster);
+        assert_eq!(game.media.unwrap()[0].kind, SurfaceMediaKind::Picture);
     }
 
     #[test]

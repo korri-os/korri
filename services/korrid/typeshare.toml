@@ -47,7 +47,6 @@ PluginSearchOutputWire = "PluginHttpRequests | ProviderClaim[]"
 PluginDetailsOutputWire = "PluginHttpRequests | ProviderClaimDetails"
 PluginResolveDownloadOutputWire = "PluginHttpRequests | DownloadResolution"
 # ADR 0032 artwork operation, enforced by acquisition/artwork.rs and game_assets.rs.
-GameAssetRoleWire = '"tile" | "poster" | "hero" | "logo"'
 PluginGameAssetCandidatesOutputWire = "PluginHttpRequests | GameAssetCandidates"
 AcquireJobStateWire = '{ _tag: "Queued" } | { _tag: "Resolving" } | { _tag: "Downloading"; bytesDone: number; bytesTotal?: number; bytesPerSecond?: number } | { _tag: "Unpacking" } | { _tag: "Placing" } | { _tag: "Imported"; gameId: string } | { _tag: "Failed"; reason: RpcFailure } | { _tag: "Cancelled" }'
 
@@ -69,4 +68,4 @@ SurfacePreferenceValues = 'import("./surface").SurfacePreferenceValues'
 SurfacePackagePanes = 'import("./surface").SurfacePackagePanes'
 SurfaceWindow = 'import("./surface").SurfaceWindow'
 SurfaceSteps = 'import("./surface").SurfaceSteps'
-SurfaceMediaRole = 'import("./surface").SurfaceMediaRole'
+SurfaceMediaKind = 'import("./surface").SurfaceMediaKind'

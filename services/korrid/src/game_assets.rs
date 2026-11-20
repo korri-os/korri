@@ -1,4 +1,5 @@
 use image::{GenericImageView, ImageFormat, ImageReader, Limits};
+use korri_surface_treaty::SurfaceMediaKind;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -19,53 +20,34 @@ pub(crate) const MAX_ASSET_BYTES: usize = 5 * 1024 * 1024;
 const MAX_DIMENSION: u32 = 4096;
 /// The decoder may hold one image of the largest admitted size as RGBA.
 const MAX_DECODED_BYTES: u64 = MAX_DIMENSION as u64 * MAX_DIMENSION as u64 * 4;
+/// The images korrid keeps of one game, from one plugin, of one kind
+/// (ADR 0091; the count is the coordinator's v1 choice).
+pub(crate) const MAX_IMAGES_PER_KIND: usize = 4;
+/// The shortest side a `picture` may have.
+const MIN_PICTURE_SIDE: u32 = 256;
 
-/// What a stored image of a game is for: legacy `GameAssetRole` without
-/// `banner` and `screenshot`, which have no consumer (ADR 0032 as widened
-/// for Velvet). `tile` is the square cover (`LocalGame.coverAssetId`).
-#[typeshare::typeshare(serialized_as = "GameAssetRoleWire")]
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum GameAssetRole {
-    Tile,
-    Poster,
-    Hero,
-    Logo,
-}
-
-impl GameAssetRole {
-    pub(crate) const ALL: [Self; 4] = [Self::Tile, Self::Poster, Self::Hero, Self::Logo];
-
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Tile => "tile",
-            Self::Poster => "poster",
-            Self::Hero => "hero",
-            Self::Logo => "logo",
-        }
-    }
-}
-
-/// One image of one game, in `assignments.json` under `<playable id>:<role>`
-/// (legacy `GameAssetAssignmentRecord.id`).
+/// One image of one game, in `assignments.json` under
+/// `<playable id>:<plugin id>:<kind>:<n>` (legacy
+/// `GameAssetAssignmentRecord.id`, widened to hold a list per plugin and
+/// kind). `n` is the image's place in the plugin's order, from 0.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct AssetAssignment {
     pub asset_id: String,
-    pub role: GameAssetRole,
+    pub kind: SurfaceMediaKind,
     pub owner: AssetOwnerIdentity,
     pub source: GameAssetSource,
     /// One colour of this image as lowercase `#rrggbb`, computed once when
     /// the image is stored (`dominant_color`). Absent when the image has no
-    /// clear colour, and on a record stored before colours were computed.
+    /// clear colour.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
 }
 
-/// A stored `poster`, `hero` or `logo` of one game, as the game list
-/// carries it. The `tile` is the cover and is never in this list.
+/// A stored image of one game, as the game list carries it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct StoredMedia {
-    pub role: GameAssetRole,
+    pub kind: SurfaceMediaKind,
     pub asset_id: String,
     pub width: u32,
     pub height: u32,
@@ -98,20 +80,27 @@ pub(crate) struct GameAssetSource {
     pub format: String,
 }
 
-/// Downloaded bytes a plugin proposed for one role, with what it said of
-/// them.
+/// Downloaded bytes a plugin proposed for one kind, with what it said of
+/// them. The owning plugin's id is given beside them, never by the plugin.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct AssetCandidate {
     pub bytes: Vec<u8>,
     pub declared_width: Option<u32>,
     pub declared_height: Option<u32>,
-    /// The owning plugin's id. A plugin cannot claim another source.
-    pub provider: String,
     pub source_id: Option<String>,
     pub source_url: Option<String>,
 }
 
-#[derive(Debug, thiserror::Error, Eq, PartialEq)]
+/// What `replace` did with one plugin's images of one kind.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct Replaced {
+    /// The records now stored, in the plugin's order.
+    pub stored: Vec<AssetAssignment>,
+    /// Why each refused candidate was refused, in the plugin's order.
+    pub rejected: Vec<AssetError>,
+}
+
+#[derive(Clone, Debug, thiserror::Error, Eq, PartialEq)]
 pub(crate) enum AssetError {
     #[error("asset bytes exceed the configured limit")]
     Oversized,
@@ -155,94 +144,105 @@ impl GameAssetRepository {
         }
     }
 
+    /// Every record of this exact game, in key order: by plugin id, then
+    /// kind, then place.
     #[cfg(test)]
-    pub(crate) fn has_assignment(
-        &self,
-        playable_id: &str,
-        role: GameAssetRole,
-    ) -> Result<bool, AssetError> {
-        Ok(read_assignments(&self.root)?.contains_key(&assignment_key(playable_id, role)))
-    }
-
-    /// The roles this exact game already has an image for.
-    pub(crate) fn assigned_roles(
+    pub(crate) fn assignments(
         &self,
         owner: &AssetOwnerIdentity,
-    ) -> Result<BTreeSet<GameAssetRole>, AssetError> {
-        let assignments = read_assignments(&self.root)?;
-        Ok(GameAssetRole::ALL
-            .into_iter()
-            .filter(|role| matching_assignment(&assignments, owner, *role).is_some())
+    ) -> Result<Vec<AssetAssignment>, AssetError> {
+        Ok(read_assignments(&self.root)?
+            .into_values()
+            .filter(|assignment| &assignment.owner == owner)
             .collect())
     }
 
-    #[cfg(test)]
-    pub(crate) fn matching_assignment(
+    /// Whether this exact game holds any image from this plugin, of `kind`
+    /// or of any kind.
+    pub(crate) fn holds_from(
         &self,
         owner: &AssetOwnerIdentity,
-        role: GameAssetRole,
-    ) -> Result<Option<AssetAssignment>, AssetError> {
-        Ok(matching_assignment(&read_assignments(&self.root)?, owner, role).cloned())
+        provider: &str,
+        kind: Option<SurfaceMediaKind>,
+    ) -> Result<bool, AssetError> {
+        Ok(read_assignments(&self.root)?.values().any(|assignment| {
+            &assignment.owner == owner
+                && assignment.source.provider == provider
+                && kind.is_none_or(|kind| assignment.kind == kind)
+        }))
     }
 
     #[cfg(test)]
-    pub(crate) fn matching_tile_asset_id(
+    pub(crate) fn matching_cover_asset_id(
         &self,
         owner: &AssetOwnerIdentity,
     ) -> Result<Option<String>, AssetError> {
         Ok(self
-            .matching_tile_asset_ids(std::iter::once(owner))?
+            .matching_cover_asset_ids(std::iter::once(owner))?
             .remove(&owner.playable_id))
     }
 
-    pub(crate) fn matching_tile_asset_ids<'a>(
+    /// The cover of each of these exact games (`LocalGame.coverAssetId`):
+    /// the largest of its square-ish pictures, from 0.85 to 1.2 wide for
+    /// each unit of height (Velvet's square tile class, ADR 0091 slice 4).
+    /// Of two of the same area, the first in key order. A game with no
+    /// square-ish picture has no cover. An image whose blob is gone is left
+    /// out.
+    pub(crate) fn matching_cover_asset_ids<'a>(
         &self,
         owners: impl IntoIterator<Item = &'a AssetOwnerIdentity>,
     ) -> Result<BTreeMap<String, String>, AssetError> {
         let assignments = read_assignments(&self.root)?;
+        let by_game = by_playable_id(&assignments);
         let blob_root = self.root.join(BLOBS_DIR);
-        let mut asset_ids = BTreeMap::new();
+        let mut covers = BTreeMap::new();
         for owner in owners {
-            let Some(assignment) = matching_assignment(&assignments, owner, GameAssetRole::Tile)
-            else {
-                continue;
-            };
-            if !valid_asset_id(&assignment.asset_id) {
-                continue;
+            let mut best: Option<(u64, &AssetAssignment)> = None;
+            for assignment in by_game
+                .get(owner.playable_id.as_str())
+                .into_iter()
+                .flatten()
+            {
+                if &assignment.owner != owner
+                    || assignment.kind != SurfaceMediaKind::Picture
+                    || !square_ish(assignment.source.width, assignment.source.height)
+                    || !stored_blob(&blob_root, &assignment.asset_id)
+                {
+                    continue;
+                }
+                let area = u64::from(assignment.source.width) * u64::from(assignment.source.height);
+                if best.is_none_or(|(largest, _)| area > largest) {
+                    best = Some((area, assignment));
+                }
             }
-            if !blob_root.join(&assignment.asset_id).is_file() {
-                continue;
+            if let Some((_, assignment)) = best {
+                covers.insert(owner.playable_id.clone(), assignment.asset_id.clone());
             }
-            asset_ids.insert(owner.playable_id.clone(), assignment.asset_id.clone());
         }
-        Ok(asset_ids)
+        Ok(covers)
     }
 
-    /// The stored `poster`, `hero` and `logo` of each of these exact games,
-    /// in that order, by playable id. A game with none is not in the map. An
-    /// image whose blob is gone is left out, as for the tile.
+    /// Every stored image of each of these exact games, of every kind and
+    /// from every plugin, in key order, by playable id. A game with none is
+    /// not in the map. An image whose blob is gone is left out.
     pub(crate) fn matching_media<'a>(
         &self,
         owners: impl IntoIterator<Item = &'a AssetOwnerIdentity>,
     ) -> Result<BTreeMap<String, Vec<StoredMedia>>, AssetError> {
-        const MEDIA_ROLES: [GameAssetRole; 3] = [
-            GameAssetRole::Poster,
-            GameAssetRole::Hero,
-            GameAssetRole::Logo,
-        ];
         let assignments = read_assignments(&self.root)?;
+        let by_game = by_playable_id(&assignments);
         let blob_root = self.root.join(BLOBS_DIR);
         let mut media = BTreeMap::new();
         for owner in owners {
-            let stored: Vec<StoredMedia> = MEDIA_ROLES
+            let stored: Vec<StoredMedia> = by_game
+                .get(owner.playable_id.as_str())
                 .into_iter()
-                .filter_map(|role| matching_assignment(&assignments, owner, role))
+                .flatten()
                 .filter(|assignment| {
-                    valid_asset_id(&assignment.asset_id)
-                        && blob_root.join(&assignment.asset_id).is_file()
+                    &assignment.owner == owner && stored_blob(&blob_root, &assignment.asset_id)
                 })
                 .map(|assignment| StoredMedia {
-                    role: assignment.role,
+                    kind: assignment.kind,
                     asset_id: assignment.asset_id.clone(),
                     width: assignment.source.width,
                     height: assignment.source.height,
@@ -287,51 +287,82 @@ impl GameAssetRepository {
         }))
     }
 
-    /// Check the bytes against the role's rules, then keep them as this
-    /// game's image for that role, replacing an earlier one.
-    pub(crate) fn assign(
+    /// Check each candidate against the kind's rules, in order, and keep
+    /// the first `MAX_IMAGES_PER_KIND` that pass as this game's images of
+    /// that kind from `provider`. They replace that plugin's earlier images
+    /// of the kind for this playable id, in one write. When none passes,
+    /// nothing is written and the earlier images stay.
+    pub(crate) fn replace(
         &self,
         owner: AssetOwnerIdentity,
-        role: GameAssetRole,
-        candidate: AssetCandidate,
-    ) -> Result<AssetAssignment, AssetError> {
-        let decoded = validate_image(&candidate, role)?;
-        fs::create_dir_all(self.root.join(BLOBS_DIR)).map_err(|_| AssetError::Storage)?;
-        let blob_name = format!("{}.{}", decoded.sha256, decoded.extension);
-        let blob_path = self.root.join(BLOBS_DIR).join(&blob_name);
-        let wrote_blob = if !blob_path.exists() {
-            write_atomically(&blob_path, &candidate.bytes)?;
-            true
-        } else {
-            false
-        };
-        let assignment = AssetAssignment {
-            asset_id: blob_name,
-            role,
-            owner,
-            source: GameAssetSource {
-                provider: candidate.provider,
-                id: candidate.source_id,
-                url: candidate.source_url,
-                sha256: format!("sha256:{}", decoded.sha256),
-                width: decoded.width,
-                height: decoded.height,
-                format: decoded.extension,
-            },
-            color: decoded.color,
-        };
-        let mut assignments = read_assignments(&self.root)?;
-        assignments.insert(
-            assignment_key(&assignment.owner.playable_id, role),
-            assignment.clone(),
-        );
-        if let Err(error) = write_json_atomically(&self.root.join(ASSIGNMENTS_FILE), &assignments) {
-            if wrote_blob {
-                let _ = fs::remove_file(&blob_path);
+        provider: &str,
+        kind: SurfaceMediaKind,
+        candidates: Vec<AssetCandidate>,
+    ) -> Result<Replaced, AssetError> {
+        let mut replaced = Replaced::default();
+        let mut admitted = Vec::new();
+        for candidate in candidates {
+            if admitted.len() == MAX_IMAGES_PER_KIND {
+                break;
             }
+            match validate_image(&candidate, kind) {
+                Ok(decoded) => admitted.push((candidate, decoded)),
+                Err(error) => replaced.rejected.push(error),
+            }
+        }
+        if admitted.is_empty() {
+            return Ok(replaced);
+        }
+        let mut assignments = read_assignments(&self.root)?;
+        fs::create_dir_all(self.root.join(BLOBS_DIR)).map_err(|_| AssetError::Storage)?;
+        let mut written = Vec::new();
+        let remove_written = |written: &[PathBuf]| {
+            for path in written {
+                let _ = fs::remove_file(path);
+            }
+        };
+        for (candidate, decoded) in admitted {
+            let blob_name = format!("{}.{}", decoded.sha256, decoded.extension);
+            let blob_path = self.root.join(BLOBS_DIR).join(&blob_name);
+            if !blob_path.exists() {
+                if let Err(error) = write_atomically(&blob_path, &candidate.bytes) {
+                    remove_written(&written);
+                    return Err(error);
+                }
+                written.push(blob_path);
+            }
+            replaced.stored.push(AssetAssignment {
+                asset_id: blob_name,
+                kind,
+                owner: owner.clone(),
+                source: GameAssetSource {
+                    provider: provider.to_owned(),
+                    id: candidate.source_id,
+                    url: candidate.source_url,
+                    sha256: format!("sha256:{}", decoded.sha256),
+                    width: decoded.width,
+                    height: decoded.height,
+                    format: decoded.extension,
+                },
+                color: decoded.color,
+            });
+        }
+        assignments.retain(|_, assignment| {
+            !(assignment.owner.playable_id == owner.playable_id
+                && assignment.source.provider == provider
+                && assignment.kind == kind)
+        });
+        for (place, assignment) in replaced.stored.iter().enumerate() {
+            assignments.insert(
+                assignment_key(&owner.playable_id, provider, kind, place),
+                assignment.clone(),
+            );
+        }
+        if let Err(error) = write_json_atomically(&self.root.join(ASSIGNMENTS_FILE), &assignments) {
+            remove_written(&written);
             return Err(error);
         }
-        Ok(assignment)
+        Ok(replaced)
     }
 }
 
@@ -344,19 +375,39 @@ struct DecodedImage {
     color: Option<String>,
 }
 
-/// `<playable id>:<role>`, the key of one assignment.
-fn assignment_key(playable_id: &str, role: GameAssetRole) -> String {
-    format!("{playable_id}:{}", role.as_str())
+/// `<playable id>:<plugin id>:<kind>:<n>`, the key of one assignment.
+fn assignment_key(
+    playable_id: &str,
+    provider: &str,
+    kind: SurfaceMediaKind,
+    place: usize,
+) -> String {
+    format!("{playable_id}:{provider}:{}:{place}", kind.as_str())
 }
 
-fn matching_assignment<'a>(
-    assignments: &'a BTreeMap<String, AssetAssignment>,
-    owner: &AssetOwnerIdentity,
-    role: GameAssetRole,
-) -> Option<&'a AssetAssignment> {
-    assignments
-        .get(&assignment_key(&owner.playable_id, role))
-        .filter(|assignment| assignment.role == role && &assignment.owner == owner)
+/// The records of each playable id, in key order. The key is not parsed:
+/// playable ids and plugin ids may both hold `:`.
+fn by_playable_id(
+    assignments: &BTreeMap<String, AssetAssignment>,
+) -> BTreeMap<&str, Vec<&AssetAssignment>> {
+    let mut by_game: BTreeMap<&str, Vec<&AssetAssignment>> = BTreeMap::new();
+    for assignment in assignments.values() {
+        by_game
+            .entry(assignment.owner.playable_id.as_str())
+            .or_default()
+            .push(assignment);
+    }
+    by_game
+}
+
+fn stored_blob(blob_root: &Path, asset_id: &str) -> bool {
+    valid_asset_id(asset_id) && blob_root.join(asset_id).is_file()
+}
+
+/// From 0.85 to 1.2 wide for each unit of height, in whole numbers.
+fn square_ish(width: u32, height: u32) -> bool {
+    let (width, height) = (u64::from(width), u64::from(height));
+    100 * width >= 85 * height && 10 * width <= 12 * height
 }
 
 fn valid_asset_id(asset_id: &str) -> bool {
@@ -435,7 +486,7 @@ pub(crate) fn asset_url(asset_id: &str) -> String {
 
 fn validate_image(
     candidate: &AssetCandidate,
-    role: GameAssetRole,
+    kind: SurfaceMediaKind,
 ) -> Result<DecodedImage, AssetError> {
     if candidate.bytes.len() > MAX_ASSET_BYTES {
         return Err(AssetError::Oversized);
@@ -461,22 +512,22 @@ fn validate_image(
     let (width, height) = header_reader
         .into_dimensions()
         .map_err(image_dimension_error)?;
-    if !role_admits_dimensions(role, width, height) {
+    if !kind_admits_dimensions(kind, width, height) {
         return Err(AssetError::UnsafeDimensions);
     }
-    // A logo lies over other art, so it needs an alpha channel, which only
-    // PNG and WebP carry.
-    if role == GameAssetRole::Logo && format == ImageFormat::Jpeg {
+    // A logo lies over other art, so it needs transparency, which only PNG
+    // and WebP carry.
+    if kind == SurfaceMediaKind::Logo && format == ImageFormat::Jpeg {
         return Err(AssetError::Unsupported);
     }
     let mut reader = ImageReader::with_format(Cursor::new(&candidate.bytes), format);
     reader.limits(image_limits());
     let image = reader.decode().map_err(image_decode_error)?;
     let (width, height) = image.dimensions();
-    if !role_admits_dimensions(role, width, height) {
+    if !kind_admits_dimensions(kind, width, height) {
         return Err(AssetError::UnsafeDimensions);
     }
-    if role == GameAssetRole::Logo && !image.color().has_alpha() {
+    if kind == SurfaceMediaKind::Logo && !has_transparency(&image) {
         return Err(AssetError::Unsupported);
     }
     if candidate
@@ -565,25 +616,28 @@ fn image_limits() -> Limits {
     limits
 }
 
-/// The size rule of each role. Every image is at most 4096 pixels a side.
-/// - `tile`: square.
-/// - `poster`: width to height is 2 to 3, within 2 % (SteamGridDB's
-///   `600x900`; the legacy importer's `2x3`).
-/// - `hero`: wider than tall, from 2 to 1 up to 4 to 1 (observed heroes are
-///   `1920x620` and `3840x1240`).
-/// - `logo`: any shape.
-fn role_admits_dimensions(role: GameAssetRole, width: u32, height: u32) -> bool {
+/// The sanity rule of each kind (ADR 0091). Every image is at least one
+/// and at most 4096 pixels a side.
+/// - `picture`: each side at least 256 pixels. Any shape: a surface picks
+///   by the measured shape.
+/// - `logo`: any shape. It must also have transparency (`has_transparency`).
+/// - `icon`: square.
+fn kind_admits_dimensions(kind: SurfaceMediaKind, width: u32, height: u32) -> bool {
     if width == 0 || height == 0 || width > MAX_DIMENSION || height > MAX_DIMENSION {
         return false;
     }
-    let (width, height) = (u64::from(width), u64::from(height));
-    match role {
-        GameAssetRole::Tile => width == height,
-        // |w/h - 2/3| <= 2 % of 2/3, in whole numbers: |150w - 100h| <= 2h.
-        GameAssetRole::Poster => (150 * width).abs_diff(100 * height) <= 2 * height,
-        GameAssetRole::Hero => width >= 2 * height && width <= 4 * height,
-        GameAssetRole::Logo => true,
+    match kind {
+        SurfaceMediaKind::Picture => width >= MIN_PICTURE_SIDE && height >= MIN_PICTURE_SIDE,
+        SurfaceMediaKind::Logo => true,
+        SurfaceMediaKind::Icon => width == height,
     }
+}
+
+/// An alpha channel, and at least one pixel that is not fully opaque. An
+/// alpha channel alone is not enough: a logo on an opaque box hides the
+/// art under it.
+fn has_transparency(image: &image::DynamicImage) -> bool {
+    image.color().has_alpha() && image.to_rgba8().pixels().any(|pixel| pixel.0[3] < u8::MAX)
 }
 
 fn image_dimension_error(error: image::ImageError) -> AssetError {
@@ -662,7 +716,8 @@ fn sync_directory(path: &Path) {
 }
 
 /// An encoded image of one flat colour for tests here and in the artwork
-/// pass: real bytes of a real format, with or without an alpha channel.
+/// pass: real bytes of a real format. With `alpha`, it has an alpha channel
+/// and its top left pixel is fully transparent, as a logo's background is.
 #[cfg(test)]
 pub(crate) fn test_image(
     width: u32,
@@ -674,11 +729,9 @@ pub(crate) fn test_image(
     let mut bytes = Vec::new();
     let [r, g, b] = rgb;
     let image = if alpha {
-        image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
-            width,
-            height,
-            image::Rgba([r, g, b, 255]),
-        ))
+        let mut image = image::RgbaImage::from_pixel(width, height, image::Rgba([r, g, b, 255]));
+        image.put_pixel(0, 0, image::Rgba([r, g, b, 0]));
+        image::DynamicImage::ImageRgba8(image)
     } else {
         image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
             width,
@@ -695,6 +748,7 @@ pub(crate) fn test_image(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use SurfaceMediaKind::{Icon, Logo, Picture};
 
     const PNG_1X1: &[u8] = &[
         137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 4,
@@ -702,6 +756,7 @@ mod tests {
         1, 2, 154, 28, 49, 113, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
     ];
     const PLUGIN: &str = "@korri:steamgriddb";
+    const OTHER: &str = "@korri:igdb";
 
     fn owner() -> AssetOwnerIdentity {
         AssetOwnerIdentity {
@@ -717,7 +772,6 @@ mod tests {
             bytes,
             declared_width: None,
             declared_height: None,
-            provider: PLUGIN.into(),
             source_id: Some("20".into()),
             source_url: Some("https://cdn2.steamgriddb.com/grid/20.png".into()),
         }
@@ -727,73 +781,66 @@ mod tests {
         test_image(width, height, ImageFormat::Png, true, [200, 40, 40])
     }
 
-    #[test]
-    fn assigns_valid_static_square_image_content_addressably() {
-        let private = tempfile::tempdir().unwrap();
-        let repo = GameAssetRepository::new(private.path());
-        let assignment = repo
-            .assign(
-                owner(),
-                GameAssetRole::Tile,
-                AssetCandidate {
-                    declared_width: Some(1),
-                    declared_height: Some(1),
-                    ..candidate(PNG_1X1.to_vec())
-                },
+    fn file(private: &Path) -> serde_json::Value {
+        serde_json::from_slice(&fs::read(private.join(STATE_DIR).join(ASSIGNMENTS_FILE)).unwrap())
+            .unwrap()
+    }
+
+    fn keys(private: &Path) -> Vec<String> {
+        file(private).as_object().unwrap().keys().cloned().collect()
+    }
+
+    fn asset_id(bytes: &[u8], extension: &str) -> String {
+        format!("{}.{extension}", hex::encode(Sha256::digest(bytes)))
+    }
+
+    /// Store `images` as `provider`'s images of `kind` for `owner`, all of
+    /// which must pass.
+    fn put(
+        repo: &GameAssetRepository,
+        owner: &AssetOwnerIdentity,
+        provider: &str,
+        kind: SurfaceMediaKind,
+        images: &[Vec<u8>],
+    ) -> Vec<AssetAssignment> {
+        let replaced = repo
+            .replace(
+                owner.clone(),
+                provider,
+                kind,
+                images.iter().cloned().map(candidate).collect(),
             )
             .unwrap();
-
-        assert_eq!(assignment.role, GameAssetRole::Tile);
-        assert!(assignment.asset_id.ends_with(".png"));
-        assert!(repo.has_assignment("wl4", GameAssetRole::Tile).unwrap());
-        assert_eq!(
-            repo.matching_tile_asset_id(&owner()).unwrap(),
-            Some(assignment.asset_id.clone())
-        );
-
-        fs::remove_file(
-            private
-                .path()
-                .join(STATE_DIR)
-                .join(BLOBS_DIR)
-                .join(&assignment.asset_id),
-        )
-        .unwrap();
-        assert_eq!(repo.matching_tile_asset_id(&owner()).unwrap(), None);
+        assert!(replaced.rejected.is_empty(), "{:?}", replaced.rejected);
+        replaced.stored
     }
 
     #[test]
-    fn each_role_has_its_own_assignment_under_playable_id_and_role() {
+    fn images_are_stored_content_addressably_under_playable_plugin_kind_and_place() {
         let private = tempfile::tempdir().unwrap();
         let repo = GameAssetRepository::new(private.path());
-        let images = [
-            (GameAssetRole::Tile, png(8, 8)),
-            (GameAssetRole::Poster, png(60, 90)),
-            (GameAssetRole::Hero, png(192, 62)),
-            (GameAssetRole::Logo, png(40, 13)),
-        ];
-        for (role, bytes) in &images {
-            repo.assign(owner(), *role, candidate(bytes.clone()))
-                .unwrap();
-        }
+        let pictures = [png(512, 512), png(600, 900), png(1920, 620)];
+        let logo = png(400, 120);
+        put(&repo, &owner(), PLUGIN, Picture, &pictures);
+        put(&repo, &owner(), PLUGIN, Logo, std::slice::from_ref(&logo));
+        put(&repo, &owner(), OTHER, Picture, &[png(1920, 1080)]);
         assert_eq!(
-            repo.assigned_roles(&owner()).unwrap(),
-            GameAssetRole::ALL.into_iter().collect()
+            keys(private.path()),
+            [
+                "wl4:@korri:igdb:picture:0",
+                "wl4:@korri:steamgriddb:logo:0",
+                "wl4:@korri:steamgriddb:picture:0",
+                "wl4:@korri:steamgriddb:picture:1",
+                "wl4:@korri:steamgriddb:picture:2",
+            ]
         );
-        // The file: one record per key, the role in the key and in the record,
-        // and the source as legacy `GameAssetSource` plus what korrid measured.
-        let file: serde_json::Value = serde_json::from_slice(
-            &fs::read(private.path().join(STATE_DIR).join(ASSIGNMENTS_FILE)).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(
-            file.as_object().unwrap().keys().collect::<Vec<_>>(),
-            vec!["wl4:hero", "wl4:logo", "wl4:poster", "wl4:tile"]
-        );
-        let hero = &file["wl4:hero"];
-        assert_eq!(hero["role"], "hero");
+        // The record: the kind, the owner, and the source as legacy
+        // `GameAssetSource` plus what korrid measured.
+        let hero = &file(private.path())["wl4:@korri:steamgriddb:picture:2"];
+        assert_eq!(hero["kind"], "picture");
+        assert!(hero.get("role").is_none());
         assert_eq!(hero["owner"]["playable_id"], "wl4");
-        let sha256 = hex::encode(Sha256::digest(&images[2].1));
+        let sha256 = hex::encode(Sha256::digest(&pictures[2]));
         assert_eq!(hero["asset_id"], format!("{sha256}.png"));
         assert_eq!(
             hero["source"],
@@ -802,37 +849,124 @@ mod tests {
                 "id": "20",
                 "url": "https://cdn2.steamgriddb.com/grid/20.png",
                 "sha256": format!("sha256:{sha256}"),
-                "width": 192,
-                "height": 62,
+                "width": 1920,
+                "height": 620,
                 "format": "png",
             })
         );
-        // The tile alone is the cover id.
         assert_eq!(
-            repo.matching_tile_asset_id(&owner()).unwrap(),
-            Some(format!("{}.png", hex::encode(Sha256::digest(&images[0].1))))
-        );
-        // A new image for one role replaces only that role's record.
-        let replacement = png(120, 40);
-        repo.assign(owner(), GameAssetRole::Hero, candidate(replacement.clone()))
-            .unwrap();
-        assert_eq!(
-            repo.matching_assignment(&owner(), GameAssetRole::Hero)
+            repo.assigned_asset(&asset_id(&logo, "png"))
                 .unwrap()
                 .unwrap()
-                .asset_id,
-            format!("{}.png", hex::encode(Sha256::digest(&replacement)))
+                .bytes,
+            logo
         );
-        assert_eq!(repo.assigned_roles(&owner()).unwrap().len(), 4);
+        assert!(repo.holds_from(&owner(), PLUGIN, None).unwrap());
+        assert!(repo.holds_from(&owner(), OTHER, None).unwrap());
+        assert!(!repo.holds_from(&owner(), "@korri:other", None).unwrap());
         // A game whose identity changed has no image under the old records.
         let mut changed = owner();
         changed.rom_identity = "sha256:other-rom".into();
-        assert!(repo.assigned_roles(&changed).unwrap().is_empty());
-        assert_eq!(repo.matching_tile_asset_id(&changed).unwrap(), None);
+        assert!(repo.assignments(&changed).unwrap().is_empty());
+        assert!(!repo.holds_from(&changed, PLUGIN, None).unwrap());
+        assert!(repo.matching_media([&changed]).unwrap().is_empty());
     }
 
     #[test]
-    fn media_lists_exactly_the_stored_poster_hero_and_logo_and_never_the_tile() {
+    fn a_new_answer_replaces_only_that_plugins_images_of_that_kind() {
+        let private = tempfile::tempdir().unwrap();
+        let repo = GameAssetRepository::new(private.path());
+        put(
+            &repo,
+            &owner(),
+            PLUGIN,
+            Picture,
+            &[png(512, 512), png(600, 900), png(1920, 620)],
+        );
+        put(&repo, &owner(), PLUGIN, Logo, &[png(400, 120)]);
+        put(&repo, &owner(), OTHER, Picture, &[png(1920, 1080)]);
+        let other_before = file(private.path())["wl4:@korri:igdb:picture:0"].clone();
+        let logo_before = file(private.path())["wl4:@korri:steamgriddb:logo:0"].clone();
+
+        // One picture now: places 1 and 2 go, place 0 is the new image.
+        let newer = png(1024, 1024);
+        put(
+            &repo,
+            &owner(),
+            PLUGIN,
+            Picture,
+            std::slice::from_ref(&newer),
+        );
+        assert_eq!(
+            keys(private.path()),
+            [
+                "wl4:@korri:igdb:picture:0",
+                "wl4:@korri:steamgriddb:logo:0",
+                "wl4:@korri:steamgriddb:picture:0",
+            ]
+        );
+        assert_eq!(
+            file(private.path())["wl4:@korri:steamgriddb:picture:0"]["asset_id"],
+            asset_id(&newer, "png")
+        );
+        assert_eq!(
+            file(private.path())["wl4:@korri:igdb:picture:0"],
+            other_before
+        );
+        assert_eq!(
+            file(private.path())["wl4:@korri:steamgriddb:logo:0"],
+            logo_before
+        );
+
+        // A record of the same playable id under an older identity is the
+        // plugin's earlier image too, and goes.
+        let mut older = owner();
+        older.release_fingerprint = "sha256:older".into();
+        put(&repo, &older, PLUGIN, Logo, &[png(400, 121)]);
+        assert_eq!(repo.assignments(&older).unwrap().len(), 1);
+        assert!(repo
+            .assignments(&owner())
+            .unwrap()
+            .iter()
+            .all(|assignment| assignment.kind != Logo || assignment.source.provider != PLUGIN));
+    }
+
+    #[test]
+    fn at_most_four_images_are_kept_in_the_plugins_order_and_refused_ones_do_not_count() {
+        let private = tempfile::tempdir().unwrap();
+        let repo = GameAssetRepository::new(private.path());
+        let images: Vec<Vec<u8>> = (0..6).map(|index| png(300 + index, 300)).collect();
+        // The second is too small to be a picture: it is refused and the
+        // next one takes its place.
+        let mut candidates: Vec<AssetCandidate> = images.iter().cloned().map(candidate).collect();
+        candidates.insert(1, candidate(png(255, 300)));
+        let replaced = repo.replace(owner(), PLUGIN, Picture, candidates).unwrap();
+        assert_eq!(replaced.rejected, [AssetError::UnsafeDimensions]);
+        assert_eq!(
+            replaced
+                .stored
+                .iter()
+                .map(|stored| stored.source.width)
+                .collect::<Vec<_>>(),
+            [300, 301, 302, 303]
+        );
+        assert_eq!(keys(private.path()).len(), 4);
+        assert_eq!(
+            file(private.path())["wl4:@korri:steamgriddb:picture:3"]["asset_id"],
+            asset_id(&images[3], "png")
+        );
+        // An answer where nothing passes writes nothing: the earlier images
+        // stay.
+        let replaced = repo
+            .replace(owner(), PLUGIN, Picture, vec![candidate(png(64, 64))])
+            .unwrap();
+        assert_eq!(replaced.stored, []);
+        assert_eq!(replaced.rejected, [AssetError::UnsafeDimensions]);
+        assert_eq!(keys(private.path()).len(), 4);
+    }
+
+    #[test]
+    fn media_lists_every_stored_image_of_every_kind_from_every_plugin() {
         let private = tempfile::tempdir().unwrap();
         let repo = GameAssetRepository::new(private.path());
         let mut other = owner();
@@ -842,111 +976,156 @@ mod tests {
         let owners = [owner(), other.clone(), bare];
         assert!(repo.matching_media(&owners).unwrap().is_empty());
 
-        // wl4: every role. anguna: a tile and a logo only.
-        let hero = test_image(192, 62, ImageFormat::Png, false, [30, 160, 90]);
-        let logo = test_image(40, 13, ImageFormat::Png, true, [255, 255, 255]);
-        for (role, bytes) in [
-            (GameAssetRole::Logo, logo.clone()),
-            (GameAssetRole::Hero, hero.clone()),
-            (GameAssetRole::Tile, png(8, 8)),
-            (GameAssetRole::Poster, png(60, 90)),
-        ] {
-            repo.assign(owner(), role, candidate(bytes)).unwrap();
-        }
-        repo.assign(other.clone(), GameAssetRole::Tile, candidate(png(8, 8)))
-            .unwrap();
-        repo.assign(other, GameAssetRole::Logo, candidate(logo.clone()))
-            .unwrap();
+        let hero = test_image(1920, 620, ImageFormat::Png, false, [30, 160, 90]);
+        let logo = test_image(400, 130, ImageFormat::Png, true, [255, 255, 255]);
+        let icon = png(64, 64);
+        put(
+            &repo,
+            &owner(),
+            PLUGIN,
+            Picture,
+            &[png(512, 512), hero.clone()],
+        );
+        put(&repo, &owner(), PLUGIN, Logo, std::slice::from_ref(&logo));
+        put(&repo, &owner(), OTHER, Icon, std::slice::from_ref(&icon));
+        put(&repo, &other, PLUGIN, Logo, std::slice::from_ref(&logo));
 
         let media = repo.matching_media(&owners).unwrap();
         assert_eq!(media.keys().collect::<Vec<_>>(), vec!["anguna", "wl4"]);
-        // Poster, hero, logo, whatever order they were stored in.
+        // Key order: plugin id, then kind, then place.
         assert_eq!(
             media["wl4"]
                 .iter()
-                .map(|stored| (stored.role, stored.width, stored.height))
+                .map(|stored| (stored.kind, stored.width, stored.height))
                 .collect::<Vec<_>>(),
             vec![
-                (GameAssetRole::Poster, 60, 90),
-                (GameAssetRole::Hero, 192, 62),
-                (GameAssetRole::Logo, 40, 13)
+                (Icon, 64, 64),
+                (Logo, 400, 130),
+                (Picture, 512, 512),
+                (Picture, 1920, 620),
             ]
         );
         assert_eq!(
-            media["wl4"][1],
+            media["wl4"][3],
             StoredMedia {
-                role: GameAssetRole::Hero,
-                asset_id: format!("{}.png", hex::encode(Sha256::digest(&hero))),
-                width: 192,
-                height: 62,
+                kind: Picture,
+                asset_id: asset_id(&hero, "png"),
+                width: 1920,
+                height: 620,
                 color: Some("#1ea05a".into()),
             }
         );
-        // A game with only some roles lists exactly those.
-        assert_eq!(
-            media["anguna"]
-                .iter()
-                .map(|stored| stored.role)
-                .collect::<Vec<_>>(),
-            vec![GameAssetRole::Logo]
-        );
         // A white logo has no clear colour.
+        assert_eq!(media["anguna"].len(), 1);
         assert_eq!(media["anguna"][0].color, None);
-        // The tile is the cover, in its own list.
-        assert_eq!(repo.matching_tile_asset_ids(&owners).unwrap().len(), 2);
         // An image whose blob is gone is left out.
         fs::remove_file(
             private
                 .path()
                 .join(STATE_DIR)
                 .join(BLOBS_DIR)
-                .join(&media["wl4"][1].asset_id),
+                .join(asset_id(&hero, "png")),
         )
         .unwrap();
         assert_eq!(
             repo.matching_media(&owners).unwrap()["wl4"]
                 .iter()
-                .map(|stored| stored.role)
+                .map(|stored| stored.kind)
                 .collect::<Vec<_>>(),
-            vec![GameAssetRole::Poster, GameAssetRole::Logo]
+            vec![Icon, Logo, Picture]
         );
+    }
+
+    #[test]
+    fn the_cover_is_the_largest_square_ish_picture() {
+        let private = tempfile::tempdir().unwrap();
+        let repo = GameAssetRepository::new(private.path());
+        assert_eq!(repo.matching_cover_asset_id(&owner()).unwrap(), None);
+        // No square-ish picture, and an icon and a logo that are square: no
+        // cover.
+        put(
+            &repo,
+            &owner(),
+            PLUGIN,
+            Picture,
+            &[png(600, 900), png(1920, 620)],
+        );
+        put(&repo, &owner(), PLUGIN, Icon, &[png(1024, 1024)]);
+        put(&repo, &owner(), PLUGIN, Logo, &[png(1024, 1024)]);
+        assert_eq!(repo.matching_cover_asset_id(&owner()).unwrap(), None);
+        // 0.85 and 1.2 wide for each unit of height are square-ish.
+        let low = png(340, 400);
+        let high = png(480, 400);
+        put(&repo, &owner(), OTHER, Picture, &[low.clone()]);
+        assert_eq!(
+            repo.matching_cover_asset_id(&owner()).unwrap(),
+            Some(asset_id(&low, "png"))
+        );
+        put(&repo, &owner(), OTHER, Picture, &[high.clone()]);
+        assert_eq!(
+            repo.matching_cover_asset_id(&owner()).unwrap(),
+            Some(asset_id(&high, "png"))
+        );
+        // The largest wins, from any plugin; of the same area, the first in
+        // key order.
+        let small = png(512, 512);
+        let large = png(1024, 1024);
+        let same = png(1024, 1025);
+        put(&repo, &owner(), PLUGIN, Picture, &[small, large.clone()]);
+        assert_eq!(
+            repo.matching_cover_asset_id(&owner()).unwrap(),
+            Some(asset_id(&large, "png"))
+        );
+        put(&repo, &owner(), OTHER, Picture, &[same.clone()]);
+        assert_eq!(
+            repo.matching_cover_asset_id(&owner()).unwrap(),
+            Some(asset_id(&same, "png"))
+        );
+        // An image whose blob is gone is not a cover.
+        fs::remove_file(
+            private
+                .path()
+                .join(STATE_DIR)
+                .join(BLOBS_DIR)
+                .join(asset_id(&same, "png")),
+        )
+        .unwrap();
+        assert_eq!(
+            repo.matching_cover_asset_id(&owner()).unwrap(),
+            Some(asset_id(&large, "png"))
+        );
+        for (width, height, square) in [
+            (85, 100, true),
+            (84, 100, false),
+            (120, 100, true),
+            (121, 100, false),
+            (2, 3, false),
+        ] {
+            assert_eq!(square_ish(width, height), square, "{width}x{height}");
+        }
     }
 
     #[test]
     fn the_colour_is_computed_once_and_kept_with_the_assignment() {
         let private = tempfile::tempdir().unwrap();
         let repo = GameAssetRepository::new(private.path());
-        let assignment = repo
-            .assign(
-                owner(),
-                GameAssetRole::Poster,
-                candidate(test_image(60, 90, ImageFormat::Png, false, [200, 60, 40])),
-            )
-            .unwrap();
-        assert_eq!(assignment.color.as_deref(), Some("#c83c28"));
-        let file: serde_json::Value = serde_json::from_slice(
-            &fs::read(private.path().join(STATE_DIR).join(ASSIGNMENTS_FILE)).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(file["wl4:poster"]["color"], "#c83c28");
+        let stored = put(
+            &repo,
+            &owner(),
+            PLUGIN,
+            Picture,
+            &[
+                test_image(600, 900, ImageFormat::Png, false, [200, 60, 40]),
+                test_image(1920, 620, ImageFormat::Png, false, [128, 128, 128]),
+            ],
+        );
+        assert_eq!(stored[0].color.as_deref(), Some("#c83c28"));
+        let file = file(private.path());
+        assert_eq!(file["wl4:@korri:steamgriddb:picture:0"]["color"], "#c83c28");
         // An image with no clear colour keeps no field.
-        repo.assign(
-            owner(),
-            GameAssetRole::Hero,
-            candidate(test_image(
-                192,
-                62,
-                ImageFormat::Png,
-                false,
-                [128, 128, 128],
-            )),
-        )
-        .unwrap();
-        let file: serde_json::Value = serde_json::from_slice(
-            &fs::read(private.path().join(STATE_DIR).join(ASSIGNMENTS_FILE)).unwrap(),
-        )
-        .unwrap();
-        assert!(file["wl4:hero"].get("color").is_none());
+        assert!(file["wl4:@korri:steamgriddb:picture:1"]
+            .get("color")
+            .is_none());
     }
 
     /// An image painted in vertical bands, widest first.
@@ -1035,60 +1214,78 @@ mod tests {
     fn a_source_without_an_id_or_url_keeps_neither() {
         let private = tempfile::tempdir().unwrap();
         let repo = GameAssetRepository::new(private.path());
-        let assignment = repo
-            .assign(
+        let replaced = repo
+            .replace(
                 owner(),
-                GameAssetRole::Tile,
-                AssetCandidate {
+                PLUGIN,
+                Icon,
+                vec![AssetCandidate {
                     source_id: None,
                     source_url: None,
                     ..candidate(png(4, 4))
-                },
+                }],
             )
             .unwrap();
-        let source = serde_json::to_value(&assignment.source).unwrap();
+        let source = serde_json::to_value(&replaced.stored[0].source).unwrap();
         assert!(source.get("id").is_none() && source.get("url").is_none());
         assert_eq!(source["provider"], PLUGIN);
     }
 
     #[test]
     fn records_from_before_the_migration_are_not_read() {
-        let private = tempfile::tempdir().unwrap();
-        let repo = GameAssetRepository::new(private.path());
-        let state = private.path().join(STATE_DIR);
-        fs::create_dir_all(&state).unwrap();
         let asset_id = format!("{}.png", "a".repeat(64));
-        // The old key and the old `source`, exactly as main wrote them.
-        fs::write(
-            state.join(ASSIGNMENTS_FILE),
+        let sha256 = format!("sha256:{}", "a".repeat(64));
+        // The records of the first artwork migration, and those of the fixed
+        // roles, exactly as korrid wrote them.
+        for old in [
             serde_json::json!({ "wl4": {
                 "asset_id": asset_id, "role": "tile", "owner": owner(),
                 "source": { "provider": "steamgriddb", "game_id": 10, "grid_id": 20,
-                    "sha256": format!("sha256:{}", "a".repeat(64)), "width": 512, "height": 512, "format": "png" }
-            } })
-            .to_string(),
-        )
-        .unwrap();
-        // No alias and no fallback read: the file is refused whole, so no new
-        // record is written beside the old ones.
-        assert_eq!(repo.assigned_roles(&owner()), Err(AssetError::Storage));
-        assert_eq!(
-            repo.assign(owner(), GameAssetRole::Tile, candidate(png(4, 4))),
-            Err(AssetError::Storage)
-        );
-        assert!(repo
-            .matching_tile_asset_ids(std::iter::once(&owner()))
-            .is_err());
+                    "sha256": sha256, "width": 512, "height": 512, "format": "png" }
+            } }),
+            serde_json::json!({ "wl4:tile": {
+                "asset_id": asset_id, "role": "tile", "owner": owner(),
+                "source": { "provider": PLUGIN, "id": "20",
+                    "sha256": sha256, "width": 512, "height": 512, "format": "png" }
+            } }),
+            serde_json::json!({ "wl4:@korri:steamgriddb:picture:0": {
+                "asset_id": asset_id, "role": "tile", "kind": "picture", "owner": owner(),
+                "source": { "provider": PLUGIN, "id": "20",
+                    "sha256": sha256, "width": 512, "height": 512, "format": "png" }
+            } }),
+        ] {
+            let private = tempfile::tempdir().unwrap();
+            let repo = GameAssetRepository::new(private.path());
+            let state = private.path().join(STATE_DIR);
+            fs::create_dir_all(&state).unwrap();
+            fs::write(state.join(ASSIGNMENTS_FILE), old.to_string()).unwrap();
+            // No alias and no fallback read: the file is refused whole, so no
+            // new record is written beside the old ones.
+            assert_eq!(
+                repo.holds_from(&owner(), PLUGIN, None),
+                Err(AssetError::Storage)
+            );
+            assert_eq!(
+                repo.replace(owner(), PLUGIN, Picture, vec![candidate(png(512, 512))]),
+                Err(AssetError::Storage)
+            );
+            assert!(repo.matching_cover_asset_ids([&owner()]).is_err());
+            assert!(repo.matching_media([&owner()]).is_err());
+            assert_eq!(
+                fs::read_to_string(state.join(ASSIGNMENTS_FILE)).unwrap(),
+                old.to_string()
+            );
+        }
     }
 
-    /// `deploy/migrate-plugin-artwork.py` turns the first file into the
+    /// `deploy/migrate-measured-media.py` turns the first file into the
     /// second; its own test compares against these same two files.
     #[test]
-    fn the_one_off_migration_writes_records_that_keep_every_cover() {
+    fn the_one_off_migration_writes_records_that_keep_every_image_and_cover() {
         const BEFORE: &str =
-            include_str!("../tests/fixtures/artwork-migration/before.assignments.json");
+            include_str!("../tests/fixtures/measured-media-migration/before.assignments.json");
         const AFTER: &str =
-            include_str!("../tests/fixtures/artwork-migration/after.assignments.json");
+            include_str!("../tests/fixtures/measured-media-migration/after.assignments.json");
         let private = tempfile::tempdir().unwrap();
         let repo = GameAssetRepository::new(private.path());
         let state = private.path().join(STATE_DIR);
@@ -1103,137 +1300,185 @@ mod tests {
             )
             .unwrap();
         }
-        let owners: Vec<AssetOwnerIdentity> = old
+        let mut owners: Vec<AssetOwnerIdentity> = old
             .values()
             .map(|record| serde_json::from_value(record["owner"].clone()).unwrap())
             .collect();
+        owners.dedup();
+        assert_eq!(owners.len(), 2);
 
         // Before the migration korrid reads nothing: no alias, no fallback.
         fs::write(state.join(ASSIGNMENTS_FILE), BEFORE).unwrap();
-        assert!(repo.matching_tile_asset_ids(&owners).is_err());
+        assert!(repo.matching_cover_asset_ids(&owners).is_err());
 
         fs::write(state.join(ASSIGNMENTS_FILE), AFTER).unwrap();
-        let covers = repo.matching_tile_asset_ids(&owners).unwrap();
-        assert_eq!(covers.len(), old.len());
-        for (playable_id, record) in &old {
-            let asset_id = record["asset_id"].as_str().unwrap();
-            assert_eq!(covers[playable_id], asset_id);
-            assert!(repo.assigned_asset(asset_id).unwrap().is_some());
+        // Every cover stays: each old tile is its game's cover.
+        let covers = repo.matching_cover_asset_ids(&owners).unwrap();
+        for (key, record) in &old {
+            if record["role"] == "tile" {
+                let playable_id = key.strip_suffix(":tile").unwrap();
+                assert_eq!(covers[playable_id], record["asset_id"].as_str().unwrap());
+            }
         }
+        assert_eq!(covers.len(), 2);
+        // Every image stays, with its kind, size and colour, from its plugin.
+        let media = repo.matching_media(&owners).unwrap();
+        let mut listed: Vec<_> = media
+            .values()
+            .flatten()
+            .map(|stored| {
+                (
+                    stored.asset_id.clone(),
+                    stored.kind,
+                    stored.width,
+                    stored.height,
+                    stored.color.clone(),
+                )
+            })
+            .collect();
+        listed.sort();
+        let mut expected: Vec<_> = old
+            .values()
+            .map(|record| {
+                (
+                    record["asset_id"].as_str().unwrap().to_owned(),
+                    if record["role"] == "logo" {
+                        Logo
+                    } else {
+                        Picture
+                    },
+                    record["source"]["width"].as_u64().unwrap() as u32,
+                    record["source"]["height"].as_u64().unwrap() as u32,
+                    record["color"].as_str().map(str::to_owned),
+                )
+            })
+            .collect();
+        expected.sort();
+        assert_eq!(listed, expected);
         for owner in &owners {
-            assert_eq!(
-                repo.assigned_roles(owner).unwrap(),
-                [GameAssetRole::Tile].into_iter().collect()
-            );
-            let source = repo
-                .matching_assignment(owner, GameAssetRole::Tile)
-                .unwrap()
-                .unwrap()
-                .source;
-            assert_eq!(source.provider, PLUGIN);
-            assert!(source.id.is_some() && source.url.is_none());
+            assert!(repo.holds_from(owner, PLUGIN, None).unwrap());
+            for assignment in repo.assignments(owner).unwrap() {
+                assert!(repo.assigned_asset(&assignment.asset_id).unwrap().is_some());
+            }
         }
+        // A later answer from the plugin replaces the migrated pictures.
+        let wario = owners
+            .iter()
+            .find(|owner| owner.playable_id == "wario-land-4")
+            .unwrap();
+        put(&repo, wario, PLUGIN, Picture, &[png(512, 512)]);
+        assert_eq!(
+            repo.assignments(wario)
+                .unwrap()
+                .iter()
+                .filter(|assignment| assignment.kind == Picture)
+                .count(),
+            1
+        );
     }
 
     #[test]
-    fn each_role_admits_only_its_own_shape() {
-        use GameAssetRole::{Hero, Logo, Poster, Tile};
-        for (role, width, height, admitted) in [
-            (Tile, 512, 512, true),
-            (Tile, 512, 511, false),
-            (Tile, 600, 900, false),
-            // 2 to 3, within 2 %.
-            (Poster, 600, 900, true),
-            (Poster, 1000, 1500, true),
-            (Poster, 612, 900, true),
-            (Poster, 588, 900, true),
-            (Poster, 613, 900, false),
-            (Poster, 587, 900, false),
-            (Poster, 900, 600, false),
-            (Poster, 512, 512, false),
-            // Wider than tall, from 2 to 1 up to 4 to 1.
-            (Hero, 1920, 620, true),
-            (Hero, 3840, 1240, true),
-            (Hero, 1240, 620, true),
-            (Hero, 2480, 620, true),
-            (Hero, 1239, 620, false),
-            (Hero, 2481, 620, false),
-            (Hero, 620, 1920, false),
-            (Hero, 512, 512, false),
-            // Any shape.
+    fn each_kind_admits_only_its_own_shape() {
+        for (kind, width, height, admitted) in [
+            // A picture: each side at least 256 pixels, any shape.
+            (Picture, 256, 256, true),
+            (Picture, 600, 900, true),
+            (Picture, 1920, 620, true),
+            (Picture, 3840, 1240, true),
+            (Picture, 1920, 1080, true),
+            (Picture, 4096, 256, true),
+            (Picture, 255, 900, false),
+            (Picture, 900, 255, false),
+            (Picture, 64, 64, false),
+            // A logo: any shape.
             (Logo, 400, 120, true),
             (Logo, 120, 400, true),
-            (Logo, 512, 512, true),
-            // Every role: at most 4096 pixels a side, and not empty.
-            (Tile, 4096, 4096, true),
-            (Tile, 4097, 4097, false),
-            (Poster, 2732, 4098, false),
-            (Hero, 4098, 1366, false),
+            (Logo, 1, 1, true),
+            // An icon: square.
+            (Icon, 1, 1, true),
+            (Icon, 256, 256, true),
+            (Icon, 256, 255, false),
+            (Icon, 600, 900, false),
+            // Every kind: at most 4096 pixels a side, and not empty.
+            (Icon, 4096, 4096, true),
+            (Icon, 4097, 4097, false),
+            (Picture, 2732, 4098, false),
+            (Picture, 4098, 1366, false),
             (Logo, 4097, 10, false),
             (Logo, 10, 4097, false),
             (Logo, 0, 10, false),
+            (Picture, 0, 300, false),
         ] {
             assert_eq!(
-                role_admits_dimensions(role, width, height),
+                kind_admits_dimensions(kind, width, height),
                 admitted,
-                "{role:?} {width}x{height}"
+                "{kind:?} {width}x{height}"
             );
         }
     }
 
     #[test]
-    fn the_shape_rule_is_applied_to_the_real_bytes_of_each_role() {
+    fn the_shape_rule_is_applied_to_the_real_bytes_of_each_kind() {
         let private = tempfile::tempdir().unwrap();
         let repo = GameAssetRepository::new(private.path());
-        for (role, width, height) in [
-            (GameAssetRole::Tile, 60, 90),
-            (GameAssetRole::Poster, 64, 64),
-            (GameAssetRole::Hero, 64, 64),
-            (GameAssetRole::Hero, 60, 90),
-        ] {
+        for (kind, width, height) in [(Icon, 60, 90), (Picture, 64, 64), (Picture, 255, 1024)] {
+            let replaced = repo
+                .replace(owner(), PLUGIN, kind, vec![candidate(png(width, height))])
+                .unwrap();
             assert_eq!(
-                repo.assign(owner(), role, candidate(png(width, height))),
-                Err(AssetError::UnsafeDimensions),
-                "{role:?} {width}x{height}"
+                replaced.rejected,
+                [AssetError::UnsafeDimensions],
+                "{kind:?} {width}x{height}"
             );
         }
-        // A JPEG poster and hero are fine: only a logo needs alpha.
-        for (role, width, height) in [
-            (GameAssetRole::Poster, 60, 90),
-            (GameAssetRole::Hero, 192, 62),
-        ] {
+        // A JPEG picture and icon are fine: only a logo needs transparency.
+        for (kind, width, height) in [(Picture, 600, 900), (Icon, 64, 64)] {
             let jpeg = test_image(width, height, ImageFormat::Jpeg, false, [10, 120, 200]);
-            let assignment = repo.assign(owner(), role, candidate(jpeg)).unwrap();
-            assert!(assignment.asset_id.ends_with(".jpg"));
-            assert_eq!(assignment.source.format, "jpg");
+            let stored = put(&repo, &owner(), PLUGIN, kind, &[jpeg]);
+            assert!(stored[0].asset_id.ends_with(".jpg"));
+            assert_eq!(stored[0].source.format, "jpg");
         }
-        assert!(repo.assigned_roles(&owner()).unwrap().len() == 2);
+        assert_eq!(repo.assignments(&owner()).unwrap().len(), 2);
     }
 
     #[test]
-    fn a_logo_needs_an_alpha_channel() {
+    fn a_logo_needs_transparency() {
         let private = tempfile::tempdir().unwrap();
         let repo = GameAssetRepository::new(private.path());
         let rgb = [240, 240, 240];
+        // An alpha channel in which every pixel is opaque is no transparency.
+        let opaque_alpha = |format| {
+            let mut bytes = Vec::new();
+            image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+                40,
+                13,
+                image::Rgba([240, 240, 240, 255]),
+            ))
+            .write_to(&mut Cursor::new(&mut bytes), format)
+            .unwrap();
+            bytes
+        };
         for opaque in [
             test_image(40, 13, ImageFormat::Jpeg, false, rgb),
             test_image(40, 13, ImageFormat::Png, false, rgb),
             test_image(40, 13, ImageFormat::WebP, false, rgb),
+            opaque_alpha(ImageFormat::Png),
+            opaque_alpha(ImageFormat::WebP),
         ] {
             assert_eq!(
-                repo.assign(owner(), GameAssetRole::Logo, candidate(opaque)),
-                Err(AssetError::Unsupported)
+                repo.replace(owner(), PLUGIN, Logo, vec![candidate(opaque)])
+                    .unwrap()
+                    .rejected,
+                [AssetError::Unsupported]
             );
         }
-        assert!(!repo.has_assignment("wl4", GameAssetRole::Logo).unwrap());
+        assert!(!repo.holds_from(&owner(), PLUGIN, None).unwrap());
         for (transparent, extension) in [
             (test_image(40, 13, ImageFormat::Png, true, rgb), ".png"),
             (test_image(40, 13, ImageFormat::WebP, true, rgb), ".webp"),
         ] {
-            let assignment = repo
-                .assign(owner(), GameAssetRole::Logo, candidate(transparent))
-                .unwrap();
-            assert!(assignment.asset_id.ends_with(extension));
+            let stored = put(&repo, &owner(), PLUGIN, Logo, &[transparent]);
+            assert!(stored[0].asset_id.ends_with(extension));
         }
     }
 
@@ -1242,16 +1487,19 @@ mod tests {
         let private = tempfile::tempdir().unwrap();
         let repo = GameAssetRepository::new(private.path());
         let assignment = repo
-            .assign(
+            .replace(
                 owner(),
-                GameAssetRole::Tile,
-                AssetCandidate {
+                PLUGIN,
+                Icon,
+                vec![AssetCandidate {
                     declared_width: Some(1),
                     declared_height: Some(1),
                     ..candidate(PNG_1X1.to_vec())
-                },
+                }],
             )
-            .unwrap();
+            .unwrap()
+            .stored
+            .remove(0);
 
         assert_eq!(
             repo.assigned_asset(&assignment.asset_id).unwrap(),
@@ -1291,14 +1539,12 @@ mod tests {
         // A later assignment is served too: the records are read again once
         // the file is written again.
         let larger = png(2, 2);
-        let later_id = format!("{}.png", hex::encode(Sha256::digest(&larger)));
+        let later_id = asset_id(&larger, "png");
         assert_eq!(repo.assigned_asset(&later_id).unwrap(), None);
         let mut other = owner();
         other.playable_id = "sm".into();
-        let later = repo
-            .assign(other, GameAssetRole::Tile, candidate(larger.clone()))
-            .unwrap();
-        assert_eq!(later.asset_id, later_id);
+        let later = put(&repo, &other, PLUGIN, Icon, std::slice::from_ref(&larger));
+        assert_eq!(later[0].asset_id, later_id);
         assert_eq!(
             repo.assigned_asset(&later_id)
                 .unwrap()
@@ -1342,61 +1588,67 @@ mod tests {
 
     #[test]
     fn rejects_unsafe_header_dimensions_before_full_decode_allocation() {
-        for role in GameAssetRole::ALL {
+        for kind in SurfaceMediaKind::ALL {
             assert_eq!(
                 validate_image(
                     &candidate(png_with_dimensions(MAX_DIMENSION + 1, MAX_DIMENSION + 1)),
-                    role
+                    kind
                 ),
                 Err(AssetError::UnsafeDimensions),
-                "{role:?}"
+                "{kind:?}"
             );
         }
-        // A header that claims an admitted hero over almost no data is
+        // A header that claims an admitted picture over almost no data is
         // malformed, not a 19 MiB allocation that succeeds.
-        assert!(validate_image(
-            &candidate(png_with_dimensions(3840, 1240)),
-            GameAssetRole::Hero
-        )
-        .is_err());
+        assert!(validate_image(&candidate(png_with_dimensions(3840, 1240)), Picture).is_err());
     }
 
     #[test]
     fn rejects_unsupported_malformed_and_inconsistent_assets_without_assignment() {
         let private = tempfile::tempdir().unwrap();
         let repo = GameAssetRepository::new(private.path());
-        for role in GameAssetRole::ALL {
+        for kind in SurfaceMediaKind::ALL {
             for bytes in [
                 b"<svg></svg>".to_vec(),
                 b"GIF89a".to_vec(),
                 PNG_1X1[..20].to_vec(),
                 vec![0; MAX_ASSET_BYTES + 1],
             ] {
-                assert!(repo
-                    .assign(
+                let replaced = repo
+                    .replace(
                         owner(),
-                        role,
-                        AssetCandidate {
+                        PLUGIN,
+                        kind,
+                        vec![AssetCandidate {
                             declared_width: Some(1),
                             declared_height: Some(1),
                             ..candidate(bytes)
-                        },
+                        }],
                     )
-                    .is_err());
+                    .unwrap();
+                assert!(replaced.stored.is_empty() && replaced.rejected.len() == 1);
             }
         }
         assert_eq!(
-            repo.assign(
+            repo.replace(
                 owner(),
-                GameAssetRole::Tile,
-                AssetCandidate {
+                PLUGIN,
+                Icon,
+                vec![AssetCandidate {
                     declared_width: Some(2),
                     declared_height: Some(1),
                     ..candidate(PNG_1X1.to_vec())
-                },
-            ),
-            Err(AssetError::InconsistentDimensions)
+                }],
+            )
+            .unwrap()
+            .rejected,
+            [AssetError::InconsistentDimensions]
         );
-        assert!(repo.assigned_roles(&owner()).unwrap().is_empty());
+        assert!(!repo.holds_from(&owner(), PLUGIN, None).unwrap());
+        assert!(!private
+            .path()
+            .join(STATE_DIR)
+            .join(ASSIGNMENTS_FILE)
+            .exists());
     }
 }

@@ -1,18 +1,21 @@
-//! The artwork operation (ADR 0032, with the roles widened for Velvet).
+//! The artwork operation (ADR 0032, with measured media from ADR 0091).
 //!
 //! A plugin that carries a `game-assets.candidates` handler finds images for
 //! a game. It performs no I/O: it returns the HTTP requests it needs or its
 //! candidates, as an acquisition provider does (ADR 0016). korrid makes every
 //! request, adds the plugin's secret itself (ADR 0034), downloads the first
-//! candidate of each role, checks the bytes and stores them. korrid does not
-//! know any artwork site.
+//! four candidates of each kind, checks the bytes and stores them beside
+//! every other art plugin's. korrid does not know any artwork site.
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     fs::{self, DirBuilder},
     os::unix::fs::DirBuilderExt,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
+    time::{SystemTime, UNIX_EPOCH},
 };
+
+use korri_surface_treaty::SurfaceMediaKind;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -24,10 +27,11 @@ use super::{
     Failure,
 };
 use crate::{
+    config::library::ExternalIds,
     discovery::reconcile::{self, ArtworkGame},
     game_assets::{
-        AssetCandidate, AssetError, AssetOwnerIdentity, GameAssetRepository, GameAssetRole,
-        MAX_ASSET_BYTES,
+        AssetCandidate, AssetError, AssetOwnerIdentity, GameAssetRepository, Replaced,
+        MAX_ASSET_BYTES, MAX_IMAGES_PER_KIND,
     },
     plugin::{deserialize_optional_non_null as non_null, PluginRegistry},
     plugin_policy::RegistrySource,
@@ -40,6 +44,9 @@ pub use crate::script::GAME_ASSETS_CANDIDATES;
 const ATTEMPTS_FILE: &str = "attempts.json";
 /// Games one plugin is asked about in one pass.
 const BATCH_LIMIT: usize = 8;
+/// A plugin's answer about a game is asked again after 30 days (the
+/// coordinator's v1 choice for ADR 0091).
+const REASK_AFTER_SECONDS: u64 = 30 * 24 * 60 * 60;
 
 /// `game-assets.candidates` input (ADR 0090): the game's library title, its
 /// system, the game's stored public ids, and every response so far.
@@ -95,13 +102,14 @@ pub struct GameAssetCandidateSource {
     pub url: String,
 }
 
-/// Legacy `GameAssetCandidate` without `candidateId` and `gameId`. `width`
-/// and `height` are optional; when given, the image must have that size.
+/// Legacy `GameAssetCandidate` without `candidateId` and `gameId`, with
+/// ADR 0091's `kind` in place of legacy `role`. `width` and `height` are
+/// optional; when given, the image must have that size.
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GameAssetCandidate {
-    pub role: GameAssetRole,
+    pub kind: SurfaceMediaKind,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -118,8 +126,8 @@ pub struct GameAssetCandidate {
 }
 
 /// The handler's result (legacy `ListGameAssetCandidatesResponse`): the
-/// candidates in the plugin's order of preference, roles in any order.
-/// korrid takes the first candidate of each role. Empty: no match.
+/// candidates in the plugin's order of preference, kinds in any order.
+/// korrid takes the first four candidates of each kind. Empty: no match.
 /// `externalIds`: the public ids of the matched game, which korrid merges
 /// into the game's record (ADR 0090).
 #[typeshare]
@@ -201,19 +209,30 @@ struct AttemptState {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 struct AttemptRecord {
     outcome: AttemptOutcome,
     playable_id: String,
     release_id: String,
     release_fingerprint: String,
     rom_identity: String,
+    /// When korrid recorded this attempt, in whole seconds since the Unix
+    /// epoch.
+    answered_at: u64,
+    /// `external_ids_sha256` of the game's public ids once this attempt's
+    /// own ids were merged in. The fingerprint leaves the ids out, so this
+    /// is how a change of ids reaches the plugin again.
+    external_ids_sha256: String,
 }
 
 /// What became of one plugin's lookup for one game (ADR 0032, section 2).
+/// Whatever the outcome, `needs_asking` asks again once the record is 30
+/// days old or the game's public ids changed.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum AttemptOutcome {
-    /// An image was stored. Never cleared.
+    /// An image was stored, or the game holds images from the plugin and
+    /// nothing failed. Not cleared by a rescan or a secret change.
     Assigned,
     /// The plugin found nothing, or a response repeated the plugin's secret
     /// and korrid kept it from the plugin. Cleared by a secret change.
@@ -225,7 +244,9 @@ enum AttemptOutcome {
 }
 
 /// main's `attempt_key`: one game as the local catalog sees it now. A changed
-/// ROM or library record is another key, so it is looked up again.
+/// ROM or library record is another key, so it is looked up again: the
+/// fingerprint covers the whole record, title and releases' systems
+/// included, and leaves out only the public ids.
 fn attempt_key(game: &ArtworkGame) -> String {
     let mut hasher = Sha256::new();
     hasher.update(game.playable_id.as_bytes());
@@ -238,14 +259,48 @@ fn attempt_key(game: &ArtworkGame) -> String {
     format!("sha256:{}", hex::encode(hasher.finalize()))
 }
 
-fn attempt_record(game: &ArtworkGame, outcome: AttemptOutcome) -> AttemptRecord {
+fn attempt_record(
+    game: &ArtworkGame,
+    outcome: AttemptOutcome,
+    external_ids: &ExternalIds,
+    answered_at: u64,
+) -> AttemptRecord {
     AttemptRecord {
         outcome,
         playable_id: game.playable_id.clone(),
         release_id: game.release_id.clone(),
         release_fingerprint: game.release_fingerprint.clone(),
         rom_identity: game.rom_identity.clone(),
+        answered_at,
+        external_ids_sha256: external_ids_sha256(external_ids),
     }
+}
+
+/// A hash of a game's public ids, by authority and in their stored order.
+fn external_ids_sha256(ids: &ExternalIds) -> String {
+    let bytes = serde_json::to_vec(ids).expect("public ids serialize");
+    format!("sha256:{}", hex::encode(Sha256::digest(bytes)))
+}
+
+/// The staleness rule (ADR 0091): korrid asks a plugin about a game when
+/// the plugin has no attempt on record for the game as it is now (a new
+/// title, system, release or ROM is a new `attempt_key`), when the game's
+/// public ids changed since that attempt, or when the attempt is 30 days
+/// old. An attempt from a time after `now` counts as old: the clock moved
+/// back, and its age is unknown.
+fn needs_asking(record: Option<&AttemptRecord>, game: &ArtworkGame, now: u64) -> bool {
+    let Some(record) = record else {
+        return true;
+    };
+    record.external_ids_sha256 != external_ids_sha256(&game.external_ids)
+        || record.answered_at > now
+        || now - record.answered_at >= REASK_AFTER_SECONDS
+}
+
+fn unix_seconds(time: SystemTime) -> u64 {
+    time.duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0)
 }
 
 fn owner_identity(game: &ArtworkGame) -> AssetOwnerIdentity {
@@ -355,13 +410,17 @@ fn art_plugins(registry: &PluginRegistry) -> Vec<ArtPlugin> {
 }
 
 enum GameOutcome {
-    /// Record the outcome and go on.
-    Recorded(AttemptOutcome),
+    /// Record the outcome, with the game's public ids once the plugin's own
+    /// were merged in, and go on.
+    Recorded(AttemptOutcome, ExternalIds),
     /// The game changed during the pass: nothing is recorded.
     Skipped,
     /// The site refused the secret: the pass stops for this plugin.
     Unauthorized,
 }
+
+/// The time an attempt is recorded at.
+type Clock = Arc<dyn Fn() -> SystemTime + Send + Sync>;
 
 /// The artwork pass korrid runs after each successful discovery pass.
 #[derive(Clone)]
@@ -371,6 +430,7 @@ pub(crate) struct ArtworkPass {
     write_lock: Arc<Mutex<()>>,
     registry_source: RegistrySource,
     engine: DownloadEngine,
+    clock: Clock,
 }
 
 impl ArtworkPass {
@@ -386,12 +446,22 @@ impl ArtworkPass {
             write_lock,
             registry_source,
             engine: DownloadEngine::default(),
+            clock: Arc::new(SystemTime::now),
         }
     }
 
     #[cfg(test)]
     pub(super) fn with_engine(mut self, engine: DownloadEngine) -> Self {
         self.engine = engine;
+        self
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_clock(
+        mut self,
+        clock: impl Fn() -> SystemTime + Send + Sync + 'static,
+    ) -> Self {
+        self.clock = Arc::new(clock);
         self
     }
 
@@ -526,13 +596,14 @@ impl ArtworkPass {
             }
         };
         let repository = GameAssetRepository::new(&self.private_root);
+        let now = unix_seconds((self.clock)());
         let mut asked = 0;
         for game in games {
             let key = attempt_key(game);
-            if attempts.attempts.contains_key(&key) {
+            if !needs_asking(attempts.attempts.get(&key), game, now) {
                 continue;
             }
-            let held = match repository.assigned_roles(&owner_identity(game)) {
+            let held = match repository.holds_from(&owner_identity(game), &plugin.id, None) {
                 Ok(held) => held,
                 Err(error) => {
                     // Unreadable records are not this game's fault: stop
@@ -543,34 +614,30 @@ impl ArtworkPass {
                     return;
                 }
             };
-            let outcome = if held.len() == GameAssetRole::ALL.len() {
-                // Every role is held already: no call.
-                GameOutcome::Recorded(AttemptOutcome::Assigned)
-            } else {
-                if asked == BATCH_LIMIT {
-                    break;
-                }
-                asked += 1;
-                report.attempted += 1;
-                self.one_game(&plugin, registry, game, &held, report).await
-            };
-            let outcome = match outcome {
-                GameOutcome::Recorded(outcome) => outcome,
-                GameOutcome::Skipped => continue,
-                GameOutcome::Unauthorized => {
-                    report.diagnostics.push(diagnostic(
-                        "CredentialUnauthorized",
-                        &format!("the site of {} refused its key", plugin.id),
-                        None,
-                    ));
-                    return;
-                }
-            };
+            if asked == BATCH_LIMIT {
+                break;
+            }
+            asked += 1;
+            report.attempted += 1;
+            let (outcome, external_ids) =
+                match self.one_game(&plugin, registry, game, held, report).await {
+                    GameOutcome::Recorded(outcome, external_ids) => (outcome, external_ids),
+                    GameOutcome::Skipped => continue,
+                    GameOutcome::Unauthorized => {
+                        report.diagnostics.push(diagnostic(
+                            "CredentialUnauthorized",
+                            &format!("the site of {} refused its key", plugin.id),
+                            None,
+                        ));
+                        return;
+                    }
+                };
+            let answered_at = unix_seconds((self.clock)());
             match self.record(
                 &plugin,
                 credential.as_deref(),
                 key,
-                attempt_record(game, outcome),
+                attempt_record(game, outcome, &external_ids, answered_at),
             ) {
                 Ok(true) => {}
                 // The secret changed during the pass: what this pass learned
@@ -612,11 +679,13 @@ impl ArtworkPass {
         plugin: &ArtPlugin,
         registry: &PluginRegistry,
         game: &ArtworkGame,
-        held: &BTreeSet<GameAssetRole>,
+        held: bool,
         report: &mut ArtworkReport,
     ) -> GameOutcome {
         let playable_id = game.playable_id.as_str();
         let input = asset_input(registry, game);
+        let unanswered = |outcome| GameOutcome::Recorded(outcome, game.external_ids.clone());
+        let mut external_ids = game.external_ids.clone();
         let candidates = match self.candidates(&plugin.context, &input).await {
             Ok(result) => {
                 if let Some(ids) = result.external_ids.filter(|ids| !ids.is_empty()) {
@@ -632,7 +701,9 @@ impl ArtworkPass {
                         )
                     };
                     match merged {
-                        Ok(true) => {}
+                        Ok(true) => {
+                            crate::config::library::merge_external_ids(&mut external_ids, &ids);
+                        }
                         Ok(false) => return GameOutcome::Skipped,
                         Err(error) => {
                             report.diagnostics.push(diagnostic(
@@ -640,7 +711,7 @@ impl ArtworkPass {
                                 &error.to_string(),
                                 Some(playable_id),
                             ));
-                            return GameOutcome::Recorded(AttemptOutcome::Transient);
+                            return unanswered(AttemptOutcome::Transient);
                         }
                     }
                 }
@@ -660,7 +731,7 @@ impl ArtworkPass {
                     ),
                     Some(playable_id),
                 ));
-                return GameOutcome::Recorded(AttemptOutcome::NoMatch);
+                return unanswered(AttemptOutcome::NoMatch);
             }
             Err(error) => {
                 // The fixed copy of the provider failure: no site text.
@@ -673,34 +744,56 @@ impl ArtworkPass {
                     message: failure.message,
                     playable_id: Some(playable_id.to_owned()),
                 });
-                return GameOutcome::Recorded(AttemptOutcome::Transient);
+                return unanswered(AttemptOutcome::Transient);
             }
         };
         if candidates.is_empty() {
-            return GameOutcome::Recorded(AttemptOutcome::NoMatch);
+            // No match now. The images an earlier answer stored stay: an
+            // empty answer can also be a site that failed under the plugin.
+            return GameOutcome::Recorded(AttemptOutcome::NoMatch, external_ids);
         }
         let (mut stored, mut transient, mut rejected) = (0, false, false);
-        for role in GameAssetRole::ALL {
-            if held.contains(&role) {
+        for kind in SurfaceMediaKind::ALL {
+            // The plugin's order is its preference: the first four of a kind.
+            let wanted: Vec<&GameAssetCandidate> = candidates
+                .iter()
+                .filter(|candidate| candidate.kind == kind)
+                .take(MAX_IMAGES_PER_KIND)
+                .collect();
+            if wanted.is_empty() {
                 continue;
             }
-            // The plugin's order is its preference: the first one of a role.
-            let Some(candidate) = candidates.iter().find(|candidate| candidate.role == role) else {
-                continue;
-            };
-            let bytes = match self.download(plugin, candidate).await {
-                Ok(bytes) => bytes,
-                Err(failure) => {
-                    report
-                        .diagnostics
-                        .push(download_diagnostic(failure, playable_id));
-                    transient = true;
-                    continue;
+            let mut downloaded = Vec::new();
+            let mut complete = true;
+            for candidate in wanted {
+                match self.download(plugin, candidate).await {
+                    Ok(bytes) => downloaded.push(AssetCandidate {
+                        bytes,
+                        declared_width: candidate.width,
+                        declared_height: candidate.height,
+                        source_id: candidate.source.id.clone(),
+                        source_url: Some(candidate.source.url.clone()),
+                    }),
+                    Err(failure) => {
+                        report
+                            .diagnostics
+                            .push(download_diagnostic(failure, playable_id));
+                        transient = true;
+                        complete = false;
+                    }
                 }
-            };
-            match self.store(plugin, registry, game, role, candidate, bytes) {
-                Ok(true) => stored += 1,
-                Ok(false) => return GameOutcome::Skipped,
+            }
+            match self.store(plugin, registry, game, kind, downloaded, complete) {
+                Ok(Some(replaced)) => {
+                    stored += replaced.stored.len();
+                    for error in &replaced.rejected {
+                        report
+                            .diagnostics
+                            .push(asset_diagnostic(error, playable_id));
+                        rejected = true;
+                    }
+                }
+                Ok(None) => return GameOutcome::Skipped,
                 Err(Stored::Catalog(message)) => {
                     report.diagnostics.push(diagnostic(
                         "EnrichmentCatalogWriteFailed",
@@ -713,25 +806,22 @@ impl ArtworkPass {
                     report
                         .diagnostics
                         .push(asset_diagnostic(&error, playable_id));
-                    if error == AssetError::Storage {
-                        transient = true;
-                    } else {
-                        rejected = true;
-                    }
+                    transient = true;
                 }
             }
         }
         report.stored += stored;
-        GameOutcome::Recorded(if transient {
-            // A rescan asks again; the roles stored now are skipped then.
+        let outcome = if transient {
+            // A rescan asks again.
             AttemptOutcome::Transient
-        } else if stored > 0 || !held.is_empty() {
+        } else if stored > 0 || held {
             AttemptOutcome::Assigned
         } else if rejected {
             AttemptOutcome::AssetRejected
         } else {
             AttemptOutcome::NoMatch
-        })
+        };
+        GameOutcome::Recorded(outcome, external_ids)
     }
 
     /// Run the handler's turns to its candidates and matched ids.
@@ -778,16 +868,21 @@ impl ArtworkPass {
     }
 
     /// Under the write lock: the game must still be the one the plugin was
-    /// asked about. `Ok(false)`: it changed, and nothing was written.
+    /// asked about. `Ok(None)`: it changed, and nothing was written.
+    ///
+    /// The images replace the plugin's earlier images of `kind` for this
+    /// game. When a download of the kind failed (`complete` is false), the
+    /// earlier images stay if the game holds any, and the images that did
+    /// arrive are stored only if it holds none.
     fn store(
         &self,
         plugin: &ArtPlugin,
         registry: &PluginRegistry,
         game: &ArtworkGame,
-        role: GameAssetRole,
-        candidate: &GameAssetCandidate,
-        bytes: Vec<u8>,
-    ) -> Result<bool, Stored> {
+        kind: SurfaceMediaKind,
+        candidates: Vec<AssetCandidate>,
+        complete: bool,
+    ) -> Result<Option<Replaced>, Stored> {
         let _guard = self.lock();
         let Some(current) = reconcile::current_artwork_game(
             &self.readable_root,
@@ -797,23 +892,22 @@ impl ArtworkPass {
         )
         .map_err(|error| Stored::Catalog(error.to_string()))?
         else {
-            return Ok(false);
+            return Ok(None);
         };
-        GameAssetRepository::new(&self.private_root)
-            .assign(
-                owner_identity(&current),
-                role,
-                AssetCandidate {
-                    bytes,
-                    declared_width: candidate.width,
-                    declared_height: candidate.height,
-                    provider: plugin.id.clone(),
-                    source_id: candidate.source.id.clone(),
-                    source_url: Some(candidate.source.url.clone()),
-                },
-            )
-            .map_err(Stored::Asset)?;
-        Ok(true)
+        let repository = GameAssetRepository::new(&self.private_root);
+        let owner = owner_identity(&current);
+        if candidates.is_empty()
+            || (!complete
+                && repository
+                    .holds_from(&owner, &plugin.id, Some(kind))
+                    .map_err(Stored::Asset)?)
+        {
+            return Ok(Some(Replaced::default()));
+        }
+        repository
+            .replace(owner, &plugin.id, kind, candidates)
+            .map(Some)
+            .map_err(Stored::Asset)
     }
 }
 

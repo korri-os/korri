@@ -8300,25 +8300,34 @@ mod tests {
         .unwrap()
         .pop()
         .unwrap();
+        // The cover is the game's square-ish picture.
         let assignment = game_assets::GameAssetRepository::new(private.path())
-            .assign(
+            .replace(
                 game_assets::AssetOwnerIdentity {
                     playable_id: game.playable_id,
                     release_id: game.release_id,
                     release_fingerprint: game.release_fingerprint,
                     rom_identity: game.rom_identity,
                 },
-                game_assets::GameAssetRole::Tile,
-                game_assets::AssetCandidate {
-                    bytes: PNG_1X1.to_vec(),
-                    declared_width: Some(1),
-                    declared_height: Some(1),
-                    provider: "@korri:steamgriddb".into(),
+                "@korri:steamgriddb",
+                korri_surface_treaty::SurfaceMediaKind::Picture,
+                vec![game_assets::AssetCandidate {
+                    bytes: game_assets::test_image(
+                        256,
+                        256,
+                        image::ImageFormat::Png,
+                        false,
+                        [200, 60, 40],
+                    ),
+                    declared_width: Some(256),
+                    declared_height: Some(256),
                     source_id: Some("20".into()),
                     source_url: None,
-                },
+                }],
             )
-            .unwrap();
+            .unwrap()
+            .stored
+            .remove(0);
 
         let games = rpc_body_authorized(
             app.clone(),
@@ -8396,24 +8405,26 @@ mod tests {
             discovery::FolderSelectionGrantStore::default(),
         );
         let assignment = game_assets::GameAssetRepository::new(private.path())
-            .assign(
+            .replace(
                 game_assets::AssetOwnerIdentity {
                     playable_id: "wl4".into(),
                     release_id: "gba".into(),
                     release_fingerprint: "sha256:item".into(),
                     rom_identity: "sha256:rom".into(),
                 },
-                game_assets::GameAssetRole::Tile,
-                game_assets::AssetCandidate {
+                "@korri:steamgriddb",
+                korri_surface_treaty::SurfaceMediaKind::Icon,
+                vec![game_assets::AssetCandidate {
                     bytes: PNG_1X1.to_vec(),
                     declared_width: Some(1),
                     declared_height: Some(1),
-                    provider: "@korri:steamgriddb".into(),
                     source_id: Some("20".into()),
                     source_url: None,
-                },
+                }],
             )
-            .unwrap();
+            .unwrap()
+            .stored
+            .remove(0);
         let wanted = asset_request(&assignment.asset_id);
 
         let (status, content_type, body) = asset_object(
@@ -8495,11 +8506,11 @@ mod tests {
     }
 
     /// ADR 0065: the object request serves an image that any assignment
-    /// names, whatever its role.
+    /// names, whatever its kind and plugin.
     #[tokio::test]
-    async fn game_asset_object_answers_an_assigned_image_of_every_role() {
-        use game_assets::GameAssetRole;
+    async fn game_asset_object_answers_an_assigned_image_of_every_kind() {
         use image::ImageFormat;
+        use korri_surface_treaty::SurfaceMediaKind;
         let readable = tempfile::tempdir().unwrap();
         let private = tempfile::tempdir().unwrap();
         let app = discovery_test_router(
@@ -8508,47 +8519,54 @@ mod tests {
             discovery::FolderSelectionGrantStore::default(),
         );
         let repository = game_assets::GameAssetRepository::new(private.path());
-        for (role, bytes, content_type) in [
+        for (plugin, kind, bytes, content_type) in [
             (
-                GameAssetRole::Tile,
-                game_assets::test_image(8, 8, ImageFormat::Png, true, [200, 60, 40]),
-                "image/png",
-            ),
-            (
-                GameAssetRole::Poster,
-                game_assets::test_image(60, 90, ImageFormat::Jpeg, false, [20, 90, 200]),
+                "@korri:steamgriddb",
+                SurfaceMediaKind::Picture,
+                game_assets::test_image(600, 900, ImageFormat::Jpeg, false, [20, 90, 200]),
                 "image/jpeg",
             ),
             (
-                GameAssetRole::Hero,
-                game_assets::test_image(192, 62, ImageFormat::WebP, false, [30, 160, 90]),
+                "@korri:igdb",
+                SurfaceMediaKind::Picture,
+                game_assets::test_image(1920, 620, ImageFormat::WebP, false, [30, 160, 90]),
                 "image/webp",
             ),
             (
-                GameAssetRole::Logo,
+                "@korri:steamgriddb",
+                SurfaceMediaKind::Logo,
                 game_assets::test_image(40, 13, ImageFormat::Png, true, [240, 200, 40]),
+                "image/png",
+            ),
+            (
+                "@korri:igdb",
+                SurfaceMediaKind::Icon,
+                game_assets::test_image(8, 8, ImageFormat::Png, true, [200, 60, 40]),
                 "image/png",
             ),
         ] {
             let assignment = repository
-                .assign(
+                .replace(
                     game_assets::AssetOwnerIdentity {
                         playable_id: "wl4".into(),
                         release_id: "gba".into(),
                         release_fingerprint: "sha256:item".into(),
                         rom_identity: "sha256:rom".into(),
                     },
-                    role,
-                    game_assets::AssetCandidate {
+                    plugin,
+                    kind,
+                    vec![game_assets::AssetCandidate {
                         bytes: bytes.clone(),
                         declared_width: None,
                         declared_height: None,
-                        provider: "@korri:steamgriddb".into(),
                         source_id: None,
                         source_url: None,
-                    },
+                    }],
                 )
-                .unwrap();
+                .unwrap()
+                .stored
+                .remove(0);
+            let role = (plugin, kind);
             let (status, answered_type, body) = asset_object(
                 app.clone(),
                 asset_request(&assignment.asset_id),

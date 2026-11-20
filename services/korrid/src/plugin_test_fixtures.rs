@@ -212,7 +212,19 @@ pub fn art_package(
     hosts: &[&str],
     credential_host: Option<&str>,
 ) -> EnabledPackage {
-    let package = root.join("plugin-steamgriddb");
+    art_package_as(root, ART_PLUGIN_ID, source, hosts, credential_host)
+}
+
+/// `art_package` under another plugin id, in its own folder.
+pub fn art_package_as(
+    root: &Path,
+    id: &str,
+    source: &str,
+    hosts: &[&str],
+    credential_host: Option<&str>,
+) -> EnabledPackage {
+    let folder = id.rsplit(':').next().unwrap_or(id);
+    let package = root.join(format!("plugin-{folder}"));
     fs::create_dir_all(&package).unwrap();
     fs::write(package.join("plugin.ts"), source).unwrap();
     fs::write(
@@ -221,7 +233,7 @@ pub fn art_package(
     )
     .unwrap();
     EnabledPackage {
-        id: ART_PLUGIN_ID.into(),
+        id: id.into(),
         package,
         files: BTreeMap::new(),
         entry: "plugin.ts".into(),
@@ -249,11 +261,14 @@ pub fn installed_with_secret_plugin(root: &Path) -> PluginRegistry {
 
 /// The mGBA core of `installed` beside one artwork plugin.
 pub fn installed_with_art(root: &Path, art: EnabledPackage) -> PluginRegistry {
-    PluginRegistry::from_installed(vec![
-        core_package(root, "mgba", GENERATED_CORE.to_owned()),
-        art,
-    ])
-    .unwrap()
+    installed_with_arts(root, vec![art])
+}
+
+/// The mGBA core of `installed` beside several artwork plugins.
+pub fn installed_with_arts(root: &Path, arts: Vec<EnabledPackage>) -> PluginRegistry {
+    let mut packages = vec![core_package(root, "mgba", GENERATED_CORE.to_owned())];
+    packages.extend(arts);
+    PluginRegistry::from_installed(packages).unwrap()
 }
 
 /// The installed Steam declaration and its real interpreter callback.

@@ -1083,8 +1083,9 @@ passes them to art plugins.
 
 ### Artwork
 
-ADR 0032 records the decision, with the roles widened on 2026-11-11 for the
-Velvet surface. A plugin finds images for a game; korrid makes every request,
+ADR 0032 records the decision. ADR 0091 replaced its fixed roles with three
+kinds and measured sizes, and keeps the images of every art plugin. A plugin
+finds images for a game; korrid makes every request,
 downloads the images, checks them and stores them. korrid knows no artwork
 site. Every type named below is a Rust type exported through Typeshare into
 `contracts/generated/korrid.ts`.
@@ -1135,7 +1136,7 @@ interface GameAssetCandidates {
 }
 
 interface GameAssetCandidate {
-  role: "tile" | "poster" | "hero" | "logo"   // GameAssetRole
+  kind: "logo" | "picture" | "icon"   // SurfaceMediaKind
   width?: number          // when given, the image must have this size
   height?: number
   source: GameAssetCandidateSource
@@ -1147,11 +1148,15 @@ interface GameAssetCandidateSource {
 }
 ```
 
-The plugin lists candidates in its order of preference, roles in any order.
-korrid takes the first candidate of each role. An empty list means no match.
-Matching, filtering and ordering stay in the plugin. `banner` and `screenshot`
-are refused: they have no consumer. Unknown fields, explicit `null` values, a
-role korrid does not admit, an empty `source.id` and a `source.url` with
+`logo` is the game's title as an image with transparency. `picture` is any
+other image of the game: box art, a grid, a wide hero or a background; its
+shape is in its measured size, not in its kind. `icon` is a small square
+mark. The plugin lists candidates in its order of preference, kinds in any
+order. korrid takes the first four candidates of each kind. An empty list
+means no match. Matching, filtering and ordering stay in the plugin. The old
+roles (`tile`, `poster`, `hero`) and a `role` field are refused, with no
+alias. Unknown fields, explicit `null` values, a kind korrid does not admit,
+an empty `source.id` and a `source.url` with
 credentials, a query or a fragment each refuse the whole answer
 (`ProviderFailed`). A plugin cannot name a provider or a title: korrid writes
 the owning plugin's id as the source's provider, and titles are library data.
@@ -1166,69 +1171,83 @@ authority fetches by it and skips the title search (ADR 0090).
 
 #### What korrid does with the candidates
 
-For each role the game does not hold yet, korrid downloads the first
-candidate's `url`: HTTPS only, a host in the plugin's `hosts`, a public
-address, no redirect, 10 seconds in all and at most 5 MiB. This download
-never carries the plugin's secret. korrid then checks the bytes: a static
-PNG, JPEG or WebP of at most 4096 pixels a side, with the size the candidate
-gave if it gave one, and in the shape of its role:
+For each kind, korrid downloads the first four candidates' `url`s: HTTPS
+only, a host in the plugin's `hosts`, a public address, no redirect, 10
+seconds in all and at most 5 MiB each. This download never carries the
+plugin's secret. korrid then checks the bytes: a static PNG, JPEG or WebP
+of at least 1 and at most 4096 pixels a side, with the size the candidate
+gave if it gave one, and the sanity rule of its kind:
 
-| Role | Shape |
+| Kind | Rule |
 |---|---|
-| `tile` | square |
-| `poster` | width to height is 2 to 3, within 2 % |
-| `hero` | wider than tall, from 2 to 1 up to 4 to 1 |
-| `logo` | any shape, with an alpha channel (PNG or WebP) |
+| `picture` | each side at least 256 pixels; any shape |
+| `logo` | any shape, with transparency: an alpha channel (PNG or WebP) and at least one pixel that is not fully opaque |
+| `icon` | square |
 
 Under discovery's write lock korrid checks that the game is still the one it
-asked about, then writes the blob and the assignment.
+asked about, then writes the blobs and the assignments. The images of a kind
+that pass replace that plugin's earlier images of the kind for the game; the
+images of other plugins and other kinds stay. When none passes, or the
+answer has no candidate of the kind, the earlier images stay. When a
+download of a kind fails, the earlier images of the kind stay if the game
+holds any; otherwise the images that arrived are stored.
 
 - **Blob:** `<private>/game-assets/blobs/<sha256>.<png|jpg|webp>`. The file
   name is the asset id.
 - **Assignment:** `<private>/game-assets/assignments.json`, one record for
-  each `<playable id>:<role>`: `{ asset_id, role, owner, source, color? }`.
-  `source` is `{ provider, id?, url?, sha256, width, height, format }`, where
-  `provider` is the owning plugin's id.
+  each `<playable id>:<plugin id>:<kind>:<n>`, where `n` is the image's
+  place in the plugin's order from 0: `{ asset_id, kind, owner, source,
+  color? }`. `source` is `{ provider, id?, url?, sha256, width, height,
+  format }`, where `provider` is the owning plugin's id.
 - **Colour:** `color` is one colour of the image as lowercase `#rrggbb`.
   korrid computes it once, when it stores the image: it reduces the image to
   32 by 32 pixels, drops pixels that are mostly transparent, near black,
   near white or of low saturation, puts the rest in 12 hue buckets and takes
   the average colour of the largest bucket. The field is absent when no
   pixel is left.
-- **Reading:** `LocalGame.coverAssetId` is the `tile` asset id.
-  `LocalGame.media` lists the stored `poster`, `hero` and `logo`, in that
-  order, as `LocalGameMedia { role, assetId, width, height, color? }`; it is
-  absent when the game has none, and it never holds a tile. The surface
-  model publishes them as `SurfaceGame.media`, each named
-  `/game-assets/<asset id>` as `coverArtUrl` is.
-  `app.game-assets.object { assetId }` serves an asset that any assignment
-  names, whatever its role (ADR 0065).
+- **Reading:** `LocalGame.media` lists every stored image of the game, of
+  every kind and from every plugin, in key order, as `LocalGameMedia { kind,
+  assetId, width, height, color? }`; it is absent when the game has none.
+  `LocalGame.coverAssetId` is the largest of its square-ish pictures, from
+  0.85 to 1.2 wide for each unit of height. The surface model publishes the
+  list as `SurfaceGame.media`, each named `/game-assets/<asset id>` as
+  `coverArtUrl` is. `app.game-assets.object { assetId }` serves an asset
+  that any assignment names, whatever its kind (ADR 0065).
 
 #### When korrid calls it
 
 After each successful discovery pass, in the `Enriching` phase, wherever
 discovery runs (ADR 0017). korrid asks every enabled plugin that carries the
-handler, in plugin id order, about at most 8 games per plugin per pass. It
-does not ask a plugin about a game that plugin has a recorded attempt for,
-and it does not ask about a game that already holds every role. If the
-plugin declares a secret and the secret is not set, korrid does not call the
+handler, in plugin id order, about at most 8 games per plugin per pass. No
+plugin wins by that order: each one keeps its own images. If the plugin
+declares a secret and the secret is not set, korrid does not call the
 handler and reports `CredentialMissing`.
 
 Attempts are in the plugin's own folder,
 `<private>/<plugin id>/attempts.json`, keyed by a hash of the playable id,
-the release id, the release fingerprint and the ROM identity:
+the release id, the release fingerprint and the ROM identity. The
+fingerprint covers the whole library record except its public ids, so a new
+title or system is a new key. Each record also holds `answered_at`, in
+seconds since the Unix epoch, and `external_ids_sha256`, a hash of the
+game's public ids once the plugin's own matched ids were merged in. korrid
+asks a plugin about a game only when:
+
+- the plugin has no attempt for the game's key: it never answered, or the
+  game's title, system, release or ROM changed;
+- the game's public ids differ from the attempt's hash, as when another
+  plugin matched the game;
+- the attempt is 30 days old, or from a time after now.
 
 | Event | Outcome | Cleared by |
 |---|---|---|
-| An image was stored, or the game held images and nothing failed | `assigned` | never |
+| An image was stored, or the game held images from the plugin and nothing failed | `assigned` | never |
 | The plugin returned no candidate, or a response repeated the plugin's secret | `no-match` | a set or a clear of the plugin's secret |
 | `ProviderUnreachable`, `ProviderFailed`, a failed download | `transient` | a rescan |
 | korrid refused the bytes and stored nothing | `asset-rejected` | a set or a clear of the plugin's secret |
 | The game changed during the pass | not recorded | |
 
-A role with no candidate is not an error. A game is `transient` when any of
-its downloads failed, also when another role arrived: the next rescan asks
-again and downloads only the roles the game does not hold. A 401 answer to a
+A kind with no candidate is not an error. A game is `transient` when any of
+its downloads failed, also when other images arrived. A 401 answer to a
 request that carried the secret stops the pass for that plugin and records
 nothing (`CredentialUnauthorized`). korrid records an attempt only while the
 secret it used still stands. korrid does not retry a 429 or a 5xx: the plugin

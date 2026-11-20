@@ -63,11 +63,13 @@ export type SurfaceIdentityStatus = { _tag: "Idle" } | { _tag: "Working"; operat
 export type SurfaceLaunchSettings = { _tag: "Closed" } | ({ _tag: "Loading" | "Ready" } & SurfaceLaunchSettingsContent) | ({ _tag: "Conflict" | "Error"; message: string } & SurfaceLaunchSettingsContent);
 
 /**
- * What an image of a game is for. `poster` is upright, two wide to three
- * tall. `hero` is a wide backdrop. `logo` is the game's title as an image,
- * with a transparent background.
+ * What a stored image of a game is, in three broad kinds (ADR 0091).
+ * `logo` is the game's title as an image with a transparent background.
+ * `picture` is any other image of the game: box art, a grid, a wide hero
+ * or a background; its shape is in its measured size, not in its kind.
+ * `icon` is a small square mark of the game.
  */
-export type SurfaceMediaRole = "poster" | "hero" | "logo";
+export type SurfaceMediaKind = "logo" | "picture" | "icon";
 
 /**
  * Something that happened, delivered to the surface's `update`.
@@ -353,9 +355,12 @@ export interface SurfaceLaunchLocation {
 	label: string;
 }
 
-/** One stored image of a game. */
+/**
+ * One stored image of a game. A surface derives its ratio from `width`
+ * and `height`; no ratio is sent.
+ */
 export interface SurfaceMedia {
-	role: SurfaceMediaRole;
+	kind: SurfaceMediaKind;
 	/**
 	 * Opaque, as `coverArtUrl`: hand it back unchanged as an image,
 	 * `{ $image: url }`. The host loads it later, so the image is empty
@@ -363,11 +368,11 @@ export interface SurfaceMedia {
 	 */
 	url: string;
 	/**
-	 * The image's own width in pixels, so a surface can lay it out before
-	 * it arrives.
+	 * The image's own width in pixels, measured by Korri, so a surface can
+	 * lay it out before it arrives.
 	 */
 	width: number;
-	/** The image's own height in pixels. */
+	/** The image's own height in pixels, measured by Korri. */
 	height: number;
 	/**
 	 * One colour taken from this image, as lowercase `#rrggbb`. Absent when
@@ -442,8 +447,11 @@ export interface SurfaceGame {
 	 */
 	system?: string;
 	/**
-	 * Images Korri stores for this game, at most one of each role. Absent
-	 * when Korri has none. The square tile stays `coverArtUrl`.
+	 * Every image Korri stores for this game, from every art plugin, each
+	 * with its measured size (ADR 0091). Absent when Korri has none. The
+	 * list has no order a surface may rely on: a surface picks by `kind`
+	 * and by the shape and size it reads from `width` and `height`.
+	 * `coverArtUrl` stays the square cover.
 	 */
 	media?: SurfaceMedia[];
 }

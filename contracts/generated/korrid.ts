@@ -410,18 +410,6 @@ export interface FinalDownload {
 }
 
 /**
- * What a stored image of a game is for: legacy `GameAssetRole` without
- * `banner` and `screenshot`, which have no consumer (ADR 0032 as widened
- * for Velvet). `tile` is the square cover (`LocalGame.coverAssetId`).
- */
-export enum GameAssetRole {
-	Tile = "tile",
-	Poster = "poster",
-	Hero = "hero",
-	Logo = "logo",
-}
-
-/**
  * Legacy `GameAssetSource` without `provider`: korrid writes the owning
  * plugin's id itself. `id` is the site's own id of the image, as text.
  * `url` is where korrid downloads it: HTTPS, one of the plugin's `hosts`,
@@ -433,11 +421,12 @@ export interface GameAssetCandidateSource {
 }
 
 /**
- * Legacy `GameAssetCandidate` without `candidateId` and `gameId`. `width`
- * and `height` are optional; when given, the image must have that size.
+ * Legacy `GameAssetCandidate` without `candidateId` and `gameId`, with
+ * ADR 0091's `kind` in place of legacy `role`. `width` and `height` are
+ * optional; when given, the image must have that size.
  */
 export interface GameAssetCandidate {
-	role: GameAssetRole;
+	kind: import("./surface").SurfaceMediaKind;
 	width?: number;
 	height?: number;
 	source: GameAssetCandidateSource;
@@ -445,8 +434,8 @@ export interface GameAssetCandidate {
 
 /**
  * The handler's result (legacy `ListGameAssetCandidatesResponse`): the
- * candidates in the plugin's order of preference, roles in any order.
- * korrid takes the first candidate of each role. Empty: no match.
+ * candidates in the plugin's order of preference, kinds in any order.
+ * korrid takes the first four candidates of each kind. Empty: no match.
  * `externalIds`: the public ids of the matched game, which korrid merges
  * into the game's record (ADR 0090).
  */
@@ -1062,13 +1051,13 @@ export interface LibraryFoldersSnapshot {
 export interface LibraryFoldersSnapshotRequest {
 }
 
-/** One stored image of a local game that is not its cover. */
+/** One stored image of a local game. */
 export interface LocalGameMedia {
-	/** `poster`, `hero` or `logo`. It cannot be `tile`. */
-	role: import("./surface").SurfaceMediaRole;
+	/** `logo`, `picture` or `icon`. */
+	kind: import("./surface").SurfaceMediaKind;
 	/** The asset id, as `coverAssetId`: `<sha256>.<png|jpg|webp>`. */
 	assetId: string;
-	/** The image's own size in pixels. */
+	/** The image's own size in pixels, as korrid measured it. */
 	width: number;
 	height: number;
 	/**
@@ -1091,8 +1080,9 @@ export interface LocalGame {
 	identity?: GameIdentity;
 	coverAssetId?: string;
 	/**
-	 * The game's stored `poster`, `hero` and `logo`, in that order. Absent
-	 * when it has none. The tile is `coverAssetId` and is never in here.
+	 * Every image korrid stores for the game, of every kind and from every
+	 * art plugin (ADR 0091). Absent when it has none. `coverAssetId` is one
+	 * of them.
 	 */
 	media?: LocalGameMedia[];
 	playStats?: PlayStats;

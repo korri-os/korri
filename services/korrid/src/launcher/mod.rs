@@ -15,7 +15,7 @@ use crate::{
         snapshot::{ConfigSnapshotState, SnapshotAuthorization},
     },
     discovery,
-    game_assets::{AssetOwnerIdentity, GameAssetRepository, GameAssetRole},
+    game_assets::{AssetOwnerIdentity, GameAssetRepository},
     plugin::PluginRegistry,
 };
 use std::{collections::BTreeMap, path::Path};
@@ -126,8 +126,8 @@ fn local_game_from_route(
     }
 }
 
-/// The images korrid stores for local catalog games, by playable id:
-/// the tile as the cover, and the other roles as media.
+/// The images korrid stores for local catalog games, by playable id: the
+/// largest square-ish picture as the cover, and every image as media.
 #[derive(Default)]
 struct StoredArt {
     covers: BTreeMap<String, String>,
@@ -156,33 +156,20 @@ fn stored_art(readable_root: &Path, private_root: &Path, registry: &PluginRegist
         .map(|(playable_id, stored)| {
             let media = stored
                 .into_iter()
-                .filter_map(|stored| {
-                    Some(LocalGameMedia {
-                        role: media_role(stored.role)?,
-                        asset_id: stored.asset_id,
-                        width: stored.width,
-                        height: stored.height,
-                        color: stored.color,
-                    })
+                .map(|stored| LocalGameMedia {
+                    kind: stored.kind,
+                    asset_id: stored.asset_id,
+                    width: stored.width,
+                    height: stored.height,
+                    color: stored.color,
                 })
                 .collect();
             (playable_id, media)
         })
         .collect();
     StoredArt {
-        covers: repo.matching_tile_asset_ids(&owners).unwrap_or_default(),
+        covers: repo.matching_cover_asset_ids(&owners).unwrap_or_default(),
         media,
-    }
-}
-
-/// The role of a stored image as media. The tile is the cover, never media.
-fn media_role(role: GameAssetRole) -> Option<korri_surface_treaty::SurfaceMediaRole> {
-    use korri_surface_treaty::SurfaceMediaRole;
-    match role {
-        GameAssetRole::Tile => None,
-        GameAssetRole::Poster => Some(SurfaceMediaRole::Poster),
-        GameAssetRole::Hero => Some(SurfaceMediaRole::Hero),
-        GameAssetRole::Logo => Some(SurfaceMediaRole::Logo),
     }
 }
 
@@ -218,13 +205,14 @@ mod tests {
         );
     }
 
-    /// A discovered game with a tile, a poster and a logo: the tile is the
-    /// cover, and media lists exactly the other two.
+    /// A discovered game with a logo and two pictures from one plugin and an
+    /// icon from another: the square-ish picture is the cover, and media
+    /// lists every image with its kind, size and colour.
     #[test]
-    fn a_listed_game_carries_its_stored_media_beside_its_cover() {
+    fn a_listed_game_carries_every_stored_image_beside_its_cover() {
         use crate::game_assets::{test_image, AssetCandidate};
         use image::ImageFormat;
-        use korri_surface_treaty::SurfaceMediaRole;
+        use korri_surface_treaty::SurfaceMediaKind;
         let root = tempdir().unwrap();
         let private = tempdir().unwrap();
         let roms = tempdir().unwrap();
@@ -252,81 +240,79 @@ mod tests {
         let game = discovery::reconcile::artwork_games(root.path(), private.path(), &registry)
             .unwrap()
             .remove(0);
+        let owner = AssetOwnerIdentity {
+            playable_id: game.playable_id.clone(),
+            release_id: game.release_id.clone(),
+            release_fingerprint: game.release_fingerprint.clone(),
+            rom_identity: game.rom_identity.clone(),
+        };
         let repository = GameAssetRepository::new(private.path());
-        let mut stored = std::collections::BTreeMap::new();
-        for (role, bytes) in [
-            (
-                GameAssetRole::Logo,
-                test_image(40, 13, ImageFormat::Png, true, [240, 200, 40]),
-            ),
-            (
-                GameAssetRole::Tile,
-                test_image(8, 8, ImageFormat::Png, true, [200, 60, 40]),
-            ),
-            (
-                GameAssetRole::Poster,
-                test_image(60, 90, ImageFormat::Png, false, [20, 80, 220]),
-            ),
-        ] {
-            let assignment = repository
-                .assign(
-                    AssetOwnerIdentity {
-                        playable_id: game.playable_id.clone(),
-                        release_id: game.release_id.clone(),
-                        release_fingerprint: game.release_fingerprint.clone(),
-                        rom_identity: game.rom_identity.clone(),
-                    },
-                    role,
-                    AssetCandidate {
-                        bytes,
-                        declared_width: None,
-                        declared_height: None,
-                        provider: crate::plugin_test_fixtures::ART_PLUGIN_ID.into(),
-                        source_id: None,
-                        source_url: None,
-                    },
+        let store = |provider: &str, kind, images: Vec<Vec<u8>>| {
+            repository
+                .replace(
+                    owner.clone(),
+                    provider,
+                    kind,
+                    images
+                        .into_iter()
+                        .map(|bytes| AssetCandidate {
+                            bytes,
+                            declared_width: None,
+                            declared_height: None,
+                            source_id: None,
+                            source_url: None,
+                        })
+                        .collect(),
                 )
-                .unwrap();
-            stored.insert(role, assignment.asset_id);
-        }
+                .unwrap()
+                .stored
+                .into_iter()
+                .map(|stored| stored.asset_id)
+                .collect::<Vec<_>>()
+        };
+        let art = crate::plugin_test_fixtures::ART_PLUGIN_ID;
+        let logo = store(
+            art,
+            SurfaceMediaKind::Logo,
+            vec![test_image(40, 13, ImageFormat::Png, true, [240, 200, 40])],
+        );
+        let pictures = store(
+            art,
+            SurfaceMediaKind::Picture,
+            vec![
+                test_image(512, 512, ImageFormat::Png, true, [200, 60, 40]),
+                test_image(600, 900, ImageFormat::Png, false, [20, 80, 220]),
+            ],
+        );
+        let icon = store(
+            "@korri:other",
+            SurfaceMediaKind::Icon,
+            vec![test_image(32, 32, ImageFormat::Png, false, [128, 128, 128])],
+        );
 
         let game = listed(Some(private.path()));
-        assert_eq!(
-            game.cover_asset_id.as_ref(),
-            Some(&stored[&GameAssetRole::Tile])
-        );
-        assert_eq!(
-            game.media,
-            Some(vec![
-                LocalGameMedia {
-                    role: SurfaceMediaRole::Poster,
-                    asset_id: stored[&GameAssetRole::Poster].clone(),
-                    width: 60,
-                    height: 90,
-                    color: Some("#1450dc".into()),
-                },
-                LocalGameMedia {
-                    role: SurfaceMediaRole::Logo,
-                    asset_id: stored[&GameAssetRole::Logo].clone(),
-                    width: 40,
-                    height: 13,
-                    color: Some("#f0c828".into()),
-                },
-            ])
-        );
-        // On the wire: camelCase, no hero, and never a tile.
+        assert_eq!(game.cover_asset_id.as_ref(), Some(&pictures[0]));
+        // On the wire: camelCase, every image, the cover among them.
         let wire = serde_json::to_value(&game).unwrap();
         assert_eq!(
             wire["media"],
             serde_json::json!([
-                { "role": "poster", "assetId": stored[&GameAssetRole::Poster], "width": 60, "height": 90, "color": "#1450dc" },
-                { "role": "logo", "assetId": stored[&GameAssetRole::Logo], "width": 40, "height": 13, "color": "#f0c828" },
+                { "kind": "icon", "assetId": icon[0], "width": 32, "height": 32 },
+                { "kind": "logo", "assetId": logo[0], "width": 40, "height": 13, "color": "#f0c828" },
+                { "kind": "picture", "assetId": pictures[0], "width": 512, "height": 512, "color": "#c83c28" },
+                { "kind": "picture", "assetId": pictures[1], "width": 600, "height": 900, "color": "#1450dc" },
             ])
         );
-        assert!(serde_json::from_value::<LocalGameMedia>(serde_json::json!(
-            { "role": "tile", "assetId": stored[&GameAssetRole::Tile], "width": 8, "height": 8 }
-        ))
-        .is_err());
+        // The fixed roles are gone: no `role`, and no `tile`.
+        for item in [
+            serde_json::json!({ "role": "poster", "assetId": pictures[1], "width": 600, "height": 900 }),
+            serde_json::json!({ "kind": "tile", "assetId": pictures[0], "width": 512, "height": 512 }),
+        ] {
+            assert!(
+                serde_json::from_value::<LocalGameMedia>(item.clone()).is_err(),
+                "{item}"
+            );
+        }
         // Without the private root there is no stored art to speak of.
         let unknown = listed(None);
         assert_eq!((unknown.cover_asset_id, unknown.media), (None, None));

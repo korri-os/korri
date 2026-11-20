@@ -29,6 +29,7 @@ fi
 KORRI_SCRIPT_FIXTURES_IN_SHELL=1 bash "$CRATE/script-fixtures-setup.sh"
 "$CRATE/deploy/test-migrate-plugin-settings.py"
 "$CRATE/deploy/test-migrate-plugin-artwork.py"
+"$CRATE/deploy/test-migrate-measured-media.py"
 cargo test --manifest-path "$ROOT/contracts/settings/Cargo.toml"
 cargo test --manifest-path "$ROOT/contracts/viewer/Cargo.toml"
 cargo test
