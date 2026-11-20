@@ -35,6 +35,16 @@ None of them can resume after an interruption.
   of the install manager decides it from one of the two existing layouts:
   netplay's release-key layout (ADR 0040) or the provider layout (ADR 0016).
 - Velvet is the first surface to show play-here and the list of installs.
+- A Steam-engine game (ADR 0083) has two kinds of install source: Valve,
+  through the Steam engine, and devices whose folder of the game matches.
+- When this device has no runner for the game but a plugin offers one,
+  Korri asks to install the plugin first, with the usual permission
+  approval, as for netplay (ADR 0040).
+- The work lands in this order: the install manager with today's provider
+  and artifact sources, resumable and kept across restarts; devices as
+  sources through iroh-blobs, for file releases; play-here and the list of
+  installs on Velvet; netplay's copy moved onto the manager; folder
+  releases; the priority and battery rules.
 - An install takes pieces from every reachable install source at once,
   like a torrent, and checks each piece. It keeps verified pieces after an
   interruption and resumes when a source returns. The person can cancel it.
