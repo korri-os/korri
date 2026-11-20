@@ -444,6 +444,28 @@ pub(crate) struct NarInfo {
     pub(crate) signatures: Vec<String>,
 }
 
+/// `nix path-info` arguments that read one named store and nothing else.
+///
+/// For a path that the named store does not hold, `nix path-info` otherwise
+/// asks every substituter in the host's Nix configuration about that path and
+/// its whole closure. Nix prints each failed answer as a warning with the full
+/// response body, up to five times per path. A substituter outage then makes a
+/// one-path query print megabytes (an HTTP 503 page from GitHub Pages is
+/// 54,887 bytes), so its output grows with the closure. The query needs no
+/// substituter: absence in the named store is the answer.
+fn named_store_args(cache: &str) -> [&str; 8] {
+    [
+        "--option",
+        "substituters",
+        "",
+        "--option",
+        "extra-substituters",
+        "",
+        "--store",
+        cache,
+    ]
+}
+
 pub(crate) fn path_info(nix: &Path, package: &str, cache: Option<&str>) -> Result<NarInfo, String> {
     let mut args = vec![
         "--extra-experimental-features",
@@ -452,7 +474,7 @@ pub(crate) fn path_info(nix: &Path, package: &str, cache: Option<&str>) -> Resul
         "--json",
     ];
     if let Some(cache) = cache {
-        args.extend(["--store", cache]);
+        args.extend(named_store_args(cache));
     }
     args.push(package);
     let json = process::checked(nix, args, Duration::from_secs(30))?;
@@ -474,19 +496,15 @@ pub(crate) fn optional_path_info(
     cache: &str,
 ) -> Result<Option<NarInfo>, String> {
     validate_store_path(Path::new(package))?;
-    let output = process::run(
-        nix,
-        [
-            "--extra-experimental-features",
-            "nix-command",
-            "path-info",
-            "--json",
-            "--store",
-            cache,
-            package,
-        ],
-        Duration::from_secs(30),
-    )?;
+    let mut args = vec![
+        "--extra-experimental-features",
+        "nix-command",
+        "path-info",
+        "--json",
+    ];
+    args.extend(named_store_args(cache));
+    args.push(package);
+    let output = process::run(nix, args, Duration::from_secs(30))?;
     let mut infos: BTreeMap<String, Option<NarInfo>> = serde_json::from_str(&output.stdout)
         .map_err(|_| {
             format!(
@@ -760,7 +778,7 @@ pub(crate) fn path_infos(
         "--json",
     ];
     if let Some(cache) = cache {
-        args.extend(["--store", cache]);
+        args.extend(named_store_args(cache));
     }
     for path in paths {
         validate_store_path(Path::new(path))?;
@@ -1447,6 +1465,62 @@ fn validate_artifact(
         return Err("payload must resolve to an immutable regular executable".into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod named_store_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    /// A Nix that, like Nix 2.34 during a substituter outage, prints 2 MiB of
+    /// warnings for a path absent from the named store unless the call turns
+    /// the host's substituters off. It answers that the path is absent.
+    fn outage_nix(root: &Path) -> PathBuf {
+        let path = root.join("nix");
+        fs::write(
+            &path,
+            r#"#!/bin/sh
+off=0 prev2= prev=
+for a in "$@"; do
+  if [ "$prev2" = --option ] && [ "$prev" = substituters ] && [ -z "$a" ]; then off=1; fi
+  prev2=$prev prev=$a last=$a
+done
+if [ $off = 0 ]; then
+  i=0
+  while [ $i -lt 2048 ]; do printf '%01024d' 0 >&2; i=$((i + 1)); done
+fi
+printf '{"%s":null}' "$last"
+"#,
+        )
+        .unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        path
+    }
+
+    #[test]
+    fn a_named_store_query_never_consults_the_host_substituters() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = outage_nix(root.path());
+        let shared = "/nix/store/2lgg8jqyzjp60svh7kmp39kqwnig31p2-util-linux-2.42.4-bin";
+        let cache = "https://korri-os.github.io/plugins/";
+        assert!(optional_path_info(&nix, shared, cache).unwrap().is_none());
+        let Err(error) = path_info(&nix, shared, Some(cache)) else {
+            panic!("an absent path has no metadata");
+        };
+        assert!(error.starts_with("invalid Nix path metadata"), "{error}");
+        let Err(error) = path_infos(&nix, &[shared.into()], Some(cache)) else {
+            panic!("an absent path has no metadata");
+        };
+        assert_eq!(error, "Nix metadata omits a selected path");
+        // The fake itself still floods a query that leaves them on.
+        assert!(process::run(
+            &nix,
+            ["path-info", "--json", "--store", cache, shared],
+            Duration::from_secs(30)
+        )
+        .unwrap_err()
+        .contains("exceeded 1 MiB"));
+    }
 }
 
 #[cfg(test)]
