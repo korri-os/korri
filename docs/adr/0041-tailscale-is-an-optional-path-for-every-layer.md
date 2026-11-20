@@ -3,6 +3,9 @@
 **Owner decision, 2026-10-28.** This changes ADR 0026 for devices that have
 Tailscale.
 
+**Amended by ADR 0089 (2026-11-19):** korrid names no network at all, and
+paths are chosen by measurement.
+
 ADR 0026 says Korri uses Tailscale as one more method when a device already
 has it, and never requires it. It also says no third-party relay carries
 traffic, including Tailscale's DERP. korrid followed both rules by using
