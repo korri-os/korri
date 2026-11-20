@@ -114,7 +114,7 @@ export component VelvetBrowse inherits Rectangle {
                     inert: root.inert;
                     activated(target, at, released) => { root.activated(target, at, released); }
                 }
-                VelvetPill {
+                menu-pill := VelvetPill {
                     x: parent.width - root.pad-x - self.width;
                     y: root.pad-y * 0.7;
                     pill: root.home.menu;
@@ -122,10 +122,12 @@ export component VelvetBrowse inherits Rectangle {
                     inert: root.inert;
                     activated(target, at, released) => { root.activated(target, at, released); }
                 }
+                // The clock ends where the pill's focus ring starts (0.24 of its size out
+                // from its edge), less a gap of 0.6: it never runs under the pill, at any size.
                 if root.home.clock != "": VelvetWords {
-                    x: parent.width - root.pad-x - Tokens.screen.small * root.u * 12;
+                    x: root.pad-x;
                     y: root.pad-y * 0.7;
-                    width: Tokens.screen.small * root.u * 6;
+                    width: Math.max(0px, menu-pill.x - Tokens.screen.small * root.u * 0.84 - root.pad-x);
                     height: Tokens.screen.small * root.u * 2.3;
                     text: root.home.clock;
                     size: Tokens.screen.small * root.u;

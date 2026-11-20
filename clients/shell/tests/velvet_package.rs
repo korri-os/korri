@@ -724,6 +724,81 @@ fn focus_stays_in_sight_through_every_scenario_at_every_size() {
     );
 }
 
+/// The clock stands beside the Menu pill and never under it: its box ends
+/// before the pill's focus ring (a quarter of the pill's size out from its
+/// edge), with the pill focused, at every size, on home and on the empty
+/// library.
+#[test]
+fn the_clock_stands_clear_of_the_menu_pill() {
+    use i_slint_backend_testing::ElementRoot;
+    install();
+    let root = package();
+    let views =
+        korri_shell::package::compile(&korri_shell::package::Package::at(&root).unwrap()).unwrap();
+    let mut failures = Vec::new();
+    for name in ["home-menu-pill", "empty"] {
+        let scenario = scenario(&root, name);
+        for (width, height) in SIZES {
+            let (mut engine, mut korri) = start(&root, &scenario["models"][0], width, height);
+            for press in scenario["steps"].as_array().unwrap() {
+                step(&mut engine, &mut korri, &scenario, press.as_str().unwrap());
+            }
+            let instance = views.surface.create().unwrap();
+            instance
+                .window()
+                .set_size(slint::PhysicalSize::new(width, height));
+            instance.show().unwrap();
+            let mut binder = view::Binder::new(&views.surface);
+            let mut images = ImageCache::new(&root);
+            let view = engine.view().unwrap();
+            binder.apply(&instance, &view, &mut images).unwrap();
+            for _ in 0..3 {
+                render(width, height);
+                settle();
+            }
+            let clock = korri.model["clockLabel"].as_str().unwrap_or("").to_owned();
+            let small = view["screen"]["small"].as_f64().unwrap() as f32;
+            let at = format!("{name} {width}x{height}");
+            let found = |label: &str| {
+                instance
+                    .root_element()
+                    .query_descendants()
+                    .match_predicate({
+                        let label = label.to_owned();
+                        move |e| e.accessible_label().as_deref() == Some(label.as_str())
+                    })
+                    .find_all()
+                    .into_iter()
+                    .filter(|e| e.is_valid() && !e.is_hidden())
+                    .collect::<Vec<_>>()
+            };
+            let clocks = found(&clock);
+            let pills = found("Menu");
+            let (Some(clock), Some(pill)) = (clocks.first(), pills.first()) else {
+                failures.push(format!("{at}: no clock ({clock:?}) or no Menu pill drawn"));
+                continue;
+            };
+            let (c, p) = (clock.absolute_position(), pill.absolute_position());
+            let ring = small * 0.24;
+            if c.x + clock.size().width > p.x - ring {
+                failures.push(format!(
+                    "{at}: the clock ends at {:.1}, the pill's ring starts at {:.1}",
+                    c.x + clock.size().width,
+                    p.x - ring
+                ));
+            }
+            if p.x + pill.size().width > width as f32 {
+                failures.push(format!("{at}: the Menu pill leaves the window"));
+            }
+            if name == "home-menu-pill" && pill.accessible_item_selected() != Some(true) {
+                failures.push(format!("{at}: the Menu pill is not the focused one"));
+            }
+            instance.hide().unwrap();
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
 /// Contract 8.4 in full, once a scenario at one size: every focus entry of
 /// the view selects exactly one element, none is selected with no entry
 /// focused, and the focused one is in the window.
