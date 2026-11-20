@@ -119,6 +119,8 @@ is no such concern, propose no schema change.
 Keep `plugin.ts` thin. It declares the plugin's identity and Korri integration,
 not a replacement configuration language for the systems the plugin uses.
 This rule applies to every plugin and platform, not only Tailscale.
+ADR 0089 records one exception: the plugin host generates the account socket
+and template units itself, so that root alone sets their identity and sandbox.
 
 - Put system-specific configuration in its established native format. A Linux
   daemon belongs in an actual systemd `.service` file shipped with the plugin.

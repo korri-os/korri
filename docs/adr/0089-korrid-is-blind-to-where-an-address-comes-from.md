@@ -71,6 +71,11 @@ Tailscale just gives me those extra benefits for free."
 
 Added 2026-11-20 with the first implementation.
 
+The declaration shape and its limits, and the unit-generation exception
+below, were chosen by the implementing agents under the owner's delegation for
+this run (2026-11-19: "keep me out of the loop"). They await the owner's
+confirmation, tracked in #581.
+
 - **Grounding.** The shared sign-in card is the owner's decision of
   2026-11-19 (above). The account host's line protocol is extracted from the
   Steam engine host's (`services/korrid/src/steam_engine/protocol.rs`): its

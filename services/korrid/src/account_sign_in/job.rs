@@ -1,8 +1,9 @@
 //! One account-host job: a connection to the plugin's account socket.
 //!
-//! The plugin host generates, for a plugin that declares `accounts`, a socket
-//! unit `korri-account-<sha256(id)>.socket` (`Accept=yes`, korrid's user
-//! only) and its service template, which runs the declared program as the
+//! The plugin host generates, for a plugin that declares an `account`, a
+//! socket unit `korri-account-<h>.socket`, where `<h>` is the first 128 bits
+//! of sha256(id) (`Accept=yes`, korrid's user only), and its service
+//! template, which runs the declared program as the
 //! plugin's own service user with the plugin's own hardening and the
 //! connection as its input and output. korrid connects: systemd starts one
 //! program for the connection. korrid writes command lines and reads event
