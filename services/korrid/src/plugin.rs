@@ -494,6 +494,10 @@ pub struct Plugin {
     session_controls: BTreeMap<String, SessionControlRecord>,
     groups: BTreeMap<String, GroupRecord>,
     declared_games: BTreeMap<String, DeclaredGame>,
+    /// The plugin's native services, in declared order.
+    services: Vec<String>,
+    /// ADR 0089: the plugin's account sign-in, at most one.
+    accounts: BTreeMap<String, crate::plugin_references::AccountDeclaration>,
 }
 
 impl Plugin {
@@ -511,6 +515,14 @@ impl Plugin {
 
     pub fn config(&self) -> Option<&BTreeMap<String, serde_json::Value>> {
         self.config.as_ref()
+    }
+
+    pub fn services(&self) -> &[String] {
+        &self.services
+    }
+
+    pub fn accounts(&self) -> &BTreeMap<String, crate::plugin_references::AccountDeclaration> {
+        &self.accounts
     }
 }
 
@@ -957,6 +969,11 @@ impl PluginRegistry {
         self.plugins.keys().map(String::as_str).collect()
     }
 
+    /// An enabled plugin's declaration.
+    pub fn plugin(&self, plugin_id: &str) -> Option<&Plugin> {
+        self.plugins.get(plugin_id)
+    }
+
     pub fn plugin_title(&self, plugin_id: &str) -> Option<&str> {
         self.plugins.get(plugin_id).map(Plugin::title)
     }
@@ -1226,6 +1243,10 @@ struct PluginDeclaration {
     discovery: Vec<ReleaseDiscoveryProvider>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     config: Option<BTreeMap<String, serde_json::Value>>,
+    /// ADR 0089. `plugin_references::accounts` checks the entries against the
+    /// installed package's files.
+    #[serde(default)]
+    accounts: BTreeMap<String, crate::plugin_references::AccountDeclaration>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1856,6 +1877,8 @@ fn normalize_plugin(
         session_controls: declaration.session_controls,
         groups: declaration.groups,
         declared_games,
+        services: declaration.services,
+        accounts: declaration.accounts,
     })
 }
 

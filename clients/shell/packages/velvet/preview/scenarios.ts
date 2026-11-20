@@ -127,7 +127,8 @@ const withActions = (model: object) => ({ ...model, focusedGame: { gameId: "", a
 const identity = (state: object) => ({ ...ready, identityManagement: state })
 const store = (state: object) => ({ ...ready, store: state })
 const overlay = (presentation: object, more: object = {}) => ({ ...ready, presentation, ...more })
-const steam = (account: object, model: object = ready) => ({ ...model, steamAccount: account })
+const steamSignIn = (state: object) => ({ accountSignIns: [{ id: "@korri:steam", title: "Steam", offer: "Steam: play the games in your Steam library", state }] })
+const steam = (account: object, model: object = ready) => ({ ...model, ...steamSignIn(account) })
 const firstBoot = (more: object = {}) => ({ ...ready, catalog: { _tag: "Empty" }, settings: korri.onboarding.settings, network: korri.onboarding.network, onboarding: korri.onboarding.onboarding, ...more })
 
 const invites = [{
@@ -296,9 +297,9 @@ const scenarios: Scenario[] = [
   { name: "steam-refused", models: [steam(korri.steam.refused)], steps: toSteam },
   { name: "steam-for-game", models: [steam(korri.steam.codeForGame)], steps: [] },
   { name: "steam-working", models: [steam(korri.steam.working)], steps: [] },
-  { name: "first-boot-steam", models: [firstBoot({ steamAccount: korri.steam.signedOut })], steps: [...pastWifi, "down", "confirm"] },
-  { name: "first-boot-steam-code", models: [firstBoot({ steamAccount: korri.steam.code })], steps: [...pastWifi, "down", "confirm"] },
-  { name: "first-boot-steam-done", models: [firstBoot({ steamAccount: korri.steam.signedIn })], steps: [...pastWifi, "down", "confirm"] },
+  { name: "first-boot-steam", models: [firstBoot(steamSignIn(korri.steam.signedOut))], steps: [...pastWifi, "down", "confirm"] },
+  { name: "first-boot-steam-code", models: [firstBoot(steamSignIn(korri.steam.code))], steps: [...pastWifi, "down", "confirm"] },
+  { name: "first-boot-steam-done", models: [firstBoot(steamSignIn(korri.steam.signedIn))], steps: [...pastWifi, "down", "confirm"] },
   // The gameplay overlay.
   { name: "overlay", models: [overlay(korri.overlay.plain)], steps: [] },
   { name: "overlay-groups", models: [overlay(korri.overlay.groups)], steps: ["down", "down"] },

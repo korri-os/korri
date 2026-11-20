@@ -195,7 +195,7 @@ shell, `VELVET_FRAMES` (below) through the test harness.
   the background, else the wide hero, and cuts it to fill at every size. A
   tile takes the poster, else the square tile or `coverArtUrl`, else the
   logo, else the no-art card.
-- `steamAccount` (ADR 0083): Settings › More › Steam, a first-boot step
+- Steam's `accountSignIns` entry (ADR 0083, ADR 0089): Settings › More › Steam, a first-boot step
   before the end (Sign in, or Skip for now; Next leads once signed in), and a
   page that takes the screen while a launch waits for the sign-in (`Code` or
   `Working` with `forGame`), where Back is Korri's Cancel. Korri sends the

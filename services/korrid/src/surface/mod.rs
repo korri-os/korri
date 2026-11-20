@@ -11,6 +11,7 @@
 //! preference store. A model is whole: the hub builds it from the
 //! controllers' facts each time one changes.
 
+pub mod account_sign_ins;
 pub mod acquisition_gate;
 pub mod catalog;
 pub mod controllers;

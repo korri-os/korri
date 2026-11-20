@@ -925,6 +925,36 @@ fn load_declaration_snapshot(package: &Path) -> Result<(Declaration, SourceSnaps
     evaluate_package(package)
 }
 
+/// The installed declaration's `accounts` as the admin projection carries
+/// them (ADR 0089), with each logo resolved through the package's files.
+pub fn projected_accounts(
+    package: &Path,
+    declaration: &Declaration,
+) -> Result<std::collections::HashMap<String, crate::plugin_admin::PluginAccount>, String> {
+    let manifest = manifest(package)?;
+    let accounts = crate::plugin_references::accounts(
+        &serde_json::to_value(declaration).map_err(|e| e.to_string())?,
+        &manifest.files,
+    )?;
+    Ok(accounts
+        .into_iter()
+        .map(|(key, account)| {
+            let logo = account
+                .logo
+                .as_ref()
+                .map(|key| manifest.files[key].display().to_string());
+            (
+                key,
+                crate::plugin_admin::PluginAccount {
+                    title: account.title,
+                    offer: account.offer,
+                    logo,
+                },
+            )
+        })
+        .collect())
+}
+
 /// Evaluation after the caller established package authority.
 fn evaluate_package(package: &Path) -> Result<(Declaration, SourceSnapshot), String> {
     let manifest = manifest(package)?;
@@ -1403,7 +1433,7 @@ fn report_from(
             .values()
             .any(|unit| !unit.credentials.is_empty())
         {
-            format!("{warning} NATIVE CREDENTIAL LOOKUP: systemd searches its inherited credentials and credstore for tailscale-authkey. A missing named credential is non-fatal in systemd. Korri supplies no secret and performs no login; Tailscale still needs an explicit operator tailscale up.")
+            format!("{warning} NATIVE CREDENTIAL LOOKUP: systemd searches its inherited credentials and credstore for tailscale-authkey. A missing named credential is non-fatal in systemd. Korri supplies no secret and performs no login; the plugin's own account program, when it declares one, may read the credential.")
         } else {
             warning
         },

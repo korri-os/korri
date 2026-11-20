@@ -131,11 +131,13 @@ fn answer(request: PluginAdminRequest) -> PluginAdminResponse {
                     source_url: "https://removed.example/catalog.json".into(),
                     release_version: "v1".into(),
                     enabled: true,
+                    accounts: None,
                 }],
                 other_installs: vec![PluginOtherInstall {
                     id: "@korri:mgba".into(),
                     title: Some("mGBA".into()),
                     enabled: false,
+                    accounts: None,
                 }],
             })
         }

@@ -204,7 +204,7 @@ fn model_for(launch_id: &str, title: Option<String>) -> SurfaceModel {
         focused_game: None,
         systems: None,
         published_at: None,
-        steam_account: None,
+        account_sign_ins: Vec::new(),
     }
 }
 

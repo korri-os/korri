@@ -1,12 +1,13 @@
 //! The current person's Steam sign-in on this device, as a pure state
 //! machine fed by host events, and its projection onto the treaty's
-//! `SurfaceSteamAccount` (ADR 0083, contract "Surface treaty").
+//! treaty's `SurfaceAccountState` (ADR 0083, ADR 0089).
 //!
 //! korrid never reads the engine's sign-in stores. It learns the state only
 //! from the host: a status job at start (the host signs in from the engine's
 //! own login, or says it has none), the QR flow, and sign-out.
-use super::{availability::Unavailable, protocol::Event, qr};
-use korri_surface_treaty::{SurfaceAction, SurfaceSteamAccount};
+use super::{availability::Unavailable, protocol::Event};
+use crate::account_sign_in::qr;
+use korri_surface_treaty::{SurfaceAccountState, SurfaceAction};
 
 pub const SIGN_IN: &str = "steam-account:sign-in";
 pub const CANCEL: &str = "steam-account:cancel";
@@ -118,18 +119,19 @@ impl Account {
 
     /// The treaty value. `None` only while the status job runs and nothing
     /// is known: a surface then shows no Steam entry rather than a guess.
-    pub fn surface(&self) -> Option<SurfaceSteamAccount> {
+    pub fn surface(&self) -> Option<SurfaceAccountState> {
         let action = |id: &str, label: &str| SurfaceAction::new(id, label, true);
         Some(match self {
-            Self::Checking => SurfaceSteamAccount::Working {
+            Self::Checking => SurfaceAccountState::Working {
                 kicker: "Checking your Steam sign-in".into(),
                 for_game: None,
                 actions: vec![],
             },
-            Self::SignedOut => SurfaceSteamAccount::SignedOut {
+            Self::SignedOut => SurfaceAccountState::SignedOut {
+                kicker: None,
                 actions: vec![action(SIGN_IN, "Sign in")],
             },
-            Self::Starting { for_game } => SurfaceSteamAccount::Working {
+            Self::Starting { for_game } => SurfaceAccountState::Working {
                 kicker: "Getting a sign-in code from Steam".into(),
                 for_game: for_game.clone(),
                 actions: vec![action(CANCEL, "Cancel")],
@@ -138,7 +140,7 @@ impl Account {
                 challenge_url,
                 for_game,
             } => match qr::grid(challenge_url) {
-                Some(qr) => SurfaceSteamAccount::Code {
+                Some(qr) => SurfaceAccountState::Code {
                     qr,
                     kicker: "Sign in to Steam".into(),
                     detail: Some(
@@ -148,24 +150,24 @@ impl Account {
                     for_game: for_game.clone(),
                     actions: vec![action(CANCEL, "Cancel")],
                 },
-                None => SurfaceSteamAccount::Problem {
+                None => SurfaceAccountState::Problem {
                     kicker: "Steam sign-in did not finish".into(),
                     reason: "Steam sent a sign-in code Korri cannot show.".into(),
                     actions: vec![action(RETRY, "Try again")],
                 },
             },
-            Self::Working { for_game } => SurfaceSteamAccount::Working {
+            Self::Working { for_game } => SurfaceAccountState::Working {
                 kicker: "Signing in to Steam".into(),
                 for_game: for_game.clone(),
                 actions: vec![],
             },
-            Self::SignedIn { account_name } => SurfaceSteamAccount::SignedIn {
+            Self::SignedIn { account_name } => SurfaceAccountState::SignedIn {
                 account_name: account_name.clone(),
                 actions: vec![action(SIGN_OUT, "Sign out")],
             },
             Self::Problem {
                 problem: Problem::SignIn { .. },
-            } => SurfaceSteamAccount::Problem {
+            } => SurfaceAccountState::Problem {
                 kicker: "Steam sign-in did not finish".into(),
                 reason: "Steam did not answer, or the code ran out. Check the network and try again."
                     .into(),
@@ -173,14 +175,14 @@ impl Account {
             },
             Self::Problem {
                 problem: Problem::ClientChosen,
-            } => SurfaceSteamAccount::Problem {
+            } => SurfaceAccountState::Problem {
                 kicker: "Steam games use the Steam client".into(),
                 reason: "Steam refused the engine version Korri uses, so your Steam games start with the Steam client now. When Korri updates, choose the engine again in a game's runners.".into(),
                 actions: vec![],
             },
             Self::Problem {
                 problem: Problem::Unavailable(reason),
-            } => SurfaceSteamAccount::Problem {
+            } => SurfaceAccountState::Problem {
                 kicker: "Steam without the client is unavailable".into(),
                 reason: reason.reason().into(),
                 actions: if reason.offers_client_runner() {
@@ -200,13 +202,13 @@ impl Account {
 mod tests {
     use super::*;
 
-    fn ids(account: &SurfaceSteamAccount) -> Vec<String> {
+    fn ids(account: &SurfaceAccountState) -> Vec<String> {
         let actions = match account {
-            SurfaceSteamAccount::SignedOut { actions }
-            | SurfaceSteamAccount::Code { actions, .. }
-            | SurfaceSteamAccount::Working { actions, .. }
-            | SurfaceSteamAccount::SignedIn { actions, .. }
-            | SurfaceSteamAccount::Problem { actions, .. } => actions,
+            SurfaceAccountState::SignedOut { actions, .. }
+            | SurfaceAccountState::Code { actions, .. }
+            | SurfaceAccountState::Working { actions, .. }
+            | SurfaceAccountState::SignedIn { actions, .. }
+            | SurfaceAccountState::Problem { actions, .. } => actions,
         };
         actions.iter().map(|a| a.id.clone()).collect()
     }
@@ -225,7 +227,7 @@ mod tests {
         account = account.apply(&Event::QrCode {
             challenge_url: "https://s.team/q/1/111".into(),
         });
-        let SurfaceSteamAccount::Code {
+        let SurfaceAccountState::Code {
             qr,
             for_game,
             actions,
@@ -242,7 +244,7 @@ mod tests {
         let rotated = account.apply(&Event::QrRefreshed {
             challenge_url: "https://s.team/q/1/222".into(),
         });
-        let SurfaceSteamAccount::Code { qr: next, .. } = rotated.surface().unwrap() else {
+        let SurfaceAccountState::Code { qr: next, .. } = rotated.surface().unwrap() else {
             panic!()
         };
         assert_ne!(next, qr);
@@ -262,7 +264,7 @@ mod tests {
         });
         assert_eq!(
             signed_in.surface(),
-            Some(SurfaceSteamAccount::SignedIn {
+            Some(SurfaceAccountState::SignedIn {
                 account_name: "korri_player".into(),
                 actions: vec![SurfaceAction::new(SIGN_OUT, "Sign out", true)],
             })
@@ -307,7 +309,7 @@ mod tests {
             assert!(ids(&account.surface().unwrap()).is_empty());
         }
         assert_eq!(ids(&refused.surface().unwrap()), [USE_CLIENT]);
-        let SurfaceSteamAccount::Problem { reason, .. } = mismatch.surface().unwrap() else {
+        let SurfaceAccountState::Problem { reason, .. } = mismatch.surface().unwrap() else {
             panic!()
         };
         assert!(reason.contains("does not match"), "{reason}");

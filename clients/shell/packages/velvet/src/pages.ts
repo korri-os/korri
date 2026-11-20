@@ -28,7 +28,7 @@ import { onForget } from "./memo"
 import { actionRow, connectionLine, connectionWords, question, settingRows, wifiRows, WIFI_PASSWORD_MAX, WIFI_SSID_MAX, numberFits } from "./settings"
 import { NONE, send, seq, type Act, type ButtonSpec, type Entry, type GameplayValue, type PageRef, type PanelSpec, type RowSpec, type SheetKind, type State } from "./types"
 import { bytes, duration, saved } from "./words"
-import { steamContent, steamTakesScreen, steamValue } from "./steam"
+import { steamAccount, steamContent, steamTakesScreen, steamValue } from "./steam"
 
 const run = (actionId: string): Act => send({ _tag: "RunAction", actionId })
 const head = (id: string, label: string): RowSpec => ({ id, kind: "head", label })
@@ -111,7 +111,8 @@ function settingsPage(state: State, model: Model): PanelSpec {
   if (model.network !== undefined) places.push({ id: "v:wifi", kind: "row", label: "Wi-Fi", value: connectionWords(model.network.connection), mark: "more", press: { t: "open", page: { p: "wifi" } } })
   if (model.identityManagement !== undefined) places.push({ id: "v:identity", kind: "row", label: "Identity", mark: "more", press: { t: "open", page: { p: "identity" } } })
   // ADR 0083: the person's Steam sign-in, while a Steam engine runner is installed.
-  if (model.steamAccount !== undefined) places.push({ id: "v:steam", kind: "row", label: "Steam", value: steamValue(model.steamAccount), mark: "more", press: { t: "open", page: { p: "steam" } } })
+  const steam = steamAccount(model)
+  if (steam !== undefined) places.push({ id: "v:steam", kind: "row", label: "Steam", value: steamValue(steam), mark: "more", press: { t: "open", page: { p: "steam" } } })
   if (places.length > 0) rows.push(head("v:head:places", "More"), ...places)
   rows.push(head("v:head:velvet", "Velvet"))
   rows.push({
@@ -244,7 +245,7 @@ function identityPage(state: State, model: Model): PanelSpec {
 
 /** The person's Steam sign-in: from Settings, or by itself while a launch waits for it. */
 function steamPage(model: Model, back: Act): PanelSpec {
-  const account = model.steamAccount
+  const account = steamAccount(model)
   if (account === undefined) return { key: "page:steam", title: "Steam", sub: "Steam is not installed on this device.", rows: [], buttons: [{ id: "b:back", label: "Back", press: back }], back }
   const content = steamContent(account)
   return {
@@ -285,7 +286,7 @@ export function onboardingSteps(model: Model): readonly ("controllers" | "wifi" 
     "controllers", ...(model.network === undefined ? [] : ["wifi" as const]), "name",
     ...(model.onboarding?.starterPack === undefined ? [] : ["starter" as const]),
     // ADR 0083: the Steam sign-in, after the existing steps, while a Steam engine runner is installed.
-    ...(model.steamAccount === undefined ? [] : ["steam" as const]),
+    ...(steamAccount(model) === undefined ? [] : ["steam" as const]),
     "finish",
   ]
 }
@@ -339,7 +340,7 @@ function onboardingPanel(state: State, model: Model): PanelSpec {
       return { ...base, title: "Starter pack", rows, buttons, first: buttons[0]!.id }
     }
     case "steam": {
-      const account = model.steamAccount
+      const account = steamAccount(model)
       const content = account === undefined ? undefined : steamContent(account)
       const done = account?._tag === "SignedIn"
       // Signed in: Next leads, Korri's Sign out stays beside it. Else Korri's actions lead and

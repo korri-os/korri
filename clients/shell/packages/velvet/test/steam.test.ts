@@ -1,7 +1,7 @@
 /**
  * The Steam sign-in (ADR 0083), against the small Korri (test/korri.ts):
  *
- *  - Settings shows a Steam row while Korri publishes `steamAccount`, and
+ *  - Settings shows a Steam row while Korri publishes Steam's sign-in, and
  *    opens its page; no row without it.
  *  - First boot has a Steam step after the existing steps, before the end,
  *    that can always be passed.
@@ -29,7 +29,7 @@ describe("the QR code", () => {
   })
   test("the page sends the code's path and its viewbox with the quiet zone", () => {
     const run = play(scenario("steam-code"))
-    const code = scenario("steam-code").models[0].steamAccount.qr
+    const code = scenario("steam-code").models[0].accountSignIns[0].state.qr
     expect(run.view.list.panel).toBe("qr")
     expect(run.view.listQrSize).toBe(code.size + 2 * QUIET)
     expect(run.view.listQr).toBe(qrPath(code))

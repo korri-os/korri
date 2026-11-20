@@ -19,7 +19,6 @@ pub mod host;
 pub mod jobs;
 pub mod protocol;
 pub mod provider;
-pub mod qr;
 pub mod saves;
 pub mod sessions;
 pub mod store;

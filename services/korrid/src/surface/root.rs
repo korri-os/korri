@@ -375,6 +375,8 @@ pub struct Root {
     pub owner_binding: Arc<OwnerBinding>,
     pub starter_pack: Arc<StarterPack>,
     pub steam: Arc<super::steam_account::SteamAccount>,
+    /// ADR 0089: every other plugin's account sign-in.
+    pub accounts: Arc<super::account_sign_ins::PluginAccounts>,
     /// The last launch through the gate: a Steam Cloud conflict refused on
     /// its sync goes back through the gate on that same attempt.
     last_gated: std::sync::Mutex<Option<AcquisitionGameRef>>,
@@ -623,6 +625,8 @@ impl Root {
                             if let Some(root) = changed.upgrade() {
                                 // ADR 0083: the Steam engine runner may have come or gone.
                                 root.steam.refresh();
+                                // ADR 0089: a plugin's account may have come or gone.
+                                tokio::spawn(Arc::clone(&root.accounts).refresh());
                                 tokio::spawn(async move { root.launchables.refresh().await });
                             }
                         }),
@@ -685,6 +689,10 @@ impl Root {
                 owner_binding,
                 starter_pack,
                 steam: super::steam_account::SteamAccount::new(korrid.clone(), notify.clone()),
+                accounts: super::account_sign_ins::PluginAccounts::new(
+                    korrid.clone(),
+                    notify.clone(),
+                ),
                 last_gated: std::sync::Mutex::new(None),
                 downloads,
                 acquisition,
@@ -1028,6 +1036,7 @@ impl Root {
     pub fn start(self: &Arc<Self>, mut overlay_intent: tokio::sync::watch::Receiver<u64>) {
         self.saves.start();
         self.steam.start();
+        self.accounts.start();
         let this = Arc::clone(self);
         tokio::spawn(async move {
             loop {
@@ -1291,7 +1300,12 @@ impl Root {
             focused_game: None,
             systems: None,
             published_at: clock.published_at,
-            steam_account: self.steam.snapshot(),
+            account_sign_ins: self
+                .steam
+                .snapshot()
+                .into_iter()
+                .chain(self.accounts.snapshot())
+                .collect(),
         };
         Facts { base, games, state }
     }
@@ -1838,6 +1852,7 @@ impl Root {
                     || self.saves.act(&action_id)
                     || self.starter_pack.act(&action_id)
                     || self.steam.act(&action_id)
+                    || self.accounts.act(&action_id)
                     || self.store.act(&action_id)
                     || self.acquisition.act(&action_id)
                 {

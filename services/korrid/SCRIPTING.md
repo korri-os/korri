@@ -196,7 +196,12 @@ runner fields name package file keys as described below.
 `sessionControls` is an unknown export and fails admission. `services` names
 native units packaged by `plugin.nix`. The Linux host selects those units; the data registry validates the names but does not
 activate them or change its existing records. `daemons` and the old `contributes`
-wrapper are rejected. No TypeScript export encodes systemd directives. Native `LimitRTPRIO=1..20` is a bounded, explicit privileged approval request; the plugin-host [native-unit reference](plugin-host/README.md) defines its strict scalar grammar and limits. It does not promote a service or grant `CAP_SYS_NICE`.
+wrapper are rejected. No TypeScript export encodes systemd directives. `accounts` (ADR 0089)
+declares at most one account sign-in: `{ <key>: { title, program, offer?, logo? } }`.
+`program` and `logo` (an `.svg`) are keys of the plugin's own `files`. The
+plugin host runs `program` for each korrid connection to a socket it generates
+for the plugin, as the plugin's first service's user; `services/korrid/src/account_sign_in/`
+holds the line protocol. Native `LimitRTPRIO=1..20` is a bounded, explicit privileged approval request; the plugin-host [native-unit reference](plugin-host/README.md) defines its strict scalar grammar and limits. It does not promote a service or grant `CAP_SYS_NICE`.
 
 `plugin::load_plugin_source(namespace, source)` and
 `decode_plugin_declaration(namespace, json)` receive publisher identity from

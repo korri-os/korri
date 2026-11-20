@@ -136,6 +136,25 @@ pub struct PluginRepositoryInstall {
     pub source_url: String,
     pub release_version: String,
     pub enabled: bool,
+    /// The installed declaration's `accounts` (ADR 0089), on or off. Absent
+    /// when it declares none or cannot be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accounts: Option<std::collections::HashMap<String, PluginAccount>>,
+}
+
+// Producer: the installed declaration's `accounts` entry
+// (`plugin_references.rs` AccountDeclaration), with `logo` resolved through
+// the package's verified `files`. `program` stays with the plugin host.
+#[typeshare]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginAccount {
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offer: Option<String>,
+    /// The logo's absolute path in the installed package.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logo: Option<String>,
 }
 
 // Producers: `selection.rs:10` Receipt (`id`, `desired` Enabled/Disabled) for
@@ -150,6 +169,9 @@ pub struct PluginOtherInstall {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     pub enabled: bool,
+    /// As `PluginRepositoryInstall.accounts`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accounts: Option<std::collections::HashMap<String, PluginAccount>>,
 }
 
 // Producer: `source_store.rs:40` AddOutcome, returned by `host.rs` add_source.

@@ -1,5 +1,5 @@
 /**
- * The person's Steam sign-in (ADR 0083): `model.steamAccount` as Velvet's
+ * The person's Steam sign-in (ADR 0083): Steam's `model.accountSignIns` entry as Velvet's
  * list page. Settings opens it, first boot shows it as a step, and it takes
  * the screen by itself while a launch waits for it (`forGame`).
  *
@@ -8,7 +8,7 @@
  * modules. Every string Korri publishes is drawn as it is; every action is
  * a RunAction with Korri's id.
  */
-import type { SurfaceAction, SurfaceModel as Model, SurfaceQrCode, SurfaceSteamAccount } from "../../../../../contracts/generated/surface"
+import type { SurfaceAccountState, SurfaceAction, SurfaceModel as Model, SurfaceQrCode } from "../../../../../contracts/generated/surface"
 import { onForget } from "./memo"
 import { NONE, send, type Act, type ButtonSpec, type PanelSide, type RowSpec } from "./types"
 
@@ -55,14 +55,23 @@ function drawQr(qr: SurfaceQrCode): string {
   return parts.join("")
 }
 
+/**
+ * Steam's state among Korri's account sign-ins (ADR 0089). Temporary: Velvet
+ * keeps its Steam page until the shared sign-in card replaces it, and finds
+ * Steam's entry by the id Korri gives it.
+ */
+export function steamAccount(model: Model): SurfaceAccountState | undefined {
+  return model.accountSignIns?.find(entry => entry.id === "@korri:steam")?.state
+}
+
 /** What a launch waiting for the sign-in shows: the code, or the sign-in at work. */
 export function steamTakesScreen(model: Model): boolean {
-  const account = model.steamAccount
+  const account = steamAccount(model)
   return account !== undefined && (account._tag === "Code" || account._tag === "Working") && account.forGame !== undefined
 }
 
 /** The Steam row's value in Settings: who is signed in, or what to do. */
-export function steamValue(account: SurfaceSteamAccount): string {
+export function steamValue(account: SurfaceAccountState): string {
   switch (account._tag) {
     case "SignedIn":
       return account.accountName
@@ -93,7 +102,7 @@ export interface SteamContent {
 }
 
 /** The page's words, rows, buttons and code for one state. */
-export function steamContent(account: SurfaceSteamAccount): SteamContent {
+export function steamContent(account: SurfaceAccountState): SteamContent {
   const note = (id: string, label: string): RowSpec => ({ id, kind: "note", label })
   const cancel = (actions: readonly SurfaceAction[]): Act | undefined => {
     // A sign-in under way has one way out, Korri's; Back takes it only when it is the only one.

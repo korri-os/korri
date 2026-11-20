@@ -1,4 +1,4 @@
-//! `SurfaceModel.steamAccount` (ADR 0083, contract "Surface treaty"): the
+//! Steam's entry in `SurfaceModel.accountSignIns` (ADR 0083, ADR 0089): the
 //! current person's Steam sign-in, the QR flow, sign-out, and the wait of a
 //! launch that needs a sign-in. Every action runs through `RunAction`.
 //!
@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use korri_surface_treaty::SurfaceSteamAccount;
+use korri_surface_treaty::{SurfaceAccountSignIn, SurfaceAccountState};
 
 use super::{acquisition_gate::Step, Notify};
 use crate::steam_engine::{
@@ -23,6 +23,12 @@ use crate::steam_engine::{
     jobs::{JobHost, JobRunner},
     protocol::{Command, Event},
 };
+
+/// Steam's entry id. Opaque to a surface; the plugin's published id.
+pub const ID: &str = "@korri:steam";
+const TITLE: &str = "Steam";
+/// ADR 0083: Korri offers the Steam sign-in during setup.
+const OFFER: &str = "Steam: play the games in your Steam library";
 
 /// What korrid knows about the engine runner for the current person.
 pub enum SteamFacts {
@@ -106,7 +112,18 @@ impl SteamAccount {
         self.inner.lock().expect("steam account poisoned")
     }
 
-    pub fn snapshot(&self) -> Option<SurfaceSteamAccount> {
+    /// Steam's sign-in entry. Absent while no engine runner is here.
+    pub fn snapshot(&self) -> Option<SurfaceAccountSignIn> {
+        self.state().map(|state| SurfaceAccountSignIn {
+            id: ID.into(),
+            title: TITLE.into(),
+            logo: None,
+            offer: Some(OFFER.into()),
+            state,
+        })
+    }
+
+    fn state(&self) -> Option<SurfaceAccountState> {
         self.lock().account.as_ref().and_then(Account::surface)
     }
 
@@ -586,7 +603,7 @@ mod tests {
         }));
         assert!(account.act(account::USE_CLIENT));
         until(&account, |s| {
-            matches!(s, Some(SurfaceSteamAccount::Problem { kicker, actions, .. })
+            matches!(s, Some(SurfaceAccountState::Problem { kicker, actions, .. })
                 if kicker == "Steam games use the Steam client" && actions.is_empty())
         })
         .await;
@@ -602,20 +619,28 @@ mod tests {
         *presence.lock().unwrap() = String::new();
         account.start();
         tokio::time::sleep(Duration::from_millis(300)).await;
-        assert_eq!(account.snapshot(), None, "no engine runner, no Steam entry");
+        assert_eq!(account.state(), None, "no engine runner, no Steam entry");
         *presence.lock().unwrap() = "steam|true".into();
         until(&account, |s| {
-            matches!(s, Some(SurfaceSteamAccount::SignedOut { .. }))
+            matches!(s, Some(SurfaceAccountState::SignedOut { .. }))
         })
         .await;
+        // One plugin-neutral entry (ADR 0089), offered in setup.
+        let entry = account.snapshot().unwrap();
+        assert_eq!(
+            (entry.id.as_str(), entry.title.as_str(), entry.logo),
+            (ID, "Steam", None)
+        );
+        assert_eq!(entry.offer.as_deref(), Some(OFFER));
         *presence.lock().unwrap() = String::new();
         until(&account, Option::is_none).await;
+        assert_eq!(account.snapshot(), None);
     }
 
-    async fn until(account: &SteamAccount, check: impl Fn(&Option<SurfaceSteamAccount>) -> bool) {
+    async fn until(account: &SteamAccount, check: impl Fn(&Option<SurfaceAccountState>) -> bool) {
         let deadline = Instant::now() + Duration::from_secs(10);
-        while !check(&account.snapshot()) {
-            assert!(Instant::now() < deadline, "{:?}", account.snapshot());
+        while !check(&account.state()) {
+            assert!(Instant::now() < deadline, "{:?}", account.state());
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     }
@@ -641,7 +666,7 @@ done"#;
         let account = account(temp.path(), QR_HOST, true);
         account.refresh();
         until(&account, |s| {
-            matches!(s, Some(SurfaceSteamAccount::SignedOut { .. }))
+            matches!(s, Some(SurfaceAccountState::SignedOut { .. }))
         })
         .await;
         let proceeded = Arc::new(AtomicBool::new(false));
@@ -655,7 +680,7 @@ done"#;
             Arc::new(move || a.store(true, Ordering::SeqCst)),
         );
         until(&account, |s| {
-            matches!(s, Some(SurfaceSteamAccount::Code { for_game: Some(game), .. }) if game == "Celeste")
+            matches!(s, Some(SurfaceAccountState::Code { for_game: Some(game), .. }) if game == "Celeste")
         })
         .await;
         assert!(
@@ -663,7 +688,7 @@ done"#;
             "the launch waits for the sign-in"
         );
         until(&account, |s| {
-            matches!(s, Some(SurfaceSteamAccount::SignedIn { account_name, .. }) if account_name == "korri_player")
+            matches!(s, Some(SurfaceAccountState::SignedIn { account_name, .. }) if account_name == "korri_player")
         })
         .await;
         // The launch goes on once the job host has shut down, so the engine
@@ -708,12 +733,12 @@ done"#,
             Arc::new(move || a.store(true, Ordering::SeqCst)),
         );
         until(&account, |s| {
-            matches!(s, Some(SurfaceSteamAccount::Code { .. }))
+            matches!(s, Some(SurfaceAccountState::Code { .. }))
         })
         .await;
         assert!(account.act(account::CANCEL));
         until(&account, |s| {
-            matches!(s, Some(SurfaceSteamAccount::SignedOut { .. }))
+            matches!(s, Some(SurfaceAccountState::SignedOut { .. }))
         })
         .await;
         assert!(abandoned.load(Ordering::SeqCst));
@@ -737,8 +762,8 @@ done"#,
         tokio::time::sleep(Duration::from_millis(300)).await;
         assert!(proceeded.load(Ordering::SeqCst));
         assert!(matches!(
-            account.snapshot(),
-            Some(SurfaceSteamAccount::SignedOut { .. })
+            account.state(),
+            Some(SurfaceAccountState::SignedOut { .. })
         ));
     }
 }

@@ -1377,6 +1377,13 @@ export interface PlayLog {
 	entries: PlayEntry[];
 }
 
+export interface PluginAccount {
+	title: string;
+	offer?: string;
+	/** The logo's absolute path in the installed package. */
+	logo?: string;
+}
+
 export interface PluginArchiveBeginRequest {
 	sha256: string;
 	size: number;
@@ -1632,6 +1639,8 @@ export interface PluginOtherInstall {
 	id: string;
 	title?: string;
 	enabled: boolean;
+	/** As `PluginRepositoryInstall.accounts`. */
+	accounts?: Record<string, PluginAccount>;
 }
 
 /** Publishers emits only Bound or Trusted; the shared state type also serves inspection. */
@@ -1654,6 +1663,11 @@ export interface PluginRepositoryInstall {
 	sourceUrl: string;
 	releaseVersion: string;
 	enabled: boolean;
+	/**
+	 * The installed declaration's `accounts` (ADR 0089), on or off. Absent
+	 * when it declares none or cannot be read.
+	 */
+	accounts?: Record<string, PluginAccount>;
 }
 
 export interface PluginRepositories {

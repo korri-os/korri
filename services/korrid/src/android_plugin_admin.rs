@@ -354,6 +354,7 @@ impl AndroidPluginAdmin {
                     source_url: request.url,
                     release_version: record.release_version,
                     enabled: true,
+                    accounts: None,
                 });
                 self.save(&state)?;
                 PluginAdminResponse::Applied(PluginChangeApplied {})

@@ -1420,13 +1420,14 @@ pub struct SurfaceWindow {
 }
 
 // ---------------------------------------------------------------------------
-// Steam account (ADR 0083)
+// Account sign-in (ADR 0083, ADR 0089)
 // ---------------------------------------------------------------------------
 
 /// A QR code for the surface to draw. `modules` holds `size` rows of `size`
 /// characters each, row by row from the top, `1` for a dark module and `0`
-/// for a light one, with no quiet zone. The surface draws it at any scale,
-/// with a light border of at least four modules.
+/// for a light one, with no quiet zone. Korri encodes every code at error
+/// correction level H, so a logo may cover the middle. The surface draws it
+/// at any scale, with a light border of at least four modules.
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1435,24 +1436,47 @@ pub struct SurfaceQrCode {
     pub modules: String,
 }
 
-/// The current person's Steam sign-in on this device. Every string is
-/// finished, user-facing copy and every action runs through `RunAction`
+/// One plugin's link between this device and the person's account at an
+/// outside service (CONTEXT.md, "Account sign-in"). Every string is
+/// finished, user-facing copy.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceAccountSignIn {
+    /// Opaque. Stable for one plugin on this device.
+    pub id: String,
+    pub title: String,
+    /// The service's mark, kind `logo`, served by Korri. Absent when the
+    /// plugin ships none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logo: Option<SurfaceMedia>,
+    /// Finished copy for an optional setup step. Absent: setup does not
+    /// offer this sign-in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offer: Option<String>,
+    pub state: SurfaceAccountState,
+}
+
+/// One account sign-in's state. Every action runs through `RunAction`
 /// unchanged; a surface infers nothing from a label.
 ///
-/// - `SignedOut`: no Steam account is linked; `actions` holds Sign in.
-/// - `Code`: the person approves `qr` in the Steam mobile app. `forGame` is
-///   the title of the game whose launch asked for the sign-in, absent when
-///   the person asked from setup or settings. `actions` holds Cancel.
+/// - `SignedOut`: no account is linked; `actions` holds Sign in. `kicker`
+///   is present when a sign-in ran out and the service needs a new one.
+/// - `Code`: the person approves `qr` on a phone. `forGame` is the title of
+///   the game whose launch asked for the sign-in, absent when the person
+///   asked from setup or settings. `actions` holds Cancel.
 /// - `Working`: approved, or starting; Korri is signing in. `actions` may
 ///   hold Cancel.
-/// - `SignedIn`: `accountName` is the Steam account name. `actions` holds
-///   Sign out.
+/// - `SignedIn`: `accountName` is the service's account name. `actions`
+///   holds Sign out.
 /// - `Problem`: sign-in did not finish; `actions` holds Retry when one helps.
-#[typeshare(serialized_as = "SurfaceSteamAccountWire")]
+#[typeshare(serialized_as = "SurfaceAccountStateWire")]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "_tag", rename_all_fields = "camelCase")]
-pub enum SurfaceSteamAccount {
+pub enum SurfaceAccountState {
     SignedOut {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        kicker: Option<String>,
         actions: Vec<SurfaceAction>,
     },
     Code {
@@ -1546,10 +1570,10 @@ pub struct SurfaceModel {
     /// a live clock. Absent when Korri has no trustworthy time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub published_at: Option<f64>,
-    /// The current person's Steam sign-in. Absent when no Steam engine runner
-    /// is installed on this device.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub steam_account: Option<SurfaceSteamAccount>,
+    /// The account sign-ins of this device's plugins, for the current
+    /// person, in a stable order. Empty when no plugin has one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub account_sign_ins: Vec<SurfaceAccountSignIn>,
 }
 
 // ---------------------------------------------------------------------------
@@ -2246,11 +2270,12 @@ mod tests {
         );
     }
 
-    /// The JSON that typeshare.toml's `SurfaceSteamAccountWire` spells.
+    /// The JSON that typeshare.toml's `SurfaceAccountStateWire` spells, in
+    /// a `SurfaceAccountSignIn`, and the model field that carries them.
     #[test]
-    fn steam_account_wire() {
-        let action = SurfaceAction::new("steam-account:cancel", "Cancel", true);
-        let code = SurfaceSteamAccount::Code {
+    fn account_sign_in_wire() {
+        let action = SurfaceAction::new("account-sign-in:cancel:@korri:steam", "Cancel", true);
+        let code = SurfaceAccountState::Code {
             qr: SurfaceQrCode {
                 size: 21,
                 modules: "1".repeat(441),
@@ -2264,10 +2289,10 @@ mod tests {
             serde_json::to_value(&code).unwrap(),
             json!({"_tag": "Code", "qr": {"size": 21, "modules": "1".repeat(441)},
                 "kicker": "Sign in to Steam", "forGame": "Celeste",
-                "actions": [{"id": "steam-account:cancel", "label": "Cancel", "enabled": true}]})
+                "actions": [{"id": "account-sign-in:cancel:@korri:steam", "label": "Cancel", "enabled": true}]})
         );
         assert_eq!(
-            serde_json::to_value(SurfaceSteamAccount::SignedIn {
+            serde_json::to_value(SurfaceAccountState::SignedIn {
                 account_name: "p".into(),
                 actions: vec![],
             })
@@ -2275,7 +2300,7 @@ mod tests {
             json!({"_tag": "SignedIn", "accountName": "p", "actions": []})
         );
         assert_eq!(
-            serde_json::to_value(SurfaceSteamAccount::Working {
+            serde_json::to_value(SurfaceAccountState::Working {
                 kicker: "k".into(),
                 for_game: None,
                 actions: vec![],
@@ -2283,9 +2308,67 @@ mod tests {
             .unwrap(),
             json!({"_tag": "Working", "kicker": "k", "actions": []})
         );
-        let round: SurfaceSteamAccount =
+        assert_eq!(
+            serde_json::to_value(SurfaceAccountState::SignedOut {
+                kicker: None,
+                actions: vec![],
+            })
+            .unwrap(),
+            json!({"_tag": "SignedOut", "actions": []})
+        );
+        assert_eq!(
+            serde_json::to_value(SurfaceAccountState::Problem {
+                kicker: "k".into(),
+                reason: "r".into(),
+                actions: vec![],
+            })
+            .unwrap(),
+            json!({"_tag": "Problem", "kicker": "k", "reason": "r", "actions": []})
+        );
+        let round: SurfaceAccountState =
             serde_json::from_value(serde_json::to_value(&code).unwrap()).unwrap();
         assert_eq!(round, code);
+
+        let expired = SurfaceAccountSignIn {
+            id: "@korri:tailscale".into(),
+            title: "Tailscale".into(),
+            logo: Some(SurfaceMedia {
+                kind: SurfaceMediaKind::Logo,
+                url: "data:image/svg+xml;base64,PHN2Zy8+".into(),
+                width: 24,
+                height: 24,
+                color: None,
+            }),
+            offer: Some("Private network: reach your devices from anywhere".into()),
+            state: SurfaceAccountState::SignedOut {
+                kicker: Some("Sign in to Tailscale again".into()),
+                actions: vec![action],
+            },
+        };
+        let wire = json!({"id": "@korri:tailscale", "title": "Tailscale",
+            "logo": {"kind": "logo", "url": "data:image/svg+xml;base64,PHN2Zy8+", "width": 24, "height": 24},
+            "offer": "Private network: reach your devices from anywhere",
+            "state": {"_tag": "SignedOut", "kicker": "Sign in to Tailscale again",
+                "actions": [{"id": "account-sign-in:cancel:@korri:steam", "label": "Cancel", "enabled": true}]}});
+        assert_eq!(serde_json::to_value(&expired).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<SurfaceAccountSignIn>(wire).unwrap(),
+            expired
+        );
+        let bare = SurfaceAccountSignIn {
+            id: "s".into(),
+            title: "Steam".into(),
+            logo: None,
+            offer: None,
+            state: SurfaceAccountState::SignedOut {
+                kicker: None,
+                actions: vec![],
+            },
+        };
+        assert_eq!(
+            serde_json::to_value(&bare).unwrap(),
+            json!({"id": "s", "title": "Steam", "state": {"_tag": "SignedOut", "actions": []}})
+        );
     }
 
     #[test]

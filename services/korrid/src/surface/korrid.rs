@@ -52,6 +52,8 @@ pub struct Korrid {
     pub(crate) viewer: Option<Arc<dyn crate::linux_viewer::LinuxStreamViewer>>,
     /// ADR 0083: the Steam engine runner's facts for the sign-in model.
     pub(crate) steam_engine: Option<Arc<dyn super::steam_account::SteamEngineAccess>>,
+    /// ADR 0089: the generic account host's facts for plugin sign-ins.
+    pub(crate) plugin_accounts: Option<Arc<dyn super::account_sign_ins::PluginAccountAccess>>,
 }
 
 /// How a refusal reads for one method, as the portal client mapped it.
@@ -141,7 +143,16 @@ impl Korrid {
             launch_steps: None,
             viewer: None,
             steam_engine: None,
+            plugin_accounts: None,
         }
+    }
+
+    pub(crate) fn with_plugin_accounts(
+        mut self,
+        access: Arc<dyn super::account_sign_ins::PluginAccountAccess>,
+    ) -> Self {
+        self.plugin_accounts = Some(access);
+        self
     }
 
     pub(crate) fn with_steam_engine(

@@ -6531,6 +6531,7 @@ mod tests {
                     source_url: "https://removed.example/catalog.json".into(),
                     release_version: "v1".into(),
                     enabled: true,
+                    accounts: None,
                 }],
                 // Off plugins stay listed; the test package has no readable
                 // declaration, so its title is left out.
@@ -6538,6 +6539,7 @@ mod tests {
                     id: seeded.id.clone(),
                     title: None,
                     enabled: false,
+                    accounts: None,
                 }],
             })
         );

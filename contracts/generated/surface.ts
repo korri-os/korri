@@ -20,6 +20,23 @@ export type CatalogOrder = "korri" | "title" | "mostPlayed" | "recent";
 export type Cursor = string;
 
 /**
+ * One account sign-in's state. Every action runs through `RunAction`
+ * unchanged; a surface infers nothing from a label.
+ *
+ * - `SignedOut`: no account is linked; `actions` holds Sign in. `kicker`
+ * is present when a sign-in ran out and the service needs a new one.
+ * - `Code`: the person approves `qr` on a phone. `forGame` is the title of
+ * the game whose launch asked for the sign-in, absent when the person
+ * asked from setup or settings. `actions` holds Cancel.
+ * - `Working`: approved, or starting; Korri is signing in. `actions` may
+ * hold Cancel.
+ * - `SignedIn`: `accountName` is the service's account name. `actions`
+ * holds Sign out.
+ * - `Problem`: sign-in did not finish; `actions` holds Retry when one helps.
+ */
+export type SurfaceAccountState = { _tag: "SignedOut"; kicker?: string; actions: SurfaceAction[] } | { _tag: "Code"; qr: SurfaceQrCode; kicker: string; detail?: string; forGame?: string; actions: SurfaceAction[] } | { _tag: "Working"; kicker: string; forGame?: string; actions: SurfaceAction[] } | { _tag: "SignedIn"; accountName: string; actions: SurfaceAction[] } | { _tag: "Problem"; kicker: string; reason: string; actions: SurfaceAction[] };
+
+/**
  * A semantic button. The shell, not the surface, decides how each device
  * maps to these, so a surface never learns which device produced one.
  */
@@ -200,23 +217,6 @@ export type SurfaceStarterPack = { _tag: "Offered"; actions: SurfaceAction[] } |
  */
 export type SurfaceStatus = { _tag: "Browsing" } | { _tag: "Busy"; kicker: string; detail?: string; progress?: SurfaceProgress; steps?: SurfaceSteps; actions?: SurfaceAction[]; declineActionId?: string; gameId?: string } | { _tag: "Confirm"; kicker: string; detail?: string; actions: SurfaceAction[]; declineActionId?: string; gameId?: string } | { _tag: "ChooseSave"; gameId: string; kicker: string; detail?: string; actions: SurfaceAction[]; declineActionId?: string; sides: SurfaceSaveSide[] } | { _tag: "Running"; kicker: string; gameId?: string } | { _tag: "Paused"; kicker: string; detail?: string; actions: SurfaceAction[]; declineActionId?: string; gameId?: string } | { _tag: "Ended"; kicker: string; reason: string; gameId?: string; gameTitle?: string } | { _tag: "Problem"; kicker: string; reason: string; canRetry: boolean; gameId?: string; gameTitle?: string };
 
-/**
- * The current person's Steam sign-in on this device. Every string is
- * finished, user-facing copy and every action runs through `RunAction`
- * unchanged; a surface infers nothing from a label.
- *
- * - `SignedOut`: no Steam account is linked; `actions` holds Sign in.
- * - `Code`: the person approves `qr` in the Steam mobile app. `forGame` is
- * the title of the game whose launch asked for the sign-in, absent when
- * the person asked from setup or settings. `actions` holds Cancel.
- * - `Working`: approved, or starting; Korri is signing in. `actions` may
- * hold Cancel.
- * - `SignedIn`: `accountName` is the Steam account name. `actions` holds
- * Sign out.
- * - `Problem`: sign-in did not finish; `actions` holds Retry when one helps.
- */
-export type SurfaceSteamAccount = { _tag: "SignedOut"; actions: SurfaceAction[] } | { _tag: "Code"; qr: SurfaceQrCode; kicker: string; detail?: string; forGame?: string; actions: SurfaceAction[] } | { _tag: "Working"; kicker: string; forGame?: string; actions: SurfaceAction[] } | { _tag: "SignedIn"; accountName: string; actions: SurfaceAction[] } | { _tag: "Problem"; kicker: string; reason: string; actions: SurfaceAction[] };
-
 export type SurfaceStoreDetails = { _tag: "Closed" } | { _tag: "Loading"; entry: SurfaceStoreEntry } | { _tag: "Problem"; entry: SurfaceStoreEntry; message: string; actions: SurfaceAction[] } | { _tag: "Ready"; entry: SurfaceStoreEntry; description?: string; get: SurfaceStoreGet };
 
 /**
@@ -308,6 +308,55 @@ export interface FocusedGame {
 	actions: SurfaceAction[];
 }
 
+/**
+ * One stored image of a game. A surface derives its ratio from `width`
+ * and `height`; no ratio is sent.
+ */
+export interface SurfaceMedia {
+	kind: SurfaceMediaKind;
+	/**
+	 * Opaque, as `coverArtUrl`: hand it back unchanged as an image,
+	 * `{ $image: url }`. The host loads it later, so the image is empty
+	 * until it arrives, and stays empty if it cannot be loaded.
+	 */
+	url: string;
+	/**
+	 * The image's own width in pixels, measured by Korri, so a surface can
+	 * lay it out before it arrives.
+	 */
+	width: number;
+	/** The image's own height in pixels, measured by Korri. */
+	height: number;
+	/**
+	 * One colour taken from this image, as lowercase `#rrggbb`. Absent when
+	 * the image has no clear colour. A surface that tints with it must have
+	 * a fallback.
+	 */
+	color?: string;
+}
+
+/**
+ * One plugin's link between this device and the person's account at an
+ * outside service (CONTEXT.md, "Account sign-in"). Every string is
+ * finished, user-facing copy.
+ */
+export interface SurfaceAccountSignIn {
+	/** Opaque. Stable for one plugin on this device. */
+	id: string;
+	title: string;
+	/**
+	 * The service's mark, kind `logo`, served by Korri. Absent when the
+	 * plugin ships none.
+	 */
+	logo?: SurfaceMedia;
+	/**
+	 * Finished copy for an optional setup step. Absent: setup does not
+	 * offer this sign-in.
+	 */
+	offer?: string;
+	state: SurfaceAccountState;
+}
+
 export interface SurfaceCatalogPresentation {
 	kind: "catalog";
 }
@@ -353,33 +402,6 @@ export interface SurfaceLaunchLocation {
 	id: string;
 	/** Human-readable host name, such as "This device" or "zao". */
 	label: string;
-}
-
-/**
- * One stored image of a game. A surface derives its ratio from `width`
- * and `height`; no ratio is sent.
- */
-export interface SurfaceMedia {
-	kind: SurfaceMediaKind;
-	/**
-	 * Opaque, as `coverArtUrl`: hand it back unchanged as an image,
-	 * `{ $image: url }`. The host loads it later, so the image is empty
-	 * until it arrives, and stays empty if it cannot be loaded.
-	 */
-	url: string;
-	/**
-	 * The image's own width in pixels, measured by Korri, so a surface can
-	 * lay it out before it arrives.
-	 */
-	width: number;
-	/** The image's own height in pixels, measured by Korri. */
-	height: number;
-	/**
-	 * One colour taken from this image, as lowercase `#rrggbb`. Absent when
-	 * the image has no clear colour. A surface that tints with it must have
-	 * a fallback.
-	 */
-	color?: string;
 }
 
 export interface SurfaceGame {
@@ -737,10 +759,10 @@ export interface SurfaceModel {
 	 */
 	publishedAt?: number;
 	/**
-	 * The current person's Steam sign-in. Absent when no Steam engine runner
-	 * is installed on this device.
+	 * The account sign-ins of this device's plugins, for the current
+	 * person, in a stable order. Empty when no plugin has one.
 	 */
-	steamAccount?: SurfaceSteamAccount;
+	accountSignIns?: SurfaceAccountSignIn[];
 }
 
 /**
@@ -759,8 +781,9 @@ export interface SurfacePackagePanes {
 /**
  * A QR code for the surface to draw. `modules` holds `size` rows of `size`
  * characters each, row by row from the top, `1` for a dark module and `0`
- * for a light one, with no quiet zone. The surface draws it at any scale,
- * with a light border of at least four modules.
+ * for a light one, with no quiet zone. Korri encodes every code at error
+ * correction level H, so a logo may cover the middle. The surface draws it
+ * at any scale, with a light border of at least four modules.
  */
 export interface SurfaceQrCode {
 	size: number;

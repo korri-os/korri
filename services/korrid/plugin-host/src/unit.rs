@@ -11,10 +11,23 @@ pub struct Units {
     pub firewall: crate::firewall::Firewall,
 }
 
+/// One unit the host writes for a plugin: its source and the host's policy
+/// drop-in, which starts with the owner marker.
 #[derive(Clone)]
-struct ManagedUnit<'a> {
+struct ManagedUnit {
     name: String,
-    native: &'a crate::native_unit::NativeUnit,
+    source: String,
+    policy: String,
+    /// A service template (`name@.service`) runs only as instances that its
+    /// socket starts: it is written and removed with the plugin, but never
+    /// loaded, started, upheld or checked for activity by name.
+    template: bool,
+}
+
+impl ManagedUnit {
+    fn upheld(&self) -> bool {
+        !self.template
+    }
 }
 
 // org.freedesktop.systemd1.Service.ExecStopPost, from systemd's D-Bus treaty.
@@ -70,7 +83,7 @@ impl Units {
         results
     }
 
-    fn discard_after(&self, report: &Report, units: &[ManagedUnit<'_>], error: String) -> String {
+    fn discard_after(&self, report: &Report, units: &[ManagedUnit], error: String) -> String {
         match self.discard_written(&report.id, units) {
             Ok(()) => error,
             Err(cleanup) => format!("{error}; staged-unit cleanup failed: {cleanup}"),
@@ -84,7 +97,7 @@ impl Units {
         }
     }
 
-    fn activate(&self, report: &Report, units: &[ManagedUnit<'_>]) -> Result<(), String> {
+    fn activate(&self, report: &Report, units: &[ManagedUnit]) -> Result<(), String> {
         let connection = zbus::blocking::connection::Builder::system()
             .map_err(|e| e.to_string())?
             .method_timeout(Duration::from_secs(10))
@@ -97,7 +110,7 @@ impl Units {
             "org.freedesktop.systemd1.Manager",
         )
         .map_err(|e| e.to_string())?;
-        for unit in units {
+        for unit in units.iter().filter(|unit| unit.upheld()) {
             let object: zbus::zvariant::OwnedObjectPath = manager
                 .call("LoadUnit", &unit.name)
                 .map_err(|e| e.to_string())?;
@@ -110,9 +123,14 @@ impl Units {
                 .map_err(|e| e.to_string())?;
         }
         let mut start = vec!["start".to_owned()];
-        start.extend(units.iter().map(|unit| unit.name.clone()));
+        start.extend(
+            units
+                .iter()
+                .filter(|unit| unit.upheld())
+                .map(|unit| unit.name.clone()),
+        );
         self.checked(start)?;
-        for unit in units {
+        for unit in units.iter().filter(|unit| unit.upheld()) {
             self.checked(["is-active", "--quiet", unit.name.as_str()])?;
         }
         // Do not expose a competing listener while activation is pending.
@@ -135,19 +153,24 @@ impl Units {
             return Ok(false);
         }
         for unit in &units {
-            if fs::read_link(self.uphold(&unit.name)).ok() != Some(uphold_target(&unit.name)) {
+            if unit.upheld()
+                && fs::read_link(self.uphold(&unit.name)).ok() != Some(uphold_target(&unit.name))
+            {
                 return Ok(false);
             }
             match fs::read_to_string(self.unit_path(&unit.name)) {
-                Ok(source) if source == unit.native.source => {}
+                Ok(source) if source == unit.source => {}
                 Ok(_) => return Ok(false),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
                 Err(e) => return Err(e.to_string()),
             }
             if fs::read_to_string(self.drop_in(&unit.name)).ok().as_deref()
-                != Some(hardening_for(&report.id, unit.native).as_str())
+                != Some(unit.policy.as_str())
             {
                 return Ok(false);
+            }
+            if unit.template {
+                continue;
             }
             let fragment =
                 self.checked(["show", "--property=FragmentPath", "--value", &unit.name])?;
@@ -203,7 +226,7 @@ impl Units {
         )
         .map_err(|e| e.to_string())?;
         let mut objects = Vec::new();
-        for unit in &units {
+        for unit in units.iter().filter(|unit| !is_template(unit)) {
             manager
                 .call::<_, _, ()>("RefUnit", unit)
                 .map_err(|e| e.to_string())?;
@@ -220,8 +243,16 @@ impl Units {
             self.remove_uphold(unit)?;
         }
         self.checked(["daemon-reload"])?;
+        // A template stops as the pattern of its running instances.
         let mut stop = vec!["stop".to_owned()];
-        stop.extend(units.iter().cloned());
+        stop.extend(
+            units
+                .iter()
+                .map(|unit| match unit.strip_suffix("@.service") {
+                    Some(base) => format!("{base}@*.service"),
+                    None => unit.clone(),
+                }),
+        );
         self.checked(stop)?;
         for (unit, object) in &objects {
             if !unit.ends_with(".service") {
@@ -253,7 +284,10 @@ impl Units {
             }
         }
         if purge {
-            for unit in units.iter().filter(|unit| unit.ends_with(".service")) {
+            for unit in units
+                .iter()
+                .filter(|unit| unit.ends_with(".service") && !is_template(unit))
+            {
                 self.checked(["clean", "--what=state", unit.as_str()])?;
             }
         }
@@ -296,7 +330,7 @@ impl Units {
         Ok(())
     }
 
-    fn write(&self, report: &Report, units: &[ManagedUnit<'_>]) -> Result<(), String> {
+    fn write(&self, report: &Report, units: &[ManagedUnit]) -> Result<(), String> {
         storage::directory(&self.ownership_directory)?;
         for unit in units {
             let runtime_present = path_present(&self.unit_path(&unit.name))?
@@ -335,14 +369,16 @@ impl Units {
             storage::directory(drop_in.parent().ok_or("invalid drop-in path")?)?;
             // The host writes policy and ownership before exposing source.
             // Plugin packages cannot ship drop-ins into this directory.
-            storage::write_atomic(&drop_in, hardening_for(&report.id, unit.native).as_bytes())?;
-            storage::write_atomic(&self.unit_path(&unit.name), unit.native.source.as_bytes())?;
-            self.write_uphold(&unit.name)?;
+            storage::write_atomic(&drop_in, unit.policy.as_bytes())?;
+            storage::write_atomic(&self.unit_path(&unit.name), unit.source.as_bytes())?;
+            if unit.upheld() {
+                self.write_uphold(&unit.name)?;
+            }
         }
         Ok(())
     }
 
-    fn discard_written(&self, id: &str, units: &[ManagedUnit<'_>]) -> Result<(), String> {
+    fn discard_written(&self, id: &str, units: &[ManagedUnit]) -> Result<(), String> {
         let mut errors = Vec::new();
         for unit in units {
             if self.owner_matches(id, &unit.name) {
@@ -530,9 +566,9 @@ pub fn purge_unit_name(report: &Report) -> String {
     format!("{}.service", package::unit_name(&report.id))
 }
 
-fn managed_units(report: &Report) -> Result<Vec<ManagedUnit<'_>>, String> {
+fn managed_units(report: &Report) -> Result<Vec<ManagedUnit>, String> {
     let mut names = BTreeSet::new();
-    report
+    let mut units = report
         .native_units
         .iter()
         .map(|(declared, native)| {
@@ -540,16 +576,138 @@ fn managed_units(report: &Report) -> Result<Vec<ManagedUnit<'_>>, String> {
             if !names.insert(name.clone()) {
                 return Err(format!("native unit name is duplicated: {name}"));
             }
-            Ok(ManagedUnit { name, native })
+            Ok(ManagedUnit {
+                name,
+                source: native.source.clone(),
+                policy: hardening_for(&report.id, native),
+                template: false,
+            })
         })
-        .collect()
+        .collect::<Result<Vec<_>, String>>()?;
+    for unit in account_units(report)? {
+        if !names.insert(unit.name.clone()) {
+            return Err(format!("native unit name is duplicated: {}", unit.name));
+        }
+        units.push(unit);
+    }
+    Ok(units)
+}
+
+fn is_template(unit: &str) -> bool {
+    unit.ends_with("@.service")
 }
 
 fn valid_owned_unit_name(unit: &str) -> bool {
+    if let Some(base) = unit.strip_suffix("@.service") {
+        return crate::declaration::valid_name(base);
+    }
     [".service", ".socket"].iter().any(|suffix| {
         unit.strip_suffix(suffix)
             .is_some_and(crate::declaration::valid_name)
     })
+}
+
+/// The user and group korrid's service runs as on every product device
+/// (`services/korrid/nixos-module.nix`, `serviceUser` and `serviceGroup`).
+/// Only it may connect to a plugin's account socket.
+pub const KORRID_USER: &str = "korrid";
+pub const KORRID_GROUP: &str = "korrid";
+/// The longest one account job runs: a QR sign-in waits up to 15 minutes in
+/// korrid, and this bounds a program that does not end with its input.
+pub const ACCOUNT_RUNTIME_MAX: &str = "20min";
+const ACCOUNT_POLICY: &str = "account-policy-v1: host-generated account sign-in socket for korrid only; the declared program as the plugin's first service's user, reading its runtime directory and with its approved credentials; no capabilities; two connections; bounded runtime";
+
+/// ADR 0089: for a plugin that declares `accounts`, a socket that only
+/// korrid can connect to, and the service template systemd starts for each
+/// connection, with the connection as the program's input and output. The
+/// program runs as the plugin's first declared service's user, beside that
+/// service (`Requisite=`), in its runtime directory with its approved
+/// credentials, and with no capabilities. Every property is the host's; the
+/// package supplies only the program.
+fn account_units(report: &Report) -> Result<Vec<ManagedUnit>, String> {
+    let declaration = serde_json::to_value(&report.declaration).map_err(|e| e.to_string())?;
+    let accounts = crate::plugin_references::accounts(&declaration, &report.files)?;
+    let Some(account) = accounts.values().next() else {
+        return Ok(Vec::new());
+    };
+    let (declared, service) = report
+        .declaration
+        .services
+        .iter()
+        .find_map(|declared| {
+            report
+                .native_units
+                .get(declared)
+                .filter(|native| native.kind == crate::native_unit::NativeUnitKind::Service)
+                .map(|native| (declared, native))
+        })
+        .ok_or("accounts require a native service for the account program to run beside")?;
+    let service_name = crate::native_unit::managed_unit_name(declared, service.kind)?;
+    let identity = match service.user.as_deref() {
+        Some("root") => return Err("an account program may not run as root".into()),
+        Some(user) => format!("User={user}\nDynamicUser=no\n"),
+        // systemd names a dynamic user after its unit when User= is unset, so
+        // this shares the running service's uid and its runtime directory.
+        None => format!(
+            "DynamicUser=yes\nUser={}\n",
+            service_name
+                .strip_suffix(".service")
+                .unwrap_or(&service_name)
+        ),
+    };
+    let program = report.files[&account.program]
+        .to_str()
+        .ok_or("account program path must be UTF-8")?;
+    if !program.starts_with("/nix/store/")
+        || program.contains(|c: char| c.is_whitespace() || "%\\\"'$;".contains(c))
+    {
+        return Err("account program must be a plain store path".into());
+    }
+    // The service's runtime directory, by path. The account unit does not
+    // declare it: a shared `RuntimeDirectory=` with a dynamic user would move
+    // the service's folder under /run/private (`RuntimeDirectoryPreserve=`)
+    // or remove it when the account program ends. Its user reads it; the
+    // sandbox keeps it read-only.
+    let (runtime_directory, _) = runtime_directory_policy(&package::unit_name(&report.id), service);
+    let runtime_directory = runtime_directory
+        .split_whitespace()
+        .next()
+        .filter(|name| {
+            !name.starts_with('.')
+                && name
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || b"-_.".contains(&c))
+        })
+        .ok_or("the service's runtime directory must be one plain name")?;
+    let base = crate::plugin_references::account_unit(&report.id);
+    let owner = owner_marker(&report.id);
+    let policy = format!("{owner}# {ACCOUNT_POLICY}\n");
+    let socket = format!(
+        "[Unit]\nDescription=Account sign-in for {id}\n\n[Socket]\nListenStream={path}\nSocketUser={KORRID_USER}\nSocketGroup={KORRID_GROUP}\nSocketMode=0600\nAccept=yes\nMaxConnections=2\nRemoveOnStop=yes\n",
+        id = report.id,
+        path = crate::plugin_references::account_socket(&report.id).display(),
+    );
+    let mut template = format!(
+        "[Unit]\nDescription=Account sign-in for {id}\nRequisite={service_name}\nAfter={service_name}\n\n[Service]\nType=simple\nExecStart={program}\nStandardInput=socket\nStandardOutput=socket\nStandardError=journal\nRuntimeMaxSec={ACCOUNT_RUNTIME_MAX}\nRestart=no\nKillMode=control-group\nTimeoutStopSec=10\n{identity}Environment=RUNTIME_DIRECTORY=/run/{runtime_directory}\nUMask=0077\nNoNewPrivileges=yes\nProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\nPrivateDevices=yes\nDevicePolicy=closed\nProtectKernelTunables=yes\nProtectKernelModules=yes\nProtectKernelLogs=yes\nProtectControlGroups=yes\nProtectProc=invisible\nRestrictSUIDSGID=yes\nRestrictRealtime=yes\nRestrictNamespaces=yes\nLockPersonality=yes\nRestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK\nCapabilityBoundingSet=\nAmbientCapabilities=\n",
+        id = report.id,
+    );
+    for credential in &service.credentials {
+        template.push_str(&format!("LoadCredential={credential}\n"));
+    }
+    Ok(vec![
+        ManagedUnit {
+            name: format!("{base}.socket"),
+            source: socket,
+            policy: policy.clone(),
+            template: false,
+        },
+        ManagedUnit {
+            name: format!("{base}@.service"),
+            source: template,
+            policy,
+            template: true,
+        },
+    ])
 }
 
 fn uphold_target(unit: &str) -> PathBuf {
@@ -579,6 +737,12 @@ pub fn render(report: &Report) -> Result<String, String> {
                 hardening_for(&report.id, unit)
             )
         })
+        .chain(account_units(report)?.into_iter().map(|unit| {
+            format!(
+                "# account unit: {}\n{}\n{}",
+                unit.name, unit.source, unit.policy
+            )
+        }))
         .collect::<Vec<_>>()
         .join("\n"))
 }
@@ -747,7 +911,7 @@ mod tests {
         let managed = managed_units(&report).unwrap();
         // An owned runtime unit with a lost relation must be repaired on
         // restore, without depending on the machine's systemd or D-Bus.
-        fs::write(units.unit_path(name), &managed[0].native.source).unwrap();
+        fs::write(units.unit_path(name), &managed[0].source).unwrap();
         storage::directory(units.drop_in(name).parent().unwrap()).unwrap();
         fs::write(units.drop_in(name), owner_marker(&report.id)).unwrap();
         units.write(&report, &managed).unwrap();
@@ -778,6 +942,171 @@ mod tests {
         units.discard_written(&report.id, &managed).unwrap();
         assert!(!path_present(&units.uphold(name)).unwrap());
         units.remove_uphold(name).unwrap();
+    }
+
+    const PROGRAM: &str =
+        "/nix/store/00000000000000000000000000000000-tailscale-account/bin/korri-tailscale-account";
+
+    /// The Tailscale plugin's shape: one service with the one admitted
+    /// credential, and one account.
+    fn account_report(service: &str) -> Report {
+        let mut report = report();
+        report.id = "@korri:tailscale".into();
+        report.declaration = crate::declaration::Declaration::evaluate(
+            "@korri",
+            "export const name = 'tailscale'; export const services = ['tailscaled']; \
+             export const accounts = { tailscale: { title: 'Tailscale', program: 'account', offer: 'Private network: reach your devices from anywhere' } };",
+        )
+        .unwrap();
+        report.native_units = std::collections::BTreeMap::from([(
+            "tailscaled".into(),
+            crate::native_unit::NativeUnit::parse(service).unwrap(),
+        )]);
+        report.files = std::collections::BTreeMap::from([("account".into(), PROGRAM.into())]);
+        report
+    }
+
+    const TAILSCALED: &str = "[Service]\nType=notify\nExecStart=/nix/store/00000000000000000000000000000000-tailscale/bin/tailscaled\nLoadCredential=authkey:tailscale-authkey\n";
+
+    #[test]
+    fn an_account_gets_a_korrid_only_socket_and_a_template_with_the_services_identity() {
+        let report = account_report(TAILSCALED);
+        let managed = managed_units(&report).unwrap();
+        let base = crate::plugin_references::account_unit("@korri:tailscale");
+        assert_eq!(
+            managed.iter().map(|u| u.name.clone()).collect::<Vec<_>>(),
+            [
+                "tailscaled.service".to_owned(),
+                format!("{base}.socket"),
+                format!("{base}@.service")
+            ]
+        );
+        let (socket, template) = (&managed[1], &managed[2]);
+        assert!(socket.upheld() && !template.upheld());
+        let lines = |source: &str| source.lines().map(str::to_owned).collect::<Vec<_>>();
+        let socket_lines = lines(&socket.source);
+        for expected in [
+            format!("ListenStream=/run/{base}.sock"),
+            "SocketUser=korrid".into(),
+            "SocketGroup=korrid".into(),
+            "SocketMode=0600".into(),
+            "Accept=yes".into(),
+            "MaxConnections=2".into(),
+        ] {
+            assert!(
+                socket_lines.contains(&expected),
+                "{expected} in {socket_lines:?}"
+            );
+        }
+        let template_lines = lines(&template.source);
+        let runtime = package::unit_name("@korri:tailscale");
+        for expected in [
+            "Requisite=tailscaled.service".to_owned(),
+            format!("ExecStart={PROGRAM}"),
+            "StandardInput=socket".into(),
+            "StandardOutput=socket".into(),
+            "RuntimeMaxSec=20min".into(),
+            "DynamicUser=yes".into(),
+            "User=tailscaled".into(),
+            format!("Environment=RUNTIME_DIRECTORY=/run/{runtime}"),
+            "NoNewPrivileges=yes".into(),
+            "CapabilityBoundingSet=".into(),
+            "AmbientCapabilities=".into(),
+            "LoadCredential=authkey:tailscale-authkey".into(),
+        ] {
+            assert!(
+                template_lines.contains(&expected),
+                "{expected} in {template_lines:?}"
+            );
+        }
+        // No capability is granted anywhere, and nothing else names a user.
+        // It never declares the service's runtime directory as its own.
+        assert!(!template_lines
+            .iter()
+            .any(|l| l.starts_with("RuntimeDirectory")));
+        for prefix in ["CapabilityBoundingSet=", "AmbientCapabilities=", "User="] {
+            assert_eq!(
+                template_lines
+                    .iter()
+                    .filter(|l| l.starts_with(prefix))
+                    .count(),
+                1,
+                "{prefix}"
+            );
+        }
+        for unit in [socket, template] {
+            assert!(unit.policy.starts_with(&owner_marker("@korri:tailscale")));
+        }
+        // Approval binds the generated units: they are in the rendered set.
+        let rendered = render(&report).unwrap();
+        assert!(rendered.contains(&format!("# account unit: {base}@.service")));
+        assert!(rendered.contains("RuntimeMaxSec=20min"));
+        assert!(valid_owned_unit_name(&template.name));
+        assert!(valid_owned_unit_name(&socket.name));
+        assert!(!valid_owned_unit_name("x@y.service"));
+        assert_eq!(base.len(), "korri-account-".len() + 32);
+    }
+
+    #[test]
+    fn an_account_needs_an_unprivileged_service_and_a_plugin_without_one_gets_no_units() {
+        assert_eq!(
+            managed_units(&account_report(
+                "[Service]\nType=exec\nUser=root\nExecStart=/nix/store/00000000000000000000000000000000-x/bin/x\n"
+            ))
+            .err()
+            .as_deref(),
+            Some("an account program may not run as root")
+        );
+        let mut none = account_report(TAILSCALED);
+        none.native_units.clear();
+        assert_eq!(
+            managed_units(&none).err().as_deref(),
+            Some("accounts require a native service for the account program to run beside")
+        );
+        assert_eq!(managed_units(&report()).unwrap().len(), 1);
+    }
+
+    /// The generated units are written, owned and removed with the plugin's
+    /// own; the template has no uphold relation.
+    #[test]
+    fn account_units_are_written_owned_and_removed_with_the_plugin() {
+        let root = tempfile::tempdir().unwrap();
+        let mut units = units(root.path());
+        // `write` asks systemctl whether each unit already exists: no.
+        let systemctl = root.path().join("systemctl");
+        fs::write(&systemctl, "#!/bin/sh\nexit 1\n").unwrap();
+        fs::set_permissions(
+            &systemctl,
+            <fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o755),
+        )
+        .unwrap();
+        units.systemctl = systemctl;
+        fs::create_dir(&units.unit_directory).unwrap();
+        let report = account_report(TAILSCALED);
+        let managed = managed_units(&report).unwrap();
+        units.write(&report, &managed).unwrap();
+        assert_eq!(
+            units.read_owned_units(&report.id).unwrap(),
+            managed.iter().map(|u| u.name.clone()).collect::<Vec<_>>()
+        );
+        for unit in &managed {
+            assert_eq!(
+                fs::read_to_string(units.unit_path(&unit.name)).unwrap(),
+                unit.source
+            );
+            assert!(units.owner_matches(&report.id, &unit.name));
+            assert_eq!(
+                path_present(&units.uphold(&unit.name)).unwrap(),
+                unit.upheld()
+            );
+        }
+        units.discard_written(&report.id, &managed).unwrap();
+        for unit in &managed {
+            assert!(!path_present(&units.unit_path(&unit.name)).unwrap());
+            assert!(!path_present(&units.drop_in(&unit.name)).unwrap());
+            assert!(!path_present(&units.uphold(&unit.name)).unwrap());
+        }
+        assert!(units.read_owned_units(&report.id).unwrap().is_empty());
     }
 
     #[test]

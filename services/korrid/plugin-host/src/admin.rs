@@ -235,6 +235,13 @@ fn repositories(host: &Host, config: &Configuration) -> Result<PluginAdminRespon
             continue;
         };
         let enabled = state == PluginInstalledState::Enabled;
+        // The installed declaration, on or off. Its title and accounts are
+        // projected; a failed read omits them.
+        let declaration = package::load_declaration(&receipt.package).ok();
+        let accounts = declaration
+            .as_ref()
+            .and_then(|declaration| package::projected_accounts(&receipt.package, declaration).ok())
+            .filter(|accounts| !accounts.is_empty());
         match receipt.provenance {
             Provenance::Repository {
                 source_url,
@@ -245,16 +252,15 @@ fn repositories(host: &Host, config: &Configuration) -> Result<PluginAdminRespon
                 source_url,
                 release_version,
                 enabled,
+                accounts,
             }),
-            // Image-seeded and raw-cache installs. The title is the
-            // installed declaration's; a failed read omits it.
+            // Image-seeded and raw-cache installs.
             Provenance::RawCache { .. } | Provenance::Sideload { .. } => {
                 other_installs.push(PluginOtherInstall {
-                    title: package::load_declaration(&receipt.package)
-                        .ok()
-                        .and_then(|declaration| declaration.title),
+                    title: declaration.and_then(|declaration| declaration.title),
                     id: receipt.id,
                     enabled,
+                    accounts,
                 })
             }
         }

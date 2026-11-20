@@ -6,6 +6,7 @@ mod android;
 #[cfg(target_os = "android")]
 pub use android::app as android_app;
 
+pub mod account_sign_in;
 pub mod acquisition;
 pub mod invites;
 pub mod netplay;
@@ -5465,6 +5466,60 @@ fn surface_accepted(result: Result<(), RpcFailure>) -> surface::SurfaceAcceptedO
     }
 }
 
+/// ADR 0089: the generic account host's facts, read in process: the plugin
+/// host's published selection and the plugin's first service.
+struct PluginAccountFacts {
+    state: AppState,
+}
+
+impl surface::account_sign_ins::PluginAccountAccess for PluginAccountFacts {
+    fn presence(&self) -> String {
+        use std::os::unix::fs::MetadataExt;
+        std::fs::metadata(plugin_installation::REGISTRY_PATH)
+            .map(|metadata| {
+                format!(
+                    "{}.{}:{}",
+                    metadata.mtime(),
+                    metadata.mtime_nsec(),
+                    metadata.len()
+                )
+            })
+            .unwrap_or_default()
+    }
+
+    fn service(&self, plugin: &str) -> Option<String> {
+        let (_, registry) = self.state.acquisition_context().ok()?;
+        // The plugin host runs the account program beside the first declared
+        // service (plugin-host `unit.rs` account_units); a socket is not one.
+        registry.plugin(plugin).and_then(|plugin| {
+            plugin
+                .services()
+                .iter()
+                .find(|name| !name.ends_with(".socket"))
+                .map(|name| match name.ends_with(".service") {
+                    true => name.clone(),
+                    false => format!("{name}.service"),
+                })
+        })
+    }
+
+    fn active(&self, service: &str) -> bool {
+        let systemctl = std::env::var_os("KORRID_SYSTEMCTL")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("systemctl"));
+        std::process::Command::new(systemctl)
+            .args(["--system", "is-active", "--quiet"])
+            .arg(service)
+            .stdin(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    }
+
+    fn hosts(&self) -> Arc<dyn account_sign_in::job::AccountHosts> {
+        Arc::new(account_sign_in::job::SocketHosts)
+    }
+}
+
 /// ADR 0083: the Steam engine runner's facts for the surface's sign-in
 /// model, read in process from the route registry and the artifact cache.
 struct SteamEngineFacts {
@@ -5776,6 +5831,9 @@ fn surface_hub_for(
     surface::SurfaceHub::new(
         surface::korrid::Korrid::new(send)
             .with_steam_engine(steam_engine)
+            .with_plugin_accounts(Arc::new(PluginAccountFacts {
+                state: surface_host.clone(),
+            }))
             .with_save_changes(match &surface_host.mode {
                 ServerMode::Host(host) => match host.save_status_changes() {
                     Ok(changes) => Some(changes),
