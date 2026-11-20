@@ -236,6 +236,20 @@ function nowOf(state: State, model: Model, shelves: readonly ShelfSpec[]): { tit
   return { title: item.set.title, fact: item.count === undefined ? "" : gamesWords(item.count) }
 }
 
+/**
+ * The height the pick's mark may take (ui/organisms/VelvetPick.slint): its box less Play and
+ * the gap over it. On a wide window the mark stands on its foot and may rise above the box,
+ * up to the line under the clock and the Menu pill.
+ */
+export function pickRoom(plan: Plan, hero: boolean): number {
+  const boxY = hero ? plan.heroY : plan.textY
+  const boxH = hero ? plan.heroH : plan.textH
+  const play = plan.button * 2.3 + plan.fact * 1.2
+  if (plan.narrow) return Math.max(0, boxH - play)
+  const top = plan.padY * 0.7 + plan.small * 2.3 + plan.fact * 0.6
+  return Math.max(0, boxY + boxH - play - top)
+}
+
 export function homeView(asked: Pictures, state: State, model: Model, plan: Plan, live: boolean) {
   const home = homeOf(state.lists, model.publishedAt)
   const pick = home.pick
@@ -247,11 +261,11 @@ export function homeView(asked: Pictures, state: State, model: Model, plan: Plan
   // The mark's logo first, then the row's tiles from the focused one outwards (the pixel budget, src/art.ts).
   const mark = pick === undefined ? NO_MARQUEE : marqueeOf(asked, pick, {
     width: hero ? plan.heroW : plan.textW, logoH: hero ? Math.round(plan.markH * 1.25) : plan.markH, title: hero ? plan.title : plan.pickTitle, fact: plan.fact,
-    mark: hero || !cardNames(pick), badge: true,
+    mark: hero || !cardNames(pick), badge: true, room: pickRoom(plan, hero),
   }, model.publishedAt)
   const rowGame = depth === 1 ? row[state.rowAt] : undefined
   const rowMark = rowGame === undefined ? NO_MARQUEE : rowGame.kind === "game"
-    ? marqueeOf(asked, rowGame.game, { width: plan.rowMarkW, logoH: Math.max(24, plan.rowMarkH - plan.fact * 3.2), title: Math.min(plan.title, Math.max(24, (plan.rowMarkH - plan.fact * 3.2) / 2)), fact: plan.fact, mark: true, badge: false }, model.publishedAt)
+    ? marqueeOf(asked, rowGame.game, { width: plan.rowMarkW, logoH: Math.max(24, plan.rowMarkH - plan.fact * 3.2), title: Math.min(plan.title, Math.max(24, (plan.rowMarkH - plan.fact * 3.2) / 2)), fact: plan.fact, mark: true, badge: false, room: plan.rowMarkH }, model.publishedAt)
     : { ...NO_MARQUEE, key: "all", ...fitMark("Library", plan.rowMarkW, plan), facts: factLines([{ icon: "grid", text: gamesWords(state.lists.total), strong: false }], plan.fact, plan.rowMarkW) }
   // Play holds the pick's focus (owner, 2026-11-13, on usu: A should feel like it plays).
   // The card beside it takes focus with Left and opens the detail; with the hero as the
@@ -732,12 +746,17 @@ export function pressDetail(state: State, button: Direction | "confirm" | "back"
   return stay(next === undefined ? state : { ...state, detail: { ...state.detail, at: next } })
 }
 
-/** Whether the detail's buttons stand one under the other: a narrow window, or more words than one row holds. */
-export function detailStacks(buttons: readonly DetailButton[], plan: Plan): boolean {
-  if (plan.stack) return true
-  const width = buttons.reduce((sum, button) => sum + plan.button * (textWidth(button.label, true) + 3.6), 0) + (buttons.length - 1) * plan.button * 0.8
-  return width > plan.width - 2 * plan.padX
+/** The width pills take side by side: each its words, its icon and its ends (VelvetPill), and a gap between (VelvetButtons). */
+export function pillsWidth(buttons: readonly { readonly label: string; readonly icon?: string }[], size: number): number {
+  return buttons.reduce((sum, button) => sum + size * (textWidth(button.label, true) + (button.icon === undefined || button.icon === "" ? 2.7 : 3.6)), 0) + Math.max(0, buttons.length - 1) * size * 0.8
 }
+
+/** Whether a group of pills stands one under the other: a narrow window, or more words than one row across the window holds. */
+export const pillsStack = (buttons: readonly { readonly label: string; readonly icon?: string }[], plan: Plan): boolean =>
+  plan.stack || pillsWidth(buttons, plan.button) > plan.width - 2 * plan.padX
+
+/** Whether the detail's buttons stand one under the other. */
+export const detailStacks = (buttons: readonly DetailButton[], plan: Plan): boolean => pillsStack(buttons, plan)
 
 export function detailView(asked: Pictures, state: State, model: Model, plan: Plan, live: boolean) {
   const game = detailGame(state, model)

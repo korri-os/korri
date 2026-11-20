@@ -16,7 +16,7 @@
  */
 import type { SurfaceMedia, SurfaceMediaRole } from "../../../../../contracts/generated/surface"
 import { gelHue, hsl, parseHex, stageLight, toHsl } from "./colour"
-import { breakLines, fitCaps, fitCapsOnce, textWidth } from "./fit"
+import { breakLines, DISPLAY_LINE, fitCaps, fitCapsOnce, textWidth } from "./fit"
 import { sameGame } from "./lists"
 import { onForget } from "./memo"
 import { NO_POSTER, posterFor, posterView, type PosterView } from "./poster"
@@ -423,10 +423,11 @@ export function factsOf(game: Game, publishedAt: number | undefined, sentence = 
 
 /**
  * Facts broken into lines no wider than `width` at `size` px (a mark, a gap,
- * the words, then the next): at most three lines of four. A fact that finds
- * no place is left out, last first; the detail shows them all.
+ * the words, then the next): at most three lines of four (`most`, when the
+ * room has fewer). A fact that finds no place is left out, last first; the
+ * detail shows them all.
  */
-export function factLines(facts: readonly FactView[], size: number, width: number, lead = 0): FactsView {
+export function factLines(facts: readonly FactView[], size: number, width: number, lead = 0, most = 3): FactsView {
   const lines: FactView[][] = [[]]
   let used = lead
   for (const fact of facts) {
@@ -434,7 +435,7 @@ export function factLines(facts: readonly FactView[], size: number, width: numbe
     const need = own + (used > lead || (used > 0 && lines[lines.length - 1]!.length > 0) ? size * 1.4 : 0)
     const line = lines[lines.length - 1]!
     if (line.length > 0 && (used + need > width || line.length === 4)) {
-      if (lines.length === 3) break
+      if (lines.length >= most) break
       lines.push([fact])
       used = own
       continue
@@ -463,7 +464,17 @@ export interface MarqueeBox {
   /** Draw the mark (logo or title); false beside a card that already names the game. */
   readonly mark: boolean
   readonly badge: boolean
+  /**
+   * The height the whole mark may take: its name, the gap and the facts
+   * (ui/molecules/VelvetMark.slint). Where it is short, the name gives way
+   * first, down to its least size, then the facts lose lines, the last first.
+   */
+  readonly room?: number
 }
+
+/** A line of facts, in font sizes (VelvetFacts' pitch), and the gap over them (VelvetMark's). */
+const FACT_PITCH = 1.7
+const FACT_GAP = 1.05
 
 /** The shape a usual logo has (about 2.3 to 1): the one that stands as tall as its box. */
 export const LOGO_USUAL = 2.3
@@ -491,17 +502,26 @@ export function logoBox(width: number, height: number, boxW: number, boxH: numbe
 export function marqueeOf(asked: Pictures, game: Game, box: MarqueeBox, publishedAt: number | undefined, facts: readonly FactView[] = factsOf(game, publishedAt)): MarqueeView {
   const wanted = box.mark ? mediaOf(game, "logo") : undefined
   const logo = wanted !== undefined && take(asked, wanted.url, wanted.width, wanted.height) ? wanted : undefined
-  const fit = box.mark ? fitCaps(game.title, box.width, Math.max(box.title, box.logoH), box.title, Math.min(box.title, 18), 3) : undefined
-  const lines = fit === undefined ? [] : fit.lines
-  const mark = logo === undefined ? { width: 0, height: 0 } : logoBox(logo.width, logo.height, box.width * 0.92, box.logoH)
   const badge = box.badge ? game.system ?? "" : ""
   const lead = badge === "" ? 0 : box.fact * (1.6 + textWidth(badge, true))
+  const least = Math.min(box.title, 18)
+  let shown = factLines(facts, box.fact, box.width, lead)
+  // The name's room: what the facts leave of the mark's room. A line of facts gives way only
+  // when the name would be under one line at its least size.
+  const nameRoom = (count: number) => box.room === undefined ? Infinity : box.room - (box.mark ? box.fact * FACT_GAP : 0) - Math.max(count, badge === "" ? 0 : 1) * box.fact * FACT_PITCH
+  if (box.mark) {
+    for (let most = shown.count - 1; most >= 1 && nameRoom(shown.count) < least * DISPLAY_LINE; most--) shown = factLines(facts, box.fact, box.width, lead, most)
+  }
+  const room = Math.max(least * DISPLAY_LINE, nameRoom(shown.count))
+  const fit = box.mark ? fitCaps(game.title, box.width, Math.min(Math.max(box.title, box.logoH), room), box.title, least, 3) : undefined
+  const lines = fit === undefined ? [] : fit.lines
+  const mark = logo === undefined ? { width: 0, height: 0 } : logoBox(logo.width, logo.height, box.width * 0.92, Math.min(box.logoH, room))
   return {
     key: game.id,
     logoShown: logo !== undefined, logo: logo === undefined ? NO_IMAGE : { $image: logo.url },
     logoW: mark.width, logoH: mark.height,
     ...titleLines(lines), size: fit?.size ?? 0, badge,
-    facts: factLines(facts, box.fact, box.width, lead),
+    facts: shown,
   }
 }
 

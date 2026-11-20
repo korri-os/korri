@@ -24,7 +24,7 @@
  * the focused game changed.
  */
 import type { SurfaceButton, SurfaceMessage as Message, SurfaceModel as Model } from "../../../../../contracts/generated/surface"
-import { detailButtons, detailGame, dragHome, dragSet, swipeHome, focusedGame, openSet, pressDetail, pressHome, pressSet, setSorts, setWindow, settleSet, tapHome, tapSet, type Step } from "./browse"
+import { detailButtons, detailGame, dragHome, dragSet, swipeHome, focusedGame, openSet, pillsStack, pressDetail, pressHome, pressSet, setSorts, setWindow, settleSet, tapHome, tapSet, type Step } from "./browse"
 import { curtainLayout, curtainOf, type CurtainSpec } from "./curtain"
 import { keyAt, keyGrid, keyInPlace, keyMove } from "./keys"
 import { hearLists, homeOf, LISTS_START, refresh, settleLists, shelvesOf, staleLists, tickLists } from "./lists"
@@ -98,8 +98,8 @@ export function panelFocus(panel: PanelSpec, kept: PanelState | undefined): Pane
   return { focus: first, at: Math.max(0, rows.findIndex(row => row.id === first)) }
 }
 
-/** Whether a panel's buttons stand one under the other. */
-export const panelStacks = (p: Plan): boolean => p.stack
+/** Whether a panel's buttons stand one under the other: a narrow window, or more than one row holds. */
+export const panelStacks = (p: Plan, panel: PanelSpec): boolean => pillsStack(panel.buttons, p)
 
 function panelPress(state: State, panel: PanelSpec, button: SurfaceButton, p: Plan): Step {
   const rows = panel.rows.filter(takesFocus)
@@ -128,7 +128,7 @@ function panelPress(state: State, panel: PanelSpec, button: SurfaceButton, p: Pl
   const at = panel.buttons.findIndex(candidate => candidate.id === kept.focus)
   const focused: ButtonSpec | undefined = panel.buttons[at]
   if (focused === undefined) return { state }
-  const stacked = panelStacks(p)
+  const stacked = panelStacks(p, panel)
   const along = stacked ? (button === "up" ? -1 : button === "down" ? 1 : 0) : button === "left" ? -1 : button === "right" ? 1 : 0
   if (button === "confirm") return { state, act: focused.press }
   if (along !== 0) {
@@ -418,8 +418,9 @@ function emptyPress(state: State, button: SurfaceButton, model: Model): Step {
   }
   const at = emptyAt(state, model)
   if (button === "confirm") return { state, act: buttons[at]!.act }
-  if (button === "up" && (!p.stack || at === 0)) return { state: { ...state, onMenu: true } }
-  const along = p.stack ? (button === "up" ? -1 : button === "down" ? 1 : 0) : button === "left" ? -1 : button === "right" ? 1 : 0
+  const stacked = pillsStack(buttons, p)
+  if (button === "up" && (!stacked || at === 0)) return { state: { ...state, onMenu: true } }
+  const along = stacked ? (button === "up" ? -1 : button === "down" ? 1 : 0) : button === "left" ? -1 : button === "right" ? 1 : 0
   if (along !== 0 && buttons[at + along] !== undefined) return { state: { ...state, panels: { ...state.panels, empty: { focus: buttons[at + along]!.id, at: at + along } } } }
   return { state }
 }

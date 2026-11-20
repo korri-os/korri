@@ -121,7 +121,10 @@ export component VelvetRow inherits Rectangle {
             overflow: elide;
         }
     }
+    // The label's line stands at the row's head; a focused row's note goes under it. (With no
+    // `y` it stood in the middle of the row and the note's line ran into the label.)
     if root.target: Rectangle {
+        y: 0;
         width: root.width;
         height: root.line;
         opacity: root.it.dim ? 0.45 : 1;

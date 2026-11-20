@@ -5,7 +5,7 @@
  *
  *  - the same window gives the same plan; nothing reads anything else;
  *  - every number is finite and no size is negative;
- *  - text never goes under its floor (a fact at 12 px, a button at 15 px);
+ *  - text never goes under its floor (a fact at 15 px, a button at 17 px);
  *  - what the plan places stays inside the window: the home's strip and
  *    shelf, a set's columns, the keyboard's five rows of ten, the sheet, the
  *    curtain, the overlay's panel;
@@ -46,12 +46,12 @@ describe("the plan", () => {
     for (const [width, height] of all) {
       const p = plan(width, height)
       const at = `${width}x${height}`
-      expect(p.fact, at).toBeGreaterThanOrEqual(12)
-      expect(p.detailFact, at).toBeGreaterThanOrEqual(12)
-      expect(p.small, at).toBeGreaterThanOrEqual(12)
-      expect(p.label, at).toBeGreaterThanOrEqual(13)
-      expect(p.body, at).toBeGreaterThanOrEqual(14)
-      expect(p.button, at).toBeGreaterThanOrEqual(15)
+      expect(p.fact, at).toBeGreaterThanOrEqual(15)
+      expect(p.detailFact, at).toBeGreaterThanOrEqual(15)
+      expect(p.small, at).toBeGreaterThanOrEqual(14)
+      expect(p.label, at).toBeGreaterThanOrEqual(15)
+      expect(p.body, at).toBeGreaterThanOrEqual(16)
+      expect(p.button, at).toBeGreaterThanOrEqual(17)
       expect(p.head, at).toBeGreaterThanOrEqual(22)
     }
   })

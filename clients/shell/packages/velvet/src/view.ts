@@ -16,7 +16,7 @@
  */
 import type { SurfaceModel as Model } from "../../../../../contracts/generated/surface"
 import { gameCard, marqueeOf, NO_IMAGE, NO_MARQUEE, pictures, stageOf, type Pictures, type StageView } from "./art"
-import { detailGame, detailView, focusedGame, homeExits, homeView, NO_PILL, pill, setExits, setView, type PillView } from "./browse"
+import { detailGame, detailView, focusedGame, homeExits, homeView, NO_PILL, pill, pillsStack, setExits, setView, type PillView } from "./browse"
 import { curtainLayout, curtainOf } from "./curtain"
 import { breakLines, fitCaps } from "./fit"
 import { keyGrid } from "./keys"
@@ -78,7 +78,7 @@ function pageView(asked: Pictures, panel: PanelSpec, state: State, p: Plan, live
       sub: panel.sub ?? "",
       step: panel.step ?? 0,
       steps: panel.steps ?? 0,
-      stack: panelStacks(p),
+      stack: panelStacks(p, panel),
       panel: side?.kind ?? "none",
       panelTitle: side?.title ?? "",
     },
@@ -198,17 +198,24 @@ function emptyView(state: State, model: Model, p: Plan, live: boolean) {
       : ""
   const width = p.emptyWide ? p.width * 0.44 : Math.min(p.width - 2 * p.padX, 900)
   const fit = fitCaps(title, width, p.title * 2.2, Math.min(p.title, p.height * 0.11), 20)
+  const stack = pillsStack(buttons, p)
+  // The words give way before a button leaves the window: as many lines as the column has
+  // room for under the title (ui/organisms/VelvetEmpty.slint), the last one cut short.
+  const pills = buttons.length === 0 ? 0 : stack ? buttons.length * p.button * 2.8 - p.button * 0.5 : p.button * 2.3
+  const titleBlock = fit.lines.length === 0 ? 0 : (fit.lines.length - 1) * fit.size * 0.98 + fit.size * 0.8
+  const most = Math.max(1, Math.floor((p.height - p.padY * 2.9 - titleBlock - p.body * 2.5 - pills) / (p.body * 1.3)))
+  const lines = breakLines(words, p.body, Math.min(width, p.body * 26)).filter(line => line !== "")
   return {
     empty: {
       shown: true,
       titleSize: fit.size,
-      stack: p.stack,
+      stack,
       menu: pill("Menu", "menu", "menu", live && (state.onMenu || buttons.length === 0), { icon: "menu", quiet: true }),
       clock: model.clockLabel ?? "",
       ghosts: catalog._tag === "Empty",
     },
     title: title === "" ? [] : fit.lines,
-    lines: breakLines(words, p.body, Math.min(width, p.body * 26)).filter(line => line !== ""),
+    lines: lines.length <= most ? lines : [...lines.slice(0, most - 1), `${lines[most - 1]!.replace(/[\s.,;:]+$/, "")}…`],
     buttons: buttons.map((button, index): PillView => pill(button.label, "empty", button.id, live && !state.onMenu && index === at, { icon: button.icon, quiet: index > 0 })),
   }
 }

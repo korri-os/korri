@@ -16,8 +16,9 @@
  *  - Velvet tells Korri which game has the focus (`FocusGame`).
  */
 import { describe, expect, test } from "bun:test"
-import { ROW_SLOTS, SHELF_SLOTS } from "../src/plan"
-import { Play, scenario, targets } from "./korri"
+import { pickRoom } from "../src/browse"
+import { plan, ROW_SLOTS, SHELF_SLOTS } from "../src/plan"
+import { Play, scenario, SIZES, targets } from "./korri"
 
 const model = (name: string) => scenario(name).models[0]
 const focus = (run: Play) => targets(run.view).find(entry => entry.focused === true)
@@ -474,6 +475,25 @@ describe("a window the shell has not sized yet (ibuki, 2026-11-14)", () => {
       expect(run.view.screen, `${width}x${height}`).toBeDefined()
       run.deliver({ _tag: "Resized", width: 3840, height: 2160 })
       expect(run.view.screen).toBeDefined()
+    }
+  })
+})
+
+describe("the pick's mark keeps to its room", () => {
+  // VelvetMark: the name, a gap of 1.05 facts, then a line of facts every 1.7.
+  const nameOf = (mark: any) => Math.max(mark.logoShown ? mark.logoH : 0, mark.lines === 0 ? 0 : (mark.lines - 1) * mark.size * 0.98 + mark.size * 0.8)
+  test("its name, the gap and its facts stand over Play at every size; facts give way before the name goes under its least", () => {
+    for (const [width, height] of SIZES) {
+      const at = `${width}x${height}`
+      const run = new Play(model("home"), width, height)
+      const p = plan(width, height)
+      const mark = run.view.home.mark
+      const room = pickRoom(p, run.view.home.hero)
+      const facts = Math.max(mark.facts.count, mark.badge === "" ? 0 : 1) * p.fact * 1.7
+      const least = Math.min(p.title, 18)
+      expect(mark.facts.count, at).toBeGreaterThanOrEqual(1)
+      if (room >= least * 0.98 + p.fact * (1.05 + 1.7)) expect(nameOf(mark) + p.fact * 1.05 + facts, at).toBeLessThanOrEqual(room + 1)
+      else expect(mark.facts.count, at).toBe(1)
     }
   })
 })

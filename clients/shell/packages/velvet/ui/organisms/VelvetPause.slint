@@ -40,11 +40,16 @@ export component VelvetPause inherits Rectangle {
     property <length> readout-h: value-size * 1.1 + label-size * 1.5;
     // The head's rhythm (owner, 2026-11-13): the title to the readouts, each line of them,
     // and the readouts to the rows.
-    property <length> after-title: fact * 1.25;
-    property <length> readout-pitch: readout-h + fact * 0.9;
-    property <length> before-rows: fact * 1.9;
+    // On a short window that rhythm gives way first (space before readouts, readouts before
+    // controls): the rows keep room for one focused row with its note.
+    property <length> rows-need: Tokens.screen.body * u * 1.12 * 4.5;
+    property <bool> tight: root.height - 2 * pad-y - head.block - fact * (1.9 - 0.5) - (readouts.length > 0 ? fact * 1.25 + readout-rows * readout-h + (readout-rows - 1) * fact * 0.9 : 0px) < rows-need;
+    property <length> after-title: fact * (tight ? 0.6 : 1.25);
+    property <length> readout-gap: fact * (tight ? 0.35 : 0.9);
+    property <length> readout-pitch: readout-h + readout-gap;
+    property <length> before-rows: fact * (tight ? 0.9 : 1.9);
     property <length> clock-w: clock == "" ? 0px : fact * 4.6;
-    property <length> strip-h: readouts.length > 0 ? after-title + readout-rows * readout-pitch - fact * 0.9 : 0px;
+    property <length> strip-h: readouts.length > 0 ? after-title + readout-rows * readout-pitch - readout-gap : 0px;
     // A press beside the panel does nothing, and never reaches the game.
     TouchArea { }
     Rectangle {

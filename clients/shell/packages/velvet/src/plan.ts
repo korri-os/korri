@@ -171,7 +171,7 @@ export function plan(width: number, height: number): Plan {
   const k = clamp(Math.min(W / 1600, H / 900), 0.4, 1.25)
   // Below the 1600 x 900 reference, type follows the fourth root of the area's
   // ratio: it shrinks slowly, and a tall or a wide window pays for it with its
-  // plentiful axis. 933 x 704: k 0.58, kt 0.82 (facts 17 px, not 13).
+  // plentiful axis. 933 x 704: k 0.58, kt 0.82 (facts 21 px, not 15).
   const kRaw = Math.min(W / 1600, H / 900)
   const kt = k >= 1 ? k : clamp(Math.min(Math.pow((W / 1600) * (H / 900), 0.25), TYPE_REACH * kRaw), Math.max(k, 0.4), 1)
   // Space: pads, gaps and room. `ft`: type.
@@ -181,8 +181,8 @@ export function plan(width: number, height: number): Plan {
   const padY = Math.round(clamp(H * 0.055, 14, 80))
   const narrow = W / H < NARROW_RATIO
   const R = TILE_RATIO
-  const fact = ft(21, 13)
-  const label = ft(22, 13)
+  const fact = ft(26, 15)
+  const label = ft(26, 15)
 
   // Home. The card and the strip under it are about 3 to 1 (owner, 2026-11-13, on usu: the
   // prototype's 6 to 1 made the card loom and the games under it too small to read).
@@ -213,7 +213,7 @@ export function plan(width: number, height: number): Plan {
     gap = fs(24, 14)
     // The card and its words stand in the middle of the room above the strip, not hung from
     // the top over an empty band. The words: two lines of facts, a gap, the buttons.
-    const words = Math.round(fact * 1.5 * 2 + gap + ft(28, 15) * 2.3)
+    const words = Math.round(fact * 1.5 * 2 + gap + ft(32, 17) * 2.3)
     const top = Math.round(padY * 1.3)
     const room = stripY - fs(24, 12) - top
     posterY = top + Math.round(Math.max(0, room - (posterH + gap + words)) * 0.5)
@@ -234,7 +234,7 @@ export function plan(width: number, height: number): Plan {
   const rowMarkH = Math.max(0, rowY - padY - Math.round(Math.max(fs(40, 16), (rowH * (FOCUS_SCALE - 1)) / 2 + fs(18, 12))))
   const peek = rowY + Math.round(rowH * FOCUS_SCALE) + Math.round(rowGap * 2)
   // The marquee widens as type outgrows space (kt over k), so the facts keep one line.
-  const heroW = narrow ? W - 2 * padX : Math.round(W * Math.min(0.8, (0.56 * kt) / k))
+  const heroW = narrow ? W - 2 * padX : Math.round(W * Math.min(0.8, (0.62 * kt) / k))
   // A narrow window stacks: the hero's band (about 3.1 to 1) across the top, the words under it.
   const heroY = narrow ? Math.round(W / HERO_RATIO + padY * 0.6) : posterY
   const heroH = narrow ? Math.max(0, Math.round(stripY - padY - heroY)) : posterH
@@ -281,7 +281,7 @@ export function plan(width: number, height: number): Plan {
 
   last = {
     width: W, height: H, k, kt, padX, padY, narrow,
-    title: ft(104, narrow ? 30 : 28), head, body: ft(24, 14), fact, label, button: ft(28, 15), small: ft(18, 12),
+    title: ft(104, narrow ? 30 : 28), head, body: ft(30, 16), fact, label, button: ft(32, 17), small: ft(22, 14),
     posterX, posterY, posterH, textX, textY, textW, textH,
     heroX: padX, heroY, heroW, heroH, markH, pickTitle,
     stripY, stripH, stripGap: gapOf(stripH),
@@ -290,7 +290,7 @@ export function plan(width: number, height: number): Plan {
     headY: padY, headH, libTop, shelfLabel, shelfRowY, shelfH, shelfGap, shelfPitch, halo,
     columns, tileW, tileH, gridGap, gridInset, gridRows, poolRows,
     sheetW: Math.round(Math.min(W, clamp(W * 0.3, 260, 420))),
-    detailLogoH, detailLogoW: narrow ? Math.round(W * 0.9) - padX : Math.round(W * 0.5), detailTitle, detailFact: ft(19, 12),
+    detailLogoH, detailLogoW: narrow ? Math.round(W * 0.9) - padX : Math.round(W * 0.5), detailTitle, detailFact: ft(24, 15),
     detailY: narrow ? Math.round(H * 0.3) : Math.round(H * 0.34), detailW,
     stack: narrow,
     pageW, rowHeight, panelBeside, panelW,

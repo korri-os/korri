@@ -44,7 +44,7 @@ export component VelvetProgramme inherits Rectangle {
     property <length> body-top: head-foot + sub-h + fact * 1.1;
     // The panel over the rows takes at most two fifths of what is left.
     // A narrow window stacks the code over its words, the code as wide as the page allows.
-    property <bool> qr-under: coded && !beside && page.stack;
+    property <bool> qr-under: coded && !beside && Tokens.screen.narrow;
     property <length> qr-words: fact * 5;
     property <length> qr-side: Math.max(0px, Math.min(self.width - 2 * pad-x, (self.height - body-top - pad-y - buttons-h - fact) * 0.75 - qr-words));
     property <length> panel-h: !panelled ? 0px : beside ? self.height - body-top - pad-y
