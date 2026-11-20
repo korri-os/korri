@@ -174,6 +174,7 @@ impl Sessions {
                 exit_synced: Arc::clone(&exit_synced),
                 refusal: Arc::clone(&refusal),
                 game_started: Arc::clone(&game_started),
+                conflict: None,
             };
             let stop = Arc::clone(&stop);
             std::thread::Builder::new()
@@ -345,6 +346,18 @@ struct Watch {
     exit_synced: Arc<AtomicBool>,
     refusal: Arc<Mutex<Option<String>>>,
     game_started: Arc<AtomicBool>,
+    /// A `sync_conflict` whose split is not written yet: its app, Steam's
+    /// remote time, and whether its job was the exit sync.
+    conflict: Option<Pending>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Pending {
+    appid: u32,
+    remote_time: u64,
+    /// The exit sync hit it: the host exports the files the game wrote only
+    /// after that job ends, and they are the local side.
+    exit: bool,
 }
 
 impl Watch {
@@ -362,6 +375,9 @@ impl Watch {
                 Err(error) => eprintln!("korrid steam engine: cannot read host events: {error}"),
             }
             if last {
+                // A host that ended before its job did, or before the exit
+                // export: the conflict is still a split, of what korrid has.
+                self.split_pending();
                 return;
             }
             std::thread::sleep(POLL);
@@ -404,8 +420,16 @@ impl Watch {
             self.game_started.store(true, Ordering::SeqCst);
         }
         match event {
-            Event::SyncFinished { kind, .. } if kind == "exit" => {
-                self.exit_synced.store(true, Ordering::SeqCst)
+            Event::SyncFinished { kind, .. } => {
+                if kind == "exit" {
+                    self.exit_synced.store(true, Ordering::SeqCst);
+                    if let Some(pending) = &mut self.conflict {
+                        pending.exit = true;
+                    }
+                } else {
+                    // The launch export is in the save folder already.
+                    self.split_pending();
+                }
             }
             Event::SaveExportEmpty { .. } => {
                 if let Some(context) = &self.context {
@@ -413,20 +437,40 @@ impl Watch {
                         eprintln!("korrid steam engine: empty save export not applied: {error}");
                     }
                 }
+                self.split_after_exit_export();
             }
             Event::SaveExport { archive, .. } => {
                 if let Err(error) = self.import(archive) {
                     eprintln!("korrid steam engine: save export not imported: {error}");
                 }
+                self.split_after_exit_export();
             }
             Event::SyncConflict {
                 appid, remote_time, ..
             } => {
-                if let Err(error) = self.conflict(*appid, *remote_time) {
-                    eprintln!("korrid steam engine: conflict not recorded: {error}");
-                }
+                self.conflict = Some(Pending {
+                    appid: *appid,
+                    remote_time: *remote_time,
+                    exit: false,
+                });
             }
             _ => {}
+        }
+    }
+
+    /// The host exports after the exit sync ends: with that export in the
+    /// save folder, an exit conflict's local side is what the game wrote.
+    fn split_after_exit_export(&mut self) {
+        if self.conflict.is_some_and(|pending| pending.exit) {
+            self.split_pending();
+        }
+    }
+
+    fn split_pending(&mut self) {
+        if let Some(pending) = self.conflict.take() {
+            if let Err(error) = self.split(pending.appid, pending.remote_time) {
+                eprintln!("korrid steam engine: conflict not recorded: {error}");
+            }
         }
     }
 
@@ -460,11 +504,13 @@ impl Watch {
         Ok(())
     }
 
-    /// The launch sync reported a conflict: the files the host exported
-    /// before it (already in the save folder) and the cloud side become a
-    /// split now, so the shim's refusal of this same attempt can go straight
-    /// to the split choice. This session's completion adds no snapshot.
-    fn conflict(&self, appid: u32, remote_time: u64) -> Result<(), String> {
+    /// A sync reported a conflict: the files in the save folder and the cloud
+    /// side become a split. For the launch sync that is the launch export,
+    /// and the split is written when the job ends, so the shim's refusal of
+    /// this same attempt can go straight to the split choice. For the exit
+    /// sync it is the exit export, which the host writes after the job.
+    /// This session's completion adds no snapshot.
+    fn split(&self, appid: u32, remote_time: u64) -> Result<(), String> {
         let Some(context) = &self.context else {
             return Ok(());
         };
@@ -559,7 +605,7 @@ mod tests {
     /// and after the exit sync, and reports a conflict when told to.
     fn session_host(dir: &Path, export: &Path, conflict: bool) -> PathBuf {
         let conflict = if conflict {
-            r#"echo '{"event":"sync_conflict","appid":70,"found":true,"local_time":1,"remote_time":1763390000}'"#
+            r#"echo '{"event":"sync_conflict","appid":70,"found":true,"local_time":1,"remote_time":1763390000}'; echo '{"event":"sync_finished","appid":70,"kind":"launch","result":"conflict"}'"#
         } else {
             ""
         };
@@ -707,6 +753,87 @@ done"#,
         }
         assert_eq!(fs::read_to_string(&resolved).unwrap(), "resolve 70 cloud\n");
         sessions.finish(next, Duration::from_millis(100)).unwrap();
+    }
+
+    /// Device run 2026-11-20, session 1 (VVVVVV): the game ran, the exit
+    /// sync found a conflict and uploaded nothing, as the host does with
+    /// any conflict. The host reports the conflict, ends the job, then
+    /// exports the files the game wrote: those are the local side, and the
+    /// split keeps both heads through the session's completion.
+    #[test]
+    fn an_exit_sync_conflict_is_a_split_of_the_files_the_game_wrote() {
+        use crate::saves::{record::snapshot_id, store::head_ids, types::SaveMark, SaveRepository};
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir(temp.path().join("private")).unwrap();
+        let before = temp.path().join("before.tar");
+        fs::write(&before, zip(&[("remote/s", b"before the game")])).unwrap();
+        let after = temp.path().join("after.tar");
+        fs::write(&after, zip(&[("remote/s", b"the game wrote this")])).unwrap();
+        let host = script_host(
+            temp.path(),
+            &format!(
+                r#"channel="$(dirname "$fifo")"
+exec 3<>"$fifo"
+while read -r line <&3; do
+  case "$line" in
+    "launched "*) mkdir -p "$channel/saves"; cp '{before}' "$channel/saves/70-launch-1.tar"; echo "{{\"event\":\"save_export\",\"appid\":70,\"archive\":\"$channel/saves/70-launch-1.tar\"}}"; echo '{{"event":"sync_finished","appid":70,"kind":"launch","result":"local_changes"}}' ;;
+    "exited "*) echo '{{"event":"command","command":"exited","appid":70,"queued":false}}'; sleep 0.3; echo '{{"event":"sync_conflict","appid":70,"found":true,"local_time":1795194441,"remote_time":1734585251}}'; echo '{{"event":"sync_finished","appid":70,"kind":"exit","result":"conflict_not_resolved"}}'; sleep 0.3; cp '{after}' "$channel/saves/70-exit-2.tar"; echo "{{\"event\":\"save_export\",\"appid\":70,\"archive\":\"$channel/saves/70-exit-2.tar\"}}" ;;
+    shutdown) exit 0 ;;
+  esac
+done"#,
+                before = before.display(),
+                after = after.display()
+            ),
+        );
+        let launches = temp.path().join("launches");
+        let units = Arc::new(ProcessHostUnits::new(&launches));
+        let sessions = Sessions::new(units, &launches, unsafe { libc::geteuid() });
+        let context = context(temp.path());
+        sessions
+            .start(LAUNCH, &plan(host, temp.path()), Some(context.clone()))
+            .unwrap();
+        let channel = Channel::open(&sessions.channel(LAUNCH));
+        channel
+            .send_within(Command::Launched(70), Duration::from_secs(5))
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(400));
+        channel
+            .send_within(Command::Exited(70), Duration::from_secs(5))
+            .unwrap();
+        sessions.finish(LAUNCH, Duration::from_secs(10)).unwrap();
+
+        let store = NativeSaveStore::new(&context.private_root);
+        let records = store.records(PERSON, "half-life").unwrap();
+        assert_eq!(records.len(), 2, "the two sides and nothing else");
+        assert_eq!(head_ids(&records).unwrap().len(), 2);
+        let local = records
+            .iter()
+            .find(|record| !crate::steam_engine::saves::in_steam_cloud(record))
+            .unwrap();
+        let file = &local.locations[0].files[0];
+        assert_eq!(file.path, "remote/s");
+        assert_eq!(
+            file.sha256,
+            crate::saves::record::hash(b"the game wrote this"),
+            "the local side is the exit export"
+        );
+        assert!(
+            sessions.conflicts.take_launch(LAUNCH),
+            "the session's completion adds no third head"
+        );
+        assert_eq!(
+            store.reconcile(PERSON, "half-life").unwrap(),
+            SaveMark::Split
+        );
+        let cloud = records
+            .iter()
+            .find(|record| crate::steam_engine::saves::in_steam_cloud(record))
+            .map(|record| snapshot_id(record).unwrap())
+            .unwrap();
+        assert_eq!(
+            sessions.conflicts.pick(PERSON, "half-life", &cloud),
+            Some(crate::steam_engine::protocol::Side::Cloud)
+        );
     }
 
     /// Device proof 6: gamescope ended 0 around the refusing session
@@ -874,6 +1001,7 @@ while read -r line <&3; do :; done"#,
             exit_synced: Arc::default(),
             refusal: Arc::default(),
             game_started: Arc::default(),
+            conflict: None,
         };
         assert_eq!(
             watch
