@@ -188,7 +188,7 @@ Wi-Fi board file to choose.
 | Boot, top screen, Korri shell, korrid | in |
 | Controller input | in: InputPlumber composite for model `AYN Thor`, one `xb360` target, both volume keys through DBus |
 | Wi-Fi (ath12k WCN7850), SSH plugin, USB gadget `10.42.8.1` | in |
-| Bottom screen | off: Sway `output DSI-1 power off` at start; its touch controller is ignored by libinput (`LIBINPUT_IGNORE_DEVICE`) |
+| Bottom screen | a Korri display (DSI-1, 1080x1240@60Hz, transform 90, at 340,1080 under the top), powered off at start like every non-main display; Korri powers it on for a lower pane or a game's overlay. Unplugged at boot (`video=DSI-1:d`) and plugged back in after the compositor starts. Its touch maps to DSI-1 through the host module's `WL_OUTPUT` rule |
 | AYN key (`KEY_F24`), Back (`KEY_BACK`) | unbound |
 | Fan | in (shared curve) |
 | Audio | in: card `AYNThor`, Thor UCM profile (./audio), sink `alsa_output.platform-sound.HiFi__Speaker__sink` |
@@ -260,10 +260,12 @@ this image (commit f950545cc), Linux 7.2.
   family. First-boot test: leave the device idle for more than 300 s, wake
   it, and check `journalctl -k` for `dsi_err_worker` or underflow lines.
   Recovery: SSH, or the power button (powers off).
-- **Top touch orientation.** The Thor DTS sets `touchscreen-swapped-x-y`
-  and `touchscreen-inverted-x`; legacy needed `calibration_matrix 0 -1 1 1 0 0`
-  under its kernel. Unknown which applies here; this image maps touch to
-  DSI-2 with no matrix. Tap the corners and correct.
+- **Touch orientation: measured 2026-11-20.** The DTS's
+  `touchscreen-swapped-x-y` and `touchscreen-inverted-x` give landscape
+  coordinates for both panels at transform 90 (libinput taps: bottom
+  top-left 6%/8%, centre 41%/48%, bottom-right 93%/94%; top centre
+  49%/61%). No calibration matrix; each controller maps to its own output
+  (`displays[].touch`). Confirm both panels after the next deploy.
 - **Input names.** Confirm `AYN Odin2 Gamepad`, `gpio-keys`, `pmic_resin`,
   `top_touchscreen` and `bottom_touchscreen` with `libinput list-devices`.
 - **Top screen at 120 Hz.** See the hardware results. If DSI-2 stays
@@ -296,11 +298,15 @@ this image (commit f950545cc), Linux 7.2.
   was the profile-less fallback). The boot-time `CMD timeout for
   [1001021]` and soundwire `dout-ports mismatch` lines also appear on the
   Portal and are benign.
-- **Bottom screen.** Never enable DSI-1 live: it still wedges the top
-  screen on the DPU cleanup kernel (see the hardware results). The
-  comparison with ROCKNIX below names what differs. If a live power cycle
-  ever passes, enabling the screen needs a design for two displays in Korri,
-  its touch mapping, and the AYN key toggle (legacy d152fb370).
+- **Bottom screen (to verify after the deploy).** DSI-1 is now a Korri
+  display, so korrid powers it on live for a lower pane (ADR 0086) or a
+  game's overlay. On 7.2, a live DSI-1 power-on wedged the top once (before
+  the boot-time cause was known); the re-plug tests on 7.3.5 were clean.
+  Check whole-boot `failed wait_for_idle` counts after opening the overlay
+  and the Floor a few times. Also check that DSI-1 shows the overlay turned
+  90: ROCKNIX PR #3507 found that Sway did not apply a transform to an
+  output that started powered off, and powered it on, turned and off once at
+  start. The AYN key toggle (legacy d152fb370) is still not built.
 - **USB unplug.** Legacy once saw an unplug reset the USB controller and
   drop DRM master, leaving both panels black with
   `Atomic commit failed: Permission denied` (legacy work/task-001, task-002).
@@ -564,6 +570,20 @@ icna3520 120 Hz frame length (`0x4C` ran at 118.63 Hz on a Thor in ROCKNIX
 PR #3489), and a commit that never reaches `flip_done` leaving a plane busy
 (the `[PLANE:97:plane-8] busy with a previous commit` line). Test it with
 screen activity, at 60 Hz and 120 Hz.
+
+## Both panels as Korri displays (2026-11-20)
+
+Owner decision 2026-11-20: the bottom panel is a Korri display with its
+touch fact (ADR 0039, ADR 0086), as on the RG DS. Display facts gained
+`transform` (Sway's value), so korrid places in the turned size.
+
+| Case | What korrid does (from `display_placement.rs`, `session_state.rs`) |
+|---|---|
+| Catalog (Velvet Floor) | The shell is fullscreen on DSI-2; every placement ends with `output DSI-1 power off`. A package with panes gets its lower pane on DSI-1, because DSI-1 (1240x1080 at 340,1080) sits directly under DSI-2 (1920x1080) and overlaps it (`lower_output`); DSI-1 is then powered on. |
+| Game | The game is fullscreen on DSI-2; DSI-1 is powered off. A launch's display size is 1920x1080 (logical). |
+| A game's overlay | It goes on the free display, DSI-1, powered on, as a 1240x1080 floating window at 340,1080, which fits the output. While Sway does not report DSI-1 (unplugged at boot, before the re-plug), the overlay stays on DSI-2 at 1920x1080 (`present_displays`). |
+| Display idle and wake | Idle powers both off; wake powers on what the last placement used. |
+| Touch | Each ft5x06 controller has a `WL_OUTPUT` udev rule from `displays[].touch`, generated by the host module. While DSI-1 is off, bottom taps land on its empty workspace. |
 
 ## Write and boot (owner)
 

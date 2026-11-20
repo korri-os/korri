@@ -75,16 +75,6 @@ in
     deviceMac = "02:52:54:48:52:02";
   };
 
-  # The kernel names each ft5x06 controller after its DT `label` (kernel
-  # patch 0015-touchscreen-edt-ft5x06-allow-to-override-input-name.patch;
-  # qcs8550-ayn-thor.dts: top_touchscreen on i2c4, bottom_touchscreen on
-  # i2c_hub_3). The bottom panel stays dark, so libinput must not see its
-  # touch controller at all; otherwise `type:touch` would map bottom taps onto
-  # the top screen (legacy d152fb370 disabled it with the panel).
-  services.udev.extraRules = ''
-    SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="bottom_touchscreen", ENV{LIBINPUT_IGNORE_DEVICE}="1"
-  '';
-
   services.korriLinuxHost = {
     label = "thor";
     compositor = {
@@ -92,25 +82,56 @@ in
       drmDevice = "/dev/dri/card0";
       renderDevice = "/dev/dri/renderD128";
       mainDisplay = top;
+      # Both panels as Korri displays (ADR 0039, ADR 0086), as the RG DS
+      # declares its two.
+      #
+      # Modes: the top is the first (120 Hz) mode of icna3520_modes in kernel
+      # patch 0057_Chipone-ICNA35XX-panel.patch. The bottom's only mode is
+      # rpminiv2_display_mode in 0057_DDIC-CH13726A-panel.patch, which Sway
+      # reported as 1080x1240@59.999 on 2026-11-20. Korri's mode string
+      # takes whole hertz, and Sway's set_mode picks the same-size mode with
+      # the closest refresh, so 60Hz selects it.
+      #
+      # Transform: both panels are portrait and shown landscape with 90
+      # (nix-on-rocks guest/modules/chipsets/sm8550/default.nix, validated
+      # under ROCKNIX 2026-05-08; the shell on DSI-2 at 90 on this stack). In
+      # Sway's layout the top is 1920x1080 and the bottom 1240x1080 (Sway
+      # outputs after a re-plug, 2026-11-20).
+      #
+      # Position: the bottom sits under the top, centred: x = (1920 - 1240)
+      # / 2 = 340, y = 1080.
+      #
+      # Touch: devicetree paths of the two ft5x06 controllers (pinned DTS:
+      # top_touchscreen at i2c4 = i2c@a90000 under geniqup@ac0000, bottom at
+      # i2c_hub_3 = i2c@98c000 under geniqup@9c0000, both at 0x38). Measured
+      # 2026-11-20: event5 top_touchscreen at …/ac0000.geniqup/a90000.i2c/
+      # i2c-4/4-0038/…, event4 bottom_touchscreen at …/9c0000.geniqup/
+      # 98c000.i2c/i2c-1/1-0038/…. The DTS's touchscreen-swapped-x-y and
+      # inverted-x already give landscape coordinates (bottom 0..1239 x
+      # 0..1079, top 0..1919 x 0..1079), so no calibration matrix: the host
+      # module's WL_OUTPUT rules map each controller to its own output.
       displays = [
         {
           name = top;
           mode = "1080x1920@120Hz";
           x = 0;
           y = 0;
-          touch = null;
+          transform = "90";
+          touch = "/soc@0/geniqup@ac0000/i2c@a90000/touchscreen@38";
+        }
+        {
+          name = bottom;
+          mode = "1080x1240@60Hz";
+          x = 340;
+          y = 1080;
+          transform = "90";
+          touch = "/soc@0/geniqup@9c0000/i2c@98c000/touchscreen@38";
         }
       ];
       renderer = "gles2";
       localInput.enable = true;
-      # The bottom panel is not a Korri display in this slice. Sway lights
-      # every connected output by default, so turn it off once at start, as
-      # legacy did (powerOnBoot = false). Never do this to DSI-2.
-      extraConfig = ''
-        output ${top} transform 90
-        output ${bottom} power off
-        input type:touch map_to_output ${top}
-      '';
+      # The generated configuration powers DSI-1 off at start, as for every
+      # display that is not the main one. Never power off DSI-2 by hand.
     };
   };
 }

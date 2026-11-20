@@ -91,19 +91,53 @@ assert lib.hasInfix "ayn-thor-ucm" c.systemd.user.services.wireplumber.environme
 assert lib.hasInfix "ayn-thor-ucm" c.systemd.user.services.pipewire.environment.ALSA_CONFIG_UCM2;
 assert !lib.hasInfix "odin2" c.environment.sessionVariables.ALSA_CONFIG_UCM2;
 
-# Top screen only; the bottom screen is dark and never a Korri display.
+# Both panels are Korri displays; the bottom is powered off at start.
 assert host.backend == "drm";
 assert host.mainDisplay == "DSI-2";
-assert map (d: d.name) host.displays == [ "DSI-2" ];
-assert (builtins.head host.displays).mode == "1080x1920@120Hz";
+assert
+  map (d: {
+    inherit (d)
+      name
+      mode
+      x
+      y
+      transform
+      touch
+      ;
+  }) host.displays == [
+    {
+      name = "DSI-2";
+      mode = "1080x1920@120Hz";
+      x = 0;
+      y = 0;
+      transform = "90";
+      touch = "/soc@0/geniqup@ac0000/i2c@a90000/touchscreen@38";
+    }
+    {
+      name = "DSI-1";
+      mode = "1080x1240@60Hz";
+      x = 340;
+      y = 1080;
+      transform = "90";
+      touch = "/soc@0/geniqup@9c0000/i2c@98c000/touchscreen@38";
+    }
+  ];
 assert host.localInput.enable;
-assert lib.hasInfix "output DSI-2 transform 90" sway;
-assert lib.hasInfix "output DSI-1 power off" sway;
+assert lib.hasInfix "output DSI-2 transform 90\noutput DSI-1 transform 90\n" sway;
+assert lib.hasInfix "output DSI-1 position 340 1080\noutput DSI-1 power off" sway;
 assert !lib.hasInfix "output DSI-2 power off" sway;
 assert !lib.hasInfix "DSI-2 disable" sway;
+assert !lib.hasInfix "type:touch" sway;
+# Each touch controller maps to its own output; nothing hides the bottom one.
+assert
+  lib.filter (line: lib.hasInfix "ENV{WL_OUTPUT}=" line) (lib.splitString "\n" c.services.udev.extraRules)
+  == [
+    ''SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHSCREEN}=="1", DEVPATH=="*/a90000.i2c/i2c-*/*-0038/input/input*/event*", ENV{WL_OUTPUT}="DSI-2"''
+    ''SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHSCREEN}=="1", DEVPATH=="*/98c000.i2c/i2c-*/*-0038/input/input*/event*", ENV{WL_OUTPUT}="DSI-1"''
+  ];
+assert !lib.hasInfix "LIBINPUT_IGNORE_DEVICE" c.services.udev.extraRules;
 # Display idle stays the product's (README: first-boot test for the DSI-2 wedge).
 assert c.systemd.services.korri-display-idle.enable;
-assert lib.hasInfix ''ATTRS{name}=="bottom_touchscreen", ENV{LIBINPUT_IGNORE_DEVICE}="1"'' c.services.udev.extraRules;
 assert builtins.elem "inputplumber-ayn-thor-data" inputDataNames;
 assert !builtins.elem "inputplumber-ayn-sm8550-data" inputDataNames;
 
