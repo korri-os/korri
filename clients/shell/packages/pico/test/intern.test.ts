@@ -24,8 +24,8 @@ const game: Required<SurfaceGame> = {
   systemId: "pico8",
   system: "PICO-8",
   media: [
-    { role: "poster", url: `/game-assets/${"a".repeat(64)}.png`, width: 600, height: 900, color: "#3a7bd5" },
-    { role: "hero", url: `/game-assets/${"b".repeat(64)}.jpg`, width: 1920, height: 620, color: "#20304f" },
+    { kind: "picture", url: `/game-assets/${"a".repeat(64)}.png`, width: 600, height: 900, color: "#3a7bd5" },
+    { kind: "picture", url: `/game-assets/${"b".repeat(64)}.jpg`, width: 1920, height: 620, color: "#20304f" },
   ],
 }
 
@@ -57,8 +57,13 @@ describe("sameGame", () => {
     for (const field of Object.keys(MEDIA_FIELDS) as (keyof typeof MEDIA_FIELDS)[]) {
       // In the last entry, so every entry is compared and not only the first.
       const changed = copy(game)
-      changed.media = [game.media[0]!, { ...game.media[1]!, [field]: field === "width" || field === "height" ? 1 : field === "role" ? "logo" : "other" }]
+      changed.media = [game.media[0]!, { ...game.media[1]!, [field]: field === "width" || field === "height" ? 1 : field === "kind" ? "logo" : "other" }]
       expect([field, sameGame(game, changed)]).toEqual([field, false])
+    }
+    // Two images that differ only in kind are not the same image.
+    for (const kind of ["logo", "icon"] as const) {
+      const rekinded = { ...copy(game), media: [game.media[0]!, { ...game.media[1]!, kind }] }
+      expect([kind, sameGame(game, rekinded)]).toEqual([kind, false])
     }
     // An image with no colour is not the image with one, and is itself.
     const { color: _, ...plain } = game.media[1]!

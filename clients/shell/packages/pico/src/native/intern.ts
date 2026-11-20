@@ -99,7 +99,7 @@ export const LOCATION_FIELDS: Readonly<Record<keyof SurfaceLaunchLocation, true>
 type GameMedia = NonNullable<SurfaceGame["media"]>[number]
 
 /** Every field of one of a game's stored images, as `GAME_FIELDS` (`sameMedia`). */
-export const MEDIA_FIELDS: Readonly<Record<keyof GameMedia, true>> = { role: true, url: true, width: true, height: true, color: true }
+export const MEDIA_FIELDS: Readonly<Record<keyof GameMedia, true>> = { kind: true, url: true, width: true, height: true, color: true }
 
 /** Whether two games are equal: field by field, by name (QuickJS reads a
  * named field several times faster than a field looked up by a string). */
@@ -138,7 +138,7 @@ function sameMedia(a: SurfaceGame["media"], b: SurfaceGame["media"]): boolean {
   for (let i = 0; i < a.length; i += 1) {
     const x = a[i]
     const y = b[i]
-    if (x === undefined || y === undefined || x.role !== y.role || x.url !== y.url || x.width !== y.width || x.height !== y.height || x.color !== y.color) return false
+    if (x === undefined || y === undefined || x.kind !== y.kind || x.url !== y.url || x.width !== y.width || x.height !== y.height || x.color !== y.color) return false
   }
   return true
 }
